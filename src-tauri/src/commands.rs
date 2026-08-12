@@ -1,4 +1,5 @@
-use crate::logic::{self, ActivityEvent, ActivityInput};
+use crate::auth::{Session, Verifier};
+use crate::logic::{self, ActivityEvent, ActivityInput, Note, NoteEvent, UserInfo};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -62,4 +63,99 @@ pub fn cancel_stream(stream_id: String, registry: State<'_, StreamRegistry>) {
     if let Some(token) = registry.lock().unwrap().get(&stream_id) {
         token.cancel();
     }
+}
+
+/// Verify a JWT and store the resulting identity in `State<Session>`.
+/// The frontend never sends `user_id`; identity is resolved here, at the edge.
+#[tauri::command]
+pub async fn set_session(
+    token: String,
+    verifier: State<'_, Verifier>,
+    session: State<'_, Session>,
+) -> Result<UserInfo, String> {
+    let claims = verifier.verify(&token).await.map_err(|e| e.to_string())?;
+    let user_id = claims.sub.clone();
+    *session.write().unwrap() = Some(claims);
+    Ok(logic::whoami(&user_id))
+}
+
+#[tauri::command]
+pub fn logout(session: State<'_, Session>) {
+    *session.write().unwrap() = None;
+}
+
+/// Requires an active session. Demonstrates the auth-required pattern: the
+/// wrapper resolves identity, `logic.rs` receives `user_id`.
+#[tauri::command]
+pub fn whoami(session: State<'_, Session>) -> Result<UserInfo, String> {
+    session
+        .read()
+        .unwrap()
+        .clone()
+        .map(|c| logic::whoami(&c.sub))
+        .ok_or_else(|| "not authenticated".to_string())
+}
+
+/// Pull the authenticated user id from the in-process session (desktop/mobile).
+/// The web twin reads identity from the `Extension<Claims>` the middleware injects.
+fn session_user_id(session: &Session) -> Result<String, String> {
+    session
+        .read()
+        .unwrap()
+        .clone()
+        .map(|c| c.sub)
+        .ok_or_else(|| "not authenticated".to_string())
+}
+
+/// Authenticated RPC: create a note scoped to the signed-in user.
+#[tauri::command]
+pub async fn create_note(
+    body: String,
+    session: State<'_, Session>,
+) -> Result<Note, String> {
+    let user_id = session_user_id(&session)?;
+    logic::create_note(&user_id, &body)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: list the signed-in user's notes.
+#[tauri::command]
+pub async fn list_notes(session: State<'_, Session>) -> Result<Vec<Note>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::list_notes(&user_id).await.map_err(|e| e.to_string())
+}
+
+/// Authenticated streaming: same pattern as `generate_activity` (stream_id +
+/// Channel + cancellation registry), but data comes from sqld via `user_id`.
+#[tauri::command]
+pub async fn stream_notes(
+    stream_id: String,
+    on_event: Channel<NoteEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    // Take an owned clone so the `State` borrow ends before any await.
+    let registry = Arc::clone(&registry);
+
+    let token = CancellationToken::new();
+    registry
+        .lock()
+        .unwrap()
+        .insert(stream_id.clone(), token.clone());
+
+    let mut stream = Box::pin(logic::stream_notes(user_id));
+    loop {
+        tokio::select! {
+            _ = token.cancelled() => break,
+            Some(event) = stream.next() => {
+                on_event.send(event).map_err(|e| e.to_string())?;
+            }
+            else => break,
+        }
+    }
+
+    registry.lock().unwrap().remove(&stream_id);
+    Ok(())
 }

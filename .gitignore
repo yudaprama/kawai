@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# env files (CLERK_SECRET_KEY lives in .env.local; backend public config in .env)
+.env
+.env.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

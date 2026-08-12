@@ -34,6 +34,12 @@ axum = { version = "0.8", optional = true }
 tower-http = { version = "0.6", optional = true, features = ["fs"] }
 rig = "0.41.0"
 libsql = "0.9.30"
+jsonwebtoken = "9"
+# rustls-tls (not default features) keeps the TLS stack aligned with libsql/rig
+# and compiles for android arm64 + ios arm64. Used only for JWKS fetch in auth.rs.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# Loads KAWAI_AUTH_* from the project-root .env in dev (no-op if absent).
+dotenvy = "0.15"
 
 [features]
 default = []
