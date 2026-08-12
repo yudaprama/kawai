@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tauri App</title>
+    <!-- 1. DaisyUI v5 CSS (Komponen Inti) -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+
+    <!-- 2. Tailwind CSS v4 Browser Engine (Kompilasi JIT langsung di WebView) -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+
+    <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js"></script>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <h1>Welcome to Tauri</h1>
+
+      <div class="row">
+        <a href="https://tauri.app" target="_blank">
+          <img src="/assets/tauri.svg" class="logo tauri" alt="Tauri logo" />
+        </a>
+        <a
+          href="https://developer.mozilla.org/en-US/docs/Web/JavaScript"
+          target="_blank"
+        >
+          <img
+            src="/assets/javascript.svg"
+            class="logo vanilla"
+            alt="JavaScript logo"
+          />
+        </a>
+      </div>
+      <p>Click on the Tauri logo to learn more about the framework</p>
+
+      <form class="row" id="greet-form">
+        <input id="greet-input" placeholder="Enter a name..." />
+        <button type="submit">Greet</button>
+      </form>
+      <p id="greet-msg"></p>
+    </main>
+  </body>
+</html>
