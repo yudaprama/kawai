@@ -4,12 +4,13 @@
   "version": "0.1.0",
   "identifier": "pro.kawai.app",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run build",
-    "frontendDist": "../dist"
+    "beforeDevCommand": "bun run dev",
+    "beforeBuildCommand": "bun run build"
   },
   "app": {
+    "withGlobalTauri": false,
     "windows": [
       {
         "title": "kawai",

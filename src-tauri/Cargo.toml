@@ -11,7 +11,7 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "kawai_app_lib"
+name = "kawai_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -22,3 +22,24 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+async-stream = "0.3"
+futures-core = "0.3"
+futures-util = "0.3"
+tokio-util = "0.7"
+
+# Web-only deps (gated behind the `web` feature). Excluded entirely from
+# desktop/mobile builds.
+axum = { version = "0.8", optional = true }
+tower-http = { version = "0.6", optional = true, features = ["fs"] }
+rig = "0.41.0"
+libsql = "0.9.30"
+
+[features]
+default = []
+web = ["dep:axum", "dep:tower-http"]
+
+[[bin]]
+name = "kawai-web"
+path = "src/bin/web.rs"
+required-features = ["web"]
