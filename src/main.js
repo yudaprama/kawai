@@ -1,4 +1,4 @@
-import { CLERK_PUBLISHABLE_KEY } from "./config.js";
+import "./lib/log.js";
 import { call } from "./lib/api.js";
 import { logout as backendLogout, setSession, whoami } from "./lib/auth.js";
 import { streamOperation } from "./lib/stream.js";
@@ -10,9 +10,12 @@ let streamCtrl = null;
 let chatCtrl = null;
 
 // ---- Alpine store ----
-document.addEventListener("alpine:init", () => {
+// Register defensively: if main.js runs after Alpine (script order changed,
+// bundler, etc.) the alpine:init event has already fired — register directly.
+function registerStore() {
   Alpine.store("app", {
     userId: null,
+    clerkError: "",
     greetInput: "",
     greetMsg: "",
     greetError: false,
@@ -26,16 +29,26 @@ document.addEventListener("alpine:init", () => {
     notesError: "",
     noteInput: "",
     llm: {
+      modelPreset: "",
       modelPath: "",
+      backend: "cpu",
       modelStatus: "",
       modelError: false,
       modelLoaded: false,
+      loading: false,
+      messages: [],
       chatInput: "",
-      chatOutput: "",
       chatActive: false,
+      stats: "",
     },
   });
-});
+}
+
+if (window.Alpine) {
+  registerStore();
+} else {
+  document.addEventListener("alpine:init", registerStore, { once: true });
+}
 
 // ---- Actions exposed to Alpine ----
 async function signOut() {
@@ -91,45 +104,81 @@ function stopStream() {
   Alpine.store("app").stream.active = false;
 }
 
+function errText(err) {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (err && typeof err.message === "string") return err.message;
+  try { return JSON.stringify(err); } catch { return String(err); }
+}
+
 async function loadModel() {
-  const app = Alpine.store("app");
-  const llm = app.llm;
+  const llm = Alpine.store("app").llm;
+  const path = llm.modelPreset === "custom" ? llm.modelPath.trim() : llm.modelPreset;
+  if (!path) return;
+  llm.loading = true;
   llm.modelError = false;
-  llm.modelStatus = "Loading model...";
+  llm.modelStatus = `Loading ${path} …`;
   try {
     const info = await call("local_load_model", {
-      modelPath: llm.modelPath.trim(),
-      gpu: true,
+      modelPath: path,
+      gpu: llm.backend === "gpu",
     });
-    llm.modelStatus = `Loaded ${info.modelPath} (${info.backend})`;
+    llm.modelStatus = `\u2714 ${info.modelPath.split("/").pop()} [${info.backend}]`;
     llm.modelLoaded = true;
+    llm.messages = [];
+    llm.stats = "";
   } catch (err) {
-    llm.modelStatus = `Error: ${err.message}`;
+    llm.modelStatus = `Error: ${errText(err)}`;
+    console.error("[loadModel]", errText(err)); // → frontend_log → app.log
     llm.modelError = true;
+    llm.modelLoaded = false;
+  } finally {
+    llm.loading = false;
   }
 }
 
+function scrollChat() {
+  const el = document.getElementById("local-chat-log");
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
 function chat() {
-  const app = Alpine.store("app");
-  const llm = app.llm;
+  const llm = Alpine.store("app").llm;
   const prompt = llm.chatInput.trim();
-  if (!prompt) return;
+  if (!prompt || llm.chatActive) return;
   llm.chatInput = "";
-  llm.chatOutput = "";
+  llm.messages = [
+    ...llm.messages,
+    { role: "user", text: prompt },
+    { role: "assistant", text: "" },
+  ];
   llm.chatActive = true;
+  scrollChat();
+
+  const t0 = performance.now();
+  let chunks = 0;
+  let chars = 0;
+  const elapsed = () => `${((performance.now() - t0) / 1000).toFixed(1)}s`;
 
   chatCtrl = streamOperation("local_chat", { prompt }, {
     onEvent: (ev) => {
       if (ev.type === "token") {
-        llm.chatOutput += ev.text;
+        chunks += 1;
+        chars += ev.text.length;
+        const msgs = llm.messages.slice();
+        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: msgs[msgs.length - 1].text + ev.text };
+        llm.messages = msgs;
+        llm.stats = `${chunks} chunks · ${chars} chars · ${elapsed()}`;
+        scrollChat();
       }
     },
     onDone: () => {
+      llm.stats = `done · ${chunks} chunks · ${chars} chars · ${elapsed()}`;
       llm.chatActive = false;
       chatCtrl = null;
     },
     onError: (err) => {
-      llm.chatOutput += `\n[error] ${err.message}`;
+      llm.messages = [...llm.messages, { role: "error", text: err.message }];
       llm.chatActive = false;
       chatCtrl = null;
     },
@@ -164,17 +213,23 @@ async function refreshNotes() {
 }
 
 // ---- Clerk auth ----
+// clerk-js v5 browser build: `window.Clerk` is already an instance (not a
+// constructor); the publishable key comes from the
+// `data-clerk-publishable-key` attribute on the CDN script tag.
 async function initClerk() {
-  clerk = new window.Clerk(CLERK_PUBLISHABLE_KEY);
-  await clerk.load();
-
-  clerk.addListener(({ user }) => {
-    if (!user) {
-      Alpine.store("app").userId = null;
-    } else {
-      syncSession();
-    }
-  });
+  if (!window.Clerk) {
+    Alpine.store("app").clerkError =
+      "Clerk failed to load (CDN unreachable?) — using dev session.";
+    tryRestoreSession();
+    return;
+  }
+  clerk = window.Clerk;
+  try {
+    await clerk.load();
+  } catch (err) {
+    console.error("[clerk.load]", errText(err));
+    Alpine.store("app").clerkError = "Clerk unavailable — using dev session.";
+  }
 
   if (clerk.user) {
     syncSession();
@@ -195,15 +250,40 @@ async function syncSession() {
 }
 
 async function tryRestoreSession() {
+  const app = Alpine.store("app");
   try {
     const u = await whoami();
-    Alpine.store("app").userId = u.userId;
+    app.userId = u.userId;
+    return;
   } catch {
-    Alpine.store("app").userId = null;
+    // No session yet. If the backend runs with the dev bypass
+    // (KAWAI_AUTH_DEV_USER_ID), any token verifies — establish one so the
+    // app is usable when Clerk cannot load (e.g. webview cookie isolation).
+    // In production (no bypass) this call is simply rejected.
+    try {
+      const u = await setSession("dev-clerk-unavailable");
+      app.userId = u.userId;
+    } catch {
+      app.userId = null;
+    }
   }
 }
 
 // ---- Boot ----
 document.addEventListener("DOMContentLoaded", () => {
   initClerk();
+});
+
+// Module scope is not visible to Alpine expressions — expose the actions.
+Object.assign(window, {
+  openSignIn: () => clerk?.openSignIn({ modal: true }),
+  openSignUp: () => clerk?.openSignUp({ modal: true }),
+  signOut,
+  greet,
+  startStream,
+  stopStream,
+  loadModel,
+  chat,
+  stopChat,
+  addNote,
 });

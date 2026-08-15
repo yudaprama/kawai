@@ -6,9 +6,14 @@
     <title>Kawai</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js" defer></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
+            data-clerk-publishable-key="pk_test_ZXhhY3QtdGVycmVwaW4tNTAuY2xlcmsuYWNjb3VudHMuZGV2JA"
+            defer></script>
+    <!-- main.js MUST load before Alpine: it registers the Alpine store on
+         alpine:init, which fires while Alpine executes. Module + defer
+         scripts run in document order. -->
     <script type="module" src="main.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   </head>
   <body>
     <main class="max-w-2xl mx-auto p-6 space-y-6" x-data>
@@ -19,9 +24,10 @@
         <div class="card-body">
           <h2 class="card-title">Auth (Clerk)</h2>
           <div x-show="!$store.app.userId" class="flex gap-2">
-            <button class="btn btn-primary" @click="clerk.openSignIn({modal:true})">Sign in</button>
-            <button class="btn btn-ghost" @click="clerk.openSignUp({modal:true})">Sign up</button>
+            <button class="btn btn-primary" @click="openSignIn()">Sign in</button>
+            <button class="btn btn-ghost" @click="openSignUp()">Sign up</button>
           </div>
+          <p x-show="$store.app.clerkError" class="text-error text-sm" x-text="$store.app.clerkError"></p>
           <div x-show="$store.app.userId" class="flex items-center gap-2">
             <span>backend user: <b class="font-mono" x-text="$store.app.userId"></b></span>
             <button class="btn btn-ghost btn-sm" @click="signOut()">Sign out</button>
@@ -62,23 +68,57 @@
       <!-- Local LLM -->
       <section class="card bg-base-100 shadow-sm">
         <div class="card-body">
-          <h2 class="card-title">Local LLM (on-device)</h2>
-          <form @submit.prevent="loadModel" class="flex gap-2">
-            <input x-model="$store.app.llm.modelPath"
-                   placeholder="/path/to/model.litertlm"
-                   class="input input-bordered flex-[2]" />
-            <button type="submit" class="btn btn-primary">Load model</button>
-          </form>
+          <h2 class="card-title">Local LLM (on-device, LiteRT-LM)</h2>
+
+          <div class="flex flex-wrap gap-2 items-center">
+            <select x-model="$store.app.llm.modelPreset" class="select select-bordered flex-1 min-w-52"
+                    :disabled="$store.app.llm.chatActive || $store.app.llm.loading">
+              <option value="">— pilih model —</option>
+              <option value="/Users/yuda/ai-orchestration/kawai/models/gemma-4-E2B-it.litertlm">Gemma 4 E2B · CPU</option>
+              <option value="/Users/yuda/ai-orchestration/kawai/models/gemma-4-E2B-it-gpu.litertlm">Gemma 4 E2B · GPU (artisan)</option>
+              <option value="/Users/yuda/ai-orchestration/kawai/models/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm">Qwen2.5 1.5B q8 · CPU</option>
+              <option value="custom">Custom path…</option>
+            </select>
+            <select x-model="$store.app.llm.backend" class="select select-bordered w-28"
+                    :disabled="$store.app.llm.chatActive || $store.app.llm.loading">
+              <option value="cpu">CPU</option>
+              <option value="gpu">GPU</option>
+            </select>
+            <button class="btn btn-primary" @click="loadModel()"
+                    :disabled="$store.app.llm.loading || !$store.app.llm.modelPreset || ($store.app.llm.modelPreset === 'custom' && !$store.app.llm.modelPath.trim())">
+              <span x-show="$store.app.llm.loading" class="loading loading-spinner loading-xs"></span>
+              Load
+            </button>
+          </div>
+
+          <input x-show="$store.app.llm.modelPreset === 'custom'" x-model="$store.app.llm.modelPath"
+                 placeholder="/absolute/path/to/model.litertlm"
+                 class="input input-bordered w-full font-mono text-xs" />
+
           <p x-text="$store.app.llm.modelStatus"
-             :class="$store.app.llm.modelError ? 'text-error' : ''"
+             :class="$store.app.llm.modelError ? 'text-error' : ($store.app.llm.modelLoaded ? 'text-success' : '')"
              class="text-sm"></p>
-          <form @submit.prevent="chat" x-show="$store.app.llm.modelLoaded" class="flex gap-2">
-            <input x-model="$store.app.llm.chatInput" placeholder="Ask the on-device model..." class="input input-bordered flex-1" />
-            <button type="submit" class="btn btn-primary" x-show="!$store.app.llm.chatActive">Send</button>
-            <button type="button" class="btn btn-ghost" @click="stopChat" x-show="$store.app.llm.chatActive">Stop</button>
-          </form>
-          <pre x-text="$store.app.llm.chatOutput"
-               class="font-mono text-sm whitespace-pre-wrap bg-base-200 p-3 rounded-box min-h-12"></pre>
+
+          <div x-show="$store.app.llm.modelLoaded" class="space-y-3">
+            <div id="local-chat-log" class="flex flex-col gap-2 max-h-96 overflow-y-auto bg-base-200 rounded-box p-3">
+              <template x-for="(m, i) in $store.app.llm.messages" :key="i">
+                <div :class="m.role === 'user' ? 'chat chat-end' : 'chat chat-start'">
+                  <div class="chat-bubble whitespace-pre-wrap"
+                       :class="m.role === 'user' ? 'chat-bubble-primary' : (m.role === 'error' ? 'chat-bubble-error' : '')"
+                       x-text="m.text"></div>
+                </div>
+              </template>
+              <div x-show="$store.app.llm.chatActive" class="text-xs opacity-50 self-start px-2">● generating…</div>
+            </div>
+
+            <form @submit.prevent="chat" class="flex gap-2">
+              <input x-model="$store.app.llm.chatInput" placeholder="Tanya model lokal… (multi-turn, riwayat di engine)"
+                     class="input input-bordered flex-1" :disabled="$store.app.llm.chatActive" />
+              <button type="submit" class="btn btn-primary" x-show="!$store.app.llm.chatActive">Kirim</button>
+              <button type="button" class="btn btn-ghost" @click="stopChat" x-show="$store.app.llm.chatActive">Stop</button>
+            </form>
+            <p class="text-xs opacity-60 font-mono" x-text="$store.app.llm.stats"></p>
+          </div>
         </div>
       </section>
 

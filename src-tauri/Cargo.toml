@@ -45,6 +45,10 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Loads KAWAI_AUTH_* from the project-root .env in dev (no-op if absent).
 dotenvy = "0.15"
 
+# stderr tee for file logging (logging.rs). Unix only.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [features]
 default = []
 web = ["dep:axum", "dep:tower-http"]

@@ -1,6 +1,7 @@
 pub mod auth;
 mod commands;
 pub mod logic;
+pub mod logging;
 
 #[cfg(feature = "web")]
 pub mod web;
@@ -8,6 +9,7 @@ pub mod web;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     auth::load_dotenv();
+    logging::init();
     let verifier = auth::Verifier::from_env();
     if verifier.has_dev_bypass() {
         eprintln!(
@@ -32,7 +34,8 @@ pub fn run() {
             commands::list_notes,
             commands::stream_notes,
             commands::local_load_model,
-            commands::local_chat
+            commands::local_chat,
+            commands::frontend_log
         ]);
 
     #[cfg(not(feature = "litert"))]
@@ -45,7 +48,8 @@ pub fn run() {
             commands::whoami,
             commands::create_note,
             commands::list_notes,
-            commands::stream_notes
+            commands::stream_notes,
+            commands::frontend_log
         ]);
 
     builder

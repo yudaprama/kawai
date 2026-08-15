@@ -272,7 +272,7 @@ pub fn stream_notes(user_id: String) -> impl Stream<Item = NoteEvent> {
 #[cfg(feature = "litert")]
 pub mod local_llm {
     use super::*;
-    use cognee_litert_lm::{Backend, Engine, EngineSettings, InputKind, Session};
+    use cognee_litert_lm::{Backend, Conversation, ConversationConfig, Engine, EngineSettings};
     use std::sync::{Mutex, OnceLock};
     use tokio::sync::mpsc;
 
@@ -297,13 +297,15 @@ pub mod local_llm {
         SLOT.get_or_init(|| Mutex::new(None))
     }
 
-    fn session_slot() -> &'static Mutex<Option<Session>> {
-        static SLOT: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
+    fn conversation_slot() -> &'static Mutex<Option<Conversation>> {
+        static SLOT: OnceLock<Mutex<Option<Conversation>>> = OnceLock::new();
         SLOT.get_or_init(|| Mutex::new(None))
     }
 
-    /// Load (or replace) the on-device model and start a fresh chat session.
-    /// Heavy C init runs on the blocking pool.
+    /// Load (or replace) the on-device model and start a fresh conversation.
+    /// Heavy C init runs on the blocking pool. The Conversation API is used
+    /// (not bare Session): it owns chat history and prompt templating inside
+    /// the engine, and its streaming path is the one verified on macOS.
     pub async fn load_model(
         _user_id: &str,
         model_path: &str,
@@ -315,9 +317,11 @@ pub mod local_llm {
             let settings = EngineSettings::new(&model_path, backend, None, None)
                 .map_err(|e| e.to_string())?;
             let engine = settings.build().map_err(|e| e.to_string())?;
-            let session = engine.create_session(None).map_err(|e| e.to_string())?;
+            let config = ConversationConfig::new().map_err(|e| e.to_string())?;
+            let conversation =
+                Conversation::new(&engine, Some(config)).map_err(|e| e.to_string())?;
             *engine_slot().lock().unwrap() = Some(engine);
-            *session_slot().lock().unwrap() = Some(session);
+            *conversation_slot().lock().unwrap() = Some(conversation);
             Ok(LocalModelInfo {
                 model_path,
                 backend: backend_name(gpu).to_string(),
@@ -331,14 +335,45 @@ pub mod local_llm {
         if gpu { "gpu" } else { "cpu" }
     }
 
-    /// On-device chat. The session is taken out of its slot for the duration
-    /// of a generation (a concurrent call sees `None` and errors) and restored
-    /// by the blocking task itself — even if the consumer was cancelled.
-    /// Session history is preserved across calls (multi-turn conversation).
+    /// Extract the text from a streamed chunk. The Conversation stream path
+    /// emits one JSON envelope per chunk:
+    /// `{"role":"assistant","content":[{"type":"text","text":"..."}]}`.
+    /// Fall back to the raw chunk if it does not parse (defensive).
+    fn chunk_text(chunk: &str) -> String {
+        #[derive(Deserialize)]
+        struct Envelope {
+            #[serde(default)]
+            content: Vec<Part>,
+        }
+        #[derive(Deserialize)]
+        struct Part {
+            #[serde(default)]
+            text: Option<String>,
+        }
+        serde_json::from_str::<Envelope>(chunk)
+            .ok()
+            .map(|e| {
+                e.content
+                    .into_iter()
+                    .filter_map(|p| p.text)
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| chunk.to_string())
+    }
+
+    /// On-device chat. The conversation is taken out of its slot for the
+    /// duration of a generation (a concurrent call sees `None` and errors)
+    /// and restored by the blocking task itself — even if the consumer was
+    /// cancelled. History is preserved across calls (multi-turn).
+    /// NOTE: the C `send_message_stream` is fire-and-forget async; the
+    /// blocking task must not return before the final callback (or an error)
+    /// — dropping the engine mid-generation segfaults.
     pub fn local_chat(_user_id: String, prompt: String) -> impl Stream<Item = LocalChatEvent> {
         stream! {
-            let session = session_slot().lock().unwrap().take();
-            if session.is_none() {
+            let conversation = conversation_slot().lock().unwrap().take();
+            if conversation.is_none() {
                 yield LocalChatEvent::Error {
                     message: "no local model loaded (or a generation is already running)".into(),
                 };
@@ -346,26 +381,48 @@ pub mod local_llm {
             }
             yield LocalChatEvent::Started;
 
+            let message = serde_json::json!({
+                "role": "user",
+                "content": [{ "type": "text", "text": prompt }]
+            })
+            .to_string();
+
             let (tx, mut rx) = mpsc::unbounded_channel::<LocalChatEvent>();
             let handle = tokio::task::spawn_blocking(move || {
-                let Some(session) = session else { unreachable!("checked above") };
-                let result = session.generate_content_stream(
-                    &[InputKind::Text(&prompt)],
-                    move |chunk, _is_final, err| {
-                        let event = match err {
-                            Some(e) => LocalChatEvent::Error { message: e.to_string() },
-                            None if !chunk.is_empty() => {
-                                LocalChatEvent::Token { text: chunk.to_string() }
-                            }
-                            None => return, // empty chunk at a non-final tick
-                        };
-                        let _ = tx.send(event);
-                    },
-                );
+                let Some(conversation) = conversation else { unreachable!("checked above") };
+                let (done_tx, done_rx) = std::sync::mpsc::channel::<Result<(), String>>();
+                let done_tx = Mutex::new(done_tx);
+                let result = conversation.send_message_stream(&message, move |chunk, is_final, err| {
+                    let event = if let Some(e) = err {
+                        LocalChatEvent::Error { message: e.to_string() }
+                    } else {
+                        let text = chunk_text(chunk);
+                        if text.is_empty() && !is_final {
+                            return;
+                        }
+                        LocalChatEvent::Token { text }
+                    };
+                    let _ = tx.send(event);
+                    if is_final {
+                        let _ = done_tx.lock().unwrap().send(Ok(()));
+                    }
+                });
+                let outcome = match result {
+                    Ok(()) => {
+                        // Block until the final callback: the generation runs
+                        // on an engine thread and outlives this call.
+                        match done_rx.recv_timeout(Duration::from_secs(600)) {
+                            Ok(res) => res,
+                            Err(_) => Err("timed out waiting for generation".into()),
+                        }
+                    }
+                    Err(e) => Err(e.to_string()),
+                };
                 // Restore regardless of consumer/cancel state so the engine
-                // never stays locked out by an abandoned stream.
-                *session_slot().lock().unwrap() = Some(session);
-                result.map_err(|e| e.to_string())
+                // never stays locked out by an abandoned stream. The session
+                // is consistent: either generation finished or errored.
+                *conversation_slot().lock().unwrap() = Some(conversation);
+                outcome
             });
 
             let mut errored = false;

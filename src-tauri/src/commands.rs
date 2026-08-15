@@ -65,6 +65,13 @@ pub fn cancel_stream(stream_id: String, registry: State<'_, StreamRegistry>) {
     }
 }
 
+/// Frontend error sink: JS error/rejection/console hooks land here and are
+/// appended to the kawai log file (see `logging.rs` for the location).
+#[tauri::command]
+pub fn frontend_log(level: String, message: String) {
+    crate::logging::write(&level, &message);
+}
+
 /// Verify a JWT and store the resulting identity in `State<Session>`.
 /// The frontend never sends `user_id`; identity is resolved here, at the edge.
 #[tauri::command]
@@ -170,7 +177,11 @@ pub async fn local_load_model(
     session: State<'_, Session>,
 ) -> Result<logic::local_llm::LocalModelInfo, String> {
     let user_id = session_user_id(&session)?;
-    logic::local_llm::load_model(&user_id, &model_path, gpu.unwrap_or(true)).await
+    let result = logic::local_llm::load_model(&user_id, &model_path, gpu.unwrap_or(true)).await;
+    if let Err(e) = &result {
+        eprintln!("[local_load_model] {e}");
+    }
+    result
 }
 
 /// Authenticated streaming: on-device chat. Same stream_id + Channel +
