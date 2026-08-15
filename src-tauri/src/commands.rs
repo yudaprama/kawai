@@ -159,3 +159,52 @@ pub async fn stream_notes(
     registry.lock().unwrap().remove(&stream_id);
     Ok(())
 }
+
+/// Authenticated RPC: load an on-device model (`.litertlm`). Identity is
+/// resolved at the edge as usual; the engine lives in `logic.rs`.
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub async fn local_load_model(
+    model_path: String,
+    gpu: Option<bool>,
+    session: State<'_, Session>,
+) -> Result<logic::local_llm::LocalModelInfo, String> {
+    let user_id = session_user_id(&session)?;
+    logic::local_llm::load_model(&user_id, &model_path, gpu.unwrap_or(true)).await
+}
+
+/// Authenticated streaming: on-device chat. Same stream_id + Channel +
+/// cancellation registry pattern as `stream_notes`; tokens come from the
+/// LiteRT-LM C callback running on the blocking pool.
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub async fn local_chat(
+    prompt: String,
+    stream_id: String,
+    on_event: Channel<logic::local_llm::LocalChatEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    let registry = Arc::clone(&registry);
+
+    let token = CancellationToken::new();
+    registry
+        .lock()
+        .unwrap()
+        .insert(stream_id.clone(), token.clone());
+
+    let mut stream = Box::pin(logic::local_llm::local_chat(user_id, prompt));
+    loop {
+        tokio::select! {
+            _ = token.cancelled() => break,
+            Some(event) = stream.next() => {
+                on_event.send(event).map_err(|e| e.to_string())?;
+            }
+            else => break,
+        }
+    }
+
+    registry.lock().unwrap().remove(&stream_id);
+    Ok(())
+}

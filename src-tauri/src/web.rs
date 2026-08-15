@@ -138,6 +138,55 @@ fn note_event_to_sse(event: NoteEvent) -> SseFrame {
     SseFrame::default().event(name).data(data)
 }
 
+/// Protected RPC: load an on-device model (`.litertlm`).
+#[cfg(feature = "litert")]
+#[derive(Deserialize)]
+struct LocalLoadModelRequest {
+    model_path: String,
+    gpu: Option<bool>,
+}
+
+#[cfg(feature = "litert")]
+async fn local_load_model_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<LocalLoadModelRequest>,
+) -> Result<Json<logic::local_llm::LocalModelInfo>, (StatusCode, String)> {
+    logic::local_llm::load_model(&claims.sub, &req.model_path, req.gpu.unwrap_or(true))
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+/// Protected streaming: on-device chat via SSE, same shape as `stream_notes`.
+#[cfg(feature = "litert")]
+#[derive(Deserialize)]
+struct LocalChatRequest {
+    prompt: String,
+}
+
+#[cfg(feature = "litert")]
+async fn local_chat_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<LocalChatRequest>,
+) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
+    let s = logic::local_llm::local_chat(claims.sub, req.prompt)
+        .map(|event| Ok::<_, Infallible>(local_event_to_sse(event)));
+    Sse::new(s).keep_alive(KeepAlive::default())
+}
+
+#[cfg(feature = "litert")]
+fn local_event_to_sse(event: logic::local_llm::LocalChatEvent) -> SseFrame {
+    use logic::local_llm::LocalChatEvent;
+    let name = match &event {
+        LocalChatEvent::Started => "started",
+        LocalChatEvent::Token { .. } => "token",
+        LocalChatEvent::Finished => "finished",
+        LocalChatEvent::Error { .. } => "error",
+    };
+    let data = serde_json::to_string(&event).unwrap_or_default();
+    SseFrame::default().event(name).data(data)
+}
+
 /// Reads the `kawai_session` cookie, verifies it, and injects `Claims` as a
 /// request extension. 401 on missing/expired token. Uses `from_fn` (state `()`)
 /// and pulls `Verifier` from `Extension`, so it composes with a `Router<()>`.
@@ -207,6 +256,11 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/list_notes", post(list_notes_handler))
         .route("/api/stream_notes", post(stream_notes_handler))
         .route_layer(from_fn(auth_middleware));
+
+    #[cfg(feature = "litert")]
+    let protected = protected
+        .route("/api/local_load_model", post(local_load_model_handler))
+        .route("/api/local_chat", post(local_chat_handler));
 
     Router::new()
         .merge(public)

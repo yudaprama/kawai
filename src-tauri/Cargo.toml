@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+default-run = "kawai"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -32,6 +33,9 @@ tokio-util = "0.7"
 # desktop/mobile builds.
 axum = { version = "0.8", optional = true }
 tower-http = { version = "0.6", optional = true, features = ["fs"] }
+# On-device LLM (LiteRT-LM C API via cognee-litert-lm). Gated: building the C
+# library is opt-in so plain cargo check/build never requires it.
+cognee-litert-lm = { path = "../cognee-litert-lm", optional = true }
 rig = "0.41.0"
 libsql = "0.9.30"
 jsonwebtoken = "9"
@@ -44,6 +48,11 @@ dotenvy = "0.15"
 [features]
 default = []
 web = ["dep:axum", "dep:tower-http"]
+litert = ["dep:cognee-litert-lm"]
+
+[[bin]]
+name = "kawai"
+path = "src/main.rs"
 
 [[bin]]
 name = "kawai-web"

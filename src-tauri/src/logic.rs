@@ -259,3 +259,130 @@ pub fn stream_notes(user_id: String) -> impl Stream<Item = NoteEvent> {
         yield NoteEvent::Finished;
     }
 }
+
+// ── On-device LLM (LiteRT-LM) ─────────────────────────────────────────────
+//
+// Pure: no tauri/axum types here. The engine/session pair lives in process
+// globals; wrappers pass `user_id` (unused for now — reserved for per-user
+// model prefs / quotas). The C inference calls are blocking and stream tokens
+// through a callback, so they run on the blocking pool and are bridged onto
+// an async stream via an unbounded channel. Cancellation: dropping the
+// consumer stops forwarding tokens; the blocking task always finishes and
+// restores the session, so the engine never deadlocks on a cancelled stream.
+#[cfg(feature = "litert")]
+pub mod local_llm {
+    use super::*;
+    use cognee_litert_lm::{Backend, Engine, EngineSettings, InputKind, Session};
+    use std::sync::{Mutex, OnceLock};
+    use tokio::sync::mpsc;
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(tag = "type", rename_all = "camelCase")]
+    pub enum LocalChatEvent {
+        Started,
+        Token { text: String },
+        Finished,
+        Error { message: String },
+    }
+
+    #[derive(Clone, Debug, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct LocalModelInfo {
+        pub model_path: String,
+        pub backend: String,
+    }
+
+    fn engine_slot() -> &'static Mutex<Option<Engine>> {
+        static SLOT: OnceLock<Mutex<Option<Engine>>> = OnceLock::new();
+        SLOT.get_or_init(|| Mutex::new(None))
+    }
+
+    fn session_slot() -> &'static Mutex<Option<Session>> {
+        static SLOT: OnceLock<Mutex<Option<Session>>> = OnceLock::new();
+        SLOT.get_or_init(|| Mutex::new(None))
+    }
+
+    /// Load (or replace) the on-device model and start a fresh chat session.
+    /// Heavy C init runs on the blocking pool.
+    pub async fn load_model(
+        _user_id: &str,
+        model_path: &str,
+        gpu: bool,
+    ) -> Result<LocalModelInfo, String> {
+        let model_path = model_path.to_string();
+        tokio::task::spawn_blocking(move || {
+            let backend = if gpu { Backend::Gpu } else { Backend::Cpu };
+            let settings = EngineSettings::new(&model_path, backend, None, None)
+                .map_err(|e| e.to_string())?;
+            let engine = settings.build().map_err(|e| e.to_string())?;
+            let session = engine.create_session(None).map_err(|e| e.to_string())?;
+            *engine_slot().lock().unwrap() = Some(engine);
+            *session_slot().lock().unwrap() = Some(session);
+            Ok(LocalModelInfo {
+                model_path,
+                backend: backend_name(gpu).to_string(),
+            })
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
+    fn backend_name(gpu: bool) -> &'static str {
+        if gpu { "gpu" } else { "cpu" }
+    }
+
+    /// On-device chat. The session is taken out of its slot for the duration
+    /// of a generation (a concurrent call sees `None` and errors) and restored
+    /// by the blocking task itself — even if the consumer was cancelled.
+    /// Session history is preserved across calls (multi-turn conversation).
+    pub fn local_chat(_user_id: String, prompt: String) -> impl Stream<Item = LocalChatEvent> {
+        stream! {
+            let session = session_slot().lock().unwrap().take();
+            if session.is_none() {
+                yield LocalChatEvent::Error {
+                    message: "no local model loaded (or a generation is already running)".into(),
+                };
+                return;
+            }
+            yield LocalChatEvent::Started;
+
+            let (tx, mut rx) = mpsc::unbounded_channel::<LocalChatEvent>();
+            let handle = tokio::task::spawn_blocking(move || {
+                let Some(session) = session else { unreachable!("checked above") };
+                let result = session.generate_content_stream(
+                    &[InputKind::Text(&prompt)],
+                    move |chunk, _is_final, err| {
+                        let event = match err {
+                            Some(e) => LocalChatEvent::Error { message: e.to_string() },
+                            None if !chunk.is_empty() => {
+                                LocalChatEvent::Token { text: chunk.to_string() }
+                            }
+                            None => return, // empty chunk at a non-final tick
+                        };
+                        let _ = tx.send(event);
+                    },
+                );
+                // Restore regardless of consumer/cancel state so the engine
+                // never stays locked out by an abandoned stream.
+                *session_slot().lock().unwrap() = Some(session);
+                result.map_err(|e| e.to_string())
+            });
+
+            let mut errored = false;
+            while let Some(event) = rx.recv().await {
+                if matches!(event, LocalChatEvent::Error { .. }) {
+                    errored = true;
+                }
+                yield event;
+            }
+            if errored {
+                return;
+            }
+            match handle.await {
+                Ok(Ok(())) => yield LocalChatEvent::Finished,
+                Ok(Err(e)) => yield LocalChatEvent::Error { message: e },
+                Err(e) => yield LocalChatEvent::Error { message: e.to_string() },
+            }
+        }
+    }
+}

@@ -5,23 +5,23 @@ This file is the operational rulebook.
 
 ## What this project is
 
-Multi-target app: **web, desktop, mobile** — all equally important.
+Desktop/mobile app (Tauri), with a standalone web server binary.
 
-- **Frontend**: React + TypeScript (Vite). Single build for all targets.
-- **Auth**: Clerk (`@clerk/react`) on the frontend; backend verifies session JWTs against Clerk's **public JWKS** (`auth.rs`) — no Clerk secret in the backend.
+- **Frontend**: Vanilla JS. No bundler, no framework. Served directly by Tauri (`frontendDist: "../src"`).
+- **Auth**: Clerk via CDN + vanilla JS SDK (`window.Clerk`); backend verifies session JWTs against Clerk's **public JWKS** (`auth.rs`) — no Clerk secret in the backend.
 - **Backend**: Rust. Single core logic, two thin transport wrappers.
-- **Transport**: native per platform — Tauri `Channel`+`invoke` (desktop/mobile), HTTP `fetch`+SSE (web).
+- **Transport**: Tauri `Channel`+`invoke` (desktop/mobile); HTTP `fetch`+SSE (web — backend only, no web frontend).
 - **LLM**: `rig` (in `logic.rs`) — declared, not yet wired.
-- **DB**: self-hosted `libsql-server` (sqld). Backend mints short **EdDSA** tokens that sqld validates; web = remote client, desktop/mobile = embedded replica.
+- **DB**: self-hosted `libsql-server` (sqld). Backend mints short **EdDSA** tokens that sqld validates; embedded replica (desktop/mobile) or remote client (web backend).
 
 ## Non-negotiable invariants
 
 1. **`logic.rs` is pure.** Never import `tauri`, `axum`, or any transport type there. It owns business logic and returns `T` or `impl Stream<Item = Event>`.
 2. **Two thin wrappers per operation.** One `#[tauri::command]` in `commands.rs`, one Axum route in `web.rs`. Both call the same `logic.rs` fn. No business logic in wrappers.
 3. **One operation = one snake_case string**, used identically for: the Rust fn name, the invoke name, and the URL path (`POST /api/<name>`). Tauri uses the fn name **verbatim** (no kebab/camel conversion). Arguments are camelCase on the JS side, mapping to snake_case Rust params.
-4. **Frontend never branches on platform** inside components. Use `src/lib/api.ts` (`call`) and `src/lib/stream.ts` (`streamOperation`). Platform detection lives only in `src/lib/transport.ts` and uses `window.__TAURI_INTERNALS__` — **not** `window.__TAURI__` (we run with `withGlobalTauri: false`).
+4. **Frontend uses `window.__TAURI__` directly** (`withGlobalTauri: true`). Platform is always Tauri — no platform branching needed.
 5. **Web deps stay gated.** `axum`/`tower-http` are `optional`, behind the `web` Cargo feature. The `web` module is `#[cfg(feature = "web")]`. The `kawai-web` binary has `required-features = ["web"]`. Never make axum a non-optional dep — it must stay out of desktop/mobile binaries.
-6. **Events.** `#[serde(tag = "type")]` in `logic.rs`; keep `src/types/events.ts` in sync. Terminal variants are `finished` / `error`.
+6. **Events.** `#[serde(tag = "type")]` in `logic.rs`; frontend reads `event.type` at runtime (no TS types file). Terminal variants are `finished` / `error`.
 7. **Identity is resolved at the transport edge, not in `logic.rs`.** Wrappers verify the token and pass `user_id` (`claims.sub`) into `logic.rs` fns as the first param. The frontend NEVER sends `user_id`. `auth.rs` is pure (no tauri/axum): it does JWKS verification (Clerk) and EdDSA minting (sqld).
 8. **sqld is EdDSA-only.** `libsql-server` validates client JWTs with Ed25519 (EdDSA) — NOT JWKS, NOT RS256. So Clerk's RS256 session JWTs CANNOT go to sqld. The backend verifies Clerk (JWKS) and MINTS the EdDSA token (`logic::mint_db_token`) sqld accepts. Never wire sqld to Clerk directly.
 9. **DB builder selection is `cfg`-gated in `logic.rs`, not branched on a transport type.** `#[cfg(feature = "web")]` → remote client; `#[cfg(not(feature = "web"))]` → embedded replica. Keeps `logic.rs` pure.
@@ -31,15 +31,11 @@ Multi-target app: **web, desktop, mobile** — all equally important.
 Package manager is **bun** (not npm/yarn).
 
 ```sh
-# Frontend
-bun run dev            # vite dev server on port 1420
-bun run build          # tsc typecheck + vite build → dist/
-
-# Desktop (Tauri)
+# Desktop (Tauri) — no dev server, Tauri serves src/ directly
 bun tauri dev
 bun tauri build
 
-# Web standalone server (Axum serves dist/ + /api/*)
+# Web standalone server (Axum serves /api/*; no frontend)
 cargo run --bin kawai-web --features web
 
 # Self-hosted libsql-server (sqld) — the DB sync target
@@ -61,7 +57,6 @@ cargo check --target aarch64-apple-ios-sim
 Run all that apply. Everything must pass clean:
 
 ```sh
-bun run build                  # frontend: tsc + vite
 cargo check                    # desktop — axum must NOT compile here
 cargo check --features web     # web module + kawai-web bin
 ```
@@ -75,39 +70,41 @@ For mobile changes, also: `cargo ndk -t arm64-v8a -P 24 check` and/or `cargo che
 - **`-p` in cargo-ndk collides with cargo `--package`.** Use `-P` / `--platform`. cargo-ndk's panic handler **dumps all env vars to stdout** — never let it panic, and keep secrets out of shell env.
 - **Two rustls versions coexist** (libsql 0.22 + rig 0.23). Expected, not a bug; binary is slightly larger.
 - **`libsql-sys` / `aws-lc-sys` are C.** Mobile needs NDK clang (Android) or Xcode clang (iOS) plus libclang for bindgen. Verified working on android arm64 + ios arm64.
-- **Don't re-add Tailwind/DaisyUI from CDN.** Wired via the Vite plugin (`@tailwindcss/vite` + `@plugin "daisyui"` in `src/index.css`).
 - **Cancellation is asymmetric by design.** Web: `AbortController` (connection drop auto-cancels the backend future). Desktop/mobile: frontend `cancel()` calls `invoke('cancel_stream', {streamId})` → `CancellationToken` in the shared registry breaks the `select!` loop. Streaming commands must accept a `stream_id` param and register/clean up a token.
 - **Axum 0.8 `from_fn` hardcodes state to `()`.** A middleware that needs shared state can't use `from_fn` + `State<S>`; use `Extension` (our `auth_middleware` reads `Extension<Verifier>`) or `from_fn_with_state`. Don't fight the type inference by annotating `Router<S>` — switch to `Extension`.
 - **`libsql` positional tuple params start at arity 2.** `(&str,)` is NOT `IntoParams`; use `vec![x]` (or an array) for a single param. Tuples `(A,B)` and up are fine. Params blanket-impl `T: TryInto<Value>` (so `&str`, `String`, `i64`, … all work).
 - **Clerk JWTs are RS256; sqld accepts only EdDSA.** Never pass a Clerk session JWT to sqld — mint an EdDSA token in the backend first (invariant 8).
 - **`dotenvy` does not override existing env vars.** Shell-exported vars win over `.env`. To force dev-bypass auth, `KAWAI_AUTH_DEV_USER_ID=demo cargo run ...`.
 - **Two `jsonwebtoken` versions coexist** (9.x is our direct dep in `auth.rs`/`logic.rs`; 10.x is transitive). Expected.
+- **Clerk CDN script is loaded in `index.html`.** `window.Clerk` must be available before `main.js` runs — the `<script>` tag order is: Clerk (defer) → main.js (module). If Clerk moves to a different CDN or version, update both `src/index.html` and `src/config.js`.
+- **No build step — frontend files are served as-is.** `src/` is the Tauri `frontendDist`. File paths in HTML/JS must be relative and valid for the filesystem (no bundler resolves them).
 
 ## Where things live
 
 ```
-src/lib/transport.ts            # platform detection (window.__TAURI_INTERNALS__)
-src/lib/api.ts                  # request-response (invoke | fetch)
-src/lib/stream.ts               # streaming (Channel | SSE), generates streamId, cancel()
-src/lib/auth.ts                 # setSession/logout/whoami thin wrappers over call()
-src/types/events.ts             # TS mirror of logic.rs event enums — keep in sync
-src/App.tsx                     # demo: greet + generate_activity + notes (auth-scoped)
-src-tauri/src/logic.rs          # PURE logic; rig + libsql + db token minting
-src-tauri/src/auth.rs           # PURE auth; Clerk JWKS verify + EdDSA mint + Session
-src-tauri/src/commands.rs       # #[tauri::command] wrappers + Channel + cancel registry
-src-tauri/src/web.rs            # Axum routes (feature-gated "web") + auth_middleware
-src-tauri/src/bin/web.rs        # standalone web server entry
-src-tauri/src/lib.rs            # Tauri builder; .manage(...); generate_handler!
-src-tauri/Cargo.toml            # axum/tower-http optional behind feature "web"
-.env                            # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)
-.env.local                      # VITE_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (gitignored)
-scripts/dev-sqld.sh             # dev launcher for self-hosted sqld
+src/index.html              # Entry point — loads Clerk CDN + main.js
+src/main.js                 # App logic: Clerk auth, greet, stream, notes
+src/styles.css              # Vanilla CSS (replaces Tailwind/DaisyUI)
+src/config.js               # Clerk publishable key
+src/lib/api.js              # RPC: window.__TAURI__.core.invoke
+src/lib/stream.js           # Streaming: Channel + cancel_stream
+src/lib/auth.js             # setSession/logout/whoami wrappers over call()
+src-tauri/src/logic.rs      # PURE logic; rig + libsql + db token minting
+src-tauri/src/auth.rs       # PURE auth; Clerk JWKS verify + EdDSA mint + Session
+src-tauri/src/commands.rs   # #[tauri::command] wrappers + Channel + cancel registry
+src-tauri/src/web.rs        # Axum routes (feature-gated "web") + auth_middleware
+src-tauri/src/bin/web.rs    # standalone web server entry
+src-tauri/src/lib.rs        # Tauri builder; .manage(...); generate_handler!
+src-tauri/Cargo.toml        # axum/tower-http optional behind feature "web"
+.env                        # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)
+.env.local                  # VITE_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (gitignored)
+scripts/dev-sqld.sh         # dev launcher for self-hosted sqld
 ```
 
 ## Adding a new operation (checklist)
 
 1. Write the pure fn (+ any event enum) in `logic.rs`. Events: `#[serde(tag = "type")]`.
-2. Mirror any new event types in `src/types/events.ts`.
+2. No TS event file to mirror — frontend reads `event.type` at runtime.
 3. Add the `#[tauri::command]` in `commands.rs`:
    - RPC: return `Result<T, String>`.
    - Streaming: take `stream_id: String` + `on_event: Channel<E>` + `State<StreamRegistry>`; loop with `tokio::select!` racing `token.cancelled()` vs `stream.next()`; register/remove token by `stream_id`.
@@ -115,18 +112,18 @@ scripts/dev-sqld.sh             # dev launcher for self-hosted sqld
 4. Add the Axum route in `web.rs`: RPC → `Json<T>`; streaming → `Sse<impl Stream<Item = Result<Event, _>>>`. Register it in `router()`.
    - If it requires auth: mount it on the `protected` router (behind `auth_middleware`) and take `Extension<auth::Claims>`; pass `claims.sub` to the same `logic.rs` fn. Public ops stay on `public`.
 5. Register the command in `lib.rs` `generate_handler!`.
-6. Call from React: `call('<name>', args)` or `streamOperation('<name>', args, handlers)`.
-7. Verify: `bun run build`, `cargo check`, `cargo check --features web`.
+6. Call from vanilla JS: `call('<name>', args)` or `streamOperation('<name>', args, handlers)` in `src/main.js` (or a new module in `src/lib/`).
+7. Verify: `cargo check`, `cargo check --features web`.
 
 ## Authentication
 
-- Frontend: `@clerk/react` `<ClerkProvider>` wraps the app (`main.tsx`). `useAuth()` is the source of truth for UI auth state; `App.tsx` pushes the Clerk session JWT into the backend every ~50s (tokens expire in ~60s).
-- `set_session` (`src/lib/auth.ts`) hands the JWT to the backend once:
-  - Web: backend sets an HttpOnly `kawai_session` cookie; the browser auto-attaches it to every `/api/*` incl. SSE. No token in JS.
+- Frontend: Clerk loaded from CDN in `index.html`. `main.js` creates `new window.Clerk(pk)` and calls `clerk.load()`. The app pushes the Clerk session JWT into the backend on sign-in and every ~50s (tokens expire in ~60s).
+- `set_session` (`src/lib/auth.js`) hands the JWT to the backend once:
   - Desktop/mobile: backend stores the verified identity in Tauri `State<Session>` (in-memory).
+  - Web backend (no web frontend): backend sets an HttpOnly `kawai_session` cookie.
 - Backend verification: `auth::Verifier` fetches Clerk's **public** JWKS (cached by `kid`) and checks `iss`/`exp`. **No `CLERK_SECRET_KEY` is needed or used by the backend** — asymmetric verification.
 - Identity → logic: wrappers extract `claims.sub` as `user_id` and pass it as the first arg to `logic.rs` fns. `whoami`/`create_note`/`list_notes`/`stream_notes` are auth-required; `greet`/`generate_activity` are public.
-- Auth operations: `set_session`, `logout`, `whoami` (one snake_case string each, same on both transports).
+- Auth operations: `set_session`, `logout`, `whoami` (one snake_case string each).
 
 ## Database (self-hosted libsql-server / sqld)
 
@@ -156,7 +153,7 @@ KAWAI_AUTH_ISSUER=...          # Clerk frontend-API origin
 KAWAI_DB_URL=http://127.0.0.1:8080
 KAWAI_DB_JWT_PRIVATE_KEY_FILE=.../sqld_jwt_ed25519.pem
 ```
-`.env.local` (gitignored) — Vite/Clerk only: `VITE_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`. The backend never uses the secret.
+`.env.local` (gitignored) — Clerk publishable key reference: `VITE_CLERK_PUBLISHABLE_KEY`. The actual key is embedded in `src/config.js` (publishable keys are public by design).
 
 ## Next dev / follow-ups
 

@@ -1,47 +1,176 @@
 import { CLERK_PUBLISHABLE_KEY } from "./config.js";
 import { call } from "./lib/api.js";
-import { logout, setSession, whoami } from "./lib/auth.js";
+import { logout as backendLogout, setSession, whoami } from "./lib/auth.js";
 import { streamOperation } from "./lib/stream.js";
 
-// ---- Element refs ----
-const $ = (s) => document.querySelector(s);
-
-const authOut = $("#auth-out");
-const authIn = $("#auth-in");
-const backendUser = $("#backend-user");
-const signInBtn = $("#sign-in-btn");
-const signUpBtn = $("#sign-up-btn");
-const signOutBtn = $("#sign-out-btn");
-
-const greetForm = $("#greet-form");
-const greetInput = $("#greet-input");
-const greetMsg = $("#greet-msg");
-
-const startBtn = $("#start-stream");
-const stopBtn = $("#stop-stream");
-const progress = $("#progress");
-const streamLog = $("#stream-log");
-
-const noteForm = $("#note-form");
-const noteInput = $("#note-input");
-const notesError = $("#notes-error");
-const notesList = $("#notes-list");
-const notesEmpty = $("#notes-empty");
-
-// ---- State ----
 let clerk;
-let streamCtrl = null;
-let backendUserId = null;
 
-// ---- Auth ----
+// ---- Stream / chat controllers (not reactive) ----
+let streamCtrl = null;
+let chatCtrl = null;
+
+// ---- Alpine store ----
+document.addEventListener("alpine:init", () => {
+  Alpine.store("app", {
+    userId: null,
+    greetInput: "",
+    greetMsg: "",
+    greetError: false,
+    stream: {
+      active: false,
+      done: 0,
+      total: 10,
+      log: [],
+    },
+    notes: [],
+    notesError: "",
+    noteInput: "",
+    llm: {
+      modelPath: "",
+      modelStatus: "",
+      modelError: false,
+      modelLoaded: false,
+      chatInput: "",
+      chatOutput: "",
+      chatActive: false,
+    },
+  });
+});
+
+// ---- Actions exposed to Alpine ----
+async function signOut() {
+  await clerk.signOut();
+  await backendLogout().catch(() => {});
+  Alpine.store("app").userId = null;
+}
+
+async function greet() {
+  const app = Alpine.store("app");
+  app.greetError = false;
+  try {
+    app.greetMsg = await call("greet", { name: app.greetInput });
+  } catch (err) {
+    app.greetMsg = `Error: ${err.message}`;
+    app.greetError = true;
+  }
+}
+
+function startStream() {
+  const app = Alpine.store("app");
+  app.stream.log = [];
+  app.stream.active = true;
+  app.stream.done = 0;
+
+  const input = { events: 10, intervalMs: 500 };
+  streamCtrl = streamOperation("generate_activity", input, {
+    onEvent: (ev) => {
+      if (ev.type === "started") {
+        app.stream.total = ev.total;
+        app.stream.done = 0;
+      } else if (ev.type === "progress") {
+        app.stream.done = ev.done;
+        app.stream.log = [...app.stream.log, `event ${ev.done}/${ev.total}`];
+      }
+    },
+    onDone: () => {
+      app.stream.log = [...app.stream.log, "\u2705 finished"];
+      app.stream.active = false;
+      streamCtrl = null;
+    },
+    onError: (err) => {
+      app.stream.log = [...app.stream.log, `\u274c ${err.message}`];
+      app.stream.active = false;
+      streamCtrl = null;
+    },
+  });
+}
+
+function stopStream() {
+  streamCtrl?.cancel();
+  streamCtrl = null;
+  Alpine.store("app").stream.active = false;
+}
+
+async function loadModel() {
+  const app = Alpine.store("app");
+  const llm = app.llm;
+  llm.modelError = false;
+  llm.modelStatus = "Loading model...";
+  try {
+    const info = await call("local_load_model", {
+      modelPath: llm.modelPath.trim(),
+      gpu: true,
+    });
+    llm.modelStatus = `Loaded ${info.modelPath} (${info.backend})`;
+    llm.modelLoaded = true;
+  } catch (err) {
+    llm.modelStatus = `Error: ${err.message}`;
+    llm.modelError = true;
+  }
+}
+
+function chat() {
+  const app = Alpine.store("app");
+  const llm = app.llm;
+  const prompt = llm.chatInput.trim();
+  if (!prompt) return;
+  llm.chatInput = "";
+  llm.chatOutput = "";
+  llm.chatActive = true;
+
+  chatCtrl = streamOperation("local_chat", { prompt }, {
+    onEvent: (ev) => {
+      if (ev.type === "token") {
+        llm.chatOutput += ev.text;
+      }
+    },
+    onDone: () => {
+      llm.chatActive = false;
+      chatCtrl = null;
+    },
+    onError: (err) => {
+      llm.chatOutput += `\n[error] ${err.message}`;
+      llm.chatActive = false;
+      chatCtrl = null;
+    },
+  });
+}
+
+function stopChat() {
+  chatCtrl?.cancel();
+  chatCtrl = null;
+  Alpine.store("app").llm.chatActive = false;
+}
+
+async function addNote() {
+  const app = Alpine.store("app");
+  app.notesError = "";
+  try {
+    await call("create_note", { body: app.noteInput });
+    app.noteInput = "";
+    await refreshNotes();
+  } catch (err) {
+    app.notesError = err.message;
+  }
+}
+
+async function refreshNotes() {
+  const app = Alpine.store("app");
+  try {
+    app.notes = await call("list_notes");
+  } catch (err) {
+    app.notesError = err.message;
+  }
+}
+
+// ---- Clerk auth ----
 async function initClerk() {
   clerk = new window.Clerk(CLERK_PUBLISHABLE_KEY);
   await clerk.load();
 
-  // Listen for auth changes
   clerk.addListener(({ user }) => {
     if (!user) {
-      renderSignedOut();
+      Alpine.store("app").userId = null;
     } else {
       syncSession();
     }
@@ -50,7 +179,6 @@ async function initClerk() {
   if (clerk.user) {
     syncSession();
   } else {
-    // Check for existing backend session (cookie / in-memory)
     await tryRestoreSession();
   }
 }
@@ -60,124 +188,20 @@ async function syncSession() {
   if (!token) return;
   try {
     const u = await setSession(token);
-    backendUserId = u.userId;
-    renderSignedIn();
+    Alpine.store("app").userId = u.userId;
   } catch {
-    // Backend unavailable; keep showing signed-out
+    Alpine.store("app").userId = null;
   }
 }
 
 async function tryRestoreSession() {
   try {
     const u = await whoami();
-    backendUserId = u.userId;
-    renderSignedIn();
+    Alpine.store("app").userId = u.userId;
   } catch {
-    renderSignedOut();
+    Alpine.store("app").userId = null;
   }
 }
-
-function renderSignedOut() {
-  authOut.hidden = false;
-  authIn.hidden = true;
-  backendUserId = null;
-  notesList.innerHTML = "";
-  notesEmpty.hidden = false;
-}
-
-function renderSignedIn() {
-  authOut.hidden = true;
-  authIn.hidden = false;
-  backendUser.innerHTML = `backend user: <b>${backendUserId}</b>`;
-  refreshNotes();
-}
-
-signInBtn.addEventListener("click", () => clerk.openSignIn({ modal: true }));
-signUpBtn.addEventListener("click", () => clerk.openSignUp({ modal: true }));
-
-signOutBtn.addEventListener("click", async () => {
-  await clerk.signOut();
-  await logout().catch(() => {});
-  renderSignedOut();
-});
-
-// ---- Greet ----
-greetForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  try {
-    const msg = await call("greet", { name: greetInput.value });
-    greetMsg.textContent = msg;
-  } catch (err) {
-    greetMsg.textContent = `Error: ${err.message}`;
-  }
-});
-
-// ---- Streaming ----
-startBtn.addEventListener("click", () => {
-  streamLog.innerHTML = "";
-  progress.hidden = false;
-  progress.value = 0;
-
-  const input = { events: 10, intervalMs: 500 };
-  streamCtrl = streamOperation("generate_activity", input, {
-    onEvent: (ev) => {
-      if (ev.type === "started") {
-        progress.max = ev.total;
-        progress.value = 0;
-      } else if (ev.type === "progress") {
-        progress.value = ev.done;
-        const li = document.createElement("li");
-        li.textContent = `event ${ev.done}/${ev.total}`;
-        streamLog.appendChild(li);
-      }
-    },
-    onDone: () => {
-      const li = document.createElement("li");
-      li.textContent = "\u2705 finished";
-      streamLog.appendChild(li);
-      streamCtrl = null;
-    },
-    onError: (err) => {
-      const li = document.createElement("li");
-      li.textContent = `\u274c ${err.message}`;
-      streamLog.appendChild(li);
-      streamCtrl = null;
-    },
-  });
-});
-
-stopBtn.addEventListener("click", () => {
-  streamCtrl?.cancel();
-  streamCtrl = null;
-});
-
-// ---- Notes ----
-async function refreshNotes() {
-  notesError.hidden = true;
-  try {
-    const notes = await call("list_notes");
-    notesList.innerHTML = notes
-      .map((n) => `<li><span class="note-id">#${n.id}</span> ${n.body}</li>`)
-      .join("");
-    notesEmpty.hidden = notes.length > 0;
-  } catch (err) {
-    notesError.textContent = err.message;
-    notesError.hidden = false;
-  }
-}
-
-noteForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  notesError.hidden = true;
-  try {
-    await call("create_note", { body: noteInput.value });
-    noteInput.value = "";
-    await refreshNotes();
-  } catch (err) {
-    notesError.textContent = err.message;
-    notesError.hidden = false;
-  }
-});
 
 // ---- Boot ----
 document.addEventListener("DOMContentLoaded", () => {

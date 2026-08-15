@@ -6,24 +6,25 @@
     <title>Kawai</title>
     <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js" defer></script>
-    <script type="module" src="main.js" defer></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script type="module" src="main.js"></script>
   </head>
   <body>
-    <main class="container">
+    <main class="container" x-data>
       <h1>Kawai</h1>
 
       <section id="auth-section">
         <h2>Auth (Clerk)</h2>
-        <div id="auth-out" hidden>
+        <div x-show="!$store.app.userId">
           <btn-group>
-            <button id="sign-in-btn">Sign in</button>
-            <button id="sign-up-btn" class="ghost">Sign up</button>
+            <button @click="clerk.openSignIn({modal:true})">Sign in</button>
+            <button @click="clerk.openSignUp({modal:true})" class="ghost">Sign up</button>
           </btn-group>
         </div>
-        <div id="auth-in" hidden>
+        <div x-show="$store.app.userId">
           <div id="auth-actions">
-            <span id="backend-user"></span>
-            <button id="sign-out-btn" class="ghost">Sign out</button>
+            <span>backend user: <b x-text="$store.app.userId"></b></span>
+            <button @click="signOut()" class="ghost">Sign out</button>
           </div>
         </div>
       </section>
@@ -32,11 +33,11 @@
 
       <section>
         <h2>RPC (request-response)</h2>
-        <form id="greet-form">
-          <input id="greet-input" placeholder="Enter a name..." />
+        <form @submit.prevent="greet">
+          <input x-model="$store.app.greetInput" placeholder="Enter a name..." />
           <button type="submit">Greet</button>
         </form>
-        <p id="greet-msg"></p>
+        <p id="greet-msg" x-text="$store.app.greetMsg" :style="$store.app.greetError ? 'color:#dc2626' : ''"></p>
       </section>
 
       <hr />
@@ -44,26 +45,54 @@
       <section>
         <h2>Streaming</h2>
         <btn-group>
-          <button id="start-stream">Start stream</button>
-          <button id="stop-stream" class="ghost">Stop</button>
+          <button @click="startStream" x-show="!$store.app.stream.active">Start stream</button>
+          <button @click="stopStream" class="ghost" x-show="$store.app.stream.active">Stop</button>
         </btn-group>
-        <progress id="progress" max="10" value="0" hidden></progress>
-        <ul id="stream-log"></ul>
+        <progress id="progress" :max="$store.app.stream.total" :value="$store.app.stream.done"
+                  x-show="$store.app.stream.active"></progress>
+        <ul id="stream-log">
+          <template x-for="(item, i) in $store.app.stream.log" :key="i">
+            <li x-text="item"></li>
+          </template>
+        </ul>
+      </section>
+
+      <hr />
+
+      <section id="local-llm-section">
+        <h2>Local LLM (on-device)</h2>
+        <form @submit.prevent="loadModel">
+          <input x-model="$store.app.llm.modelPath"
+                 placeholder="/path/to/model.litertlm" style="flex: 2" />
+          <button type="submit">Load model</button>
+        </form>
+        <p x-text="$store.app.llm.modelStatus"
+           :style="$store.app.llm.modelError ? 'color:#dc2626' : ''"></p>
+        <form @submit.prevent="chat" x-show="$store.app.llm.modelLoaded">
+          <input x-model="$store.app.llm.chatInput" placeholder="Ask the on-device model..." />
+          <button type="submit" x-show="!$store.app.llm.chatActive">Send</button>
+          <button type="button" @click="stopChat" class="ghost" x-show="$store.app.llm.chatActive">Stop</button>
+        </form>
+        <pre x-text="$store.app.llm.chatOutput" id="local-chat-out"></pre>
       </section>
 
       <hr />
 
       <section id="notes-section">
         <h2>Notes (per-user, sqld)</h2>
-        <div id="notes-authenticated">
-          <form id="note-form">
-            <input id="note-input" placeholder="Write a note..." />
+        <div x-show="$store.app.userId">
+          <form @submit.prevent="addNote">
+            <input x-model="$store.app.noteInput" placeholder="Write a note..." />
             <button type="submit">Add</button>
           </form>
-          <p id="notes-error" hidden></p>
-          <ul id="notes-list"></ul>
+          <p id="notes-error" x-text="$store.app.notesError" x-show="$store.app.notesError"></p>
+          <ul id="notes-list">
+            <template x-for="(note, i) in $store.app.notes" :key="i">
+              <li><span class="note-id" x-text="'#' + note.id"></span> <span x-text="note.body"></span></li>
+            </template>
+          </ul>
         </div>
-        <p id="notes-empty">Sign in to use notes.</p>
+        <p x-show="!$store.app.userId">Sign in to use notes.</p>
       </section>
     </main>
   </body>
