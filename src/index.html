@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kawai</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js" defer></script>
+    <script type="module" src="main.js" defer></script>
+  </head>
+  <body>
+    <main class="container">
+      <h1>Kawai</h1>
+
+      <section id="auth-section">
+        <h2>Auth (Clerk)</h2>
+        <div id="auth-out" hidden>
+          <btn-group>
+            <button id="sign-in-btn">Sign in</button>
+            <button id="sign-up-btn" class="ghost">Sign up</button>
+          </btn-group>
+        </div>
+        <div id="auth-in" hidden>
+          <div id="auth-actions">
+            <span id="backend-user"></span>
+            <button id="sign-out-btn" class="ghost">Sign out</button>
+          </div>
+        </div>
+      </section>
+
+      <hr />
+
+      <section>
+        <h2>RPC (request-response)</h2>
+        <form id="greet-form">
+          <input id="greet-input" placeholder="Enter a name..." />
+          <button type="submit">Greet</button>
+        </form>
+        <p id="greet-msg"></p>
+      </section>
+
+      <hr />
+
+      <section>
+        <h2>Streaming</h2>
+        <btn-group>
+          <button id="start-stream">Start stream</button>
+          <button id="stop-stream" class="ghost">Stop</button>
+        </btn-group>
+        <progress id="progress" max="10" value="0" hidden></progress>
+        <ul id="stream-log"></ul>
+      </section>
+
+      <hr />
+
+      <section id="notes-section">
+        <h2>Notes (per-user, sqld)</h2>
+        <div id="notes-authenticated">
+          <form id="note-form">
+            <input id="note-input" placeholder="Write a note..." />
+            <button type="submit">Add</button>
+          </form>
+          <p id="notes-error" hidden></p>
+          <ul id="notes-list"></ul>
+        </div>
+        <p id="notes-empty">Sign in to use notes.</p>
+      </section>
+    </main>
+  </body>
+</html>
