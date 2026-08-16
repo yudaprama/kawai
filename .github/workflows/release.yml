@@ -189,6 +189,21 @@ jobs:
       - name: Init submodules (cognee-litert-lm + nested LiteRT-LM fork)
         run: git submodule update --init --recursive cognee-litert-lm
 
+      # LiteRT-LM's .bazelrc pins CC=clang (action_env); the runner default is
+      # clang-14, whose std lib lacks std::source_location in C++20 mode
+      # (absl fails). clang-18 via apt.llvm.org — stays on ubuntu-22.04 so the
+      # built .so keeps targeting glibc >= 2.35.
+      - name: Install clang-18
+        run: |
+          set -euo pipefail
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm18.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang-18
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 1000
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 1000
+          clang --version
+
       - name: Build litert-lm shared library
         run: |
           set -euo pipefail
@@ -301,6 +316,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      # The kawai lib crate depends on tauri unconditionally (glib-sys et al.
+      # need the GTK/webkit dev headers even when building only kawai-web).
+      - name: Install Tauri Linux system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - name: Build kawai-web binary
         run: cargo build --release --bin kawai-web --features web
         working-directory: src-tauri
