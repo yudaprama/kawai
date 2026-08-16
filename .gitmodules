@@ -1,0 +1,3 @@
+[submodule "rig-libsql"]
+	path = rig-libsql
+	url = https://github.com/yudaprama/rig-libsql.git
