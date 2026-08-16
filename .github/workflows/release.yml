@@ -134,14 +134,17 @@ jobs:
           cd cognee-litert-lm/vendor/LiteRT-LM
           bazel build //c:litert-lm --config=macos_arm64 --jobs=6
           # Copy + fix install name (dev-recipe from AGENTS.md Landmines).
-          # The bundling step for the release .app is MVP roadmap #2 — for now
-          # the CI build proves the Rust side links; when the bundling recipe
-          # lands, extend this block to embed the dylib into the .app.
-          mkdir -p ../native
-          cp bazel-bin/c/liblitert-lm.dylib ../native/
-          install_name_tool -id @rpath/liblitert-lm.dylib ../native/liblitert-lm.dylib
-          codesign -f -s - ../native/liblitert-lm.dylib
-          ln -sfn bazel-bin/_solib_darwin_arm64 ../../_solib_darwin_arm64
+          # NOTE: ../../native = cognee-litert-lm/native — the dir
+          # LITERT_LM_LIB_DIR/RUSTFLAGS below point at. Linking only needs
+          # liblitert-lm.dylib; bundling the siblings into the .app is MVP
+          # roadmap #2.
+          mkdir -p ../../native
+          cp bazel-bin/c/liblitert-lm.dylib ../../native/
+          install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
+          codesign -f -s - ../../native/liblitert-lm.dylib
+          # Symlink target must resolve from cognee-litert-lm/ (the symlink's
+          # own directory), not from the CWD where ln runs.
+          ln -sfn vendor/LiteRT-LM/bazel-bin/_solib_darwin_arm64 ../../_solib_darwin_arm64
 
       # Office CLI engines (ooxcli + pdfcli + office-runtime with docbuilder/
       # x2t/sdkjs) → src-tauri/{office-bin,office-runtime}; bundled into the
@@ -298,15 +301,16 @@ jobs:
         # MSYS (Git Bash) rewrites the leading "//" of the bazel target into
         # a POSIX path ("/c:litert-lm") — invalid package name. Disable arg
         # path conversion for this step.
-        # ANDROID_NDK_HOME/ANDROID_HOME cleared (upstream ml-ci-build-win does
-        # the same): the runner's NDK makes the androidndk repo rule symlink
-        # outside its directory, which fails on Windows. Empty env => the
-        # Android toolchains are never registered and the repo never fetched.
+        # ANDROID_NDK_HOME cleared (upstream ml-ci-build-win does the same):
+        # the runner's NDK makes the androidndk repo rule symlink outside its
+        # directory, which fails on Windows. ANDROID_HOME stays set — with it
+        # empty the androidsdk rule falls back to the workspace root and
+        # fails instead. With NDK_HOME empty the androidndk toolchains never
+        # register, so the repo is never fetched.
         env:
           MSYS_NO_PATHCONV: 1
           MSYS2_ARG_CONV_EXCL: "*"
           ANDROID_NDK_HOME: ""
-          ANDROID_HOME: ""
         run: |
           set -euo pipefail
           cd cognee-litert-lm/vendor/LiteRT-LM
