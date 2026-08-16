@@ -50,7 +50,8 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Loads KAWAI_AUTH_* from the project-root .env in dev (no-op if absent).
 dotenvy = "0.15"
 # Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
-kawai-constants = { path = "/Users/yuda/github.com/kawai-network/x/rust/constants" }
+# Private repo — CI authenticates via the insteadOf git rewrite (release.yml).
+kawai-constants = { git = "https://github.com/yudaprama/kawai-vault", subdirectory = "constants" }
 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]

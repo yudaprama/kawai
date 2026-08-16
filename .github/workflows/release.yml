@@ -72,7 +72,11 @@ jobs:
   build-macos:
     needs: bump
     if: needs.bump.outputs.skipped != 'true'
-    runs-on: macos-14
+    # macos-26 (arm64, Xcode 26 default, bazel 9.2): Xcode 15.4 on macos-14
+    # ships an old libc++ where __pointer_traits_element_type is a hard error
+    # in SFINAE — breaks the cxx-generated contiguous_range static_assert in
+    # LiteRT-LM's fc_parser_utils.cc.
+    runs-on: macos-26
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -102,14 +106,16 @@ jobs:
           workspaces: src-tauri
 
       # ── Build the LiteRT-LM C library (bazel, ~15-30 min first run) ──
+      # Key is per-runner-generation: objects built against an older Xcode's
+      # libc++ headers must not be reused after a toolchain jump.
       - name: Mount bazel cache
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/bazel
             /private/var/tmp/_bazel_runner
-          key: bazel-macos-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
-          restore-keys: bazel-macos-arm64-
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos26-arm64-
 
       # Only cognee-litert-lm (+ its nested vendor/LiteRT-LM via --recursive).
       # rig-libsql/flutter_gemma/litert-lm-rs are NOT needed for the build —
@@ -286,6 +292,11 @@ jobs:
       - name: Git auth for private dependencies
         run: |
           git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      # Cargo parses the cognee-litert-lm manifest even without the litert
+      # feature (optional deps still resolve) — the dir must exist. Shallow,
+      # non-recursive: only the crate manifest is needed, not the C sources.
+      - name: Init submodules (cognee-litert-lm, manifest only)
+        run: git submodule update --init --depth 1 cognee-litert-lm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
