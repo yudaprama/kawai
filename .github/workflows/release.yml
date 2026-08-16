@@ -286,9 +286,15 @@ jobs:
         # MSYS (Git Bash) rewrites the leading "//" of the bazel target into
         # a POSIX path ("/c:litert-lm") — invalid package name. Disable arg
         # path conversion for this step.
+        # ANDROID_NDK_HOME/ANDROID_HOME cleared (upstream ml-ci-build-win does
+        # the same): the runner's NDK makes the androidndk repo rule symlink
+        # outside its directory, which fails on Windows. Empty env => the
+        # Android toolchains are never registered and the repo never fetched.
         env:
           MSYS_NO_PATHCONV: 1
           MSYS2_ARG_CONV_EXCL: "*"
+          ANDROID_NDK_HOME: ""
+          ANDROID_HOME: ""
         run: |
           set -euo pipefail
           cd cognee-litert-lm/vendor/LiteRT-LM
