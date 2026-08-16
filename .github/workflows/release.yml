@@ -99,6 +99,11 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      # tauri-action invokes the package-manager's `tauri` script; the CLI
+      # binary only exists after install (node_modules/.bin/tauri).
+      - name: Install JS deps
+        run: bun install
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -172,6 +177,9 @@ jobs:
           node-version: 22
 
       - uses: oven-sh/setup-bun@v2
+
+      - name: Install JS deps
+        run: bun install
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -248,6 +256,9 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      - name: Install JS deps
+        run: bun install
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -272,6 +283,12 @@ jobs:
 
       - name: Build litert-lm shared library
         shell: bash
+        # MSYS (Git Bash) rewrites the leading "//" of the bazel target into
+        # a POSIX path ("/c:litert-lm") — invalid package name. Disable arg
+        # path conversion for this step.
+        env:
+          MSYS_NO_PATHCONV: 1
+          MSYS2_ARG_CONV_EXCL: "*"
         run: |
           set -euo pipefail
           cd cognee-litert-lm/vendor/LiteRT-LM
