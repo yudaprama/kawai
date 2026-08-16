@@ -44,6 +44,9 @@ function registerStore() {
       thinking: false,
       pendingImage: null,
       pendingImageName: "",
+      pendingAudio: null,
+      pendingAudioName: "",
+      recording: false,
     },
   });
 }
@@ -152,12 +155,15 @@ function chat() {
   const prompt = llm.chatInput.trim();
   if (!prompt || llm.chatActive) return;
   const image = llm.pendingImage;
+  const audio = llm.pendingAudio;
   llm.chatInput = "";
   llm.pendingImage = null;
   llm.pendingImageName = "";
+  llm.pendingAudio = null;
+  llm.pendingAudioName = "";
   llm.messages = [
     ...llm.messages,
-    { role: "user", text: prompt, hasImage: !!image },
+    { role: "user", text: prompt, hasImage: !!image, hasAudio: !!audio },
     { role: "assistant", text: "" },
   ];
   llm.chatActive = true;
@@ -168,7 +174,7 @@ function chat() {
   let chars = 0;
   const elapsed = () => `${((performance.now() - t0) / 1000).toFixed(1)}s`;
 
-  chatCtrl = streamOperation("local_chat", { prompt, image: image || null }, {
+  chatCtrl = streamOperation("local_chat", { prompt, image: image || null, audio: audio || null }, {
     onEvent: (ev) => {
       if (ev.type === "token") {
         chunks += 1;
@@ -219,6 +225,43 @@ function onImageSelected(e) {
 function clearImage() {
   Alpine.store("app").llm.pendingImage = null;
   Alpine.store("app").llm.pendingImageName = "";
+}
+
+let mediaRecorder = null;
+let audioChunks = [];
+
+async function toggleRecord() {
+  const llm = Alpine.store("app").llm;
+  if (llm.recording) {
+    mediaRecorder?.stop();
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+      const reader = new FileReader();
+      reader.onload = () => {
+        llm.pendingAudio = reader.result.split(",")[1];
+        llm.pendingAudioName = `${(blob.size / 1024).toFixed(0)} KB`;
+      };
+      reader.readAsDataURL(blob);
+      llm.recording = false;
+    };
+    mediaRecorder.start();
+    llm.recording = true;
+  } catch (err) {
+    console.error("[toggleRecord]", errText(err));
+  }
+}
+
+function clearAudio() {
+  Alpine.store("app").llm.pendingAudio = null;
+  Alpine.store("app").llm.pendingAudioName = "";
 }
 
 async function resetChat() {
@@ -359,5 +402,7 @@ Object.assign(window, {
   pickImage,
   onImageSelected,
   clearImage,
+  toggleRecord,
+  clearAudio,
   addNote,
 });

@@ -462,6 +462,7 @@ pub mod local_llm {
         _user_id: String,
         prompt: String,
         image_b64: Option<String>,
+        audio_b64: Option<String>,
     ) -> impl Stream<Item = LocalChatEvent> {
         stream! {
             let conversation = conversation_slot().lock().unwrap().take();
@@ -473,18 +474,18 @@ pub mod local_llm {
             }
             yield LocalChatEvent::Started;
 
-            let message = if let Some(img) = &image_b64 {
+            let message = {
+                let mut content = Vec::new();
+                if let Some(img) = &image_b64 {
+                    content.push(serde_json::json!({ "type": "image", "blob": img }));
+                }
+                if let Some(aud) = &audio_b64 {
+                    content.push(serde_json::json!({ "type": "audio", "blob": aud }));
+                }
+                content.push(serde_json::json!({ "type": "text", "text": prompt }));
                 serde_json::json!({
                     "role": "user",
-                    "content": [
-                        { "type": "image", "blob": img },
-                        { "type": "text", "text": prompt }
-                    ]
-                })
-            } else {
-                serde_json::json!({
-                    "role": "user",
-                    "content": [{ "type": "text", "text": prompt }]
+                    "content": content
                 })
             }
             .to_string();

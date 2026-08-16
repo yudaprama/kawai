@@ -143,11 +143,21 @@
               <button type="button" class="btn btn-xs btn-ghost" @click="clearImage()">✕</button>
             </div>
 
+            <div x-show="$store.app.llm.pendingAudio" class="flex items-center gap-2 text-xs bg-base-200 rounded-box px-3 py-2">
+              <span class="opacity-60">🎤</span>
+              <span x-text="$store.app.llm.pendingAudioName" class="truncate flex-1"></span>
+              <button type="button" class="btn btn-xs btn-ghost" @click="clearAudio()">✕</button>
+            </div>
+
             <form @submit.prevent="chat" class="flex gap-2">
               <input x-model="$store.app.llm.chatInput" placeholder="Tanya model lokal… (multi-turn, riwayat di engine)"
                      class="input input-bordered flex-1" :disabled="$store.app.llm.chatActive" />
               <button type="button" class="btn btn-ghost btn-sm" @click="pickImage()" :disabled="$store.app.llm.chatActive"
                       title="Attach image">📷</button>
+              <button type="button"
+                      :class="$store.app.llm.recording ? 'btn-error animate-pulse' : 'btn-ghost'"
+                      class="btn btn-sm" @click="toggleRecord()" :disabled="$store.app.llm.chatActive"
+                      title="Record audio">🎤</button>
               <button type="submit" class="btn btn-primary" x-show="!$store.app.llm.chatActive">Kirim</button>
               <button type="button" class="btn btn-ghost" @click="stopChat" x-show="$store.app.llm.chatActive">Stop</button>
             </form>

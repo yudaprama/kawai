@@ -201,6 +201,7 @@ pub async fn local_load_model(
 pub async fn local_chat(
     prompt: String,
     image: Option<String>,
+    audio: Option<String>,
     stream_id: String,
     on_event: Channel<logic::local_llm::LocalChatEvent>,
     registry: State<'_, StreamRegistry>,
@@ -215,7 +216,7 @@ pub async fn local_chat(
         .unwrap()
         .insert(stream_id.clone(), token.clone());
 
-    let mut stream = Box::pin(logic::local_llm::local_chat(user_id, prompt, image));
+    let mut stream = Box::pin(logic::local_llm::local_chat(user_id, prompt, image, audio));
     loop {
         tokio::select! {
             _ = token.cancelled() => break,

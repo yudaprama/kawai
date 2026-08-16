@@ -171,6 +171,7 @@ async fn local_load_model_handler(
 struct LocalChatRequest {
     prompt: String,
     image: Option<String>,
+    audio: Option<String>,
 }
 
 #[cfg(feature = "litert")]
@@ -178,7 +179,7 @@ async fn local_chat_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<LocalChatRequest>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
-    let s = logic::local_llm::local_chat(claims.sub, req.prompt, req.image)
+    let s = logic::local_llm::local_chat(claims.sub, req.prompt, req.image, req.audio)
         .map(|event| Ok::<_, Infallible>(local_event_to_sse(event)));
     Sse::new(s).keep_alive(KeepAlive::default())
 }
