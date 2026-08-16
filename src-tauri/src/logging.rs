@@ -95,9 +95,9 @@ pub fn init() {
                 let slice = &buf[..n as usize];
                 let _ = libc::write(saved_fd, slice.as_ptr() as *const _, n as usize);
                 let mut file: std::mem::ManuallyDrop<std::fs::File> =
-                    std::mem::ManuallyDrop::new(unsafe {
-                        std::os::unix::io::FromRawFd::from_raw_fd(log_fd)
-                    });
+                    std::mem::ManuallyDrop::new(std::os::unix::io::FromRawFd::from_raw_fd(
+                        log_fd,
+                    ));
                 let _ = file.write_all(slice);
             }
         });
