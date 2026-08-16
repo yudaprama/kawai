@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "tools/browser",
+    "tools/entertainment",
+    "tools/finance",
+    "tools/food_drink",
+    "tools/gaming",
+    "tools/geospace",
+    "tools/knowledge",
+    "tools/news_media",
+    "tools/officecreate",
+    "tools/pdf",
+    "tools/religion",
+    "tools/sports",
+    "tools/utility",
+    "tools/weather_geo",
+]
