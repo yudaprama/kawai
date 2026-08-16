@@ -191,6 +191,12 @@ jobs:
       - name: Install JS deps
         run: bun install
 
+      # Tauri needs the GTK/webkit dev headers on Linux (gdk-sys et al.).
+      - name: Install Tauri Linux system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
