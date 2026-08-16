@@ -84,6 +84,11 @@
               <option value="cpu">CPU</option>
               <option value="gpu">GPU</option>
             </select>
+            <label class="label cursor-pointer gap-1" title="Speculative decoding (Multi-Token Prediction)">
+              <input type="checkbox" x-model="$store.app.llm.specDec" class="checkbox checkbox-xs"
+                     :disabled="$store.app.llm.chatActive || $store.app.llm.loading" />
+              <span class="label-text text-xs">Spec</span>
+            </label>
             <button class="btn btn-primary" @click="loadModel()"
                     :disabled="$store.app.llm.loading || !$store.app.llm.modelPreset || ($store.app.llm.modelPreset === 'custom' && !$store.app.llm.modelPath.trim())">
               <span x-show="$store.app.llm.loading" class="loading loading-spinner loading-xs"></span>

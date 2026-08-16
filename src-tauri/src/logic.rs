@@ -317,6 +317,7 @@ pub mod local_llm {
         _user_id: &str,
         model_path: &str,
         gpu: bool,
+        speculative_decoding: bool,
     ) -> Result<LocalModelInfo, String> {
         let model_path = model_path.to_string();
         tokio::task::spawn_blocking(move || {
@@ -330,8 +331,11 @@ pub mod local_llm {
                 return Err("a generation is already running".into());
             }
             let backend = if gpu { Backend::Gpu } else { Backend::Cpu };
-            let settings = EngineSettings::new(&model_path, backend, None, None)
+            let mut settings = EngineSettings::new(&model_path, backend, None, None)
                 .map_err(|e| e.to_string())?;
+            if speculative_decoding {
+                settings.enable_speculative_decoding(true);
+            }
             let engine = settings.build().map_err(|e| e.to_string())?;
             let config = ConversationConfig::new().map_err(|e| e.to_string())?;
             let conversation =

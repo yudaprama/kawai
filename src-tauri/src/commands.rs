@@ -174,10 +174,17 @@ pub async fn stream_notes(
 pub async fn local_load_model(
     model_path: String,
     gpu: Option<bool>,
+    speculative_decoding: Option<bool>,
     session: State<'_, Session>,
 ) -> Result<logic::local_llm::LocalModelInfo, String> {
     let user_id = session_user_id(&session)?;
-    let result = logic::local_llm::load_model(&user_id, &model_path, gpu.unwrap_or(true)).await;
+    let result = logic::local_llm::load_model(
+        &user_id,
+        &model_path,
+        gpu.unwrap_or(true),
+        speculative_decoding.unwrap_or(false),
+    )
+    .await;
     if let Err(e) = &result {
         eprintln!("[local_load_model] {e}");
     }

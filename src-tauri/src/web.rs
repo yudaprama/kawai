@@ -144,6 +144,7 @@ fn note_event_to_sse(event: NoteEvent) -> SseFrame {
 struct LocalLoadModelRequest {
     model_path: String,
     gpu: Option<bool>,
+    speculative_decoding: Option<bool>,
 }
 
 #[cfg(feature = "litert")]
@@ -151,10 +152,15 @@ async fn local_load_model_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<LocalLoadModelRequest>,
 ) -> Result<Json<logic::local_llm::LocalModelInfo>, (StatusCode, String)> {
-    logic::local_llm::load_model(&claims.sub, &req.model_path, req.gpu.unwrap_or(true))
-        .await
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+    logic::local_llm::load_model(
+        &claims.sub,
+        &req.model_path,
+        req.gpu.unwrap_or(true),
+        req.speculative_decoding.unwrap_or(false),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
 /// Protected streaming: on-device chat via SSE, same shape as `stream_notes`.

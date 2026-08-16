@@ -32,6 +32,7 @@ function registerStore() {
       modelPreset: "",
       modelPath: "",
       backend: "cpu",
+      specDec: false,
       modelStatus: "",
       modelError: false,
       modelLoaded: false,
@@ -123,6 +124,7 @@ async function loadModel() {
     const info = await call("local_load_model", {
       modelPath: path,
       gpu: llm.backend === "gpu",
+      speculativeDecoding: llm.specDec,
     });
     llm.modelStatus = `\u2714 ${info.modelPath.split("/").pop()} [${info.backend}]`;
     llm.modelLoaded = true;
