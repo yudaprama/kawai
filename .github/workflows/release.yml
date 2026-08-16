@@ -146,6 +146,131 @@ jobs:
           prerelease: false
           args: --features litert
 
+  build-linux:
+    needs: bump
+    if: needs.bump.outputs.skipped != 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.bump.outputs.version }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-linux-x86_64-
+
+      - name: Init submodules (cognee-litert-lm + nested LiteRT-LM fork)
+        run: git submodule update --init --recursive cognee-litert-lm
+
+      - name: Build litert-lm shared library
+        run: |
+          set -euo pipefail
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=linux_x86_64 --jobs=6
+          mkdir -p ../native
+          cp bazel-bin/c/liblitert-lm.so ../native/
+
+      - name: Build .deb/.AppImage (with litert)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        with:
+          tagName: v${{ needs.bump.outputs.version }}
+          releaseName: "kawai v${{ needs.bump.outputs.version }}"
+          releaseDraft: true
+          prerelease: false
+          args: --features litert
+
+  build-windows:
+    needs: bump
+    if: needs.bump.outputs.skipped != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.bump.outputs.version }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        shell: bash
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-windows-x86_64-
+
+      - name: Init submodules (cognee-litert-lm + nested LiteRT-LM fork)
+        shell: bash
+        run: git submodule update --init --recursive cognee-litert-lm
+
+      - name: Install bazelisk
+        shell: pwsh
+        run: |
+          choco install bazelisk --confirm --no-progress
+
+      - name: Build litert-lm shared library
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=windows --jobs=4
+          mkdir -p ../native
+          cp bazel-bin/c/litert-lm.dll ../native/
+
+      - name: Build .msi/.exe (with litert)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        with:
+          tagName: v${{ needs.bump.outputs.version }}
+          releaseName: "kawai v${{ needs.bump.outputs.version }}"
+          releaseDraft: true
+          prerelease: false
+          args: --features litert
+
   build-web:
     needs: bump
     if: needs.bump.outputs.skipped != 'true'
