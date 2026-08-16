@@ -145,6 +145,7 @@ struct LocalLoadModelRequest {
     model_path: String,
     gpu: Option<bool>,
     speculative_decoding: Option<bool>,
+    max_num_images: Option<i32>,
 }
 
 #[cfg(feature = "litert")]
@@ -157,6 +158,7 @@ async fn local_load_model_handler(
         &req.model_path,
         req.gpu.unwrap_or(true),
         req.speculative_decoding.unwrap_or(false),
+        req.max_num_images.unwrap_or(0),
     )
     .await
     .map(Json)
@@ -168,6 +170,7 @@ async fn local_load_model_handler(
 #[derive(Deserialize)]
 struct LocalChatRequest {
     prompt: String,
+    image: Option<String>,
 }
 
 #[cfg(feature = "litert")]
@@ -175,7 +178,7 @@ async fn local_chat_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<LocalChatRequest>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
-    let s = logic::local_llm::local_chat(claims.sub, req.prompt)
+    let s = logic::local_llm::local_chat(claims.sub, req.prompt, req.image)
         .map(|event| Ok::<_, Infallible>(local_event_to_sse(event)));
     Sse::new(s).keep_alive(KeepAlive::default())
 }

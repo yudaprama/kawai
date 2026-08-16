@@ -175,6 +175,7 @@ pub async fn local_load_model(
     model_path: String,
     gpu: Option<bool>,
     speculative_decoding: Option<bool>,
+    max_num_images: Option<i32>,
     session: State<'_, Session>,
 ) -> Result<logic::local_llm::LocalModelInfo, String> {
     let user_id = session_user_id(&session)?;
@@ -183,6 +184,7 @@ pub async fn local_load_model(
         &model_path,
         gpu.unwrap_or(true),
         speculative_decoding.unwrap_or(false),
+        max_num_images.unwrap_or(0),
     )
     .await;
     if let Err(e) = &result {
@@ -198,6 +200,7 @@ pub async fn local_load_model(
 #[tauri::command]
 pub async fn local_chat(
     prompt: String,
+    image: Option<String>,
     stream_id: String,
     on_event: Channel<logic::local_llm::LocalChatEvent>,
     registry: State<'_, StreamRegistry>,
@@ -212,7 +215,7 @@ pub async fn local_chat(
         .unwrap()
         .insert(stream_id.clone(), token.clone());
 
-    let mut stream = Box::pin(logic::local_llm::local_chat(user_id, prompt));
+    let mut stream = Box::pin(logic::local_llm::local_chat(user_id, prompt, image));
     loop {
         tokio::select! {
             _ = token.cancelled() => break,

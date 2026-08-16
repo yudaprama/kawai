@@ -42,6 +42,8 @@ function registerStore() {
       chatActive: false,
       stats: "",
       thinking: false,
+      pendingImage: null,
+      pendingImageName: "",
     },
   });
 }
@@ -149,10 +151,13 @@ function chat() {
   const llm = Alpine.store("app").llm;
   const prompt = llm.chatInput.trim();
   if (!prompt || llm.chatActive) return;
+  const image = llm.pendingImage;
   llm.chatInput = "";
+  llm.pendingImage = null;
+  llm.pendingImageName = "";
   llm.messages = [
     ...llm.messages,
-    { role: "user", text: prompt },
+    { role: "user", text: prompt, hasImage: !!image },
     { role: "assistant", text: "" },
   ];
   llm.chatActive = true;
@@ -163,7 +168,7 @@ function chat() {
   let chars = 0;
   const elapsed = () => `${((performance.now() - t0) / 1000).toFixed(1)}s`;
 
-  chatCtrl = streamOperation("local_chat", { prompt }, {
+  chatCtrl = streamOperation("local_chat", { prompt, image: image || null }, {
     onEvent: (ev) => {
       if (ev.type === "token") {
         chunks += 1;
@@ -192,6 +197,28 @@ function stopChat() {
   chatCtrl?.cancel();
   chatCtrl = null;
   Alpine.store("app").llm.chatActive = false;
+}
+
+function pickImage() {
+  document.getElementById("image-input").click();
+}
+
+function onImageSelected(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64 = reader.result.split(",")[1];
+    Alpine.store("app").llm.pendingImage = base64;
+    Alpine.store("app").llm.pendingImageName = file.name;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = "";
+}
+
+function clearImage() {
+  Alpine.store("app").llm.pendingImage = null;
+  Alpine.store("app").llm.pendingImageName = "";
 }
 
 async function resetChat() {
@@ -329,5 +356,8 @@ Object.assign(window, {
   resetChat,
   toggleThinking,
   unloadModel,
+  pickImage,
+  onImageSelected,
+  clearImage,
   addNote,
 });

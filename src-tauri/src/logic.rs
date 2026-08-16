@@ -318,6 +318,7 @@ pub mod local_llm {
         model_path: &str,
         gpu: bool,
         speculative_decoding: bool,
+        max_num_images: i32,
     ) -> Result<LocalModelInfo, String> {
         let model_path = model_path.to_string();
         tokio::task::spawn_blocking(move || {
@@ -335,6 +336,9 @@ pub mod local_llm {
                 .map_err(|e| e.to_string())?;
             if speculative_decoding {
                 settings.enable_speculative_decoding(true);
+            }
+            if max_num_images > 0 {
+                settings.set_max_num_images(max_num_images);
             }
             let engine = settings.build().map_err(|e| e.to_string())?;
             let config = ConversationConfig::new().map_err(|e| e.to_string())?;
@@ -454,7 +458,11 @@ pub mod local_llm {
     /// NOTE: the C `send_message_stream` is fire-and-forget async; the
     /// blocking task must not return before the final callback (or an error)
     /// — dropping the engine mid-generation segfaults.
-    pub fn local_chat(_user_id: String, prompt: String) -> impl Stream<Item = LocalChatEvent> {
+    pub fn local_chat(
+        _user_id: String,
+        prompt: String,
+        image_b64: Option<String>,
+    ) -> impl Stream<Item = LocalChatEvent> {
         stream! {
             let conversation = conversation_slot().lock().unwrap().take();
             if conversation.is_none() {
@@ -465,10 +473,20 @@ pub mod local_llm {
             }
             yield LocalChatEvent::Started;
 
-            let message = serde_json::json!({
-                "role": "user",
-                "content": [{ "type": "text", "text": prompt }]
-            })
+            let message = if let Some(img) = &image_b64 {
+                serde_json::json!({
+                    "role": "user",
+                    "content": [
+                        { "type": "image", "blob": img },
+                        { "type": "text", "text": prompt }
+                    ]
+                })
+            } else {
+                serde_json::json!({
+                    "role": "user",
+                    "content": [{ "type": "text", "text": prompt }]
+                })
+            }
             .to_string();
 
             let use_thinking = *thinking_slot().lock().unwrap();
