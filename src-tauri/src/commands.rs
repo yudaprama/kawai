@@ -308,3 +308,110 @@ pub async fn local_llm_unload(session: State<'_, Session>) -> Result<(), String>
     let user_id = session_user_id(&session)?;
     logic::local_llm::unload_model(&user_id).await
 }
+
+// ── Office document ops (feature "office") ──────────────────────────────────
+//
+// Thin wrappers over logic::office; identity resolved at the edge as always.
+// File content addresses are opaque ids — never paths (except import's
+// sourcePath, the one sanctioned way in).
+
+/// Authenticated RPC: import a file into the office store — either from an
+/// absolute path (desktop picker/drag-drop) or as base64 (webview blob).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub fn office_import_file(
+    source_path: Option<String>,
+    name: Option<String>,
+    data_base64: Option<String>,
+    session: State<'_, Session>,
+) -> Result<logic::office::OfficeFile, String> {
+    let user_id = session_user_id(&session)?;
+    match (source_path.as_deref(), (name.as_deref(), data_base64.as_deref())) {
+        (Some(src), _) => logic::office::import_path(&user_id, src),
+        (None, (Some(name), Some(data))) => logic::office::import_base64(&user_id, name, data),
+        _ => Err("provide sourcePath, or name + dataBase64".into()),
+    }
+}
+
+/// Authenticated RPC: list the user's stored office files.
+#[cfg(feature = "office")]
+#[tauri::command]
+pub fn office_list_files(
+    session: State<'_, Session>,
+) -> Result<Vec<logic::office::OfficeFile>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::list_files(&user_id)
+}
+
+/// Authenticated RPC: read a stored document as markdown (ooxcli extract).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub async fn office_read_document(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::office::ReadDocumentResult, String> {
+    let user_id = session_user_id(&session)?;
+    let markdown = logic::office::read_document(&user_id, &file_id).await?;
+    Ok(logic::office::ReadDocumentResult { markdown })
+}
+
+/// Authenticated RPC: export a stored file to the filesystem.
+#[cfg(feature = "office")]
+#[tauri::command]
+pub fn office_export_file(
+    file_id: String,
+    dest_path: Option<String>,
+    session: State<'_, Session>,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::export_file(&user_id, &file_id, dest_path.as_deref())
+}
+
+/// Authenticated RPC: which office engines are available on this host.
+#[cfg(feature = "office")]
+#[tauri::command]
+pub fn office_capabilities(
+    session: State<'_, Session>,
+) -> Result<logic::office::OfficeCapabilities, String> {
+    let _ = session_user_id(&session)?;
+    Ok(logic::office::capabilities())
+}
+
+/// Authenticated streaming: agent chat (prompt-based tool calling on the
+/// on-device model). Tool chatter arrives as toolCall/toolResult events; only
+/// the final answer is persisted. Same stream_id + Channel + cancellation
+/// registry pattern as local_chat.
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub async fn agent_chat(
+    agent_id: String,
+    session_id: Option<i64>,
+    message: String,
+    stream_id: String,
+    on_event: Channel<logic::agent::AgentChatEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    let registry = Arc::clone(&registry);
+
+    let token = CancellationToken::new();
+    registry
+        .lock()
+        .unwrap()
+        .insert(stream_id.clone(), token.clone());
+
+    let mut stream = Box::pin(logic::agent::agent_chat(user_id, agent_id, session_id, message));
+    loop {
+        tokio::select! {
+            _ = token.cancelled() => break,
+            Some(event) = stream.next() => {
+                on_event.send(event).map_err(|e| e.to_string())?;
+            }
+            else => break,
+        }
+    }
+
+    registry.lock().unwrap().remove(&stream_id);
+    Ok(())
+}

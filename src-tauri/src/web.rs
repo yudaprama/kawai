@@ -311,6 +311,120 @@ async fn local_llm_unload_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
+// ── Office document ops (feature "office") ──────────────────────────────────
+
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficeImportFileRequest {
+    source_path: Option<String>,
+    name: Option<String>,
+    data_base64: Option<String>,
+}
+
+#[cfg(feature = "office")]
+async fn office_import_file_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<OfficeImportFileRequest>,
+) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
+    let result = match (req.source_path.as_deref(), (req.name.as_deref(), req.data_base64.as_deref())) {
+        (Some(src), _) => logic::office::import_path(&claims.sub, src),
+        (None, (Some(name), Some(data))) => {
+            logic::office::import_base64(&claims.sub, name, data)
+        }
+        _ => Err("provide sourcePath, or name + dataBase64".into()),
+    };
+    result.map(Json).map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+#[cfg(feature = "office")]
+async fn office_list_files_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<logic::office::OfficeFile>>, (StatusCode, String)> {
+    logic::office::list_files(&claims.sub)
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficeReadDocumentRequest {
+    file_id: String,
+}
+
+#[cfg(feature = "office")]
+async fn office_read_document_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<OfficeReadDocumentRequest>,
+) -> Result<Json<logic::office::ReadDocumentResult>, (StatusCode, String)> {
+    let markdown = logic::office::read_document(&claims.sub, &req.file_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(Json(logic::office::ReadDocumentResult { markdown }))
+}
+
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficeExportFileRequest {
+    file_id: String,
+    dest_path: Option<String>,
+}
+
+#[cfg(feature = "office")]
+async fn office_export_file_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<OfficeExportFileRequest>,
+) -> Result<Json<std::collections::HashMap<String, String>>, (StatusCode, String)> {
+    logic::office::export_file(&claims.sub, &req.file_id, req.dest_path.as_deref())
+        .map(|path| Json(std::collections::HashMap::from([("path".to_string(), path)])))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "office")]
+async fn office_capabilities_handler(
+    Extension(claims): Extension<Claims>,
+) -> Json<logic::office::OfficeCapabilities> {
+    let _ = &claims.sub;
+    Json(logic::office::capabilities())
+}
+
+/// Protected streaming: agent chat (tool-calling loop) via SSE.
+#[cfg(feature = "litert")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentChatRequest {
+    agent_id: String,
+    session_id: Option<i64>,
+    message: String,
+}
+
+#[cfg(feature = "litert")]
+async fn agent_chat_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<AgentChatRequest>,
+) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
+    let s = logic::agent::agent_chat(claims.sub, req.agent_id, req.session_id, req.message)
+        .map(|event| Ok::<_, Infallible>(agent_event_to_sse(event)));
+    Sse::new(s).keep_alive(KeepAlive::default())
+}
+
+#[cfg(feature = "litert")]
+fn agent_event_to_sse(event: logic::agent::AgentChatEvent) -> SseFrame {
+    use logic::agent::AgentChatEvent;
+    let name = match &event {
+        AgentChatEvent::Started { .. } => "started",
+        AgentChatEvent::Token { .. } => "token",
+        AgentChatEvent::ToolCall { .. } => "toolCall",
+        AgentChatEvent::ToolResult { .. } => "toolResult",
+        AgentChatEvent::Finished => "finished",
+        AgentChatEvent::Error { .. } => "error",
+    };
+    let data = serde_json::to_string(&event).unwrap_or_default();
+    SseFrame::default().event(name).data(data)
+}
+
 /// Reads the `kawai_session` cookie, verifies it, and injects `Claims` as a
 /// request extension. 401 on missing/expired token. Uses `from_fn` (state `()`)
 /// and pulls `Verifier` from `Extension`, so it composes with a `Router<()>`.
@@ -394,7 +508,22 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
             "/api/local_llm_set_thinking",
             post(local_llm_set_thinking_handler),
         )
-        .route("/api/local_llm_unload", post(local_llm_unload_handler));
+        .route("/api/local_llm_unload", post(local_llm_unload_handler))
+        .route("/api/agent_chat", post(agent_chat_handler));
+
+    #[cfg(feature = "office")]
+    let protected = protected
+        .route("/api/office_import_file", post(office_import_file_handler))
+        .route("/api/office_list_files", post(office_list_files_handler))
+        .route(
+            "/api/office_read_document",
+            post(office_read_document_handler),
+        )
+        .route("/api/office_export_file", post(office_export_file_handler))
+        .route(
+            "/api/office_capabilities",
+            post(office_capabilities_handler),
+        );
 
     Router::new()
         .merge(public)

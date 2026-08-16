@@ -20,9 +20,30 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(commands::new_registry())
         .manage(verifier)
-        .manage(auth::new_session());
+        .manage(auth::new_session())
+        .setup(|app| {
+            // Inject office engine directories from the Tauri app paths
+            // (env overrides still win — see logic::office). Resolution:
+            // resource dir first, exe-dir sibling as dev fallback.
+            #[cfg(feature = "office")]
+            {
+                use tauri::Manager;
+                if let Ok(res) = app.path().resource_dir() {
+                    logic::office::set_bin_dir(res.join("office-bin"));
+                    logic::office::set_runtime_dir(res.join("office-runtime"));
+                }
+                if let Ok(data) = app.path().app_data_dir() {
+                    logic::office::set_docs_dir(data.join("documents"));
+                }
+            }
+            #[cfg(not(feature = "office"))]
+            let _ = &app;
+            Ok(())
+        });
 
-    #[cfg(feature = "litert")]
+    // The office ops exist only with "office"; agent_chat only with "litert".
+    // Four literal lists keep generate_handler! static per feature combo.
+    #[cfg(all(feature = "litert", feature = "office"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
             commands::greet,
             commands::generate_activity,
@@ -42,10 +63,63 @@ pub fn run() {
             commands::local_llm_reset,
             commands::local_llm_set_thinking,
             commands::local_llm_unload,
+            commands::office_import_file,
+            commands::office_list_files,
+            commands::office_read_document,
+            commands::office_export_file,
+            commands::office_capabilities,
+            commands::agent_chat,
             commands::frontend_log
         ]);
 
-    #[cfg(not(feature = "litert"))]
+    #[cfg(all(feature = "litert", not(feature = "office")))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+            commands::greet,
+            commands::generate_activity,
+            commands::cancel_stream,
+            commands::set_session,
+            commands::logout,
+            commands::whoami,
+            commands::create_note,
+            commands::list_notes,
+            commands::stream_notes,
+            commands::create_chat_session,
+            commands::list_chat_sessions,
+            commands::list_chat_messages,
+            commands::append_chat_message,
+            commands::local_load_model,
+            commands::local_chat,
+            commands::local_llm_reset,
+            commands::local_llm_set_thinking,
+            commands::local_llm_unload,
+            commands::agent_chat,
+            commands::frontend_log
+        ]);
+
+    #[cfg(all(not(feature = "litert"), feature = "office"))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+            commands::greet,
+            commands::generate_activity,
+            commands::cancel_stream,
+            commands::set_session,
+            commands::logout,
+            commands::whoami,
+            commands::create_note,
+            commands::list_notes,
+            commands::stream_notes,
+            commands::create_chat_session,
+            commands::list_chat_sessions,
+            commands::list_chat_messages,
+            commands::append_chat_message,
+            commands::office_import_file,
+            commands::office_list_files,
+            commands::office_read_document,
+            commands::office_export_file,
+            commands::office_capabilities,
+            commands::frontend_log
+        ]);
+
+    #[cfg(not(any(feature = "litert", feature = "office")))]
     let builder = builder.invoke_handler(tauri::generate_handler![
             commands::greet,
             commands::generate_activity,
