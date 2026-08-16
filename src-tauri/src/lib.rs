@@ -33,6 +33,10 @@ pub fn run() {
             commands::create_note,
             commands::list_notes,
             commands::stream_notes,
+            commands::create_chat_session,
+            commands::list_chat_sessions,
+            commands::list_chat_messages,
+            commands::append_chat_message,
             commands::local_load_model,
             commands::local_chat,
             commands::local_llm_reset,
@@ -52,6 +56,10 @@ pub fn run() {
             commands::create_note,
             commands::list_notes,
             commands::stream_notes,
+            commands::create_chat_session,
+            commands::list_chat_sessions,
+            commands::list_chat_messages,
+            commands::append_chat_message,
             commands::frontend_log
         ]);
 

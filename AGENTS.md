@@ -5,15 +5,39 @@ This file is the operational rulebook.
 
 ## What this project is
 
+**Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from `rig-tools/` (per-category crates of generated rig tools — `registry::toolset_for(names)`). UI concept, three-pane: left sidebar = agent list, right sidebar = sessions of the selected agent, center = the active agent's content.
+
 Desktop/mobile app (Tauri), with a standalone web server binary.
+**End state: desktop + mobile + web from one core. Current phase: MVP, desktop-first — see "Current phase" below.**
 
 - **Frontend**: Vanilla JS. No bundler, no framework. Served directly by Tauri (`frontendDist: "../src"`).
 - **Auth**: Clerk via CDN + vanilla JS SDK (`window.Clerk`); backend verifies session JWTs against Clerk's **public JWKS** (`auth.rs`) — no Clerk secret in the backend.
 - **Backend**: Rust. Single core logic, two thin transport wrappers.
 - **Transport**: Tauri `Channel`+`invoke` (desktop/mobile); HTTP `fetch`+SSE (web — backend only, no web frontend).
 - **LLM (on-device)**: LiteRT-LM via `cognee-litert-lm` (path dep, vendored at `cognee-litert-lm/vendor/LiteRT-LM` = upstream `google-ai-edge` main). Behind the `litert` cargo feature. Gemma 4 / Qwen `.litertlm` verified streaming on macOS arm64 CPU.
-- **LLM (remote)**: `rig` (in `logic.rs`) — declared, not yet wired.
+- **LLM (remote)**: `rig` — pinned to git rev `4232abdb` (55 commits past 0.41.0), the SAME rev as `rig-libsql` (submodule); one rig-core source across src-tauri + rig-tools + rig-libsql or ToolSet/vector-store types won't unify. Swap to crates.io "0.42"+ everywhere at once when it ships. **Decision (2026-08-16): local Gemma 4 via LiteRT-LM is THE model for now** — no remote tier planned short-term. `rig-tools` toolsets are usable standalone (definitions + dispatch) without a rig provider; when the agent tier (Roadmap 5) arrives it runs on local Gemma 4 with prompt-based tool calling (the LiteRT-LM Conversation API has no native function calling). Remote providers via `rig` become optional configuration later, not a requirement.
 - **DB**: self-hosted `libsql-server` (sqld). Backend mints short **EdDSA** tokens that sqld validates; embedded replica (desktop/mobile) or remote client (web backend).
+
+## Current phase: MVP (desktop-first)
+
+Short-term focus is a **macOS desktop MVP**. The end state is unchanged — desktop + mobile + web from one core — so this phase defers *work*, never *architecture*. The invariants below are exactly what keeps mobile/web cheap later; they all stay law during MVP.
+
+**MVP scope (work only these):**
+- macOS desktop app (Tauri, feature `litert`): on-device LLM chat (LiteRT-LM), notes + chat history in sqld, dev-bypass auth (`KAWAI_AUTH_DEV_USER_ID=demo`).
+- Remaining MVP gaps, in order (details in Roadmap):
+  1. Chat history persistence — conversations live only in the LiteRT in-memory session + the Alpine store; persist to sqld per `user_id` and reload on launch.
+  2. Distributable build — bundle the LiteRT dylib into `bun tauri build` so the release .app works without dev-only rpath/env setup.
+  3. `local_llm_smoke` as a streaming regression gate (small `.litertlm` fixture).
+
+**Deferred — do NOT start without the user asking (tracked in Roadmap):**
+- The agent tier (`rig` wiring + `rig-tools` integration + agent catalog + three-pane UI); mobile LLM bazel builds + mobile UI; web frontend; LoRA; GPU/Metal; sqld namespaces; pooling; production hardening.
+- The agent tier, prod auth (deep-link), and keychain session persistence are the *first post-MVP milestones* — required before any public release, not part of MVP.
+
+**Still mandatory during MVP (end-state insurance, all cheap):**
+- Every new op still gets BOTH wrappers (`commands.rs` + `web.rs`) — this is what keeps web/mobile near-free later.
+- `cargo check --features web` stays green for every change; mobile checks whenever shared code changes (`logic.rs`, `auth.rs`, shared deps).
+- Identity stays resolved at the transport edge (`user_id` as first arg into `logic.rs`) — never shortcut it for dev-bypass convenience.
+- The dev bypass stays env-gated (`KAWAI_AUTH_DEV_USER_ID`), off by default, and NEVER in a shipped build.
 
 ## Non-negotiable invariants
 
@@ -43,6 +67,16 @@ cd src-tauri && env \
   LLVM_PROFILE_FILE=/dev/null \
   KAWAI_AUTH_DEV_USER_ID=demo \
   ../node_modules/.bin/tauri dev -- --features litert
+
+# CI release (.github/workflows/release.yml): on push to main a bot bumps the
+# patch version in src-tauri/tauri.conf.json, commits + tags vX.Y.Z, then builds
+# the macOS .app (tauri-action, features litert, bazel-cached) and the
+# kawai-web binary into a DRAFT GitHub release. Needs RELEASE_TOKEN (PAT with
+# contents:write) as a repo secret so the bump push doesn't trigger recursive
+# runs (GITHUB_TOKEN pushes create no push event — intentional). The same PAT
+# authenticates ALL github.com git traffic in the build jobs (insteadOf rewrite)
+# — private submodules (cognee-litert-lm, rig-libsql, nested LiteRT-LM fork)
+# and private cargo git deps work without workflow changes.
 
 # Build the LiteRT-LM C library (first build ~15-30 min; cached afterwards)
 cd cognee-litert-lm/vendor/LiteRT-LM && bazel build //c:litert-lm --config=macos_arm64 --jobs=6
@@ -75,7 +109,7 @@ cargo check --features web     # web module + kawai-web bin
 cargo check --features litert  # local LLM (bindgen only; no C lib needed)
 ```
 
-For mobile changes, also: `cargo ndk -t arm64-v8a -P 24 check` and/or `cargo check --target aarch64-apple-ios` (NDK r29 at `/opt/homebrew/share/android-ndk`; sim target needs `rustup target add aarch64-apple-ios-sim`). All verified green 2026-08-15.
+For mobile, also (during MVP: only when shared code changes — `logic.rs`, `auth.rs`, shared deps; UI/commands-only changes don't need these): `cargo ndk -t arm64-v8a -P 24 check` and/or `cargo check --target aarch64-apple-ios` (NDK r29 at `/opt/homebrew/share/android-ndk`; sim target needs `rustup target add aarch64-apple-ios-sim`). All verified green 2026-08-15.
 
 ## Landmines (things that already bit us)
 
@@ -92,14 +126,16 @@ For mobile changes, also: `cargo ndk -t arm64-v8a -P 24 check` and/or `cargo che
 - **Two `jsonwebtoken` versions coexist** (9.x is our direct dep in `auth.rs`/`logic.rs`; 10.x is transitive). Expected.
 - **Clerk CDN script is loaded in `index.html`.** `window.Clerk` must be available before `main.js` runs — the `<script>` tag order is: Clerk (defer) → main.js (module) → Alpine (defer, LAST — main.js registers the Alpine store on `alpine:init` which fires while Alpine executes; loading Alpine first = a page full of `$store.app undefined` TypeErrors).
 - **clerk-js v5 has no constructor.** `window.Clerk` is already an instance; the publishable key goes in the `data-clerk-publishable-key` attribute on the script tag. `new window.Clerk(pk)` throws.
-- **Clerk dev-mode does NOT work in the Tauri webview.** Dev instances need the `dev_browser` third-party cookie; WKWebView (macOS) blocks third-party cookies → `clerk.load()` always rejects. Wrap it in try/catch (see `initClerk` in `main.js`) and fall back to `setSession(<any-token>)`, which only succeeds when the backend runs the dev bypass. Production (`pk_live` + own domain) is expected to work; if not, the deep-link browser flow is the fallback (see Next dev).
+- **Clerk dev-mode does NOT work in the Tauri webview.** Dev instances need the `dev_browser` third-party cookie; WKWebView (macOS) blocks third-party cookies → `clerk.load()` always rejects. Wrap it in try/catch (see `initClerk` in `main.js`) and fall back to `setSession(<any-token>)`, which only succeeds when the backend runs the dev bypass. Production (`pk_live` + own domain) is expected to work; if not, the deep-link browser flow is the fallback (see Roadmap).
 - **Bazel-built dylibs emit `default.profraw` into the CWD.** If that CWD is `src-tauri/`, the `tauri dev` watcher sees the file change after every run and rebuild-loops the app forever (window opens/closes infinitely). Always set `LLVM_PROFILE_FILE=/dev/null` when running instrumented dylibs from `tauri dev`.
 - **The LiteRT-LM dylib's install name is a bazel-relative path.** `dyld` can't find it from `target/debug/kawai` unless you: (1) copy it out of bazel-bin, (2) `install_name_tool -id @rpath/liblitert-lm.dylib` + re-codesign, (3) embed an rpath in the consuming binary via `RUSTFLAGS="-C link-arg=-Wl,-rpath,<dir>"` (a dependency's `cargo:rustc-link-arg` does NOT propagate to the final binary), and (4) symlink `cognee-litert-lm/_solib_darwin_arm64` → `vendor/LiteRT-LM/bazel-bin/_solib_darwin_arm64` for the sibling dylib deps. `DYLD_LIBRARY_PATH` does NOT survive through the tauri CLI.
 - **LiteRT-LM streaming C calls are fire-and-forget async.** `litert_lm_conversation_send_message_stream` returns before generation starts; tokens arrive on an engine thread. Dropping the engine/conversation mid-generation segfaults. The blocking task must block until the final callback (`recv_timeout` on a channel fed from the callback) — see `logic::local_llm::local_chat`.
 - **sentencepiece needs the patched recipe on macOS.** Upstream's v0.2.2 layout fails strict `hdrs_check`; our vendored WORKSPACE carries the fix (strip-to-src + `PATCH.sentencepiece_darts` + absl/protobuf seds + full absl deps in `BUILD.sentencepiece`). If you change the sentencepiece stanza, `bazel sync --only=sentencepiece` does NOT refetch — delete the repo dir under `/private/var/tmp/_bazel_*/external/sentencepiece` + its marker, then rebuild.
 - **Tauri invoke rejects with a bare string, not an `Error`.** Read it via a helper (`errText` in `main.js`) — `err.message` is `undefined` otherwise.
+- **Web request structs need `#[serde(rename_all = "camelCase")]`.** Tauri maps camelCase invoke args → snake_case params automatically; Axum `Json<T>` does NOT — without the rename, camelCase bodies 422 (bit us 2026-08-16 with the chat ops). Every web request struct with a multi-word field carries the rename.
 - **No build step — frontend files are served as-is.** `src/` is the Tauri `frontendDist`. File paths in HTML/JS must be relative and valid for the filesystem (no bundler resolves them).
 - **Logs go to `~/Library/Logs/kawai/app.log`.** `logging.rs` tees process stderr (Rust panics, `eprintln!`, LiteRT C++ absl logs) and `src/lib/log.js` pipes JS errors/rejections/`console.error` via the `frontend_log` command. Deliberately outside `src-tauri/` (watcher) — don't move it inside. A symlink lives at `kawai/app.log`.
+- **One rig-core source for the whole graph.** `src-tauri`, `rig-tools/*`, and the `rig-libsql` submodule all pin git rev `4232abdb` (crates.io 0.41.0 predates the `Vec<Embedding>` `insert_documents` change rig-libsql needs). A crates.io `rig`/`rig-core` dep anywhere alongside the pin = two rig-cores = ToolSet/vector-store type mismatch at the agent-tier seam. When 0.42+ ships, swap ALL of them (incl. the generator template `rig-tools/gen/src/main.rs` in the parent workspace) in one change.
 
 ## Where things live
 
@@ -122,6 +158,7 @@ src-tauri/examples/local_llm_smoke.rs   # headless local-LLM smoke test (feature
 src-tauri/Cargo.toml        # axum/tower-http behind "web"; cognee-litert-lm behind "litert"
 cognee-litert-lm/           # Rust bindings for the LiteRT-LM C API (path dep)
 cognee-litert-lm/vendor/LiteRT-LM        # submodule = upstream google-ai-edge main + macOS patches
+rig-tools/                  # per-category rig tool crates (generated; each has registry::toolset_for)
 models/                     # .litertlm model files (gitignored, GB-scale)
 .env                        # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)
 .env.local                  # VITE_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (gitignored)
@@ -150,7 +187,7 @@ app.log                     # symlink → ~/Library/Logs/kawai/app.log
   - Desktop/mobile: backend stores the verified identity in Tauri `State<Session>` (in-memory).
   - Web backend (no web frontend): backend sets an HttpOnly `kawai_session` cookie.
 - Backend verification: `auth::Verifier` fetches Clerk's **public** JWKS (cached by `kid`) and checks `iss`/`exp`. **No `CLERK_SECRET_KEY` is needed or used by the backend** — asymmetric verification.
-- Identity → logic: wrappers extract `claims.sub` as `user_id` and pass it as the first arg to `logic.rs` fns. `whoami`/`create_note`/`list_notes`/`stream_notes`/`local_load_model`/`local_chat` are auth-required; `greet`/`generate_activity` are public.
+- Identity → logic: wrappers extract `claims.sub` as `user_id` and pass it as the first arg to `logic.rs` fns. `whoami`/`create_note`/`list_notes`/`stream_notes`/`create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message`/`local_load_model`/`local_chat` are auth-required; `greet`/`generate_activity` are public.
 - Auth operations: `set_session`, `logout`, `whoami` (one snake_case string each).
 
 ## Database (self-hosted libsql-server / sqld)
@@ -169,7 +206,7 @@ user → (Clerk) → Rust backend → logic::mint_db_token(user_id)   [EdDSA, ba
   - web (`cfg(feature="web")`): `Builder::new_remote(url, token)`.
   - desktop/mobile: `Builder::new_remote_replica(path, url, token)` (local file syncs to sqld).
 - Backend holds the Ed25519 **private** key; sqld holds the **public** key (mismatched halves = auth fails).
-- Multi-tenancy today: single (default) namespace, rows scoped by `WHERE user_id = ?`. Flip to `--enable-namespaces` for hard per-user DB isolation (token `sub` → namespace) — see Next dev.
+- Multi-tenancy today: single (default) namespace, rows scoped by `WHERE user_id = ?`. Flip to `--enable-namespaces` for hard per-user DB isolation (token `sub` → namespace) — see Roadmap.
 
 ## Configuration (.env)
 
@@ -183,22 +220,33 @@ KAWAI_DB_JWT_PRIVATE_KEY_FILE=.../sqld_jwt_ed25519.pem
 ```
 `.env.local` (gitignored) — Clerk publishable key reference: `VITE_CLERK_PUBLISHABLE_KEY`. The actual key is embedded in `src/config.js` (publishable keys are public by design).
 
-## Next dev / follow-ups
+## Roadmap
 
-1. **Desktop/mobile session persistence.** `State<Session>` is in-memory; lost on restart. Persist the token in the OS keychain (`tauri-plugin-stronghold` / keyring) and reload on launch.
-2. **Desktop/mobile DB token broker.** `logic::mint_db_token` reads the Ed25519 private key locally — fine for dev, but the private key MUST NOT ship in a production app. Add a `db_token` op: kawai-web verifies Clerk → mints a short EdDSA token → the device fetches it and feeds `Builder::new_remote_replica`. The private key stays server-side.
-3. **Connection pooling + token refresh.** DB connections are opened per-op (correct, not optimal). Pool them and refresh tokens before expiry for production load.
-4. **`--enable-namespaces` on sqld** for hard per-user DB isolation (token `sub` → namespace) instead of shared-namespace + `WHERE user_id`.
-5. **Mobile compile verification.** ✅ Done 2026-08-15: android arm64 (NDK r29 via brew) + iOS device + iOS sim all check clean, default/web/litert feature combos. NOT yet done: building the LiteRT-LM C lib itself for android/iOS (`cognee-litert-lm/build.rs` has the NDK path ready; needs `bazel build //c:litert-lm --config=android_arm64` + static-link trial).
-6. **Production hardening.** Add `Secure` to the session cookie (HTTPS only), CORS only if cross-origin, rate limiting, Clerk refresh-token rotation.
-7. **`rig` (remote LLM) is unused.** Declared in Cargo.toml but no LLM features yet — wire the first remote op (OpenAI-compatible endpoint / Ollama at localhost) onto the same streaming event pattern as `local_chat`, so backend choice becomes configuration.
-8. **Local-LLM ops backlog** (feature `litert`):
-   - `local_llm_reset` (fresh conversation), model unload, expose `ThinkingConfig` / constrained decoding (JSON schema) — all already wrapped in cognee-litert-lm.
-   - Concurrency: one generation at a time today (session take/restore); a session pool would allow parallel chats.
-   - Bundle dylibs for `tauri build` (framework-embedding recipe like flutter_gemma's, see its DESKTOP_SUPPORT.md).
-9. **Gemma 4 GPU (Metal) — blocked upstream.** The `-gpu.litertlm` variants need backend `GPU_ARTISAN`, which maps to engine types (`kAdvancedLegacyTfLite`/`kLegacyTfLite`) that upstream deleted; only `kAdvancedLiteRTCompiledModel` registers now → `No available engine for GPU_ARTISAN`. The plain `.litertlm` is CPU-locked by its section backend-constraint (`engine_settings.cc:78` rejects mismatches). Revisit when upstream ships a GPU path for the compiled-model engine.
-10. **Upstream PR: sentencepiece macOS fix — PR [#3262](https://github.com/google-ai-edge/LiteRT-LM/pull/3262), assume ignored.** Upstream is "not yet accepting external OSS contributions", so we operate as upstream-main + 1 local commit: the submodule points at our fork branch (`yudaprama/LiteRT-LM@fix/macos-sentencepiece-hdrs-check`), and `cognee-litert-lm/tools/update-litert-lm.sh` rebases the fix onto new upstream main mechanically. If the PR is ever merged, drop the commit and repoint the submodule at `google-ai-edge` main.
-11. **Production auth = browser + deep link.** Clerk dev-mode is broken in the webview (see Landmines); even prod may need it. Flow: open system browser → Clerk sign-in → redirect `kawai://auth?token=<jwt>` → `set_session`. Needs the tauri deep-link plugin + a Clerk-hosted page (or kawai-web route) to mint the redirect.
-12. **Tests.** No test suite yet; add unit tests for `auth.rs` (JWKS verify), `logic.rs` (token mint + db round-trip), and a `local_llm_smoke` CI job (needs a small `.litertlm` fixture — e.g. Gemma 3 270M or SmolLM 135M).
-13. **Web platform support (backlog).** Investigate running kawai from a browser. Three approaches: (A) new web frontend served by Axum + `@litert-lm/core` WASM for client-side inference, (B) Rust backend as inference proxy (server-side), (C) hybrid. flutter_gemma already proves `@litert-lm/core` works in-browser with WebGPU. Open questions: WebGPU availability, model download UX (GB-scale), browser memory limits, whether to duplicate effort or share with flutter_gemma. Needs design doc before implementation.
-14. **LoRA support (backlog).** LoRA adapters enable on-device personalization (custom writing style, domain expertise, local language/slang). C API supports `set_lora_path` on SessionConfig and `set_lora_rank` on EngineSettings, but kawai uses the Conversation API which manages sessions internally — cannot inject SessionConfig. Options: (A) switch from Conversation API to Session API (big refactor, lose chat history/prompt templating), (B) wait for upstream to add LoRA to ConversationConfig, (C) hybrid approach. Fine-tuning on-device not yet supported by LiteRT-LM. Open questions: which use cases justify the refactor? How big is the Session API migration?
+Priority order: **MVP track → post-MVP/pre-release → end state**. Items in the later tracks are deferred — do not start them without the user asking. Where things live in the codebase today: `local_llm_reset` / `local_llm_set_thinking` / `local_llm_unload` are already wired (commands + web routes).
+
+### MVP track (now — desktop, on-device LLM, dev-bypass auth)
+
+1. **Chat history persistence.** ✅ Done 2026-08-16: `sessions(agent_id, user_id, title, …)` + `messages(session_id, role, content, …)` tables in sqld; ops `create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message` (both wrappers). MVP runs a single implicit agent (`builtin.chat`); sessions are created lazily on first message, first user message seeds the title, engine context stays in-memory (restart shows history, model context starts fresh).
+2. **Distributable desktop build.** Bundle the LiteRT dylib (+ `_solib` siblings) into `bun tauri build` — framework-embedding recipe like flutter_gemma's (`flutter_gemma/packages/flutter_gemma/DESKTOP_SUPPORT.md`). The release .app must work without dev-only rpath/env setup (see Landmines: install-name/rpath recipe).
+3. **`local_llm_smoke` streaming regression gate.** Small `.litertlm` fixture (e.g. Gemma 3 270M or SmolLM 135M) so token streaming keeps working across changes. (`src-tauri/examples/local_llm_smoke.rs` exists; needs the fixture + a CI hook — natural home is a GitHub Actions macOS runner that builds the dylib + runs the example.)
+4. **(standing) Upstream maintenance.** sentencepiece macOS fix — PR [#3262](https://github.com/google-ai-edge/LiteRT-LM/pull/3262), assume ignored. Submodule stays on our fork branch (`yudaprama/LiteRT-LM@fix/macos-sentencepiece-hdrs-check`); `cognee-litert-lm/tools/update-litert-lm.sh` rebases the fix onto new upstream main. If merged, drop the commit and repoint at `google-ai-edge` main.
+
+### Post-MVP, pre-release (first milestones after MVP ships)
+
+5. **Agent tier foundation — the product's core.** Agent = persona (system prompt) + curated toolset from `rig-tools/` (`registry::toolset_for(names)`, used standalone — no rig provider needed). Runs on **local Gemma 4** (decision 2026-08-16): prompt-based tool calling — tool definitions embedded in the system prompt, model replies with JSON tool calls, backend loop in `logic.rs` parses → dispatches via ToolSet → feeds results back. Ship a built-in agent catalog (specialist personas per category), the three-pane UI (left: agent list; right: sessions of the selected agent; center: agent content), and session persistence keyed by `agent_id` (schema from MVP 1). Remote models via `rig` stay pluggable-optional, wired only if/when local quality proves insufficient.
+6. **Production auth = browser + deep link.** Clerk dev-mode is broken in the webview (see Landmines); even prod may need it. Flow: open system browser → Clerk sign-in → redirect `kawai://auth?token=<jwt>` → `set_session`. Needs the tauri deep-link plugin + a Clerk-hosted page (or kawai-web route) to mint the redirect.
+7. **Desktop/mobile session persistence.** `State<Session>` is in-memory; lost on restart (with the dev bypass the frontend re-establishes it automatically — fine for MVP). Persist the token in the OS keychain (`tauri-plugin-stronghold` / keyring) and reload on launch.
+8. **Desktop/mobile DB token broker.** `logic::mint_db_token` reads the Ed25519 private key locally — fine for dev, but the private key MUST NOT ship in a production app. Add a `db_token` op: kawai-web verifies Clerk → mints a short EdDSA token → the device fetches it and feeds `Builder::new_remote_replica`. The private key stays server-side.
+9. **Production hardening.** Add `Secure` to the session cookie (HTTPS only), CORS only if cross-origin, rate limiting, Clerk refresh-token rotation.
+10. **Connection pooling + token refresh.** DB connections are opened per-op (correct, not optimal). Pool them and refresh tokens before expiry for production load.
+11. **SQLite schema migrations.** Schema changes today are additive + idempotent (`CREATE TABLE/INDEX IF NOT EXISTS`), which is fine while no distributed build carries an old replica. Before shipping one: hand-rolled `schema_migrations` table + versioned SQL list (via `include_str!`) applied transactionally on connect — NOT refinery/rusqlite_migration (they assume rusqlite, we use the libsql API). With embedded replicas DDL syncs to sqld, so migrations must be race-safe across devices (version table + transactional DDL gives that). First known backfill when introduced: sessions created before first-message title-seeding will never get a title.
+12. **Tests beyond the smoke gate.** Unit tests for `auth.rs` (JWKS verify), `logic.rs` (token mint + db round-trip), agent tier (toolset assembly, agent catalog integrity).
+
+### End state (desktop + mobile + web — design work, later)
+
+13. **Mobile LLM builds.** Mobile Rust compiles are verified (android arm64 + iOS device/sim, 2026-08-15) but the LiteRT-LM C lib itself is not built for mobile yet (`cognee-litert-lm/build.rs` has the NDK path ready; needs `bazel build //c:litert-lm --config=android_arm64` + static-link trial). Mobile UI work rides on this.
+14. **Windows/Linux desktop builds.** macOS-only for MVP; the other desktop targets are end state. No cross-compile from macOS — build each platform on its native GitHub Actions runner (`macos-14+` arm64 / `windows-latest` MSVC / `ubuntu-22.04` for glibc ≥ 2.35) with bazel caching (`actions/cache`, GB-scale) + `tauri-action` for bundling. Upstream bazel carries `linux` (clang) and partial Windows (MSVC) flags — never exercised by us; our sentencepiece patch is macOS-specific (may need sibling patches per OS). flutter_gemma proves the C lib works on Windows x86_64 (DX12/Dawn GPU) and Linux x86_64+arm64 (Vulkan/Dawn; glibc ≥ 2.34) via prebuilt binaries — consider prebuilts vs building from source per platform. Bundling differs per OS: macOS `@rpath`+codesign (current recipe), Windows DLL-exe-adjacent + vcredist (+ `dxil`/`dxcompiler` for GPU), Linux `.so` + `$ORIGIN` rpath. Windows is the highest-risk target (MSVC flags unexercised).
+15. **Web platform support.** Investigate running kawai from a browser. Three approaches: (A) new web frontend served by Axum + `@litert-lm/core` WASM for client-side inference, (B) Rust backend as inference proxy (server-side), (C) hybrid. flutter_gemma already proves `@litert-lm/core` works in-browser with WebGPU. Open questions: WebGPU availability, model download UX (GB-scale), browser memory limits, whether to duplicate effort or share with flutter_gemma. Needs design doc before implementation.
+16. **`--enable-namespaces` on sqld** for hard per-user DB isolation (token `sub` → namespace) instead of shared-namespace + `WHERE user_id`.
+17. **Gemma 4 GPU (Metal) — blocked upstream.** The `-gpu.litertlm` variants need backend `GPU_ARTISAN`, which maps to engine types (`kAdvancedLegacyTfLite`/`kLegacyTfLite`) that upstream deleted; only `kAdvancedLiteRTCompiledModel` registers now → `No available engine for GPU_ARTISAN`. The plain `.litertlm` is CPU-locked by its section backend-constraint (`engine_settings.cc:78` rejects mismatches). Revisit when upstream ships a GPU path for the compiled-model engine.
+18. **LoRA support.** LoRA adapters enable on-device personalization (custom writing style, domain expertise, local language/slang). C API supports `set_lora_path` on SessionConfig and `set_lora_rank` on EngineSettings, but kawai uses the Conversation API which manages sessions internally — cannot inject SessionConfig. Options: (A) switch from Conversation API to Session API (big refactor, lose chat history/prompt templating), (B) wait for upstream to add LoRA to ConversationConfig, (C) hybrid approach. Fine-tuning on-device not yet supported by LiteRT-LM. Open questions: which use cases justify the refactor? How big is the Session API migration?

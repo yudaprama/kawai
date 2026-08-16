@@ -1,0 +1,176 @@
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      skipped: ${{ steps.bump.outputs.skipped }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the version bump commit from a previous run is
+          # visible; token so we can push the bump back to main.
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          set -euo pipefail
+          # Version lives in src-tauri/tauri.conf.json; Cargo.toml picks it up
+          # from there at build time (tauri reads the conf, not Cargo.toml —
+          # keep Cargo.toml's 0.1.0 untouched).
+          CONF=src-tauri/tauri.conf.json
+          OLD=$(python3 -c "import json;print(json.load(open('$CONF'))['version'])")
+          python3 - <<EOF
+          import json
+          p = "$CONF"
+          c = json.load(open(p))
+          major, minor, patch = (int(x) for x in c["version"].split("."))
+          c["version"] = f"{major}.{minor}.{patch + 1}"
+          json.dump(c, open(p, "w"), indent=2)
+          open(p, "a").write("\n")
+          EOF
+          NEW=$(python3 -c "import json;print(json.load(open('$CONF'))['version'])")
+
+          if git ls-remote --exit-code --tags origin "v$NEW" >/dev/null 2>&1; then
+            echo "Tag v$NEW already exists — a bump commit landed between push and now. Skipping."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            echo "version=$NEW" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "kawai-release-bot"
+          git config user.email "actions@github.com"
+          git add "$CONF"
+          git commit -m "chore(release): v$NEW"
+          git tag "v$NEW"
+          git push origin HEAD:main "v$NEW" 2>/dev/null || {
+            # Remote moved (another push raced us). The tag is the guard:
+            # if pushing the tag alone fails, another run already claimed it.
+            git push origin "v$NEW" || {
+              echo "Race lost on v$NEW — skipping this run."
+              echo "skipped=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            }
+          }
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "skipped=false" >> "$GITHUB_OUTPUT"
+
+  build-macos:
+    needs: bump
+    if: needs.bump.outputs.skipped != 'true'
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The bump commit (HEAD of main) carries the new version.
+          # RELEASE_TOKEN (PAT) instead of GITHUB_TOKEN so private repos work:
+          # the kawai repo itself and any private submodule/cargo git dep.
+          ref: v${{ needs.bump.outputs.version }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      # Authenticate ALL github.com git traffic (submodule fetches + cargo git
+      # deps) with the PAT — covers private repos under yudaprama/ now or later.
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # ── Build the LiteRT-LM C library (bazel, ~15-30 min first run) ──
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            /private/var/tmp/_bazel_runner
+          key: bazel-macos-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos-arm64-
+
+      # Only cognee-litert-lm (+ its nested vendor/LiteRT-LM via --recursive).
+      # rig-libsql/flutter_gemma/litert-lm-rs are NOT needed for the build —
+      # skip them to keep the checkout lean.
+      - name: Init submodules (cognee-litert-lm + nested LiteRT-LM fork)
+        run: git submodule update --init --recursive cognee-litert-lm
+
+      - name: Build litert-lm dylib
+        run: |
+          set -euo pipefail
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=macos_arm64 --jobs=6
+          # Copy + fix install name (dev-recipe from AGENTS.md Landmines).
+          # The bundling step for the release .app is MVP roadmap #2 — for now
+          # the CI build proves the Rust side links; when the bundling recipe
+          # lands, extend this block to embed the dylib into the .app.
+          mkdir -p ../native
+          cp bazel-bin/c/liblitert-lm.dylib ../native/
+          install_name_tool -id @rpath/liblitert-lm.dylib ../native/liblitert-lm.dylib
+          codesign -f -s - ../native/liblitert-lm.dylib
+          ln -sfn bazel-bin/_solib_darwin_arm64 ../../_solib_darwin_arm64
+
+      - name: Build .app (with litert)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        with:
+          tagName: v${{ needs.bump.outputs.version }}
+          releaseName: "kawai v${{ needs.bump.outputs.version }}"
+          releaseDraft: true
+          prerelease: false
+          args: --features litert
+
+  build-web:
+    needs: bump
+    if: needs.bump.outputs.skipped != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.bump.outputs.version }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+      # No submodules needed (no litert feature), but future private cargo git
+      # deps (e.g. rig forks) fetch through git — authenticate them too.
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Build kawai-web binary
+        run: cargo build --release --bin kawai-web --features web
+        working-directory: src-tauri
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.bump.outputs.version }}
+          draft: true
+          files: src-tauri/target/release/kawai-web

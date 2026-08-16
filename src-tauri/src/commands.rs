@@ -1,5 +1,7 @@
 use crate::auth::{Session, Verifier};
-use crate::logic::{self, ActivityEvent, ActivityInput, Note, NoteEvent, UserInfo};
+use crate::logic::{
+    self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, Note, NoteEvent, UserInfo,
+};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -165,6 +167,57 @@ pub async fn stream_notes(
 
     registry.lock().unwrap().remove(&stream_id);
     Ok(())
+}
+
+/// Authenticated RPC: start a new chat session (agent-ready schema; MVP uses
+/// the implicit builtin agent when `agentId` is absent).
+#[tauri::command]
+pub async fn create_chat_session(
+    agent_id: Option<String>,
+    session: State<'_, Session>,
+) -> Result<ChatSession, String> {
+    let user_id = session_user_id(&session)?;
+    logic::create_chat_session(&user_id, agent_id.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: list the user's chat sessions, newest first.
+#[tauri::command]
+pub async fn list_chat_sessions(
+    session: State<'_, Session>,
+) -> Result<Vec<ChatSession>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::list_chat_sessions(&user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: list a session's messages, oldest first.
+#[tauri::command]
+pub async fn list_chat_messages(
+    session_id: i64,
+    session: State<'_, Session>,
+) -> Result<Vec<ChatMessage>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::list_chat_messages(&user_id, session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: append a message to a session. The first user message
+/// seeds the session title.
+#[tauri::command]
+pub async fn append_chat_message(
+    session_id: i64,
+    role: String,
+    content: String,
+    session: State<'_, Session>,
+) -> Result<ChatMessage, String> {
+    let user_id = session_user_id(&session)?;
+    logic::append_chat_message(&user_id, session_id, &role, &content)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Authenticated RPC: load an on-device model (`.litertlm`). Identity is

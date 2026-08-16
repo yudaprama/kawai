@@ -4390,6 +4390,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "jsonwebtoken",
+ "kawai-constants",
  "libc",
  "libsql",
  "reqwest 0.12.28",
@@ -4402,6 +4403,22 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tower-http 0.6.11",
+]
+
+[[package]]
+name = "kawai-constants"
+version = "0.1.0"
+dependencies = [
+ "kawai-vault",
+ "lazy_static",
+ "rand 0.8.7",
+]
+
+[[package]]
+name = "kawai-vault"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
 ]
 
 [[package]]
@@ -7294,8 +7311,7 @@ checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 [[package]]
 name = "rig"
 version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ce03971e6115d30ef53fb3244d06718a4e62bbde82c103065600c09459b989a"
+source = "git+https://github.com/0xPlaygrounds/rig?rev=4232abdb85a3ef2c48ccf3fa5c2cb8636588db94#4232abdb85a3ef2c48ccf3fa5c2cb8636588db94"
 dependencies = [
  "rig-agent",
  "rig-core",
@@ -7309,8 +7325,7 @@ dependencies = [
 [[package]]
 name = "rig-agent"
 version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b0796bbf47d7b76670401aac975bc619cf7fba3482b22dfe14992edaa9c2e04"
+source = "git+https://github.com/0xPlaygrounds/rig?rev=4232abdb85a3ef2c48ccf3fa5c2cb8636588db94#4232abdb85a3ef2c48ccf3fa5c2cb8636588db94"
 dependencies = [
  "async-stream",
  "fastrand",
@@ -7331,8 +7346,7 @@ dependencies = [
 [[package]]
 name = "rig-core"
 version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35f5520515ae8f6851adcbc6fde9eea8e96f657418c062e16c82cd81cce44e8e"
+source = "git+https://github.com/0xPlaygrounds/rig?rev=4232abdb85a3ef2c48ccf3fa5c2cb8636588db94#4232abdb85a3ef2c48ccf3fa5c2cb8636588db94"
 dependencies = [
  "as-any",
  "async-stream",
@@ -7354,6 +7368,7 @@ dependencies = [
  "schemars 1.2.2",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.20",
  "tokio",
  "tokio-tungstenite",
@@ -7365,8 +7380,7 @@ dependencies = [
 [[package]]
 name = "rig-derive"
 version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb868fcebdf3ba425e3afad2e4926bb6d9e1188a856843b00bcee2e15c07424f"
+source = "git+https://github.com/0xPlaygrounds/rig?rev=4232abdb85a3ef2c48ccf3fa5c2cb8636588db94#4232abdb85a3ef2c48ccf3fa5c2cb8636588db94"
 dependencies = [
  "convert_case",
  "proc-macro-crate 3.5.0",
@@ -7378,8 +7392,7 @@ dependencies = [
 [[package]]
 name = "rig-fastembed"
 version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69ba93356242940918fac76a4b1cfe78b964f757e5cb65bb3feebd597635cfb0"
+source = "git+https://github.com/0xPlaygrounds/rig?rev=4232abdb85a3ef2c48ccf3fa5c2cb8636588db94#4232abdb85a3ef2c48ccf3fa5c2cb8636588db94"
 dependencies = [
  "fastembed",
  "rig-core",
@@ -7392,8 +7405,7 @@ dependencies = [
 [[package]]
 name = "rig-helixdb"
 version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1d40ae8fa89af33793626b898ec527e246183ef8b4b5095afee5f6a65cbbb1a"
+source = "git+https://github.com/0xPlaygrounds/rig?rev=4232abdb85a3ef2c48ccf3fa5c2cb8636588db94#4232abdb85a3ef2c48ccf3fa5c2cb8636588db94"
 dependencies = [
  "reqwest 0.13.4",
  "rig-core",
@@ -7405,8 +7417,7 @@ dependencies = [
 [[package]]
 name = "rig-lancedb"
 version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f703b9e081ee4d77e60953598a5071a5cff4b8b702a2f06d251310950b0dae7c"
+source = "git+https://github.com/0xPlaygrounds/rig?rev=4232abdb85a3ef2c48ccf3fa5c2cb8636588db94#4232abdb85a3ef2c48ccf3fa5c2cb8636588db94"
 dependencies = [
  "arrow-array",
  "deranged",
@@ -7420,8 +7431,7 @@ dependencies = [
 [[package]]
 name = "rig-milvus"
 version = "0.41.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76662eb7f75de4e54b5f71e616430dc7f75d96d32f109d9435ad426b511eb565"
+source = "git+https://github.com/0xPlaygrounds/rig?rev=4232abdb85a3ef2c48ccf3fa5c2cb8636588db94#4232abdb85a3ef2c48ccf3fa5c2cb8636588db94"
 dependencies = [
  "reqwest 0.13.4",
  "rig-core",
@@ -9113,9 +9123,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857"
+checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
 dependencies = [
  "futures-util",
  "log",
@@ -9508,9 +9518,9 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tungstenite"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442"
+checksum = "6c01152af293afb9c7c2a57e4b559c5620b421f6d133261c60dd2d0cdb38e6b8"
 dependencies = [
  "bytes",
  "data-encoding",
@@ -9522,7 +9532,6 @@ dependencies = [
  "rustls-pki-types",
  "sha1",
  "thiserror 2.0.20",
- "utf-8",
 ]
 
 [[package]]
@@ -9716,12 +9725,6 @@ dependencies = [
  "unic-ucd-ident",
  "url",
 ]
-
-[[package]]
-name = "utf-8"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
 
 [[package]]
 name = "utf8-ranges"

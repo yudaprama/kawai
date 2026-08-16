@@ -1,5 +1,7 @@
 use crate::auth::{Claims, Verifier};
-use crate::logic::{self, ActivityEvent, ActivityInput, Note, NoteEvent, UserInfo};
+use crate::logic::{
+    self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, Note, NoteEvent, UserInfo,
+};
 use axum::{
     extract::{Json, Request},
     http::{header, HeaderValue, StatusCode},
@@ -34,6 +36,26 @@ struct SetSessionRequest {
 #[derive(Deserialize)]
 struct CreateNoteRequest {
     body: String,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct CreateChatSessionRequest {
+    agent_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListChatMessagesRequest {
+    session_id: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppendChatMessageRequest {
+    session_id: i64,
+    role: String,
+    content: String,
 }
 
 #[derive(Serialize)]
@@ -128,6 +150,59 @@ async fn stream_notes_handler(
     Sse::new(s).keep_alive(KeepAlive::default())
 }
 
+/// Map DbError to an HTTP status: NotFound → 404, everything else 500.
+fn db_status(e: &logic::DbError) -> StatusCode {
+    if matches!(e, logic::DbError::NotFound(_)) {
+        StatusCode::NOT_FOUND
+    } else {
+        StatusCode::INTERNAL_SERVER_ERROR
+    }
+}
+
+/// Protected RPC: start a new chat session (agent-ready schema; MVP uses the
+/// implicit builtin agent when `agentId` is absent).
+async fn create_chat_session_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<CreateChatSessionRequest>,
+) -> Result<Json<ChatSession>, (StatusCode, String)> {
+    logic::create_chat_session(&claims.sub, req.agent_id.as_deref())
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+/// Protected RPC: list the user's chat sessions, newest first.
+async fn list_chat_sessions_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<ChatSession>>, (StatusCode, String)> {
+    logic::list_chat_sessions(&claims.sub)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+/// Protected RPC: list a session's messages, oldest first.
+async fn list_chat_messages_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<ListChatMessagesRequest>,
+) -> Result<Json<Vec<ChatMessage>>, (StatusCode, String)> {
+    logic::list_chat_messages(&claims.sub, req.session_id)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+/// Protected RPC: append a message to a session.
+async fn append_chat_message_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<AppendChatMessageRequest>,
+) -> Result<Json<ChatMessage>, (StatusCode, String)> {
+    logic::append_chat_message(&claims.sub, req.session_id, &req.role, &req.content)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
 fn note_event_to_sse(event: NoteEvent) -> SseFrame {
     let name = match &event {
         NoteEvent::Notes { .. } => "notes",
@@ -141,6 +216,7 @@ fn note_event_to_sse(event: NoteEvent) -> SseFrame {
 /// Protected RPC: load an on-device model (`.litertlm`).
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct LocalLoadModelRequest {
     model_path: String,
     gpu: Option<bool>,
@@ -303,6 +379,10 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/create_note", post(create_note_handler))
         .route("/api/list_notes", post(list_notes_handler))
         .route("/api/stream_notes", post(stream_notes_handler))
+        .route("/api/create_chat_session", post(create_chat_session_handler))
+        .route("/api/list_chat_sessions", post(list_chat_sessions_handler))
+        .route("/api/list_chat_messages", post(list_chat_messages_handler))
+        .route("/api/append_chat_message", post(append_chat_message_handler))
         .route_layer(from_fn(auth_middleware));
 
     #[cfg(feature = "litert")]

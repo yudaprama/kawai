@@ -5,12 +5,14 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 
 ## Goals
 
-- Desktop, mobile are primary targets; web backend exists for server-side use.
+- Product: **an AI agents app** — a catalog of specialized agents (finance, knowledge, weather, …); each agent = LLM persona + curated toolset from `rig-tools/` (per-category crates of generated rig tools, `registry::toolset_for(names)`). UI: three-pane — left = agent list, center = active agent content, right = sessions of the selected agent.
+- End state: **desktop + mobile + web from one core**; app logic is 100% shared, only transport and launcher differ per target.
+- Current phase: **MVP, desktop-first** (macOS, on-device LLM, dev-bypass auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
 - Frontend: Vanilla JS. No bundler, no framework. Served directly by Tauri (`frontendDist: "../src"`).
 - Backend: Rust, single core logic.
 - App logic is 100% shared; only transport and launcher differ per target.
 - Auth: Clerk via CDN + vanilla JS SDK; the backend verifies session JWTs via Clerk's **public JWKS** (no secret in the backend).
-- LLM orchestration: `rig` (in `logic.rs`) — declared, not yet wired.
+- LLM: **on-device Gemma 4 via LiteRT-LM is THE model** (decision 2026-08-16). `rig` 0.41 stays declared but unwired — remote providers become optional configuration later. Agent tier will use prompt-based tool calling on the local model; `rig-tools/` (14 category crates of generated rig tools, `registry::toolset_for(names)`) provides the toolsets, usable standalone without a rig provider.
 - Persistence: self-hosted `libsql-server` (sqld); per-user embedded replica (desktop/mobile) or remote client (web backend), driven from `logic.rs`.
 
 ## Layer diagram
@@ -54,6 +56,7 @@ kawai/
 │       ├── api.js            # RPC: window.__TAURI__.core.invoke
 │       ├── stream.js         # Streaming: Channel + cancel_stream
 │       └── auth.js           # Clerk session → backend (set_session/logout/whoami)
+├── rig-tools/                # per-category rig tool crates (agent-tier tool library)
 ├── scripts/
 │   └── dev-sqld.sh           # dev launcher for self-hosted sqld
 ├── .env                      # KAWAI_AUTH_* + KAWAI_DB_* (gitignored)
@@ -97,10 +100,10 @@ kawai/
 
 ## Core dependencies (in `logic.rs` / `auth.rs`)
 
-- **`rig`** — LLM orchestration (providers, agents, streaming). Use for any LLM call; token streams map onto the streaming event pattern. (Declared, not yet wired.)
+- **`rig`** — declared, unwired, pinned to git rev `4232abdb` (same source as `rig-libsql` and `rig-tools`; crates.io 0.41.0 predates the `Vec<Embedding>` change). Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers via rig become optional configuration later, not a requirement.
 - **`libsql`** — per-user DB against self-hosted sqld. Desktop/mobile: local embedded replica per user; web: remote connection (no per-user local file). Builder selection lives in `logic.rs` behind `cfg(feature = "web")`. Connections are per-op (fresh EdDSA token each call).
 - **`jsonwebtoken`** — RS256 (Clerk JWKS verify in `auth.rs`) and EdDSA (sqld token mint in `logic.rs`). Two versions coexist (9.x direct + 10.x transitive) — expected.
-- All compile clean across desktop, android arm64, and ios arm64 (libsql/rustls verified; jsonwebtoken/reqwest pending a mobile check — see Next dev). Two rustls versions (0.22 + 0.23) coexist — expected.
+- All compile clean across desktop, android arm64, and ios arm64 (verified 2026-08-15; default/web/litert feature combos). Two rustls versions (0.22 + 0.23) coexist — expected.
 
 ## Web dependency gating (Axum excluded from desktop/mobile)
 
@@ -166,14 +169,3 @@ user → (Clerk) → Rust backend ──verify JWKS──▶ user_id
 - Builder selection is `cfg`-gated in `logic.rs`, not branched on a transport type → stays pure.
 - Multi-tenancy today: single (default) namespace + `WHERE user_id = ?`. Production option: `--enable-namespaces` (token `sub` → isolated per-user DB).
 - Connections are per-op (fresh token each call) — simple and correct; pool/refresh before production.
-
-## Next dev / follow-ups
-
-1. **Desktop/mobile session persistence** — `State<Session>` is in-memory; persist the token to the OS keychain (`tauri-plugin-stronghold` / keyring) and reload on launch.
-2. **Desktop/mobile DB token broker** — `mint_db_token` reads the Ed25519 private key locally. In production the private key must NOT ship in the app: add a `db_token` op (kawai-web verifies Clerk → mints a short EdDSA token → device fetches it → feeds `open_with_remote_replica`).
-3. **Connection pooling + token refresh** — per-op connections are correct but not optimal; pool and refresh before expiry.
-4. **`--enable-namespaces` on sqld** — hard per-user DB isolation instead of shared-namespace + `WHERE user_id`.
-5. **Mobile compile verification** — `jsonwebtoken` (ring) + `reqwest` (rustls) + `libsql` not yet checked on android arm64 / ios arm64 this session.
-6. **Production hardening** — `Secure` cookie flag (HTTPS), CORS if cross-origin, rate limiting, Clerk refresh-token rotation.
-7. **`rig` (LLM) wiring** — declared but unused; wire the first LLM op.
-8. **Tests** — no suite yet; add unit tests for `auth.rs` (JWKS verify) and `logic.rs` (token mint + db round-trip).

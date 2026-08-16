@@ -36,7 +36,12 @@ tower-http = { version = "0.6", optional = true, features = ["fs"] }
 # On-device LLM (LiteRT-LM C API via cognee-litert-lm). Gated: building the C
 # library is opt-in so plain cargo check/build never requires it.
 cognee-litert-lm = { path = "../cognee-litert-lm", optional = true }
-rig = "0.41.0"
+# Pinned to the same git rev as rig-libsql (submodule): crates.io 0.41.0
+# predates the Vec<Embedding> insert_documents change the vector store needs.
+# One rig-core source for the whole graph (src-tauri + rig-tools + rig-libsql)
+# or ToolSet/vector-store types won't unify. Swap to crates.io "0.42"+ when
+# that release ships, everywhere at once.
+rig = { git = "https://github.com/0xPlaygrounds/rig", rev = "4232abdb85a3ef2c48ccf3fa5c2cb8636588db94" }
 libsql = "0.9.30"
 jsonwebtoken = "9"
 # rustls-tls (not default features) keeps the TLS stack aligned with libsql/rig
@@ -44,6 +49,8 @@ jsonwebtoken = "9"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 # Loads KAWAI_AUTH_* from the project-root .env in dev (no-op if absent).
 dotenvy = "0.15"
+# Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
+kawai-constants = { path = "/Users/yuda/github.com/kawai-network/x/rust/constants" }
 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]

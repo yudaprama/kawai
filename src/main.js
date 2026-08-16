@@ -37,6 +37,7 @@ function registerStore() {
       modelError: false,
       modelLoaded: false,
       loading: false,
+      sessionId: null,
       messages: [],
       chatInput: "",
       chatActive: false,
@@ -135,6 +136,7 @@ async function loadModel() {
     llm.modelLoaded = true;
     llm.messages = [];
     llm.stats = "";
+    await loadChatHistory();
   } catch (err) {
     llm.modelStatus = `Error: ${errText(err)}`;
     console.error("[loadModel]", errText(err)); // → frontend_log → app.log
@@ -150,7 +152,37 @@ function scrollChat() {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
-function chat() {
+// Chat persistence (sqld, agent-ready sessions/messages schema). Reload the
+// most recent session after a model load; failures are non-fatal — chat works
+// without persistence, it just won't survive a restart.
+async function loadChatHistory() {
+  const llm = Alpine.store("app").llm;
+  try {
+    const sessions = await call("list_chat_sessions");
+    const latest = sessions[0] || null; // newest first
+    llm.sessionId = latest ? latest.id : null;
+    const messages = latest ? await call("list_chat_messages", { sessionId: latest.id }) : [];
+    llm.messages = messages.map((m) => ({ role: m.role, text: m.content }));
+    scrollChat();
+  } catch (err) {
+    llm.sessionId = null;
+    console.error("[loadChatHistory]", errText(err));
+  }
+}
+
+// Lazily create the DB session on the first message of a fresh chat.
+async function ensureChatSession(llm) {
+  if (llm.sessionId != null) return llm.sessionId;
+  try {
+    const s = await call("create_chat_session", {});
+    llm.sessionId = s.id;
+  } catch (err) {
+    console.error("[ensureChatSession]", errText(err));
+  }
+  return llm.sessionId;
+}
+
+async function chat() {
   const llm = Alpine.store("app").llm;
   const prompt = llm.chatInput.trim();
   if (!prompt || llm.chatActive) return;
@@ -169,9 +201,17 @@ function chat() {
   llm.chatActive = true;
   scrollChat();
 
+  const sessionId = await ensureChatSession(llm);
+  if (sessionId != null) {
+    call("append_chat_message", { sessionId, role: "user", content: prompt }).catch((err) =>
+      console.error("[append user]", errText(err))
+    );
+  }
+
   const t0 = performance.now();
   let chunks = 0;
   let chars = 0;
+  let full = "";
   const elapsed = () => `${((performance.now() - t0) / 1000).toFixed(1)}s`;
 
   chatCtrl = streamOperation("local_chat", { prompt, image: image || null, audio: audio || null }, {
@@ -179,8 +219,9 @@ function chat() {
       if (ev.type === "token") {
         chunks += 1;
         chars += ev.text.length;
+        full += ev.text;
         const msgs = llm.messages.slice();
-        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: msgs[msgs.length - 1].text + ev.text };
+        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: full };
         llm.messages = msgs;
         llm.stats = `${chunks} chunks · ${chars} chars · ${elapsed()}`;
         scrollChat();
@@ -190,6 +231,11 @@ function chat() {
       llm.stats = `done · ${chunks} chunks · ${chars} chars · ${elapsed()}`;
       llm.chatActive = false;
       chatCtrl = null;
+      if (sessionId != null && full) {
+        call("append_chat_message", { sessionId, role: "assistant", content: full }).catch((err) =>
+          console.error("[append assistant]", errText(err))
+        );
+      }
     },
     onError: (err) => {
       llm.messages = [...llm.messages, { role: "error", text: err.message }];
@@ -269,6 +315,14 @@ async function resetChat() {
   if (llm.chatActive) return;
   try {
     await call("local_llm_reset");
+    // New chat = new DB session; the old one stays in history (future sidebar).
+    try {
+      const s = await call("create_chat_session", {});
+      llm.sessionId = s.id;
+    } catch (err) {
+      llm.sessionId = null;
+      console.error("[resetChat] session", errText(err));
+    }
     llm.messages = [];
     llm.stats = "";
   } catch (err) {
