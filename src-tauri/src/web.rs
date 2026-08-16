@@ -187,6 +187,44 @@ fn local_event_to_sse(event: logic::local_llm::LocalChatEvent) -> SseFrame {
     SseFrame::default().event(name).data(data)
 }
 
+/// Protected RPC: reset the on-device conversation history (same model).
+#[cfg(feature = "litert")]
+async fn local_llm_reset_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    logic::local_llm::reset_conversation(&claims.sub)
+        .await
+        .map(|_| StatusCode::NO_CONTENT)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+/// Protected RPC: toggle thinking mode for subsequent on-device chats.
+#[cfg(feature = "litert")]
+#[derive(Deserialize)]
+struct LocalSetThinkingRequest {
+    enabled: bool,
+}
+
+#[cfg(feature = "litert")]
+async fn local_llm_set_thinking_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<LocalSetThinkingRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    logic::local_llm::set_thinking(&claims.sub, req.enabled);
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Protected RPC: unload the on-device model and free all resources.
+#[cfg(feature = "litert")]
+async fn local_llm_unload_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    logic::local_llm::unload_model(&claims.sub)
+        .await
+        .map(|_| StatusCode::NO_CONTENT)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
 /// Reads the `kawai_session` cookie, verifies it, and injects `Claims` as a
 /// request extension. 401 on missing/expired token. Uses `from_fn` (state `()`)
 /// and pulls `Verifier` from `Extension`, so it composes with a `Router<()>`.
@@ -260,7 +298,13 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
     #[cfg(feature = "litert")]
     let protected = protected
         .route("/api/local_load_model", post(local_load_model_handler))
-        .route("/api/local_chat", post(local_chat_handler));
+        .route("/api/local_chat", post(local_chat_handler))
+        .route("/api/local_llm_reset", post(local_llm_reset_handler))
+        .route(
+            "/api/local_llm_set_thinking",
+            post(local_llm_set_thinking_handler),
+        )
+        .route("/api/local_llm_unload", post(local_llm_unload_handler));
 
     Router::new()
         .merge(public)

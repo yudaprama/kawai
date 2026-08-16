@@ -35,6 +35,9 @@ pub fn run() {
             commands::stream_notes,
             commands::local_load_model,
             commands::local_chat,
+            commands::local_llm_reset,
+            commands::local_llm_set_thinking,
+            commands::local_llm_unload,
             commands::frontend_log
         ]);
 

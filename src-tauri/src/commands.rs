@@ -219,3 +219,28 @@ pub async fn local_chat(
     registry.lock().unwrap().remove(&stream_id);
     Ok(())
 }
+
+/// Authenticated RPC: reset the conversation history (fresh chat, same model).
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub async fn local_llm_reset(session: State<'_, Session>) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::local_llm::reset_conversation(&user_id).await
+}
+
+/// Authenticated RPC: enable or disable thinking mode for subsequent chats.
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub fn local_llm_set_thinking(session: State<'_, Session>, enabled: bool) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::local_llm::set_thinking(&user_id, enabled);
+    Ok(())
+}
+
+/// Authenticated RPC: unload the model and free all resources.
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub async fn local_llm_unload(session: State<'_, Session>) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::local_llm::unload_model(&user_id).await
+}

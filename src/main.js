@@ -40,6 +40,7 @@ function registerStore() {
       chatInput: "",
       chatActive: false,
       stats: "",
+      thinking: false,
     },
   });
 }
@@ -191,6 +192,44 @@ function stopChat() {
   Alpine.store("app").llm.chatActive = false;
 }
 
+async function resetChat() {
+  const llm = Alpine.store("app").llm;
+  if (llm.chatActive) return;
+  try {
+    await call("local_llm_reset");
+    llm.messages = [];
+    llm.stats = "";
+  } catch (err) {
+    console.error("[resetChat]", errText(err));
+  }
+}
+
+async function toggleThinking() {
+  const llm = Alpine.store("app").llm;
+  llm.thinking = !llm.thinking;
+  try {
+    await call("local_llm_set_thinking", { enabled: llm.thinking });
+  } catch (err) {
+    console.error("[toggleThinking]", errText(err));
+    llm.thinking = !llm.thinking;
+  }
+}
+
+async function unloadModel() {
+  const llm = Alpine.store("app").llm;
+  if (llm.chatActive) return;
+  try {
+    await call("local_llm_unload");
+    llm.modelLoaded = false;
+    llm.modelStatus = "";
+    llm.messages = [];
+    llm.stats = "";
+    llm.thinking = false;
+  } catch (err) {
+    console.error("[unloadModel]", errText(err));
+  }
+}
+
 async function addNote() {
   const app = Alpine.store("app");
   app.notesError = "";
@@ -285,5 +324,8 @@ Object.assign(window, {
   loadModel,
   chat,
   stopChat,
+  resetChat,
+  toggleThinking,
+  unloadModel,
   addNote,
 });
