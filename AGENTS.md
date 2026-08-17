@@ -5,7 +5,7 @@ This file is the operational rulebook.
 
 ## What this project is
 
-**Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from `rig-tools/` (per-category crates of generated rig tools — `registry::toolset_for(names)`). UI concept, three-pane: left sidebar = agent list, right sidebar = sessions of the selected agent, center = the active agent's content.
+**Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from `rig-components/` (per-category crates of generated rig tools — `registry::toolset_for(names)`). UI concept, three-pane: left sidebar = agent list, right sidebar = sessions of the selected agent, center = the active agent's content.
 
 Desktop/mobile app (Tauri), with a standalone web server binary.
 **End state: desktop + mobile + web from one core. Current phase: MVP, desktop-first — see "Current phase" below.**
@@ -15,7 +15,7 @@ Desktop/mobile app (Tauri), with a standalone web server binary.
 - **Backend**: Rust. Single core logic, two thin transport wrappers.
 - **Transport**: Tauri `Channel`+`invoke` (desktop/mobile); HTTP `fetch`+SSE (web — backend only, no web frontend).
 - **LLM (on-device)**: LiteRT-LM via `cognee-litert-lm` (path dep, vendored at `cognee-litert-lm/vendor/LiteRT-LM` = upstream `google-ai-edge` main). Behind the `litert` cargo feature. Gemma 4 / Qwen `.litertlm` verified streaming on macOS arm64 CPU.
-- **LLM (remote)**: `rig` — pinned to git rev `4232abdb` (55 commits past 0.41.0), the SAME rev as `rig-libsql` (submodule); one rig-core source across src-tauri + rig-tools + rig-libsql or ToolSet/vector-store types won't unify. Swap to crates.io "0.42"+ everywhere at once when it ships. **Decision (2026-08-16): local Gemma 4 via LiteRT-LM is THE model for now** — no remote tier planned short-term. `rig-tools` toolsets are usable standalone (definitions + dispatch) without a rig provider; when the agent tier (Roadmap 5) arrives it runs on local Gemma 4 with prompt-based tool calling (the LiteRT-LM Conversation API has no native function calling). Remote providers via `rig` become optional configuration later, not a requirement.
+- **LLM (remote)**: `rig` — pinned to git rev `4232abdb` (55 commits past 0.41.0), the SAME rev as `rig-libsql` (submodule); one rig-core source across src-tauri + rig-components + rig-libsql or ToolSet/vector-store types won't unify. Swap to crates.io "0.42"+ everywhere at once when it ships. **Decision (2026-08-16): local Gemma 4 via LiteRT-LM is THE model for now** — no remote tier planned short-term. `rig-components` toolsets are usable standalone (definitions + dispatch) without a rig provider; when the agent tier (Roadmap 5) arrives it runs on local Gemma 4 with prompt-based tool calling (the LiteRT-LM Conversation API has no native function calling). Remote providers via `rig` become optional configuration later, not a requirement.
 - **DB**: self-hosted `libsql-server` (sqld). Backend mints short **EdDSA** tokens that sqld validates; embedded replica (desktop/mobile) or remote client (web backend).
 
 ## Current phase: MVP (desktop-first)
@@ -30,7 +30,7 @@ Short-term focus is a **macOS desktop MVP**. The end state is unchanged — desk
   3. `local_llm_smoke` as a streaming regression gate (small `.litertlm` fixture).
 
 **Deferred — do NOT start without the user asking (tracked in Roadmap):**
-- The agent tier (`rig` wiring + `rig-tools` integration + agent catalog + three-pane UI); mobile LLM bazel builds + mobile UI; web frontend; LoRA; GPU/Metal; sqld namespaces; pooling; production hardening.
+- The agent tier (`rig` wiring + `rig-components` integration + agent catalog + three-pane UI); mobile LLM bazel builds + mobile UI; web frontend; LoRA; GPU/Metal; sqld namespaces; pooling; production hardening.
 - The agent tier, prod auth (deep-link), and keychain session persistence are the *first post-MVP milestones* — required before any public release, not part of MVP.
 
 **Still mandatory during MVP (end-state insurance, all cheap):**
@@ -135,7 +135,7 @@ For mobile, also (during MVP: only when shared code changes — `logic.rs`, `aut
 - **Web request structs need `#[serde(rename_all = "camelCase")]`.** Tauri maps camelCase invoke args → snake_case params automatically; Axum `Json<T>` does NOT — without the rename, camelCase bodies 422 (bit us 2026-08-16 with the chat ops). Every web request struct with a multi-word field carries the rename.
 - **No build step — frontend files are served as-is.** `src/` is the Tauri `frontendDist`. File paths in HTML/JS must be relative and valid for the filesystem (no bundler resolves them).
 - **Logs go to `~/Library/Logs/kawai/app.log`.** `logging.rs` tees process stderr (Rust panics, `eprintln!`, LiteRT C++ absl logs) and `src/lib/log.js` pipes JS errors/rejections/`console.error` via the `frontend_log` command. Deliberately outside `src-tauri/` (watcher) — don't move it inside. A symlink lives at `kawai/app.log`.
-- **One rig-core source for the whole graph.** `src-tauri`, `rig-tools/*`, and the `rig-libsql` submodule all pin git rev `4232abdb` (crates.io 0.41.0 predates the `Vec<Embedding>` `insert_documents` change rig-libsql needs). A crates.io `rig`/`rig-core` dep anywhere alongside the pin = two rig-cores = ToolSet/vector-store type mismatch at the agent-tier seam. When 0.42+ ships, swap ALL of them (incl. the generator template `rig-tools/gen/src/main.rs` in the parent workspace) in one change.
+- **One rig-core source for the whole graph.** `src-tauri`, `rig-components/*`, and the `rig-libsql` submodule all pin git rev `4232abdb` (crates.io 0.41.0 predates the `Vec<Embedding>` `insert_documents` change rig-libsql needs). A crates.io `rig`/`rig-core` dep anywhere alongside the pin = two rig-cores = ToolSet/vector-store type mismatch at the agent-tier seam. When 0.42+ ships, swap ALL of them (incl. the generator template `rig-components/gen/src/main.rs` in the parent workspace) in one change.
 
 ## Where things live
 
@@ -158,7 +158,7 @@ src-tauri/examples/local_llm_smoke.rs   # headless local-LLM smoke test (feature
 src-tauri/Cargo.toml        # axum/tower-http behind "web"; cognee-litert-lm behind "litert"
 cognee-litert-lm/           # Rust bindings for the LiteRT-LM C API (path dep)
 cognee-litert-lm/vendor/LiteRT-LM        # submodule = upstream google-ai-edge main + macOS patches
-rig-tools/                  # per-category rig tool crates (generated; each has registry::toolset_for)
+rig-components/                  # per-category rig tool crates (generated; each has registry::toolset_for)
 models/                     # .litertlm model files (gitignored, GB-scale)
 .env                        # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)
 .env.local                  # VITE_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (gitignored)
@@ -233,7 +233,7 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
 
 ### Post-MVP, pre-release (first milestones after MVP ships)
 
-5. **Agent tier foundation — the product's core.** Agent = persona (system prompt) + curated toolset from `rig-tools/` (`registry::toolset_for(names)`, used standalone — no rig provider needed). Runs on **local Gemma 4** (decision 2026-08-16): prompt-based tool calling — tool definitions embedded in the system prompt, model replies with JSON tool calls, backend loop in `logic.rs` parses → dispatches via ToolSet → feeds results back. Ship a built-in agent catalog (specialist personas per category), the three-pane UI (left: agent list; right: sessions of the selected agent; center: agent content), and session persistence keyed by `agent_id` (schema from MVP 1). Remote models via `rig` stay pluggable-optional, wired only if/when local quality proves insufficient.
+5. **Agent tier foundation — the product's core.** Agent = persona (system prompt) + curated toolset from `rig-components/` (`registry::toolset_for(names)`, used standalone — no rig provider needed). Runs on **local Gemma 4** (decision 2026-08-16): prompt-based tool calling — tool definitions embedded in the system prompt, model replies with JSON tool calls, backend loop in `logic.rs` parses → dispatches via ToolSet → feeds results back. Ship a built-in agent catalog (specialist personas per category), the three-pane UI (left: agent list; right: sessions of the selected agent; center: agent content), and session persistence keyed by `agent_id` (schema from MVP 1). Remote models via `rig` stay pluggable-optional, wired only if/when local quality proves insufficient.
 6. **Production auth = browser + deep link.** Clerk dev-mode is broken in the webview (see Landmines); even prod may need it. Flow: open system browser → Clerk sign-in → redirect `kawai://auth?token=<jwt>` → `set_session`. Needs the tauri deep-link plugin + a Clerk-hosted page (or kawai-web route) to mint the redirect.
 7. **Desktop/mobile session persistence.** `State<Session>` is in-memory; lost on restart (with the dev bypass the frontend re-establishes it automatically — fine for MVP). Persist the token in the OS keychain (`tauri-plugin-stronghold` / keyring) and reload on launch.
 8. **Desktop/mobile DB token broker.** `logic::mint_db_token` reads the Ed25519 private key locally — fine for dev, but the private key MUST NOT ship in a production app. Add a `db_token` op: kawai-web verifies Clerk → mints a short EdDSA token → the device fetches it and feeds `Builder::new_remote_replica`. The private key stays server-side.
