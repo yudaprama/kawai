@@ -131,6 +131,10 @@ jobs:
       - name: Build litert-lm dylib
         run: |
           set -euo pipefail
+          # The bazel-downloaded remote JDK fails to extract llvm-raw on
+          # newer macOS ("write (Illegal byte sequence)") — run bazel on the
+          # image's preinstalled Temurin 17 instead.
+          export JAVA_HOME="$JAVA_HOME_17_arm64"
           cd cognee-litert-lm/vendor/LiteRT-LM
           bazel build //c:litert-lm --config=macos_arm64 --jobs=6
           # Copy + fix install name (dev-recipe from AGENTS.md Landmines).
@@ -233,8 +237,10 @@ jobs:
           set -euo pipefail
           cd cognee-litert-lm/vendor/LiteRT-LM
           bazel build //c:litert-lm --config=linux_x86_64 --jobs=6
-          mkdir -p ../native
-          cp bazel-bin/c/liblitert-lm.so ../native/
+          # ../../native = cognee-litert-lm/native — the dir
+          # LITERT_LM_LIB_DIR/RUSTFLAGS point at.
+          mkdir -p ../../native
+          cp bazel-bin/c/liblitert-lm.so ../../native/
 
       # Office CLI engines → src-tauri/{office-bin,office-runtime}; bundled as
       # Tauri resources via .github/tauri-office.json.
@@ -302,6 +308,18 @@ jobs:
         run: |
           choco install bazelisk --confirm --no-progress
 
+      # Upstream ml-ci-build-win recipe: the runner's TEMP is the 8.3 short
+      # form (C:\Users\RUNNER~1\...); rustc's msvc link inside bazel fails
+      # there (LNK1181 on .rcgu.o). Remap TMP/TEMP to a short plain path and
+      # pass them through to bazel actions.
+      - name: Remap TMP/TEMP for rustc/msvc linking
+        shell: pwsh
+        run: |
+          $newTemp = "C:\_w\_tmp"
+          New-Item -ItemType Directory -Path $newTemp -Force | Out-Null
+          "TMP=$newTemp" >> $env:GITHUB_ENV
+          "TEMP=$newTemp" >> $env:GITHUB_ENV
+
       - name: Build litert-lm shared library
         shell: bash
         # MSYS (Git Bash) rewrites the leading "//" of the bazel target into
@@ -320,9 +338,12 @@ jobs:
         run: |
           set -euo pipefail
           cd cognee-litert-lm/vendor/LiteRT-LM
-          bazel build //c:litert-lm --config=windows --jobs=4
-          mkdir -p ../native
-          cp bazel-bin/c/litert-lm.dll ../native/
+          bazel build //c:litert-lm --config=windows --jobs=4 \
+            --action_env=TMP --action_env=TEMP
+          # ../../native = cognee-litert-lm/native — the dir
+          # LITERT_LM_LIB_DIR points at.
+          mkdir -p ../../native
+          cp bazel-bin/c/litert-lm.dll ../../native/
 
       # Office CLI engines → src-tauri/{office-bin,office-runtime}; bundled as
       # Tauri resources via .github/tauri-office.json. Runs in Git Bash (the
