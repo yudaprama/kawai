@@ -16,8 +16,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-OOXCLI_TAG="${OOXCLI_TAG:-v0.1.3}"
-PDFCLI_TAG="${PDFCLI_TAG:-v0.1.4}"
+OOXCLI_TAG="${OOXCLI_TAG:-v0.1.4}"
+PDFCLI_TAG="${PDFCLI_TAG:-v0.1.5}"
 RUNTIME_TAG="${RUNTIME_TAG:-runtime-v8}"
 
 OS="$(uname -s)"; ARCH="$(uname -m)"
