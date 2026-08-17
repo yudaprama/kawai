@@ -7,3 +7,9 @@
 [submodule "local-llm"]
 	path = local-llm
 	url = https://github.com/yudaprama/local-llm.git
+[submodule "rig-components"]
+	path = rig-components
+	url = https://github.com/yudaprama/rig-components.git
+[submodule "kawai-vault"]
+	path = kawai-vault
+	url = https://github.com/yudaprama/kawai-vault.git
