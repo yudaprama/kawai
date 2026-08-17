@@ -28,6 +28,7 @@ function registerStore() {
     notes: [],
     notesError: "",
     noteInput: "",
+    sessions: [],
     llm: {
       modelPreset: "",
       modelPath: "",
@@ -158,8 +159,9 @@ function scrollChat() {
 async function loadChatHistory() {
   const llm = Alpine.store("app").llm;
   try {
-    const sessions = await call("list_chat_sessions");
-    const latest = sessions[0] || null; // newest first
+    await loadSessions();
+    const app = Alpine.store("app");
+    const latest = app.sessions[0] || null; // newest first
     llm.sessionId = latest ? latest.id : null;
     const messages = latest ? await call("list_chat_messages", { sessionId: latest.id }) : [];
     llm.messages = messages.map((m) => ({ role: m.role, text: m.content }));
@@ -170,12 +172,54 @@ async function loadChatHistory() {
   }
 }
 
+// Load all sessions from the database (newest first).
+async function loadSessions() {
+  const app = Alpine.store("app");
+  try {
+    app.sessions = await call("list_chat_sessions");
+  } catch (err) {
+    app.sessions = [];
+    console.error("[loadSessions]", errText(err));
+  }
+}
+
+// Switch to a different session. Clears the Conversation API history (model
+// context starts fresh) and loads the selected session's messages from sqld.
+async function switchSession(sessionId) {
+  const llm = Alpine.store("app").llm;
+  if (llm.chatActive) return;
+  if (sessionId === llm.sessionId) return;
+
+  // Clear model context — the Conversation API doesn't support multi-session.
+  try {
+    await call("local_llm_reset");
+  } catch (err) {
+    console.error("[switchSession] reset", errText(err));
+  }
+
+  // Load the selected session's messages from sqld.
+  llm.sessionId = sessionId;
+  try {
+    const messages = sessionId
+      ? await call("list_chat_messages", { sessionId })
+      : [];
+    llm.messages = messages.map((m) => ({ role: m.role, text: m.content }));
+  } catch (err) {
+    llm.messages = [];
+    console.error("[switchSession] load messages", errText(err));
+  }
+  llm.stats = "";
+  scrollChat();
+}
+
 // Lazily create the DB session on the first message of a fresh chat.
 async function ensureChatSession(llm) {
   if (llm.sessionId != null) return llm.sessionId;
   try {
     const s = await call("create_chat_session", {});
     llm.sessionId = s.id;
+    // Refresh the session list so the new session appears in the sidebar.
+    await loadSessions();
   } catch (err) {
     console.error("[ensureChatSession]", errText(err));
   }
@@ -315,10 +359,11 @@ async function resetChat() {
   if (llm.chatActive) return;
   try {
     await call("local_llm_reset");
-    // New chat = new DB session; the old one stays in history (future sidebar).
+    // New chat = new DB session; the old one stays in history (sidebar).
     try {
       const s = await call("create_chat_session", {});
       llm.sessionId = s.id;
+      await loadSessions();
     } catch (err) {
       llm.sessionId = null;
       console.error("[resetChat] session", errText(err));
@@ -451,6 +496,7 @@ Object.assign(window, {
   chat,
   stopChat,
   resetChat,
+  switchSession,
   toggleThinking,
   unloadModel,
   pickImage,

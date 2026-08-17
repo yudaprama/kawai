@@ -124,6 +124,21 @@
                 Unload
               </button>
             </div>
+
+            <!-- Session list (sidebar) -->
+            <div x-show="$store.app.sessions.length > 0" class="border rounded-box p-2 bg-base-100">
+              <p class="text-xs opacity-60 mb-1">Sessions</p>
+              <div class="flex flex-col gap-1 max-h-32 overflow-y-auto">
+                <template x-for="s in $store.app.sessions" :key="s.id">
+                  <button class="btn btn-xs text-left truncate"
+                          :class="s.id === $store.app.llm.sessionId ? 'btn-primary' : 'btn-ghost'"
+                          @click="switchSession(s.id)"
+                          :disabled="$store.app.llm.chatActive"
+                          x-text="s.title || ('Session #' + s.id)"></button>
+                </template>
+              </div>
+            </div>
+
             <div id="local-chat-log" class="flex flex-col gap-2 max-h-96 overflow-y-auto bg-base-200 rounded-box p-3">
               <template x-for="(m, i) in $store.app.llm.messages" :key="i">
                 <div :class="m.role === 'user' ? 'chat chat-end' : 'chat chat-start'">
