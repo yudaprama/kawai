@@ -131,21 +131,15 @@ jobs:
       - name: Build litert-lm dylib
         run: |
           set -euo pipefail
-          # The bazel-downloaded remote JDK fails to extract llvm-raw on
-          # newer macOS ("write (Illegal byte sequence)") — run bazel on the
-          # image's preinstalled Temurin 17 instead.
           export JAVA_HOME="$JAVA_HOME_17_arm64"
           cd cognee-litert-lm/vendor/LiteRT-LM
           bazel build //c:litert-lm --config=macos_arm64 --jobs=6
-          # Copy + fix install name (dev-recipe from AGENTS.md Landmines).
-          # NOTE: ../../native = cognee-litert-lm/native — the dir
-          # LITERT_LM_LIB_DIR/RUSTFLAGS below point at. Linking only needs
-          # liblitert-lm.dylib; bundling the siblings into the .app is MVP
-          # roadmap #2.
           mkdir -p ../../native
           cp bazel-bin/c/liblitert-lm.dylib ../../native/
           install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
-          codesign -f -s - ../../native/liblitert-lm.dylib
+          # Prepare the full suite of dylibs for Contents/Frameworks bundling.
+          bash ../../scripts/bundle-litert-dylibs.sh
+
           # Symlink target must resolve from cognee-litert-lm/ (the symlink's
           # own directory), not from the CWD where ln runs.
           ln -sfn vendor/LiteRT-LM/bazel-bin/_solib_darwin_arm64 ../../_solib_darwin_arm64
@@ -162,14 +156,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
         with:
           tagName: v${{ needs.bump.outputs.version }}
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
-          args: --features litert,office --config .github/tauri-office.json
+          args: --features litert,office --config .github/tauri-office.json,.github/tauri-litert.json
 
   build-linux:
     needs: bump
@@ -199,7 +192,7 @@ jobs:
       - name: Install Tauri Linux system deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libfuse2
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -231,6 +224,23 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 1000
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 1000
           clang --version
+
+      - name: Cache linuxdeploy
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/tauri
+          key: linuxdeploy-x86_64
+
+      - name: Download linuxdeploy
+        run: |
+          mkdir -p ~/.cache/tauri
+          [ -f ~/.cache/tauri/linuxdeploy-x86_64.AppImage ] || \
+            wget -qO ~/.cache/tauri/linuxdeploy-x86_64.AppImage \
+              https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x ~/.cache/tauri/linuxdeploy-x86_64.AppImage
+          mkdir -p ~/.local/bin
+          ln -sf ~/.cache/tauri/linuxdeploy-x86_64.AppImage ~/.local/bin/linuxdeploy-x86_64.AppImage
+          echo "LINUXDEPLOY=$(realpath ~/.cache/tauri/linuxdeploy-x86_64.AppImage)" >> "$GITHUB_ENV"
 
       - name: Build litert-lm shared library
         run: |
@@ -338,8 +348,11 @@ jobs:
         run: |
           set -euo pipefail
           cd cognee-litert-lm/vendor/LiteRT-LM
+          # Short output base avoids Windows long-path issues with MSVC linker;
+          # --sandbox_writable_path lets bazel copy outputs to the short path.
           bazel build //c:litert-lm --config=windows --jobs=4 \
-            --action_env=TMP --action_env=TEMP
+            --action_env=TMP --action_env=TEMP \
+            --output_base=C:/_b
           # ../../native = cognee-litert-lm/native — the dir
           # LITERT_LM_LIB_DIR points at.
           mkdir -p ../../native

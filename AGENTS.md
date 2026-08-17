@@ -61,6 +61,10 @@ bun tauri dev
 bun tauri build
 
 # Desktop WITH on-device LLM (needs the Bazel-built dylib; see Landmines):
+# Run bundle-litert-dylibs.sh once after building the dylib (it fills native/
+# with all companions, so the _solib symlink is optional afterwards). Dev
+# still needs the native/ rpath via RUSTFLAGS — the bundle rpath build.rs
+# embeds only exists inside the .app.
 cd src-tauri && env \
   RUSTFLAGS="-C link-arg=-Wl,-rpath,<ABS>/cognee-litert-lm/native" \
   LITERT_LM_LIB_DIR=<ABS>/cognee-litert-lm/native \
@@ -81,6 +85,14 @@ cd src-tauri && env \
 # Build the LiteRT-LM C library (first build ~15-30 min; cached afterwards)
 cd cognee-litert-lm/vendor/LiteRT-LM && bazel build //c:litert-lm --config=macos_arm64 --jobs=6
 # then copy + fix the dylib (see Landmines: rpath recipe)
+
+# Distributable build (bundles LiteRT dylibs into the .app)
+# First build the dylib (see Landmines), then:
+bun run tauri:build:litert-office     # prepare dylibs + office engines + build
+# Or step by step:
+#   bash scripts/bundle-litert-dylibs.sh
+#   bash scripts/fetch-office-bins.sh
+#   bun tauri build -- --features litert,office --config .github/tauri-office.json,.github/tauri-litert.json
 
 # Web standalone server (Axum serves /api/*; no frontend)
 cargo run --bin kawai-web --features web
@@ -128,7 +140,7 @@ For mobile, also (during MVP: only when shared code changes — `logic.rs`, `aut
 - **clerk-js v5 has no constructor.** `window.Clerk` is already an instance; the publishable key goes in the `data-clerk-publishable-key` attribute on the script tag. `new window.Clerk(pk)` throws.
 - **Clerk dev-mode does NOT work in the Tauri webview.** Dev instances need the `dev_browser` third-party cookie; WKWebView (macOS) blocks third-party cookies → `clerk.load()` always rejects. Wrap it in try/catch (see `initClerk` in `main.js`) and fall back to `setSession(<any-token>)`, which only succeeds when the backend runs the dev bypass. Production (`pk_live` + own domain) is expected to work; if not, the deep-link browser flow is the fallback (see Roadmap).
 - **Bazel-built dylibs emit `default.profraw` into the CWD.** If that CWD is `src-tauri/`, the `tauri dev` watcher sees the file change after every run and rebuild-loops the app forever (window opens/closes infinitely). Always set `LLVM_PROFILE_FILE=/dev/null` when running instrumented dylibs from `tauri dev`.
-- **The LiteRT-LM dylib's install name is a bazel-relative path.** `dyld` can't find it from `target/debug/kawai` unless you: (1) copy it out of bazel-bin, (2) `install_name_tool -id @rpath/liblitert-lm.dylib` + re-codesign, (3) embed an rpath in the consuming binary via `RUSTFLAGS="-C link-arg=-Wl,-rpath,<dir>"` (a dependency's `cargo:rustc-link-arg` does NOT propagate to the final binary), and (4) symlink `cognee-litert-lm/_solib_darwin_arm64` → `vendor/LiteRT-LM/bazel-bin/_solib_darwin_arm64` for the sibling dylib deps. `DYLD_LIBRARY_PATH` does NOT survive through the tauri CLI.
+- **The LiteRT-LM dylib's install name is a bazel-relative path.** `dyld` can't find it from `target/debug/kawai` unless you: (1) copy it out of bazel-bin, (2) `install_name_tool -id @rpath/liblitert-lm.dylib` + re-codesign, (3) embed an rpath in the consuming binary via `RUSTFLAGS="-C link-arg=-Wl,-rpath,<dir>"` (a dependency's `cargo:rustc-link-arg` does NOT propagate to the final binary; the app crate's own `build.rs` DOES — it now embeds `@executable_path/../Frameworks` for litert+macOS), and (4) `scripts/bundle-litert-dylibs.sh` copies all companions into `native/`, strips the baked-in `_solib` rpaths, and adds `@loader_path/../Frameworks` so the bundle (`.github/tauri-litert.json` → `Contents/Frameworks/`) and dev both resolve. `DYLD_LIBRARY_PATH` does NOT survive through the tauri CLI.
 - **LiteRT-LM streaming C calls are fire-and-forget async.** `litert_lm_conversation_send_message_stream` returns before generation starts; tokens arrive on an engine thread. Dropping the engine/conversation mid-generation segfaults. The blocking task must block until the final callback (`recv_timeout` on a channel fed from the callback) — see `logic::local_llm::local_chat`.
 - **sentencepiece needs the patched recipe on macOS.** Upstream's v0.2.2 layout fails strict `hdrs_check`; our vendored WORKSPACE carries the fix (strip-to-src + `PATCH.sentencepiece_darts` + absl/protobuf seds + full absl deps in `BUILD.sentencepiece`). If you change the sentencepiece stanza, `bazel sync --only=sentencepiece` does NOT refetch — delete the repo dir under `/private/var/tmp/_bazel_*/external/sentencepiece` + its marker, then rebuild.
 - **Tauri invoke rejects with a bare string, not an `Error`.** Read it via a helper (`errText` in `main.js`) — `err.message` is `undefined` otherwise.
@@ -148,6 +160,8 @@ src/lib/api.js              # RPC: window.__TAURI__.core.invoke
 src/lib/stream.js           # Streaming: Channel + cancel_stream
 src/lib/auth.js             # setSession/logout/whoami wrappers over call()
 src-tauri/src/logic.rs      # PURE logic; rig + libsql + local_llm (litert) + db token minting
+src-tauri/src/logic/office/ # office domain (feature "office"): mod.rs (toolset/capabilities) + cli.rs + store.rs + ooxml.rs + pdf.rs + tools.rs
+src-tauri/src/logic/agent.rs    # prompt-based tool-calling loop (features litert) — personas + agent_chat
 src-tauri/src/logging.rs    # stderr tee + frontend_log sink → ~/Library/Logs/kawai/app.log
 src-tauri/src/auth.rs       # PURE auth; Clerk JWKS verify + EdDSA mint + Session
 src-tauri/src/commands.rs   # #[tauri::command] wrappers + Channel + cancel registry
@@ -156,13 +170,19 @@ src-tauri/src/bin/web.rs    # standalone web server entry
 src-tauri/src/lib.rs        # Tauri builder; .manage(...); generate_handler!
 src-tauri/examples/local_llm_smoke.rs   # headless local-LLM smoke test (features litert)
 src-tauri/Cargo.toml        # axum/tower-http behind "web"; cognee-litert-lm behind "litert"
+src-tauri/build.rs          # tauri_build + embeds @executable_path/../Frameworks rpath (litert+macOS) for the bundled .app
 cognee-litert-lm/           # Rust bindings for the LiteRT-LM C API (path dep)
 cognee-litert-lm/vendor/LiteRT-LM        # submodule = upstream google-ai-edge main + macOS patches
+cognee-litert-lm/native/    # gitignored: prepared LiteRT-LM dylibs (bundle-litert-dylibs.sh fills this)
 rig-components/                  # per-category rig tool crates (generated; each has registry::toolset_for)
 models/                     # .litertlm model files (gitignored, GB-scale)
 .env                        # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)
 .env.local                  # VITE_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (gitignored)
 scripts/dev-sqld.sh         # dev launcher for self-hosted sqld
+scripts/bundle-litert-dylibs.sh    # prep all LiteRT dylibs into native/ for bundling into the .app
+scripts/fetch-office-bins.sh       # fetch ooxcli/pdfcli/office-runtime engines into src-tauri/{office-bin,office-runtime}
+.github/tauri-office.json   # merges office engines as Tauri resources (Contents/Resources)
+.github/tauri-litert.json   # merges LiteRT dylibs into `bundle.macOS.files` (Contents/Frameworks)
 app.log                     # symlink → ~/Library/Logs/kawai/app.log
 ```
 
@@ -227,7 +247,7 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
 ### MVP track (now — desktop, on-device LLM, dev-bypass auth)
 
 1. **Chat history persistence.** ✅ Done 2026-08-16: `sessions(agent_id, user_id, title, …)` + `messages(session_id, role, content, …)` tables in sqld; ops `create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message` (both wrappers). MVP runs a single implicit agent (`builtin.chat`); sessions are created lazily on first message, first user message seeds the title, engine context stays in-memory (restart shows history, model context starts fresh).
-2. **Distributable desktop build.** Bundle the LiteRT dylib (+ `_solib` siblings) into `bun tauri build` — framework-embedding recipe like flutter_gemma's (`flutter_gemma/packages/flutter_gemma/DESKTOP_SUPPORT.md`). The release .app must work without dev-only rpath/env setup (see Landmines: install-name/rpath recipe).
+2. **Distributable desktop build.** ✅ Done 2026-08-17: `scripts/bundle-litert-dylibs.sh` preps all LiteRT dylibs (main C API + 7 companions) into `cognee-litert-lm/native/`; `.github/tauri-litert.json` copies them into `Contents/Frameworks/` via `bundle.macOS.files`; `src-tauri/build.rs` embeds the `@executable_path/../Frameworks` rpath (litert+macOS) so the release .app needs no dev rpath/env. Local: `bun run tauri:build:litert(-office)`. CI builds via `tauri-action --config .github/tauri-office.json,.github/tauri-litert.json`.
 3. **`local_llm_smoke` streaming regression gate.** Small `.litertlm` fixture (e.g. Gemma 3 270M or SmolLM 135M) so token streaming keeps working across changes. (`src-tauri/examples/local_llm_smoke.rs` exists; needs the fixture + a CI hook — natural home is a GitHub Actions macOS runner that builds the dylib + runs the example.)
 4. **(standing) Upstream maintenance.** sentencepiece macOS fix — PR [#3262](https://github.com/google-ai-edge/LiteRT-LM/pull/3262), assume ignored. Submodule stays on our fork branch (`yudaprama/LiteRT-LM@fix/macos-sentencepiece-hdrs-check`); `cognee-litert-lm/tools/update-litert-lm.sh` rebases the fix onto new upstream main. If merged, drop the commit and repoint at `google-ai-edge` main.
 

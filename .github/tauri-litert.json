@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "macOS": {
+      "files": {
+        "../cognee-litert-lm/native/liblitert-lm.dylib": "Frameworks/liblitert-lm.dylib",
+        "../cognee-litert-lm/native/libGemmaModelConstraintProvider.dylib": "Frameworks/libGemmaModelConstraintProvider.dylib",
+        "../cognee-litert-lm/native/libLiteRt.dylib": "Frameworks/libLiteRt.dylib",
+        "../cognee-litert-lm/native/libLiteRtMetalAccelerator.dylib": "Frameworks/libLiteRtMetalAccelerator.dylib",
+        "../cognee-litert-lm/native/libLiteRtTopKMetalSampler.dylib": "Frameworks/libLiteRtTopKMetalSampler.dylib",
+        "../cognee-litert-lm/native/libLiteRtTopKWebGpuSampler.dylib": "Frameworks/libLiteRtTopKWebGpuSampler.dylib",
+        "../cognee-litert-lm/native/libLiteRtWebGpuAccelerator.dylib": "Frameworks/libLiteRtWebGpuAccelerator.dylib",
+        "../cognee-litert-lm/native/libwebgpu_dawn.dylib": "Frameworks/libwebgpu_dawn.dylib"
+      }
+    }
+  }
+}
