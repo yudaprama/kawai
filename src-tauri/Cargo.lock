@@ -4386,7 +4386,6 @@ dependencies = [
  "async-stream",
  "axum 0.8.9",
  "base64 0.22.1",
- "cognee-litert-lm",
  "dotenvy",
  "futures-core",
  "futures-util",
@@ -4394,6 +4393,7 @@ dependencies = [
  "kawai-constants",
  "libc",
  "libsql",
+ "local-llm",
  "reqwest 0.12.28",
  "rig",
  "serde",
@@ -5371,6 +5371,18 @@ name = "litemap"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
+
+[[package]]
+name = "local-llm"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "cognee-litert-lm",
+ "futures-core",
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "lock_api"

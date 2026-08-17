@@ -59,7 +59,7 @@ pub fn generate_activity(input: ActivityInput) -> impl Stream<Item = ActivityEve
 // the wrappers stay stable across the split.
 pub mod db;
 #[cfg(feature = "litert")]
-pub mod local_llm;
+pub use local_llm;
 #[cfg(feature = "office")]
 pub mod office;
 pub mod agent;

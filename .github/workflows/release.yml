@@ -122,11 +122,11 @@ jobs:
           key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-macos26-arm64-
 
-      # Only cognee-litert-lm (+ its nested vendor/LiteRT-LM via --recursive).
-      # rig-libsql/flutter_gemma/litert-lm-rs are NOT needed for the build —
-      # skip them to keep the checkout lean.
-      - name: Init submodules (cognee-litert-lm + nested LiteRT-LM fork)
-        run: git submodule update --init --recursive cognee-litert-lm
+      # local-llm and cognee-litert-lm (+ its nested vendor/LiteRT-LM via
+      # --recursive). rig-libsql/flutter_gemma/litert-lm-rs are NOT needed
+      # for the build — skip them to keep the checkout lean.
+      - name: Init submodules (local-llm + cognee-litert-lm)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm
 
       - name: Build litert-lm dylib
         run: |
@@ -214,8 +214,8 @@ jobs:
           key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux-x86_64-
 
-      - name: Init submodules (cognee-litert-lm + nested LiteRT-LM fork)
-        run: git submodule update --init --recursive cognee-litert-lm
+      - name: Init submodules (local-llm + cognee-litert-lm)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm
 
       # LiteRT-LM's .bazelrc pins CC=clang (action_env); the runner default is
       # clang-14, whose std lib lacks std::source_location in C++20 mode
@@ -299,9 +299,9 @@ jobs:
           key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-windows-x86_64-
 
-      - name: Init submodules (cognee-litert-lm + nested LiteRT-LM fork)
+      - name: Init submodules (local-llm + cognee-litert-lm)
         shell: bash
-        run: git submodule update --init --recursive cognee-litert-lm
+        run: git submodule update --init --recursive local-llm cognee-litert-lm
 
       - name: Install bazelisk
         shell: pwsh
@@ -381,11 +381,11 @@ jobs:
       - name: Git auth for private dependencies
         run: |
           git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
-      # Cargo parses the cognee-litert-lm manifest even without the litert
-      # feature (optional deps still resolve) — the dir must exist. Shallow,
-      # non-recursive: only the crate manifest is needed, not the C sources.
-      - name: Init submodules (cognee-litert-lm, manifest only)
-        run: git submodule update --init --depth 1 cognee-litert-lm
+      # Cargo parses local-llm's and cognee-litert-lm's manifests even
+      # without the litert feature (optional deps still resolve) — the dirs
+      # must exist. Shallow, non-recursive: only crate manifests, not C sources.
+      - name: Init submodules (local-llm + cognee-litert-lm, manifest only)
+        run: git submodule update --init --depth 1 local-llm cognee-litert-lm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

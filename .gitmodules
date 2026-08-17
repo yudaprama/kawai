@@ -4,3 +4,6 @@
 [submodule "rig-libsql"]
 	path = rig-libsql
 	url = https://github.com/yudaprama/rig-libsql.git
+[submodule "local-llm"]
+	path = local-llm
+	url = https://github.com/yudaprama/local-llm.git
