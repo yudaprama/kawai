@@ -1,159 +1,213 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dim">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kawai</title>
+    <title>kawai</title>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pinecone-router@7.6.0/dist/router.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js"
             data-clerk-publishable-key="pk_test_ZXhhY3QtdGVycmVwaW4tNTAuY2xlcmsuYWNjb3VudHMuZGV2JA"
             defer></script>
-    <!-- main.js MUST load before Alpine: it registers the Alpine store on
-         alpine:init, which fires while Alpine executes. Module + defer
-         scripts run in document order. -->
     <script type="module" src="main.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+      body { font-family: ui-sans-serif, -apple-system, system-ui, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+      .mono, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .fade-down { background: linear-gradient(to bottom, transparent, var(--color-base-100)); }
+      .canvas-tab { height: 100%; display: inline-flex; align-items: center; margin-bottom: -1px; cursor: pointer;
+        border-bottom: 2px solid transparent; transition: border-color 150ms ease, color 150ms ease; }
+      .canvas-tab.tab-on { border-bottom-color: var(--color-primary); }
+      #agents-pane, #sessions-pane { transition: width 150ms ease; overflow: hidden; }
+      #agents-pane.agents-rail { width: 64px; }
+      #sessions-pane.sessions-collapsed { width: 0; border-left-width: 0; }
+      #agents-pane.agents-rail .wordmark,
+      #agents-pane.agents-rail .agents-label,
+      #agents-pane.agents-rail .agent-name,
+      #agents-pane.agents-rail .agent-meta,
+      #agents-pane.agents-rail .add-label,
+      #agents-pane.agents-rail .user-name { display: none; }
+      #agents-pane.agents-rail .pane-head { flex-direction: column; height: auto; gap: 8px; padding: 10px 0; }
+      #agents-pane.agents-rail #agents-toggle { margin-left: 0; }
+      #agents-pane.agents-rail .agent-card { flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 8px 0; }
+      #agents-pane.agents-rail .add-agent-btn { justify-content: center; }
+      #agents-pane.agents-rail .user-chip { flex-direction: column; gap: 6px; padding-left: 0; padding-right: 0; }
+      #agents-pane.agents-rail .user-logout { margin-left: 0; }
+      .agent-card { position: relative; }
+      .agent-card .active-bar { position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 1px; background: var(--color-primary); opacity: 0; transition: opacity 150ms ease; }
+      .agent-card.is-active .active-bar { opacity: 1; }
+      .session-item { cursor: pointer; }
+      .session-item.is-active { background: var(--color-base-300); color: var(--color-base-content); }
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+    </style>
   </head>
-  <body>
-    <main class="max-w-2xl mx-auto p-6 space-y-6" x-data>
-      <h1 class="text-3xl font-bold">Kawai</h1>
+  <body class="h-screen overflow-hidden flex bg-base-100 text-base-content" x-data x-init="$router.navigate('/office')">
 
-      <!-- Auth -->
-      <section class="card bg-base-100 shadow-sm">
-        <div class="card-body">
-          <h2 class="card-title">Auth (Clerk)</h2>
-          <div x-show="!$store.app.userId" class="flex gap-2">
-            <button class="btn btn-primary" @click="openSignIn()">Sign in</button>
-            <button class="btn btn-ghost" @click="openSignUp()">Sign up</button>
-          </div>
-          <p x-show="$store.app.clerkError" class="text-error text-sm" x-text="$store.app.clerkError"></p>
-          <div x-show="$store.app.userId" class="flex items-center gap-2">
-            <span>backend user: <b class="font-mono" x-text="$store.app.userId"></b></span>
-            <button class="btn btn-ghost btn-sm" @click="signOut()">Sign out</button>
-          </div>
+    <!-- icon sprite (Lucide, stroke=currentColor) -->
+    <svg class="hidden" aria-hidden="true">
+      <symbol id="i-briefcase" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></symbol>
+      <symbol id="i-line-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></symbol>
+      <symbol id="i-book-open" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
+      <symbol id="i-cloud-sun" viewBox="0 0 24 24"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+      <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+      <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></symbol>
+      <symbol id="i-square" viewBox="0 0 24 24"><rect width="14" height="14" x="5" y="5" rx="2"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+      <symbol id="i-rotate-ccw" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+      <symbol id="i-log-out" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+      <symbol id="i-external-link" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+      <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+      <symbol id="i-panel-left-close" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></symbol>
+      <symbol id="i-panel-left-open" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/></symbol>
+      <symbol id="i-panel-right-close" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/><path d="m8 9-3 3 3 3"/></symbol>
+      <symbol id="i-panel-right-open" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/><path d="m10 9-3 3 3 3"/></symbol>
+    </svg>
+
+    <!-- ══════════ PANE 1: AGENTS ══════════ -->
+    <aside id="agents-pane" class="w-[210px] shrink-0 bg-base-200 border-r border-base-300 flex flex-col">
+      <div class="pane-head h-12 shrink-0 flex items-center gap-2 px-3">
+        <div class="flex items-center gap-2">
+          <span class="w-3 h-3 rounded-full" style="background:#e2625b"></span>
+          <span class="w-3 h-3 rounded-full" style="background:#dca54a"></span>
+          <span class="w-3 h-3 rounded-full" style="background:#3fae62"></span>
         </div>
-      </section>
+        <span class="wordmark mono text-xs text-base-content/40 ml-1">kawai</span>
+        <button id="agents-toggle" class="ml-auto btn btn-ghost btn-xs btn-circle w-7 h-7 min-h-0 text-base-content/50" title="Toggle agents rail" aria-label="Toggle agents rail">
+          <svg id="agents-close-ic" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-panel-left-close"/></svg>
+          <svg id="agents-open-ic" class="hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-panel-left-open"/></svg>
+        </button>
+      </div>
 
-      <!-- RPC -->
-      <section class="card bg-base-100 shadow-sm">
-        <div class="card-body">
-          <h2 class="card-title">RPC (request-response)</h2>
-          <form @submit.prevent="greet" class="flex gap-2">
-            <input x-model="$store.app.greetInput" placeholder="Enter a name..." class="input input-bordered flex-1" />
-            <button type="submit" class="btn btn-primary">Greet</button>
-          </form>
-          <p id="greet-msg" x-text="$store.app.greetMsg" :class="$store.app.greetError ? 'text-error' : ''" class="text-sm"></p>
+      <div class="agents-label text-[11px] uppercase tracking-wider text-base-content/35 px-3 pt-2 pb-1.5">Agents</div>
+
+      <nav class="px-2 flex flex-col gap-1">
+        <template x-for="agent in $store.app.agents" :key="agent.id">
+          <button @click="$router.navigate('/' + agent.id)"
+                  class="agent-card w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-150"
+                  :class="$router.context.params.agentId === agent.id ? 'is-active bg-base-300 text-base-content' : 'hover:bg-base-300/50 text-base-content/80'"
+                  :title="agent.name + ' · ' + agent.subtitle">
+            <span class="active-bar"></span>
+            <span class="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center"
+                  :class="$router.context.params.agentId === agent.id ? 'bg-base-200/60 text-base-content/70' : 'bg-base-300 text-base-content/70'">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use :href="'#' + agent.icon"/></svg>
+            </span>
+            <span class="min-w-0 flex flex-col">
+              <span class="agent-name text-sm font-medium leading-tight" x-text="agent.name"></span>
+              <span class="agent-meta text-xs leading-tight truncate" :class="$router.context.params.agentId === agent.id ? 'text-base-content/50' : 'text-base-content/40'" x-text="agent.subtitle"></span>
+            </span>
+          </button>
+        </template>
+      </nav>
+
+      <div class="user-chip mt-auto border-t border-base-300/60 p-3 flex items-center gap-2.5">
+        <span class="w-7 h-7 shrink-0 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-semibold"
+              x-text="$store.app.userId ? $store.app.userId.charAt(0).toUpperCase() : 'D'"></span>
+        <span class="user-name mono text-xs text-base-content/70" x-text="$store.app.userId || 'demo'"></span>
+        <button class="user-logout ml-auto btn btn-ghost btn-xs btn-circle w-7 h-7 min-h-0 text-base-content/50" aria-label="Log out" @click="signOut()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-log-out"/></svg>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ══════════ PANE 2: WORKSPACE ══════════ -->
+    <main id="workspace" class="flex-1 flex flex-col min-w-0 bg-base-100">
+      <header class="h-12 shrink-0 border-b border-base-300/60 flex items-center gap-2.5 px-4">
+        <span class="text-sm font-medium truncate"
+              x-text="$router.context.params.sessionId
+                ? ($store.app.sessions.find(s => String(s.id) === $router.context.params.sessionId)?.title || $router.context.params.sessionId)
+                : ($router.context.params.agentId
+                  ? ($store.app.agents.find(a => a.id === $router.context.params.agentId)?.name || '') + ' agent'
+                  : 'kawai')"
+        ></span>
+        <span class="badge badge-ghost badge-xs text-success" x-show="$store.app.llm.modelLoaded">on-device</span>
+        <div class="ml-auto flex items-center gap-2">
+          <button class="btn btn-ghost btn-xs btn-circle text-base-content/50" title="Toggle sessions pane" aria-label="Toggle sessions pane" @click="toggleSessions()">
+            <svg id="sessions-close-ic" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-panel-right-close"/></svg>
+            <svg id="sessions-open-ic" class="hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-panel-right-open"/></svg>
+          </button>
         </div>
-      </section>
+      </header>
+      <div id="workspace-content" class="flex-1 flex min-h-0"></div>
+    </main>
 
-      <!-- Streaming -->
-      <section class="card bg-base-100 shadow-sm">
-        <div class="card-body">
-          <h2 class="card-title">Streaming</h2>
-          <div class="flex gap-2">
-            <button class="btn btn-primary" @click="startStream" x-show="!$store.app.stream.active">Start stream</button>
-            <button class="btn btn-ghost" @click="stopStream" x-show="$store.app.stream.active">Stop</button>
-          </div>
-          <progress class="progress progress-primary w-full" :max="$store.app.stream.total" :value="$store.app.stream.done"
-                    x-show="$store.app.stream.active"></progress>
-          <ul class="list-none p-0 m-0 font-mono text-xs">
-            <template x-for="(item, i) in $store.app.stream.log" :key="i">
-              <li class="py-0.5" x-text="item"></li>
-            </template>
-          </ul>
+    <!-- ══════════ ROUTE TEMPLATES ══════════ -->
+
+    <!-- WELCOME: / -->
+    <template x-route="/" x-template.target.workspace-content>
+      <div class="flex-1 min-h-0 flex flex-col items-center justify-center gap-4">
+        <div class="w-16 h-16 rounded-2xl bg-base-200 flex items-center justify-center">
+          <span class="mono text-2xl font-bold" style="background:linear-gradient(135deg,#e2625b,#dca54a,#3fae62);-webkit-background-clip:text;-webkit-text-fill-color:transparent">k</span>
         </div>
-      </section>
-
-      <!-- Local LLM -->
-      <section class="card bg-base-100 shadow-sm">
-        <div class="card-body">
-          <h2 class="card-title">Local LLM (on-device, LiteRT-LM)</h2>
-
-          <div class="flex flex-wrap gap-2 items-center">
-            <select x-model="$store.app.llm.modelPreset" class="select select-bordered flex-1 min-w-52"
-                    :disabled="$store.app.llm.chatActive || $store.app.llm.loading">
-              <option value="">— pilih model —</option>
-              <option value="/Users/yuda/ai-orchestration/kawai/models/gemma-4-E2B-it.litertlm">Gemma 4 E2B · CPU</option>
-              <option value="/Users/yuda/ai-orchestration/kawai/models/gemma-4-E2B-it-gpu.litertlm">Gemma 4 E2B · GPU (artisan)</option>
-              <option value="/Users/yuda/ai-orchestration/kawai/models/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm">Qwen2.5 1.5B q8 · CPU</option>
-              <option value="custom">Custom path…</option>
-            </select>
-            <select x-model="$store.app.llm.backend" class="select select-bordered w-28"
-                    :disabled="$store.app.llm.chatActive || $store.app.llm.loading">
-              <option value="cpu">CPU</option>
-              <option value="gpu">GPU</option>
-            </select>
-            <label class="label cursor-pointer gap-1" title="Speculative decoding (Multi-Token Prediction)">
-              <input type="checkbox" x-model="$store.app.llm.specDec" class="checkbox checkbox-xs"
-                     :disabled="$store.app.llm.chatActive || $store.app.llm.loading" />
-              <span class="label-text text-xs">Spec</span>
-            </label>
-            <button class="btn btn-primary" @click="loadModel()"
-                    :disabled="$store.app.llm.loading || !$store.app.llm.modelPreset || ($store.app.llm.modelPreset === 'custom' && !$store.app.llm.modelPath.trim())">
-              <span x-show="$store.app.llm.loading" class="loading loading-spinner loading-xs"></span>
-              Load
+        <h2 class="text-lg font-semibold mt-1">Welcome to kawai</h2>
+        <p class="text-sm text-base-content/50 -mt-1">Pick an agent from the sidebar to get started</p>
+        <div class="flex items-center gap-3 mt-4">
+          <template x-for="agent in $store.app.agents" :key="agent.id">
+            <button @click="$router.navigate('/' + agent.id)" class="btn btn-outline btn-sm gap-2">
+              <span x-text="agent.name"></span>
             </button>
+          </template>
+        </div>
+      </div>
+    </template>
+
+    <!-- AGENT OVERVIEW: /:agentId -->
+    <template x-route="/:agentId" x-template.target.workspace-content>
+      <div class="flex-1 min-h-0 flex flex-col items-center justify-center gap-3">
+        <template x-if="$router.context.params.agentId !== 'builtin.chat'">
+          <div x-data="{ agent: $store.app.agents.find(a => a.id === $router.context.params.agentId) }" class="flex flex-col items-center gap-3">
+            <div class="w-12 h-12 rounded-xl bg-primary/20 text-primary flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use :href="'#' + (agent?.icon || 'i-briefcase')"/></svg>
+            </div>
+            <h2 class="text-lg font-semibold mt-1" x-text="agent?.name + ' agent'"></h2>
+            <p class="text-sm text-base-content/50 -mt-1" x-text="agent?.description"></p>
+            <div class="flex items-center gap-2 mt-3">
+              <template x-for="prompt in (agent?.prompts || [])" :key="prompt">
+                <button class="btn btn-outline btn-sm" x-text="prompt"></button>
+              </template>
+            </div>
           </div>
+        </template>
+        <!-- builtin.chat or unknown: redirect to first real agent -->
+        <template x-if="!$store.app.agents.find(a => a.id === $router.context.params.agentId)">
+          <div class="flex flex-col items-center gap-3">
+            <p class="text-sm text-base-content/50">Unknown agent</p>
+            <button class="btn btn-outline btn-sm" @click="$router.navigate('/office')">Go to Office</button>
+          </div>
+        </template>
+      </div>
+    </template>
 
-          <input x-show="$store.app.llm.modelPreset === 'custom'" x-model="$store.app.llm.modelPath"
-                 placeholder="/absolute/path/to/model.litertlm"
-                 class="input input-bordered w-full font-mono text-xs" />
+    <!-- SESSION VIEW: /:agentId/:sessionId -->
+    <template x-route="/:agentId/:sessionId" x-template.target.workspace-content
+              x-effect="const sid = $router.context.params?.sessionId; if (sid && String(sid) !== String($store.app.llm.sessionId)) switchSession(sid);">
+      <div class="flex-1 flex min-h-0">
 
-          <p x-text="$store.app.llm.modelStatus"
-             :class="$store.app.llm.modelError ? 'text-error' : ($store.app.llm.modelLoaded ? 'text-success' : '')"
-             class="text-sm"></p>
-
-          <div x-show="$store.app.llm.modelLoaded" class="space-y-3">
-            <div class="flex gap-2 flex-wrap">
-              <button class="btn btn-xs btn-ghost" @click="resetChat()"
-                      :disabled="$store.app.llm.chatActive"
-                      title="Reset conversation history">
-                Reset Chat
-              </button>
-              <button class="btn btn-xs"
-                      :class="$store.app.llm.thinking ? 'btn-warning' : 'btn-ghost'"
-                      @click="toggleThinking()"
-                      :disabled="$store.app.llm.chatActive"
-                      title="Toggle thinking/reasoning mode">
-                Thinking: <span x-text="$store.app.llm.thinking ? 'ON' : 'OFF'"></span>
-              </button>
-              <button class="btn btn-xs btn-error btn-outline" @click="unloadModel()"
-                      :disabled="$store.app.llm.chatActive"
-                      title="Unload model and free memory">
-                Unload
-              </button>
-            </div>
-
-            <!-- Session list (sidebar) -->
-            <div x-show="$store.app.sessions.length > 0" class="border rounded-box p-2 bg-base-100">
-              <p class="text-xs opacity-60 mb-1">Sessions</p>
-              <div class="flex flex-col gap-1 max-h-32 overflow-y-auto">
-                <template x-for="s in $store.app.sessions" :key="s.id">
-                  <button class="btn btn-xs text-left truncate"
-                          :class="s.id === $store.app.llm.sessionId ? 'btn-primary' : 'btn-ghost'"
-                          @click="switchSession(s.id)"
-                          :disabled="$store.app.llm.chatActive"
-                          x-text="s.title || ('Session #' + s.id)"></button>
-                </template>
-              </div>
-            </div>
-
-            <div id="local-chat-log" class="flex flex-col gap-2 max-h-96 overflow-y-auto bg-base-200 rounded-box p-3">
+        <!-- conversation -->
+        <section class="w-full min-w-0 flex flex-col" :class="$store.app.llm.modelLoaded ? 'md:w-[55%]' : ''">
+          <div class="flex-1 overflow-y-auto px-6 py-8">
+            <div class="max-w-xl mx-auto w-full flex flex-col gap-7" id="local-chat-log">
               <template x-for="(m, i) in $store.app.llm.messages" :key="i">
                 <div :class="m.role === 'user' ? 'chat chat-end' : 'chat chat-start'" class="flex flex-col gap-1.5">
                   <template x-if="m.role !== 'user' && m.toolCalls && m.toolCalls.length > 0">
                     <div class="flex flex-col gap-1">
                       <template x-for="(tc, j) in m.toolCalls" :key="j">
                         <div class="rounded-lg border border-base-300/60 bg-base-200/60 px-3 py-2 flex items-center gap-2">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-base-content/50"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-base-content/50"><use href="#i-search"/></svg>
                           <span class="font-mono text-xs flex-1 truncate" x-text="tc.tool + '(' + JSON.stringify(tc.args).slice(1, -1) + ')'"></span>
                           <template x-if="tc.ok === null">
                             <span class="loading loading-spinner loading-xs text-primary shrink-0"></span>
                           </template>
                           <template x-if="tc.ok === true">
                             <span class="inline-flex items-center gap-1 text-xs text-success shrink-0">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>done
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-check"/></svg>done
                             </span>
                           </template>
                           <template x-if="tc.ok === false">
@@ -164,65 +218,179 @@
                     </div>
                   </template>
                   <template x-if="m.text">
-                    <div class="chat-bubble whitespace-pre-wrap"
+                    <div class="chat-bubble whitespace-pre-wrap text-sm"
                          :class="m.role === 'user' ? 'chat-bubble-primary' : (m.role === 'error' ? 'chat-bubble-error' : '')"
                          x-text="m.text"></div>
                   </template>
                 </div>
               </template>
-              <div x-show="$store.app.llm.chatActive" class="text-xs opacity-50 self-start px-2">● generating…</div>
+              <div x-show="$store.app.llm.chatActive" class="flex items-center gap-1 opacity-40">
+                <button class="btn btn-ghost btn-xs btn-circle w-7 h-7 min-h-0" aria-label="Copy" @click="copyLastMessage()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-copy"/></svg>
+                </button>
+                <button class="btn btn-ghost btn-xs btn-circle w-7 h-7 min-h-0" aria-label="Retry">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-rotate-ccw"/></svg>
+                </button>
+              </div>
             </div>
-
-            <input type="file" id="image-input" accept="image/*" class="hidden" onchange="onImageSelected(event)" />
-
-            <div x-show="$store.app.llm.pendingImage" class="flex items-center gap-2 text-xs bg-base-200 rounded-box px-3 py-2">
-              <span class="opacity-60">📷</span>
-              <span x-text="$store.app.llm.pendingImageName" class="truncate flex-1"></span>
-              <button type="button" class="btn btn-xs btn-ghost" @click="clearImage()">✕</button>
-            </div>
-
-            <div x-show="$store.app.llm.pendingAudio" class="flex items-center gap-2 text-xs bg-base-200 rounded-box px-3 py-2">
-              <span class="opacity-60">🎤</span>
-              <span x-text="$store.app.llm.pendingAudioName" class="truncate flex-1"></span>
-              <button type="button" class="btn btn-xs btn-ghost" @click="clearAudio()">✕</button>
-            </div>
-
-            <form @submit.prevent="chat" class="flex gap-2">
-              <input x-model="$store.app.llm.chatInput" placeholder="Tanya model lokal… (multi-turn, riwayat di engine)"
-                     class="input input-bordered flex-1" :disabled="$store.app.llm.chatActive" />
-              <button type="button" class="btn btn-ghost btn-sm" @click="pickImage()" :disabled="$store.app.llm.chatActive"
-                      title="Attach image">📷</button>
-              <button type="button"
-                      :class="$store.app.llm.recording ? 'btn-error animate-pulse' : 'btn-ghost'"
-                      class="btn btn-sm" @click="toggleRecord()" :disabled="$store.app.llm.chatActive"
-                      title="Record audio">🎤</button>
-              <button type="submit" class="btn btn-primary" x-show="!$store.app.llm.chatActive">Kirim</button>
-              <button type="button" class="btn btn-ghost" @click="stopChat" x-show="$store.app.llm.chatActive">Stop</button>
-            </form>
-            <p class="text-xs opacity-60 font-mono" x-text="$store.app.llm.stats"></p>
           </div>
-        </div>
-      </section>
 
-      <!-- Notes -->
-      <section class="card bg-base-100 shadow-sm">
-        <div class="card-body">
-          <h2 class="card-title">Notes (per-user, sqld)</h2>
-          <div x-show="$store.app.userId" class="space-y-4">
-            <form @submit.prevent="addNote" class="flex gap-2">
-              <input x-model="$store.app.noteInput" placeholder="Write a note..." class="input input-bordered flex-1" />
-              <button type="submit" class="btn btn-primary">Add</button>
-            </form>
-            <p id="notes-error" x-text="$store.app.notesError" x-show="$store.app.notesError" class="text-error text-sm"></p>
-            <ul class="list-none p-0 m-0 font-mono text-sm">
-              <template x-for="(note, i) in $store.app.notes" :key="i">
-                <li class="py-1"><span class="opacity-50" x-text="'#' + note.id"></span> <span x-text="note.body"></span></li>
+          <!-- composer -->
+          <div class="relative shrink-0">
+            <div class="fade-down absolute -top-7 left-0 right-0 h-7 pointer-events-none"></div>
+            <div class="mx-4 mb-4 rounded-2xl border border-base-300 bg-base-200 shadow-xl flex items-center gap-1 px-2 py-1.5">
+              <button class="btn btn-ghost btn-sm btn-circle text-base-content/50" aria-label="Attach" @click="pickImage()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-paperclip"/></svg>
+              </button>
+              <button class="btn btn-ghost btn-sm btn-circle text-base-content/50" aria-label="Dictate" @click="toggleRecord()"
+                      :class="$store.app.llm.recording ? 'text-error animate-pulse' : ''">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-mic"/></svg>
+              </button>
+              <input x-model="$store.app.llm.chatInput" @keydown.enter.prevent="chat()"
+                     :placeholder="'Message ' + ($store.app.agents.find(a => a.id === $router.context.params.agentId)?.name || 'kawai') + '...'"
+                     class="flex-1 px-1 text-sm bg-transparent outline-none" :disabled="$store.app.llm.chatActive" />
+              <button class="btn btn-error btn-sm gap-1.5" x-show="$store.app.llm.chatActive" @click="stopChat()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-square"/></svg>Stop
+              </button>
+              <button class="btn btn-primary btn-sm" x-show="!$store.app.llm.chatActive" @click="chat()"
+                      :disabled="!$store.app.llm.chatInput.trim()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- model controls (below composer, shown when model loaded) -->
+          <div x-show="$store.app.llm.modelLoaded" class="px-4 pb-3 flex items-center gap-2 flex-wrap">
+            <button class="btn btn-xs btn-ghost" @click="resetChat()" :disabled="$store.app.llm.chatActive" title="Reset conversation">Reset</button>
+            <button class="btn btn-xs" :class="$store.app.llm.thinking ? 'btn-warning' : 'btn-ghost'" @click="toggleThinking()" :disabled="$store.app.llm.chatActive">
+              Thinking: <span x-text="$store.app.llm.thinking ? 'ON' : 'OFF'"></span>
+            </button>
+            <button class="btn btn-xs btn-error btn-outline" @click="unloadModel()" :disabled="$store.app.llm.chatActive">Unload</button>
+            <span class="mono text-xs text-base-content/40 ml-auto" x-text="$store.app.llm.stats"></span>
+          </div>
+        </section>
+
+        <!-- model selector (shown when no model loaded) -->
+        <div x-show="!$store.app.llm.modelLoaded" class="w-full flex flex-col items-center justify-center gap-4 p-6">
+          <div class="w-12 h-12 rounded-xl bg-base-200 flex items-center justify-center">
+            <span class="mono text-lg font-bold text-base-content/30">?</span>
+          </div>
+          <p class="text-sm text-base-content/50">Load a model to start chatting</p>
+          <div class="flex flex-wrap gap-2 items-center justify-center max-w-lg">
+            <select x-model="$store.app.llm.modelPreset" class="select select-bordered flex-1 min-w-52"
+                    :disabled="$store.app.llm.loading">
+              <option value="">Select model...</option>
+              <option value="/Users/yuda/ai-orchestration/kawai/models/gemma-4-E2B-it.litertlm">Gemma 4 E2B · CPU</option>
+              <option value="/Users/yuda/ai-orchestration/kawai/models/gemma-4-E2B-it-gpu.litertlm">Gemma 4 E2B · GPU</option>
+              <option value="/Users/yuda/ai-orchestration/kawai/models/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm">Qwen2.5 1.5B q8 · CPU</option>
+              <option value="custom">Custom path...</option>
+            </select>
+            <select x-model="$store.app.llm.backend" class="select select-bordered w-28" :disabled="$store.app.llm.loading">
+              <option value="cpu">CPU</option>
+              <option value="gpu">GPU</option>
+            </select>
+            <label class="label cursor-pointer gap-1">
+              <input type="checkbox" x-model="$store.app.llm.specDec" class="checkbox checkbox-xs" :disabled="$store.app.llm.loading" />
+              <span class="label-text text-xs">Spec</span>
+            </label>
+            <button class="btn btn-primary" @click="loadModel()"
+                    :disabled="$store.app.llm.loading || !$store.app.llm.modelPreset || ($store.app.llm.modelPreset === 'custom' && !$store.app.llm.modelPath.trim())">
+              <span x-show="$store.app.llm.loading" class="loading loading-spinner loading-xs"></span>
+              Load
+            </button>
+          </div>
+          <input x-show="$store.app.llm.modelPreset === 'custom'" x-model="$store.app.llm.modelPath"
+                 placeholder="/absolute/path/to/model.litertlm"
+                 class="input input-bordered w-full max-w-lg font-mono text-xs" />
+          <p x-text="$store.app.llm.modelStatus"
+             :class="$store.app.llm.modelError ? 'text-error' : ''"
+             class="text-sm"></p>
+        </div>
+      </div>
+    </template>
+
+    <!-- ══════════ PANE 3: SESSIONS ══════════ -->
+    <aside id="sessions-pane" class="w-[240px] shrink-0 bg-base-200 border-l border-base-300 flex flex-col">
+      <div class="h-12 shrink-0 px-3 flex items-center justify-between border-b border-base-300/60">
+        <span class="text-[11px] uppercase tracking-wider text-base-content/35">Sessions</span>
+        <button @click="$store.app.createSession()" class="btn btn-primary btn-xs gap-1">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-plus"/></svg>
+          New
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto px-2 py-3 flex flex-col gap-4">
+        <template x-for="group in $store.app.sessionGroups" :key="group.label">
+          <div>
+            <div class="mono text-[11px] uppercase tracking-wider text-base-content/35 px-2.5 pb-1.5" x-text="group.label"></div>
+            <div class="flex flex-col gap-0.5">
+              <template x-for="session in group.sessions" :key="session.id">
+                <div @click="$router.navigate('/' + session.agentId + '/' + session.id)"
+                     class="session-item group flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors duration-150"
+                     :class="String($router.context.params.sessionId) === String(session.id) ? 'is-active' : 'hover:bg-base-300/50 text-base-content/70'">
+                  <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="String($router.context.params.sessionId) === String(session.id) ? 'bg-primary' : ''"></span>
+                  <span class="text-sm truncate" x-text="session.title || ('Session #' + session.id)"></span>
+                  <button class="btn btn-ghost btn-xs btn-circle w-6 h-6 min-h-0 text-base-content/50 opacity-0 group-hover:opacity-100 transition-opacity duration-150" aria-label="Delete session" @click.stop>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-trash"/></svg>
+                  </button>
+                </div>
               </template>
-            </ul>
+            </div>
           </div>
-          <p x-show="!$store.app.userId" class="text-sm opacity-60">Sign in to use notes.</p>
-        </div>
-      </section>
-    </main>
+        </template>
+      </div>
+    </aside>
+
+    <!-- sessions reopen (visible when pane collapsed) -->
+    <button id="sessions-reopen" class="hidden fixed right-0 top-1/2 -translate-y-1/2 z-50 w-7 h-14 rounded-l-lg border border-base-300 border-r-0 bg-base-200 text-base-content/60 hover:text-base-content flex items-center justify-center transition-colors duration-150" title="Show sessions" aria-label="Show sessions pane" @click="toggleSessions()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-panel-right-open"/></svg>
+    </button>
+
+    <input type="file" id="image-input" accept="image/*" class="hidden" />
+
+    <script>
+      // Pinecone Router: hash-based routing
+      window.PineconeRouter.settings({ hash: true });
+
+      // Agent pane toggle
+      (function () {
+        var agentsPane = document.getElementById('agents-pane');
+        var sessionsPane = document.getElementById('sessions-pane');
+        var sessionsReopen = document.getElementById('sessions-reopen');
+        var agentsCloseIc = document.getElementById('agents-close-ic');
+        var agentsOpenIc = document.getElementById('agents-open-ic');
+        var sessionsCloseIc = document.getElementById('sessions-close-ic');
+        var sessionsOpenIc = document.getElementById('sessions-open-ic');
+
+        function setAgentsRail(on) {
+          agentsPane.classList.toggle('agents-rail', on);
+          agentsCloseIc.classList.toggle('hidden', on);
+          agentsOpenIc.classList.toggle('hidden', !on);
+        }
+        function setSessionsCollapsed(collapsed) {
+          sessionsPane.classList.toggle('sessions-collapsed', collapsed);
+          sessionsCloseIc.classList.toggle('hidden', collapsed);
+          sessionsOpenIc.classList.toggle('hidden', !collapsed);
+          sessionsReopen.classList.toggle('hidden', !collapsed);
+        }
+
+        document.getElementById('agents-toggle').addEventListener('click', function () {
+          setAgentsRail(!agentsPane.classList.contains('agents-rail'));
+        });
+
+        // Expose toggleSessions globally for Alpine
+        window.toggleSessions = function () {
+          setSessionsCollapsed(!sessionsPane.classList.contains('sessions-collapsed'));
+        };
+
+        sessionsReopen.addEventListener('click', function () { setSessionsCollapsed(false); });
+
+        document.addEventListener('keydown', function (e) {
+          if (!(e.metaKey || e.ctrlKey)) return;
+          if (e.key === '1') { e.preventDefault(); setAgentsRail(!agentsPane.classList.contains('agents-rail')); }
+          else if (e.key === '3') { e.preventDefault(); setSessionsCollapsed(!sessionsPane.classList.contains('sessions-collapsed')); }
+        });
+      })();
+    </script>
   </body>
 </html>

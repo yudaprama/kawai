@@ -29,6 +29,29 @@ function registerStore() {
     notesError: "",
     noteInput: "",
     sessions: [],
+    agents: [
+      { id: "office", name: "Office", icon: "i-briefcase", subtitle: "docs \u00b7 pdf \u00b7 sheets", description: "Documents, PDFs, spreadsheets \u2014 created and edited locally", prompts: ["Summarize this PDF", "Create a weekly report", "Merge these invoices"] },
+      { id: "finance", name: "Finance", icon: "i-line-chart", subtitle: "markets & budgets", description: "Markets, budgets, and financial analysis", prompts: ["Analyze my portfolio", "Create a budget", "Compare Q3 vs Q2"] },
+      { id: "knowledge", name: "Knowledge", icon: "i-book-open", subtitle: "notes & recall", description: "Notes, research, and knowledge recall", prompts: ["Search my notes", "Create a research brief", "Summarize this article"] },
+      { id: "weather", name: "Weather", icon: "i-cloud-sun", subtitle: "forecasts & alerts", description: "Forecasts, alerts, and weather insights", prompts: ["Weekend forecast", "Rain alert for commute", "Best travel days"] },
+    ],
+    get sessionGroups() {
+      const ctx = window.PineconeRouter?.context;
+      const agentId = ctx?.params?.agentId;
+      const filtered = agentId ? this.sessions.filter(s => s.agentId === agentId) : this.sessions;
+      const groups = {};
+      filtered.forEach(s => {
+        const period = s.createdAt ? sessionPeriod(s.createdAt) : "Earlier";
+        if (!groups[period]) groups[period] = [];
+        groups[period].push(s);
+      });
+      return ["Today", "Yesterday", "Earlier"].filter(k => groups[k]).map(k => ({ label: k, sessions: groups[k] }));
+    },
+    createSession() {
+      const ctx = window.PineconeRouter?.context;
+      const agentId = ctx?.params?.agentId || "office";
+      createSessionForAgent(agentId);
+    },
     llm: {
       modelPreset: "",
       modelPath: "",
@@ -120,6 +143,28 @@ function errText(err) {
   try { return JSON.stringify(err); } catch { return String(err); }
 }
 
+function sessionPeriod(createdAt) {
+  const now = new Date();
+  const d = new Date(createdAt * 1000);
+  const diffMs = now - d;
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return "Earlier";
+}
+
+async function createSessionForAgent(agentId) {
+  const llm = Alpine.store("app").llm;
+  if (llm.chatActive) return;
+  try {
+    const s = await call("create_chat_session", { agentId });
+    await loadSessions();
+    window.PineconeRouter.navigate("/" + agentId + "/" + s.id);
+  } catch (err) {
+    console.error("[createSessionForAgent]", errText(err));
+  }
+}
+
 async function loadModel() {
   const llm = Alpine.store("app").llm;
   const path = llm.modelPreset === "custom" ? llm.modelPath.trim() : llm.modelPreset;
@@ -172,10 +217,19 @@ async function loadChatHistory() {
   try {
     await loadSessions();
     const app = Alpine.store("app");
-    const latest = app.sessions[0] || null; // newest first
-    llm.sessionId = latest ? latest.id : null;
-    const messages = latest ? await call("list_chat_messages", { sessionId: latest.id }) : [];
-    llm.messages = messages.map((m) => ({ role: m.role, text: m.content }));
+    const ctx = window.PineconeRouter?.context;
+    // If we're on a session route, load that session; otherwise load the latest.
+    const routeSessionId = ctx?.params?.sessionId;
+    let target = null;
+    if (routeSessionId) {
+      target = app.sessions.find(s => String(s.id) === routeSessionId) || null;
+    }
+    if (!target) {
+      target = app.sessions[0] || null;
+    }
+    llm.sessionId = target ? target.id : null;
+    const messages = target ? await call("list_chat_messages", { sessionId: target.id }) : [];
+    llm.messages = messages.map((m) => ({ role: m.role, text: m.content, toolCalls: [] }));
     scrollChat();
   } catch (err) {
     llm.sessionId = null;
@@ -214,13 +268,22 @@ async function switchSession(sessionId) {
     const messages = sessionId
       ? await call("list_chat_messages", { sessionId })
       : [];
-    llm.messages = messages.map((m) => ({ role: m.role, text: m.content }));
+    llm.messages = messages.map((m) => ({ role: m.role, text: m.content, toolCalls: [] }));
   } catch (err) {
     llm.messages = [];
     console.error("[switchSession] load messages", errText(err));
   }
   llm.stats = "";
   scrollChat();
+}
+
+// Navigate to a session route and load its messages.
+async function navigateToSession(sessionId) {
+  const app = Alpine.store("app");
+  const session = app.sessions.find(s => String(s.id) === String(sessionId));
+  if (!session) return;
+  await switchSession(sessionId);
+  window.PineconeRouter.navigate("/" + session.agentId + "/" + session.id);
 }
 
 // Lazily create the DB session on the first message of a fresh chat.
@@ -452,6 +515,12 @@ async function refreshNotes() {
   }
 }
 
+function copyLastMessage() {
+  const llm = Alpine.store("app").llm;
+  const last = llm.messages.filter(m => m.role === "assistant" && m.text).pop();
+  if (last) navigator.clipboard?.writeText(last.text);
+}
+
 // ---- Clerk auth ----
 // clerk-js v5 browser build: `window.Clerk` is already an instance (not a
 // constructor); the publishable key comes from the
@@ -527,6 +596,7 @@ Object.assign(window, {
   stopChat,
   resetChat,
   switchSession,
+  navigateToSession,
   toggleThinking,
   unloadModel,
   pickImage,
@@ -535,4 +605,5 @@ Object.assign(window, {
   toggleRecord,
   clearAudio,
   addNote,
+  copyLastMessage,
 });
