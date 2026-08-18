@@ -39,7 +39,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { useCopyButton } from "@/hooks/use-copy-button";
 import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useLocalChat } from "@/hooks/use-local-chat";
-import { call, errText, type KnowledgeContext } from "@/lib/api";
+import { platform } from "@/platform";
+import { call, errText, type KnowledgeContext, type OfficeFileInfo } from "@/lib/api";
 import type { SourceDocumentUIPart, UIMessage } from "@/lib/ai-types";
 import {
   BookOpenIcon,
@@ -167,23 +168,65 @@ function dataUrlB64(url: string): string | null {
   return url.slice(i + 1);
 }
 
+/** Reads a File as a base64 string (chunked to survive large files). */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.onload = () => {
+      const result = reader.result;
+      if (!(result instanceof ArrayBuffer)) {
+        reject(new Error("Unexpected file read result"));
+        return;
+      }
+      const bytes = new Uint8Array(result);
+      let binary = "";
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      resolve(btoa(binary));
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/** Human-readable byte size ("1.2 MB", "840 B"). */
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "—";
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = n;
+  let i = -1;
+  do {
+    v /= 1024;
+    i += 1;
+  } while (v >= 1024 && i < units.length - 1);
+  return `${v.toFixed(v >= 10 ? 0 : 1)} ${units[i]}`;
+}
+
 /** The composer with attachments + knowledge @-mention. */
+type KnowledgeFiles = ReturnType<typeof useKnowledgeFiles>;
+
 function ChatComposer({
   agentName,
   status,
   onStop,
   onSubmit,
+  knowledge,
 }: {
   agentName: string;
   status: ReturnType<typeof useLocalChat>["status"];
   onStop: () => void;
   onSubmit: (text: string, imageB64?: string, knowledgeContext?: string) => void;
+  knowledge: KnowledgeFiles;
 }) {
   return (
     <PromptInputProvider>
       <ChatComposerSources>
         <ChatComposerInner
           agentName={agentName}
+          knowledge={knowledge}
           onStop={onStop}
           status={status}
           onSubmit={onSubmit}
@@ -228,18 +271,20 @@ function ChatComposerInner({
   status,
   onStop,
   onSubmit,
+  knowledge,
 }: {
   agentName: string;
   status: ReturnType<typeof useLocalChat>["status"];
   onStop: () => void;
   onSubmit: (text: string, imageB64?: string, knowledgeContext?: string) => void;
+  knowledge: KnowledgeFiles;
 }) {
   const attachments = usePromptInputAttachments();
   const sources = usePromptInputReferencedSources();
   const controller = usePromptInputController();
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
-  const { files, loaded, unavailable, refresh } = useKnowledgeFiles(mentionOpen);
+  const { files, loaded, unavailable, refresh } = knowledge;
 
   const text = controller.textInput.value ?? "";
 
@@ -420,6 +465,33 @@ export default function App() {
   const { status } = chat;
   const busy = status === "submitted" || status === "streaming";
   const inSession = chat.sessionId != null || chat.messages.length > 0;
+
+  const knowledge = useKnowledgeFiles(true);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  /** Imports picked office documents into the knowledge store. */
+  const addKnowledgeFiles = useCallback(async () => {
+    const picked = await platform.pickFiles({
+      accept: [".docx", ".xlsx", ".pptx", ".pdf"],
+      multiple: true,
+    });
+    if (!picked?.length) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      for (const file of picked) {
+        const dataBase64 = await fileToBase64(file);
+        await call<OfficeFileInfo>("office_import_file", { dataBase64, name: file.name });
+      }
+      await knowledge.refresh();
+    } catch (err) {
+      console.warn("[office_import_file]", errText(err));
+      setImportError(errText(err));
+    } finally {
+      setImporting(false);
+    }
+  }, [knowledge.refresh]);
 
   // Switching agent clears the model context + active session.
   useEffect(() => {
@@ -611,6 +683,7 @@ export default function App() {
             <div className="shrink-0 px-4 pb-4">
               <ChatComposer
                 agentName={agent.name}
+                knowledge={knowledge}
                 onStop={chat.stop}
                 status={status}
                 onSubmit={(text, imageB64, knowledgeContext) =>
@@ -623,35 +696,97 @@ export default function App() {
           {/* canvas */}
           {canvasOpen && (
             <section className="hidden min-w-0 flex-1 flex-col border-l md:flex">
-              <div className="flex h-10 shrink-0 items-center gap-4 border-b px-3">
-                {(["artifact", "files"] as const).map((tab) => (
-                  <button
-                    className={`-mb-px border-b-2 pb-2.5 text-sm font-medium transition-colors ${
-                      canvasTab === tab
-                        ? "border-primary text-foreground"
-                        : "text-muted-foreground border-transparent"
-                    }`}
-                    key={tab}
-                    onClick={() => setCanvasTab(tab)}
+              <div className="flex h-10 shrink-0 items-center justify-between gap-4 border-b px-3">
+                <div className="flex items-center gap-4">
+                  {(["artifact", "files"] as const).map((tab) => (
+                    <button
+                      className={`-mb-px border-b-2 pb-2.5 text-sm font-medium transition-colors ${
+                        canvasTab === tab
+                          ? "border-primary text-foreground"
+                          : "text-muted-foreground border-transparent"
+                      }`}
+                      key={tab}
+                      onClick={() => setCanvasTab(tab)}
+                    >
+                      {tab === "artifact" ? "Artifact" : "Files"}
+                    </button>
+                  ))}
+                </div>
+                {canvasTab === "files" && (
+                  <Button
+                    disabled={importing}
+                    onClick={() => void addKnowledgeFiles()}
+                    size="xs"
+                    title="Import office documents (.docx .xlsx .pptx .pdf)"
+                    variant="ghost"
                   >
-                    {tab === "artifact" ? "Artifact" : "Files"}
-                  </button>
-                ))}
+                    {importing ? <Spinner className="size-3" /> : <PlusIcon className="size-3" />}
+                    Add files
+                  </Button>
+                )}
               </div>
-              <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+              <div className="min-h-0 flex-1">
                 {canvasTab === "artifact" ? (
-                  <>
+                  <div className="flex h-full flex-col items-center justify-center p-6 text-center">
                     <WrenchIcon className="text-muted-foreground/40 mb-3 size-5" />
                     <p className="text-muted-foreground text-sm">Artifacts will appear here</p>
                     <p className="text-muted-foreground/70 mt-1 text-xs">
                       Generated docs, summaries, and exports
                     </p>
-                  </>
+                  </div>
                 ) : (
-                  <>
-                    <p className="text-muted-foreground text-sm">No files in this session</p>
-                    <p className="text-muted-foreground/70 mt-1 text-xs">Attach files to get started</p>
-                  </>
+                  <div className="flex h-full flex-col overflow-y-auto">
+                    {importError && (
+                      <div className="text-destructive border-destructive/40 bg-destructive/10 mx-3 mt-3 rounded-md border px-3 py-2 text-xs">
+                        {importError}
+                      </div>
+                    )}
+                    <div className="flex-1 p-3 pt-5">
+                      {knowledge.unavailable ? (
+                        <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+                          <FileTextIcon className="text-muted-foreground/40 mb-3 size-5" />
+                          <p className="text-muted-foreground text-sm">Knowledge store unavailable</p>
+                          <p className="text-muted-foreground/70 mt-1 text-xs">
+                            The office feature isn&apos;t enabled in this build
+                          </p>
+                        </div>
+                      ) : !knowledge.loaded ? (
+                        <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
+                          <Spinner className="size-4" />
+                          Loading files…
+                        </div>
+                      ) : knowledge.files.length === 0 ? (
+                        <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+                          <FileTextIcon className="text-muted-foreground/40 mb-3 size-5" />
+                          <p className="text-muted-foreground text-sm">No documents yet</p>
+                          <p className="text-muted-foreground/70 mt-1 text-xs">
+                            Import .docx / .xlsx / .pptx / .pdf to reference them in chat
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1.5">
+                          {knowledge.files.map((file) => (
+                            <div
+                              className="bg-card flex items-center gap-2.5 rounded-lg border px-2.5 py-2"
+                              key={file.id}
+                            >
+                              <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm">{file.originalName}</p>
+                                <p className="text-muted-foreground mt-0.5 text-xs">
+                                  {formatBytes(file.bytes)} ·{" "}
+                                  {new Date(file.createdAt * 1000).toLocaleDateString()}
+                                </p>
+                              </div>
+                              <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] tracking-wider uppercase">
+                                {file.ext}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             </section>
