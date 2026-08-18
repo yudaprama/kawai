@@ -103,5 +103,7 @@ pub use local_llm;
 pub mod agent;
 #[cfg(feature = "office")]
 pub mod office;
+#[cfg(feature = "office")]
+pub mod rag;
 
 pub use db::*;

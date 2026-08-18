@@ -72,6 +72,9 @@ pub fn run() {
         commands::knowledge_context,
         commands::office_export_file,
         commands::office_capabilities,
+        commands::office_index_file,
+        commands::knowledge_search,
+        commands::knowledge_forget,
         commands::agent_chat,
         commands::frontend_log
     ]);
@@ -121,6 +124,9 @@ pub fn run() {
         commands::office_read_document,
         commands::office_export_file,
         commands::office_capabilities,
+        commands::office_index_file,
+        commands::knowledge_search,
+        commands::knowledge_forget,
         commands::frontend_log
     ]);
 

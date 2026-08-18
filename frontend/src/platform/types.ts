@@ -1,10 +1,12 @@
 /**
  * Slim platform contract for the kawai frontend. The vendored ai-elements
  * components call these capabilities; kawai ships a single adapter backed by
- * the standard Web APIs (the Tauri desktop webview is a full browser engine).
+ * the standard Web APIs (the Tauri desktop webview is a full browser engine),
+ * so the same adapter serves the future web target too — only the transport
+ * (`invoke`+`Channel` vs `fetch`+SSE) differs, which lives outside Platform.
  */
 
-export type PlatformTarget = 'desktop' | 'mobile'
+export type PlatformTarget = 'desktop' | 'mobile' | 'web'
 
 export interface PickFilesOptions {
   multiple?: boolean

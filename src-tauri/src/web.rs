@@ -364,6 +364,61 @@ async fn knowledge_context_handler(
 }
 
 #[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeSearchRequest {
+    file_ids: Vec<String>,
+    query: String,
+}
+
+#[cfg(feature = "office")]
+async fn knowledge_search_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<KnowledgeSearchRequest>,
+) -> Result<Json<Vec<logic::rag::RagHit>>, (StatusCode, String)> {
+    logic::rag::knowledge_search(claims.sub, req.file_ids, req.query)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeForgetRequest {
+    file_ids: Vec<String>,
+}
+
+#[cfg(feature = "office")]
+async fn knowledge_forget_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<KnowledgeForgetRequest>,
+) -> Result<Json<usize>, (StatusCode, String)> {
+    logic::rag::forget_file(claims.sub, req.file_ids)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficeIndexFileRequest {
+    file_id: String,
+}
+
+#[cfg(feature = "office")]
+async fn office_index_file_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<OfficeIndexFileRequest>,
+) -> Result<Json<usize>, (StatusCode, String)> {
+    logic::rag::office_index_file(claims.sub, req.file_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "office")]
 async fn office_list_files_handler(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<logic::office::OfficeFile>>, (StatusCode, String)> {
@@ -557,6 +612,9 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
             post(office_read_document_handler),
         )
         .route("/api/knowledge_context", post(knowledge_context_handler))
+        .route("/api/office_index_file", post(office_index_file_handler))
+        .route("/api/knowledge_search", post(knowledge_search_handler))
+        .route("/api/knowledge_forget", post(knowledge_forget_handler))
         .route("/api/office_export_file", post(office_export_file_handler))
         .route(
             "/api/office_capabilities",

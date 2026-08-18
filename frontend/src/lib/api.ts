@@ -52,3 +52,10 @@ export interface KnowledgeContext {
   context: string;
   files: OfficeFileInfo[];
 }
+
+/** A retrieved RAG chunk with provenance, returned by `knowledge_search`. */
+export interface RagHit {
+  source: string;
+  locator: string;
+  content: string;
+}

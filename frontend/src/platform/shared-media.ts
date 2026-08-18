@@ -21,9 +21,18 @@
 // Capability detection
 // ---------------------------------------------------------------------------
 
-import type { PickFilesOptions } from './types'
+import type { PickFilesOptions, PlatformTarget } from './types'
 
 export type DictationMode = 'speech-recognition' | 'media-recorder' | 'none'
+
+/** Detect the active platform from the runtime environment. */
+export function detectPlatformTarget(): PlatformTarget {
+  if (typeof window === 'undefined') return 'web'
+  const isTauri = '__TAURI_INTERNALS__' in window
+  if (!isTauri) return 'web'
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+  return /Android|iPhone|iPod|iPad|Mobile/i.test(ua) ? 'mobile' : 'desktop'
+}
 
 export function detectDictationMode(): DictationMode {
   if (typeof window === 'undefined') return 'none'

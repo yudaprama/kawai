@@ -1,7 +1,9 @@
 /**
  * kawai platform adapter — the desktop webview (WKWebView) is a full browser
  * engine, so every capability is implemented with the standard Web APIs from
- * `shared-media`. No `@tauri-apps/*` plugins are needed here.
+ * `shared-media`. The same adapter serves the future web target (identical
+ * browser APIs); `target` is detected from the runtime. Only native-dialog
+ * paths (Tauri desktop) differ, gated by `runningInTauri`.
  */
 
 import { open } from "@tauri-apps/plugin-dialog";
@@ -11,6 +13,7 @@ import {
   capturePhotoViaUserMedia,
   captureScreenshotViaDisplayMedia,
   detectDictationMode,
+  detectPlatformTarget,
   hasClipboardRead,
   hasGetDisplayMedia,
   hasGetUserMedia,
@@ -54,9 +57,7 @@ async function pickFilePathsViaDialog(options?: PickFilesOptions): Promise<strin
 }
 
 export const platform: Platform = {
-  // kawai is desktop-only for now (macOS MVP); mobile arrives with the Tauri
-  // mobile shells.
-  target: 'desktop',
+  target: detectPlatformTarget(),
   canDictate: detectDictationMode() !== 'none',
   canCapturePhoto: hasGetUserMedia(),
   canCaptureScreenshot: hasGetDisplayMedia(),

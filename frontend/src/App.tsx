@@ -41,7 +41,7 @@ import { useCopyButton } from "@/hooks/use-copy-button";
 import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useLocalChat } from "@/hooks/use-local-chat";
 import { platform, runningInTauri } from "@/platform";
-import { call, errText, type KnowledgeContext, type OfficeFileInfo } from "@/lib/api";
+import { call, errText, type KnowledgeContext, type OfficeFileInfo, type RagHit } from "@/lib/api";
 import type { SourceDocumentUIPart, UIMessage } from "@/lib/ai-types";
 import {
   BookOpenIcon,
@@ -387,11 +387,28 @@ function ChatComposerInner({
       let context: string | undefined;
       const sourceIds = sources.sources.map((s) => s.sourceId);
       if (sourceIds.length > 0) {
+        // Prefer instant vector retrieval over the slow full-text path.
         try {
-          const kc = await call<KnowledgeContext>("knowledge_context", { fileIds: sourceIds });
-          context = kc.context || undefined;
+          const hits = await call<RagHit[]>("knowledge_search", {
+            fileIds: sourceIds,
+            query: message.text,
+          });
+          if (hits.length) {
+            context = hits
+              .map((h) => `【${h.source}】\n${h.content}`)
+              .join("\n\n---\n\n");
+          }
         } catch (err) {
-          console.error("[knowledge_context]", errText(err));
+          console.warn("[knowledge_search]", errText(err));
+        }
+        // Fallback to lazy extraction when nothing is indexed yet.
+        if (!context) {
+          try {
+            const kc = await call<KnowledgeContext>("knowledge_context", { fileIds: sourceIds });
+            context = kc.context || undefined;
+          } catch (err) {
+            console.error("[knowledge_context]", errText(err));
+          }
         }
       }
 
@@ -433,7 +450,14 @@ function ChatComposerInner({
                 <button
                   aria-label={`Remove ${source.title}`}
                   className="hover:text-foreground shrink-0"
-                  onClick={() => sources.remove(source.id)}
+                  onClick={() => {
+                    sources.remove(source.id);
+                    // Drop the idle-indexed chunks for this file; they are
+                    // cheaply rebuilt during idle time if mentioned again.
+                    void call<number>("knowledge_forget", {
+                      fileIds: [source.sourceId],
+                    }).catch((e) => console.warn("[knowledge_forget]", errText(e)));
+                  }}
                   type="button"
                 >
                   <XIcon className="size-3" />
@@ -565,11 +589,19 @@ export default function App() {
         }
       }
       for (const item of toImportOffice) {
+        let imported: OfficeFileInfo | undefined;
         if (item.sourcePath) {
-          await call<OfficeFileInfo>("office_import_file", { sourcePath: item.sourcePath });
+          imported = await call<OfficeFileInfo>("office_import_file", { sourcePath: item.sourcePath });
         } else if (item.file) {
           const dataBase64 = await fileToBase64(item.file);
-          await call<OfficeFileInfo>("office_import_file", { dataBase64, name: item.name });
+          imported = await call<OfficeFileInfo>("office_import_file", { dataBase64, name: item.name });
+        }
+        // Fire-and-forget idle-time RAG indexing: runs while the user is still
+        // in the composer, so the knowledge search at submit time is instant.
+        if (imported?.id) {
+          void call<number>("office_index_file", { fileId: imported.id }).catch((e) =>
+            console.warn("[office_index_file]", errText(e)),
+          );
         }
       }
       if (toPending.length) setPending((prev) => [...prev, ...toPending]);

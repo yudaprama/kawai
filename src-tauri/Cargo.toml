@@ -56,6 +56,21 @@ kawai-constants = { git = "https://github.com/yudaprama/kawai-vault", subdir = "
 # "office" so non-office builds stay dep-free.
 base64 = { version = "0.22", optional = true }
 tauri-plugin-dialog = "2"
+# RAG pipeline for office knowledge files (gated behind "office"):
+#   kawai-embedding — embed (local fastembed ONNX fallback, no API key)
+#   rig-libsql     — vector store (insert_documents / search)
+# Both pinned to the same rig-core rev as the rest of the graph (4232abdb)
+# so the vector-store seam unifies with kawai-embedding's EmbeddingModel.
+# Chunking is done in-tree (logic::rag) reusing the office extractors
+# (ooxcli/pdfcli) — the separate `ragloader` crate currently does not compile
+# against current text_splitter/jigsawstack, so we avoid the extra dependency.
+kawai-embedding = { path = "../kawai-embedding", optional = true }
+rig-libsql = { path = "../rig-libsql", optional = true }
+# rig-core is a direct dep (not just transitive) because logic::rag uses its
+# `Embed` derive + `EmbeddingsBuilder`/`InsertDocuments` traits directly. Pinned
+# to the SAME rev as every other rig consumer in the graph (4232abdb) so the
+# vector-store seam unifies with kawai-embedding's `EmbeddingModel`.
+rig-core = { git = "https://github.com/0xPlaygrounds/rig", rev = "4232abdb85a3ef2c48ccf3fa5c2cb8636588db94", optional = true }
 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]
@@ -66,8 +81,9 @@ default = []
 web = ["dep:axum", "dep:tower-http"]
 litert = ["dep:local-llm", "local-llm/rig-tools"]
 # Office document tools (logic::office): external CLI engines (ooxcli/pdfcli/
-# docbuilder) resolved at runtime — no new heavy deps, base64 for imports.
-office = ["dep:base64"]
+# docbuilder) resolved at runtime — plus the RAG pipeline (kawai-embedding →
+# rig-libsql, with in-tree chunking) for idle-time knowledge indexing.
+office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core"]
 
 [[bin]]
 name = "kawai"
