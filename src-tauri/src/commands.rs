@@ -377,6 +377,20 @@ pub async fn office_read_document(
     Ok(logic::office::ReadDocumentResult { markdown })
 }
 
+/// Authenticated RPC: extract stored documents into a prompt-injectable
+/// context block (composer @-mention knowledge).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub async fn knowledge_context(
+    file_ids: Vec<String>,
+    session: State<'_, Session>,
+) -> Result<logic::office::KnowledgeContext, String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::knowledge_context(&user_id, &file_ids)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: export a stored file to the filesystem.
 #[cfg(feature = "office")]
 #[tauri::command]

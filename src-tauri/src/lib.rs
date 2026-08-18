@@ -68,6 +68,7 @@ pub fn run() {
             commands::office_import_file,
             commands::office_list_files,
             commands::office_read_document,
+            commands::knowledge_context,
             commands::office_export_file,
             commands::office_capabilities,
             commands::agent_chat,

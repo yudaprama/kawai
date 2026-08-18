@@ -39,3 +39,16 @@ export interface LocalModelInfo {
   modelPath: string;
   backend: string;
 }
+
+export interface OfficeFileInfo {
+  id: string;
+  originalName: string;
+  ext: string;
+  bytes: number;
+  createdAt: number;
+}
+
+export interface KnowledgeContext {
+  context: string;
+  files: OfficeFileInfo[];
+}

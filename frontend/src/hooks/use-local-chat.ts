@@ -246,14 +246,23 @@ export function useLocalChat(agentId: string) {
   }, [patch]);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, imageB64?: string, knowledgeContext?: string) => {
       const prompt = text.trim();
-      if (!prompt || streamCtrl.current) return;
+      if ((!prompt && !imageB64) || streamCtrl.current) return;
 
+      const userParts: UIMessagePart[] = [];
+      if (prompt) userParts.push({ type: "text", text: prompt, state: "done" });
+      if (imageB64) {
+        userParts.push({
+          type: "file",
+          mediaType: "image/png",
+          url: `data:image/png;base64,${imageB64}`,
+        });
+      }
       const userMessage: UIMessage = {
         id: nanoid(),
         role: "user",
-        parts: [{ type: "text", text: prompt, state: "done" }],
+        parts: userParts,
       };
       const assistantId = nanoid();
       const assistantMessage: UIMessage = {
@@ -294,7 +303,10 @@ export function useLocalChat(agentId: string) {
 
       streamCtrl.current = streamOperation<LocalChatEvent>(
         "local_chat",
-        { prompt },
+        {
+          prompt: knowledgeContext ? `${knowledgeContext}\n\n${prompt}` : prompt,
+          image: imageB64 ?? null,
+        },
         {
           onEvent: (ev) => {
             if (ev.type === "token") {

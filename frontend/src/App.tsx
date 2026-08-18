@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { nanoid } from "nanoid";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -6,28 +7,52 @@ import {
 } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import {
+  Attachment,
+  AttachmentPreview,
+  AttachmentRemove,
+  Attachments,
+} from "@/components/ai-elements/attachments";
+import {
   PromptInput,
+  PromptInputActionAddAttachments,
+  PromptInputActionAddScreenshot,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuItem,
+  PromptInputActionMenuTrigger,
   PromptInputBody,
   PromptInputFooter,
+  PromptInputHeader,
+  LocalReferencedSourcesContext,
+  PromptInputProvider,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
+  usePromptInputAttachments,
+  usePromptInputController,
+  usePromptInputReferencedSources,
+  type ReferencedSourcesContext,
 } from "@/components/ai-elements/prompt-input";
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useCopyButton } from "@/hooks/use-copy-button";
+import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useLocalChat } from "@/hooks/use-local-chat";
-import type { UIMessage } from "@/lib/ai-types";
+import { call, errText, type KnowledgeContext } from "@/lib/api";
+import type { SourceDocumentUIPart, UIMessage } from "@/lib/ai-types";
 import {
   BookOpenIcon,
   BriefcaseIcon,
   CheckIcon,
   CloudSunIcon,
   CopyIcon,
+  FileTextIcon,
   LineChartIcon,
   PlusIcon,
+  Plus,
   WrenchIcon,
+  XIcon,
 } from "lucide-react";
 import {
   PanelLeftCloseIcon,
@@ -135,6 +160,254 @@ function MessagePartView({ message }: { message: UIMessage }) {
   );
 }
 
+/** Extracts the raw base64 payload (no data: prefix) from a data URL. */
+function dataUrlB64(url: string): string | null {
+  const i = url.indexOf(",");
+  if (!url.startsWith("data:") || i === -1) return null;
+  return url.slice(i + 1);
+}
+
+/** The composer with attachments + knowledge @-mention. */
+function ChatComposer({
+  agentName,
+  status,
+  onStop,
+  onSubmit,
+}: {
+  agentName: string;
+  status: ReturnType<typeof useLocalChat>["status"];
+  onStop: () => void;
+  onSubmit: (text: string, imageB64?: string, knowledgeContext?: string) => void;
+}) {
+  return (
+    <PromptInputProvider>
+      <ChatComposerSources>
+        <ChatComposerInner
+          agentName={agentName}
+          onStop={onStop}
+          status={status}
+          onSubmit={onSubmit}
+        />
+      </ChatComposerSources>
+    </PromptInputProvider>
+  );
+}
+
+/** Provides the referenced-sources context that ChatComposerInner reads. */
+function ChatComposerSources({ children }: { children: React.ReactNode }) {
+  const [sources, setSources] = useState<(SourceDocumentUIPart & { id: string })[]>([]);
+
+  const refsCtx = useMemo<ReferencedSourcesContext>(
+    () => ({
+      sources,
+      add: (incoming) => {
+        const arr = Array.isArray(incoming) ? incoming : [incoming];
+        setSources((prev) => [
+          ...prev,
+          ...arr.map((s) => ({ ...s, id: nanoid() })),
+        ]);
+      },
+      remove: (id) => setSources((prev) => prev.filter((s) => s.id !== id)),
+      clear: () => setSources([]),
+    }),
+    [sources],
+  );
+
+  return (
+    <LocalReferencedSourcesContext.Provider value={refsCtx}>
+      {children}
+    </LocalReferencedSourcesContext.Provider>
+  );
+}
+
+/** Matches a trailing @query token ("see @invoic" → "invoic"). */
+const TRAILING_MENTION = /(^|\s)@([\p{L}\p{N}._-]*)$/u;
+
+function ChatComposerInner({
+  agentName,
+  status,
+  onStop,
+  onSubmit,
+}: {
+  agentName: string;
+  status: ReturnType<typeof useLocalChat>["status"];
+  onStop: () => void;
+  onSubmit: (text: string, imageB64?: string, knowledgeContext?: string) => void;
+}) {
+  const attachments = usePromptInputAttachments();
+  const sources = usePromptInputReferencedSources();
+  const controller = usePromptInputController();
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const { files, loaded, unavailable, refresh } = useKnowledgeFiles(mentionOpen);
+
+  const text = controller.textInput.value ?? "";
+
+  const filtered = useMemo(() => {
+    const q = mentionQuery.toLowerCase();
+    return files
+      .filter((f) => f.originalName.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [files, mentionQuery]);
+
+  const handleTextareaChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.currentTarget.value;
+      const m = TRAILING_MENTION.exec(value);
+      if (m) {
+        setMentionOpen(true);
+        setMentionQuery(m[2]);
+      } else {
+        setMentionOpen(false);
+      }
+    },
+    [],
+  );
+
+  const selectMention = useCallback(
+    (file: { id: string; originalName: string }) => {
+      sources.add({
+        type: "source-document",
+        sourceId: file.id,
+        title: file.originalName,
+        mediaType: "text/markdown",
+      });
+      // Strip the trailing @token from the draft.
+      controller.textInput.setInput(text.replace(TRAILING_MENTION, "$1"));
+      setMentionOpen(false);
+    },
+    [sources, controller, text],
+  );
+
+  const handleSubmit = useCallback(
+    async (message: { text: string; files: { url: string; mediaType: string }[] }) => {
+      const image = message.files.find((f) => f.mediaType.startsWith("image/"));
+      const imageB64 =
+        image && image.url.startsWith("data:") ? (dataUrlB64(image.url) ?? undefined) : undefined;
+
+      let context: string | undefined;
+      const sourceIds = sources.sources.map((s) => s.sourceId);
+      if (sourceIds.length > 0) {
+        try {
+          const kc = await call<KnowledgeContext>("knowledge_context", { fileIds: sourceIds });
+          context = kc.context || undefined;
+        } catch (err) {
+          console.error("[knowledge_context]", errText(err));
+        }
+      }
+
+      if (message.text.trim() || imageB64 || context) onSubmit(message.text, imageB64, context);
+      sources.clear();
+    },
+    [sources, onSubmit],
+  );
+
+  return (
+    <PromptInput
+      className="mx-auto max-w-2xl [&_[data-slot=input-group]]:flex-col [&_[data-slot=input-group]]:items-stretch [&_[data-slot=input-group]]:gap-1 [&_[data-slot=input-group]]:overflow-visible [&_[data-slot=input-group]]:rounded-3xl [&_[data-slot=input-group]]:px-2 [&_[data-slot=input-group]]:py-1.5"
+      globalDrop
+      multiple
+      onSubmit={handleSubmit}
+    >
+      <PromptInputHeader>
+        {(attachments.files.length > 0 || sources.sources.length > 0) && (
+          <div className="flex flex-wrap items-center gap-1.5 px-1 pt-1">
+            <Attachments variant="inline">
+              {attachments.files.map((attachment) => (
+                <Attachment
+                  data={attachment}
+                  key={attachment.id}
+                  onRemove={() => attachments.remove(attachment.id)}
+                >
+                  <AttachmentPreview />
+                  <AttachmentRemove />
+                </Attachment>
+              ))}
+            </Attachments>
+            {sources.sources.map((source) => (
+              <span
+                className="bg-muted text-muted-foreground inline-flex max-w-[200px] items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
+                key={source.id}
+              >
+                <FileTextIcon className="size-3 shrink-0" />
+                <span className="truncate">{source.title || source.sourceId}</span>
+                <button
+                  aria-label={`Remove ${source.title}`}
+                  className="hover:text-foreground shrink-0"
+                  onClick={() => sources.remove(source.id)}
+                  type="button"
+                >
+                  <XIcon className="size-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </PromptInputHeader>
+      <PromptInputBody>
+        <div className="relative w-full">
+          <PromptInputTextarea
+            onChange={handleTextareaChange}
+            placeholder={`Message ${agentName}… (@ to reference a document)`}
+          />
+          {mentionOpen && (
+            <div className="bg-popover text-popover-foreground absolute bottom-full left-0 z-10 mb-1 w-64 overflow-hidden rounded-lg border shadow-lg">
+              {filtered.length > 0 ? (
+                filtered.map((file) => (
+                  <button
+                    className="hover:bg-accent flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm"
+                    key={file.id}
+                    onClick={() => selectMention(file)}
+                    type="button"
+                  >
+                    <FileTextIcon className="text-muted-foreground size-3.5 shrink-0" />
+                    <span className="truncate">{file.originalName}</span>
+                    <span className="text-muted-foreground ml-auto text-[10px] uppercase">
+                      {file.ext}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <button
+                  className="text-muted-foreground w-full px-2.5 py-2 text-left text-xs"
+                  onClick={() => setMentionOpen(false)}
+                  type="button"
+                >
+                  {unavailable || !loaded
+                    ? "No knowledge base (office feature off?)"
+                    : `No documents matching “${mentionQuery}”`}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </PromptInputBody>
+      <PromptInputFooter>
+        <PromptInputTools>
+          <PromptInputActionMenu>
+            <PromptInputActionMenuTrigger>
+              <Plus className="size-4" />
+            </PromptInputActionMenuTrigger>
+            <PromptInputActionMenuContent>
+              <PromptInputActionAddAttachments label="Add photos or files" />
+              <PromptInputActionAddScreenshot label="Take screenshot" />
+              <PromptInputActionMenuItem
+                onSelect={() => {
+                  void refresh();
+                  controller.textInput.setInput(text.endsWith(" ") || !text ? `${text}@` : `${text} @`);
+                }}
+              >
+                <FileTextIcon className="mr-2 size-4" /> Reference document
+              </PromptInputActionMenuItem>
+            </PromptInputActionMenuContent>
+          </PromptInputActionMenu>
+        </PromptInputTools>
+        <PromptInputSubmit onStop={onStop} status={status} />
+      </PromptInputFooter>
+    </PromptInput>
+  );
+}
+
 export default function App() {
   const [activeAgentId, setActiveAgentId] = useState(AGENTS[0].id);
   const [agentsRail, setAgentsRail] = useState(false);
@@ -175,13 +448,6 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, chat]);
-
-  const handleSubmit = useCallback(
-    (message: { text: string }) => {
-      if (message.text.trim()) void chat.send(message.text);
-    },
-    [chat],
-  );
 
   return (
     <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">
@@ -343,15 +609,14 @@ export default function App() {
 
             {/* composer */}
             <div className="shrink-0 px-4 pb-4">
-              <PromptInput className="mx-auto max-w-2xl" onSubmit={handleSubmit}>
-                <PromptInputBody>
-                  <PromptInputTextarea placeholder={`Message ${agent.name}…`} />
-                </PromptInputBody>
-                <PromptInputFooter>
-                  <PromptInputTools />
-                  <PromptInputSubmit onStop={chat.stop} status={status} />
-                </PromptInputFooter>
-              </PromptInput>
+              <ChatComposer
+                agentName={agent.name}
+                onStop={chat.stop}
+                status={status}
+                onSubmit={(text, imageB64, knowledgeContext) =>
+                  void chat.send(text, imageB64, knowledgeContext)
+                }
+              />
             </div>
           </section>
 

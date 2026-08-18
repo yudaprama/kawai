@@ -346,6 +346,24 @@ async fn office_import_file_handler(
 }
 
 #[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeContextRequest {
+    file_ids: Vec<String>,
+}
+
+#[cfg(feature = "office")]
+async fn knowledge_context_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<KnowledgeContextRequest>,
+) -> Result<Json<logic::office::KnowledgeContext>, (StatusCode, String)> {
+    logic::office::knowledge_context(&claims.sub, &req.file_ids)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "office")]
 async fn office_list_files_handler(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<logic::office::OfficeFile>>, (StatusCode, String)> {
@@ -527,6 +545,7 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
             "/api/office_read_document",
             post(office_read_document_handler),
         )
+        .route("/api/knowledge_context", post(knowledge_context_handler))
         .route("/api/office_export_file", post(office_export_file_handler))
         .route(
             "/api/office_capabilities",
