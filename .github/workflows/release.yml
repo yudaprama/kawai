@@ -162,7 +162,7 @@ jobs:
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
-          args: --features litert,office --config .github/tauri-office.json,.github/tauri-litert.json
+          args: --features litert,office --config .github/tauri-office.json --config .github/tauri-litert.json
 
   build-linux:
     needs: bump

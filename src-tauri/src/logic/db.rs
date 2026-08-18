@@ -1,21 +1,12 @@
-//! Database access (self-hosted libsql-server / sqld) + notes + chat sessions.
+//! Database access (local SQLite via libsql) + notes + chat sessions.
 //!
-//! sqld validates client JWTs with EdDSA against an Ed25519 PUBLIC key. It does
-//! NOT support JWKS/RS256, so Clerk's session JWTs CANNOT be presented to sqld
-//! directly. The backend (holder of the Ed25519 private key) verifies the Clerk
-//! identity elsewhere and MINTS the EdDSA token here that sqld accepts.
+//! Desktop MVP: single-device, local SQLite file, no sync.
+//! DB path: $KAWAI_DB_DIR/kawai.db (default: /tmp/kawai-db/kawai.db).
 //!
-//! Builder selection is feature-gated — NOT branched on a transport type — so
-//! this module stays pure (no tauri/axum imports):
-//!   - web (`--features web`, kawai-web): remote client, no local file.
-//!   - desktop/mobile: embedded replica — a local file that syncs to sqld.
-//!
-//! Connections are opened per-op for correctness (fresh token, no expiry churn).
-//! Pool/refresh before production.
+//! Connections are opened per-op. Pool before production.
 
 use async_stream::stream;
 use futures_core::Stream;
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -51,8 +42,6 @@ impl std::fmt::Display for DbError {
 }
 impl std::error::Error for DbError {}
 
-const DB_TOKEN_TTL_SECS: u64 = 300;
-
 pub(crate) fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -60,75 +49,24 @@ pub(crate) fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
-fn db_url() -> Result<String, DbError> {
-    std::env::var("KAWAI_DB_URL").map_err(|_| DbError::Config("KAWAI_DB_URL not set".into()))
-}
-
-fn db_jwt_key_path() -> Result<PathBuf, DbError> {
-    std::env::var("KAWAI_DB_JWT_PRIVATE_KEY_FILE")
-        .map(PathBuf::from)
-        .map_err(|_| DbError::Config("KAWAI_DB_JWT_PRIVATE_KEY_FILE not set".into()))
-}
-
-#[derive(Serialize)]
-struct DbClaims {
-    sub: String,
-    iat: u64,
-    exp: u64,
-}
-
-/// Mint a short-lived EdDSA token that sqld validates against its configured
-/// Ed25519 public key. `sub` carries the user id (selects the namespace when
-/// sqld runs with `--enable-namespaces`; otherwise it's informational and rows
-/// are filtered by `user_id`).
-pub fn mint_db_token(user_id: &str) -> Result<String, DbError> {
-    let pem = std::fs::read(db_jwt_key_path()?)?;
-    let key = EncodingKey::from_ed_pem(&pem)
-        .map_err(|e| DbError::Config(format!("ed25519 key: {e}")))?;
-    let now = unix_now();
-    let claims = DbClaims {
-        sub: user_id.to_string(),
-        iat: now,
-        exp: now + DB_TOKEN_TTL_SECS,
-    };
-    let header = Header::new(Algorithm::EdDSA);
-    encode(&header, &claims, &key).map_err(|e| DbError::Config(format!("encode jwt: {e}")))
-}
-
-/// Open a libsql connection to sqld, authenticated with a freshly minted
-/// per-user EdDSA token.
-pub async fn db_connection(user_id: &str) -> Result<libsql::Connection, DbError> {
-    let url = db_url()?;
-    let token = mint_db_token(user_id)?;
-    let db = build_db(&url, &token).await?;
+/// Open a local libsql (SQLite) connection. No auth token needed — desktop MVP,
+/// single-device, no sync.
+pub async fn db_connection(_user_id: &str) -> Result<libsql::Connection, DbError> {
+    let db = build_db().await?;
     db.connect().map_err(DbError::from)
 }
 
-async fn build_db(url: &str, token: &str) -> Result<libsql::Database, DbError> {
-    #[cfg(feature = "web")]
-    {
-        Ok(libsql::Builder::new_remote(url.to_string(), token.to_string()).build().await?)
-    }
-    #[cfg(not(feature = "web"))]
-    {
-        let dir = replica_dir();
-        std::fs::create_dir_all(&dir).ok();
-        let file = dir.join("replica.db");
-        Ok(
-            libsql::Builder::new_remote_replica(file, url.to_string(), token.to_string())
-                .build()
-                .await?,
-        )
-    }
+async fn build_db() -> Result<libsql::Database, DbError> {
+    let dir = db_dir();
+    std::fs::create_dir_all(&dir).ok();
+    let file = dir.join("kawai.db");
+    Ok(libsql::Builder::new_local(file).build().await?)
 }
 
-#[cfg(not(feature = "web"))]
-fn replica_dir() -> PathBuf {
-    // Desktop/mobile: a per-user local replica file. In production set
-    // KAWAI_DB_REPLICA_DIR to the Tauri app-data dir (from a setup hook).
-    std::env::var("KAWAI_DB_REPLICA_DIR")
+fn db_dir() -> PathBuf {
+    std::env::var("KAWAI_DB_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir().join("kawai-replica"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("kawai-db"))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

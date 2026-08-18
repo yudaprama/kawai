@@ -16,22 +16,22 @@ Desktop/mobile app (Tauri), with a standalone web server binary.
 - **Transport**: Tauri `Channel`+`invoke` (desktop/mobile); HTTP `fetch`+SSE (web — backend only, no web frontend).
 - **LLM (on-device)**: LiteRT-LM via `cognee-litert-lm` (path dep, vendored at `cognee-litert-lm/vendor/LiteRT-LM` = upstream `google-ai-edge` main). Behind the `litert` cargo feature. Gemma 4 / Qwen `.litertlm` verified streaming on macOS arm64 CPU.
 - **LLM (remote)**: `rig` — pinned to git rev `4232abdb` (55 commits past 0.41.0), the SAME rev as `rig-libsql` (submodule); one rig-core source across src-tauri + rig-components + rig-libsql or ToolSet/vector-store types won't unify. Swap to crates.io "0.42"+ everywhere at once when it ships. **Decision (2026-08-16): local Gemma 4 via LiteRT-LM is THE model for now** — no remote tier planned short-term. `rig-components` toolsets are usable standalone (definitions + dispatch) without a rig provider; when the agent tier (Roadmap 5) arrives it runs on local Gemma 4 with prompt-based tool calling (the LiteRT-LM Conversation API has no native function calling). Remote providers via `rig` become optional configuration later, not a requirement.
-- **DB**: self-hosted `libsql-server` (sqld). Backend mints short **EdDSA** tokens that sqld validates; embedded replica (desktop/mobile) or remote client (web backend).
+- **DB**: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
 ## Current phase: MVP (desktop-first)
 
 Short-term focus is a **macOS desktop MVP**. The end state is unchanged — desktop + mobile + web from one core — so this phase defers *work*, never *architecture*. The invariants below are exactly what keeps mobile/web cheap later; they all stay law during MVP.
 
 **MVP scope (work only these):**
-- macOS desktop app (Tauri, feature `litert`): on-device LLM chat (LiteRT-LM), notes + chat history in sqld, dev-bypass auth (`KAWAI_AUTH_DEV_USER_ID=demo`).
+- macOS desktop app (Tauri, feature `litert`): on-device LLM chat (LiteRT-M), notes + chat history in local SQLite, dev-bypass auth (`KAWAI_AUTH_DEV_USER_ID=demo`).
 - Three-pane UI with agent catalog, session sidebar, dark theme, Pinecone Router routing, tool call cards in conversation.
 - Remaining MVP gaps, in order (details in Roadmap):
-  1. Chat history persistence — ✅ Done 2026-08-16 (sessions + messages in sqld).
+  1. Chat history persistence — ✅ Done 2026-08-16 (sessions + messages in SQLite).
   2. Distributable build — ✅ Done 2026-08-17 (litert dylibs bundled into .app).
   3. `local_llm_smoke` as a streaming regression gate (small `.litertlm` fixture).
 
 **Deferred — do NOT start without the user asking (tracked in Roadmap):**
-- The agent tier (`rig` wiring + `rig-components` integration); mobile LLM bazel builds + mobile UI; web frontend; LoRA; GPU/Metal; sqld namespaces; pooling; production hardening.
+- The agent tier (`rig` wiring + `rig-components` integration); mobile LLM bazel builds + mobile UI; web frontend; LoRA; GPU/Metal; production hardening.
 - The agent tier, prod auth (deep-link), and keychain session persistence are the *first post-MVP milestones* — required before any public release, not part of MVP.
 
 **Still mandatory during MVP (end-state insurance, all cheap):**
@@ -48,9 +48,8 @@ Short-term focus is a **macOS desktop MVP**. The end state is unchanged — desk
 4. **Frontend uses `window.__TAURI__` directly** (`withGlobalTauri: true`). Platform is always Tauri — no platform branching needed.
 5. **Web deps stay gated.** `axum`/`tower-http` are `optional`, behind the `web` Cargo feature. The `web` module is `#[cfg(feature = "web")]`. The `kawai-web` binary has `required-features = ["web"]`. Never make axum a non-optional dep — it must stay out of desktop/mobile binaries.
 6. **Events.** `#[serde(tag = "type")]` in `logic.rs`; frontend reads `event.type` at runtime (no TS types file). Terminal variants are `finished` / `error`.
-7. **Identity is resolved at the transport edge, not in `logic.rs`.** Wrappers verify the token and pass `user_id` (`claims.sub`) into `logic.rs` fns as the first param. The frontend NEVER sends `user_id`. `auth.rs` is pure (no tauri/axum): it does JWKS verification (Clerk) and EdDSA minting (sqld).
-8. **sqld is EdDSA-only.** `libsql-server` validates client JWTs with Ed25519 (EdDSA) — NOT JWKS, NOT RS256. So Clerk's RS256 session JWTs CANNOT go to sqld. The backend verifies Clerk (JWKS) and MINTS the EdDSA token (`logic::mint_db_token`) sqld accepts. Never wire sqld to Clerk directly.
-9. **DB builder selection is `cfg`-gated in `logic.rs`, not branched on a transport type.** `#[cfg(feature = "web")]` → remote client; `#[cfg(not(feature = "web"))]` → embedded replica. Keeps `logic.rs` pure.
+7. **Identity is resolved at the transport edge, not in `logic.rs`.** Wrappers verify the token and pass `user_id` (`claims.sub`) into `logic.rs` fns as the first param. The frontend NEVER sends `user_id`. `auth.rs` is pure (no tauri/axum): it does JWKS verification (Clerk).
+8. **DB builder selection is `cfg`-gated in `logic.rs`, not branched on a transport type.** `#[cfg(feature = "web")]` → remote client; `#[cfg(not(feature = "web"))]` → local SQLite. Keeps `logic.rs` pure.
 
 ## Commands
 
@@ -98,8 +97,6 @@ bun run tauri:build:litert-office     # prepare dylibs + office engines + build
 # Web standalone server (Axum serves /api/*; no frontend)
 cargo run --bin kawai-web --features web
 
-# Self-hosted libsql-server (sqld) — the DB sync target
-./scripts/dev-sqld.sh                       # sqld on 127.0.0.1:8080, Ed25519 JWT auth (auto-generates keys)
 # Dev-bypass auth (accept ANY token as user "demo"; NEVER in prod):
 KAWAI_AUTH_DEV_USER_ID=demo cargo run --bin kawai-web --features web
 
@@ -134,7 +131,7 @@ For mobile, also (during MVP: only when shared code changes — `logic.rs`, `aut
 - **Cancellation is asymmetric by design.** Web: `AbortController` (connection drop auto-cancels the backend future). Desktop/mobile: frontend `cancel()` calls `invoke('cancel_stream', {streamId})` → `CancellationToken` in the shared registry breaks the `select!` loop. Streaming commands must accept a `stream_id` param and register/clean up a token.
 - **Axum 0.8 `from_fn` hardcodes state to `()`.** A middleware that needs shared state can't use `from_fn` + `State<S>`; use `Extension` (our `auth_middleware` reads `Extension<Verifier>`) or `from_fn_with_state`. Don't fight the type inference by annotating `Router<S>` — switch to `Extension`.
 - **`libsql` positional tuple params start at arity 2.** `(&str,)` is NOT `IntoParams`; use `vec![x]` (or an array) for a single param. Tuples `(A,B)` and up are fine. Params blanket-impl `T: TryInto<Value>` (so `&str`, `String`, `i64`, … all work).
-- **Clerk JWTs are RS256; sqld accepts only EdDSA.** Never pass a Clerk session JWT to sqld — mint an EdDSA token in the backend first (invariant 8).
+- **Clerk JWTs are RS256; sqld accepts only EdDSA (post-MVP).** When sqld is added for multi-device sync, never pass a Clerk session JWT to sqld — mint an EdDSA token in the backend first.
 - **`dotenvy` does not override existing env vars.** Shell-exported vars win over `.env`. To force dev-bypass auth, `KAWAI_AUTH_DEV_USER_ID=demo cargo run ...`.
 - **Two `jsonwebtoken` versions coexist** (9.x is our direct dep in `auth.rs`/`logic.rs`; 10.x is transitive). Expected.
 - **Clerk CDN script is loaded in `index.html`.** `window.Clerk` must be available before `main.js` runs — the `<script>` tag order is: Clerk (defer) → main.js (module) → Alpine (defer, LAST — main.js registers the Alpine store on `alpine:init` which fires while Alpine executes; loading Alpine first = a page full of `$store.app undefined` TypeErrors).
@@ -214,23 +211,21 @@ app.log                     # symlink → ~/Library/Logs/kawai/app.log
 - Identity → logic: wrappers extract `claims.sub` as `user_id` and pass it as the first arg to `logic.rs` fns. `whoami`/`create_note`/`list_notes`/`stream_notes`/`create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message`/`local_load_model`/`local_chat` are auth-required; `greet`/`generate_activity` are public.
 - Auth operations: `set_session`, `logout`, `whoami` (one snake_case string each).
 
-## Database (self-hosted libsql-server / sqld)
+## Database (local SQLite via libsql)
 
-Topology — **do NOT couple sqld to Clerk** (invariant 8):
+Desktop MVP: single-device, local SQLite file, no sync.
 
 ```
-user → (Clerk) → Rust backend → logic::mint_db_token(user_id)   [EdDSA, backend's key]
-                                       │
-   desktop/mobile replica ◀───────────┴── sqld validates EdDSA against its Ed25519 PUB key
-   web remote client ──────┘             (sqld NEVER sees the Clerk JWT)
+user → (Clerk) → Rust backend → user_id
+                                      │
+   local SQLite file ◀────────────────┘  Builder::new_local(path)
+   ($KAWAI_DB_DIR/kawai.db)
 ```
 
-- Start sqld with `./scripts/dev-sqld.sh` (runs `sqld --auth-jwt-key-file <ed25519_pub.pem>`).
-- `logic::db_connection(user_id)` opens a per-op connection: mints a fresh EdDSA token, then:
-  - web (`cfg(feature="web")`): `Builder::new_remote(url, token)`.
-  - desktop/mobile: `Builder::new_remote_replica(path, url, token)` (local file syncs to sqld).
-- Backend holds the Ed25519 **private** key; sqld holds the **public** key (mismatched halves = auth fails).
-- Multi-tenancy today: single (default) namespace, rows scoped by `WHERE user_id = ?`. Flip to `--enable-namespaces` for hard per-user DB isolation (token `sub` → namespace) — see Roadmap.
+- `logic::db_connection(user_id)` opens a per-op local SQLite connection.
+- Default path: `/tmp/kawai-db/kawai.db` (override with `KAWAI_DB_DIR`).
+- Rows scoped by `WHERE user_id = ?`.
+- Post-MVP: sqld for multi-device sync, EdDSA token minting, embedded replicas.
 
 ## Configuration (.env)
 
@@ -239,8 +234,7 @@ Project-root `.env` (gitignored) — backend reads these via `auth::load_dotenv(
 KAWAI_AUTH_JWKS_URI=...        # Clerk public JWKS
 KAWAI_AUTH_ISSUER=...          # Clerk frontend-API origin
 # KAWAI_AUTH_DEV_USER_ID=dev   # uncomment to accept ANY token as this user (dev only)
-KAWAI_DB_URL=http://127.0.0.1:8080
-KAWAI_DB_JWT_PRIVATE_KEY_FILE=.../sqld_jwt_ed25519.pem
+KAWAI_DB_DIR=/path/to/dir     # optional, default: /tmp/kawai-db
 ```
 `.env.local` (gitignored) — Clerk publishable key reference: `VITE_CLERK_PUBLISHABLE_KEY`. The actual key is embedded in `src/config.js` (publishable keys are public by design).
 
@@ -250,7 +244,7 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
 
 ### MVP track (now — desktop, on-device LLM, dev-bypass auth)
 
-1. **Chat history persistence.** ✅ Done 2026-08-16: `sessions(agent_id, user_id, title, …)` + `messages(session_id, role, content, …)` tables in sqld; ops `create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message` (both wrappers). MVP runs a single implicit agent (`builtin.chat`); sessions are created lazily on first message, first user message seeds the title, engine context stays in-memory (restart shows history, model context starts fresh).
+1. **Chat history persistence.** ✅ Done 2026-08-16: `sessions(agent_id, user_id, title, …)` + `messages(session_id, role, content, …)` tables in SQLite; ops `create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message` (both wrappers). MVP runs a single implicit agent (`builtin.chat`); sessions are created lazily on first message, first user message seeds the title, engine context stays in-memory (restart shows history, model context starts fresh).
 2. **Distributable desktop build.** ✅ Done 2026-08-17: `scripts/bundle-litert-dylibs.sh` preps all LiteRT dylibs (main C API + 7 companions) into `cognee-litert-lm/native/`; `.github/tauri-litert.json` copies them into `Contents/Frameworks/` via `bundle.macOS.files`; `src-tauri/build.rs` embeds the `@executable_path/../Frameworks` rpath (litert+macOS) so the release .app needs no dev rpath/env. Local: `bun run tauri:build:litert(-office)`. CI builds via `tauri-action --config .github/tauri-office.json,.github/tauri-litert.json`.
 3. **`local_llm_smoke` streaming regression gate.** Small `.litertlm` fixture (e.g. Gemma 3 270M or SmolLM 135M) so token streaming keeps working across changes. (`src-tauri/examples/local_llm_smoke.rs` exists; needs the fixture + a CI hook — natural home is a GitHub Actions macOS runner that builds the dylib + runs the example.)
 4. **(standing) Upstream maintenance.** sentencepiece macOS fix — PR [#3262](https://github.com/google-ai-edge/LiteRT-LM/pull/3262), assume ignored. Submodule stays on our fork branch (`yudaprama/LiteRT-LM@fix/macos-sentencepiece-hdrs-check`); `cognee-litert-lm/tools/update-litert-lm.sh` rebases the fix onto new upstream main. If merged, drop the commit and repoint at `google-ai-edge` main.
@@ -263,10 +257,10 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
    - Remaining: route-based session loading may need Pinecone Router reactivity work; session delete handler; session file tracking.
 6. **Production auth = browser + deep link.** Clerk dev-mode is broken in the webview (see Landmines); even prod may need it. Flow: open system browser → Clerk sign-in → redirect `kawai://auth?token=<jwt>` → `set_session`. Needs the tauri deep-link plugin + a Clerk-hosted page (or kawai-web route) to mint the redirect.
 7. **Desktop/mobile session persistence.** `State<Session>` is in-memory; lost on restart (with the dev bypass the frontend re-establishes it automatically — fine for MVP). Persist the token in the OS keychain (`tauri-plugin-stronghold` / keyring) and reload on launch.
-8. **Desktop/mobile DB token broker.** `logic::mint_db_token` reads the Ed25519 private key locally — fine for dev, but the private key MUST NOT ship in a production app. Add a `db_token` op: kawai-web verifies Clerk → mints a short EdDSA token → the device fetches it and feeds `Builder::new_remote_replica`. The private key stays server-side.
+8. **Desktop/mobile DB token broker.** For sqld sync: `logic::mint_db_token` reads the Ed25519 private key locally — fine for dev, but the private key MUST NOT ship in a production app. Add a `db_token` op: kawai-web verifies Clerk → mints a short EdDSA token → the device fetches it and feeds `Builder::new_remote_replica`. The private key stays server-side. **(Post-MVP — requires sqld setup)**
 9. **Production hardening.** Add `Secure` to the session cookie (HTTPS only), CORS only if cross-origin, rate limiting, Clerk refresh-token rotation.
 10. **Connection pooling + token refresh.** DB connections are opened per-op (correct, not optimal). Pool them and refresh tokens before expiry for production load.
-11. **SQLite schema migrations.** Schema changes today are additive + idempotent (`CREATE TABLE/INDEX IF NOT EXISTS`), which is fine while no distributed build carries an old replica. Before shipping one: hand-rolled `schema_migrations` table + versioned SQL list (via `include_str!`) applied transactionally on connect — NOT refinery/rusqlite_migration (they assume rusqlite, we use the libsql API). With embedded replicas DDL syncs to sqld, so migrations must be race-safe across devices (version table + transactional DDL gives that). First known backfill when introduced: sessions created before first-message title-seeding will never get a title.
+11. **SQLite schema migrations.** Schema changes today are additive + idempotent (`CREATE TABLE/INDEX IF NOT EXISTS`), which is fine for single-device local SQLite. Before distributed builds: hand-rolled `schema_migrations` table + versioned SQL list (via `include_str!`) applied transactionally on connect — NOT refinery/rusqlite_migration (they assume rusqlite, we use the libsql API). First known backfill when introduced: sessions created before first-message title-seeding will never get a title.
 12. **Tests beyond the smoke gate.** Unit tests for `auth.rs` (JWKS verify), `logic.rs` (token mint + db round-trip), agent tier (toolset assembly, agent catalog integrity).
 
 ### End state (desktop + mobile + web — design work, later)

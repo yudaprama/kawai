@@ -53,7 +53,7 @@ pub fn generate_activity(input: ActivityInput) -> impl Stream<Item = ActivityEve
     }
 }
 
-// Database (sqld), notes and chat-session persistence live in `db`; the
+// Database (local SQLite), notes and chat-session persistence live in `db`; the
 // on-device LLM in `local_llm`; office tooling in `office`; the prompt-based
 // tool-calling agent loop in `agent`. Re-exported so `logic::X` paths used by
 // the wrappers stay stable across the split.

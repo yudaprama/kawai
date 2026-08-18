@@ -136,7 +136,7 @@ pub async fn list_notes(session: State<'_, Session>) -> Result<Vec<Note>, String
 }
 
 /// Authenticated streaming: same pattern as `generate_activity` (stream_id +
-/// Channel + cancellation registry), but data comes from sqld via `user_id`.
+/// Channel + cancellation registry), but data comes from local SQLite via `user_id`.
 #[tauri::command]
 pub async fn stream_notes(
     stream_id: String,

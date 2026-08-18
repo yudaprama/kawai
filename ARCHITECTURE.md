@@ -13,7 +13,7 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 - App logic is 100% shared; only transport and launcher differ per target.
 - Auth: Clerk via CDN + vanilla JS SDK; the backend verifies session JWTs via Clerk's **public JWKS** (no secret in the backend).
 - LLM: **on-device Gemma 4 via LiteRT-LM is THE model** (decision 2026-08-16). `rig` 0.41 stays declared but unwired — remote providers become optional configuration later. Agent tier will use prompt-based tool calling on the local model; `rig-components/` (14 category crates of generated rig tools, `registry::toolset_for(names)`) provides the toolsets, usable standalone without a rig provider.
-- Persistence: self-hosted `libsql-server` (sqld); per-user embedded replica (desktop/mobile) or remote client (web backend), driven from `logic.rs`.
+- Persistence: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
 ## Layer diagram
 
@@ -36,7 +36,7 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 ├───────────────────────────────────────────────────────────┤
 │  CORE LOGIC (Rust, pure, platform-agnostic)               │
 │  logic.rs : fn() -> T  |  fn() -> Stream<Event>           │
-│  auth.rs  : Clerk JWKS verify  +  EdDSA token mint        │
+│  auth.rs  : Clerk JWKS verify                                 │
 ├───────────────────────────────────────────────────────────┤
 │  self-hosted sqld (EdDSA JWT auth; backend mints tokens)  │
 └───────────────────────────────────────────────────────────┘
@@ -153,19 +153,17 @@ Web backend (no web frontend): HttpOnly `kawai_session` cookie.
 - **Auth ops**: `set_session`, `logout`, `whoami`. `greet`/`generate_activity` are public; everything else requires auth.
 - **Dev bypass**: `KAWAI_AUTH_DEV_USER_ID` makes `Verifier::verify` return that user for any token (offline/dev only).
 
-## Persistence (self-hosted sqld)
+## Persistence (local SQLite)
 
-sqld validates client JWTs with **EdDSA against an Ed25519 public key** — it does NOT support JWKS or RS256. So Clerk's RS256 session JWTs cannot be presented to sqld directly; the backend verifies Clerk and **mints** the EdDSA token sqld accepts.
+Desktop MVP: local SQLite file, no sync. Post-MVP: sqld for multi-device sync.
 
 ```
-user → (Clerk) → Rust backend ──verify JWKS──▶ user_id
-                              └──mint_db_token(user_id)──▶ EdDSA JWT (backend's Ed25519 key)
-                                                                   │
-       web: Builder::new_remote(url, token) ──────────────────────┼──▶ sqld (--auth-jwt-key-file <pub>)
-       desktop/mobile: Builder::new_remote_replica(path, url, token) ─▶ local file syncs to sqld
+user → (Clerk) → Rust backend → user_id
+                                      │
+   local SQLite file ◀────────────────┘  Builder::new_local(path)
+   ($KAWAI_DB_DIR/kawai.db)
 ```
 
-- sqld holds the Ed25519 **public** key; the backend holds the **private** key (mismatched halves = auth fails). Start: `./scripts/dev-sqld.sh`.
-- Builder selection is `cfg`-gated in `logic.rs`, not branched on a transport type → stays pure.
-- Multi-tenancy today: single (default) namespace + `WHERE user_id = ?`. Production option: `--enable-namespaces` (token `sub` → isolated per-user DB).
-- Connections are per-op (fresh token each call) — simple and correct; pool/refresh before production.
+- `logic::db_connection(user_id)` opens a per-op local SQLite connection.
+- Default path: `/tmp/kawai-db/kawai.db` (override with `KAWAI_DB_DIR`).
+- Rows scoped by `WHERE user_id = ?`.

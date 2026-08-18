@@ -228,7 +228,7 @@ function scrollChat() {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
-// Chat persistence (sqld, agent-ready sessions/messages schema). Reload the
+// Chat persistence (local SQLite, agent-ready sessions/messages schema). Reload the
 // most recent session after a model load; failures are non-fatal — chat works
 // without persistence, it just won't survive a restart.
 async function loadChatHistory() {
@@ -268,7 +268,7 @@ async function loadSessions() {
 }
 
 // Switch to a different session. Clears the Conversation API history (model
-// context starts fresh) and loads the selected session's messages from sqld.
+// context starts fresh) and loads the selected session's messages from local SQLite.
 async function switchSession(sessionId) {
   const llm = Alpine.store("app").llm;
   if (llm.chatActive) return;
@@ -281,7 +281,7 @@ async function switchSession(sessionId) {
     console.error("[switchSession] reset", errText(err));
   }
 
-  // Load the selected session's messages from sqld.
+  // Load the selected session's messages from local SQLite.
   llm.sessionId = sessionId;
   try {
     const messages = sessionId
