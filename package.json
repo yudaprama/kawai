@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "dev": "bash scripts/dev.sh",
     "tauri": "tauri",
     "bundle:litert": "bash scripts/bundle-litert-dylibs.sh",
     "tauri:build:litert": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features litert --config .github/tauri-litert.json",

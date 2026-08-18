@@ -153,6 +153,25 @@ function sessionPeriod(createdAt) {
   return "Earlier";
 }
 
+// Prompt chip click: create a fresh session for the current agent, navigate to
+// it, and prefill the composer with the prompt.
+async function promptChip(prompt) {
+  const app = Alpine.store("app");
+  const llm = app.llm;
+  if (llm.chatActive) return;
+  const ctx = window.PineconeRouter?.context;
+  const agentId = ctx?.params?.agentId || "office";
+  try {
+    const s = await call("create_chat_session", { agentId });
+    await loadSessions();
+    llm.sessionId = s.id;
+    llm.chatInput = prompt;
+    window.PineconeRouter.navigate("/" + agentId + "/" + s.id);
+  } catch (err) {
+    console.error("[promptChip]", errText(err));
+  }
+}
+
 async function createSessionForAgent(agentId) {
   const llm = Alpine.store("app").llm;
   if (llm.chatActive) return;
@@ -603,6 +622,7 @@ Object.assign(window, {
   resetChat,
   switchSession,
   navigateToSession,
+  promptChip,
   toggleSessions: () => window._toggleSessions?.(),
   toggleThinking,
   unloadModel,

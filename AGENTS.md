@@ -5,7 +5,7 @@ This file is the operational rulebook.
 
 ## What this project is
 
-**Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from `rig-components/` (per-category crates of generated rig tools — `registry::toolset_for(names)`). UI concept, three-pane: left sidebar = agent list, right sidebar = sessions of the selected agent, center = the active agent's content.
+**Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from `rig-components/` (per-category crates of generated rig tools — `registry::toolset_for(names)`). UI: three-pane layout (left sidebar = agent list, center = active agent's chat/content, right sidebar = sessions of the selected agent), dark theme, client-side routing via Pinecone Router.
 
 Desktop/mobile app (Tauri), with a standalone web server binary.
 **End state: desktop + mobile + web from one core. Current phase: MVP, desktop-first — see "Current phase" below.**
@@ -24,13 +24,14 @@ Short-term focus is a **macOS desktop MVP**. The end state is unchanged — desk
 
 **MVP scope (work only these):**
 - macOS desktop app (Tauri, feature `litert`): on-device LLM chat (LiteRT-LM), notes + chat history in sqld, dev-bypass auth (`KAWAI_AUTH_DEV_USER_ID=demo`).
+- Three-pane UI with agent catalog, session sidebar, dark theme, Pinecone Router routing, tool call cards in conversation.
 - Remaining MVP gaps, in order (details in Roadmap):
-  1. Chat history persistence — conversations live only in the LiteRT in-memory session + the Alpine store; persist to sqld per `user_id` and reload on launch.
-  2. Distributable build — bundle the LiteRT dylib into `bun tauri build` so the release .app works without dev-only rpath/env setup.
+  1. Chat history persistence — ✅ Done 2026-08-16 (sessions + messages in sqld).
+  2. Distributable build — ✅ Done 2026-08-17 (litert dylibs bundled into .app).
   3. `local_llm_smoke` as a streaming regression gate (small `.litertlm` fixture).
 
 **Deferred — do NOT start without the user asking (tracked in Roadmap):**
-- The agent tier (`rig` wiring + `rig-components` integration + agent catalog + three-pane UI); mobile LLM bazel builds + mobile UI; web frontend; LoRA; GPU/Metal; sqld namespaces; pooling; production hardening.
+- The agent tier (`rig` wiring + `rig-components` integration); mobile LLM bazel builds + mobile UI; web frontend; LoRA; GPU/Metal; sqld namespaces; pooling; production hardening.
 - The agent tier, prod auth (deep-link), and keychain session persistence are the *first post-MVP milestones* — required before any public release, not part of MVP.
 
 **Still mandatory during MVP (end-state insurance, all cheap):**
@@ -148,12 +149,14 @@ For mobile, also (during MVP: only when shared code changes — `logic.rs`, `aut
 - **No build step — frontend files are served as-is.** `src/` is the Tauri `frontendDist`. File paths in HTML/JS must be relative and valid for the filesystem (no bundler resolves them).
 - **Logs go to `~/Library/Logs/kawai/app.log`.** `logging.rs` tees process stderr (Rust panics, `eprintln!`, LiteRT C++ absl logs) and `src/lib/log.js` pipes JS errors/rejections/`console.error` via the `frontend_log` command. Deliberately outside `src-tauri/` (watcher) — don't move it inside. A symlink lives at `kawai/app.log`.
 - **One rig-core source for the whole graph.** `src-tauri`, `rig-components/*`, and the `rig-libsql` submodule all pin git rev `4232abdb` (crates.io 0.41.0 predates the `Vec<Embedding>` `insert_documents` change rig-libsql needs). A crates.io `rig`/`rig-core` dep anywhere alongside the pin = two rig-cores = ToolSet/vector-store type mismatch at the agent-tier seam. When 0.42+ ships, swap ALL of them (incl. the generator template `rig-components/gen/src/main.rs` in the parent workspace) in one change.
+- **Pinecone Router `x-init` runs before routes register.** The `x-route` templates are in the DOM but Pinecone Router hasn't scanned them yet when `x-init` on `<body>` fires. Use `setTimeout(() => $router.navigate(...), 0)` to defer the initial navigation. Without the delay, the router throws "Path: /xxx was not found".
+- **Tool call events in `LocalChatEvent`.** The `local_chat` stream now emits `ToolCall` and `ToolResult` variants (not just `Token`). Frontend must handle all variants or the stream silently drops events. `agent.rs` also matches on `LocalChatEvent` — add arms for new variants there too.
 
 ## Where things live
 
 ```
-src/index.html              # Entry point — Clerk CDN + main.js + Alpine (order matters)
-src/main.js                 # App logic: Clerk auth, greet, stream, notes, local LLM
+src/index.html              # Entry point — three-pane layout, Pinecone Router routes, icon sprite, pane collapse CSS
+src/main.js                 # App logic: Alpine store (agents, sessions, llm), Clerk auth, streaming, session routing
 src/lib/log.js              # Global JS error capture → frontend_log command (import FIRST)
 src/config.js               # Clerk publishable key (legacy; key now on the script tag)
 src/lib/api.js              # RPC: window.__TAURI__.core.invoke
@@ -176,6 +179,7 @@ cognee-litert-lm/vendor/LiteRT-LM        # submodule = upstream google-ai-edge m
 cognee-litert-lm/native/    # gitignored: prepared LiteRT-LM dylibs (bundle-litert-dylibs.sh fills this)
 rig-components/                  # per-category rig tool crates (generated; each has registry::toolset_for)
 models/                     # .litertlm model files (gitignored, GB-scale)
+design-demos/               # UI mock HTML files (standalone, not served by Tauri)
 .env                        # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)
 .env.local                  # VITE_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (gitignored)
 scripts/dev-sqld.sh         # dev launcher for self-hosted sqld
@@ -254,6 +258,9 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
 ### Post-MVP, pre-release (first milestones after MVP ships)
 
 5. **Agent tier foundation — the product's core.** Agent = persona (system prompt) + curated toolset from `rig-components/` (`registry::toolset_for(names)`, used standalone — no rig provider needed). Runs on **local Gemma 4** (decision 2026-08-16): prompt-based tool calling — tool definitions embedded in the system prompt, model replies with JSON tool calls, backend loop in `logic.rs` parses → dispatches via ToolSet → feeds results back. Ship a built-in agent catalog (specialist personas per category), the three-pane UI (left: agent list; right: sessions of the selected agent; center: agent content), and session persistence keyed by `agent_id` (schema from MVP 1). Remote models via `rig` stay pluggable-optional, wired only if/when local quality proves insufficient.
+   - ✅ Three-pane UI implemented (2026-08-18): `index.html` rewrite with Pinecone Router, agent catalog (office/finance/knowledge/weather), session sidebar with period grouping, dark theme, pane collapse (⌘1/⌘3), canvas view (artifact/files tabs).
+   - ✅ Tool call events in `LocalChatEvent` (2026-08-18): `ToolCall` + `ToolResult` variants; frontend renders tool cards in conversation with spinner/checkmark status.
+   - Remaining: route-based session loading may need Pinecone Router reactivity work; session delete handler; session file tracking.
 6. **Production auth = browser + deep link.** Clerk dev-mode is broken in the webview (see Landmines); even prod may need it. Flow: open system browser → Clerk sign-in → redirect `kawai://auth?token=<jwt>` → `set_session`. Needs the tauri deep-link plugin + a Clerk-hosted page (or kawai-web route) to mint the redirect.
 7. **Desktop/mobile session persistence.** `State<Session>` is in-memory; lost on restart (with the dev bypass the frontend re-establishes it automatically — fine for MVP). Persist the token in the OS keychain (`tauri-plugin-stronghold` / keyring) and reload on launch.
 8. **Desktop/mobile DB token broker.** `logic::mint_db_token` reads the Ed25519 private key locally — fine for dev, but the private key MUST NOT ship in a production app. Add a `db_token` op: kawai-web verifies Clerk → mints a short EdDSA token → the device fetches it and feeds `Builder::new_remote_replica`. The private key stays server-side.
