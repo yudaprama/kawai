@@ -186,7 +186,7 @@
       <div class="flex-1 flex min-h-0">
 
         <!-- conversation -->
-        <section class="w-full min-w-0 flex flex-col" :class="$store.app.llm.modelLoaded ? 'md:w-[55%]' : ''">
+        <section class="w-full md:w-[55%] min-w-0 flex flex-col">
           <div class="flex-1 overflow-y-auto px-6 py-8">
             <div class="max-w-xl mx-auto w-full flex flex-col gap-7" id="local-chat-log">
               <template x-for="(m, i) in $store.app.llm.messages" :key="i">
@@ -248,25 +248,34 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-square"/></svg>Stop
               </button>
               <button class="btn btn-primary btn-sm" x-show="!$store.app.llm.chatActive" @click="chat()"
-                      :disabled="!$store.app.llm.chatInput.trim()">
+                      :disabled="!$store.app.llm.chatInput.trim() || !$store.app.llm.modelLoaded">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
               </button>
             </div>
           </div>
 
-          <!-- model controls (below composer, shown when model loaded) -->
-          <div x-show="$store.app.llm.modelLoaded" class="px-4 pb-3 flex items-center gap-2 flex-wrap">
-            <button class="btn btn-xs btn-ghost" @click="resetChat()" :disabled="$store.app.llm.chatActive" title="Reset conversation">Reset</button>
-            <button class="btn btn-xs" :class="$store.app.llm.thinking ? 'btn-warning' : 'btn-ghost'" @click="toggleThinking()" :disabled="$store.app.llm.chatActive">
-              Thinking: <span x-text="$store.app.llm.thinking ? 'ON' : 'OFF'"></span>
-            </button>
-            <button class="btn btn-xs btn-error btn-outline" @click="unloadModel()" :disabled="$store.app.llm.chatActive">Unload</button>
-            <span class="mono text-xs text-base-content/40 ml-auto" x-text="$store.app.llm.stats"></span>
+          <!-- model status + controls (below composer) -->
+          <div class="px-4 pb-3 flex items-center gap-2 flex-wrap">
+            <template x-if="!$store.app.llm.modelLoaded">
+              <span class="inline-flex items-center gap-2 text-xs text-base-content/50">
+                <span class="loading loading-spinner loading-xs text-primary"></span>
+                <span x-text="$store.app.llm.modelStatus || 'Loading model…'"></span>
+              </span>
+            </template>
+            <template x-if="$store.app.llm.modelLoaded">
+              <span class="inline-flex items-center gap-2 flex-wrap">
+                <button class="btn btn-xs btn-ghost" @click="resetChat()" :disabled="$store.app.llm.chatActive" title="Reset conversation">Reset</button>
+                <button class="btn btn-xs" :class="$store.app.llm.thinking ? 'btn-warning' : 'btn-ghost'" @click="toggleThinking()" :disabled="$store.app.llm.chatActive">
+                  Thinking: <span x-text="$store.app.llm.thinking ? 'ON' : 'OFF'"></span>
+                </button>
+                <span class="mono text-xs text-base-content/40 ml-auto" x-text="$store.app.llm.stats"></span>
+              </span>
+            </template>
           </div>
         </section>
 
-        <!-- canvas (only when model loaded) -->
-        <section x-show="$store.app.llm.modelLoaded" class="flex-1 min-w-0 flex flex-col border-l border-base-300/60" x-data="{ canvasTab: 'artifact' }">
+        <!-- canvas -->
+        <section class="flex-1 min-w-0 flex flex-col border-l border-base-300/60" x-data="{ canvasTab: 'artifact' }">
           <div class="h-10 shrink-0 border-b border-base-300/60 px-3 flex items-center gap-4">
             <button @click="canvasTab = 'artifact'" class="canvas-tab text-sm font-medium" :class="canvasTab === 'artifact' ? 'tab-on' : 'text-base-content/40'">Artifact</button>
             <button @click="canvasTab = 'files'" class="canvas-tab text-sm font-medium" :class="canvasTab === 'files' ? 'tab-on' : 'text-base-content/40'">Files</button>
@@ -287,43 +296,6 @@
             </div>
           </div>
         </section>
-
-        <!-- model selector (shown when no model loaded) -->
-        <div x-show="!$store.app.llm.modelLoaded" class="w-full flex flex-col items-center justify-center gap-4 p-6">
-          <div class="w-12 h-12 rounded-xl bg-base-200 flex items-center justify-center">
-            <span class="mono text-lg font-bold text-base-content/30">?</span>
-          </div>
-          <p class="text-sm text-base-content/50">Load a model to start chatting</p>
-          <div class="flex flex-wrap gap-2 items-center justify-center max-w-lg">
-            <select x-model="$store.app.llm.modelPreset" class="select select-bordered flex-1 min-w-52"
-                    :disabled="$store.app.llm.loading">
-              <option value="">Select model...</option>
-              <option value="/Users/yuda/ai-orchestration/kawai/models/gemma-4-E2B-it.litertlm">Gemma 4 E2B · CPU</option>
-              <option value="/Users/yuda/ai-orchestration/kawai/models/gemma-4-E2B-it-gpu.litertlm">Gemma 4 E2B · GPU</option>
-              <option value="/Users/yuda/ai-orchestration/kawai/models/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm">Qwen2.5 1.5B q8 · CPU</option>
-              <option value="custom">Custom path...</option>
-            </select>
-            <select x-model="$store.app.llm.backend" class="select select-bordered w-28" :disabled="$store.app.llm.loading">
-              <option value="cpu">CPU</option>
-              <option value="gpu">GPU</option>
-            </select>
-            <label class="label cursor-pointer gap-1">
-              <input type="checkbox" x-model="$store.app.llm.specDec" class="checkbox checkbox-xs" :disabled="$store.app.llm.loading" />
-              <span class="label-text text-xs">Spec</span>
-            </label>
-            <button class="btn btn-primary" @click="loadModel()"
-                    :disabled="$store.app.llm.loading || !$store.app.llm.modelPreset || ($store.app.llm.modelPreset === 'custom' && !$store.app.llm.modelPath.trim())">
-              <span x-show="$store.app.llm.loading" class="loading loading-spinner loading-xs"></span>
-              Load
-            </button>
-          </div>
-          <input x-show="$store.app.llm.modelPreset === 'custom'" x-model="$store.app.llm.modelPath"
-                 placeholder="/absolute/path/to/model.litertlm"
-                 class="input input-bordered w-full max-w-lg font-mono text-xs" />
-          <p x-text="$store.app.llm.modelStatus"
-             :class="$store.app.llm.modelError ? 'text-error' : ''"
-             class="text-sm"></p>
-        </div>
       </div>
     </template>
 

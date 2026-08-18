@@ -221,11 +221,12 @@ pub async fn append_chat_message(
 }
 
 /// Authenticated RPC: load an on-device model (`.litertlm`). Identity is
-/// resolved at the edge as usual; the engine lives in `logic.rs`.
+/// resolved at the edge as usual; the engine lives in `logic.rs`. When
+/// `model_path` is omitted the backend resolves it via `logic::resolve_model_path`.
 #[cfg(feature = "litert")]
 #[tauri::command]
 pub async fn local_load_model(
-    model_path: String,
+    model_path: Option<String>,
     gpu: Option<bool>,
     speculative_decoding: Option<bool>,
     max_num_images: Option<i32>,
@@ -233,6 +234,10 @@ pub async fn local_load_model(
     session: State<'_, Session>,
 ) -> Result<logic::local_llm::LocalModelInfo, String> {
     let user_id = session_user_id(&session)?;
+    let model_path = match model_path {
+        Some(p) if !p.is_empty() => p,
+        _ => logic::resolve_model_path()?,
+    };
     let result = logic::local_llm::load_model(
         &user_id,
         &model_path,

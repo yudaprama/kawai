@@ -53,8 +53,6 @@ function registerStore() {
       createSessionForAgent(agentId);
     },
     llm: {
-      modelPreset: "",
-      modelPath: "",
       backend: "cpu",
       specDec: false,
       modelStatus: "",
@@ -186,11 +184,9 @@ async function createSessionForAgent(agentId) {
 
 async function loadModel() {
   const llm = Alpine.store("app").llm;
-  const path = llm.modelPreset === "custom" ? llm.modelPath.trim() : llm.modelPreset;
-  if (!path) return;
   llm.loading = true;
   llm.modelError = false;
-  llm.modelStatus = `Loading ${path} …`;
+  llm.modelStatus = "Loading model…";
   try {
     // Get rig-components tools for native function calling
     let toolsJson = null;
@@ -201,9 +197,9 @@ async function loadModel() {
     } catch (e) {
       console.log("[loadModel] No rig-tools available:", e);
     }
-    
+
+    // Backend resolves the model path (KAWAI_MODEL_PATH → ./models/…).
     const info = await call("local_load_model", {
-      modelPath: path,
       gpu: llm.backend === "gpu",
       speculativeDecoding: llm.specDec,
       toolsJson: toolsJson,
@@ -578,6 +574,7 @@ async function syncSession() {
   try {
     const u = await setSession(token);
     Alpine.store("app").userId = u.userId;
+    await autoLoadModel();
   } catch {
     Alpine.store("app").userId = null;
   }
@@ -588,6 +585,7 @@ async function tryRestoreSession() {
   try {
     const u = await whoami();
     app.userId = u.userId;
+    await autoLoadModel();
     return;
   } catch {
     // No session yet. If the backend runs with the dev bypass
@@ -597,10 +595,18 @@ async function tryRestoreSession() {
     try {
       const u = await setSession("dev-clerk-unavailable");
       app.userId = u.userId;
+      await autoLoadModel();
     } catch {
       app.userId = null;
     }
   }
+}
+
+// Load the on-device Gemma 4 model automatically — no user action needed.
+async function autoLoadModel() {
+  const llm = Alpine.store("app").llm;
+  if (llm.modelLoaded || llm.loading) return;
+  await loadModel();
 }
 
 // ---- Boot ----

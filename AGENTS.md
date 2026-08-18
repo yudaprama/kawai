@@ -234,7 +234,8 @@ Project-root `.env` (gitignored) — backend reads these via `auth::load_dotenv(
 KAWAI_AUTH_JWKS_URI=...        # Clerk public JWKS
 KAWAI_AUTH_ISSUER=...          # Clerk frontend-API origin
 # KAWAI_AUTH_DEV_USER_ID=dev   # uncomment to accept ANY token as this user (dev only)
-KAWAI_DB_DIR=/path/to/dir     # optional, default: /tmp/kawai-db
+KAWAI_DB_DIR=/path/to/dir      # optional, default: /tmp/kawai-db
+KAWAI_MODEL_PATH=/path/to/gemma-4-E2B-it.litertlm  # optional on-device model; resolved by logic::resolve_model_path (env → ./models/ → ~/.kawai/models)
 ```
 `.env.local` (gitignored) — Clerk publishable key reference: `VITE_CLERK_PUBLISHABLE_KEY`. The actual key is embedded in `src/config.js` (publishable keys are public by design).
 

@@ -218,7 +218,7 @@ fn note_event_to_sse(event: NoteEvent) -> SseFrame {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LocalLoadModelRequest {
-    model_path: String,
+    model_path: Option<String>,
     gpu: Option<bool>,
     speculative_decoding: Option<bool>,
     max_num_images: Option<i32>,
@@ -230,9 +230,13 @@ async fn local_load_model_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<LocalLoadModelRequest>,
 ) -> Result<Json<logic::local_llm::LocalModelInfo>, (StatusCode, String)> {
+    let model_path = match req.model_path {
+        Some(p) if !p.is_empty() => p,
+        _ => logic::resolve_model_path()?,
+    };
     logic::local_llm::load_model(
         &claims.sub,
-        &req.model_path,
+        &model_path,
         req.gpu.unwrap_or(true),
         req.speculative_decoding.unwrap_or(false),
         req.max_num_images.unwrap_or(0),
