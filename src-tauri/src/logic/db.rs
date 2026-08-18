@@ -1,7 +1,11 @@
 //! Database access (local SQLite via libsql) + notes + chat sessions.
 //!
 //! Desktop MVP: single-device, local SQLite file, no sync.
-//! DB path: $KAWAI_DB_DIR/kawai.db (default: /tmp/kawai-db/kawai.db).
+//! One data directory per user: `<data_root>/<user_id>/` holds everything the
+//! user owns (kawai.db + office docs subdir) so backup/restore is one folder
+//! per user. The identity from the transport edge selects the directory; rows
+//! inside are NOT user-tagged (hard isolation by path — the sqld-namespace
+//! model, applied to local files).
 //!
 //! Connections are opened per-op. Pool before production.
 
@@ -49,24 +53,65 @@ pub(crate) fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
-/// Open a local libsql (SQLite) connection. No auth token needed — desktop MVP,
-/// single-device, no sync.
-pub async fn db_connection(_user_id: &str) -> Result<libsql::Connection, DbError> {
-    let db = build_db().await?;
+/// Open the calling user's local libsql (SQLite) connection. `user_id` selects
+/// the per-user data directory — one DB per user, no auth token needed (desktop
+/// MVP, single-device, no sync).
+pub async fn db_connection(user_id: &str) -> Result<libsql::Connection, DbError> {
+    let db = build_db(user_id).await?;
     db.connect().map_err(DbError::from)
 }
 
-async fn build_db() -> Result<libsql::Database, DbError> {
-    let dir = db_dir();
-    std::fs::create_dir_all(&dir).ok();
+static DATA_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Inject the data root (used by the Tauri shell: app-data dir). Env overrides
+/// still win — see `data_root()`.
+pub fn set_data_root(dir: impl Into<PathBuf>) {
+    let _ = DATA_ROOT.set(dir.into());
+}
+
+/// Root of all per-user data directories. Resolution order: `KAWAI_DATA_DIR`
+/// env → legacy `KAWAI_DB_DIR` env (also a per-user root) → injected root →
+/// `/tmp/kawai` (headless/web default).
+fn data_root() -> PathBuf {
+    for key in ["KAWAI_DATA_DIR", "KAWAI_DB_DIR"] {
+        if let Ok(v) = std::env::var(key) {
+            if !v.is_empty() {
+                return PathBuf::from(v);
+            }
+        }
+    }
+    if let Some(p) = DATA_ROOT.get() {
+        return p.clone();
+    }
+    std::env::temp_dir().join("kawai")
+}
+
+/// The user's data directory — everything a user owns lives here (kawai.db,
+/// docs/). Backup/restore/sync operates on this one folder per user.
+pub fn user_data_dir(user_id: &str) -> PathBuf {
+    data_root().join(sanitize_user_dir(user_id))
+}
+
+async fn build_db(user_id: &str) -> Result<libsql::Database, DbError> {
+    let dir = user_data_dir(user_id);
+    std::fs::create_dir_all(&dir)?;
     let file = dir.join("kawai.db");
     Ok(libsql::Builder::new_local(file).build().await?)
 }
 
-fn db_dir() -> PathBuf {
-    std::env::var("KAWAI_DB_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::temp_dir().join("kawai-db"))
+/// Filesystem-safe encoding of a user id for the per-user data directory.
+/// `[A-Za-z0-9_-]` passes through (covers `demo` and Clerk `user_*` subs);
+/// anything else degrades to a deterministic hex encoding.
+fn sanitize_user_dir(user_id: &str) -> String {
+    if !user_id.is_empty()
+        && user_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        user_id.to_string()
+    } else {
+        user_id.bytes().map(|b| format!("{b:02x}")).collect()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -78,7 +123,6 @@ pub struct Note {
 }
 
 const NOTES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS notes (
-    user_id TEXT NOT NULL,
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     body TEXT NOT NULL,
     created_at INTEGER NOT NULL
@@ -90,9 +134,9 @@ pub async fn create_note(user_id: &str, body: &str) -> Result<Note, DbError> {
     let now = unix_now() as i64;
     let mut rows = conn
         .query(
-            "INSERT INTO notes (user_id, body, created_at) VALUES (?, ?, ?) \
+            "INSERT INTO notes (body, created_at) VALUES (?, ?) \
              RETURNING id, body, created_at",
-            (user_id, body, now),
+            (body, now),
         )
         .await?;
     let row = rows
@@ -111,8 +155,8 @@ pub async fn list_notes(user_id: &str) -> Result<Vec<Note>, DbError> {
     conn.execute(NOTES_SCHEMA, ()).await?;
     let mut rows = conn
         .query(
-            "SELECT id, body, created_at FROM notes WHERE user_id = ? ORDER BY id",
-            vec![user_id],
+            "SELECT id, body, created_at FROM notes ORDER BY id",
+            (),
         )
         .await?;
     let mut out = Vec::new();
@@ -183,7 +227,6 @@ pub struct ChatMessage {
 }
 
 const SESSIONS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS sessions (
-    user_id TEXT NOT NULL,
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id TEXT NOT NULL,
     title TEXT NOT NULL DEFAULT '',
@@ -201,12 +244,7 @@ const MESSAGES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS messages (
 async fn ensure_chat_schema(conn: &libsql::Connection) -> Result<(), DbError> {
     conn.execute(SESSIONS_SCHEMA, ()).await?;
     conn.execute(MESSAGES_SCHEMA, ()).await?;
-    // Cover the hot queries: sessions by user (sidebar), messages by session.
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id, id)",
-        (),
-    )
-    .await?;
+    // Cover the hot query: messages by session (`id` is already the PK).
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_messages_session ON messages (session_id, id)",
         (),
@@ -228,10 +266,10 @@ pub async fn create_chat_session(
     let now = unix_now() as i64;
     let mut rows = conn
         .query(
-            "INSERT INTO sessions (user_id, agent_id, title, created_at) \
-             VALUES (?, ?, '', ?) \
+            "INSERT INTO sessions (agent_id, title, created_at) \
+             VALUES (?, '', ?) \
              RETURNING id, agent_id, title, created_at",
-            (user_id, agent, now),
+            (agent, now),
         )
         .await?;
     let row = rows
@@ -252,9 +290,8 @@ pub async fn list_chat_sessions(user_id: &str) -> Result<Vec<ChatSession>, DbErr
     ensure_chat_schema(&conn).await?;
     let mut rows = conn
         .query(
-            "SELECT id, agent_id, title, created_at FROM sessions \
-             WHERE user_id = ? ORDER BY id DESC",
-            vec![user_id],
+            "SELECT id, agent_id, title, created_at FROM sessions ORDER BY id DESC",
+            (),
         )
         .await?;
     let mut out = Vec::new();
@@ -269,18 +306,16 @@ pub async fn list_chat_sessions(user_id: &str) -> Result<Vec<ChatSession>, DbErr
     Ok(out)
 }
 
-/// Fetch a session owned by `user_id`, or `NotFound` (covers both a missing
-/// id and one belonging to another user — no information leak).
+/// Fetch a session, or `NotFound` if the id doesn't exist. (User isolation is
+/// by per-user database file — no user column to check.)
 async fn chat_session_owned(
     conn: &libsql::Connection,
-    user_id: &str,
     session_id: i64,
 ) -> Result<ChatSession, DbError> {
     let mut rows = conn
         .query(
-            "SELECT id, agent_id, title, created_at FROM sessions \
-             WHERE id = ? AND user_id = ?",
-            (session_id, user_id),
+            "SELECT id, agent_id, title, created_at FROM sessions WHERE id = ?",
+            vec![session_id],
         )
         .await?;
     let row = rows
@@ -295,14 +330,14 @@ async fn chat_session_owned(
     })
 }
 
-/// List a session's messages, oldest first. Ownership is verified first.
+/// List a session's messages, oldest first. Existence is verified first.
 pub async fn list_chat_messages(
     user_id: &str,
     session_id: i64,
 ) -> Result<Vec<ChatMessage>, DbError> {
     let conn = db_connection(user_id).await?;
     ensure_chat_schema(&conn).await?;
-    chat_session_owned(&conn, user_id, session_id).await?;
+    chat_session_owned(&conn, session_id).await?;
     let mut rows = conn
         .query(
             "SELECT id, session_id, role, content, created_at FROM messages \
@@ -323,7 +358,7 @@ pub async fn list_chat_messages(
     Ok(out)
 }
 
-/// Append a message to a session (ownership verified). The first user message
+/// Append a message to a session (existence verified). The first user message
 /// seeds the session title.
 pub async fn append_chat_message(
     user_id: &str,
@@ -333,7 +368,7 @@ pub async fn append_chat_message(
 ) -> Result<ChatMessage, DbError> {
     let conn = db_connection(user_id).await?;
     ensure_chat_schema(&conn).await?;
-    chat_session_owned(&conn, user_id, session_id).await?;
+    chat_session_owned(&conn, session_id).await?;
     let now = unix_now() as i64;
     let mut rows = conn
         .query(

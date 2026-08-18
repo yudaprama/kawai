@@ -407,33 +407,37 @@ pub async fn office_index_file(
         .map_err(|e| e.to_string())
 }
 
-/// Authenticated RPC: vector-search the indexed knowledge for a query, scoped to
-/// the user and the mentioned files. Runs at submit time (instant — no
+/// Authenticated RPC: vector-search the indexed knowledge for a query. The
+/// candidate set is the message's mentioned files plus everything the session
+/// has referenced (`session_files`). Runs at submit time (instant — no
 /// subprocess spawn). Returns chunk contents; the frontend falls back to
 /// `knowledge_context` when this is empty (index not built yet).
 #[cfg(feature = "office")]
 #[tauri::command]
 pub async fn knowledge_search(
+    session_id: Option<i64>,
     file_ids: Vec<String>,
     query: String,
     session: State<'_, Session>,
 ) -> Result<Vec<logic::rag::RagHit>, String> {
     let user_id = session_user_id(&session)?;
-    logic::rag::knowledge_search(user_id, file_ids, query)
+    logic::rag::knowledge_search(user_id, session_id, file_ids, query)
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Authenticated RPC: forget indexed chunks for the given file ids (e.g. when a
-/// knowledge mention is removed). Scoped by the session user.
+/// Authenticated RPC: remove the session's association with the given files
+/// and purge chunks of files no session references anymore (e.g. when a
+/// knowledge mention is removed).
 #[cfg(feature = "office")]
 #[tauri::command]
 pub async fn knowledge_forget(
+    session_id: Option<i64>,
     file_ids: Vec<String>,
     session: State<'_, Session>,
 ) -> Result<usize, String> {
     let user_id = session_user_id(&session)?;
-    logic::rag::forget_file(user_id, file_ids)
+    logic::rag::forget_file(user_id, session_id, file_ids)
         .await
         .map_err(|e| e.to_string())
 }

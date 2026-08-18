@@ -34,7 +34,9 @@ pub fn run() {
                     logic::office::set_runtime_dir(res.join("office-runtime"));
                 }
                 if let Ok(data) = app.path().app_data_dir() {
-                    logic::office::set_docs_dir(data.join("documents"));
+                    // One per-user data root: <app_data>/<user_id>/ holds
+                    // kawai.db + docs/ (office store defaults into it).
+                    logic::db::set_data_root(data);
                 }
             }
             #[cfg(not(feature = "office"))]

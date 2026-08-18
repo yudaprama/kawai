@@ -5,7 +5,9 @@ import {
   errText,
   type ChatMessageInfo,
   type ChatSessionInfo,
+  type KnowledgeContext,
   type LocalModelInfo,
+  type RagHit,
   type UserInfo,
 } from "@/lib/api";
 import { streamOperation, type StreamControl } from "@/lib/stream";
@@ -246,9 +248,9 @@ export function useLocalChat(agentId: string) {
   }, [patch]);
 
   const send = useCallback(
-    async (text: string, imageB64?: string, knowledgeContext?: string) => {
+    async (text: string, imageB64?: string, sourceIds?: string[]) => {
       const prompt = text.trim();
-      if ((!prompt && !imageB64) || streamCtrl.current) return;
+      if ((!prompt && !imageB64 && !sourceIds?.length) || streamCtrl.current) return;
 
       const userParts: UIMessagePart[] = [];
       if (prompt) userParts.push({ type: "text", text: prompt, state: "done" });
@@ -284,6 +286,36 @@ export function useLocalChat(agentId: string) {
         call("append_chat_message", { sessionId, role: "user", content: prompt }).catch(
           (err) => console.error("[append user]", errText(err)),
         );
+      }
+
+      // Knowledge retrieval runs here, after the session exists, so the
+      // backend can associate the mentioned files with the session and search
+      // everything the session has referenced (`session_files`).
+      let knowledgeContext: string | undefined;
+      if (sourceIds?.length) {
+        try {
+          const hits = await call<RagHit[]>("knowledge_search", {
+            sessionId,
+            fileIds: sourceIds,
+            query: prompt,
+          });
+          if (hits.length) {
+            knowledgeContext = hits
+              .map((h) => `【${h.source}】\n${h.content}`)
+              .join("\n\n---\n\n");
+          }
+        } catch (err) {
+          console.warn("[knowledge_search]", errText(err));
+        }
+        // Fallback to lazy extraction when nothing is indexed yet.
+        if (!knowledgeContext) {
+          try {
+            const kc = await call<KnowledgeContext>("knowledge_context", { fileIds: sourceIds });
+            knowledgeContext = kc.context || undefined;
+          } catch (err) {
+            console.error("[knowledge_context]", errText(err));
+          }
+        }
       }
 
       const t0 = performance.now();

@@ -189,6 +189,7 @@ frontend/                        # React 19 + Vite + Tailwind v4 SPA (vite root)
 │   └── assets/                  # icon-map.json + utils (file icon naming)
 src/                             # RETIRED vanilla frontend (reference only; do not edit)
 src-tauri/src/logic.rs           # PURE logic; rig + libsql + local_llm (litert) + db token minting
+src-tauri/src/logic/rag.rs       # office-gated RAG: chunk/embed/index + session-scoped knowledge_search
 src-tauri/src/logic/office/      # office domain (feature "office"): mod.rs + cli.rs + store.rs + ooxml.rs + pdf.rs + tools.rs
 src-tauri/src/logic/agent.rs     # prompt-based tool-calling loop (features litert) — personas + agent_chat
 src-tauri/src/logging.rs         # stderr tee → ~/Library/Logs/kawai/app.log
@@ -244,14 +245,14 @@ Desktop MVP: single-device, local SQLite file, no sync.
 
 ```
 user → (dev bypass / future Clerk) → Rust backend → user_id
-                                                   │
-   local SQLite file ◀─────────────────────────────┘  Builder::new_local(path)
-   ($KAWAI_DB_DIR/kawai.db)
+                                                    │
+   local SQLite file (per user) ◀──────────────────┘  Builder::new_local(path)
+   ($KAWAI_DB_DIR/<user_id>/kawai.db)
 ```
 
 - `logic::db_connection(user_id)` opens a per-op local SQLite connection.
-- Default path: `/tmp/kawai-db/kawai.db` (override with `KAWAI_DB_DIR`).
-- Rows scoped by `WHERE user_id = ?`.
+- Default path: `/tmp/kawai-db/<user_id>/kawai.db` (override root with `KAWAI_DB_DIR`; `[A-Za-z0-9_-]` user ids pass through, anything else hex-encodes).
+- **One DB per user — no `user_id` columns.** Isolation is structural (per-user file), matching the future sqld-namespace model (Roadmap 16). The `office` RAG tables (`rag_chunks`, `session_files`) follow the same rule; `session_files(session_id, file_id)` scopes knowledge search to everything a session has referenced.
 - Post-MVP: sqld for multi-device sync, EdDSA token minting, embedded replicas.
 
 ## Configuration (.env)
@@ -282,7 +283,8 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
 5. **Agent tier foundation — the product's core.** Agent = persona (system prompt) + curated toolset from `rig-components/` (`registry::toolset_for(names)`, used standalone — no rig provider needed). Runs on **local Gemma 4** (decision 2026-08-16): prompt-based tool calling — tool definitions embedded in the system prompt, model replies with JSON tool calls, backend loop in `logic.rs` parses → dispatches via ToolSet → feeds results back. Ship a built-in agent catalog (specialist personas per category), the three-pane UI (left: agent list; right: sessions of the selected agent; center: agent content) — rebuild on the React frontend, and session persistence keyed by `agent_id` (schema from MVP 1). Remote models via `rig` stay pluggable-optional, wired only if/when local quality proves insufficient.
    - ✅ Tool call events in `LocalChatEvent` (2026-08-18): `ToolCall` + `ToolResult` variants; the React frontend renders tool cards in conversation (`App.tsx` + `components/ai-elements/tool`).
    - ✅ React frontend migration (2026-08-18): vanilla JS/Alpine/Pinecone replaced by React 19 + Vite + Tailwind v4 (`frontend/`), components vendored from the `web/` SPA. Chat, sessions sidebar, thinking toggle, tool cards at parity with the vanilla MVP.
-   - ✅ Knowledge injection Tier 1 (2026-08-18): composer @-mention (`@` → popup of stored office docs → chip) + `knowledge_context` op (office feature) extracts text (pdfcli/ooxcli, per-file 12k / total 36k char caps) and prepends it to the `local_chat` prompt. Tier 2 (local embeddings + rig-libsql vec RAG) and Tier 3 (`knowledge_search` as an agent tool) remain open.
+   - ✅ Knowledge injection Tier 1 (2026-08-18): composer @-mention (`@` → popup of stored office docs → chip) + `knowledge_context` op (office feature) extracts text (pdfcli/ooxcli, per-file 12k / total 36k char caps) and prepends it to the `local_chat` prompt.
+   - ✅ Knowledge injection Tier 2 (2026-08-19): idle-time RAG in `logic/rag.rs` — `office_index_file` (extract → chunk 1500/overlap 200 → `kawai-embedding` local fastembed → `rig-libsql` vector store `rag_chunks`), `knowledge_search` at submit time (instant top-8, candidates = message mentions ∪ `session_files` of the session, fallback `knowledge_context`), `knowledge_forget` (disassociate + orphan chunk purge). Retrieval lives in `use-local-chat.ts` `send` (post-`ensureSession`, so the session id is known). Tier 3 (`knowledge_search` as an agent tool) remains open.
    - Remaining: agent catalog UI (three-pane), per-agent session routing, session delete, session file tracking.
 6. **Production auth = browser + deep link.** Flow: open system browser → sign-in (Clerk page or Kratos) → redirect `kawai://auth?token=<jwt>` → `set_session`. Needs the tauri deep-link plugin + a hosted page (or kawai-web route) to mint the redirect. The main `web/` SPA's Kratos `kawai://oidc-callback` flow is the proven reference (`web/src/platform/tauri.ts`); reusing Kratos would unify identity with the main platform.
 7. **Desktop/mobile session persistence.** `State<Session>` is in-memory; lost on restart (with the dev bypass the frontend re-establishes it automatically — fine for MVP). Persist the token in the OS keychain (`tauri-plugin-stronghold` / keyring) and reload on launch.

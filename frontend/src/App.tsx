@@ -41,7 +41,7 @@ import { useCopyButton } from "@/hooks/use-copy-button";
 import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useLocalChat } from "@/hooks/use-local-chat";
 import { platform, runningInTauri } from "@/platform";
-import { call, errText, type KnowledgeContext, type OfficeFileInfo, type RagHit } from "@/lib/api";
+import { call, errText, type OfficeFileInfo } from "@/lib/api";
 import type { SourceDocumentUIPart, UIMessage } from "@/lib/ai-types";
 import {
   BookOpenIcon,
@@ -258,12 +258,14 @@ function ChatComposer({
   onStop,
   onSubmit,
   knowledge,
+  sessionId,
 }: {
   agentName: string;
   status: ReturnType<typeof useLocalChat>["status"];
   onStop: () => void;
-  onSubmit: (text: string, imageB64?: string, knowledgeContext?: string) => void;
+  onSubmit: (text: string, imageB64?: string, sourceIds?: string[]) => void;
   knowledge: KnowledgeFiles;
+  sessionId: number | null;
 }) {
   return (
     <PromptInputProvider>
@@ -274,6 +276,7 @@ function ChatComposer({
           onStop={onStop}
           status={status}
           onSubmit={onSubmit}
+          sessionId={sessionId}
         />
       </ChatComposerSources>
     </PromptInputProvider>
@@ -316,12 +319,14 @@ function ChatComposerInner({
   onStop,
   onSubmit,
   knowledge,
+  sessionId,
 }: {
   agentName: string;
   status: ReturnType<typeof useLocalChat>["status"];
   onStop: () => void;
-  onSubmit: (text: string, imageB64?: string, knowledgeContext?: string) => void;
+  onSubmit: (text: string, imageB64?: string, sourceIds?: string[]) => void;
   knowledge: KnowledgeFiles;
+  sessionId: number | null;
 }) {
   const attachments = usePromptInputAttachments();
   const sources = usePromptInputReferencedSources();
@@ -384,35 +389,12 @@ function ChatComposerInner({
       const imageB64 =
         image && image.url.startsWith("data:") ? (dataUrlB64(image.url) ?? undefined) : undefined;
 
-      let context: string | undefined;
+      // Pass the mentioned knowledge files through — retrieval happens in the
+      // chat hook, where the session id is known (session-scoped search).
       const sourceIds = sources.sources.map((s) => s.sourceId);
-      if (sourceIds.length > 0) {
-        // Prefer instant vector retrieval over the slow full-text path.
-        try {
-          const hits = await call<RagHit[]>("knowledge_search", {
-            fileIds: sourceIds,
-            query: message.text,
-          });
-          if (hits.length) {
-            context = hits
-              .map((h) => `【${h.source}】\n${h.content}`)
-              .join("\n\n---\n\n");
-          }
-        } catch (err) {
-          console.warn("[knowledge_search]", errText(err));
-        }
-        // Fallback to lazy extraction when nothing is indexed yet.
-        if (!context) {
-          try {
-            const kc = await call<KnowledgeContext>("knowledge_context", { fileIds: sourceIds });
-            context = kc.context || undefined;
-          } catch (err) {
-            console.error("[knowledge_context]", errText(err));
-          }
-        }
-      }
 
-      if (message.text.trim() || imageB64 || context) onSubmit(message.text, imageB64, context);
+      if (message.text.trim() || imageB64 || sourceIds.length > 0)
+        onSubmit(message.text, imageB64, sourceIds.length > 0 ? sourceIds : undefined);
       sources.clear();
     },
     [sources, onSubmit],
@@ -452,9 +434,10 @@ function ChatComposerInner({
                   className="hover:text-foreground shrink-0"
                   onClick={() => {
                     sources.remove(source.id);
-                    // Drop the idle-indexed chunks for this file; they are
-                    // cheaply rebuilt during idle time if mentioned again.
+                    // Disassociate the file from this session; chunks are
+                    // purged only if no session references the file anymore.
                     void call<number>("knowledge_forget", {
+                      sessionId,
                       fileIds: [source.sourceId],
                     }).catch((e) => console.warn("[knowledge_forget]", errText(e)));
                   }}
@@ -826,9 +809,10 @@ export default function App() {
                 knowledge={knowledge}
                 onStop={chat.stop}
                 status={status}
-                onSubmit={(text, imageB64, knowledgeContext) =>
-                  void chat.send(text, imageB64, knowledgeContext)
+                onSubmit={(text, imageB64, sourceIds) =>
+                  void chat.send(text, imageB64, sourceIds)
                 }
+                sessionId={chat.sessionId}
               />
             </div>
           </section>

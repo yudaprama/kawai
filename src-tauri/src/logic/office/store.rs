@@ -10,16 +10,21 @@ pub fn set_docs_dir(dir: impl Into<PathBuf>) {
     let _ = DOCS_DIR.set(dir.into());
 }
 
-pub fn docs_root() -> PathBuf {
+/// An explicitly configured documents root (`KAWAI_DOCS_DIR` env or injected
+/// via `set_docs_dir`). When set, user docs live at `<root>/<user_id>/`
+/// (legacy layout). When unset, they default into the user's unified data
+/// directory: `<data_root>/<user_id>/docs/` — one folder per user to back up.
+fn custom_docs_root() -> Option<PathBuf> {
     if let Ok(v) = std::env::var("KAWAI_DOCS_DIR") {
         if !v.is_empty() {
-            return PathBuf::from(v);
+            return Some(PathBuf::from(v));
         }
     }
-    if let Some(p) = DOCS_DIR.get() {
-        return p.clone();
-    }
-    std::env::temp_dir().join("kawai-docs")
+    DOCS_DIR.get().cloned()
+}
+
+pub fn docs_root() -> PathBuf {
+    custom_docs_root().unwrap_or_else(|| std::env::temp_dir().join("kawai-docs"))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -90,7 +95,10 @@ fn user_dir(user_id: &str) -> Result<PathBuf, String> {
     if !valid_id(user_id) {
         return Err("invalid user id".into());
     }
-    Ok(docs_root().join(user_id))
+    match custom_docs_root() {
+        Some(root) => Ok(root.join(user_id)),
+        None => Ok(crate::logic::db::user_data_dir(user_id).join("docs")),
+    }
 }
 
 pub fn import_bytes(user_id: &str, name: &str, data: &[u8]) -> Result<OfficeFile, String> {
