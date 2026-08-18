@@ -16,6 +16,12 @@
 //! to FILES; the `session_files` table associates files with the sessions that
 //! referenced them, so a search covers everything the session has touched, not
 //! just the current message's mentions.
+//!
+//! Retrieval is hybrid: an FTS5 mirror of `rag_chunks` provides BM25 keyword
+//! ranking (exact ids, numbers, codes) alongside vector similarity (paraphrase,
+//! synonyms), fused per-query with Reciprocal Rank Fusion.
+
+use std::collections::HashMap;
 
 use rig_core::Embed;
 use rig_core::embeddings::EmbeddingsBuilder;
@@ -29,6 +35,8 @@ use kawai_embedding::TenantAwareEmbedder;
 
 const CHUNK_CHARS: usize = 1500;
 const CHUNK_OVERLAP: usize = 200;
+/// Reciprocal Rank Fusion smoothing constant (the standard k = 60).
+const RRF_K: f64 = 60.0;
 
 /// A single embedded chunk of an indexed office document.
 #[derive(Clone, Debug, Deserialize, Serialize, Embed)]
@@ -169,6 +177,124 @@ async fn extract_text(user_id: &str, file_id: &str) -> Result<Option<String>, St
     }
 }
 
+// ── lexical (FTS5 / BM25) mirror ─────────────────────────────────────────────
+
+/// Create the FTS5 mirror of `rag_chunks` plus the triggers that keep it in
+/// sync, then backfill rows written before the mirror existed. Every write
+/// path (rig-libsql inserts, `purge_file_chunks`, the orphan pass in
+/// `forget_file`) issues plain INSERT/DELETE on `rag_chunks`, so the triggers
+/// cover them without touching any caller. rig-libsql uses `INSERT OR REPLACE`:
+/// on a replace SQLite assigns a NEW rowid and (recursive triggers off) fires
+/// only the insert trigger, leaving the old FTS row as a ghost — harmless,
+/// because `bm25_search` joins on `rag_chunks.rowid`, which the ghost no longer
+/// matches. Must be called only after `rag_chunks` itself exists.
+async fn ensure_fts(conn: &libsql::Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS rag_chunks_fts USING fts5(content, tokenize='unicode61');
+         CREATE TRIGGER IF NOT EXISTS rag_chunks_fts_ai AFTER INSERT ON rag_chunks BEGIN
+             INSERT INTO rag_chunks_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
+         END;
+         CREATE TRIGGER IF NOT EXISTS rag_chunks_fts_ad AFTER DELETE ON rag_chunks BEGIN
+             DELETE FROM rag_chunks_fts WHERE rowid = OLD.rowid;
+         END;
+         CREATE TRIGGER IF NOT EXISTS rag_chunks_fts_au AFTER UPDATE ON rag_chunks BEGIN
+             DELETE FROM rag_chunks_fts WHERE rowid = OLD.rowid;
+             INSERT INTO rag_chunks_fts(rowid, content) VALUES (NEW.rowid, NEW.content);
+         END;
+         INSERT INTO rag_chunks_fts(rowid, content)
+             SELECT rowid, content FROM rag_chunks
+             WHERE rowid NOT IN (SELECT rowid FROM rag_chunks_fts);",
+    )
+    .await
+    .map(|_| ())
+    .map_err(|e| format!("fts schema: {e}"))
+}
+
+/// Quote each whitespace token so arbitrary user text (hyphens, digits, FTS5
+/// operators) can never produce a MATCH syntax error; tokens become AND-ed
+/// phrases (a hyphenated code like `INV-2026-041` matches its exact token
+/// sequence). `None` when nothing searchable remains.
+fn fts_match_query(query: &str) -> Option<String> {
+    let phrases: Vec<String> = query
+        .split_whitespace()
+        .map(|t| format!("\"{}\"", t.replace('"', " ")))
+        .take(16)
+        .collect();
+    if phrases.is_empty() {
+        None
+    } else {
+        Some(phrases.join(" "))
+    }
+}
+
+/// Lexical top-k: BM25 over the FTS5 mirror, restricted to the same candidate
+/// files the vector side searches (FTS5 cannot filter `file_id` itself, hence
+/// the rowid JOIN back to `rag_chunks`). SQLite's `bm25()` is lower-is-better,
+/// so the ASC order yields best matches first.
+async fn bm25_search(
+    conn: &libsql::Connection,
+    file_ids: &[String],
+    match_query: &str,
+    limit: usize,
+) -> Result<Vec<RagChunk>, String> {
+    if file_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let file_ph = (2..=file_ids.len() + 1)
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT c.id, c.content, c.file_id, c.source, c.locator \
+         FROM rag_chunks_fts f JOIN rag_chunks c ON c.rowid = f.rowid \
+         WHERE f MATCH ?1 AND c.file_id IN ({file_ph}) \
+         ORDER BY bm25(f) LIMIT ?{}",
+        file_ids.len() + 2
+    );
+    let mut params: Vec<libsql::Value> = Vec::with_capacity(file_ids.len() + 2);
+    params.push(libsql::Value::Text(match_query.to_string()));
+    params.extend(file_ids.iter().map(|f| libsql::Value::Text(f.clone())));
+    params.push(libsql::Value::Integer(limit as i64));
+
+    let mut rows = conn
+        .query(&sql, params)
+        .await
+        .map_err(|e| format!("bm25: {e}"))?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await.map_err(|e| format!("bm25: {e}"))? {
+        let id: String = row.get(0).map_err(|e| format!("bm25: {e}"))?;
+        let content: String = row.get(1).map_err(|e| format!("bm25: {e}"))?;
+        let file_id: String = row.get(2).map_err(|e| format!("bm25: {e}"))?;
+        let source: String = row.get(3).map_err(|e| format!("bm25: {e}"))?;
+        let locator: String = row.get(4).map_err(|e| format!("bm25: {e}"))?;
+        out.push(RagChunk {
+            id,
+            content,
+            file_id,
+            source,
+            locator,
+        });
+    }
+    Ok(out)
+}
+
+/// Reciprocal Rank Fusion of the vector and lexical rankings (1-based ranks):
+/// score(d) = Σ 1/(RRF_K + rank_d). Chunks found by both sides outrank
+/// single-side hits; ties break by chunk id for determinism.
+fn rrf_fuse(vector: Vec<RagChunk>, lexical: Vec<RagChunk>, limit: usize) -> Vec<RagChunk> {
+    let mut fused: HashMap<String, (f64, RagChunk)> = HashMap::new();
+    for ranking in [vector, lexical] {
+        for (rank, doc) in ranking.into_iter().enumerate() {
+            let entry = fused.entry(doc.id.clone()).or_insert_with(|| (0.0, doc));
+            entry.0 += 1.0 / (RRF_K + rank as f64 + 1.0);
+        }
+    }
+    let mut ranked: Vec<(f64, RagChunk)> = fused.into_values().collect();
+    ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.id.cmp(&b.1.id)));
+    ranked.truncate(limit);
+    ranked.into_iter().map(|(_, doc)| doc).collect()
+}
+
 /// A retrieved chunk with its provenance, for citation in the UI/LLM context.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -208,9 +334,13 @@ pub async fn office_index_file(user_id: String, file_id: String) -> Result<usize
     purge_file_chunks(&conn, &file_id).await?;
 
     let store: LibsqlVectorStore<TenantAwareEmbedder, RagChunk> =
-        LibsqlVectorStore::new(conn, &model)
+        LibsqlVectorStore::new(conn.clone(), &model)
             .await
             .map_err(|e| format!("store: {e}"))?;
+
+    // FTS mirror + triggers must exist before the inserts below so BM25 sees
+    // them; the backfill inside also covers chunks indexed pre-FTS.
+    ensure_fts(&conn).await?;
 
     let docs: Vec<RagChunk> = chunks
         .into_iter()
@@ -245,8 +375,10 @@ pub async fn office_index_file(user_id: String, file_id: String) -> Result<usize
 /// context without re-mentioning. Mentioned files are (re-)associated with the
 /// session here, at the only moment the session id is guaranteed known.
 /// Called at submit time instead of the slow `knowledge_context` (which
-/// re-extracts everything). Returns chunk contents; empty when nothing is
-/// indexed yet (caller falls back to `knowledge_context`).
+/// re-extracts everything). Retrieval is hybrid — vector similarity fused with
+/// FTS5/BM25 keyword ranking via RRF — so exact codes and numbers also hit.
+/// Returns chunk contents; empty when nothing is indexed yet (caller falls
+/// back to `knowledge_context`).
 pub async fn knowledge_search(
     user_id: String,
     session_id: Option<i64>,
@@ -279,7 +411,7 @@ pub async fn knowledge_search(
 
     let model = kawai_embedding::build_providers_from_env();
     let store: LibsqlVectorStore<TenantAwareEmbedder, RagChunk> =
-        LibsqlVectorStore::new(conn, &model)
+        LibsqlVectorStore::new(conn.clone(), &model)
             .await
             .map_err(|e| format!("store: {e}"))?;
     let index = store.index(model);
@@ -300,9 +432,26 @@ pub async fn knowledge_search(
         .await
         .map_err(|e| format!("search: {e}"))?;
 
-    Ok(results
+    // Lexical side is best-effort: a missing/broken FTS mirror must never fail
+    // the search — degrade to vector-only.
+    let mut lexical: Vec<RagChunk> = Vec::new();
+    if let Some(match_query) = fts_match_query(&query) {
+        if ensure_fts(&conn).await.is_ok() {
+            lexical = bm25_search(&conn, &candidates, &match_query, K as usize)
+                .await
+                .unwrap_or_default();
+        }
+    }
+
+    let docs = rrf_fuse(
+        results.into_iter().map(|(_, _, doc)| doc).collect(),
+        lexical,
+        K as usize,
+    );
+
+    Ok(docs
         .into_iter()
-        .map(|(_, _, doc)| RagHit {
+        .map(|doc| RagHit {
             source: doc.source,
             locator: doc.locator,
             content: doc.content,
@@ -369,7 +518,8 @@ pub async fn forget_file(
 }
 
 /// Delete one file's chunks plus their FLOAT32 vectors and map links. Missing
-/// tables are tolerated (nothing indexed yet).
+/// tables are tolerated (nothing indexed yet). The FTS mirror rows go away via
+/// the `rag_chunks` delete trigger.
 async fn purge_file_chunks(conn: &libsql::Connection, file_id: &str) -> Result<(), String> {
     let docs_subq = "SELECT rowid FROM rag_chunks WHERE file_id = ?";
     // 1. Drop the FLOAT32 vectors referenced by the map for these docs, so
@@ -391,4 +541,112 @@ async fn purge_file_chunks(conn: &libsql::Connection, file_id: &str) -> Result<(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chunk(id: &str) -> RagChunk {
+        RagChunk {
+            id: id.to_string(),
+            content: String::new(),
+            file_id: String::new(),
+            source: String::new(),
+            locator: String::new(),
+        }
+    }
+
+    #[test]
+    fn fts_match_query_quotes_and_sanitizes() {
+        assert_eq!(
+            fts_match_query("berapa total INV-2026-041?"),
+            Some("\"berapa\" \"total\" \"INV-2026-041?\"".to_string())
+        );
+        assert_eq!(fts_match_query("  \"  \""), None);
+        assert_eq!(fts_match_query(""), None);
+    }
+
+    #[test]
+    fn rrf_fuse_rewards_dual_side_hits() {
+        // "a" ranks 1st (vector) + 2nd (lexical) → beats "b" (1st lexical only
+        // is "c"; b is 2nd vector) and outranks single-side winners.
+        let out = rrf_fuse(vec![chunk("a"), chunk("b")], vec![chunk("c"), chunk("a")], 2);
+        assert_eq!(out[0].id, "a");
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn rrf_fuse_respects_limit_and_empty_sides() {
+        let out = rrf_fuse(Vec::new(), vec![chunk("x"), chunk("y")], 1);
+        assert_eq!(out.len(), 1);
+        assert!(rrf_fuse(Vec::new(), Vec::new(), 8).is_empty());
+    }
+
+    const RAG_CHUNKS_SCHEMA: &str =
+        "CREATE TABLE rag_chunks (id TEXT PRIMARY KEY, content TEXT, file_id TEXT, source TEXT, locator TEXT)";
+
+    async fn memory_conn() -> libsql::Connection {
+        let db = libsql::Builder::new_local(":memory:").build().await.unwrap();
+        let conn = db.connect().unwrap();
+        conn.execute_batch(RAG_CHUNKS_SCHEMA).await.unwrap();
+        conn
+    }
+
+    async fn insert_chunk(conn: &libsql::Connection, id: &str, content: &str, file_id: &str) {
+        conn.execute(
+            "INSERT INTO rag_chunks (id, content, file_id, source, locator) VALUES (?, ?, ?, 'src', 'chunk-0')",
+            (id, content, file_id),
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn fts_mirror_syncs_via_triggers_and_scopes_to_candidates() {
+        let conn = memory_conn().await;
+        ensure_fts(&conn).await.unwrap();
+        insert_chunk(&conn, "a#c0", "Invoice INV-2026-041 total 5000", "a").await;
+        insert_chunk(&conn, "b#c0", "Laporan keuangan kuartal pertama", "b").await;
+
+        let both = ["a".to_string(), "b".to_string()];
+        let hits = bm25_search(&conn, &both, "\"INV-2026-041\"", 8)
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "a#c0");
+
+        // Candidate scoping: the code only exists in file "a".
+        let hits = bm25_search(&conn, &["b".to_string()], "\"INV-2026-041\"", 8)
+            .await
+            .unwrap();
+        assert!(hits.is_empty());
+
+        // Delete trigger keeps the mirror clean.
+        conn.execute("DELETE FROM rag_chunks WHERE id = 'a#c0'", ())
+            .await
+            .unwrap();
+        let hits = bm25_search(&conn, &both, "\"INV-2026-041\"", 8)
+            .await
+            .unwrap();
+        assert!(hits.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fts_backfills_rows_indexed_before_the_mirror_existed() {
+        let conn = memory_conn().await;
+        insert_chunk(&conn, "x#c0", "kwitansi pembayaran Q1", "x").await;
+        ensure_fts(&conn).await.unwrap();
+        let hits = bm25_search(&conn, &["x".to_string()], "\"kwitansi\"", 8)
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "x#c0");
+        // Idempotent: a second ensure_fts must not duplicate mirror rows.
+        ensure_fts(&conn).await.unwrap();
+        let hits = bm25_search(&conn, &["x".to_string()], "\"kwitansi\"", 8)
+            .await
+            .unwrap();
+        assert_eq!(hits.len(), 1);
+    }
 }
