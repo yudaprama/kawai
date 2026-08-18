@@ -122,11 +122,12 @@ jobs:
           key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-macos26-arm64-
 
-      # local-llm and cognee-litert-lm (+ its nested vendor/LiteRT-LM via
-      # --recursive). rig-libsql/flutter_gemma/litert-lm-rs are NOT needed
-      # for the build — skip them to keep the checkout lean.
-      - name: Init submodules (local-llm + cognee-litert-lm)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm
+      # local-llm's manifest path-deps the rig-components tools (finance,
+      # weather_geo) — those crates compile under the litert feature, so
+      # rig-components is required, not optional. rig-libsql/flutter_gemma/
+      # litert-lm-rs are NOT needed — skip them to keep the checkout lean.
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components
 
       - name: Build litert-lm dylib
         run: |
@@ -207,8 +208,8 @@ jobs:
           key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm
+- name: Init submodules (local-llm + cognee-litert-lm + rig-components)
+    run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components
 
       # LiteRT-LM's .bazelrc pins CC=clang (action_env); the runner default is
       # clang-14, whose std lib lacks std::source_location in C++20 mode
@@ -311,7 +312,7 @@ jobs:
 
       - name: Init submodules (local-llm + cognee-litert-lm)
         shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components
 
       - name: Install bazelisk
         shell: pwsh
@@ -395,9 +396,11 @@ jobs:
           git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
       # Cargo parses local-llm's and cognee-litert-lm's manifests even
       # without the litert feature (optional deps still resolve) — the dirs
-      # must exist. Shallow, non-recursive: only crate manifests, not C sources.
-      - name: Init submodules (local-llm + cognee-litert-lm, manifest only)
-        run: git submodule update --init --depth 1 local-llm cognee-litert-lm
+      # must exist. local-llm path-deps rig-components tools, so that
+      # manifest needs rig-components present too. Shallow, non-recursive:
+      # only crate manifests, not C sources.
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components, manifest only)
+        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

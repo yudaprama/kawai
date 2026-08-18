@@ -217,7 +217,9 @@ async fn ensure_fts(conn: &libsql::Connection) -> Result<(), String> {
 fn fts_match_query(query: &str) -> Option<String> {
     let phrases: Vec<String> = query
         .split_whitespace()
-        .map(|t| format!("\"{}\"", t.replace('"', " ")))
+        .map(|t| t.replace('"', " "))
+        .filter(|t| !t.trim().is_empty())
+        .map(|t| format!("\"{}\"", t.trim()))
         .take(16)
         .collect();
     if phrases.is_empty() {
@@ -246,9 +248,9 @@ async fn bm25_search(
         .join(", ");
     let sql = format!(
         "SELECT c.id, c.content, c.file_id, c.source, c.locator \
-         FROM rag_chunks_fts f JOIN rag_chunks c ON c.rowid = f.rowid \
-         WHERE f MATCH ?1 AND c.file_id IN ({file_ph}) \
-         ORDER BY bm25(f) LIMIT ?{}",
+         FROM rag_chunks_fts JOIN rag_chunks c ON c.rowid = rag_chunks_fts.rowid \
+         WHERE rag_chunks_fts MATCH ?1 AND c.file_id IN ({file_ph}) \
+         ORDER BY bm25(rag_chunks_fts) LIMIT ?{}",
         file_ids.len() + 2
     );
     let mut params: Vec<libsql::Value> = Vec::with_capacity(file_ids.len() + 2);

@@ -246,13 +246,15 @@ Desktop MVP: single-device, local SQLite file, no sync.
 ```
 user → (dev bypass / future Clerk) → Rust backend → user_id
                                                     │
-   local SQLite file (per user) ◀──────────────────┘  Builder::new_local(path)
-   ($KAWAI_DB_DIR/<user_id>/kawai.db)
+   per-user data directory ◀───────────────────────┘
+   <data_root>/<user_id>/          ← one folder per user (backup unit)
+   ├── kawai.db                    ← Builder::new_local(path)
+   └── docs/                       ← office store (files + .meta.json)
 ```
 
-- `logic::db_connection(user_id)` opens a per-op local SQLite connection.
-- Default path: `/tmp/kawai-db/<user_id>/kawai.db` (override root with `KAWAI_DB_DIR`; `[A-Za-z0-9_-]` user ids pass through, anything else hex-encodes).
-- **One DB per user — no `user_id` columns.** Isolation is structural (per-user file), matching the future sqld-namespace model (Roadmap 16). The `office` RAG tables (`rag_chunks`, `session_files`) follow the same rule; `session_files(session_id, file_id)` scopes knowledge search to everything a session has referenced.
+- `logic::db_connection(user_id)` opens a per-op local SQLite connection; the office store defaults into the same per-user dir (`logic::db::user_data_dir`).
+- Data root resolution: `KAWAI_DATA_DIR` env → legacy `KAWAI_DB_DIR` env → injected root (`logic::db::set_data_root`; Tauri injects the app-data dir) → `/tmp/kawai`. `KAWAI_DOCS_DIR` still overrides the docs root to the legacy `<root>/<user_id>/` layout; unset = unified per-user dir. `[A-Za-z0-9_-]` user ids pass through as dir names, anything else hex-encodes.
+- **One data directory per user — no `user_id` columns.** Isolation is structural (per-user folder), matching the future sqld-namespace model (Roadmap 16). The `office` RAG tables (`rag_chunks` + FTS5 mirror, `session_files`) follow the same rule; `session_files(session_id, file_id)` scopes knowledge search to everything a session has referenced.
 - Post-MVP: sqld for multi-device sync, EdDSA token minting, embedded replicas.
 
 ## Configuration (.env)
