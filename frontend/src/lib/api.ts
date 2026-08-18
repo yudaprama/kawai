@@ -1,0 +1,41 @@
+import { invoke } from "@tauri-apps/api/core";
+
+/**
+ * Request-response RPC to the Tauri backend (in-process IPC). Command names
+ * are the snake_case Rust fn names; args are camelCase on the JS side.
+ */
+export function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  return invoke<T>(command, args ?? {});
+}
+
+/** Tauri invoke rejects with a bare string, not an Error. */
+export function errText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
+// ---- Backend payload types (serde camelCase) ----
+
+export interface UserInfo {
+  userId: string;
+}
+
+export interface ChatSessionInfo {
+  id: number;
+  agentId: string;
+  title: string | null;
+  createdAt: number | null;
+}
+
+export interface ChatMessageInfo {
+  id: number;
+  sessionId: number;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: number | null;
+}
+
+export interface LocalModelInfo {
+  modelPath: string;
+  backend: string;
+}

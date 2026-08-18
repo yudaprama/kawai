@@ -4,7 +4,10 @@
   "version": "0.1.51",
   "identifier": "pro.kawai.app",
   "build": {
-    "frontendDist": "../src"
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
   },
   "app": {
     "withGlobalTauri": true,

@@ -1,17 +1,16 @@
 # Kawai Architecture
 
-Desktop/mobile app (Tauri) with vanilla frontend and Rust backend.
+Desktop/mobile app (Tauri) with a React frontend and Rust backend.
 The backend also ships as a standalone web server binary (Axum, feature-gated).
 
 ## Goals
 
-- Product: **an AI agents app** — a catalog of specialized agents (finance, knowledge, weather, …); each agent = LLM persona + curated toolset from `rig-components/` (per-category crates of generated rig tools, `registry::toolset_for(names)`). UI: three-pane — left = agent list, center = active agent content, right = sessions of the selected agent.
+- Product: **an AI agents app** — a catalog of specialized agents (finance, knowledge, weather, …); each agent = LLM persona + curated toolset from `rig-components/` (per-category crates of generated rig tools, `registry::toolset_for(names)`). UI: three-pane — left = agent list, center = active agent content, right = sessions of the selected agent (MVP ships the center pane + session sidebar; the full three-pane arrives with the agent tier).
 - End state: **desktop + mobile + web from one core**; app logic is 100% shared, only transport and launcher differ per target.
 - Current phase: **MVP, desktop-first** (macOS, on-device LLM, dev-bypass auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
-- Frontend: Vanilla JS. No bundler, no framework. Served directly by Tauri (`frontendDist: "../src"`).
+- Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`hooks/use-local-chat.ts` + `lib/ai-types.ts`).
 - Backend: Rust, single core logic.
-- App logic is 100% shared; only transport and launcher differ per target.
-- Auth: Clerk via CDN + vanilla JS SDK; the backend verifies session JWTs via Clerk's **public JWKS** (no secret in the backend).
+- Auth: MVP = dev-bypass (`set_session` with any token, backend-gated by `KAWAI_AUTH_DEV_USER_ID`). Backend retains Clerk JWKS verification (`auth.rs`, public keys only) for the future prod flow (browser + deep link, Roadmap 6).
 - LLM: **on-device Gemma 4 via LiteRT-LM is THE model** (decision 2026-08-16). `rig` 0.41 stays declared but unwired — remote providers become optional configuration later. Agent tier will use prompt-based tool calling on the local model; `rig-components/` (14 category crates of generated rig tools, `registry::toolset_for(names)`) provides the toolsets, usable standalone without a rig provider.
 - Persistence: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
@@ -19,13 +18,14 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│  VANILLA JS  —  no build, served as-is by Tauri           │
-│  main.js → lib/api.call() / lib/stream.streamOperation()  │
+│  REACT 19 + VITE (frontend/ → dist/) — Tailwind v4        │
+│  App.tsx → use-local-chat → lib/api.call() /              │
+│                            lib/stream.streamOperation()   │
 ├───────────────────────────────────────────────────────────┤
 │  FRONTEND ABSTRACTION (Tauri-only, no platform branching) │
-│  window.__TAURI__.core.invoke  (RPC)                       │
-│  window.__TAURI__.core.Channel (streaming)                 │
-│  auth.js      : Clerk session → backend (set_session)      │
+│  @tauri-apps/api/core.invoke  (RPC)                       │
+│  @tauri-apps/api/core.Channel (streaming)                 │
+│  ai-types.ts : local UIMessage/part type shim (no ai-sdk) │
 ├───────────────────────┬───────────────────────────────────┤
 │  Desktop / Mobile     │  Web (backend-only)               │
 │  Tauri Channel+invoke │  HTTP fetch + SSE (cookie auth)   │
@@ -36,7 +36,7 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 ├───────────────────────────────────────────────────────────┤
 │  CORE LOGIC (Rust, pure, platform-agnostic)               │
 │  logic.rs : fn() -> T  |  fn() -> Stream<Event>           │
-│  auth.rs  : Clerk JWKS verify                                 │
+│  auth.rs  : Clerk JWKS verify                             │
 ├───────────────────────────────────────────────────────────┤
 │  self-hosted sqld (EdDSA JWT auth; backend mints tokens)  │
 └───────────────────────────────────────────────────────────┘
@@ -46,24 +46,35 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 
 ```
 kawai/
-├── package.json              # @tauri-apps/cli only (no bundler)
-├── src/                      # Frontend (vanilla JS, served as-is)
-│   ├── index.html            # Entry point — Clerk CDN + main.js
-│   ├── main.js               # App logic (auth, greet, stream, notes)
-│   ├── styles.css            # Vanilla CSS
-│   ├── config.js             # Clerk publishable key
-│   └── lib/
-│       ├── api.js            # RPC: window.__TAURI__.core.invoke
-│       ├── stream.js         # Streaming: Channel + cancel_stream
-│       └── auth.js           # Clerk session → backend (set_session/logout/whoami)
-├── rig-components/                # per-category rig tool crates (agent-tier tool library)
+├── package.json              # bun; react, vite, tailwind, vendored-component deps
+├── vite.config.ts            # root=frontend/, outDir=dist/, @ → frontend/src, port 1420 strictPort
+├── tsconfig{,.app,.node}.json
+├── components.json           # shadcn config (aliases @/components, @/lib, @/hooks)
+├── frontend/                 # React SPA (vite root)
+│   ├── index.html            # entry (dark theme)
+│   └── src/
+│       ├── main.tsx          # React root
+│       ├── App.tsx           # chat UI: session sidebar, Conversation, PromptInput, tool cards
+│       ├── lib/
+│       │   ├── ai-types.ts   # LOCAL UIMessage/part type shim — NO ai-sdk runtime
+│       │   ├── api.ts        # call() RPC + errText + payload types
+│       │   ├── stream.ts     # streamOperation(): Channel + cancel_stream
+│       │   └── streamdown/   # vendored markdown/streaming renderer (from web/)
+│       ├── hooks/
+│       │   └── use-local-chat.ts  # LocalChatEvent → UIMessage parts; sessions; model mgmt
+│       ├── components/
+│       │   ├── ai-elements/  # vendored chat components (from web/, trimmed)
+│       │   └── ui/           # shadcn primitives (from web/)
+│       └── platform/         # slim capability adapter (browser APIs only)
+├── src/                      # RETIRED vanilla frontend (reference only — do not edit)
+├── rig-components/           # per-category rig tool crates (agent-tier tool library)
 ├── scripts/
 │   └── dev-sqld.sh           # dev launcher for self-hosted sqld
 ├── .env                      # KAWAI_AUTH_* + KAWAI_DB_* (gitignored)
 ├── .env.local                # VITE_CLERK_PUBLISHABLE_KEY (gitignored; reference only)
 └── src-tauri/
     ├── Cargo.toml
-    ├── tauri.conf.json       # withGlobalTauri: true, frontendDist: ../src
+    ├── tauri.conf.json       # devUrl :1420, frontendDist ../dist, beforeBuildCommand "bun run build"
     └── src/
         ├── main.rs           # desktop binary entry
         ├── lib.rs            # Tauri builder + module decls
@@ -84,19 +95,20 @@ kawai/
 5. **Launcher**:
    - Desktop/Mobile (`main.rs` → `lib.rs::run()`): Tauri builder, registers commands + `.manage(Verifier)` + `.manage(Session)`. **Does NOT run Axum.**
    - Web (`bin/web.rs`): binds `0.0.0.0:PORT`, serves `/api/*` router. Not a Tauri app.
-6. **Frontend** — vanilla JS, loaded from `src/` directly by Tauri (no build step). Uses `window.__TAURI__` for all backend calls. Clerk loaded via CDN script in `index.html`.
+6. **Frontend** — React SPA (`frontend/`), bundled by Vite into `dist/` and served by Tauri. RPC via `@tauri-apps/api/core.invoke`; streaming via `Channel` + `cancel_stream`. Chat state lives in `hooks/use-local-chat.ts`, which folds backend stream events (`token`/`toolCall`/`toolResult`/terminals) into `UIMessage[]` parts; `lib/ai-types.ts` defines those shapes locally (no `ai` npm package — field names stay AI-SDK-v5-compatible so the vendored `ai-elements` components render them unmodified).
 
-## Conventions
+## Frontend conventions
 
 | Concern | Convention |
 |---------|------------|
 | Naming | command `foo_bar` ↔ route `POST /api/foo_bar` ↔ frontend `call('foo_bar')` (Tauri uses the snake_case fn name verbatim; one string used for both invoke and URL path) |
-| Errors | Rust `Result<T, String>` ↔ web HTTP 4xx/5xx + `{error}` ↔ frontend `throw Error` |
-| Event tagging | `#[serde(tag = "type")]`; `finished`/`error` variants are terminal |
-| Completion | encoded in event type, not in transport |
+| Errors | Rust `Result<T, String>` ↔ web HTTP 4xx/5xx + `{error}` ↔ frontend `throw Error` (invoke rejects with a bare string — use `errText()`) |
+| Event tagging | `#[serde(tag = "type")]`; `finished`/`error` variants are terminal; frontend mirrors the union in `use-local-chat.ts` |
 | Cancellation | Desktop/Mobile: `cancel_stream` command signals a `CancellationToken` looked up by `streamId` in a shared registry, breaking the `select!` loop. Web backend: client `AbortController` drops the connection → Axum response future dropped → stream dropped. |
-| Static assets | Tauri: `frontendDist = "../src"` (served as-is, no build); Web backend: no frontend serving |
-| Frontend IPC | `window.__TAURI__.core.invoke` / `window.__TAURI__.core.Channel` (`withGlobalTauri: true`) |
+| Message shape | `UIMessage`/parts from `@/lib/ai-types` (local shim) — never import `ai`/`@ai-sdk/*` |
+| Styling | Tailwind v4 tokens in `frontend/src/index.css` (dark-first); `cn()` from `@/lib/utils` |
+| Components | Reuse `ai-elements/` → `ui/` first; add built-ins via `bunx shadcn@latest add` only when nothing fits |
+| Vendored sync | Updates from `web/` require the standing trims: `ai`→shim, strip i18n, slim `@/platform`, no Lexical/`@xyflow`/`tokenlens` |
 
 ## Core dependencies (in `logic.rs` / `auth.rs`)
 
@@ -104,6 +116,7 @@ kawai/
 - **`libsql`** — per-user DB against self-hosted sqld. Desktop/mobile: local embedded replica per user; web: remote connection (no per-user local file). Builder selection lives in `logic.rs` behind `cfg(feature = "web")`. Connections are per-op (fresh EdDSA token each call).
 - **`jsonwebtoken`** — RS256 (Clerk JWKS verify in `auth.rs`) and EdDSA (sqld token mint in `logic.rs`). Two versions coexist (9.x direct + 10.x transitive) — expected.
 - All compile clean across desktop, android arm64, and ios arm64 (verified 2026-08-15; default/web/litert feature combos). Two rustls versions (0.22 + 0.23) coexist — expected.
+- **Frontend**: `@types/hast` pinned to 3.0.4 via `resolutions` (3.0.5 breaks the vendored streamdown — see AGENTS.md Landmines).
 
 ## Web dependency gating (Axum excluded from desktop/mobile)
 
@@ -121,46 +134,49 @@ Package manager is **bun**. Mobile needs extra toolchain: Android requires `ANDR
 
 | Target | Dev | Build | Output |
 |--------|-----|-------|--------|
+| Frontend | `bun run dev` (vite :1420) | `bun run build` | `dist/` |
 | Desktop | `bun tauri dev` | `bun tauri build` | .app/.exe/.deb |
 | Android | `cargo ndk -t arm64-v8a -P 24 check` | `bun tauri android build` | APK/AAB |
 | iOS | `cargo check --target aarch64-apple-ios` | `bun tauri ios build` | IPA |
 | Web server | `cargo run --bin kawai-web --features web` | (same) | server binary |
 
-Note: No web frontend build step — Tauri serves `src/` directly without a bundler.
+`bun tauri dev`/`build` auto-runs the frontend via `beforeDevCommand`/`beforeBuildCommand` ("bun run dev"/"bun run build"); `bun install` first on a fresh clone.
 
 ## Data flow
 
-**RPC:** `main.js → call('greet', {name})` → `invoke` → `commands::greet` → `logic::greet`
+**RPC:** `App.tsx → call('list_chat_sessions')` → `invoke` → `commands::list_chat_sessions` → `logic::…`
 
-**Streaming:** `main.js → streamOperation('generate_activity', {events, intervalMs}, handlers)` → `Channel` → `commands::generate_activity` → `logic::generate_activity()` stream
+**Streaming:** `use-local-chat.ts → streamOperation('local_chat', {prompt}, handlers)` → `Channel` → `commands::local_chat` → `logic::local_llm::local_chat` stream → events folded into the live assistant `UIMessage` parts (`token` → text part, `toolCall`/`toolResult` → tool parts with state transitions).
 
 ## Authentication
 
-Identity is established by Clerk and verified by the backend; it never lives in `logic.rs` — it arrives as a `user_id` parameter.
+Identity is established at the edge and verified by the backend; it never lives in `logic.rs` — it arrives as a `user_id` parameter.
 
 ```
-Vanilla JS (Clerk CDN)  ──getSession JWT──▶  set_session  ──▶  auth::Verifier (public JWKS) ──▶ user_id
-    │                                                                                    │
-    └─ pushed every ~50s (tokens expire ~60s)                                            ▼
-                                                                 wrappers pass user_id as first arg to logic.rs
+React (use-local-chat bootstrap) ──whoami?──▶ ┐ found → user_id
+                                              └ missing → set_session(<any token>)
+                                                  │ succeeds ONLY with the dev bypass
+                                                  ▼
+                                     auth::Verifier (public JWKS) → user_id
+                                     (wrappers pass user_id as first arg to logic.rs)
 Desktop/mobile: Tauri `State<Session>` (in-memory).
 Web backend (no web frontend): HttpOnly `kawai_session` cookie.
 ```
 
-- **Frontend**: Clerk loaded via script tag in `index.html`; `main.js` creates `new Clerk(pk)` and manages auth lifecycle.
+- **MVP**: dev bypass (`KAWAI_AUTH_DEV_USER_ID`) — any token verifies as that user. No auth UI in the React app.
 - **Backend verify**: `auth::Verifier` fetches Clerk's public JWKS, caches by `kid`, checks `iss`/`exp`. **No `CLERK_SECRET_KEY` is used by the backend.**
 - **Edge resolution**: `commands.rs` reads `State<Session>`; `web.rs` reads `Extension<Claims>` (injected by `auth_middleware`). Both extract `claims.sub` → `user_id`.
 - **Auth ops**: `set_session`, `logout`, `whoami`. `greet`/`generate_activity` are public; everything else requires auth.
-- **Dev bypass**: `KAWAI_AUTH_DEV_USER_ID` makes `Verifier::verify` return that user for any token (offline/dev only).
+- **Prod auth (post-MVP)**: browser + deep link (`kawai://auth?token=…` → `set_session`); the main `web/` SPA's Kratos deep-link flow is the proven pattern.
 
 ## Persistence (local SQLite)
 
 Desktop MVP: local SQLite file, no sync. Post-MVP: sqld for multi-device sync.
 
 ```
-user → (Clerk) → Rust backend → user_id
-                                      │
-   local SQLite file ◀────────────────┘  Builder::new_local(path)
+user → (dev bypass / future prod auth) → Rust backend → user_id
+                                                       │
+   local SQLite file ◀─────────────────────────────────┘  Builder::new_local(path)
    ($KAWAI_DB_DIR/kawai.db)
 ```
 

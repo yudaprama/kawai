@@ -5,13 +5,13 @@ This file is the operational rulebook.
 
 ## What this project is
 
-**Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from `rig-components/` (per-category crates of generated rig tools — `registry::toolset_for(names)`). UI: three-pane layout (left sidebar = agent list, center = active agent's chat/content, right sidebar = sessions of the selected agent), dark theme, client-side routing via Pinecone Router.
+**Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from `rig-components/` (per-category crates of generated rig tools — `registry::toolset_for(names)`). UI: three-pane layout (left sidebar = agent list, center = active agent's chat/content, right sidebar = sessions of the selected agent), dark theme.
 
 Desktop/mobile app (Tauri), with a standalone web server binary.
 **End state: desktop + mobile + web from one core. Current phase: MVP, desktop-first — see "Current phase" below.**
 
-- **Frontend**: Vanilla JS. No bundler, no framework. Served directly by Tauri (`frontendDist: "../src"`).
-- **Auth**: Clerk via CDN + vanilla JS SDK (`window.Clerk`); backend verifies session JWTs against Clerk's **public JWKS** (`auth.rs`) — no Clerk secret in the backend.
+- **Frontend**: React 19 + TypeScript + Vite + Tailwind v4 (`frontend/`, alias `@/` → `frontend/src`). UI components vendored from the `web/` SPA (`ai-elements/`, `ui/`, `lib/streamdown/`). NO ai-sdk — `lib/ai-types.ts` is a type-only local shim of the `UIMessage`/parts shapes; streaming is raw Tauri `Channel` mapped by `hooks/use-local-chat.ts`. The vanilla frontend (`src/`) is RETIRED — kept on disk for reference only; `tauri.conf.json` points at the React build.
+- **Auth**: dev-bypass via `set_session` for MVP (`KAWAI_AUTH_DEV_USER_ID=demo`). Clerk backend verification (`auth.rs`, public JWKS) remains for the future prod auth flow (Roadmap 6 — browser + deep link). **No Clerk UI is wired in the React frontend.**
 - **Backend**: Rust. Single core logic, two thin transport wrappers.
 - **Transport**: Tauri `Channel`+`invoke` (desktop/mobile); HTTP `fetch`+SSE (web — backend only, no web frontend).
 - **LLM (on-device)**: LiteRT-LM via `cognee-litert-lm` (path dep, vendored at `cognee-litert-lm/vendor/LiteRT-LM` = upstream `google-ai-edge` main). Behind the `litert` cargo feature. Gemma 4 / Qwen `.litertlm` verified streaming on macOS arm64 CPU.
@@ -24,15 +24,15 @@ Short-term focus is a **macOS desktop MVP**. The end state is unchanged — desk
 
 **MVP scope (work only these):**
 - macOS desktop app (Tauri, feature `litert`): on-device LLM chat (LiteRT-M), notes + chat history in local SQLite, dev-bypass auth (`KAWAI_AUTH_DEV_USER_ID=demo`).
-- Three-pane UI with agent catalog, session sidebar, dark theme, Pinecone Router routing, tool call cards in conversation.
+- Chat UI (React): session sidebar with period grouping, streaming conversation, tool call cards, thinking toggle.
 - Remaining MVP gaps, in order (details in Roadmap):
   1. Chat history persistence — ✅ Done 2026-08-16 (sessions + messages in SQLite).
   2. Distributable build — ✅ Done 2026-08-17 (litert dylibs bundled into .app).
   3. `local_llm_smoke` as a streaming regression gate (small `.litertlm` fixture).
 
 **Deferred — do NOT start without the user asking (tracked in Roadmap):**
-- The agent tier (`rig` wiring + `rig-components` integration); mobile LLM bazel builds + mobile UI; web frontend; LoRA; GPU/Metal; production hardening.
-- The agent tier, prod auth (deep-link), and keychain session persistence are the *first post-MVP milestones* — required before any public release, not part of MVP.
+- The agent tier (`rig` wiring + `rig-components` integration) — including the full three-pane UI with agent catalog (current React UI is single-agent chat); mobile LLM bazel builds + mobile UI; web frontend; LoRA; GPU/Metal; production hardening.
+- Prod auth (deep-link) and keychain session persistence are the *first post-MVP milestones* — required before any public release, not part of MVP.
 
 **Still mandatory during MVP (end-state insurance, all cheap):**
 - Every new op still gets BOTH wrappers (`commands.rs` + `web.rs`) — this is what keeps web/mobile near-free later.
@@ -45,18 +45,25 @@ Short-term focus is a **macOS desktop MVP**. The end state is unchanged — desk
 1. **`logic.rs` is pure.** Never import `tauri`, `axum`, or any transport type there. It owns business logic and returns `T` or `impl Stream<Item = Event>`.
 2. **Two thin wrappers per operation.** One `#[tauri::command]` in `commands.rs`, one Axum route in `web.rs`. Both call the same `logic.rs` fn. No business logic in wrappers.
 3. **One operation = one snake_case string**, used identically for: the Rust fn name, the invoke name, and the URL path (`POST /api/<name>`). Tauri uses the fn name **verbatim** (no kebab/camel conversion). Arguments are camelCase on the JS side, mapping to snake_case Rust params.
-4. **Frontend uses `window.__TAURI__` directly** (`withGlobalTauri: true`). Platform is always Tauri — no platform branching needed.
-5. **Web deps stay gated.** `axum`/`tower-http` are `optional`, behind the `web` Cargo feature. The `web` module is `#[cfg(feature = "web")]`. The `kawai-web` binary has `required-features = ["web"]`. Never make axum a non-optional dep — it must stay out of desktop/mobile binaries.
-6. **Events.** `#[serde(tag = "type")]` in `logic.rs`; frontend reads `event.type` at runtime (no TS types file). Terminal variants are `finished` / `error`.
-7. **Identity is resolved at the transport edge, not in `logic.rs`.** Wrappers verify the token and pass `user_id` (`claims.sub`) into `logic.rs` fns as the first param. The frontend NEVER sends `user_id`. `auth.rs` is pure (no tauri/axum): it does JWKS verification (Clerk).
-8. **DB builder selection is `cfg`-gated in `logic.rs`, not branched on a transport type.** `#[cfg(feature = "web")]` → remote client; `#[cfg(not(feature = "web"))]` → local SQLite. Keeps `logic.rs` pure.
+4. **Frontend uses the `@tauri-apps/api` npm package** (`invoke` / `Channel` from `@tauri-apps/api/core`). The React app is bundled by Vite (`frontend/` → `dist/`, `frontendDist: "../dist"`); never reference `window.__TAURI__` in new code (`withGlobalTauri` is only kept for the retired vanilla frontend).
+5. **No AI SDK.** The chat state is produced by `hooks/use-local-chat.ts` from raw Tauri stream events; the UIMessage/part shapes in `lib/ai-types.ts` are a LOCAL type contract only (field names stay AI-SDK-v5-compatible so the vendored ai-elements components work unmodified). Never add a runtime dep on `ai` / `@ai-sdk/*`.
+6. **Web deps stay gated.** `axum`/`tower-http` are `optional`, behind the `web` Cargo feature. The `web` module is `#[cfg(feature = "web")]`. The `kawai-web` binary has `required-features = ["web"]`. Never make axum a non-optional dep — it must stay out of desktop/mobile binaries.
+7. **Events.** `#[serde(tag = "type")]` in `logic.rs`; frontend reads `event.type` at runtime. Terminal variants are `finished` / `error`. The frontend mirror of the event union lives in `hooks/use-local-chat.ts` (`LocalChatEvent`) — update BOTH sides when adding a variant (plus `agent.rs` matches on it too).
+8. **Identity is resolved at the transport edge, not in `logic.rs`.** Wrappers verify the token and pass `user_id` (`claims.sub`) into `logic.rs` fns as the first param. The frontend NEVER sends `user_id`. `auth.rs` is pure (no tauri/axum): it does JWKS verification (Clerk).
+9. **DB builder selection is `cfg`-gated in `logic.rs`, not branched on a transport type.** `#[cfg(feature = "web")]` → remote client; `#[cfg(not(feature = "web"))]` → local SQLite. Keeps `logic.rs` pure.
+10. **Vendored components stay in sync with the shim.** `components/ai-elements/*`, `components/ui/*`, `lib/streamdown/` come from the `web/` SPA. When pulling updates from `web/`, re-run the same trims: `ai` imports → `@/lib/ai-types`, strip `react-i18next`, no `@/platform` beyond the slim local adapter (`src/platform/`), no Lexical, no `@xyflow`, no `tokenlens`.
 
 ## Commands
 
 Package manager is **bun** (not npm/yarn).
 
 ```sh
-# Desktop (Tauri) — no dev server, Tauri serves src/ directly
+# Frontend (React, Vite) — dev server on :1420 (Tauri devUrl)
+bun run dev            # from kawai/ (vite, root=frontend/)
+bun run build          # tsc -b && vite build → dist/
+bun run typecheck      # tsc -b --force
+
+# Desktop (Tauri) — launches vite automatically via beforeDevCommand
 bun tauri dev
 bun tauri build
 
@@ -70,7 +77,7 @@ cd src-tauri && env \
   LITERT_LM_LIB_DIR=<ABS>/cognee-litert-lm/native \
   LLVM_PROFILE_FILE=/dev/null \
   KAWAI_AUTH_DEV_USER_ID=demo \
-  ../node_modules/.bin/tauri dev -- --features litert
+  tauri dev -- --features litert
 
 # CI release (.github/workflows/release.yml): on push to main a bot bumps the
 # patch version in src-tauri/tauri.conf.json, commits + tags vX.Y.Z, then builds
@@ -80,7 +87,9 @@ cd src-tauri && env \
 # runs (GITHUB_TOKEN pushes create no push event — intentional). The same PAT
 # authenticates ALL github.com git traffic in the build jobs (insteadOf rewrite)
 # — private submodules (cognee-litert-lm, rig-libsql, nested LiteRT-LM fork)
-# and private cargo git deps work without workflow changes.
+# and private cargo git deps work without workflow changes. The frontend builds
+# inside tauri-action via beforeBuildCommand ("bun run build"); setup-bun +
+# bun install are already workflow steps.
 
 # Build the LiteRT-LM C library (first build ~15-30 min; cached afterwards)
 cd cognee-litert-lm/vendor/LiteRT-LM && bazel build //c:litert-lm --config=macos_arm64 --jobs=6
@@ -114,15 +123,19 @@ cargo check --target aarch64-apple-ios-sim
 Run all that apply. Everything must pass clean:
 
 ```sh
+bun run build                  # frontend: tsc -b + vite build (frontend changes)
 cargo check                    # desktop — axum must NOT compile here
 cargo check --features web     # web module + kawai-web bin
 cargo check --features litert  # local LLM (bindgen only; no C lib needed)
 ```
 
-For mobile, also (during MVP: only when shared code changes — `logic.rs`, `auth.rs`, shared deps; UI/commands-only changes don't need these): `cargo ndk -t arm64-v8a -P 24 check` and/or `cargo check --target aarch64-apple-ios` (NDK r29 at `/opt/homebrew/share/android-ndk`; sim target needs `rustup target add aarch64-apple-ios-sim`). All verified green 2026-08-15.
+For mobile, also (during MVP: only when shared code changes — `logic.rs`, `auth.rs`, shared deps; UI/commands-only changes don't need these): `cargo ndk -t arm64-v8a -P 24 check` and/or `cargo check --target aarch64-apple-ios` (NDK r29 at `/opt/homebrew/share/android-ndk`; sim target needs `rustup target add aarch64-apple-ios-sim`).
 
 ## Landmines (things that already bit us)
 
+- **`@types/hast` must stay pinned to 3.0.4.** `resolutions` in `package.json` forces it across the tree. 3.0.5 rewrites `Properties.className` to `string[]` and bun nests per-package copies (under `mdast-util-to-hast`, `@shikijs/*`, …), which SPLITS the `hast` module identity: `mdast-util-to-hast`'s module augmentation (`RootContentMap.raw`) stops applying to the copy `streamdown/lib/markdown.ts` sees → TS2367/TS2339 across the markdown renderer. If you bump it, `bun install --force` and re-check `find node_modules -path '*node_modules/@types/hast' -maxdepth 5 -type d | wc -l` is 1.
+- **Frontend deps must be installed before `tauri dev`/`tauri build`.** `bun install` in `kawai/` (Vite root is `frontend/`; deps live at the repo package root). CI already does this.
+- **Vite `server.port: 1420` is `strictPort`** (Tauri `devUrl` expects exactly this port) and `watch.ignored` covers both `src-tauri/**` and the retired `src/**` — don't let vite watch the Rust side (rebuild loop).
 - **`async_stream` streams are not `Unpin`.** `Box::pin(...)` before calling `.next()` in a loop.
 - **`Channel::send` takes the value by value**, not `&event` (Tauri 2: `send(data: T)`).
 - **`-p` in cargo-ndk collides with cargo `--package`.** Use `-P` / `--platform`. cargo-ndk's panic handler **dumps all env vars to stdout** — never let it panic, and keep secrets out of shell env.
@@ -134,91 +147,105 @@ For mobile, also (during MVP: only when shared code changes — `logic.rs`, `aut
 - **Clerk JWTs are RS256; sqld accepts only EdDSA (post-MVP).** When sqld is added for multi-device sync, never pass a Clerk session JWT to sqld — mint an EdDSA token in the backend first.
 - **`dotenvy` does not override existing env vars.** Shell-exported vars win over `.env`. To force dev-bypass auth, `KAWAI_AUTH_DEV_USER_ID=demo cargo run ...`.
 - **Two `jsonwebtoken` versions coexist** (9.x is our direct dep in `auth.rs`/`logic.rs`; 10.x is transitive). Expected.
-- **Clerk CDN script is loaded in `index.html`.** `window.Clerk` must be available before `main.js` runs — the `<script>` tag order is: Clerk (defer) → main.js (module) → Alpine (defer, LAST — main.js registers the Alpine store on `alpine:init` which fires while Alpine executes; loading Alpine first = a page full of `$store.app undefined` TypeErrors).
-- **clerk-js v5 has no constructor.** `window.Clerk` is already an instance; the publishable key goes in the `data-clerk-publishable-key` attribute on the script tag. `new window.Clerk(pk)` throws.
-- **Clerk dev-mode does NOT work in the Tauri webview.** Dev instances need the `dev_browser` third-party cookie; WKWebView (macOS) blocks third-party cookies → `clerk.load()` always rejects. Wrap it in try/catch (see `initClerk` in `main.js`) and fall back to `setSession(<any-token>)`, which only succeeds when the backend runs the dev bypass. Production (`pk_live` + own domain) is expected to work; if not, the deep-link browser flow is the fallback (see Roadmap).
+- **Clerk dev-mode does NOT work in the Tauri webview.** Dev instances need the `dev_browser` third-party cookie; WKWebView (macOS) blocks third-party cookies → `clerk.load()` always rejects. That's why the React frontend doesn't wire Clerk at all for MVP — it calls `set_session(<any-token>)` which only succeeds when the backend runs the dev bypass (see `use-local-chat.ts` bootstrap). Production auth = browser + deep link (Roadmap 6); consider reusing the Kratos OIDC deep-link pattern from the main `web/` SPA (`web/src/platform/tauri.ts`) when that lands.
 - **Bazel-built dylibs emit `default.profraw` into the CWD.** If that CWD is `src-tauri/`, the `tauri dev` watcher sees the file change after every run and rebuild-loops the app forever (window opens/closes infinitely). Always set `LLVM_PROFILE_FILE=/dev/null` when running instrumented dylibs from `tauri dev`.
 - **The LiteRT-LM dylib's install name is a bazel-relative path.** `dyld` can't find it from `target/debug/kawai` unless you: (1) copy it out of bazel-bin, (2) `install_name_tool -id @rpath/liblitert-lm.dylib` + re-codesign, (3) embed an rpath in the consuming binary via `RUSTFLAGS="-C link-arg=-Wl,-rpath,<dir>"` (a dependency's `cargo:rustc-link-arg` does NOT propagate to the final binary; the app crate's own `build.rs` DOES — it now embeds `@executable_path/../Frameworks` for litert+macOS), and (4) `scripts/bundle-litert-dylibs.sh` copies all companions into `native/`, strips the baked-in `_solib` rpaths, and adds `@loader_path/../Frameworks` so the bundle (`.github/tauri-litert.json` → `Contents/Frameworks/`) and dev both resolve. `DYLD_LIBRARY_PATH` does NOT survive through the tauri CLI.
 - **LiteRT-LM streaming C calls are fire-and-forget async.** `litert_lm_conversation_send_message_stream` returns before generation starts; tokens arrive on an engine thread. Dropping the engine/conversation mid-generation segfaults. The blocking task must block until the final callback (`recv_timeout` on a channel fed from the callback) — see `logic::local_llm::local_chat`.
 - **sentencepiece needs the patched recipe on macOS.** Upstream's v0.2.2 layout fails strict `hdrs_check`; our vendored WORKSPACE carries the fix (strip-to-src + `PATCH.sentencepiece_darts` + absl/protobuf seds + full absl deps in `BUILD.sentencepiece`). If you change the sentencepiece stanza, `bazel sync --only=sentencepiece` does NOT refetch — delete the repo dir under `/private/var/tmp/_bazel_*/external/sentencepiece` + its marker, then rebuild.
-- **Tauri invoke rejects with a bare string, not an `Error`.** Read it via a helper (`errText` in `main.js`) — `err.message` is `undefined` otherwise.
+- **Tauri invoke rejects with a bare string, not an `Error`.** Read it via a helper (`errText` in `frontend/src/lib/api.ts`).
 - **Web request structs need `#[serde(rename_all = "camelCase")]`.** Tauri maps camelCase invoke args → snake_case params automatically; Axum `Json<T>` does NOT — without the rename, camelCase bodies 422 (bit us 2026-08-16 with the chat ops). Every web request struct with a multi-word field carries the rename.
-- **No build step — frontend files are served as-is.** `src/` is the Tauri `frontendDist`. File paths in HTML/JS must be relative and valid for the filesystem (no bundler resolves them).
-- **Logs go to `~/Library/Logs/kawai/app.log`.** `logging.rs` tees process stderr (Rust panics, `eprintln!`, LiteRT C++ absl logs) and `src/lib/log.js` pipes JS errors/rejections/`console.error` via the `frontend_log` command. Deliberately outside `src-tauri/` (watcher) — don't move it inside. A symlink lives at `kawai/app.log`.
+- **Tool call events in `LocalChatEvent`.** The `local_chat` stream emits `ToolCall` and `ToolResult` variants (not just `Token`). The frontend (`use-local-chat.ts`) AND `agent.rs` both match on the union — add arms for new variants in all matchers or events are silently dropped.
 - **One rig-core source for the whole graph.** `src-tauri`, `rig-components/*`, and the `rig-libsql` submodule all pin git rev `4232abdb` (crates.io 0.41.0 predates the `Vec<Embedding>` `insert_documents` change rig-libsql needs). A crates.io `rig`/`rig-core` dep anywhere alongside the pin = two rig-cores = ToolSet/vector-store type mismatch at the agent-tier seam. When 0.42+ ships, swap ALL of them (incl. the generator template `rig-components/gen/src/main.rs` in the parent workspace) in one change.
-- **Pinecone Router `x-init` runs before routes register.** The `x-route` templates are in the DOM but Pinecone Router hasn't scanned them yet when `x-init` on `<body>` fires. Use `setTimeout(() => $router.navigate(...), 0)` to defer the initial navigation. Without the delay, the router throws "Path: /xxx was not found".
-- **Tool call events in `LocalChatEvent`.** The `local_chat` stream now emits `ToolCall` and `ToolResult` variants (not just `Token`). Frontend must handle all variants or the stream silently drops events. `agent.rs` also matches on `LocalChatEvent` — add arms for new variants there too.
+- **The retired vanilla frontend (`src/`) still sits next to `frontend/`.** Do NOT edit it; do NOT serve it (`tauri.conf.json` points at `../dist`). Its Alpine/Pinecone landmines are obsolete. Deletion pending user confirmation.
 
 ## Where things live
 
 ```
-src/index.html              # Entry point — three-pane layout, Pinecone Router routes, icon sprite, pane collapse CSS
-src/main.js                 # App logic: Alpine store (agents, sessions, llm), Clerk auth, streaming, session routing
-src/lib/log.js              # Global JS error capture → frontend_log command (import FIRST)
-src/config.js               # Clerk publishable key (legacy; key now on the script tag)
-src/lib/api.js              # RPC: window.__TAURI__.core.invoke
-src/lib/stream.js           # Streaming: Channel + cancel_stream
-src/lib/auth.js             # setSession/logout/whoami wrappers over call()
-src-tauri/src/logic.rs      # PURE logic; rig + libsql + local_llm (litert) + db token minting
-src-tauri/src/logic/office/ # office domain (feature "office"): mod.rs (toolset/capabilities) + cli.rs + store.rs + ooxml.rs + pdf.rs + tools.rs
-src-tauri/src/logic/agent.rs    # prompt-based tool-calling loop (features litert) — personas + agent_chat
-src-tauri/src/logging.rs    # stderr tee + frontend_log sink → ~/Library/Logs/kawai/app.log
-src-tauri/src/auth.rs       # PURE auth; Clerk JWKS verify + EdDSA mint + Session
-src-tauri/src/commands.rs   # #[tauri::command] wrappers + Channel + cancel registry
-src-tauri/src/web.rs        # Axum routes (feature-gated "web") + auth_middleware
-src-tauri/src/bin/web.rs    # standalone web server entry
-src-tauri/src/lib.rs        # Tauri builder; .manage(...); generate_handler!
-src-tauri/examples/local_llm_smoke.rs   # headless local-LLM smoke test (features litert)
-src-tauri/Cargo.toml        # axum/tower-http behind "web"; cognee-litert-lm behind "litert"
-src-tauri/build.rs          # tauri_build + embeds @executable_path/../Frameworks rpath (litert+macOS) for the bundled .app
-cognee-litert-lm/           # Rust bindings for the LiteRT-LM C API (path dep)
-cognee-litert-lm/vendor/LiteRT-LM        # submodule = upstream google-ai-edge main + macOS patches
-cognee-litert-lm/native/    # gitignored: prepared LiteRT-LM dylibs (bundle-litert-dylibs.sh fills this)
+frontend/                        # React 19 + Vite + Tailwind v4 SPA (vite root)
+├── index.html                   # entry, dark class on <html>
+├── src/
+│   ├── main.tsx                 # React root
+│   ├── App.tsx                  # chat UI: session sidebar, Conversation, PromptInput, tool cards
+│   ├── lib/
+│   │   ├── ai-types.ts          # LOCAL UIMessage/part type shim (NO ai-sdk runtime)
+│   │   ├── api.ts               # call() RPC + errText + backend payload types
+│   │   ├── stream.ts            # streamOperation(): Channel + cancel_stream
+│   │   ├── clipboard.ts         # copy/paste helpers (browser APIs)
+│   │   ├── download.ts          # triggerDownload helper
+│   │   ├── file-types.ts        # extension → FileKind classification
+│   │   ├── utils.ts             # cn() + misc
+│   │   └── streamdown/          # vendored markdown/streaming renderer (from web/)
+│   ├── hooks/
+│   │   ├── use-local-chat.ts    # chat state: LocalChatEvent → UIMessage parts, sessions, model mgmt
+│   │   ├── use-streamdown.ts    # streamdown plugins/config (i18n stripped → English)
+│   │   ├── use-copy-button.ts   # copy button state
+│   │   └── use-copy-to-clipboard.ts
+│   ├── components/
+│   │   ├── ai-elements/         # vendored chat components (from web/; trimmed)
+│   │   │   └── tool-renderers/  # per-domain tool result cards
+│   │   ├── ui/                  # shadcn primitives (from web/)
+│   │   └── file-icon.tsx        # CDN file-type icons
+│   ├── platform/                # slim local adapter (types, index, shared-media) — browser APIs only
+│   └── assets/                  # icon-map.json + utils (file icon naming)
+src/                             # RETIRED vanilla frontend (reference only; do not edit)
+src-tauri/src/logic.rs           # PURE logic; rig + libsql + local_llm (litert) + db token minting
+src-tauri/src/logic/office/      # office domain (feature "office"): mod.rs + cli.rs + store.rs + ooxml.rs + pdf.rs + tools.rs
+src-tauri/src/logic/agent.rs     # prompt-based tool-calling loop (features litert) — personas + agent_chat
+src-tauri/src/logging.rs         # stderr tee → ~/Library/Logs/kawai/app.log
+src-tauri/src/auth.rs            # PURE auth; Clerk JWKS verify + EdDSA mint + Session
+src-tauri/src/commands.rs        # #[tauri::command] wrappers + Channel + cancel registry
+src-tauri/src/web.rs             # Axum routes (feature-gated "web") + auth_middleware
+src-tauri/src/bin/web.rs         # standalone web server entry
+src-tauri/src/lib.rs             # Tauri builder; .manage(...); generate_handler!
+src-tauri/examples/local_llm_smoke.rs  # headless local-LLM smoke test (features litert)
+src-tauri/Cargo.toml             # axum/tower-http behind "web"; cognee-litert-lm behind "litert"
+src-tauri/build.rs               # tauri_build + embeds @executable_path/../Frameworks rpath (litert+macOS)
+cognee-litert-lm/                # Rust bindings for the LiteRT-LM C API (path dep)
+cognee-litert-lm/vendor/LiteRT-LM         # submodule = upstream google-ai-edge main + macOS patches
+cognee-litert-lm/native/         # gitignored: prepared LiteRT-LM dylibs (bundle-litert-dylibs.sh fills this)
 rig-components/                  # per-category rig tool crates (generated; each has registry::toolset_for)
-models/                     # .litertlm model files (gitignored, GB-scale)
-design-demos/               # UI mock HTML files (standalone, not served by Tauri)
-.env                        # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)
-.env.local                  # VITE_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (gitignored)
-scripts/dev-sqld.sh         # dev launcher for self-hosted sqld
-scripts/bundle-litert-dylibs.sh    # prep all LiteRT dylibs into native/ for bundling into the .app
-scripts/fetch-office-bins.sh       # fetch ooxcli/pdfcli/office-runtime engines into src-tauri/{office-bin,office-runtime}
-.github/tauri-office.json   # merges office engines as Tauri resources (Contents/Resources)
-.github/tauri-litert.json   # merges LiteRT dylibs into `bundle.macOS.files` (Contents/Frameworks)
-app.log                     # symlink → ~/Library/Logs/kawai/app.log
+models/                          # .litertlm model files (gitignored, GB-scale)
+design-demos/                    # UI mock HTML files (standalone)
+.env                             # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)
+.env.local                       # VITE_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (gitignored)
+scripts/dev-sqld.sh              # dev launcher for self-hosted sqld
+scripts/bundle-litert-dylibs.sh  # prep all LiteRT dylibs into native/ for bundling into the .app
+scripts/fetch-office-bins.sh     # fetch ooxcli/pdfcli/office-runtime engines into src-tauri/{office-bin,office-runtime}
+.github/tauri-office.json        # merges office engines as Tauri resources (Contents/Resources)
+.github/tauri-litert.json        # merges LiteRT dylibs into `bundle.macOS.files` (Contents/Frameworks)
+app.log                          # symlink → ~/Library/Logs/kawai/app.log
 ```
 
 ## Adding a new operation (checklist)
 
 1. Write the pure fn (+ any event enum) in `logic.rs`. Events: `#[serde(tag = "type")]`.
-2. No TS event file to mirror — frontend reads `event.type` at runtime.
-3. Add the `#[tauri::command]` in `commands.rs`:
+2. Add the `#[tauri::command]` in `commands.rs`:
    - RPC: return `Result<T, String>`.
    - Streaming: take `stream_id: String` + `on_event: Channel<E>` + `State<StreamRegistry>`; loop with `tokio::select!` racing `token.cancelled()` vs `stream.next()`; register/remove token by `stream_id`.
    - If it requires auth: take `State<Session>`, read claims, pass `claims.sub` to the `logic.rs` fn as `user_id`. The frontend never passes `user_id`.
-4. Add the Axum route in `web.rs`: RPC → `Json<T>`; streaming → `Sse<impl Stream<Item = Result<Event, _>>>`. Register it in `router()`.
+3. Add the Axum route in `web.rs`: RPC → `Json<T>`; streaming → `Sse<impl Stream<Item = Result<Event, _>>>`. Register it in `router()`.
    - If it requires auth: mount it on the `protected` router (behind `auth_middleware`) and take `Extension<auth::Claims>`; pass `claims.sub` to the same `logic.rs` fn. Public ops stay on `public`.
-5. Register the command in `lib.rs` `generate_handler!`.
-6. Call from vanilla JS: `call('<name>', args)` or `streamOperation('<name>', args, handlers)` in `src/main.js` (or a new module in `src/lib/`).
-7. Verify: `cargo check`, `cargo check --features web`.
+4. Register the command in `lib.rs` `generate_handler!`.
+5. Call from React: `call('<name>', args)` from `@/lib/api`, or `streamOperation('<name>', args, handlers)` from `@/lib/stream` — mirror any new event variant in the matching union type (e.g. `LocalChatEvent` in `hooks/use-local-chat.ts`).
+6. Verify: `bun run build`, `cargo check`, `cargo check --features web`.
 
 ## Authentication
 
-- Frontend: Clerk loaded from CDN in `index.html`. clerk-js v5 exposes `window.Clerk` as an already-constructed instance (key on the script tag's `data-clerk-publishable-key`). `main.js` calls `clerk.load()` (wrapped in try/catch — it rejects in the webview) and pushes the Clerk session JWT into the backend on sign-in and every ~50s (tokens expire in ~60s).
-- `set_session` (`src/lib/auth.js`) hands the JWT to the backend once:
-  - Desktop/mobile: backend stores the verified identity in Tauri `State<Session>` (in-memory).
-  - Web backend (no web frontend): backend sets an HttpOnly `kawai_session` cookie.
+- **MVP (current)**: no auth UI. On boot `use-local-chat.ts` calls `whoami`; on failure it calls `set_session(<any-token>)`, which only succeeds when the backend runs the dev bypass (`KAWAI_AUTH_DEV_USER_ID`). Identity = the bypass user until prod auth lands.
+- `set_session` (`commands.rs`) verifies the token and stores the identity in Tauri `State<Session>` (in-memory, per launch).
 - Backend verification: `auth::Verifier` fetches Clerk's **public** JWKS (cached by `kid`) and checks `iss`/`exp`. **No `CLERK_SECRET_KEY` is needed or used by the backend** — asymmetric verification.
 - Identity → logic: wrappers extract `claims.sub` as `user_id` and pass it as the first arg to `logic.rs` fns. `whoami`/`create_note`/`list_notes`/`stream_notes`/`create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message`/`local_load_model`/`local_chat` are auth-required; `greet`/`generate_activity` are public.
 - Auth operations: `set_session`, `logout`, `whoami` (one snake_case string each).
+- **Prod auth (Roadmap 6, deferred)**: browser + deep link — open system browser → sign-in → redirect `kawai://auth?token=…` → `set_session`. The `web/` SPA's Kratos deep-link flow (`web/src/platform/tauri.ts`) is the proven pattern to copy.
 
 ## Database (local SQLite via libsql)
 
 Desktop MVP: single-device, local SQLite file, no sync.
 
 ```
-user → (Clerk) → Rust backend → user_id
-                                      │
-   local SQLite file ◀────────────────┘  Builder::new_local(path)
+user → (dev bypass / future Clerk) → Rust backend → user_id
+                                                   │
+   local SQLite file ◀─────────────────────────────┘  Builder::new_local(path)
    ($KAWAI_DB_DIR/kawai.db)
 ```
 
@@ -237,7 +264,7 @@ KAWAI_AUTH_ISSUER=...          # Clerk frontend-API origin
 KAWAI_DB_DIR=/path/to/dir      # optional, default: /tmp/kawai-db
 KAWAI_MODEL_PATH=/path/to/gemma-4-E2B-it.litertlm  # optional on-device model; resolved by logic::resolve_model_path (env → ./models/ → ~/.kawai/models)
 ```
-`.env.local` (gitignored) — Clerk publishable key reference: `VITE_CLERK_PUBLISHABLE_KEY`. The actual key is embedded in `src/config.js` (publishable keys are public by design).
+`.env.local` (gitignored) — Clerk publishable key reference: `VITE_CLERK_PUBLISHABLE_KEY` (unused by the React frontend; kept for the future prod-auth flow).
 
 ## Roadmap
 
@@ -252,23 +279,23 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
 
 ### Post-MVP, pre-release (first milestones after MVP ships)
 
-5. **Agent tier foundation — the product's core.** Agent = persona (system prompt) + curated toolset from `rig-components/` (`registry::toolset_for(names)`, used standalone — no rig provider needed). Runs on **local Gemma 4** (decision 2026-08-16): prompt-based tool calling — tool definitions embedded in the system prompt, model replies with JSON tool calls, backend loop in `logic.rs` parses → dispatches via ToolSet → feeds results back. Ship a built-in agent catalog (specialist personas per category), the three-pane UI (left: agent list; right: sessions of the selected agent; center: agent content), and session persistence keyed by `agent_id` (schema from MVP 1). Remote models via `rig` stay pluggable-optional, wired only if/when local quality proves insufficient.
-   - ✅ Three-pane UI implemented (2026-08-18): `index.html` rewrite with Pinecone Router, agent catalog (office/finance/knowledge/weather), session sidebar with period grouping, dark theme, pane collapse (⌘1/⌘3), canvas view (artifact/files tabs).
-   - ✅ Tool call events in `LocalChatEvent` (2026-08-18): `ToolCall` + `ToolResult` variants; frontend renders tool cards in conversation with spinner/checkmark status.
-   - Remaining: route-based session loading may need Pinecone Router reactivity work; session delete handler; session file tracking.
-6. **Production auth = browser + deep link.** Clerk dev-mode is broken in the webview (see Landmines); even prod may need it. Flow: open system browser → Clerk sign-in → redirect `kawai://auth?token=<jwt>` → `set_session`. Needs the tauri deep-link plugin + a Clerk-hosted page (or kawai-web route) to mint the redirect.
+5. **Agent tier foundation — the product's core.** Agent = persona (system prompt) + curated toolset from `rig-components/` (`registry::toolset_for(names)`, used standalone — no rig provider needed). Runs on **local Gemma 4** (decision 2026-08-16): prompt-based tool calling — tool definitions embedded in the system prompt, model replies with JSON tool calls, backend loop in `logic.rs` parses → dispatches via ToolSet → feeds results back. Ship a built-in agent catalog (specialist personas per category), the three-pane UI (left: agent list; right: sessions of the selected agent; center: agent content) — rebuild on the React frontend, and session persistence keyed by `agent_id` (schema from MVP 1). Remote models via `rig` stay pluggable-optional, wired only if/when local quality proves insufficient.
+   - ✅ Tool call events in `LocalChatEvent` (2026-08-18): `ToolCall` + `ToolResult` variants; the React frontend renders tool cards in conversation (`App.tsx` + `components/ai-elements/tool`).
+   - ✅ React frontend migration (2026-08-18): vanilla JS/Alpine/Pinecone replaced by React 19 + Vite + Tailwind v4 (`frontend/`), components vendored from the `web/` SPA. Chat, sessions sidebar, thinking toggle, tool cards at parity with the vanilla MVP.
+   - Remaining: agent catalog UI (three-pane), per-agent session routing, session delete, session file tracking.
+6. **Production auth = browser + deep link.** Flow: open system browser → sign-in (Clerk page or Kratos) → redirect `kawai://auth?token=<jwt>` → `set_session`. Needs the tauri deep-link plugin + a hosted page (or kawai-web route) to mint the redirect. The main `web/` SPA's Kratos `kawai://oidc-callback` flow is the proven reference (`web/src/platform/tauri.ts`); reusing Kratos would unify identity with the main platform.
 7. **Desktop/mobile session persistence.** `State<Session>` is in-memory; lost on restart (with the dev bypass the frontend re-establishes it automatically — fine for MVP). Persist the token in the OS keychain (`tauri-plugin-stronghold` / keyring) and reload on launch.
-8. **Desktop/mobile DB token broker.** For sqld sync: `logic::mint_db_token` reads the Ed25519 private key locally — fine for dev, but the private key MUST NOT ship in a production app. Add a `db_token` op: kawai-web verifies Clerk → mints a short EdDSA token → the device fetches it and feeds `Builder::new_remote_replica`. The private key stays server-side. **(Post-MVP — requires sqld setup)**
-9. **Production hardening.** Add `Secure` to the session cookie (HTTPS only), CORS only if cross-origin, rate limiting, Clerk refresh-token rotation.
-10. **Connection pooling + token refresh.** DB connections are opened per-op (correct, not optimal). Pool them and refresh tokens before expiry for production load.
+8. **Desktop/mobile DB token broker.** For sqld sync: `logic::mint_db_token` reads the Ed25519 private key locally — fine for dev, but the private key MUST NOT ship in a production app. Add a `db_token` op: kawai-web verifies the identity → mints a short EdDSA token → the device fetches it and feeds `Builder::new_remote_replica`. The private key stays server-side. **(Post-MVP — requires sqld setup)**
+9. **Production hardening.** Add `Secure` to the session cookie (HTTPS only), CORS only if cross-origin, rate limiting, token refresh rotation.
+10. **Connection pooling + token refresh.** DB connections are opened per-op (correct, not optimal). Pool them for production load.
 11. **SQLite schema migrations.** Schema changes today are additive + idempotent (`CREATE TABLE/INDEX IF NOT EXISTS`), which is fine for single-device local SQLite. Before distributed builds: hand-rolled `schema_migrations` table + versioned SQL list (via `include_str!`) applied transactionally on connect — NOT refinery/rusqlite_migration (they assume rusqlite, we use the libsql API). First known backfill when introduced: sessions created before first-message title-seeding will never get a title.
 12. **Tests beyond the smoke gate.** Unit tests for `auth.rs` (JWKS verify), `logic.rs` (token mint + db round-trip), agent tier (toolset assembly, agent catalog integrity).
 
 ### End state (desktop + mobile + web — design work, later)
 
-13. **Mobile LLM builds.** Mobile Rust compiles are verified (android arm64 + iOS device/sim, 2026-08-15) but the LiteRT-LM C lib itself is not built for mobile yet (`cognee-litert-lm/build.rs` has the NDK path ready; needs `bazel build //c:litert-lm --config=android_arm64` + static-link trial). Mobile UI work rides on this.
+13. **Mobile LLM builds.** Mobile Rust compiles are verified (android arm64 + iOS device/sim, 2026-08-15) but the LiteRT-LM C lib itself is not built for mobile yet (`cognee-litert-lm/build.rs` has the NDK path ready; needs `bazel build //c:litert-lm --config=android_arm64` + static-link trial). Mobile UI work rides on this (React frontend must grow the mobile platform adapter then).
 14. **Windows/Linux desktop builds.** macOS-only for MVP; the other desktop targets are end state. No cross-compile from macOS — build each platform on its native GitHub Actions runner (`macos-14+` arm64 / `windows-latest` MSVC / `ubuntu-22.04` for glibc ≥ 2.35) with bazel caching (`actions/cache`, GB-scale) + `tauri-action` for bundling. Upstream bazel carries `linux` (clang) and partial Windows (MSVC) flags — never exercised by us; our sentencepiece patch is macOS-specific (may need sibling patches per OS). flutter_gemma proves the C lib works on Windows x86_64 (DX12/Dawn GPU) and Linux x86_64+arm64 (Vulkan/Dawn; glibc ≥ 2.34) via prebuilt binaries — consider prebuilts vs building from source per platform. Bundling differs per OS: macOS `@rpath`+codesign (current recipe), Windows DLL-exe-adjacent + vcredist (+ `dxil`/`dxcompiler` for GPU), Linux `.so` + `$ORIGIN` rpath. Windows is the highest-risk target (MSVC flags unexercised). **CI jobs added** (`build-linux`, `build-windows` in `.github/workflows/release.yml`) — both ship `--features litert` bundled via `tauri-action`. Linux uses `--config=linux_x86_64` (clang), Windows uses `--config=windows` (MSVC). Sentencepiece patch may need Linux/Windows siblings if `hdrs_check` fails on those platforms. Known: Windows `bazel-bin/c/litert-lm.dll` output name (not `liblitert-lm.dll`), no `install_name_tool` equivalent, no `codesign`.
-15. **Web platform support.** Investigate running kawai from a browser. Three approaches: (A) new web frontend served by Axum + `@litert-lm/core` WASM for client-side inference, (B) Rust backend as inference proxy (server-side), (C) hybrid. flutter_gemma already proves `@litert-lm/core` works in-browser with WebGPU. Open questions: WebGPU availability, model download UX (GB-scale), browser memory limits, whether to duplicate effort or share with flutter_gemma. Needs design doc before implementation.
+15. **Web platform support.** Investigate running kawai from a browser. Three approaches: (A) the React frontend built for web + `@litert-lm/core` WASM for client-side inference, (B) Rust backend as inference proxy (server-side), (C) hybrid. flutter_gemma already proves `@litert-lm/core` works in-browser with WebGPU. Open questions: WebGPU availability, model download UX (GB-scale), browser memory limits, whether to duplicate effort or share with flutter_gemma. Needs design doc before implementation.
 16. **`--enable-namespaces` on sqld** for hard per-user DB isolation (token `sub` → namespace) instead of shared-namespace + `WHERE user_id`.
 17. **Gemma 4 GPU (Metal) — blocked upstream.** The `-gpu.litertlm` variants need backend `GPU_ARTISAN`, which maps to engine types (`kAdvancedLegacyTfLite`/`kLegacyTfLite`) that upstream deleted; only `kAdvancedLiteRTCompiledModel` registers now → `No available engine for GPU_ARTISAN`. The plain `.litertlm` is CPU-locked by its section backend-constraint (`engine_settings.cc:78` rejects mismatches). Revisit when upstream ships a GPU path for the compiled-model engine.
 18. **LoRA support.** LoRA adapters enable on-device personalization (custom writing style, domain expertise, local language/slang). C API supports `set_lora_path` on SessionConfig and `set_lora_rank` on EngineSettings, but kawai uses the Conversation API which manages sessions internally — cannot inject SessionConfig. Options: (A) switch from Conversation API to Session API (big refactor, lose chat history/prompt templating), (B) wait for upstream to add LoRA to ConversationConfig, (C) hybrid approach. Fine-tuning on-device not yet supported by LiteRT-LM. Open questions: which use cases justify the refactor? How big is the Session API migration?
