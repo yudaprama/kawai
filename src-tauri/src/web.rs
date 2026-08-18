@@ -367,8 +367,7 @@ async fn knowledge_context_handler(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KnowledgeSearchRequest {
-    session_id: Option<i64>,
-    file_ids: Vec<String>,
+    session_id: i64,
     query: String,
 }
 
@@ -377,7 +376,7 @@ async fn knowledge_search_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<KnowledgeSearchRequest>,
 ) -> Result<Json<Vec<logic::rag::RagHit>>, (StatusCode, String)> {
-    logic::rag::knowledge_search(claims.sub, req.session_id, req.file_ids, req.query)
+    logic::rag::knowledge_search(claims.sub, req.session_id, req.query)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -406,6 +405,7 @@ async fn knowledge_forget_handler(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OfficeIndexFileRequest {
+    session_id: Option<i64>,
     file_id: String,
 }
 
@@ -414,7 +414,7 @@ async fn office_index_file_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<OfficeIndexFileRequest>,
 ) -> Result<Json<usize>, (StatusCode, String)> {
-    logic::rag::office_index_file(claims.sub, req.file_id)
+    logic::rag::office_index_file(claims.sub, req.session_id, req.file_id)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))

@@ -306,12 +306,17 @@ pub struct RagHit {
     pub content: String,
 }
 
-/// Index one stored office file for vector search. Called during the idle gap
-/// after import (frontend fires it without awaiting). Returns the number of
-/// chunks indexed, or `Ok(0)` for empty/unsupported files. Errors surface the
-/// underlying cause (missing engine, embedding failure, …) without aborting
-/// the session — the legacy `knowledge_context` path remains the fallback.
-pub async fn office_index_file(user_id: String, file_id: String) -> Result<usize, String> {
+/// Index one stored office file for vector search, then associate it with the
+/// uploading session (`session_files`). Called fire-and-forget right after
+/// import from the files panel. Returns the number of chunks indexed, or
+/// `Ok(0)` for empty/unsupported files. Errors surface the underlying cause
+/// (missing engine, embedding failure, …) without aborting the session — the
+/// agent can still fall back to the office read tools.
+pub async fn office_index_file(
+    user_id: String,
+    session_id: Option<i64>,
+    file_id: String,
+) -> Result<usize, String> {
     let text = match extract_text(&user_id, &file_id).await? {
         Some(t) if !t.trim().is_empty() => t,
         _ => return Ok(0),
@@ -330,10 +335,10 @@ pub async fn office_index_file(user_id: String, file_id: String) -> Result<usize
     let conn = crate::logic::db_connection(&user_id)
         .await
         .map_err(|e| format!("db: {e}"))?;
-
-    // Re-indexing replaces: drop this file's previous chunks (and vectors) so
-    // ids never go stale when the new extraction has fewer chunks.
-    purge_file_chunks(&conn, &file_id).await?;
+    ensure_session_files(&conn).await?;
+    if let Some(sid) = session_id {
+        associate_session_files(&conn, sid, &[file_id.clone()]).await?;
+    }
 
     let store: LibsqlVectorStore<TenantAwareEmbedder, RagChunk> =
         LibsqlVectorStore::new(conn.clone(), &model)
@@ -371,23 +376,18 @@ pub async fn office_index_file(user_id: String, file_id: String) -> Result<usize
     Ok(docs.len())
 }
 
-/// Retrieve the top-k most relevant indexed chunks for a query. The candidate
-/// files are the message's explicit mentions UNION every file the session has
-/// referenced (`session_files`) — so follow-up questions keep their document
-/// context without re-mentioning. Mentioned files are (re-)associated with the
-/// session here, at the only moment the session id is guaranteed known.
-/// Called at submit time instead of the slow `knowledge_context` (which
-/// re-extracts everything). Retrieval is hybrid — vector similarity fused with
-/// FTS5/BM25 keyword ranking via RRF — so exact codes and numbers also hit.
-/// Returns chunk contents; empty when nothing is indexed yet (caller falls
-/// back to `knowledge_context`).
+/// Retrieve the top-k most relevant indexed chunks for a query, scoped to the
+/// files the session has uploaded (`session_files`). The session id is bound
+/// server-side (agent tool / wrapper state) — callers only supply the query.
+/// Retrieval is hybrid — vector similarity fused with FTS5/BM25 keyword
+/// ranking via RRF — so exact codes and numbers also hit. Empty result means
+/// nothing is indexed for this session yet.
 pub async fn knowledge_search(
     user_id: String,
-    session_id: Option<i64>,
-    file_ids: Vec<String>,
+    session_id: i64,
     query: String,
 ) -> Result<Vec<RagHit>, String> {
-    if (file_ids.is_empty() && session_id.is_none()) || query.trim().is_empty() {
+    if query.trim().is_empty() {
         return Ok(Vec::new());
     }
     const K: u64 = 8;
@@ -397,16 +397,7 @@ pub async fn knowledge_search(
         .map_err(|e| format!("db: {e}"))?;
     ensure_session_files(&conn).await?;
 
-    // Union of explicit mentions and the session's accumulated file set.
-    let mut candidates: Vec<String> = file_ids.clone();
-    if let Some(sid) = session_id {
-        if !file_ids.is_empty() {
-            associate_session_files(&conn, sid, &file_ids).await?;
-        }
-        candidates.extend(session_file_ids(&conn, sid).await?);
-    }
-    candidates.sort();
-    candidates.dedup();
+    let candidates = session_file_ids(&conn, session_id).await?;
     if candidates.is_empty() {
         return Ok(Vec::new());
     }
@@ -462,10 +453,9 @@ pub async fn knowledge_search(
 }
 
 /// Remove the given files' session associations and drop the chunks of any
-/// file no longer referenced by ANY session (orphans). `session_id` `None`
-/// (mention removed before the session exists) only runs the orphan pass.
-/// Safe to call before anything was indexed (missing tables are treated as
-/// "nothing to delete"); the index is cheaply rebuilt during idle time.
+/// file no longer referenced by ANY session (orphans). Used when a file is
+/// removed from a session or deleted outright. Safe to call before anything
+/// was indexed (missing tables are treated as "nothing to delete").
 pub async fn forget_file(
     user_id: String,
     session_id: Option<i64>,

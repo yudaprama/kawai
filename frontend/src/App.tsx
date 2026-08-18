@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -19,20 +19,16 @@ import {
   PromptInputActionAddScreenshot,
   PromptInputActionMenu,
   PromptInputActionMenuContent,
-  PromptInputActionMenuItem,
   PromptInputActionMenuTrigger,
   PromptInputBody,
   PromptInputFooter,
   PromptInputHeader,
-  LocalReferencedSourcesContext,
   PromptInputProvider,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
   usePromptInputAttachments,
   usePromptInputController,
-  usePromptInputReferencedSources,
-  type ReferencedSourcesContext,
 } from "@/components/ai-elements/prompt-input";
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
 import { Button } from "@/components/ui/button";
@@ -42,7 +38,7 @@ import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useLocalChat } from "@/hooks/use-local-chat";
 import { platform, runningInTauri } from "@/platform";
 import { call, errText, type OfficeFileInfo } from "@/lib/api";
-import type { SourceDocumentUIPart, UIMessage } from "@/lib/ai-types";
+import type { UIMessage } from "@/lib/ai-types";
 import {
   BookOpenIcon,
   BriefcaseIcon,
@@ -249,129 +245,44 @@ function classifySource(name: string, src: { path?: string; file?: File }): Know
   return { kind: "unsupported", name };
 }
 
-/** The composer with attachments + knowledge @-mention. */
-type KnowledgeFiles = ReturnType<typeof useKnowledgeFiles>;
-
+/** The composer with image attachments (knowledge lives in the files panel —
+ * the agent searches it via its `knowledge_search` tool). */
 function ChatComposer({
   agentName,
   status,
   onStop,
   onSubmit,
-  knowledge,
-  sessionId,
 }: {
   agentName: string;
   status: ReturnType<typeof useLocalChat>["status"];
   onStop: () => void;
-  onSubmit: (text: string, imageB64?: string, sourceIds?: string[]) => void;
-  knowledge: KnowledgeFiles;
-  sessionId: number | null;
+  onSubmit: (text: string, imageB64?: string) => void;
 }) {
   return (
     <PromptInputProvider>
-      <ChatComposerSources>
-        <ChatComposerInner
-          agentName={agentName}
-          knowledge={knowledge}
-          onStop={onStop}
-          status={status}
-          onSubmit={onSubmit}
-          sessionId={sessionId}
-        />
-      </ChatComposerSources>
+      <ChatComposerInner
+        agentName={agentName}
+        onStop={onStop}
+        status={status}
+        onSubmit={onSubmit}
+      />
     </PromptInputProvider>
   );
 }
-
-/** Provides the referenced-sources context that ChatComposerInner reads. */
-function ChatComposerSources({ children }: { children: React.ReactNode }) {
-  const [sources, setSources] = useState<(SourceDocumentUIPart & { id: string })[]>([]);
-
-  const refsCtx = useMemo<ReferencedSourcesContext>(
-    () => ({
-      sources,
-      add: (incoming) => {
-        const arr = Array.isArray(incoming) ? incoming : [incoming];
-        setSources((prev) => [
-          ...prev,
-          ...arr.map((s) => ({ ...s, id: nanoid() })),
-        ]);
-      },
-      remove: (id) => setSources((prev) => prev.filter((s) => s.id !== id)),
-      clear: () => setSources([]),
-    }),
-    [sources],
-  );
-
-  return (
-    <LocalReferencedSourcesContext.Provider value={refsCtx}>
-      {children}
-    </LocalReferencedSourcesContext.Provider>
-  );
-}
-
-/** Matches a trailing @query token ("see @invoic" → "invoic"). */
-const TRAILING_MENTION = /(^|\s)@([\p{L}\p{N}._-]*)$/u;
 
 function ChatComposerInner({
   agentName,
   status,
   onStop,
   onSubmit,
-  knowledge,
-  sessionId,
 }: {
   agentName: string;
   status: ReturnType<typeof useLocalChat>["status"];
   onStop: () => void;
-  onSubmit: (text: string, imageB64?: string, sourceIds?: string[]) => void;
-  knowledge: KnowledgeFiles;
-  sessionId: number | null;
+  onSubmit: (text: string, imageB64?: string) => void;
 }) {
   const attachments = usePromptInputAttachments();
-  const sources = usePromptInputReferencedSources();
   const controller = usePromptInputController();
-  const [mentionOpen, setMentionOpen] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState("");
-  const { files, loaded, unavailable, refresh } = knowledge;
-
-  const text = controller.textInput.value ?? "";
-
-  const filtered = useMemo(() => {
-    const q = mentionQuery.toLowerCase();
-    return files
-      .filter((f) => f.originalName.toLowerCase().includes(q))
-      .slice(0, 6);
-  }, [files, mentionQuery]);
-
-  const handleTextareaChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const value = e.currentTarget.value;
-      const m = TRAILING_MENTION.exec(value);
-      if (m) {
-        setMentionOpen(true);
-        setMentionQuery(m[2]);
-      } else {
-        setMentionOpen(false);
-      }
-    },
-    [],
-  );
-
-  const selectMention = useCallback(
-    (file: { id: string; originalName: string }) => {
-      sources.add({
-        type: "source-document",
-        sourceId: file.id,
-        title: file.originalName,
-        mediaType: "text/markdown",
-      });
-      // Strip the trailing @token from the draft.
-      controller.textInput.setInput(text.replace(TRAILING_MENTION, "$1"));
-      setMentionOpen(false);
-    },
-    [sources, controller, text],
-  );
 
   const handleTranscription = useCallback(
     (transcript: string) => {
@@ -389,15 +300,9 @@ function ChatComposerInner({
       const imageB64 =
         image && image.url.startsWith("data:") ? (dataUrlB64(image.url) ?? undefined) : undefined;
 
-      // Pass the mentioned knowledge files through — retrieval happens in the
-      // chat hook, where the session id is known (session-scoped search).
-      const sourceIds = sources.sources.map((s) => s.sourceId);
-
-      if (message.text.trim() || imageB64 || sourceIds.length > 0)
-        onSubmit(message.text, imageB64, sourceIds.length > 0 ? sourceIds : undefined);
-      sources.clear();
+      if (message.text.trim() || imageB64) onSubmit(message.text, imageB64);
     },
-    [sources, onSubmit],
+    [onSubmit],
   );
 
   return (
@@ -408,7 +313,7 @@ function ChatComposerInner({
       onSubmit={handleSubmit}
     >
       <PromptInputHeader>
-        {(attachments.files.length > 0 || sources.sources.length > 0) && (
+        {attachments.files.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 px-1 pt-1">
             <Attachments variant="inline">
               {attachments.files.map((attachment) => (
@@ -422,71 +327,11 @@ function ChatComposerInner({
                 </Attachment>
               ))}
             </Attachments>
-            {sources.sources.map((source) => (
-              <span
-                className="bg-muted text-muted-foreground inline-flex max-w-[200px] items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
-                key={source.id}
-              >
-                <FileTextIcon className="size-3 shrink-0" />
-                <span className="truncate">{source.title || source.sourceId}</span>
-                <button
-                  aria-label={`Remove ${source.title}`}
-                  className="hover:text-foreground shrink-0"
-                  onClick={() => {
-                    sources.remove(source.id);
-                    // Disassociate the file from this session; chunks are
-                    // purged only if no session references the file anymore.
-                    void call<number>("knowledge_forget", {
-                      sessionId,
-                      fileIds: [source.sourceId],
-                    }).catch((e) => console.warn("[knowledge_forget]", errText(e)));
-                  }}
-                  type="button"
-                >
-                  <XIcon className="size-3" />
-                </button>
-              </span>
-            ))}
           </div>
         )}
       </PromptInputHeader>
       <PromptInputBody>
-        <div className="relative w-full">
-          <PromptInputTextarea
-            onChange={handleTextareaChange}
-            placeholder={`Message ${agentName}… (@ to reference a document)`}
-          />
-          {mentionOpen && (
-            <div className="bg-popover text-popover-foreground absolute bottom-full left-0 z-10 mb-1 w-64 overflow-hidden rounded-lg border shadow-lg">
-              {filtered.length > 0 ? (
-                filtered.map((file) => (
-                  <button
-                    className="hover:bg-accent flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm"
-                    key={file.id}
-                    onClick={() => selectMention(file)}
-                    type="button"
-                  >
-                    <FileTextIcon className="text-muted-foreground size-3.5 shrink-0" />
-                    <span className="truncate">{file.originalName}</span>
-                    <span className="text-muted-foreground ml-auto text-[10px] uppercase">
-                      {file.ext}
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <button
-                  className="text-muted-foreground w-full px-2.5 py-2 text-left text-xs"
-                  onClick={() => setMentionOpen(false)}
-                  type="button"
-                >
-                  {unavailable || !loaded
-                    ? "No knowledge base (office feature off?)"
-                    : `No documents matching “${mentionQuery}”`}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        <PromptInputTextarea placeholder={`Message ${agentName}…`} />
       </PromptInputBody>
       <PromptInputFooter>
         <PromptInputTools>
@@ -497,14 +342,6 @@ function ChatComposerInner({
             <PromptInputActionMenuContent>
               <PromptInputActionAddAttachments label="Add photos or files" />
               <PromptInputActionAddScreenshot label="Take screenshot" />
-              <PromptInputActionMenuItem
-                onSelect={() => {
-                  void refresh();
-                  controller.textInput.setInput(text.endsWith(" ") || !text ? `${text}@` : `${text} @`);
-                }}
-              >
-                <FileTextIcon className="mr-2 size-4" /> Reference document
-              </PromptInputActionMenuItem>
             </PromptInputActionMenuContent>
           </PromptInputActionMenu>
           <SpeechInput
@@ -537,10 +374,12 @@ export default function App() {
   const [pending, setPending] = useState<{ id: string; kind: "image" | "link"; name: string; url?: string }[]>([]);
 
   /**
- * Imports picked documents/images into the knowledge store. In Tauri the
- * native dialog returns absolute paths (imported via `sourcePath`); in a
- * plain browser we fall back to `File` → base64.
- */
+   * Imports picked documents/images into the knowledge store. In Tauri the
+   * native dialog returns absolute paths (imported via `sourcePath`); in a
+   * plain browser we fall back to `File` → base64. Imported documents are
+   * indexed (RAG) and associated with the active session — the agent then
+   * finds them via its `knowledge_search` tool.
+   */
   const addKnowledgeFiles = useCallback(async () => {
     setImporting(true);
     setImportError(null);
@@ -579,12 +418,13 @@ export default function App() {
           const dataBase64 = await fileToBase64(item.file);
           imported = await call<OfficeFileInfo>("office_import_file", { dataBase64, name: item.name });
         }
-        // Fire-and-forget idle-time RAG indexing: runs while the user is still
-        // in the composer, so the knowledge search at submit time is instant.
+        // Fire-and-forget RAG indexing; associates the file with the active
+        // session so the agent's knowledge_search sees it.
         if (imported?.id) {
-          void call<number>("office_index_file", { fileId: imported.id }).catch((e) =>
-            console.warn("[office_index_file]", errText(e)),
-          );
+          void call<number>("office_index_file", {
+            sessionId: chat.sessionId,
+            fileId: imported.id,
+          }).catch((e) => console.warn("[office_index_file]", errText(e)));
         }
       }
       if (toPending.length) setPending((prev) => [...prev, ...toPending]);
@@ -595,7 +435,7 @@ export default function App() {
     } finally {
       setImporting(false);
     }
-  }, [knowledge.refresh]);
+  }, [chat.sessionId, knowledge.refresh]);
 
   /** Prompts for a YouTube URL and adds it to the pending (session-only) list. */
   const addKnowledgeLink = useCallback(async () => {
@@ -806,13 +646,9 @@ export default function App() {
             <div className="shrink-0 px-4 pb-4">
               <ChatComposer
                 agentName={agent.name}
-                knowledge={knowledge}
                 onStop={chat.stop}
                 status={status}
-                onSubmit={(text, imageB64, sourceIds) =>
-                  void chat.send(text, imageB64, sourceIds)
-                }
-                sessionId={chat.sessionId}
+                onSubmit={(text, imageB64) => void chat.send(text, imageB64)}
               />
             </div>
           </section>

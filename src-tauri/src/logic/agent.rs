@@ -58,6 +58,7 @@ const CHAT_PERSONA: &str =
 const OFFICE_PERSONA: &str = "You are kawai's office agent. You read, create, edit, merge and inspect documents (docx, xlsx, pptx, pdf) through tools.\n\
 Rules:\n\
 - Call at most ONE tool per reply, as a single ```tool block, then stop and wait for the TOOL_RESULT message.\n\
+- When the user asks ANYTHING about their uploaded documents (numbers, names, dates, invoice codes, table contents), call knowledge_search FIRST — it finds the relevant passages for you.\n\
 - Tools address stored files by their file id, never by path. If the user refers to a document and you don't know its id, call office_list_files first.\n\
 - Never invent arguments: if a required input is missing, ask the user.\n\
 - Prefer office_document_info / pdf_info before large reads when only structure matters.\n\
@@ -74,13 +75,14 @@ fn persona_for(agent_id: &str) -> Option<&'static str> {
     }
 }
 
-/// Toolset for an agent, scoped to one user (office tools bake the user id in
-/// at construction). None = the agent has no tools (plain chat).
+/// Toolset for an agent, scoped to one user + session (office tools bake the
+/// user id — and the knowledge tool the session id — in at construction, so
+/// the model can never supply them). None = the agent has no tools.
 #[cfg(feature = "litert")]
-fn toolset_for(agent_id: &str, user_id: &str) -> Option<ToolSet> {
+fn toolset_for(agent_id: &str, user_id: &str, session_id: i64) -> Option<ToolSet> {
     match agent_id {
         #[cfg(feature = "office")]
-        OFFICE_AGENT_ID => Some(crate::logic::office::toolset(user_id)),
+        OFFICE_AGENT_ID => Some(crate::logic::office::toolset(user_id, session_id)),
         _ => {
             let _ = user_id;
             None
@@ -229,7 +231,6 @@ pub fn agent_chat(
             yield AgentChatEvent::Error { message: format!("unknown agent: {agent_id}") };
             return;
         };
-        let toolset = toolset_for(&agent_id, &user_id);
 
         // Lazy session creation, then persist the user turn (seeds the title).
         let sid = match session_id {
@@ -242,6 +243,8 @@ pub fn agent_chat(
                 }
             },
         };
+        // Built after `sid` exists: the knowledge tool binds the session id.
+        let toolset = toolset_for(&agent_id, &user_id, sid);
         yield AgentChatEvent::Started { session_id: sid };
         if let Err(e) = db::append_chat_message(&user_id, sid, "user", &message).await {
             yield AgentChatEvent::Error { message: e.to_string() };

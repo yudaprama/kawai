@@ -146,15 +146,21 @@ pub struct OfficeTools {
     user_id: String,
 }
 
-/// Build the office ToolSet for one user, filtered by the capability probe —
-/// tools without engines are never registered (never offered to the model).
-pub fn toolset(user_id: &str) -> ToolSet {
+/// Build the office ToolSet for one user + session, filtered by the capability
+/// probe — tools without engines are never registered (never offered to the
+/// model). `knowledge_search` is session-scoped: it only sees documents this
+/// session uploaded (`session_files`).
+pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
     let caps = capabilities();
     let t = OfficeTools {
         user_id: user_id.to_string(),
     };
     let mut set = ToolSet::default();
     set.add_tool(tools::ListFilesTool(t.user_id.clone()));
+    set.add_tool(tools::KnowledgeSearchTool(
+        t.user_id.clone(),
+        session_id,
+    ));
     if caps.ooxcli {
         set.add_tool(tools::ReadDocumentTool(t.user_id.clone()));
         set.add_tool(tools::DocumentInfoTool(t.user_id.clone()));

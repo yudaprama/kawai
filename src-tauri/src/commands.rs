@@ -392,43 +392,40 @@ pub async fn knowledge_context(
         .map_err(|e| e.to_string())
 }
 
-/// Authenticated RPC: index a stored office file into the per-user vector store
-/// (idle-time RAG preprocessing). Fire-and-forget from the frontend — runs
-/// while the user types, so submit-time `knowledge_search` is instant.
+/// Authenticated RPC: index a stored office file into the user's vector store
+/// (upload-time RAG preprocessing) and associate it with the uploading
+/// session. Fire-and-forget from the files panel.
 #[cfg(feature = "office")]
 #[tauri::command]
 pub async fn office_index_file(
+    session_id: Option<i64>,
     file_id: String,
     session: State<'_, Session>,
 ) -> Result<usize, String> {
     let user_id = session_user_id(&session)?;
-    logic::rag::office_index_file(user_id, file_id)
+    logic::rag::office_index_file(user_id, session_id, file_id)
         .await
         .map_err(|e| e.to_string())
 }
 
-/// Authenticated RPC: vector-search the indexed knowledge for a query. The
-/// candidate set is the message's mentioned files plus everything the session
-/// has referenced (`session_files`). Runs at submit time (instant — no
-/// subprocess spawn). Returns chunk contents; the frontend falls back to
-/// `knowledge_context` when this is empty (index not built yet).
+/// Authenticated RPC: hybrid vector+BM25 search over the documents a session
+/// uploaded. Kept for the web transport / debugging; the agent reaches the
+/// same logic through its `knowledge_search` tool (session bound server-side).
 #[cfg(feature = "office")]
 #[tauri::command]
 pub async fn knowledge_search(
-    session_id: Option<i64>,
-    file_ids: Vec<String>,
+    session_id: i64,
     query: String,
     session: State<'_, Session>,
 ) -> Result<Vec<logic::rag::RagHit>, String> {
     let user_id = session_user_id(&session)?;
-    logic::rag::knowledge_search(user_id, session_id, file_ids, query)
+    logic::rag::knowledge_search(user_id, session_id, query)
         .await
         .map_err(|e| e.to_string())
 }
 
 /// Authenticated RPC: remove the session's association with the given files
-/// and purge chunks of files no session references anymore (e.g. when a
-/// knowledge mention is removed).
+/// and purge chunks of files no session references anymore.
 #[cfg(feature = "office")]
 #[tauri::command]
 pub async fn knowledge_forget(

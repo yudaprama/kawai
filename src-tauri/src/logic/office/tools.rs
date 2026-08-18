@@ -36,6 +36,57 @@ impl PortableTool for ListFilesTool {
     }
 }
 
+// -- knowledge_search --------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeSearchArgs {
+    pub query: String,
+}
+
+/// Hybrid (vector + BM25) search over the documents this session uploaded.
+/// `user_id` + `session_id` are bound at construction (server-side state) —
+/// the model only supplies the query.
+pub struct KnowledgeSearchTool(pub String, pub i64);
+
+impl PortableTool for KnowledgeSearchTool {
+    const NAME: &'static str = "knowledge_search";
+    type Args = KnowledgeSearchArgs;
+    type Output = String;
+    type Error = OfficeToolError;
+
+    fn description(&self) -> String {
+        "Search the documents uploaded in this conversation for relevant passages. Use this FIRST when the user asks about content that may be in their documents (numbers, names, dates, invoice codes, tables). Returns the best matching excerpts with their source document.".into()
+    }
+
+    fn parameters(&self) -> Value {
+        schema!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "What to look for — keywords, codes, or a question." }
+            },
+            "required": ["query"]
+        })
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<String, OfficeToolError> {
+        let hits = crate::logic::rag::knowledge_search(
+            self.0.clone(),
+            self.1,
+            args.query,
+        )
+        .await
+        .map_err(oerr)?;
+        if hits.is_empty() {
+            return Ok(
+                json!({ "hits": [], "note": "No documents match. Either nothing was uploaded in this conversation, or none of them contains the answer." })
+                    .to_string(),
+            );
+        }
+        Ok(json!({ "hits": hits }).to_string())
+    }
+}
+
 // -- office_read_document ----------------------------------------------------
 
 #[derive(Deserialize)]
