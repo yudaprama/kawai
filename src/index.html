@@ -265,6 +265,29 @@
           </div>
         </section>
 
+        <!-- canvas (only when model loaded) -->
+        <section x-show="$store.app.llm.modelLoaded" class="flex-1 min-w-0 flex flex-col border-l border-base-300/60" x-data="{ canvasTab: 'artifact' }">
+          <div class="h-10 shrink-0 border-b border-base-300/60 px-3 flex items-center gap-4">
+            <button @click="canvasTab = 'artifact'" class="canvas-tab text-sm font-medium" :class="canvasTab === 'artifact' ? 'tab-on' : 'text-base-content/40'">Artifact</button>
+            <button @click="canvasTab = 'files'" class="canvas-tab text-sm font-medium" :class="canvasTab === 'files' ? 'tab-on' : 'text-base-content/40'">Files</button>
+          </div>
+          <div x-show="canvasTab === 'artifact'" class="flex-1 overflow-y-auto flex flex-col items-center justify-center p-6">
+            <div class="text-center">
+              <div class="w-12 h-12 rounded-xl bg-base-200 flex items-center justify-center mx-auto mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-base-content/30"><use href="#i-file-text"/></svg>
+              </div>
+              <p class="text-sm text-base-content/40">Artifacts will appear here</p>
+              <p class="text-xs text-base-content/30 mt-1">Generated docs, summaries, and exports</p>
+            </div>
+          </div>
+          <div x-show="canvasTab === 'files'" class="flex-1 overflow-y-auto flex flex-col gap-2 px-4 py-4">
+            <div class="text-center py-8">
+              <p class="text-sm text-base-content/40">No files in this session</p>
+              <p class="text-xs text-base-content/30 mt-1">Attach files to get started</p>
+            </div>
+          </div>
+        </section>
+
         <!-- model selector (shown when no model loaded) -->
         <div x-show="!$store.app.llm.modelLoaded" class="w-full flex flex-col items-center justify-center gap-4 p-6">
           <div class="w-12 h-12 rounded-xl bg-base-200 flex items-center justify-center">
@@ -381,6 +404,7 @@
           if (!(e.metaKey || e.ctrlKey)) return;
           if (e.key === '1') { e.preventDefault(); setAgentsRail(!agentsPane.classList.contains('agents-rail')); }
           else if (e.key === '3') { e.preventDefault(); setSessionsCollapsed(!sessionsPane.classList.contains('sessions-collapsed')); }
+          else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); Alpine.store('app').createSession(); }
         });
       })();
     </script>
