@@ -58,12 +58,36 @@ pub async fn document_info(user_id: &str, file_id: &str) -> Result<Value, String
         .map_err(|e| format!("ooxcli info returned invalid JSON: {e}"))
 }
 
+/// Per-operation outcome from `ooxcli edit --json` (gooxml >= v0.1.5).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EditOpOutcome {
+    pub index: u64,
+    #[serde(rename = "type")]
+    pub op_type: String,
+    /// "applied", "no_match", or "error"
+    pub status: String,
+    pub modified: u64,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// Structured edit summary from `ooxcli edit --json` (gooxml >= v0.1.5).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EditOutcome {
+    pub success: bool,
+    pub rows_modified: u64,
+    #[serde(default)]
+    pub operations: Vec<EditOpOutcome>,
+    #[serde(default)]
+    pub error_summary: Option<String>,
+}
+
 /// `ooxcli edit` with ops JSON on stdin; output replaces the stored file.
 pub async fn edit_document(
     user_id: &str,
     file_id: &str,
     operations: &[Value],
-) -> Result<usize, String> {
+) -> Result<EditOutcome, String> {
     let (path, info) = store::resolve(user_id, file_id)?;
     let bin = cli::ooxcli_path().ok_or_else(|| cli::missing_engine("ooxcli"))?;
     let allowed = allowed_ops(&info.ext)
@@ -79,6 +103,9 @@ pub async fn edit_document(
     }
     let ops_json = serde_json::to_string(&operations).map_err(|e| e.to_string())?;
     let tmp = path.with_extension(format!("{}.tmp", info.ext));
+    // Trailing --json (gooxml >= v0.1.5) must come AFTER the positional input:
+    // older binaries treat an unknown leading positional as the input file,
+    // while a trailing one is safely ignored.
     let out = cli::run_cli(
         &bin,
         &[
@@ -86,6 +113,7 @@ pub async fn edit_document(
             path.display().to_string(),
             "--out".to_string(),
             tmp.display().to_string(),
+            "--json".to_string(),
         ],
         Some(&ops_json),
         None,
@@ -98,8 +126,24 @@ pub async fn edit_document(
             out.stderr.trim()
         ));
     }
+    // gooxml >= v0.1.5 prints an EditResult JSON summary; older binaries print
+    // nothing on success — degrade to an op-count-only outcome.
+    let outcome = match serde_json::from_str::<EditOutcome>(out.stdout.trim()) {
+        Ok(parsed) if parsed.success => parsed,
+        Ok(parsed) => {
+            return Err(parsed
+                .error_summary
+                .unwrap_or_else(|| "ooxcli edit failed".into()));
+        }
+        Err(_) => EditOutcome {
+            success: true,
+            rows_modified: operations.len() as u64,
+            operations: Vec::new(),
+            error_summary: None,
+        },
+    };
     store::replace_stored(user_id, file_id, &tmp)?;
-    Ok(operations.len())
+    Ok(outcome)
 }
 
 /// Minimal JS string escaping for the `<outDir>` substitution.
@@ -182,5 +226,48 @@ mod tests {
         assert!(allowed_ops("xlsx").unwrap().contains(&"set_cell"));
         assert!(allowed_ops("pptx").unwrap().contains(&"append_slides"));
         assert!(allowed_ops("pdf").is_none());
+    }
+
+    #[test]
+    fn parses_edit_outcome_json() {
+        let raw = r#"{
+          "file_path": "/tmp/a.docx",
+          "output_path": "/tmp/a.docx.tmp",
+          "success": true,
+          "rows_modified": 3,
+          "operations": [
+            {"index": 0, "type": "replace_text", "status": "applied", "modified": 2},
+            {"index": 1, "type": "remove_slide", "status": "no_match", "modified": 0}
+          ]
+        }"#;
+        let outcome: EditOutcome = serde_json::from_str(raw).expect("parse");
+        assert!(outcome.success);
+        assert_eq!(outcome.rows_modified, 3);
+        assert_eq!(outcome.operations.len(), 2);
+        assert_eq!(outcome.operations[0].op_type, "replace_text");
+        assert_eq!(outcome.operations[0].status, "applied");
+        assert_eq!(outcome.operations[1].status, "no_match");
+        assert!(outcome.error_summary.is_none());
+    }
+
+    #[test]
+    fn parses_edit_outcome_error_summary() {
+        let raw = r#"{
+          "file_path": "/tmp/a.docx",
+          "output_path": "/tmp/a.docx.tmp",
+          "success": false,
+          "rows_modified": 0,
+          "operations": [
+            {"index": 0, "type": "bogus", "status": "error", "modified": 0, "error": "unknown docx operation \"bogus\""}
+          ],
+          "error_summary": "unknown docx operation \"bogus\""
+        }"#;
+        let outcome: EditOutcome = serde_json::from_str(raw).expect("parse");
+        assert!(!outcome.success);
+        assert_eq!(
+            outcome.error_summary.as_deref(),
+            Some("unknown docx operation \"bogus\"")
+        );
+        assert_eq!(outcome.operations[0].error.as_deref(), outcome.error_summary.as_deref());
     }
 }

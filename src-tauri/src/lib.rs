@@ -63,6 +63,8 @@ pub fn run() {
             commands::local_llm_reset,
             commands::local_llm_set_thinking,
             commands::local_llm_unload,
+            commands::local_llm_get_test_tools,
+            commands::local_llm_get_rig_tools,
             commands::office_import_file,
             commands::office_list_files,
             commands::office_read_document,
@@ -92,6 +94,7 @@ pub fn run() {
             commands::local_llm_reset,
             commands::local_llm_set_thinking,
             commands::local_llm_unload,
+            commands::local_llm_get_test_tools,
             commands::agent_chat,
             commands::frontend_log
         ]);

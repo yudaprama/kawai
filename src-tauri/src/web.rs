@@ -222,6 +222,7 @@ struct LocalLoadModelRequest {
     gpu: Option<bool>,
     speculative_decoding: Option<bool>,
     max_num_images: Option<i32>,
+    tools_json: Option<String>,
 }
 
 #[cfg(feature = "litert")]
@@ -235,6 +236,7 @@ async fn local_load_model_handler(
         req.gpu.unwrap_or(true),
         req.speculative_decoding.unwrap_or(false),
         req.max_num_images.unwrap_or(0),
+        req.tools_json,
     )
     .await
     .map(Json)
@@ -266,6 +268,8 @@ fn local_event_to_sse(event: logic::local_llm::LocalChatEvent) -> SseFrame {
     let name = match &event {
         LocalChatEvent::Started => "started",
         LocalChatEvent::Token { .. } => "token",
+        LocalChatEvent::ToolCall { .. } => "toolCall",
+        LocalChatEvent::ToolResult { .. } => "toolResult",
         LocalChatEvent::Finished => "finished",
         LocalChatEvent::Error { .. } => "error",
     };

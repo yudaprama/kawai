@@ -2866,6 +2866,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "finance"
+version = "0.1.0"
+dependencies = [
+ "kawai-constants",
+ "reqwest 0.12.28",
+ "rig",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5378,10 +5391,13 @@ version = "0.1.0"
 dependencies = [
  "async-stream",
  "cognee-litert-lm",
+ "finance",
  "futures-core",
+ "rig",
  "serde",
  "serde_json",
  "tokio",
+ "weather_geo",
 ]
 
 [[package]]
@@ -9927,6 +9943,18 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "weather_geo"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.12.28",
+ "rig",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]

@@ -35,7 +35,7 @@ axum = { version = "0.8", optional = true }
 tower-http = { version = "0.6", optional = true, features = ["fs"] }
 # High-level streaming chat over LiteRT-LM (on-device Gemma 4, etc.).
 # Pulls in cognee-litert-lm transitively. Gated behind `litert`.
-local-llm = { path = "../local-llm", optional = true }
+local-llm = { path = "../local-llm", optional = true, features = ["rig-tools"] }
 # Pinned to the same git rev as rig-libsql (submodule): crates.io 0.41.0
 # predates the Vec<Embedding> insert_documents change the vector store needs.
 # One rig-core source for the whole graph (src-tauri + rig-tools + rig-libsql)
@@ -63,7 +63,7 @@ libc = "0.2"
 [features]
 default = []
 web = ["dep:axum", "dep:tower-http"]
-litert = ["dep:local-llm"]
+litert = ["dep:local-llm", "local-llm/rig-tools"]
 # Office document tools (logic::office): external CLI engines (ooxcli/pdfcli/
 # docbuilder) resolved at runtime — no new heavy deps, base64 for imports.
 office = ["dep:base64"]

@@ -155,10 +155,16 @@ set_cell{cells:[{cell,value}]}. \
         if args.operations.len() > 50 {
             return Err(OfficeToolError("too many operations (max 50)".into()));
         }
-        let n = ooxml::edit_document(&self.0, &args.file_id, &args.operations)
+        let outcome = ooxml::edit_document(&self.0, &args.file_id, &args.operations)
             .await
             .map_err(oerr)?;
-        Ok(json!({ "success": true, "operationsApplied": n }).to_string())
+        Ok(json!({
+            "success": true,
+            "operationsApplied": args.operations.len(),
+            "rowsModified": outcome.rows_modified,
+            "operations": outcome.operations,
+        })
+        .to_string())
     }
 }
 

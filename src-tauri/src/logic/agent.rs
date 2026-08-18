@@ -266,6 +266,12 @@ pub fn agent_chat(
                                 yield AgentChatEvent::Token { text: t };
                             }
                         }
+                        LocalChatEvent::ToolCall { id, tool, args } => {
+                            yield AgentChatEvent::ToolCall { tool, args };
+                        }
+                        LocalChatEvent::ToolResult { id, tool, ok, summary } => {
+                            yield AgentChatEvent::ToolResult { tool, ok, summary };
+                        }
                         LocalChatEvent::Error { message } => {
                             generation_error = Some(message);
                             break;

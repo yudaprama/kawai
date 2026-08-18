@@ -128,10 +128,21 @@ async function loadModel() {
   llm.modelError = false;
   llm.modelStatus = `Loading ${path} …`;
   try {
+    // Get rig-components tools for native function calling
+    let toolsJson = null;
+    try {
+      toolsJson = await call("local_llm_get_rig_tools", {
+        toolNames: ["get_weather", "get_stock_quote", "get_crypto_price"],
+      });
+    } catch (e) {
+      console.log("[loadModel] No rig-tools available:", e);
+    }
+    
     const info = await call("local_load_model", {
       modelPath: path,
       gpu: llm.backend === "gpu",
       speculativeDecoding: llm.specDec,
+      toolsJson: toolsJson,
     });
     llm.modelStatus = `\u2714 ${info.modelPath.split("/").pop()} [${info.backend}]`;
     llm.modelLoaded = true;
@@ -240,7 +251,7 @@ async function chat() {
   llm.messages = [
     ...llm.messages,
     { role: "user", text: prompt, hasImage: !!image, hasAudio: !!audio },
-    { role: "assistant", text: "" },
+    { role: "assistant", text: "", toolCalls: [] },
   ];
   llm.chatActive = true;
   scrollChat();
@@ -268,6 +279,25 @@ async function chat() {
         msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], text: full };
         llm.messages = msgs;
         llm.stats = `${chunks} chunks · ${chars} chars · ${elapsed()}`;
+        scrollChat();
+      } else if (ev.type === "toolCall") {
+        const msgs = llm.messages.slice();
+        const last = { ...msgs[msgs.length - 1] };
+        last.toolCalls = [
+          ...last.toolCalls,
+          { id: ev.id, tool: ev.tool, args: ev.args, ok: null, summary: "" },
+        ];
+        msgs[msgs.length - 1] = last;
+        llm.messages = msgs;
+        scrollChat();
+      } else if (ev.type === "toolResult") {
+        const msgs = llm.messages.slice();
+        const last = { ...msgs[msgs.length - 1] };
+        last.toolCalls = last.toolCalls.map((tc) =>
+          tc.id === ev.id ? { ...tc, ok: ev.ok, summary: ev.summary } : tc
+        );
+        msgs[msgs.length - 1] = last;
+        llm.messages = msgs;
         scrollChat();
       }
     },

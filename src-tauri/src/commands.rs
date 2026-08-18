@@ -229,6 +229,7 @@ pub async fn local_load_model(
     gpu: Option<bool>,
     speculative_decoding: Option<bool>,
     max_num_images: Option<i32>,
+    tools_json: Option<String>,
     session: State<'_, Session>,
 ) -> Result<logic::local_llm::LocalModelInfo, String> {
     let user_id = session_user_id(&session)?;
@@ -238,6 +239,7 @@ pub async fn local_load_model(
         gpu.unwrap_or(true),
         speculative_decoding.unwrap_or(false),
         max_num_images.unwrap_or(0),
+        tools_json,
     )
     .await;
     if let Err(e) = &result {
@@ -307,6 +309,21 @@ pub fn local_llm_set_thinking(session: State<'_, Session>, enabled: bool) -> Res
 pub async fn local_llm_unload(session: State<'_, Session>) -> Result<(), String> {
     let user_id = session_user_id(&session)?;
     logic::local_llm::unload_model(&user_id).await
+}
+
+/// Authenticated RPC: get test tool definitions for native function calling.
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub fn local_llm_get_test_tools() -> Result<String, String> {
+    Ok(logic::local_llm::get_test_tools_json())
+}
+
+/// Authenticated RPC: get rig-components tool definitions for native function calling.
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub fn local_llm_get_rig_tools(tool_names: Vec<String>) -> Result<String, String> {
+    let names: Vec<&str> = tool_names.iter().map(|s| s.as_str()).collect();
+    Ok(logic::local_llm::get_rig_tools_json(&names))
 }
 
 // ── Office document ops (feature "office") ──────────────────────────────────

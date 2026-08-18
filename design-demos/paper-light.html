@@ -1,0 +1,462 @@
+<!-- Direction A · Paper Light · AGENT WORKSPACE: catalog + conversation-with-tool-runs + artifact canvas · static mock, fake data -->
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1512" />
+<title>kawai · Paper Light</title>
+<link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<style>
+  /* Warm-paper tune of the daisyUI `light` theme tokens — every element below still consumes tokens only. */
+  [data-theme="light"] {
+    --color-base-100: oklch(98.6% 0.004 95);
+    --color-base-200: oklch(96.3% 0.005 95);
+    --color-base-300: oklch(92% 0.007 92);
+    --color-base-content: oklch(25.5% 0.012 75);
+  }
+  html { font-family: ui-sans-serif, -apple-system, "SF Pro Text", sans-serif; -webkit-font-smoothing: antialiased; }
+  .font-mono, kbd { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .btn, .badge { transition-duration: 150ms; }
+  .icon-btn-28 { height: 1.75rem; min-height: 1.75rem; width: 1.75rem; padding: 0; }
+  .icon-btn-32 { height: 2rem; min-height: 2rem; width: 2rem; padding: 0; }
+  * { scrollbar-width: thin; scrollbar-color: var(--color-base-300) transparent; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--color-base-300); border-radius: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* collapsible side panes · agents icon rail + sessions full collapse */
+  #agents-pane, #sessions-pane { transition: width 150ms ease; }
+  .agents-rail #agents-pane { width: 4rem; }
+  .agents-rail .rail-hide { display: none; }
+  .agents-rail .rail-header { justify-content: center; padding-left: 0; padding-right: 0; }
+  .agents-rail .agents-nav { gap: 0.25rem; }
+  .agents-rail .agent-card { flex-direction: column; align-items: center; padding-left: 0; padding-right: 0; }
+  .agents-rail .agent-card-active { box-shadow: inset 2px 0 0 var(--color-primary); }
+  .agents-rail .add-agent-btn { justify-content: center; padding-left: 0; padding-right: 0; }
+  .agents-rail .user-chip { justify-content: center; padding-left: 0; padding-right: 0; }
+  .sessions-collapsed #sessions-pane { width: 0; border-left-width: 0; }
+</style>
+</head>
+<body class="h-screen overflow-hidden flex bg-base-100 text-base-content text-sm antialiased">
+
+  <!-- ═══ PANE 1 · AGENTS ═══ -->
+  <aside id="agents-pane" class="w-[210px] shrink-0 bg-base-200 border-r border-base-300 flex flex-col overflow-hidden">
+    <div class="rail-header h-12 shrink-0 flex items-center gap-2 px-3">
+      <span class="w-3 h-3 rounded-full opacity-90" style="background:#ff5f57"></span>
+      <span class="w-3 h-3 rounded-full opacity-90" style="background:#febc2e"></span>
+      <span class="w-3 h-3 rounded-full opacity-90" style="background:#28c840"></span>
+    </div>
+    <div class="rail-hide px-3 pt-2 pb-1 text-[11px] uppercase tracking-wider text-base-content/40">Agents</div>
+    <nav class="agents-nav px-2 flex flex-col gap-0.5">
+      <!-- active: Office -->
+      <div class="agent-card agent-card-active flex items-center gap-2.5 rounded-lg bg-base-300 px-2.5 py-2 cursor-default" title="Office · Documents, PDFs, spreadsheets">
+        <span class="w-7 h-7 rounded-lg bg-base-100 flex items-center justify-center text-base-content/70 shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+        </span>
+        <span class="rail-hide min-w-0 flex-1">
+          <span class="block text-sm font-medium truncate">Office</span>
+          <span class="block text-xs text-base-content/50 truncate">Docs, PDFs &amp; spreadsheets</span>
+        </span>
+      </div>
+      <div class="agent-card flex items-center gap-2.5 rounded-lg px-2.5 py-2 cursor-default hover:bg-base-300/50 transition-colors duration-150" title="Finance · Budgets &amp; spend insight">
+        <span class="w-7 h-7 rounded-lg bg-base-300 flex items-center justify-center text-base-content/70 shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+        </span>
+        <span class="rail-hide min-w-0 flex-1">
+          <span class="block text-sm font-medium truncate">Finance</span>
+          <span class="block text-xs text-base-content/50 truncate">Budgets &amp; spend insight</span>
+        </span>
+      </div>
+      <div class="agent-card flex items-center gap-2.5 rounded-lg px-2.5 py-2 cursor-default hover:bg-base-300/50 transition-colors duration-150" title="Knowledge · Answers from your notes">
+        <span class="w-7 h-7 rounded-lg bg-base-300 flex items-center justify-center text-base-content/70 shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+        </span>
+        <span class="rail-hide min-w-0 flex-1">
+          <span class="block text-sm font-medium truncate">Knowledge</span>
+          <span class="block text-xs text-base-content/50 truncate">Answers from your notes</span>
+        </span>
+      </div>
+      <div class="agent-card flex items-center gap-2.5 rounded-lg px-2.5 py-2 cursor-default hover:bg-base-300/50 transition-colors duration-150" title="Weather · Forecasts for planning">
+        <span class="w-7 h-7 rounded-lg bg-base-300 flex items-center justify-center text-base-content/70 shrink-0">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/></svg>
+        </span>
+        <span class="rail-hide min-w-0 flex-1">
+          <span class="block text-sm font-medium truncate">Weather</span>
+          <span class="block text-xs text-base-content/50 truncate">Forecasts for planning</span>
+        </span>
+      </div>
+      <button class="add-agent-btn btn btn-ghost btn-xs w-full justify-start gap-2 mt-1 text-base-content/60 font-normal whitespace-nowrap" title="Add agent">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        <span class="rail-hide">Add agent</span>
+      </button>
+    </nav>
+    <!-- pinned user chip -->
+    <div class="user-chip mt-auto shrink-0 border-t border-base-300 px-3 py-2.5 flex items-center gap-2.5">
+      <span class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-semibold shrink-0">D</span>
+      <span class="rail-hide font-mono text-xs text-base-content/70">demo</span>
+      <button class="rail-hide btn btn-ghost btn-square btn-xs icon-btn-28 ml-auto text-base-content/50" title="Sign out">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ═══ PANE 2 · WORKSPACE ═══ -->
+  <main class="relative flex-1 min-w-0 bg-base-100 flex flex-col">
+
+    <!-- agents rail toggle · seam handle (swaps SVG via JS) -->
+    <button id="agents-toggle" class="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1/2 z-10 btn btn-ghost btn-square btn-xs icon-btn-28 text-base-content/40 hover:text-base-content/70" title="Toggle agents rail (⌘1)">
+      <svg id="agents-collapse-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg>
+      <svg id="agents-expand-icon" class="hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/></svg>
+    </button>
+
+    <div id="workspace-session" class="flex-1 flex flex-col min-h-0">
+      <header class="h-12 shrink-0 border-b border-base-300 px-4 flex items-center gap-2 min-w-0">
+        <span class="text-sm font-medium truncate">Q3 report summary</span>
+        <span class="badge badge-ghost badge-xs gap-1 text-success shrink-0"><span class="h-1.5 w-1.5 rounded-full bg-current"></span>on-device</span>
+        <div class="ml-auto flex items-center gap-1 shrink-0">
+          <span class="text-xs text-base-content/50 mr-1">2 files</span>
+          <button class="btn btn-ghost btn-square btn-xs icon-btn-28 text-base-content/60" title="Export session">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="flex-1 flex min-h-0">
+
+        <!-- ── conversation column ── -->
+        <section class="relative w-[55%] min-w-0 border-r border-base-300 flex flex-col">
+          <div class="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-6 max-w-xl mx-auto w-full">
+
+            <!-- user turn -->
+            <div class="flex flex-col items-end gap-1.5">
+              <div class="flex items-center gap-1.5 rounded-lg bg-base-200 border border-base-300 px-2 py-1 text-xs text-base-content/70">
+                <img src="https://cdn.jsdelivr.net/npm/@lobehub/assets-fileicon@1.0.0/assets/pdf.svg" alt="pdf" class="inline-block w-4 h-4 shrink-0" />
+                <span class="font-mono text-[11px]">board-deck-q3.pdf</span>
+                <span class="text-base-content/50">· 24 pages</span>
+              </div>
+              <div class="chat chat-end w-full">
+                <div class="chat-bubble chat-bubble-primary max-w-[75%] text-sm">Summarize the key numbers from this deck and draft a board-ready summary doc.</div>
+              </div>
+            </div>
+
+            <!-- agent turn -->
+            <div class="flex flex-col gap-3">
+              <div class="flex items-center gap-2">
+                <span class="w-5 h-5 rounded-md bg-base-300 flex items-center justify-center text-base-content/70 shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                </span>
+                <span class="text-sm font-medium">Kawai · Office</span>
+                <span class="badge badge-ghost badge-xs gap-1 text-success"><span class="h-1.5 w-1.5 rounded-full bg-current"></span>on-device</span>
+              </div>
+
+              <!-- tool run 1 · done -->
+              <div class="rounded-lg bg-base-200 border border-base-300 px-3 py-2 flex flex-col gap-1">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-base-content/60 shrink-0">
+                    <img src="https://cdn.jsdelivr.net/npm/@lobehub/assets-fileicon@1.0.0/assets/pdf.svg" alt="pdf" class="inline-block w-4 h-4 shrink-0" />
+                  </span>
+                  <span class="font-mono text-xs text-base-content/80 truncate">read_document(board-deck-q3.pdf)</span>
+                  <span class="ml-auto shrink-0 inline-flex items-center gap-1 text-xs text-success">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                    done
+                  </span>
+                </div>
+                <div class="text-xs text-base-content/50 pl-[22px]">24 pages · 8,214 words · 6 tables</div>
+              </div>
+
+              <!-- body -->
+              <div class="flex flex-col gap-2">
+                <p class="text-sm leading-relaxed">Parsed the full deck locally — three numbers stand out:</p>
+                <ul class="flex flex-col gap-1.5">
+                  <li class="flex items-start gap-2 text-sm leading-relaxed">
+                    <span class="mt-[7px] w-1 h-1 rounded-full bg-base-content/40 shrink-0"></span>
+                    <span>Revenue grew <strong class="font-medium">+12% QoQ to $4.2M</strong>, clearing the $3.9M plan on expansion revenue.</span>
+                  </li>
+                  <li class="flex items-start gap-2 text-sm leading-relaxed">
+                    <span class="mt-[7px] w-1 h-1 rounded-full bg-base-content/40 shrink-0"></span>
+                    <span>Churn fell to <strong class="font-medium">3.1%</strong>, down from 4.4% after the July onboarding overhaul.</span>
+                  </li>
+                  <li class="flex items-start gap-2 text-sm leading-relaxed">
+                    <span class="mt-[7px] w-1 h-1 rounded-full bg-base-content/40 shrink-0"></span>
+                    <span>NPS reached <strong class="font-medium">48</strong> — the highest reading to date.</span>
+                  </li>
+                </ul>
+              </div>
+
+              <!-- tool run 2 · active -->
+              <div class="rounded-lg bg-base-200 border border-base-300 px-3 py-2 flex flex-col gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="text-base-content/60 shrink-0">
+                    <img src="https://cdn.jsdelivr.net/npm/@lobehub/assets-fileicon@1.0.0/assets/word.svg" alt="docx" class="inline-block w-4 h-4 shrink-0" />
+                  </span>
+                  <span class="font-mono text-xs text-base-content/60 truncate">create_document(q3-summary.docx)</span>
+                  <span class="ml-auto shrink-0 inline-flex items-center gap-1.5 text-xs text-base-content/60">
+                    <span class="loading loading-spinner loading-xs"></span>
+                    creating…
+                  </span>
+                </div>
+                <progress class="progress progress-primary h-1 w-full" max="100"></progress>
+              </div>
+
+              <!-- thinking · collapsed -->
+              <button class="self-start flex items-center gap-1 text-xs text-base-content/40 hover:text-base-content/70 transition-colors duration-150">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                Thinking · 4s
+              </button>
+
+              <!-- streaming -->
+              <p class="text-sm leading-relaxed">Headline numbers are drafted and the outlook section is taking shape — next I'm folding the churn cohort table into<span class="animate-pulse">▍</span></p>
+
+              <!-- turn footer -->
+              <div class="flex items-center gap-0.5 opacity-50 transition-opacity duration-150 hover:opacity-100">
+                <button class="btn btn-ghost btn-square btn-xs icon-btn-28 text-base-content/70" title="Copy">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                </button>
+                <button class="btn btn-ghost btn-square btn-xs icon-btn-28 text-base-content/70" title="Retry">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- composer -->
+          <div class="relative shrink-0">
+            <div class="pointer-events-none absolute -top-6 inset-x-0 h-6" style="background:linear-gradient(to bottom, rgba(251,250,246,0), rgba(251,250,246,1))"></div>
+            <div class="px-6 pb-5">
+              <div class="rounded-xl border border-base-300 bg-base-200 flex items-center gap-1 px-1.5 py-1.5 focus-within:border-primary/50 transition-colors duration-150">
+                <button class="btn btn-ghost btn-square btn-xs icon-btn-32 text-base-content/60" title="Attach files">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </button>
+                <textarea rows="1" placeholder="Message Kawai · Office…" class="flex-1 min-w-0 resize-none bg-transparent border-0 outline-none text-sm py-1.5 px-1 leading-snug placeholder:text-base-content/40"></textarea>
+                <button class="btn btn-ghost btn-square btn-xs icon-btn-32 text-base-content/60" title="Dictate">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                </button>
+                <button class="btn btn-error btn-sm gap-1.5 font-medium">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>
+                  Stop
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── canvas column ── -->
+        <section class="w-[45%] min-w-0 flex flex-col bg-base-100">
+          <div class="h-10 shrink-0 border-b border-base-300 px-3 flex items-stretch gap-4">
+            <button class="flex items-center text-sm font-medium text-base-content border-b-2 border-primary -mb-px">Artifact</button>
+            <button class="flex items-center text-sm text-base-content/50 border-b-2 border-transparent hover:text-base-content/80 transition-colors duration-150">Files</button>
+            <div class="ml-auto flex items-center">
+              <button class="btn btn-ghost btn-square btn-xs icon-btn-28 text-base-content/60" title="Reveal in Finder">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- artifact view -->
+          <div class="flex-1 overflow-y-auto">
+            <div class="max-w-[420px] w-full mx-auto my-4 px-3">
+              <div class="bg-base-100 border border-base-300 rounded-lg px-8 py-8 flex flex-col gap-5">
+                <div>
+                  <h2 class="text-base font-semibold leading-tight">Q3 2025 Board Summary</h2>
+                  <div class="mt-1 font-mono text-xs text-base-content/40">q3-summary.docx · draft</div>
+                </div>
+                <section class="flex flex-col gap-1.5">
+                  <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Highlights</h3>
+                  <p class="text-sm leading-relaxed">Revenue reached $4.2M in Q3, up 12% quarter over quarter and ahead of the $3.9M plan. Expansion in existing accounts drove 68% of new bookings.</p>
+                </section>
+                <section class="flex flex-col gap-1.5">
+                  <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Retention</h3>
+                  <p class="text-sm leading-relaxed">Churn improved to 3.1% from 4.4%, the strongest retention figure since launch.</p>
+                  <ul class="mt-0.5 flex flex-col gap-1">
+                    <li class="flex items-start gap-2 text-sm leading-relaxed"><span class="mt-[7px] w-1 h-1 rounded-full bg-base-content/40 shrink-0"></span><span>NPS of 48, up from 41 in Q2</span></li>
+                    <li class="flex items-start gap-2 text-sm leading-relaxed"><span class="mt-[7px] w-1 h-1 rounded-full bg-base-content/40 shrink-0"></span><span>Net revenue retention at 114%</span></li>
+                    <li class="flex items-start gap-2 text-sm leading-relaxed"><span class="mt-[7px] w-1 h-1 rounded-full bg-base-content/40 shrink-0"></span><span>Median support first-response of 3.2 hours</span></li>
+                  </ul>
+                </section>
+                <section class="flex flex-col gap-1.5">
+                  <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/60">Outlook</h3>
+                  <p class="text-sm leading-relaxed">Q4 focuses on converting the trial cohort and shipping usage-based pricing. Preliminary modeling suggests<span class="animate-pulse">▍</span></p>
+                </section>
+                <div class="pt-2 text-center text-[11px] text-base-content/40">page 1 of 3</div>
+              </div>
+              <div class="flex items-center justify-center gap-2 py-3">
+                <button class="btn btn-outline btn-xs gap-1.5">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                  Export .docx
+                </button>
+                <button class="btn btn-ghost btn-xs gap-1.5 text-base-content/70">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+                  Reveal in Finder
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- files view (rendered in DOM, hidden) -->
+          <div id="canvas-files" class="hidden flex-1 overflow-y-auto p-3 flex-col gap-1">
+            <div class="flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 hover:bg-base-200 transition-colors duration-150 cursor-default">
+              <span class="text-base-content/70 shrink-0">
+                <img src="https://cdn.jsdelivr.net/npm/@lobehub/assets-fileicon@1.0.0/assets/pdf.svg" alt="pdf" class="inline-block w-4 h-4 shrink-0" />
+              </span>
+              <span class="font-mono text-xs truncate flex-1 min-w-0">board-deck-q3.pdf</span>
+              <span class="badge badge-success badge-xs shrink-0">indexed</span>
+              <span class="text-xs text-base-content/50 shrink-0">24 pages</span>
+            </div>
+            <div class="flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 hover:bg-base-200 transition-colors duration-150 cursor-default">
+              <span class="text-base-content/70 shrink-0">
+                <img src="https://cdn.jsdelivr.net/npm/@lobehub/assets-fileicon@1.0.0/assets/word.svg" alt="docx" class="inline-block w-4 h-4 shrink-0" />
+              </span>
+              <span class="font-mono text-xs truncate flex-1 min-w-0">q3-summary.docx</span>
+              <span class="badge badge-warning badge-xs shrink-0">creating</span>
+            </div>
+            <div class="flex items-center gap-2.5 rounded-lg px-2.5 py-2.5 hover:bg-base-200 transition-colors duration-150 cursor-default">
+              <span class="text-base-content/70 shrink-0">
+                <img src="https://cdn.jsdelivr.net/npm/@lobehub/assets-fileicon@1.0.0/assets/table.svg" alt="xlsx" class="inline-block w-4 h-4 shrink-0" />
+              </span>
+              <span class="font-mono text-xs truncate flex-1 min-w-0">budget-2026.xlsx</span>
+              <span class="badge badge-success badge-xs shrink-0">indexed</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- empty-state preview (toggled) -->
+    <div id="workspace-empty" class="hidden flex-1 flex flex-col items-center justify-center text-center px-6">
+      <div class="w-12 h-12 rounded-lg bg-base-300 flex items-center justify-center text-base-content/70">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="7" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+      </div>
+      <div class="mt-4 text-lg font-semibold">Office agent</div>
+      <div class="mt-1 text-sm text-base-content/50">Documents, PDFs, spreadsheets — created and edited locally</div>
+      <div class="mt-7 flex flex-wrap items-center justify-center gap-2">
+        <button class="btn btn-outline btn-sm">Summarize this PDF</button>
+        <button class="btn btn-outline btn-sm">Create a weekly report</button>
+        <button class="btn btn-outline btn-sm">Merge these invoices</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══ PANE 3 · SESSIONS ═══ -->
+  <aside id="sessions-pane" class="w-[240px] shrink-0 bg-base-200 border-l border-base-300 flex flex-col overflow-hidden">
+    <div class="h-12 shrink-0 border-b border-base-300 px-3 flex items-center justify-between">
+      <span class="text-[11px] uppercase tracking-wider text-base-content/40">Sessions</span>
+      <span class="flex items-center gap-1.5">
+        <button class="btn btn-primary btn-xs gap-1 font-medium">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          New
+        </button>
+        <kbd class="kbd text-[10px] text-base-content/40">⌘N</kbd>
+        <button id="sessions-collapse-btn" class="btn btn-ghost btn-square btn-xs icon-btn-28 text-base-content/50" title="Collapse sessions (⌘3)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/><path d="m8 9-3 3 3 3"/></svg>
+        </button>
+      </span>
+    </div>
+    <div class="flex-1 overflow-y-auto px-2 py-3 flex flex-col gap-4">
+      <div class="flex flex-col gap-0.5">
+        <div class="px-2.5 pb-1 text-[11px] uppercase tracking-wider text-base-content/40">Today</div>
+        <div class="rounded-lg bg-base-300 px-2.5 py-1.5 text-sm cursor-default truncate">Q3 report summary</div>
+        <div class="group flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm cursor-default hover:bg-base-300/50 transition-colors duration-150">
+          <span class="truncate flex-1 min-w-0">Invoice merge test</span>
+          <button class="btn btn-ghost btn-square btn-xs shrink-0 opacity-0 group-hover:opacity-100 text-base-content/40 hover:text-error" title="Delete">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex flex-col gap-0.5">
+        <div class="px-2.5 pb-1 text-[11px] uppercase tracking-wider text-base-content/40">Yesterday</div>
+        <div class="group flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm cursor-default hover:bg-base-300/50 transition-colors duration-150">
+          <span class="truncate flex-1 min-w-0">Q2 deck analysis</span>
+          <button class="btn btn-ghost btn-square btn-xs shrink-0 opacity-0 group-hover:opacity-100 text-base-content/40 hover:text-error" title="Delete">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex flex-col gap-0.5">
+        <div class="px-2.5 pb-1 text-[11px] uppercase tracking-wider text-base-content/40">Earlier</div>
+        <div class="group flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm cursor-default hover:bg-base-300/50 transition-colors duration-150">
+          <span class="truncate flex-1 min-w-0">Expense notes</span>
+          <button class="btn btn-ghost btn-square btn-xs shrink-0 opacity-0 group-hover:opacity-100 text-base-content/40 hover:text-error" title="Delete">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </button>
+        </div>
+        <div class="group flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm cursor-default hover:bg-base-300/50 transition-colors duration-150">
+          <span class="truncate flex-1 min-w-0">Weekly report draft</span>
+          <button class="btn btn-ghost btn-square btn-xs shrink-0 opacity-0 group-hover:opacity-100 text-base-content/40 hover:text-error" title="Delete">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- pinned session files -->
+    <div class="shrink-0 border-t border-base-300 px-3 py-2.5">
+      <div class="px-0.5 pb-1.5 text-[11px] uppercase tracking-wider text-base-content/40">Files in this session</div>
+      <div class="flex flex-col gap-0.5">
+        <div class="flex items-center gap-2 rounded-lg px-1.5 py-1.5 cursor-default">
+          <span class="text-base-content/60 shrink-0">
+            <img src="https://cdn.jsdelivr.net/npm/@lobehub/assets-fileicon@1.0.0/assets/pdf.svg" alt="pdf" class="inline-block w-4 h-4 shrink-0" />
+          </span>
+          <span class="font-mono text-xs truncate flex-1 min-w-0">board-deck-q3.pdf</span>
+          <span class="text-[10px] text-base-content/40 shrink-0">24 pages</span>
+        </div>
+        <div class="flex items-center gap-2 rounded-lg px-1.5 py-1.5 cursor-default">
+          <span class="text-base-content/60 shrink-0">
+            <img src="https://cdn.jsdelivr.net/npm/@lobehub/assets-fileicon@1.0.0/assets/word.svg" alt="docx" class="inline-block w-4 h-4 shrink-0" />
+          </span>
+          <span class="font-mono text-xs truncate flex-1 min-w-0">q3-summary.docx</span>
+          <span class="badge badge-warning badge-xs shrink-0">creating</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- sessions reopen handle · visible only while collapsed -->
+  <button id="sessions-open-float" class="hidden fixed right-0 top-1/2 -translate-y-1/2 z-40 btn btn-ghost btn-square btn-xs icon-btn-28 bg-base-200 border border-base-300 rounded-l-lg rounded-r-none text-base-content/60" title="Show sessions (⌘3)">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/><path d="m10 9-3 3 3 3"/></svg>
+  </button>
+
+  <!-- preview toggle + shortcut hint -->
+  <div class="fixed bottom-3 right-3 z-50 flex flex-col items-end gap-1">
+    <button id="preview-toggle" class="btn btn-ghost btn-xs border border-base-300 text-base-content/60">preview: session ⟷ empty</button>
+    <div class="font-mono text-[10px] text-base-content/40 select-none">⌘1 agents rail · ⌘3 sessions</div>
+  </div>
+
+  <script>
+    const FILE_ICONS = { pdf:'pdf', doc:'word', docx:'word', rtf:'word', odt:'word', xls:'table', xlsx:'table', csv:'table', tsv:'table', ods:'table', ppt:'powerpoint', pptx:'powerpoint', odp:'powerpoint', md:'markdown', markdown:'markdown', txt:'document', png:'image', jpg:'image', jpeg:'image', gif:'image', webp:'image', svg:'image', json:'json', zip:'zip', mp3:'audio', wav:'audio', m4a:'audio', mp4:'video', mov:'video', webm:'video' };
+    const fileIconUrl = (name) => `https://cdn.jsdelivr.net/npm/@lobehub/assets-fileicon@1.0.0/assets/${FILE_ICONS[name.split('.').pop().toLowerCase()] || 'document'}.svg`;
+
+    const sessionView = document.getElementById('workspace-session');
+    const emptyView = document.getElementById('workspace-empty');
+    document.getElementById('preview-toggle').addEventListener('click', () => {
+      sessionView.classList.toggle('hidden');
+      emptyView.classList.toggle('hidden');
+    });
+
+    const agentsCollapseIcon = document.getElementById('agents-collapse-icon');
+    const agentsExpandIcon = document.getElementById('agents-expand-icon');
+    const sessionsFloat = document.getElementById('sessions-open-float');
+
+    function toggleAgentsRail() {
+      const rail = document.body.classList.toggle('agents-rail');
+      agentsCollapseIcon.classList.toggle('hidden', rail);
+      agentsExpandIcon.classList.toggle('hidden', !rail);
+    }
+    function toggleSessionsPane() {
+      const collapsed = document.body.classList.toggle('sessions-collapsed');
+      sessionsFloat.classList.toggle('hidden', !collapsed);
+    }
+
+    document.getElementById('agents-toggle').addEventListener('click', toggleAgentsRail);
+    document.getElementById('sessions-collapse-btn').addEventListener('click', toggleSessionsPane);
+    sessionsFloat.addEventListener('click', toggleSessionsPane);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.metaKey && (e.key === '1' || e.key === '3')) {
+        e.preventDefault();
+        if (e.key === '1') toggleAgentsRail();
+        else toggleSessionsPane();
+      }
+    });
+  </script>
+</body>
+</html>
