@@ -12,6 +12,7 @@ import {
   AttachmentRemove,
   Attachments,
 } from "@/components/ai-elements/attachments";
+import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -39,7 +40,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useCopyButton } from "@/hooks/use-copy-button";
 import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useLocalChat } from "@/hooks/use-local-chat";
-import { platform } from "@/platform";
+import { platform, runningInTauri } from "@/platform";
 import { call, errText, type KnowledgeContext, type OfficeFileInfo } from "@/lib/api";
 import type { SourceDocumentUIPart, UIMessage } from "@/lib/ai-types";
 import {
@@ -49,9 +50,11 @@ import {
   CloudSunIcon,
   CopyIcon,
   FileTextIcon,
+  ImageIcon,
   LineChartIcon,
   PlusIcon,
   Plus,
+  VideoIcon,
   WrenchIcon,
   XIcon,
 } from "lucide-react";
@@ -205,6 +208,47 @@ function formatBytes(n: number): string {
   return `${v.toFixed(v >= 10 ? 0 : 1)} ${units[i]}`;
 }
 
+/** Extensions accepted by the Files panel picker (office store + images). */
+const ADD_FILE_ACCEPT = [".docx", ".xlsx", ".pptx", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"];
+const OFFICE_EXTS = new Set(["docx", "xlsx", "pptx", "pdf"]);
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
+
+/** True when a URL is a YouTube watch/embed/share link. */
+function isYouTubeUrl(raw: string): boolean {
+  try {
+    const host = new URL(raw.trim()).hostname.toLowerCase();
+    return ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"].includes(host);
+  } catch {
+    return false;
+  }
+}
+
+/** Extracts the 11-char YouTube video id from a URL (or null). */
+function youtubeId(raw: string): string | null {
+  try {
+    const u = new URL(raw.trim());
+    if (u.hostname.toLowerCase() === "youtu.be") {
+      const id = u.pathname.split("/").filter(Boolean)[0];
+      return id?.length === 11 ? id : null;
+    }
+    return u.searchParams.get("v");
+  } catch {
+    return null;
+  }
+}
+
+type KnowledgeSource = { kind: "office"; name: string; sourcePath?: string; file?: File } | { kind: "image"; name: string } | { kind: "unsupported"; name: string };
+
+/** Classify a picked file into what the Files panel should do with it. */
+function classifySource(name: string, src: { path?: string; file?: File }): KnowledgeSource {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (OFFICE_EXTS.has(ext)) {
+    return { kind: "office", name, ...(src.path ? { sourcePath: src.path } : { file: src.file }) };
+  }
+  if (IMAGE_EXTS.has(ext)) return { kind: "image", name };
+  return { kind: "unsupported", name };
+}
+
 /** The composer with attachments + knowledge @-mention. */
 type KnowledgeFiles = ReturnType<typeof useKnowledgeFiles>;
 
@@ -322,6 +366,16 @@ function ChatComposerInner({
       setMentionOpen(false);
     },
     [sources, controller, text],
+  );
+
+  const handleTranscription = useCallback(
+    (transcript: string) => {
+      // Append recognized speech to the current draft, separated by a space.
+      controller.textInput.setInput(
+        (controller.textInput.value.trimEnd() + " " + transcript).trimStart()
+      );
+    },
+    [controller]
   );
 
   const handleSubmit = useCallback(
@@ -446,6 +500,10 @@ function ChatComposerInner({
               </PromptInputActionMenuItem>
             </PromptInputActionMenuContent>
           </PromptInputActionMenu>
+          <SpeechInput
+            className="size-8 [&_svg]:size-4"
+            onTranscriptionChange={handleTranscription}
+          />
         </PromptInputTools>
         <PromptInputSubmit onStop={onStop} status={status} />
       </PromptInputFooter>
@@ -469,21 +527,52 @@ export default function App() {
   const knowledge = useKnowledgeFiles(true);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ id: string; kind: "image" | "link"; name: string; url?: string }[]>([]);
 
-  /** Imports picked office documents into the knowledge store. */
+  /**
+ * Imports picked documents/images into the knowledge store. In Tauri the
+ * native dialog returns absolute paths (imported via `sourcePath`); in a
+ * plain browser we fall back to `File` → base64.
+ */
   const addKnowledgeFiles = useCallback(async () => {
-    const picked = await platform.pickFiles({
-      accept: [".docx", ".xlsx", ".pptx", ".pdf"],
-      multiple: true,
-    });
-    if (!picked?.length) return;
     setImporting(true);
     setImportError(null);
+    const toImportOffice: { sourcePath?: string; file?: File; name: string }[] = [];
+    const toPending: { id: string; kind: "image" | "link"; name: string }[] = [];
+    let picked: KnowledgeSource[];
     try {
-      for (const file of picked) {
-        const dataBase64 = await fileToBase64(file);
-        await call<OfficeFileInfo>("office_import_file", { dataBase64, name: file.name });
+      if (runningInTauri) {
+        const paths = await platform.pickFilePaths({ accept: ADD_FILE_ACCEPT, multiple: true });
+        if (!paths?.length) return;
+        picked = paths.map((p) =>
+          classifySource(p.split(/[\\/]/).pop() ?? p, { path: p }),
+        );
+      } else {
+        const pickedFiles = await platform.pickFiles({
+          accept: ADD_FILE_ACCEPT,
+          multiple: true,
+        });
+        if (!pickedFiles?.length) return;
+        picked = pickedFiles.map((f) => classifySource(f.name, { file: f }));
       }
+      for (const item of picked) {
+        if (item.kind === "office") {
+          toImportOffice.push({ name: item.name, sourcePath: item.sourcePath, file: item.file });
+        } else if (item.kind === "image") {
+          toPending.push({ id: nanoid(), kind: "image", name: item.name });
+        } else {
+          setImportError(`Unsupported file type: ${item.name}`);
+        }
+      }
+      for (const item of toImportOffice) {
+        if (item.sourcePath) {
+          await call<OfficeFileInfo>("office_import_file", { sourcePath: item.sourcePath });
+        } else if (item.file) {
+          const dataBase64 = await fileToBase64(item.file);
+          await call<OfficeFileInfo>("office_import_file", { dataBase64, name: item.name });
+        }
+      }
+      if (toPending.length) setPending((prev) => [...prev, ...toPending]);
       await knowledge.refresh();
     } catch (err) {
       console.warn("[office_import_file]", errText(err));
@@ -492,6 +581,25 @@ export default function App() {
       setImporting(false);
     }
   }, [knowledge.refresh]);
+
+  /** Prompts for a YouTube URL and adds it to the pending (session-only) list. */
+  const addKnowledgeLink = useCallback(async () => {
+    setImportError(null);
+    const url = await platform.promptForUrl("Paste a YouTube video URL");
+    if (!url) return;
+    if (!isYouTubeUrl(url)) {
+      setImportError("Only YouTube URLs are supported for now");
+      return;
+    }
+    const id = youtubeId(url);
+    const label = id ? `YouTube · ${id}` : url;
+    setPending((prev) => [...prev, { id: nanoid(), kind: "link", name: label, url }]);
+  }, []);
+
+  const removePending = useCallback(
+    (id: string) => setPending((prev) => prev.filter((p) => p.id !== id)),
+    [],
+  );
 
   // Switching agent clears the model context + active session.
   useEffect(() => {
@@ -713,16 +821,27 @@ export default function App() {
                   ))}
                 </div>
                 {canvasTab === "files" && (
-                  <Button
-                    disabled={importing}
-                    onClick={() => void addKnowledgeFiles()}
-                    size="xs"
-                    title="Import office documents (.docx .xlsx .pptx .pdf)"
-                    variant="ghost"
-                  >
-                    {importing ? <Spinner className="size-3" /> : <PlusIcon className="size-3" />}
-                    Add files
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      onClick={() => void addKnowledgeLink()}
+                      size="xs"
+                      title="Paste a YouTube video URL"
+                      variant="ghost"
+                    >
+                      <VideoIcon className="size-3" />
+                      Link
+                    </Button>
+                    <Button
+                      disabled={importing}
+                      onClick={() => void addKnowledgeFiles()}
+                      size="xs"
+                      title="Import documents & images (.docx .xlsx .pptx .pdf .png .jpg …)"
+                      variant="ghost"
+                    >
+                      {importing ? <Spinner className="size-3" /> : <PlusIcon className="size-3" />}
+                      Add files
+                    </Button>
+                  </div>
                 )}
               </div>
               <div className="min-h-0 flex-1">
@@ -755,34 +874,84 @@ export default function App() {
                           <Spinner className="size-4" />
                           Loading files…
                         </div>
-                      ) : knowledge.files.length === 0 ? (
-                        <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-                          <FileTextIcon className="text-muted-foreground/40 mb-3 size-5" />
-                          <p className="text-muted-foreground text-sm">No documents yet</p>
-                          <p className="text-muted-foreground/70 mt-1 text-xs">
-                            Import .docx / .xlsx / .pptx / .pdf to reference them in chat
-                          </p>
-                        </div>
                       ) : (
-                        <div className="flex flex-col gap-1.5">
-                          {knowledge.files.map((file) => (
-                            <div
-                              className="bg-card flex items-center gap-2.5 rounded-lg border px-2.5 py-2"
-                              key={file.id}
-                            >
-                              <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm">{file.originalName}</p>
-                                <p className="text-muted-foreground mt-0.5 text-xs">
-                                  {formatBytes(file.bytes)} ·{" "}
-                                  {new Date(file.createdAt * 1000).toLocaleDateString()}
-                                </p>
+                        <div className="flex flex-col gap-5">
+                          <div>
+                            <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
+                              Documents
+                            </p>
+                            {knowledge.files.length === 0 ? (
+                              <div className="text-muted-foreground/70 px-1 py-2 text-xs">
+                                No documents imported yet — they&apos;ll appear here and in the
+                                @-mention popup.
                               </div>
-                              <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] tracking-wider uppercase">
-                                {file.ext}
+                            ) : (
+                              <div className="flex flex-col gap-1.5">
+                                {knowledge.files.map((file) => (
+                                  <div
+                                    className="bg-card flex items-center gap-2.5 rounded-lg border px-2.5 py-2"
+                                    key={file.id}
+                                  >
+                                    <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm">{file.originalName}</p>
+                                      <p className="text-muted-foreground mt-0.5 text-xs">
+                                        {formatBytes(file.bytes)} ·{" "}
+                                        {new Date(file.createdAt * 1000).toLocaleDateString()}
+                                      </p>
+                                    </div>
+                                    <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] tracking-wider uppercase">
+                                      {file.ext}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground flex items-center gap-1.5 px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
+                              Images &amp; links
+                              <span className="text-muted-foreground/60 font-sans text-[10px] normal-case tracking-normal">
+                                session-only · backend coming soon
                               </span>
-                            </div>
-                          ))}
+                            </p>
+                            {pending.length === 0 ? (
+                              <div className="text-muted-foreground/70 px-1 py-2 text-xs">
+                                Use the Link or Add files buttons above to add a YouTube video or an
+                                image — not persisted yet.
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-1.5">
+                                {pending.map((item) => (
+                                  <div
+                                    className="bg-card flex items-center gap-2.5 rounded-lg border px-2.5 py-2"
+                                    key={item.id}
+                                  >
+                                    {item.kind === "link" ? (
+                                      <VideoIcon className="text-muted-foreground size-4 shrink-0" />
+                                    ) : (
+                                      <ImageIcon className="text-muted-foreground size-4 shrink-0" />
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm">{item.name}</p>
+                                      <p className="text-muted-foreground mt-0.5 truncate text-xs">
+                                        {item.kind === "link" ? item.url : "Image"}
+                                      </p>
+                                    </div>
+                                    <button
+                                      aria-label={`Remove ${item.name}`}
+                                      className="text-muted-foreground hover:text-foreground shrink-0"
+                                      onClick={() => removePending(item.id)}
+                                      title="Remove (session only)"
+                                      type="button"
+                                    >
+                                      <XIcon className="size-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>

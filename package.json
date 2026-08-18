@@ -20,6 +20,7 @@
     "@rive-app/react-webgl2": "^4.32.0",
     "@tanstack/react-virtual": "^3.14.9",
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "~2",
     "ansi-to-react": "^6.2.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

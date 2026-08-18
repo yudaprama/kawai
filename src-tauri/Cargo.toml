@@ -55,6 +55,7 @@ kawai-constants = { git = "https://github.com/yudaprama/kawai-vault", subdir = "
 # Office tool store imports (drag-drop/web base64 blobs). Gated behind
 # "office" so non-office builds stay dep-free.
 base64 = { version = "0.22", optional = true }
+tauri-plugin-dialog = "2"
 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]

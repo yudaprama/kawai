@@ -96,6 +96,16 @@ export function pickFilesViaInput(options?: PickFilesOptions): Promise<File[] | 
   })
 }
 
+/**
+ * Prompts for a single URL via a `window.prompt` dialog and resolves the
+ * trimmed value. Resolves `null` when the user cancels or enters nothing.
+ * Mobile adapters should override with a native text entry if desired.
+ */
+export function promptForUrlViaBrowser(label?: string): Promise<string | null> {
+  const answer = window.prompt(label ?? "Paste a URL");
+  return Promise.resolve(answer ? answer.trim() || null : null);
+}
+
 // ---------------------------------------------------------------------------
 // Camera capture
 // ---------------------------------------------------------------------------

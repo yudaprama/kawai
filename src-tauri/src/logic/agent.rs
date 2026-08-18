@@ -21,9 +21,9 @@
 #[cfg(feature = "litert")]
 use crate::logic::db;
 #[cfg(feature = "litert")]
-use futures_util::StreamExt;
-#[cfg(feature = "litert")]
 use futures_core::Stream;
+#[cfg(feature = "litert")]
+use futures_util::StreamExt;
 #[cfg(feature = "litert")]
 use rig::tool::ToolContext;
 use rig::tool::ToolSet;
@@ -51,7 +51,8 @@ pub fn agent_ids() -> Vec<&'static str> {
     }
 }
 
-const CHAT_PERSONA: &str = "You are kawai, a helpful, concise personal assistant running fully on-device.";
+const CHAT_PERSONA: &str =
+    "You are kawai, a helpful, concise personal assistant running fully on-device.";
 
 #[cfg(feature = "office")]
 const OFFICE_PERSONA: &str = "You are kawai's office agent. You read, create, edit, merge and inspect documents (docx, xlsx, pptx, pdf) through tools.\n\
@@ -90,16 +91,25 @@ fn toolset_for(agent_id: &str, user_id: &str) -> Option<ToolSet> {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AgentChatEvent {
-    Started { session_id: i64 },
-    Token { text: String },
-    ToolCall { tool: String, args: Value },
+    Started {
+        session_id: i64,
+    },
+    Token {
+        text: String,
+    },
+    ToolCall {
+        tool: String,
+        args: Value,
+    },
     ToolResult {
         tool: String,
         ok: bool,
         summary: String,
     },
     Finished,
-    Error { message: String },
+    Error {
+        message: String,
+    },
 }
 
 /// Render the per-turn prompt: persona + fence protocol + tool manifest +
@@ -156,10 +166,7 @@ pub fn parse_tool_call(text: &str) -> Option<Result<(String, Value), String>> {
     }
     match serde_json::from_str::<Value>(raw) {
         Ok(v) => {
-            let tool = v
-                .get("tool")
-                .and_then(|t| t.as_str())
-                .map(str::to_string);
+            let tool = v.get("tool").and_then(|t| t.as_str()).map(str::to_string);
             match tool {
                 Some(t) if !t.is_empty() => {
                     let args = v.get("args").cloned().unwrap_or(serde_json::json!({}));

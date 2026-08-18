@@ -63,7 +63,10 @@ pub fn init() {
     let file = match OpenOptions::new().create(true).append(true).open(&path) {
         Ok(f) => f,
         Err(e) => {
-            write("WARN", &format!("cannot open log file {}: {e}", path.display()));
+            write(
+                "WARN",
+                &format!("cannot open log file {}: {e}", path.display()),
+            );
             return;
         }
     };
@@ -95,9 +98,7 @@ pub fn init() {
                 let slice = &buf[..n as usize];
                 let _ = libc::write(saved_fd, slice.as_ptr() as *const _, n as usize);
                 let mut file: std::mem::ManuallyDrop<std::fs::File> =
-                    std::mem::ManuallyDrop::new(std::os::unix::io::FromRawFd::from_raw_fd(
-                        log_fd,
-                    ));
+                    std::mem::ManuallyDrop::new(std::os::unix::io::FromRawFd::from_raw_fd(log_fd));
                 let _ = file.write_all(slice);
             }
         });
@@ -105,7 +106,10 @@ pub fn init() {
         std::mem::forget(file);
     }
 
-    write("INFO", &format!("logging (stderr tee) to {}", path.display()));
+    write(
+        "INFO",
+        &format!("logging (stderr tee) to {}", path.display()),
+    );
 }
 
 #[cfg(not(unix))]

@@ -268,6 +268,9 @@ mod tests {
             outcome.error_summary.as_deref(),
             Some("unknown docx operation \"bogus\"")
         );
-        assert_eq!(outcome.operations[0].error.as_deref(), outcome.error_summary.as_deref());
+        assert_eq!(
+            outcome.operations[0].error.as_deref(),
+            outcome.error_summary.as_deref()
+        );
     }
 }

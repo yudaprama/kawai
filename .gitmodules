@@ -13,3 +13,6 @@
 [submodule "kawai-vault"]
 	path = kawai-vault
 	url = https://github.com/yudaprama/kawai-vault.git
+[submodule "kawai-embedding"]
+	path = kawai-embedding
+	url = https://github.com/yudaprama/kawai-embedding.git

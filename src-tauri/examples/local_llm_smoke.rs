@@ -5,16 +5,24 @@ use kawai_lib::logic::local_llm;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let model = std::env::args().nth(1).expect("usage: local_llm_smoke <model.litertlm>");
+    let model = std::env::args()
+        .nth(1)
+        .expect("usage: local_llm_smoke <model.litertlm>");
     let gpu = std::env::args().any(|a| a == "--gpu");
 
-    println!("loading {model} ({}:())...", if gpu { "gpu" } else { "cpu" });
+    println!(
+        "loading {model} ({}:())...",
+        if gpu { "gpu" } else { "cpu" }
+    );
     let info = local_llm::load_model("smoke", &model, gpu)
         .await
         .expect("load_model");
     println!("loaded: {} [{}]", info.model_path, info.backend);
 
-    let mut stream = Box::pin(local_llm::local_chat("smoke".into(), "Say hello and introduce yourself in one sentence.".into()));
+    let mut stream = Box::pin(local_llm::local_chat(
+        "smoke".into(),
+        "Say hello and introduce yourself in one sentence.".into(),
+    ));
     while let Some(ev) = stream.next().await {
         match ev {
             local_llm::LocalChatEvent::Started => print!("\n[stream] "),
@@ -25,7 +33,10 @@ async fn main() {
     }
 
     // Second turn: proves the conversation history survives restoration.
-    let mut stream = Box::pin(local_llm::local_chat("smoke".into(), "Repeat your name exactly.".into()));
+    let mut stream = Box::pin(local_llm::local_chat(
+        "smoke".into(),
+        "Repeat your name exactly.".into(),
+    ));
     while let Some(ev) = stream.next().await {
         if let local_llm::LocalChatEvent::Token { text } = ev {
             print!("{text}");

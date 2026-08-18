@@ -70,8 +70,7 @@ async fn greet_handler(Json(req): Json<GreetRequest>) -> Json<String> {
 async fn generate_activity_handler(
     Json(input): Json<ActivityInput>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
-    let s = logic::generate_activity(input)
-        .map(|event| Ok::<_, Infallible>(event_to_sse(event)));
+    let s = logic::generate_activity(input).map(|event| Ok::<_, Infallible>(event_to_sse(event)));
     Sse::new(s).keep_alive(KeepAlive::default())
 }
 
@@ -145,8 +144,8 @@ async fn list_notes_handler(
 async fn stream_notes_handler(
     Extension(claims): Extension<Claims>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
-    let s = logic::stream_notes(claims.sub)
-        .map(|event| Ok::<_, Infallible>(note_event_to_sse(event)));
+    let s =
+        logic::stream_notes(claims.sub).map(|event| Ok::<_, Infallible>(note_event_to_sse(event)));
     Sse::new(s).keep_alive(KeepAlive::default())
 }
 
@@ -335,11 +334,12 @@ async fn office_import_file_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<OfficeImportFileRequest>,
 ) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
-    let result = match (req.source_path.as_deref(), (req.name.as_deref(), req.data_base64.as_deref())) {
+    let result = match (
+        req.source_path.as_deref(),
+        (req.name.as_deref(), req.data_base64.as_deref()),
+    ) {
         (Some(src), _) => logic::office::import_path(&claims.sub, src),
-        (None, (Some(name), Some(data))) => {
-            logic::office::import_base64(&claims.sub, name, data)
-        }
+        (None, (Some(name), Some(data))) => logic::office::import_base64(&claims.sub, name, data),
         _ => Err("provide sourcePath, or name + dataBase64".into()),
     };
     result.map(Json).map_err(|e| (StatusCode::BAD_REQUEST, e))
@@ -404,7 +404,12 @@ async fn office_export_file_handler(
     Json(req): Json<OfficeExportFileRequest>,
 ) -> Result<Json<std::collections::HashMap<String, String>>, (StatusCode, String)> {
     logic::office::export_file(&claims.sub, &req.file_id, req.dest_path.as_deref())
-        .map(|path| Json(std::collections::HashMap::from([("path".to_string(), path)])))
+        .map(|path| {
+            Json(std::collections::HashMap::from([(
+                "path".to_string(),
+                path,
+            )]))
+        })
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
@@ -519,10 +524,16 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/create_note", post(create_note_handler))
         .route("/api/list_notes", post(list_notes_handler))
         .route("/api/stream_notes", post(stream_notes_handler))
-        .route("/api/create_chat_session", post(create_chat_session_handler))
+        .route(
+            "/api/create_chat_session",
+            post(create_chat_session_handler),
+        )
         .route("/api/list_chat_sessions", post(list_chat_sessions_handler))
         .route("/api/list_chat_messages", post(list_chat_messages_handler))
-        .route("/api/append_chat_message", post(append_chat_message_handler))
+        .route(
+            "/api/append_chat_message",
+            post(append_chat_message_handler),
+        )
         .route_layer(from_fn(auth_middleware));
 
     #[cfg(feature = "litert")]
@@ -561,5 +572,7 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
 
 pub async fn serve(addr: &str, dist_dir: PathBuf, verifier: Verifier) {
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, router(dist_dir, verifier)).await.unwrap();
+    axum::serve(listener, router(dist_dir, verifier))
+        .await
+        .unwrap();
 }

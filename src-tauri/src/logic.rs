@@ -66,9 +66,11 @@ pub fn resolve_model_path() -> Result<String, String> {
         }
     }
     candidates.push(std::path::PathBuf::from("./models").join(filename));
-    candidates.push(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../models")
-        .join(filename));
+    candidates.push(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../models")
+            .join(filename),
+    );
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             candidates.push(dir.join("models").join(filename));
@@ -76,7 +78,11 @@ pub fn resolve_model_path() -> Result<String, String> {
         }
     }
     if let Ok(home) = std::env::var("HOME") {
-        candidates.push(std::path::PathBuf::from(home).join(".kawai/models").join(filename));
+        candidates.push(
+            std::path::PathBuf::from(home)
+                .join(".kawai/models")
+                .join(filename),
+        );
     }
     candidates
         .into_iter()
@@ -85,7 +91,7 @@ pub fn resolve_model_path() -> Result<String, String> {
         .ok_or_else(|| format!(
             "model not found: set KAWAI_MODEL_PATH or install {filename} in the app resources or ~/.kawai/models/"
         ))
-}    
+}
 
 // Database (local SQLite), notes and chat-session persistence live in `db`; the
 // on-device LLM in `local_llm`; office tooling in `office`; the prompt-based
@@ -94,8 +100,8 @@ pub fn resolve_model_path() -> Result<String, String> {
 pub mod db;
 #[cfg(feature = "litert")]
 pub use local_llm;
+pub mod agent;
 #[cfg(feature = "office")]
 pub mod office;
-pub mod agent;
 
 pub use db::*;

@@ -12,7 +12,9 @@ async fn main() {
     let dist_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dist");
     let verifier = kawai_lib::auth::Verifier::from_env();
     if verifier.has_dev_bypass() {
-        eprintln!("⚠️  KAWAI_AUTH_DEV_USER_ID set — auth bypassed (dev only, DO NOT use in production)");
+        eprintln!(
+            "⚠️  KAWAI_AUTH_DEV_USER_ID set — auth bypassed (dev only, DO NOT use in production)"
+        );
     }
     kawai_lib::web::serve("0.0.0.0:3000", dist_dir, verifier).await;
 }

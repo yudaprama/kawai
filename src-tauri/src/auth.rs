@@ -121,9 +121,10 @@ impl Verifier {
         let alg = header.alg;
 
         let jwk_value = self.jwk_for(&kid).await?;
-        let jwk: Jwk =
-            serde_json::from_value(jwk_value).map_err(|e| AuthError::InvalidToken(e.to_string()))?;
-        let key = DecodingKey::from_jwk(&jwk).map_err(|e| AuthError::InvalidToken(e.to_string()))?;
+        let jwk: Jwk = serde_json::from_value(jwk_value)
+            .map_err(|e| AuthError::InvalidToken(e.to_string()))?;
+        let key =
+            DecodingKey::from_jwk(&jwk).map_err(|e| AuthError::InvalidToken(e.to_string()))?;
 
         let mut validation = Validation::new(alg);
         validation.validate_exp = true;

@@ -96,7 +96,10 @@ pub struct KnowledgeContext {
 /// context block for prompt injection. PDFs go through `pdf_extract_text`,
 /// OOXML through `read_document` (markdown). Files that fail to resolve are
 /// skipped (a missing engine or file must not block the chat turn).
-pub async fn knowledge_context(user_id: &str, file_ids: &[String]) -> Result<KnowledgeContext, String> {
+pub async fn knowledge_context(
+    user_id: &str,
+    file_ids: &[String],
+) -> Result<KnowledgeContext, String> {
     let mut files = Vec::new();
     let mut sections = Vec::new();
     let mut used = 0usize;
@@ -119,14 +122,20 @@ pub async fn knowledge_context(user_id: &str, file_ids: &[String]) -> Result<Kno
         let cap = KNOWLEDGE_PER_FILE_CAP.min(remaining_total);
         let body = truncate_chars(&text, cap);
         used += body.chars().count();
-        sections.push(format!("── {} (.{}) ──\n{}", info.original_name, info.ext, body));
+        sections.push(format!(
+            "── {} (.{}) ──\n{}",
+            info.original_name, info.ext, body
+        ));
         files.push(info);
     }
 
     let context = if sections.is_empty() {
         String::new()
     } else {
-        format!("Reference documents follow (user-selected):\n\n{}\n\nEnd of reference documents.", sections.join("\n\n"))
+        format!(
+            "Reference documents follow (user-selected):\n\n{}\n\nEnd of reference documents.",
+            sections.join("\n\n")
+        )
     };
     Ok(KnowledgeContext { context, files })
 }

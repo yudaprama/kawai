@@ -43,7 +43,10 @@ pub async fn generate_activity(
         .unwrap()
         .insert(stream_id.clone(), token.clone());
 
-    let input = ActivityInput { events, interval_ms };
+    let input = ActivityInput {
+        events,
+        interval_ms,
+    };
     // Box::pin so the (non-Unpin) async_stream supports `.next()`.
     let mut stream = Box::pin(logic::generate_activity(input));
     loop {
@@ -118,10 +121,7 @@ fn session_user_id(session: &Session) -> Result<String, String> {
 
 /// Authenticated RPC: create a note scoped to the signed-in user.
 #[tauri::command]
-pub async fn create_note(
-    body: String,
-    session: State<'_, Session>,
-) -> Result<Note, String> {
+pub async fn create_note(body: String, session: State<'_, Session>) -> Result<Note, String> {
     let user_id = session_user_id(&session)?;
     logic::create_note(&user_id, &body)
         .await
@@ -184,9 +184,7 @@ pub async fn create_chat_session(
 
 /// Authenticated RPC: list the user's chat sessions, newest first.
 #[tauri::command]
-pub async fn list_chat_sessions(
-    session: State<'_, Session>,
-) -> Result<Vec<ChatSession>, String> {
+pub async fn list_chat_sessions(session: State<'_, Session>) -> Result<Vec<ChatSession>, String> {
     let user_id = session_user_id(&session)?;
     logic::list_chat_sessions(&user_id)
         .await
@@ -348,7 +346,10 @@ pub fn office_import_file(
     session: State<'_, Session>,
 ) -> Result<logic::office::OfficeFile, String> {
     let user_id = session_user_id(&session)?;
-    match (source_path.as_deref(), (name.as_deref(), data_base64.as_deref())) {
+    match (
+        source_path.as_deref(),
+        (name.as_deref(), data_base64.as_deref()),
+    ) {
         (Some(src), _) => logic::office::import_path(&user_id, src),
         (None, (Some(name), Some(data))) => logic::office::import_base64(&user_id, name, data),
         _ => Err("provide sourcePath, or name + dataBase64".into()),
@@ -437,7 +438,9 @@ pub async fn agent_chat(
         .unwrap()
         .insert(stream_id.clone(), token.clone());
 
-    let mut stream = Box::pin(logic::agent::agent_chat(user_id, agent_id, session_id, message));
+    let mut stream = Box::pin(logic::agent::agent_chat(
+        user_id, agent_id, session_id, message,
+    ));
     loop {
         tokio::select! {
             _ = token.cancelled() => break,
