@@ -138,7 +138,7 @@ jobs:
           cp bazel-bin/c/liblitert-lm.dylib ../../native/
           install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
           # Prepare the full suite of dylibs for Contents/Frameworks bundling.
-          bash ../../scripts/bundle-litert-dylibs.sh
+          bash ../../../scripts/bundle-litert-dylibs.sh
 
           # Symlink target must resolve from cognee-litert-lm/ (the symlink's
           # own directory), not from the CWD where ln runs.
@@ -350,9 +350,8 @@ jobs:
           cd cognee-litert-lm/vendor/LiteRT-LM
           # Short output base avoids Windows long-path issues with MSVC linker;
           # --sandbox_writable_path lets bazel copy outputs to the short path.
-          bazel build //c:litert-lm --config=windows --jobs=4 \
-            --action_env=TMP --action_env=TEMP \
-            --output_base=C:/_b
+          bazel --output_base=C:/_b build //c:litert-lm --config=windows \
+            --jobs=4 --action_env=TMP --action_env=TEMP
           # ../../native = cognee-litert-lm/native — the dir
           # LITERT_LM_LIB_DIR points at.
           mkdir -p ../../native

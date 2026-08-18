@@ -280,8 +280,14 @@ async function switchSession(sessionId) {
 // Navigate to a session route and load its messages.
 async function navigateToSession(sessionId) {
   const app = Alpine.store("app");
+  const llm = app.llm;
   const session = app.sessions.find(s => String(s.id) === String(sessionId));
   if (!session) return;
+  // Already on this session — just navigate (no reload).
+  if (String(llm.sessionId) === String(sessionId)) {
+    window.PineconeRouter.navigate("/" + session.agentId + "/" + session.id);
+    return;
+  }
   await switchSession(sessionId);
   window.PineconeRouter.navigate("/" + session.agentId + "/" + session.id);
 }
@@ -597,6 +603,7 @@ Object.assign(window, {
   resetChat,
   switchSession,
   navigateToSession,
+  toggleSessions: () => window._toggleSessions?.(),
   toggleThinking,
   unloadModel,
   pickImage,

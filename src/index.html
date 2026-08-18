@@ -74,12 +74,7 @@
     <!-- ══════════ PANE 1: AGENTS ══════════ -->
     <aside id="agents-pane" class="w-[210px] shrink-0 bg-base-200 border-r border-base-300 flex flex-col">
       <div class="pane-head h-12 shrink-0 flex items-center gap-2 px-3">
-        <div class="flex items-center gap-2">
-          <span class="w-3 h-3 rounded-full" style="background:#e2625b"></span>
-          <span class="w-3 h-3 rounded-full" style="background:#dca54a"></span>
-          <span class="w-3 h-3 rounded-full" style="background:#3fae62"></span>
-        </div>
-        <span class="wordmark mono text-xs text-base-content/40 ml-1">kawai</span>
+        <span class="wordmark mono text-xs text-base-content/40">kawai</span>
         <button id="agents-toggle" class="ml-auto btn btn-ghost btn-xs btn-circle w-7 h-7 min-h-0 text-base-content/50" title="Toggle agents rail" aria-label="Toggle agents rail">
           <svg id="agents-close-ic" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-panel-left-close"/></svg>
           <svg id="agents-open-ic" class="hidden" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><use href="#i-panel-left-open"/></svg>
@@ -325,7 +320,7 @@
             <div class="mono text-[11px] uppercase tracking-wider text-base-content/35 px-2.5 pb-1.5" x-text="group.label"></div>
             <div class="flex flex-col gap-0.5">
               <template x-for="session in group.sessions" :key="session.id">
-                <div @click="$router.navigate('/' + session.agentId + '/' + session.id)"
+                <div @click="navigateToSession(session.id)"
                      class="session-item group flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors duration-150"
                      :class="String($router.context.params.sessionId) === String(session.id) ? 'is-active' : 'hover:bg-base-300/50 text-base-content/70'">
                   <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="String($router.context.params.sessionId) === String(session.id) ? 'bg-primary' : ''"></span>
@@ -349,10 +344,7 @@
     <input type="file" id="image-input" accept="image/*" class="hidden" />
 
     <script>
-      // Pinecone Router: hash-based routing
-      window.PineconeRouter.settings({ hash: true });
-
-      // Agent pane toggle
+      // Agent pane rail toggle (pure DOM, no Alpine dependency)
       (function () {
         var agentsPane = document.getElementById('agents-pane');
         var sessionsPane = document.getElementById('sessions-pane');
@@ -378,8 +370,8 @@
           setAgentsRail(!agentsPane.classList.contains('agents-rail'));
         });
 
-        // Expose toggleSessions globally for Alpine
-        window.toggleSessions = function () {
+        // Expose for Alpine — main.js also calls this
+        window._toggleSessions = function () {
           setSessionsCollapsed(!sessionsPane.classList.contains('sessions-collapsed'));
         };
 
