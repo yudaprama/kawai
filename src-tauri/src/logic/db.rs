@@ -204,8 +204,10 @@ pub fn stream_notes(user_id: String) -> impl Stream<Item = NoteEvent> {
 // extends this with real agent ids.
 pub const BUILTIN_CHAT_AGENT_ID: &str = "builtin.chat";
 
-/// First N chars of the first user message become the session title.
-const SESSION_TITLE_MAX_CHARS: usize = 60;
+/// First N chars of the first user message become the session title (offline
+/// fallback). The LLM-generated title (`generate_session_title`) is capped to
+/// the same length so the sidebar never overflows.
+pub const SESSION_TITLE_MAX_CHARS: usize = 60;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

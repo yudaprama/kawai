@@ -230,6 +230,21 @@ pub async fn delete_chat_session(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: generate a concise session title with a remote LLM
+/// (Cloudflare Workers AI, `cloudflare_title` feature). Fire-and-forget: the
+/// caller ignores the result and the offline substr fallback stays if it fails.
+#[cfg(feature = "cloudflare_title")]
+#[tauri::command]
+pub async fn generate_session_title(
+    session_id: i64,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::generate_session_title(&user_id, session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: load an on-device model (`.litertlm`). Identity is
 /// resolved at the edge as usual; the engine lives in `logic.rs`. When
 /// `model_path` is omitted the backend resolves it via `logic::resolve_model_path`.

@@ -1283,6 +1283,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cloudflare"
+version = "0.1.0"
+dependencies = [
+ "kawai-constants",
+ "reqwest 0.12.28",
+ "rig",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "cmake"
 version = "0.1.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4561,6 +4571,7 @@ dependencies = [
  "async-stream",
  "axum 0.8.9",
  "base64 0.22.1",
+ "cloudflare",
  "dotenvy",
  "futures-core",
  "futures-util",

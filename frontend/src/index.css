@@ -178,6 +178,7 @@
   body {
     @apply bg-background text-foreground;
     letter-spacing: var(--tracking-normal);
+    transition: background-color 150ms ease, color 150ms ease;
   }
 
   button:not(:disabled),

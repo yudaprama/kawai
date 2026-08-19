@@ -304,11 +304,20 @@ export function useLocalChat(agentId: string) {
         stats: "",
       }));
 
+      const isFirstMessage = sessionIdRef.current == null;
       const sessionId = await ensureSession(prompt);
       if (sessionId != null) {
         call("append_chat_message", { sessionId, role: "user", content: prompt }).catch(
-          (err) => console.error("[append user]", errText(err)),
+          (err) => console.error("[append user]", errText(err))
         );
+        // First message of a session: ask the remote LLM (Cloudflare, when the
+        // backend enables `cloudflare_title`) to propose a concise title; the
+        // offline substr fallback stays if it fails. Refresh the sidebar after.
+        if (isFirstMessage) {
+          call("generate_session_title", { sessionId })
+            .then(() => loadSessions())
+            .catch((err) => console.error("[generate_session_title]", errText(err)));
+        }
       }
 
       const t0 = performance.now();

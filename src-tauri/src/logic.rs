@@ -107,3 +107,80 @@ pub mod office;
 pub mod rag;
 
 pub use db::*;
+
+/// Generate a concise session title with a remote LLM (Cloudflare Workers AI,
+/// gated behind the `cloudflare_title` feature). The first user message is the
+/// input; the result overwrites the offline substr fallback set by
+/// `append_chat_message`. Safe to call fire-and-forget: any failure is logged
+/// and the existing title is left untouched.
+#[cfg(feature = "cloudflare_title")]
+pub async fn generate_session_title(user_id: &str, session_id: i64) -> Result<(), DbError> {
+    use rig::client::CompletionClient;
+    use rig::completion::CompletionModel;
+    use rig::completion::message::{AssistantContent, Text};
+
+    let conn = db_connection(user_id).await?;
+
+    // First user message of the session is the title source.
+    let mut rows = conn
+        .query(
+            "SELECT content FROM messages WHERE session_id = ? AND role = 'user' \
+             ORDER BY id ASC LIMIT 1",
+            vec![session_id],
+        )
+        .await?;
+    let first: String = match rows.next().await? {
+        Some(r) => r.get(0)?,
+        None => return Ok(()),
+    };
+    if first.trim().is_empty() {
+        return Ok(());
+    }
+
+    let client = cloudflare::CloudflareClient::from_env()
+        .map_err(|e| DbError::Config(format!("cloudflare client: {e}")))?;
+    let model = client.completion_model(cloudflare::models::GRANITE_4_0_H_MICRO);
+
+    let prompt = format!(
+        "Write a short chat session title (max 6 words, no punctuation, no quotes). \
+         Reply with only the title.\n\nConversation start: {}",
+        first
+    );
+    let request = model
+        .completion_request(prompt)
+        .temperature(0.2)
+        .max_tokens(24)
+        .build();
+    let response = model
+        .completion(request)
+        .await
+        .map_err(|e| DbError::Config(format!("cloudflare completion: {e}")))?;
+
+    let raw = response
+        .choice
+        .iter()
+        .find_map(|p| match p {
+            AssistantContent::Text(Text { text, .. }) => Some(text.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+
+    let title: String = raw
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .trim_matches(|c| c == '"' || c == '\'' || c == '#')
+        .chars()
+        .take(SESSION_TITLE_MAX_CHARS)
+        .collect();
+
+    if !title.is_empty() {
+        conn.execute(
+            "UPDATE sessions SET title = ? WHERE id = ?",
+            (title, session_id),
+        )
+        .await?;
+    }
+    Ok(())
+}

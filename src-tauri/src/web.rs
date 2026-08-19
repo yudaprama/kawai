@@ -64,6 +64,13 @@ struct DeleteChatSessionRequest {
     session_id: i64,
 }
 
+#[cfg(feature = "cloudflare_title")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerateSessionTitleRequest {
+    session_id: i64,
+}
+
 #[derive(Serialize)]
 struct ErrorResponse {
     error: String,
@@ -213,6 +220,17 @@ async fn delete_chat_session_handler(
     Json(req): Json<DeleteChatSessionRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     logic::delete_chat_session(&claims.sub, req.session_id)
+        .await
+        .map(|_| StatusCode::NO_CONTENT)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+#[cfg(feature = "cloudflare_title")]
+async fn generate_session_title_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<GenerateSessionTitleRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    logic::generate_session_title(&claims.sub, req.session_id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -705,6 +723,12 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
             post(delete_chat_session_handler),
         )
         .route_layer(from_fn(auth_middleware));
+
+    #[cfg(feature = "cloudflare_title")]
+    let protected = protected.route(
+        "/api/generate_session_title",
+        post(generate_session_title_handler),
+    );
 
     #[cfg(feature = "litert")]
     let protected = protected

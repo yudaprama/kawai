@@ -52,6 +52,10 @@ dotenvy = "0.15"
 # Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
 # Private repo — CI authenticates via the insteadOf git rewrite (release.yml).
 kawai-constants = { git = "https://github.com/yudaprama/kawai-vault", subdir = "constants" }
+# Remote LLM session-title generation (feature `cloudflare_title`): the
+# Cloudflare Workers AI rig provider. Optional + feature-gated so the default
+# desktop build stays fully local (MVP decision: local Gemma 4 is THE model).
+cloudflare = { path = "../rig-components/providers/cloudflare", optional = true }
 # Office tool store imports (drag-drop/web base64 blobs). Gated behind
 # "office" so non-office builds stay dep-free.
 base64 = { version = "0.22", optional = true }
@@ -92,6 +96,8 @@ litert = ["dep:local-llm", "local-llm/rig-tools"]
 # docbuilder) resolved at runtime — plus the RAG pipeline (kawai-embedding →
 # rig-libsql, with in-tree chunking) for idle-time knowledge indexing.
 office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript"]
+# Remote LLM session-title generation via the Cloudflare Workers AI provider.
+cloudflare_title = ["dep:cloudflare"]
 
 [[bin]]
 name = "kawai"
