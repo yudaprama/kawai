@@ -219,10 +219,8 @@ fn chunk_plain(text: &str, max_chars: usize, overlap: usize) -> Vec<(String, Str
 /// Extract full text from a stored office file, dispatching by extension to the
 /// same engines `knowledge_context` uses. Returns `Ok(None)` for file kinds we
 /// cannot index (e.g. images, unknown types).
-async fn extract_text(user_id: &str, file_id: &str) -> Result<Option<String>, String> {
-    let (_path, info) =
-        crate::logic::office::store::resolve(user_id, file_id).map_err(|e| format!("resolve: {e}"))?;
-    match info.ext.as_str() {
+async fn extract_text(user_id: &str, file_id: &str, ext: &str) -> Result<Option<String>, String> {
+    match ext {
         "pdf" => crate::logic::office::pdf::pdf_extract_text(user_id, file_id, None)
             .await
             .map(Some)
@@ -394,7 +392,7 @@ pub async fn office_index_file(
     let (_file_path, info) =
         crate::logic::office::store::resolve(&user_id, &file_id).map_err(|e| format!("resolve: {e}"))?;
 
-    let text = match extract_text(&user_id, &file_id).await? {
+    let text = match extract_text(&user_id, &file_id, &info.ext).await? {
         Some(t) if !t.trim().is_empty() => t,
         _ => return Ok(0),
     };
