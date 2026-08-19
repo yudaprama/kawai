@@ -203,6 +203,7 @@ fn chunk_markdown(text: &str, max_chars: usize, overlap: usize) -> Vec<(String, 
 }
 
 /// Chunk plain text (PDF pages, .txt, etc.) using `TextSplitter`.
+#[allow(dead_code)]
 fn chunk_plain(text: &str, max_chars: usize, overlap: usize) -> Vec<(String, String)> {
     let config = ChunkConfig::new(max_chars)
         .with_overlap(overlap)
@@ -398,10 +399,7 @@ pub async fn office_index_file(
         _ => return Ok(0),
     };
 
-    let chunks = match info.ext.as_str() {
-        "pdf" => chunk_plain(&text, CHUNK_CHARS, CHUNK_OVERLAP),
-        _ => chunk_markdown(&text, CHUNK_CHARS, CHUNK_OVERLAP),
-    };
+    let chunks = chunk_markdown(&text, CHUNK_CHARS, CHUNK_OVERLAP);
     if chunks.is_empty() {
         return Ok(0);
     }

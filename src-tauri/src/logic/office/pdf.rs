@@ -20,7 +20,7 @@ fn pages_arg(spec: Option<&str>) -> Vec<String> {
     }
 }
 
-/// `pdfcli extract` → text.
+/// `pdfcli extract --md` → markdown.
 pub async fn pdf_extract_text(
     user_id: &str,
     file_id: &str,
@@ -31,7 +31,7 @@ pub async fn pdf_extract_text(
         return Err(format!("not a PDF: .{}", info.ext));
     }
     let bin = cli::pdfcli_path().ok_or_else(|| cli::missing_engine("pdfcli"))?;
-    let mut args = vec!["extract".to_string()];
+    let mut args = vec!["extract".to_string(), "--md".to_string()];
     args.extend(pages_arg(pages));
     args.push(path.display().to_string());
     let out = cli::run_cli(&bin, &args, None, None, CLI_TIMEOUT).await?;

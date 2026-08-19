@@ -126,8 +126,8 @@ jobs:
       # weather_geo) — those crates compile under the litert feature, so
       # rig-components is required, not optional. rig-libsql/flutter_gemma/
       # litert-lm-rs are NOT needed — skip them to keep the checkout lean.
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding
 
       - name: Build litert-lm dylib
         run: |
@@ -208,8 +208,8 @@ jobs:
           key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux-x86_64-
 
-- name: Init submodules (local-llm + cognee-litert-lm + rig-components)
-    run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding
 
       # LiteRT-LM's .bazelrc pins CC=clang (action_env); the runner default is
       # clang-14, whose std lib lacks std::source_location in C++20 mode
@@ -310,9 +310,9 @@ jobs:
           key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-windows-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm)
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding)
         shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding
 
       - name: Install bazelisk
         shell: pwsh
@@ -399,8 +399,8 @@ jobs:
       # must exist. local-llm path-deps rig-components tools, so that
       # manifest needs rig-components present too. Shallow, non-recursive:
       # only crate manifests, not C sources.
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components, manifest only)
-        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding, manifest only)
+        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
