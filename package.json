@@ -8,8 +8,8 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --force",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:dev:litert": "bash scripts/dev.sh",
+    "tauri": "bash scripts/tauri.sh",
+    "tauri:dev:litert": "bash scripts/tauri.sh dev",
     "bundle:litert": "bash scripts/bundle-litert-dylibs.sh",
     "tauri:build:litert": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features litert --config .github/tauri-litert.json",
     "tauri:build:litert-office": "bash scripts/bundle-litert-dylibs.sh && bash scripts/fetch-office-bins.sh && tauri build -- --features litert,office --config .github/tauri-office.json,.github/tauri-litert.json"

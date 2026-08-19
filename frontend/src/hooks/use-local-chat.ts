@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import {
   call,
   errText,
+  type AgentInfo,
   type ChatMessageInfo,
   type ChatSessionInfo,
   type LocalModelInfo,
@@ -16,12 +17,12 @@ import type {
   UIMessagePart,
 } from "@/lib/ai-types";
 
-/** Events emitted by the backend's `local_chat` stream (serde camelCase). */
+/** Events emitted by the backend's `local_chat` / `agent_chat` streams. */
 type LocalChatEvent =
-  | { type: "started" }
+  | { type: "started"; sessionId?: number }
   | { type: "token"; text: string }
-  | { type: "toolCall"; id: string | null; tool: string; args: unknown }
-  | { type: "toolResult"; id: string | null; tool: string; ok: boolean; summary: string }
+  | { type: "toolCall"; id?: string | null; tool: string; args: unknown }
+  | { type: "toolResult"; id?: string | null; tool: string; ok: boolean; summary: string }
   | { type: "finished" }
   | { type: "error"; message: string };
 
@@ -61,7 +62,13 @@ function sessionPeriod(createdAt: number | null): "Today" | "Yesterday" | "Earli
   return "Earlier";
 }
 
-export function useLocalChat(agentId: string) {
+/**
+ * @param agent the active catalog entry (from the `list_agents` op). The
+ * backend owns agent ids; every agent (with or without tools) chats through
+ * `agent_chat` — one code path, backend-side persistence + title generation.
+ */
+export function useLocalChat(agent: Pick<AgentInfo, "id">) {
+  const { id: agentId } = agent;
   const [state, setState] = useState<LocalChatState>({
     userId: null,
     authError: null,
@@ -304,21 +311,10 @@ export function useLocalChat(agentId: string) {
         stats: "",
       }));
 
-      const isFirstMessage = sessionIdRef.current == null;
+      // All agents go through `agent_chat` — the backend owns persistence
+      // (user + assistant turns) and fires title generation after its own
+      // append, so the title generator never races the message insert.
       const sessionId = await ensureSession(prompt);
-      if (sessionId != null) {
-        call("append_chat_message", { sessionId, role: "user", content: prompt }).catch(
-          (err) => console.error("[append user]", errText(err))
-        );
-        // First message of a session: ask the remote LLM (Cloudflare, when the
-        // backend enables `cloudflare_title`) to propose a concise title; the
-        // offline substr fallback stays if it fails. Refresh the sidebar after.
-        if (isFirstMessage) {
-          call("generate_session_title", { sessionId })
-            .then(() => loadSessions())
-            .catch((err) => console.error("[generate_session_title]", errText(err)));
-        }
-      }
 
       const t0 = performance.now();
       let chunks = 0;
@@ -336,22 +332,25 @@ export function useLocalChat(agentId: string) {
       };
 
       streamCtrl.current = streamOperation<LocalChatEvent>(
-        "local_chat",
-        {
-          prompt,
-          image: imageB64 ?? null,
-        },
+        "agent_chat",
+        { agentId, sessionId, message: prompt },
         {
           onEvent: (ev) => {
             if (ev.type === "token") {
               chunks += 1;
               chars += ev.text.length;
               full += ev.text;
+              
+              // Strip fence blocks from display text (they become tool cards)
+              const displayText = full.replace(/```tool\s*\n[\s\S]*?\n```/gi, '').trim();
+              
               setAssistantParts(
-                [
-                  { type: "text", text: full, state: "streaming" as const },
-                  ...toolParts,
-                ],
+                displayText
+                  ? [
+                      { type: "text", text: displayText, state: "streaming" as const },
+                      ...toolParts,
+                    ]
+                  : [...toolParts],
                 "streaming",
                 `${chunks} chunks · ${chars} chars · ${((performance.now() - t0) / 1000).toFixed(1)}s`,
               );
@@ -363,9 +362,13 @@ export function useLocalChat(agentId: string) {
                 input: ev.args,
               };
               toolParts = [...toolParts, part];
+              
+              // Strip fence blocks from display text
+              const displayText = full.replace(/```tool\s*\n[\s\S]*?\n```/gi, '').trim();
+              
               setAssistantParts(
-                full
-                  ? [{ type: "text", text: full, state: "streaming" as const }, ...toolParts]
+                displayText
+                  ? [{ type: "text", text: displayText, state: "streaming" as const }, ...toolParts]
                   : [...toolParts],
                 "streaming",
               );
@@ -382,9 +385,13 @@ export function useLocalChat(agentId: string) {
                     }
                   : p,
               );
+              
+              // Strip fence blocks from display text
+              const displayText = full.replace(/```tool\s*\n[\s\S]*?\n```/gi, '').trim();
+              
               setAssistantParts(
-                full
-                  ? [{ type: "text", text: full, state: "streaming" as const }, ...toolParts]
+                displayText
+                  ? [{ type: "text", text: displayText, state: "streaming" as const }, ...toolParts]
                   : [...toolParts],
                 "streaming",
               );
@@ -392,18 +399,17 @@ export function useLocalChat(agentId: string) {
           },
           onDone: () => {
             streamCtrl.current = null;
+            
+            // Strip fence blocks from final display text
+            const displayText = full.replace(/```tool\s*\n[\s\S]*?\n```/gi, '').trim();
+            
             setAssistantParts(
-              full
-                ? [{ type: "text", text: full, state: "done" as const }, ...toolParts]
+              displayText
+                ? [{ type: "text", text: displayText, state: "done" as const }, ...toolParts]
                 : [...toolParts],
               "ready",
               `done · ${chunks} chunks · ${chars} chars · ${((performance.now() - t0) / 1000).toFixed(1)}s`,
             );
-            if (sessionId != null && full) {
-              call("append_chat_message", { sessionId, role: "assistant", content: full }).catch(
-                (err) => console.error("[append assistant]", errText(err)),
-              );
-            }
             void loadSessions();
           },
           onError: (err) => {
@@ -427,7 +433,7 @@ export function useLocalChat(agentId: string) {
         },
       );
     },
-    [ensureSession, loadSessions],
+    [agentId, ensureSession, loadSessions],
   );
 
   const agentSessions = state.sessions.filter((s) => s.agentId === agentId);

@@ -10,7 +10,7 @@ This file is the operational rulebook.
 Desktop/mobile app (Tauri), with a standalone web server binary.
 **End state: desktop + mobile + web from one core. Current phase: MVP, desktop-first — see "Current phase" below.**
 
-- **Frontend**: React 19 + TypeScript + Vite + Tailwind v4 (`frontend/`, alias `@/` → `frontend/src`). UI components vendored from the `web/` SPA (`ai-elements/`, `ui/`, `lib/streamdown/`). NO ai-sdk — `lib/ai-types.ts` is a type-only local shim of the `UIMessage`/parts shapes; streaming is raw Tauri `Channel` mapped by `hooks/use-local-chat.ts`. The vanilla frontend (`src/`) is RETIRED — kept on disk for reference only; `tauri.conf.json` points at the React build.
+- **Frontend**: React 19 + TypeScript + Vite + Tailwind v4 (`frontend/`, alias `@/` → `frontend/src`). UI components vendored from the `web/` SPA (`ai-elements/`, `ui/`, `lib/streamdown/`). NO ai-sdk — `lib/ai-types.ts` is a type-only local shim of the `UIMessage`/parts shapes; streaming is raw Tauri `Channel` mapped by `hooks/use-local-chat.ts`. The vanilla frontend (`src/`) was deleted 2026-08-19.
 - **Auth**: dev-bypass via `set_session` for MVP (`KAWAI_AUTH_DEV_USER_ID=demo`). Clerk backend verification (`auth.rs`, public JWKS) remains for the future prod auth flow (Roadmap 6 — browser + deep link). **No Clerk UI is wired in the React frontend.**
 - **Backend**: Rust. Single core logic, two thin transport wrappers.
 - **Transport**: Tauri `Channel`+`invoke` (desktop/mobile); HTTP `fetch`+SSE (web — backend only, no web frontend).
@@ -45,7 +45,7 @@ Short-term focus is a **macOS desktop MVP**. The end state is unchanged — desk
 1. **`logic.rs` is pure.** Never import `tauri`, `axum`, or any transport type there. It owns business logic and returns `T` or `impl Stream<Item = Event>`.
 2. **Two thin wrappers per operation.** One `#[tauri::command]` in `commands.rs`, one Axum route in `web.rs`. Both call the same `logic.rs` fn. No business logic in wrappers.
 3. **One operation = one snake_case string**, used identically for: the Rust fn name, the invoke name, and the URL path (`POST /api/<name>`). Tauri uses the fn name **verbatim** (no kebab/camel conversion). Arguments are camelCase on the JS side, mapping to snake_case Rust params.
-4. **Frontend uses the `@tauri-apps/api` npm package** (`invoke` / `Channel` from `@tauri-apps/api/core`). The React app is bundled by Vite (`frontend/` → `dist/`, `frontendDist: "../dist"`); never reference `window.__TAURI__` in new code (`withGlobalTauri` is only kept for the retired vanilla frontend).
+4. **Frontend uses the `@tauri-apps/api` npm package** (`invoke` / `Channel` from `@tauri-apps/api/core`). The React app is bundled by Vite (`frontend/` → `dist/`, `frontendDist: "../dist"`); never reference `window.__TAURI__` in new code (`withGlobalTauri` is a leftover from the deleted vanilla frontend — safe to remove from `tauri.conf.json`).
 5. **No AI SDK.** The chat state is produced by `hooks/use-local-chat.ts` from raw Tauri stream events; the UIMessage/part shapes in `lib/ai-types.ts` are a LOCAL type contract only (field names stay AI-SDK-v5-compatible so the vendored ai-elements components work unmodified). Never add a runtime dep on `ai` / `@ai-sdk/*`.
 6. **Web deps stay gated.** `axum`/`tower-http` are `optional`, behind the `web` Cargo feature. The `web` module is `#[cfg(feature = "web")]`. The `kawai-web` binary has `required-features = ["web"]`. Never make axum a non-optional dep — it must stay out of desktop/mobile binaries.
 7. **Events.** `#[serde(tag = "type")]` in `logic.rs`; frontend reads `event.type` at runtime. Terminal variants are `finished` / `error`. The frontend mirror of the event union lives in `hooks/use-local-chat.ts` (`LocalChatEvent`) — update BOTH sides when adding a variant (plus `agent.rs` matches on it too).
@@ -63,21 +63,23 @@ bun run dev            # from kawai/ (vite, root=frontend/)
 bun run build          # tsc -b && vite build → dist/
 bun run typecheck      # tsc -b --force
 
-# Desktop (Tauri) — launches vite automatically via beforeDevCommand
+# Desktop (Tauri) — the `tauri` npm script is wrapped by scripts/tauri.sh.
+# `dev` = on-device LLM stack: litert feature + native/ rpath + dev-bypass
+# auth + profraw off (needs the Bazel-built dylibs; run bundle:litert once).
+# `build` and everything else pass through unchanged.
 bun tauri dev
 bun tauri build
 
-# Desktop WITH on-device LLM (needs the Bazel-built dylib; see Landmines):
-# Run bundle-litert-dylibs.sh once after building the dylib (it fills native/
-# with all companions, so the _solib symlink is optional afterwards). Dev
-# still needs the native/ rpath via RUSTFLAGS — the bundle rpath build.rs
-# embeds only exists inside the .app.
+# Manual equivalent of `bun tauri dev` (for extra flags like office dev):
 cd src-tauri && env \
   RUSTFLAGS="-C link-arg=-Wl,-rpath,<ABS>/cognee-litert-lm/native" \
   LITERT_LM_LIB_DIR=<ABS>/cognee-litert-lm/native \
   LLVM_PROFILE_FILE=/dev/null \
   KAWAI_AUTH_DEV_USER_ID=demo \
   tauri dev -- --features litert
+
+# Prepare the dev dylibs once (fills cognee-litert-lm/native/):
+bun run bundle:litert
 
 # CI release (.github/workflows/release.yml): on push to main a bot bumps the
 # patch version in src-tauri/tauri.conf.json, commits + tags vX.Y.Z, then builds
@@ -135,7 +137,7 @@ For mobile, also (during MVP: only when shared code changes — `logic.rs`, `aut
 
 - **`@types/hast` must stay pinned to 3.0.4.** `resolutions` in `package.json` forces it across the tree. 3.0.5 rewrites `Properties.className` to `string[]` and bun nests per-package copies (under `mdast-util-to-hast`, `@shikijs/*`, …), which SPLITS the `hast` module identity: `mdast-util-to-hast`'s module augmentation (`RootContentMap.raw`) stops applying to the copy `streamdown/lib/markdown.ts` sees → TS2367/TS2339 across the markdown renderer. If you bump it, `bun install --force` and re-check `find node_modules -path '*node_modules/@types/hast' -maxdepth 5 -type d | wc -l` is 1.
 - **Frontend deps must be installed before `tauri dev`/`tauri build`.** `bun install` in `kawai/` (Vite root is `frontend/`; deps live at the repo package root). CI already does this.
-- **Vite `server.port: 1420` is `strictPort`** (Tauri `devUrl` expects exactly this port) and `watch.ignored` covers both `src-tauri/**` and the retired `src/**` — don't let vite watch the Rust side (rebuild loop).
+- **Vite `server.port: 1420` is `strictPort`** (Tauri `devUrl` expects exactly this port) and `watch.ignored` covers `src-tauri/**` — don't let vite watch the Rust side (rebuild loop).
 - **`async_stream` streams are not `Unpin`.** `Box::pin(...)` before calling `.next()` in a loop.
 - **`Channel::send` takes the value by value**, not `&event` (Tauri 2: `send(data: T)`).
 - **`-p` in cargo-ndk collides with cargo `--package`.** Use `-P` / `--platform`. cargo-ndk's panic handler **dumps all env vars to stdout** — never let it panic, and keep secrets out of shell env.
@@ -157,7 +159,6 @@ For mobile, also (during MVP: only when shared code changes — `logic.rs`, `aut
 - **Web request structs need `#[serde(rename_all = "camelCase")]`.** Tauri maps camelCase invoke args → snake_case params automatically; Axum `Json<T>` does NOT — without the rename, camelCase bodies 422 (bit us 2026-08-16 with the chat ops). Every web request struct with a multi-word field carries the rename.
 - **Tool call events in `LocalChatEvent`.** The `local_chat` stream emits `ToolCall` and `ToolResult` variants (not just `Token`). The frontend (`use-local-chat.ts`) AND `agent.rs` both match on the union — add arms for new variants in all matchers or events are silently dropped.
 - **One rig-core source for the whole graph.** `src-tauri`, `rig-components/*`, `rig-libsql`, `kawai-embedding`, and `local-llm` all pin crates.io `rig`/`rig-core` `0.42` (published 2026-08-17). One semver source across the graph so the rig-core types unify at the agent-tier seam. The generator template in `rig-components/gen/src/main.rs` also uses `0.42`. If a newer rig releases, bump ALL of them together.
-- **The retired vanilla frontend (`src/`) still sits next to `frontend/`.** Do NOT edit it; do NOT serve it (`tauri.conf.json` points at `../dist`). Its Alpine/Pinecone landmines are obsolete. Deletion pending user confirmation.
 
 ## Where things live
 
@@ -188,7 +189,6 @@ frontend/                        # React 19 + Vite + Tailwind v4 SPA (vite root)
 │   │   └── file-icon.tsx        # CDN file-type icons
 │   ├── platform/                # slim local adapter (types, index, shared-media) — browser APIs only
 │   └── assets/                  # icon-map.json + utils (file icon naming)
-src/                             # RETIRED vanilla frontend (reference only; do not edit)
 src-tauri/src/logic.rs           # PURE logic; rig + libsql + local_llm (litert) + db token minting
 src-tauri/src/logic/rag.rs       # office-gated RAG: chunk/embed/index (status tracked in rag_files) + session-scoped knowledge_search + knowledge_list/add_to_session/import_youtube/delete_file + image description (ragloader)
 src-tauri/src/logic/office/      # office domain (feature "office"): mod.rs + cli.rs + store.rs + ooxml.rs + pdf.rs + tools.rs
@@ -236,7 +236,7 @@ app.log                          # symlink → ~/Library/Logs/kawai/app.log
 - **MVP (current)**: no auth UI. On boot `use-local-chat.ts` calls `whoami`; on failure it calls `set_session(<any-token>)`, which only succeeds when the backend runs the dev bypass (`KAWAI_AUTH_DEV_USER_ID`). Identity = the bypass user until prod auth lands.
 - `set_session` (`commands.rs`) verifies the token and stores the identity in Tauri `State<Session>` (in-memory, per launch).
 - Backend verification: `auth::Verifier` fetches Clerk's **public** JWKS (cached by `kid`) and checks `iss`/`exp`. **No `CLERK_SECRET_KEY` is needed or used by the backend** — asymmetric verification.
-- Identity → logic: wrappers extract `claims.sub` as `user_id` and pass it as the first arg to `logic.rs` fns. `whoami`/`create_note`/`list_notes`/`stream_notes`/`create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message`/`delete_chat_session`/`local_load_model`/`local_chat`/`agent_chat` are auth-required (plus the `office`-gated `office_*`/`knowledge_*` ops — incl. `knowledge_list`/`knowledge_add_to_session`); `greet`/`generate_activity` are public.
+- Identity → logic: wrappers extract `claims.sub` as `user_id` and pass it as the first arg to `logic.rs` fns. `whoami`/`create_note`/`list_notes`/`stream_notes`/`create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message`/`delete_chat_session`/`local_load_model`/`local_chat`/`agent_chat` are auth-required (plus the `office`-gated `office_*`/`knowledge_*` ops — incl. `knowledge_list`/`knowledge_add_to_session`); `greet`/`list_agents`/`generate_activity` are public.
 - Auth operations: `set_session`, `logout`, `whoami` (one snake_case string each).
 - **Prod auth (Roadmap 6, deferred)**: browser + deep link — open system browser → sign-in → redirect `kawai://auth?token=…` → `set_session`. The `web/` SPA's Kratos deep-link flow (`web/src/platform/tauri.ts`) is the proven pattern to copy.
 
@@ -267,6 +267,7 @@ KAWAI_AUTH_ISSUER=...          # Clerk frontend-API origin
 # KAWAI_AUTH_DEV_USER_ID=dev   # uncomment to accept ANY token as this user (dev only)
 KAWAI_DATA_DIR=/path/to/dir    # optional per-user data root; default /tmp/kawai (Tauri injects its app-data dir)
 KAWAI_MODEL_PATH=/path/to/gemma-4-E2B-it.litertlm  # optional on-device model; resolved by logic::resolve_model_path (env → ./models/ → ~/.kawai/models)
+KAWAI_LLM_MAX_TOKENS=8192        # optional context budget (K/V state entries) for the on-device conversation; default 8192, must stay below the model's max (Gemma 4: 32003). Larger = more K/V memory.
 ```
 `.env.local` (gitignored) — Clerk publishable key reference: `VITE_CLERK_PUBLISHABLE_KEY` (unused by the React frontend; kept for the future prod-auth flow).
 
@@ -289,7 +290,7 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
    - ✅ Knowledge injection Tier 1 (2026-08-18): composer @-mention (`@` → popup of stored office docs → chip) + `knowledge_context` op (office feature) extracts text (pdfcli/ooxcli, per-file 12k / total 36k char caps) and prepends it to the `local_chat` prompt. **Superseded 2026-08-19 by Tier 3** (mention UI removed; `knowledge_context` op remains as a plain extraction helper).
    - ✅ Knowledge injection Tier 2 (2026-08-19): idle-time RAG in `logic/rag.rs` — `office_index_file` (extract → chunk 1500/overlap 200 → `kawai-embedding` local fastembed → `rig-libsql` vector store `rag_chunks`), hybrid retrieval (vector + FTS5/BM25 mirror fused via RRF), `knowledge_forget` (disassociate + orphan chunk purge).
     - ✅ Knowledge injection Tier 3 (2026-08-19): `knowledge_search` as an AGENT TOOL, query-only. Upload happens exclusively in the files panel (session-scoped: `office_index_file` indexes + associates the file with the active session). The office agent calls `knowledge_search(query, mode?)` itself; `user_id`+`session_id` are bound server-side when the toolset is built (the model can never supply them). Retrieval mode (optional, defaults to `hybrid`): `hybrid` = vector+BM25 fused via RRF; `semantic` = vector only (paraphrased/conceptual questions); `keyword` = BM25 only, skips the embedder (exact codes/numbers/names — fastest). Unknown values are rejected server-side. Composer is now text + image only — no @-mention, no chips, no submit-time injection.
-   - ✅ Agent catalog UI three-pane + per-agent session routing (2026-08-19): pane 1 = agent list (collapsible rail, `AGENTS` in `App.tsx`; `agent_ids()`/personas in `logic/agent.rs`), pane 2 = active agent chat + canvas, pane 3 = sessions of the selected agent (period-grouped, ⌘1/⌘2/⌘3 pane shortcuts). Sessions carry `agent_id`; switching agents resets model context.
+   - ✅ Agent catalog UI three-pane + per-agent session routing (2026-08-19): pane 1 = agent list (collapsible rail; catalog served by the `list_agents` op — backend `logic/agent.rs` is the single source of truth for ids, frontend `AGENT_META` in `App.tsx` only adds presentation), pane 2 = active agent chat + canvas, pane 3 = sessions of the selected agent (period-grouped, ⌘1/⌘2/⌘3 pane shortcuts). Sessions carry `agent_id`; switching agents resets model context.
    - ✅ Session delete (2026-08-19): op `delete_chat_session` (both wrappers) — deletes `session_files` rows, messages, and the session; indexed chunks stay (files own them). UI: per-session trash button (hover) in the sessions sidebar; deleting the active session starts a fresh chat (`deleteSession` in `use-local-chat.ts`).
    - ✅ Session file tracking UI (2026-08-19): `list_session_files` op (both wrappers) + Files tab split into "In this session" (green checkmark) and "All documents" sections. `useKnowledgeFiles` hook tracks session changes and fetches session-scoped file list. Importing files refreshes both lists.
    - ✅ Knowledge base panel revamp (2026-08-19): Files tab → **Knowledge** tab (sections "In this session" / "Library"). Index status is now visible: `rag_files(file_id, status, chunks, error)` tracks `indexing → ready/failed` in `office_index_file` (stale `indexing` rows read as failed). One list op `knowledge_list` (both wrappers) returns metadata + index state + `inSession` (replaces the panel's two-call fetch; `office_list_files`/`list_session_files` remain). Scope is explicit: `knowledge_add_to_session` associates + auto-indexes chunkless files, `knowledge_forget` (existing) removes from session, `office_delete_file` deletes everywhere (store + chunks + vectors + associations). Rows show badges (Indexing… / N chunks / Index failed + retry) and hover actions; import indexing is tracked instead of fire-and-forget.

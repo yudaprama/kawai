@@ -49,6 +49,7 @@ pub fn run() {
     #[cfg(all(feature = "litert", feature = "office"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::greet,
+        commands::list_agents,
         commands::generate_activity,
         commands::cancel_stream,
         commands::set_session,
@@ -92,6 +93,7 @@ pub fn run() {
     #[cfg(all(feature = "litert", not(feature = "office")))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::greet,
+        commands::list_agents,
         commands::generate_activity,
         commands::cancel_stream,
         commands::set_session,
@@ -119,6 +121,7 @@ pub fn run() {
     #[cfg(all(not(feature = "litert"), feature = "office"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::greet,
+        commands::list_agents,
         commands::generate_activity,
         commands::cancel_stream,
         commands::set_session,
@@ -153,6 +156,7 @@ pub fn run() {
     #[cfg(not(any(feature = "litert", feature = "office")))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::greet,
+        commands::list_agents,
         commands::generate_activity,
         commands::cancel_stream,
         commands::set_session,

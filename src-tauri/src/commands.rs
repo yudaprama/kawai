@@ -22,6 +22,13 @@ pub fn greet(name: String) -> String {
     logic::greet(&name)
 }
 
+/// Public RPC: the agent catalog (id, name, description, tools) in UI order.
+/// Static data — no user scope, so no auth state.
+#[tauri::command]
+pub fn list_agents() -> Vec<logic::agent::AgentInfo> {
+    logic::agent::list_agents()
+}
+
 /// Streaming command. The `stream_id` lets the client request early
 /// cancellation via `cancel_stream`. Business args arrive as individual
 /// camelCase fields (Tauri default arg mapping); the `Channel` carries events

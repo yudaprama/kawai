@@ -79,6 +79,11 @@ async fn greet_handler(Json(req): Json<GreetRequest>) -> Json<String> {
     Json(logic::greet(&req.name))
 }
 
+/// Public RPC: the agent catalog (same op as the Tauri `list_agents` command).
+async fn list_agents_handler() -> Json<Vec<logic::agent::AgentInfo>> {
+    Json(logic::agent::list_agents())
+}
+
 async fn generate_activity_handler(
     Json(input): Json<ActivityInput>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
@@ -714,6 +719,7 @@ fn event_to_sse(event: ActivityEvent) -> SseFrame {
 pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
     let public = Router::new()
         .route("/api/greet", post(greet_handler))
+        .route("/api/list_agents", post(list_agents_handler))
         .route("/api/generate_activity", post(generate_activity_handler))
         .route("/api/set_session", post(set_session_handler))
         .route("/api/logout", post(logout_handler));

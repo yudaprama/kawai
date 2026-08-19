@@ -20,6 +20,16 @@ export interface UserInfo {
   userId: string;
 }
 
+/** Agent catalog entry from the `list_agents` op — the backend is the single
+ *  source of truth for agent ids; the frontend never hardcodes them. */
+export interface AgentInfo {
+  id: string;
+  name: string;
+  description: string;
+  /** true → `agent_chat` (tool loop); false → plain `local_chat`. */
+  tools: boolean;
+}
+
 export interface ChatSessionInfo {
   id: number;
   agentId: string;

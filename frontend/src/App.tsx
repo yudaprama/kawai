@@ -16,7 +16,7 @@ import {
   PromptInputTools,
   usePromptInputController,
 } from "@/components/ai-elements/prompt-input";
-import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
+import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -30,7 +30,7 @@ import { useCopyButton } from "@/hooks/use-copy-button";
 import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useLocalChat } from "@/hooks/use-local-chat";
 import { platform, runningInTauri } from "@/platform";
-import { call, errText, type KnowledgeFileInfo, type OfficeFileInfo } from "@/lib/api";
+import { call, errText, type AgentInfo, type KnowledgeFileInfo, type OfficeFileInfo } from "@/lib/api";
 import { knowledgeFileToPreview } from "@/lib/preview-file";
 import { FilePreview } from "@/components/file-preview";
 import {
@@ -41,17 +41,16 @@ import {
 } from "@/components/ui/dialog";
 import type { UIMessage } from "@/lib/ai-types";
 import {
-  BookOpenIcon,
   BriefcaseIcon,
   CheckIcon,
-  CloudSunIcon,
+  BotIcon,
   CopyIcon,
   FileTextIcon,
-  LineChartIcon,
   MonitorIcon,
   MoonIcon,
   PlusIcon,
   RotateCcwIcon,
+  SparklesIcon,
   SunIcon,
   TrashIcon,
   VideoIcon,
@@ -66,49 +65,37 @@ import {
   PanelRightOpenIcon,
 } from "lucide-react";
 
-interface Agent {
-  id: string;
-  name: string;
+/** Presentation for a catalog agent (from the `list_agents` op): the backend
+ *  owns ids/names/descriptions; this map adds the icon, sidebar subtitle and
+ *  suggested prompts. Unknown ids (new backend agents) fall back to a generic
+ *  entry — adding an agent server-side is enough for it to appear. */
+interface AgentPresentation {
   icon: typeof BriefcaseIcon;
   subtitle: string;
-  description: string;
   prompts: string[];
 }
 
-const AGENTS: Agent[] = [
-  {
-    id: "office",
-    name: "Office",
+const GENERIC_AGENT: AgentPresentation = {
+  icon: BotIcon,
+  subtitle: "agent",
+  prompts: [],
+};
+
+const AGENT_META: Record<string, AgentPresentation> = {
+  "builtin.chat": {
+    icon: SparklesIcon,
+    subtitle: "on-device assistant",
+    prompts: ["How are you?", "Summarize my day", "Help me write an email"],
+  },
+  "builtin.office": {
     icon: BriefcaseIcon,
     subtitle: "docs · pdf · sheets",
-    description: "Documents, PDFs, spreadsheets — created and edited locally",
     prompts: ["Summarize this PDF", "Create a weekly report", "Merge these invoices"],
   },
-  {
-    id: "finance",
-    name: "Finance",
-    icon: LineChartIcon,
-    subtitle: "markets & budgets",
-    description: "Markets, budgets, and financial analysis",
-    prompts: ["Analyze my portfolio", "Create a budget", "Compare Q3 vs Q2"],
-  },
-  {
-    id: "knowledge",
-    name: "Knowledge",
-    icon: BookOpenIcon,
-    subtitle: "notes & recall",
-    description: "Notes, research, and knowledge recall",
-    prompts: ["Search my notes", "Create a research brief", "Summarize this article"],
-  },
-  {
-    id: "weather",
-    name: "Weather",
-    icon: CloudSunIcon,
-    subtitle: "forecasts & alerts",
-    description: "Forecasts, alerts, and weather insights",
-    prompts: ["Weekend forecast", "Rain alert for commute", "Best travel days"],
-  },
-];
+};
+
+const agentPresentation = (id: string): AgentPresentation =>
+  AGENT_META[id] ?? GENERIC_AGENT;
 
 function MessagePartView({ message }: { message: UIMessage }) {
   const textPart = message.parts.find((p) => p.type === "text");
@@ -125,7 +112,10 @@ function MessagePartView({ message }: { message: UIMessage }) {
       className={message.role === "assistant" ? "items-start" : undefined}
     >
       {toolParts.map((part) => {
+        // Extract summary from the output wrapper { ok, summary }
         const output = part.output as { ok?: boolean; summary?: string } | undefined;
+        const displayOutput = output?.summary ?? part.output;
+        
         return (
           <Tool key={part.toolCallId}>
             <ToolHeader
@@ -134,15 +124,9 @@ function MessagePartView({ message }: { message: UIMessage }) {
               type={part.type}
             />
             <ToolContent>
-              {part.input != null && (
-                <pre className="text-muted-foreground max-h-40 overflow-auto rounded-md bg-muted/50 p-2 text-xs">
-                  {JSON.stringify(part.input, null, 2)}
-                </pre>
-              )}
-              {output && (
-                <p className={output.ok ? "text-xs" : "text-destructive text-xs"}>
-                  {output.summary}
-                </p>
+              {part.input != null && <ToolInput input={part.input} />}
+              {displayOutput != null && (
+                <ToolOutput output={displayOutput} errorText={part.errorText} />
               )}
             </ToolContent>
           </Tool>
@@ -506,13 +490,35 @@ function ChatComposerInner({
 }
 
 export default function App() {
-  const [activeAgentId, setActiveAgentId] = useState(AGENTS[0].id);
+  // Agent catalog comes from the backend (`list_agents`) — ids are never
+  // hardcoded here. Until it arrives the UI shows a loading shell.
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
   const [agentsRail, setAgentsRail] = useState(false);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(true);
 
-  const agent = AGENTS.find((a) => a.id === activeAgentId) ?? AGENTS[0];
-  const chat = useLocalChat(agent.id);
+  useEffect(() => {
+    let disposed = false;
+    call<AgentInfo[]>("list_agents")
+      .then((catalog) => {
+        if (!disposed && catalog.length) setAgents(catalog);
+      })
+      .catch((err) => console.error("[list_agents]", errText(err)));
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  // First catalog entry is the default agent (backend order = UI order).
+  useEffect(() => {
+    if (agents.length && activeAgentId == null) setActiveAgentId(agents[0].id);
+  }, [agents, activeAgentId]);
+
+  const agent =
+    (activeAgentId != null && agents.find((a) => a.id === activeAgentId)) || agents[0] || null;
+  const presentation = agent ? agentPresentation(agent.id) : GENERIC_AGENT;
+  const chat = useLocalChat(agent ?? { id: "", tools: false });
   const { status } = chat;
   const busy = status === "submitted" || status === "streaming";
   const inSession = chat.sessionId != null || chat.messages.length > 0;
@@ -772,6 +778,11 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [busy, chat]);
 
+  // Catalog not loaded yet — all hooks above have run; render a quiet shell.
+  if (!agent) {
+    return <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center" />;
+  }
+
   return (
     <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">
       {/* ══════════ PANE 1: AGENTS ══════════ */}
@@ -802,8 +813,9 @@ export default function App() {
         )}
 
         <nav className={`flex flex-col gap-1 ${agentsRail ? "px-1.5" : "px-2"}`}>
-          {AGENTS.map((a) => {
-            const Icon = a.icon;
+          {agents.map((a) => {
+            const meta = agentPresentation(a.id);
+            const Icon = meta.icon;
             const active = a.id === activeAgentId;
             return (
               <button
@@ -812,7 +824,7 @@ export default function App() {
                 } ${active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
                 key={a.id}
                 onClick={() => setActiveAgentId(a.id)}
-                title={`${a.name} · ${a.subtitle}`}
+                title={`${a.name} · ${meta.subtitle}`}
               >
                 <span
                   className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${
@@ -825,7 +837,7 @@ export default function App() {
                   <span className="flex min-w-0 flex-col">
                     <span className="text-sm leading-tight font-medium">{a.name}</span>
                     <span className="text-muted-foreground truncate text-xs leading-tight">
-                      {a.subtitle}
+                      {meta.subtitle}
                     </span>
                   </span>
                 )}
@@ -907,12 +919,12 @@ export default function App() {
               {!inSession ? (
                 <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
                   <span className="bg-primary/15 text-primary flex size-12 items-center justify-center rounded-xl">
-                    <agent.icon className="size-6" />
+                    <presentation.icon className="size-6" />
                   </span>
                   <h2 className="text-lg font-semibold text-foreground">{agent.name} agent</h2>
                   <p className="-mt-1 text-sm">{agent.description}</p>
                   <div className="mt-3 flex flex-wrap justify-center gap-2">
-                    {agent.prompts.map((prompt) => (
+                    {presentation.prompts.map((prompt) => (
                       <button
                         className="border bg-card hover:bg-accent rounded-full border px-3 py-1 text-xs"
                         key={prompt}
