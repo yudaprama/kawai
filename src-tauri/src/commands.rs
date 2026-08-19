@@ -550,6 +550,19 @@ pub fn office_export_file(
     logic::office::export_file(&user_id, &file_id, dest_path.as_deref())
 }
 
+/// Authenticated RPC: read a stored document's raw bytes (for in-app preview
+/// — image/video/pdf embeds or text/markdown rendering). Returns base64 plus
+/// a best-effort MIME type so the frontend can build a `data:` URL.
+#[cfg(feature = "office")]
+#[tauri::command]
+pub fn office_read_file(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::office::ReadFileResult, String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::read_file_b64(&user_id, &file_id)
+}
+
 /// Authenticated RPC: which office engines are available on this host.
 #[cfg(feature = "office")]
 #[tauri::command]

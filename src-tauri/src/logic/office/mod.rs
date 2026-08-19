@@ -26,8 +26,8 @@ use serde::Serialize;
 
 pub use error::OfficeToolError;
 pub use ooxml::read_document;
-pub use store::{export_file, import_base64, import_bytes, import_path, list_files};
-pub use store::{OfficeFile, ReadDocumentResult};
+pub use store::{export_file, import_base64, import_bytes, import_path, list_files, read_file_b64};
+pub use store::{OfficeFile, ReadFileResult, ReadDocumentResult};
 
 // ── capability probe ────────────────────────────────────────────────────────
 

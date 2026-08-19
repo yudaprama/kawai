@@ -31,6 +31,14 @@ import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useLocalChat } from "@/hooks/use-local-chat";
 import { platform, runningInTauri } from "@/platform";
 import { call, errText, type KnowledgeFileInfo, type OfficeFileInfo } from "@/lib/api";
+import { knowledgeFileToPreview } from "@/lib/preview-file";
+import { FilePreview } from "@/components/file-preview";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { UIMessage } from "@/lib/ai-types";
 import {
   BookOpenIcon,
@@ -47,8 +55,8 @@ import {
   SunIcon,
   TrashIcon,
   VideoIcon,
-  WrenchIcon,
   XIcon,
+  EyeIcon,
 } from "lucide-react";
 import {
   PanelLeftCloseIcon,
@@ -315,6 +323,7 @@ function KnowledgeFileRow({
   onRemove,
   onRetry,
   onDelete,
+  onPreview,
 }: {
   file: KnowledgeFileInfo;
   inSessionList: boolean;
@@ -323,6 +332,7 @@ function KnowledgeFileRow({
   onRemove: (file: KnowledgeFileInfo) => void;
   onRetry: (file: KnowledgeFileInfo) => void;
   onDelete: (file: KnowledgeFileInfo) => void;
+  onPreview: (file: KnowledgeFileInfo) => void;
 }) {
   return (
     <div className="bg-card group/file flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
@@ -332,7 +342,14 @@ function KnowledgeFileRow({
         <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
       )}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm">{file.originalName}</p>
+        <button
+          className="block w-full truncate text-left text-sm hover:underline"
+          onClick={() => onPreview(file)}
+          title={`Preview ${file.originalName}`}
+          type="button"
+        >
+          {file.originalName}
+        </button>
         <p className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
           <span>{formatBytes(file.bytes)}</span>
           <span aria-hidden>·</span>
@@ -342,6 +359,15 @@ function KnowledgeFileRow({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/file:opacity-100">
+        <button
+          aria-label={`Preview ${file.originalName}`}
+          className="text-muted-foreground hover:text-foreground rounded p-1"
+          onClick={() => onPreview(file)}
+          title="Preview file"
+          type="button"
+        >
+          <EyeIcon className="size-3.5" />
+        </button>
         {file.status === "failed" && (
           <button
             aria-label={`Retry indexing ${file.originalName}`}
@@ -484,7 +510,6 @@ export default function App() {
   const [agentsRail, setAgentsRail] = useState(false);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(true);
-  const [canvasTab, setCanvasTab] = useState<"artifact" | "files">("artifact");
 
   const agent = AGENTS.find((a) => a.id === activeAgentId) ?? AGENTS[0];
   const chat = useLocalChat(agent.id);
@@ -499,6 +524,7 @@ export default function App() {
   const [linking, setLinking] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<KnowledgeFileInfo | null>(null);
 
   /** Two-step delete confirm auto-dismisses after 3s. */
   useEffect(() => {
@@ -681,6 +707,11 @@ export default function App() {
     },
     [confirmDeleteId, knowledge],
   );
+
+  /** Opens the inline preview for a knowledge document. */
+  const openPreview = useCallback((file: KnowledgeFileInfo) => {
+    setPreviewFile(file);
+  }, []);
 
   /** Prompts for a YouTube URL and ingests its transcript into the knowledge
    * base (fetch → markdown document → indexed, deduped per video). */
@@ -920,140 +951,114 @@ export default function App() {
           {canvasOpen && (
             <section className="hidden min-w-0 flex-1 flex-col border-l md:flex">
               <div className="flex h-10 shrink-0 items-center justify-between gap-4 border-b px-3">
-                <div className="flex items-center gap-4">
-                  {(["artifact", "files"] as const).map((tab) => (
-                    <button
-                      className={`-mb-px border-b-2 pb-2.5 text-sm font-medium transition-colors ${
-                        canvasTab === tab
-                          ? "border-primary text-foreground"
-                          : "text-muted-foreground border-transparent"
-                      }`}
-                      key={tab}
-                      onClick={() => setCanvasTab(tab)}
-                    >
-                      {tab === "artifact" ? "Artifact" : "Knowledge"}
-                    </button>
-                  ))}
+                <span className="text-sm font-medium">Knowledge</span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    disabled={linking || importing}
+                    onClick={() => void addKnowledgeLink()}
+                    size="xs"
+                    title="Ingest a YouTube video transcript into your knowledge base"
+                    variant="ghost"
+                  >
+                    {linking ? <Spinner className="size-3" /> : <VideoIcon className="size-3" />}
+                    Link
+                  </Button>
+                  <Button
+                    disabled={importing || linking}
+                    onClick={() => void addKnowledgeFiles()}
+                    size="xs"
+                    title="Import documents & images (.docx .xlsx .pptx .pdf .png .jpg …)"
+                    variant="ghost"
+                  >
+                    {importing ? <Spinner className="size-3" /> : <PlusIcon className="size-3" />}
+                    Add files
+                  </Button>
                 </div>
-                {canvasTab === "files" && (
-                  <div className="flex items-center gap-1">
-                    <Button
-                      disabled={linking || importing}
-                      onClick={() => void addKnowledgeLink()}
-                      size="xs"
-                      title="Ingest a YouTube video transcript into your knowledge base"
-                      variant="ghost"
-                    >
-                      {linking ? <Spinner className="size-3" /> : <VideoIcon className="size-3" />}
-                      Link
-                    </Button>
-                    <Button
-                      disabled={importing || linking}
-                      onClick={() => void addKnowledgeFiles()}
-                      size="xs"
-                      title="Import documents & images (.docx .xlsx .pptx .pdf .png .jpg …)"
-                      variant="ghost"
-                    >
-                      {importing ? <Spinner className="size-3" /> : <PlusIcon className="size-3" />}
-                      Add files
-                    </Button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {importError && (
+                  <div className="text-destructive border-destructive/40 bg-destructive/10 mx-3 mt-3 rounded-md border px-3 py-2 text-xs">
+                    {importError}
                   </div>
                 )}
-              </div>
-              <div className="min-h-0 flex-1">
-                {canvasTab === "artifact" ? (
-                  <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-                    <WrenchIcon className="text-muted-foreground/40 mb-3 size-5" />
-                    <p className="text-muted-foreground text-sm">Artifacts will appear here</p>
-                    <p className="text-muted-foreground/70 mt-1 text-xs">
-                      Generated docs, summaries, and exports
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex h-full flex-col overflow-y-auto">
-                    {importError && (
-                      <div className="text-destructive border-destructive/40 bg-destructive/10 mx-3 mt-3 rounded-md border px-3 py-2 text-xs">
-                        {importError}
-                      </div>
-                    )}
-                    <div className="flex-1 p-3 pt-5">
-                      {knowledge.unavailable ? (
-                        <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-                          <FileTextIcon className="text-muted-foreground/40 mb-3 size-5" />
-                          <p className="text-muted-foreground text-sm">Knowledge store unavailable</p>
-                          <p className="text-muted-foreground/70 mt-1 text-xs">
-                            The office feature isn&apos;t enabled in this build
+                <div className="p-3 pt-5">
+                  {knowledge.unavailable ? (
+                    <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+                      <FileTextIcon className="text-muted-foreground/40 mb-3 size-5" />
+                      <p className="text-muted-foreground text-sm">Knowledge store unavailable</p>
+                      <p className="text-muted-foreground/70 mt-1 text-xs">
+                        The office feature isn&apos;t enabled in this build
+                      </p>
+                    </div>
+                  ) : !knowledge.loaded ? (
+                    <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
+                      <Spinner className="size-4" />
+                      Loading knowledge…
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-5">
+                      {chat.sessionId != null && sessionFiles.length > 0 && (
+                        <div>
+                          <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
+                            In this session
+                          </p>
+                          <div className="flex flex-col gap-1.5">
+                            {sessionFiles.map((file) => (
+                              <KnowledgeFileRow
+                                confirmDelete={confirmDeleteId === file.id}
+                                file={file}
+                                inSessionList
+                                key={file.id}
+                                onAdd={addToSession}
+                                onDelete={deleteFile}
+                                onPreview={openPreview}
+                                onRemove={removeFromSession}
+                                onRetry={retryIndex}
+                              />
+                            ))}
+                          </div>
+                          <p className="text-muted-foreground/70 mt-1.5 px-1 text-xs">
+                            The agent can search these documents in this chat.
                           </p>
                         </div>
-                      ) : !knowledge.loaded ? (
-                        <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
-                          <Spinner className="size-4" />
-                          Loading knowledge…
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-5">
-                          {chat.sessionId != null && sessionFiles.length > 0 && (
-                            <div>
-                              <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
-                                In this session
-                              </p>
-                              <div className="flex flex-col gap-1.5">
-                                {sessionFiles.map((file) => (
-                                  <KnowledgeFileRow
-                                    confirmDelete={confirmDeleteId === file.id}
-                                    file={file}
-                                    inSessionList
-                                    key={file.id}
-                                    onAdd={addToSession}
-                                    onDelete={deleteFile}
-                                    onRemove={removeFromSession}
-                                    onRetry={retryIndex}
-                                  />
-                                ))}
-                              </div>
-                              <p className="text-muted-foreground/70 mt-1.5 px-1 text-xs">
-                                The agent can search these documents in this chat.
-                              </p>
-                            </div>
-                          )}
-                          {chat.sessionId != null && sessionFiles.length === 0 && (
-                            <p className="text-muted-foreground/70 px-1 text-xs">
-                              Add documents to this session — import new ones, or press{" "}
-                              <span className="font-medium">+</span> on a library document below —
-                              to make them searchable by the agent in this chat.
-                            </p>
-                          )}
-                          <div>
-                            <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
-                              {sessionFiles.length > 0 ? "Library" : "Documents"}
-                            </p>
-                            {knowledge.files.length === 0 ? (
-                              <div className="text-muted-foreground/70 px-1 py-2 text-xs">
-                                No sources yet — import .docx, .xlsx, .pptx, .pdf or images with
-                                “Add files”, or paste a YouTube link with “Link”.
-                              </div>
-                            ) : (
-                              <div className="flex flex-col gap-1.5">
-                                {knowledge.files.map((file) => (
-                                  <KnowledgeFileRow
-                                    confirmDelete={confirmDeleteId === file.id}
-                                    file={file}
-                                    inSessionList={file.inSession && chat.sessionId != null}
-                                    key={file.id}
-                                    onAdd={addToSession}
-                                    onDelete={deleteFile}
-                                    onRemove={removeFromSession}
-                                    onRetry={retryIndex}
-                                  />
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
                       )}
+                      {chat.sessionId != null && sessionFiles.length === 0 && (
+                        <p className="text-muted-foreground/70 px-1 text-xs">
+                          Add documents to this session — import new ones, or press{" "}
+                          <span className="font-medium">+</span> on a library document below —
+                          to make them searchable by the agent in this chat.
+                        </p>
+                      )}
+                      <div>
+                        <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
+                          {sessionFiles.length > 0 ? "Library" : "Documents"}
+                        </p>
+                        {knowledge.files.length === 0 ? (
+                          <div className="text-muted-foreground/70 px-1 py-2 text-xs">
+                            No sources yet — import .docx, .xlsx, .pptx, .pdf or images with
+                            "Add files", or paste a YouTube link with "Link".
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-1.5">
+                            {knowledge.files.map((file) => (
+                              <KnowledgeFileRow
+                                confirmDelete={confirmDeleteId === file.id}
+                                file={file}
+                                inSessionList={file.inSession && chat.sessionId != null}
+                                key={file.id}
+                                onAdd={addToSession}
+                                onDelete={deleteFile}
+                                onPreview={openPreview}
+                                onRemove={removeFromSession}
+                                onRetry={retryIndex}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </section>
           )}
@@ -1113,8 +1118,21 @@ export default function App() {
               </div>
             ))}
           </div>
-        </aside>
-      )}
-    </div>
+          </aside>
+        )}
+
+        <Dialog open={previewFile != null} onOpenChange={(open) => !open && setPreviewFile(null)}>
+          <DialogContent className="flex h-[80vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">
+            <DialogHeader className="flex shrink-0 flex-row items-center justify-between gap-2 border-b px-4 py-3">
+              <DialogTitle className="truncate text-sm font-medium">
+                {previewFile?.originalName}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex min-h-0 flex-1 flex-col bg-background">
+              {previewFile && <FilePreview file={knowledgeFileToPreview(previewFile)} />}
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
   );
 }

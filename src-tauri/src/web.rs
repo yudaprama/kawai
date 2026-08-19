@@ -603,6 +603,23 @@ async fn office_capabilities_handler(
     Json(logic::office::capabilities())
 }
 
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficeReadFileRequest {
+    file_id: String,
+}
+
+#[cfg(feature = "office")]
+async fn office_read_file_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<OfficeReadFileRequest>,
+) -> Result<Json<logic::office::ReadFileResult>, (StatusCode, String)> {
+    logic::office::read_file_b64(&claims.sub, &req.file_id)
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
 /// Protected streaming: agent chat (tool-calling loop) via SSE.
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
@@ -763,6 +780,7 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         )
         .route("/api/office_delete_file", post(office_delete_file_handler))
         .route("/api/office_export_file", post(office_export_file_handler))
+        .route("/api/office_read_file", post(office_read_file_handler))
         .route(
             "/api/office_capabilities",
             post(office_capabilities_handler),

@@ -261,6 +261,61 @@ pub(crate) fn replace_stored(user_id: &str, file_id: &str, tmp: &Path) -> Result
     write_meta(&user_dir(user_id)?, &info)
 }
 
+/** Best-effort MIME type from a stored extension (for preview embeds). */
+fn mime_for_ext(ext: &str) -> &'static str {
+    match ext {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "tif" | "tiff" => "image/tiff",
+        "svg" => "image/svg+xml",
+        "pdf" => "application/pdf",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "m4v" => "video/x-m4v",
+        "ogg" | "ogv" => "video/ogg",
+        "md" | "markdown" => "text/markdown",
+        "txt" => "text/plain",
+        _ => "application/octet-stream",
+    }
+}
+
+/** Read a stored document's raw bytes (preview needs them as-is). */
+pub fn read_file(user_id: &str, file_id: &str) -> Result<(OfficeFile, Vec<u8>), String> {
+    let (path, info) = resolve(user_id, file_id)?;
+    let bytes = std::fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    Ok((info, bytes))
+}
+
+/** Read a document and return its bytes as base64 plus preview metadata. The
+ * frontend turns this into a `data:` URL for inline image/video/pdf embeds or
+ * decodes it for text/markdown rendering. */
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadFileResult {
+    pub id: String,
+    pub original_name: String,
+    pub ext: String,
+    pub bytes: u64,
+    pub mime: String,
+    pub data_base64: String,
+}
+
+pub fn read_file_b64(user_id: &str, file_id: &str) -> Result<ReadFileResult, String> {
+    let (info, bytes) = read_file(user_id, file_id)?;
+    let mime = mime_for_ext(&info.ext).to_string();
+    Ok(ReadFileResult {
+        id: info.id,
+        original_name: info.original_name,
+        ext: info.ext,
+        bytes: info.bytes,
+        mime,
+        data_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

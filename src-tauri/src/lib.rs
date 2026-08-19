@@ -84,6 +84,7 @@ pub fn run() {
         commands::knowledge_add_to_session,
         commands::knowledge_import_youtube,
         commands::office_delete_file,
+        commands::office_read_file,
         commands::agent_chat,
         commands::frontend_log
     ]);
@@ -145,6 +146,7 @@ pub fn run() {
         commands::knowledge_add_to_session,
         commands::knowledge_import_youtube,
         commands::office_delete_file,
+        commands::office_read_file,
         commands::frontend_log
     ]);
 
