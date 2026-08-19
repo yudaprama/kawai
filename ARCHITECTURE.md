@@ -11,7 +11,7 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 - Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`hooks/use-local-chat.ts` + `lib/ai-types.ts`).
 - Backend: Rust, single core logic.
 - Auth: MVP = dev-bypass (`set_session` with any token, backend-gated by `KAWAI_AUTH_DEV_USER_ID`). Backend retains Clerk JWKS verification (`auth.rs`, public keys only) for the future prod flow (browser + deep link, Roadmap 6).
-- LLM: **on-device Gemma 4 via LiteRT-LM is THE model** (decision 2026-08-16). `rig` 0.41 stays declared but unwired — remote providers become optional configuration later. Agent tier will use prompt-based tool calling on the local model; `rig-components/` (14 category crates of generated rig tools, `registry::toolset_for(names)`) provides the toolsets, usable standalone without a rig provider.
+- LLM: **on-device Gemma 4 via LiteRT-LM is THE model** (decision 2026-08-16). `rig` is on crates.io `0.42` (declared + used for the cloudflare title provider and the vector-store seam) but remote providers are optional configuration later. Agent tier will use prompt-based tool calling on the local model; `rig-components/` (14 category crates of generated rig tools, `registry::toolset_for(names)`) provides the toolsets, usable standalone without a rig provider.
 - Persistence: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
 ## Layer diagram
@@ -112,7 +112,7 @@ kawai/
 
 ## Core dependencies (in `logic.rs` / `auth.rs`)
 
-- **`rig`** — declared, unwired, pinned to git rev `4232abdb` (same source as `rig-libsql` and `rig-components`; crates.io 0.41.0 predates the `Vec<Embedding>` change). Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers via rig become optional configuration later, not a requirement.
+- **`rig`** — on crates.io `0.42` (same semver source as `rig-libsql` and `rig-components`; the `Vec<Embedding>` `insert_documents` change rig-libsql needs is in this release). Used for the cloudflare session-title provider and the libsql vector-store seam. Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers via rig become optional configuration later, not a requirement.
 - **`libsql`** — per-user DB against self-hosted sqld. Desktop/mobile: local embedded replica per user; web: remote connection (no per-user local file). Builder selection lives in `logic.rs` behind `cfg(feature = "web")`. Connections are per-op (fresh EdDSA token each call).
 - **`jsonwebtoken`** — RS256 (Clerk JWKS verify in `auth.rs`) and EdDSA (sqld token mint in `logic.rs`). Two versions coexist (9.x direct + 10.x transitive) — expected.
 - All compile clean across desktop, android arm64, and ios arm64 (verified 2026-08-15; default/web/litert feature combos). Two rustls versions (0.22 + 0.23) coexist — expected.

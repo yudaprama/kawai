@@ -36,12 +36,9 @@ tower-http = { version = "0.6", optional = true, features = ["fs"] }
 # High-level streaming chat over LiteRT-LM (on-device Gemma 4, etc.).
 # Pulls in cognee-litert-lm transitively. Gated behind `litert`.
 local-llm = { path = "../local-llm", optional = true }
-# Pinned to the same git rev as rig-libsql (submodule): crates.io 0.41.0
-# predates the Vec<Embedding> insert_documents change the vector store needs.
-# One rig-core source for the whole graph (src-tauri + rig-tools + rig-libsql)
-# or ToolSet/vector-store types won't unify. Swap to crates.io "0.42"+ when
-# that release ships, everywhere at once.
-rig = { git = "https://github.com/0xPlaygrounds/rig", rev = "4232abdb85a3ef2c48ccf3fa5c2cb8636588db94" }
+# One rig-core source for the whole graph (src-tauri + rig-tools + rig-libsql).
+# Every consumer uses crates.io "0.42" uniformly — see ARCHITECTURE.md.
+rig = "0.42"
 libsql = "0.9.30"
 jsonwebtoken = "9"
 # rustls-tls (not default features) keeps the TLS stack aligned with libsql/rig
@@ -63,7 +60,7 @@ tauri-plugin-dialog = "2"
 # RAG pipeline for office knowledge files (gated behind "office"):
 #   kawai-embedding — embed (local fastembed ONNX fallback, no API key)
 #   rig-libsql     — vector store (insert_documents / search)
-# Both pinned to the same rig-core rev as the rest of the graph (4232abdb)
+# Uses the same crates.io rig-core 0.42 source as the rest of the graph
 # so the vector-store seam unifies with kawai-embedding's EmbeddingModel.
 kawai-embedding = { path = "../kawai-embedding", optional = true }
 # Markdown-aware + char-based chunking for RAG indexing (office feature only).
@@ -79,10 +76,8 @@ ragloader = { path = "../rig-components/ragloader", optional = true }
 # Uses reqwest 0.13 — coexists with our direct 0.12 (like the rustls pair).
 youtube_transcript = { path = "../rig-components/youtube_transcript", optional = true }
 # rig-core is a direct dep (not just transitive) because logic::rag uses its
-# `Embed` derive + `EmbeddingsBuilder`/`InsertDocuments` traits directly. Pinned
-# to the SAME rev as every other rig consumer in the graph (4232abdb) so the
-# vector-store seam unifies with kawai-embedding's `EmbeddingModel`.
-rig-core = { git = "https://github.com/0xPlaygrounds/rig", rev = "4232abdb85a3ef2c48ccf3fa5c2cb8636588db94", optional = true }
+# `Embed` derive + `EmbeddingsBuilder`/`InsertDocuments` traits directly.
+rig-core = { version = "0.42", optional = true }
 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]
