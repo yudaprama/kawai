@@ -421,6 +421,24 @@ async fn knowledge_forget_handler(
 #[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ListSessionFilesRequest {
+    session_id: i64,
+}
+
+#[cfg(feature = "office")]
+async fn list_session_files_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<ListSessionFilesRequest>,
+) -> Result<Json<Vec<logic::office::OfficeFile>>, (StatusCode, String)> {
+    logic::rag::list_session_files(&claims.sub, req.session_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct OfficeIndexFileRequest {
     session_id: Option<i64>,
     file_id: String,
@@ -638,6 +656,7 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/office_index_file", post(office_index_file_handler))
         .route("/api/knowledge_search", post(knowledge_search_handler))
         .route("/api/knowledge_forget", post(knowledge_forget_handler))
+        .route("/api/list_session_files", post(list_session_files_handler))
         .route("/api/office_export_file", post(office_export_file_handler))
         .route(
             "/api/office_capabilities",

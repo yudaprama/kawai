@@ -1,9 +1,23 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>kawai</title>
+    <script>
+      // Set the theme before paint to avoid a flash of the wrong theme.
+      // Key matches the one written by hooks/use-theme.ts ("kawai-theme").
+      (function () {
+        try {
+          var t = localStorage.getItem("kawai-theme"); // "light" | "dark" | "system" | null
+          var dark =
+            t === "dark" ||
+            (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

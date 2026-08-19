@@ -120,8 +120,8 @@ async fn associate_session_files(
     Ok(())
 }
 
-/// All files the session has ever referenced.
-async fn session_file_ids(
+/// All file ids the session has ever referenced (ordered by `added_at`).
+pub async fn session_file_ids(
     conn: &libsql::Connection,
     session_id: i64,
 ) -> Result<Vec<String>, String> {
@@ -135,6 +135,26 @@ async fn session_file_ids(
     let mut out = Vec::new();
     while let Some(row) = rows.next().await.map_err(|e| format!("session files: {e}"))? {
         out.push(row.get(0).map_err(|e| format!("session files: {e}"))?);
+    }
+    Ok(out)
+}
+
+/// List the full metadata of every file associated with a session. Used by the
+/// files panel to show "In this session" vs "All documents".
+pub async fn list_session_files(
+    user_id: &str,
+    session_id: i64,
+) -> Result<Vec<crate::logic::office::OfficeFile>, String> {
+    let conn = crate::logic::db_connection(user_id)
+        .await
+        .map_err(|e| format!("db: {e}"))?;
+    ensure_session_files(&conn).await?;
+    let ids = session_file_ids(&conn, session_id).await?;
+    let mut out = Vec::with_capacity(ids.len());
+    for id in &ids {
+        if let Ok((_path, info)) = crate::logic::office::store::resolve(user_id, id) {
+            out.push(info);
+        }
     }
     Ok(out)
 }

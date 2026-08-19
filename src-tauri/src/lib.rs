@@ -78,6 +78,7 @@ pub fn run() {
         commands::office_index_file,
         commands::knowledge_search,
         commands::knowledge_forget,
+        commands::list_session_files,
         commands::agent_chat,
         commands::frontend_log
     ]);
@@ -132,6 +133,7 @@ pub fn run() {
         commands::office_index_file,
         commands::knowledge_search,
         commands::knowledge_forget,
+        commands::list_session_files,
         commands::frontend_log
     ]);
 

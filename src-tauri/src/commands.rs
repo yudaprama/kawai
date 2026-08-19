@@ -452,6 +452,20 @@ pub async fn knowledge_forget(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: list the files associated with a session (the files
+/// panel's "In this session" section).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub async fn list_session_files(
+    session_id: i64,
+    session: State<'_, Session>,
+) -> Result<Vec<logic::office::OfficeFile>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::rag::list_session_files(&user_id, session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: export a stored file to the filesystem.
 #[cfg(feature = "office")]
 #[tauri::command]

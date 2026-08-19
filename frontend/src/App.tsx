@@ -32,7 +32,14 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { useTheme, type Theme } from "@/hooks/use-theme";
 import { useCopyButton } from "@/hooks/use-copy-button";
 import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useLocalChat } from "@/hooks/use-local-chat";
@@ -48,8 +55,11 @@ import {
   FileTextIcon,
   ImageIcon,
   LineChartIcon,
+  MonitorIcon,
+  MoonIcon,
   PlusIcon,
   Plus,
+  SunIcon,
   TrashIcon,
   VideoIcon,
   WrenchIcon,
@@ -189,6 +199,50 @@ function fileToBase64(file: File): Promise<string> {
     };
     reader.readAsArrayBuffer(file);
   });
+}
+
+/** Tri-state theme switcher (Light / Dark / System). Client-only, persisted to
+ * localStorage; the inline script in index.html applies it before paint. */
+function ThemeControl({ collapsed }: { collapsed: boolean }) {
+  const { theme, setTheme, resolvedTheme } = useTheme();
+
+  const TriggerIcon = resolvedTheme === "dark" ? MoonIcon : SunIcon;
+  const options: { value: Theme; label: string; icon: typeof SunIcon }[] = [
+    { value: "light", label: "Light", icon: SunIcon },
+    { value: "dark", label: "Dark", icon: MoonIcon },
+    { value: "system", label: "System", icon: MonitorIcon },
+  ];
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          aria-label="Change theme"
+          size="icon"
+          title="Appearance"
+          variant="ghost"
+        >
+          <TriggerIcon className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" side="top" className="w-36">
+        {options.map((opt) => (
+          <DropdownMenuItem
+            key={opt.value}
+            onClick={() => setTheme(opt.value)}
+            className="gap-2"
+          >
+            <opt.icon className="size-4 text-muted-foreground" />
+            <span className="flex-1">{opt.label}</span>
+            {theme === opt.value && <CheckIcon className="size-4" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+      {!collapsed && (
+        <span className="text-muted-foreground ml-2 truncate text-xs">Appearance</span>
+      )}
+    </DropdownMenu>
+  );
 }
 
 /** Human-readable byte size ("1.2 MB", "840 B"). */
@@ -430,13 +484,14 @@ export default function App() {
       }
       if (toPending.length) setPending((prev) => [...prev, ...toPending]);
       await knowledge.refresh();
+      if (chat.sessionId) await knowledge.refreshSessionFiles(chat.sessionId);
     } catch (err) {
       console.warn("[office_import_file]", errText(err));
       setImportError(errText(err));
     } finally {
       setImporting(false);
     }
-  }, [chat.sessionId, knowledge.refresh]);
+  }, [chat.sessionId, knowledge.refresh, knowledge.refreshSessionFiles]);
 
   /** Prompts for a YouTube URL and adds it to the pending (session-only) list. */
   const addKnowledgeLink = useCallback(async () => {
@@ -462,6 +517,12 @@ export default function App() {
     void chat.selectAgent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAgentId]);
+
+  // Track session changes so the files panel shows "In this session" correctly.
+  useEffect(() => {
+    knowledge.setSessionId(chat.sessionId ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.sessionId]);
 
   // Pane shortcuts: ⌘1 agents rail, ⌘2 canvas, ⌘3 sessions pane, ⌘N new session.
   useEffect(() => {
@@ -553,10 +614,15 @@ export default function App() {
           <span className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
             {(chat.userId ?? "d").charAt(0).toUpperCase()}
           </span>
-          {!agentsRail && (
-            <span className="truncate font-mono text-xs text-muted-foreground">
-              {chat.userId ?? "demo"}
-            </span>
+          {agentsRail ? (
+            <ThemeControl collapsed />
+          ) : (
+            <div className="flex w-full items-center justify-between gap-2">
+              <span className="truncate font-mono text-xs text-muted-foreground">
+                {chat.userId ?? "demo"}
+              </span>
+              <ThemeControl collapsed={false} />
+            </div>
           )}
         </div>
       </aside>
@@ -729,23 +795,18 @@ export default function App() {
                         </div>
                       ) : (
                         <div className="flex flex-col gap-5">
-                          <div>
-                            <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
-                              Documents
-                            </p>
-                            {knowledge.files.length === 0 ? (
-                              <div className="text-muted-foreground/70 px-1 py-2 text-xs">
-                                No documents imported yet — they&apos;ll appear here and in the
-                                @-mention popup.
-                              </div>
-                            ) : (
+                          {chat.sessionId && knowledge.sessionFiles.length > 0 && (
+                            <div>
+                              <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
+                                In this session
+                              </p>
                               <div className="flex flex-col gap-1.5">
-                                {knowledge.files.map((file) => (
+                                {knowledge.sessionFiles.map((file) => (
                                   <div
                                     className="bg-card flex items-center gap-2.5 rounded-lg border px-2.5 py-2"
                                     key={file.id}
                                   >
-                                    <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
+                                    <CheckIcon className="text-green-500 size-4 shrink-0" />
                                     <div className="min-w-0 flex-1">
                                       <p className="truncate text-sm">{file.originalName}</p>
                                       <p className="text-muted-foreground mt-0.5 text-xs">
@@ -759,13 +820,56 @@ export default function App() {
                                   </div>
                                 ))}
                               </div>
+                            </div>
+                          )}
+                          <div>
+                            <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
+                              {chat.sessionId && knowledge.sessionFiles.length > 0
+                                ? "All documents"
+                                : "Documents"}
+                            </p>
+                            {knowledge.files.length === 0 ? (
+                              <div className="text-muted-foreground/70 px-1 py-2 text-xs">
+                                No documents imported yet — they&apos;ll appear here and in the
+                                @-mention popup.
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-1.5">
+                                {knowledge.files.map((file) => {
+                                  const inSession =
+                                    chat.sessionId != null &&
+                                    knowledge.sessionFiles.some((f) => f.id === file.id);
+                                  return (
+                                    <div
+                                      className="bg-card flex items-center gap-2.5 rounded-lg border px-2.5 py-2"
+                                      key={file.id}
+                                    >
+                                      {inSession ? (
+                                        <CheckIcon className="text-green-500 size-4 shrink-0" />
+                                      ) : (
+                                        <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
+                                      )}
+                                      <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm">{file.originalName}</p>
+                                        <p className="text-muted-foreground mt-0.5 text-xs">
+                                          {formatBytes(file.bytes)} ·{" "}
+                                          {new Date(file.createdAt * 1000).toLocaleDateString()}
+                                        </p>
+                                      </div>
+                                      <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] tracking-wider uppercase">
+                                        {file.ext}
+                                      </span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
                           <div>
                             <p className="text-muted-foreground flex items-center gap-1.5 px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
                               Images &amp; links
                               <span className="text-muted-foreground/60 font-sans text-[10px] normal-case tracking-normal">
-                                session-only · backend coming soon
+                                session-only
                               </span>
                             </p>
                             {pending.length === 0 ? (
