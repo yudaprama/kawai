@@ -62,7 +62,6 @@ pub fn run() {
         commands::list_chat_messages,
         commands::append_chat_message,
         commands::delete_chat_session,
-        #[cfg(feature = "cloudflare_title")]
         commands::generate_session_title,
         commands::local_load_model,
         commands::local_chat,
@@ -105,7 +104,6 @@ pub fn run() {
         commands::list_chat_messages,
         commands::append_chat_message,
         commands::delete_chat_session,
-        #[cfg(feature = "cloudflare_title")]
         commands::generate_session_title,
         commands::local_load_model,
         commands::local_chat,
@@ -133,7 +131,6 @@ pub fn run() {
         commands::list_chat_messages,
         commands::append_chat_message,
         commands::delete_chat_session,
-        #[cfg(feature = "cloudflare_title")]
         commands::generate_session_title,
         commands::office_import_file,
         commands::office_list_files,
@@ -167,7 +164,6 @@ pub fn run() {
         commands::list_chat_messages,
         commands::append_chat_message,
         commands::delete_chat_session,
-        #[cfg(feature = "cloudflare_title")]
         commands::generate_session_title,
         commands::frontend_log
     ]);

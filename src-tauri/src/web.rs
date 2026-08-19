@@ -64,7 +64,6 @@ struct DeleteChatSessionRequest {
     session_id: i64,
 }
 
-#[cfg(feature = "cloudflare_title")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GenerateSessionTitleRequest {
@@ -225,7 +224,6 @@ async fn delete_chat_session_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
-#[cfg(feature = "cloudflare_title")]
 async fn generate_session_title_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<GenerateSessionTitleRequest>,
@@ -724,7 +722,6 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         )
         .route_layer(from_fn(auth_middleware));
 
-    #[cfg(feature = "cloudflare_title")]
     let protected = protected.route(
         "/api/generate_session_title",
         post(generate_session_title_handler),

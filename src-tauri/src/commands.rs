@@ -231,9 +231,8 @@ pub async fn delete_chat_session(
 }
 
 /// Authenticated RPC: generate a concise session title with a remote LLM
-/// (Cloudflare Workers AI, `cloudflare_title` feature). Fire-and-forget: the
-/// caller ignores the result and the offline substr fallback stays if it fails.
-#[cfg(feature = "cloudflare_title")]
+/// (Cloudflare Workers AI). Fire-and-forget: the caller ignores the result and
+/// the offline substr fallback stays if it fails.
 #[tauri::command]
 pub async fn generate_session_title(
     session_id: i64,

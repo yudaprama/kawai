@@ -108,12 +108,10 @@ pub mod rag;
 
 pub use db::*;
 
-/// Generate a concise session title with a remote LLM (Cloudflare Workers AI,
-/// gated behind the `cloudflare_title` feature). The first user message is the
-/// input; the result overwrites the offline substr fallback set by
-/// `append_chat_message`. Safe to call fire-and-forget: any failure is logged
-/// and the existing title is left untouched.
-#[cfg(feature = "cloudflare_title")]
+/// Generate a concise session title with a remote LLM (Cloudflare Workers AI).
+/// The first user message is the input; the result overwrites the offline substr
+/// fallback set by `append_chat_message`. Safe to call fire-and-forget: any
+/// failure is logged and the existing title is left untouched.
 pub async fn generate_session_title(user_id: &str, session_id: i64) -> Result<(), DbError> {
     use rig::client::CompletionClient;
     use rig::completion::CompletionModel;
