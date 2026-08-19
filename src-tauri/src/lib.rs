@@ -61,6 +61,7 @@ pub fn run() {
         commands::list_chat_sessions,
         commands::list_chat_messages,
         commands::append_chat_message,
+        commands::delete_chat_session,
         commands::local_load_model,
         commands::local_chat,
         commands::local_llm_reset,
@@ -96,6 +97,7 @@ pub fn run() {
         commands::list_chat_sessions,
         commands::list_chat_messages,
         commands::append_chat_message,
+        commands::delete_chat_session,
         commands::local_load_model,
         commands::local_chat,
         commands::local_llm_reset,
@@ -121,6 +123,7 @@ pub fn run() {
         commands::list_chat_sessions,
         commands::list_chat_messages,
         commands::append_chat_message,
+        commands::delete_chat_session,
         commands::office_import_file,
         commands::office_list_files,
         commands::office_read_document,
@@ -147,6 +150,7 @@ pub fn run() {
         commands::list_chat_sessions,
         commands::list_chat_messages,
         commands::append_chat_message,
+        commands::delete_chat_session,
         commands::frontend_log
     ]);
 

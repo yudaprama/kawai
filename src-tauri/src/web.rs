@@ -58,6 +58,12 @@ struct AppendChatMessageRequest {
     content: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteChatSessionRequest {
+    session_id: i64,
+}
+
 #[derive(Serialize)]
 struct ErrorResponse {
     error: String,
@@ -199,6 +205,16 @@ async fn append_chat_message_handler(
     logic::append_chat_message(&claims.sub, req.session_id, &req.role, &req.content)
         .await
         .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn delete_chat_session_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<DeleteChatSessionRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    logic::delete_chat_session(&claims.sub, req.session_id)
+        .await
+        .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
@@ -369,6 +385,7 @@ async fn knowledge_context_handler(
 struct KnowledgeSearchRequest {
     session_id: i64,
     query: String,
+    mode: Option<logic::rag::SearchMode>,
 }
 
 #[cfg(feature = "office")]
@@ -376,7 +393,7 @@ async fn knowledge_search_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<KnowledgeSearchRequest>,
 ) -> Result<Json<Vec<logic::rag::RagHit>>, (StatusCode, String)> {
-    logic::rag::knowledge_search(claims.sub, req.session_id, req.query)
+    logic::rag::knowledge_search(claims.sub, req.session_id, req.query, req.mode)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -590,6 +607,10 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route(
             "/api/append_chat_message",
             post(append_chat_message_handler),
+        )
+        .route(
+            "/api/delete_chat_session",
+            post(delete_chat_session_handler),
         )
         .route_layer(from_fn(auth_middleware));
 

@@ -61,10 +61,11 @@ tauri-plugin-dialog = "2"
 #   rig-libsql     — vector store (insert_documents / search)
 # Both pinned to the same rig-core rev as the rest of the graph (4232abdb)
 # so the vector-store seam unifies with kawai-embedding's EmbeddingModel.
-# Chunking is done in-tree (logic::rag) reusing the office extractors
-# (ooxcli/pdfcli) — the separate `ragloader` crate currently does not compile
-# against current text_splitter/jigsawstack, so we avoid the extra dependency.
 kawai-embedding = { path = "../kawai-embedding", optional = true }
+# Markdown-aware + char-based chunking for RAG indexing (office feature only).
+# Replaces the in-tree chunk_text sliding window with text-splitter's
+# MarkdownSplitter (heading-aware locators) / TextSplitter.
+text-splitter = { version = "0.27", features = ["markdown"], optional = true }
 rig-libsql = { path = "../rig-libsql", optional = true }
 # rig-core is a direct dep (not just transitive) because logic::rag uses its
 # `Embed` derive + `EmbeddingsBuilder`/`InsertDocuments` traits directly. Pinned
@@ -83,7 +84,7 @@ litert = ["dep:local-llm", "local-llm/rig-tools"]
 # Office document tools (logic::office): external CLI engines (ooxcli/pdfcli/
 # docbuilder) resolved at runtime — plus the RAG pipeline (kawai-embedding →
 # rig-libsql, with in-tree chunking) for idle-time knowledge indexing.
-office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core"]
+office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter"]
 
 [[bin]]
 name = "kawai"

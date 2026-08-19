@@ -175,11 +175,14 @@ Desktop MVP: local SQLite file, no sync. Post-MVP: sqld for multi-device sync.
 
 ```
 user → (dev bypass / future prod auth) → Rust backend → user_id
-                                                       │
-   local SQLite file ◀─────────────────────────────────┘  Builder::new_local(path)
-   ($KAWAI_DB_DIR/kawai.db)
+                                                        │
+   per-user data directory ◀───────────────────────────┘
+   <data_root>/<user_id>/          ← one folder per user (backup unit)
+   ├── kawai.db                    ← Builder::new_local(path)
+   └── docs/                       ← office store (files + .meta.json)
 ```
 
-- `logic::db_connection(user_id)` opens a per-op local SQLite connection.
-- Default path: `/tmp/kawai-db/kawai.db` (override with `KAWAI_DB_DIR`).
-- Rows scoped by `WHERE user_id = ?`.
+- `logic::db_connection(user_id)` opens a per-op local SQLite connection; the office store defaults into the same per-user dir (`logic::db::user_data_dir`).
+- Data root resolution: `KAWAI_DATA_DIR` env → legacy `KAWAI_DB_DIR` env → injected root (`set_data_root`; Tauri injects the app-data dir) → `/tmp/kawai`. `KAWAI_DOCS_DIR` still overrides the docs root (legacy `<root>/<user_id>/` layout).
+- **One data directory per user — no `user_id` columns, no `WHERE user_id`.** Isolation is structural (per-user folder), matching the future sqld-namespace model.
+- Schema: `sessions(agent_id, title)`, `messages(session_id, role, content)`, `session_files(session_id, file_id)` (which documents a session uploaded — scopes `knowledge_search`), `rag_chunks` + FTS5 mirror (knowledge index owned by files).

@@ -50,6 +50,7 @@ import {
   LineChartIcon,
   PlusIcon,
   Plus,
+  TrashIcon,
   VideoIcon,
   WrenchIcon,
   XIcon,
@@ -835,20 +836,34 @@ export default function App() {
                 </p>
                 <div className="flex flex-col gap-0.5">
                   {group.sessions.map((session) => (
-                    <button
-                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                    <div
+                      className={`group/session flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
                         chat.sessionId === session.id
                           ? "bg-accent text-accent-foreground"
                           : "hover:bg-accent/50"
                       }`}
                       key={session.id}
-                      onClick={() => void chat.selectSession(session.id)}
                     >
-                      {chat.sessionId === session.id && (
-                        <span className="bg-primary size-1.5 shrink-0 rounded-full" />
-                      )}
-                      <span className="truncate">{session.title || `Session #${session.id}`}</span>
-                    </button>
+                      <button
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                        onClick={() => void chat.selectSession(session.id)}
+                        type="button"
+                      >
+                        {chat.sessionId === session.id && (
+                          <span className="bg-primary size-1.5 shrink-0 rounded-full" />
+                        )}
+                        <span className="truncate">{session.title || `Session #${session.id}`}</span>
+                      </button>
+                      <button
+                        aria-label={`Delete ${session.title || `session ${session.id}`}`}
+                        className="text-muted-foreground hover:text-destructive shrink-0 opacity-0 transition-opacity group-hover/session:opacity-100"
+                        onClick={() => void chat.deleteSession(session.id)}
+                        title="Delete session"
+                        type="button"
+                      >
+                        <TrashIcon className="size-3.5" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>

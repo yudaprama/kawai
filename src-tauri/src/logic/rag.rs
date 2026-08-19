@@ -17,9 +17,12 @@
 //! referenced them, so a search covers everything the session has touched, not
 //! just the current message's mentions.
 //!
-//! Retrieval is hybrid: an FTS5 mirror of `rag_chunks` provides BM25 keyword
-//! ranking (exact ids, numbers, codes) alongside vector similarity (paraphrase,
-//! synonyms), fused per-query with Reciprocal Rank Fusion.
+//! Retrieval is hybrid by default: an FTS5 mirror of `rag_chunks` provides BM25
+//! keyword ranking (exact ids, numbers, codes) alongside vector similarity
+//! (paraphrase, synonyms), fused per-query with Reciprocal Rank Fusion.
+//! [`knowledge_search`] also accepts an optional [`SearchMode`] — `semantic`
+//! (vector only) or `keyword` (BM25 only, skips the embedder) — so the agent
+//! can steer retrieval when it knows the query shape.
 
 use std::collections::HashMap;
 
@@ -30,6 +33,7 @@ use rig_core::vector_store::{InsertDocuments, VectorStoreIndex};
 use rig_libsql::{Column, ColumnValue, LibsqlSearchFilter, LibsqlVectorStore, LibsqlVectorStoreTable};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use text_splitter::{ChunkConfig, MarkdownSplitter, TextSplitter};
 
 use kawai_embedding::TenantAwareEmbedder;
 
@@ -135,25 +139,80 @@ async fn session_file_ids(
     Ok(out)
 }
 
-/// Split text into overlapping character windows. Keeps a single short doc as
-/// one chunk; long docs are cut at `CHUNK_CHARS` with `CHUNK_OVERLAP` overlap
-/// so context spanning a boundary is still retrievable.
-fn chunk_text(text: &str, max: usize, overlap: usize) -> Vec<String> {
-    let chars: Vec<char> = text.chars().collect();
-    if chars.len() <= max {
-        return vec![text.to_string()];
-    }
+/// A single heading found by scanning markdown text, with its char offset.
+struct Heading {
+    char_offset: usize,
+    text: String,
+}
+
+/// Scan markdown text for `#`-prefixed headings, returning their char offsets
+/// and trimmed titles. Used to attach the nearest preceding heading as each
+/// chunk's locator (e.g. "Invoice Summary" instead of "chunk-3").
+fn scan_headings(text: &str) -> Vec<Heading> {
     let mut out = Vec::new();
-    let mut start = 0;
-    while start < chars.len() {
-        let end = (start + max).min(chars.len());
-        out.push(chars[start..end].iter().collect());
-        if end == chars.len() {
-            break;
+    let mut offset = 0usize;
+    for line in text.split_inclusive('\n') {
+        let line_chars = line.chars().count();
+        let bare = line.trim_end_matches(['\n', '\r']);
+        let trimmed = bare.trim_start();
+        if let Some(rest) = trimmed.strip_prefix('#') {
+            let level = 1 + rest.chars().take_while(|c| *c == '#').count();
+            if level <= 6 {
+                let title = trimmed.trim_start_matches('#').trim();
+                if !title.is_empty() {
+                    out.push(Heading {
+                        char_offset: offset,
+                        text: title.to_string(),
+                    });
+                }
+            }
         }
-        start = end.saturating_sub(overlap);
+        offset += line_chars;
     }
     out
+}
+
+/// Find the nearest preceding heading for a given char offset. Returns the
+/// heading title, or a fallback `"section {idx}"` if none found.
+fn locator_for(headings: &[Heading], char_offset: usize, fallback_idx: usize) -> String {
+    let idx = headings.partition_point(|h| h.char_offset <= char_offset);
+    headings
+        .get(idx.wrapping_sub(1))
+        .map(|h| h.text.clone())
+        .unwrap_or_else(|| format!("section {fallback_idx}"))
+}
+
+/// Chunk markdown text using `MarkdownSplitter` (respects heading boundaries)
+/// and attach the nearest preceding heading as each chunk's locator.
+fn chunk_markdown(text: &str, max_chars: usize, overlap: usize) -> Vec<(String, String)> {
+    let config = ChunkConfig::new(max_chars)
+        .with_overlap(overlap)
+        .expect("overlap is clamped below capacity");
+    let splitter = MarkdownSplitter::new(config);
+    let headings = scan_headings(text);
+    splitter
+        .chunk_char_indices(text)
+        .enumerate()
+        .map(|(i, idx)| {
+            (
+                locator_for(&headings, idx.char_offset, i),
+                idx.chunk.to_string(),
+            )
+        })
+        .collect()
+}
+
+/// Chunk plain text (PDF pages, .txt, etc.) using `TextSplitter`.
+fn chunk_plain(text: &str, max_chars: usize, overlap: usize) -> Vec<(String, String)> {
+    let config = ChunkConfig::new(max_chars)
+        .with_overlap(overlap)
+        .expect("overlap is clamped below capacity");
+    let splitter = TextSplitter::new(config);
+    splitter
+        .chunk_char_indices(text)
+        .enumerate()
+        .map(|(i, idx)| (format!("section {i}"), idx.chunk.to_string()))
+        .collect()
 }
 
 /// Extract full text from a stored office file, dispatching by extension to the
@@ -306,6 +365,20 @@ pub struct RagHit {
     pub content: String,
 }
 
+/// Retrieval strategy for [`knowledge_search`]. Deserialized from the
+/// model/RPC-supplied string; unknown values are rejected by serde (whitelist).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchMode {
+    /// Vector similarity fused with BM25 via RRF (the default).
+    #[default]
+    Hybrid,
+    /// Vector similarity only — natural-language questions about concepts.
+    Semantic,
+    /// BM25 only — exact codes, names, numbers; skips the embedder entirely.
+    Keyword,
+}
+
 /// Index one stored office file for vector search, then associate it with the
 /// uploading session (`session_files`). Called fire-and-forget right after
 /// import from the files panel. Returns the number of chunks indexed, or
@@ -317,19 +390,23 @@ pub async fn office_index_file(
     session_id: Option<i64>,
     file_id: String,
 ) -> Result<usize, String> {
+    let (_file_path, info) =
+        crate::logic::office::store::resolve(&user_id, &file_id).map_err(|e| format!("resolve: {e}"))?;
+
     let text = match extract_text(&user_id, &file_id).await? {
         Some(t) if !t.trim().is_empty() => t,
         _ => return Ok(0),
     };
 
-    let chunks = chunk_text(&text, CHUNK_CHARS, CHUNK_OVERLAP);
+    let chunks = match info.ext.as_str() {
+        "pdf" => chunk_plain(&text, CHUNK_CHARS, CHUNK_OVERLAP),
+        _ => chunk_markdown(&text, CHUNK_CHARS, CHUNK_OVERLAP),
+    };
     if chunks.is_empty() {
         return Ok(0);
     }
 
-    let source = crate::logic::office::store::resolve(&user_id, &file_id)
-        .map(|(_, info)| info.original_name)
-        .unwrap_or_else(|_| file_id.clone());
+    let source = info.original_name;
 
     let model = kawai_embedding::build_providers_from_env();
     let conn = crate::logic::db_connection(&user_id)
@@ -352,12 +429,12 @@ pub async fn office_index_file(
     let docs: Vec<RagChunk> = chunks
         .into_iter()
         .enumerate()
-        .map(|(i, content)| RagChunk {
+        .map(|(i, (locator, content))| RagChunk {
             id: format!("{file_id}#c{i}"),
             content,
             file_id: file_id.clone(),
             source: source.clone(),
-            locator: format!("chunk-{i}"),
+            locator,
         })
         .collect();
 
@@ -378,18 +455,21 @@ pub async fn office_index_file(
 
 /// Retrieve the top-k most relevant indexed chunks for a query, scoped to the
 /// files the session has uploaded (`session_files`). The session id is bound
-/// server-side (agent tool / wrapper state) — callers only supply the query.
-/// Retrieval is hybrid — vector similarity fused with FTS5/BM25 keyword
-/// ranking via RRF — so exact codes and numbers also hit. Empty result means
-/// nothing is indexed for this session yet.
+/// server-side (agent tool / wrapper state) — callers only supply the query
+/// and an optional [`SearchMode`] (`None` = hybrid). Hybrid fuses vector
+/// similarity with FTS5/BM25 keyword ranking via RRF so exact codes and
+/// numbers also hit; `keyword` skips the embedder, `semantic` skips the FTS
+/// side. Empty result means nothing is indexed for this session yet.
 pub async fn knowledge_search(
     user_id: String,
     session_id: i64,
     query: String,
+    mode: Option<SearchMode>,
 ) -> Result<Vec<RagHit>, String> {
     if query.trim().is_empty() {
         return Ok(Vec::new());
     }
+    let mode = mode.unwrap_or_default();
     const K: u64 = 8;
 
     let conn = crate::logic::db_connection(&user_id)
@@ -402,45 +482,64 @@ pub async fn knowledge_search(
         return Ok(Vec::new());
     }
 
-    let model = kawai_embedding::build_providers_from_env();
-    let store: LibsqlVectorStore<TenantAwareEmbedder, RagChunk> =
-        LibsqlVectorStore::new(conn.clone(), &model)
-            .await
-            .map_err(|e| format!("store: {e}"))?;
-    let index = store.index(model);
-
-    let mut file_filter = LibsqlSearchFilter::eq("file_id", json!(candidates[0]));
-    for fid in &candidates[1..] {
-        file_filter = file_filter.or(LibsqlSearchFilter::eq("file_id", json!(fid)));
-    }
-
-    let req = VectorSearchRequest::builder()
-        .query(&query)
-        .samples(K)
-        .filter(file_filter)
-        .build();
-
-    let results = index
-        .top_n::<RagChunk>(req)
-        .await
-        .map_err(|e| format!("search: {e}"))?;
-
-    // Lexical side is best-effort: a missing/broken FTS mirror must never fail
-    // the search — degrade to vector-only.
-    let mut lexical: Vec<RagChunk> = Vec::new();
-    if let Some(match_query) = fts_match_query(&query) {
-        if ensure_fts(&conn).await.is_ok() {
-            lexical = bm25_search(&conn, &candidates, &match_query, K as usize)
+    // Vector side — skipped entirely in keyword mode (no embedder round-trip).
+    let vector: Vec<RagChunk> = if mode == SearchMode::Keyword {
+        Vec::new()
+    } else {
+        let model = kawai_embedding::build_providers_from_env();
+        let store: LibsqlVectorStore<TenantAwareEmbedder, RagChunk> =
+            LibsqlVectorStore::new(conn.clone(), &model)
                 .await
-                .unwrap_or_default();
-        }
-    }
+                .map_err(|e| format!("store: {e}"))?;
+        let index = store.index(model);
 
-    let docs = rrf_fuse(
-        results.into_iter().map(|(_, _, doc)| doc).collect(),
-        lexical,
-        K as usize,
-    );
+        let mut file_filter = LibsqlSearchFilter::eq("file_id", json!(candidates[0]));
+        for fid in &candidates[1..] {
+            file_filter = file_filter.or(LibsqlSearchFilter::eq("file_id", json!(fid)));
+        }
+
+        let req = VectorSearchRequest::builder()
+            .query(&query)
+            .samples(K)
+            .filter(file_filter)
+            .build();
+
+        index
+            .top_n::<RagChunk>(req)
+            .await
+            .map_err(|e| format!("search: {e}"))?
+            .into_iter()
+            .map(|(_, _, doc)| doc)
+            .collect()
+    };
+
+    // Lexical side. In hybrid mode it is best-effort: a missing/broken FTS
+    // mirror must never fail the search — degrade to vector-only. In keyword
+    // mode it IS the requested retrieval, so failures surface; an untokenizable
+    // query just yields no matches.
+    let lexical: Vec<RagChunk> = if mode == SearchMode::Semantic {
+        Vec::new()
+    } else {
+        match fts_match_query(&query) {
+            Some(match_query) => {
+                if mode == SearchMode::Hybrid {
+                    if ensure_fts(&conn).await.is_ok() {
+                        bm25_search(&conn, &candidates, &match_query, K as usize)
+                            .await
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    ensure_fts(&conn).await?;
+                    bm25_search(&conn, &candidates, &match_query, K as usize).await?
+                }
+            }
+            None => Vec::new(),
+        }
+    };
+
+    let docs = rrf_fuse(vector, lexical, K as usize);
 
     Ok(docs
         .into_iter()

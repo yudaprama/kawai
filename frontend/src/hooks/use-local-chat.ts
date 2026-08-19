@@ -212,6 +212,31 @@ export function useLocalChat(agentId: string) {
     patch({ sessionId: null, messages: [], stats: "" });
   }, [patch]);
 
+  /** Delete a session (and its messages). Deleting the active session starts
+   * a fresh chat; the model context is cleared either way. */
+  const deleteSession = useCallback(
+    async (sessionId: number) => {
+      if (streamCtrl.current) return;
+      try {
+        await call("delete_chat_session", { sessionId });
+      } catch (err) {
+        console.error("[delete_chat_session]", errText(err));
+        return;
+      }
+      if (sessionIdRef.current === sessionId) {
+        try {
+          await call("local_llm_reset");
+        } catch (err) {
+          console.error("[local_llm_reset]", errText(err));
+        }
+        sessionIdRef.current = null;
+        patch({ sessionId: null, messages: [], stats: "" });
+      }
+      void loadSessions();
+    },
+    [patch, loadSessions],
+  );
+
   const toggleThinking = useCallback(async () => {
     const next = !state.thinking;
     patch({ thinking: next });
@@ -414,6 +439,7 @@ export function useLocalChat(agentId: string) {
     newChat,
     selectSession,
     selectAgent,
+    deleteSession,
     toggleThinking,
     unloadModel,
     reloadModel: loadModel,

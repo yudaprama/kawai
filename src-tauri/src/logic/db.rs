@@ -358,6 +358,26 @@ pub async fn list_chat_messages(
     Ok(out)
 }
 
+/// Delete a session and its messages (existence verified first). Indexed
+/// knowledge chunks are untouched — they belong to files, not sessions;
+/// `session_files` rows go with the session, which may orphan chunks of files
+/// no other session references (the uploader can re-index to reclaim space).
+pub async fn delete_chat_session(user_id: &str, session_id: i64) -> Result<(), DbError> {
+    let conn = db_connection(user_id).await?;
+    ensure_chat_schema(&conn).await?;
+    chat_session_owned(&conn, session_id).await?;
+    conn.execute(
+        "DELETE FROM session_files WHERE session_id = ?",
+        vec![session_id],
+    )
+    .await?;
+    conn.execute("DELETE FROM messages WHERE session_id = ?", vec![session_id])
+        .await?;
+    conn.execute("DELETE FROM sessions WHERE id = ?", vec![session_id])
+        .await?;
+    Ok(())
+}
+
 /// Append a message to a session (existence verified). The first user message
 /// seeds the session title.
 pub async fn append_chat_message(

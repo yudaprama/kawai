@@ -218,6 +218,18 @@ pub async fn append_chat_message(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: delete a chat session and its messages.
+#[tauri::command]
+pub async fn delete_chat_session(
+    session_id: i64,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::delete_chat_session(&user_id, session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: load an on-device model (`.litertlm`). Identity is
 /// resolved at the edge as usual; the engine lives in `logic.rs`. When
 /// `model_path` is omitted the backend resolves it via `logic::resolve_model_path`.
@@ -416,10 +428,11 @@ pub async fn office_index_file(
 pub async fn knowledge_search(
     session_id: i64,
     query: String,
+    mode: Option<logic::rag::SearchMode>,
     session: State<'_, Session>,
 ) -> Result<Vec<logic::rag::RagHit>, String> {
     let user_id = session_user_id(&session)?;
-    logic::rag::knowledge_search(user_id, session_id, query)
+    logic::rag::knowledge_search(user_id, session_id, query, mode)
         .await
         .map_err(|e| e.to_string())
 }

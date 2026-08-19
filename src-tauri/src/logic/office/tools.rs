@@ -42,11 +42,12 @@ impl PortableTool for ListFilesTool {
 #[serde(rename_all = "camelCase")]
 pub struct KnowledgeSearchArgs {
     pub query: String,
+    pub mode: Option<crate::logic::rag::SearchMode>,
 }
 
 /// Hybrid (vector + BM25) search over the documents this session uploaded.
 /// `user_id` + `session_id` are bound at construction (server-side state) —
-/// the model only supplies the query.
+/// the model only supplies the query (and an optional retrieval mode).
 pub struct KnowledgeSearchTool(pub String, pub i64);
 
 impl PortableTool for KnowledgeSearchTool {
@@ -63,7 +64,12 @@ impl PortableTool for KnowledgeSearchTool {
         schema!({
             "type": "object",
             "properties": {
-                "query": { "type": "string", "description": "What to look for — keywords, codes, or a question." }
+                "query": { "type": "string", "description": "What to look for — keywords, codes, or a question." },
+                "mode": {
+                    "type": "string",
+                    "enum": ["hybrid", "semantic", "keyword"],
+                    "description": "Retrieval strategy. keyword: exact identifiers, codes, numbers, names (fastest). semantic: conceptual or rephrased questions where wording may differ. hybrid: combine both (default — use when unsure)."
+                }
             },
             "required": ["query"]
         })
@@ -74,6 +80,7 @@ impl PortableTool for KnowledgeSearchTool {
             self.0.clone(),
             self.1,
             args.query,
+            args.mode,
         )
         .await
         .map_err(oerr)?;
