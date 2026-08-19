@@ -466,6 +466,64 @@ pub async fn list_session_files(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: the knowledge panel's single list — office files with
+/// RAG index status and active-session association.
+#[cfg(feature = "office")]
+#[tauri::command]
+pub async fn knowledge_list(
+    session_id: Option<i64>,
+    session: State<'_, Session>,
+) -> Result<Vec<logic::rag::KnowledgeFileInfo>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::rag::knowledge_list(&user_id, session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: add library documents to the active session so the
+/// agent can search them (indexing any file that has no chunks yet).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub async fn knowledge_add_to_session(
+    session_id: i64,
+    file_ids: Vec<String>,
+    session: State<'_, Session>,
+) -> Result<usize, String> {
+    let user_id = session_user_id(&session)?;
+    logic::rag::knowledge_add_to_session(&user_id, session_id, &file_ids)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: ingest a YouTube video into the knowledge base
+/// (transcript → markdown document → indexed; deduped per video).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub async fn knowledge_import_youtube(
+    url: String,
+    session_id: Option<i64>,
+    session: State<'_, Session>,
+) -> Result<logic::office::OfficeFile, String> {
+    let user_id = session_user_id(&session)?;
+    logic::rag::knowledge_import_youtube(&user_id, session_id, &url)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: delete a stored document plus everything indexed from
+/// it (chunks, vectors, session associations).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub async fn office_delete_file(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::rag::office_delete_file(&user_id, &file_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: export a stored file to the filesystem.
 #[cfg(feature = "office")]
 #[tauri::command]

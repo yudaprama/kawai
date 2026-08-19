@@ -1,4 +1,3 @@
-import { nanoid } from "nanoid";
 import { useCallback, useEffect, useState } from "react";
 import {
   Conversation,
@@ -6,28 +5,15 @@ import {
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
-import {
-  Attachment,
-  AttachmentPreview,
-  AttachmentRemove,
-  Attachments,
-} from "@/components/ai-elements/attachments";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
   PromptInput,
-  PromptInputActionAddAttachments,
-  PromptInputActionAddScreenshot,
-  PromptInputActionMenu,
-  PromptInputActionMenuContent,
-  PromptInputActionMenuTrigger,
   PromptInputBody,
   PromptInputFooter,
-  PromptInputHeader,
   PromptInputProvider,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputTools,
-  usePromptInputAttachments,
   usePromptInputController,
 } from "@/components/ai-elements/prompt-input";
 import { Tool, ToolContent, ToolHeader } from "@/components/ai-elements/tool";
@@ -44,7 +30,7 @@ import { useCopyButton } from "@/hooks/use-copy-button";
 import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useLocalChat } from "@/hooks/use-local-chat";
 import { platform, runningInTauri } from "@/platform";
-import { call, errText, type OfficeFileInfo } from "@/lib/api";
+import { call, errText, type KnowledgeFileInfo, type OfficeFileInfo } from "@/lib/api";
 import type { UIMessage } from "@/lib/ai-types";
 import {
   BookOpenIcon,
@@ -53,12 +39,11 @@ import {
   CloudSunIcon,
   CopyIcon,
   FileTextIcon,
-  ImageIcon,
   LineChartIcon,
   MonitorIcon,
   MoonIcon,
   PlusIcon,
-  Plus,
+  RotateCcwIcon,
   SunIcon,
   TrashIcon,
   VideoIcon,
@@ -171,13 +156,6 @@ function MessagePartView({ message }: { message: UIMessage }) {
   );
 }
 
-/** Extracts the raw base64 payload (no data: prefix) from a data URL. */
-function dataUrlB64(url: string): string | null {
-  const i = url.indexOf(",");
-  if (!url.startsWith("data:") || i === -1) return null;
-  return url.slice(i + 1);
-}
-
 /** Reads a File as a base64 string (chunked to survive large files). */
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -274,44 +252,158 @@ function isYouTubeUrl(raw: string): boolean {
   }
 }
 
-/** Extracts the 11-char YouTube video id from a URL (or null). */
-function youtubeId(raw: string): string | null {
-  try {
-    const u = new URL(raw.trim());
-    if (u.hostname.toLowerCase() === "youtu.be") {
-      const id = u.pathname.split("/").filter(Boolean)[0];
-      return id?.length === 11 ? id : null;
-    }
-    return u.searchParams.get("v");
-  } catch {
-    return null;
-  }
+/** Decodes a `data:` URL back into a File (for routing pasted images into the
+ * knowledge import pipeline). */
+function dataUrlToFile(dataUrl: string, name: string): File {
+  const [meta, b64] = dataUrl.split(",", 2);
+  const mime = meta.slice(5, meta.indexOf(";")) || "application/octet-stream";
+  const binary = atob(b64 ?? "");
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], name, { type: mime });
 }
 
-type KnowledgeSource = { kind: "office"; name: string; sourcePath?: string; file?: File } | { kind: "image"; name: string } | { kind: "unsupported"; name: string };
+type KnowledgeSource =
+  | { kind: "file"; name: string; sourcePath?: string; file?: File }
+  | { kind: "unsupported"; name: string };
 
-/** Classify a picked file into what the Files panel should do with it. */
+/** Classify a picked file into what the knowledge panel should do with it. */
 function classifySource(name: string, src: { path?: string; file?: File }): KnowledgeSource {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  if (OFFICE_EXTS.has(ext)) {
-    return { kind: "office", name, ...(src.path ? { sourcePath: src.path } : { file: src.file }) };
+  if (OFFICE_EXTS.has(ext) || IMAGE_EXTS.has(ext)) {
+    return { kind: "file", name, ...(src.path ? { sourcePath: src.path } : { file: src.file }) };
   }
-  if (IMAGE_EXTS.has(ext)) return { kind: "image", name };
   return { kind: "unsupported", name };
 }
 
-/** The composer with image attachments (knowledge lives in the files panel —
- * the agent searches it via its `knowledge_search` tool). */
+/** RAG index state shown under a document's name ("Indexing…", "12 chunks", …). */
+function KnowledgeStatusBadge({ file }: { file: KnowledgeFileInfo }) {
+  if (file.status === "indexing") {
+    return (
+      <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
+        <Spinner className="size-3" />
+        Indexing…
+      </span>
+    );
+  }
+  if (file.status === "failed") {
+    return (
+      <span className="text-destructive text-xs" title={file.error ?? undefined}>
+        Index failed
+      </span>
+    );
+  }
+  if (file.status === "ready") {
+    return file.chunks > 0 ? (
+      <span className="text-muted-foreground text-xs">{file.chunks} chunks</span>
+    ) : (
+      <span className="text-muted-foreground/70 text-xs" title="No extractable text found">
+        no text
+      </span>
+    );
+  }
+  return <span className="text-muted-foreground/70 text-xs">not indexed</span>;
+}
+
+/** One knowledge-panel document row: name, size/date/index state + scope
+ * actions (add/remove to the active session, retry, delete). */
+function KnowledgeFileRow({
+  file,
+  inSessionList,
+  confirmDelete,
+  onAdd,
+  onRemove,
+  onRetry,
+  onDelete,
+}: {
+  file: KnowledgeFileInfo;
+  inSessionList: boolean;
+  confirmDelete: boolean;
+  onAdd: (file: KnowledgeFileInfo) => void;
+  onRemove: (file: KnowledgeFileInfo) => void;
+  onRetry: (file: KnowledgeFileInfo) => void;
+  onDelete: (file: KnowledgeFileInfo) => void;
+}) {
+  return (
+    <div className="bg-card group/file flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
+      {inSessionList ? (
+        <CheckIcon className="text-green-500 size-4 shrink-0" />
+      ) : (
+        <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm">{file.originalName}</p>
+        <p className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
+          <span>{formatBytes(file.bytes)}</span>
+          <span aria-hidden>·</span>
+          <span>{new Date(file.createdAt * 1000).toLocaleDateString()}</span>
+          <span aria-hidden>·</span>
+          <KnowledgeStatusBadge file={file} />
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/file:opacity-100">
+        {file.status === "failed" && (
+          <button
+            aria-label={`Retry indexing ${file.originalName}`}
+            className="text-muted-foreground hover:text-foreground rounded p-1"
+            onClick={() => onRetry(file)}
+            title={file.error ? `Retry indexing — last error: ${file.error}` : "Retry indexing"}
+            type="button"
+          >
+            <RotateCcwIcon className="size-3.5" />
+          </button>
+        )}
+        {inSessionList ? (
+          <button
+            aria-label={`Remove ${file.originalName} from this session`}
+            className="text-muted-foreground hover:text-foreground rounded p-1"
+            onClick={() => onRemove(file)}
+            title="Remove from this session — the agent stops searching it here"
+            type="button"
+          >
+            <XIcon className="size-3.5" />
+          </button>
+        ) : (
+          <button
+            aria-label={`Add ${file.originalName} to this session`}
+            className="text-muted-foreground hover:text-foreground rounded p-1"
+            onClick={() => onAdd(file)}
+            title="Add to this session — makes this document searchable by the agent in this chat"
+            type="button"
+          >
+            <PlusIcon className="size-3.5" />
+          </button>
+        )}
+        <button
+          aria-label={`Delete ${file.originalName}`}
+          className={`rounded p-1 ${
+            confirmDelete ? "text-destructive" : "text-muted-foreground hover:text-destructive"
+          }`}
+          onClick={() => onDelete(file)}
+          title={confirmDelete ? "Click again to confirm — deletes the document everywhere" : "Delete document"}
+          type="button"
+        >
+          <TrashIcon className="size-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The composer (text + speech only — images and documents live in the
+ * knowledge panel; pasted images are routed there via `onImageToKnowledge`). */
 function ChatComposer({
   agentName,
   status,
   onStop,
   onSubmit,
+  onImageToKnowledge,
 }: {
   agentName: string;
   status: ReturnType<typeof useLocalChat>["status"];
   onStop: () => void;
-  onSubmit: (text: string, imageB64?: string) => void;
+  onSubmit: (text: string) => void;
+  onImageToKnowledge: (dataUrl: string, name: string) => void;
 }) {
   return (
     <PromptInputProvider>
@@ -320,6 +412,7 @@ function ChatComposer({
         onStop={onStop}
         status={status}
         onSubmit={onSubmit}
+        onImageToKnowledge={onImageToKnowledge}
       />
     </PromptInputProvider>
   );
@@ -330,75 +423,51 @@ function ChatComposerInner({
   status,
   onStop,
   onSubmit,
+  onImageToKnowledge,
 }: {
   agentName: string;
   status: ReturnType<typeof useLocalChat>["status"];
   onStop: () => void;
-  onSubmit: (text: string, imageB64?: string) => void;
+  onSubmit: (text: string) => void;
+  onImageToKnowledge: (dataUrl: string, name: string) => void;
 }) {
-  const attachments = usePromptInputAttachments();
   const controller = usePromptInputController();
 
   const handleTranscription = useCallback(
     (transcript: string) => {
       // Append recognized speech to the current draft, separated by a space.
       controller.textInput.setInput(
-        (controller.textInput.value.trimEnd() + " " + transcript).trimStart()
+        (controller.textInput.value.trimEnd() + " " + transcript).trimStart(),
       );
     },
     [controller]
   );
 
   const handleSubmit = useCallback(
-    async (message: { text: string; files: { url: string; mediaType: string }[] }) => {
-      const image = message.files.find((f) => f.mediaType.startsWith("image/"));
-      const imageB64 =
-        image && image.url.startsWith("data:") ? (dataUrlB64(image.url) ?? undefined) : undefined;
-
-      if (message.text.trim() || imageB64) onSubmit(message.text, imageB64);
+    async (message: { text: string; files: { url: string; mediaType: string; fileName?: string }[] }) => {
+      // The vendored textarea still captures pasted images into attachment
+      // state; the knowledge panel is the single home for images, so route
+      // them there instead of dropping them silently.
+      for (const file of message.files) {
+        if (file.mediaType.startsWith("image/") && file.url.startsWith("data:")) {
+          onImageToKnowledge(file.url, file.fileName ?? "pasted-image");
+        }
+      }
+      if (message.text.trim()) onSubmit(message.text);
     },
-    [onSubmit],
+    [onImageToKnowledge, onSubmit],
   );
 
   return (
     <PromptInput
       className="mx-auto max-w-2xl [&_[data-slot=input-group]]:flex-col [&_[data-slot=input-group]]:items-stretch [&_[data-slot=input-group]]:gap-1 [&_[data-slot=input-group]]:overflow-visible [&_[data-slot=input-group]]:rounded-3xl [&_[data-slot=input-group]]:px-2 [&_[data-slot=input-group]]:py-1.5"
-      globalDrop
-      multiple
       onSubmit={handleSubmit}
     >
-      <PromptInputHeader>
-        {attachments.files.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 px-1 pt-1">
-            <Attachments variant="inline">
-              {attachments.files.map((attachment) => (
-                <Attachment
-                  data={attachment}
-                  key={attachment.id}
-                  onRemove={() => attachments.remove(attachment.id)}
-                >
-                  <AttachmentPreview />
-                  <AttachmentRemove />
-                </Attachment>
-              ))}
-            </Attachments>
-          </div>
-        )}
-      </PromptInputHeader>
       <PromptInputBody>
         <PromptInputTextarea placeholder={`Message ${agentName}…`} />
       </PromptInputBody>
       <PromptInputFooter>
         <PromptInputTools>
-          <PromptInputActionMenu>
-            <PromptInputActionMenuTrigger>
-              <Plus className="size-4" />
-            </PromptInputActionMenuTrigger>
-            <PromptInputActionMenuContent>
-              <PromptInputActionAddAttachments label="Add photos or files" />
-              <PromptInputActionAddScreenshot label="Take screenshot" />
-            </PromptInputActionMenuContent>
-          </PromptInputActionMenu>
           <SpeechInput
             className="size-8 [&_svg]:size-4"
             onTranscriptionChange={handleTranscription}
@@ -424,22 +493,68 @@ export default function App() {
   const inSession = chat.sessionId != null || chat.messages.length > 0;
 
   const knowledge = useKnowledgeFiles(true);
+  const sessionFiles =
+    chat.sessionId != null ? knowledge.files.filter((f) => f.inSession) : [];
   const [importing, setImporting] = useState(false);
+  const [linking, setLinking] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
-  const [pending, setPending] = useState<{ id: string; kind: "image" | "link"; name: string; url?: string }[]>([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  /** Two-step delete confirm auto-dismisses after 3s. */
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const t = setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDeleteId]);
+
+  /** Shared import + tracked-index pipeline for documents and images. */
+  const importKnowledgeFiles = useCallback(
+    async (items: { sourcePath?: string; file?: File; name: string }[]) => {
+      const importedIds: string[] = [];
+      for (const item of items) {
+        let imported: OfficeFileInfo | undefined;
+        if (item.sourcePath) {
+          imported = await call<OfficeFileInfo>("office_import_file", { sourcePath: item.sourcePath });
+        } else if (item.file) {
+          const dataBase64 = await fileToBase64(item.file);
+          imported = await call<OfficeFileInfo>("office_import_file", { dataBase64, name: item.name });
+        }
+        if (imported?.id) importedIds.push(imported.id);
+      }
+      if (importedIds.length) {
+        // Tracked RAG indexing; associates the files with the active session
+        // so the agent's knowledge_search sees them. The runs are dispatched
+        // first (the backend records `indexing` immediately), then the list
+        // refresh shows the new files — patched optimistically so no refresh
+        // can race the status writes and flash "not indexed".
+        const runs = importedIds.map((fileId) =>
+          call<number>("office_index_file", {
+            sessionId: chat.sessionId,
+            fileId,
+          })
+            .catch((e) => console.warn("[office_index_file]", errText(e)))
+            .finally(() => void knowledge.refresh()),
+        );
+        await knowledge.refresh();
+        knowledge.markIndexing(importedIds);
+        void Promise.allSettled(runs);
+      }
+    },
+    [chat.sessionId, knowledge],
+  );
 
   /**
-   * Imports picked documents/images into the knowledge store. In Tauri the
+   * Imports picked documents/images into the knowledge base. In Tauri the
    * native dialog returns absolute paths (imported via `sourcePath`); in a
-   * plain browser we fall back to `File` → base64. Imported documents are
-   * indexed (RAG) and associated with the active session — the agent then
-   * finds them via its `knowledge_search` tool.
+   * plain browser we fall back to `File` → base64. Everything is indexed
+   * (RAG) and associated with the active session — the agent then finds it
+   * via its `knowledge_search` tool. Indexing is tracked: the row shows
+   * `Indexing…` immediately and settles to chunks/failed on refresh.
    */
   const addKnowledgeFiles = useCallback(async () => {
     setImporting(true);
     setImportError(null);
-    const toImportOffice: { sourcePath?: string; file?: File; name: string }[] = [];
-    const toPending: { id: string; kind: "image" | "link"; name: string }[] = [];
+    const toImport: { sourcePath?: string; file?: File; name: string }[] = [];
     let picked: KnowledgeSource[];
     try {
       if (runningInTauri) {
@@ -457,43 +572,118 @@ export default function App() {
         picked = pickedFiles.map((f) => classifySource(f.name, { file: f }));
       }
       for (const item of picked) {
-        if (item.kind === "office") {
-          toImportOffice.push({ name: item.name, sourcePath: item.sourcePath, file: item.file });
-        } else if (item.kind === "image") {
-          toPending.push({ id: nanoid(), kind: "image", name: item.name });
+        if (item.kind === "file") {
+          toImport.push({ name: item.name, sourcePath: item.sourcePath, file: item.file });
         } else {
           setImportError(`Unsupported file type: ${item.name}`);
         }
       }
-      for (const item of toImportOffice) {
-        let imported: OfficeFileInfo | undefined;
-        if (item.sourcePath) {
-          imported = await call<OfficeFileInfo>("office_import_file", { sourcePath: item.sourcePath });
-        } else if (item.file) {
-          const dataBase64 = await fileToBase64(item.file);
-          imported = await call<OfficeFileInfo>("office_import_file", { dataBase64, name: item.name });
-        }
-        // Fire-and-forget RAG indexing; associates the file with the active
-        // session so the agent's knowledge_search sees it.
-        if (imported?.id) {
-          void call<number>("office_index_file", {
-            sessionId: chat.sessionId,
-            fileId: imported.id,
-          }).catch((e) => console.warn("[office_index_file]", errText(e)));
-        }
-      }
-      if (toPending.length) setPending((prev) => [...prev, ...toPending]);
-      await knowledge.refresh();
-      if (chat.sessionId) await knowledge.refreshSessionFiles(chat.sessionId);
+      await importKnowledgeFiles(toImport);
     } catch (err) {
       console.warn("[office_import_file]", errText(err));
       setImportError(errText(err));
     } finally {
       setImporting(false);
     }
-  }, [chat.sessionId, knowledge.refresh, knowledge.refreshSessionFiles]);
+  }, [importKnowledgeFiles]);
 
-  /** Prompts for a YouTube URL and adds it to the pending (session-only) list. */
+  /** Pasted-image entry from the composer → the knowledge base (the single
+   * home for images). Derives the extension from the data-URL mime type. */
+  const imageToKnowledge = useCallback(
+    async (dataUrl: string, name: string) => {
+      const mime = dataUrl.slice(5, dataUrl.indexOf(";"));
+      const ext = mime.split("/")[1] ?? "png";
+      try {
+        await importKnowledgeFiles([
+          { name: `${name}.${ext}`, file: dataUrlToFile(dataUrl, `${name}.${ext}`) },
+        ]);
+      } catch (err) {
+        setImportError(errText(err));
+      }
+    },
+    [importKnowledgeFiles],
+  );
+
+  /** Add a library document to the active session (indexes it if needed). */
+  const addToSession = useCallback(
+    async (file: KnowledgeFileInfo) => {
+      if (chat.sessionId == null) return;
+      knowledge.markInSession([file.id], true);
+      if (file.chunks === 0 || file.status === "failed") knowledge.markIndexing([file.id]);
+      try {
+        await call<number>("knowledge_add_to_session", {
+          sessionId: chat.sessionId,
+          fileIds: [file.id],
+        });
+      } catch (err) {
+        setImportError(errText(err));
+      } finally {
+        await knowledge.refresh();
+      }
+    },
+    [chat.sessionId, knowledge],
+  );
+
+  /** Disassociate a document from the active session (orphaned chunks are
+   * purged by the backend). */
+  const removeFromSession = useCallback(
+    async (file: KnowledgeFileInfo) => {
+      if (chat.sessionId == null) return;
+      knowledge.markInSession([file.id], false);
+      try {
+        await call<number>("knowledge_forget", {
+          sessionId: chat.sessionId,
+          fileIds: [file.id],
+        });
+      } catch (err) {
+        setImportError(errText(err));
+      } finally {
+        await knowledge.refresh();
+      }
+    },
+    [chat.sessionId, knowledge],
+  );
+
+  /** Re-run indexing for a failed document. */
+  const retryIndex = useCallback(
+    async (file: KnowledgeFileInfo) => {
+      knowledge.markIndexing([file.id]);
+      try {
+        await call<number>("office_index_file", {
+          sessionId: chat.sessionId,
+          fileId: file.id,
+        });
+      } catch (err) {
+        // The row's `failed` status (after refresh) surfaces the cause.
+        console.warn("[office_index_file]", errText(err));
+      } finally {
+        await knowledge.refresh();
+      }
+    },
+    [chat.sessionId, knowledge],
+  );
+
+  /** Delete a document everywhere; first click arms, second click confirms. */
+  const deleteFile = useCallback(
+    async (file: KnowledgeFileInfo) => {
+      if (confirmDeleteId !== file.id) {
+        setConfirmDeleteId(file.id);
+        return;
+      }
+      setConfirmDeleteId(null);
+      knowledge.remove([file.id]);
+      try {
+        await call("office_delete_file", { fileId: file.id });
+      } catch (err) {
+        setImportError(errText(err));
+        await knowledge.refresh();
+      }
+    },
+    [confirmDeleteId, knowledge],
+  );
+
+  /** Prompts for a YouTube URL and ingests its transcript into the knowledge
+   * base (fetch → markdown document → indexed, deduped per video). */
   const addKnowledgeLink = useCallback(async () => {
     setImportError(null);
     const url = await platform.promptForUrl("Paste a YouTube video URL");
@@ -502,15 +692,20 @@ export default function App() {
       setImportError("Only YouTube URLs are supported for now");
       return;
     }
-    const id = youtubeId(url);
-    const label = id ? `YouTube · ${id}` : url;
-    setPending((prev) => [...prev, { id: nanoid(), kind: "link", name: label, url }]);
-  }, []);
-
-  const removePending = useCallback(
-    (id: string) => setPending((prev) => prev.filter((p) => p.id !== id)),
-    [],
-  );
+    setLinking(true);
+    try {
+      await call<OfficeFileInfo>("knowledge_import_youtube", {
+        url,
+        sessionId: chat.sessionId,
+      });
+      await knowledge.refresh();
+    } catch (err) {
+      console.warn("[knowledge_import_youtube]", errText(err));
+      setImportError(errText(err));
+    } finally {
+      setLinking(false);
+    }
+  }, [chat.sessionId, knowledge.refresh]);
 
   // Switching agent clears the model context + active session.
   useEffect(() => {
@@ -715,7 +910,8 @@ export default function App() {
                 agentName={agent.name}
                 onStop={chat.stop}
                 status={status}
-                onSubmit={(text, imageB64) => void chat.send(text, imageB64)}
+                onSubmit={(text) => void chat.send(text)}
+                onImageToKnowledge={(dataUrl, name) => void imageToKnowledge(dataUrl, name)}
               />
             </div>
           </section>
@@ -735,23 +931,24 @@ export default function App() {
                       key={tab}
                       onClick={() => setCanvasTab(tab)}
                     >
-                      {tab === "artifact" ? "Artifact" : "Files"}
+                      {tab === "artifact" ? "Artifact" : "Knowledge"}
                     </button>
                   ))}
                 </div>
                 {canvasTab === "files" && (
                   <div className="flex items-center gap-1">
                     <Button
+                      disabled={linking || importing}
                       onClick={() => void addKnowledgeLink()}
                       size="xs"
-                      title="Paste a YouTube video URL"
+                      title="Ingest a YouTube video transcript into your knowledge base"
                       variant="ghost"
                     >
-                      <VideoIcon className="size-3" />
+                      {linking ? <Spinner className="size-3" /> : <VideoIcon className="size-3" />}
                       Link
                     </Button>
                     <Button
-                      disabled={importing}
+                      disabled={importing || linking}
                       onClick={() => void addKnowledgeFiles()}
                       size="xs"
                       title="Import documents & images (.docx .xlsx .pptx .pdf .png .jpg …)"
@@ -791,120 +988,63 @@ export default function App() {
                       ) : !knowledge.loaded ? (
                         <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
                           <Spinner className="size-4" />
-                          Loading files…
+                          Loading knowledge…
                         </div>
                       ) : (
                         <div className="flex flex-col gap-5">
-                          {chat.sessionId && knowledge.sessionFiles.length > 0 && (
+                          {chat.sessionId != null && sessionFiles.length > 0 && (
                             <div>
                               <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
                                 In this session
                               </p>
                               <div className="flex flex-col gap-1.5">
-                                {knowledge.sessionFiles.map((file) => (
-                                  <div
-                                    className="bg-card flex items-center gap-2.5 rounded-lg border px-2.5 py-2"
+                                {sessionFiles.map((file) => (
+                                  <KnowledgeFileRow
+                                    confirmDelete={confirmDeleteId === file.id}
+                                    file={file}
+                                    inSessionList
                                     key={file.id}
-                                  >
-                                    <CheckIcon className="text-green-500 size-4 shrink-0" />
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm">{file.originalName}</p>
-                                      <p className="text-muted-foreground mt-0.5 text-xs">
-                                        {formatBytes(file.bytes)} ·{" "}
-                                        {new Date(file.createdAt * 1000).toLocaleDateString()}
-                                      </p>
-                                    </div>
-                                    <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] tracking-wider uppercase">
-                                      {file.ext}
-                                    </span>
-                                  </div>
+                                    onAdd={addToSession}
+                                    onDelete={deleteFile}
+                                    onRemove={removeFromSession}
+                                    onRetry={retryIndex}
+                                  />
                                 ))}
                               </div>
+                              <p className="text-muted-foreground/70 mt-1.5 px-1 text-xs">
+                                The agent can search these documents in this chat.
+                              </p>
                             </div>
+                          )}
+                          {chat.sessionId != null && sessionFiles.length === 0 && (
+                            <p className="text-muted-foreground/70 px-1 text-xs">
+                              Add documents to this session — import new ones, or press{" "}
+                              <span className="font-medium">+</span> on a library document below —
+                              to make them searchable by the agent in this chat.
+                            </p>
                           )}
                           <div>
                             <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
-                              {chat.sessionId && knowledge.sessionFiles.length > 0
-                                ? "All documents"
-                                : "Documents"}
+                              {sessionFiles.length > 0 ? "Library" : "Documents"}
                             </p>
                             {knowledge.files.length === 0 ? (
                               <div className="text-muted-foreground/70 px-1 py-2 text-xs">
-                                No documents imported yet — they&apos;ll appear here and in the
-                                @-mention popup.
+                                No sources yet — import .docx, .xlsx, .pptx, .pdf or images with
+                                “Add files”, or paste a YouTube link with “Link”.
                               </div>
                             ) : (
                               <div className="flex flex-col gap-1.5">
-                                {knowledge.files.map((file) => {
-                                  const inSession =
-                                    chat.sessionId != null &&
-                                    knowledge.sessionFiles.some((f) => f.id === file.id);
-                                  return (
-                                    <div
-                                      className="bg-card flex items-center gap-2.5 rounded-lg border px-2.5 py-2"
-                                      key={file.id}
-                                    >
-                                      {inSession ? (
-                                        <CheckIcon className="text-green-500 size-4 shrink-0" />
-                                      ) : (
-                                        <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
-                                      )}
-                                      <div className="min-w-0 flex-1">
-                                        <p className="truncate text-sm">{file.originalName}</p>
-                                        <p className="text-muted-foreground mt-0.5 text-xs">
-                                          {formatBytes(file.bytes)} ·{" "}
-                                          {new Date(file.createdAt * 1000).toLocaleDateString()}
-                                        </p>
-                                      </div>
-                                      <span className="bg-muted text-muted-foreground shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] tracking-wider uppercase">
-                                        {file.ext}
-                                      </span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                          <div>
-                            <p className="text-muted-foreground flex items-center gap-1.5 px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
-                              Images &amp; links
-                              <span className="text-muted-foreground/60 font-sans text-[10px] normal-case tracking-normal">
-                                session-only
-                              </span>
-                            </p>
-                            {pending.length === 0 ? (
-                              <div className="text-muted-foreground/70 px-1 py-2 text-xs">
-                                Use the Link or Add files buttons above to add a YouTube video or an
-                                image — not persisted yet.
-                              </div>
-                            ) : (
-                              <div className="flex flex-col gap-1.5">
-                                {pending.map((item) => (
-                                  <div
-                                    className="bg-card flex items-center gap-2.5 rounded-lg border px-2.5 py-2"
-                                    key={item.id}
-                                  >
-                                    {item.kind === "link" ? (
-                                      <VideoIcon className="text-muted-foreground size-4 shrink-0" />
-                                    ) : (
-                                      <ImageIcon className="text-muted-foreground size-4 shrink-0" />
-                                    )}
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm">{item.name}</p>
-                                      <p className="text-muted-foreground mt-0.5 truncate text-xs">
-                                        {item.kind === "link" ? item.url : "Image"}
-                                      </p>
-                                    </div>
-                                    <button
-                                      aria-label={`Remove ${item.name}`}
-                                      className="text-muted-foreground hover:text-foreground shrink-0"
-                                      onClick={() => removePending(item.id)}
-                                      title="Remove (session only)"
-                                      type="button"
-                                    >
-                                      <XIcon className="size-3" />
-                                    </button>
-                                  </div>
+                                {knowledge.files.map((file) => (
+                                  <KnowledgeFileRow
+                                    confirmDelete={confirmDeleteId === file.id}
+                                    file={file}
+                                    inSessionList={file.inSession && chat.sessionId != null}
+                                    key={file.id}
+                                    onAdd={addToSession}
+                                    onDelete={deleteFile}
+                                    onRemove={removeFromSession}
+                                    onRetry={retryIndex}
+                                  />
                                 ))}
                               </div>
                             )}

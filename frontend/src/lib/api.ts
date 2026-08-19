@@ -53,6 +53,22 @@ export interface KnowledgeContext {
   files: OfficeFileInfo[];
 }
 
+/** RAG index lifecycle of one document (mirror of `rag::IndexStatus`). */
+export type KnowledgeIndexStatus = "not_indexed" | "indexing" | "ready" | "failed";
+
+/** Knowledge panel row: office store metadata + index state + session scope. */
+export interface KnowledgeFileInfo {
+  id: string;
+  originalName: string;
+  ext: string;
+  bytes: number;
+  createdAt: number;
+  status: KnowledgeIndexStatus;
+  chunks: number;
+  error: string | null;
+  inSession: boolean;
+}
+
 /** A retrieved RAG chunk with provenance, returned by `knowledge_search`. */
 export interface RagHit {
   source: string;

@@ -88,7 +88,13 @@ pub(crate) fn sanitize_component(name: &str) -> String {
 
 pub(crate) fn allowed_ext(name: &str) -> Option<String> {
     let ext = Path::new(name).extension()?.to_str()?.to_ascii_lowercase();
-    matches!(ext.as_str(), "docx" | "xlsx" | "pptx" | "pdf").then_some(ext)
+    matches!(
+        ext.as_str(),
+        // office documents (tool-edited) + images and markdown (knowledge
+        // ingestion sources: image descriptions, YouTube transcripts)
+        "docx" | "xlsx" | "pptx" | "pdf" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "md"
+    )
+    .then_some(ext)
 }
 
 fn user_dir(user_id: &str) -> Result<PathBuf, String> {
@@ -103,7 +109,7 @@ fn user_dir(user_id: &str) -> Result<PathBuf, String> {
 
 pub fn import_bytes(user_id: &str, name: &str, data: &[u8]) -> Result<OfficeFile, String> {
     let ext = allowed_ext(name).ok_or_else(|| {
-        format!("unsupported file type: {name} (allowed: .docx, .xlsx, .pptx, .pdf)")
+        format!("unsupported file type: {name} (allowed: .docx, .xlsx, .pptx, .pdf, images, .md)")
     })?;
     let dir = user_dir(user_id)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -232,6 +238,15 @@ pub fn export_file(user_id: &str, file_id: &str, dest: Option<&str>) -> Result<S
     }
     std::fs::copy(&src, &dest).map_err(|e| format!("export: {e}"))?;
     Ok(dest.display().to_string())
+}
+
+/// Remove a file's stored bytes and metadata from the store. Takes the
+/// already-resolved stored path (callers resolve first to validate the id);
+/// a missing metadata file is tolerated — the bytes are the source of truth.
+pub fn delete_file(user_id: &str, stored: &Path, file_id: &str) -> Result<(), String> {
+    std::fs::remove_file(stored).map_err(|e| format!("delete {}: {e}", stored.display()))?;
+    let _ = std::fs::remove_file(meta_path(&user_dir(user_id)?, file_id));
+    Ok(())
 }
 
 pub(crate) fn replace_stored(user_id: &str, file_id: &str, tmp: &Path) -> Result<(), String> {

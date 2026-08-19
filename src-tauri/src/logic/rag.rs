@@ -159,6 +159,183 @@ pub async fn list_session_files(
     Ok(out)
 }
 
+// ── index status tracking ────────────────────────────────────────────────────
+
+const RAG_FILES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS rag_files (
+    file_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    chunks INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    updated_at INTEGER NOT NULL
+)";
+
+/// An `indexing` row older than this is a crashed/interrupted run (the app
+/// died mid-index) — surfaced as `failed` instead of spinning forever.
+const STALE_INDEXING_SECS: i64 = 15 * 60;
+
+async fn ensure_rag_files(conn: &libsql::Connection) -> Result<(), String> {
+    conn.execute(RAG_FILES_SCHEMA, ())
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("rag_files schema: {e}"))
+}
+
+fn unix_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Upsert one file's index status row.
+async fn set_index_status(
+    conn: &libsql::Connection,
+    file_id: &str,
+    status: &str,
+    chunks: i64,
+    error: Option<&str>,
+) -> Result<(), String> {
+    let error_val = match error {
+        Some(e) => libsql::Value::Text(e.to_string()),
+        None => libsql::Value::Null,
+    };
+    conn.execute(
+        "INSERT INTO rag_files (file_id, status, chunks, error, updated_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(file_id) DO UPDATE SET
+            status = excluded.status,
+            chunks = excluded.chunks,
+            error = excluded.error,
+            updated_at = excluded.updated_at",
+        (file_id, status, chunks, error_val, unix_secs()),
+    )
+    .await
+    .map(|_| ())
+    .map_err(|e| format!("rag_files upsert: {e}"))
+}
+
+/// Current stored status of one file's index (`None` when never indexed).
+async fn rag_file_status(conn: &libsql::Connection, file_id: &str) -> Result<Option<String>, String> {
+    let mut rows = conn
+        .query(
+            "SELECT status FROM rag_files WHERE file_id = ?",
+            vec![file_id.to_string()],
+        )
+        .await
+        .map_err(|e| format!("rag_files: {e}"))?;
+    match rows.next().await.map_err(|e| format!("rag_files: {e}"))? {
+        Some(row) => Ok(Some(row.get(0).map_err(|e| format!("rag_files: {e}"))?)),
+        None => Ok(None),
+    }
+}
+
+/// Lifecycle of one file's RAG index, as shown by the knowledge panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IndexStatus {
+    /// Never indexed (imported before RAG existed, or indexing never ran).
+    NotIndexed,
+    /// Extraction/chunking/embedding in progress.
+    Indexing,
+    /// Indexed (possibly with zero chunks — empty/unextractable documents).
+    Ready,
+    /// The last indexing attempt failed (`error` carries the cause).
+    Failed,
+}
+
+/// One knowledge-panel row: office store metadata + index state + whether the
+/// active session can search this file.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeFileInfo {
+    pub id: String,
+    pub original_name: String,
+    pub ext: String,
+    pub bytes: u64,
+    pub created_at: i64,
+    pub status: IndexStatus,
+    pub chunks: i64,
+    pub error: Option<String>,
+    pub in_session: bool,
+}
+
+/// The knowledge panel's single list call: every stored office file joined
+/// with its index status and its association to the given session. Files with
+/// no `rag_files` row read as `not_indexed` (imported before RAG existed).
+pub async fn knowledge_list(
+    user_id: &str,
+    session_id: Option<i64>,
+) -> Result<Vec<KnowledgeFileInfo>, String> {
+    let conn = crate::logic::db_connection(user_id)
+        .await
+        .map_err(|e| format!("db: {e}"))?;
+    ensure_session_files(&conn).await?;
+    ensure_rag_files(&conn).await?;
+
+    let mut in_session = std::collections::HashSet::new();
+    if let Some(sid) = session_id {
+        in_session = session_file_ids(&conn, sid).await?.into_iter().collect();
+    }
+
+    let mut status_rows = conn
+        .query(
+            "SELECT file_id, status, chunks, error, updated_at FROM rag_files",
+            (),
+        )
+        .await
+        .map_err(|e| format!("rag_files: {e}"))?;
+    // (status, chunks, error) per file; stale `indexing` rows become
+    // failed/interrupted so a crashed run never spins in the UI.
+    let mut statuses: HashMap<String, (String, i64, Option<String>)> = HashMap::new();
+    let now = unix_secs();
+    while let Some(row) = status_rows
+        .next()
+        .await
+        .map_err(|e| format!("rag_files: {e}"))?
+    {
+        let fid: String = row.get(0).map_err(|e| format!("rag_files: {e}"))?;
+        let status: String = row.get(1).map_err(|e| format!("rag_files: {e}"))?;
+        let chunks: i64 = row.get(2).map_err(|e| format!("rag_files: {e}"))?;
+        let error: Option<String> = row.get(3).map_err(|e| format!("rag_files: {e}"))?;
+        let updated_at: i64 = row.get(4).map_err(|e| format!("rag_files: {e}"))?;
+        let entry = if status == "indexing" && now.saturating_sub(updated_at) > STALE_INDEXING_SECS
+        {
+            ("failed".to_string(), chunks, Some("indexing interrupted".to_string()))
+        } else {
+            (status, chunks, error)
+        };
+        statuses.insert(fid, entry);
+    }
+
+    let files = crate::logic::office::list_files(user_id)?;
+    Ok(files
+        .into_iter()
+        .map(|f| {
+            let is_in_session = in_session.contains(&f.id);
+            let (status, chunks, error) = match statuses.get(&f.id) {
+                Some((s, c, e)) => match s.as_str() {
+                    "indexing" => (IndexStatus::Indexing, *c, None),
+                    "ready" => (IndexStatus::Ready, *c, None),
+                    "failed" => (IndexStatus::Failed, *c, e.clone()),
+                    _ => (IndexStatus::NotIndexed, 0, None),
+                },
+                None => (IndexStatus::NotIndexed, 0, None),
+            };
+            KnowledgeFileInfo {
+                id: f.id,
+                original_name: f.original_name,
+                ext: f.ext,
+                bytes: f.bytes,
+                created_at: f.created_at,
+                status,
+                chunks,
+                error,
+                in_session: is_in_session,
+            }
+        })
+        .collect())
+}
+
 /// A single heading found by scanning markdown text, with its char offset.
 struct Heading {
     char_offset: usize,
@@ -236,9 +413,10 @@ fn chunk_plain(text: &str, max_chars: usize, overlap: usize) -> Vec<(String, Str
         .collect()
 }
 
-/// Extract full text from a stored office file, dispatching by extension to the
-/// same engines `knowledge_context` uses. Returns `Ok(None)` for file kinds we
-/// cannot index (e.g. images, unknown types).
+/// Extract full text from a stored office file, dispatching by extension to
+/// the same engines `knowledge_context` uses. Returns `Ok(None)` for file kinds we
+/// cannot index (e.g. unknown types). Images are described to text via the
+/// ragloader chain; markdown (YouTube transcripts) is read as-is.
 async fn extract_text(user_id: &str, file_id: &str, ext: &str) -> Result<Option<String>, String> {
     match ext {
         "pdf" => crate::logic::office::pdf::pdf_extract_text(user_id, file_id, None)
@@ -251,8 +429,43 @@ async fn extract_text(user_id: &str, file_id: &str, ext: &str) -> Result<Option<
                 .map(Some)
                 .map_err(|e| format!("ooxml: {e}"))
         }
+        "png" | "jpg" | "jpeg" | "gif" | "webp" => {
+            describe_image(user_id, file_id).await.map(Some)
+        }
+        "md" => {
+            let (path, _info) = crate::logic::office::store::resolve(user_id, file_id)
+                .map_err(|e| format!("resolve: {e}"))?;
+            tokio::fs::read_to_string(&path)
+                .await
+                .map(Some)
+                .map_err(|e| format!("read: {e}"))
+        }
         _ => Ok(None),
     }
+}
+
+/// Describe a stored image into indexing-ready text via ragloader's
+/// `DescriberChain` (local model stub first, JigsawStack VOCR when the image
+/// is URL-reachable). Until LiteRT-LM gains multimodal input, purely local
+/// images fail with "no describer supports this source" — surfaced as the
+/// file's `failed` index status, retryable once a describer lands.
+async fn describe_image(user_id: &str, file_id: &str) -> Result<String, String> {
+    let (path, info) = crate::logic::office::store::resolve(user_id, file_id)
+        .map_err(|e| format!("resolve: {e}"))?;
+    let data = tokio::fs::read(&path)
+        .await
+        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let chain = ragloader::image::default_chain();
+    let source = ragloader::image::ImageSource::local(&info.original_name);
+    let desc = chain
+        .describe(&source, &data)
+        .await
+        .map_err(|e| format!("image describe: {e}"))?;
+    let mut text = format!("# {}\n\n{}", info.original_name, desc.content);
+    if !desc.tags.is_empty() {
+        text.push_str(&format!("\n\nTags: {}", desc.tags.join(", ")));
+    }
+    Ok(text)
 }
 
 // ── lexical (FTS5 / BM25) mirror ─────────────────────────────────────────────
@@ -400,10 +613,13 @@ pub enum SearchMode {
 
 /// Index one stored office file for vector search, then associate it with the
 /// uploading session (`session_files`). Called fire-and-forget right after
-/// import from the files panel. Returns the number of chunks indexed, or
+/// import from the knowledge panel. Returns the number of chunks indexed, or
 /// `Ok(0)` for empty/unsupported files. Errors surface the underlying cause
 /// (missing engine, embedding failure, …) without aborting the session — the
-/// agent can still fall back to the office read tools.
+/// agent can still fall back to the office read tools. Progress is recorded
+/// in `rag_files` (`indexing` → `ready`/`failed`) so the panel can show it;
+/// a crash mid-run leaves a stale `indexing` row that `knowledge_list`
+/// reports as failed/interrupted.
 pub async fn office_index_file(
     user_id: String,
     session_id: Option<i64>,
@@ -412,7 +628,33 @@ pub async fn office_index_file(
     let (_file_path, info) =
         crate::logic::office::store::resolve(&user_id, &file_id).map_err(|e| format!("resolve: {e}"))?;
 
-    let text = match extract_text(&user_id, &file_id, &info.ext).await? {
+    let conn = crate::logic::db_connection(&user_id)
+        .await
+        .map_err(|e| format!("db: {e}"))?;
+    ensure_rag_files(&conn).await?;
+
+    set_index_status(&conn, &file_id, "indexing", 0, None).await?;
+    match index_file_inner(&conn, &user_id, session_id, &file_id, &info).await {
+        Ok(n) => {
+            set_index_status(&conn, &file_id, "ready", n as i64, None).await?;
+            Ok(n)
+        }
+        Err(e) => {
+            // Best-effort: a status-write failure must not mask the real error.
+            let _ = set_index_status(&conn, &file_id, "failed", 0, Some(&e)).await;
+            Err(e)
+        }
+    }
+}
+
+async fn index_file_inner(
+    conn: &libsql::Connection,
+    user_id: &str,
+    session_id: Option<i64>,
+    file_id: &str,
+    info: &crate::logic::office::OfficeFile,
+) -> Result<usize, String> {
+    let text = match extract_text(user_id, file_id, &info.ext).await? {
         Some(t) if !t.trim().is_empty() => t,
         _ => return Ok(0),
     };
@@ -422,15 +664,12 @@ pub async fn office_index_file(
         return Ok(0);
     }
 
-    let source = info.original_name;
+    let source = info.original_name.clone();
 
     let model = kawai_embedding::build_providers_from_env();
-    let conn = crate::logic::db_connection(&user_id)
-        .await
-        .map_err(|e| format!("db: {e}"))?;
-    ensure_session_files(&conn).await?;
+    ensure_session_files(conn).await?;
     if let Some(sid) = session_id {
-        associate_session_files(&conn, sid, &[file_id.clone()]).await?;
+        associate_session_files(conn, sid, &[file_id.to_string()]).await?;
     }
 
     let store: LibsqlVectorStore<TenantAwareEmbedder, RagChunk> =
@@ -440,7 +679,7 @@ pub async fn office_index_file(
 
     // FTS mirror + triggers must exist before the inserts below so BM25 sees
     // them; the backfill inside also covers chunks indexed pre-FTS.
-    ensure_fts(&conn).await?;
+    ensure_fts(conn).await?;
 
     let docs: Vec<RagChunk> = chunks
         .into_iter()
@@ -448,7 +687,7 @@ pub async fn office_index_file(
         .map(|(i, (locator, content))| RagChunk {
             id: format!("{file_id}#c{i}"),
             content,
-            file_id: file_id.clone(),
+            file_id: file_id.to_string(),
             source: source.clone(),
             locator,
         })
@@ -583,6 +822,7 @@ pub async fn forget_file(
         .await
         .map_err(|e| format!("db: {e}"))?;
     ensure_session_files(&conn).await?;
+    ensure_rag_files(&conn).await?;
 
     if let Some(sid) = session_id {
         for fid in &file_ids {
@@ -620,8 +860,193 @@ pub async fn forget_file(
     }
     for fid in &orphans {
         purge_file_chunks(&conn, fid).await?;
+        // The file may still sit in the library, but nothing is indexed
+        // anymore — reset its status row so the panel shows `not indexed`.
+        conn.execute(
+            "DELETE FROM rag_files WHERE file_id = ?",
+            vec![fid.clone()],
+        )
+        .await
+        .map_err(|e| format!("rag_files delete: {e}"))?;
     }
     Ok(orphans.len())
+}
+
+/// Number of chunks a file currently has indexed (0 when nothing has ever
+/// been indexed — the `rag_chunks` table itself may not exist yet).
+async fn file_chunk_count(conn: &libsql::Connection, file_id: &str) -> Result<i64, String> {
+    let mut rows = match conn
+        .query(
+            "SELECT COUNT(*) FROM rag_chunks WHERE file_id = ?",
+            vec![file_id.to_string()],
+        )
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) if e.to_string().contains("no such table") => return Ok(0),
+        Err(e) => return Err(format!("chunk count: {e}")),
+    };
+    match rows
+        .next()
+        .await
+        .map_err(|e| format!("chunk count: {e}"))?
+    {
+        Some(row) => row.get(0).map_err(|e| format!("chunk count: {e}")),
+        None => Ok(0),
+    }
+}
+
+/// Associate existing library documents with a session (the knowledge panel's
+/// "Add to this session") and make sure they become searchable: files with no
+/// chunks — imported before RAG existed, previously purged, or failed — are
+/// (re)indexed; files mid-index are left alone. Re-indexing is idempotent
+/// (deterministic chunk ids replace). Individual index failures don't abort
+/// the batch — they surface per file via the panel's `failed` status.
+/// Returns how many files were (re)indexed.
+pub async fn knowledge_add_to_session(
+    user_id: &str,
+    session_id: i64,
+    file_ids: &[String],
+) -> Result<usize, String> {
+    if file_ids.is_empty() {
+        return Ok(0);
+    }
+    let conn = crate::logic::db_connection(user_id)
+        .await
+        .map_err(|e| format!("db: {e}"))?;
+    ensure_session_files(&conn).await?;
+    ensure_rag_files(&conn).await?;
+
+    // Validate every id against the store before associating anything.
+    for fid in file_ids {
+        crate::logic::office::store::resolve(user_id, fid)
+            .map_err(|e| format!("resolve {fid}: {e}"))?;
+    }
+    associate_session_files(&conn, session_id, file_ids).await?;
+
+    let mut reindexed = 0usize;
+    for fid in file_ids {
+        if file_chunk_count(&conn, fid).await? > 0 {
+            continue;
+        }
+        if rag_file_status(&conn, fid).await?.as_deref() == Some("indexing") {
+            continue;
+        }
+        if office_index_file(user_id.to_string(), Some(session_id), fid.clone())
+            .await
+            .is_ok()
+        {
+            reindexed += 1;
+        }
+    }
+    Ok(reindexed)
+}
+
+/// Language preference for YouTube transcripts, in order.
+const YT_LANGS: [&str; 2] = ["en", "id"];
+
+/// Ingest a YouTube video into the knowledge base: fetch its transcript,
+/// store it as a markdown document (`yt-<videoId> <title>.md`), associate it
+/// with the session and index it. Re-importing a known video just
+/// re-associates/re-indexes the existing document (dedupe by name prefix).
+/// Transcript fetch errors surface to the caller; indexing failures land in
+/// the file's `failed` status (visible in the panel).
+pub async fn knowledge_import_youtube(
+    user_id: &str,
+    session_id: Option<i64>,
+    url: &str,
+) -> Result<crate::logic::office::OfficeFile, String> {
+    let video_id = youtube_transcript::YouTubeTranscript::extract_video_id(url)
+        .map_err(|e| format!("not a YouTube URL: {e}"))?;
+
+    // Dedupe: the deterministic `yt-<id>` name prefix identifies a video.
+    let prefix = format!("yt-{video_id} ");
+    if let Some(existing) = crate::logic::office::list_files(user_id)?
+        .into_iter()
+        .find(|f| f.original_name.starts_with(&prefix) || f.original_name == format!("yt-{video_id}.md"))
+    {
+        if let Some(sid) = session_id {
+            knowledge_add_to_session(user_id, sid, &[existing.id.clone()]).await?;
+        }
+        return Ok(existing);
+    }
+
+    let yt = youtube_transcript::YouTubeTranscript::new();
+    let langs = YT_LANGS.to_vec();
+    let resp = match yt.fetch_transcript(&video_id, Some(langs)).await {
+        Ok(resp) => resp,
+        Err(youtube_transcript::TranscriptError::NoTranscriptFound(_, _)) => {
+            // Video has no en/id track — fall back to whatever exists.
+            let list = yt
+                .list_transcripts(&video_id)
+                .await
+                .map_err(|e| format!("transcript list: {e}"))?;
+            let fallback = list
+                .all_transcripts()
+                .first()
+                .ok_or_else(|| "video has no transcripts".to_string())?
+                .language_code
+                .clone();
+            yt.fetch_transcript(&video_id, Some(vec![&fallback]))
+                .await
+                .map_err(|e| format!("transcript: {e}"))?
+        }
+        Err(e) => return Err(format!("transcript: {e}")),
+    };
+
+    let title = resp.title.clone().unwrap_or_else(|| video_id.clone());
+    let body: String = resp
+        .transcript
+        .iter()
+        .map(|item| item.text.trim())
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let markdown = format!(
+        "# {title} (YouTube)\n\nSource: https://youtu.be/{video_id}\n\n{body}\n"
+    );
+
+    let file = crate::logic::office::store::import_bytes(
+        user_id,
+        &format!("yt-{video_id} {title}.md"),
+        markdown.as_bytes(),
+    )?;
+    if let Some(sid) = session_id {
+        knowledge_add_to_session(user_id, sid, &[file.id.clone()]).await?;
+    }
+    Ok(file)
+}
+
+/// Delete a stored document entirely: session associations, indexed chunks
+/// (with FTS mirror + vectors), the index status row, and the file itself in
+/// the office store. Unlike [`forget_file`] there is no orphan pass — the
+/// file is gone unconditionally.
+pub async fn office_delete_file(user_id: &str, file_id: &str) -> Result<(), String> {
+    // Resolve first: an unknown id errors before anything is deleted.
+    let (stored_path, _info) = crate::logic::office::store::resolve(user_id, file_id)
+        .map_err(|e| format!("resolve: {e}"))?;
+
+    let conn = crate::logic::db_connection(user_id)
+        .await
+        .map_err(|e| format!("db: {e}"))?;
+    ensure_session_files(&conn).await?;
+    ensure_rag_files(&conn).await?;
+
+    conn.execute(
+        "DELETE FROM session_files WHERE file_id = ?",
+        vec![file_id.to_string()],
+    )
+    .await
+    .map_err(|e| format!("disassociate: {e}"))?;
+    purge_file_chunks(&conn, file_id).await?;
+    conn.execute(
+        "DELETE FROM rag_files WHERE file_id = ?",
+        vec![file_id.to_string()],
+    )
+    .await
+    .map_err(|e| format!("rag_files delete: {e}"))?;
+
+    crate::logic::office::store::delete_file(user_id, &stored_path, file_id)
 }
 
 /// Delete one file's chunks plus their FLOAT32 vectors and map links. Missing

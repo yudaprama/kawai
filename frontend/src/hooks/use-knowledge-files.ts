@@ -1,80 +1,77 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { call, errText, type OfficeFileInfo } from "@/lib/api";
+import { call, errText, type KnowledgeFileInfo } from "@/lib/api";
 
 /**
- * Lazy list of the user's stored knowledge documents (office store:
- * .docx/.xlsx/.pptx/.pdf imported via the office tools). Fetched on first
- * demand (composer focus / @ typed) and kept for the session — the store only
- * changes when the user imports files. When the backend runs without the
- * `office` feature the call rejects and we settle on an empty list (the
- * @-mention popup just shows "no documents").
+ * The knowledge panel list: every stored document with its RAG index state
+ * and whether the ACTIVE session can search it — one `knowledge_list` call.
+ * Re-fetched when the session changes and after any mutation (import / add /
+ * remove / delete); mutations also patch state optimistically so index runs
+ * feel immediate. When the backend runs without the `office` feature the call
+ * rejects and we settle on an empty list.
  */
 export function useKnowledgeFiles(enabled: boolean) {
-  const [files, setFiles] = useState<OfficeFileInfo[]>([]);
+  const [files, setFiles] = useState<KnowledgeFileInfo[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
-  const [sessionFiles, setSessionFiles] = useState<OfficeFileInfo[]>([]);
-  const prevSessionId = useRef<number | null>(null);
+  const sessionIdRef = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
+    const sessionId = sessionIdRef.current;
     try {
-      const rows = await call<OfficeFileInfo[]>("office_list_files");
+      const rows = await call<KnowledgeFileInfo[]>(
+        "knowledge_list",
+        sessionId != null ? { sessionId } : undefined,
+      );
       setFiles(rows);
       setUnavailable(false);
     } catch (err) {
       // Feature-gated command missing (no `office` build) or not authed yet.
-      console.warn("[office_list_files]", errText(err));
+      console.warn("[knowledge_list]", errText(err));
       setUnavailable(true);
     } finally {
       setLoaded(true);
     }
   }, []);
 
-  /** Load the files associated with the given session. */
-  const loadSessionFiles = useCallback(async (sessionId: number) => {
-    try {
-      const rows = await call<OfficeFileInfo[]>("list_session_files", {
-        sessionId,
-      });
-      setSessionFiles(rows);
-    } catch (err) {
-      console.warn("[list_session_files]", errText(err));
-      setSessionFiles([]);
-    }
+  /** Track the active session (drives `inSession` + a re-fetch). */
+  const setSessionId = useCallback(
+    (sessionId: number | null) => {
+      if (sessionId === sessionIdRef.current) return;
+      sessionIdRef.current = sessionId;
+      void refresh();
+    },
+    [refresh],
+  );
+
+  /** Optimistically mark files as being (re)indexed (import / add / retry). */
+  const markIndexing = useCallback((fileIds: string[]) => {
+    setFiles((prev) =>
+      prev.map((f) => (fileIds.includes(f.id) ? { ...f, status: "indexing", error: null } : f)),
+    );
   }, []);
 
-  /** Reset session files when there's no active session. */
-  const clearSessionFiles = useCallback(() => {
-    setSessionFiles([]);
-    prevSessionId.current = null;
+  /** Optimistically flip session association before the backend confirms. */
+  const markInSession = useCallback((fileIds: string[], inSession: boolean) => {
+    setFiles((prev) => prev.map((f) => (fileIds.includes(f.id) ? { ...f, inSession } : f)));
+  }, []);
+
+  /** Optimistically drop files (delete). */
+  const remove = useCallback((fileIds: string[]) => {
+    setFiles((prev) => prev.filter((f) => !fileIds.includes(f.id)));
   }, []);
 
   useEffect(() => {
     if (enabled && !loaded) void refresh();
   }, [enabled, loaded, refresh]);
 
-  // Re-fetch session files when the session id changes (or becomes null).
-  const setSessionId = useCallback(
-    (sessionId: number | null) => {
-      if (sessionId === prevSessionId.current) return;
-      prevSessionId.current = sessionId;
-      if (sessionId != null) {
-        void loadSessionFiles(sessionId);
-      } else {
-        setSessionFiles([]);
-      }
-    },
-    [loadSessionFiles],
-  );
-
   return {
     files,
     loaded,
     unavailable,
     refresh,
-    sessionFiles,
     setSessionId,
-    clearSessionFiles,
-    refreshSessionFiles: loadSessionFiles,
+    markIndexing,
+    markInSession,
+    remove,
   };
 }

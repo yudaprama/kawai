@@ -456,6 +456,80 @@ async fn office_index_file_handler(
 }
 
 #[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeListRequest {
+    session_id: Option<i64>,
+}
+
+#[cfg(feature = "office")]
+async fn knowledge_list_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<KnowledgeListRequest>,
+) -> Result<Json<Vec<logic::rag::KnowledgeFileInfo>>, (StatusCode, String)> {
+    logic::rag::knowledge_list(&claims.sub, req.session_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeAddToSessionRequest {
+    session_id: i64,
+    file_ids: Vec<String>,
+}
+
+#[cfg(feature = "office")]
+async fn knowledge_add_to_session_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<KnowledgeAddToSessionRequest>,
+) -> Result<Json<usize>, (StatusCode, String)> {
+    logic::rag::knowledge_add_to_session(&claims.sub, req.session_id, &req.file_ids)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KnowledgeImportYoutubeRequest {
+    url: String,
+    session_id: Option<i64>,
+}
+
+#[cfg(feature = "office")]
+async fn knowledge_import_youtube_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<KnowledgeImportYoutubeRequest>,
+) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
+    logic::rag::knowledge_import_youtube(&claims.sub, req.session_id, &req.url)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficeDeleteFileRequest {
+    file_id: String,
+}
+
+#[cfg(feature = "office")]
+async fn office_delete_file_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<OfficeDeleteFileRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    logic::rag::office_delete_file(&claims.sub, &req.file_id)
+        .await
+        .map(|_| StatusCode::NO_CONTENT)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "office")]
 async fn office_list_files_handler(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<logic::office::OfficeFile>>, (StatusCode, String)> {
@@ -657,6 +731,16 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/knowledge_search", post(knowledge_search_handler))
         .route("/api/knowledge_forget", post(knowledge_forget_handler))
         .route("/api/list_session_files", post(list_session_files_handler))
+        .route("/api/knowledge_list", post(knowledge_list_handler))
+        .route(
+            "/api/knowledge_add_to_session",
+            post(knowledge_add_to_session_handler),
+        )
+        .route(
+            "/api/knowledge_import_youtube",
+            post(knowledge_import_youtube_handler),
+        )
+        .route("/api/office_delete_file", post(office_delete_file_handler))
         .route("/api/office_export_file", post(office_export_file_handler))
         .route(
             "/api/office_capabilities",

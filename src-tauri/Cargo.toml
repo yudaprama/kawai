@@ -67,6 +67,13 @@ kawai-embedding = { path = "../kawai-embedding", optional = true }
 # MarkdownSplitter (heading-aware locators) / TextSplitter.
 text-splitter = { version = "0.27", features = ["markdown"], optional = true }
 rig-libsql = { path = "../rig-libsql", optional = true }
+# Image understanding for knowledge ingestion (office feature): describe
+# images to text via the ragloader DescriberChain (local stub → JigsawStack
+# VOCR). Pulls jigsawstack (reqwest 0.12) transitively.
+ragloader = { path = "../rig-components/ragloader", optional = true }
+# YouTube transcript fetching for knowledge ingestion (office feature).
+# Uses reqwest 0.13 — coexists with our direct 0.12 (like the rustls pair).
+youtube_transcript = { path = "../rig-components/youtube_transcript", optional = true }
 # rig-core is a direct dep (not just transitive) because logic::rag uses its
 # `Embed` derive + `EmbeddingsBuilder`/`InsertDocuments` traits directly. Pinned
 # to the SAME rev as every other rig consumer in the graph (4232abdb) so the
@@ -84,7 +91,7 @@ litert = ["dep:local-llm", "local-llm/rig-tools"]
 # Office document tools (logic::office): external CLI engines (ooxcli/pdfcli/
 # docbuilder) resolved at runtime — plus the RAG pipeline (kawai-embedding →
 # rig-libsql, with in-tree chunking) for idle-time knowledge indexing.
-office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter"]
+office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript"]
 
 [[bin]]
 name = "kawai"
