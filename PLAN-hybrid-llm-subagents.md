@@ -1,8 +1,10 @@
 # Implementation Plan — Hybrid LLM: local orchestrator + cloud subagents (kawai)
 
-Status: DRAFT v1, not started. Exists because the user asked (per AGENTS.md the
-agent tier is "do NOT start without the user asking" — this extends Roadmap 5's
-shipped agent loop with a second compute tier).
+Status: **IMPLEMENTED (2026-08-20)** — shipped in commit `3c79675`. Local Gemma 4
+orchestrates; cloud subagents `deep_write` / `draft_document` are wired via
+`agent_chat` prompt-based tool calling (`logic/remote.rs`, `logic/agent.rs`). CI
+smoke gate lives in `.github/workflows/ci.yml`. This doc is now a design record;
+the live status lives in `AGENTS.md` → Roadmap 5 ✅ and `ARCHITECTURE.md` → LLM.
 
 Decision context (2026-08-20): after extensive testing, on-device LiteRT-LM
 (Gemma 4 E2B, CPU) is **not feasible for medium/heavy work** — long synthesis,
