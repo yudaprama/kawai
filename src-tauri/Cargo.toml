@@ -49,10 +49,6 @@ dotenvy = "0.15"
 # Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
 # Private repo — CI authenticates via the insteadOf git rewrite (release.yml).
 kawai-constants = { git = "https://github.com/yudaprama/kawai-vault", subdir = "constants" }
-# Remote LLM session-title generation: the Cloudflare Workers AI rig provider.
-# Always compiled — the title call degrades to the offline substr fallback if
-# the network/credentials are unavailable, so the desktop build never hard-fails.
-cloudflare = { path = "../rig-components/providers/cloudflare" }
 # Office tool store imports (drag-drop/web base64 blobs). Gated behind
 # "office" so non-office builds stay dep-free.
 base64 = { version = "0.22", optional = true }

@@ -111,13 +111,14 @@ pub mod rag;
 pub use db::*;
 
 /// Generate a concise session title with a remote LLM (Cloudflare Workers AI).
+/// Uses a custom request/response to avoid rig's strict OpenAI-compatible
+/// deserialization which Cloudflare's Workers AI doesn't fully match.
 /// The first user message is the input; the result overwrites the offline substr
 /// fallback set by `append_chat_message`. Safe to call fire-and-forget: any
 /// failure is logged and the existing title is left untouched.
 pub async fn generate_session_title(user_id: &str, session_id: i64) -> Result<(), DbError> {
-    use rig::client::CompletionClient;
-    use rig::completion::CompletionModel;
-    use rig::completion::message::{AssistantContent, Text};
+    use reqwest::Client;
+    use serde::{Deserialize, Serialize};
 
     let conn = db_connection(user_id).await?;
 
@@ -137,32 +138,49 @@ pub async fn generate_session_title(user_id: &str, session_id: i64) -> Result<()
         return Ok(());
     }
 
-    let client = cloudflare::CloudflareClient::from_env()
-        .map_err(|e| DbError::Config(format!("cloudflare client: {e}")))?;
-    let model = client.completion_model(cloudflare::models::GRANITE_4_0_H_MICRO);
-
-    let prompt = format!(
-        "Write a short chat session title (max 6 words, no punctuation, no quotes). \
-         Reply with only the title.\n\nConversation start: {}",
-        first
+    // Vault Workers AI credentials.
+    let (account_id, api_key) =
+        kawai_constants::cloudflare::get_cf_workers_ai_account_id_and_key();
+    if account_id.is_empty() || api_key.is_empty() {
+        eprintln!("[generate_session_title] kawai-vault workers-ai credentials empty — keeping offline title");
+        return Ok(());
+    }
+    let base_url = format!(
+        "https://api.cloudflare.com/client/v4/accounts/{}/ai/v1/chat/completions",
+        account_id
     );
-    let request = model
-        .completion_request(prompt)
-        .temperature(0.2)
-        .max_tokens(24)
-        .build();
-    let response = model
-        .completion(request)
+
+    let client = Client::new();
+    let request_body = CloudflareRequest {
+        model: CloudflareModel::Granite4HMicro,
+        messages: vec![CloudflareMessage {
+            role: CloudflareRole::User,
+            content: format!(
+                "Write a short chat session title (max 6 words, no punctuation, no quotes). \
+                 Reply with only the title.\n\nConversation start: {}",
+                first
+            ),
+        }],
+        raw: false,
+        temperature: 0.2,
+        max_tokens: 24,
+    };
+
+    let response: CloudflareResponse = client
+        .post(&base_url)
+        .bearer_auth(api_key)
+        .json(&request_body)
+        .send()
         .await
-        .map_err(|e| DbError::Config(format!("cloudflare completion: {e}")))?;
+        .map_err(|e| DbError::Config(format!("cloudflare request: {e}")))?
+        .json()
+        .await
+        .map_err(|e| DbError::Config(format!("cloudflare json: {e}")))?;
 
     let raw = response
-        .choice
-        .iter()
-        .find_map(|p| match p {
-            AssistantContent::Text(Text { text, .. }) => Some(text.clone()),
-            _ => None,
-        })
+        .choices
+        .first()
+        .and_then(|c| c.message.content.clone())
         .unwrap_or_default();
 
     let title: String = raw
@@ -183,4 +201,51 @@ pub async fn generate_session_title(user_id: &str, session_id: i64) -> Result<()
         .await?;
     }
     Ok(())
+}
+
+#[derive(Serialize)]
+struct CloudflareRequest {
+    model: CloudflareModel,
+    messages: Vec<CloudflareMessage>,
+    #[serde(default)]
+    raw: bool,
+    #[serde(default)]
+    temperature: f32,
+    #[serde(default)]
+    max_tokens: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum CloudflareModel {
+    #[serde(rename = "@cf/ibm-granite/granite-4.0-h-micro")]
+    Granite4HMicro,
+}
+
+#[derive(Serialize)]
+struct CloudflareMessage {
+    role: CloudflareRole,
+    content: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum CloudflareRole {
+    User,
+    Assistant,
+}
+
+#[derive(Deserialize, Clone)]
+struct CloudflareResponse {
+    choices: Vec<CloudflareChoice>,
+}
+
+#[derive(Deserialize, Clone)]
+struct CloudflareChoice {
+    message: CloudflareChoiceMessage,
+}
+
+#[derive(Deserialize, Clone)]
+struct CloudflareChoiceMessage {
+    content: Option<String>,
 }
