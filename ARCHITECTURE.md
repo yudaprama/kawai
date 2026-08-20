@@ -46,6 +46,38 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 
 What happens when a user sends a prompt (the agent-tier chat transport; `local_chat` is the legacy path and is no longer invoked by the frontend):
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant FE as Frontend (use-local-chat)
+    participant CMD as commands.rs::agent_chat
+    participant AC as logic::agent_chat
+    participant LLM as local_llm (Gemma 4)
+    participant CLOUD as RemoteLlm (zai)
+
+    U->>FE: type prompt, send
+    FE->>CMD: streamOperation("agent_chat", {agentId, sessionId, message, streamId})
+    CMD->>CMD: resolve user_id from Session; register cancel token
+    CMD->>AC: agent_chat(user_id, agent_id, sid, message)
+    AC->>AC: remote = from_env(); toolset_for(...)  (adds deep_write if remote)
+    AC->>AC: reset conversation (takeover); build prompt
+    AC->>LLM: local_chat(stream)
+    LLM-->>FE: Token events (live render)
+    LLM-->>AC: full text
+    AC->>AC: parse_tool_call(text)
+    alt tool call = deep_write / draft_document AND remote set
+        AC->>CLOUD: completion(task)  (stream)
+        CLOUD-->>FE: Token events (answer)
+        CLOUD-->>AC: result
+        AC->>LLM: feed result back (loop)
+    else no tool call
+        AC-->>FE: final answer
+    end
+    AC->>AC: db::log_turn (provider, tool, latency)
+    AC-->>FE: Finished
+```
+
 1. **Frontend capture & invoke.** `App.tsx` → `hooks/use-local-chat.ts` calls `streamOperation("agent_chat", { agentId, sessionId, message, streamId })` (use-local-chat.ts hardcodes `"agent_chat"`). Streaming arrives over a Tauri `Channel` as `#[serde(tag="type")]` events; the frontend mirrors the union in `LocalChatEvent` (`Started`, `Token`, `ToolCall`, `ToolResult`, `Finished`, `Error`).
 
 2. **Transport — Tauri command.** `commands.rs::agent_chat` takes `stream_id`, `on_event: Channel`, `State<Session>`, `State<StreamRegistry>`. The wrapper resolves `user_id` from the session claims (identity at the edge, never inside `logic.rs`), registers a `CancellationToken` keyed by `stream_id`, then calls `logic::agent_chat(...)`. (Web: the equivalent Axum route in `web.rs` mounts on the protected router and takes `Extension<auth::Claims>`.)
