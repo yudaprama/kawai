@@ -42,6 +42,28 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 └───────────────────────────────────────────────────────────┘
 ```
 
+## Request flow — `agent_chat` end-to-end
+
+What happens when a user sends a prompt (the agent-tier chat transport; `local_chat` is the legacy path and is no longer invoked by the frontend):
+
+1. **Frontend capture & invoke.** `App.tsx` → `hooks/use-local-chat.ts` calls `streamOperation("agent_chat", { agentId, sessionId, message, streamId })` (use-local-chat.ts hardcodes `"agent_chat"`). Streaming arrives over a Tauri `Channel` as `#[serde(tag="type")]` events; the frontend mirrors the union in `LocalChatEvent` (`Started`, `Token`, `ToolCall`, `ToolResult`, `Finished`, `Error`).
+
+2. **Transport — Tauri command.** `commands.rs::agent_chat` takes `stream_id`, `on_event: Channel`, `State<Session>`, `State<StreamRegistry>`. The wrapper resolves `user_id` from the session claims (identity at the edge, never inside `logic.rs`), registers a `CancellationToken` keyed by `stream_id`, then calls `logic::agent_chat(...)`. (Web: the equivalent Axum route in `web.rs` mounts on the protected router and takes `Extension<auth::Claims>`.)
+
+3. **Setup (`logic/agent.rs`).** `agent_chat` resolves the agent (`get_agent(agent_id)`), builds the persona (system prompt — richer when a remote is configured), and calls `remote = RemoteLlm::from_env()` — default `zai` (glm-5.3) using a **compiled-in kawai-vault key** (zero-config; override via `KAWAI_REMOTE_LLM_*` or disable with `off`). It builds `toolset = toolset_for(agent_id, user_id, sid, remote.as_ref())`, which adds `deep_write` **only when `remote.is_some()`** and `draft_document` under the `office` feature. It `yield`s `Started`, loads `prior_turns` from SQLite, and appends the user message.
+
+4. **Generation loop — local model is the orchestrator.** If the conversation manifest isn't injected yet, `agent_chat` **resets the engine conversation** (singleton per user; clears any framing left by `local_chat`) and builds the full prompt = persona + tool manifest + `compact_transcript(prior_turns)` + the user message. It calls `local_llm::local_chat` (LiteRT-LM Conversation API, on-device Gemma 4) — tokens stream out as `Token` events rendered live. On completion `parse_tool_call(&text)`:
+   - **tool call + tool ∈ {`deep_write`, `draft_document`} + `remote.is_some()`** → *intercept* (don't run a Rust tool), delegate to the cloud subagent (step 5).
+   - other native tool → dispatch via `toolset` (Rust execution), `yield ToolResult`, loop again.
+   - **no tool call** → final answer.
+   - prefill K/V overflow (8192 budget) → reset + retry once.
+
+5. **Cloud subagent delegation (`logic/remote.rs`).** `deep_write` streams a completion from `zai` and the long-form result is streamed back to the frontend as the answer (with a `ToolResult` card: "cloud writer produced the answer (zai)"). `draft_document` has the cloud write a file via the office engine. The result is fed back into the loop so Gemma 4 can synthesize the final response.
+
+6. **Finalize.** The final answer triggers `db::log_turn` (`logic/db.rs`) — one row in `turn_log`: `provider` (`local` | `zai`), `tool` (`deep_write`/`draft_document`/`NULL`), `latency_ms`, `outcome=answer` — used to calibrate delegation via `turn_log_report`. `agent_chat` `yield`s `Finished`; the frontend completes the UIMessage parts (text + tool cards).
+
+**Design invariant:** Gemma 4 local is the *permanent orchestrator*; the cloud is the most expensive *tool* the model may choose for heavy synthesis. No user-facing provider switch — zero-config `zai`, `off` as the only kill-switch. Unset/`off`/no-key ⇒ pure-local agents.
+
 ## Directory layout
 
 ```
