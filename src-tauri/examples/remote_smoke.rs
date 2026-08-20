@@ -5,7 +5,6 @@
 // Usage:
 //   cargo run --example remote_smoke                # default tiny task
 //   cargo run --example remote_smoke -- "your task" # custom task
-//   KAWAI_REMOTE_LLM_PROVIDER=off cargo run --example remote_smoke  # expect: disabled
 use futures_util::StreamExt;
 use kawai_lib::logic::remote::{RemoteEvent, RemoteLlm};
 
@@ -18,10 +17,10 @@ async fn main() {
     kawai_lib::auth::load_dotenv();
 
     let Some(remote) = RemoteLlm::from_env() else {
-        println!("[remote_smoke] remote tier DISABLED (unset/off/no key) — this is the graceful-degradation path: OK");
+        println!("[remote_smoke] remote tier DISABLED (no vault keys) — this is the graceful-degradation path: OK");
         return;
     };
-    println!("[remote_smoke] provider: {}", remote.provider_label());
+    println!("[remote_smoke] pool primary: {}", remote.provider_label());
 
     let task = std::env::args().nth(1).unwrap_or_else(|| DEFAULT_TASK.into());
     let materials = "Context: the on-device model is a 2B-parameter CPU model; the cloud model is a large hosted model.";
@@ -34,13 +33,17 @@ async fn main() {
     let mut stream = Box::pin(stream);
     let mut chars = 0;
     let mut usage = None;
+    let mut winner = String::new();
     while let Some(ev) = stream.next().await {
         match ev {
             Ok(RemoteEvent::Token { text }) => {
                 chars += text.chars().count();
                 print!("{text}");
             }
-            Ok(RemoteEvent::Done { usage: u }) => usage = Some(u),
+            Ok(RemoteEvent::Done { usage: u, provider }) => {
+                usage = Some(u);
+                winner = provider;
+            }
             Err(e) => {
                 println!("\n[remote_smoke] stream error: {e}");
                 std::process::exit(1);
@@ -50,8 +53,9 @@ async fn main() {
     println!();
     match usage {
         Some(u) => println!(
-            "[remote_smoke] done in {:.1}s · {chars} chars · usage: in={} out={} tokens (zeros = provider reported none)",
+            "[remote_smoke] done in {:.1}s · pool primary {} · served by {winner} · {chars} chars · usage: in={} out={} tokens (zeros = provider reported none)",
             t0.elapsed().as_secs_f64(),
+            remote.provider_label(),
             u.input_tokens,
             u.output_tokens
         ),

@@ -11,7 +11,9 @@
 //     KAWAI_DATA_DIR=/tmp/kawai-agent-smoke \
 //     cargo run --example agent_smoke --features litert,office
 //
-// Env: KAWAI_REMOTE_LLM_PROVIDER=off skips the cloud part (local-only run).
+// Remote tier: zero-config cloud — keys are compiled into the vault, so
+// delegation assertions run unconditionally. An empty vault is a broken
+// environment and SHOULD fail loudly here.
 use futures_util::StreamExt;
 use kawai_lib::logic::agent::{agent_chat, AgentChatEvent};
 use kawai_lib::logic::{db, local_llm};
@@ -73,9 +75,6 @@ fn verdict(label: &str, pass: bool) -> bool {
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     kawai_lib::auth::load_dotenv();
-    let remote_on = std::env::var("KAWAI_REMOTE_LLM_PROVIDER")
-        .map(|v| !v.trim().eq_ignore_ascii_case("off"))
-        .unwrap_or(true);
     std::env::set_var("KAWAI_DATA_DIR", "/tmp/kawai-agent-smoke");
 
     // 1. Load the on-device model (the orchestrator under test).
@@ -112,11 +111,7 @@ async fn main() {
         && !events2.iter().any(|e| e.starts_with("ERROR"));
     let delegated = events2.iter().any(|e| e.contains("deep_write"));
     all_pass &= verdict("heavy turn completes", heavy_ok);
-    if remote_on {
-        all_pass &= verdict("heavy turn delegates to deep_write", delegated);
-    } else {
-        println!("  ⇒ delegation check SKIPPED (remote off)\n");
-    }
+    all_pass &= verdict("heavy turn delegates to deep_write", delegated);
 
     // 4. Office agent heavy-with-file turn (draft_document path).
     println!("── office agent · DOCUMENT turn (expect draft_document) ──");
@@ -131,11 +126,7 @@ async fn main() {
         && !events3.iter().any(|e| e.starts_with("ERROR"));
     let drafted = events3.iter().any(|e| e.contains("draft_document"));
     all_pass &= verdict("office turn completes", office_ok);
-    if remote_on {
-        all_pass &= verdict("office turn uses draft_document", drafted);
-    } else {
-        println!("  ⇒ draft check SKIPPED (remote off)\n");
-    }
+    all_pass &= verdict("office turn uses draft_document", drafted);
 
     // 5. turn_log actually captured the turns.
     println!("── turn_log ──");

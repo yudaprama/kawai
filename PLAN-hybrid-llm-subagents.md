@@ -252,10 +252,11 @@ impl RemoteLlm {
 }
 ```
 
-- **Provider**: hardcoded — Z.AI (default) and OpenRouter, both with API keys
-  from `kawai_constants::llm` vault pool. Config in `.env`:
-  `KAWAI_REMOTE_LLM_PROVIDER` (kill switch: `off`), optional
-  `KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS`.
+- **Provider**: hardcoded — every provider with an API key in the
+  `kawai_constants::llm` vault pool joins a fixed-priority failover pool
+  (zai → openrouter → ollama → venice → opencode). Optional
+  `KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS` in `.env`. An empty vault is the only
+  off state.
 - **Graceful degradation**: no API key ⇒ `from_env() → None` ⇒ subagent tools
   are simply not registered in any toolset; agents behave exactly as today
   (pure local). No errors, no UI changes.
@@ -372,10 +373,9 @@ costs per agent per day.
    litert,office`, iOS + Android ndk checks, `cargo test --features litert
    --lib` 19/19. (Known pre-existing: `litert,office,web` combined fails in
    `web.rs` on the reqwest 0.13 landmine — fails on the clean tree too.)
-7. Pending manual smoke (needs a live key): dev run with
-   `KAWAI_REMOTE_LLM_PROVIDER=zai` on the office agent — heavy prompt streams
-   a cloud answer, `turn_log` rows written, cancel mid-stream aborts; and
-   without a key — agents behave exactly as today.
+ 7. Pending manual smoke (needs a live key): dev run on the office agent —
+    heavy prompt streams a cloud answer, `turn_log` rows written, cancel
+    mid-stream aborts; and without a key — agents behave exactly as today.
 
 ### Phase 2 — `draft_document` + calibration
 

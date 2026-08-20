@@ -54,6 +54,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 #[cfg(feature = "litert")]
 use rig::tool::ToolContext;
+use rig::tool::ToolSet;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -769,6 +770,9 @@ pub fn agent_chat(
                 let system = if is_draft { DRAFT_DOCUMENT_SYSTEM } else { DEEP_WRITE_SYSTEM };
                 let mut answer = String::new();
                 let mut usage: Option<crate::logic::remote::RemoteUsage> = None;
+                // Label of the candidate that actually served the stream
+                // (failover may skip the preferred primary).
+                let mut cloud_provider: Option<String> = None;
                 let mut failed: Option<String> = None;
                 let mut stream: std::pin::Pin<
                     Box<dyn futures_core::Stream<Item = Result<crate::logic::remote::RemoteEvent, String>> + Send>,
@@ -807,8 +811,9 @@ pub fn agent_chat(
                                 }
                             }
                         }
-                        Some(Ok(crate::logic::remote::RemoteEvent::Done { usage: u })) => {
+                        Some(Ok(crate::logic::remote::RemoteEvent::Done { usage: u, provider: p })) => {
                             usage = Some(u);
+                            cloud_provider = Some(p);
                             break;
                         }
                         Some(Err(e)) => {
@@ -820,10 +825,13 @@ pub fn agent_chat(
                 }
 
                 let latency = started.elapsed().as_millis() as i64;
-                let provider = remote
-                    .as_ref()
-                    .map(|r| r.provider_label())
-                    .unwrap_or("cloud");
+                // Owned: the draft-JSON retry below may still set the winner.
+                let provider = cloud_provider.clone().unwrap_or_else(|| {
+                    remote
+                        .as_ref()
+                        .map(|r| r.provider_label().to_string())
+                        .unwrap_or_else(|| "cloud".to_string())
+                });
 
                 // ── draft_document: parse JSON → write file → receipt ────
                 #[cfg(feature = "office")]
@@ -855,9 +863,12 @@ pub fn agent_chat(
                                                 retry_text.push_str(&text);
                                             }
                                         }
-                                        Ok(crate::logic::remote::RemoteEvent::Done { usage: u }) => {
+                                        Ok(crate::logic::remote::RemoteEvent::Done { usage: u, provider: p }) => {
                                             if usage.is_none() {
                                                 usage = Some(u);
+                                            }
+                                            if cloud_provider.is_none() {
+                                                cloud_provider = Some(p);
                                             }
                                             break;
                                         }
@@ -910,7 +921,7 @@ pub fn agent_chat(
                                             db::TurnLogEntry {
                                                 session_id: sid,
                                                 agent_id: &agent_id,
-                                                provider,
+                                                provider: &provider,
                                                 tool: Some(DRAFT_DOCUMENT_TOOL),
                                                 input_tokens: usage.map(|u| u.input_tokens as i64),
                                                 output_tokens: usage
@@ -977,7 +988,7 @@ pub fn agent_chat(
                         db::TurnLogEntry {
                             session_id: sid,
                             agent_id: &agent_id,
-                            provider,
+                            provider: &provider,
                             tool: Some(&call.tool),
                             input_tokens: None,
                             output_tokens: None,
@@ -1003,7 +1014,7 @@ pub fn agent_chat(
                     db::TurnLogEntry {
                         session_id: sid,
                         agent_id: &agent_id,
-                        provider,
+                        provider: &provider,
                         tool: Some(DEEP_WRITE_TOOL),
                         input_tokens: usage.map(|u| u.input_tokens as i64),
                         output_tokens: usage

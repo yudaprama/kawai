@@ -27,7 +27,7 @@ async fn main() {
         println!("[draft_smoke] remote tier DISABLED — nothing to test, OK");
         return;
     };
-    println!("[draft_smoke] provider: {}", remote.provider_label());
+    println!("[draft_smoke] pool primary: {}", remote.provider_label());
 
     let task = "Compose a one-page project-update document titled 'Hybrid LLM Update' with sections: \
 What Shipped (bullets), Results (table with metric/value rows), Next Steps (bullets), and a closing paragraph.";
@@ -39,10 +39,14 @@ Results: cloud smoke 3.6s, 193 output tokens; local tests 40/40. Next: calibrati
     let mut stream = Box::pin(stream);
     let mut raw = String::new();
     let mut usage = None;
+    let mut winner = String::new();
     while let Some(ev) = stream.next().await {
         match ev {
             Ok(RemoteEvent::Token { text }) => raw.push_str(&text),
-            Ok(RemoteEvent::Done { usage: u }) => usage = Some(u),
+            Ok(RemoteEvent::Done { usage: u, provider }) => {
+                usage = Some(u);
+                winner = provider;
+            }
             Err(e) => {
                 println!("[draft_smoke] stream error: {e}");
                 std::process::exit(1);
@@ -50,7 +54,7 @@ Results: cloud smoke 3.6s, 193 output tokens; local tests 40/40. Next: calibrati
         }
     }
     println!(
-        "[draft_smoke] cloud done in {:.1}s · {} chars · usage in={:?} out={:?}",
+        "[draft_smoke] cloud done in {:.1}s · served by {winner} · {} chars · usage in={:?} out={:?}",
         t0.elapsed().as_secs_f64(),
         raw.chars().count(),
         usage.map(|u| u.input_tokens),
