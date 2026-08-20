@@ -232,7 +232,7 @@ set_cell{cells:[{cell,value}]}. \
 #[serde(rename_all = "camelCase")]
 pub struct CreateDocumentArgs {
     pub filename: String,
-    pub script: String,
+    pub blocks: Vec<super::ooxml::DocBlock>,
 }
 
 pub struct CreateDocumentTool(pub String);
@@ -244,10 +244,15 @@ impl PortableTool for CreateDocumentTool {
     type Error = OfficeToolError;
 
     fn description(&self) -> String {
-        "Create a NEW office document (.docx/.xlsx/.pptx) by writing an ONLYOFFICE docbuilder JS program. \
-Lifecycle: builder.CreateFile(\"docx\"|\"xlsx\"|\"pptx\") … builder.SaveFile(\"docx\", \"<outDir>/output.docx\"); builder.CloseFile(); \
-Word: var doc=Api.GetDocument(); var p=Api.CreateParagraph(); var r=Api.CreateRun(); r.AddText(\"…\"); r.SetBold(true); r.SetFontSize(24); p.AddElement(r); doc.Push(p); tables via doc.CreateTable(rows, cols) then cell.GetContent().AddElement(Api.CreateParagraph().AddText(\"…\")). \
-Sheets: var s=Api.GetActiveSheet(); s.GetRange(\"A1:B2\").SetValue([[…]]); formulas via SetFormula. Save output to <outDir>/output.<ext> (the <outDir> placeholder is substituted for you; CloseFile is appended if you omit it). Keep the script small and focused."
+        "Create a NEW office document from EXACT content the user already provided (you transcribe their literal text — do NOT compose content yourself; when content must be written/drafted, call draft_document instead). \
+blocks is a list, in document order: \
+{\"type\":\"title\",\"text\":\"...\"} — big centered title; \
+{\"type\":\"heading\",\"text\":\"...\",\"level\":1|2|3} — section heading; \
+{\"type\":\"paragraph\",\"text\":\"...\",\"bold\":true|false}; \
+{\"type\":\"bullets\",\"items\":[\"...\",\"...\"]}; \
+{\"type\":\"table\",\"rows\":[[\"a\",\"b\"],[\"c\",\"d\"]]}. \
+The filename extension picks the format (.docx renders blocks in order; .xlsx writes blocks as spreadsheet rows starting at A1, tables as cells; .pptx makes each title a new slide with the following blocks as its body text). \
+Example args: {\"filename\":\"report.docx\",\"blocks\":[{\"type\":\"title\",\"text\":\"Report\"},{\"type\":\"paragraph\",\"text\":\"Hello world\"}]}"
             .into()
     }
 
@@ -256,14 +261,14 @@ Sheets: var s=Api.GetActiveSheet(); s.GetRange(\"A1:B2\").SetValue([[…]]); for
             "type": "object",
             "properties": {
                 "filename": { "type": "string", "description": "Output filename, e.g. report.docx / sheet.xlsx / deck.pptx" },
-                "script": { "type": "string", "description": "Complete docbuilder JS program (builder.CreateFile, Api.*, builder.SaveFile). Save to <outDir>/output.<ext>." }
+                "blocks": { "type": "array", "description": "Document content in order: title/heading/paragraph/bullets/table objects (see tool description).", "items": { "type": "object" } }
             },
-            "required": ["filename", "script"]
+            "required": ["filename", "blocks"]
         })
     }
 
     async fn call(&self, args: Self::Args) -> Result<String, OfficeToolError> {
-        let file = ooxml::create_document(&self.0, &args.filename, &args.script)
+        let file = ooxml::create_document_from_blocks(&self.0, &args.filename, &args.blocks)
             .await
             .map_err(oerr)?;
         Ok(json!({ "success": true, "file": file }).to_string())

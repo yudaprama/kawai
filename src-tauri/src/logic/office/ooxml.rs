@@ -1,8 +1,132 @@
+use serde::Deserialize;
 use serde_json::Value;
 
 use super::cli::{self, CLI_TIMEOUT};
 use super::store;
 use super::store::OfficeFile;
+
+// ── structured document blocks (model-friendly create path) ─────────────────
+//
+// The agent model writes simple JSON blocks; the docbuilder JS below is
+// generated deterministically in Rust. Nested "code inside a JSON string"
+// was beyond a small on-device model (escaping broke the JSON every time).
+
+/// One content block for `office_create_document`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum DocBlock {
+    #[serde(rename = "title")]
+    Title { text: String },
+    #[serde(rename = "heading")]
+    Heading { text: String, #[serde(default)] level: Option<u8> },
+    #[serde(rename = "paragraph")]
+    Paragraph { text: String, #[serde(default)] bold: Option<bool> },
+    #[serde(rename = "bullets")]
+    Bullets { items: Vec<String> },
+    #[serde(rename = "table")]
+    Table { rows: Vec<Vec<String>> },
+}
+
+/// Create a document from structured content blocks (see [`DocBlock`]).
+///
+/// Renders the blocks to markdown and creates the file in-process via
+/// office_oxide (`create_from_markdown`) — no docbuilder engine needed.
+/// Markdown semantics carry across formats: an H1 (`title` block) starts a
+/// new section, which the xlsx/pptx writers map to a new sheet/slide with
+/// that title; other blocks flow in document order.
+pub async fn create_document_from_blocks(
+    user_id: &str,
+    filename: &str,
+    blocks: &[DocBlock],
+) -> Result<OfficeFile, String> {
+    use std::io::Cursor;
+
+    let ext = store::allowed_ext(filename)
+        .filter(|e| matches!(e.as_str(), "docx" | "xlsx" | "pptx"))
+        .ok_or_else(|| format!("unsupported output type: {filename} (docx/xlsx/pptx)"))?;
+    let format = match ext.as_str() {
+        "docx" => office_oxide::format::DocumentFormat::Docx,
+        "xlsx" => office_oxide::format::DocumentFormat::Xlsx,
+        "pptx" => office_oxide::format::DocumentFormat::Pptx,
+        _ => unreachable!(),
+    };
+    let markdown = blocks_to_markdown(blocks)?;
+    let mut bytes = Cursor::new(Vec::new());
+    office_oxide::create::create_from_markdown_to_writer(&markdown, format, &mut bytes)
+        .map_err(|e| format!("office_oxide create failed: {e}"))?;
+    store::import_bytes(user_id, filename, &bytes.into_inner())
+}
+
+/// Render content blocks to the markdown dialect office_oxide ingests
+/// (ATX headings, pipe tables, `-` bullets, `**bold**`).
+fn blocks_to_markdown(blocks: &[DocBlock]) -> Result<String, String> {
+    if blocks.is_empty() {
+        return Err("blocks must not be empty — add at least one title/paragraph/bullets/table block".into());
+    }
+    let mut md = String::new();
+    for b in blocks {
+        match b {
+            DocBlock::Title { text } => {
+                md.push_str(&format!("# {}\n\n", md_text(text)));
+            }
+            DocBlock::Heading { text, level } => {
+                let hashes = "#".repeat((level.unwrap_or(1).clamp(1, 3) as usize) + 1);
+                md.push_str(&format!("{hashes} {}\n\n", md_text(text)));
+            }
+            DocBlock::Paragraph { text, bold } => {
+                if bold.unwrap_or(false) {
+                    md.push_str(&format!("**{}**\n\n", md_text(text)));
+                } else {
+                    md.push_str(&format!("{}\n\n", md_text(text)));
+                }
+            }
+            DocBlock::Bullets { items } => {
+                // Plain "• item" paragraphs (not markdown lists): the xlsx
+                // writer does not render List elements, and one rendering for
+                // all three formats keeps output predictable.
+                for item in items {
+                    md.push_str(&format!("• {}\n\n", md_text(item)));
+                }
+            }
+            DocBlock::Table { rows } => {
+                if rows.is_empty() || rows[0].is_empty() {
+                    return Err("table block needs at least one non-empty row".into());
+                }
+                let cols = rows.iter().map(Vec::len).max().unwrap_or(1);
+                let mut row_line = |cells: &[String]| -> String {
+                    let padded: Vec<String> = (0..cols)
+                        .map(|i| cell_text(cells.get(i).map(String::as_str).unwrap_or("")))
+                        .collect();
+                    format!("| {} |\n", padded.join(" | "))
+                };
+                md.push_str(&row_line(&rows[0]));
+                md.push_str(&format!("|{}|\n", vec![" --- "; cols].join("|")));
+                for row in &rows[1..] {
+                    md.push_str(&row_line(row));
+                }
+                md.push('\n');
+            }
+        }
+    }
+    Ok(md)
+}
+
+/// One-line plain text for markdown: strip newlines (a paragraph must stay
+/// one block) and escape markdown-active leading characters.
+fn md_text(s: &str) -> String {
+    let flat: String = s.replace(['\r', '\n'], " ");
+    let trimmed = flat.trim();
+    if trimmed.starts_with(['#', '-', '*', '>']) {
+        format!("\\ {}", trimmed)
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Table cell text: newlines out, pipes escaped.
+fn cell_text(s: &str) -> String {
+    s.replace(['\r', '\n'], " ").replace('|', "\\|")
+}
 
 fn allowed_ops(ext: &str) -> Option<&'static [&'static str]> {
     match ext {
@@ -146,74 +270,6 @@ pub async fn edit_document(
     Ok(outcome)
 }
 
-/// Minimal JS string escaping for the `<outDir>` substitution.
-fn js_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 8);
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
-/// docbuilder create.
-pub async fn create_document(
-    user_id: &str,
-    filename: &str,
-    script: &str,
-) -> Result<OfficeFile, String> {
-    let ext = store::allowed_ext(filename)
-        .ok_or_else(|| format!("unsupported output type: {filename} (docx/xlsx/pptx)"))?;
-    let bin = cli::docbuilder_path().ok_or_else(|| cli::missing_engine("docbuilder"))?;
-    let bin_dir = bin
-        .parent()
-        .ok_or("docbuilder has no parent dir")?
-        .to_path_buf();
-
-    let out_dir = std::env::temp_dir().join(format!("kawai-create-{}", store::new_file_id()));
-    std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
-    let out_dir_abs = out_dir.canonicalize().unwrap_or(out_dir.clone());
-
-    let script_escaped = js_escape(&out_dir_abs.display().to_string());
-    let script_sub = script.replace("<outDir>", &script_escaped);
-    let script_sub = if script_sub.contains("builder.CloseFile") {
-        format!("{script_sub}\n")
-    } else {
-        format!("{script_sub}\nbuilder.CloseFile();\n")
-    };
-    let script_path = out_dir.join("script.docbuilder");
-    std::fs::write(&script_path, script_sub).map_err(|e| e.to_string())?;
-
-    let args = vec![
-        "--check-fonts=0".to_string(),
-        format!("--save-use-only-names={}", out_dir_abs.display()),
-        script_path.display().to_string(),
-    ];
-    let ran = cli::run_cli(&bin, &args, None, Some(&bin_dir), cli::DOCBUILDER_TIMEOUT).await;
-
-    let produced = out_dir.join(format!("output.{ext}"));
-    let result = if !produced.is_file() {
-        let stderr = ran.as_ref().map(|o| o.stderr.trim()).unwrap_or("");
-        Err(format!(
-            "docbuilder produced no output at {} (stderr: {stderr}; verify the script calls builder.CreateFile(\"{ext}\") first and builder.SaveFile(\"{ext}\", \"<outDir>/output.{ext}\"))",
-            produced.display()
-        ))
-    } else {
-        match std::fs::read(&produced) {
-            Ok(data) => store::import_bytes(user_id, filename, &data),
-            Err(e) => Err(e.to_string()),
-        }
-    };
-    let _ = std::fs::remove_dir_all(&out_dir);
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,5 +328,80 @@ mod tests {
             outcome.operations[0].error.as_deref(),
             outcome.error_summary.as_deref()
         );
+    }
+
+    // -- structured create (blocks → markdown → office_oxide) ------------------
+
+    fn blocks() -> Vec<DocBlock> {
+        vec![
+            DocBlock::Title { text: "Report".into() },
+            DocBlock::Heading { text: "S1".into(), level: Some(2) },
+            DocBlock::Paragraph { text: "it's a \"test\"".into(), bold: Some(true) },
+            DocBlock::Bullets { items: vec!["one".into(), "two".into()] },
+            DocBlock::Table { rows: vec![vec!["a".into(), "b".into()], vec!["c".into(), "d".into()]] },
+        ]
+    }
+
+    #[test]
+    fn markdown_renders_all_blocks() {
+        let md = blocks_to_markdown(&blocks()).expect("md");
+        assert!(md.starts_with("# Report\n\n"));
+        assert!(md.contains("### S1\n\n"));
+        assert!(md.contains("**it's a \"test\"**\n\n"));
+        assert!(md.contains("• one\n\n• two\n\n"));
+        assert!(md.contains("| a | b |\n| --- | --- |\n| c | d |\n"));
+    }
+
+    #[test]
+    fn markdown_escapes_active_characters() {
+        let md = blocks_to_markdown(&[DocBlock::Paragraph {
+            text: "# not a heading\nsecond line".into(),
+            bold: None,
+        }])
+        .expect("md");
+        assert!(md.contains("\\ # not a heading second line"));
+    }
+
+    #[test]
+    fn markdown_rejects_empty_and_bad_tables() {
+        assert!(blocks_to_markdown(&[]).is_err());
+        assert!(blocks_to_markdown(&[DocBlock::Table { rows: vec![] }]).is_err());
+    }
+
+    #[test]
+    fn creates_all_three_formats_and_round_trips() {
+        let md = blocks_to_markdown(&blocks()).expect("md");
+        for (ext, fmt) in [
+            ("docx", office_oxide::format::DocumentFormat::Docx),
+            ("xlsx", office_oxide::format::DocumentFormat::Xlsx),
+            ("pptx", office_oxide::format::DocumentFormat::Pptx),
+        ] {
+            let mut w = std::io::Cursor::new(Vec::new());
+            office_oxide::create::create_from_markdown_to_writer(&md, fmt, &mut w)
+                .unwrap_or_else(|e| panic!("{ext}: {e}"));
+            let bytes = w.into_inner();
+            assert!(bytes.len() > 500, "{ext} suspiciously small");
+            // Round-trip: office_oxide can read its own output back.
+            let doc = office_oxide::Document::from_reader(
+                std::io::Cursor::new(bytes.clone()),
+                fmt,
+            )
+            .unwrap_or_else(|e| panic!("{ext} read-back: {e}"));
+            let text = doc.plain_text();
+            if ext == "xlsx" {
+                // An H1 section title becomes the SHEET NAME in xlsx.
+                let names: Vec<String> = doc
+                    .as_xlsx()
+                    .map(|x| x.workbook.sheets.iter().map(|s| s.name.clone()).collect())
+                    .unwrap_or_default();
+                assert!(
+                    names.iter().any(|n| n.contains("Report")),
+                    "{ext} lost the title (sheets: {names:?})"
+                );
+            } else {
+                assert!(text.contains("Report"), "{ext} lost the title: {text:?}");
+            }
+            assert!(text.contains("one"), "{ext} lost the bullets: {text:?}");
+        }
     }
 }

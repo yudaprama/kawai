@@ -55,10 +55,10 @@ pub fn generate_activity(input: ActivityInput) -> impl Stream<Item = ActivityEve
 
 /// Resolve the on-device model path. Priority:
 ///   1. `KAWAI_MODEL_PATH` env var
-///   2. `./models/gemma-4-E2B-it.litertlm` (development cwd)
-///   3. `~/.kawai/models/gemma-4-E2B-it.litertlm` (user home)
+///   2. `./models/gemma-4-E4B-it.litertlm` (development cwd)
+///   3. `~/.kawai/models/gemma-4-E4B-it.litertlm` (user home)
 pub fn resolve_model_path() -> Result<String, String> {
-    let filename = "gemma-4-E2B-it.litertlm";
+    let filename = "gemma-4-E4B-it.litertlm";
     let mut candidates = Vec::new();
     if let Ok(path) = std::env::var("KAWAI_MODEL_PATH") {
         if !path.is_empty() {
@@ -95,12 +95,14 @@ pub fn resolve_model_path() -> Result<String, String> {
 
 // Database (local SQLite), notes and chat-session persistence live in `db`; the
 // on-device LLM in `local_llm`; office tooling in `office`; the prompt-based
-// tool-calling agent loop in `agent`. Re-exported so `logic::X` paths used by
-// the wrappers stay stable across the split.
+// tool-calling agent loop in `agent`; the cloud subagent client (hybrid LLM
+// tier) in `remote`. Re-exported so `logic::X` paths used by the wrappers stay
+// stable across the split.
 pub mod db;
 #[cfg(feature = "litert")]
 pub use local_llm;
 pub mod agent;
+pub mod remote;
 #[cfg(feature = "office")]
 pub mod office;
 #[cfg(feature = "office")]

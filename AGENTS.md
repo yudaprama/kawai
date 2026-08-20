@@ -192,7 +192,9 @@ frontend/                        # React 19 + Vite + Tailwind v4 SPA (vite root)
 src-tauri/src/logic.rs           # PURE logic; rig + libsql + local_llm (litert) + db token minting
 src-tauri/src/logic/rag.rs       # office-gated RAG: chunk/embed/index (status tracked in rag_files) + session-scoped knowledge_search + knowledge_list/add_to_session/import_youtube/delete_file + image description (ragloader)
 src-tauri/src/logic/office/      # office domain (feature "office"): mod.rs + cli.rs + store.rs + ooxml.rs + pdf.rs + tools.rs
-src-tauri/src/logic/agent.rs     # prompt-based tool-calling loop (features litert) — personas + agent_chat
+src-tauri/src/logic/agent.rs     # prompt-based tool-calling loop (features litert) — personas + agent_chat + cloud subagent interception (deep_write / draft_document)
+src-tauri/src/logic/remote.rs    # hybrid-tier cloud client (RemoteLlm): one stateless streaming completion per subagent call; zai default (kawai-vault key), OpenAI-compatible endpoints
+src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), turn_log_report (hybrid calibration)
 src-tauri/src/logging.rs         # stderr tee → ~/Library/Logs/kawai/app.log
 src-tauri/src/auth.rs            # PURE auth; Clerk JWKS verify + EdDSA mint + Session
 src-tauri/src/commands.rs        # #[tauri::command] wrappers + Channel + cancel registry
@@ -254,7 +256,7 @@ user → (dev bypass / future Clerk) → Rust backend → user_id
 ```
 
 - `logic::db_connection(user_id)` opens a per-op local SQLite connection; the office store defaults into the same per-user dir (`logic::db::user_data_dir`).
-- Data root resolution: `KAWAI_DATA_DIR` env → legacy `KAWAI_DB_DIR` env → injected root (`logic::db::set_data_root`; Tauri injects the app-data dir) → `/tmp/kawai`. `KAWAI_DOCS_DIR` still overrides the docs root to the legacy `<root>/<user_id>/` layout; unset = unified per-user dir. `[A-Za-z0-9_-]` user ids pass through as dir names, anything else hex-encodes.
+- Data root resolution: `KAWAI_DATA_DIR` env → legacy `KAWAI_DB_DIR` env → injected root (`logic::db::set_data_root`; Tauri injects the app-data dir — on macOS `~/Library/Application Support/pro.kawai.app`, from the `pro.kawai.app` identifier in `src-tauri/tauri.conf.json`) → `/tmp/kawai`. `KAWAI_DOCS_DIR` still overrides the docs root to the legacy `<root>/<user_id>/` layout; unset = unified per-user dir. `[A-Za-z0-9_-]` user ids pass through as dir names, anything else hex-encodes.
 - **One data directory per user — no `user_id` columns.** Isolation is structural (per-user folder), matching the future sqld-namespace model (Roadmap 16). The `office` RAG tables (`rag_chunks` + FTS5 mirror, `rag_files` index-status, `session_files`) follow the same rule; `session_files(session_id, file_id)` scopes knowledge search to everything a session has referenced.
 - Post-MVP: sqld for multi-device sync, EdDSA token minting, embedded replicas.
 
@@ -265,9 +267,16 @@ Project-root `.env` (gitignored) — backend reads these via `auth::load_dotenv(
 KAWAI_AUTH_JWKS_URI=...        # Clerk public JWKS
 KAWAI_AUTH_ISSUER=...          # Clerk frontend-API origin
 # KAWAI_AUTH_DEV_USER_ID=dev   # uncomment to accept ANY token as this user (dev only)
-KAWAI_DATA_DIR=/path/to/dir    # optional per-user data root; default /tmp/kawai (Tauri injects its app-data dir)
-KAWAI_MODEL_PATH=/path/to/gemma-4-E2B-it.litertlm  # optional on-device model; resolved by logic::resolve_model_path (env → ./models/ → ~/.kawai/models)
+KAWAI_DATA_DIR=/path/to/dir    # optional per-user data root; default on desktop = Tauri app-data dir (~/Library/Application Support/pro.kawai.app on macOS), else /tmp/kawai
+KAWAI_MODEL_PATH=/path/to/gemma-4-E4B-it.litertlm  # optional on-device model; resolved by logic::resolve_model_path (env → ./models/ → ~/.kawai/models)
 KAWAI_LLM_MAX_TOKENS=8192        # optional context budget (K/V state entries) for the on-device conversation; default 8192, must stay below the model's max (Gemma 4: 32003). Larger = more K/V memory.
+# ── Hybrid LLM tier — cloud subagents (logic/remote.rs, PLAN-hybrid-llm-subagents.md) ──
+# All unset/`off`/no-key ⇒ subagents disabled; agents behave pure-local.
+KAWAI_REMOTE_LLM_PROVIDER=zai     # zai (default, key from kawai-vault) | openai | openrouter | custom | off
+KAWAI_REMOTE_LLM_API_KEY=...      # bearer token; zai falls back to the kawai-vault pool
+KAWAI_REMOTE_LLM_MODEL=glm-5.3    # required for non-zai providers (zai defaults to glm-5.3)
+KAWAI_REMOTE_LLM_BASE_URL=...     # endpoint override (required for provider=custom)
+KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS=8192  # per-subagent-call output cap
 ```
 `.env.local` (gitignored) — Clerk publishable key reference: `VITE_CLERK_PUBLISHABLE_KEY` (unused by the React frontend; kept for the future prod-auth flow).
 

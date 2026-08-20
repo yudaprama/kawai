@@ -5,10 +5,8 @@ use std::time::Duration;
 use tokio::sync::Semaphore;
 
 pub(crate) const CLI_TIMEOUT: Duration = Duration::from_secs(60);
-pub(crate) const DOCBUILDER_TIMEOUT: Duration = Duration::from_secs(180);
 
 static BIN_DIR: OnceLock<PathBuf> = OnceLock::new();
-static RUNTIME_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 fn exe_dir() -> PathBuf {
     std::env::current_exe()
@@ -34,16 +32,8 @@ pub fn set_bin_dir(dir: impl Into<PathBuf>) {
     let _ = BIN_DIR.set(dir.into());
 }
 
-pub fn set_runtime_dir(dir: impl Into<PathBuf>) {
-    let _ = RUNTIME_DIR.set(dir.into());
-}
-
 fn bin_dir() -> Option<PathBuf> {
     resolve_dir("KAWAI_OFFICE_BIN_DIR", &BIN_DIR, "office-bin")
-}
-
-fn runtime_dir() -> Option<PathBuf> {
-    resolve_dir("KAWAI_OFFICE_RUNTIME_DIR", &RUNTIME_DIR, "office-runtime")
 }
 
 fn exe_name(base: &str) -> String {
@@ -63,12 +53,6 @@ pub(crate) fn ooxcli_path() -> Option<PathBuf> {
 pub(crate) fn pdfcli_path() -> Option<PathBuf> {
     bin_dir()
         .map(|d| d.join(exe_name("pdfcli")))
-        .filter(|p| p.is_file())
-}
-
-pub(crate) fn docbuilder_path() -> Option<PathBuf> {
-    runtime_dir()
-        .map(|d| d.join("bin").join(exe_name("docbuilder")))
         .filter(|p| p.is_file())
 }
 
@@ -152,8 +136,4 @@ pub(crate) async fn run_cli(
 
 pub(crate) fn bin_dir_str() -> Option<String> {
     bin_dir().map(|p| p.display().to_string())
-}
-
-pub(crate) fn runtime_dir_str() -> Option<String> {
-    runtime_dir().map(|p| p.display().to_string())
 }

@@ -78,6 +78,10 @@ youtube_transcript = { path = "../rig-components/youtube_transcript", optional =
 # rig-core is a direct dep (not just transitive) because logic::rag uses its
 # `Embed` derive + `EmbeddingsBuilder`/`InsertDocuments` traits directly.
 rig-core = { version = "0.42", optional = true }
+# Pure-Rust office create/read/edit (vendored submodule). Replaces the
+# docbuilder/office-runtime engine for document CREATION (markdown → IR →
+# docx/xlsx/pptx, in-process). ooxcli/pdfcli remain for read/edit/PDF.
+office_oxide = { path = "../office_oxide", optional = true }
 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]
@@ -87,10 +91,11 @@ libc = "0.2"
 default = []
 web = ["dep:axum", "dep:tower-http"]
 litert = ["dep:local-llm", "local-llm/rig-tools"]
-# Office document tools (logic::office): external CLI engines (ooxcli/pdfcli/
-# docbuilder) resolved at runtime — plus the RAG pipeline (kawai-embedding →
-# rig-libsql, with in-tree chunking) for idle-time knowledge indexing.
-office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript"]
+# Office document tools (logic::office): ooxcli/pdfcli external engines for
+# read/edit/PDF + pure-Rust creation via office_oxide — plus the RAG pipeline
+# (kawai-embedding → rig-libsql, with in-tree chunking) for idle-time
+# knowledge indexing.
+office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide"]
 
 [[bin]]
 name = "kawai"

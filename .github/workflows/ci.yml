@@ -1,0 +1,168 @@
+name: ci
+
+# Regression gates (AGENTS.md "Verify before considering work done" + Roadmap
+# MVP 3): unit tests, the on-device streaming smoke (small 270M fixture), and
+# the hybrid-tier cloud smokes — on every push to main and every PR.
+#
+# release.yml (app bundles) stays separate; this workflow gates merges.
+# NOTE: every push to main (including the release bot's bump commits) runs
+# here too — the bazel cache makes that cheap after the first run.
+#
+# agent_smoke (the full local→cloud turn) is intentionally NOT run here: it
+# needs the GB-scale E4B model and ~10 min of CPU per turn. Run it manually
+# (see its header comment) before tagging a release.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Fast gate: frontend + web feature (no C toolchain) ────────────────────
+  web:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install JS deps
+        run: bun install
+
+      - name: Build frontend (tsc -b + vite)
+        run: bun run build
+
+      # Cargo parses local-llm's and cognee-litert-lm's manifests even without
+      # the litert feature (optional deps still resolve) — the dirs must
+      # exist. local-llm path-deps rig-components tools; office needs
+      # office_oxide. Shallow, non-recursive: manifests only, no C sources.
+      - name: Init submodules (manifest only)
+        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # The kawai lib crate depends on tauri unconditionally (glib-sys et al.
+      # need the GTK/webkit dev headers even when checking only kawai-web).
+      - name: Install Tauri Linux system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: cargo check (web feature; axum must compile here)
+        run: cargo check --features web
+        working-directory: src-tauri
+
+  # ── Full gate: unit tests + on-device smoke + hybrid cloud smokes ─────────
+  macos-smoke:
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # Key is per-runner-generation: objects built against an older Xcode's
+      # libc++ headers must not be reused after a toolchain jump (same as
+      # release.yml build-macos).
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            /private/var/tmp/_bazel_runner
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos26-arm64-
+
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+
+      - name: Build litert-lm dylib
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_arm64"
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=macos_arm64 --jobs=6
+          mkdir -p ../../native
+          cp bazel-bin/c/liblitert-lm.dylib ../../native/
+          install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
+          bash ../../../scripts/bundle-litert-dylibs.sh
+
+      # ── Unit tests (41: fence parsing, transcript compaction, draft JSON,
+      #    ooxml round-trips, rag FTS mirror …) ──
+      - name: cargo test (litert + office)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        run: cargo test --features litert,office --lib
+
+      # ── Smoke 1: on-device streaming (Roadmap MVP 3). Small public fixture:
+      #    litert-community/gemma-3-270m-it · q8 · 304 MB. Cached between runs.
+      - name: Cache smoke model fixture
+        id: model
+        uses: actions/cache@v4
+        with:
+          path: smoke-model
+          key: gemma3-270m-it-q8-litertlm
+
+      - name: Download smoke model fixture
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p smoke-model
+          curl -fL --retry 3 -o smoke-model/gemma3-270m-it-q8.litertlm \
+            https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.litertlm
+
+      - name: local_llm_smoke (on-device streaming regression)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/gemma3-270m-it-q8.litertlm
+
+      # ── Smoke 2 + 3: hybrid cloud tier. The zai key comes from the compiled
+      #    kawai-vault constants (cargo git dep — authenticated via the PAT
+      #    rewrite above), so no extra secrets. Data goes to /tmp.
+      - name: remote_smoke (cloud streaming + usage)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: /tmp/kawai-ci
+        run: cargo run --example remote_smoke --features litert
+
+      - name: draft_smoke (cloud → docx artifact + receipt)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: /tmp/kawai-ci
+        run: cargo run --example draft_smoke --features litert,office

@@ -1,12 +1,10 @@
-//! Office document tooling backed by external CLI engines.
+//! Office document tooling.
 //!
-//! Pure logic — no tauri/axum imports. Engines are subprocess binaries
-//! resolved at first use:
-//!   - `ooxcli`   (github.com/yudaprama/gooxml)  — OOXML read/edit/info
-//!   - `pdfcli`   (github.com/yudaprama/pdf)     — PDF text/merge/split/…
-//!   - `docbuilder` (office-runtime tarball from
-//!     github.com/yudaprama/Docker-DocumentServer) — document CREATE via
-//!     docbuilder JS.
+//! Pure logic — no tauri/axum imports.
+//!   - `ooxcli`    (github.com/yudaprama/gooxml) — OOXML read/edit/info (subprocess)
+//!   - `pdfcli`    (github.com/yudaprama/pdf)    — PDF text/merge/split/… (subprocess)
+//!   - `office_oxide` (vendored ../office_oxide) — document CREATE, pure Rust,
+//!     in-process (markdown → IR → docx/xlsx/pptx). No docbuilder engine.
 //!
 //! Files live in a per-user on-disk store addressed ONLY by opaque file ids —
 //! path traversal is impossible by construction.
@@ -37,23 +35,19 @@ pub struct OfficeCapabilities {
     pub available: bool,
     pub ooxcli: bool,
     pub pdfcli: bool,
-    pub docbuilder: bool,
     pub bin_dir: Option<String>,
-    pub runtime_dir: Option<String>,
 }
 
-/// Probe which engines are present.
+/// Probe which engines are present. (Document creation needs no engine —
+/// it is pure Rust via office_oxide.)
 pub fn capabilities() -> OfficeCapabilities {
     let oox = cli::ooxcli_path().is_some();
     let pdf = cli::pdfcli_path().is_some();
-    let db = cli::docbuilder_path().is_some();
     OfficeCapabilities {
-        available: oox || pdf || db,
+        available: oox || pdf,
         ooxcli: oox,
         pdfcli: pdf,
-        docbuilder: db,
         bin_dir: cli::bin_dir_str(),
-        runtime_dir: cli::runtime_dir_str(),
     }
 }
 
@@ -148,8 +142,9 @@ pub struct OfficeTools {
 
 /// Build the office ToolSet for one user + session, filtered by the capability
 /// probe — tools without engines are never registered (never offered to the
-/// model). `knowledge_search` is session-scoped: it only sees documents this
-/// session uploaded (`session_files`).
+/// model). Create is always available (pure Rust). `knowledge_search` is
+/// session-scoped: it only sees documents this session uploaded
+/// (`session_files`).
 pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
     let caps = capabilities();
     let t = OfficeTools {
@@ -161,13 +156,11 @@ pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
         t.user_id.clone(),
         session_id,
     ));
+    set.add_tool(tools::CreateDocumentTool(t.user_id.clone()));
     if caps.ooxcli {
         set.add_tool(tools::ReadDocumentTool(t.user_id.clone()));
         set.add_tool(tools::DocumentInfoTool(t.user_id.clone()));
         set.add_tool(tools::EditDocumentTool(t.user_id.clone()));
-        if caps.docbuilder {
-            set.add_tool(tools::CreateDocumentTool(t.user_id.clone()));
-        }
     }
     if caps.pdfcli {
         set.add_tool(tools::PdfExtractTextTool(t.user_id.clone()));
@@ -181,5 +174,4 @@ pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
 }
 
 pub use cli::set_bin_dir;
-pub use cli::set_runtime_dir;
 pub use store::set_docs_dir;

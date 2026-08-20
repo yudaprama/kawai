@@ -419,3 +419,115 @@ pub async fn append_chat_message(
         created_at: row.get(4)?,
     })
 }
+
+/// One telemetry row per completed generation (local answer, cloud subagent
+/// call, escalation, or terminal error) — the calibration data for the hybrid
+/// LLM tier (`PLAN-hybrid-llm-subagents.md` §7). Best-effort by design:
+/// failures are logged and swallowed, telemetry must never fail a turn.
+pub struct TurnLogEntry<'a> {
+    pub session_id: i64,
+    pub agent_id: &'a str,
+    /// "local" | "cloud"
+    pub provider: &'a str,
+    /// Subagent/tool name for cloud rows.
+    pub tool: Option<&'a str>,
+    /// Provider-reported input tokens (None = unknown/not reported).
+    pub input_tokens: Option<i64>,
+    /// Provider-reported (cloud) or estimated (local, chars/4) output tokens.
+    pub output_tokens: Option<i64>,
+    pub latency_ms: i64,
+    /// "answer" | "escalated" | "error"
+    pub outcome: &'a str,
+}
+
+const TURN_LOG_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS turn_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    agent_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    tool TEXT,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    latency_ms INTEGER NOT NULL,
+    outcome TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+)";
+
+pub async fn log_turn(user_id: &str, entry: TurnLogEntry<'_>) {
+    let conn = match db_connection(user_id).await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[turn_log] no connection: {e}");
+            return;
+        }
+    };
+    if let Err(e) = conn.execute(TURN_LOG_SCHEMA, ()).await {
+        eprintln!("[turn_log] schema: {e}");
+        return;
+    }
+    let now = unix_now() as i64;
+    let res = conn
+        .execute(
+            "INSERT INTO turn_log (session_id, agent_id, provider, tool, input_tokens, \
+             output_tokens, latency_ms, outcome, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                entry.session_id,
+                entry.agent_id,
+                entry.provider,
+                entry.tool,
+                entry.input_tokens,
+                entry.output_tokens,
+                entry.latency_ms,
+                entry.outcome,
+                now,
+            ),
+        )
+        .await;
+    if let Err(e) = res {
+        eprintln!("[turn_log] insert: {e}");
+    }
+}
+
+/// One materialized `turn_log` row (calibration reader — see
+/// `examples/turn_log_report.rs`).
+pub struct TurnLogRow {
+    pub session_id: i64,
+    pub agent_id: String,
+    pub provider: String,
+    pub tool: Option<String>,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub latency_ms: i64,
+    pub outcome: String,
+    pub created_at: i64,
+}
+
+/// Read telemetry rows for a user since a unix timestamp (oldest first).
+/// Best-effort like `log_turn`: a missing table reads as empty.
+pub async fn list_turn_log(user_id: &str, since: i64) -> Result<Vec<TurnLogRow>, DbError> {
+    let conn = db_connection(user_id).await?;
+    conn.execute(TURN_LOG_SCHEMA, ()).await?;
+    let mut rows = conn
+        .query(
+            "SELECT session_id, agent_id, provider, tool, input_tokens, output_tokens, \
+             latency_ms, outcome, created_at FROM turn_log WHERE created_at >= ? ORDER BY id ASC",
+            vec![since],
+        )
+        .await?;
+    let mut out = Vec::new();
+    while let Some(r) = rows.next().await? {
+        out.push(TurnLogRow {
+            session_id: r.get(0)?,
+            agent_id: r.get(1)?,
+            provider: r.get(2)?,
+            tool: r.get(3)?,
+            input_tokens: r.get(4)?,
+            output_tokens: r.get(5)?,
+            latency_ms: r.get(6)?,
+            outcome: r.get(7)?,
+            created_at: r.get(8)?,
+        });
+    }
+    Ok(out)
+}
