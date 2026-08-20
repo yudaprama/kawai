@@ -157,8 +157,10 @@ pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
         session_id,
     ));
     set.add_tool(tools::CreateDocumentTool(t.user_id.clone()));
+    // ReadDocumentTool is pure-Rust (office_oxide); always available, even
+    // without the external ooxcli engine.
+    set.add_tool(tools::ReadDocumentTool(t.user_id.clone()));
     if caps.ooxcli {
-        set.add_tool(tools::ReadDocumentTool(t.user_id.clone()));
         set.add_tool(tools::DocumentInfoTool(t.user_id.clone()));
         set.add_tool(tools::EditDocumentTool(t.user_id.clone()));
     }

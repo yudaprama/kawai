@@ -143,27 +143,20 @@ fn allowed_ops(ext: &str) -> Option<&'static [&'static str]> {
     }
 }
 
-/// `ooxcli extract` → markdown.
+/// Extract a document to Markdown, in-process via `office_oxide`.
+///
+/// Replaces the previous `ooxcli extract` subprocess. The `baseurl` is kept
+/// for parity so any future image-serving endpoint rooted at
+/// `/office-files/<file_id>/…` (e.g. `/office-files/<file_id>/word/media/image1.png`)
+/// resolves embedded pictures to servable URLs.
 pub async fn read_document(user_id: &str, file_id: &str) -> Result<String, String> {
     let (path, info) = store::resolve(user_id, file_id)?;
-    let bin = cli::ooxcli_path().ok_or_else(|| cli::missing_engine("ooxcli"))?;
     if info.ext == "pdf" {
         return Err("use pdf_extract_text for PDF files".into());
     }
-    let out = cli::run_cli(
-        &bin,
-        &[
-            "extract".to_string(),
-            "--baseurl".to_string(),
-            "/office-files".to_string(),
-            path.display().to_string(),
-        ],
-        None,
-        None,
-        CLI_TIMEOUT,
-    )
-    .await?;
-    Ok(out.stdout)
+    let doc = office_oxide::Document::open(&path)
+        .map_err(|e| format!("office_oxide read failed: {e}"))?;
+    Ok(doc.to_markdown_with_baseurl(Some(&format!("/office-files/{file_id}"))))
 }
 
 /// `ooxcli info` → parsed JSON.
