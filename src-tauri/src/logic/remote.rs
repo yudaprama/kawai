@@ -22,6 +22,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use rig::client::CompletionClient;
 use rig::completion::CompletionModel;
+use rig::http_client::HeaderMap;
 use rig::providers::openai;
 
 /// Default cap on the `materials` string sent to the cloud (chars ≈ /4
@@ -48,7 +49,7 @@ const VENICE_MODEL: &str = "deepseek-v4-flash";
 
 /// OpenCode Zen — OpenAI-compatible gateway.
 const OPENCODE_BASE_URL: &str = "https://opencode.ai/zen/v1";
-const OPENCODE_MODEL: &str = "mimo-v2.5-free";
+const OPENCODE_MODEL: &str = "deepseek-v4-flash-free";
 
 /// Per-call token usage captured from the stream's terminal record
 /// (telemetry for `turn_log`). Zeros mean "provider reported none".
@@ -134,9 +135,22 @@ impl RemoteLlm {
             }
         };
 
+        let mut headers = HeaderMap::new();
+        if provider == "opencode" {
+            let session_id = random_id();
+            let project_id = random_id();
+            let request_id = random_id();
+            headers.insert("x-opencode-client", "cli".parse().unwrap());
+            headers.insert("x-opencode-session", session_id.parse().unwrap());
+            headers.insert("x-opencode-project", project_id.parse().unwrap());
+            headers.insert("x-opencode-request", request_id.parse().unwrap());
+            headers.insert("User-Agent", "opencode/latest/1.3.15/cli".parse().unwrap());
+        }
+
         let client = openai::CompletionsClient::builder()
             .base_url(base_url)
             .api_key(rig::client::BearerAuth::from(api_key))
+            .http_headers(headers)
             .build();
         let client = match client {
             Ok(c) => c,
@@ -246,4 +260,16 @@ fn truncate_chars(s: &str, max: usize) -> String {
         let t: String = s.chars().take(max).collect();
         format!("{t}\n[materials truncated at {max} chars by the server]")
     }
+}
+
+/// Generate a random 26-char alphanumeric ID for OpenCode headers.
+fn random_id() -> String {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    (0..26)
+        .map(|_| {
+            let idx = rng.gen_range(0..36);
+            if idx < 10 { (b'0' + idx as u8) as char } else { (b'a' + idx as u8 - 10) as char }
+        })
+        .collect()
 }

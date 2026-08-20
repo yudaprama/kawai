@@ -28,6 +28,7 @@ async-stream = "0.3"
 futures-core = "0.3"
 futures-util = "0.3"
 tokio-util = "0.7"
+rand = "0.8"
 
 # Web-only deps (gated behind the `web` feature). Excluded entirely from
 # desktop/mobile builds.
