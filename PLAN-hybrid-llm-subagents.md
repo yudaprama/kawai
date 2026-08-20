@@ -252,10 +252,10 @@ impl RemoteLlm {
 }
 ```
 
-- **Provider**: one to start (whichever account exists; Gemini or OpenAI via
-  rig 0.42 — already pinned graph-wide, zero new deps). Config in `.env`:
-  `KAWAI_REMOTE_LLM_PROVIDER`, `KAWAI_REMOTE_LLM_API_KEY`,
-  `KAWAI_REMOTE_LLM_MODEL`, optional `KAWAI_REMOTE_LLM_BASE_URL`.
+- **Provider**: hardcoded — Z.AI (default) and OpenRouter, both with API keys
+  from `kawai_constants::llm` vault pool. Config in `.env`:
+  `KAWAI_REMOTE_LLM_PROVIDER` (kill switch: `off`), optional
+  `KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS`.
 - **Graceful degradation**: no API key ⇒ `from_env() → None` ⇒ subagent tools
   are simply not registered in any toolset; agents behave exactly as today
   (pure local). No errors, no UI changes.

@@ -54,7 +54,6 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 #[cfg(feature = "litert")]
 use rig::tool::ToolContext;
-use rig::tool::ToolSet;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

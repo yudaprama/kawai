@@ -118,7 +118,6 @@ pub use db::*;
 /// failure is logged and the existing title is left untouched.
 pub async fn generate_session_title(user_id: &str, session_id: i64) -> Result<(), DbError> {
     use reqwest::Client;
-    use serde::{Deserialize, Serialize};
 
     let conn = db_connection(user_id).await?;
 

@@ -6,21 +6,16 @@
 //! Chat history is NEVER sent — continuity is the local orchestrator's job;
 //! the cloud only ever sees the delegation package the model curated.
 //!
-//! All providers ride the OpenAI-compatible Chat Completions API via rig's
-//! `openai::CompletionsClient` (the same client the in-tree `zai` provider
-//! wraps), so one code path covers z.ai / OpenAI / OpenRouter / any
-//! compatible endpoint.
+//! Providers, base URLs, models, and API keys are all hardcoded.
+//! API keys come from `kawai_constants::llm` (vault pool).
 //!
 //! Configuration (`.env`):
 //! ```text
-//! KAWAI_REMOTE_LLM_PROVIDER           zai (default) | openai | openrouter | custom | off
-//! KAWAI_REMOTE_LLM_API_KEY            bearer token; zai falls back to the kawai-vault pool
-//! KAWAI_REMOTE_LLM_MODEL              model id (required for non-zai providers)
-//! KAWAI_REMOTE_LLM_BASE_URL           endpoint override
+//! KAWAI_REMOTE_LLM_PROVIDER           zai (default) | openrouter | ollama | venice | opencode | off
 //! KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS  default 8192
 //! ```
 //!
-//! `from_env() -> None` (unset, `off`, or no resolvable key) disables
+//! `from_env() -> None` (unset, `off`, or no vault key) disables
 //! subagents entirely — every agent then behaves exactly as pure-local.
 
 use futures_core::Stream;
@@ -34,11 +29,26 @@ use rig::providers::openai;
 const DEFAULT_MATERIALS_CHARS: usize = 24_000;
 /// Default output-token cap for one subagent call.
 const DEFAULT_MAX_OUTPUT_TOKENS: u64 = 8192;
-/// Default endpoint for the `zai` provider — the GLM coding-plan gateway the
-/// kawai-vault key pool is provisioned for.
+
+/// Z.AI — GLM Coding Plan gateway.
 const ZAI_BASE_URL: &str = "https://api.z.ai/api/coding/paas/v4";
-/// Default model for the `zai` provider.
 const ZAI_MODEL: &str = "glm-5.3";
+
+/// OpenRouter — OpenAI-compatible gateway.
+const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
+const OPENROUTER_MODEL: &str = "nvidia/nemotron-3-super-120b-a12b:free";
+
+/// Ollama Cloud — OpenAI-compatible endpoint.
+const OLLAMA_BASE_URL: &str = "https://ollama.com/v1";
+const OLLAMA_MODEL: &str = "nemotron-3-nano:30b";
+
+/// Venice AI — OpenAI-compatible gateway.
+const VENICE_BASE_URL: &str = "https://api.venice.ai/api/v1";
+const VENICE_MODEL: &str = "deepseek-v4-flash";
+
+/// OpenCode Zen — OpenAI-compatible gateway.
+const OPENCODE_BASE_URL: &str = "https://opencode.ai/zen/v1";
+const OPENCODE_MODEL: &str = "mimo-v2.5-free";
 
 /// Per-call token usage captured from the stream's terminal record
 /// (telemetry for `turn_log`). Zeros mean "provider reported none".
@@ -77,53 +87,55 @@ impl RemoteLlm {
             return None;
         }
 
-        let key_env = std::env::var("KAWAI_REMOTE_LLM_API_KEY")
-            .ok()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty());
-        let model_env = std::env::var("KAWAI_REMOTE_LLM_MODEL")
-            .ok()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty());
-        let base_env = std::env::var("KAWAI_REMOTE_LLM_BASE_URL")
-            .ok()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty());
-
-        let (base_url, default_model, fallback_key) = match provider.as_str() {
-            "zai" => (ZAI_BASE_URL.to_string(), Some(ZAI_MODEL.to_string()), {
-                // Vault pool (kawai-vault constants crate) — same source the
-                // in-tree zai provider uses.
+        let (base_url, model_id, api_key) = match provider.as_str() {
+            "zai" => {
                 let k = kawai_constants::llm::get_zai();
-                if k.is_empty() { None } else { Some(k) }
-            }),
-            "openai" => ("https://api.openai.com/v1".to_string(), None, None),
-            "openrouter" => ("https://openrouter.ai/api/v1".to_string(), None, None),
-            "custom" => (String::new(), None, None),
+                if k.is_empty() {
+                    eprintln!("[remote] no vault key for zai — remote tier disabled");
+                    return None;
+                }
+                (ZAI_BASE_URL, ZAI_MODEL, k)
+            }
+            "openrouter" => {
+                let k = kawai_constants::llm::get_openrouter();
+                if k.is_empty() {
+                    eprintln!("[remote] no vault key for openrouter — remote tier disabled");
+                    return None;
+                }
+                (OPENROUTER_BASE_URL, OPENROUTER_MODEL, k)
+            }
+            "ollama" => {
+                let k = kawai_constants::llm::get_ollama();
+                if k.is_empty() {
+                    eprintln!("[remote] no vault key for ollama — remote tier disabled");
+                    return None;
+                }
+                (OLLAMA_BASE_URL, OLLAMA_MODEL, k)
+            }
+            "venice" => {
+                let k = kawai_constants::llm::get_venice();
+                if k.is_empty() {
+                    eprintln!("[remote] no vault key for venice — remote tier disabled");
+                    return None;
+                }
+                (VENICE_BASE_URL, VENICE_MODEL, k)
+            }
+            "opencode" => {
+                let k = kawai_constants::llm::get_opencode();
+                if k.is_empty() {
+                    eprintln!("[remote] no vault key for opencode — remote tier disabled");
+                    return None;
+                }
+                (OPENCODE_BASE_URL, OPENCODE_MODEL, k)
+            }
             other => {
                 eprintln!("[remote] unknown KAWAI_REMOTE_LLM_PROVIDER {other:?} — remote tier disabled");
                 return None;
             }
         };
-        let base_url = base_env.unwrap_or(base_url);
-        let model_id = match model_env.or(default_model) {
-            Some(m) => m,
-            None => {
-                eprintln!("[remote] KAWAI_REMOTE_LLM_MODEL is required for provider {provider:?} — remote tier disabled");
-                return None;
-            }
-        };
-        if base_url.is_empty() {
-            eprintln!("[remote] KAWAI_REMOTE_LLM_BASE_URL is required for provider \"custom\" — remote tier disabled");
-            return None;
-        }
-        let Some(api_key) = key_env.or(fallback_key) else {
-            eprintln!("[remote] no API key for provider {provider:?} (set KAWAI_REMOTE_LLM_API_KEY) — remote tier disabled");
-            return None;
-        };
 
         let client = openai::CompletionsClient::builder()
-            .base_url(&base_url)
+            .base_url(base_url)
             .api_key(rig::client::BearerAuth::from(api_key))
             .build();
         let client = match client {
@@ -139,7 +151,7 @@ impl RemoteLlm {
             .filter(|&v| v > 0)
             .unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS);
         Some(Self {
-            model: client.completion_model(&model_id),
+            model: client.completion_model(model_id),
             provider,
             max_output_tokens,
             materials_cap: DEFAULT_MATERIALS_CHARS,

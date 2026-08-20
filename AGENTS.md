@@ -272,10 +272,7 @@ KAWAI_MODEL_PATH=/path/to/gemma-4-E4B-it.litertlm  # optional on-device model; r
 KAWAI_LLM_MAX_TOKENS=8192        # optional context budget (K/V state entries) for the on-device conversation; default 8192, must stay below the model's max (Gemma 4: 32003). Larger = more K/V memory.
 # ── Hybrid LLM tier — cloud subagents (logic/remote.rs, PLAN-hybrid-llm-subagents.md) ──
 # All unset/`off`/no-key ⇒ subagents disabled; agents behave pure-local.
-KAWAI_REMOTE_LLM_PROVIDER=zai     # zai (default, key from kawai-vault) | openai | openrouter | custom | off
-KAWAI_REMOTE_LLM_API_KEY=...      # bearer token; zai falls back to the kawai-vault pool
-KAWAI_REMOTE_LLM_MODEL=glm-5.3    # required for non-zai providers (zai defaults to glm-5.3)
-KAWAI_REMOTE_LLM_BASE_URL=...     # endpoint override (required for provider=custom)
+KAWAI_REMOTE_LLM_PROVIDER=zai     # zai (default) | openrouter | ollama | venice | opencode | off
 KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS=8192  # per-subagent-call output cap
 ```
 `.env.local` (gitignored) — Clerk publishable key reference: `VITE_CLERK_PUBLISHABLE_KEY` (unused by the React frontend; kept for the future prod-auth flow).
