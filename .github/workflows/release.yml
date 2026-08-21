@@ -128,8 +128,8 @@ jobs:
       # path-deps kawai-embedding (fastembed) and rig-libsql (vector store).
       # flutter_gemma/litert-lm-rs are NOT needed — skip them to keep the
       # checkout lean.
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide + pdf_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
 
       - name: Build litert-lm dylib
         run: |
@@ -211,8 +211,8 @@ jobs:
           key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide + pdf_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
 
       # LiteRT-LM's .bazelrc pins CC=clang (action_env); the runner default is
       # clang-14, whose std lib lacks std::source_location in C++20 mode
@@ -266,14 +266,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
         with:
           tagName: v${{ needs.bump.outputs.version }}
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
-          args: --features litert,office --config .github/tauri-office.json
+          args: --features litert,office --config .github/tauri-office.json --config .github/tauri-litert.json
 
   build-windows:
     needs: bump
@@ -313,9 +312,9 @@ jobs:
           key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-windows-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql)
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide + pdf_oxide)
         shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
 
       - name: Install bazelisk
         shell: pwsh
@@ -356,10 +355,12 @@ jobs:
           # --sandbox_writable_path lets bazel copy outputs to the short path.
           bazel --output_base=C:/_b build //c:litert-lm --config=windows \
             --jobs=4 --action_env=TMP --action_env=TEMP
-          # ../../native = cognee-litert-lm/native — the dir
-          # LITERT_LM_LIB_DIR points at.
+          # Resolve the actual bazel-bin path (may not be the workspace symlink
+          # when --output_base is overridden). Copy both the DLL (runtime) and
+          # the import library (link-time) — MSVC requires .lib to link a DLL.
+          BZ_BIN="$(bazel --output_base=C:/_b info bazel-bin)"
           mkdir -p ../../native
-          cp bazel-bin/c/litert-lm.dll ../../native/
+          cp "$BZ_BIN/c/litert-lm.dll" "$BZ_BIN/c/litert-lm.lib" ../../native/
 
       # Office CLI engines → src-tauri/{office-bin,office-runtime}; bundled as
       # Tauri resources via .github/tauri-office.json. Runs in Git Bash (the
@@ -380,7 +381,7 @@ jobs:
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
-          args: --features litert,office --config .github/tauri-office.json
+          args: --features litert,office --config .github/tauri-office.json --config .github/tauri-litert.json
 
   build-web:
     needs: bump
@@ -402,8 +403,8 @@ jobs:
       # must exist. local-llm path-deps rig-components tools, so that
       # manifest needs rig-components present too. Shallow, non-recursive:
       # only crate manifests, not C sources.
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql, manifest only)
-        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide + pdf_oxide, manifest only)
+        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

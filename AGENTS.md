@@ -207,7 +207,7 @@ src-tauri/src/logic/office/      # office domain (feature "office"): mod.rs + cl
 src-tauri/src/logic/agent.rs     # prompt-based tool-calling loop (features litert) — personas + agent_chat + cloud subagent interception (deep_write / draft_document)
 src-tauri/src/logic/remote.rs    # hybrid-tier cloud client (RemoteLlm): one stateless streaming completion per subagent call; zai default (kawai-vault key), OpenAI-compatible endpoints
 src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), turn_log_report (hybrid calibration)
-src-tauri/src/logging.rs         # stderr tee → ~/Library/Logs/kawai/app.log
+src-tauri/src/logging.rs         # stderr tee → platform log dir (macOS ~/Library/Logs/, Linux $XDG_STATE_HOME)
 src-tauri/src/auth.rs            # PURE auth; Clerk JWKS verify + EdDSA mint + Session
 src-tauri/src/commands.rs        # #[tauri::command] wrappers + Channel + cancel registry
 src-tauri/src/web.rs             # Axum routes (feature-gated "web") + auth_middleware
@@ -231,7 +231,7 @@ scripts/bundle-litert-dylibs.sh  # prep all LiteRT dylibs into native/ for bundl
 scripts/fetch-office-bins.sh     # fetch ooxcli engine into src-tauri/office-bin (PDF is in-process via pdf_oxide; office_oxide handles creation)
 .github/tauri-office.json        # merges the ooxcli engine as Tauri resources (Contents/Resources)
 .github/tauri-litert.json        # merges LiteRT dylibs into `bundle.macOS.files` (Contents/Frameworks)
-app.log                          # symlink → ~/Library/Logs/kawai/app.log
+app.log                          # symlink → platform log dir (macOS ~/Library/Logs/kawai/)
 ```
 
 ## Adding a new operation (checklist)

@@ -12,6 +12,16 @@
         "../cognee-litert-lm/native/libLiteRtWebGpuAccelerator.dylib": "Frameworks/libLiteRtWebGpuAccelerator.dylib",
         "../cognee-litert-lm/native/libwebgpu_dawn.dylib": "Frameworks/libwebgpu_dawn.dylib"
       }
+    },
+    "linux": {
+      "files": {
+        "../cognee-litert-lm/native/liblitert-lm.so": "lib/liblitert-lm.so"
+      }
+    },
+    "windows": {
+      "files": {
+        "../cognee-litert-lm/native/litert-lm.dll": "litert-lm.dll"
+      }
     }
   }
 }

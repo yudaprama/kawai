@@ -48,7 +48,7 @@ jobs:
       # exist. local-llm path-deps rig-components tools; office needs
       # office_oxide. Shallow, non-recursive: manifests only, no C sources.
       - name: Init submodules (manifest only)
-        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -65,6 +65,45 @@ jobs:
 
       - name: cargo check (web feature; axum must compile here)
         run: cargo check --features web
+        working-directory: src-tauri
+
+  # ── Linux desktop gate: litert + office features compile on Linux ────────
+  linux-check:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install JS deps
+        run: bun install
+
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide + pdf_oxide)
+        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # Tauri needs GTK/webkit headers; bindgen (litert feature) needs libclang.
+      # clang-18 NOT needed here — cargo check doesn't build the LiteRT-LM C
+      # library (bindgen only parses the C headers via libclang).
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libclang-dev
+
+      - name: cargo check (litert + office; desktop feature set)
+        run: cargo check --features litert,office
         working-directory: src-tauri
 
   # ── Full gate: unit tests + on-device smoke + hybrid cloud smokes ─────────
@@ -99,7 +138,7 @@ jobs:
           restore-keys: bazel-macos26-arm64-
 
       - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
 
       - name: Build litert-lm dylib
         run: |
