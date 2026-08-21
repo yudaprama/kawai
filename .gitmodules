@@ -23,7 +23,3 @@
 	path = pdf_oxide
 	url = https://github.com/yfedoseev/pdf_oxide.git
 	shallow = true
-[submodule "spacedrive"]
-	path = spacedrive
-	url = https://github.com/spacedriveapp/spacedrive.git
-	shallow = true
