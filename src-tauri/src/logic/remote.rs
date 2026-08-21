@@ -15,9 +15,11 @@
 //! marked unhealthy (cooldown from `Retry-After` when the provider sent one)
 //! and the next candidate is tried. Cooled candidates stay last in line, so
 //! the request never hard-fails just because every backend is cooling down.
-//! The failover boundary is the FIRST committed stream item: once a token has
-//! been handed to the consumer, mid-stream errors propagate as-is (retrying
-//! would duplicate output).
+//! The failover boundary is the first TEXT token handed to the consumer: a
+//! candidate that handshakes cleanly but streams zero text (empty completion,
+//! reasoning-only) has committed nothing and the next candidate is tried.
+//! Once a token has been handed over, mid-stream errors propagate as-is
+//! (retrying would duplicate output).
 //!
 //! Providers, base URLs, models, and API keys are all hardcoded.
 //! API keys come from `kawai_constants::llm` (vault pool).
@@ -44,8 +46,10 @@ use rig::providers::openai;
 /// Default cap on the `materials` string sent to the cloud (chars ≈ /4
 /// tokens). Enforced server-side so no caller can blow the request budget.
 const DEFAULT_MATERIALS_CHARS: usize = 24_000;
-/// Default output-token cap for one subagent call.
-const DEFAULT_MAX_OUTPUT_TOKENS: u64 = 8192;
+/// Default output-token cap for one subagent call. Generous on purpose:
+/// hitting the cap truncates the answer mid-sentence (provider stops at
+/// max_tokens), and a summary that runs long must still finish.
+const DEFAULT_MAX_OUTPUT_TOKENS: u64 = 16_384;
 
 /// Z.AI — GLM Coding Plan gateway.
 const ZAI_BASE_URL: &str = "https://api.z.ai/api/coding/paas/v4";
@@ -212,10 +216,12 @@ const ENDPOINTS: &[EndpointDef] = &[
     },
 ];
 
-/// One failover candidate: a built rig model + its telemetry label.
+/// One failover candidate: a built rig model + its telemetry label. Clone so
+/// the failover loop can run inside the returned stream ('static).
+#[derive(Clone)]
 pub struct Candidate {
     label: &'static str,
-    model: openai::CompletionModel,
+    model: std::sync::Arc<openai::CompletionModel>,
 }
 
 /// Per-call token usage captured from the stream's terminal record
@@ -231,7 +237,9 @@ pub struct RemoteUsage {
 /// candidate that actually won (failover may have skipped earlier ones).
 pub enum RemoteEvent {
     Token { text: String },
-    Done { usage: RemoteUsage, provider: String },
+    /// `hit_cap` = the provider stopped at max_tokens (answer is truncated
+    /// mid-flight); surfaced so consumers can flag it honestly.
+    Done { usage: RemoteUsage, provider: String, hit_cap: bool },
 }
 
 /// A configured remote completion pool.
@@ -280,7 +288,7 @@ impl RemoteLlm {
             };
             candidates.push(Candidate {
                 label: def.label,
-                model: client.completion_model(def.model),
+                model: std::sync::Arc::new(client.completion_model(def.model)),
             });
         }
         if candidates.is_empty() {
@@ -315,9 +323,12 @@ impl RemoteLlm {
     /// One stateless streaming completion with provider failover (see module
     /// docs). `system` is the subagent persona; `task` is the model-written
     /// brief; `materials` is the curated context package (truncated to the
-    /// cap here — never trust the caller). Returns a boxed `Send` stream
-    /// (the consumer lives inside Tauri command futures, which must be
-    /// `Send`).
+    /// cap here — never trust the caller). The whole candidate loop runs
+    /// INSIDE the returned stream: the failover boundary is the first TEXT
+    /// token yielded, so a zero-text completion (empty answer, reasoning-only
+    /// stream) transparently retries the next candidate. Returns a boxed
+    /// `Send` stream (the consumer lives inside Tauri command futures, which
+    /// must be `Send`).
     pub async fn stream(
         &self,
         system: &str,
@@ -340,106 +351,110 @@ impl RemoteLlm {
             )
         };
 
-        let labels: Vec<&str> = self.candidates.iter().map(|c| c.label).collect();
-        let mut last_err = String::new();
-        for idx in MODEL_HEALTH.order_indices(&labels) {
-            let cand = &self.candidates[idx];
-            let request = cand
-                .model
-                .completion_request(prompt.clone())
-                .preamble(system.to_string())
-                .temperature(0.4)
-                .max_tokens(self.max_output_tokens)
-                .build();
-            let mut response = match cand.model.stream(request).await {
-                Ok(r) => r,
-                Err(e) => {
-                    if failover_worthy(&e) {
-                        MODEL_HEALTH.mark_unhealthy(cand.label, retry_after(&e));
-                        last_err = e.to_string();
-                        eprintln!(
-                            "[remote] attempt {} failed ({}) — trying next candidate",
-                            cand.label,
-                            describe_error(&e)
-                        );
-                        continue;
-                    }
-                    return Err(e.to_string());
-                }
-            };
-            // First-item gate: a 200 whose first SSE record is a provider
-            // error envelope is still failover-able — nothing has been
-            // handed to the consumer yet. The first Ok item of ANY kind
-            // commits this candidate (a leading reasoning delta is not an
-            // error).
-            match response.next().await {
-                Some(Err(e)) => {
-                    if failover_worthy(&e) {
-                        MODEL_HEALTH.mark_unhealthy(cand.label, retry_after(&e));
-                        last_err = e.to_string();
-                        eprintln!(
-                            "[remote] attempt {} first record errored ({}) — trying next candidate",
-                            cand.label,
-                            describe_error(&e)
-                        );
-                        continue;
-                    }
-                    return Err(e.to_string());
-                }
-                first => {
-                    MODEL_HEALTH.mark_healthy(cand.label);
-                    let label = cand.label;
-                    let stream = async_stream::stream! {
-                        match first {
-                            Some(Ok(rig::streaming::StreamedAssistantContent::Text(t))) => {
-                                if !t.text.is_empty() {
-                                    yield Ok(RemoteEvent::Token { text: t.text });
-                                }
-                            }
-                            Some(Ok(_)) => {}
-                            // Handled by the gate above; the compiler can't see it.
-                            Some(Err(_)) => {}
-                            None => {}
+        let candidates = self.candidates.clone();
+        let max_output_tokens = self.max_output_tokens;
+        let system = system.to_string();
+
+        let stream = async_stream::stream! {
+            let labels: Vec<&str> = candidates.iter().map(|c| c.label).collect();
+            let mut last_err = String::new();
+            for idx in MODEL_HEALTH.order_indices(&labels) {
+                let cand = &candidates[idx];
+                let request = cand
+                    .model
+                    .completion_request(prompt.clone())
+                    .preamble(system.clone())
+                    .temperature(0.4)
+                    .max_tokens(max_output_tokens)
+                    .build();
+                let mut response = match cand.model.stream(request).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        if failover_worthy(&e) {
+                            MODEL_HEALTH.mark_unhealthy(cand.label, retry_after(&e));
+                            last_err = e.to_string();
+                            eprintln!(
+                                "[remote] attempt {} failed ({}) — trying next candidate",
+                                cand.label,
+                                describe_error(&e)
+                            );
+                            continue;
                         }
-                        while let Some(item) = response.next().await {
-                            match item {
-                                Ok(rig::streaming::StreamedAssistantContent::Text(t)) => {
-                                    if !t.text.is_empty() {
-                                        yield Ok(RemoteEvent::Token { text: t.text });
-                                    }
+                        yield Err(e.to_string());
+                        return;
+                    }
+                };
+                let mut yielded_any = false;
+                let mut broke_pre_text = false;
+                while let Some(item) = response.next().await {
+                    match item {
+                        Ok(rig::streaming::StreamedAssistantContent::Text(t)) => {
+                            if !t.text.is_empty() {
+                                if !yielded_any {
+                                    MODEL_HEALTH.mark_healthy(cand.label);
                                 }
-                                // deep_write sends no tools, so any other content kind is
-                                // ignored (reasoning deltas are provider-internal).
-                                Ok(_) => {}
-                                Err(e) => {
-                                    yield Err(e.to_string());
-                                    return;
-                                }
+                                yielded_any = true;
+                                yield Ok(RemoteEvent::Token { text: t.text });
                             }
                         }
-                        // Terminal record (usage) is populated by the time the stream ends.
-                        let usage = response
-                            .response
-                            .as_ref()
-                            .map(|f| RemoteUsage {
-                                input_tokens: f.usage.input_tokens,
-                                output_tokens: f.usage.output_tokens,
-                            })
-                            .unwrap_or_default();
-                        yield Ok(RemoteEvent::Done { usage, provider: label.to_string() });
-                    };
-                    return Ok(Box::pin(stream));
+                        // No tools are sent, so any other content kind is
+                        // ignored (reasoning deltas are provider-internal).
+                        Ok(_) => {}
+                        Err(e) => {
+                            if !yielded_any && failover_worthy(&e) {
+                                MODEL_HEALTH.mark_unhealthy(cand.label, retry_after(&e));
+                                last_err = e.to_string();
+                                broke_pre_text = true;
+                                eprintln!(
+                                    "[remote] attempt {} errored before any text ({}) — trying next candidate",
+                                    cand.label,
+                                    describe_error(&e)
+                                );
+                                break;
+                            }
+                            yield Err(e.to_string());
+                            return;
+                        }
+                    }
                 }
+                if !yielded_any {
+                    if !broke_pre_text {
+                        // Stream ended cleanly with ZERO text: an empty
+                        // completion. Nothing was committed to the consumer —
+                        // fail over just like a transport failure.
+                        MODEL_HEALTH.mark_unhealthy(cand.label, None);
+                        last_err = format!("{} returned an empty stream", cand.label);
+                        eprintln!(
+                            "[remote] attempt {} produced no text — trying next candidate",
+                            cand.label
+                        );
+                    }
+                    continue;
+                }
+                // Terminal record (usage) is populated by the time the stream ends.
+                let usage = response
+                    .response
+                    .as_ref()
+                    .map(|f| RemoteUsage {
+                        input_tokens: f.usage.input_tokens,
+                        output_tokens: f.usage.output_tokens,
+                    })
+                    .unwrap_or_default();
+                let hit_cap = usage.output_tokens > 0
+                    && usage.output_tokens >= max_output_tokens;
+                yield Ok(RemoteEvent::Done { usage, provider: cand.label.to_string(), hit_cap });
+                return;
             }
-        }
-        Err(format!(
-            "all remote candidates failed{}",
-            if last_err.is_empty() {
-                String::new()
-            } else {
-                format!("; last error: {last_err}")
-            }
-        ))
+            yield Err(format!(
+                "all remote candidates failed{}",
+                if last_err.is_empty() {
+                    String::new()
+                } else {
+                    format!("; last error: {last_err}")
+                }
+            ));
+        };
+        Ok(Box::pin(stream))
     }
 }
 

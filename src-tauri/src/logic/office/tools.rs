@@ -8,6 +8,71 @@ use super::pdf;
 use super::store;
 use super::{schema, truncate_chars};
 
+/// Resolve a file id the model half-copied. Small models routinely corrupt
+/// long hex ids (drop/scramble digits) when echoing them into a call; exact
+/// resolve fails and the turn dies. Candidates are scored by normalized LCS
+/// ratio; the best wins when it clears a floor AND beats the runner-up by a
+/// margin (no guessing across near-ties).
+fn resolve_file_id_fuzzy(user_id: &str, arg: &str) -> Option<String> {
+    let files = super::list_files(user_id).ok()?;
+    let normalize = |s: &str| -> String {
+        s.chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .flat_map(|c| c.to_lowercase())
+            .collect()
+    };
+    let n_arg = normalize(arg);
+    if n_arg.len() < 6 {
+        return None;
+    }
+    let mut scored: Vec<(f64, String)> = files
+        .into_iter()
+        .map(|f| (lcs_ratio(&n_arg, &normalize(&f.id)), f.id))
+        .collect();
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let (best, second) = (scored.first()?, scored.get(1).map(|s| s.0).unwrap_or(0.0));
+    if best.0 >= 0.6 && best.0 - second >= 0.1 {
+        Some(best.1.clone())
+    } else {
+        None
+    }
+}
+
+/// Longest-common-subsequence ratio between two normalized id strings.
+fn lcs_ratio(a: &str, b: &str) -> f64 {
+    let x: Vec<char> = a.chars().collect();
+    let y: Vec<char> = b.chars().collect();
+    let mut prev = vec![0usize; y.len() + 1];
+    let mut cur = vec![0usize; y.len() + 1];
+    for &cx in &x {
+        cur.iter_mut().for_each(|v| *v = 0);
+        for (j, &cy) in y.iter().enumerate() {
+            cur[j + 1] = if cx == cy {
+                prev[j] + 1
+            } else {
+                cur[j].max(prev[j + 1])
+            };
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    let lcs = prev[y.len()];
+    lcs as f64 / x.len().max(y.len()) as f64
+}
+
+/// Exact read; on failure retry once with a fuzzy-resolved id.
+async fn read_document_forgiving(user_id: &str, file_id: &str) -> Result<String, String> {
+    match ooxml::read_document(user_id, file_id).await {
+        Ok(md) => Ok(md),
+        Err(exact_err) => match resolve_file_id_fuzzy(user_id, file_id) {
+            Some(fixed) => {
+                eprintln!("[office] fileId {file_id:?} unresolved — fuzzy matched, retrying");
+                ooxml::read_document(user_id, &fixed).await
+            }
+            None => Err(exact_err),
+        },
+    }
+}
+
 // -- office_list_files -------------------------------------------------------
 
 #[derive(Deserialize)]
@@ -111,21 +176,21 @@ impl PortableTool for ReadDocumentTool {
     type Error = OfficeToolError;
 
     fn description(&self) -> String {
-        "Read a stored .docx/.xlsx/.pptx and return its full content as markdown (headings, tables, lists). For PDFs use pdf_extract_text.".into()
+        "Read a stored .docx/.xlsx/.pptx (or .md transcript/notes) and return its full content as markdown (headings, tables, lists). For PDFs use pdf_extract_text.".into()
     }
 
     fn parameters(&self) -> Value {
         schema!({
             "type": "object",
             "properties": {
-                "fileId": { "type": "string", "description": "File id from office_list_files" }
+                "fileId": { "type": "string", "description": "File id from office_list_files or a search hit" }
             },
             "required": ["fileId"]
         })
     }
 
     async fn call(&self, args: Self::Args) -> Result<String, OfficeToolError> {
-        let md = ooxml::read_document(&self.0, &args.file_id)
+        let md = read_document_forgiving(&self.0, &args.file_id)
             .await
             .map_err(oerr)?;
         Ok(json!({ "markdown": truncate_chars(&md, 60_000) }).to_string())
@@ -155,9 +220,13 @@ impl PortableTool for DocumentInfoTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<String, OfficeToolError> {
-        let info = ooxml::document_info(&self.0, &args.file_id)
-            .await
-            .map_err(oerr)?;
+        let info = match ooxml::document_info(&self.0, &args.file_id).await {
+            Ok(i) => i,
+            Err(exact_err) => match resolve_file_id_fuzzy(&self.0, &args.file_id) {
+                Some(fixed) => ooxml::document_info(&self.0, &fixed).await.map_err(oerr)?,
+                None => return Err(oerr(exact_err)),
+            },
+        };
         Ok(info.to_string())
     }
 }
@@ -505,5 +574,30 @@ impl PortableTool for PdfInfoTool {
     async fn call(&self, args: Self::Args) -> Result<String, OfficeToolError> {
         let info = pdf::pdf_info(&self.0, &args.file_id).await.map_err(oerr)?;
         Ok(info.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lcs_ratio_scores_corrupted_ids_high() {
+        // Exact shape observed in the wild: model dropped + scrambled digits.
+        let real = "f87328470555963000-0000";
+        let mangled1 = "f83247805963000-000";
+        let mangled2 = "f3787545960300-000";
+        assert!(lcs_ratio(mangled1, real) >= 0.6, "{}", lcs_ratio(mangled1, real));
+        assert!(lcs_ratio(mangled2, real) >= 0.6, "{}", lcs_ratio(mangled2, real));
+    }
+
+    #[test]
+    fn lcs_ratio_scores_unrelated_ids_low() {
+        assert!(lcs_ratio("f3787545960300-000", "f11111111111111111-2222") < 0.5);
+    }
+
+    #[test]
+    fn lcs_ratio_exact_is_one() {
+        assert!((lcs_ratio("f87328470555963000-0000", "f87328470555963000-0000") - 1.0).abs() < 1e-9);
     }
 }

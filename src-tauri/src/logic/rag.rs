@@ -558,12 +558,15 @@ fn rrf_fuse(vector: Vec<RagChunk>, lexical: Vec<RagChunk>, limit: usize) -> Vec<
 }
 
 /// A retrieved chunk with its provenance, for citation in the UI/LLM context.
+/// `file_id` lets the model act on a hit directly (e.g. office_read_document)
+/// without a name→id lookup round-trip.
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RagHit {
     pub source: String,
     pub locator: String,
     pub content: String,
+    pub file_id: String,
 }
 
 /// Retrieval strategy for [`knowledge_search`]. Deserialized from the
@@ -768,6 +771,7 @@ pub async fn knowledge_search(
             source: doc.source,
             locator: doc.locator,
             content: doc.content,
+            file_id: doc.file_id,
         })
         .collect())
 }

@@ -160,6 +160,11 @@ pub async fn read_document(user_id: &str, file_id: &str) -> Result<String, Strin
     if info.ext == "pdf" {
         return Err("use pdf_extract_text for PDF files".into());
     }
+    if matches!(info.ext.as_str(), "md" | "markdown") {
+        return tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("read markdown failed: {e}"));
+    }
     let doc = office_oxide::Document::open(&path)
         .map_err(|e| format!("office_oxide read failed: {e}"))?;
     Ok(doc.to_markdown_with_baseurl(Some(&format!("/office-files/{file_id}"))))

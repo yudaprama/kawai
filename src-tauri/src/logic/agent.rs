@@ -69,6 +69,11 @@ const TOOL_RESULT_UI_CHARS: usize = 500;
 /// permanently burns the K/V budget. When capped, the model is told to
 /// narrow its query.
 const TOOL_RESULT_MODEL_CHARS: usize = 4000;
+/// Cap on tool results accumulated for cloud-subagent `materials` this turn.
+/// Cloud-facing only (big remote context) — the accumulation never enters the
+/// local K/V state, so it can far exceed TOOL_RESULT_MODEL_CHARS. Whole-doc
+/// reads (summaries) need the full text, not top-k excerpts.
+const TOOL_RESULT_MATERIALS_CHARS: usize = 32_000;
 /// Per-message cap inside a replayed transcript.
 const TRANSCRIPT_MSG_CHARS: usize = 2000;
 /// Char budget for the replayed transcript when opening a conversation epoch
@@ -93,6 +98,61 @@ const REMOTE_TIMEOUT_SECS: u64 = 600;
 /// Cap on the draft JSON the cloud may return (chars) — guards absurd output.
 #[cfg(feature = "litert")]
 const DRAFT_JSON_MAX_CHARS: usize = 120_000;
+
+/// Does the user's message ask for a whole-content summary? Keyword gate
+/// (id + en) — deliberately cheap; it only gates an in-context NUDGE, never
+/// a silent auto-action, so a false positive just makes the model re-check.
+#[cfg(feature = "litert")]
+fn is_summary_request(message: &str) -> bool {
+    let m = message.to_lowercase();
+    ["ringkas", "rangkum", "summar", "tldr", "tl;dr"]
+        .iter()
+        .any(|k| m.contains(k))
+}
+
+/// Directive appended to a successful knowledge_search response: when the
+/// user asked for a summary, excerpts are not enough — the model must read
+/// the full document (file id resolved from the hit) and delegate the
+/// writing to deep_write. In-context + id-resolved beats a persona rule the
+/// small model ignores.
+#[cfg(feature = "litert")]
+fn summary_directive(first_file_id: &str) -> String {
+    format!(
+        "\n\nSUMMARY DIRECTIVE: the user asked for a summary — these excerpts are NOT enough. \
+         Next: call:office_read_document{{\"fileId\": \"{first_file_id}\"}} to get the full text, \
+         then delegate to deep_write with the full text as materials. Do NOT answer from excerpts."
+    )
+}
+
+/// First `fileId` inside a knowledge_search result body (the tool returns
+/// `{"hits":[{"fileId": ...}, ...]}` as a JSON string).
+#[cfg(feature = "litert")]
+fn first_file_id(body: &str) -> Option<String> {
+    serde_json::from_str::<Value>(body)
+        .ok()?
+        .get("hits")?
+        .as_array()?
+        .iter()
+        .find_map(|h| {
+            h.get("fileId")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+        })
+}
+
+/// Did the model's `materials` already embed the turn's tool results
+/// verbatim? Probes a mid-slice of the accumulation — a paraphrase never
+/// contains the raw probe, a verbatim paste always does.
+#[cfg(feature = "litert")]
+fn materials_embeds_results(materials: &str, results: &str) -> bool {
+    let r_chars: Vec<char> = results.chars().collect();
+    if r_chars.len() < 400 {
+        return materials.contains(results);
+    }
+    let probe: String = r_chars[r_chars.len() / 2..r_chars.len() / 2 + 200].iter().collect();
+    materials.contains(&probe)
+}
 
 /// Persona of the deep_write subagent (the cloud writer). Runs on the remote
 /// model — it never sees the chat history, only the task + materials package.
@@ -160,8 +220,9 @@ const OFFICE_PERSONA: &str =
 const OFFICE_PERSONA: &str = "You are kawai's office agent. You read, create, edit, merge and inspect documents (docx, xlsx, pptx, pdf, youtube transcript) through tools.\n\
 Rules:\n\
 - Call at most ONE tool per reply, as a single call:<name>{...} line, then stop and wait for the response: message.\n\
-- When the user asks ANYTHING about their uploaded documents or imported YouTube videos (summaries, numbers, names, dates, invoice codes, table contents), call knowledge_search FIRST — it finds the relevant passages for you.\n\
-- NEVER say you cannot access a video, transcript, or document: imported content is searchable via knowledge_search. Always call knowledge_search first; only if it returns no hits may you say you cannot find the content.\n\
+- Factual questions about uploaded documents or imported YouTube videos (numbers, names, dates, invoice codes, table contents): call knowledge_search FIRST — it finds the relevant passages for you.\n\
+- Summarizing a WHOLE document or video: office_list_files to find its id → office_read_document to get the full text → delegate to deep_write with that text as materials. NEVER summarize long content yourself from search excerpts.\n\
+- NEVER say you cannot access a video, transcript, or document: imported content is searchable via knowledge_search. If a search returns no hits, you may say you cannot find the content.\n\
 - Tools address stored files by their file id, never by path. If the user refers to a document and you don't know its id, call office_list_files first.\n\
 - Never invent arguments: if a required input is missing, ask the user.\n\
 - Prefer office_document_info / pdf_info before large reads when only structure matters.\n\
@@ -603,11 +664,24 @@ fn parse_native_tool_call(text: &str) -> Option<Result<(String, Value), String>>
         {
             continue;
         }
-        let Some(args_raw) = balanced_braces(body, open) else {
-            continue;
-        };
-        if let Some(Ok((n, v))) = parse_native_body(&format!("{name} {args_raw}")) {
+        let parsed = balanced_braces(body, open)
+            .and_then(|raw| parse_native_body(&format!("{name} {raw}")));
+        if let Some(Ok((n, v))) = parsed {
             return Some(Ok((n, v)));
+        }
+        // Retry after syntax repair: a key missing its opening quote desyncs
+        // the string tracker above, so unbalanced here may still be a valid
+        // call once bare keys are re-quoted.
+        let fixed = quote_bare_keys(body);
+        if let Some(open2) = fixed.find('{') {
+            let name2 = fixed[..open2].trim().trim_end_matches(':').trim().to_string();
+            if name2 == name {
+                let reparsed = balanced_braces(&fixed, open2)
+                    .and_then(|raw| parse_native_body(&format!("{name} {raw}")));
+                if let Some(Ok((n, v))) = reparsed {
+                    return Some(Ok((n, v)));
+                }
+            }
         }
     }
     None
@@ -714,6 +788,18 @@ fn quote_bare_keys(s: &str) -> String {
                     out.push('"');
                     out.push_str(&ident);
                     out.push('"');
+                } else if j < chars.len() && chars[j] == '"' && {
+                    // Missing OPENING quote (`..."`,task": "x`) — the model
+                    // dropped one side of the key. The closing quote is right
+                    // here; supply the opener.
+                    let mut k = j + 1;
+                    while k < chars.len() && chars[k] == ' ' {
+                        k += 1;
+                    }
+                    k < chars.len() && chars[k] == ':'
+                } {
+                    out.push('"');
+                    out.push_str(&ident);
                 } else {
                     out.push_str(&ident);
                 }
@@ -915,6 +1001,7 @@ pub fn agent_chat(
         let mut prompt = String::new();
         let mut calls_used = 0usize;
         let mut repairs_used = 0usize;
+        let mut empty_retries = 0usize;
         let mut budget_notified = false;
         // Hybrid-tier state: a pending subagent delegation (set by the
         // dispatch arm or the escalation path) runs at the top of the next
@@ -974,6 +1061,7 @@ pub fn agent_chat(
                 let system = if is_draft { DRAFT_DOCUMENT_SYSTEM } else { DEEP_WRITE_SYSTEM };
                 let mut answer = String::new();
                 let mut usage: Option<crate::logic::remote::RemoteUsage> = None;
+                let mut hit_cap = false;
                 // Label of the candidate that actually served the stream
                 // (failover may skip the preferred primary).
                 let mut cloud_provider: Option<String> = None;
@@ -1015,9 +1103,10 @@ pub fn agent_chat(
                                 }
                             }
                         }
-                        Some(Ok(crate::logic::remote::RemoteEvent::Done { usage: u, provider: p })) => {
+                        Some(Ok(crate::logic::remote::RemoteEvent::Done { usage: u, provider: p, hit_cap: c })) => {
                             usage = Some(u);
                             cloud_provider = Some(p);
+                            hit_cap = c;
                             break;
                         }
                         Some(Err(e)) => {
@@ -1067,7 +1156,7 @@ pub fn agent_chat(
                                                 retry_text.push_str(&text);
                                             }
                                         }
-                                        Ok(crate::logic::remote::RemoteEvent::Done { usage: u, provider: p }) => {
+                                        Ok(crate::logic::remote::RemoteEvent::Done { usage: u, provider: p, .. }) => {
                                             if usage.is_none() {
                                                 usage = Some(u);
                                             }
@@ -1179,7 +1268,13 @@ pub fn agent_chat(
                 }
 
                 // ── deep_write: final passthrough ─────────────────────────
-                let answer = answer.trim().to_string();
+                // A provider-side max_tokens cut leaves the answer hanging
+                // mid-sentence — append an honest marker so the user knows.
+                let answer = if hit_cap && !is_draft {
+                    format!("{}\n\n_[output truncated at the provider token cap]_", answer.trim())
+                } else {
+                    answer.trim().to_string()
+                };
                 if failed.is_none() && !is_draft {
                     failed = answer
                         .is_empty()
@@ -1237,6 +1332,15 @@ pub fn agent_chat(
                         "cloud writer produced the answer ({provider}) — streamed above"
                     ),
                 };
+                // The cloud answer streamed to the user but never entered the
+                // engine: its conversation ends on the model's own
+                // `call:deep_write` line, mid tool-lifecycle. Gemma halts
+                // after requesting a tool — a follow-up message appended to
+                // that dangling state makes the next generation come back
+                // EMPTY (immediate EOS). Reset so the next turn opens a fresh
+                // epoch (opener re-sent, transcript replays the cloud answer).
+                let _ = crate::logic::local_llm::reset_conversation(&user_id).await;
+                eprintln!("[agent_chat] reset conversation after deep_write passthrough");
                 yield AgentChatEvent::Finished;
                 return;
             }
@@ -1332,7 +1436,21 @@ pub fn agent_chat(
             }
 
             match parse_tool_call(&text) {
-                // Final answer: fence-free reply.
+                // Final answer: fence-free reply. An EMPTY reply is never a
+                // valid final answer (observed: model halts immediately when
+                // the engine state dangles mid tool-lifecycle) — nudge once,
+                // then fall through and accept whatever comes back.
+                None if text.trim().is_empty() && empty_retries < 1 => {
+                    empty_retries += 1;
+                    eprintln!("[agent_chat] empty generation — nudging once");
+                    prompt = format!(
+                        "SYSTEM: your previous reply was empty. Answer the user's \
+                         request now. If you were waiting for a tool result, it is \
+                         no longer needed — answer with what you know.\n\n\
+                         The user asked: {message}"
+                    );
+                    continue;
+                }
                 None => {
                     db::log_turn(
                         &user_id,
@@ -1421,19 +1539,36 @@ pub fn agent_chat(
                             .and_then(Value::as_str)
                             .map(str::to_string)
                             .unwrap_or_default();
-                        // The model often forwards only a title/summary instead
-                        // of the excerpts it gathered. The cloud writer cannot
-                        // see this conversation — hand the turn's tool results
-                        // over deterministically when materials look thin.
-                        const MIN_REAL_MATERIALS_CHARS: usize = 500;
-                        if !turn_tool_results.is_empty()
-                            && materials.chars().count() < MIN_REAL_MATERIALS_CHARS
-                        {
-                            materials = format!(
-                                "{materials}\n\n[tool results gathered this turn]{turn_tool_results}"
-                            )
-                            .trim()
-                            .to_string();
+                        // The model only ever saw the model-capped slice of
+                        // each result; its `materials` is at best a paraphrase
+                        // of that slice. The cloud writer needs the full text
+                        // — append the turn's accumulated tool results unless
+                        // the model already embedded them verbatim (probe a
+                        // mid-slice; a paraphrase never contains it).
+                        if !turn_tool_results.is_empty() {
+                            if !materials_embeds_results(&materials, &turn_tool_results) {
+                                materials = format!(
+                                    "{materials}\n\n[tool results gathered this turn]{turn_tool_results}"
+                                )
+                                .trim()
+                                .to_string();
+                            }
+                        } else if !prior_turns.is_empty() {
+                            // No tools ran this turn (e.g. "summarize our
+                            // conversation") — the small model cannot copy
+                            // the history into `materials` itself, so hand it
+                            // the session transcript deterministically.
+                            let replay =
+                                compact_transcript(&prior_turns, TRANSCRIPT_BUDGET_CHARS);
+                            if !replay.is_empty()
+                                && !materials.contains(&replay)
+                            {
+                                materials = format!(
+                                    "{materials}\n\n[conversation so far]\n{replay}"
+                                )
+                                .trim()
+                                .to_string();
+                            }
                         }
                         let filename = args
                             .get("filename")
@@ -1506,9 +1641,23 @@ pub fn agent_chat(
                         ok,
                         summary: truncate_chars(&body, TOOL_RESULT_UI_CHARS),
                     };
+                    // Summary requests must not stop at excerpts: nudge the
+                    // model toward full read + delegation with the file id
+                    // resolved from the first hit.
+                    let summary_nudge = if tool == "knowledge_search"
+                        && ok
+                        && is_summary_request(&message)
+                    {
+                        first_file_id(&body).map(|fid| summary_directive(&fid))
+                    } else {
+                        None
+                    };
                     // Cap what re-enters the conversation: uncapped outputs
                     // (60k chars) permanently burn the K/V budget. Tell the
-                    // model the output was cut so it can narrow the query.
+                    // model the output was cut so it can narrow its query.
+                    // The cloud-materials accumulation gets a much larger
+                    // slice — delegation needs the full text, local does not.
+                    let materials_body = truncate_chars(&body, TOOL_RESULT_MATERIALS_CHARS);
                     let model_body =
                         if body.chars().count() > TOOL_RESULT_MODEL_CHARS {
                             format!(
@@ -1518,10 +1667,13 @@ pub fn agent_chat(
                         } else {
                             body
                         };
-                    turn_tool_results.push_str(&format!("\n\n--- {tool} ---\n{model_body}"));
+                    turn_tool_results.push_str(&format!("\n\n--- {tool} ---\n{materials_body}"));
                     prompt = format!(
                         "response:{tool}:\n{model_body}\n\nContinue. If you need another tool, reply with a single call: line; otherwise answer the user directly."
                     );
+                    if let Some(nudge) = summary_nudge {
+                        prompt.push_str(&nudge);
+                    }
                 }
             }
         };
@@ -1692,6 +1844,36 @@ mod tests {
     }
 
     #[test]
+    fn parse_bare_call_selftruncated_materials_and_bare_task_key() {
+        // Exact persisted shape (msg id 33): the model closed a huge
+        // self-truncated materials string with "... \", then wrote the next
+        // key WITHOUT its opening quote — ",task": "..." — which desyncs the
+        // string tracker. Repairs must recover the dispatchable call.
+        let text = concat!(
+            r#"call:deep_write{"materials": "Ringkasan Video: \"Gw Coba Trading Forex Selama 4 Hari Tanpa Pengalama\"\n\n"#,
+            r#"> Catatan: video yang dirum berjudul \"…42 Hari…\", bukan 4 hari.\n## Perjalanan (dari Nol)\n- Kelly 8,3% vs praktik 0,2-0,4%"#,
+            r#" \n- dia benar tapi \"mati di tikungan\" jika posisi keb... ",task": "Ringkaskan seluruh isi video tersebut menjadi satu paragraf tunggal yang padat dan informatif."}"#,
+            "\n",
+        );
+        match parse_tool_call(text) {
+            Some(Ok((tool, args))) => {
+                assert_eq!(tool, "deep_write");
+                assert!(args["materials"].as_str().unwrap().contains("Kelly 8,3%"));
+                assert_eq!(
+                    args["task"],
+                    "Ringkaskan seluruh isi video tersebut menjadi satu paragraf tunggal yang padat dan informatif."
+                );
+            }
+            other => panic!("expected Ok, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn quote_bare_keys_supplies_missing_opening_quote() {
+        assert_eq!(quote_bare_keys(r#"{"a": "x",b": "y"}"#), r#"{"a": "x","b": "y"}"#);
+    }
+
+    #[test]
     fn parse_inline_fence_json_glued_to_opener() {
         // Observed: no newline after ```tool, closing fence glued to the JSON.
         let text = "prose before.```tool{\"tool\": \"deep_write\", \"args\": {\"task\": \"Ringkasan\", \"materials\": \"judul saja\"}}```Mohon maaf.";
@@ -1702,6 +1884,43 @@ mod tests {
             }
             other => panic!("expected Ok, got {other:?}"),
         }
+    }
+
+    #[cfg(feature = "litert")]
+    #[test]
+    fn summary_request_detection() {
+        assert!(is_summary_request("ringkaskan youtube video \"...\""));
+        assert!(is_summary_request("Tolong rangkum dokumen ini"));
+        assert!(is_summary_request("give me a summary of the report"));
+        assert!(is_summary_request("TLDR please"));
+        assert!(!is_summary_request("berapa total invoice ini?"));
+        assert!(!is_summary_request("what is the invoice code"));
+    }
+
+    #[cfg(feature = "litert")]
+    #[test]
+    fn first_file_id_from_search_body() {
+        let body = r#"{"hits":[{"source":"yt-x.md","locator":"x","content":"...","fileId":"f123-0000"},{"fileId":"f124-0000"}]}"#;
+        assert_eq!(first_file_id(body).as_deref(), Some("f123-0000"));
+        assert_eq!(first_file_id(r#"{"hits":[]}"#), None);
+        assert_eq!(first_file_id("not json"), None);
+    }
+
+    #[cfg(feature = "litert")]
+    #[test]
+    fn materials_embed_detection() {
+        let results = format!("--- office_read_document ---\n{}", "transcript line. ".repeat(200));
+        // Paraphrase does not embed → append needed.
+        assert!(!materials_embeds_results(
+            "video tentang trading forex selama 42 hari, tiga porto",
+            &results
+        ));
+        // Verbatim paste embeds → skip append.
+        let pasted = format!("judul video\n{results}");
+        assert!(materials_embeds_results(&pasted, &results));
+        // Short results: exact containment.
+        assert!(materials_embeds_results("x: small", "small"));
+        assert!(!materials_embeds_results("x: other", "small"));
     }
 
     #[test]
