@@ -426,7 +426,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
           .replace(/```tool[\s\S]*?```/gi, "")
           .replace(/<\|tool_call[^>]*>[\s\S]*?(?:<tool_call\|>|<\|tool_call_end\|>)/gi, "")
           .replace(/<\|(?:tool_call[^>]*|tool_response[^>]*|channel>[^>]*|message\||end\|)>/gi, "")
-          .replace(/call:[a-z0-9_]+\s*\{[^{}]*\}/gi, "")
+          .replace(/\b(?:call|response):[a-z0-9_]+\s*\{[^{}]*\}/gi, "")
           .trim();
 
       const setAssistantParts = (parts: UIMessagePart[], status?: ChatStatus, stats?: string) => {

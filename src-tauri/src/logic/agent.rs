@@ -1,11 +1,13 @@
 //! Prompt-based tool-calling agent loop (the Roadmap-5 slice).
 //!
 //! The LiteRT-LM Conversation API has no native function calling, so tools are
-//! declared in the prompt and the model replies with a fenced ```tool block.
-//! The loop: send user message → stream tokens → on completion, parse the
-//! fence → dispatch via a rig `ToolSet` → feed the result back as the next
-//! user message → repeat until a fence-free reply (final answer), a
-//! malformed-fence failure after one repair, or the tool budget runs out.
+//! declared in the prompt and the model replies with a `call:NAME{json}` line —
+//! the compact tool-call body Gemma 4 was trained on. The loop: send user
+//! message → stream tokens → on completion, parse the call (the parser also
+//! accepts the Gemma special-token wrappers and the legacy ```tool fence) →
+//! dispatch via a rig `ToolSet` → feed the result back as a `response:NAME:`
+//! message → repeat until a call-free reply (final answer), a malformed-call
+//! failure after one repair, or the tool budget runs out.
 //!
 //! # Context economy (the conversation is stateful!)
 //!
@@ -15,7 +17,7 @@
 //! `local_llm` alongside the conversation epoch:
 //!
 //! - **Opener** (only when the manifest is NOT in the current conversation
-//!   state): persona + tool manifest + fence protocol + a compacted transcript
+//!   state): persona + tool manifest + call protocol + a compacted transcript
 //!   of the session's prior turns (rebuilt from SQLite — the DB is the source
 //!   of truth, the conversation is a disposable cache). This covers the first
 //!   turn, a session/agent switch (frontend resets), an app restart, and
@@ -37,13 +39,13 @@
 //! every tool-carrying agent also gets the `deep_write` subagent — a tool
 //! whose implementation streams one stateless cloud completion (PLAN
 //! `PLAN-hybrid-llm-subagents.md`). Division of labor: local plans (emits
-//! short ```tool fences), compresses and curates `materials`; cloud writes
+//! short call: lines), compresses and curates `materials`; cloud writes
 //! the long-form answer. A `deep_write` result is FINAL (`final:true`
 //! passthrough): its tokens stream straight to the user, are persisted as
 //! the assistant message, and local never rewrites them. Chat history is
 //! never sent — only the task + materials package. On cloud failure the
-//! turn degrades to local (fed back as a normal TOOL_RESULT error), and a
-//! twice-malformed fence on a heavy turn escalates to `deep_write` instead
+//! turn degrades to local (fed back as a normal response: error), and a
+//! twice-malformed call on a heavy turn escalates to `deep_write` instead
 //! of failing.
 
 #[cfg(feature = "litert")]
@@ -106,7 +108,7 @@ Rules:\n\
 /// Extra persona rule for agents carrying the deep_write subagent: tells the
 /// local model WHEN to delegate (the core quality lever of the hybrid tier).
 #[cfg(feature = "litert")]
-const DEEP_WRITE_RULE: &str = "- Long, analytical, comparative or creative answers (reports, comparisons, drafts, syntheses across sources) MUST be delegated to the deep_write tool: task = the complete brief (audience, structure, focus); materials = the relevant excerpts you gathered from TOOL_RESULTs. The deep_write result is streamed to the user as your final answer. Short factual replies you write yourself — do NOT delegate those.";
+const DEEP_WRITE_RULE: &str = "- Long, analytical, comparative or creative answers (reports, comparisons, drafts, syntheses across sources) MUST be delegated to the deep_write tool: task = the complete brief (audience, structure, focus); materials = the relevant excerpts you gathered from response: results. The deep_write result is streamed to the user as your final answer. Short factual replies you write yourself — do NOT delegate those.";
 
 /// Extra persona rule for the office agent: document creation with real
 /// content goes through the draft_document subagent, which composes the
@@ -157,15 +159,15 @@ const OFFICE_PERSONA: &str =
 #[cfg(feature = "office")]
 const OFFICE_PERSONA: &str = "You are kawai's office agent. You read, create, edit, merge and inspect documents (docx, xlsx, pptx, pdf, youtube transcript) through tools.\n\
 Rules:\n\
-- Call at most ONE tool per reply, as a single ```tool block, then stop and wait for the TOOL_RESULT message.\n\
+- Call at most ONE tool per reply, as a single call:<name>{...} line, then stop and wait for the response: message.\n\
 - When the user asks ANYTHING about their uploaded documents or imported YouTube videos (summaries, numbers, names, dates, invoice codes, table contents), call knowledge_search FIRST — it finds the relevant passages for you.\n\
 - NEVER say you cannot access a video, transcript, or document: imported content is searchable via knowledge_search. Always call knowledge_search first; only if it returns no hits may you say you cannot find the content.\n\
 - Tools address stored files by their file id, never by path. If the user refers to a document and you don't know its id, call office_list_files first.\n\
 - Never invent arguments: if a required input is missing, ask the user.\n\
 - Prefer office_document_info / pdf_info before large reads when only structure matters.\n\
-- NEVER claim you created, edited, or changed a document unless a TOOL_RESULT explicitly reported success. If you did not call a tool, say so.\n\
-- If a TOOL_RESULT reports an error, fix your arguments and call the tool again (up to the budget) before telling the user it failed.\n\
-- After each TOOL_RESULT, either call another tool or give the final answer.\n\
+- NEVER claim you created, edited, or changed a document unless a response: message explicitly reported success. If you did not call a tool, say so.\n\
+- If a response: message reports an error, fix your arguments and call the tool again (up to the budget) before telling the user it failed.\n\
+- After each response: message, either call another tool or give the final answer.\n\
 - Final answers: short, factual, no JSON dumps.";
 
 #[cfg(feature = "litert")]
@@ -255,7 +257,7 @@ impl rig::tool::PortableTool for DeepWrite {
             "type": "object",
             "properties": {
                 "task": { "type": "string", "description": "What to write: the complete brief — audience, structure, focus, approximate length." },
-                "materials": { "type": "string", "description": "Excerpts/facts the writer must use, gathered from TOOL_RESULTs. Omit for general-knowledge writing." }
+                "materials": { "type": "string", "description": "Excerpts/facts the writer must use, gathered from response: results. Omit for general-knowledge writing." }
             },
             "required": ["task"]
         })
@@ -305,7 +307,7 @@ You provide the brief, the gathered materials and the filename; the writer compo
             "properties": {
                 "task": { "type": "string", "description": "What to write: audience, structure, focus, approximate length." },
                 "filename": { "type": "string", "description": "Output filename ending in .docx, .xlsx or .pptx, e.g. report.docx" },
-                "materials": { "type": "string", "description": "Excerpts/facts from TOOL_RESULTs the document must be grounded in. Omit for general-knowledge documents." }
+                "materials": { "type": "string", "description": "Excerpts/facts from response: results the document must be grounded in. Omit for general-knowledge documents." }
             },
             "required": ["task", "filename"]
         })
@@ -388,16 +390,16 @@ fn build_prompt(
         let tools = serde_json::to_string_pretty(&defs).unwrap_or_else(|_| "[]".into());
         format!(
             "<agent_context>\n{persona}\n\nAvailable tools (name, what it does, and its args):\n{tools}\n\n\
-            To call a tool, reply with exactly ONE fenced block:\n\
-            ```tool\n{{\"tool\": \"<name>\", \"args\": {{ ... }}}}\n```\n\
-            In `args`, supply exactly the parameters listed for that tool (omit optional ones). After a tool block, STOP — the result arrives as a TOOL_RESULT message in the next turn.\n\
-            If no tool is needed, answer the user directly in plain text with NO fenced block.\n\n\
-            Example of the format (illustration only — never repeat it verbatim, and ALWAYS emit the ```tool block yourself when a tool is needed):\n\
-            User: create a docx named hello.docx containing \"hello world\"\n\
-            ```tool\n{{\"tool\": \"office_create_document\", \"args\": {{\"filename\": \"hello.docx\", \"blocks\": [{{\"type\": \"paragraph\", \"text\": \"hello world\"}}]}}}}\n```\n\
-            TOOL_RESULT office_create_document: {{\"success\": true, \"file\": {{\"id\": \"f9\", \"originalName\": \"hello.docx\"}}}}\n\
-            Created hello.docx (id f9).\n\
-            </agent_context>\n\n"
+             To call a tool, reply with exactly ONE line in this format:\n\
+             call:<name>{{\"arg\": \"value\", ...}}\n\
+             Supply exactly the parameters listed for that tool (omit optional ones). After the call: line, STOP — the result arrives as a response:<name>{{...}} message in the next turn.\n\
+             If no tool is needed, answer the user directly in plain text with NO call: line.\n\n\
+             Example of the format (illustration only — never repeat it verbatim, and ALWAYS emit the call: line yourself when a tool is needed):\n\
+             User: create a docx named hello.docx containing \"hello world\"\n\
+             call:office_create_document{{\"filename\": \"hello.docx\", \"blocks\": [{{\"type\": \"paragraph\", \"text\": \"hello world\"}}]}}\n\
+             response:office_create_document{{\"success\": true, \"file\": {{\"id\": \"f9\", \"originalName\": \"hello.docx\"}}}}\n\
+             Created hello.docx (id f9).\n\
+             </agent_context>\n\n"
         )
     } else {
         format!("<agent_context>\n{persona}\n</agent_context>\n\n")
@@ -936,8 +938,8 @@ pub fn agent_chat(
             if let Some(call) = pending_subagent.take() {
                 if subagent_calls_used >= MAX_SUBAGENT_CALLS {
                     prompt = format!(
-                        "TOOL_RESULT {}:\nERROR: the cloud call for this turn was already used. \
-                         Answer the user directly now with what you have (NO tool block).",
+                        "response:{}:\nERROR: the cloud call for this turn was already used. \
+                         Answer the user directly now with what you have (NO call: line).",
                         call.tool
                     );
                     continue;
@@ -946,7 +948,7 @@ pub fn agent_chat(
                 let is_draft = call.tool == DRAFT_DOCUMENT_TOOL;
                 if !is_draft && call.tool != DEEP_WRITE_TOOL {
                     prompt = format!(
-                        "TOOL_RESULT {}:\nERROR: unknown cloud tool. Answer directly (NO tool block).",
+                        "response:{}:\nERROR: unknown cloud tool. Answer directly (NO call: line).",
                         call.tool
                     );
                     continue;
@@ -1149,9 +1151,9 @@ pub fn agent_chat(
                                         // Receipt back to local — short enough to
                                         // be safe in K/V; local closes the turn.
                                         prompt = format!(
-                                            "TOOL_RESULT {DRAFT_DOCUMENT_TOOL}:\n{receipt}\n\n\
+                                            "response:{DRAFT_DOCUMENT_TOOL}:\n{receipt}\n\n\
                                              The document was created and saved. Tell the user \
-                                             concisely (filename + what it contains). NO tool block."
+                                             concisely (filename + what it contains). NO call: line."
                                         );
                                         continue;
                                     }
@@ -1205,8 +1207,8 @@ pub fn agent_chat(
                         summary: truncate_chars(&err, TOOL_RESULT_UI_CHARS),
                     };
                     prompt = format!(
-                        "TOOL_RESULT {}:\nERROR: {err}\n\nThe cloud writer is unavailable. \
-                         Answer the user directly with what you have (NO tool block).",
+                        "response:{}:\nERROR: {err}\n\nThe cloud writer is unavailable. \
+                         Answer the user directly with what you have (NO call: line).",
                         call.tool
                     );
                     continue;
@@ -1397,9 +1399,9 @@ pub fn agent_chat(
                     }
                     repairs_used += 1;
                     prompt = format!(
-                        "TOOL_ERROR: malformed tool call ({detail}). The fence MUST contain ONE valid JSON object, exactly this shape:\n\
-                        ```tool\n{{\"tool\": \"<tool_name>\", \"args\": {{<argument objects>}}}}\n```\n\
-                        Rules: the key is \"tool\" (a string), \"args\" is ONE object holding every argument as \"name\": value pairs (nested arrays/objects allowed as values). Do not put a colon between two argument names. Reply with the corrected ```tool block, or answer the user directly WITHOUT any tool block."
+                        "TOOL_ERROR: malformed tool call ({detail}). The call MUST be ONE line, exactly this shape:\n\
+                        call:<tool_name>{{\"<arg>\": <value>, ...}}\n\
+                        Rules: call: + the tool name + ONE JSON object holding every argument as \"name\": value pairs (nested arrays/objects allowed as values). Do not put a colon between two argument names. Reply with the corrected call: line, or answer the user directly WITHOUT any call: line."
                     );
                 }
 
@@ -1444,9 +1446,9 @@ pub fn agent_chat(
                                 summary: format!("{tool} requires a non-empty 'task'"),
                             };
                             prompt = format!(
-                                "TOOL_RESULT {tool}:\nERROR: 'task' must be a non-empty \
+                                "response:{tool}:\nERROR: 'task' must be a non-empty \
                                  string describing what to write. Retry with a complete brief, or \
-                                 answer directly (NO tool block)."
+                                 answer directly (NO call: line)."
                             );
                             continue;
                         }
@@ -1468,7 +1470,7 @@ pub fn agent_chat(
                             return;
                         }
                         budget_notified = true;
-                        prompt = "TOOL_BUDGET_EXHAUSTED — you have used all tool calls for this turn. Answer the user now with what you have (NO tool block).".into();
+                        prompt = "TOOL_BUDGET_EXHAUSTED — you have used all tool calls for this turn. Answer the user now with what you have (NO call: line).".into();
                         continue;
                     }
                     yield AgentChatEvent::ToolCall { tool: tool.clone(), args: args.clone() };
@@ -1491,7 +1493,7 @@ pub fn agent_chat(
                                 ok: false,
                                 summary: truncate_chars(&body, TOOL_RESULT_UI_CHARS),
                             };
-                            prompt = format!("TOOL_RESULT {tool}:\n{body}\n\nAnswer the user directly now — no tools are available.");
+                            prompt = format!("response:{tool}:\nERROR: tool {tool:?} does not exist (no tools are available)\n\nAnswer the user directly now — no tools are available.");
                             continue
                         }
                     };
@@ -1518,7 +1520,7 @@ pub fn agent_chat(
                         };
                     turn_tool_results.push_str(&format!("\n\n--- {tool} ---\n{model_body}"));
                     prompt = format!(
-                        "TOOL_RESULT {tool}:\n{model_body}\n\nContinue. If you need another tool, reply with a single ```tool block; otherwise answer the user directly."
+                        "response:{tool}:\n{model_body}\n\nContinue. If you need another tool, reply with a single call: line; otherwise answer the user directly."
                     );
                 }
             }
@@ -1829,6 +1831,7 @@ mod tests {
         assert!(out.contains("persona text"));
         assert!(out.contains("<user_request>"));
         assert!(!out.contains("```tool"));
+        assert!(!out.contains("call:<name>"));
         assert!(!out.contains("Available tools"));
     }
 
@@ -1954,13 +1957,13 @@ mod tests {
         assert!(out.contains("echo_tool"));
         assert!(out.contains("\"message\""));
         assert!(out.contains("required"));
-        // Few-shot example of the fence format.
-        assert!(out.contains("```tool"));
-        assert!(out.contains("TOOL_RESULT"));
+        // Few-shot example of the taught call: protocol + response: feedback.
+        assert!(out.contains("call:office_create_document{"));
+        assert!(out.contains("response:"));
     }
 
     /// The subagent-only toolset (chat agent, remote on) must render the
-    /// fence protocol + deep_write manifest — a persona rule without a
+    /// call protocol + deep_write manifest — a persona rule without a
     /// manifest teaches a tool the model cannot call.
     #[cfg(feature = "litert")]
     #[test]
@@ -1971,6 +1974,22 @@ mod tests {
         assert!(out.contains("deep_write"));
         assert!(out.contains("\"task\""));
         assert!(out.contains("\"materials\""));
-        assert!(out.contains("```tool"));
+        assert!(out.contains("call:"));
     }
+
+    #[cfg(feature = "litert")]
+    #[test]
+    fn opener_teaches_call_line_protocol() {
+        let mut set = ToolSet::default();
+        set.add_tool(echo::EchoTool);
+        let out = build_prompt("persona", Some(&set), "", "hi");
+        // The taught call format is the Gemma-native body with plain quotes…
+        assert!(out.contains("call:<name>{\"arg\": \"value\", ...}"));
+        // …results come back in the response: shape…
+        assert!(out.contains("response:<name>{...}"));
+        // …and the worked example uses a real call: line, not a fence.
+        assert!(out.contains("call:office_create_document{"));
+        assert!(!out.contains("```tool"));
+    }
+
 }
