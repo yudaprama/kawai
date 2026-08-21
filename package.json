@@ -12,7 +12,7 @@
     "tauri:dev:litert": "bash scripts/tauri.sh dev",
     "bundle:litert": "bash scripts/bundle-litert-dylibs.sh",
     "tauri:build:litert": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features litert --config .github/tauri-litert.json",
-    "tauri:build:litert-office": "bash scripts/bundle-litert-dylibs.sh && bash scripts/fetch-office-bins.sh && tauri build -- --features litert,office --config .github/tauri-office.json,.github/tauri-litert.json"
+    "tauri:build:litert-office": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features litert,office --config .github/tauri-litert.json"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.15",

@@ -9,12 +9,17 @@
 > - **2026-08-21 — `pdfcli`: replaced by `pdf_oxide`** (pure-Rust, in-process,
 >   vendored submodule). ALL PDF ops (extract/search/replace/merge/split/info)
 >   now call the pdf_oxide Rust API via `spawn_blocking` — no subprocess, no
->   bundled binary. `ooxcli` is the ONLY remaining subprocess engine. See
->   AGENTS.md Roadmap 5 for details.
+>   bundled binary.
+> - **ooxcli: dismantled** — OOXML read (`office_oxide::Document::to_markdown`),
+>   info (Document IR + counts), and edit (`office_oxide::EditableDocument`
+>   raw-part surgery) all run in-process; the `rig-components` `officeedit` /
+>   `officemarkdown` tools and `ragloader` extraction were ported off the
+>   subprocess too. No external engine binary remains anywhere in the stack.
+>   See AGENTS.md Roadmap 5 for details.
 >
 > Sections 3–4 (engine inventory, CLI surfaces, bundling) describe the
-> pre-migration subprocess architecture and are obsolete for PDF; the
-> store/tools/agent-loop sections remain the reference.
+> pre-migration subprocess architecture and are obsolete for PDF **and**
+> OOXML; the store/tools/agent-loop sections remain the reference.
 
 Status: DRAFT v2, not started. This plan deliberately pulls **Roadmap 5 (agent
 tier foundation) forward** as a thin vertical slice, with the office agent as

@@ -29,9 +29,6 @@ pub fn run() {
             #[cfg(feature = "office")]
             {
                 use tauri::Manager;
-                if let Ok(res) = app.path().resource_dir() {
-                    logic::office::set_bin_dir(res.join("office-bin"));
-                }
                 if let Ok(data) = app.path().app_data_dir() {
                     // One per-user data root: <app_data>/<user_id>/ holds
                     // kawai.db + docs/ (office store defaults into it).

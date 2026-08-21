@@ -136,6 +136,7 @@ pub struct AgentInfo {
 
 /// The agent catalog in UI order. Static data — no user scope, no auth.
 pub fn list_agents() -> Vec<AgentInfo> {
+    #[allow(unused_mut)]
     let mut out = vec![AgentInfo {
         id: CHAT_AGENT_ID.to_string(),
         name: "Chat".into(),

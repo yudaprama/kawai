@@ -297,6 +297,18 @@ function KnowledgeStatusBadge({ file }: { file: KnowledgeFileInfo }) {
   return <span className="text-muted-foreground/70 text-xs">not indexed</span>;
 }
 
+/** Knowledge panel section label with a right-aligned item count. */
+function KnowledgeSectionLabel({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="flex items-baseline justify-between px-1 pb-1.5">
+      <p className="font-mono text-[11px] tracking-wider text-muted-foreground uppercase">
+        {label}
+      </p>
+      <span className="font-mono text-[11px] text-muted-foreground/70">{count}</span>
+    </div>
+  );
+}
+
 /** One knowledge-panel document row: name, size/date/index state + scope
  * actions (add/remove to the active session, retry, delete). */
 function KnowledgeFileRow({
@@ -1009,44 +1021,50 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-5">
-                      {chat.sessionId != null && sessionFiles.length > 0 && (
+                      {chat.sessionId != null && (
                         <div>
-                          <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
-                            In this session
-                          </p>
-                          <div className="flex flex-col gap-1.5">
-                            {sessionFiles.map((file) => (
-                              <KnowledgeFileRow
-                                confirmDelete={confirmDeleteId === file.id}
-                                file={file}
-                                inSessionList
-                                key={file.id}
-                                onAdd={addToSession}
-                                onDelete={deleteFile}
-                                onPreview={openPreview}
-                                onRemove={removeFromSession}
-                                onRetry={retryIndex}
-                              />
-                            ))}
-                          </div>
-                          <p className="text-muted-foreground/70 mt-1.5 px-1 text-xs">
-                            The agent can search these documents in this chat.
-                          </p>
+                          <KnowledgeSectionLabel
+                            count={sessionFiles.length}
+                            label="In this session"
+                          />
+                          {sessionFiles.length > 0 ? (
+                            <>
+                              <div className="flex flex-col gap-1.5">
+                                {sessionFiles.map((file) => (
+                                  <KnowledgeFileRow
+                                    confirmDelete={confirmDeleteId === file.id}
+                                    file={file}
+                                    inSessionList
+                                    key={file.id}
+                                    onAdd={addToSession}
+                                    onDelete={deleteFile}
+                                    onPreview={openPreview}
+                                    onRemove={removeFromSession}
+                                    onRetry={retryIndex}
+                                  />
+                                ))}
+                              </div>
+                              <p className="text-muted-foreground/70 mt-1.5 px-1 text-xs">
+                                The agent can search these documents in this chat.
+                              </p>
+                            </>
+                          ) : (
+                            <div className="text-muted-foreground/70 rounded-lg border border-dashed px-3 py-3 text-xs">
+                              No documents in this session yet — press{" "}
+                              <span className="font-medium">+</span> on a library document
+                              below, or import new files; the agent can then search them in
+                              this chat.
+                            </div>
+                          )}
                         </div>
                       )}
-                      {chat.sessionId != null && sessionFiles.length === 0 && (
-                        <p className="text-muted-foreground/70 px-1 text-xs">
-                          Add documents to this session — import new ones, or press{" "}
-                          <span className="font-medium">+</span> on a library document below —
-                          to make them searchable by the agent in this chat.
-                        </p>
-                      )}
                       <div>
-                        <p className="text-muted-foreground px-1 pb-1.5 font-mono text-[11px] tracking-wider uppercase">
-                          {sessionFiles.length > 0 ? "Library" : "Documents"}
-                        </p>
+                        <KnowledgeSectionLabel
+                          count={knowledge.files.length}
+                          label={chat.sessionId != null ? "Library" : "Documents"}
+                        />
                         {knowledge.files.length === 0 ? (
-                          <div className="text-muted-foreground/70 px-1 py-2 text-xs">
+                          <div className="text-muted-foreground/70 rounded-lg border border-dashed px-3 py-3 text-xs">
                             No sources yet — import .docx, .xlsx, .pptx, .pdf or images with
                             "Add files", or paste a YouTube link with "Link".
                           </div>

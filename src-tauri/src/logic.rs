@@ -99,6 +99,7 @@ pub fn resolve_model_path() -> Result<String, String> {
 // tier) in `remote`. Re-exported so `logic::X` paths used by the wrappers stay
 // stable across the split.
 pub mod db;
+pub mod db_migrations;
 #[cfg(feature = "litert")]
 pub use local_llm;
 pub mod agent;

@@ -6,7 +6,7 @@
 //! store, so that `knowledge_search` at submit time is instant (no subprocess
 //! spawn, no on-the-fly embedding).
 //!
-//! Pipeline: office extractors (ooxcli for OOXML, pdf_oxide in-process for
+//! Pipeline: office extractors (office_oxide for OOXML, pdf_oxide in-process for
 //! PDF) → in-tree chunker →
 //! `kawai-embedding` (local fastembed ONNX fallback, no API key) →
 //! `rig-libsql` vector store. All deps are gated behind the `office` feature

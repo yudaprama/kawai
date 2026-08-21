@@ -399,7 +399,7 @@ pub fn office_list_files(
     logic::office::list_files(&user_id)
 }
 
-/// Authenticated RPC: read a stored document as markdown (ooxcli extract).
+/// Authenticated RPC: read a stored document as markdown (in-process via office_oxide).
 #[cfg(feature = "office")]
 #[tauri::command]
 pub async fn office_read_document(

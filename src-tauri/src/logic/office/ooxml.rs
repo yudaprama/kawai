@@ -1,7 +1,14 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::cli::{self, CLI_TIMEOUT};
+use office_oxide::edit::{
+    DocxAlign, DocxBlock, DocxBlockKind, DocxFormat, DocxRun, EditableDocument, PptxSlideSpec,
+    XlsxCellValue,
+};
+use office_oxide::ir::Element;
+use office_oxide::xlsx::edit::CellValue as XlsxEditCellValue;
+use office_oxide::{Document, DocumentFormat};
+
 use super::store;
 use super::store::OfficeFile;
 
@@ -145,10 +152,9 @@ fn allowed_ops(ext: &str) -> Option<&'static [&'static str]> {
 
 /// Extract a document to Markdown, in-process via `office_oxide`.
 ///
-/// Replaces the previous `ooxcli extract` subprocess. The `baseurl` is kept
-/// for parity so any future image-serving endpoint rooted at
+/// The `baseurl` keeps parity with the old image-serving endpoint rooted at
 /// `/office-files/<file_id>/…` (e.g. `/office-files/<file_id>/word/media/image1.png`)
-/// resolves embedded pictures to servable URLs.
+/// so embedded pictures resolve to servable URLs.
 pub async fn read_document(user_id: &str, file_id: &str) -> Result<String, String> {
     let (path, info) = store::resolve(user_id, file_id)?;
     if info.ext == "pdf" {
@@ -159,23 +165,52 @@ pub async fn read_document(user_id: &str, file_id: &str) -> Result<String, Strin
     Ok(doc.to_markdown_with_baseurl(Some(&format!("/office-files/{file_id}"))))
 }
 
-/// `ooxcli info` → parsed JSON.
+/// `office_document_info` — pure-Rust document inspection via `office_oxide`.
+/// Returns a JSON object describing counts and core properties, no engine.
 pub async fn document_info(user_id: &str, file_id: &str) -> Result<Value, String> {
-    let (path, _info) = store::resolve(user_id, file_id)?;
-    let bin = cli::ooxcli_path().ok_or_else(|| cli::missing_engine("ooxcli"))?;
-    let out = cli::run_cli(
-        &bin,
-        &["info".to_string(), path.display().to_string()],
-        None,
-        None,
-        CLI_TIMEOUT,
-    )
-    .await?;
-    serde_json::from_str(out.stdout.trim())
-        .map_err(|e| format!("ooxcli info returned invalid JSON: {e}"))
+    let (path, info) = store::resolve(user_id, file_id)?;
+    if info.ext == "pdf" {
+        return Err("use pdf_info for PDF files".into());
+    }
+    let doc = Document::open(&path)
+        .map_err(|e| format!("office_oxide read failed: {e}"))?;
+    let ir = doc.to_ir();
+    let words = doc.plain_text().split_whitespace().count();
+
+    let (paragraphs, slides, sheets) = match doc.format() {
+        DocumentFormat::Pptx => (None, doc.as_pptx().map(|d| d.slides.len()), None),
+        DocumentFormat::Xlsx => (None, None, doc.as_xlsx().map(|d| d.worksheets.len())),
+        _ => {
+            let p = ir
+                .sections
+                .iter()
+                .flat_map(|s| s.elements.iter())
+                .filter(|e| matches!(e, Element::Paragraph(_) | Element::Heading(_)))
+                .count();
+            (Some(p), None, None)
+        },
+    };
+
+    let m = ir.metadata;
+    Ok(serde_json::json!({
+        "format": info.ext,
+        "wordCount": words,
+        "paragraphCount": paragraphs,
+        "slideCount": slides,
+        "sheetCount": sheets,
+        "metadata": {
+            "title": m.title,
+            "author": m.author,
+            "subject": m.subject,
+            "keywords": m.keywords,
+            "created": m.created,
+            "modified": m.modified,
+            "description": m.description,
+        },
+    }))
 }
 
-/// Per-operation outcome from `ooxcli edit --json` (gooxml >= v0.1.5).
+/// Per-operation outcome from `office_edit_document`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EditOpOutcome {
     pub index: u64,
@@ -188,7 +223,7 @@ pub struct EditOpOutcome {
     pub error: Option<String>,
 }
 
-/// Structured edit summary from `ooxcli edit --json` (gooxml >= v0.1.5).
+/// Structured edit summary from `office_edit_document`.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EditOutcome {
     pub success: bool,
@@ -199,14 +234,15 @@ pub struct EditOutcome {
     pub error_summary: Option<String>,
 }
 
-/// `ooxcli edit` with ops JSON on stdin; output replaces the stored file.
+/// `office_edit_document` — pure-Rust edit via `office_oxide::EditableDocument`.
+/// Each op is applied in order; per-op status is recorded and the final
+/// document replaces the stored file.
 pub async fn edit_document(
     user_id: &str,
     file_id: &str,
     operations: &[Value],
 ) -> Result<EditOutcome, String> {
     let (path, info) = store::resolve(user_id, file_id)?;
-    let bin = cli::ooxcli_path().ok_or_else(|| cli::missing_engine("ooxcli"))?;
     let allowed = allowed_ops(&info.ext)
         .ok_or_else(|| format!("edit does not support .{} files", info.ext))?;
     for (i, op) in operations.iter().enumerate() {
@@ -218,49 +254,295 @@ pub async fn edit_document(
             ));
         }
     }
-    let ops_json = serde_json::to_string(&operations).map_err(|e| e.to_string())?;
+    let ext = info.ext.clone();
     let tmp = path.with_extension(format!("{}.tmp", info.ext));
-    // Trailing --json (gooxml >= v0.1.5) must come AFTER the positional input:
-    // older binaries treat an unknown leading positional as the input file,
-    // while a trailing one is safely ignored.
-    let out = cli::run_cli(
-        &bin,
-        &[
-            "edit".to_string(),
-            path.display().to_string(),
-            "--out".to_string(),
-            tmp.display().to_string(),
-            "--json".to_string(),
-        ],
-        Some(&ops_json),
-        None,
-        CLI_TIMEOUT,
-    )
-    .await?;
-    if !tmp.is_file() {
-        return Err(format!(
-            "ooxcli edit produced no output: {}",
-            out.stderr.trim()
-        ));
+    let mut doc = EditableDocument::open(&path)
+        .map_err(|e| format!("open for edit failed: {e}"))?;
+
+    let mut op_results = Vec::new();
+    let mut rows_modified = 0u64;
+    for (i, op) in operations.iter().enumerate() {
+        let ty = op
+            .get("type")
+            .and_then(|t| t.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let (status, modified, error) = match apply_edit_op(&mut doc, &ext, op) {
+            Ok(n) => ("applied".to_string(), n, None),
+            Err(e) => ("error".to_string(), 0, Some(e)),
+        };
+        rows_modified += modified;
+        op_results.push(EditOpOutcome {
+            index: i as u64,
+            op_type: ty,
+            status,
+            modified,
+            error,
+        });
     }
-    // gooxml >= v0.1.5 prints an EditResult JSON summary; older binaries print
-    // nothing on success — degrade to an op-count-only outcome.
-    let outcome = match serde_json::from_str::<EditOutcome>(out.stdout.trim()) {
-        Ok(parsed) if parsed.success => parsed,
-        Ok(parsed) => {
-            return Err(parsed
-                .error_summary
-                .unwrap_or_else(|| "ooxcli edit failed".into()));
-        }
-        Err(_) => EditOutcome {
-            success: true,
-            rows_modified: operations.len() as u64,
-            operations: Vec::new(),
-            error_summary: None,
-        },
-    };
+
+    let file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+    doc.write_to(file)
+        .map_err(|e| format!("write edited document: {e}"))?;
     store::replace_stored(user_id, file_id, &tmp)?;
-    Ok(outcome)
+    Ok(EditOutcome {
+        success: true,
+        rows_modified,
+        operations: op_results,
+        error_summary: None,
+    })
+}
+
+/// Apply a single edit op to the open document, returning the number of
+/// affected units (paragraphs, cells, slides, …).
+fn apply_edit_op(
+    doc: &mut EditableDocument,
+    ext: &str,
+    op: &Value,
+) -> Result<u64, String> {
+    let ty = op.get("type").and_then(|t| t.as_str()).unwrap_or_default();
+    match (ext, ty) {
+        ("docx", "replace_text") => {
+            let find = op.get("find").and_then(|v| v.as_str()).unwrap_or("");
+            let replace = op.get("replace").and_then(|v| v.as_str()).unwrap_or("");
+            Ok(doc.replace_text(find, replace) as u64)
+        }
+        ("docx", "append_paragraphs") => {
+            let blocks = parse_docx_blocks(op)?;
+            doc.append_docx_blocks(&blocks)
+                .map_err(|e| e.to_string())
+                .map(|n| n as u64)
+        }
+        ("docx", "append_table") => {
+            let rows = parse_docx_table(op)?;
+            doc.append_docx_table(&rows)
+                .map_err(|e| e.to_string())
+                .map(|n| n as u64)
+        }
+        ("docx", "delete_paragraph") => {
+            let find = op.get("find").and_then(|v| v.as_str()).unwrap_or("");
+            doc.delete_docx_paragraphs(find)
+                .map_err(|e| e.to_string())
+                .map(|n| n as u64)
+        }
+        ("docx", "format_paragraph") => {
+            let find = op.get("find").and_then(|v| v.as_str()).unwrap_or("");
+            let fmt = parse_docx_format(op)?;
+            doc.format_docx_paragraph(find, &fmt)
+                .map_err(|e| e.to_string())
+                .map(|n| n as u64)
+        }
+        ("xlsx", "replace_text") => {
+            let find = op.get("find").and_then(|v| v.as_str()).unwrap_or("");
+            let replace = op.get("replace").and_then(|v| v.as_str()).unwrap_or("");
+            doc.xlsx_replace_text(find, replace)
+                .map_err(|e| e.to_string())
+                .map(|n| n as u64)
+        }
+        ("xlsx", "append_rows") => {
+            let sheet = op.get("sheet").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            let rows = parse_xlsx_rows(op)?;
+            doc.append_xlsx_rows(sheet, &rows)
+                .map_err(|e| e.to_string())
+                .map(|n| n as u64)
+        }
+        ("xlsx", "set_cell") => {
+            let cells = op
+                .get("cells")
+                .and_then(|v| v.as_array())
+                .ok_or("set_cell requires cells[]")?;
+            let mut count = 0u64;
+            for c in cells {
+                let cell = c.get("cell").and_then(|v| v.as_str()).ok_or("cell ref missing")?;
+                let value = parse_xlsx_edit_cell_value(c.get("value"))?;
+                doc.set_cell(0, cell, value)
+                    .map_err(|e| e.to_string())?;
+                count += 1;
+            }
+            Ok(count)
+        }
+        ("pptx", "replace_text") => {
+            let find = op.get("find").and_then(|v| v.as_str()).unwrap_or("");
+            let replace = op.get("replace").and_then(|v| v.as_str()).unwrap_or("");
+            Ok(doc.replace_text(find, replace) as u64)
+        }
+        ("pptx", "append_slides") => {
+            let slides = parse_pptx_slides(op)?;
+            doc.append_pptx_slides(&slides)
+                .map_err(|e| e.to_string())
+                .map(|n| n as u64)
+        }
+        ("pptx", "remove_slide") => {
+            let find = op.get("find").and_then(|v| v.as_str()).unwrap_or("");
+            doc.remove_pptx_slide(find)
+                .map_err(|e| e.to_string())
+                .map(|n| n as u64)
+        }
+        _ => Err(format!("unsupported operation {ty:?} for .{ext}")),
+    }
+}
+
+fn parse_docx_blocks(op: &Value) -> Result<Vec<DocxBlock>, String> {
+    let arr = op
+        .get("paragraphs")
+        .and_then(|v| v.as_array())
+        .ok_or("append_paragraphs requires paragraphs[]")?;
+    let mut blocks = Vec::new();
+    for p in arr {
+        let kind = match p.get("type").and_then(|v| v.as_str()).unwrap_or("paragraph") {
+            "paragraph" => DocxBlockKind::Paragraph,
+            "title" => DocxBlockKind::Title,
+            "heading1" => DocxBlockKind::Heading1,
+            "heading2" => DocxBlockKind::Heading2,
+            "heading3" => DocxBlockKind::Heading3,
+            "bullet" => DocxBlockKind::Bullet,
+            other => return Err(format!("unknown paragraph type {other:?}")),
+        };
+        let runs = p
+            .get("runs")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut docx_runs = Vec::new();
+        for r in runs {
+            docx_runs.push(DocxRun {
+                text: r.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                bold: r.get("bold").and_then(|v| v.as_bool()).unwrap_or(false),
+                italic: r.get("italic").and_then(|v| v.as_bool()).unwrap_or(false),
+                size: r.get("size").and_then(|v| v.as_f64()),
+                color: r.get("color").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                font: r.get("font").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            });
+        }
+        blocks.push(DocxBlock { kind, runs: docx_runs });
+    }
+    Ok(blocks)
+}
+
+fn parse_docx_table(op: &Value) -> Result<Vec<Vec<String>>, String> {
+    let rows = op
+        .get("rows")
+        .and_then(|v| v.as_array())
+        .ok_or("append_table requires rows[]")?;
+    let mut out = Vec::new();
+    for row in rows {
+        let cells = row
+            .get("cells")
+            .and_then(|v| v.as_array())
+            .ok_or("row missing cells[]")?;
+        let mut r = Vec::new();
+        for c in cells {
+            r.push(c.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string());
+        }
+        out.push(r);
+    }
+    Ok(out)
+}
+
+fn parse_docx_format(op: &Value) -> Result<DocxFormat, String> {
+    let mut fmt = DocxFormat::default();
+    if let Some(a) = op.get("alignment").and_then(|v| v.as_str()) {
+        fmt.alignment = Some(match a {
+            "left" => DocxAlign::Left,
+            "center" => DocxAlign::Center,
+            "right" => DocxAlign::Right,
+            "justify" => DocxAlign::Justify,
+            other => return Err(format!("unknown alignment {other:?}")),
+        });
+    }
+    fmt.spacing_before = op.get("spacing_before").and_then(|v| v.as_u64()).map(|v| v as u32);
+    fmt.spacing_after = op.get("spacing_after").and_then(|v| v.as_u64()).map(|v| v as u32);
+    fmt.indent_left = op.get("indent_left").and_then(|v| v.as_u64()).map(|v| v as u32);
+    fmt.indent_right = op.get("indent_right").and_then(|v| v.as_u64()).map(|v| v as u32);
+    Ok(fmt)
+}
+
+fn parse_xlsx_rows(op: &Value) -> Result<Vec<Vec<XlsxCellValue>>, String> {
+    let rows = op
+        .get("cell_rows")
+        .and_then(|v| v.as_array())
+        .ok_or("append_rows requires cell_rows[]")?;
+    let mut out = Vec::new();
+    for row in rows {
+        let values = row
+            .get("values")
+            .and_then(|v| v.as_array())
+            .ok_or("row missing values[]")?;
+        let mut r = Vec::new();
+        for v in values {
+            r.push(parse_xlsx_cell_value(Some(v))?);
+        }
+        out.push(r);
+    }
+    Ok(out)
+}
+
+fn parse_xlsx_cell_value(v: Option<&Value>) -> Result<XlsxCellValue, String> {
+    let v = v.ok_or("missing cell value")?;
+    if let Some(n) = v.as_f64() {
+        return Ok(XlsxCellValue::Number(n));
+    }
+    if let Some(b) = v.as_bool() {
+        return Ok(XlsxCellValue::Boolean(b));
+    }
+    if let Some(s) = v.as_str() {
+        if let Ok(n) = s.parse::<f64>() {
+            return Ok(XlsxCellValue::Number(n));
+        }
+        if s == "true" {
+            return Ok(XlsxCellValue::Boolean(true));
+        }
+        if s == "false" {
+            return Ok(XlsxCellValue::Boolean(false));
+        }
+        return Ok(XlsxCellValue::String(s.to_string()));
+    }
+    Ok(XlsxCellValue::String(v.to_string()))
+}
+
+fn parse_xlsx_edit_cell_value(v: Option<&Value>) -> Result<XlsxEditCellValue, String> {
+    let v = v.ok_or("missing cell value")?;
+    if let Some(n) = v.as_f64() {
+        return Ok(XlsxEditCellValue::Number(n));
+    }
+    if let Some(b) = v.as_bool() {
+        return Ok(XlsxEditCellValue::Boolean(b));
+    }
+    if let Some(s) = v.as_str() {
+        if let Ok(n) = s.parse::<f64>() {
+            return Ok(XlsxEditCellValue::Number(n));
+        }
+        if s == "true" {
+            return Ok(XlsxEditCellValue::Boolean(true));
+        }
+        if s == "false" {
+            return Ok(XlsxEditCellValue::Boolean(false));
+        }
+        return Ok(XlsxEditCellValue::String(s.to_string()));
+    }
+    Ok(XlsxEditCellValue::String(v.to_string()))
+}
+
+fn parse_pptx_slides(op: &Value) -> Result<Vec<PptxSlideSpec>, String> {
+    let slides = op
+        .get("slides")
+        .and_then(|v| v.as_array())
+        .ok_or("append_slides requires slides[]")?;
+    let mut out = Vec::new();
+    for s in slides {
+        let title = s.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let body = s
+            .get("body")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        out.push(PptxSlideSpec { title, body });
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

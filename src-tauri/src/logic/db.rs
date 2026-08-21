@@ -57,8 +57,11 @@ pub(crate) fn unix_now() -> u64 {
 /// the per-user data directory — one DB per user, no auth token needed (desktop
 /// MVP, single-device, no sync).
 pub async fn db_connection(user_id: &str) -> Result<libsql::Connection, DbError> {
+    let dir = user_data_dir(user_id);
     let db = build_db(user_id).await?;
-    db.connect().map_err(DbError::from)
+    let conn = db.connect().map_err(DbError::from)?;
+    crate::logic::db_migrations::ensure_schema(&conn, &dir).await?;
+    Ok(conn)
 }
 
 static DATA_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -122,15 +125,8 @@ pub struct Note {
     pub created_at: i64,
 }
 
-const NOTES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS notes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    body TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-)";
-
 pub async fn create_note(user_id: &str, body: &str) -> Result<Note, DbError> {
     let conn = db_connection(user_id).await?;
-    conn.execute(NOTES_SCHEMA, ()).await?;
     let now = unix_now() as i64;
     let mut rows = conn
         .query(
@@ -152,7 +148,6 @@ pub async fn create_note(user_id: &str, body: &str) -> Result<Note, DbError> {
 
 pub async fn list_notes(user_id: &str) -> Result<Vec<Note>, DbError> {
     let conn = db_connection(user_id).await?;
-    conn.execute(NOTES_SCHEMA, ()).await?;
     let mut rows = conn
         .query(
             "SELECT id, body, created_at FROM notes ORDER BY id",
@@ -228,33 +223,6 @@ pub struct ChatMessage {
     pub created_at: i64,
 }
 
-const SESSIONS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    agent_id TEXT NOT NULL,
-    title TEXT NOT NULL DEFAULT '',
-    created_at INTEGER NOT NULL
-)";
-
-const MESSAGES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL,
-    role TEXT NOT NULL,
-    content TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-)";
-
-async fn ensure_chat_schema(conn: &libsql::Connection) -> Result<(), DbError> {
-    conn.execute(SESSIONS_SCHEMA, ()).await?;
-    conn.execute(MESSAGES_SCHEMA, ()).await?;
-    // Cover the hot query: messages by session (`id` is already the PK).
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_messages_session ON messages (session_id, id)",
-        (),
-    )
-    .await?;
-    Ok(())
-}
-
 /// Start a new chat session for the given agent (defaults to the MVP implicit
 /// agent). Sessions are created lazily — on the first message, not on launch —
 /// so restarts don't accumulate empty rows.
@@ -263,7 +231,6 @@ pub async fn create_chat_session(
     agent_id: Option<&str>,
 ) -> Result<ChatSession, DbError> {
     let conn = db_connection(user_id).await?;
-    ensure_chat_schema(&conn).await?;
     let agent = agent_id.unwrap_or(BUILTIN_CHAT_AGENT_ID);
     let now = unix_now() as i64;
     let mut rows = conn
@@ -289,7 +256,6 @@ pub async fn create_chat_session(
 /// List the user's chat sessions, newest first (right-sidebar order).
 pub async fn list_chat_sessions(user_id: &str) -> Result<Vec<ChatSession>, DbError> {
     let conn = db_connection(user_id).await?;
-    ensure_chat_schema(&conn).await?;
     let mut rows = conn
         .query(
             "SELECT id, agent_id, title, created_at FROM sessions ORDER BY id DESC",
@@ -338,7 +304,6 @@ pub async fn list_chat_messages(
     session_id: i64,
 ) -> Result<Vec<ChatMessage>, DbError> {
     let conn = db_connection(user_id).await?;
-    ensure_chat_schema(&conn).await?;
     chat_session_owned(&conn, session_id).await?;
     let mut rows = conn
         .query(
@@ -366,7 +331,6 @@ pub async fn list_chat_messages(
 /// no other session references (the uploader can re-index to reclaim space).
 pub async fn delete_chat_session(user_id: &str, session_id: i64) -> Result<(), DbError> {
     let conn = db_connection(user_id).await?;
-    ensure_chat_schema(&conn).await?;
     chat_session_owned(&conn, session_id).await?;
     conn.execute(
         "DELETE FROM session_files WHERE session_id = ?",
@@ -389,7 +353,6 @@ pub async fn append_chat_message(
     content: &str,
 ) -> Result<ChatMessage, DbError> {
     let conn = db_connection(user_id).await?;
-    ensure_chat_schema(&conn).await?;
     chat_session_owned(&conn, session_id).await?;
     let now = unix_now() as i64;
     let mut rows = conn
@@ -440,19 +403,6 @@ pub struct TurnLogEntry<'a> {
     pub outcome: &'a str,
 }
 
-const TURN_LOG_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS turn_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id INTEGER NOT NULL,
-    agent_id TEXT NOT NULL,
-    provider TEXT NOT NULL,
-    tool TEXT,
-    input_tokens INTEGER,
-    output_tokens INTEGER,
-    latency_ms INTEGER NOT NULL,
-    outcome TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-)";
-
 pub async fn log_turn(user_id: &str, entry: TurnLogEntry<'_>) {
     let conn = match db_connection(user_id).await {
         Ok(c) => c,
@@ -461,10 +411,6 @@ pub async fn log_turn(user_id: &str, entry: TurnLogEntry<'_>) {
             return;
         }
     };
-    if let Err(e) = conn.execute(TURN_LOG_SCHEMA, ()).await {
-        eprintln!("[turn_log] schema: {e}");
-        return;
-    }
     let now = unix_now() as i64;
     let res = conn
         .execute(
@@ -507,7 +453,6 @@ pub struct TurnLogRow {
 /// Best-effort like `log_turn`: a missing table reads as empty.
 pub async fn list_turn_log(user_id: &str, since: i64) -> Result<Vec<TurnLogRow>, DbError> {
     let conn = db_connection(user_id).await?;
-    conn.execute(TURN_LOG_SCHEMA, ()).await?;
     let mut rows = conn
         .query(
             "SELECT session_id, agent_id, provider, tool, input_tokens, output_tokens, \

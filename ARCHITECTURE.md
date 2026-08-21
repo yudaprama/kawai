@@ -236,7 +236,7 @@ user → (dev bypass / future prod auth) → Rust backend → user_id
    └── docs/                       ← office store (files + .meta.json)
 ```
 
-- `logic::db_connection(user_id)` opens a per-op local SQLite connection; the office store defaults into the same per-user dir (`logic::db::user_data_dir`).
+- `logic::db_connection(user_id)` opens a per-op local SQLite connection; the office store defaults into the same per-user dir (`logic::db::user_data_dir`). Every `db_connection` runs `logic::db_migrations::ensure_schema` first (idempotent, transactional, guarded in-memory per data dir) so schema is always current — do NOT re-add scattered `CREATE TABLE IF NOT EXISTS` in callers.
 - Data root resolution: `KAWAI_DATA_DIR` env → legacy `KAWAI_DB_DIR` env → injected root (`set_data_root`; Tauri injects the app-data dir) → `/tmp/kawai`. `KAWAI_DOCS_DIR` still overrides the docs root (legacy `<root>/<user_id>/` layout).
 - **One data directory per user — no `user_id` columns, no `WHERE user_id`.** Isolation is structural (per-user folder), matching the future sqld-namespace model.
 - Schema: `sessions(agent_id, title)`, `messages(session_id, role, content)`, `session_files(session_id, file_id)` (which documents a session can search — scopes `knowledge_search`), `rag_chunks` + FTS5 mirror (knowledge index owned by files), `rag_files(file_id, status, chunks, error)` (index lifecycle for the knowledge panel).

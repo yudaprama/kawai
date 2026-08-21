@@ -75,10 +75,9 @@ youtube_transcript = { path = "../rig-components/youtube_transcript", optional =
 # rig-core is a direct dep (not just transitive) because logic::rag uses its
 # `Embed` derive + `EmbeddingsBuilder`/`InsertDocuments` traits directly.
 rig-core = { version = "0.42", optional = true }
-# Pure-Rust office create/read/edit (vendored submodule). Replaces the
-# docbuilder/office-runtime engine for document CREATION (markdown → IR →
-# docx/xlsx/pptx, in-process). ooxcli remains for OOXML read/edit.
-# PDF operations are in-process via pdf_oxide.
+# Pure-Rust office create/read/edit (vendored submodule): markdown → IR →
+# docx/xlsx/pptx (in-process), raw-part surgery for in-place edits. PDF
+# operations are in-process via pdf_oxide.
 office_oxide = { path = "../office_oxide", optional = true }
 pdf_oxide = { path = "../pdf_oxide", optional = true }
 regex = { version = "1", optional = true }
@@ -91,9 +90,8 @@ libc = "0.2"
 default = []
 web = ["dep:axum", "dep:tower-http"]
 litert = ["dep:local-llm", "local-llm/rig-tools"]
-# Office document tools (logic::office): ooxcli external engine for
-# OOXML read/edit + pure-Rust creation via office_oxide and PDF via
-# pdf_oxide (in-process) — plus the RAG pipeline
+# Office document tools (logic::office): pure-Rust create/read/edit/info via
+# office_oxide and PDF via pdf_oxide (both in-process) — plus the RAG pipeline
 # (kawai-embedding → rig-libsql, with in-tree chunking) for idle-time
 # knowledge indexing.
 office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex"]

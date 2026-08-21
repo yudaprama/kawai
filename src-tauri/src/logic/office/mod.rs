@@ -1,10 +1,10 @@
 //! Office document tooling.
 //!
 //! Pure logic — no tauri/axum imports.
-//!   - `ooxcli`    (github.com/yudaprama/gooxml) — OOXML read/edit/info (subprocess)
-//!   - `pdf_oxide` (vendored ../pdf_oxide)       — PDF ops, pure Rust, in-process
-//!   - `office_oxide` (vendored ../office_oxide) — document CREATE, pure Rust,
-//!     in-process (markdown → IR → docx/xlsx/pptx). No docbuilder engine.
+//!   - `pdf_oxide`   (vendored ../pdf_oxide)     — PDF ops, pure Rust, in-process
+//!   - `office_oxide`(vendored ../office_oxide)  — document CREATE + READ +
+//!     EDIT + INFO, pure Rust, in-process (markdown → IR → docx/xlsx/pptx,
+//!     and raw-part surgery for in-place edits). No external engine.
 //!
 //! Files live in a per-user on-disk store addressed ONLY by opaque file ids —
 //! path traversal is impossible by construction.
@@ -12,7 +12,6 @@
 //! Tools implement rig's `PortableTool` so the agent loop dispatches them
 //! through a `rig::tool::ToolSet`.
 
-pub mod cli;
 pub mod error;
 pub mod ooxml;
 pub mod pdf;
@@ -33,21 +32,16 @@ pub use store::{OfficeFile, ReadFileResult, ReadDocumentResult};
 #[serde(rename_all = "camelCase")]
 pub struct OfficeCapabilities {
     pub available: bool,
-    pub ooxcli: bool,
     pub pdfcli: bool,
-    pub bin_dir: Option<String>,
 }
 
-/// Probe which engines are present. (Document creation needs no engine —
-/// it is pure Rust via office_oxide. PDF is in-process via pdf_oxide —
-/// always available.)
+/// Probe which engines are present. Document creation, reading, editing, and
+/// info are all pure Rust via `office_oxide` (in-process). PDF is in-process
+/// via `pdf_oxide` — always available.
 pub fn capabilities() -> OfficeCapabilities {
-    let oox = cli::ooxcli_path().is_some();
     OfficeCapabilities {
         available: true,
-        ooxcli: oox,
         pdfcli: true,
-        bin_dir: cli::bin_dir_str(),
     }
 }
 
@@ -146,7 +140,6 @@ pub struct OfficeTools {
 /// session-scoped: it only sees documents this session uploaded
 /// (`session_files`).
 pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
-    let caps = capabilities();
     let t = OfficeTools {
         user_id: user_id.to_string(),
     };
@@ -157,13 +150,11 @@ pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
         session_id,
     ));
     set.add_tool(tools::CreateDocumentTool(t.user_id.clone()));
-    // ReadDocumentTool is pure-Rust (office_oxide); always available, even
-    // without the external ooxcli engine.
+    // ReadDocumentTool is pure-Rust (office_oxide); always available.
     set.add_tool(tools::ReadDocumentTool(t.user_id.clone()));
-    if caps.ooxcli {
-        set.add_tool(tools::DocumentInfoTool(t.user_id.clone()));
-        set.add_tool(tools::EditDocumentTool(t.user_id.clone()));
-    }
+    // Document info + edit are pure-Rust via office_oxide — always available.
+    set.add_tool(tools::DocumentInfoTool(t.user_id.clone()));
+    set.add_tool(tools::EditDocumentTool(t.user_id.clone()));
     // PDF tools are in-process (pdf_oxide) — always available.
     set.add_tool(tools::PdfExtractTextTool(t.user_id.clone()));
     set.add_tool(tools::PdfSearchTextTool(t.user_id.clone()));
@@ -174,5 +165,4 @@ pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
     set
 }
 
-pub use cli::set_bin_dir;
 pub use store::set_docs_dir;

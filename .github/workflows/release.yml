@@ -147,13 +147,8 @@ jobs:
           # own directory), not from the CWD where ln runs.
           ln -sfn vendor/LiteRT-LM/bazel-bin/_solib_darwin_arm64 ../../_solib_darwin_arm64
 
-      # Office CLI engine (ooxcli) → src-tauri/office-bin; bundled
-      # into the .app as Tauri resources via .github/tauri-office.json. The app
-      # resolves it from resource_dir at runtime (lib.rs setup hook).
-      # Document creation is pure Rust (office_oxide); PDF ops are pure Rust
-      # (pdf_oxide, in-process) — no engine needed for either.
-      - name: Fetch office engines
-        run: ./scripts/fetch-office-bins.sh
+      # Office document ops (read/edit/info + creation) and PDF ops are
+      # pure Rust (office_oxide + pdf_oxide, in-process) — no external engine.
 
       - name: Build .app (with litert + office)
         uses: tauri-apps/tauri-action@v0
@@ -166,7 +161,7 @@ jobs:
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
-          args: --features litert,office --config .github/tauri-office.json --config .github/tauri-litert.json
+          args: --features litert,office --config .github/tauri-litert.json
 
   build-linux:
     needs: bump
@@ -256,11 +251,6 @@ jobs:
           mkdir -p ../../native
           cp bazel-bin/c/liblitert-lm.so ../../native/
 
-      # Office CLI engines → src-tauri/office-bin; bundled as Tauri resources
-      # via .github/tauri-office.json.
-      - name: Fetch office engines
-        run: ./scripts/fetch-office-bins.sh
-
       - name: Build .deb/.AppImage (with litert + office)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -272,7 +262,7 @@ jobs:
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
-          args: --features litert,office --config .github/tauri-office.json --config .github/tauri-litert.json
+          args: --features litert,office --config .github/tauri-litert.json
 
   build-windows:
     needs: bump
@@ -362,14 +352,6 @@ jobs:
           mkdir -p ../../native
           cp "$BZ_BIN/c/litert-lm.dll" "$BZ_BIN/c/litert-lm.lib" ../../native/
 
-      # Office CLI engines → src-tauri/{office-bin,office-runtime}; bundled as
-      # Tauri resources via .github/tauri-office.json. Runs in Git Bash (the
-      # script detects MINGW and picks the windows-amd64 assets; tar/curl ship
-      # with the runner).
-      - name: Fetch office engines
-        shell: bash
-        run: ./scripts/fetch-office-bins.sh
-
       - name: Build .msi/.exe (with litert + office)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -381,7 +363,7 @@ jobs:
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
-          args: --features litert,office --config .github/tauri-office.json --config .github/tauri-litert.json
+          args: --features litert,office --config .github/tauri-litert.json
 
   build-web:
     needs: bump
