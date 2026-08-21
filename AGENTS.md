@@ -214,7 +214,7 @@ design-demos/                    # UI mock HTML files (standalone)
 .env.local                       # VITE_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (gitignored)
 scripts/dev-sqld.sh              # dev launcher for self-hosted sqld
 scripts/bundle-litert-dylibs.sh  # prep all LiteRT dylibs into native/ for bundling into the .app
-scripts/fetch-office-bins.sh     # fetch ooxcli/pdfcli/office-runtime engines into src-tauri/{office-bin,office-runtime}
+scripts/fetch-office-bins.sh     # fetch ooxcli engine into src-tauri/office-bin (PDF is in-process via pdf_oxide; office_oxide handles creation)
 .github/tauri-office.json        # merges office engines as Tauri resources (Contents/Resources)
 .github/tauri-litert.json        # merges LiteRT dylibs into `bundle.macOS.files` (Contents/Frameworks)
 app.log                          # symlink → ~/Library/Logs/kawai/app.log
@@ -255,7 +255,7 @@ user → (dev bypass / future Clerk) → Rust backend → user_id
    └── docs/                       ← office store (files + .meta.json)
 ```
 
-- `logic::db_connection(user_id)` opens a per-op local SQLite connection; the office store defaults into the same per-user dir (`logic::db::user_data_dir`).
+- `logic::db_connection(user_id)` opens a per-op local SQLite connection; the office store defaults into the same per-user dir (`logic::db::user_data_dir`). Every `db_connection` runs `logic::db_migrations::ensure_schema` first (idempotent, transactional, guarded in-memory per data dir) so schema is always current — do NOT re-add scattered `CREATE TABLE IF NOT EXISTS` in callers.
 - Data root resolution: `KAWAI_DATA_DIR` env → legacy `KAWAI_DB_DIR` env → injected root (`logic::db::set_data_root`; Tauri injects the app-data dir — on macOS `~/Library/Application Support/pro.kawai.app`, from the `pro.kawai.app` identifier in `src-tauri/tauri.conf.json`) → `/tmp/kawai`. `KAWAI_DOCS_DIR` still overrides the docs root to the legacy `<root>/<user_id>/` layout; unset = unified per-user dir. `[A-Za-z0-9_-]` user ids pass through as dir names, anything else hex-encodes.
 - **One data directory per user — no `user_id` columns.** Isolation is structural (per-user folder), matching the future sqld-namespace model (Roadmap 16). The `office` RAG tables (`rag_chunks` + FTS5 mirror, `rag_files` index-status, `session_files`) follow the same rule; `session_files(session_id, file_id)` scopes knowledge search to everything a session has referenced.
 - Post-MVP: sqld for multi-device sync, EdDSA token minting, embedded replicas.
@@ -312,7 +312,7 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
 8. **Desktop/mobile DB token broker.** For sqld sync: `logic::mint_db_token` reads the Ed25519 private key locally — fine for dev, but the private key MUST NOT ship in a production app. Add a `db_token` op: kawai-web verifies the identity → mints a short EdDSA token → the device fetches it and feeds `Builder::new_remote_replica`. The private key stays server-side. **(Post-MVP — requires sqld setup)**
 9. **Production hardening.** Add `Secure` to the session cookie (HTTPS only), CORS only if cross-origin, rate limiting, token refresh rotation.
 10. **Connection pooling + token refresh.** DB connections are opened per-op (correct, not optimal). Pool them for production load.
-11. **SQLite schema migrations.** Schema changes today are additive + idempotent (`CREATE TABLE/INDEX IF NOT EXISTS`), which is fine for single-device local SQLite. Before distributed builds: hand-rolled `schema_migrations` table + versioned SQL list (via `include_str!`) applied transactionally on connect — NOT refinery/rusqlite_migration (they assume rusqlite, we use the libsql API). First known backfill when introduced: sessions created before first-message title-seeding will never get a title.
+11. **SQLite schema migrations.** ✅ Done 2026-08-21: hand-rolled `schema_migrations` table + versioned, transactional migration runner in `src-tauri/src/logic/db_migrations.rs` applied on every `db_connection` (with an in-memory `OnceLock<HashSet<PathBuf>>` guard keyed by per-user data dir so per-op connections skip the check). Migrations are `include_str!`-loaded `.sql` files in `src-tauri/migrations/`: `0001_baseline` (notes/sessions/messages+index/turn_log), `0002_backfill_untitled_sessions` (the legacy empty-title backfill), and `0003_office_tables` (session_files + rag_files, `#[cfg(feature="office")]`). NOT refinery/rusqlite_migration (they assume rusqlite, we use the libsql API). The FTS5 mirror (`rag_chunks_fts` + triggers) stays created at runtime in `rag.rs::ensure_fts` because `CREATE TRIGGER` requires `rag_chunks` to already exist (rig-libsql creates it on first index); `rag_chunks`/embeddings tables are rig-libsql-owned and intentionally excluded. Add new schema via a new `<NNN>_name.sql` + a `Migration` entry in `migrations()`; cover it with a test in `db_migrations.rs`'s `tests` module (runs in the CI `cargo test --features litert,office --lib` gate).
 12. **Tests beyond the smoke gate.** Unit tests for `auth.rs` (JWKS verify), `logic.rs` (token mint + db round-trip), agent tier (toolset assembly, agent catalog integrity).
 
 ### End state (desktop + mobile + web — design work, later)

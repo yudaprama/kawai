@@ -2,7 +2,7 @@
 //!
 //! Pure logic — no tauri/axum imports.
 //!   - `ooxcli`    (github.com/yudaprama/gooxml) — OOXML read/edit/info (subprocess)
-//!   - `pdfcli`    (github.com/yudaprama/pdf)    — PDF text/merge/split/… (subprocess)
+//!   - `pdf_oxide` (vendored ../pdf_oxide)       — PDF ops, pure Rust, in-process
 //!   - `office_oxide` (vendored ../office_oxide) — document CREATE, pure Rust,
 //!     in-process (markdown → IR → docx/xlsx/pptx). No docbuilder engine.
 //!
@@ -39,14 +39,14 @@ pub struct OfficeCapabilities {
 }
 
 /// Probe which engines are present. (Document creation needs no engine —
-/// it is pure Rust via office_oxide.)
+/// it is pure Rust via office_oxide. PDF is in-process via pdf_oxide —
+/// always available.)
 pub fn capabilities() -> OfficeCapabilities {
     let oox = cli::ooxcli_path().is_some();
-    let pdf = cli::pdfcli_path().is_some();
     OfficeCapabilities {
-        available: oox || pdf,
+        available: true,
         ooxcli: oox,
-        pdfcli: pdf,
+        pdfcli: true,
         bin_dir: cli::bin_dir_str(),
     }
 }
@@ -164,14 +164,13 @@ pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
         set.add_tool(tools::DocumentInfoTool(t.user_id.clone()));
         set.add_tool(tools::EditDocumentTool(t.user_id.clone()));
     }
-    if caps.pdfcli {
-        set.add_tool(tools::PdfExtractTextTool(t.user_id.clone()));
-        set.add_tool(tools::PdfSearchTextTool(t.user_id.clone()));
-        set.add_tool(tools::PdfReplaceTextTool(t.user_id.clone()));
-        set.add_tool(tools::PdfMergeTool(t.user_id.clone()));
-        set.add_tool(tools::PdfSplitTool(t.user_id.clone()));
-        set.add_tool(tools::PdfInfoTool(t.user_id));
-    }
+    // PDF tools are in-process (pdf_oxide) — always available.
+    set.add_tool(tools::PdfExtractTextTool(t.user_id.clone()));
+    set.add_tool(tools::PdfSearchTextTool(t.user_id.clone()));
+    set.add_tool(tools::PdfReplaceTextTool(t.user_id.clone()));
+    set.add_tool(tools::PdfMergeTool(t.user_id.clone()));
+    set.add_tool(tools::PdfSplitTool(t.user_id.clone()));
+    set.add_tool(tools::PdfInfoTool(t.user_id));
     set
 }
 

@@ -50,12 +50,6 @@ pub(crate) fn ooxcli_path() -> Option<PathBuf> {
         .filter(|p| p.is_file())
 }
 
-pub(crate) fn pdfcli_path() -> Option<PathBuf> {
-    bin_dir()
-        .map(|d| d.join(exe_name("pdfcli")))
-        .filter(|p| p.is_file())
-}
-
 pub(crate) fn missing_engine(name: &str) -> String {
     format!("{name} binary not available on this host (see office_capabilities)")
 }

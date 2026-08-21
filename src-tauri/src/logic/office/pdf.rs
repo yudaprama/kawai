@@ -1,7 +1,11 @@
+use pdf_oxide::converters::ConversionOptions;
+use pdf_oxide::editor::{DocumentEditor, EditableDocument};
+use pdf_oxide::search::{SearchOptions, TextSearcher};
+use pdf_oxide::PdfDocument;
 use serde_json::{json, Value};
 use std::path::PathBuf;
+use tokio::task::spawn_blocking;
 
-use super::cli::{self, CLI_TIMEOUT};
 use super::store;
 use super::store::OfficeFile;
 
@@ -13,32 +17,82 @@ fn require_pdf(user_id: &str, file_id: &str) -> Result<(PathBuf, OfficeFile), St
     Ok((path, info))
 }
 
-fn pages_arg(spec: Option<&str>) -> Vec<String> {
-    match spec {
-        Some(p) if !p.is_empty() => vec!["--pages".to_string(), p.to_string()],
-        _ => Vec::new(),
+/// Run a synchronous pdf_oxide operation off the async runtime.
+async fn run_blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    spawn_blocking(f)
+        .await
+        .map_err(|e| format!("pdf blocking task join: {e}"))?
+}
+
+/// Parse a page-spec string ("1,3,5-7") into 0-indexed page indices.
+fn resolve_pages(pages: Option<&str>, count: usize) -> Result<Vec<usize>, String> {
+    match pages {
+        None | Some("") | Some("*") => Ok((0..count).collect()),
+        Some(spec) => {
+            let mut out = Vec::new();
+            for part in spec.split(',') {
+                let part = part.trim();
+                if part.is_empty() {
+                    continue;
+                }
+                if let Some((a, b)) = part.split_once('-') {
+                    let s: usize = a.trim().parse().map_err(|_| format!("bad page: '{a}'"))?;
+                    let e: usize = b.trim().parse().map_err(|_| format!("bad page: '{b}'"))?;
+                    if s == 0 || e == 0 {
+                        return Err("pdf page numbers start at 1".into());
+                    }
+                    if s > e {
+                        return Err(format!("invalid range {s}-{e}"));
+                    }
+                    for p in s..=e {
+                        out.push(p - 1);
+                    }
+                } else {
+                    let p: usize = part.parse().map_err(|_| format!("bad page: '{part}'"))?;
+                    if p == 0 {
+                        return Err("pdf page numbers start at 1".into());
+                    }
+                    out.push(p - 1);
+                }
+            }
+            out.sort();
+            out.dedup();
+            if out.is_empty() {
+                return Err("no pages specified".into());
+            }
+            Ok(out)
+        }
     }
 }
 
-/// `pdfcli extract --md` → markdown.
+/// Extract markdown text from a stored PDF. Output is prefixed per page:
+/// `--- page N ---`.
 pub async fn pdf_extract_text(
     user_id: &str,
     file_id: &str,
     pages: Option<&str>,
 ) -> Result<String, String> {
-    let (path, info) = store::resolve(user_id, file_id)?;
-    if info.ext != "pdf" {
-        return Err(format!("not a PDF: .{}", info.ext));
-    }
-    let bin = cli::pdfcli_path().ok_or_else(|| cli::missing_engine("pdfcli"))?;
-    let mut args = vec!["extract".to_string(), "--md".to_string()];
-    args.extend(pages_arg(pages));
-    args.push(path.display().to_string());
-    let out = cli::run_cli(&bin, &args, None, None, CLI_TIMEOUT).await?;
-    Ok(out.stdout)
+    let (path, _) = require_pdf(user_id, file_id)?;
+    let pages = pages.map(|s| s.to_string());
+    run_blocking(move || {
+        let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open: {e}"))?;
+        let count = doc.page_count().map_err(|e| format!("pdf page_count: {e}"))?;
+        let options = ConversionOptions::default();
+        let indices = resolve_pages(pages.as_deref(), count)?;
+        let mut out = String::new();
+        for &i in &indices {
+            let md = doc.to_markdown(i, &options).map_err(|e| format!("pdf to_markdown: {e}"))?;
+            out.push_str(&format!("--- page {} ---\n{}\n", i + 1, md));
+        }
+        Ok(out)
+    })
+    .await
 }
 
-/// `pdfcli search` → JSON value.
+/// Search text in a stored PDF. Returns an array of `{page, matches}` entries
+/// (empty array = no hits).
 pub async fn pdf_search_text(
     user_id: &str,
     file_id: &str,
@@ -46,19 +100,47 @@ pub async fn pdf_search_text(
     pages: Option<&str>,
 ) -> Result<Value, String> {
     let (path, _) = require_pdf(user_id, file_id)?;
-    let bin = cli::pdfcli_path().ok_or_else(|| cli::missing_engine("pdfcli"))?;
-    let mut args = vec!["search".to_string(), pattern.to_string()];
-    args.extend(pages_arg(pages));
-    args.push(path.display().to_string());
-    let out = cli::run_cli(&bin, &args, None, None, CLI_TIMEOUT).await?;
-    let raw = out.stdout.trim();
-    if raw.is_empty() {
-        return Ok(json!([]));
-    }
-    serde_json::from_str(raw).map_err(|e| format!("pdfcli search returned invalid JSON: {e}"))
+    let pattern = pattern.to_string();
+    let pages = pages.map(|s| s.to_string());
+    run_blocking(move || -> Result<Value, String> {
+        let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open: {e}"))?;
+        let count = doc.page_count().map_err(|e| format!("pdf page_count: {e}"))?;
+        let indices = resolve_pages(pages.as_deref(), count)?;
+        let page_range = indices.first().zip(indices.last()).map(|(&min, &max)| (min, max));
+        let options = SearchOptions {
+            case_insensitive: false,
+            page_range,
+            ..Default::default()
+        };
+        let results = TextSearcher::search(&doc, &pattern, &options)
+            .map_err(|e| format!("pdf search: {e}"))?;
+
+        // Group matches by 1-based page number.
+        let mut by_page: std::collections::BTreeMap<usize, Vec<Value>> = Default::default();
+        for r in results {
+            if !indices.contains(&r.page) {
+                continue;
+            }
+            by_page
+                .entry(r.page + 1)
+                .or_default()
+                .push(json!({
+                    "text": r.text,
+                    "start_index": r.start_index,
+                    "end_index": r.end_index,
+                }));
+        }
+        let entries: Vec<Value> = by_page
+            .into_iter()
+            .map(|(page, matches)| json!({ "page": page, "matches": matches }))
+            .collect();
+        Ok(Value::Array(entries))
+    })
+    .await
 }
 
-/// `pdfcli replace` → replaces the stored file.
+/// Replace text in a stored PDF in place; the stored file is swapped for the
+/// edited copy.
 pub async fn pdf_replace_text(
     user_id: &str,
     file_id: &str,
@@ -67,30 +149,44 @@ pub async fn pdf_replace_text(
     pages: Option<&str>,
 ) -> Result<(), String> {
     let (path, _) = require_pdf(user_id, file_id)?;
-    let bin = cli::pdfcli_path().ok_or_else(|| cli::missing_engine("pdfcli"))?;
+    let pattern = pattern.to_string();
+    let replacement = replacement.to_string();
+    let pages = pages.map(|s| s.to_string());
     let tmp = path.with_extension("replaced.tmp.pdf");
-    let mut args = vec![
-        "replace".to_string(),
-        pattern.to_string(),
-        replacement.to_string(),
-    ];
-    args.extend(pages_arg(pages));
-    args.push(path.display().to_string());
-    args.push(tmp.display().to_string());
-    cli::run_cli(&bin, &args, None, None, CLI_TIMEOUT).await?;
-    if !tmp.is_file() {
-        return Err("pdfcli replace produced no output".into());
-    }
+    let tmp_out = tmp.clone();
+    run_blocking(move || {
+        let re = regex::Regex::new(&pattern).map_err(|e| format!("bad regex '{pattern}': {e}"))?;
+        let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open: {e}"))?;
+        let count = doc.page_count().map_err(|e| format!("pdf page_count: {e}"))?;
+        drop(doc);
+        let indices = resolve_pages(pages.as_deref(), count)?;
+
+        let mut editor = DocumentEditor::open(&path).map_err(|e| format!("pdf open editor: {e}"))?;
+        for &i in &indices {
+            let mut page = editor.get_page(i).map_err(|e| format!("pdf get_page: {e}"))?;
+            let matches = page.find_text(|t| re.is_match(t.text()));
+            for t in matches {
+                let old = t.text().to_string();
+                let id = t.id();
+                let updated = re.replace_all(&old, &replacement);
+                page.set_text(id, updated.into_owned())
+                    .map_err(|e| format!("pdf set_text: {e}"))?;
+            }
+            editor.save_page(page).map_err(|e| format!("pdf save_page: {e}"))?;
+        }
+        editor.save(&tmp_out).map_err(|e| format!("pdf save: {e}"))
+    })
+    .await
+    .map_err(|e| format!("pdf replace: {e}"))?;
     store::replace_stored(user_id, file_id, &tmp)
 }
 
-/// `pdfcli merge` → new stored file.
+/// Merge a list of stored PDFs into a NEW stored file.
 pub async fn pdf_merge(
     user_id: &str,
     file_ids: &[String],
     output_name: &str,
 ) -> Result<OfficeFile, String> {
-    let bin = cli::pdfcli_path().ok_or_else(|| cli::missing_engine("pdfcli"))?;
     if file_ids.len() < 2 {
         return Err("pdf_merge needs at least two file ids".into());
     }
@@ -99,76 +195,111 @@ pub async fn pdf_merge(
     } else {
         format!("{}.pdf", store::sanitize_component(output_name))
     };
-    let mut args = vec!["merge".to_string()];
+    let mut paths: Vec<PathBuf> = Vec::new();
     for id in file_ids {
         let (path, _) = require_pdf(user_id, id)?;
-        args.push(path.display().to_string());
+        paths.push(path);
     }
-    let tmp = std::env::temp_dir().join(format!("kawai-merge-{}", store::new_file_id()));
-    args.push(tmp.display().to_string());
-    cli::run_cli(&bin, &args, None, None, CLI_TIMEOUT).await?;
-    if !tmp.is_file() {
-        return Err("pdfcli merge produced no output".into());
-    }
-    let data = std::fs::read(&tmp).map_err(|e| e.to_string())?;
-    let _ = std::fs::remove_file(&tmp);
+    let data = run_blocking(move || {
+        let mut editor = DocumentEditor::open(&paths[0]).map_err(|e| format!("pdf open: {e}"))?;
+        for src in &paths[1..] {
+            editor.merge_from(src).map_err(|e| format!("pdf merge_from: {e}"))?;
+        }
+        editor.save_to_bytes().map_err(|e| format!("pdf save_to_bytes: {e}"))
+    })
+    .await?;
     store::import_bytes(user_id, &name, &data)
 }
 
-/// `pdfcli split` → new stored files (one per part).
+/// Split a stored PDF into NEW stored PDFs (one per range, or per page).
 pub async fn pdf_split(
     user_id: &str,
     file_id: &str,
     ranges: Option<&str>,
 ) -> Result<Vec<OfficeFile>, String> {
     let (path, info) = require_pdf(user_id, file_id)?;
-    let bin = cli::pdfcli_path().ok_or_else(|| cli::missing_engine("pdfcli"))?;
-    let out_dir = std::env::temp_dir().join(format!("kawai-split-{}", store::new_file_id()));
-    std::fs::create_dir_all(&out_dir).map_err(|e| e.to_string())?;
+    let ranges = ranges.map(|s| s.to_string());
+    let parts = run_blocking(move || {
+        let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open: {e}"))?;
+        let count = doc.page_count().map_err(|e| format!("pdf page_count: {e}"))?;
+        drop(doc);
 
-    let mut args = vec!["split".to_string()];
-    if let Some(r) = ranges.filter(|r| !r.is_empty()) {
-        args.extend(["--ranges".to_string(), r.to_string()]);
-    }
-    args.push(path.display().to_string());
-    args.push(format!("{}/", out_dir.display()));
-    cli::run_cli(&bin, &args, None, None, CLI_TIMEOUT).await?;
+        let groups: Vec<Vec<usize>> = match ranges.as_deref() {
+            Some(r) if !r.is_empty() => {
+                let mut g: Vec<Vec<usize>> = Vec::new();
+                for part in r.split(',') {
+                    let part = part.trim();
+                    if part.is_empty() {
+                        continue;
+                    }
+                    if let Some((a, b)) = part.split_once('-') {
+                        let s: usize = a.trim().parse().map_err(|_| format!("bad range '{a}'"))?;
+                        let e: usize = b.trim().parse().map_err(|_| format!("bad range '{b}'"))?;
+                        if s == 0 || e == 0 {
+                            return Err("pdf page numbers start at 1".into());
+                        }
+                        if s > e {
+                            return Err(format!("invalid range {s}-{e}"));
+                        }
+                        g.push((s..=e).map(|p| p - 1).collect());
+                    } else {
+                        let p: usize = part.parse().map_err(|_| format!("bad page '{part}'"))?;
+                        if p == 0 {
+                            return Err("pdf page numbers start at 1".into());
+                        }
+                        g.push(vec![p - 1]);
+                    }
+                }
+                g
+            }
+            _ => (0..count).map(|i| vec![i]).collect(),
+        };
 
-    let mut parts: Vec<PathBuf> = std::fs::read_dir(&out_dir)
-        .map_err(|e| e.to_string())?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("pdf"))
-        .collect();
-    parts.sort();
-    if parts.is_empty() {
-        let _ = std::fs::remove_dir_all(&out_dir);
-        return Err("pdfcli split produced no parts".into());
-    }
+        let mut out: Vec<Vec<u8>> = Vec::new();
+        for group in &groups {
+            let mut editor = DocumentEditor::open(&path).map_err(|e| format!("pdf open: {e}"))?;
+            let keep: std::collections::HashSet<usize> = group.iter().copied().collect();
+            for i in (0..count).rev() {
+                if !keep.contains(&i) {
+                    editor.remove_page(i).map_err(|e| format!("pdf remove_page: {e}"))?;
+                }
+            }
+            out.push(editor.save_to_bytes().map_err(|e| format!("pdf save_to_bytes: {e}"))?);
+        }
+        Ok(out)
+    })
+    .await?;
 
     let base = info.original_name.trim_end_matches(".pdf");
     let mut files = Vec::new();
-    for (i, part) in parts.iter().enumerate() {
-        let data = std::fs::read(part).map_err(|e| e.to_string())?;
+    for (i, data) in parts.iter().enumerate() {
         let name = format!("{base} part {:02}.pdf", i + 1);
-        files.push(store::import_bytes(user_id, &name, &data)?);
+        files.push(store::import_bytes(user_id, &name, data)?);
     }
-    let _ = std::fs::remove_dir_all(&out_dir);
     Ok(files)
 }
 
-/// `pdfcli info` → parsed JSON.
+/// Inspect a stored PDF: page count plus per-page size/rotation.
 pub async fn pdf_info(user_id: &str, file_id: &str) -> Result<Value, String> {
     let (path, _) = require_pdf(user_id, file_id)?;
-    let bin = cli::pdfcli_path().ok_or_else(|| cli::missing_engine("pdfcli"))?;
-    let out = cli::run_cli(
-        &bin,
-        &["info".to_string(), path.display().to_string()],
-        None,
-        None,
-        CLI_TIMEOUT,
-    )
-    .await?;
-    serde_json::from_str(out.stdout.trim())
-        .map_err(|e| format!("pdfcli info returned invalid JSON: {e}"))
+    run_blocking(move || -> Result<Value, String> {
+        let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open: {e}"))?;
+        let count = doc.page_count().map_err(|e| format!("pdf page_count: {e}"))?;
+        let (major, minor) = doc.version();
+        drop(doc);
+
+        let mut editor = DocumentEditor::open(&path).map_err(|e| format!("pdf open editor: {e}"))?;
+        let mut pages = Vec::new();
+        for i in 0..count {
+            let mb = editor.get_page_media_box(i).map_err(|e| format!("pdf media_box: {e}"))?;
+            let rot = editor.get_page_rotation(i).map_err(|e| format!("pdf rotation: {e}"))?;
+            pages.push(json!({ "page": i + 1, "width": mb[2], "height": mb[3], "rotation": rot }));
+        }
+        Ok(json!({
+            "pageCount": count,
+            "version": format!("{major}.{minor}"),
+            "pages": pages,
+        }))
+    })
+    .await
 }

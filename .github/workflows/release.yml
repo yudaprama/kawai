@@ -147,10 +147,11 @@ jobs:
           # own directory), not from the CWD where ln runs.
           ln -sfn vendor/LiteRT-LM/bazel-bin/_solib_darwin_arm64 ../../_solib_darwin_arm64
 
-      # Office CLI engines (ooxcli + pdfcli) → src-tauri/office-bin; bundled
+      # Office CLI engine (ooxcli) → src-tauri/office-bin; bundled
       # into the .app as Tauri resources via .github/tauri-office.json. The app
-      # resolves them from resource_dir at runtime (lib.rs setup hook).
-      # Document creation is pure Rust (office_oxide) — no engine needed.
+      # resolves it from resource_dir at runtime (lib.rs setup hook).
+      # Document creation is pure Rust (office_oxide); PDF ops are pure Rust
+      # (pdf_oxide, in-process) — no engine needed for either.
       - name: Fetch office engines
         run: ./scripts/fetch-office-bins.sh
 

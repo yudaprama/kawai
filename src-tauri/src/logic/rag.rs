@@ -6,7 +6,8 @@
 //! store, so that `knowledge_search` at submit time is instant (no subprocess
 //! spawn, no on-the-fly embedding).
 //!
-//! Pipeline: office extractors (ooxcli/pdfcli) → in-tree chunker →
+//! Pipeline: office extractors (ooxcli for OOXML, pdf_oxide in-process for
+//! PDF) → in-tree chunker →
 //! `kawai-embedding` (local fastembed ONNX fallback, no API key) →
 //! `rig-libsql` vector store. All deps are gated behind the `office` feature
 //! and share the single rig-core rev used by the rest of the graph.
@@ -85,20 +86,6 @@ impl LibsqlVectorStoreTable for RagChunk {
 
 // ── session ↔ file association ──────────────────────────────────────────────
 
-const SESSION_FILES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS session_files (
-    session_id INTEGER NOT NULL,
-    file_id TEXT NOT NULL,
-    added_at INTEGER NOT NULL,
-    PRIMARY KEY (session_id, file_id)
-)";
-
-async fn ensure_session_files(conn: &libsql::Connection) -> Result<(), String> {
-    conn.execute(SESSION_FILES_SCHEMA, ())
-        .await
-        .map(|_| ())
-        .map_err(|e| format!("session_files schema: {e}"))
-}
-
 /// Record which files a session referenced (idempotent).
 async fn associate_session_files(
     conn: &libsql::Connection,
@@ -148,7 +135,6 @@ pub async fn list_session_files(
     let conn = crate::logic::db_connection(user_id)
         .await
         .map_err(|e| format!("db: {e}"))?;
-    ensure_session_files(&conn).await?;
     let ids = session_file_ids(&conn, session_id).await?;
     let mut out = Vec::with_capacity(ids.len());
     for id in &ids {
@@ -161,24 +147,9 @@ pub async fn list_session_files(
 
 // ── index status tracking ────────────────────────────────────────────────────
 
-const RAG_FILES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS rag_files (
-    file_id TEXT PRIMARY KEY,
-    status TEXT NOT NULL,
-    chunks INTEGER NOT NULL DEFAULT 0,
-    error TEXT,
-    updated_at INTEGER NOT NULL
-)";
-
 /// An `indexing` row older than this is a crashed/interrupted run (the app
 /// died mid-index) — surfaced as `failed` instead of spinning forever.
 const STALE_INDEXING_SECS: i64 = 15 * 60;
-
-async fn ensure_rag_files(conn: &libsql::Connection) -> Result<(), String> {
-    conn.execute(RAG_FILES_SCHEMA, ())
-        .await
-        .map(|_| ())
-        .map_err(|e| format!("rag_files schema: {e}"))
-}
 
 fn unix_secs() -> i64 {
     std::time::SystemTime::now()
@@ -269,8 +240,6 @@ pub async fn knowledge_list(
     let conn = crate::logic::db_connection(user_id)
         .await
         .map_err(|e| format!("db: {e}"))?;
-    ensure_session_files(&conn).await?;
-    ensure_rag_files(&conn).await?;
 
     let mut in_session = std::collections::HashSet::new();
     if let Some(sid) = session_id {
@@ -631,7 +600,6 @@ pub async fn office_index_file(
     let conn = crate::logic::db_connection(&user_id)
         .await
         .map_err(|e| format!("db: {e}"))?;
-    ensure_rag_files(&conn).await?;
 
     set_index_status(&conn, &file_id, "indexing", 0, None).await?;
     match index_file_inner(&conn, &user_id, session_id, &file_id, &info).await {
@@ -667,7 +635,6 @@ async fn index_file_inner(
     let source = info.original_name.clone();
 
     let model = kawai_embedding::build_providers_from_env();
-    ensure_session_files(conn).await?;
     if let Some(sid) = session_id {
         associate_session_files(conn, sid, &[file_id.to_string()]).await?;
     }
@@ -730,7 +697,6 @@ pub async fn knowledge_search(
     let conn = crate::logic::db_connection(&user_id)
         .await
         .map_err(|e| format!("db: {e}"))?;
-    ensure_session_files(&conn).await?;
 
     let candidates = session_file_ids(&conn, session_id).await?;
     if candidates.is_empty() {
@@ -821,8 +787,6 @@ pub async fn forget_file(
     let conn = crate::logic::db_connection(&user_id)
         .await
         .map_err(|e| format!("db: {e}"))?;
-    ensure_session_files(&conn).await?;
-    ensure_rag_files(&conn).await?;
 
     if let Some(sid) = session_id {
         for fid in &file_ids {
@@ -914,8 +878,6 @@ pub async fn knowledge_add_to_session(
     let conn = crate::logic::db_connection(user_id)
         .await
         .map_err(|e| format!("db: {e}"))?;
-    ensure_session_files(&conn).await?;
-    ensure_rag_files(&conn).await?;
 
     // Validate every id against the store before associating anything.
     for fid in file_ids {
@@ -1029,8 +991,6 @@ pub async fn office_delete_file(user_id: &str, file_id: &str) -> Result<(), Stri
     let conn = crate::logic::db_connection(user_id)
         .await
         .map_err(|e| format!("db: {e}"))?;
-    ensure_session_files(&conn).await?;
-    ensure_rag_files(&conn).await?;
 
     conn.execute(
         "DELETE FROM session_files WHERE file_id = ?",

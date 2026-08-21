@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Fetch the office CLI engines into src-tauri/ for dev builds:
 #   - ooxcli  (github.com/yudaprama/gooxml releases)      → src-tauri/office-bin/
-#   - pdfcli  (github.com/yudaprama/pdf releases)         → src-tauri/office-bin/
 #
 # Document CREATION needs no engine (pure Rust via office_oxide).
+# PDF operations need no engine either (pure Rust via pdf_oxide, in-process).
 #
 # The backend resolves the binaries via (1) KAWAI_OFFICE_BIN_DIR env,
 # (2) the injected Tauri resource dir (release bundles), (3) exe-dir sibling.
@@ -14,7 +14,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 OOXCLI_TAG="${OOXCLI_TAG:-v0.1.5}"
-PDFCLI_TAG="${PDFCLI_TAG:-v0.1.7}"
 
 OS="$(uname -s)"; ARCH="$(uname -m)"
 case "$OS" in
@@ -49,14 +48,12 @@ fetch() { # fetch <url> <dest-file>
   curl -fL --retry 3 -o "$dest" "$url"
 }
 
-# ── ooxcli + pdfcli ──────────────────────────────────────────────────────────
+# ── ooxcli ───────────────────────────────────────────────────────────────────
 BIN_EXT=""
 if [ -z "${SLUG##windows-*}" ]; then BIN_EXT=".exe"; fi
 
 fetch "https://github.com/yudaprama/gooxml/releases/download/${OOXCLI_TAG}/ooxcli-${SLUG}${BIN_EXT}" \
       "$BIN_DIR/ooxcli${BIN_EXT}"
-fetch "https://github.com/yudaprama/pdf/releases/download/${PDFCLI_TAG}/pdfcli-${SLUG}${BIN_EXT}" \
-      "$BIN_DIR/pdfcli${BIN_EXT}"
 chmod +x "$BIN_DIR"/* 2>/dev/null || true
 # Strip quarantine xattrs so the binaries run on the dev host (macOS only).
 xattr -cr "$BIN_DIR" 2>/dev/null || true

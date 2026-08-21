@@ -19,3 +19,7 @@
 [submodule "office_oxide"]
 	path = office_oxide
 	url = https://github.com/yudaprama/office_oxide
+[submodule "pdf_oxide"]
+	path = pdf_oxide
+	url = https://github.com/yfedoseev/pdf_oxide.git
+	shallow = true
