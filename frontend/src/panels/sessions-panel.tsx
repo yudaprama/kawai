@@ -129,8 +129,10 @@ export function SessionsPanel({
                     key={session.id}
                   >
                     <button
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:opacity-50"
+                      disabled={busy}
                       onClick={() => onSelectSession(session.id)}
+                      title={busy ? "Tunggu jawaban selesai" : undefined}
                       type="button"
                     >
                       {activeSessionId === session.id && (
@@ -141,27 +143,30 @@ export function SessionsPanel({
                     <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/session:opacity-100">
                       <button
                         aria-label={`Rename ${session.title || `session ${session.id}`}`}
-                        className="text-muted-foreground hover:text-foreground"
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                        disabled={busy}
                         onClick={() => startRename(session)}
-                        title="Rename session"
+                        title={busy ? "Tunggu jawaban selesai" : "Rename session"}
                         type="button"
                       >
                         <PencilIcon className="size-3.5" />
                       </button>
                       <button
                         aria-label={`Archive ${session.title || `session ${session.id}`}`}
-                        className="text-muted-foreground hover:text-foreground"
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                        disabled={busy}
                         onClick={() => onArchiveSession(session.id, true)}
-                        title="Archive session"
+                        title={busy ? "Tunggu jawaban selesai" : "Archive session"}
                         type="button"
                       >
                         <ArchiveIcon className="size-3.5" />
                       </button>
                       <button
                         aria-label={`Delete ${session.title || `session ${session.id}`}`}
-                        className="text-muted-foreground hover:text-destructive"
+                        className="text-muted-foreground hover:text-destructive disabled:opacity-30"
+                        disabled={busy}
                         onClick={() => onDeleteSession(session.id)}
-                        title="Delete session"
+                        title={busy ? "Tunggu jawaban selesai" : "Delete session"}
                         type="button"
                       >
                         <TrashIcon className="size-3.5" />
@@ -200,8 +205,10 @@ export function SessionsPanel({
                     key={session.id}
                   >
                     <button
-                      className="text-muted-foreground flex min-w-0 flex-1 items-center gap-2 text-left"
+                      className="text-muted-foreground flex min-w-0 flex-1 items-center gap-2 text-left disabled:opacity-50"
+                      disabled={busy}
                       onClick={() => onSelectSession(session.id)}
+                      title={busy ? "Tunggu jawaban selesai" : undefined}
                       type="button"
                     >
                       <span className="truncate italic">
@@ -211,18 +218,20 @@ export function SessionsPanel({
                     <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/session:opacity-100">
                       <button
                         aria-label={`Restore ${session.title || `session ${session.id}`}`}
-                        className="text-muted-foreground hover:text-foreground"
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                        disabled={busy}
                         onClick={() => onArchiveSession(session.id, false)}
-                        title="Restore session"
+                        title={busy ? "Tunggu jawaban selesai" : "Restore session"}
                         type="button"
                       >
                         <ArchiveRestoreIcon className="size-3.5" />
                       </button>
                       <button
                         aria-label={`Delete ${session.title || `session ${session.id}`}`}
-                        className="text-muted-foreground hover:text-destructive"
+                        className="text-muted-foreground hover:text-destructive disabled:opacity-30"
+                        disabled={busy}
                         onClick={() => onDeleteSession(session.id)}
-                        title="Delete session"
+                        title={busy ? "Tunggu jawaban selesai" : "Delete session"}
                         type="button"
                       >
                         <TrashIcon className="size-3.5" />

@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { MicIcon, SquareIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 interface SpeechRecognition extends EventTarget {
   continuous: boolean;
@@ -72,7 +73,7 @@ export type SpeechInputProps = ComponentProps<typeof Button> & {
   lang?: string;
 };
 
-const detectSpeechInputMode = (): SpeechInputMode => {
+export const detectSpeechInputMode = (): SpeechInputMode => {
   if (typeof window === "undefined") {
     return "none";
   }
@@ -86,6 +87,11 @@ const detectSpeechInputMode = (): SpeechInputMode => {
   }
 
   return "none";
+};
+
+const isTauriDesktop = (): boolean => {
+  if (typeof window === "undefined") return false;
+  return "__TAURI_INTERNALS__" in window;
 };
 
 export const SpeechInput = ({
@@ -155,8 +161,16 @@ export const SpeechInput = ({
       }
     };
 
-    const handleError = () => {
+    const handleError = (event: Event) => {
       setIsListening(false);
+      const err = event as SpeechRecognitionErrorEvent;
+      if (err?.error === "not-allowed" || err?.error === "service-not-allowed") {
+        toast.error("Akses mikrofon ditolak. Aktifkan di System Settings → Privacy & Security → Microphone.");
+      } else if (err?.error === "no-speech") {
+        toast.error("Tidak ada suara terdeteksi, coba lagi.");
+      } else if (err?.error) {
+        toast.error(`Speech error: ${err.error}`);
+      }
     };
 
     speechRecognition.addEventListener("start", handleStart);
@@ -196,6 +210,12 @@ export const SpeechInput = ({
   // Start MediaRecorder recording
   const startMediaRecorder = useCallback(async () => {
     if (!onAudioRecordedRef.current) {
+      const isTauri = isTauriDesktop();
+      toast.error(
+        isTauri
+          ? "Speech tidak tersedia di aplikasi desktop (WKWebView tidak mendukung Web Speech API). Silakan gunakan sistem dikte macOS (tekan Fn dua kali) atau buka versi web di Chrome/Edge."
+          : "Transkripsi suara tidak tersedia di browser ini. Gunakan Chrome atau Edge untuk speech recognition."
+      );
       return;
     }
 
@@ -251,8 +271,14 @@ export const SpeechInput = ({
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
       setIsListening(true);
-    } catch {
+    } catch (err) {
       setIsListening(false);
+      const msg = err instanceof DOMException && err.name === "NotAllowedError"
+        ? "Akses mikrofon ditolak. Aktifkan izin mikrofon untuk Kawai di System Settings → Privacy & Security → Microphone."
+        : err instanceof DOMException && err.name === "NotFoundError"
+          ? "Mikrofon tidak ditemukan."
+          : "Gagal memulai rekaman suara.";
+      toast.error(msg);
     }
   }, []);
 
@@ -265,27 +291,66 @@ export const SpeechInput = ({
   }, []);
 
   const toggleListening = useCallback(() => {
+    if (isProcessing) return;
+
+    if (mode === "none") {
+      toast.error(
+        isTauriDesktop()
+          ? "Speech tidak didukung di aplikasi desktop ini. WKWebView tidak menyediakan Web Speech API — gunakan dikte sistem (Fn Fn) atau buka Kawai di Chrome/Edge."
+          : "Browser ini tidak mendukung speech recognition. Gunakan Chrome atau Edge."
+      );
+      return;
+    }
+
+    if (mode === "speech-recognition" && !isRecognitionReady) {
+      toast.error("Speech recognition belum siap, coba lagi sebentar.");
+      return;
+    }
+
     if (mode === "speech-recognition" && recognitionRef.current) {
-      if (isListening) {
-        recognitionRef.current.stop();
-      } else {
-        recognitionRef.current.start();
+      try {
+        if (isListening) {
+          recognitionRef.current.stop();
+        } else {
+          recognitionRef.current.start();
+        }
+      } catch (err) {
+        const msg = err instanceof DOMException && err.name === "NotAllowedError"
+          ? "Akses mikrofon ditolak."
+          : "Gagal memulai speech recognition.";
+        toast.error(msg);
       }
-    } else if (mode === "media-recorder") {
+      return;
+    }
+
+    if (mode === "media-recorder") {
       if (isListening) {
         stopMediaRecorder();
       } else {
-        startMediaRecorder();
+        void startMediaRecorder();
       }
+      return;
     }
-  }, [mode, isListening, startMediaRecorder, stopMediaRecorder]);
+  }, [mode, isListening, isProcessing, isRecognitionReady, startMediaRecorder, stopMediaRecorder]);
 
-  // Determine if button should be disabled
-  const isDisabled =
-    mode === "none" ||
-    (mode === "speech-recognition" && !isRecognitionReady) ||
-    (mode === "media-recorder" && !onAudioRecorded) ||
-    isProcessing;
+  // Only truly disable while processing a transcription; for unsupported
+  // modes we keep the button enabled so the click can show a helpful toast
+  // (desktop WKWebView has no Web Speech API → previous "disabled + pointer-events-none"
+  // made it look like "nothing happened").
+  const isDisabled = isProcessing;
+
+  const disabledReason =
+    mode === "none"
+      ? isTauriDesktop()
+        ? "Speech tidak didukung di desktop (WKWebView). Gunakan dikte sistem atau Chrome/Edge."
+        : "Speech tidak didukung di browser ini. Gunakan Chrome/Edge."
+      : mode === "speech-recognition" && !isRecognitionReady
+        ? "Menyiapkan speech recognition…"
+        : mode === "media-recorder" && !onAudioRecorded
+          ? isTauriDesktop()
+            ? "Transkripsi belum dikonfigurasi untuk desktop. Gunakan dikte sistem."
+            : "Transkripsi tidak dikonfigurasi."
+          : undefined;
 
   return (
     <div className="relative inline-flex items-center justify-center">
@@ -304,6 +369,7 @@ export const SpeechInput = ({
 
       {/* Main record button */}
       <Button
+        aria-label={isListening ? "Stop recording" : disabledReason ? "Speech tidak tersedia" : "Mulai dikte suara"}
         className={cn(
           "relative z-10 rounded-full transition-all duration-300",
           isListening
@@ -313,6 +379,7 @@ export const SpeechInput = ({
         )}
         disabled={isDisabled}
         onClick={toggleListening}
+        title={disabledReason ?? (isListening ? "Stop" : "Mulai dikte")}
         {...props}
       >
         {isProcessing && <Spinner />}

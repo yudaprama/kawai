@@ -42,6 +42,10 @@ fn migrations() -> Vec<Migration> {
         version: "0004_session_archive",
         sql: include_str!("../../migrations/0004_session_archive.sql"),
     });
+    m.push(Migration {
+        version: "0005_remap_chat_agent",
+        sql: include_str!("../../migrations/0005_remap_chat_agent.sql"),
+    });
     m
 }
 
@@ -171,10 +175,14 @@ mod tests {
         while let Some(r) = rows.next().await.unwrap() {
             versions.push(r.get::<String>(0).unwrap());
         }
-        let mut expected = vec!["0001_baseline", "0002_backfill_untitled_sessions"];
+        let mut expected = vec![
+            "0001_baseline",
+            "0002_backfill_untitled_sessions",
+        ];
         #[cfg(feature = "office")]
         expected.push("0003_office_tables");
         expected.push("0004_session_archive");
+        expected.push("0005_remap_chat_agent");
         assert_eq!(versions, expected);
 
         // Core tables exist.
@@ -212,5 +220,31 @@ mod tests {
             .unwrap();
         let row = r.next().await.unwrap().unwrap();
         assert_eq!(row.get::<String>(0).unwrap(), "(untitled)");
+    }
+
+    #[tokio::test]
+    async fn remaps_legacy_chat_agent_sessions() {
+        let (conn, dir) = open_temp().await;
+        conn.execute(
+            "CREATE TABLE sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)",
+            (),
+        )
+        .await
+        .unwrap();
+        conn.execute(
+            "INSERT INTO sessions (agent_id, title, created_at) VALUES ('builtin.chat', 'old chat', 0)",
+            (),
+        )
+        .await
+        .unwrap();
+
+        ensure_schema(&conn, &dir).await.unwrap();
+
+        let mut r = conn
+            .query("SELECT agent_id FROM sessions", ())
+            .await
+            .unwrap();
+        let row = r.next().await.unwrap().unwrap();
+        assert_eq!(row.get::<String>(0).unwrap(), "builtin.office");
     }
 }

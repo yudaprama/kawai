@@ -120,13 +120,14 @@ fn sanitize_user_dir(user_id: &str) -> String {
 // ── Chat sessions (agent-ready persistence) ────────────────────────────────
 //
 // Schema is designed for the agent tier (Roadmap 5) from day one: sessions
-// carry an `agent_id`, messages hang off a `session_id`. The MVP runs a single
-// implicit agent (BUILTIN_CHAT_AGENT_ID); the future three-pane UI (agent
+// carry an `agent_id`, messages hang off a `session_id`. The default agent is
+// the Office agent (the single catalog entry); the three-pane UI (agent
 // list / sessions / content) rides on the same tables without a migration.
 
-/// The single implicit agent of the MVP chat. The agent catalog (Roadmap 5)
-// extends this with real agent ids.
-pub const BUILTIN_CHAT_AGENT_ID: &str = "builtin.chat";
+/// The default agent id for sessions created without an explicit agent. The
+/// agent catalog (`logic::agent::list_agents`) serves the Office agent under
+/// this id, so new sessions land in the Office agent's sidebar.
+pub const BUILTIN_DEFAULT_AGENT_ID: &str = "builtin.office";
 
 /// First N chars of the first user message become the session title (offline
 /// fallback). The LLM-generated title (`generate_session_title`) is capped to
@@ -162,7 +163,7 @@ pub async fn create_chat_session(
     agent_id: Option<&str>,
 ) -> Result<ChatSession, DbError> {
     let conn = db_connection(user_id).await?;
-    let agent = agent_id.unwrap_or(BUILTIN_CHAT_AGENT_ID);
+    let agent = agent_id.unwrap_or(BUILTIN_DEFAULT_AGENT_ID);
     let now = unix_now() as i64;
     let mut rows = conn
         .query(

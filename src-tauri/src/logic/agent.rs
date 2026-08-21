@@ -115,7 +115,6 @@ const DEEP_WRITE_RULE: &str = "- Long, analytical, comparative or creative answe
 #[cfg(all(feature = "litert", feature = "office"))]
 const DRAFT_DOCUMENT_RULE: &str = "- Document-content rule (STRICT): when the document's content must be WRITTEN or COMPOSED (the user describes what it should contain or say — reports, proposals, summaries, updates, decks from their files), you MUST call draft_document. Do NOT compose document content yourself and do NOT pass your own made-up content to office_create_document — that tool is ONLY for files whose exact text the user already gave you (transcribe verbatim, e.g. 'a docx containing exactly these lines'). If you are writing ANY of the document's body yourself, that is a draft_document turn.";
 
-pub const CHAT_AGENT_ID: &str = crate::logic::BUILTIN_CHAT_AGENT_ID;
 pub const OFFICE_AGENT_ID: &str = "builtin.office";
 
 /// One catalog entry served to the UI by the `list_agents` op. The backend is
@@ -128,39 +127,39 @@ pub struct AgentInfo {
     pub id: String,
     pub name: String,
     pub description: String,
-    /// true → the agent runs the tool loop (`agent_chat`); false → plain
-    /// `local_chat` (no persona/tool injection). Drives the frontend's
-    /// transport choice, so the chat agent id is never duplicated client-side.
+    /// true → the agent runs the tool loop (`agent_chat`) with domain tools
+    /// (office, cloud subagents); false → `agent_chat` with only a persona and
+    /// no tools. Drives the frontend's tool-card rendering; transport is always
+    /// `agent_chat` regardless.
     pub tools: bool,
 }
 
 /// The agent catalog in UI order. Static data — no user scope, no auth.
+/// Office is the single, default agent (it subsumes the old plain chat role:
+/// general questions are answered from the model's own knowledge when no tool
+/// applies).
 pub fn list_agents() -> Vec<AgentInfo> {
-    #[allow(unused_mut)]
-    let mut out = vec![AgentInfo {
-        id: CHAT_AGENT_ID.to_string(),
-        name: "Chat".into(),
-        description: "A helpful, concise personal assistant.".into(),
-        tools: false,
-    }];
-    #[cfg(feature = "office")]
-    out.push(AgentInfo {
+    vec![AgentInfo {
         id: OFFICE_AGENT_ID.to_string(),
         name: "Office".into(),
-        description: "Documents, PDFs, spreadsheets — created and edited locally.".into(),
+        description: "Your on-device assistant for documents, PDFs, spreadsheets, and chat.".into(),
+        #[cfg(feature = "office")]
         tools: true,
-    });
-    out
+        #[cfg(not(feature = "office"))]
+        tools: false,
+    }]
 }
 
-const CHAT_PERSONA: &str =
+#[cfg(not(feature = "office"))]
+const OFFICE_PERSONA: &str =
     "You are kawai, a helpful, concise personal assistant.";
 
 #[cfg(feature = "office")]
-const OFFICE_PERSONA: &str = "You are kawai's office agent. You read, create, edit, merge and inspect documents (docx, xlsx, pptx, pdf) through tools.\n\
+const OFFICE_PERSONA: &str = "You are kawai's office agent. You read, create, edit, merge and inspect documents (docx, xlsx, pptx, pdf, youtube transcript) through tools.\n\
 Rules:\n\
 - Call at most ONE tool per reply, as a single ```tool block, then stop and wait for the TOOL_RESULT message.\n\
-- When the user asks ANYTHING about their uploaded documents (numbers, names, dates, invoice codes, table contents), call knowledge_search FIRST — it finds the relevant passages for you.\n\
+- When the user asks ANYTHING about their uploaded documents or imported YouTube videos (summaries, numbers, names, dates, invoice codes, table contents), call knowledge_search FIRST — it finds the relevant passages for you.\n\
+- NEVER say you cannot access a video, transcript, or document: imported content is searchable via knowledge_search. Always call knowledge_search first; only if it returns no hits may you say you cannot find the content.\n\
 - Tools address stored files by their file id, never by path. If the user refers to a document and you don't know its id, call office_list_files first.\n\
 - Never invent arguments: if a required input is missing, ask the user.\n\
 - Prefer office_document_info / pdf_info before large reads when only structure matters.\n\
@@ -172,8 +171,6 @@ Rules:\n\
 #[cfg(feature = "litert")]
 fn persona_for(agent_id: &str) -> Option<&'static str> {
     match agent_id {
-        CHAT_AGENT_ID => Some(CHAT_PERSONA),
-        #[cfg(feature = "office")]
         OFFICE_AGENT_ID => Some(OFFICE_PERSONA),
         _ => None,
     }
@@ -491,21 +488,38 @@ fn is_prefill_overflow(msg: &str) -> bool {
 
 /// Parse a fenced tool call from a completed generation.
 ///
-/// - `None` → no ```tool fence (final answer)
+/// - `None` → no ```tool fence and no native markup (final answer)
 /// - `Some(Ok((tool, args)))` → dispatchable call
-/// - `Some(Err(detail))` → fence present but malformed (one repair allowed)
+/// - `Some(Err(detail))` → markup present but malformed (one repair allowed)
 pub fn parse_tool_call(text: &str) -> Option<Result<(String, Value), String>> {
+    if let Some(fenced) = parse_fenced_tool_call(text) {
+        return Some(fenced);
+    }
+    parse_native_tool_call(text)
+}
+
+/// Parse the taught ```tool fence protocol. Tolerates the inline form the
+/// model emits under pressure (JSON glued to the opener: ```tool{"tool":…}```
+/// with no newline) as well as an info-string line (```tool json).
+fn parse_fenced_tool_call(text: &str) -> Option<Result<(String, Value), String>> {
     let lower = text.to_lowercase();
     let start = lower.find("```tool")? + "```tool".len();
-    let rest = &text[start..];
-    // Skip anything to end-of-line after the opener (```tool json, etc).
-    let body_start = rest.find('\n').map(|i| i + 1).unwrap_or(rest.len());
-    let body = &rest[body_start..];
-    let end = match body.find("```") {
+    let rest = text[start..].trim_start();
+    let end = match rest.find("```") {
         Some(e) => e,
         None => return Some(Err("unterminated ```tool block".into())),
     };
-    let raw = body[..end].trim();
+    let mut raw = rest[..end].trim();
+    if !raw.starts_with('{') {
+        // Info string on its own line (```tool json\n{...}) — drop it, but
+        // only when a JSON body actually follows (a lone bare name stays).
+        if let Some(nl) = raw.find('\n') {
+            let next = raw[nl + 1..].trim_start();
+            if next.starts_with('{') {
+                raw = next.trim_end();
+            }
+        }
+    }
     if raw.is_empty() {
         return Some(Err("empty ```tool block".into()));
     }
@@ -541,13 +555,196 @@ pub fn parse_tool_call(text: &str) -> Option<Result<(String, Value), String>> {
     }
 }
 
+/// Parse the Gemma native tool-call markup the model sometimes emits instead
+/// of the taught ```tool fence:
+/// `<|tool_call>call:NAME{ARGS}<tool_call|>` — opener tolerates the closed
+/// `<|tool_call|>` form, terminator accepts `<tool_call|>` or
+/// `<|tool_call_end|>`, and quotes may be escaped as `<|"|>` / `<|'|>`.
+/// Keys may be bare (`{mode:"keyword"}`) — [`quote_bare_keys`] fixes that.
+fn parse_native_tool_call(text: &str) -> Option<Result<(String, Value), String>> {
+    if let Some(start) = text.find("<|tool_call") {
+        let after = &text[start..];
+        let name_start = after.find("call:")? + "call:".len();
+        let rest = &after[name_start..];
+        let end = ["<tool_call|>", "<|tool_call_end|>"]
+            .iter()
+            .filter_map(|m| rest.find(m))
+            .min()
+            .unwrap_or(rest.len());
+        return parse_native_body(rest[..end].trim());
+    }
+    // Marker-less bare form: `call:NAME{args}` with no special tokens at all
+    // (observed degradation when the model drops the wrapper entirely). A
+    // candidate that does not validate is treated as prose (final answer),
+    // NOT an error — "call:" inside ordinary language must not kill a turn.
+    let mut from = 0usize;
+    while let Some(rel) = text[from..].find("call:") {
+        let at = from + rel;
+        from = at + "call:".len();
+        // Word boundary: "recall:" / "we call:" are not tool calls.
+        if at > 0 {
+            let prev = text[..at].chars().next_back().unwrap();
+            if prev.is_alphanumeric() || prev == '_' {
+                continue;
+            }
+        }
+        let body = &text[at + "call:".len()..];
+        // Arg extent: balanced braces from the first `{` (strings respected).
+        let Some(open) = body.find('{') else {
+            continue;
+        };
+        let name = body[..open].trim().trim_end_matches(':').trim();
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        {
+            continue;
+        }
+        let Some(args_raw) = balanced_braces(body, open) else {
+            continue;
+        };
+        if let Some(Ok((n, v))) = parse_native_body(&format!("{name} {args_raw}")) {
+            return Some(Ok((n, v)));
+        }
+    }
+    None
+}
+
+/// Extract `{...}` starting at `body[open]`, honouring string literals, to the
+/// matching close brace. `None` when unbalanced.
+fn balanced_braces(body: &str, open: usize) -> Option<&str> {
+    let bytes = body.as_bytes();
+    let mut depth = 0usize;
+    let mut in_str = false;
+    let mut i = open;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if in_str => i += 1,
+            b'"' => in_str = !in_str,
+            b'{' if !in_str => depth += 1,
+            b'}' if !in_str => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&body[open..=i]);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Validate `NAME {json}` (or bare `NAME`) from a native call body.
+fn parse_native_body(body: &str) -> Option<Result<(String, Value), String>> {
+    let (name, args_raw) = match body.find('{') {
+        Some(i) => (body[..i].trim().trim_end_matches(':').trim(), body[i..].trim()),
+        None => (body.trim(), ""),
+    };
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    {
+        let shown: String = name.chars().take(60).collect();
+        return Some(Err(format!("native tool call has no valid name: {shown}")));
+    }
+    if args_raw.is_empty() {
+        return Some(Ok((name.to_string(), serde_json::json!({}))));
+    }
+    let unescaped = args_raw.replace("<|\"|>", "\"").replace("<|'|>", "'");
+    let fixed = quote_bare_keys(&unescaped);
+    match serde_json::from_str::<Value>(&fixed) {
+        Ok(v) => Some(Ok((name.to_string(), v))),
+        Err(e) => Some(Err(format!("native tool call args not valid JSON: {e}"))),
+    }
+}
+
+/// Quote bare object keys so serde accepts near-JSON args:
+/// `{mode:"keyword"}` → `{"mode":"keyword"}`. Only identifiers directly after
+/// `{` or `,` (modulo whitespace) that are followed by `:` get quoted —
+/// string values and already-quoted keys pass through untouched.
+fn quote_bare_keys(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len() + 16);
+    let mut i = 0usize;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '"' {
+            // Copy the string literal verbatim (escape-aware).
+            out.push(c);
+            i += 1;
+            while i < chars.len() {
+                let ch = chars[i];
+                out.push(ch);
+                i += 1;
+                if ch == '\\' && i < chars.len() {
+                    out.push(chars[i]);
+                    i += 1;
+                } else if ch == '"' {
+                    break;
+                }
+            }
+            continue;
+        }
+        if c == '{' || c == ',' || (out.is_empty() && (c.is_ascii_alphabetic() || c == '_')) {
+            // At a key position: scan an identifier, quote it if a `:` follows.
+            out.push(c);
+            i += 1;
+            while i < chars.len() && chars[i] == ' ' {
+                out.push(' ');
+                i += 1;
+            }
+            if i < chars.len() && (chars[i].is_ascii_alphabetic() || chars[i] == '_') {
+                let ks = i;
+                while i < chars.len()
+                    && (chars[i].is_ascii_alphanumeric() || chars[i] == '_')
+                {
+                    i += 1;
+                }
+                let ident: String = chars[ks..i].iter().collect();
+                let mut j = i;
+                while j < chars.len() && chars[j] == ' ' {
+                    j += 1;
+                }
+                if j < chars.len() && chars[j] == ':' {
+                    out.push('"');
+                    out.push_str(&ident);
+                    out.push('"');
+                } else {
+                    out.push_str(&ident);
+                }
+            }
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
 /// Strip protocol markers the model may echo back into streamed tokens.
+/// Covers the taught fence markers plus the Gemma 4 native special tokens
+/// (tool-call lifecycle, thought channel, turn end) so they never reach the
+/// UI as prose. Escaped string delimiters un-escape to real quotes.
 #[cfg(feature = "litert")]
 fn strip_markers(t: &str) -> String {
     t.replace("<agent_context>", "")
         .replace("</agent_context>", "")
         .replace("<user_request>", "")
         .replace("</user_request>", "")
+        .replace("<|tool_call>", "")
+        .replace("<|tool_call|>", "")
+        .replace("<tool_call|>", "")
+        .replace("<|tool_call_end|>", "")
+        .replace("<|tool_response>", "")
+        .replace("<|tool_response|>", "")
+        .replace("<|channel>thought>", "")
+        .replace("<|message|>", "")
+        .replace("<|end|>", "")
+        .replace("<|\"|>", "\"")
+        .replace("<|'|>", "'")
 }
 
 #[cfg(feature = "litert")]
@@ -722,6 +919,10 @@ pub fn agent_chat(
         // loop iteration — one code path for both entry points.
         let mut pending_subagent: Option<PendingSubagent> = None;
         let mut subagent_calls_used = 0usize;
+        // Excerpts returned by plain tools this turn (already model-capped).
+        // The cloud subagents are stateless — this is the deterministic
+        // hand-off so a delegation never loses what the model just gathered.
+        let mut turn_tool_results = String::new();
         let turn_started = std::time::Instant::now();
 
         let final_answer = loop {
@@ -1157,7 +1358,15 @@ pub fn agent_chat(
                         // (transcript as materials) instead of failing.
                         if remote.is_some() && subagent_calls_used < MAX_SUBAGENT_CALLS {
                             eprintln!("[agent_chat] malformed fence twice ({detail}) — escalating to deep_write");
-                            let materials = compact_transcript(&prior_turns, TRANSCRIPT_BUDGET_CHARS);
+                            let mut materials =
+                                compact_transcript(&prior_turns, TRANSCRIPT_BUDGET_CHARS);
+                            if !turn_tool_results.is_empty() {
+                                materials = format!(
+                                    "{materials}\n\n[tool results gathered this turn]{turn_tool_results}"
+                                )
+                                .trim()
+                                .to_string();
+                            }
                             pending_subagent = Some(PendingSubagent {
                                 tool: DEEP_WRITE_TOOL.to_string(),
                                 task: message.clone(),
@@ -1205,11 +1414,25 @@ pub fn agent_chat(
                             .and_then(Value::as_str)
                             .map(str::to_string)
                             .unwrap_or_default();
-                        let materials = args
+                        let mut materials = args
                             .get("materials")
                             .and_then(Value::as_str)
                             .map(str::to_string)
                             .unwrap_or_default();
+                        // The model often forwards only a title/summary instead
+                        // of the excerpts it gathered. The cloud writer cannot
+                        // see this conversation — hand the turn's tool results
+                        // over deterministically when materials look thin.
+                        const MIN_REAL_MATERIALS_CHARS: usize = 500;
+                        if !turn_tool_results.is_empty()
+                            && materials.chars().count() < MIN_REAL_MATERIALS_CHARS
+                        {
+                            materials = format!(
+                                "{materials}\n\n[tool results gathered this turn]{turn_tool_results}"
+                            )
+                            .trim()
+                            .to_string();
+                        }
                         let filename = args
                             .get("filename")
                             .and_then(Value::as_str)
@@ -1293,6 +1516,7 @@ pub fn agent_chat(
                         } else {
                             body
                         };
+                    turn_tool_results.push_str(&format!("\n\n--- {tool} ---\n{model_body}"));
                     prompt = format!(
                         "TOOL_RESULT {tool}:\n{model_body}\n\nContinue. If you need another tool, reply with a single ```tool block; otherwise answer the user directly."
                     );
@@ -1395,6 +1619,144 @@ mod tests {
             }
             other => panic!("expected Ok, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_native_gemma_tool_call_garbled() {
+        // Exact shape observed from Gemma 4: bare keys, escaped quotes,
+        // one-line collapse of the native multi-line format.
+        let text = "<|tool_call>call:knowledge_search{mode:<|\"|>keyword<|\"|>,query:<|\"|>Gw Coba Trading Forex Selama 42 Hari Tanpa Pengalaman<|\"|>}<tool_call|>";
+        match parse_tool_call(text) {
+            Some(Ok((tool, args))) => {
+                assert_eq!(tool, "knowledge_search");
+                assert_eq!(args["mode"], "keyword");
+                assert_eq!(args["query"], "Gw Coba Trading Forex Selama 42 Hari Tanpa Pengalaman");
+            }
+            other => panic!("expected Ok, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_native_gemma_tool_call_multiline() {
+        // The well-formed native form: closed opener, JSON on its own line,
+        // `<|tool_call_end|>` terminator, already-quoted keys.
+        let text = "Sure.\n<|tool_call|>\ncall:knowledge_search\n{\"query\": \"invoice total\", \"mode\": \"hybrid\"}\n<|tool_call_end|>";
+        match parse_tool_call(text) {
+            Some(Ok((tool, args))) => {
+                assert_eq!(tool, "knowledge_search");
+                assert_eq!(args["query"], "invoice total");
+                assert_eq!(args["mode"], "hybrid");
+            }
+            other => panic!("expected Ok, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_native_tool_call_no_args() {
+        match parse_tool_call("prefix<|tool_call>call:office_list_files<tool_call|>suffix") {
+            Some(Ok((tool, args))) => {
+                assert_eq!(tool, "office_list_files");
+                assert_eq!(args, serde_json::json!({}));
+            }
+            other => panic!("expected Ok, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_bare_native_call_without_markers() {
+        // Exact persisted shape: model dropped ALL special tokens and emitted
+        // only the compact body, real quotes but bare keys.
+        let text = r#"call:knowledge_search{mode:"keyword",query:"Gw Coba Trading Forex Selama 42 Hari Tanpa Pengalaman"}"#;
+        match parse_tool_call(text) {
+            Some(Ok((tool, args))) => {
+                assert_eq!(tool, "knowledge_search");
+                assert_eq!(args["mode"], "keyword");
+                assert_eq!(args["query"], "Gw Coba Trading Forex Selama 42 Hari Tanpa Pengalaman");
+            }
+            other => panic!("expected Ok, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_bare_call_with_prose_around() {
+        let text = "Let me search the transcript.\ncall:knowledge_search{query:\"porto terbesar\"}\nthanks";
+        match parse_tool_call(text) {
+            Some(Ok((tool, args))) => {
+                assert_eq!(tool, "knowledge_search");
+                assert_eq!(args["query"], "porto terbesar");
+            }
+            other => panic!("expected Ok, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_inline_fence_json_glued_to_opener() {
+        // Observed: no newline after ```tool, closing fence glued to the JSON.
+        let text = "prose before.```tool{\"tool\": \"deep_write\", \"args\": {\"task\": \"Ringkasan\", \"materials\": \"judul saja\"}}```Mohon maaf.";
+        match parse_tool_call(text) {
+            Some(Ok((tool, args))) => {
+                assert_eq!(tool, "deep_write");
+                assert_eq!(args["task"], "Ringkasan");
+            }
+            other => panic!("expected Ok, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_fence_with_info_string_still_works() {
+        let text = "```tool json\n{\"tool\": \"a\"}\n```";
+        match parse_tool_call(text) {
+            Some(Ok((tool, _))) => assert_eq!(tool, "a"),
+            other => panic!("expected Ok, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bare_call_word_boundary_and_prose_ignored() {
+        // "recall:" embeds "call:" — boundary check must skip it.
+        assert!(parse_tool_call("I recall: the day we met. Nothing else.").is_none());
+        // call: with no braces is not a tool call.
+        assert!(parse_tool_call("You should call: me later today.").is_none());
+        // Unbalanced braces stay prose, not a malformed-call error.
+        assert!(parse_tool_call("call:knowledge_search{query:\"open").is_none());
+    }
+
+    #[test]
+    fn parse_native_tool_call_bad_name_is_malformed() {
+        assert!(matches!(
+            parse_tool_call("<|tool_call>call:Not A Name{}<tool_call|>"),
+            Some(Err(_))
+        ));
+    }
+
+    #[test]
+    fn parse_native_tool_call_bad_args_is_malformed() {
+        assert!(matches!(
+            parse_tool_call("<|tool_call>call:t{not json at all}<tool_call|>"),
+            Some(Err(_))
+        ));
+    }
+
+    #[test]
+    fn quote_bare_keys_leaves_valid_json_alone() {
+        for ok in [
+            r#"{"query":"a,b: c","mode":"hybrid"}"#,
+            r#"{"blocks":[{"type":"paragraph","text":"x: y"}]}"#,
+            "{}",
+        ] {
+            assert_eq!(quote_bare_keys(ok), ok, "input: {ok}");
+        }
+    }
+
+    #[test]
+    fn quote_bare_keys_quotes_only_key_positions() {
+        assert_eq!(
+            quote_bare_keys(r#"{mode:"keyword", query:"a, b: c"}"#),
+            r#"{"mode":"keyword", "query":"a, b: c"}"#
+        );
+        // Bare VALUE (not followed by `:`) stays bare — serde then rejects it,
+        // which routes to the repair path instead of silently guessing.
+        assert_eq!(quote_bare_keys(r#"{a:b}"#), r#"{"a":b}"#);
     }
 
     #[test]

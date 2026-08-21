@@ -87,19 +87,19 @@ async fn main() {
 
     let mut all_pass = true;
 
-    // 2. LIGHT turn on the chat agent — must stay local (no cloud call).
-    println!("── chat agent · LIGHT turn (expect local answer, no cloud) ──");
-    let (sid, events) = run_turn("builtin.chat", None, "In one short sentence: what is 7 times 8?").await;
+    // 2. LIGHT turn on the office agent — must stay local (no cloud call).
+    println!("── office agent · LIGHT turn (expect local answer, no cloud) ──");
+    let (sid, events) = run_turn("builtin.office", None, "In one short sentence: what is 7 times 8?").await;
     let light_ok = events.iter().any(|e| e == "finished")
         && !events.iter().any(|e| e.starts_with("ERROR"))
         && !events.iter().any(|e| e.contains("deep_write"));
     all_pass &= verdict("light turn local", light_ok);
 
-    // 3. HEAVY turn on the chat agent — the under-delegation lens: the model
+    // 3. HEAVY turn on the office agent — the under-delegation lens: the model
     //    SHOULD emit a deep_write fence here.
-    println!("── chat agent · HEAVY turn (expect deep_write delegation) ──");
+    println!("── office agent · HEAVY turn (expect deep_write delegation) ──");
     let (sid2, events2) = run_turn(
-        "builtin.chat",
+        "builtin.office",
         None,
         "Write a thorough comparative analysis of using SQLite versus PostgreSQL for a desktop-first \
          app that may later sync — structure it with sections, cover at least performance, \

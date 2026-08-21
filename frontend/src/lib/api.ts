@@ -26,7 +26,7 @@ export interface AgentInfo {
   id: string;
   name: string;
   description: string;
-  /** true → `agent_chat` (tool loop); false → plain `local_chat`. */
+  /** true → `agent_chat` with domain tools (office, cloud subagents); false → `agent_chat` with only a persona. */
   tools: boolean;
 }
 

@@ -57,7 +57,7 @@ impl PortableTool for KnowledgeSearchTool {
     type Error = OfficeToolError;
 
     fn description(&self) -> String {
-        "Search the documents uploaded in this conversation for relevant passages. Use this FIRST when the user asks about content that may be in their documents (numbers, names, dates, invoice codes, tables). Returns the best matching excerpts with their source document.".into()
+        "Search the knowledge imported in this conversation (uploaded documents AND imported YouTube transcripts) for relevant passages. Use this FIRST when the user asks about content that may be in their files or videos — summaries, numbers, names, dates, invoice codes, tables. Returns the best matching excerpts with their source.".into()
     }
 
     fn parameters(&self) -> Value {

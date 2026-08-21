@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { streamOperation, type StreamControl } from "@/lib/stream";
 import { showErrorToast } from "@/lib/toast-utils";
+import { logError, logWarn } from "@/lib/logger";
 import type {
   ChatStatus,
   ToolUIPart,
@@ -50,6 +51,14 @@ function historyToMessages(rows: ChatMessageInfo[]): UIMessage[] {
     role: row.role,
     parts: [{ type: "text", text: row.content, state: "done" }],
   }));
+}
+
+function toFriendlyError(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes("already running") || lower.includes("generation is already")) {
+    return "Masih memproses jawaban sebelumnya. Tunggu sebentar atau tekan Stop untuk membatalkan.";
+  }
+  return raw;
 }
 
 function sessionPeriod(createdAt: number | null): "Today" | "Yesterday" | "Earlier" {
@@ -127,7 +136,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         modelStatus: `${info.modelPath.split("/").pop()} · ${info.backend}`,
       });
     } catch (err) {
-      patch({ modelLoading: false, modelError: true, modelStatus: errText(err) });
+      patch({ modelLoading: false, modelError: true, modelStatus: toFriendlyError(errText(err)) });
     }
   }, [patch]);
 
@@ -146,7 +155,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
       ]);
       patch({ sessions, archivedSessions });
     } catch (err) {
-      console.error("[list_chat_sessions]", errText(err));
+      logWarn("list_chat_sessions", err);
     }
   }, [patch]);
 
@@ -167,7 +176,29 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         void loadSessions();
         return s.id;
       } catch (err) {
-        console.error("[create_chat_session]", errText(err));
+        logError("create_chat_session", err);
+        showErrorToast(`Couldn't start a new chat — ${errText(err)}`);
+        return null;
+      }
+    },
+    [agentId, patch, loadSessions],
+  );
+
+  /** Ensure a session exists, creating one with a generic title if needed (e.g. adding knowledge before first message). */
+  const ensureSessionId = useCallback(
+    async (titleHint = "New chat"): Promise<number | null> => {
+      if (sessionIdRef.current != null) return sessionIdRef.current;
+      try {
+        const s = await call<ChatSessionInfo>("create_chat_session", {
+          agentId,
+          title: titleHint.slice(0, 80) || "New chat",
+        });
+        sessionIdRef.current = s.id;
+        patch({ sessionId: s.id });
+        void loadSessions();
+        return s.id;
+      } catch (err) {
+        logError("create_chat_session", err);
         showErrorToast(`Couldn't start a new chat — ${errText(err)}`);
         return null;
       }
@@ -180,7 +211,8 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     try {
       await call("local_llm_reset");
     } catch (err) {
-      console.error("[local_llm_reset]", errText(err));
+      // Expected transient noise (not authenticated / no model loaded) → breadcrumb only.
+      logWarn("local_llm_reset", err);
     }
     sessionIdRef.current = null;
     patch({ sessionId: null, messages: [], stats: "" });
@@ -193,7 +225,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
       try {
         await call("local_llm_reset");
       } catch (err) {
-        console.error("[local_llm_reset]", errText(err));
+        logWarn("local_llm_reset", err);
       }
       sessionIdRef.current = sessionId;
       patch({ sessionId, messages: [], stats: "" });
@@ -201,7 +233,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         const rows = await call<ChatMessageInfo[]>("list_chat_messages", { sessionId });
         patch({ messages: historyToMessages(rows) });
       } catch (err) {
-        console.error("[list_chat_messages]", errText(err));
+        logError("list_chat_messages", err);
       }
     },
     [patch],
@@ -213,7 +245,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     try {
       await call("local_llm_reset");
     } catch (err) {
-      console.error("[local_llm_reset]", errText(err));
+      logWarn("local_llm_reset", err);
     }
     sessionIdRef.current = null;
     patch({ sessionId: null, messages: [], stats: "" });
@@ -227,7 +259,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
       try {
         await call("delete_chat_session", { sessionId });
       } catch (err) {
-        console.error("[delete_chat_session]", errText(err));
+        logError("delete_chat_session", err);
         showErrorToast(`Couldn't delete the session — ${errText(err)}`);
         return;
       }
@@ -235,7 +267,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         try {
           await call("local_llm_reset");
         } catch (err) {
-          console.error("[local_llm_reset]", errText(err));
+          logWarn("local_llm_reset", err);
         }
         sessionIdRef.current = null;
         patch({ sessionId: null, messages: [], stats: "" });
@@ -266,7 +298,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
           sessions: state.sessions.map((s) => (s.id === sessionId ? updated : s)),
         });
       } catch (err) {
-        console.error("[rename_chat_session]", errText(err));
+        logError("rename_chat_session", err);
         showErrorToast(`Couldn't rename the session — ${errText(err)}`);
         patch({
           sessions: state.sessions.map((s) =>
@@ -285,7 +317,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
       try {
         await call<ChatSessionInfo>("set_chat_session_archived", { sessionId, archived });
       } catch (err) {
-        console.error("[set_chat_session_archived]", errText(err));
+        logError("set_chat_session_archived", err);
         showErrorToast(
           `${archived ? "Couldn't archive" : "Couldn't restore"} the session — ${errText(err)}`,
         );
@@ -296,7 +328,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         try {
           await call("local_llm_reset");
         } catch (err) {
-          console.error("[local_llm_reset]", errText(err));
+          logWarn("local_llm_reset", err);
         }
         sessionIdRef.current = null;
         patch({ sessionId: null, messages: [], stats: "" });
@@ -312,7 +344,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     try {
       await call("local_llm_set_thinking", { enabled: next });
     } catch (err) {
-      console.error("[local_llm_set_thinking]", errText(err));
+      logError("local_llm_set_thinking", err);
       patch({ thinking: !next });
     }
   }, [state.thinking, patch]);
@@ -329,7 +361,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         thinking: false,
       });
     } catch (err) {
-      console.error("[local_llm_unload]", errText(err));
+      logError("local_llm_unload", err);
     }
   }, [patch]);
 
@@ -384,6 +416,19 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
       let full = "";
       let toolParts: ToolUIPart[] = [];
 
+      // Tool-call markup never renders as prose: the taught ```tool fences
+      // (stripped here, they render as tool cards) AND the Gemma 4 native
+      // form <|tool_call>call:NAME{args}<tool_call|>. The backend strips the
+      // native special tokens per token, so also catch the leftover bare
+      // `call:NAME{...}` body.
+      const stripToolMarkup = (s: string) =>
+        s
+          .replace(/```tool[\s\S]*?```/gi, "")
+          .replace(/<\|tool_call[^>]*>[\s\S]*?(?:<tool_call\|>|<\|tool_call_end\|>)/gi, "")
+          .replace(/<\|(?:tool_call[^>]*|tool_response[^>]*|channel>[^>]*|message\||end\|)>/gi, "")
+          .replace(/call:[a-z0-9_]+\s*\{[^{}]*\}/gi, "")
+          .trim();
+
       const setAssistantParts = (parts: UIMessagePart[], status?: ChatStatus, stats?: string) => {
         setState((prev) => ({
           ...prev,
@@ -404,7 +449,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
               full += ev.text;
               
               // Strip fence blocks from display text (they become tool cards)
-              const displayText = full.replace(/```tool\s*\n[\s\S]*?\n```/gi, '').trim();
+              const displayText = stripToolMarkup(full);
               
               setAssistantParts(
                 displayText
@@ -426,7 +471,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
               toolParts = [...toolParts, part];
               
               // Strip fence blocks from display text
-              const displayText = full.replace(/```tool\s*\n[\s\S]*?\n```/gi, '').trim();
+              const displayText = stripToolMarkup(full);
               
               setAssistantParts(
                 displayText
@@ -449,7 +494,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
               );
               
               // Strip fence blocks from display text
-              const displayText = full.replace(/```tool\s*\n[\s\S]*?\n```/gi, '').trim();
+              const displayText = stripToolMarkup(full);
               
               setAssistantParts(
                 displayText
@@ -463,7 +508,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
             streamCtrl.current = null;
             
             // Strip fence blocks from final display text
-            const displayText = full.replace(/```tool\s*\n[\s\S]*?\n```/gi, '').trim();
+            const displayText = stripToolMarkup(full);
             
             setAssistantParts(
               displayText
@@ -476,10 +521,32 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
           },
           onError: (err) => {
             streamCtrl.current = null;
+            const msg = toFriendlyError(err.message);
+            // Transient concurrency race — downgrade to ready, don't scare user.
+            const lower = err.message.toLowerCase();
+            const isBusyRace = lower.includes("already running") || lower.includes("generation is already");
+            if (isBusyRace) {
+              setState((prev) => ({
+                ...prev,
+                status: "ready",
+                error: msg,
+                messages: prev.messages.map((m) =>
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        parts: full
+                          ? [{ type: "text", text: full, state: "done" as const }, ...toolParts]
+                          : [...toolParts],
+                      }
+                    : m,
+                ),
+              }));
+              return;
+            }
             setState((prev) => ({
               ...prev,
               status: "error",
-              error: err.message,
+              error: msg,
               messages: prev.messages.map((m) =>
                 m.id === assistantId
                   ? {
@@ -522,5 +589,6 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     toggleThinking,
     unloadModel,
     reloadModel: loadModel,
+    ensureSessionId,
   };
 }

@@ -1,4 +1,6 @@
-import { Component, type ReactNode } from "react";
+import { Component, type ReactNode, useEffect } from "react";
+import * as Sentry from "@sentry/react";
+import { ErrorBoundary as SentryReactErrorBoundary } from "@sentry/react";
 import { Button } from "@/components/ui/button";
 import { call } from "@/lib/api";
 
@@ -10,7 +12,7 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-function ErrorFallback({ error, onRetry }: { error: Error | null; onRetry: () => void }) {
+export function ErrorFallback({ error, onRetry }: { error: Error | null; onRetry: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
       <div className="space-y-1">
@@ -37,10 +39,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error) {
+    // Use logger semantics: console + Sentry + frontend_log are handled here directly
+    // to avoid double-capture via logError's own Sentry call + boundary auto-capture.
     console.error("Uncaught render error:", error);
-    // Mirror into the platform log file so crashes are diagnosable from a
-    // shipped build (no devtools there). Best-effort — `frontend_log` is a
-    // fire-and-forget command.
+    Sentry.captureException(error, { tags: { boundary: "legacy" } });
     call("frontend_log", { level: "error", message: String(error) }).catch(() => {});
   }
 
@@ -55,4 +57,38 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     }
     return this.props.children;
   }
+}
+
+function SentryFallback({
+  error,
+  resetError,
+}: {
+  error: unknown;
+  resetError: () => void;
+}) {
+  useEffect(() => {
+    console.error("Uncaught render error:", error);
+    // Mirror to platform log — Sentry already captured the exception.
+    call("frontend_log", { level: "error", message: String(error) }).catch(() => {});
+  }, [error]);
+
+  return <ErrorFallback error={error as Error} onRetry={resetError} />;
+}
+
+/** Sentry-native boundary — prefer this in new code. Automatically calls
+ *  `Sentry.captureException` + renders the same fallback. Also mirrors to
+ *  `frontend_log` so shipped builds stay diagnosable without devtools. */
+export function SentryErrorBoundary({ children }: { children: ReactNode }) {
+  return (
+    <SentryReactErrorBoundary
+      fallback={({ error, resetError }) => (
+        <SentryFallback error={error} resetError={resetError} />
+      )}
+      beforeCapture={(scope) => {
+        scope.setTag("boundary", "root");
+      }}
+    >
+      {children}
+    </SentryReactErrorBoundary>
+  );
 }

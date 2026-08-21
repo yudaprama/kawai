@@ -30,7 +30,7 @@ async fn main() {
 
     let mut stream = Box::pin(agent_chat(
         SMOKE_USER.into(),
-        "builtin.chat".into(),
+        "builtin.office".into(),
         None,
         prompt.into(),
     ));

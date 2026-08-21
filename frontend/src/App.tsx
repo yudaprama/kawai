@@ -174,12 +174,17 @@ export default function App() {
 
   const addToSession = useCallback(
     async (file: KnowledgeFileInfo) => {
-      if (chat.sessionId == null) return;
+      let sid = chat.sessionId;
+      if (sid == null) {
+        sid = await chat.ensureSessionId(file.originalName);
+        if (sid == null) return;
+        knowledge.setSessionId(sid);
+      }
       knowledge.markInSession([file.id], true);
       if (file.chunks === 0 || file.status === "failed") knowledge.markIndexing([file.id]);
       try {
         await call<number>("knowledge_add_to_session", {
-          sessionId: chat.sessionId,
+          sessionId: sid,
           fileIds: [file.id],
         });
       } catch (err) {
@@ -188,7 +193,7 @@ export default function App() {
         await knowledge.refresh();
       }
     },
-    [chat.sessionId, knowledge],
+    [chat.sessionId, chat.ensureSessionId, knowledge],
   );
 
   const removeFromSession = useCallback(
@@ -329,7 +334,11 @@ export default function App() {
         activeAgentId={activeAgentId}
         collapsed={agentsRail}
         userId={chat.userId}
-        onSelectAgent={(id) => setActiveAgentId(id)}
+        busy={busy}
+        onSelectAgent={(id) => {
+          if (busy && id !== activeAgentId) return;
+          setActiveAgentId(id);
+        }}
         onToggle={() => setAgentsRail((v) => !v)}
       />
 

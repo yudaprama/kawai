@@ -15,7 +15,6 @@ import {
   MoonIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
-  SparklesIcon,
   SunIcon,
 } from "lucide-react";
 
@@ -32,14 +31,9 @@ const GENERIC_AGENT: AgentPresentation = {
 };
 
 const AGENT_META: Record<string, AgentPresentation> = {
-  "builtin.chat": {
-    icon: SparklesIcon,
-    subtitle: "on-device assistant",
-    prompts: ["How are you?", "Summarize my day", "Help me write an email"],
-  },
   "builtin.office": {
     icon: BriefcaseIcon,
-    subtitle: "docs · pdf · sheets",
+    subtitle: "docs · pdf · sheets · chat",
     prompts: ["Summarize this PDF", "Create a weekly report", "Merge these invoices"],
   },
 };
@@ -83,6 +77,7 @@ export function AgentsRail({
   activeAgentId,
   collapsed,
   userId,
+  busy,
   onSelectAgent,
   onToggle,
 }: {
@@ -90,6 +85,7 @@ export function AgentsRail({
   activeAgentId: string | null;
   collapsed: boolean;
   userId: string | null;
+  busy?: boolean;
   onSelectAgent: (id: string) => void;
   onToggle: () => void;
 }) {
@@ -127,12 +123,13 @@ export function AgentsRail({
           const active = a.id === activeAgentId;
           return (
             <button
-              className={`flex w-full items-center rounded-lg text-left transition-colors ${
+              className={`flex w-full items-center rounded-lg text-left transition-colors disabled:opacity-50 ${
                 collapsed ? "justify-center p-2" : "gap-2.5 px-2.5 py-2"
               } ${active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
+              disabled={busy && !active}
               key={a.id}
               onClick={() => onSelectAgent(a.id)}
-              title={`${a.name} · ${meta.subtitle}`}
+              title={busy && !active ? "Tunggu jawaban selesai" : `${a.name} · ${meta.subtitle}`}
             >
               <span
                 className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${
