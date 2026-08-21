@@ -39,7 +39,8 @@
 //! every tool-carrying agent also gets the `deep_write` subagent — a tool
 //! whose implementation streams one stateless cloud completion (PLAN
 //! `PLAN-hybrid-llm-subagents.md`). Division of labor: local plans (emits
-//! short call: lines), compresses and curates `materials`; cloud writes
+//! short call: lines; `materials` stays a one-line pointer — the loop
+//! attaches the turn's full tool results deterministically); cloud writes
 //! the long-form answer. A `deep_write` result is FINAL (`final:true`
 //! passthrough): its tokens stream straight to the user, are persisted as
 //! the assistant message, and local never rewrites them. Chat history is
@@ -120,7 +121,8 @@ fn summary_directive(first_file_id: &str) -> String {
     format!(
         "\n\nSUMMARY DIRECTIVE: the user asked for a summary — these excerpts are NOT enough. \
          Next: call:office_read_document{{\"fileId\": \"{first_file_id}\"}} to get the full text, \
-         then delegate to deep_write with the full text as materials. Do NOT answer from excerpts."
+         then call:deep_write with a clear task brief (keep materials a one-line pointer or omit it — \
+         the full text is attached to the writer automatically). Do NOT answer from excerpts."
     )
 }
 
@@ -168,7 +170,7 @@ Rules:\n\
 /// Extra persona rule for agents carrying the deep_write subagent: tells the
 /// local model WHEN to delegate (the core quality lever of the hybrid tier).
 #[cfg(feature = "litert")]
-const DEEP_WRITE_RULE: &str = "- Long, analytical, comparative or creative answers (reports, comparisons, drafts, syntheses across sources) MUST be delegated to the deep_write tool: task = the complete brief (audience, structure, focus); materials = the relevant excerpts you gathered from response: results. The deep_write result is streamed to the user as your final answer. Short factual replies you write yourself — do NOT delegate those.";
+const DEEP_WRITE_RULE: &str = "- Long, analytical, comparative or creative answers (reports, comparisons, drafts, syntheses across sources) MUST be delegated to the deep_write tool: task = the complete brief (audience, structure, focus). materials = a ONE-LINE pointer naming what to use (e.g. \"the video transcript read this turn\") or omit it — the system AUTOMATICALLY attaches the full tool results you gathered this turn. NEVER paste excerpts, documents, or long text into materials (slow and error-prone). The deep_write result is streamed to the user as your final answer. Short factual replies you write yourself — do NOT delegate those.";
 
 /// Extra persona rule for the office agent: document creation with real
 /// content goes through the draft_document subagent, which composes the
@@ -221,7 +223,7 @@ const OFFICE_PERSONA: &str = "You are kawai's office agent. You read, create, ed
 Rules:\n\
 - Call at most ONE tool per reply, as a single call:<name>{...} line, then stop and wait for the response: message.\n\
 - Factual questions about uploaded documents or imported YouTube videos (numbers, names, dates, invoice codes, table contents): call knowledge_search FIRST — it finds the relevant passages for you.\n\
-- Summarizing a WHOLE document or video: office_list_files to find its id → office_read_document to get the full text → delegate to deep_write with that text as materials. NEVER summarize long content yourself from search excerpts.\n\
+- Summarizing a WHOLE document or video: office_list_files to find its id → office_read_document to get the full text → delegate to deep_write with a clear task brief (materials: one-line pointer or omit — the system attaches the full text automatically). NEVER summarize long content yourself from search excerpts.\n\
 - NEVER say you cannot access a video, transcript, or document: imported content is searchable via knowledge_search. If a search returns no hits, you may say you cannot find the content.\n\
 - Tools address stored files by their file id, never by path. If the user refers to a document and you don't know its id, call office_list_files first.\n\
 - Never invent arguments: if a required input is missing, ask the user.\n\
@@ -318,7 +320,7 @@ impl rig::tool::PortableTool for DeepWrite {
             "type": "object",
             "properties": {
                 "task": { "type": "string", "description": "What to write: the complete brief — audience, structure, focus, approximate length." },
-                "materials": { "type": "string", "description": "Excerpts/facts the writer must use, gathered from response: results. Omit for general-knowledge writing." }
+                "materials": { "type": "string", "description": "Optional one-line pointer (tool results are attached automatically — never paste excerpts or long text). Omit for general-knowledge writing." }
             },
             "required": ["task"]
         })
@@ -368,7 +370,7 @@ You provide the brief, the gathered materials and the filename; the writer compo
             "properties": {
                 "task": { "type": "string", "description": "What to write: audience, structure, focus, approximate length." },
                 "filename": { "type": "string", "description": "Output filename ending in .docx, .xlsx or .pptx, e.g. report.docx" },
-                "materials": { "type": "string", "description": "Excerpts/facts from response: results the document must be grounded in. Omit for general-knowledge documents." }
+                "materials": { "type": "string", "description": "Optional one-line pointer (tool results are attached automatically — never paste excerpts or long text). Omit for general-knowledge documents." }
             },
             "required": ["task", "filename"]
         })
@@ -2194,6 +2196,8 @@ mod tests {
         assert!(out.contains("\"task\""));
         assert!(out.contains("\"materials\""));
         assert!(out.contains("call:"));
+        // Materials stay a one-line pointer — the loop attaches tool results.
+        assert!(out.contains("attached automatically"));
     }
 
     #[cfg(feature = "litert")]
