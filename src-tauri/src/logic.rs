@@ -93,7 +93,7 @@ pub fn resolve_model_path() -> Result<String, String> {
         ))
 }
 
-// Database (local SQLite), notes and chat-session persistence live in `db`; the
+// Database (local SQLite), chat-session persistence lives in `db`; the
 // on-device LLM in `local_llm`; office tooling in `office`; the prompt-based
 // tool-calling agent loop in `agent`; the cloud subagent client (hybrid LLM
 // tier) in `remote`. Re-exported so `logic::X` paths used by the wrappers stay

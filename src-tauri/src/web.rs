@@ -1,6 +1,6 @@
 use crate::auth::{Claims, Verifier};
 use crate::logic::{
-    self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, Note, NoteEvent, UserInfo,
+    self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo,
 };
 use axum::{
     extract::{Json, Request},
@@ -33,15 +33,30 @@ struct SetSessionRequest {
     token: String,
 }
 
-#[derive(Deserialize)]
-struct CreateNoteRequest {
-    body: String,
-}
-
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct CreateChatSessionRequest {
     agent_id: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ListChatSessionsRequest {
+    archived: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameChatSessionRequest {
+    session_id: i64,
+    title: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetChatSessionArchivedRequest {
+    session_id: i64,
+    archived: bool,
 }
 
 #[derive(Deserialize)]
@@ -136,36 +151,6 @@ async fn whoami_handler(Extension(claims): Extension<Claims>) -> Json<UserInfo> 
     Json(logic::whoami(&claims.sub))
 }
 
-/// Protected RPC: create a note scoped to the signed-in user.
-async fn create_note_handler(
-    Extension(claims): Extension<Claims>,
-    Json(req): Json<CreateNoteRequest>,
-) -> Result<Json<Note>, (StatusCode, String)> {
-    logic::create_note(&claims.sub, &req.body)
-        .await
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-}
-
-/// Protected RPC: list the signed-in user's notes.
-async fn list_notes_handler(
-    Extension(claims): Extension<Claims>,
-) -> Result<Json<Vec<Note>>, (StatusCode, String)> {
-    logic::list_notes(&claims.sub)
-        .await
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-}
-
-/// Protected streaming: notes via SSE, same shape as `generate_activity`.
-async fn stream_notes_handler(
-    Extension(claims): Extension<Claims>,
-) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
-    let s =
-        logic::stream_notes(claims.sub).map(|event| Ok::<_, Infallible>(note_event_to_sse(event)));
-    Sse::new(s).keep_alive(KeepAlive::default())
-}
-
 /// Map DbError to an HTTP status: NotFound → 404, everything else 500.
 fn db_status(e: &logic::DbError) -> StatusCode {
     if matches!(e, logic::DbError::NotFound(_)) {
@@ -187,11 +172,37 @@ async fn create_chat_session_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
-/// Protected RPC: list the user's chat sessions, newest first.
+/// Protected RPC: list the user's chat sessions, newest first. Defaults to the
+/// active (non-archived) sidebar list; `{ "archived": true }` for the archive.
+/// The body is optional so an empty POST lists the active sessions.
 async fn list_chat_sessions_handler(
     Extension(claims): Extension<Claims>,
+    body: Option<Json<ListChatSessionsRequest>>,
 ) -> Result<Json<Vec<ChatSession>>, (StatusCode, String)> {
-    logic::list_chat_sessions(&claims.sub)
+    let archived = body.and_then(|Json(req)| req.archived).unwrap_or(false);
+    logic::list_chat_sessions(&claims.sub, archived)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+/// Protected RPC: rename a session (sidebar inline rename).
+async fn rename_chat_session_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<RenameChatSessionRequest>,
+) -> Result<Json<ChatSession>, (StatusCode, String)> {
+    logic::rename_chat_session(&claims.sub, req.session_id, &req.title)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+/// Protected RPC: archive or restore a session.
+async fn set_chat_session_archived_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<SetChatSessionArchivedRequest>,
+) -> Result<Json<ChatSession>, (StatusCode, String)> {
+    logic::set_chat_session_archived(&claims.sub, req.session_id, req.archived)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -239,16 +250,6 @@ async fn generate_session_title_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
-fn note_event_to_sse(event: NoteEvent) -> SseFrame {
-    let name = match &event {
-        NoteEvent::Notes { .. } => "notes",
-        NoteEvent::Finished => "finished",
-        NoteEvent::Error { .. } => "error",
-    };
-    let data = serde_json::to_string(&event).unwrap_or_default();
-    SseFrame::default().event(name).data(data)
-}
-
 /// Protected RPC: load an on-device model (`.litertlm`).
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
@@ -283,7 +284,7 @@ async fn local_load_model_handler(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-/// Protected streaming: on-device chat via SSE, same shape as `stream_notes`.
+/// Protected streaming: on-device chat via SSE.
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
 struct LocalChatRequest {
@@ -726,14 +727,19 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
 
     let protected = Router::new()
         .route("/api/whoami", post(whoami_handler))
-        .route("/api/create_note", post(create_note_handler))
-        .route("/api/list_notes", post(list_notes_handler))
-        .route("/api/stream_notes", post(stream_notes_handler))
         .route(
             "/api/create_chat_session",
             post(create_chat_session_handler),
         )
         .route("/api/list_chat_sessions", post(list_chat_sessions_handler))
+        .route(
+            "/api/rename_chat_session",
+            post(rename_chat_session_handler),
+        )
+        .route(
+            "/api/set_chat_session_archived",
+            post(set_chat_session_archived_handler),
+        )
         .route("/api/list_chat_messages", post(list_chat_messages_handler))
         .route(
             "/api/append_chat_message",

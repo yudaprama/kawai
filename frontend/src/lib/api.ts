@@ -35,6 +35,8 @@ export interface ChatSessionInfo {
   agentId: string;
   title: string | null;
   createdAt: number | null;
+  archived: boolean;
+  archivedAt: number | null;
 }
 
 export interface ChatMessageInfo {

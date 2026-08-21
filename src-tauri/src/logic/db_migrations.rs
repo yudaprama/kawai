@@ -38,6 +38,10 @@ fn migrations() -> Vec<Migration> {
         version: "0003_office_tables",
         sql: include_str!("../../migrations/0003_office_tables.sql"),
     });
+    m.push(Migration {
+        version: "0004_session_archive",
+        sql: include_str!("../../migrations/0004_session_archive.sql"),
+    });
     m
 }
 
@@ -170,10 +174,11 @@ mod tests {
         let mut expected = vec!["0001_baseline", "0002_backfill_untitled_sessions"];
         #[cfg(feature = "office")]
         expected.push("0003_office_tables");
+        expected.push("0004_session_archive");
         assert_eq!(versions, expected);
 
         // Core tables exist.
-        for table in ["notes", "sessions", "messages", "turn_log", "schema_migrations"] {
+        for table in ["sessions", "messages", "turn_log", "schema_migrations"] {
             let mut r = conn
                 .query("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", vec![table])
                 .await

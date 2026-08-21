@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
+import { useAuth } from "./use-auth";
 import {
   call,
   errText,
@@ -7,9 +8,9 @@ import {
   type ChatMessageInfo,
   type ChatSessionInfo,
   type LocalModelInfo,
-  type UserInfo,
 } from "@/lib/api";
 import { streamOperation, type StreamControl } from "@/lib/stream";
+import { showErrorToast } from "@/lib/toast-utils";
 import type {
   ChatStatus,
   ToolUIPart,
@@ -39,6 +40,7 @@ export interface LocalChatState {
   error: string | null;
   stats: string;
   sessions: ChatSessionInfo[];
+  archivedSessions: ChatSessionInfo[];
   sessionId: number | null;
 }
 
@@ -66,8 +68,10 @@ function sessionPeriod(createdAt: number | null): "Today" | "Yesterday" | "Earli
  * @param agent the active catalog entry (from the `list_agents` op). The
  * backend owns agent ids; every agent (with or without tools) chats through
  * `agent_chat` — one code path, backend-side persistence + title generation.
+ * @param userId optional authenticated user id; if provided the auth bootstrap
+ * is skipped and this value is used directly.
  */
-export function useLocalChat(agent: Pick<AgentInfo, "id">) {
+export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | null) {
   const { id: agentId } = agent;
   const [state, setState] = useState<LocalChatState>({
     userId: null,
@@ -82,6 +86,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">) {
     error: null,
     stats: "",
     sessions: [],
+    archivedSessions: [],
     sessionId: null,
   });
 
@@ -92,30 +97,21 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">) {
     setState((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  // ---- Auth bootstrap (mirrors the vanilla app's tryRestoreSession) ----
-  // With the backend dev bypass (KAWAI_AUTH_DEV_USER_ID) any token verifies;
-  // in production this falls through to null until Clerk is wired in.
+  // Use provided userId or run auth bootstrap.
+  const { userId: authUserId, authError } = useAuth();
+
+  const effectiveUserId = userId ?? authUserId;
+
   useEffect(() => {
-    let disposed = false;
-    (async () => {
-      try {
-        const u = await call<UserInfo>("whoami");
-        if (!disposed) patch({ userId: u.userId });
-        return;
-      } catch {
-        // no session yet
-      }
-      try {
-        const u = await call<UserInfo>("set_session", { token: "dev-clerk-unavailable" });
-        if (!disposed) patch({ userId: u.userId });
-      } catch (err) {
-        if (!disposed) patch({ authError: errText(err) });
-      }
-    })();
-    return () => {
-      disposed = true;
-    };
-  }, [patch]);
+    if (effectiveUserId) patch({ userId: effectiveUserId });
+    if (authError) patch({ authError });
+  }, [effectiveUserId, authError]);
+
+  // Refresh auth state when userId changes externally (e.g. dev-bypass toggle).
+  useEffect(() => {
+    if (effectiveUserId) patch({ userId: effectiveUserId });
+    if (authError) patch({ authError });
+  }, [effectiveUserId, authUserId, authError]);
 
   const loadModel = useCallback(async () => {
     setState((prev) =>
@@ -144,8 +140,11 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">) {
 
   const loadSessions = useCallback(async () => {
     try {
-      const sessions = await call<ChatSessionInfo[]>("list_chat_sessions");
-      patch({ sessions });
+      const [sessions, archivedSessions] = await Promise.all([
+        call<ChatSessionInfo[]>("list_chat_sessions", { archived: false }),
+        call<ChatSessionInfo[]>("list_chat_sessions", { archived: true }),
+      ]);
+      patch({ sessions, archivedSessions });
     } catch (err) {
       console.error("[list_chat_sessions]", errText(err));
     }
@@ -169,6 +168,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">) {
         return s.id;
       } catch (err) {
         console.error("[create_chat_session]", errText(err));
+        showErrorToast(`Couldn't start a new chat — ${errText(err)}`);
         return null;
       }
     },
@@ -228,9 +228,71 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">) {
         await call("delete_chat_session", { sessionId });
       } catch (err) {
         console.error("[delete_chat_session]", errText(err));
+        showErrorToast(`Couldn't delete the session — ${errText(err)}`);
         return;
       }
       if (sessionIdRef.current === sessionId) {
+        try {
+          await call("local_llm_reset");
+        } catch (err) {
+          console.error("[local_llm_reset]", errText(err));
+        }
+        sessionIdRef.current = null;
+        patch({ sessionId: null, messages: [], stats: "" });
+      }
+      void loadSessions();
+    },
+    [patch, loadSessions],
+  );
+
+  /** Rename a session (sidebar inline rename). Empty titles are rejected
+   *  server-side; locally we keep the old title on failure. */
+  const renameSession = useCallback(
+    async (sessionId: number, title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) return;
+      const prior = state.sessions.find((s) => s.id === sessionId)?.title ?? null;
+      patch({
+        sessions: state.sessions.map((s) =>
+          s.id === sessionId ? { ...s, title: trimmed } : s,
+        ),
+      });
+      try {
+        const updated = await call<ChatSessionInfo>("rename_chat_session", {
+          sessionId,
+          title: trimmed,
+        });
+        patch({
+          sessions: state.sessions.map((s) => (s.id === sessionId ? updated : s)),
+        });
+      } catch (err) {
+        console.error("[rename_chat_session]", errText(err));
+        showErrorToast(`Couldn't rename the session — ${errText(err)}`);
+        patch({
+          sessions: state.sessions.map((s) =>
+            s.id === sessionId ? { ...s, title: prior } : s,
+          ),
+        });
+      }
+    },
+    [state.sessions, patch],
+  );
+
+  /** Archive or restore a session. Archiving the ACTIVE session starts a
+   *  fresh chat (same behaviour as deleting it); restoring only refetches. */
+  const setSessionArchived = useCallback(
+    async (sessionId: number, archived: boolean) => {
+      try {
+        await call<ChatSessionInfo>("set_chat_session_archived", { sessionId, archived });
+      } catch (err) {
+        console.error("[set_chat_session_archived]", errText(err));
+        showErrorToast(
+          `${archived ? "Couldn't archive" : "Couldn't restore"} the session — ${errText(err)}`,
+        );
+        await loadSessions();
+        return;
+      }
+      if (archived && sessionIdRef.current === sessionId) {
         try {
           await call("local_llm_reset");
         } catch (err) {
@@ -455,6 +517,8 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">) {
     selectSession,
     selectAgent,
     deleteSession,
+    renameSession,
+    setSessionArchived,
     toggleThinking,
     unloadModel,
     reloadModel: loadModel,

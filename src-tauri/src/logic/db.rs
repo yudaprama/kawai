@@ -1,4 +1,4 @@
-//! Database access (local SQLite via libsql) + notes + chat sessions.
+//! Database access (local SQLite via libsql) + chat sessions.
 //!
 //! Desktop MVP: single-device, local SQLite file, no sync.
 //! One data directory per user: `<data_root>/<user_id>/` holds everything the
@@ -117,77 +117,6 @@ fn sanitize_user_dir(user_id: &str) -> String {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Note {
-    pub id: i64,
-    pub body: String,
-    pub created_at: i64,
-}
-
-pub async fn create_note(user_id: &str, body: &str) -> Result<Note, DbError> {
-    let conn = db_connection(user_id).await?;
-    let now = unix_now() as i64;
-    let mut rows = conn
-        .query(
-            "INSERT INTO notes (body, created_at) VALUES (?, ?) \
-             RETURNING id, body, created_at",
-            (body, now),
-        )
-        .await?;
-    let row = rows
-        .next()
-        .await?
-        .ok_or_else(|| DbError::Config("insert returned no row".into()))?;
-    Ok(Note {
-        id: row.get(0)?,
-        body: row.get(1)?,
-        created_at: row.get(2)?,
-    })
-}
-
-pub async fn list_notes(user_id: &str) -> Result<Vec<Note>, DbError> {
-    let conn = db_connection(user_id).await?;
-    let mut rows = conn
-        .query(
-            "SELECT id, body, created_at FROM notes ORDER BY id",
-            (),
-        )
-        .await?;
-    let mut out = Vec::new();
-    while let Some(row) = rows.next().await? {
-        out.push(Note {
-            id: row.get(0)?,
-            body: row.get(1)?,
-            created_at: row.get(2)?,
-        });
-    }
-    Ok(out)
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum NoteEvent {
-    Notes { notes: Vec<Note> },
-    Finished,
-    Error { message: String },
-}
-
-/// Streaming variant of `list_notes`, demonstrating DB + auth + cancellation
-/// flowing through the same streaming pattern as `generate_activity`.
-pub fn stream_notes(user_id: String) -> impl Stream<Item = NoteEvent> {
-    stream! {
-        match list_notes(&user_id).await {
-            Ok(notes) => yield NoteEvent::Notes { notes },
-            Err(e) => {
-                yield NoteEvent::Error { message: e.to_string() };
-                return;
-            }
-        }
-        yield NoteEvent::Finished;
-    }
-}
-
 // ── Chat sessions (agent-ready persistence) ────────────────────────────────
 //
 // Schema is designed for the agent tier (Roadmap 5) from day one: sessions
@@ -211,6 +140,8 @@ pub struct ChatSession {
     pub agent_id: String,
     pub title: String,
     pub created_at: i64,
+    pub archived: bool,
+    pub archived_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -237,7 +168,7 @@ pub async fn create_chat_session(
         .query(
             "INSERT INTO sessions (agent_id, title, created_at) \
              VALUES (?, '', ?) \
-             RETURNING id, agent_id, title, created_at",
+             RETURNING id, agent_id, title, created_at, archived, archived_at",
             (agent, now),
         )
         .await?;
@@ -245,33 +176,80 @@ pub async fn create_chat_session(
         .next()
         .await?
         .ok_or_else(|| DbError::Config("insert returned no row".into()))?;
-    Ok(ChatSession {
-        id: row.get(0)?,
-        agent_id: row.get(1)?,
-        title: row.get(2)?,
-        created_at: row.get(3)?,
-    })
+    Ok(chat_session_row(&row))
 }
 
-/// List the user's chat sessions, newest first (right-sidebar order).
-pub async fn list_chat_sessions(user_id: &str) -> Result<Vec<ChatSession>, DbError> {
+/// List the user's chat sessions, newest first (right-sidebar order). Pass
+/// `archived: false` for the active sidebar list, `true` for the archive view.
+pub async fn list_chat_sessions(
+    user_id: &str,
+    archived: bool,
+) -> Result<Vec<ChatSession>, DbError> {
     let conn = db_connection(user_id).await?;
     let mut rows = conn
         .query(
-            "SELECT id, agent_id, title, created_at FROM sessions ORDER BY id DESC",
-            (),
+            "SELECT id, agent_id, title, created_at, archived, archived_at \
+             FROM sessions WHERE archived = ? ORDER BY id DESC",
+            vec![archived as i64],
         )
         .await?;
     let mut out = Vec::new();
     while let Some(row) = rows.next().await? {
-        out.push(ChatSession {
-            id: row.get(0)?,
-            agent_id: row.get(1)?,
-            title: row.get(2)?,
-            created_at: row.get(3)?,
-        });
+        out.push(chat_session_row(&row));
     }
     Ok(out)
+}
+
+/// Read a `ChatSession` from a row of
+/// `SELECT id, agent_id, title, created_at, archived, archived_at`.
+fn chat_session_row(row: &libsql::Row) -> ChatSession {
+    ChatSession {
+        id: row.get(0).unwrap_or(0),
+        agent_id: row.get(1).unwrap_or_default(),
+        title: row.get(2).unwrap_or_default(),
+        created_at: row.get(3).unwrap_or(0),
+        archived: row.get::<i64>(4).unwrap_or(0) != 0,
+        archived_at: row.get(5).unwrap_or(None),
+    }
+}
+
+/// Rename a session (sidebar inline rename). The trimmed title must be
+/// non-empty; it is capped to `SESSION_TITLE_MAX_CHARS`.
+pub async fn rename_chat_session(
+    user_id: &str,
+    session_id: i64,
+    title: &str,
+) -> Result<ChatSession, DbError> {
+    let title: String = title.trim().chars().take(SESSION_TITLE_MAX_CHARS).collect();
+    if title.is_empty() {
+        return Err(DbError::Config("session title cannot be empty".into()));
+    }
+    let conn = db_connection(user_id).await?;
+    chat_session_owned(&conn, session_id).await?;
+    conn.execute(
+        "UPDATE sessions SET title = ? WHERE id = ?",
+        (title, session_id),
+    )
+    .await?;
+    chat_session_owned(&conn, session_id).await
+}
+
+/// Archive or restore a session. Archiving keeps messages and knowledge
+/// associations intact — the row just drops out of the active sidebar list.
+pub async fn set_chat_session_archived(
+    user_id: &str,
+    session_id: i64,
+    archived: bool,
+) -> Result<ChatSession, DbError> {
+    let conn = db_connection(user_id).await?;
+    chat_session_owned(&conn, session_id).await?;
+    let archived_at = if archived { Some(unix_now() as i64) } else { None };
+    conn.execute(
+        "UPDATE sessions SET archived = ?, archived_at = ? WHERE id = ?",
+        (archived as i64, archived_at, session_id),
+    )
+    .await?;
+    chat_session_owned(&conn, session_id).await
 }
 
 /// Fetch a session, or `NotFound` if the id doesn't exist. (User isolation is
@@ -282,7 +260,7 @@ async fn chat_session_owned(
 ) -> Result<ChatSession, DbError> {
     let mut rows = conn
         .query(
-            "SELECT id, agent_id, title, created_at FROM sessions WHERE id = ?",
+            "SELECT id, agent_id, title, created_at, archived, archived_at FROM sessions WHERE id = ?",
             vec![session_id],
         )
         .await?;
@@ -290,12 +268,7 @@ async fn chat_session_owned(
         .next()
         .await?
         .ok_or_else(|| DbError::NotFound(format!("session {session_id}")))?;
-    Ok(ChatSession {
-        id: row.get(0)?,
-        agent_id: row.get(1)?,
-        title: row.get(2)?,
-        created_at: row.get(3)?,
-    })
+    Ok(chat_session_row(&row))
 }
 
 /// List a session's messages, oldest first. Existence is verified first.

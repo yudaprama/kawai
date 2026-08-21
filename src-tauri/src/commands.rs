@@ -1,6 +1,6 @@
 use crate::auth::{Session, Verifier};
 use crate::logic::{
-    self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, Note, NoteEvent, UserInfo,
+    self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo,
 };
 use futures_util::StreamExt;
 use std::collections::HashMap;
@@ -126,56 +126,6 @@ fn session_user_id(session: &Session) -> Result<String, String> {
         .ok_or_else(|| "not authenticated".to_string())
 }
 
-/// Authenticated RPC: create a note scoped to the signed-in user.
-#[tauri::command]
-pub async fn create_note(body: String, session: State<'_, Session>) -> Result<Note, String> {
-    let user_id = session_user_id(&session)?;
-    logic::create_note(&user_id, &body)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Authenticated RPC: list the signed-in user's notes.
-#[tauri::command]
-pub async fn list_notes(session: State<'_, Session>) -> Result<Vec<Note>, String> {
-    let user_id = session_user_id(&session)?;
-    logic::list_notes(&user_id).await.map_err(|e| e.to_string())
-}
-
-/// Authenticated streaming: same pattern as `generate_activity` (stream_id +
-/// Channel + cancellation registry), but data comes from local SQLite via `user_id`.
-#[tauri::command]
-pub async fn stream_notes(
-    stream_id: String,
-    on_event: Channel<NoteEvent>,
-    registry: State<'_, StreamRegistry>,
-    session: State<'_, Session>,
-) -> Result<(), String> {
-    let user_id = session_user_id(&session)?;
-    // Take an owned clone so the `State` borrow ends before any await.
-    let registry = Arc::clone(&registry);
-
-    let token = CancellationToken::new();
-    registry
-        .lock()
-        .unwrap()
-        .insert(stream_id.clone(), token.clone());
-
-    let mut stream = Box::pin(logic::stream_notes(user_id));
-    loop {
-        tokio::select! {
-            _ = token.cancelled() => break,
-            Some(event) = stream.next() => {
-                on_event.send(event).map_err(|e| e.to_string())?;
-            }
-            else => break,
-        }
-    }
-
-    registry.lock().unwrap().remove(&stream_id);
-    Ok(())
-}
-
 /// Authenticated RPC: start a new chat session (agent-ready schema; MVP uses
 /// the implicit builtin agent when `agentId` is absent).
 #[tauri::command]
@@ -189,11 +139,42 @@ pub async fn create_chat_session(
         .map_err(|e| e.to_string())
 }
 
-/// Authenticated RPC: list the user's chat sessions, newest first.
+/// Authenticated RPC: list the user's chat sessions, newest first. Defaults to
+/// the active (non-archived) sidebar list; pass `archived: true` for the
+/// archive view.
 #[tauri::command]
-pub async fn list_chat_sessions(session: State<'_, Session>) -> Result<Vec<ChatSession>, String> {
+pub async fn list_chat_sessions(
+    archived: Option<bool>,
+    session: State<'_, Session>,
+) -> Result<Vec<ChatSession>, String> {
     let user_id = session_user_id(&session)?;
-    logic::list_chat_sessions(&user_id)
+    logic::list_chat_sessions(&user_id, archived.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: rename a session (sidebar inline rename).
+#[tauri::command]
+pub async fn rename_chat_session(
+    session_id: i64,
+    title: String,
+    session: State<'_, Session>,
+) -> Result<ChatSession, String> {
+    let user_id = session_user_id(&session)?;
+    logic::rename_chat_session(&user_id, session_id, &title)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: archive or restore a session.
+#[tauri::command]
+pub async fn set_chat_session_archived(
+    session_id: i64,
+    archived: bool,
+    session: State<'_, Session>,
+) -> Result<ChatSession, String> {
+    let user_id = session_user_id(&session)?;
+    logic::set_chat_session_archived(&user_id, session_id, archived)
         .await
         .map_err(|e| e.to_string())
 }
@@ -285,7 +266,7 @@ pub async fn local_load_model(
 }
 
 /// Authenticated streaming: on-device chat. Same stream_id + Channel +
-/// cancellation registry pattern as `stream_notes`; tokens come from the
+/// cancellation registry pattern as `generate_activity`; tokens come from the
 /// LiteRT-LM C callback running on the blocking pool.
 #[cfg(feature = "litert")]
 #[tauri::command]

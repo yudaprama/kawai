@@ -97,7 +97,7 @@ commands.rs / web.rs keep working):
 
 ```
 src-tauri/src/logic/mod.rs        # re-exports; greet/whoami/activity stay here
-src-tauri/src/logic/db.rs         # DbError, token mint, notes, chat sessions
+src-tauri/src/logic/db.rs         # DbError, token mint, chat sessions
 src-tauri/src/logic/local_llm.rs  # moved verbatim from `pub mod local_llm`
 src-tauri/src/logic/office.rs     # NEW (Phase 1-2) — see §4-§5
 src-tauri/src/logic/agent.rs      # NEW (Phase 3) — see §6

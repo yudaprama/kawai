@@ -37,7 +37,7 @@ The following are copied from the `web/` SPA and trimmed. Updates from `web/` re
 frontend/
 ├── index.html              # entry point; inline script prevents theme flash (localStorage "kawai-theme")
 ├── src/
-│   ├── main.tsx            # React root + TooltipProvider wrapper
+│   ├── main.tsx            # React root + TooltipProvider + Toaster (sonner)
 │   ├── App.tsx             # main app: three-pane UI (agents rail, chat+canvas, sessions sidebar)
 │   ├── index.css           # Tailwind v4 + shadcn + custom CSS variables ("Hatchet" design tokens)
 │   ├── lib/
@@ -48,6 +48,7 @@ frontend/
 │   │   ├── download.ts     # triggerDownload() — creates and clicks a temp <a>
 │   │   ├── file-types.ts   # fileExtension(), fileKind(), shikiLanguage(), guessMimeType()
 │   │   ├── utils.ts        # cn() (clsx+tailwind-merge), formatSize(), errorMessage(), etc.
+│   │   ├── toast-utils.ts  # showErrorToast() — sonner error toast from an unknown rejection
 │   │   ├── preview-file.ts # useFilePreview() hook — fetches + decodes office store files
 │   │   └── streamdown/     # vendored streaming markdown renderer
 │   ├── hooks/
@@ -56,14 +57,22 @@ frontend/
 │   │   ├── use-streamdown.ts    # streamdown plugins (cjk, code, math, mermaid) + translations
 │   │   ├── use-theme.ts         # dark/light/system theme with localStorage persistence
 │   │   ├── use-copy-button.ts   # copy button with Check/Copy icon swap
+│   │   ├── use-retryable-toast.ts # run a promise; on failure toast with a Retry action
 │   │   └── use-copy-to-clipboard.ts # copy-to-clipboard primitive with timed reset
 │   ├── components/
 │   │   ├── ai-elements/    # vendored chat components (from web/ SPA, trimmed)
 │   │   │   ├── tool-renderers/   # per-domain tool result cards (cards, connector, finance, geo, media, etc.)
 │   │   │   └── ... (conversation, message, tool, prompt-input, code-block, artifact, etc.)
 │   │   ├── ui/             # shadcn primitives (vendored from web/)
+│   │   ├── rename-input.tsx # inline rename field (Enter/blur commit, Escape cancel)
+│   │   ├── error-boundary.tsx # top-level render crash fallback (Try again / Reload app; mirrors to frontend_log)
 │   │   ├── file-icon.tsx   # CDN file-type icons (jsdelivr @lobehub/assets-fileicon)
 │   │   └── file-preview.tsx # dispatches to renderer by file kind (image, video, pdf, text, markdown, fallback)
+│   ├── panels/
+│   │   ├── agents-rail.tsx        # pane 1: agent catalog rail
+│   │   ├── conversation-panel.tsx # pane 2: chat + composer + model status
+│   │   ├── knowledge-panel.tsx    # canvas pane: knowledge base (session/library tabs)
+│   │   └── sessions-panel.tsx     # pane 3: session list — search, inline rename, archive/restore, delete
 │   ├── platform/
 │   │   ├── types.ts        # Platform interface (pickFiles, dictation, screenshots, clipboard, share)
 │   │   ├── index.ts        # platform adapter — browser APIs + Tauri dialog for native file picker
