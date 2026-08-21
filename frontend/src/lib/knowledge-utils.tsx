@@ -212,5 +212,5 @@ export function fileToBase64(file: File): Promise<string> {
       resolve(btoa(binary));
     };
     reader.readAsArrayBuffer(file);
-  );
+});
 }
