@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
@@ -13,7 +14,10 @@ import { knowledgeFileToPreview } from "@/lib/preview-file";
 import { FilePreview } from "@/components/file-preview";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -70,6 +74,8 @@ export default function App() {
   const [linking, setLinking] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<KnowledgeFileInfo | null>(null);
+  const [linkPromptOpen, setLinkPromptOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
   const runWithRetry = useRetryableToast();
 
   useEffect(() => {
@@ -242,13 +248,22 @@ export default function App() {
     setPreviewFile(file);
   }, []);
 
-  const addKnowledgeLink = useCallback(async () => {
-    const url = await platform.promptForUrl("Paste a YouTube video URL");
+  /** Opens the themed URL prompt; the ingest itself runs in submitKnowledgeLink. */
+  const addKnowledgeLink = useCallback(() => {
+    setLinkUrl("");
+    setLinkPromptOpen(true);
+  }, []);
+
+  /** Ingests the URL from the prompt dialog into the knowledge base. */
+  const submitKnowledgeLink = useCallback(async () => {
+    const url = linkUrl.trim();
     if (!url) return;
     if (!isYouTubeUrl(url)) {
       showErrorToast("Only YouTube URLs are supported for now");
+      setLinkPromptOpen(false);
       return;
     }
+    setLinkPromptOpen(false);
     setLinking(true);
     const importVideo = async () => {
       const info = await call<OfficeFileInfo>("knowledge_import_youtube", {
@@ -269,7 +284,7 @@ export default function App() {
     } finally {
       setLinking(false);
     }
-  }, [chat.sessionId, knowledge.refresh, runWithRetry]);
+  }, [chat.sessionId, knowledge.refresh, linkUrl, runWithRetry]);
 
   useEffect(() => {
     void chat.selectAgent();
@@ -346,7 +361,7 @@ export default function App() {
                 <div className="flex items-center gap-1">
                   <Button
                     disabled={linking || importing}
-                    onClick={() => void addKnowledgeLink()}
+                    onClick={addKnowledgeLink}
                     size="xs"
                     title="Ingest a YouTube video transcript into your knowledge base"
                     variant="ghost"
@@ -489,6 +504,42 @@ export default function App() {
           <div className="flex min-h-0 flex-1 flex-col bg-background">
             {previewFile && <FilePreview file={knowledgeFileToPreview(previewFile)} />}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={linkPromptOpen} onOpenChange={setLinkPromptOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add a YouTube link</DialogTitle>
+            <DialogDescription>
+              Paste a YouTube video URL to ingest its transcript into your
+              knowledge base.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            disabled={linking}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !linking) void submitKnowledgeLink();
+            }}
+            placeholder="https://www.youtube.com/watch?v=…"
+            type="url"
+            value={linkUrl}
+          />
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button disabled={linking} variant="outline">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              disabled={linking || !linkUrl.trim()}
+              onClick={() => void submitKnowledgeLink()}
+            >
+              {linking ? <Spinner className="size-3" /> : "Add"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
