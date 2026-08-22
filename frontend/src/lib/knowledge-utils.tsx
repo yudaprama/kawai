@@ -1,9 +1,9 @@
+import { FileIcon } from "@/components/file-icon";
 import { Spinner } from "@/components/ui/spinner";
 import type { KnowledgeFileInfo } from "@/lib/api";
 import {
   CheckIcon,
   EyeIcon,
-  FileTextIcon,
   PlusIcon,
   RotateCcwIcon,
   TrashIcon,
@@ -115,7 +115,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
       {inSessionList ? (
         <CheckIcon className="text-green-500 size-4 shrink-0" />
       ) : (
-        <FileTextIcon className="text-muted-foreground size-4 shrink-0" />
+        <FileIcon name={file.originalName} className="size-4 shrink-0" />
       )}
       <div className="min-w-0 flex-1">
         <button

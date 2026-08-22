@@ -21,7 +21,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FileTextIcon, PlusIcon, VideoIcon } from "lucide-react";
+import { FileIcon } from "@/components/file-icon";
+import { PlusIcon, VideoIcon } from "lucide-react";
 import { AgentsRail, agentPresentation } from "@/panels/agents-rail";
 import { ConversationPanel } from "@/panels/conversation-panel";
 import { SessionsPanel } from "@/panels/sessions-panel";
@@ -394,7 +395,7 @@ export default function App() {
                 <div className="p-3 pt-5">
                   {knowledge.unavailable ? (
                     <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-                      <FileTextIcon className="text-muted-foreground/40 mb-3 size-5" />
+                      <FileIcon name="file" className="text-muted-foreground/40 mb-3 size-5" />
                       <p className="text-muted-foreground text-sm">Knowledge store unavailable</p>
                       <p className="text-muted-foreground/70 mt-1 text-xs">
                         The office feature isn&apos;t enabled in this build

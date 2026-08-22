@@ -12,7 +12,6 @@ import {
 import { cn } from "@/lib/utils";
 import { useCopyButton } from "@/hooks/use-copy-button";
 import {
-  FileIcon,
   GitCommitIcon,
   MinusIcon,
   PlusIcon,
@@ -324,18 +323,6 @@ export const CommitFileStatus = ({
   >
     {children ?? fileStatusLabels[status]}
   </span>
-);
-
-export type CommitFileIconProps = ComponentProps<typeof FileIcon>;
-
-export const CommitFileIcon = ({
-  className,
-  ...props
-}: CommitFileIconProps) => (
-  <FileIcon
-    className={cn("size-3.5 shrink-0 text-muted-foreground", className)}
-    {...props}
-  />
 );
 
 export type CommitFilePathProps = HTMLAttributes<HTMLSpanElement>;

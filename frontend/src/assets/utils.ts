@@ -45,36 +45,4 @@ export function getIconForDirectoryPath(path: string) {
   return getIconNameForDirectoryName(dirName);
 }
 
-export function getIconUrlByName(iconName: string, iconsUrl: string, open?: boolean): string {
-  return `${iconsUrl}/${iconName.toString()}${open ? '-open' : ''}.svg`;
-}
 
-export function getIconUrlForFilePath({
-  path,
-  iconsUrl,
-  fallbackUnknownType,
-}: {
-  fallbackUnknownType: boolean;
-  iconsUrl: string;
-  path: string;
-}): string {
-  const iconName = getIconForFilePath(path);
-  if (fallbackUnknownType && iconName === 'file') return '';
-  return getIconUrlByName(iconName, iconsUrl);
-}
-
-export function getIconUrlForDirectoryPath({
-  path,
-  iconsUrl,
-  open,
-  fallbackUnknownType,
-}: {
-  fallbackUnknownType: boolean;
-  iconsUrl: string;
-  open?: boolean;
-  path: string;
-}): string {
-  const iconName = getIconForDirectoryPath(path);
-  if (fallbackUnknownType && iconName === 'folder') return '';
-  return getIconUrlByName(iconName, iconsUrl, open);
-}

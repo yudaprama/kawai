@@ -7,10 +7,10 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { FileIcon } from "@/components/file-icon";
 import { cn } from "@/lib/utils";
 import {
   ChevronRightIcon,
-  FileIcon,
   FolderIcon,
   FolderOpenIcon,
 } from "lucide-react";
@@ -274,7 +274,7 @@ export const FileTreeFile = ({
             {/* Spacer for alignment */}
             <span className="size-4 shrink-0" />
             <FileTreeIcon>
-              {icon ?? <FileIcon className="size-4 text-muted-foreground" />}
+              {icon ?? <FileIcon name={name} className="size-4" />}
             </FileTreeIcon>
             <FileTreeName>{name}</FileTreeName>
           </>
