@@ -100,9 +100,54 @@ const SCENARIOS: &[Scenario] = &[
         &[("query", "re:late|fee|invoice")]),
 ];
 
+/// Filler tools for the TOOL_INFLATE=N experiment: realistic names/descriptions
+/// modeled on the rig-components weather/finance/news/entertainment categories.
+/// Measures how manifest size affects selection accuracy + latency on E4B.
+const FILLER_TOOLS: &str = r#"[
+  {"type":"function","function":{"name":"weather_get_forecast","description":"Get the weather forecast for a city for up to 7 days.","parameters":{"type":"object","properties":{"city":{"type":"string","description":"City name"},"days":{"type":"integer","description":"Number of forecast days"}},"required":["city"]}}},
+  {"type":"function","function":{"name":"weather_get_current","description":"Get current weather conditions for a city.","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}},
+  {"type":"function","function":{"name":"weather_get_alerts","description":"Get active weather alerts for a region.","parameters":{"type":"object","properties":{"region":{"type":"string"}},"required":["region"]}}},
+  {"type":"function","function":{"name":"finance_get_quote","description":"Get the latest stock quote for a ticker symbol.","parameters":{"type":"object","properties":{"symbol":{"type":"string","description":"Ticker symbol, e.g. AAPL"}},"required":["symbol"]}}},
+  {"type":"function","function":{"name":"finance_get_income_statement","description":"Get the annual income statement for a company.","parameters":{"type":"object","properties":{"symbol":{"type":"string"},"years":{"type":"integer"}},"required":["symbol"]}}},
+  {"type":"function","function":{"name":"finance_search_tickers","description":"Search for ticker symbols by company name.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}},
+  {"type":"function","function":{"name":"finance_get_exchange_rate","description":"Get the exchange rate between two currencies.","parameters":{"type":"object","properties":{"from":{"type":"string"},"to":{"type":"string"}},"required":["from","to"]}}},
+  {"type":"function","function":{"name":"news_search","description":"Search recent news articles by keyword.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}},
+  {"type":"function","function":{"name":"news_get_top_headlines","description":"Get the current top headlines for a category.","parameters":{"type":"object","properties":{"category":{"type":"string","enum":["business","technology","sports","world"]}},"required":["category"]}}},
+  {"type":"function","function":{"name":"entertainment_search_movies","description":"Search for movies by title.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}},
+  {"type":"function","function":{"name":"entertainment_get_movie_detail","description":"Get details for one movie.","parameters":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}}},
+  {"type":"function","function":{"name":"geospace_get_country_info","description":"Get facts about a country.","parameters":{"type":"object","properties":{"country":{"type":"string"}},"required":["country"]}}},
+  {"type":"function","function":{"name":"sports_get_scores","description":"Get live scores for a sports league.","parameters":{"type":"object","properties":{"league":{"type":"string"}},"required":["league"]}}},
+  {"type":"function","function":{"name":"utility_calculate","description":"Evaluate a mathematical expression.","parameters":{"type":"object","properties":{"expression":{"type":"string"}},"required":["expression"]}}},
+  {"type":"function","function":{"name":"utility_define_word","description":"Get the dictionary definition of a word.","parameters":{"type":"object","properties":{"word":{"type":"string"}},"required":["word"]}}},
+  {"type":"function","function":{"name":"browser_markdown_extract","description":"Fetch a web page and return its content as markdown.","parameters":{"type":"object","properties":{"url":{"type":"string","description":"Full URL including https://"}},"required":["url"]}}},
+  {"type":"function","function":{"name":"browser_links_extract","description":"Extract all links from a web page.","parameters":{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}}},
+  {"type":"function","function":{"name":"browser_json_extract","description":"Fetch a JSON API endpoint and return the parsed payload.","parameters":{"type":"object","properties":{"url":{"type":"string"}},"required":["url"]}}},
+  {"type":"function","function":{"name":"knowledge_search_papers","description":"Search academic papers by keyword.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}},
+  {"type":"function","function":{"name":"gaming_get_game_info","description":"Get details about a video game.","parameters":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}}},
+  {"type":"function","function":{"name":"food_search_recipes","description":"Search recipes by dish name or ingredient.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}},
+  {"type":"function","function":{"name":"religion_get_verse","description":"Look up a verse by reference.","parameters":{"type":"object","properties":{"reference":{"type":"string"}},"required":["reference"]}}},
+  {"type":"function","function":{"name":"geospace_get_timezone","description":"Get the current time and timezone for a city.","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}},
+  {"type":"function","function":{"name":"news_get_sources","description":"List available news sources.","parameters":{"type":"object","properties":{},"required":[]}}},
+  {"type":"function","function":{"name":"finance_get_market_overview","description":"Get major indices and market summary.","parameters":{"type":"object","properties":{},"required":[]}}}
+]"#;
+
 fn prompt_for(message: &str) -> String {
+    let inflate: usize = std::env::var("TOOL_INFLATE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let tools = if inflate > 0 {
+        let fillers: Vec<Value> = serde_json::from_str(FILLER_TOOLS).unwrap();
+        let take: Vec<&Value> = fillers.iter().take(inflate.min(fillers.len())).collect();
+        let base: Vec<Value> = serde_json::from_str(TOOLS).unwrap();
+        let all: Vec<&Value> = base.iter().chain(take.iter().copied()).collect();
+        serde_json::to_string(&all).unwrap()
+    } else {
+        TOOLS.to_string()
+    };
+    println!("manifest tools: {}", serde_json::from_str::<Vec<Value>>(&tools).unwrap().len());
     format!(
-        "<agent_context>\n{SYSTEM}\nAvailable tools (JSON schemas):\n{TOOLS}\n\n\
+        "<agent_context>\n{SYSTEM}\nAvailable tools (JSON schemas):\n{tools}\n\n\
          To call a tool, reply with exactly ONE line in this format:\n\
          call:<name>{{\"arg\": \"value\", ...}}\n\
          Supply exactly the parameters listed for that tool (omit optional ones). After the call: line, STOP.\n\
@@ -165,17 +210,30 @@ fn check_asserts(args: &Value, asserts: &[(&str, &str)]) -> Result<(), String> {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    let model = std::env::args()
-        .nth(1)
-        .expect("usage: agent_eval <model.litertlm>");
+    let mut args = std::env::args().skip(1);
+    let model = args.next().expect("usage: agent_eval <model.litertlm> [report.md]");
+    // Optional second arg: write a markdown report (consumed by CI job summary
+    // + artifact). Env EVAL_MIN_PASS (default: all scenarios) sets the gate —
+    // exit code 1 below it, so CI fails on regressions.
+    let report_path = args.next();
+    let min_pass: usize = std::env::var("EVAL_MIN_PASS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(usize::MAX);
+
+    let t_load = std::time::Instant::now();
     let info = local_llm::load_model("eval", &model, false, false, 1, None)
         .await
         .expect("load_model");
-    println!("model {} [{}]\n", info.model_path, info.backend);
+    let load_s = t_load.elapsed().as_secs_f64();
+    let tool_count = serde_json::from_str::<Vec<Value>>(TOOLS).unwrap().len();
+    println!("model {} [{}] (load {load_s:.1}s)\n", info.model_path, info.backend);
 
     let mut pass = 0usize;
+    let mut rows: Vec<(String, bool, String, f64)> = Vec::new();
     for Scenario(id, prompt, want_tool, asserts) in SCENARIOS {
         let _ = local_llm::reset_conversation("eval").await;
+        let t = std::time::Instant::now();
         let mut text = String::new();
         let mut stream = Box::pin(local_llm::local_chat("eval".into(), prompt_for(prompt), None, None));
         while let Some(ev) = stream.next().await {
@@ -189,6 +247,7 @@ async fn main() {
                 _ => {}
             }
         }
+        let secs = t.elapsed().as_secs_f64();
         let call = parse_call(&text);
         let (ok, note) = match (want_tool, &call) {
             (None, Some(c)) => (
@@ -215,7 +274,44 @@ async fn main() {
         if ok {
             pass += 1;
         }
-        println!("{} {id:18} {note}", if ok { "PASS" } else { "FAIL" });
+        println!("{} {id:18} {note} ({secs:.1}s)", if ok { "PASS" } else { "FAIL" });
+        rows.push((id.to_string(), ok, note, secs));
     }
-    println!("\n== {pass}/{} pass ({:.0}%)", SCENARIOS.len(), 100.0 * pass as f64 / SCENARIOS.len() as f64);
+    let total = SCENARIOS.len();
+    let pct = 100.0 * pass as f64 / total as f64;
+    let min_pass = min_pass.min(total);
+    let gate_ok = pass >= min_pass;
+    println!(
+        "\n== {pass}/{total} pass ({pct:.0}%) — gate {min_pass}/{total} {}",
+        if gate_ok { "OK" } else { "FAILED" }
+    );
+
+    if let Some(path) = report_path {
+        let mut md = String::new();
+        md.push_str("# agent_eval — orchestration quality report\n\n");
+        md.push_str(&format!(
+            "- **date**: {} (unix)\n- **model**: `{}` [{}]\n- **load time**: {load_s:.1}s\n- **manifest tools**: {tool_count} (E4B ceiling: 30 — see PLAN L14)\n- **score**: **{pass}/{total} ({pct:.0}%)**\n- **gate**: {min_pass}/{total} — {}\n\n",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+            info.model_path,
+            info.backend,
+            if gate_ok { "PASS" } else { "FAIL" },
+        ));
+        md.push_str("| scenario | status | note | time |\n|---|---|---|---|\n");
+        for (id, ok, note, secs) in &rows {
+            md.push_str(&format!(
+                "| {id} | {} | {} | {secs:.1}s |\n",
+                if *ok { "✅" } else { "❌" },
+                note.replace('|', "\\|")
+            ));
+        }
+        std::fs::write(&path, md).expect("write report");
+        println!("report written to {path}");
+    }
+    if !gate_ok {
+        eprintln!("EVAL FAILED: {pass}/{total} below gate {min_pass}/{total}");
+        std::process::exit(1);
+    }
 }

@@ -205,3 +205,46 @@ jobs:
           LLVM_PROFILE_FILE: /dev/null
           KAWAI_DATA_DIR: /tmp/kawai-ci
         run: cargo run --example draft_smoke --features litert,office
+
+      # ── Smoke 4: orchestration-quality gate (PLAN H1/L12). 20 office
+      #    scenarios against E4B, scored on tool selection + arguments.
+      #    Gate 19/20 (temp=1.0 sampling allows a one-scenario flake; a real
+      #    regression fails 2+). Report lands in the job summary + artifact.
+      #    K/V budget 8192: eval prompts are ~2k tokens, this halves peak RSS
+      #    vs the 16384 desktop default (runner has 14GB).
+      - name: Cache E4B eval model
+        id: eval-model
+        uses: actions/cache@v4
+        with:
+          path: eval-model
+          key: gemma-4-E4B-it-litertlm
+
+      - name: Download E4B eval model
+        if: steps.eval-model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p eval-model
+          curl -fL --retry 3 -o eval-model/gemma-4-E4B-it.litertlm \
+            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
+
+      - name: agent_eval (orchestration quality gate + report)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: /tmp/kawai-ci
+          KAWAI_LLM_MAX_TOKENS: "8192"
+          EVAL_MIN_PASS: "19"
+        run: |
+          cargo run --release --example agent_eval --features litert,office -- \
+            ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
+            ${{ github.workspace }}/agent-eval-report.md
+          cat ${{ github.workspace }}/agent-eval-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-report
+          path: agent-eval-report.md
+          if-no-files-found: warn
