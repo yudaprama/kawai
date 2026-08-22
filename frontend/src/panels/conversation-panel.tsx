@@ -1,8 +1,9 @@
-import { useCallback, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
+  ConversationVirtualizedContent,
 } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
@@ -66,8 +67,8 @@ function MessagePartView({ message }: { message: UIMessage }) {
           <Tool key={part.toolCallId}>
             <ToolHeader
               state={part.state}
-              title={part.type.split("-").slice(1).join("-")}
               type={part.type}
+              input={part.input}
             />
             <ToolContent>
               {part.input != null && <ToolInput input={part.input} />}
@@ -334,6 +335,15 @@ function ChatComposerInner({
 
 export type { AgentPresentation };
 
+const VIRTUALIZE_THRESHOLD = 50; // mirrors desktop/src/components/ProgressiveMessageList.tsx:88 showLoadingThreshold
+
+function estimateMessageSize(msg: UIMessage): number {
+  const textLen = msg.parts.find((p) => p.type === "text")?.text.length ?? 0;
+  const toolCount = msg.parts.filter((p) => p.type.startsWith("tool-")).length;
+  // base 80 + ~24px per 80 chars + 80 per tool card
+  return 80 + Math.ceil(textLen / 80) * 24 + toolCount * 82;
+}
+
 export function ConversationPanel({
   agent,
   presentation,
@@ -375,6 +385,22 @@ export function ConversationPanel({
   onImageToKnowledge: (dataUrl: string, name: string) => void;
   canvas: React.ReactNode;
 }) {
+  const [forceAll, setForceAll] = useState(false);
+  // P2: mirror desktop ProgressiveMessageList Ctrl+F → render all for browser find
+  useEffect(() => {
+    if (messages.length <= VIRTUALIZE_THRESHOLD || forceAll) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const isMac = navigator.platform.toUpperCase().includes("MAC");
+      const isSearch = (isMac ? e.metaKey : e.ctrlKey) && e.key.toLowerCase() === "f";
+      if (isSearch) setForceAll(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [messages.length, forceAll]);
+  // reset when session changes / length drops
+  useEffect(() => {
+    if (messages.length <= VIRTUALIZE_THRESHOLD && forceAll) setForceAll(false);
+  }, [messages.length, forceAll]);
   return (
     <main className="bg-background flex min-w-0 flex-1 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2.5 border-b px-4">
@@ -446,11 +472,26 @@ export function ConversationPanel({
               </div>
             ) : (
               <Conversation className="h-full">
-                <ConversationContent className="mx-auto max-w-2xl px-4 pt-6 pb-4">
-                  {messages.map((message) => (
-                    <MessagePartView key={message.id} message={message} />
-                  ))}
-                </ConversationContent>
+                {messages.length > VIRTUALIZE_THRESHOLD &&
+                !forceAll &&
+                status !== "streaming" &&
+                status !== "submitted" ? (
+                  <ConversationVirtualizedContent
+                    items={messages}
+                    estimateSize={estimateMessageSize}
+                    getItemKey={(m) => m.id}
+                    overscan={8}
+                    className="mx-auto max-w-2xl px-4 pt-6 pb-4"
+                  >
+                    {(message) => <MessagePartView message={message} />}
+                  </ConversationVirtualizedContent>
+                ) : (
+                  <ConversationContent className="mx-auto max-w-2xl px-4 pt-6 pb-4">
+                    {messages.map((message) => (
+                      <MessagePartView key={message.id} message={message} />
+                    ))}
+                  </ConversationContent>
+                )}
                 <ConversationScrollButton />
               </Conversation>
             )}

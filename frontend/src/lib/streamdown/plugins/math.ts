@@ -49,9 +49,14 @@ export function createMathPlugin(options: MathPluginOptions = {}): MathPlugin {
     { singleDollarTextMath: options.singleDollarTextMath ?? false },
   ];
 
+  // P1-5: mirror desktop/src/components/MarkdownContent.tsx:238 — never throw on bad math
   const rehypeKatexPlugin: Pluggable = [
     rehypeKatex,
-    { errorColor: options.errorColor ?? "var(--color-muted-foreground)" },
+    {
+      errorColor: options.errorColor ?? "var(--color-muted-foreground)",
+      throwOnError: false,
+      strict: false,
+    },
   ];
 
   return {

@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 import { WithTooltip } from "@/components/ai-elements/with-tooltip";
 import { useStreamdownConfig } from "@/hooks/use-streamdown";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { wrapHTMLInCodeBlock } from "@/lib/html-security";
+import { customUrlTransform } from "@/lib/url-security";
 import {
   createContext,
   memo,
@@ -302,8 +304,35 @@ export const MessageBranchPage = ({
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => {
+  ({ className, children, urlTransform, ...props }: MessageResponseProps) => {
     const { plugins, translations, mermaid } = useStreamdownConfig();
+
+    // P1-5: harden — mirrors desktop/src/components/MarkdownContent.tsx:188 + 168
+    const safeChildren =
+      typeof children === "string"
+        ? (() => {
+            try {
+              const out = wrapHTMLInCodeBlock(children);
+              if (out.length > 10000) {
+                console.log(`Large markdown block detected (${out.length} chars)`);
+              }
+              return out;
+            } catch {
+              return children;
+            }
+          })()
+        : children;
+
+    // desktop allows all except BLOCKED_PROTOCOLS (desktop/src/utils/urlSecurity.ts:7)
+    // Streamdown harden defaults to ["*"]; we filter via urlTransform instead
+    const urlTransformFn =
+      urlTransform ??
+      ((url: string) => {
+        const transformed = customUrlTransform(url);
+        // Streamdown expects null/undefined to drop href; "" is treated as empty, so return undefined
+        return transformed === "" ? undefined : transformed;
+      });
+
     return (
       <Streamdown
         className={cn(
@@ -315,8 +344,11 @@ export const MessageResponse = memo(
         mermaid={mermaid}
         caret="block"
         dir="auto"
+        urlTransform={urlTransformFn}
         {...props}
-      />
+      >
+        {safeChildren}
+      </Streamdown>
     );
   },
   (prevProps, nextProps) =>
