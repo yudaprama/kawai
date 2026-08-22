@@ -1,15 +1,18 @@
 name: ci
 
 # Regression gates (AGENTS.md "Verify before considering work done" + Roadmap
-# MVP 3): unit tests, the on-device streaming smoke (small 270M fixture), and
-# the hybrid-tier cloud smokes — on every push to main and every PR.
+# MVP 3): unit tests, the on-device streaming smoke (small 270M fixture), the
+# hybrid-tier cloud smokes, and agent_eval (E4B orchestration-quality gate) —
+# on every push to main and every PR. agent_eval and the litert-dependent
+# smokes run only on macOS: the litert-lm C engine is built in CI for
+# macos_arm64 only, and the eval must measure target-hardware behavior.
 #
 # release.yml (app bundles) stays separate; this workflow gates merges.
 # NOTE: every push to main (including the release bot's bump commits) runs
 # here too — the bazel cache makes that cheap after the first run.
 #
 # agent_smoke (the full local→cloud turn) is intentionally NOT run here: it
-# needs the GB-scale E4B model and ~10 min of CPU per turn. Run it manually
+# needs interactive cloud-side state beyond the smokes. Run it manually
 # (see its header comment) before tagging a release.
 
 on:
@@ -164,20 +167,22 @@ jobs:
         run: cargo test --features litert,office --lib
 
       # ── Smoke 1: on-device streaming (Roadmap MVP 3). Small public fixture:
-      #    litert-community/gemma-3-270m-it · q8 · 304 MB. Cached between runs.
+      #    litert-community/LFM2.5-1.2B-Instruct · int8 · 1.25 GB. The previous
+      #    fixture (gemma-3-270m-it q8) went gated=auto on HF — anonymous CI
+      #    downloads 401. Cached between runs.
       - name: Cache smoke model fixture
         id: model
         uses: actions/cache@v4
         with:
           path: smoke-model
-          key: gemma3-270m-it-q8-litertlm
+          key: lfm25-1p2b-instruct-int8-litertlm
 
       - name: Download smoke model fixture
         if: steps.model.outputs.cache-hit != 'true'
         run: |
           mkdir -p smoke-model
-          curl -fL --retry 3 -o smoke-model/gemma3-270m-it-q8.litertlm \
-            https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.litertlm
+          curl -fL --retry 3 -o smoke-model/lfm2.5-1.2b-instruct-int8.litertlm \
+            https://huggingface.co/litert-community/LFM2.5-1.2B-Instruct/resolve/main/LFM2.5-1.2B-Instruct_int8.litertlm
 
       - name: local_llm_smoke (on-device streaming regression)
         working-directory: src-tauri
@@ -185,7 +190,7 @@ jobs:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-        run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/gemma3-270m-it-q8.litertlm
+        run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/lfm2.5-1.2b-instruct-int8.litertlm
 
       # ── Smoke 2 + 3: hybrid cloud tier. The zai key comes from the compiled
       #    kawai-vault constants (cargo git dep — authenticated via the PAT
