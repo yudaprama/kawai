@@ -85,8 +85,10 @@ jobs:
       - name: Install JS deps
         run: bun install
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
-        run: git submodule update --init local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+      # Recursive: the litert feature runs bindgen, which parses the C headers
+      # of the NESTED submodule cognee-litert-lm/vendor/LiteRT-LM.
+      - name: Init submodules (recursive — bindgen needs nested LiteRT-LM headers)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
 
       - uses: dtolnay/rust-toolchain@stable
 
