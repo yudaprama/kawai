@@ -13,7 +13,7 @@
   ],
   "scope": {
     "opener:allow-open-path": [
-      { "path": "$APPDATA/pro.kawai.app/**" }
+      { "path": "$APPDATA/**" }
     ]
   }
 }
