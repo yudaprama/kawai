@@ -10,5 +10,10 @@
     "opener:default",
     "opener:allow-open-path",
     "dialog:default"
-  ]
+  ],
+  "scope": {
+    "opener:allow-open-path": [
+      { "path": "$APPDATA/pro.kawai.app/**" }
+    ]
+  }
 }
