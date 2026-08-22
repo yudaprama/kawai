@@ -50,6 +50,10 @@ jobs:
       - name: Init submodules (manifest only)
         run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
 
+      - name: Force update submodules to latest remote
+        run: |
+          git submodule foreach --recursive 'git remote update --prune && git checkout master && git pull'
+
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -87,6 +91,10 @@ jobs:
 
       - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide + pdf_oxide)
         run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
+
+      - name: Force update submodules to latest remote
+        run: |
+          git submodule foreach --recursive 'git remote update --prune && git checkout master && git pull'
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -139,6 +147,10 @@ jobs:
 
       - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
         run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
+
+      - name: Force update submodules to latest remote
+        run: |
+          git submodule foreach --recursive 'git remote update --prune && git checkout master && git pull'
 
       - name: Build litert-lm dylib
         run: |
