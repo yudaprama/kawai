@@ -23,7 +23,7 @@ use serde::Serialize;
 
 pub use error::OfficeToolError;
 pub use ooxml::read_document;
-pub use store::{export_file, import_base64, import_bytes, import_path, list_files, read_file_b64};
+pub use store::{export_file, file_path, import_base64, import_bytes, import_path, list_files, read_file_b64};
 pub use store::{OfficeFile, ReadFileResult, ReadDocumentResult};
 
 // ── capability probe ────────────────────────────────────────────────────────
@@ -155,6 +155,8 @@ pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
     // Document info + edit are pure-Rust via office_oxide — always available.
     set.add_tool(tools::DocumentInfoTool(t.user_id.clone()));
     set.add_tool(tools::EditDocumentTool(t.user_id.clone()));
+    // Edit undo — swaps the stored file with its pre-edit snapshot.
+    set.add_tool(tools::RestoreBackupTool(t.user_id.clone()));
     // PDF tools are in-process (pdf_oxide) — always available.
     set.add_tool(tools::PdfExtractTextTool(t.user_id.clone()));
     set.add_tool(tools::PdfSearchTextTool(t.user_id.clone()));

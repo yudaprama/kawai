@@ -246,7 +246,58 @@ pub fn export_file(user_id: &str, file_id: &str, dest: Option<&str>) -> Result<S
 pub fn delete_file(user_id: &str, stored: &Path, file_id: &str) -> Result<(), String> {
     std::fs::remove_file(stored).map_err(|e| format!("delete {}: {e}", stored.display()))?;
     let _ = std::fs::remove_file(meta_path(&user_dir(user_id)?, file_id));
+    // The pre-edit snapshot dies with the document — leaving it behind would
+    // keep data the user just asked to remove.
+    let _ = std::fs::remove_file(backup_path(stored));
     Ok(())
+}
+
+/// Path of a stored file's pre-edit snapshot (`backups/<name>.bak`). The
+/// single source of the naming rule — `edit_document` writes it, `delete_file`
+/// removes it. One slot per document (each edit overwrites).
+pub(crate) fn backup_path(stored: &Path) -> PathBuf {
+    let name = stored
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    stored
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("backups")
+        .join(format!("{name}.bak"))
+}
+
+/// Undo the last edit: swap the stored file with its `backups/` snapshot.
+/// Swap (not one-shot) semantics — the current (edited) content moves into
+/// the backup slot, so a second restore puts it back (undo-undo = redo).
+/// Errors when the file has no snapshot (never edited).
+pub fn restore_backup(user_id: &str, file_id: &str) -> Result<OfficeFile, String> {
+    let (stored, mut info) = resolve(user_id, file_id)?;
+    let backup = backup_path(&stored);
+    if !backup.exists() {
+        return Err(format!(
+            "no backup for this file (it has never been edited)"
+        ));
+    }
+    // Park the current (edited) content, move the snapshot in, then let the
+    // parked copy become the new snapshot — the swap.
+    let parked = stored.with_extension("restore.tmp");
+    std::fs::copy(&stored, &parked).map_err(|e| format!("park current content: {e}"))?;
+    if std::fs::rename(&backup, &stored).is_err() {
+        std::fs::copy(&backup, &stored)
+            .map_err(|e| format!("restore {}: {e}", stored.display()))?;
+        let _ = std::fs::remove_file(&backup);
+    }
+    if std::fs::rename(&parked, &backup).is_err() {
+        std::fs::copy(&parked, &backup).map_err(|e| format!("park to backup: {e}"))?;
+        let _ = std::fs::remove_file(&parked);
+    }
+    info.bytes = std::fs::metadata(&stored)
+        .map(|m| m.len())
+        .unwrap_or(info.bytes);
+    let dir = user_dir(user_id)?;
+    write_meta(&dir, &info)?;
+    Ok(info)
 }
 
 pub(crate) fn replace_stored(user_id: &str, file_id: &str, tmp: &Path) -> Result<(), String> {
@@ -314,6 +365,12 @@ pub fn read_file_b64(user_id: &str, file_id: &str) -> Result<ReadFileResult, Str
         mime,
         data_base64: base64::engine::general_purpose::STANDARD.encode(&bytes),
     })
+}
+
+/// Absolute on-disk path of a stored file (desktop "open in OS viewer").
+pub fn file_path(user_id: &str, file_id: &str) -> Result<String, String> {
+    let (path, _) = resolve(user_id, file_id)?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 #[cfg(test)]
@@ -386,6 +443,33 @@ mod tests {
         let exported = export_file(user, &f.id, Some(dest.to_str().unwrap())).expect("export");
         assert!(exported.contains("copy.docx"));
         assert!(dest.is_file());
+    }
+
+    #[test]
+    fn restore_backup_swaps_and_requires_snapshot() {
+        let _lock = test_root("restore");
+        let user = "restore_user";
+
+        // Never edited → restore must fail.
+        let f = import_bytes(user, "Doc.md", b"original").expect("import");
+        assert!(restore_backup(user, &f.id).is_err());
+
+        // Simulate an edit: snapshot the original, then change the stored file.
+        let (stored, _) = resolve(user, &f.id).expect("resolve");
+        let bak = backup_path(&stored);
+        std::fs::create_dir_all(bak.parent().unwrap()).unwrap();
+        std::fs::copy(&stored, &bak).unwrap();
+        std::fs::write(&stored, b"edited").unwrap();
+
+        // Undo #1: content back to the original; the edited text is parked.
+        restore_backup(user, &f.id).expect("restore 1");
+        assert_eq!(std::fs::read(&stored).unwrap(), b"original");
+        assert_eq!(std::fs::read(&bak).unwrap(), b"edited");
+
+        // Undo #2 (redo): swap back.
+        restore_backup(user, &f.id).expect("restore 2");
+        assert_eq!(std::fs::read(&stored).unwrap(), b"edited");
+        assert_eq!(std::fs::read(&bak).unwrap(), b"original");
     }
 
     #[test]

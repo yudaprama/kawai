@@ -526,6 +526,18 @@ pub async fn office_delete_file(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: undo the last edit — swap the stored file with its
+/// pre-edit snapshot (second call swaps back).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub fn office_restore_backup(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::office::OfficeFile, String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::store::restore_backup(&user_id, &file_id).map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: export a stored file to the filesystem.
 #[cfg(feature = "office")]
 #[tauri::command]
@@ -551,6 +563,18 @@ pub fn office_read_file(
     logic::office::read_file_b64(&user_id, &file_id)
 }
 
+/// Authenticated RPC: resolve a stored file's absolute on-disk path so the
+/// desktop client can open it in the OS default viewer (Tauri `opener`).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub fn tauri_open_file(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::file_path(&user_id, &file_id)
+}
+
 /// Authenticated RPC: which office engines are available on this host.
 #[cfg(feature = "office")]
 #[tauri::command]
@@ -571,6 +595,7 @@ pub async fn agent_chat(
     agent_id: String,
     session_id: Option<i64>,
     message: String,
+    file_ids: Option<Vec<String>>,
     stream_id: String,
     on_event: Channel<logic::agent::AgentChatEvent>,
     registry: State<'_, StreamRegistry>,
@@ -586,7 +611,11 @@ pub async fn agent_chat(
         .insert(stream_id.clone(), token.clone());
 
     let mut stream = Box::pin(logic::agent::agent_chat(
-        user_id, agent_id, session_id, message,
+        user_id,
+        agent_id,
+        session_id,
+        message,
+        file_ids.unwrap_or_default(),
     ));
     loop {
         tokio::select! {

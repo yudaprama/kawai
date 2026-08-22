@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { BundledLanguage } from "shiki";
-import { Download, FileWarning } from "lucide-react";
+import { Download, ExternalLink, FileWarning } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import { MessageResponse } from "@/components/ai-elements/message";
-import { errText } from "@/lib/api";
+import { errText, tauriOpenFile } from "@/lib/api";
 import { fileKind, shikiLanguage, type FileKind } from "@/lib/file-types";
 import { useFilePreview, type PreviewFile } from "@/lib/preview-file";
+import { platform, runningInTauri } from "@/platform";
 
 const FALLBACK_REASON: Partial<Record<FileKind, string>> = {
   "video-fallback": "This video format can't be previewed.",
@@ -79,6 +80,9 @@ function VideoPreview({ file }: { file: PreviewFile }) {
 }
 
 function PdfPreview({ file }: { file: PreviewFile }) {
+  // Desktop opens the file in the OS default viewer rather than embedding an
+  // iframe (which can't render PDFs reliably under a restrictive sandbox).
+  if (runningInTauri) return <DesktopFileOpen file={file} />;
   const { data, isLoading, error } = useFilePreview(file);
   if (isLoading || error || !data?.dataUrl) return <PreviewLoading />;
   return (
@@ -86,9 +90,62 @@ function PdfPreview({ file }: { file: PreviewFile }) {
       <iframe
         src={data.dataUrl}
         title={file.name}
-        sandbox="allow-downloads"
+        sandbox="allow-scripts allow-same-origin allow-downloads"
         className="h-full min-h-0 w-full flex-1 rounded-lg border"
       />
+    </div>
+  );
+}
+
+/**
+ * Desktop-only: resolves the file's on-disk path and opens it in the OS
+ * default viewer via Tauri's `opener`. Shows a status panel with a
+ * re-open / download fallback (the latter still needs the `data:` URL, so we
+ * reuse the preview fetch).
+ */
+function DesktopFileOpen({ file }: { file: PreviewFile }) {
+  const [error, setError] = useState<string | null>(null);
+  const { data } = useFilePreview(file);
+
+  const open = useCallback(async () => {
+    setError(null);
+    try {
+      const path = await tauriOpenFile(file.id);
+      await platform.openPath(path);
+    } catch (e) {
+      setError(errText(e));
+    }
+  }, [file.id]);
+
+  useEffect(() => {
+    open();
+  }, [open]);
+
+  return (
+    <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="bg-muted flex size-12 items-center justify-center rounded-lg">
+        <ExternalLink className="size-5" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-foreground text-sm font-medium">
+          {error ? "Couldn't open this file" : "Opened in your default app"}
+        </p>
+        <p className="text-xs">
+          {error ?? `${file.name} should now be open in another window.`}
+        </p>
+      </div>
+      <div className="flex gap-2">
+        <Button variant="secondary" size="sm" onClick={open}>
+          <ExternalLink className="size-4" /> Open again
+        </Button>
+        {data?.dataUrl && (
+          <Button asChild variant="secondary" size="sm">
+            <a href={data.dataUrl} target="_blank" rel="noreferrer" download={file.name}>
+              <Download className="size-4" /> Download
+            </a>
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

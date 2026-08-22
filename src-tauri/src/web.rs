@@ -309,6 +309,7 @@ fn local_event_to_sse(event: logic::local_llm::LocalChatEvent) -> SseFrame {
     let name = match &event {
         LocalChatEvent::Started => "started",
         LocalChatEvent::Token { .. } => "token",
+        LocalChatEvent::Thinking { .. } => "thinking",
         LocalChatEvent::ToolCall { .. } => "toolCall",
         LocalChatEvent::ToolResult { .. } => "toolResult",
         LocalChatEvent::Finished => "finished",
@@ -552,6 +553,16 @@ async fn office_delete_file_handler(
 }
 
 #[cfg(feature = "office")]
+async fn office_restore_backup_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<OfficeDeleteFileRequest>,
+) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
+    logic::office::store::restore_backup(&claims.sub, &req.file_id)
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "office")]
 async fn office_list_files_handler(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<logic::office::OfficeFile>>, (StatusCode, String)> {
@@ -626,6 +637,16 @@ async fn office_read_file_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
+#[cfg(feature = "office")]
+async fn tauri_open_file_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<OfficeReadFileRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::office::file_path(&claims.sub, &req.file_id)
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
 /// Protected streaming: agent chat (tool-calling loop) via SSE.
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
@@ -634,6 +655,8 @@ struct AgentChatRequest {
     agent_id: String,
     session_id: Option<i64>,
     message: String,
+    #[serde(default)]
+    file_ids: Vec<String>,
 }
 
 #[cfg(feature = "litert")]
@@ -641,7 +664,7 @@ async fn agent_chat_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<AgentChatRequest>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
-    let s = logic::agent::agent_chat(claims.sub, req.agent_id, req.session_id, req.message)
+    let s = logic::agent::agent_chat(claims.sub, req.agent_id, req.session_id, req.message, req.file_ids)
         .map(|event| Ok::<_, Infallible>(agent_event_to_sse(event)));
     Sse::new(s).keep_alive(KeepAlive::default())
 }
@@ -791,8 +814,13 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
             post(knowledge_import_youtube_handler),
         )
         .route("/api/office_delete_file", post(office_delete_file_handler))
+        .route(
+            "/api/office_restore_backup",
+            post(office_restore_backup_handler),
+        )
         .route("/api/office_export_file", post(office_export_file_handler))
         .route("/api/office_read_file", post(office_read_file_handler))
+        .route("/api/tauri_open_file", post(tauri_open_file_handler))
         .route(
             "/api/office_capabilities",
             post(office_capabilities_handler),
