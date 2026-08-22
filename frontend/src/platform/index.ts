@@ -7,7 +7,6 @@
  */
 
 import { open } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
 
 import type { Platform, PickFilesOptions } from './types'
 import {
@@ -71,7 +70,6 @@ export const platform: Platform = {
   writeClipboardText: writeClipboardTextViaBrowser,
   readClipboardImage: readClipboardImageViaBrowser,
   share: shareViaBrowser,
-  openPath,
 }
 
 export const runningInTauri = isTauri

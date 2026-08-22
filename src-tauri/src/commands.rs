@@ -7,6 +7,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
+use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
 use tokio_util::sync::CancellationToken;
 
 /// Shared registry: active stream id -> cancellation token.
@@ -563,16 +565,21 @@ pub fn office_read_file(
     logic::office::read_file_b64(&user_id, &file_id)
 }
 
-/// Authenticated RPC: resolve a stored file's absolute on-disk path so the
-/// desktop client can open it in the OS default viewer (Tauri `opener`).
+/// Authenticated RPC: open a stored file in the OS default viewer. The backend
+/// resolves the file id to a path (already scoped to the user's data dir) and
+/// opens it directly — no webview-side path scope needed.
 #[cfg(feature = "office")]
 #[tauri::command]
 pub fn tauri_open_file(
+    app: tauri::AppHandle,
     file_id: String,
     session: State<'_, Session>,
-) -> Result<String, String> {
+) -> Result<(), String> {
     let user_id = session_user_id(&session)?;
-    logic::office::file_path(&user_id, &file_id)
+    let path = logic::office::file_path(&user_id, &file_id)?;
+    app.opener()
+        .open_path(&path, None::<&str>)
+        .map_err(|e| format!("open {}: {e}", path))
 }
 
 /// Authenticated RPC: which office engines are available on this host.

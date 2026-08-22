@@ -14,9 +14,9 @@ export function errText(err: unknown): string {
   return String(err);
 }
 
-/** Resolve a stored file's absolute on-disk path (desktop "open in OS viewer"). */
-export function tauriOpenFile(fileId: string): Promise<string> {
-  return call<string>("tauri_open_file", { fileId });
+/** Open a stored file in the OS default viewer (desktop only). */
+export function tauriOpenFile(fileId: string): Promise<void> {
+  return call<void>("tauri_open_file", { fileId });
 }
 
 // ---- Backend payload types (serde camelCase) ----

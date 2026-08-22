@@ -8,7 +8,7 @@ import { MessageResponse } from "@/components/ai-elements/message";
 import { errText, tauriOpenFile } from "@/lib/api";
 import { fileKind, shikiLanguage, type FileKind } from "@/lib/file-types";
 import { useFilePreview, type PreviewFile } from "@/lib/preview-file";
-import { platform, runningInTauri } from "@/platform";
+import { runningInTauri } from "@/platform";
 
 const FALLBACK_REASON: Partial<Record<FileKind, string>> = {
   "video-fallback": "This video format can't be previewed.",
@@ -110,8 +110,7 @@ function DesktopFileOpen({ file }: { file: PreviewFile }) {
   const open = useCallback(async () => {
     setError(null);
     try {
-      const path = await tauriOpenFile(file.id);
-      await platform.openPath(path);
+      await tauriOpenFile(file.id);
     } catch (e) {
       setError(errText(e));
     }

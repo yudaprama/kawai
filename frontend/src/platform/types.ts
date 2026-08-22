@@ -34,9 +34,4 @@ export interface Platform {
   writeClipboardText(text: string): Promise<boolean>
   readClipboardImage(): Promise<File | null>
   share(text: string): Promise<void>
-  /**
-   * Opens an absolute file path in the OS default viewer (Tauri `opener`).
-   * No-op / rejects outside Tauri (web can't shell out to the OS).
-   */
-  openPath(path: string): Promise<void>
 }
