@@ -11,10 +11,10 @@ async fn main() {
     let gpu = std::env::args().any(|a| a == "--gpu");
 
     println!(
-        "loading {model} ({}:())...",
+        "loading {model} ({})...",
         if gpu { "gpu" } else { "cpu" }
     );
-    let info = local_llm::load_model("smoke", &model, gpu)
+    let info = local_llm::load_model("smoke", &model, gpu, false, 1, None)
         .await
         .expect("load_model");
     println!("loaded: {} [{}]", info.model_path, info.backend);
@@ -22,6 +22,8 @@ async fn main() {
     let mut stream = Box::pin(local_llm::local_chat(
         "smoke".into(),
         "Say hello and introduce yourself in one sentence.".into(),
+        None,
+        None,
     ));
     while let Some(ev) = stream.next().await {
         match ev {
@@ -29,6 +31,9 @@ async fn main() {
             local_llm::LocalChatEvent::Token { text } => print!("{text}"),
             local_llm::LocalChatEvent::Finished => println!("\n[finished]"),
             local_llm::LocalChatEvent::Error { message } => println!("\n[error] {message}"),
+            local_llm::LocalChatEvent::Thinking { .. } => {}
+            local_llm::LocalChatEvent::ToolCall { .. } => {}
+            local_llm::LocalChatEvent::ToolResult { .. } => {}
         }
     }
 
@@ -36,6 +41,8 @@ async fn main() {
     let mut stream = Box::pin(local_llm::local_chat(
         "smoke".into(),
         "Repeat your name exactly.".into(),
+        None,
+        None,
     ));
     while let Some(ev) = stream.next().await {
         if let local_llm::LocalChatEvent::Token { text } = ev {
