@@ -48,11 +48,7 @@ jobs:
       # exist. local-llm path-deps rig-components tools; office needs
       # office_oxide. Shallow, non-recursive: manifests only, no C sources.
       - name: Init submodules (manifest only)
-        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
-
-      - name: Force update submodules to latest remote
-        run: |
-          git submodule foreach --recursive 'git remote update --prune && git checkout master && git pull'
+        run: git submodule update --init local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -89,12 +85,8 @@ jobs:
       - name: Install JS deps
         run: bun install
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide + pdf_oxide)
-        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
-
-      - name: Force update submodules to latest remote
-        run: |
-          git submodule foreach --recursive 'git remote update --prune && git checkout master && git pull'
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
+        run: git submodule update --init local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -146,11 +138,7 @@ jobs:
           restore-keys: bazel-macos26-arm64-
 
       - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
-
-      - name: Force update submodules to latest remote
-        run: |
-          git submodule foreach --recursive 'git remote update --prune && git checkout master && git pull'
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
 
       - name: Build litert-lm dylib
         run: |

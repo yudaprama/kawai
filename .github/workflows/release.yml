@@ -128,8 +128,8 @@ jobs:
       # path-deps kawai-embedding (fastembed) and rig-libsql (vector store).
       # flutter_gemma/litert-lm-rs are NOT needed — skip them to keep the
       # checkout lean.
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide + pdf_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
 
       - name: Build litert-lm dylib
         run: |
@@ -148,7 +148,7 @@ jobs:
           ln -sfn vendor/LiteRT-LM/bazel-bin/_solib_darwin_arm64 ../../_solib_darwin_arm64
 
       # Office document ops (read/edit/info + creation) and PDF ops are
-      # pure Rust (office_oxide + pdf_oxide, in-process) — no external engine.
+      # pure Rust (office_oxide, in-process) — no external engine.
 
       - name: Build .app (with litert + office)
         uses: tauri-apps/tauri-action@v0
@@ -206,8 +206,8 @@ jobs:
           key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide + pdf_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
 
       # LiteRT-LM's .bazelrc pins CC=clang (action_env); the runner default is
       # clang-14, whose std lib lacks std::source_location in C++20 mode
@@ -302,9 +302,9 @@ jobs:
           key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-windows-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide + pdf_oxide)
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
         shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
 
       - name: Install bazelisk
         shell: pwsh
@@ -385,8 +385,8 @@ jobs:
       # must exist. local-llm path-deps rig-components tools, so that
       # manifest needs rig-components present too. Shallow, non-recursive:
       # only crate manifests, not C sources.
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide + pdf_oxide, manifest only)
-        run: git submodule update --init --depth 1 local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide pdf_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide, manifest only)
+        run: git submodule update --init local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

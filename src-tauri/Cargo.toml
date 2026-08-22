@@ -77,9 +77,9 @@ youtube_transcript = { path = "../rig-components/youtube_transcript", optional =
 rig-core = { version = "0.42", optional = true }
 # Pure-Rust office create/read/edit (vendored submodule): markdown → IR →
 # docx/xlsx/pptx (in-process), raw-part surgery for in-place edits. PDF
-# operations are in-process via pdf_oxide.
+# operations via pdf_oxide (fetched from GitHub, no local submodule).
 office_oxide = { path = "../office_oxide", optional = true }
-pdf_oxide = { path = "../pdf_oxide", optional = true }
+pdf_oxide = { git = "https://github.com/yfedoseev/pdf_oxide", optional = true }
 regex = { version = "1", optional = true }
 
 # stderr tee for file logging (logging.rs). Unix only.

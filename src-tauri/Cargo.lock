@@ -7159,6 +7159,7 @@ dependencies = [
 [[package]]
 name = "pdf_oxide"
 version = "0.3.77"
+source = "git+https://github.com/yfedoseev/pdf_oxide#c92ea077498418ace14080a27ccd6a411d1ea288"
 dependencies = [
  "aes 0.9.2",
  "base64 0.22.1",
