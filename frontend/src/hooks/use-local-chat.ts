@@ -372,7 +372,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
   }, [patch]);
 
   const send = useCallback(
-    async (text: string, imageB64?: string) => {
+    async (text: string, imageB64?: string, fileIds?: string[]) => {
       const prompt = text.trim();
       if ((!prompt && !imageB64) || streamCtrl.current) return;
 
@@ -440,7 +440,12 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
 
       streamCtrl.current = streamOperation<LocalChatEvent>(
         "agent_chat",
-        { agentId, sessionId, message: prompt },
+        {
+          agentId,
+          sessionId,
+          message: prompt,
+          ...(fileIds && fileIds.length > 0 ? { fileIds } : {}),
+        },
         {
           onEvent: (ev) => {
             if (ev.type === "token") {

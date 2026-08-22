@@ -151,7 +151,7 @@ impl PortableTool for KnowledgeSearchTool {
         .map_err(oerr)?;
         if hits.is_empty() {
             return Ok(
-                json!({ "hits": [], "note": "No documents match. Either nothing was uploaded in this conversation, or none of them contains the answer." })
+                json!({ "hits": [], "note": "No documents match. Either nothing was uploaded in this conversation, or none of them contains the answer. Retry with ONE distinctive keyword (an exact code, name, or date word) — long phrases often miss." })
                     .to_string(),
             );
         }
@@ -341,6 +341,43 @@ Example args: {\"filename\":\"report.docx\",\"blocks\":[{\"type\":\"title\",\"te
             .await
             .map_err(oerr)?;
         Ok(json!({ "success": true, "file": file }).to_string())
+    }
+}
+
+// -- office_restore_backup -----------------------------------------------------
+
+pub struct RestoreBackupTool(pub String);
+
+impl PortableTool for RestoreBackupTool {
+    const NAME: &'static str = "office_restore_backup";
+    type Args = FileIdArgs;
+    type Output = String;
+    type Error = OfficeToolError;
+
+    fn description(&self) -> String {
+        "Undo the LAST edit of a stored document by restoring its pre-edit snapshot (swap semantics — call it twice to get the edited version back). Use when the user says an edit went wrong / undo / batalkan edit. Fails when the document was never edited.".into()
+    }
+
+    fn parameters(&self) -> Value {
+        schema!({
+            "type": "object",
+            "properties": {
+                "fileId": { "type": "string", "description": "File id from office_list_files or a search hit" }
+            },
+            "required": ["fileId"]
+        })
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<String, OfficeToolError> {
+        let file = match store::restore_backup(&self.0, &args.file_id) {
+            Ok(f) => f,
+            Err(exact_err) => match resolve_file_id_fuzzy(&self.0, &args.file_id) {
+                Some(fixed) => store::restore_backup(&self.0, &fixed)
+                    .map_err(|e| oerr(format!("{e} (fuzzy matched from {:?})", args.file_id)))?,
+                None => return Err(oerr(exact_err)),
+            },
+        };
+        Ok(json!({ "success": true, "restored": true, "note": "pre-edit snapshot restored; calling again swaps back", "file": file }).to_string())
     }
 }
 

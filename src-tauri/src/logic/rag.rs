@@ -471,21 +471,39 @@ async fn ensure_fts(conn: &libsql::Connection) -> Result<(), String> {
 }
 
 /// Quote each whitespace token so arbitrary user text (hyphens, digits, FTS5
-/// operators) can never produce a MATCH syntax error; tokens become AND-ed
-/// phrases (a hyphenated code like `INV-2026-041` matches its exact token
-/// sequence). `None` when nothing searchable remains.
+/// operators) can never produce a MATCH syntax error. Tokens are OR-ed and
+/// ranked by BM25 — the model often forwards a user's whole phrase ("June to
+/// August") as the query, and AND-semantics would demand every noise word
+/// ("to", "dan") literally appear. Short tokens (<3 chars) are dropped as
+/// noise while longer siblings remain; if nothing survives, every token is
+/// kept (a lone short code is still a valid query). `None` when nothing
+/// searchable remains.
 fn fts_match_query(query: &str) -> Option<String> {
-    let phrases: Vec<String> = query
+    let all: Vec<String> = query
         .split_whitespace()
         .map(|t| t.replace('"', " "))
-        .filter(|t| !t.trim().is_empty())
-        .map(|t| format!("\"{}\"", t.trim()))
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
         .take(16)
         .collect();
-    if phrases.is_empty() {
+    let tokens: Vec<&String> = {
+        let long: Vec<&String> = all.iter().filter(|t| t.chars().count() >= 3).collect();
+        if long.is_empty() {
+            all.iter().collect()
+        } else {
+            long
+        }
+    };
+    if tokens.is_empty() {
         None
     } else {
-        Some(phrases.join(" "))
+        Some(
+            tokens
+                .iter()
+                .map(|t| format!("\"{}\"", t))
+                .collect::<Vec<_>>()
+                .join(" OR "),
+        )
     }
 }
 
@@ -1057,10 +1075,27 @@ mod tests {
     fn fts_match_query_quotes_and_sanitizes() {
         assert_eq!(
             fts_match_query("berapa total INV-2026-041?"),
-            Some("\"berapa\" \"total\" \"INV-2026-041?\"".to_string())
+            Some("\"berapa\" OR \"total\" OR \"INV-2026-041?\"".to_string())
         );
         assert_eq!(fts_match_query("  \"  \""), None);
         assert_eq!(fts_match_query(""), None);
+    }
+
+    #[test]
+    fn fts_match_query_ors_tokens_and_drops_noise() {
+        // The model forwards whole user phrases; AND/"phrase" semantics
+        // would require the noise words to literally appear.
+        assert_eq!(
+            fts_match_query("June to August"),
+            Some("\"June\" OR \"August\"".to_string())
+        );
+        // A lone short token still searches (nothing longer to prefer).
+        assert_eq!(fts_match_query("Rp"), Some("\"Rp\"".to_string()));
+        // All-short multi-token queries keep every token.
+        assert_eq!(
+            fts_match_query("ab cd"),
+            Some("\"ab\" OR \"cd\"".to_string())
+        );
     }
 
     #[test]

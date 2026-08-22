@@ -355,7 +355,7 @@ export default function App() {
         modelStatus={chat.modelStatus}
         chatError={chat.error}
         onStop={chat.stop}
-        onSend={(text) => void chat.send(text)}
+        onSend={(text, fileIds) => void chat.send(text, undefined, fileIds)}
         canvasOpen={canvasOpen}
         inSession={inSession}
         sessionsCollapsed={sessionsCollapsed}

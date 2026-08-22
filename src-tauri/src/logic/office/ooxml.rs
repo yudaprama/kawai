@@ -237,11 +237,17 @@ pub struct EditOutcome {
     pub operations: Vec<EditOpOutcome>,
     #[serde(default)]
     pub error_summary: Option<String>,
+    /// File name of the pre-edit snapshot taken in `backups/` — the user's
+    /// escape hatch when an edit applied the wrong change.
+    #[serde(default)]
+    pub backup: Option<String>,
 }
 
 /// `office_edit_document` — pure-Rust edit via `office_oxide::EditableDocument`.
 /// Each op is applied in order; per-op status is recorded and the final
-/// document replaces the stored file.
+/// document replaces the stored file. The pre-edit file is snapshotted to
+/// `backups/<name>.bak` first (an unreadable/skippable backup FAILS the edit —
+/// never apply destructive ops without a safety net).
 pub async fn edit_document(
     user_id: &str,
     file_id: &str,
@@ -259,6 +265,22 @@ pub async fn edit_document(
             ));
         }
     }
+    // Safety net BEFORE any mutation: copy the pre-edit file into `backups/`.
+    // A sibling `<id>__*.bak` would be dangerous — `resolve()` scans for the
+    // `{id}__` prefix and could pick the backup — so backups live one level
+    // down, where neither `resolve` (non-recursive) nor `list_files`
+    // (`*.meta.json` only) can see them.
+    let backup_path = store::backup_path(&path);
+    let backup_name = backup_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default()
+        .to_string();
+    std::fs::create_dir_all(backup_path.parent().unwrap())
+        .map_err(|e| format!("create backups dir: {e}"))?;
+    std::fs::copy(&path, &backup_path)
+        .map_err(|e| format!("backup before edit failed (edit refused): {e}"))?;
+
     let ext = info.ext.clone();
     let tmp = path.with_extension(format!("{}.tmp", info.ext));
     let mut doc = EditableDocument::open(&path)
@@ -295,6 +317,7 @@ pub async fn edit_document(
         rows_modified,
         operations: op_results,
         error_summary: None,
+        backup: Some(backup_name),
     })
 }
 

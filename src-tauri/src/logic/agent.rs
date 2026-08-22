@@ -61,8 +61,10 @@ use rig::tool::ToolSet;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Max tool dispatches per user turn before forcing a final answer.
-const MAX_TOOL_CALLS: usize = 5;
+/// Max tool dispatches per user turn before forcing a final answer. Sized for
+/// multi-step workflows (list → read → read → delegate) without letting a
+/// tool-looping model spin forever.
+const MAX_TOOL_CALLS: usize = 8;
 /// How many chars of a tool result are echoed into the UI event.
 const TOOL_RESULT_UI_CHARS: usize = 500;
 /// Cap on a tool result fed BACK into the conversation (chars). Tool outputs
@@ -75,8 +77,12 @@ const TOOL_RESULT_MODEL_CHARS: usize = 4000;
 /// local K/V state, so it can far exceed TOOL_RESULT_MODEL_CHARS. Whole-doc
 /// reads (summaries) need the full text, not top-k excerpts.
 const TOOL_RESULT_MATERIALS_CHARS: usize = 32_000;
-/// Per-message cap inside a replayed transcript.
+/// Per-message cap inside a replayed transcript (all but the newest message).
 const TRANSCRIPT_MSG_CHARS: usize = 2000;
+/// Cap for the NEWEST message in a replayed transcript — usually the previous
+/// assistant answer (often a long cloud-written artifact). Follow-ups like
+/// "shorten what you just wrote" need far more of it than 2000 chars.
+const TRANSCRIPT_LAST_MSG_CHARS: usize = 6000;
 /// Char budget for the replayed transcript when opening a conversation epoch
 /// (first turn, session switch, restart).
 const TRANSCRIPT_BUDGET_CHARS: usize = 6000;
@@ -141,6 +147,28 @@ fn first_file_id(body: &str) -> Option<String> {
                 .filter(|s| !s.is_empty())
                 .map(str::to_string)
         })
+}
+
+/// Prompt block listing user-attached files (@-mentions). Ids are resolved
+/// server-side (never trusted raw) and exposed to the model as short alias
+/// handles (`doc1`, …) — the model copies these reliably, unlike the real
+/// 23-char store ids. Dispatch resolves the handle back to the real id.
+#[cfg(feature = "litert")]
+fn attachment_prompt_block(sid: i64, ids: &[String]) -> String {
+    #[cfg(feature = "office")]
+    if !ids.is_empty() {
+        let lines: Vec<String> = ids
+            .iter()
+            .map(|id| format!("- {}", alias_assign(sid, id)))
+            .collect();
+        return format!(
+            "[files attached by the user for THIS message — use these exact handles \
+             with the file tools; no need to search for them]\n{}",
+            lines.join("\n")
+        );
+    }
+    #[allow(unreachable_code)]
+    String::new()
 }
 
 /// Did the model's `materials` already embed the turn's tool results
@@ -225,7 +253,7 @@ Rules:\n\
 - Factual questions about uploaded documents or imported YouTube videos (numbers, names, dates, invoice codes, table contents): call knowledge_search FIRST — it finds the relevant passages for you.\n\
 - Summarizing a WHOLE document or video: office_list_files to find its id → office_read_document to get the full text → delegate to deep_write with a clear task brief (materials: one-line pointer or omit — the system attaches the full text automatically). NEVER summarize long content yourself from search excerpts.\n\
 - NEVER say you cannot access a video, transcript, or document: imported content is searchable via knowledge_search. If a search returns no hits, you may say you cannot find the content.\n\
-- Tools address stored files by their file id, never by path. If the user refers to a document and you don't know its id, call office_list_files first.\n\
+- Tools address stored files by their file id, never by path. File ids appear in tool results as short handles like `doc1`, `doc2` — copy the handle EXACTLY as shown (never guess or lengthen it). If you don't know a file's handle, call office_list_files first.\n\
 - Never invent arguments: if a required input is missing, ask the user.\n\
 - Prefer office_document_info / pdf_info before large reads when only structure matters.\n\
 - NEVER claim you created, edited, or changed a document unless a response: message explicitly reported success. If you did not call a tool, say so.\n\
@@ -284,6 +312,135 @@ fn toolset_for(
         set.add_tool(DraftDocument);
     }
     Some(set)
+}
+
+/// # File-id alias handles
+///
+/// The office store mints long, opaque file ids (`f87366129058607000-0000`).
+/// The on-device model reliably transcribes short, stable handles but
+/// corrupts 23-char ids (session 20: `f873…0000` → `f7`). So the loop hides
+/// the real id behind a per-session, short alias (`doc1`, `doc2`, …) shown in
+/// tool results, and resolves the alias back to the real id only at dispatch
+/// (so the underlying rig tool still sees the real id). The map is keyed by
+/// session id and persists for the session's lifetime.
+#[cfg(feature = "litert")]
+struct AliasState {
+    order: Vec<(String, String)>,
+    seen: std::collections::HashSet<String>,
+}
+
+#[cfg(feature = "litert")]
+fn alias_registry() -> &'static std::sync::Mutex<std::collections::HashMap<i64, AliasState>> {
+    use std::sync::{Mutex, OnceLock};
+    static REG: OnceLock<Mutex<std::collections::HashMap<i64, AliasState>>> = OnceLock::new();
+    REG.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Assign (or reuse) a short alias for a real file id and return it.
+#[cfg(feature = "litert")]
+fn alias_assign(sid: i64, real: &str) -> String {
+    if real.is_empty() {
+        return String::new();
+    }
+    let mut reg = alias_registry().lock().unwrap();
+    let st = reg.entry(sid).or_insert(AliasState {
+        order: Vec::new(),
+        seen: std::collections::HashSet::new(),
+    });
+    if let Some((a, _)) = st.order.iter().find(|(_, r)| r == real) {
+        return a.clone();
+    }
+    let a = format!("doc{}", st.order.len() + 1);
+    st.seen.insert(real.to_string());
+    st.order.push((a.clone(), real.to_string()));
+    a
+}
+
+/// Reverse lookup: real id → its alias (if previously assigned).
+#[cfg(feature = "litert")]
+fn alias_of(sid: i64, real: &str) -> Option<String> {
+    let reg = alias_registry().lock().unwrap();
+    reg.get(&sid)?
+        .order
+        .iter()
+        .find(|(_, r)| r == real)
+        .map(|(a, _)| a.clone())
+}
+
+/// Resolve a possibly-aliased value to its real id. Tries exact alias, then a
+/// case-insensitive match (the model occasionally lowercases the handle,
+/// e.g. `Doc1`). Returns the original value unchanged when no alias matches —
+/// downstream arg validation / the repair round still handle genuine misses.
+#[cfg(feature = "litert")]
+fn alias_resolve(sid: i64, value: &str) -> String {
+    let reg = alias_registry().lock().unwrap();
+    let st = match reg.get(&sid) {
+        Some(s) => s,
+        None => return value.to_string(),
+    };
+    let v = value.trim();
+    for (a, r) in &st.order {
+        if a == v || a.eq_ignore_ascii_case(v) {
+            return r.clone();
+        }
+    }
+    value.to_string()
+}
+
+/// Rewrite a tool result body so any real file ids it exposes become short
+/// aliases before the model sees them. Only the two result shapes that carry
+/// ids are touched: `office_list_files` (`files[].id`) and `knowledge_search`
+/// (`hits[].fileId`). Other tools pass through unchanged.
+#[cfg(feature = "litert")]
+fn alias_rewrite_body(sid: i64, tool: &str, body: &str) -> String {
+    let mut v: Value = match serde_json::from_str(body) {
+        Ok(v) => v,
+        Err(_) => return body.to_string(),
+    };
+    let mut touch = |map: &mut serde_json::Map<String, Value>, key: &str| {
+        if let Some(id) = map.get(key).and_then(Value::as_str) {
+            if !id.is_empty() {
+                let a = alias_assign(sid, id);
+                map.insert(key.to_string(), Value::String(a));
+            }
+        }
+    };
+    match tool {
+        "office_list_files" => {
+            if let Some(files) = v.get_mut("files").and_then(Value::as_array_mut) {
+                for f in files.iter_mut().filter_map(Value::as_object_mut) {
+                    touch(f, "id");
+                }
+            }
+        }
+        "knowledge_search" => {
+            if let Some(hits) = v.get_mut("hits").and_then(Value::as_array_mut) {
+                for h in hits.iter_mut().filter_map(Value::as_object_mut) {
+                    touch(h, "fileId");
+                }
+            }
+        }
+        _ => {}
+    }
+    serde_json::to_string(&v).unwrap_or_else(|_| body.to_string())
+}
+
+/// Resolve any `fileId` / `file_id` argument from an alias to its real id,
+/// returning a new args object (the original is preserved for the UI event).
+#[cfg(feature = "litert")]
+fn alias_resolve_args(sid: i64, args: &Value) -> Value {
+    let mut out = args.clone();
+    if let Some(obj) = out.as_object_mut() {
+        for key in ["fileId", "file_id"] {
+            if let Some(Value::String(s)) = obj.get(key) {
+                let resolved = alias_resolve(sid, s);
+                if resolved != *s {
+                    obj.insert(key.to_string(), Value::String(resolved));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Manifest entry + arg schema for the `deep_write` cloud subagent. The
@@ -510,7 +667,9 @@ fn compact_args(params: &Value) -> Value {
 
 /// Compact a session's prior messages into a transcript, newest-first within
 /// a char budget (oldest turns drop first). Each message is individually
-/// capped. Empty string when there is nothing (left) to replay.
+/// capped; the NEWEST message gets the larger [`TRANSCRIPT_LAST_MSG_CHARS`]
+/// cap and is ALWAYS included (partially if needed) — follow-up turns center
+/// on it. Empty string when there is nothing (left) to replay.
 #[cfg(feature = "litert")]
 fn compact_transcript(rows: &[db::ChatMessage], budget: usize) -> String {
     if rows.is_empty() || budget == 0 {
@@ -519,11 +678,18 @@ fn compact_transcript(rows: &[db::ChatMessage], budget: usize) -> String {
     let mut kept: Vec<String> = Vec::new();
     let mut used = 0usize;
     let mut dropped_older = false;
-    for row in rows.iter().rev() {
+    for (i, row) in rows.iter().enumerate().rev() {
         let role = if row.role == "user" { "USER" } else { "ASSISTANT" };
-        let line = format!("{role}: {}", truncate_chars(row.content.trim(), TRANSCRIPT_MSG_CHARS));
+        let cap = if i == rows.len() - 1 {
+            TRANSCRIPT_LAST_MSG_CHARS
+        } else {
+            TRANSCRIPT_MSG_CHARS
+        };
+        let line = format!("{role}: {}", truncate_chars(row.content.trim(), cap));
         let add = line.chars().count() + 1;
-        if used + add > budget {
+        // The newest message is always kept — even when it alone fills the
+        // budget (older turns then drop, which is the right trade).
+        if !kept.is_empty() && used + add > budget {
             dropped_older = true;
             break;
         }
@@ -642,6 +808,9 @@ fn parse_native_tool_call(text: &str) -> Option<Result<(String, Value), String>>
     // (observed degradation when the model drops the wrapper entirely). A
     // candidate that does not validate is treated as prose (final answer),
     // NOT an error — "call:" inside ordinary language must not kill a turn.
+    // Exception: a valid name + balanced braces whose args fail to parse is
+    // clearly an attempted call — surfaced as malformed for the repair round.
+    let mut first_broken: Option<String> = None;
     let mut from = 0usize;
     while let Some(rel) = text[from..].find("call:") {
         let at = from + rel;
@@ -666,7 +835,8 @@ fn parse_native_tool_call(text: &str) -> Option<Result<(String, Value), String>>
         {
             continue;
         }
-        let parsed = balanced_braces(body, open)
+        let args_span = balanced_braces(body, open);
+        let parsed = args_span
             .and_then(|raw| parse_native_body(&format!("{name} {raw}")));
         if let Some(Ok((n, v))) = parsed {
             return Some(Ok((n, v)));
@@ -685,8 +855,21 @@ fn parse_native_tool_call(text: &str) -> Option<Result<(String, Value), String>>
                 }
             }
         }
+        // Recognizable but broken (valid name + BALANCED braces, args won't
+        // parse): NOT prose — remember the first failure. If no candidate
+        // parses, surface it as a malformed call so the loop's ONE repair
+        // round teaches the correct shape (raw-persisting the line is the
+        // worst outcome). Unbalanced braces stay prose ("call:" + garbage).
+        if args_span.is_some() && first_broken.is_none() {
+            first_broken = Some(format!(
+                "call:{name}{{...}} — args are not valid JSON"
+            ));
+        }
     }
-    None
+    match first_broken {
+        Some(detail) => Some(Err(detail)),
+        None => None,
+    }
 }
 
 /// Extract `{...}` starting at `body[open]`, honouring string literals, to the
@@ -931,6 +1114,7 @@ pub fn agent_chat(
     agent_id: String,
     session_id: Option<i64>,
     message: String,
+    file_ids: Vec<String>,
 ) -> impl Stream<Item = AgentChatEvent> {
     use crate::logic::local_llm::LocalChatEvent;
     use async_stream::stream;
@@ -974,6 +1158,39 @@ pub fn agent_chat(
             toolset.is_some()
         );
         yield AgentChatEvent::Started { session_id: sid };
+
+        // User-attached files (@-mentions from the composer): resolve + bind
+        // them to the session so the knowledge tools see them, and expose the
+        // ids in the prompt — deterministic intent binding, no guessing via
+        // search. Office-gated: without the office feature there is no store
+        // to resolve against (mentions are then ignored).
+        let mut attached_ids: Vec<String> = Vec::new();
+        #[cfg(feature = "office")]
+        {
+            for fid in &file_ids {
+                match crate::logic::office::store::resolve(&user_id, fid) {
+                    Ok((_, info)) => attached_ids.push(info.id),
+                    Err(e) => eprintln!("[agent_chat] attached file {fid} unresolved: {e}"),
+                }
+            }
+            if !attached_ids.is_empty() {
+                if let Err(e) = crate::logic::rag::knowledge_add_to_session(
+                    &user_id,
+                    sid,
+                    &attached_ids,
+                )
+                .await
+                {
+                    eprintln!("[agent_chat] attach to session failed: {e}");
+                }
+            }
+        }
+        let attachment_block = attachment_prompt_block(sid, &attached_ids);
+        let message_for_model = if attachment_block.is_empty() {
+            message.clone()
+        } else {
+            format!("{message}\n\n{attachment_block}")
+        };
 
         // Snapshot the prior turns BEFORE appending the current user message,
         // so a replayed transcript never contains the message being answered.
@@ -1366,7 +1583,7 @@ pub fn agent_chat(
                     TRANSCRIPT_BUDGET_CHARS
                 };
                 let transcript = compact_transcript(&prior_turns, budget);
-                prompt = build_prompt(persona, toolset.as_ref(), &transcript, &message);
+                prompt = build_prompt(persona, toolset.as_ref(), &transcript, &message_for_model);
                 manifest_pending = true;
             }
 
@@ -1388,6 +1605,11 @@ pub fn agent_chat(
                                 text.push_str(&t);
                                 yield AgentChatEvent::Token { text: t };
                             }
+                        }
+                        // Thinking-mode reasoning: observed (telemetry) but
+                        // never part of the answer text or persistence.
+                        LocalChatEvent::Thinking { text: t } => {
+                            eprintln!("[agent_chat] thinking: {}", truncate_chars(&t, 120));
                         }
                         LocalChatEvent::ToolCall { id: _, tool, args } => {
                             yield AgentChatEvent::ToolCall { tool, args };
@@ -1617,7 +1839,11 @@ pub fn agent_chat(
                     let result = match toolset.as_ref() {
                         Some(set) => {
                             let mut ctx = ToolContext::default();
-                            set.execute(&tool, args.to_string(), &mut ctx).await
+                            // Resolve any short alias (doc1) the model emitted
+                            // back to the real store id before the rig tool
+                            // runs — the model never sees the real id.
+                            let exec_args = alias_resolve_args(sid, &args);
+                            set.execute(&tool, exec_args.to_string(), &mut ctx).await
                         }
                         None => {
                             // No tools registered for this agent: feed the
@@ -1636,7 +1862,7 @@ pub fn agent_chat(
                     };
 
                     let ok = result.is_success();
-                    let body = tool_result_body(&result);
+                    let body = alias_rewrite_body(sid, &tool, &tool_result_body(&result));
                     eprintln!("[agent_chat] tool result {tool}: ok={ok} {}", truncate_chars(&body, 300));
                     yield AgentChatEvent::ToolResult {
                         tool: tool.clone(),
@@ -1650,7 +1876,17 @@ pub fn agent_chat(
                         && ok
                         && is_summary_request(&message)
                     {
-                        first_file_id(&body).map(|fid| summary_directive(&fid))
+                        // Prefer the user's explicit attachment — it is the
+                        // authoritative target; fall back to the first hit.
+                        // Both are already aliases at this point (the
+                        // attachment block and the rewritten result use
+                        // handles), so the directive names the handle the
+                        // model actually knows.
+                        attached_ids
+                            .first()
+                            .and_then(|id| alias_of(sid, id))
+                            .or_else(|| first_file_id(&body))
+                            .map(|fid| summary_directive(&fid))
                     } else {
                         None
                     };
@@ -1688,6 +1924,47 @@ pub fn agent_chat(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn alias_assign_is_stable_and_sequential() {
+        let sid = 99001;
+        let a = alias_assign(sid, "f87366129058607000-0000");
+        let b = alias_assign(sid, "f87328470555963000-0000");
+        let a2 = alias_assign(sid, "f87366129058607000-0000");
+        assert_eq!(a, "doc1");
+        assert_eq!(b, "doc2");
+        assert_eq!(a2, "doc1"); // reuse, not reassign
+        assert_eq!(alias_resolve(sid, "doc1"), "f87366129058607000-0000");
+        assert_eq!(alias_resolve(sid, "Doc1"), "f87366129058607000-0000");
+        assert_eq!(alias_resolve(sid, "nope"), "nope");
+    }
+
+    #[test]
+    fn alias_rewrite_body_replaces_list_and_search_ids() {
+        let sid = 99002;
+        let list = r#"{"files":[{"id":"f87366129058607000-0000","originalName":"a.pdf"},{"id":"f87328470555963000-0000","originalName":"b.pdf"}]}"#;
+        let out = alias_rewrite_body(sid, "office_list_files", list);
+        assert!(out.contains("\"id\":\"doc1\""), "got {out}");
+        assert!(out.contains("\"id\":\"doc2\""), "got {out}");
+
+        let search = r#"{"hits":[{"fileId":"f87366129058607000-0000","content":"x"}]}"#;
+        let out2 = alias_rewrite_body(sid, "knowledge_search", search);
+        assert!(out2.contains("\"fileId\":\"doc1\""), "got {out2}");
+
+        // Untouched tools keep their body verbatim.
+        let other = r#"{"answer":"ok"}"#;
+        assert_eq!(alias_rewrite_body(sid, "some_tool", other), other);
+    }
+
+    #[test]
+    fn alias_resolve_args_maps_file_id() {
+        let sid = 99003;
+        alias_assign(sid, "f87366129058607000-0000");
+        let args = serde_json::json!({"fileId":"doc1","operations":[]});
+        let out = alias_resolve_args(sid, &args);
+        assert_eq!(out["fileId"], "f87366129058607000-0000");
+        assert!(out["operations"].is_array());
+    }
 
     #[test]
     fn parse_no_fence_is_final_answer() {
@@ -1871,6 +2148,35 @@ mod tests {
     }
 
     #[test]
+    fn recognizable_broken_call_triggers_repair_not_prose() {
+        // Exact persisted shape (msg id 47): THREE call: lines, all broken —
+        // doubled tool name, corrupted ids, consecutive string values, a
+        // missing replace key. None parses, but each has a valid name +
+        // balanced braces → must surface as MALFORMED (repair round), never
+        // as a silent final answer.
+        let text = "I need to replace \"June\" with \"August\" in all documents.\n\ncall:office_edit_document_document{\"fileId\": \"f36.pdf\",\"operations\": [{\"type\": \"replace_text\", \"find\": \"June, \"August\"}]}\ncall:office_edit_document{\"file_Id\": \"f7\",\"operations\": [{\"type\": \"replace_text\", \"find\": \"June\", \"August\"}]}\ncall:office_edit_document{\"file_Id\": \"f\": \"operations\": [{\"type\": \"replace_text\", \"find\": \"June\", \"August\"}]}";
+        match parse_tool_call(text) {
+            Some(Err(detail)) => {
+                assert!(detail.contains("call:"), "detail should name the call: {detail}");
+            }
+            other => panic!("expected Err (malformed), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn healthy_line_among_broken_ones_wins() {
+        // Second line valid → dispatched even though the first is broken.
+        let text = "call:office_edit_document{\"fileId\": \"f7\",\"find\": \"June, \"August\"}\ncall:knowledge_search{\"query\": \"june\"}";
+        match parse_tool_call(text) {
+            Some(Ok((tool, args))) => {
+                assert_eq!(tool, "knowledge_search");
+                assert_eq!(args["query"], "june");
+            }
+            other => panic!("expected Ok, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn quote_bare_keys_supplies_missing_opening_quote() {
         assert_eq!(quote_bare_keys(r#"{"a": "x",b": "y"}"#), r#"{"a": "x","b": "y"}"#);
     }
@@ -2029,10 +2335,35 @@ mod tests {
     #[cfg(feature = "litert")]
     #[test]
     fn transcript_caps_individual_messages() {
+        // The single row is the NEWEST message: capped at the larger
+        // last-message cap (still truncated — the '…' marker must appear).
         let rows = vec![msg("user", &"x".repeat(10_000))];
         let out = compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS);
-        assert!(out.chars().count() < TRANSCRIPT_BUDGET_CHARS);
+        assert!(out.chars().count() <= TRANSCRIPT_LAST_MSG_CHARS + "USER: ".len() + 2);
         assert!(out.contains('…'));
+    }
+
+    #[cfg(feature = "litert")]
+    #[test]
+    fn transcript_newest_message_gets_larger_cap() {
+        // A 3000-char newest answer fits whole under the last-message cap;
+        // an equally long OLDER message would be cut to 2000.
+        let newest = "y".repeat(3000);
+        let rows = vec![msg("assistant", &"z".repeat(3000)), msg("assistant", &newest)];
+        let out = compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS);
+        assert!(out.contains(&newest)); // whole, no '…' inside it
+        assert!(out.matches('…').count() == 1); // only the older row truncated
+    }
+
+    #[cfg(feature = "litert")]
+    #[test]
+    fn transcript_newest_always_included_even_over_budget() {
+        // Newest alone exceeds the whole budget — still included (partially),
+        // never dropped to an empty transcript.
+        let rows = vec![msg("user", "old"), msg("assistant", &"a".repeat(9000))];
+        let out = compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS);
+        assert!(out.contains("ASSISTANT: aaaa"));
+        assert!(!out.contains("USER: old"));
     }
 
     #[cfg(feature = "litert")]
