@@ -40,7 +40,10 @@ local-llm = { path = "../local-llm", optional = true }
 # One rig-core source for the whole graph (src-tauri + rig-tools + rig-libsql).
 # Every consumer uses crates.io "0.42" uniformly — see ARCHITECTURE.md.
 rig = "0.42"
-libsql = "0.9.30"
+# default-features=false keeps only the local-SQLite core: replication/remote
+# would pull tonic 0.11 + hyper 0.14 + axum 0.6 + rustls 0.22 (dead weight —
+# every call site uses Builder::new_local; re-add "remote" with sqld sync).
+libsql = { version = "0.9.30", default-features = false, features = ["core"] }
 jsonwebtoken = "9"
 # rustls-tls (not default features) keeps the TLS stack aligned with libsql/rig
 # and compiles for android arm64 + ios arm64. Used only for JWKS fetch in auth.rs.

@@ -117,6 +117,8 @@ export default function App() {
 
       {!sessionsCollapsed && (
         <SessionsPanel
+          agent={agent}
+          railCollapsed={agentsRail}
           groupedSessions={chat.groupedSessions}
           archivedSessions={chat.archivedSessions.filter((s) => s.agentId === agent.id)}
           activeSessionId={chat.sessionId}

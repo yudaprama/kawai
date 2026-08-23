@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { ChatSessionInfo } from "@/lib/api";
+import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { SessionRow } from "@/components/session-row";
 import { useSessionFilter } from "@/hooks/use-session-filter";
+import { agentPresentation } from "@/panels/agents-rail";
 
 interface SessionGroup {
   label: string;
@@ -12,6 +13,8 @@ interface SessionGroup {
 }
 
 export function SessionsPanel({
+  agent,
+  railCollapsed,
   groupedSessions,
   archivedSessions,
   activeSessionId,
@@ -22,6 +25,8 @@ export function SessionsPanel({
   onRenameSession,
   onArchiveSession,
 }: {
+  agent: AgentInfo;
+  railCollapsed: boolean;
   groupedSessions: SessionGroup[];
   archivedSessions: ChatSessionInfo[];
   activeSessionId: number | null;
@@ -37,6 +42,7 @@ export function SessionsPanel({
   const [renameValue, setRenameValue] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
   const { filteredGroups, filteredArchived, q } = useSessionFilter(groupedSessions, archivedSessions, query);
+  const CapabilityIcon = agentPresentation(agent.id).icon;
 
   const startRename = (session: ChatSessionInfo) => {
     setRenamingId(session.id);
@@ -58,6 +64,19 @@ export function SessionsPanel({
           New
         </Button>
       </div>
+      {railCollapsed && (
+        <div className="flex shrink-0 items-center gap-2.5 border-b px-3 py-2" title={agent.description}>
+          <span className="bg-muted flex size-7 shrink-0 items-center justify-center rounded-lg">
+            <CapabilityIcon className="size-[15px]" />
+          </span>
+          <span className="flex min-w-0 flex-col">
+            <span className="text-sm leading-tight font-medium">{agent.name}</span>
+            <span className="text-muted-foreground truncate text-xs leading-tight">
+              {agentPresentation(agent.id).subtitle}
+            </span>
+          </span>
+        </div>
+      )}
       <div className="relative shrink-0 border-b px-2 py-1.5">
         <SearchIcon className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-4.5 size-3.5 -translate-y-1/2" />
         <Input

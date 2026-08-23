@@ -185,7 +185,7 @@ kawai/
 - **`rig`** — on crates.io `0.42` (same semver source as `rig-libsql` and `rig-components`; the `Vec<Embedding>` `insert_documents` change rig-libsql needs is in this release). Used for the cloudflare session-title provider and the libsql vector-store seam. Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers via rig become optional configuration later, not a requirement.
 - **`libsql`** — per-user DB against self-hosted sqld. Desktop/mobile: local embedded replica per user; web: remote connection (no per-user local file). Builder selection lives in `logic.rs` behind `cfg(feature = "web")`. Connections are per-op (fresh EdDSA token each call).
 - **`jsonwebtoken`** — RS256 (Clerk JWKS verify in `auth.rs`) and EdDSA (sqld token mint in `logic.rs`). Two versions coexist (9.x direct + 10.x transitive) — expected.
-- All compile clean across desktop, android arm64, and ios arm64 (verified 2026-08-15; default/web/litert feature combos). Two rustls versions (0.22 + 0.23) coexist — expected.
+- All compile clean across desktop, android arm64, and ios arm64 (default/web/litert feature combos). One rustls (0.23) across the graph — libsql runs core-only (`Builder::new_local` everywhere; re-add its `remote` feature with sqld sync).
 - **Frontend**: `@types/hast` pinned to 3.0.4 via `resolutions` (3.0.5 breaks the vendored streamdown — see AGENTS.md Landmines).
 
 ## Web dependency gating (Axum excluded from desktop/mobile)
