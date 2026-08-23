@@ -4,6 +4,7 @@ import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useRetryableToast } from "@/hooks/use-retryable-toast";
 import { platform, runningInTauri } from "@/platform";
 import { call, errText, type KnowledgeFileInfo, type OfficeFileInfo } from "@/lib/api";
+import { logWarn } from "@/lib/logger";
 import { showErrorToast } from "@/lib/utils";
 import { ADD_FILE_ACCEPT } from "@/lib/extensions";
 import { dataUrlToFile, fileToBase64 } from "@/lib/base64";
@@ -51,7 +52,7 @@ export function useKnowledgeActions(chat: {
       if (importedIds.length) {
         const runs = importedIds.map((fileId) =>
           call<number>("office_index_file", { sessionId: chat.sessionId, fileId })
-            .catch((e) => console.warn("[office_index_file]", errText(e)))
+            .catch((e) => logWarn("office_index_file", e))
             .finally(() => void knowledge.refresh()),
         );
         await knowledge.refresh();
@@ -90,7 +91,7 @@ export function useKnowledgeActions(chat: {
         });
       }
     } catch (err) {
-      console.warn("[office_import_file]", errText(err));
+      logWarn("office_import_file", err);
       showErrorToast(err);
     } finally {
       setImporting(false);
@@ -153,7 +154,7 @@ export function useKnowledgeActions(chat: {
       try {
         await call<number>("office_index_file", { sessionId: chat.sessionId, fileId: file.id });
       } catch (err) {
-        console.warn("[office_index_file]", errText(err));
+        logWarn("office_index_file", err);
       } finally {
         await knowledge.refresh();
       }
@@ -205,7 +206,7 @@ export function useKnowledgeActions(chat: {
       const info = await importVideo();
       toast.success(`Imported ${info.originalName}`, { description: "Indexing runs in the background." });
     } catch (err) {
-      console.warn("[knowledge_import_youtube]", errText(err));
+      logWarn("knowledge_import_youtube", err);
       runWithRetry(`Couldn't import the YouTube video — ${errText(err)}`, importVideo);
     } finally {
       setLinking(false);

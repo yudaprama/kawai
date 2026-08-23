@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { call, errText, type KnowledgeFileInfo } from "@/lib/api";
+import { call, type KnowledgeFileInfo } from "@/lib/api";
+import { logWarn } from "@/lib/logger";
 
 /**
  * The knowledge panel list: every stored document with its RAG index state
@@ -26,7 +27,7 @@ export function useKnowledgeFiles(enabled: boolean) {
       setUnavailable(false);
     } catch (err) {
       // Feature-gated command missing (no `office` build) or not authed yet.
-      console.warn("[knowledge_list]", errText(err));
+      logWarn("knowledge_list", err);
       setUnavailable(true);
     } finally {
       setLoaded(true);

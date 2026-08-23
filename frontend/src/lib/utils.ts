@@ -25,12 +25,6 @@ export function formatBytes(n: number): string {
   return `${v.toFixed(v >= 10 ? 0 : 1)} ${units[i]}`;
 }
 
-/** @deprecated use formatBytes */
-export const formatSize = formatBytes;
-
-/** @deprecated use errText from @/lib/api — same semantics, single source */
-export const errorMessage = errText;
-
 export function showErrorToast(e: unknown): void {
   toast.error(errText(e));
 }

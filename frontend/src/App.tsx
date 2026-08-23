@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useLocalChat } from "@/hooks/use-local-chat";
 import { useKnowledgeActions } from "@/hooks/use-knowledge-actions";
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
-import { call, errText, type AgentInfo } from "@/lib/api";
+import { call, type AgentInfo } from "@/lib/api";
+import { logWarn } from "@/lib/logger";
 import { LinkDialog, PreviewDialog } from "@/components/knowledge-dialogs";
 import { AgentsRail, agentPresentation } from "@/panels/agents-rail";
 import { ConversationPanel } from "@/panels/conversation-panel";
@@ -22,7 +23,7 @@ export default function App() {
       .then((catalog) => {
         if (!disposed && catalog.length) setAgents(catalog);
       })
-      .catch((err) => console.error("[list_agents]", errText(err)));
+      .catch((err) => logWarn("list_agents", err));
     return () => {
       disposed = true;
     };

@@ -1,7 +1,8 @@
 import { useCallback, useState, type ChangeEvent } from "react";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { call, errText, type KnowledgeFileInfo } from "@/lib/api";
+import { call, type KnowledgeFileInfo } from "@/lib/api";
+import { logWarn } from "@/lib/logger";
 import {
   PromptInput,
   PromptInputBody,
@@ -77,7 +78,7 @@ function ChatComposerInner({
     try {
       setMentionFiles(await call<KnowledgeFileInfo[]>("knowledge_list"));
     } catch (err) {
-      console.warn("[knowledge_list]", errText(err));
+      logWarn("knowledge_list", err);
       setMentionFiles([]);
     }
   }, [mentionFiles]);
