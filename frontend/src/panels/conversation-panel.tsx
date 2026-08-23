@@ -121,6 +121,14 @@ export function ConversationPanel({
       <div className="flex min-h-0 flex-1">
         <section className={`flex min-w-0 flex-col ${canvasOpen ? "md:w-[55%] md:flex-none" : "w-full"}`}>
           <div className="relative min-h-0 flex-1">
+            {status === "submitted" && (
+              <div className="text-muted-foreground absolute inset-x-0 top-3 z-10 flex justify-center">
+                <span className="bg-background/90 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs shadow-sm">
+                  <Spinner className="size-3" />
+                  thinking…
+                </span>
+              </div>
+            )}
             {!inSession ? (
               <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
                 <span className="bg-primary/15 text-primary flex size-12 items-center justify-center rounded-xl">
