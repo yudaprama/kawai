@@ -1082,21 +1082,9 @@ pub fn extract_draft_blocks(raw: &str) -> Result<Vec<crate::logic::office::ooxml
         .trim();
     // Parse the whole payload first; only carve a substring when the model
     // wrapped the JSON in prose (which breaks whole-string parsing).
-    let value: Value = match serde_json::from_str::<Value>(unfenced) {
+    let value: Value = match parse_with_brace_repair(unfenced) {
         Ok(v) => v,
-        Err(whole_err) => {
-            let carved = match (unfenced.find('{'), unfenced.rfind('}')) {
-                (Some(a), Some(b)) if b > a => Some(&unfenced[a..=b]),
-                _ => None,
-            };
-            match carved
-                .map(|c| serde_json::from_str::<Value>(c).ok())
-                .flatten()
-            {
-                Some(v) => v,
-                None => return Err(format!("not valid JSON: {whole_err}")),
-            }
-        }
+        Err(e) => return Err(format!("not valid JSON: {e}")),
     };
     let blocks_value = match &value {
         Value::Array(_) => value.clone(),
@@ -1105,6 +1093,35 @@ pub fn extract_draft_blocks(raw: &str) -> Result<Vec<crate::logic::office::ooxml
     };
     serde_json::from_value::<Vec<crate::logic::office::ooxml::DocBlock>>(blocks_value)
         .map_err(|e| format!("blocks failed schema validation: {e}"))
+}
+
+/// Parse a draft payload, recovering from a recurring provider quirk: an
+/// extra `}` emitted right after a nested block (observed as `…items":[…]}},`
+/// — the stray brace closes the root object early and the rest of the blocks
+/// become unparseable). Whole-string first; then prose-carve (first `{` to
+/// last `}`); then try deleting one `}` from each `}}` pair in turn. Returns
+/// the last serde error when nothing parses (for diagnosis).
+fn parse_with_brace_repair(unfenced: &str) -> Result<Value, String> {
+    if let Ok(v) = serde_json::from_str::<Value>(unfenced) {
+        return Ok(v);
+    }
+    let carved = match (unfenced.find('{'), unfenced.rfind('}')) {
+        (Some(a), Some(b)) if b > a => &unfenced[a..=b],
+        _ => unfenced,
+    };
+    let mut last_err = match serde_json::from_str::<Value>(carved) {
+        Ok(v) => return Ok(v),
+        Err(e) => e.to_string(),
+    };
+    let mut repaired = carved.to_string();
+    while let Some(pos) = repaired.rfind("}}") {
+        repaired.remove(pos + 1);
+        match serde_json::from_str::<Value>(&repaired) {
+            Ok(v) => return Ok(v),
+            Err(e) => last_err = e.to_string(),
+        }
+    }
+    Err(last_err)
 }
 
 /// The agent chat loop. Requires `litert` (the on-device model is the only
@@ -2433,6 +2450,28 @@ mod tests {
         assert!(extract_draft_blocks("no json here").is_err());
         assert!(extract_draft_blocks("{\"blocks\": \"not an array\"}").is_err());
         assert!(extract_draft_blocks("{\"blocks\":[{\"type\":\"hologram\"}]}").is_err());
+    }
+
+    // Provider quirk (zai glm, observed 2026-08-23): a stray `}` right after
+    // the first bullets block — `…items":[…]}},{"type":"heading"` — closes the
+    // root object early. The brace-repair pass must recover every block.
+    #[cfg(all(feature = "litert", feature = "office"))]
+    #[test]
+    fn draft_blocks_repairs_stray_brace_after_nested_block() {
+        let raw = "{\"blocks\":[{\"type\":\"title\",\"text\":\"Hybrid LLM Update\"},\
+{\"type\":\"bullets\",\"items\":[\"deep_write subagent\",\"draft_document subagent\"]}\
+},{\"type\":\"heading\",\"text\":\"Results\",\"level\":1},\
+{\"type\":\"paragraph\",\"text\":\"Closing.\"}]}";
+        let blocks = extract_draft_blocks(raw).expect("repair parses");
+        assert_eq!(blocks.len(), 4);
+    }
+
+    #[cfg(all(feature = "litert", feature = "office"))]
+    #[test]
+    fn draft_blocks_repairs_stray_brace_prose_wrapped() {
+        let raw = "Here you go:\n{\"blocks\":[{\"type\":\"bullets\",\"items\":[\"a\",\"b\"]}},{\"type\":\"paragraph\",\"text\":\"tail\"}]}\nEnjoy.";
+        let blocks = extract_draft_blocks(raw).expect("repair parses");
+        assert_eq!(blocks.len(), 2);
     }
 
     #[cfg(feature = "litert")]

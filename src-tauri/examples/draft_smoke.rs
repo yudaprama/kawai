@@ -35,39 +35,54 @@ What Shipped (bullets), Results (table with metric/value rows), Next Steps (bull
 Results: cloud smoke 3.6s, 193 output tokens; local tests 40/40. Next: calibration, GUI badge.";
 
     let t0 = std::time::Instant::now();
-    let stream = remote.stream(DRAFT_SYSTEM, task, materials).await.expect("stream");
-    let mut stream = Box::pin(stream);
-    let mut raw = String::new();
-    let mut usage = None;
-    let mut winner = String::new();
-    while let Some(ev) = stream.next().await {
-        match ev {
-            Ok(RemoteEvent::Token { text }) => raw.push_str(&text),
-            Ok(RemoteEvent::Done { usage: u, provider, .. }) => {
-                usage = Some(u);
-                winner = provider;
+    // One retry: a cloud stream can drop mid-generation after the failover
+    // boundary (first text token) — truncated JSON is a transient provider
+    // flake, not a regression.
+    let mut blocks = None;
+    for attempt in 1..=2 {
+        let mut raw = String::new();
+        let mut usage = None;
+        let mut winner = String::new();
+        let mut hit_cap = false;
+        let stream = remote.stream(DRAFT_SYSTEM, task, materials).await.expect("stream");
+        let mut stream = Box::pin(stream);
+        while let Some(ev) = stream.next().await {
+            match ev {
+                Ok(RemoteEvent::Token { text }) => raw.push_str(&text),
+                Ok(RemoteEvent::Done { usage: u, provider, hit_cap: c }) => {
+                    usage = Some(u);
+                    winner = provider;
+                    hit_cap = c;
+                }
+                Err(e) => {
+                    println!("[draft_smoke] stream error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        println!(
+            "[draft_smoke] attempt {attempt} done in {:.1}s · served by {winner} · {} chars · usage in={:?} out={:?} · hit_cap={hit_cap}",
+            t0.elapsed().as_secs_f64(),
+            raw.chars().count(),
+            usage.map(|u| u.input_tokens),
+            usage.map(|u| u.output_tokens)
+        );
+
+        match extract_draft_blocks(raw.trim()) {
+            Ok(b) => {
+                blocks = Some(b);
+                break;
+            }
+            Err(e) if attempt == 1 => {
+                println!("[draft_smoke] JSON invalid ({e}) — retrying once\n--- raw ---\n{raw}");
             }
             Err(e) => {
-                println!("[draft_smoke] stream error: {e}");
+                println!("[draft_smoke] JSON invalid after retry: {e}\n--- raw ---\n{raw}");
                 std::process::exit(1);
             }
         }
     }
-    println!(
-        "[draft_smoke] cloud done in {:.1}s · served by {winner} · {} chars · usage in={:?} out={:?}",
-        t0.elapsed().as_secs_f64(),
-        raw.chars().count(),
-        usage.map(|u| u.input_tokens),
-        usage.map(|u| u.output_tokens)
-    );
-
-    let blocks = match extract_draft_blocks(raw.trim()) {
-        Ok(b) => b,
-        Err(e) => {
-            println!("[draft_smoke] JSON invalid: {e}\n--- raw head ---\n{}", &raw[..raw.len().min(600)]);
-            std::process::exit(1);
-        }
-    };
+    let blocks = blocks.expect("blocks parsed");
     println!("[draft_smoke] parsed {} blocks", blocks.len());
 
     let file = kawai_lib::logic::office::ooxml::create_document_from_blocks(
