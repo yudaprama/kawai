@@ -55,7 +55,9 @@ frontend/
 │   │   ├── preview-file.ts # useFilePreview() hook — fetches + decodes office store files
 │   │   └── streamdown/     # vendored streaming markdown renderer
 │   ├── hooks/
-│   │   ├── use-local-chat.ts    # central chat state: LocalChatEvent → UIMessage parts, sessions, model mgmt
+│   │   ├── use-local-chat.ts    # facade: composes use-chat-model + use-chat-sessions + send/stop
+│   │   ├── use-chat-model.ts        # model slice: loadModel, resetModelContext, toggleThinking, unloadModel
+│   │   ├── use-chat-sessions.ts     # session slice: CRUD, ensureSessionId, groupedSessions
 │   │   ├── use-knowledge-actions.ts # knowledge mutations: import, index, session binding, delete + UI state
 │   │   ├── use-knowledge-files.ts # knowledge panel list: refresh, markIndexing, markInSession, remove
 │   │   ├── use-session-filter.ts    # filteredGroups / filteredArchived from query (extracted from SessionsPanel)
