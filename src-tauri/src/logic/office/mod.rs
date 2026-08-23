@@ -164,11 +164,12 @@ pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
     set.add_tool(tools::PdfMergeTool(t.user_id.clone()));
     set.add_tool(tools::PdfSplitTool(t.user_id.clone()));
     set.add_tool(tools::PdfInfoTool(t.user_id.clone()));
-    // Web read tiering: hidden webview first, Cloudflare fallback. Registered
-    // only when at least one engine exists (never offered to the model
-    // otherwise) — same capability-probe rule as the engines above.
+    // Web read + search tiering: hidden webview first, Cloudflare fallback.
+    // Registered only when at least one engine exists (never offered to the
+    // model otherwise) — same capability-probe rule as the engines above.
     if crate::logic::scrape::any_engine() {
-        set.add_tool(crate::logic::scrape::WebReadTool(t.user_id));
+        set.add_tool(crate::logic::scrape::WebReadTool(t.user_id.clone()));
+        set.add_tool(crate::logic::scrape::WebSearchTool(t.user_id.clone()));
     }
     set
 }
