@@ -5,13 +5,13 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 
 ## Goals
 
-- Product: **an AI agents app** — a catalog of specialized agents (finance, knowledge, weather, …); each agent = LLM persona + curated toolset from `rig-components/` (per-category crates of generated rig tools, `registry::toolset_for(names)`). UI: three-pane — left = agent list, center = active agent content, right = sessions of the selected agent (MVP ships the center pane + session sidebar; the full three-pane arrives with the agent tier).
+- Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from `rig-components/` (per-category crates of generated rig tools, `registry::toolset_for(names)`). UI: three-pane — left = agents rail, center = active agent chat + canvas, right = sessions sidebar.
 - End state: **desktop + mobile + web from one core**; app logic is 100% shared, only transport and launcher differ per target.
 - Current phase: **MVP, desktop-first** (macOS, on-device LLM, dev-bypass auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
 - Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`hooks/use-local-chat.ts` + `lib/ai-types.ts`).
 - Backend: Rust, single core logic.
 - Auth: MVP = dev-bypass (`set_session` with any token, backend-gated by `KAWAI_AUTH_DEV_USER_ID`). Backend retains Clerk JWKS verification (`auth.rs`, public keys only) for the future prod flow (browser + deep link, Roadmap 6).
-- LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). `rig` is on crates.io `0.42` (declared + used for the cloudflare title provider and the vector-store seam); remote providers are optional configuration. **Hybrid cloud-subagent tier (2026-08-20):** the local model delegates heavy synthesis to cloud subagent *tools* (`deep_write`, `draft_document`) via prompt-based tool calling when a remote LLM is configured (default `zai` via kawai-vault compiled-in key; `logic/remote.rs`). Agent tier uses prompt-based tool calling on the local model; `rig-components/` (14 category crates of generated rig tools, `registry::toolset_for(names)`) provides the toolsets, usable standalone without a rig provider. Design record: `PLAN-hybrid-llm-subagents.md`.
+- LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). `rig` is on crates.io `0.42` (declared + used for the cloudflare title provider and the vector-store seam); remote providers are optional configuration. **Hybrid cloud-subagent tier (2026-08-20):** the local model delegates heavy synthesis to cloud subagent *tools* (`deep_write`, `draft_document`) via prompt-based tool calling when a remote LLM is configured (default `zai` via kawai-vault compiled-in key; `logic/remote.rs`). Agent tier uses prompt-based tool calling on the local model; `rig-components/` (per-category crates of generated rig tools, `registry::toolset_for(names)`) provides the toolsets, usable standalone without a rig provider. Design record: `PLAN-hybrid-llm-subagents.md`.
 - Persistence: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
 ## Layer diagram
@@ -119,6 +119,7 @@ kawai/
 │   └── src/
 │       ├── main.tsx          # React root
 │       ├── App.tsx           # three-pane UI: agents rail, chat + canvas (artifact/knowledge panel), sessions sidebar
+│       ├── panels/           # pane components: agents-rail, conversation-panel, sessions-panel, chat-composer, knowledge-panel
 │       ├── lib/
 │       │   ├── ai-types.ts   # LOCAL UIMessage/part type shim — NO ai-sdk runtime
 │       │   ├── api.ts        # call() RPC + errText + payload types
@@ -130,22 +131,27 @@ kawai/
 │       │   ├── ai-elements/  # vendored chat components (from web/, trimmed)
 │       │   └── ui/           # shadcn primitives (from web/)
 │       └── platform/         # slim capability adapter (browser APIs only)
-├── src/                      # RETIRED vanilla frontend (reference only — do not edit)
 ├── rig-components/           # per-category rig tool crates (agent-tier tool library)
 ├── scripts/
-│   └── dev-sqld.sh           # dev launcher for self-hosted sqld
+│   ├── dev-sqld.sh           # dev launcher for self-hosted sqld
+│   └── bundle-litert-dylibs.sh  # prep LiteRT dylibs into native/ for .app bundling
 ├── .env                      # KAWAI_AUTH_* + KAWAI_DB_* (gitignored)
 ├── .env.local                # VITE_CLERK_PUBLISHABLE_KEY (gitignored; reference only)
 └── src-tauri/
     ├── Cargo.toml
     ├── tauri.conf.json       # devUrl :1420, frontendDist ../dist, beforeBuildCommand "bun run build"
+    ├── build.rs              # tauri_build + embeds @executable_path/../Frameworks rpath
+    ├── migrations/           # versioned SQLite schema (include_str! loaded by db_migrations.rs)
+    ├── examples/             # headless dev tools (all require litert feature)
     └── src/
         ├── main.rs           # desktop binary entry
         ├── lib.rs            # Tauri builder + module decls
         ├── logic.rs          # PURE LOGIC (no Tauri/Axum deps); rig + libsql + db token
+        ├── logic/            # domain modules: agent, db, rag, remote, scrape, office/
         ├── auth.rs           # PURE AUTH; Clerk JWKS verify + EdDSA mint + Session
         ├── commands.rs       # #[tauri::command] wrappers
-        ├── web.rs            # Axum router + auth_middleware + static serving
+        ├── web.rs            # Axum router + auth_middleware
+        ├── webview_engine.rs # on-device webview fetch engine (office feature)
         └── bin/
             └── web.rs        # standalone web server entry
 ```
@@ -210,7 +216,7 @@ Package manager is **bun**. Mobile needs extra toolchain: Android requires `ANDR
 
 **RPC:** `App.tsx → call('list_chat_sessions')` → `invoke` → `commands::list_chat_sessions` → `logic::…`
 
-**Streaming:** `use-local-chat.ts → streamOperation('local_chat', {prompt}, handlers)` → `Channel` → `commands::local_chat` → `logic::local_llm::local_chat` stream → events folded into the live assistant `UIMessage` parts (`token` → text part, `toolCall`/`toolResult` → tool parts with state transitions).
+**Streaming:** `use-local-chat.ts → streamOperation('agent_chat', {agentId, sessionId, message}, handlers)` → `Channel` → `commands::agent_chat` → `logic::agent::agent_chat` stream → events folded into the live assistant `UIMessage` parts (`token` → text part, `toolCall`/`toolResult` → tool parts with state transitions).
 
 ## Authentication
 
