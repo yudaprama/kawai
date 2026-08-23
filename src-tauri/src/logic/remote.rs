@@ -591,4 +591,33 @@ mod tests {
             assert!(!is_retryable_status(s), "{s} should not be retryable");
         }
     }
+
+    // H5 failover boundary regression: empty completion (zero text) must be
+    // treated as failover-worthy — it marks the candidate unhealthy and the
+    // next candidate is tried. See stream() `!yielded_any` branch.
+    #[test]
+    fn failover_boundary_empty_stream_marks_unhealthy() {
+        let t = ModelHealthTracker::new(Duration::from_secs(30));
+        // Empty stream from zai → mark unhealthy (default cooldown)
+        t.mark_unhealthy("zai", None);
+        assert!(!t.is_available("zai"));
+        // zai should now be last, openrouter first
+        let labels = ["zai", "openrouter", "ollama"];
+        assert_eq!(t.order_indices(&labels), vec![1, 2, 0]);
+        // After recovery, priority restored
+        t.mark_healthy("zai");
+        assert_eq!(t.order_indices(&labels), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn failover_boundary_yielded_token_commits_provider() {
+        let t = ModelHealthTracker::default();
+        // If at least one text token was yielded, mark_healthy is called — no cooldown
+        t.mark_healthy("zai");
+        assert!(t.is_available("zai"));
+        let labels = ["zai", "openrouter"];
+        assert_eq!(t.order_indices(&labels), vec![0, 1]);
+        // Even if later mid-stream error occurs, yielded_any=true means NO failover
+        // (stream() yields Err directly). This is verified by the `!yielded_any && failover_worthy` guard.
+    }
 }

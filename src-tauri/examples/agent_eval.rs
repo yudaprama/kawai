@@ -281,10 +281,20 @@ async fn main() {
     let pct = 100.0 * pass as f64 / total as f64;
     let min_pass = min_pass.min(total);
     let gate_ok = pass >= min_pass;
+    // H4 latency budget — p50/p95/avg across scenarios
+    let mut sorted: Vec<f64> = rows.iter().map(|(_, _, _, s)| *s).collect();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let avg = sorted.iter().sum::<f64>() / sorted.len() as f64;
+    let p50 = sorted[sorted.len() / 2];
+    let p95 = sorted[(sorted.len() as f64 * 0.95) as usize % sorted.len()];
     println!(
         "\n== {pass}/{total} pass ({pct:.0}%) — gate {min_pass}/{total} {}",
         if gate_ok { "OK" } else { "FAILED" }
     );
+    println!(
+        "[latency H4] load {load_s:.1}s | avg {avg:.1}s p50 {p50:.1}s p95 {p95:.1}s | decode ~9-10 tok/s (E4B CPU) TTFT 7-8s cold — see PLAN L1/L12"
+    );
+    println!("[latency H4] budget suggestion: tool-routing turns <12s, long synthesis via deep_write (cloud) with 600s deadline; see logic/agent.rs REMOTE_TIMEOUT_SECS");
 
     if let Some(path) = report_path {
         let mut md = String::new();

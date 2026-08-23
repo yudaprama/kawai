@@ -1,0 +1,101 @@
+name: kv-sweep
+
+# H7 K/V budget sweep — weekly + manual (PLAN H7)
+# Measures peak RSS + TTFT/decode at 8192 / 16384 / 24576 (ceiling 32003)
+# to pick the largest stable K/V budget for Gemma 4 E4B.
+# Separated from ci.yml so the per-PR gates stay fast:
+# ci.yml runs on every push/PR (no schedule), this workflow runs only on
+# manual dispatch or weekly cron. Both share the same bazel + E4B caches.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1' # Mon 03:00 UTC
+
+concurrency:
+  group: kv-sweep-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kv-sweep:
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            /private/var/tmp/_bazel_runner
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos26-arm64-
+
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+
+      - name: Build litert-lm dylib
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_arm64"
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=macos_arm64 --jobs=6
+          mkdir -p ../../native
+          cp bazel-bin/c/liblitert-lm.dylib ../../native/
+          install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
+          bash ../../../scripts/bundle-litert-dylibs.sh
+
+      - name: Cache E4B eval model
+        id: eval-model
+        uses: actions/cache@v4
+        with:
+          path: eval-model
+          key: gemma-4-E4B-it-litertlm
+
+      - name: Download E4B eval model
+        if: steps.eval-model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p eval-model
+          curl -fL --retry 3 -o eval-model/gemma-4-E4B-it.litertlm \
+            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
+
+      - name: kv_sweep (H7 — 8192 / 16384 / 24576 + RSS)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        run: |
+          set -euo pipefail
+          echo "# kv_sweep — H7 K/V budget sweep" | tee ${{ github.workspace }}/kv-sweep-report.md
+          echo "- model: gemma-4-E4B-it (14GB runner)" | tee -a ${{ github.workspace }}/kv-sweep-report.md
+          echo "- budgets: 8192, 16384, 24576 (ceiling 32003)" | tee -a ${{ github.workspace }}/kv-sweep-report.md
+          echo "" | tee -a ${{ github.workspace }}/kv-sweep-report.md
+          for b in 8192 16384 24576; do
+            echo "## budget $b" | tee -a ${{ github.workspace }}/kv-sweep-report.md
+            KAWAI_LLM_MAX_TOKENS=$b /usr/bin/time -l cargo run --release --example kv_sweep --features litert -- ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm $b 2>&1 | tee /tmp/kv_sweep_$b.log
+            grep -i "maximum resident" /tmp/kv_sweep_$b.log | tee -a ${{ github.workspace }}/kv-sweep-report.md || true
+            echo "" | tee -a ${{ github.workspace }}/kv-sweep-report.md
+          done
+          cat ${{ github.workspace }}/kv-sweep-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload kv-sweep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kv-sweep-report
+          path: kv-sweep-report.md
+          if-no-files-found: warn
