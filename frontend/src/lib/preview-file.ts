@@ -14,13 +14,7 @@ export function knowledgeFileToPreview(f: KnowledgeFileInfo): PreviewFile {
   return { id: f.id, name: f.originalName, size: f.bytes };
 }
 
-/** Decodes base64 → UTF-8 text (for text/markdown rendering). */
-function decodeBase64Text(b64: string): string {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new TextDecoder("utf-8").decode(bytes);
-}
+import { base64ToText } from "@/lib/base64";
 
 export interface FilePreviewData {
   mime: string;
@@ -56,7 +50,7 @@ export function useFilePreview(file: PreviewFile) {
           mime: res.mime,
           dataBase64: res.dataBase64,
           dataUrl,
-          text: isText ? decodeBase64Text(res.dataBase64) : undefined,
+          text: isText ? base64ToText(res.dataBase64) : undefined,
         });
       })
       .catch((e) => {

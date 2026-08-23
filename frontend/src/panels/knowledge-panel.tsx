@@ -2,10 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { KnowledgeFileInfo } from "@/lib/api";
-import {
-  KnowledgeFileRow,
-  KnowledgeSectionLabel,
-} from "@/lib/knowledge-utils";
+import { KnowledgeFileRow, KnowledgeSectionLabel } from "@/components/knowledge-file-row";
 import { FileIcon } from "@/components/file-icon";
 import { PlusIcon, VideoIcon } from "lucide-react";
 
@@ -29,7 +26,7 @@ export function KnowledgePanel({
     loaded: boolean;
     files: KnowledgeFileInfo[];
   };
-  sessionId: string | null;
+  sessionId: number | null;
   sessionFiles: KnowledgeFileInfo[];
   importing: boolean;
   linking: boolean;

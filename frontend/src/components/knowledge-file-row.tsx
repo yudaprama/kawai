@@ -1,56 +1,8 @@
 import { FileIcon } from "@/components/file-icon";
 import { Spinner } from "@/components/ui/spinner";
 import type { KnowledgeFileInfo } from "@/lib/api";
-import {
-  CheckIcon,
-  EyeIcon,
-  PlusIcon,
-  RotateCcwIcon,
-  TrashIcon,
-  XIcon,
-} from "lucide-react";
-
-export const ADD_FILE_ACCEPT = [".docx", ".xlsx", ".pptx", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"];
-export const OFFICE_EXTS = new Set(["docx", "xlsx", "pptx", "pdf"]);
-export const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
-
-export function formatBytes(n: number): string {
-  if (!Number.isFinite(n) || n < 0) return "—";
-  if (n < 1024) return `${n} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let v = n;
-  let i = -1;
-  do { v /= 1024; i += 1; } while (v >= 1024 && i < units.length - 1);
-  return `${v.toFixed(v >= 10 ? 0 : 1)} ${units[i]}`;
-}
-
-export function isYouTubeUrl(raw: string): boolean {
-  try {
-    const host = new URL(raw.trim()).hostname.toLowerCase();
-    return ["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"].includes(host);
-  } catch { return false; }
-}
-
-export function dataUrlToFile(dataUrl: string, name: string): File {
-  const [meta, b64] = dataUrl.split(",", 2);
-  const mime = meta.slice(5, meta.indexOf(";")) || "application/octet-stream";
-  const binary = atob(b64 ?? "");
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new File([bytes], name, { type: mime });
-}
-
-export type KnowledgeSource =
-  | { kind: "file"; name: string; sourcePath?: string; file?: File }
-  | { kind: "unsupported"; name: string };
-
-export function classifySource(name: string, src: { path?: string; file?: File }): KnowledgeSource {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  if (OFFICE_EXTS.has(ext) || IMAGE_EXTS.has(ext)) {
-    return { kind: "file", name, ...(src.path ? { sourcePath: src.path } : { file: src.file }) };
-  }
-  return { kind: "unsupported", name };
-}
+import { formatBytes } from "@/lib/utils";
+import { CheckIcon, EyeIcon, PlusIcon, RotateCcwIcon, TrashIcon, XIcon } from "lucide-react";
 
 export function KnowledgeStatusBadge({ file }: { file: KnowledgeFileInfo }) {
   if (file.status === "indexing") {
@@ -83,9 +35,7 @@ export function KnowledgeStatusBadge({ file }: { file: KnowledgeFileInfo }) {
 export function KnowledgeSectionLabel({ label, count }: { label: string; count: number }) {
   return (
     <div className="flex items-baseline justify-between px-1 pb-1.5">
-      <p className="font-mono text-[11px] tracking-wider text-muted-foreground uppercase">
-        {label}
-      </p>
+      <p className="font-mono text-[11px] tracking-wider text-muted-foreground uppercase">{label}</p>
       <span className="font-mono text-[11px] text-muted-foreground/70">{count}</span>
     </div>
   );
@@ -178,9 +128,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
         )}
         <button
           aria-label={`Delete ${file.originalName}`}
-          className={`rounded p-1 ${
-            confirmDelete ? "text-destructive" : "text-muted-foreground hover:text-destructive"
-          }`}
+          className={`rounded p-1 ${confirmDelete ? "text-destructive" : "text-muted-foreground hover:text-destructive"}`}
           onClick={() => actions.onDelete(file)}
           title={confirmDelete ? "Click again to confirm — deletes the document everywhere" : "Delete document"}
           type="button"
@@ -190,27 +138,4 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
       </div>
     </div>
   );
-}
-
-/** Reads a File as a base64 string (chunked to survive large files). */
-export function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
-    reader.onload = () => {
-      const result = reader.result;
-      if (!(result instanceof ArrayBuffer)) {
-        reject(new Error("Unexpected file read result"));
-        return;
-      }
-      const bytes = new Uint8Array(result);
-      let binary = "";
-      const CHUNK = 0x8000;
-      for (let i = 0; i < bytes.length; i += CHUNK) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-      }
-      resolve(btoa(binary));
-    };
-    reader.readAsArrayBuffer(file);
-});
-}
+};

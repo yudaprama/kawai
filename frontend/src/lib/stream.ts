@@ -28,13 +28,18 @@ export function streamOperation<E extends { type: string }>(
   const streamId = crypto.randomUUID();
 
   channel.onmessage = (msg: E) => {
-    if (msg.type === "finished") {
-      onDone?.();
-    } else if (msg.type === "error") {
-      const message = (msg as unknown as { message?: string }).message ?? "stream error";
-      onError?.(new Error(message));
-    } else {
-      onEvent?.(msg);
+    switch (msg.type) {
+      case "finished":
+        onDone?.();
+        break;
+      case "error": {
+        const message = (msg as unknown as { message?: string }).message ?? "stream error";
+        onError?.(new Error(message));
+        break;
+      }
+      default:
+        onEvent?.(msg);
+        break;
     }
   };
 

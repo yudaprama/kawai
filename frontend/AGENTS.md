@@ -44,16 +44,21 @@ frontend/
 │   │   ├── ai-types.ts     # LOCAL type shim: UIMessage, UIMessagePart, ToolUIPart, etc. (no ai-sdk dep)
 │   │   ├── api.ts          # call() — RPC via Tauri invoke + errText helper + backend payload types
 │   │   ├── stream.ts       # streamOperation() — streaming via Tauri Channel + cancel_stream
+│   │   ├── base64.ts       # bytesToBase64, base64ToBytes, dataUrlToFile, fileToBase64
+│   │   ├── extensions.ts   # ADD_FILE_ACCEPT, OFFICE_EXTS, IMAGE_EXTS (single source)
+│   │   ├── knowledge.ts    # isYouTubeUrl, classifySource — pure knowledge helpers
 │   │   ├── clipboard.ts    # clipboard read/write helpers (browser APIs)
 │   │   ├── download.ts     # triggerDownload() — creates and clicks a temp <a>
 │   │   ├── file-types.ts   # fileExtension(), fileKind(), shikiLanguage(), guessMimeType()
-│   │   ├── utils.ts        # cn() (clsx+tailwind-merge), formatSize(), errorMessage(), etc.
-│   │   ├── toast-utils.ts  # showErrorToast() — sonner error toast from an unknown rejection
+│   │   ├── utils.ts        # cn(), formatBytes, isRecord, errText alias + showErrorToast
 │   │   ├── preview-file.ts # useFilePreview() hook — fetches + decodes office store files
 │   │   └── streamdown/     # vendored streaming markdown renderer
 │   ├── hooks/
 │   │   ├── use-local-chat.ts    # central chat state: LocalChatEvent → UIMessage parts, sessions, model mgmt
+│   │   ├── use-knowledge-actions.ts # knowledge mutations: import, index, session binding, delete + UI state
 │   │   ├── use-knowledge-files.ts # knowledge panel list: refresh, markIndexing, markInSession, remove
+│   │   ├── use-session-filter.ts    # filteredGroups / filteredArchived from query (extracted from SessionsPanel)
+│   │   ├── use-app-shortcuts.ts     # ⌘1/2/3 + ⌘N global shortcuts (extracted from App)
 │   │   ├── use-streamdown.ts    # streamdown plugins (cjk, code, math, mermaid) + translations
 │   │   ├── use-theme.ts         # dark/light/system theme with localStorage persistence
 │   │   ├── use-copy-button.ts   # copy button with Check/Copy icon swap
@@ -67,10 +72,15 @@ frontend/
 │   │   ├── rename-input.tsx # inline rename field (Enter/blur commit, Escape cancel)
 │   │   ├── error-boundary.tsx # top-level render crash fallback (Try again / Reload app; mirrors to frontend_log)
 │   │   ├── file-icon.tsx   # CDN file-type icons (jsdelivr @lobehub/assets-fileicon)
-│   │   └── file-preview.tsx # dispatches to renderer by file kind (image, video, pdf, text, markdown, fallback)
+│   │   ├── file-preview.tsx # dispatches to renderer by file kind (image, video, pdf, text, markdown, fallback)
+│   │   ├── message-part-view.tsx  # MessagePartView: tool cards + reasoning + text + copy
+│   │   ├── knowledge-file-row.tsx # KnowledgeFileRow + StatusBadge + SectionLabel
+│   │   ├── knowledge-dialogs.tsx  # PreviewDialog + LinkDialog (extracted from App)
+│   │   └── session-row.tsx        # SessionRow: active/archived row with rename/archive/delete
 │   ├── panels/
 │   │   ├── agents-rail.tsx        # pane 1: agent catalog rail
-│   │   ├── conversation-panel.tsx # pane 2: chat + composer + model status
+│   │   ├── conversation-panel.tsx # pane 2: chat + model status (virtualization)
+│   │   ├── chat-composer.tsx      # composer: @-mention + file chips + speech
 │   │   ├── knowledge-panel.tsx    # canvas pane: knowledge base (session/library tabs)
 │   │   └── sessions-panel.tsx     # pane 3: session list — search, inline rename, archive/restore, delete
 │   ├── platform/
@@ -89,7 +99,7 @@ frontend/
 User prompt → App.tsx → use-local-chat.send()
   → streamOperation("agent_chat", {agentId, sessionId, message})
   → Tauri Channel<LocalChatEvent> (via @tauri-apps/api/core)
-  → events: "started" | "token" | "toolCall" | "toolResult" | "finished" | "error"
+  → events: "started" | "token" | "toolCall" | "subagentThinking" | "toolResult" | "finished" | "error"
   → use-local-chat folds events into UIMessage[] parts
   → App.tsx renders via Conversation/Message/Tool components
 ```

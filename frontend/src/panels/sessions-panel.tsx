@@ -1,19 +1,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { RenameInput } from "@/components/rename-input";
 import type { ChatSessionInfo } from "@/lib/api";
-import {
-  ArchiveIcon,
-  ArchiveRestoreIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  PencilIcon,
-  PlusIcon,
-  SearchIcon,
-  TrashIcon,
-  XIcon,
-} from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { SessionRow } from "@/components/session-row";
+import { useSessionFilter } from "@/hooks/use-session-filter";
 
 interface SessionGroup {
   label: string;
@@ -45,31 +36,14 @@ export function SessionsPanel({
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
-
-  const q = query.trim().toLowerCase();
-  const filteredGroups = q
-    ? groupedSessions
-        .map((group) => ({
-          ...group,
-          sessions: group.sessions.filter((s) =>
-            (s.title ?? "").toLowerCase().includes(q),
-          ),
-        }))
-        .filter((group) => group.sessions.length > 0)
-    : groupedSessions;
-  const filteredArchived = q
-    ? archivedSessions.filter((s) => (s.title ?? "").toLowerCase().includes(q))
-    : archivedSessions;
+  const { filteredGroups, filteredArchived, q } = useSessionFilter(groupedSessions, archivedSessions, query);
 
   const startRename = (session: ChatSessionInfo) => {
     setRenamingId(session.id);
     setRenameValue(session.title ?? "");
   };
-
   const commitRename = () => {
-    if (renamingId != null && renameValue.trim()) {
-      onRenameSession(renamingId, renameValue);
-    }
+    if (renamingId != null && renameValue.trim()) onRenameSession(renamingId, renameValue);
     setRenamingId(null);
   };
 
@@ -110,71 +84,23 @@ export function SessionsPanel({
               {group.label}
             </p>
             <div className="flex flex-col gap-0.5">
-              {group.sessions.map((session) =>
-                renamingId === session.id ? (
-                  <RenameInput
-                    key={session.id}
-                    onChange={setRenameValue}
-                    onCancel={() => setRenamingId(null)}
-                    onCommit={commitRename}
-                    value={renameValue}
-                  />
-                ) : (
-                  <div
-                    className={`group/session flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
-                      activeSessionId === session.id
-                        ? "bg-accent text-accent-foreground"
-                        : "hover:bg-accent/50"
-                    }`}
-                    key={session.id}
-                  >
-                    <button
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:opacity-50"
-                      disabled={busy}
-                      onClick={() => onSelectSession(session.id)}
-                      title={busy ? "Tunggu jawaban selesai" : undefined}
-                      type="button"
-                    >
-                      {activeSessionId === session.id && (
-                        <span className="bg-primary size-1.5 shrink-0 rounded-full" />
-                      )}
-                      <span className="truncate">{session.title || `Session #${session.id}`}</span>
-                    </button>
-                    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/session:opacity-100">
-                      <button
-                        aria-label={`Rename ${session.title || `session ${session.id}`}`}
-                        className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-                        disabled={busy}
-                        onClick={() => startRename(session)}
-                        title={busy ? "Tunggu jawaban selesai" : "Rename session"}
-                        type="button"
-                      >
-                        <PencilIcon className="size-3.5" />
-                      </button>
-                      <button
-                        aria-label={`Archive ${session.title || `session ${session.id}`}`}
-                        className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-                        disabled={busy}
-                        onClick={() => onArchiveSession(session.id, true)}
-                        title={busy ? "Tunggu jawaban selesai" : "Archive session"}
-                        type="button"
-                      >
-                        <ArchiveIcon className="size-3.5" />
-                      </button>
-                      <button
-                        aria-label={`Delete ${session.title || `session ${session.id}`}`}
-                        className="text-muted-foreground hover:text-destructive disabled:opacity-30"
-                        disabled={busy}
-                        onClick={() => onDeleteSession(session.id)}
-                        title={busy ? "Tunggu jawaban selesai" : "Delete session"}
-                        type="button"
-                      >
-                        <TrashIcon className="size-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ),
-              )}
+              {group.sessions.map((session) => (
+                <SessionRow
+                  key={session.id}
+                  session={session}
+                  active={activeSessionId === session.id}
+                  busy={busy}
+                  renaming={renamingId === session.id}
+                  renameValue={renameValue}
+                  onChangeRename={setRenameValue}
+                  onSelect={() => onSelectSession(session.id)}
+                  onStartRename={() => startRename(session)}
+                  onCommitRename={commitRename}
+                  onCancelRename={() => setRenamingId(null)}
+                  onArchive={() => onArchiveSession(session.id, true)}
+                  onDelete={() => onDeleteSession(session.id)}
+                />
+              ))}
             </div>
           </div>
         ))}
@@ -200,44 +126,21 @@ export function SessionsPanel({
             {archiveOpen && (
               <div className="flex flex-col gap-0.5">
                 {filteredArchived.map((session) => (
-                  <div
-                    className="group/session flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors hover:bg-accent/50"
+                  <SessionRow
                     key={session.id}
-                  >
-                    <button
-                      className="text-muted-foreground flex min-w-0 flex-1 items-center gap-2 text-left disabled:opacity-50"
-                      disabled={busy}
-                      onClick={() => onSelectSession(session.id)}
-                      title={busy ? "Tunggu jawaban selesai" : undefined}
-                      type="button"
-                    >
-                      <span className="truncate italic">
-                        {session.title || `Session #${session.id}`}
-                      </span>
-                    </button>
-                    <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/session:opacity-100">
-                      <button
-                        aria-label={`Restore ${session.title || `session ${session.id}`}`}
-                        className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-                        disabled={busy}
-                        onClick={() => onArchiveSession(session.id, false)}
-                        title={busy ? "Tunggu jawaban selesai" : "Restore session"}
-                        type="button"
-                      >
-                        <ArchiveRestoreIcon className="size-3.5" />
-                      </button>
-                      <button
-                        aria-label={`Delete ${session.title || `session ${session.id}`}`}
-                        className="text-muted-foreground hover:text-destructive disabled:opacity-30"
-                        disabled={busy}
-                        onClick={() => onDeleteSession(session.id)}
-                        title={busy ? "Tunggu jawaban selesai" : "Delete session"}
-                        type="button"
-                      >
-                        <TrashIcon className="size-3.5" />
-                      </button>
-                    </div>
-                  </div>
+                    session={session}
+                    busy={busy}
+                    renaming={false}
+                    renameValue=""
+                    onChangeRename={() => {}}
+                    onSelect={() => onSelectSession(session.id)}
+                    onStartRename={() => {}}
+                    onCommitRename={() => {}}
+                    onCancelRename={() => {}}
+                    onArchive={() => onArchiveSession(session.id, false)}
+                    onDelete={() => onDeleteSession(session.id)}
+                    archivedStyle
+                  />
                 ))}
               </div>
             )}

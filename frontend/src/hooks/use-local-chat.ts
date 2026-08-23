@@ -10,7 +10,7 @@ import {
   type LocalModelInfo,
 } from "@/lib/api";
 import { streamOperation, type StreamControl } from "@/lib/stream";
-import { showErrorToast } from "@/lib/toast-utils";
+import { showErrorToast } from "@/lib/utils";
 import { logError, logWarn } from "@/lib/logger";
 import type {
   ChatStatus,
@@ -24,6 +24,7 @@ type LocalChatEvent =
   | { type: "started"; sessionId?: number }
   | { type: "token"; text: string }
   | { type: "toolCall"; id?: string | null; tool: string; args: unknown }
+  | { type: "subagentThinking"; provider: string; text: string }
   | { type: "toolResult"; id?: string | null; tool: string; ok: boolean; summary: string }
   | { type: "finished" }
   | { type: "error"; message: string };
@@ -73,6 +74,17 @@ function sessionPeriod(createdAt: number | null): "Today" | "Yesterday" | "Earli
   return "Earlier";
 }
 
+// Tool-call markup never renders as prose: taught ```tool fences and Gemma 4
+// native <|tool_call>… forms are stripped to tool cards.
+function stripToolMarkup(s: string): string {
+  return s
+    .replace(/```tool[\s\S]*?```/gi, "")
+    .replace(/<\|tool_call[^>]*>[\s\S]*?(?:<tool_call\|>|<\|tool_call_end\|>)/gi, "")
+    .replace(/<\|(?:tool_call[^>]*|tool_response[^>]*|channel>[^>]*|message\||end\|)>/gi, "")
+    .replace(/\b(?:call|response):[a-z0-9_]+\s*\{[^{}]*\}/gi, "")
+    .trim();
+}
+
 /**
  * @param agent the active catalog entry (from the `list_agents` op). The
  * backend owns agent ids; every agent (with or without tools) chats through
@@ -106,21 +118,13 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     setState((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  // Use provided userId or run auth bootstrap.
   const { userId: authUserId, authError } = useAuth();
-
   const effectiveUserId = userId ?? authUserId;
 
   useEffect(() => {
     if (effectiveUserId) patch({ userId: effectiveUserId });
     if (authError) patch({ authError });
   }, [effectiveUserId, authError]);
-
-  // Refresh auth state when userId changes externally (e.g. dev-bypass toggle).
-  useEffect(() => {
-    if (effectiveUserId) patch({ userId: effectiveUserId });
-    if (authError) patch({ authError });
-  }, [effectiveUserId, authUserId, authError]);
 
   const loadModel = useCallback(async () => {
     setState((prev) =>
@@ -147,6 +151,16 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     }
   }, [state.userId, state.modelLoaded, state.modelLoading, loadModel]);
 
+  const resetModelContext = useCallback(async () => {
+    try {
+      await call("local_llm_reset");
+    } catch (err) {
+      // Best-effort: agent.rs force-resets on the opener path before transcript
+      // replay, so a stale context never leaks even if this fails.
+      logWarn("local_llm_reset", err);
+    }
+  }, []);
+
   const loadSessions = useCallback(async () => {
     try {
       const [sessions, archivedSessions] = await Promise.all([
@@ -163,28 +177,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     if (state.userId) void loadSessions();
   }, [state.userId, loadSessions]);
 
-  const ensureSession = useCallback(
-    async (firstMessage: string): Promise<number | null> => {
-      if (sessionIdRef.current != null) return sessionIdRef.current;
-      try {
-        const s = await call<ChatSessionInfo>("create_chat_session", {
-          agentId,
-          title: firstMessage.slice(0, 80),
-        });
-        sessionIdRef.current = s.id;
-        patch({ sessionId: s.id });
-        void loadSessions();
-        return s.id;
-      } catch (err) {
-        logError("create_chat_session", err);
-        showErrorToast(`Couldn't start a new chat — ${errText(err)}`);
-        return null;
-      }
-    },
-    [agentId, patch, loadSessions],
-  );
-
-  /** Ensure a session exists, creating one with a generic title if needed (e.g. adding knowledge before first message). */
+  /** Ensure a session exists, creating one with titleHint if needed. */
   const ensureSessionId = useCallback(
     async (titleHint = "New chat"): Promise<number | null> => {
       if (sessionIdRef.current != null) return sessionIdRef.current;
@@ -208,30 +201,15 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
 
   const newChat = useCallback(async () => {
     if (streamCtrl.current) return;
-    try {
-      await call("local_llm_reset");
-    } catch (err) {
-      // Best-effort only: a failed reset leaves the engine context stale, and
-      // the next turn's opener path in agent.rs force-resets before replaying
-      // the transcript, so contamination never reaches the model.
-      logWarn("local_llm_reset", err);
-    }
+    await resetModelContext();
     sessionIdRef.current = null;
     patch({ sessionId: null, messages: [], stats: "" });
-  }, [patch]);
+  }, [patch, resetModelContext]);
 
   const selectSession = useCallback(
     async (sessionId: number) => {
       if (streamCtrl.current) return;
-      // Clear model context — the Conversation API holds a single context.
-      // Best-effort: if this fails, agent.rs force-resets on the opener path
-      // before the next turn replays the transcript, so a stale context never
-      // leaks across sessions.
-      try {
-        await call("local_llm_reset");
-      } catch (err) {
-        logWarn("local_llm_reset", err);
-      }
+      await resetModelContext();
       sessionIdRef.current = sessionId;
       patch({ sessionId, messages: [], stats: "" });
       try {
@@ -241,20 +219,16 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         logError("list_chat_messages", err);
       }
     },
-    [patch],
+    [patch, resetModelContext],
   );
 
   /** Switch agent: clear model context and start fresh (no session selected). */
   const selectAgent = useCallback(async () => {
     if (streamCtrl.current) return;
-    try {
-      await call("local_llm_reset");
-    } catch (err) {
-      logWarn("local_llm_reset", err);
-    }
+    await resetModelContext();
     sessionIdRef.current = null;
     patch({ sessionId: null, messages: [], stats: "" });
-  }, [patch]);
+  }, [patch, resetModelContext]);
 
   /** Delete a session (and its messages). Deleting the active session starts
    * a fresh chat; the model context is cleared either way. */
@@ -269,17 +243,13 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         return;
       }
       if (sessionIdRef.current === sessionId) {
-        try {
-          await call("local_llm_reset");
-        } catch (err) {
-          logWarn("local_llm_reset", err);
-        }
+        await resetModelContext();
         sessionIdRef.current = null;
         patch({ sessionId: null, messages: [], stats: "" });
       }
       void loadSessions();
     },
-    [patch, loadSessions],
+    [patch, loadSessions, resetModelContext],
   );
 
   /** Rename a session (sidebar inline rename). Empty titles are rejected
@@ -330,17 +300,13 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         return;
       }
       if (archived && sessionIdRef.current === sessionId) {
-        try {
-          await call("local_llm_reset");
-        } catch (err) {
-          logWarn("local_llm_reset", err);
-        }
+        await resetModelContext();
         sessionIdRef.current = null;
         patch({ sessionId: null, messages: [], stats: "" });
       }
       void loadSessions();
     },
-    [patch, loadSessions],
+    [patch, loadSessions, resetModelContext],
   );
 
   const toggleThinking = useCallback(async () => {
@@ -413,26 +379,29 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
       // All agents go through `agent_chat` — the backend owns persistence
       // (user + assistant turns) and fires title generation after its own
       // append, so the title generator never races the message insert.
-      const sessionId = await ensureSession(prompt);
+      const sessionId = await ensureSessionId(prompt);
 
       const t0 = performance.now();
       let chunks = 0;
       let chars = 0;
       let full = "";
       let toolParts: ToolUIPart[] = [];
-
-      // Tool-call markup never renders as prose: the taught ```tool fences
-      // (stripped here, they render as tool cards) AND the Gemma 4 native
-      // form <|tool_call>call:NAME{args}<tool_call|>. The backend strips the
-      // native special tokens per token, so also catch the leftover bare
-      // `call:NAME{...}` body.
-      const stripToolMarkup = (s: string) =>
-        s
-          .replace(/```tool[\s\S]*?```/gi, "")
-          .replace(/<\|tool_call[^>]*>[\s\S]*?(?:<tool_call\|>|<\|tool_call_end\|>)/gi, "")
-          .replace(/<\|(?:tool_call[^>]*|tool_response[^>]*|channel>[^>]*|message\||end\|)>/gi, "")
-          .replace(/\b(?:call|response):[a-z0-9_]+\s*\{[^{}]*\}/gi, "")
-          .trim();
+      // Cloud-subagent reasoning (`subagentThinking` events): `text` is the
+      // FULL visible buffer from the backend (replace semantics). `done`
+      // flips when the answer phase starts so the collapsible auto-closes.
+      // Display-only — never persisted with the message.
+      let reasoning: { provider: string; text: string; done: boolean } | null = null;
+      const reasoningPart = (): UIMessagePart[] =>
+        reasoning && reasoning.text
+          ? [
+              {
+                type: "reasoning",
+                text: reasoning.text,
+                state: reasoning.done ? ("done" as const) : ("streaming" as const),
+                providerMetadata: { provider: reasoning.provider },
+              },
+            ]
+          : [];
 
       const setAssistantParts = (parts: UIMessagePart[], status?: ChatStatus, stats?: string) => {
         setState((prev) => ({
@@ -441,6 +410,21 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
           ...(stats != null ? { stats } : {}),
           messages: prev.messages.map((m) => (m.id === assistantId ? { ...m, parts } : m)),
         }));
+      };
+
+      const syncStreamingDisplay = (stats?: string) => {
+        const displayText = stripToolMarkup(full);
+        setAssistantParts(
+          displayText
+            ? [
+                { type: "text", text: displayText, state: "streaming" as const },
+                ...toolParts,
+                ...reasoningPart(),
+              ]
+            : [...toolParts, ...reasoningPart()],
+          "streaming",
+          stats,
+        );
       };
 
       streamCtrl.current = streamOperation<LocalChatEvent>(
@@ -457,20 +441,14 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
               chunks += 1;
               chars += ev.text.length;
               full += ev.text;
-              
-              // Strip fence blocks from display text (they become tool cards)
-              const displayText = stripToolMarkup(full);
-              
-              setAssistantParts(
-                displayText
-                  ? [
-                      { type: "text", text: displayText, state: "streaming" as const },
-                      ...toolParts,
-                    ]
-                  : [...toolParts],
-                "streaming",
+              // Answer tokens started — the subagent's thinking is over.
+              if (reasoning) reasoning.done = true;
+              syncStreamingDisplay(
                 `${chunks} chunks · ${chars} chars · ${((performance.now() - t0) / 1000).toFixed(1)}s`,
               );
+            } else if (ev.type === "subagentThinking") {
+              reasoning = { provider: ev.provider, text: ev.text, done: false };
+              syncStreamingDisplay();
             } else if (ev.type === "toolCall") {
               const part: ToolUIPart = {
                 type: `tool-${ev.tool}`,
@@ -479,16 +457,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
                 input: ev.args,
               };
               toolParts = [...toolParts, part];
-              
-              // Strip fence blocks from display text
-              const displayText = stripToolMarkup(full);
-              
-              setAssistantParts(
-                displayText
-                  ? [{ type: "text", text: displayText, state: "streaming" as const }, ...toolParts]
-                  : [...toolParts],
-                "streaming",
-              );
+              syncStreamingDisplay();
             } else if (ev.type === "toolResult") {
               toolParts = toolParts.map((p) =>
                 p.type === `tool-${ev.tool}` &&
@@ -502,28 +471,24 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
                     }
                   : p,
               );
-              
-              // Strip fence blocks from display text
-              const displayText = stripToolMarkup(full);
-              
-              setAssistantParts(
-                displayText
-                  ? [{ type: "text", text: displayText, state: "streaming" as const }, ...toolParts]
-                  : [...toolParts],
-                "streaming",
-              );
+              syncStreamingDisplay();
             }
           },
           onDone: () => {
             streamCtrl.current = null;
-            
+            if (reasoning) reasoning.done = true;
+
             // Strip fence blocks from final display text
             const displayText = stripToolMarkup(full);
-            
+
             setAssistantParts(
               displayText
-                ? [{ type: "text", text: displayText, state: "done" as const }, ...toolParts]
-                : [...toolParts],
+                ? [
+                    { type: "text", text: displayText, state: "done" as const },
+                    ...toolParts,
+                    ...reasoningPart(),
+                  ]
+                : [...toolParts, ...reasoningPart()],
               "ready",
               `done · ${chunks} chunks · ${chars} chars · ${((performance.now() - t0) / 1000).toFixed(1)}s`,
             );
@@ -535,6 +500,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
             // Transient concurrency race — downgrade to ready, don't scare user.
             const lower = err.message.toLowerCase();
             const isBusyRace = lower.includes("already running") || lower.includes("generation is already");
+            if (reasoning) reasoning.done = true;
             if (isBusyRace) {
               setState((prev) => ({
                 ...prev,
@@ -545,8 +511,12 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
                     ? {
                         ...m,
                         parts: full
-                          ? [{ type: "text", text: full, state: "done" as const }, ...toolParts]
-                          : [...toolParts],
+                          ? [
+                              { type: "text", text: full, state: "done" as const },
+                              ...toolParts,
+                              ...reasoningPart(),
+                            ]
+                          : [...toolParts, ...reasoningPart()],
                       }
                     : m,
                 ),
@@ -562,8 +532,12 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
                   ? {
                       ...m,
                       parts: full
-                        ? [{ type: "text", text: full, state: "done" as const }, ...toolParts]
-                        : [...toolParts],
+                        ? [
+                            { type: "text", text: full, state: "done" as const },
+                            ...toolParts,
+                            ...reasoningPart(),
+                          ]
+                        : [...toolParts, ...reasoningPart()],
                     }
                   : m,
               ),
@@ -572,7 +546,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         },
       );
     },
-    [agentId, ensureSession, loadSessions],
+    [agentId, ensureSessionId, loadSessions],
   );
 
   const agentSessions = state.sessions.filter((s) => s.agentId === agentId);
