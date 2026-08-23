@@ -152,12 +152,17 @@ mod tests {
     }
 
     fn uuid_like() -> String {
+        use std::sync::atomic::{AtomicU64, Ordering};
         use std::time::{SystemTime, UNIX_EPOCH};
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
         let n = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        format!("{n:x}")
+        // The counter keeps parallel tests off each other's temp dirs even
+        // when the clock granularity repeats across simultaneous starts.
+        let c = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        format!("{n:x}_{c:x}")
     }
 
     #[tokio::test]
