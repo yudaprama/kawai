@@ -107,6 +107,7 @@ impl ModelHealthTracker {
         }
     }
 
+    #[cfg(test)]
     /// True if the provider is not currently in cooldown.
     fn is_available(&self, label: &str) -> bool {
         let guard = self.cooldowns.read().unwrap();
@@ -237,6 +238,14 @@ pub struct RemoteUsage {
 /// candidate that actually won (failover may have skipped earlier ones).
 pub enum RemoteEvent {
     Token { text: String },
+    /// Provider reasoning (thinking) text, surfaced for live display.
+    /// `provider` = the candidate actually streaming (failover may switch
+    /// mid-call). `reset` carries replace semantics: `true` ⇒ `text` is the
+    /// FULL corrected reasoning buffer (a complete reasoning block
+    /// superseding its deltas, or a cleared buffer after a failover);
+    /// `false` ⇒ `text` is a delta to append. Never counts toward the
+    /// failover boundary — only a `Token` commits a candidate.
+    Reasoning { provider: String, text: String, reset: bool },
     /// `hit_cap` = the provider stopped at max_tokens (answer is truncated
     /// mid-flight); surfaced so consumers can flag it honestly.
     Done { usage: RemoteUsage, provider: String, hit_cap: bool },
@@ -358,15 +367,43 @@ impl RemoteLlm {
         let stream = async_stream::stream! {
             let labels: Vec<&str> = candidates.iter().map(|c| c.label).collect();
             let mut last_err = String::new();
+            // Reasoning mirror: the full display buffer the consumer sees via
+            // reset events. `part_start` is where the CURRENT reasoning part
+            // begins — a complete `Reasoning` block replaces only its own
+            // part's deltas, never the parts before it.
+            let mut reasoning_buf = String::new();
+            let mut reasoning_part_start = 0usize;
+            let mut reasoning_id: Option<String> = None;
             for idx in MODEL_HEALTH.order_indices(&labels) {
                 let cand = &candidates[idx];
-                let request = cand
+                if !reasoning_buf.is_empty() {
+                    // Reasoning from an abandoned candidate attempt — clear
+                    // the visible thinking so it tracks the candidate that
+                    // actually serves the call.
+                    reasoning_buf.clear();
+                    reasoning_part_start = 0;
+                    reasoning_id = None;
+                    yield Ok(RemoteEvent::Reasoning {
+                        provider: cand.label.to_string(),
+                        text: String::new(),
+                        reset: true,
+                    });
+                }
+                let mut request = cand
                     .model
                     .completion_request(prompt.clone())
                     .preamble(system.clone())
                     .temperature(0.4)
-                    .max_tokens(max_output_tokens)
-                    .build();
+                    .max_tokens(max_output_tokens);
+                if cand.label == "zai" {
+                    // GLM keeps thinking OFF by default on this endpoint;
+                    // enable it so the reasoning channel streams. The field
+                    // is zai-specific — never sent to other providers.
+                    request = request.additional_params(
+                        serde_json::json!({"thinking": {"type": "enabled"}}),
+                    );
+                }
+                let request = request.build();
                 let mut response = match cand.model.stream(request).await {
                     Ok(r) => r,
                     Err(e) => {
@@ -397,8 +434,47 @@ impl RemoteLlm {
                                 yield Ok(RemoteEvent::Token { text: t.text });
                             }
                         }
+                        Ok(rig::streaming::StreamedAssistantContent::ReasoningDelta {
+                            id,
+                            reasoning,
+                            ..
+                        }) => {
+                            if !reasoning.is_empty() {
+                                if reasoning_id.as_deref() != Some(id.as_str()) {
+                                    reasoning_id = Some(id);
+                                    reasoning_part_start = reasoning_buf.len();
+                                }
+                                reasoning_buf.push_str(&reasoning);
+                                yield Ok(RemoteEvent::Reasoning {
+                                    provider: cand.label.to_string(),
+                                    text: reasoning,
+                                    reset: false,
+                                });
+                            }
+                        }
+                        Ok(rig::streaming::StreamedAssistantContent::Reasoning {
+                            reasoning,
+                            id,
+                        }) => {
+                            let text = reasoning_text(&reasoning);
+                            if !text.is_empty() {
+                                if reasoning_id.as_deref() != Some(id.as_str()) {
+                                    reasoning_id = Some(id.clone());
+                                    reasoning_part_start = reasoning_buf.len();
+                                }
+                                // A complete block supersedes its own part's
+                                // deltas: splice it in at the part boundary.
+                                reasoning_buf.truncate(reasoning_part_start);
+                                reasoning_buf.push_str(&text);
+                                yield Ok(RemoteEvent::Reasoning {
+                                    provider: cand.label.to_string(),
+                                    text: reasoning_buf.clone(),
+                                    reset: true,
+                                });
+                            }
+                        }
                         // No tools are sent, so any other content kind is
-                        // ignored (reasoning deltas are provider-internal).
+                        // ignored (tool-call deltas are provider-internal).
                         Ok(_) => {}
                         Err(e) => {
                             if !yielded_any && failover_worthy(&e) {
@@ -510,6 +586,21 @@ fn truncate_chars(s: &str, max: usize) -> String {
         let t: String = s.chars().take(max).collect();
         format!("{t}\n[materials truncated at {max} chars by the server]")
     }
+}
+
+/// Flatten a complete reasoning block into display text. Encrypted/redacted
+/// payloads carry nothing readable and are skipped.
+fn reasoning_text(reasoning: &rig::message::Reasoning) -> String {
+    reasoning
+        .content
+        .iter()
+        .filter_map(|block| match block {
+            rig::message::ReasoningContent::Text { text, .. } => Some(text.as_str()),
+            rig::message::ReasoningContent::Summary(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 /// Generate a random 26-char alphanumeric ID for OpenCode headers.

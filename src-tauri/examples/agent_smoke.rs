@@ -31,6 +31,7 @@ async fn run_turn(agent_id: &str, session_id: Option<i64>, message: &str) -> (Op
         agent_id.into(),
         session_id,
         message.into(),
+        Vec::new(),
     ));
     while let Some(ev) = stream.next().await {
         match ev {
@@ -46,6 +47,12 @@ async fn run_turn(agent_id: &str, session_id: Option<i64>, message: &str) -> (Op
                     saw_cloud_call = true;
                 }
                 events.push(format!("tool_call {tool}"));
+            }
+            AgentChatEvent::SubagentThinking { provider, text } => {
+                events.push(format!(
+                    "subagent_thinking {provider} +{} chars",
+                    text.chars().count()
+                ));
             }
             AgentChatEvent::ToolResult { tool, ok, summary } => {
                 if saw_cloud_call && tool == "deep_write" {

@@ -33,14 +33,24 @@ async fn main() {
         "builtin.office".into(),
         None,
         prompt.into(),
+        Vec::new(),
     ));
     let mut answer = String::new();
     let mut tool: Option<String> = None;
+    let mut thinking = 0usize;
+    let mut thinking_provider = String::new();
     while let Some(ev) = stream.next().await {
         match ev {
             AgentChatEvent::ToolCall { tool: t, .. } => {
                 println!("[tool_call {t}]");
                 tool = Some(t);
+            }
+            AgentChatEvent::SubagentThinking { provider, text } => {
+                if thinking == 0 {
+                    thinking_provider = provider.clone();
+                    println!("[subagent_thinking streaming ({provider})]");
+                }
+                thinking = text.chars().count();
             }
             AgentChatEvent::Token { text } => answer.push_str(&text),
             AgentChatEvent::Finished => println!("[finished]"),
@@ -50,6 +60,9 @@ async fn main() {
     }
     println!("── RESULT ──");
     println!("delegated_to_cloud = {}", tool.as_deref().unwrap_or("-"));
+    println!(
+        "subagent thinking = {thinking} chars (last provider: {thinking_provider})",
+    );
     println!("local answer ({} chars): {}", answer.chars().count(), &answer.chars().take(200).collect::<String>());
 
     let since = std::time::SystemTime::now()

@@ -57,35 +57,44 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 #[cfg(feature = "litert")]
 use rig::tool::ToolContext;
+#[cfg(feature = "litert")]
 use rig::tool::ToolSet;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[cfg(feature = "litert")]
 /// Max tool dispatches per user turn before forcing a final answer. Sized for
 /// multi-step workflows (list → read → read → delegate) without letting a
 /// tool-looping model spin forever.
 const MAX_TOOL_CALLS: usize = 8;
+#[cfg(feature = "litert")]
 /// How many chars of a tool result are echoed into the UI event.
 const TOOL_RESULT_UI_CHARS: usize = 500;
+#[cfg(feature = "litert")]
 /// Cap on a tool result fed BACK into the conversation (chars). Tool outputs
 /// reach 60k chars (office_read_document) — uncapped, a single call
 /// permanently burns the K/V budget. When capped, the model is told to
 /// narrow its query.
 const TOOL_RESULT_MODEL_CHARS: usize = 4000;
+#[cfg(feature = "litert")]
 /// Cap on tool results accumulated for cloud-subagent `materials` this turn.
 /// Cloud-facing only (big remote context) — the accumulation never enters the
 /// local K/V state, so it can far exceed TOOL_RESULT_MODEL_CHARS. Whole-doc
 /// reads (summaries) need the full text, not top-k excerpts.
 const TOOL_RESULT_MATERIALS_CHARS: usize = 32_000;
+#[cfg(feature = "litert")]
 /// Per-message cap inside a replayed transcript (all but the newest message).
 const TRANSCRIPT_MSG_CHARS: usize = 2000;
+#[cfg(feature = "litert")]
 /// Cap for the NEWEST message in a replayed transcript — usually the previous
 /// assistant answer (often a long cloud-written artifact). Follow-ups like
 /// "shorten what you just wrote" need far more of it than 2000 chars.
 const TRANSCRIPT_LAST_MSG_CHARS: usize = 6000;
+#[cfg(feature = "litert")]
 /// Char budget for the replayed transcript when opening a conversation epoch
 /// (first turn, session switch, restart).
 const TRANSCRIPT_BUDGET_CHARS: usize = 6000;
+#[cfg(feature = "litert")]
 /// Smaller budget for the retry after an overflow — it MUST fit.
 const TRANSCRIPT_BUDGET_RETRY_CHARS: usize = 3000;
 
@@ -105,6 +114,10 @@ const REMOTE_TIMEOUT_SECS: u64 = 600;
 /// Cap on the draft JSON the cloud may return (chars) — guards absurd output.
 #[cfg(feature = "litert")]
 const DRAFT_JSON_MAX_CHARS: usize = 120_000;
+/// Cap on the cloud-subagent reasoning text surfaced to the UI (chars).
+/// Display-only: never persisted, never fed into the local conversation.
+#[cfg(feature = "litert")]
+const SUBAGENT_THINKING_MAX_CHARS: usize = 16_000;
 
 /// Does the user's message ask for a whole-content summary? Keyword gate
 /// (id + en) — deliberately cheap; it only gates an in-context NUDGE, never
@@ -154,7 +167,7 @@ fn first_file_id(body: &str) -> Option<String> {
 /// handles (`doc1`, …) — the model copies these reliably, unlike the real
 /// 23-char store ids. Dispatch resolves the handle back to the real id.
 #[cfg(feature = "litert")]
-fn attachment_prompt_block(sid: i64, ids: &[String]) -> String {
+fn attachment_prompt_block(sid: i64, #[allow(unused_variables)] ids: &[String]) -> String {
     #[cfg(feature = "office")]
     if !ids.is_empty() {
         let lines: Vec<String> = ids
@@ -242,11 +255,11 @@ pub fn list_agents() -> Vec<AgentInfo> {
     }]
 }
 
-#[cfg(not(feature = "office"))]
+#[cfg(all(feature = "litert", not(feature = "office")))]
 const OFFICE_PERSONA: &str =
     "You are kawai, a helpful, concise personal assistant.";
 
-#[cfg(feature = "office")]
+#[cfg(all(feature = "litert", feature = "office"))]
 const OFFICE_PERSONA: &str = "You are kawai's office agent. You read, create, edit, merge and inspect documents (docx, xlsx, pptx, pdf, youtube transcript) through tools.\n\
 Rules:\n\
 - Call at most ONE tool per reply, as a single call:<name>{...} line, then stop and wait for the response: message.\n\
@@ -398,7 +411,7 @@ fn alias_rewrite_body(sid: i64, tool: &str, body: &str) -> String {
         Ok(v) => v,
         Err(_) => return body.to_string(),
     };
-    let mut touch = |map: &mut serde_json::Map<String, Value>, key: &str| {
+    let touch = |map: &mut serde_json::Map<String, Value>, key: &str| {
         if let Some(id) = map.get(key).and_then(Value::as_str) {
             if !id.is_empty() {
                 let a = alias_assign(sid, id);
@@ -551,6 +564,14 @@ pub enum AgentChatEvent {
     ToolCall {
         tool: String,
         args: Value,
+    },
+    /// Cloud-subagent reasoning (thinking), streamed live for display.
+    /// `text` is the FULL visible buffer so far (replace, not append);
+    /// `provider` labels the cloud candidate currently streaming.
+    /// Display-only: never persisted, never enters the local conversation.
+    SubagentThinking {
+        provider: String,
+        text: String,
     },
     ToolResult {
         tool: String,
@@ -867,10 +888,7 @@ fn parse_native_tool_call(text: &str) -> Option<Result<(String, Value), String>>
             ));
         }
     }
-    match first_broken {
-        Some(detail) => Some(Err(detail)),
-        None => None,
-    }
+    first_broken.map(Err)
 }
 
 /// Extract `{...}` starting at `body[open]`, honouring string literals, to the
@@ -1101,6 +1119,7 @@ pub fn extract_draft_blocks(raw: &str) -> Result<Vec<crate::logic::office::ooxml
 /// become unparseable). Whole-string first; then prose-carve (first `{` to
 /// last `}`); then try deleting one `}` from each `}}` pair in turn. Returns
 /// the last serde error when nothing parses (for diagnosis).
+#[cfg(all(feature = "litert", feature = "office"))]
 fn parse_with_brace_repair(unfenced: &str) -> Result<Value, String> {
     if let Ok(v) = serde_json::from_str::<Value>(unfenced) {
         return Ok(v);
@@ -1132,6 +1151,7 @@ pub fn agent_chat(
     agent_id: String,
     session_id: Option<i64>,
     message: String,
+    #[allow(unused_variables)]
     file_ids: Vec<String>,
 ) -> impl Stream<Item = AgentChatEvent> {
     use crate::logic::local_llm::LocalChatEvent;
@@ -1182,6 +1202,7 @@ pub fn agent_chat(
         // ids in the prompt — deterministic intent binding, no guessing via
         // search. Office-gated: without the office feature there is no store
         // to resolve against (mentions are then ignored).
+        #[allow(unused_mut)]
         let mut attached_ids: Vec<String> = Vec::new();
         #[cfg(feature = "office")]
         {
@@ -1297,6 +1318,9 @@ pub fn agent_chat(
                 let started = std::time::Instant::now();
                 let system = if is_draft { DRAFT_DOCUMENT_SYSTEM } else { DEEP_WRITE_SYSTEM };
                 let mut answer = String::new();
+                // Mirror of the cloud reasoning buffer (capped) — the
+                // authoritative display text re-emitted per event.
+                let mut reasoning_buf = String::new();
                 let mut usage: Option<crate::logic::remote::RemoteUsage> = None;
                 let mut hit_cap = false;
                 // Label of the candidate that actually served the stream
@@ -1339,6 +1363,23 @@ pub fn agent_chat(
                                     yield AgentChatEvent::Token { text: t };
                                 }
                             }
+                        }
+                        Some(Ok(crate::logic::remote::RemoteEvent::Reasoning { provider, text, reset })) => {
+                            if reset {
+                                reasoning_buf = text;
+                            } else {
+                                reasoning_buf.push_str(&text);
+                            }
+                            if reasoning_buf.chars().count() > SUBAGENT_THINKING_MAX_CHARS {
+                                reasoning_buf = truncate_chars(
+                                    &reasoning_buf,
+                                    SUBAGENT_THINKING_MAX_CHARS,
+                                );
+                            }
+                            yield AgentChatEvent::SubagentThinking {
+                                provider,
+                                text: reasoning_buf.clone(),
+                            };
                         }
                         Some(Ok(crate::logic::remote::RemoteEvent::Done { usage: u, provider: p, hit_cap: c })) => {
                             usage = Some(u);
@@ -1392,6 +1433,25 @@ pub fn agent_chat(
                                             if retry_text.chars().count() < DRAFT_JSON_MAX_CHARS {
                                                 retry_text.push_str(&text);
                                             }
+                                        }
+                                        Ok(crate::logic::remote::RemoteEvent::Reasoning { provider, text, reset }) => {
+                                            if reset {
+                                                reasoning_buf = text;
+                                            } else {
+                                                reasoning_buf.push_str(&text);
+                                            }
+                                            if reasoning_buf.chars().count()
+                                                > SUBAGENT_THINKING_MAX_CHARS
+                                            {
+                                                reasoning_buf = truncate_chars(
+                                                    &reasoning_buf,
+                                                    SUBAGENT_THINKING_MAX_CHARS,
+                                                );
+                                            }
+                                            yield AgentChatEvent::SubagentThinking {
+                                                provider,
+                                                text: reasoning_buf.clone(),
+                                            };
                                         }
                                         Ok(crate::logic::remote::RemoteEvent::Done { usage: u, provider: p, .. }) => {
                                             if usage.is_none() {

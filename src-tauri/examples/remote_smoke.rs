@@ -32,6 +32,7 @@ async fn main() {
         .expect("stream() failed to start");
     let mut stream = Box::pin(stream);
     let mut chars = 0;
+    let mut reasoning_chars = 0;
     let mut usage = None;
     let mut winner = String::new();
     while let Some(ev) = stream.next().await {
@@ -39,6 +40,16 @@ async fn main() {
             Ok(RemoteEvent::Token { text }) => {
                 chars += text.chars().count();
                 print!("{text}");
+            }
+            Ok(RemoteEvent::Reasoning { provider, text, reset }) => {
+                if reset {
+                    eprintln!(
+                        "[remote_smoke] reasoning ({provider}, buffer reset, {} chars)",
+                        text.chars().count()
+                    );
+                } else {
+                    reasoning_chars += text.chars().count();
+                }
             }
             Ok(RemoteEvent::Done { usage: u, provider, .. }) => {
                 usage = Some(u);
@@ -53,7 +64,7 @@ async fn main() {
     println!();
     match usage {
         Some(u) => println!(
-            "[remote_smoke] done in {:.1}s · pool primary {} · served by {winner} · {chars} chars · usage: in={} out={} tokens (zeros = provider reported none)",
+            "[remote_smoke] done in {:.1}s · pool primary {} · served by {winner} · {chars} chars · reasoning {reasoning_chars} chars · usage: in={} out={} tokens (zeros = provider reported none)",
             t0.elapsed().as_secs_f64(),
             remote.provider_label(),
             u.input_tokens,
