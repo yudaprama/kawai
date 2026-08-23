@@ -192,13 +192,21 @@ phone. The realistic on-device mobile orchestrator is a tiny router-class model
 or a much smaller Gemma variant — but Needle 2 is now ruled out as that router
 (L11); watch for a capable successor rather than forcing it.
 
-**H7 — Push the K/V budget toward the 32003 ceiling (harness DONE, measurement pending).**
-16384 is conservative. Harness is committed: `local-llm/src/lib.rs:315` logs `max_tokens` on load,
-`src-tauri/examples/kv_sweep.rs` loops 16384/24576/31999 with TTFT/decode per budget,
+**H7 — Push the K/V budget toward the 32003 ceiling (harness DONE; CI low-RAM floor measured
+2026-08-23; high-budget run + default pick pending).**
+Harness is committed: `local-llm/src/lib.rs:315` logs `max_tokens` on load,
+`src-tauri/examples/kv_sweep.rs` loops budgets with TTFT/decode per budget,
 `scripts/kv_sweep.sh` wraps `/usr/bin/time -l` for peak RSS (isolated per process),
 `.github/workflows/kv-sweep.yml` runs the sweep weekly (Mon 03:00 UTC) + manual dispatch
-(`ci.yml` stays fast per-PR). Still to run once on target hardware and pick the largest
-stable budget — that decision directly reduces overflow resets (L3). Must be measured, not guessed.
+(`ci.yml` stays fast per-PR). First CI run (14GB runner, 2026-08-23): **8192 OK** (TTFT 14.7s,
+RSS 3.64 GB, footprint 6.3 GB), **16384 OK** (TTFT 17.5s, RSS 3.68 GB, footprint 22.8 GB),
+**24576 killed by the OS mid-turn** (footprint 46 GB > runner RAM). Established rule of thumb:
+**K/V state costs ~2 MB per slot, allocated upfront at conversation creation** (RSS stays flat
+~3.4 GB while footprint scales with the budget) → the 32003 ceiling implies a ~60 GB-class
+machine; even the current 16384 default needs ~23 GB. Remaining: one local run on target
+hardware (`bash scripts/kv_sweep.sh <model> 24576,31999`) and decide whether the default
+moves above 16384 or stays put for min-spec headroom — that decision directly reduces overflow
+resets (L3). Must be measured, not guessed.
 
 **H8 — Revisit cactus only on upstream movement (parked 2026-08-22, L9).**
 cactus stays the long-game option for L7 (Metal), H6 (mobile), and 128K context —
@@ -232,7 +240,9 @@ presets expanded in Rust).
    **DONE** — the eval is a committed gate (`agent_eval.rs`). Follow-up:
    regex presets.
 2. ~~**H2 + H7**~~ H2 **DONE** (E4B, L12/L13). **H7 harness DONE 2026-08-23**
-   (`kv_sweep` + `kv-sweep.yml` weekly) — measurement (one run on target hardware) then pick budget.
+   (`kv_sweep` + `kv-sweep.yml` weekly); CI floor measured same day — 8192/16384
+   fit a 14GB machine, 24576 does not (~2 MB K/V per slot). Remaining: local
+   24576/31999 run on target hardware, then pick the default budget.
 3. ~~**H4 + H5**~~ **DONE 2026-08-23** — H4 harness reports p50/p95/TTFT, H5 failover regression gated in CI (MVP readiness).
 4. **H3** — resolved by measurement: Needle killed (L11), option (a) stands on
    19/20 eval evidence; revisit only if the eval later shows real malformed-call

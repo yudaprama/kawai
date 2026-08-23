@@ -1,8 +1,11 @@
 name: kv-sweep
 
 # H7 K/V budget sweep — weekly + manual (PLAN H7)
-# Measures peak RSS + TTFT/decode at 8192 / 16384 / 24576 (ceiling 32003)
-# to pick the largest stable K/V budget for Gemma 4 E4B.
+# Measures peak RSS + TTFT/decode at 8192 / 12288 / 16384 (ceiling 32003).
+# The 14GB runner caps what fits: K/V state costs ~2MB per slot upfront
+# (footprint 6GB @8192, 23GB @16384, 46GB @24576 was jetsam-killed on the
+# first run) — so this workflow is the LOW-RAM floor measurement. Budgets
+# above 16384 belong on target hardware via scripts/kv_sweep.sh.
 # Separated from ci.yml so the per-PR gates stay fast:
 # ci.yml runs on every push/PR (no schedule), this workflow runs only on
 # manual dispatch or weekly cron. Both share the same bazel + E4B caches.
@@ -72,25 +75,32 @@ jobs:
           curl -fL --retry 3 -o eval-model/gemma-4-E4B-it.litertlm \
             https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
 
-      - name: kv_sweep (H7 — 8192 / 16384 / 24576 + RSS)
+      - name: kv_sweep (H7 — 8192 / 12288 / 16384 + RSS)
         working-directory: src-tauri
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
         run: |
-          set -euo pipefail
-          echo "# kv_sweep — H7 K/V budget sweep" | tee ${{ github.workspace }}/kv-sweep-report.md
-          echo "- model: gemma-4-E4B-it (14GB runner)" | tee -a ${{ github.workspace }}/kv-sweep-report.md
-          echo "- budgets: 8192, 16384, 24576 (ceiling 32003)" | tee -a ${{ github.workspace }}/kv-sweep-report.md
-          echo "" | tee -a ${{ github.workspace }}/kv-sweep-report.md
-          for b in 8192 16384 24576; do
-            echo "## budget $b" | tee -a ${{ github.workspace }}/kv-sweep-report.md
-            KAWAI_LLM_MAX_TOKENS=$b /usr/bin/time -l cargo run --release --example kv_sweep --features litert -- ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm $b 2>&1 | tee /tmp/kv_sweep_$b.log
-            grep -i "maximum resident" /tmp/kv_sweep_$b.log | tee -a ${{ github.workspace }}/kv-sweep-report.md || true
-            echo "" | tee -a ${{ github.workspace }}/kv-sweep-report.md
+          set -uo pipefail
+          REPORT=${{ github.workspace }}/kv-sweep-report.md
+          echo "# kv_sweep — H7 K/V budget sweep" | tee "$REPORT"
+          echo "- model: gemma-4-E4B-it (14GB runner — low-RAM floor; high budgets on target hardware via scripts/kv_sweep.sh)" | tee -a "$REPORT"
+          echo "- budgets: 8192, 12288, 16384 (ceiling 32003)" | tee -a "$REPORT"
+          echo "" | tee -a "$REPORT"
+          for b in 8192 12288 16384; do
+            echo "## budget $b" | tee -a "$REPORT"
+            # One OOM kill must not fail the job or skip later budgets.
+            if KAWAI_LLM_MAX_TOKENS=$b /usr/bin/time -l cargo run --release --example kv_sweep --features litert -- ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm $b 2>&1 | tee "/tmp/kv_sweep_$b.log"; then
+              grep -E "load:|turn:" "/tmp/kv_sweep_$b.log" | tee -a "$REPORT" || true
+            else
+              echo "- DIED before finishing the turn (OOM-class on this runner)" | tee -a "$REPORT"
+              tail -n 3 "/tmp/kv_sweep_$b.log" | tee -a "$REPORT" || true
+            fi
+            grep -i "maximum resident\|peak memory footprint" "/tmp/kv_sweep_$b.log" | tee -a "$REPORT" || true
+            echo "" | tee -a "$REPORT"
           done
-          cat ${{ github.workspace }}/kv-sweep-report.md >> "$GITHUB_STEP_SUMMARY"
+          cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload kv-sweep report
         if: always()
