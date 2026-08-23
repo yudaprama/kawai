@@ -7,7 +7,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
+#[cfg(feature = "office")]
 use tauri::Manager;
+#[cfg(feature = "office")]
 use tauri_plugin_opener::OpenerExt;
 use tokio_util::sync::CancellationToken;
 
@@ -340,6 +342,7 @@ pub fn local_llm_get_test_tools() -> Result<String, String> {
 /// Authenticated RPC: get rig-components tool definitions for native function calling.
 #[cfg(feature = "litert")]
 #[tauri::command]
+#[allow(dead_code)]
 pub fn local_llm_get_rig_tools(tool_names: Vec<String>) -> Result<String, String> {
     let names: Vec<&str> = tool_names.iter().map(|s| s.as_str()).collect();
     Ok(logic::local_llm::get_rig_tools_json(&names))
@@ -598,6 +601,7 @@ pub fn office_capabilities(
 /// registry pattern as local_chat.
 #[cfg(feature = "litert")]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn agent_chat(
     agent_id: String,
     session_id: Option<i64>,

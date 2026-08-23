@@ -9,8 +9,6 @@
 //!
 //! Connections are opened per-op. Pool before production.
 
-use async_stream::stream;
-use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 

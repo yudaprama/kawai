@@ -234,6 +234,7 @@ struct CloudflareMessage {
 #[serde(rename_all = "lowercase")]
 enum CloudflareRole {
     User,
+    #[allow(dead_code)]
     Assistant,
 }
 

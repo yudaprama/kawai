@@ -167,7 +167,8 @@ fn first_file_id(body: &str) -> Option<String> {
 /// handles (`doc1`, …) — the model copies these reliably, unlike the real
 /// 23-char store ids. Dispatch resolves the handle back to the real id.
 #[cfg(feature = "litert")]
-fn attachment_prompt_block(sid: i64, #[allow(unused_variables)] ids: &[String]) -> String {
+#[allow(unused_variables)]
+fn attachment_prompt_block(sid: i64, ids: &[String]) -> String {
     #[cfg(feature = "office")]
     if !ids.is_empty() {
         let lines: Vec<String> = ids
