@@ -195,14 +195,15 @@ or a much smaller Gemma variant — but Needle 2 is now ruled out as that router
 **H7 — Push the K/V budget toward the 32003 ceiling (harness DONE; CI low-RAM floor measured
 2026-08-23; high-budget run + default pick pending).**
 Harness is committed: `local-llm/src/lib.rs:315` logs `max_tokens` on load,
-`src-tauri/examples/kv_sweep.rs` loops budgets with TTFT/decode per budget,
+`src-tauri/examples/kv_sweep.rs` loops budgets with TTFT/decode-phase tok/s per budget,
 `scripts/kv_sweep.sh` wraps `/usr/bin/time -l` for peak RSS (isolated per process),
-`.github/workflows/kv-sweep.yml` runs the sweep weekly (Mon 03:00 UTC) + manual dispatch
-(`ci.yml` stays fast per-PR). First CI run (14GB runner, 2026-08-23): **8192 OK** (TTFT 14.7s,
-RSS 3.64 GB, footprint 6.3 GB), **16384 OK** (TTFT 17.5s, RSS 3.68 GB, footprint 22.8 GB),
-**24576 killed by the OS mid-turn** (footprint 46 GB > runner RAM). Established rule of thumb:
-**K/V state costs ~2 MB per slot, allocated upfront at conversation creation** (RSS stays flat
-~3.4 GB while footprint scales with the budget) → the 32003 ceiling implies a ~60 GB-class
+`.github/workflows/kv-sweep.yml` sweeps 8192/12288/16384 weekly (Mon 03:00 UTC) + manual
+dispatch (`ci.yml` stays fast per-PR). CI floor on the 14 GB runner (2026-08-23): **8192 OK**
+(footprint 6.3 GB), **12288 OK** (13.2 GB), **16384 OK** (22.8 GB); RSS stays flat ~3.0–3.5 GB
+and TTFT ~11.6 s is budget-invariant. **24576 was jetsam-killed** (footprint 46 GB > runner
+RAM) so budgets above 16384 belong on target hardware. Marginal footprint cost is superlinear:
+~1.6 MiB/slot (8192→12288), ~2.2 MiB/slot (12288→16384) — rule of thumb **~2 MB per K/V slot,
+allocated upfront at conversation creation** → the 32003 ceiling implies a ~60 GB-class
 machine; even the current 16384 default needs ~23 GB. Remaining: one local run on target
 hardware (`bash scripts/kv_sweep.sh <model> 24576,31999`) and decide whether the default
 moves above 16384 or stays put for min-spec headroom — that decision directly reduces overflow

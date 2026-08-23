@@ -18,7 +18,7 @@ async fn main() {
         .map(|s| {
             s.split(',')
                 .filter_map(|v| v.trim().parse().ok())
-                .filter(|&v| v > 0 && v < 32000)
+                .filter(|&v| v > 0 && v < 32003) // model ceiling 32003; keep strictly below
                 .collect()
         })
         .unwrap_or_else(|| DEFAULT_BUDGETS.to_vec());
