@@ -211,7 +211,9 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     try {
       await call("local_llm_reset");
     } catch (err) {
-      // Expected transient noise (not authenticated / no model loaded) → breadcrumb only.
+      // Best-effort only: a failed reset leaves the engine context stale, and
+      // the next turn's opener path in agent.rs force-resets before replaying
+      // the transcript, so contamination never reaches the model.
       logWarn("local_llm_reset", err);
     }
     sessionIdRef.current = null;
@@ -222,6 +224,9 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     async (sessionId: number) => {
       if (streamCtrl.current) return;
       // Clear model context — the Conversation API holds a single context.
+      // Best-effort: if this fails, agent.rs force-resets on the opener path
+      // before the next turn replays the transcript, so a stale context never
+      // leaks across sessions.
       try {
         await call("local_llm_reset");
       } catch (err) {
