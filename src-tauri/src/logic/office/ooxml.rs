@@ -100,7 +100,7 @@ fn blocks_to_markdown(blocks: &[DocBlock]) -> Result<String, String> {
                     return Err("table block needs at least one non-empty row".into());
                 }
                 let cols = rows.iter().map(Vec::len).max().unwrap_or(1);
-                let mut row_line = |cells: &[String]| -> String {
+                let row_line = |cells: &[String]| -> String {
                     let padded: Vec<String> = (0..cols)
                         .map(|i| cell_text(cells.get(i).map(String::as_str).unwrap_or("")))
                         .collect();

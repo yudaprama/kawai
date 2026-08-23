@@ -1974,6 +1974,7 @@ mod tests {
         assert_eq!(alias_rewrite_body(sid, "some_tool", other), other);
     }
 
+    #[cfg(feature = "litert")]
     #[test]
     fn alias_resolve_args_maps_file_id() {
         let sid = 99003;
