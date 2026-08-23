@@ -81,6 +81,8 @@ jobs:
             git push origin HEAD:main
           fi
 
+          # The bump commit is on main — now create and claim the tag.
+          git tag "v$NEW"
           if ! git push origin "v$NEW"; then
             echo "Race lost on v$NEW — another run claimed the tag. Skipping."
             echo "skipped=true" >> "$GITHUB_OUTPUT"
