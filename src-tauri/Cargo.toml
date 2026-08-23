@@ -109,3 +109,8 @@ path = "src/main.rs"
 name = "kawai-web"
 path = "src/bin/web.rs"
 required-features = ["web"]
+
+# Redirect crates.io office_oxide to the local fork for the entire dependency
+# graph (including pdf_oxide). Prevents duplicate FFI symbols on Linux.
+[patch.crates-io]
+office_oxide = { path = "../office_oxide" }

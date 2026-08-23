@@ -4838,7 +4838,7 @@ dependencies = [
  "libc",
  "libsql",
  "local-llm",
- "office_oxide 0.1.8",
+ "office_oxide",
  "pdf_oxide",
  "ragloader",
  "rand 0.8.7",
@@ -6964,24 +6964,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "office_oxide"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "317c254cebe5b87c74a0fbd84e889d51ec0c4db885fa5aca98700ad85fd9ec5f"
-dependencies = [
- "atoi_simd",
- "encoding_rs",
- "fast-float2",
- "libc",
- "log",
- "quick-xml 0.41.0",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "zip",
-]
-
-[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7196,7 +7178,7 @@ dependencies = [
  "md-5 0.11.0",
  "memchr",
  "nom 8.0.0",
- "office_oxide 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "office_oxide",
  "phf 0.14.0",
  "qcms",
  "quick-xml 0.41.0",
@@ -7934,7 +7916,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "jigsawstack",
- "office_oxide 0.1.8",
+ "office_oxide",
  "pdf_oxide",
  "regex",
  "serde",

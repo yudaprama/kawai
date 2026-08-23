@@ -471,7 +471,15 @@ jobs:
             --jobs=4 --action_env=TMP --action_env=TEMP
           BZ_BIN="$(bazel --output_base=C:/_b info bazel-bin)"
           mkdir -p ../../native
-          cp "$BZ_BIN/c/litert-lm.dll" "$BZ_BIN/c/litert-lm.lib" ../../native/
+          cp "$BZ_BIN/c/litert-lm.dll" ../../native/
+          # MSVC link emits the DLL's import library under bazel's interface
+          # library name <target>.if.lib; rustc -llitert-lm searches for
+          # litert-lm.lib — normalize the name on copy.
+          if [ -f "$BZ_BIN/c/litert-lm.if.lib" ]; then
+            cp "$BZ_BIN/c/litert-lm.if.lib" ../../native/litert-lm.lib
+          else
+            cp "$BZ_BIN/c/litert-lm.lib" ../../native/litert-lm.lib
+          fi
 
       # ── Unit tests ──
       - name: cargo test (litert + office)
