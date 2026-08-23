@@ -194,6 +194,24 @@ on-device generation takes 5–30 s depending on the call-line length.
   then inspect `fts_match_query` (src-tauri/src/logic/rag.rs) and add a unit
   test for the shape.
 
+### 3.12 web_read returns challenge text / budget exhausted
+
+- **Check**: `app.log` line `tool result web_read: ok=true {"engine":"..."}`;
+  the engine field names the tier that served the call.
+- **Root cause (engine none + "bot-protected")**: tier-0 webview missed
+  (marker detection or thin content) AND the Cloudflare render came back
+  walled — hard JS-challenge site.
+- **Root cause ("budget exhausted for today")**: `KAWAI_CF_PER_USER_DAILY`
+  (user) or `KAWAI_CF_GLOBAL_DAILY` (dev-wallet fuse) cap hit; the tool
+  result carries guidance, it is NOT an error.
+- **Root cause (engine never "webview" on desktop)**: engine not registered —
+  check `logic::scrape::set_webview_engine` runs in the `lib.rs` setup hook
+  (office feature only); `kawai-web` and non-office builds are Cloudflare-only
+  by design.
+- **Action**: budget → raise the env cap or wait for the UTC-day rollover;
+  walled page → nothing to fix locally (excluded by design); missing tier 0 →
+  verify the office feature is compiled in.
+
 ## 4. Verification after a fix
 
 ```sh
