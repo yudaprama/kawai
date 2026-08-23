@@ -3,9 +3,10 @@ name: ci
 # Regression gates (AGENTS.md "Verify before considering work done" + Roadmap
 # MVP 3): unit tests, the on-device streaming smoke (small 270M fixture), the
 # hybrid-tier cloud smokes, and agent_eval (E4B orchestration-quality gate) —
-# on every push to main and every PR. agent_eval and the litert-dependent
-# smokes run only on macOS: the litert-lm C engine is built in CI for
-# macos_arm64 only, and the eval must measure target-hardware behavior.
+# on every push to main and every PR. litert-dependent smokes run on all three
+# desktop platforms (macOS arm64, Linux x86_64, Windows x86_64) — each job
+# bazel-builds the LiteRT-LM C engine natively before exercising the full
+# smoke suite.
 #
 # release.yml (app bundles) stays separate; this workflow gates merges.
 # NOTE: every push to main (including the release bot's bump commits) runs
@@ -254,4 +255,316 @@ jobs:
         with:
           name: agent-eval-report
           path: agent-eval-report.md
+          if-no-files-found: warn
+
+  # ── Linux full gate: bazel-built litert-lm + unit tests + all smokes ─────
+  linux-smoke:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install JS deps
+        run: bun install
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-linux-x86_64-
+
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+
+      # Tauri needs GTK/webkit headers; bindgen + bazel need clang-18.
+      # clang-18 via apt.llvm.org — ubuntu-22.04 keeps glibc >= 2.35.
+      - name: Install system deps
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libclang-dev
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm18.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang-18
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 1000
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 1000
+          clang --version
+
+      - name: Build litert-lm shared library
+        run: |
+          set -euo pipefail
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=linux_x86_64 --jobs=6
+          mkdir -p ../../native
+          cp bazel-bin/c/liblitert-lm.so ../../native/
+
+      # ── Unit tests ──
+      - name: cargo test (litert + office)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        run: cargo test --features litert,office --lib
+
+      # ── Smoke 1: on-device streaming ──
+      - name: Cache smoke model fixture
+        id: model
+        uses: actions/cache@v4
+        with:
+          path: smoke-model
+          key: lfm25-1p2b-instruct-int8-litertlm
+
+      - name: Download smoke model fixture
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p smoke-model
+          curl -fL --retry 3 -o smoke-model/lfm2.5-1.2b-instruct-int8.litertlm \
+            https://huggingface.co/litert-community/LFM2.5-1.2B-Instruct/resolve/main/LFM2.5-1.2B-Instruct_int8.litertlm
+
+      - name: local_llm_smoke (on-device streaming regression)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/lfm2.5-1.2b-instruct-int8.litertlm
+
+      # ── Smoke 2 + 3: hybrid cloud tier ──
+      - name: remote_smoke (cloud streaming + usage)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: /tmp/kawai-ci
+        run: cargo run --example remote_smoke --features litert
+
+      - name: draft_smoke (cloud → docx artifact + receipt)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: /tmp/kawai-ci
+        run: cargo run --example draft_smoke --features litert,office
+
+      # ── Smoke 4: orchestration-quality gate ──
+      - name: Cache E4B eval model
+        id: eval-model
+        uses: actions/cache@v4
+        with:
+          path: eval-model
+          key: gemma-4-E4B-it-litertlm
+
+      - name: Download E4B eval model
+        if: steps.eval-model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p eval-model
+          curl -fL --retry 3 -o eval-model/gemma-4-E4B-it.litertlm \
+            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
+
+      - name: agent_eval (orchestration quality gate + report)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: /tmp/kawai-ci
+          KAWAI_LLM_MAX_TOKENS: "8192"
+          EVAL_MIN_PASS: "19"
+        run: |
+          cargo run --release --example agent_eval --features litert,office -- \
+            ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
+            ${{ github.workspace }}/agent-eval-report-linux.md
+          cat ${{ github.workspace }}/agent-eval-report-linux.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-report-linux
+          path: agent-eval-report-linux.md
+          if-no-files-found: warn
+
+  # ── Windows full gate: bazel-built litert-lm + unit tests + all smokes ──
+  windows-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        shell: bash
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install JS deps
+        run: bun install
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-windows-x86_64-
+
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
+        shell: bash
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+
+      - name: Install bazelisk
+        shell: pwsh
+        run: choco install bazelisk --confirm --no-progress
+
+      # Upstream ml-ci-build-win recipe: the runner's TEMP is the 8.3 short
+      # form — rustc's msvc link inside bazel fails there (LNK1181 on .rcgu.o).
+      - name: Remap TMP/TEMP for rustc/msvc linking
+        shell: pwsh
+        run: |
+          $newTemp = "C:\_w\_tmp"
+          New-Item -ItemType Directory -Path $newTemp -Force | Out-Null
+          "TMP=$newTemp" >> $env:GITHUB_ENV
+          "TEMP=$newTemp" >> $env:GITHUB_ENV
+
+      - name: Build litert-lm shared library
+        shell: bash
+        env:
+          MSYS_NO_PATHCONV: 1
+          MSYS2_ARG_CONV_EXCL: "*"
+          ANDROID_NDK_HOME: ""
+        run: |
+          set -euo pipefail
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel --output_base=C:/_b build //c:litert-lm --config=windows \
+            --jobs=4 --action_env=TMP --action_env=TEMP
+          BZ_BIN="$(bazel --output_base=C:/_b info bazel-bin)"
+          mkdir -p ../../native
+          cp "$BZ_BIN/c/litert-lm.dll" "$BZ_BIN/c/litert-lm.lib" ../../native/
+
+      # ── Unit tests ──
+      - name: cargo test (litert + office)
+        working-directory: src-tauri
+        shell: bash
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          PATH: ${{ github.workspace }}/cognee-litert-lm/native;${{ env.PATH }}
+          LLVM_PROFILE_FILE: /dev/null
+        run: cargo test --features litert,office --lib
+
+      # ── Smoke 1: on-device streaming ──
+      - name: Cache smoke model fixture
+        id: model
+        uses: actions/cache@v4
+        with:
+          path: smoke-model
+          key: lfm25-1p2b-instruct-int8-litertlm
+
+      - name: Download smoke model fixture
+        if: steps.model.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          mkdir -p smoke-model
+          curl -fL --retry 3 -o smoke-model/lfm2.5-1.2b-instruct-int8.litertlm \
+            https://huggingface.co/litert-community/LFM2.5-1.2B-Instruct/resolve/main/LFM2.5-1.2B-Instruct_int8.litertlm
+
+      - name: local_llm_smoke (on-device streaming regression)
+        working-directory: src-tauri
+        shell: bash
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          PATH: ${{ github.workspace }}/cognee-litert-lm/native;${{ env.PATH }}
+          LLVM_PROFILE_FILE: /dev/null
+        run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/lfm2.5-1.2b-instruct-int8.litertlm
+
+      # ── Smoke 2 + 3: hybrid cloud tier ──
+      - name: remote_smoke (cloud streaming + usage)
+        working-directory: src-tauri
+        shell: bash
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          PATH: ${{ github.workspace }}/cognee-litert-lm/native;${{ env.PATH }}
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: ${{ runner.temp }}/kawai-ci
+        run: cargo run --example remote_smoke --features litert
+
+      - name: draft_smoke (cloud → docx artifact + receipt)
+        working-directory: src-tauri
+        shell: bash
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          PATH: ${{ github.workspace }}/cognee-litert-lm/native;${{ env.PATH }}
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: ${{ runner.temp }}/kawai-ci
+        run: cargo run --example draft_smoke --features litert,office
+
+      # ── Smoke 4: orchestration-quality gate ──
+      - name: Cache E4B eval model
+        id: eval-model
+        uses: actions/cache@v4
+        with:
+          path: eval-model
+          key: gemma-4-E4B-it-litertlm
+
+      - name: Download E4B eval model
+        if: steps.eval-model.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          mkdir -p eval-model
+          curl -fL --retry 3 -o eval-model/gemma-4-E4B-it.litertlm \
+            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
+
+      - name: agent_eval (orchestration quality gate + report)
+        working-directory: src-tauri
+        shell: bash
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          PATH: ${{ github.workspace }}/cognee-litert-lm/native;${{ env.PATH }}
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: ${{ runner.temp }}/kawai-ci
+          KAWAI_LLM_MAX_TOKENS: "8192"
+          EVAL_MIN_PASS: "19"
+        run: |
+          cargo run --release --example agent_eval --features litert,office -- \
+            ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
+            ${{ github.workspace }}/agent-eval-report-windows.md
+          cat ${{ github.workspace }}/agent-eval-report-windows.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-report-windows
+          path: agent-eval-report-windows.md
           if-no-files-found: warn
