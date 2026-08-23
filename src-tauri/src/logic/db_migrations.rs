@@ -247,4 +247,45 @@ mod tests {
         let row = r.next().await.unwrap().unwrap();
         assert_eq!(row.get::<String>(0).unwrap(), "builtin.office");
     }
+
+    #[tokio::test]
+    async fn adds_archive_columns_to_sessions() {
+        let (conn, dir) = open_temp().await;
+        // Pre-create sessions WITHOUT the archive columns (legacy shape).
+        conn.execute(
+            "CREATE TABLE sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_id TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)",
+            (),
+        )
+        .await
+        .unwrap();
+
+        ensure_schema(&conn, &dir).await.unwrap();
+
+        // Verify both archive columns exist via PRAGMA (works for libsql).
+        let mut r = conn
+            .query("PRAGMA table_info(sessions)", ())
+            .await
+            .unwrap();
+        let mut columns = Vec::new();
+        while let Some(row) = r.next().await.unwrap() {
+            columns.push(row.get::<String>(1).unwrap());
+        }
+        assert!(
+            columns.contains(&"archived".to_string()),
+            "missing 'archived' column; got {columns:?}"
+        );
+        assert!(
+            columns.contains(&"archived_at".to_string()),
+            "missing 'archived_at' column; got {columns:?}"
+        );
+
+        // Verify default values: archived=0, archived_at=NULL.
+        let mut r = conn
+            .query("INSERT INTO sessions (agent_id, title, created_at) VALUES ('test', 't', 0) RETURNING archived, archived_at", ())
+            .await
+            .unwrap();
+        let row = r.next().await.unwrap().unwrap();
+        assert_eq!(row.get::<i64>(0).unwrap(), 0);
+        assert!(row.get::<Option<i64>>(1).unwrap().is_none());
+    }
 }
