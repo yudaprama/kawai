@@ -247,9 +247,13 @@ jobs:
           cd cognee-litert-lm/vendor/LiteRT-LM
           bazel build //c:litert-lm --config=linux_x86_64 --jobs=6
           # ../../native = cognee-litert-lm/native — the dir
-          # LITERT_LM_LIB_DIR/RUSTFLAGS point at.
+          # LITERT_LM_LIB_DIR/RUSTFLAGS point at. Companion libraries are
+          # loaded at engine creation (dlopen of e.g.
+          # libGemmaModelConstraintProvider.so) and must sit beside the
+          # main .so, both for linking and for the bundle manifest.
           mkdir -p ../../native
           cp bazel-bin/c/liblitert-lm.so ../../native/
+          cp prebuilt/linux_x86_64/*.so ../../native/
 
       - name: Build .deb/.AppImage (with litert + office)
         uses: tauri-apps/tauri-action@v0
@@ -359,6 +363,10 @@ jobs:
           else
             cp "$BZ_BIN/c/litert-lm.lib" ../../native/litert-lm.lib
           fi
+          # Companion DLLs are load-time dependencies of litert-lm.dll (e.g.
+          # libGemmaModelConstraintProvider.dll); stage them next to the main
+          # DLL so runtime loading and the bundle manifest resolve them.
+          cp prebuilt/windows_x86_64/*.dll ../../native/
 
       - name: Build .msi/.exe (with litert + office)
         uses: tauri-apps/tauri-action@v0

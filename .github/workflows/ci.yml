@@ -313,6 +313,10 @@ jobs:
           bazel build //c:litert-lm --config=linux_x86_64 --jobs=6
           mkdir -p ../../native
           cp bazel-bin/c/liblitert-lm.so ../../native/
+          # Companion libraries are loaded at engine creation (dlopen of e.g.
+          # libGemmaModelConstraintProvider.so); stage them next to the main
+          # .so so LD_LIBRARY_PATH=<native> resolves them.
+          cp prebuilt/linux_x86_64/*.so ../../native/
 
       # ── Unit tests ──
       - name: cargo test (litert + office)
@@ -480,6 +484,18 @@ jobs:
           else
             cp "$BZ_BIN/c/litert-lm.lib" ../../native/litert-lm.lib
           fi
+          # Companion DLLs are load-time dependencies of litert-lm.dll (e.g.
+          # libGemmaModelConstraintProvider.dll); stage them next to the main
+          # DLL so PATH-based loading resolves them.
+          cp prebuilt/windows_x86_64/*.dll ../../native/
+
+      # Expose the staged DLLs to the test/smoke binaries WITHOUT clobbering
+      # PATH: a step-env `PATH:` override replaces the runner PATH entirely
+      # (`${{ env.PATH }}` is empty in workflow-file context, which erases
+      # cargo). GITHUB_PATH appends persist and merge with the runner PATH.
+      - name: Add native dir to PATH
+        shell: pwsh
+        run: Add-Content $env:GITHUB_PATH "${{ github.workspace }}\cognee-litert-lm\native"
 
       # ── Unit tests ──
       - name: cargo test (litert + office)
@@ -487,7 +503,6 @@ jobs:
         shell: bash
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          PATH: ${{ github.workspace }}/cognee-litert-lm/native;${{ env.PATH }}
           LLVM_PROFILE_FILE: /dev/null
         run: cargo test --features litert,office --lib
 
@@ -512,7 +527,6 @@ jobs:
         shell: bash
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          PATH: ${{ github.workspace }}/cognee-litert-lm/native;${{ env.PATH }}
           LLVM_PROFILE_FILE: /dev/null
         run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/lfm2.5-1.2b-instruct-int8.litertlm
 
@@ -522,7 +536,6 @@ jobs:
         shell: bash
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          PATH: ${{ github.workspace }}/cognee-litert-lm/native;${{ env.PATH }}
           LLVM_PROFILE_FILE: /dev/null
           KAWAI_DATA_DIR: ${{ runner.temp }}/kawai-ci
         run: cargo run --example remote_smoke --features litert
@@ -532,7 +545,6 @@ jobs:
         shell: bash
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          PATH: ${{ github.workspace }}/cognee-litert-lm/native;${{ env.PATH }}
           LLVM_PROFILE_FILE: /dev/null
           KAWAI_DATA_DIR: ${{ runner.temp }}/kawai-ci
         run: cargo run --example draft_smoke --features litert,office
@@ -558,7 +570,6 @@ jobs:
         shell: bash
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          PATH: ${{ github.workspace }}/cognee-litert-lm/native;${{ env.PATH }}
           LLVM_PROFILE_FILE: /dev/null
           KAWAI_DATA_DIR: ${{ runner.temp }}/kawai-ci
           KAWAI_LLM_MAX_TOKENS: "8192"
