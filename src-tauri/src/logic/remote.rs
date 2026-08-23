@@ -57,7 +57,7 @@ const ZAI_MODEL: &str = "glm-5.3";
 
 /// OpenRouter — OpenAI-compatible gateway.
 const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
-const OPENROUTER_MODEL: &str = "nvidia/nemotron-3-super-120b-a12b:free";
+const OPENROUTER_MODEL: &str = "stealth/ox-alpha";
 
 /// Ollama Cloud — OpenAI-compatible endpoint.
 const OLLAMA_BASE_URL: &str = "https://ollama.com/v1";
@@ -65,11 +65,11 @@ const OLLAMA_MODEL: &str = "nemotron-3-nano:30b";
 
 /// Venice AI — OpenAI-compatible gateway.
 const VENICE_BASE_URL: &str = "https://api.venice.ai/api/v1";
-const VENICE_MODEL: &str = "deepseek-v4-flash";
+const VENICE_MODEL: &str = "stealth-ox-alpha";
 
 /// OpenCode Zen — OpenAI-compatible gateway.
 const OPENCODE_BASE_URL: &str = "https://opencode.ai/zen/v1";
-const OPENCODE_MODEL: &str = "deepseek-v4-flash-free";
+const OPENCODE_MODEL: &str = "x-preview-f-free";
 
 // ---------------------------------------------------------------------------
 // Health tracker (failover state)
@@ -191,18 +191,6 @@ const ENDPOINTS: &[EndpointDef] = &[
         key: kawai_constants::llm::get_zai,
     },
     EndpointDef {
-        label: "openrouter",
-        base_url: OPENROUTER_BASE_URL,
-        model: OPENROUTER_MODEL,
-        key: kawai_constants::llm::get_openrouter,
-    },
-    EndpointDef {
-        label: "ollama",
-        base_url: OLLAMA_BASE_URL,
-        model: OLLAMA_MODEL,
-        key: kawai_constants::llm::get_ollama,
-    },
-    EndpointDef {
         label: "venice",
         base_url: VENICE_BASE_URL,
         model: VENICE_MODEL,
@@ -213,6 +201,18 @@ const ENDPOINTS: &[EndpointDef] = &[
         base_url: OPENCODE_BASE_URL,
         model: OPENCODE_MODEL,
         key: kawai_constants::llm::get_opencode,
+    },
+    EndpointDef {
+        label: "openrouter",
+        base_url: OPENROUTER_BASE_URL,
+        model: OPENROUTER_MODEL,
+        key: kawai_constants::llm::get_openrouter,
+    },
+    EndpointDef {
+        label: "ollama",
+        base_url: OLLAMA_BASE_URL,
+        model: OLLAMA_MODEL,
+        key: kawai_constants::llm::get_ollama,
     },
 ];
 

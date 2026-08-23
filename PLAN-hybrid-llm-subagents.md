@@ -254,7 +254,7 @@ impl RemoteLlm {
 
 - **Provider**: hardcoded — every provider with an API key in the
   `kawai_constants::llm` vault pool joins a fixed-priority failover pool
-  (zai → openrouter → ollama → venice → opencode). Optional
+  (zai → venice → opencode → openrouter → ollama). Optional
   `KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS` in `.env`. An empty vault is the only
   off state.
 - **Graceful degradation**: no API key ⇒ `from_env() → None` ⇒ subagent tools
