@@ -1091,6 +1091,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "browser"
+version = "0.1.0"
+dependencies = [
+ "kawai-constants",
+ "reqwest 0.12.28",
+ "rig",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "bs58"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4815,6 +4828,7 @@ dependencies = [
  "async-stream",
  "axum 0.8.9",
  "base64 0.22.1",
+ "browser",
  "dotenvy",
  "futures-core",
  "futures-util",
@@ -4843,6 +4857,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tower-http 0.6.11",
+ "url",
  "youtube_transcript",
 ]
 

@@ -3,6 +3,9 @@ mod commands;
 pub mod logging;
 pub mod logic;
 
+#[cfg(feature = "office")]
+pub mod webview_engine;
+
 #[cfg(feature = "web")]
 pub mod web;
 
@@ -34,6 +37,11 @@ pub fn run() {
                     // kawai.db + docs/ (office store defaults into it).
                     logic::db::set_data_root(data);
                 }
+                // Tier-0 web read engine: hidden webview owned by the shell.
+                // kawai-web never registers one (Cloudflare-only there).
+                logic::scrape::set_webview_engine(Some(std::sync::Arc::new(
+                    webview_engine::TauriWebViewFetch::new(app.handle().clone()),
+                )));
             }
             #[cfg(not(feature = "office"))]
             let _ = &app;

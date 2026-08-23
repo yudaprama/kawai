@@ -23,7 +23,7 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process", "io-util"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process", "io-util", "sync"] }
 async-stream = "0.3"
 futures-core = "0.3"
 futures-util = "0.3"
@@ -81,6 +81,11 @@ rig-core = { version = "0.42", optional = true }
 office_oxide = { path = "../office_oxide", optional = true }
 pdf_oxide = { git = "https://github.com/yfedoseev/pdf_oxide", optional = true }
 regex = { version = "1", optional = true }
+# Web read tiering (office feature): Cloudflare Browser Rendering fallback
+# tier via the generated browser tool crate (reqwest-only, mobile-safe), plus
+# the `url` crate for pure URL normalization in logic::scrape.
+browser = { path = "../rig-components/tools/browser", optional = true }
+url = { version = "2", optional = true }
 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]
@@ -94,7 +99,7 @@ litert = ["dep:local-llm", "local-llm/rig-tools"]
 # office_oxide and PDF via pdf_oxide (both in-process) — plus the RAG pipeline
 # (kawai-embedding → rig-libsql, with in-tree chunking) for idle-time
 # knowledge indexing.
-office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex"]
+office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "dep:browser", "dep:url"]
 
 [[bin]]
 name = "kawai"
