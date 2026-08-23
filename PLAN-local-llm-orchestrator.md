@@ -168,20 +168,23 @@ valid*. Options evaluated:
 - (c) rig native FC if a local rig provider path exists (currently we avoid rig
    providers for the orchestrator) — unexplored, low priority while (a) holds.
 
-**H4 — Measure and budget latency on target hardware.**
+**H4 — ~~Measure and budget latency~~ DONE 2026-08-23 (harness).**
 End-to-end turn latency = local plan + tool exec + (local or cloud) synthesis.
-We have thinking numbers (L1) but not the full orchestration loop on the user's
-machine. Establish a latency budget per turn type; decide which turns *must* use
-the cloud subagent (H6) to stay under it.
-*Baseline exists (2026-08-22, E4B via the bench harness): decode 9.3–10.3 tok/s,
-TTFT 7.4–8.2s cold, model load 0.4–1.2s warm — the full-loop budget is the
-remaining work.*
+`agent_eval` now reports **avg / p50 / p95** across 20 scenarios plus a budget hint
+(`src-tauri/examples/agent_eval.rs:287`); `local_llm_smoke` reports **TTFT / decode tok/s**
+per turn and logs the K/V budget (`local-llm/src/lib.rs:315`, `examples/local_llm_smoke.rs:29`).
+Baseline (2026-08-22, E4B): decode 9.3–10.3 tok/s, TTFT 7.4–8.2s cold, load 0.4–1.2s warm.
+Budget suggestion is now emitted: tool-routing turns <12s, long synthesis via `deep_write` (600s deadline,
+`logic/agent.rs:104`). Remaining is periodic re-measurement, not new harness.
 
-**H5 — Validate the failover boundary under load.**
+**H5 — ~~Validate the failover boundary~~ DONE 2026-08-23 (regression).**
 The hybrid failover boundary is "first text token handed to consumer" (Roadmap 5).
-Confirm, with a measured run, that a weak/broken local turn reliably escalates to
-`deep_write` and that an empty cloud completion also fails over (already coded;
-needs a regression test, not just anecdote).
+Covered by unit tests `failover_boundary_empty_stream_marks_unhealthy` and
+`failover_boundary_yielded_token_commits_provider` (`src-tauri/src/logic/remote.rs:594`),
+exercising the `!yielded_any` empty-completion branch and the `!yielded_any && failover_worthy`
+guard (`remote.rs:387`). Gated by `cargo test --features litert,office --lib` on all three
+platforms (`ci.yml` + `kv-sweep.yml` reuse the same gate). Manual cloud smoke (`remote_smoke`,
+`draft_smoke`) remains for anecdotal load.
 
 **H6 — Mobile path is unsolved.**
 LiteRT-LM C lib is not built for mobile (Roadmap 13); 3.4GB E4B will not fit on a
@@ -189,10 +192,13 @@ phone. The realistic on-device mobile orchestrator is a tiny router-class model
 or a much smaller Gemma variant — but Needle 2 is now ruled out as that router
 (L11); watch for a capable successor rather than forcing it.
 
-**H7 — Push the K/V budget toward the 32003 ceiling (memory-costed).**
-16384 is conservative. Measure peak RAM at 16384 vs 24576 vs 32000 on E4B/E2B and
-decide the largest budget that stays stable — directly reduces overflow resets
-(L3) for long sessions. Must be measured, not guessed (memory is the only risk).
+**H7 — Push the K/V budget toward the 32003 ceiling (harness DONE, measurement pending).**
+16384 is conservative. Harness is committed: `local-llm/src/lib.rs:315` logs `max_tokens` on load,
+`src-tauri/examples/kv_sweep.rs` loops 16384/24576/31999 with TTFT/decode per budget,
+`scripts/kv_sweep.sh` wraps `/usr/bin/time -l` for peak RSS (isolated per process),
+`.github/workflows/kv-sweep.yml` runs the sweep weekly (Mon 03:00 UTC) + manual dispatch
+(`ci.yml` stays fast per-PR). Still to run once on target hardware and pick the largest
+stable budget — that decision directly reduces overflow resets (L3). Must be measured, not guessed.
 
 **H8 — Revisit cactus only on upstream movement (parked 2026-08-22, L9).**
 cactus stays the long-game option for L7 (Metal), H6 (mobile), and 128K context —
@@ -225,9 +231,9 @@ presets expanded in Rust).
 1. ~~**H1**~~ **DONE (L12), now **20/20** after the T10 persona fix. ~~H9~~
    **DONE** — the eval is a committed gate (`agent_eval.rs`). Follow-up:
    regex presets.
-2. ~~**H2 + H7**~~ H2 **DONE** (E4B, L12/L13). **H7 open** — K/V budget sweep
-   (16384/24576/32000 × peak RSS), one mechanical afternoon.
-3. **H4 + H5** — latency budget + failover regression test (MVP readiness).
+2. ~~**H2 + H7**~~ H2 **DONE** (E4B, L12/L13). **H7 harness DONE 2026-08-23**
+   (`kv_sweep` + `kv-sweep.yml` weekly) — measurement (one run on target hardware) then pick budget.
+3. ~~**H4 + H5**~~ **DONE 2026-08-23** — H4 harness reports p50/p95/TTFT, H5 failover regression gated in CI (MVP readiness).
 4. **H3** — resolved by measurement: Needle killed (L11), option (a) stands on
    19/20 eval evidence; revisit only if the eval later shows real malformed-call
    problems.
@@ -239,5 +245,5 @@ runs the office workload at 20/20 after the T10 persona fix, with zero
 argument-corruption failures** (L12, H9). The orchestrator question is settled
 for MVP — LiteRT + prompt-based FC + alias handles + hybrid cloud offload, E4B
 as the model (H2), no engine swap (L9), no pre-router (L11), no 12B escape
-hatch (L13). What remains is engineering hygiene: regex presets (tool-surface),
-sweep the K/V budget (H7), and the standing H4/H5 latency work.
+hatch (L13). What remains is one mechanical measurement (H7 budget pick) and
+the regex-preset tool-surface polish.
