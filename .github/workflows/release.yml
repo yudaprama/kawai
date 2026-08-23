@@ -14,6 +14,10 @@ concurrency:
 jobs:
   bump:
     runs-on: ubuntu-latest
+    # Recursion guard: the bot lands its bump commit with a PAT, which DOES
+    # trigger this workflow again — without this check every release would
+    # cascade into bumping forever.
+    if: ${{ github.event.head_commit == null || !startsWith(github.event.head_commit.message, 'chore(release):') }}
     outputs:
       version: ${{ steps.bump.outputs.version }}
       skipped: ${{ steps.bump.outputs.skipped }}
@@ -91,7 +95,7 @@ jobs:
 
   build-macos:
     needs: bump
-    if: needs.bump.outputs.skipped != 'true'
+    if: needs.bump.outputs.skipped == 'false'
     # macos-26 (arm64, Xcode 26 default, bazel 9.2): Xcode 15.4 on macos-14
     # ships an old libc++ where __pointer_traits_element_type is a hard error
     # in SFINAE — breaks the cxx-generated contiguous_range static_assert in
@@ -185,7 +189,7 @@ jobs:
 
   build-linux:
     needs: bump
-    if: needs.bump.outputs.skipped != 'true'
+    if: needs.bump.outputs.skipped == 'false'
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
@@ -290,7 +294,7 @@ jobs:
 
   build-windows:
     needs: bump
-    if: needs.bump.outputs.skipped != 'true'
+    if: needs.bump.outputs.skipped == 'false'
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
@@ -403,7 +407,7 @@ jobs:
 
   build-web:
     needs: bump
-    if: needs.bump.outputs.skipped != 'true'
+    if: needs.bump.outputs.skipped == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
