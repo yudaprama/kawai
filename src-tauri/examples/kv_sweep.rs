@@ -60,10 +60,14 @@ async fn main() {
                     }
                 }
                 let total = t0.elapsed().as_secs_f64();
+                let ttft = ttft.unwrap_or(total);
+                let decode_tps = if tokens > 1 && total > ttft {
+                    (tokens - 1) as f64 / (total - ttft)
+                } else {
+                    0.0
+                };
                 println!(
-                    "  turn: TTFT {:.2}s, ~{tokens} tokens, total {total:.1}s, decode ~{:.1} tok/s",
-                    ttft.unwrap_or(total),
-                    if total > 0.0 { tokens as f64 / total } else { 0.0 }
+                    "  turn: TTFT {ttft:.2}s, ~{tokens} tokens, total {total:.1}s, decode ~{decode_tps:.1} tok/s"
                 );
                 // Unload so next budget starts from clean state (frees K/V).
                 let _ = local_llm::unload_model("kv_sweep").await;

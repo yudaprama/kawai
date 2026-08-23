@@ -208,15 +208,15 @@ hardware (`bash scripts/kv_sweep.sh <model> 24576,31999`) and decide whether the
 moves above 16384 or stays put for min-spec headroom — that decision directly reduces overflow
 resets (L3). Must be measured, not guessed.
 
-**H8 — Revisit cactus only on upstream movement (parked 2026-08-22, L9).**
-cactus stays the long-game option for L7 (Metal), H6 (mobile), and 128K context —
-re-evaluate when ALL of: (a) upstream ships a v-current E4B bundle (today's
-`-int4` zips are unresolvable by their own CLI and missing
-`components/manifest.json`); (b) cactus native FC round-trips on Gemma 4 office-
-style tools (schema mapping currently drops the model's `tool_code` output
-silently); (c) H1-grade evidence that INT4 quality matches f16 on our workload.
-Until then no integration work — the stage-0 harness (temp bench example, since
-removed) is cheap to rebuild if needed.
+**H8 — ~~Revisit cactus~~ CONCLUDED 2026-08-22 (L9). No cactus integration.**
+Cactus decodes 3.4× faster but fails tool calling 0/3 (LiteRT 3/3) — wrong
+tool names, schema mapping drops output silently. Speed is the wrong
+optimization: heavy synthesis already routes to `deep_write`. The only
+conditions that could reopen this are ALL of: (a) upstream ships a working
+E4B bundle (current `-int4` zips are broken), (b) cactus native FC passes
+office-style tools, (c) INT4 quality matches f16 on our eval. None are met,
+none are pursued. The integration path is closed; upstream movement is
+watched passively, not acted on.
 
 **H9 — ~~Land the eval as a permanent gate~~ DONE 2026-08-22.**
 `src-tauri/examples/agent_eval.rs` is committed: the 20-scenario set, tool
@@ -248,12 +248,12 @@ presets expanded in Rust).
    19/20 eval evidence; revisit only if the eval later shows real malformed-call
    problems.
 5. **H6** — mobile, end-state track.
-6. **H8** — parked; upstream-triggered, never self-initiated.
+6. ~~**H8**~~ **CONCLUDED (L9)** — cactus faster but tool calling 0/3; closed.
 
 **Bottom line:** the fear is now a number, and the number is perfect: **E4B
 runs the office workload at 20/20 after the T10 persona fix, with zero
 argument-corruption failures** (L12, H9). The orchestrator question is settled
 for MVP — LiteRT + prompt-based FC + alias handles + hybrid cloud offload, E4B
-as the model (H2), no engine swap (L9), no pre-router (L11), no 12B escape
+as the model (H2), cactus closed (L9/H8), no pre-router (L11), no 12B escape
 hatch (L13). What remains is one mechanical measurement (H7 budget pick) and
 the regex-preset tool-surface polish.

@@ -22,8 +22,9 @@ for b in "${BUDGETS[@]}"; do
   # /usr/bin/time -l is macOS-specific; on Linux use /usr/bin/time -v
   if [[ "$(uname)" == "Darwin" ]]; then
     KAWAI_LLM_MAX_TOKENS="$b" /usr/bin/time -l cargo run --release --example kv_sweep --features litert -- "$MODEL" "$b" 2>&1 | tee "/tmp/kv_sweep_${b}.log"
-    # Extract RSS: "maximum resident set size" is in bytes on macOS
-    RSS=$(grep -i "maximum resident" "/tmp/kv_sweep_${b}.log" | awk '{print $1, $2, $3, $4, $5, $6, $7}' || true)
+    # Anchored: the example's own banner quotes 'maximum resident set size' —
+    # only match /usr/bin/time output lines (spaces + number + label).
+    RSS=$(grep -E '^[[:space:]]*[0-9]+[[:space:]]+maximum resident' "/tmp/kv_sweep_${b}.log" | awk '{print $1, $2, $3, $4, $5, $6, $7}' || true)
     echo "# -> $RSS (bytes; /1024/1024 = MB)"
   else
     KAWAI_LLM_MAX_TOKENS="$b" /usr/bin/time -v cargo run --release --example kv_sweep --features litert -- "$MODEL" "$b" 2>&1 | tee "/tmp/kv_sweep_${b}.log"

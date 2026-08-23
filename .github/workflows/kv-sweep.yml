@@ -97,7 +97,7 @@ jobs:
               echo "- DIED before finishing the turn (OOM-class on this runner)" | tee -a "$REPORT"
               tail -n 3 "/tmp/kv_sweep_$b.log" | tee -a "$REPORT" || true
             fi
-            grep -i "maximum resident\|peak memory footprint" "/tmp/kv_sweep_$b.log" | tee -a "$REPORT" || true
+            grep -iE '^[[:space:]]*[0-9]+[[:space:]]+(maximum resident|peak memory footprint)' "/tmp/kv_sweep_$b.log" | tee -a "$REPORT" || true
             echo "" | tee -a "$REPORT"
           done
           cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
