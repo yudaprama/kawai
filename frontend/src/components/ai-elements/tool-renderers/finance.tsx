@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { parse, isRecord, num, str, fmtNum, MetricGrid, ChartCard, type Metric, type Series } from "./shared";
+import { parse, isRecord, num, str, fmtNum, MetricGrid, ChartCard, Footnote, TextCard, type Metric, type Series } from "./shared";
 
 /** frankfurter → { amount, base, rates: { SYMBOL: rate } } */
 export function renderCurrency(output: unknown): ReactNode {
@@ -141,4 +141,131 @@ export function tiingoSeries(output: unknown): Series | null {
 
 export function chart(series: Series | null, label?: string): ReactNode {
   return series ? <ChartCard series={series} label={label} /> : null;
+}
+
+// ── builtin.binance agent tools (rig-components/binance) ───────────────────
+
+/** Binance agent klines → { candles: [[openTime, o, h, l, c, v], ...] }. */
+export function binanceKlineSeries(output: unknown): Series | null {
+  const d = parse(output);
+  if (!isRecord(d)) return null;
+  return klinesSeries(d.candles);
+}
+
+/**
+ * Binance agent order book → { book: { bestBid, bestAsk, spread, mid },
+ * bids/asks: [[price, qty], ...] }.
+ */
+export function renderBinanceDepth(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || !isRecord(d.book)) return null;
+  const mid = num(d.book.mid);
+  const spread = num(d.book.spread);
+  const bid = num(d.book.bestBid);
+  const ask = num(d.book.bestAsk);
+  if (mid === null || spread === null) return null;
+  const symbol = str(d.symbol);
+  const items: Metric[] = [
+    { label: symbol ? `${symbol} Mid` : "Mid", value: fmtNum(mid) },
+    { label: "Spread", value: fmtNum(spread), sub: mid ? `${((spread / mid) * 100).toFixed(3)}%` : undefined },
+  ];
+  if (bid !== null) items.push({ label: "Best Bid", value: fmtNum(bid) });
+  if (ask !== null) items.push({ label: "Best Ask", value: fmtNum(ask) });
+  return <MetricGrid items={items} />;
+}
+
+/**
+ * Binance agent TA suite → flat indicator map ({ ema9, rsi14,
+ * macd12269: {macd, signal, histogram}, bb202: {upper, middle, lower}, … })
+ * plus { symbol: { symbol, interval, candles }, lastClose, windowChangePct,
+ * skipped }.
+ */
+const TA_KEYS: Array<[key: string, label: string]> = [
+  ["ema9", "EMA 9"],
+  ["ema21", "EMA 21"],
+  ["sma20", "SMA 20"],
+  ["wma9", "WMA 9"],
+  ["rsi14", "RSI 14"],
+  ["atr14", "ATR 14"],
+  ["cci20", "CCI 20"],
+  ["mfi14", "MFI 14"],
+  ["stochK14", "Stoch %K 14"],
+  ["sd20", "StdDev 20"],
+  ["er14", "Efficiency 14"],
+];
+
+export function renderBinanceTa(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d)) return null;
+  const meta = isRecord(d.symbol) ? d.symbol : {};
+  const symbol = str(meta.symbol);
+  const interval = str(meta.interval);
+  const last = num(d.lastClose);
+  if (last === null) return null;
+  const pct = typeof d.windowChangePct === "string" ? Number(d.windowChangePct) : NaN;
+  const candleCount = num(meta.candles);
+
+  const items: Metric[] = [
+    {
+      label: [symbol, interval, candleCount !== null ? `${candleCount} candles` : null]
+        .filter(Boolean)
+        .join(" · "),
+      value: fmtNum(last),
+      delta: Number.isFinite(pct) ? `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}% (window)` : undefined,
+      up: Number.isFinite(pct) ? pct >= 0 : undefined,
+    },
+  ];
+
+  for (const [key, label] of TA_KEYS) {
+    const v = num(d[key]);
+    if (v !== null) items.push({ label, value: fmtNum(v) });
+  }
+
+  // Composite indicators — one cell per family, bands stacked in `sub`.
+  const osc = (key: string, label: string) => {
+    const m = isRecord(d[key]) ? d[key] : null;
+    if (!m) return;
+    const hist = num(m.histogram);
+    const macdVal = num(m.macd) ?? num(m.ppo);
+    const signal = num(m.signal);
+    items.push({
+      label,
+      value: hist !== null ? fmtNum(hist) : macdVal !== null ? fmtNum(macdVal) : "—",
+      sub: macdVal !== null && signal !== null ? `${fmtNum(macdVal)} vs ${fmtNum(signal)}` : undefined,
+      ...(hist !== null ? { delta: hist >= 0 ? "bullish" : "bearish", up: hist >= 0 } : {}),
+    });
+  };
+  osc("macd12269", "MACD 12/26/9");
+  osc("ppo12269", "PPO 12/26/9");
+
+  const bands = (key: string, label: string) => {
+    const b = isRecord(d[key]) ? d[key] : null;
+    if (!b) return;
+    const upper = num(b.upper);
+    const middle = num(b.middle) ?? num(b.average);
+    const lower = num(b.lower);
+    if (middle === null) return;
+    items.push({
+      label,
+      value: fmtNum(middle),
+      sub: upper !== null && lower !== null ? `${fmtNum(lower)} — ${fmtNum(upper)}` : undefined,
+    });
+  };
+  bands("bb202", "BB 20×2");
+  bands("kc102", "KC 10×2");
+
+  const skipped = Array.isArray(d.skipped)
+    ? d.skipped
+        .map((s) => (isRecord(s) && typeof s.name === "string" ? s.name : null))
+        .filter((s): s is string => s !== null)
+    : [];
+
+  return (
+    <TextCard>
+      <MetricGrid items={items} />
+      {skipped.length > 0 && (
+        <Footnote>Not enough history for: {skipped.join(", ")}</Footnote>
+      )}
+    </TextCard>
+  );
 }

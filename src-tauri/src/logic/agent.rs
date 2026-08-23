@@ -223,6 +223,8 @@ const DRAFT_DOCUMENT_RULE: &str = "- Document-content rule (STRICT): when the do
 
 pub const OFFICE_AGENT_ID: &str = "builtin.office";
 
+pub const BINANCE_AGENT_ID: &str = "builtin.binance";
+
 /// One catalog entry served to the UI by the `list_agents` op. The backend is
 /// the single source of truth for agent ids — the frontend fetches this and
 /// never hardcodes ids (presentation — icon, suggested prompts — stays in the
@@ -241,19 +243,31 @@ pub struct AgentInfo {
 }
 
 /// The agent catalog in UI order. Static data — no user scope, no auth.
-/// Office is the single, default agent (it subsumes the old plain chat role:
+/// Office is the default agent (it subsumes the old plain chat role:
 /// general questions are answered from the model's own knowledge when no tool
 /// applies).
 pub fn list_agents() -> Vec<AgentInfo> {
-    vec![AgentInfo {
-        id: OFFICE_AGENT_ID.to_string(),
-        name: "Office".into(),
-        description: "Your on-device assistant for documents, PDFs, spreadsheets, and chat.".into(),
-        #[cfg(feature = "office")]
-        tools: true,
-        #[cfg(not(feature = "office"))]
-        tools: false,
-    }]
+    vec![
+        AgentInfo {
+            id: OFFICE_AGENT_ID.to_string(),
+            name: "Office".into(),
+            description: "Your on-device assistant for documents, PDFs, spreadsheets, and chat."
+                .into(),
+            #[cfg(feature = "office")]
+            tools: true,
+            #[cfg(not(feature = "office"))]
+            tools: false,
+        },
+        AgentInfo {
+            id: BINANCE_AGENT_ID.to_string(),
+            name: "Binance".into(),
+            description: "Crypto market data and technical analysis on Binance spot.".into(),
+            #[cfg(feature = "binance")]
+            tools: true,
+            #[cfg(not(feature = "binance"))]
+            tools: false,
+        },
+    ]
 }
 
 #[cfg(all(feature = "litert", not(feature = "office")))]
@@ -276,10 +290,25 @@ Rules:\n\
 - After each response: message, either call another tool or give the final answer.\n\
 - Final answers: short, factual, no JSON dumps.";
 
+#[cfg(all(feature = "litert", feature = "binance"))]
+const BINANCE_PERSONA: &str = "You are kawai's Binance market agent. You answer crypto market questions using tools on Binance spot data.\n\
+Rules:\n\
+- Call at most ONE tool per reply, as a single call:<name>{...} line, then stop and wait for the response: message.\n\
+- Current price / 24h stats: binance_price. Liquidity, spread, order book: binance_depth. Raw candles: binance_klines.\n\
+- Any trend/momentum/volatility question (RSI, MACD, moving averages, Bollinger Bands, ATR, oscillators): call binance_ta_analyze — NEVER compute indicators yourself from raw candles.\n\
+- Symbols are uppercase pairs without separators (BTCUSDT). If the user names only a coin, use USDT as quote; ask when genuinely ambiguous.\n\
+- Never invent arguments: if a required input is missing, ask the user.\n\
+- The tools are read-only public market data: you cannot trade or see account balances — say so plainly if asked.\n\
+- Explain indicator readings in plain language (e.g. RSI above 70 is overbought) as information, never as financial advice.\n\
+- After each response: message, either call another tool or give the final answer.\n\
+- Final answers: short, factual, no JSON dumps.";
+
 #[cfg(feature = "litert")]
 fn persona_for(agent_id: &str) -> Option<&'static str> {
     match agent_id {
         OFFICE_AGENT_ID => Some(OFFICE_PERSONA),
+        #[cfg(feature = "binance")]
+        BINANCE_AGENT_ID => Some(BINANCE_PERSONA),
         _ => None,
     }
 }
@@ -306,6 +335,8 @@ fn toolset_for(
     let mut set = match agent_id {
         #[cfg(feature = "office")]
         OFFICE_AGENT_ID => crate::logic::office::toolset(user_id, session_id),
+        #[cfg(feature = "binance")]
+        BINANCE_AGENT_ID => ::binance::registry::all_tools(),
         _ => {
             let _ = user_id;
             let _ = session_id;
@@ -318,6 +349,8 @@ fn toolset_for(
         return match agent_id {
             #[cfg(feature = "office")]
             OFFICE_AGENT_ID => Some(set),
+            #[cfg(feature = "binance")]
+            BINANCE_AGENT_ID => Some(set),
             _ => None,
         };
     }

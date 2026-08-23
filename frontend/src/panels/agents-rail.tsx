@@ -16,6 +16,7 @@ import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   SunIcon,
+  TrendingUpIcon,
 } from "lucide-react";
 
 interface AgentPresentation {
@@ -35,6 +36,15 @@ const AGENT_META: Record<string, AgentPresentation> = {
     icon: BriefcaseIcon,
     subtitle: "docs · pdf · sheets · chat",
     prompts: ["Summarize this PDF", "Create a weekly report", "Merge these invoices"],
+  },
+  "builtin.binance": {
+    icon: TrendingUpIcon,
+    subtitle: "crypto · market data · TA",
+    prompts: [
+      "Analyze BTCUSDT on the daily",
+      "RSI and MACD for ETHUSDT",
+      "Order book depth for SOLUSDT",
+    ],
   },
 };
 

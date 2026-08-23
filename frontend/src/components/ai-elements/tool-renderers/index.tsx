@@ -22,7 +22,7 @@ import { cards } from "./shared";
 import { renderBibleVerse, renderQuran, renderPoem, renderDefinition } from "./typographic";
 import { renderWeather, renderForecast } from "./weather";
 import { renderMedia } from "./media";
-import { renderCurrency, renderCryptoPrice, renderStockQuote, renderTicker24, chart, twelveSeries, klinesSeries, tiingoSeries } from "./finance";
+import { renderCurrency, renderCryptoPrice, renderStockQuote, renderTicker24, chart, twelveSeries, klinesSeries, tiingoSeries, binanceKlineSeries, renderBinanceDepth, renderBinanceTa } from "./finance";
 import { jikanCards, mealCards, drinkCards, bookCards, repoCards, paperCards, quakeCards, flightStateCards, recentFlightCards, renderSpacexLaunch, spacexList } from "./cards";
 import { renderGeocode, renderIpLocation, renderIss } from "./geo";
 import { renderConnectorTools } from "./connector";
@@ -76,6 +76,10 @@ const registry: Record<string, ToolRenderer> = {
   get_macd: (o) => chart(twelveSeries(o, "macd"), "MACD"),
   get_bbands: (o) => chart(twelveSeries(o, "middle_band"), "BBANDS (mid)"),
   get_crypto_ticker_24hr: renderTicker24,
+  binance_price: renderTicker24,
+  binance_depth: renderBinanceDepth,
+  binance_klines: (o) => chart(binanceKlineSeries(o)),
+  binance_ta_analyze: renderBinanceTa,
   geocode: renderGeocode,
   get_ip_location: renderIpLocation,
   get_iss_position: renderIss,
@@ -117,7 +121,7 @@ const iconRules: Array<[(name: string) => boolean, IconComponent]> = [
   [(n) => n.startsWith("browser_"), GlobeIcon],
   [
     (n) =>
-      /crypto|stock|forex|currency|_rsi|_macd|_sma|_ema|bbands|financials|fundamentals/.test(
+      /crypto|stock|forex|currency|binance|_rsi|_macd|_sma|_ema|bbands|financials|fundamentals/.test(
         n
       ),
     DollarSignIcon,

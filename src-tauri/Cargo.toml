@@ -28,7 +28,8 @@ async-stream = "0.3"
 futures-core = "0.3"
 futures-util = "0.3"
 tokio-util = "0.7"
-rand = "0.8"
+# Matches the graph majority (hf-hub / tokenizers / jigsawstack run 0.9).
+rand = "0.9"
 
 # Web-only deps (gated behind the `web` feature). Excluded entirely from
 # desktop/mobile builds.
@@ -45,9 +46,10 @@ rig = "0.42"
 # every call site uses Builder::new_local; re-add "remote" with sqld sync).
 libsql = { version = "0.9.30", default-features = false, features = ["core"] }
 jsonwebtoken = "9"
-# rustls-tls (not default features) keeps the TLS stack aligned with libsql/rig
+# rustls (not default features) keeps the TLS stack aligned with libsql/rig
 # and compiles for android arm64 + ios arm64. Used only for JWKS fetch in auth.rs.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# 0.13 matches rig-core/kawai-embedding/youtube_transcript — one reqwest in the graph.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 # Loads KAWAI_AUTH_* from the project-root .env in dev (no-op if absent).
 dotenvy = "0.15"
 # Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
@@ -89,6 +91,9 @@ regex = { version = "1", optional = true }
 # the `url` crate for pure URL normalization in logic::scrape.
 browser = { path = "../rig-components/tools/browser", optional = true }
 url = { version = "2", optional = true }
+# Binance agent tools (builtin.binance): keyless public market data via the
+# crates.io binance-sdk (rustls, spot-only) + in-process TA via rig-components/ta.
+binance = { path = "../rig-components/binance", optional = true }
 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]
@@ -103,6 +108,9 @@ litert = ["dep:local-llm", "local-llm/rig-tools"]
 # (kawai-embedding → rig-libsql, with in-tree chunking) for idle-time
 # knowledge indexing.
 office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "dep:browser", "dep:url"]
+# Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
+# technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
+binance = ["dep:binance"]
 
 [[bin]]
 name = "kawai"
@@ -124,6 +132,10 @@ required-features = ["litert"]
 [[example]]
 name = "remote_smoke"
 required-features = ["litert"]
+
+[[example]]
+name = "binance_smoke"
+required-features = ["binance"]
 
 [[example]]
 name = "chat_route_check"

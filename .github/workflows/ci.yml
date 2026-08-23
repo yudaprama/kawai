@@ -112,6 +112,11 @@ jobs:
         run: cargo check --features litert,office
         working-directory: src-tauri
 
+      # Binance agent tools: keyless, no C deps — a plain compile gate is enough.
+      - name: cargo check (binance feature)
+        run: cargo check --features binance
+        working-directory: src-tauri
+
   # ── Full gate: unit tests + on-device smoke + hybrid cloud smokes ─────────
   macos-smoke:
     runs-on: macos-26
@@ -214,7 +219,15 @@ jobs:
           KAWAI_DATA_DIR: /tmp/kawai-ci
         run: cargo run --example draft_smoke --features litert,office
 
-      # ── Smoke 4: orchestration-quality gate (PLAN H1/L12). 20 office
+      # ── Smoke 4 (macOS): keyless Binance market data + TA. Geo-blocked hosts
+      #    SKIP (exit 0), not fail — see the example header.
+      - name: binance_smoke (keyless market data + TA)
+        working-directory: src-tauri
+        env:
+          KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
+        run: cargo run --example binance_smoke --features binance
+
+      # ── Smoke 5: orchestration-quality gate (PLAN H1/L12). 20 office
       #    scenarios against E4B, scored on tool selection + arguments.
       #    Gate 19/20 (temp=1.0 sampling allows a one-scenario flake; a real
       #    regression fails 2+). Report lands in the job summary + artifact.
@@ -373,7 +386,14 @@ jobs:
           KAWAI_DATA_DIR: /tmp/kawai-ci
         run: cargo run --example draft_smoke --features litert,office
 
-      # ── Smoke 4: orchestration-quality gate ──
+      # ── Smoke 4 (Linux): keyless Binance market data + TA ──
+      - name: binance_smoke (keyless market data + TA)
+        working-directory: src-tauri
+        env:
+          KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
+        run: cargo run --example binance_smoke --features binance
+
+      # ── Smoke 5: orchestration-quality gate ──
       - name: Cache E4B eval model
         id: eval-model
         uses: actions/cache@v4
@@ -549,7 +569,15 @@ jobs:
           KAWAI_DATA_DIR: ${{ runner.temp }}/kawai-ci
         run: cargo run --example draft_smoke --features litert,office
 
-      # ── Smoke 4: orchestration-quality gate ──
+      # ── Smoke 4 (Windows): keyless Binance market data + TA ──
+      - name: binance_smoke (keyless market data + TA)
+        working-directory: src-tauri
+        env:
+          KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
+        shell: bash
+        run: cargo run --example binance_smoke --features binance
+
+      # ── Smoke 5: orchestration-quality gate ──
       - name: Cache E4B eval model
         id: eval-model
         uses: actions/cache@v4

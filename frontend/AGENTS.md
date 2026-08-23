@@ -135,7 +135,7 @@ User prompt → App.tsx → use-local-chat.send()
 - **File @-mentions carry IDs, not content.** The composer's @ button opens a `knowledge_list` popover; picked files render as chips and their IDs ride along on the next send (`onSubmit(text, fileIds)` → `chat.send(text, undefined, fileIds)` → `agent_chat` `fileIds`). The backend binds them to the session and lists them in the model prompt. Chips clear after submit.
 - **Auth bootstrap is in use-local-chat.ts** (lines 96-118). The hook first tries `whoami`, then falls back to `set_session` with a dev token. This is the MVP dev-bypass — no Clerk UI is wired in the React frontend.
 - **Theme is applied before React mounts** via an inline script in `index.html:7-20`. The `use-theme.ts` hook writes to the same `localStorage` key (`"kawai-theme"`).
-- **Agent presentation is a frontend map** (`AGENT_META` in `App.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry.
+- **Agent presentation is a frontend map** (`AGENT_META` in `panels/agents-rail.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry.
 - **`file-preview.tsx`** uses `useFilePreview` from `lib/preview-file.ts` which calls `office_read_file` — every mount triggers a backend call. The preview switch mounts only one renderer at a time, so only one fetch happens.
 - **`useKnowledgeFiles`** (in `use-knowledge-files.ts`) is feature-gated — if the backend rejects `knowledge_list` (no `office` feature), it settles on an empty list with `unavailable=true`.
 
