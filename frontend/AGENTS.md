@@ -47,6 +47,7 @@ frontend/
 │   │   ├── base64.ts       # bytesToBase64, base64ToBytes, dataUrlToFile, fileToBase64
 │   │   ├── extensions.ts   # ADD_FILE_ACCEPT, OFFICE_EXTS, IMAGE_EXTS (single source)
 │   │   ├── knowledge.ts    # isYouTubeUrl, classifySource — pure knowledge helpers
+│   │   ├── chat-helpers.ts # historyToMessages, toFriendlyError, sessionPeriod, stripToolMarkup
 │   │   ├── clipboard.ts    # clipboard read/write helpers (browser APIs)
 │   │   ├── download.ts     # triggerDownload() — creates and clicks a temp <a>
 │   │   ├── file-types.ts   # fileExtension(), fileKind(), shikiLanguage(), guessMimeType()
