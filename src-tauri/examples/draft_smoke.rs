@@ -43,7 +43,7 @@ Results: cloud smoke 3.6s, 193 output tokens; local tests 40/40. Next: calibrati
     while let Some(ev) = stream.next().await {
         match ev {
             Ok(RemoteEvent::Token { text }) => raw.push_str(&text),
-            Ok(RemoteEvent::Done { usage: u, provider }) => {
+            Ok(RemoteEvent::Done { usage: u, provider, .. }) => {
                 usage = Some(u);
                 winner = provider;
             }

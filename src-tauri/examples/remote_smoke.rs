@@ -40,7 +40,7 @@ async fn main() {
                 chars += text.chars().count();
                 print!("{text}");
             }
-            Ok(RemoteEvent::Done { usage: u, provider }) => {
+            Ok(RemoteEvent::Done { usage: u, provider, .. }) => {
                 usage = Some(u);
                 winner = provider;
             }
