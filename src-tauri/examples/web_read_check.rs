@@ -53,6 +53,18 @@ fn main() {
                     "[web_read_check] engine={} chars={} truncated={}",
                     out.engine, out.chars, out.truncated
                 );
+                // CI gate mode: content alone isn't enough — a silent tier-0
+                // miss still succeeds via Cloudflare. Require the webview
+                // (or cache seeded by one) when the flag is set.
+                let require_tier0 = std::env::var("KAWAI_WEB_READ_REQUIRE_TIER0").is_ok();
+                let tiered = out.engine == "webview" || out.engine == "cache";
+                if require_tier0 && !tiered {
+                    eprintln!(
+                        "[web_read_check] FAIL: KAWAI_WEB_READ_REQUIRE_TIER0 set but engine={} \
+                         — tier 0 did not serve",
+                        out.engine
+                    );
+                }
                 if let Some(content) = &out.content {
                     let head: String = content.chars().take(300).collect();
                     println!("[web_read_check] content head:\n{head}");
@@ -60,7 +72,9 @@ fn main() {
                 if let (Some(err), Some(hint)) = (&out.error, &out.hint) {
                     eprintln!("[web_read_check] FAIL: {err} — {hint}");
                 }
-                std::process::exit(i32::from(out.content.is_none()));
+                let ok =
+                    out.content.is_some() && (!require_tier0 || tiered);
+                std::process::exit(i32::from(!ok));
             });
             Ok(())
         })

@@ -275,6 +275,16 @@ jobs:
         run: cargo run --example analytics_smoke --features analytics
         working-directory: src-tauri
 
+      # ── Smoke (macOS): tier-0 web_read chain end-to-end — real hidden
+      #    WKWebView window, extractor payload probe, Rust-side markdown
+      #    render. Strict mode: engine MUST be webview/cache (a regression
+      #    falls through to Cloudflare and would otherwise pass silently).
+      - name: web_read_check (tier-0 webview chain)
+        run: cargo run --example web_read_check --features office
+        working-directory: src-tauri
+        env:
+          KAWAI_WEB_READ_REQUIRE_TIER0: "1"
+
       # ── Smoke 5: orchestration-quality gate (PLAN H1/L12). 20 office
       #    scenarios against E4B, scored on tool selection + arguments.
       #    Gate 19/20 (temp=1.0 sampling allows a one-scenario flake; a real
