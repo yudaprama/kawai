@@ -208,9 +208,24 @@ on-device generation takes 5–30 s depending on the call-line length.
   check `webread::set_webview_engine` runs in the `lib.rs` setup hook
   (webread feature only); `kawai-web` and non-webread builds are
   Cloudflare-only by design.
+- **Root cause (registered BUT every read still serves cloudflare)**: tier-0
+  failing silently inside the chain — `read_markdown` never surfaces why.
+  Reproduce outside the app shell and read the raw payload:
+  ```sh
+  cd src-tauri && cargo run --example web_read_check --features office -- <url>
+  ```
+  * `[probe] ERROR: eval channel closed` on the very first poll → WKWebView
+    dropped the evaluation (provisional-navigation race). `extract()` must
+    retry failed/incomplete polls until the deadline — a hard-fail there
+    reintroduces this (fixed once; regression = re-read webview_engine.rs).
+  * Payload starts `{"t":"","x":"","e":"..."}` → the EXTRACTOR JS itself threw
+    in-page; the `e` field names the error.
+  * Short/empty `x`+`h` on a sparse page → legitimately below
+    `MIN_USABLE_CHARS`; Cloudflare serving is correct behavior, not a bug.
 - **Action**: budget → raise the env cap or wait for the UTC-day rollover;
   walled page → nothing to fix locally (excluded by design); missing tier 0 →
-  verify the office feature is compiled in.
+  verify the office feature is compiled in; silent tier-0 miss → the probe
+  above discriminates the three cases before any code change.
 
 ## 4. Verification after a fix
 
