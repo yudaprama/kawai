@@ -96,6 +96,10 @@ browser = { path = "../rig-components/tools/browser", optional = true }
 url = { version = "2", optional = true }
 # Binance agent tools (builtin.binance): keyless public market data via the
 # crates.io binance-sdk (rustls, spot-only) + in-process TA via rig-components/ta.
+# Android excluded: binance-sdk's own reqwest dep carries default-tls
+# (native-tls → openssl-sys), which has no NDK prebuilds; desktop/iOS resolve
+# it natively (macOS/iOS use Security.framework).
+[target.'cfg(not(target_os = "android"))'.dependencies]
 binance = { path = "../rig-components/binance", optional = true }
 
 # stderr tee for file logging (logging.rs). Unix only.

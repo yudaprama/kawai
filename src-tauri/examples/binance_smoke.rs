@@ -128,6 +128,36 @@ async fn main() {
     succeeded += 1;
     println!("[binance_smoke] validation rejects bad intervals: OK");
 
+    // ── 6. signed account reads (only when BINANCE_API_KEY/SECRET are set) ──
+    if binance::account::has_credentials() {
+        let balances = parse(
+            "binance_balances",
+            step!(succeeded, "binance_balances", binance::account::BalancesTool.call(binance::account::BalancesArgs {})),
+        );
+        assert!(balances["balances"].is_array(), "balances: array expected");
+        println!(
+            "[binance_smoke] balances   canTrade={} assets={}",
+            balances["canTrade"],
+            balances["balances"].as_array().map(|a| a.len()).unwrap_or(0)
+        );
+
+        let orders = parse(
+            "binance_open_orders",
+            step!(succeeded, "binance_open_orders", binance::account::OpenOrdersTool.call(binance::account::OpenOrdersArgs { symbol: None })),
+        );
+        println!(
+            "[binance_smoke] openorders count={}",
+            orders["count"]
+        );
+        succeeded += 2;
+    } else {
+        println!(
+            "[binance_smoke] account tools SKIPPED (no {}/{} env) — market-data coverage complete",
+            binance::account::API_KEY_ENV,
+            binance::account::API_SECRET_ENV
+        );
+    }
+
     println!(
         "[binance_smoke] PASS — {} checks in {:.1}s",
         succeeded,

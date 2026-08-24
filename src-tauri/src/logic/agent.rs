@@ -305,9 +305,9 @@ pub fn list_agents() -> Vec<AgentInfo> {
             id: BINANCE_AGENT_ID.to_string(),
             name: "Binance".into(),
             description: "Crypto market data and technical analysis on Binance spot.".into(),
-            #[cfg(feature = "binance")]
+            #[cfg(all(feature = "binance", not(target_os = "android")))]
             tools: true,
-            #[cfg(not(feature = "binance"))]
+            #[cfg(any(not(feature = "binance"), target_os = "android"))]
             tools: false,
         },
     ]
@@ -333,7 +333,7 @@ Rules:\n\
 - After each response: message, either call another tool or give the final answer.\n\
 - Final answers: short, factual, no JSON dumps.";
 
-#[cfg(all(feature = "litert", feature = "binance"))]
+#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
 const BINANCE_PERSONA: &str = "You are kawai's Binance market agent. You answer crypto market questions using tools on Binance spot data.\n\
 Rules:\n\
 - Call at most ONE tool per reply, as a single call:<name>{...} line, then stop and wait for the response: message.\n\
@@ -341,7 +341,7 @@ Rules:\n\
 - Any trend/momentum/volatility question (RSI, MACD, moving averages, Bollinger Bands, ATR, oscillators): call binance_ta_analyze — NEVER compute indicators yourself from raw candles.\n\
 - Symbols are uppercase pairs without separators (BTCUSDT). If the user names only a coin, use USDT as quote; ask when genuinely ambiguous.\n\
 - Never invent arguments: if a required input is missing, ask the user.\n\
-- The tools are read-only public market data: you cannot trade or see account balances — say so plainly if asked.\n\
+- The tools are read-only: you can inspect market data and (when the balance/order tools are offered) the user's spot balances and open orders; you can NEVER place, modify, or cancel orders — say so plainly if asked.\n\
 - Explain indicator readings in plain language (e.g. RSI above 70 is overbought) as information, never as financial advice.\n\
 - After each response: message, either call another tool or give the final answer.\n\
 - Final answers: short, factual, no JSON dumps.";
@@ -350,7 +350,7 @@ Rules:\n\
 fn persona_for(agent_id: &str) -> Option<&'static str> {
     match agent_id {
         OFFICE_AGENT_ID => Some(OFFICE_PERSONA),
-        #[cfg(feature = "binance")]
+        #[cfg(all(feature = "binance", not(target_os = "android")))]
         BINANCE_AGENT_ID => Some(BINANCE_PERSONA),
         _ => None,
     }
@@ -378,8 +378,20 @@ fn toolset_for(
     let mut set = match agent_id {
         #[cfg(feature = "office")]
         OFFICE_AGENT_ID => crate::logic::office::toolset(user_id, session_id),
-        #[cfg(feature = "binance")]
-        BINANCE_AGENT_ID => ::binance::registry::all_tools(),
+        #[cfg(all(feature = "binance", not(target_os = "android")))]
+        BINANCE_AGENT_ID => {
+            let mut set = ::binance::registry::all_tools();
+            // Web read/search reuse from the webread crate — same engine
+            // chain + daily budgets as the office agent; registered only
+            // when an engine exists (capability probe). Enable with the
+            // `webread` cargo feature.
+            #[cfg(feature = "webread")]
+            if webread::any_engine() {
+                set.add_tool(webread::WebReadTool(user_id.to_string()));
+                set.add_tool(webread::WebSearchTool(user_id.to_string()));
+            }
+            set
+        }
         _ => {
             let _ = user_id;
             let _ = session_id;
@@ -394,7 +406,7 @@ fn toolset_for(
         OFFICE_AGENT_ID => {
             set.add_tool(ArtifactRecall);
         }
-        #[cfg(feature = "binance")]
+        #[cfg(all(feature = "binance", not(target_os = "android")))]
         BINANCE_AGENT_ID => {
             set.add_tool(ArtifactRecall);
         }
@@ -406,7 +418,7 @@ fn toolset_for(
         return match agent_id {
             #[cfg(feature = "office")]
             OFFICE_AGENT_ID => Some(set),
-            #[cfg(feature = "binance")]
+            #[cfg(all(feature = "binance", not(target_os = "android")))]
             BINANCE_AGENT_ID => Some(set),
             _ => None,
         };

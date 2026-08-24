@@ -113,8 +113,14 @@ jobs:
         working-directory: src-tauri
 
       # Binance agent tools: keyless, no C deps — a plain compile gate is enough.
+      # The webread combo covers the binance-agent web_read/web_search reuse
+      # path in logic::agent::toolset_for.
       - name: cargo check (binance feature)
         run: cargo check --features binance
+        working-directory: src-tauri
+
+      - name: cargo check (binance + webread)
+        run: cargo check --features binance,webread
         working-directory: src-tauri
 
   # ── Full gate: unit tests + on-device smoke + hybrid cloud smokes ─────────

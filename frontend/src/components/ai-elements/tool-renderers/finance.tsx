@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { parse, isRecord, num, str, fmtNum, MetricGrid, ChartCard, Footnote, TextCard, type Metric, type Series } from "./shared";
+import { parse, isRecord, num, str, fmtNum, MetricGrid, ChartCard, Footnote, TextCard, cards, type CardItem, type Metric, type Series } from "./shared";
 
 /** frankfurter → { amount, base, rates: { SYMBOL: rate } } */
 export function renderCurrency(output: unknown): ReactNode {
@@ -144,6 +144,55 @@ export function chart(series: Series | null, label?: string): ReactNode {
 }
 
 // ── builtin.binance agent tools (rig-components/binance) ───────────────────
+
+/** Binance agent balances → { canTrade, balances: [{ asset, free, locked }] }. */
+export function renderBinanceBalances(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || !Array.isArray(d.balances)) return null;
+  const items: Metric[] = d.balances
+    .filter(isRecord)
+    .slice(0, 9)
+    .map((b) => {
+      const free = num(b.free) ?? 0;
+      const locked = num(b.locked) ?? 0;
+      return {
+        label: str(b.asset) ?? "—",
+        value: fmtNum(free),
+        ...(locked > 0 ? { sub: `locked ${fmtNum(locked)}` } : {}),
+      };
+    });
+  return items.length ? <MetricGrid items={items} /> : null;
+}
+
+/** Binance agent open orders → { count, orders: [{symbol, side, type, …}] }. */
+export function renderBinanceOpenOrders(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || !Array.isArray(d.orders)) return null;
+  const items: CardItem[] = d.orders
+    .filter(isRecord)
+    .map((o) => {
+      const side = str(o.side)?.toUpperCase();
+      const qty = num(o.origQty);
+      const filled = num(o.executedQty) ?? 0;
+      const price = num(o.price);
+      const title =
+        [side, str(o.type)?.replace(/_/g, " "), qty !== null ? fmtNum(qty) : null]
+          .filter(Boolean)
+          .join(" ") || "Order";
+      return {
+        title,
+        subtitle: str(o.symbol),
+        meta: [
+          ...(price !== null && price > 0 ? [`limit ${fmtNum(price)}`] : []),
+          `filled ${fmtNum(filled)}`,
+          str(o.status),
+        ]
+          .filter(Boolean)
+      .join(" · "),
+    };
+  });
+  return cards(items);
+}
 
 /** Binance agent klines → { candles: [[openTime, o, h, l, c, v], ...] }. */
 export function binanceKlineSeries(output: unknown): Series | null {
