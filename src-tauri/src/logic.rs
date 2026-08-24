@@ -112,6 +112,10 @@ pub mod remote;
 // tabular files live in the office store.
 #[cfg(feature = "analytics")]
 pub mod analytics;
+// Remote SQL sources (Postgres/MySQL) behind the narrower `analytics-sql`
+// feature — sqlx stays out of builds that only serve local SQLite.
+#[cfg(feature = "analytics-sql")]
+pub mod sql_remote;
 
 pub use db::*;
 

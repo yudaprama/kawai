@@ -134,6 +134,13 @@ jobs:
         run: cargo check --features analytics
         working-directory: src-tauri
 
+      # Remote SQL sources (sqlx, rustls): pure-Rust compile gate for the
+      # data_tables/data_import remote branch. Live-server tests stay local
+      # (KAWAI_SQL_TEST_PG/MYSQL) — CI has no database service here.
+      - name: cargo check (analytics-sql feature)
+        run: cargo check --features analytics-sql
+        working-directory: src-tauri
+
       - name: cargo test (rig-components/analytics)
         run: cargo test -p analytics
         working-directory: rig-components

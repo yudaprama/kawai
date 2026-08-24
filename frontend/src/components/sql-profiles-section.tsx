@@ -94,7 +94,7 @@ export function SqlProfilesSection() {
           <div className="flex gap-2">
             <Input
               onChange={(e) => setSource(e.target.value)}
-              placeholder="/path/ke/database.db"
+              placeholder="/path/database.db atau postgres://user@host/db"
               value={source}
             />
             <Button onClick={pickFile} size="sm" variant="outline">

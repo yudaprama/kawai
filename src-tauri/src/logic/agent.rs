@@ -131,6 +131,33 @@ const ARTIFACT_PAGE_CHARS: usize = 3_600;
 /// Memory-log payload (chars) a turn must gather before the end-of-turn cloud
 /// close is offered. Keeps trivial turns (list files, price checks) local.
 const CLOUD_CLOSE_MIN_CHARS: usize = 6_000;
+#[cfg(feature = "litert")]
+/// Headroom carved out of the materials package for the omission note whenever
+/// any artifact doesn't fit. Worst case ≈ MAX_TOOL_CALLS entries × ~50 chars
+/// of listing each — far below this reserve.
+const MATERIALS_NOTE_RESERVE: usize = 600;
+
+/// One "--- tool ---" block of the cloud-materials package.
+#[cfg(feature = "litert")]
+fn artifact_block(a: &TurnArtifact) -> String {
+    format!("--- {} ---\n{}", a.tool, a.content)
+}
+
+/// Largest prefix of artifacts whose joined blocks stay within `budget`
+/// (accounting for the "\n\n" separator before every non-first block).
+#[cfg(feature = "litert")]
+fn fitting_materials_prefix(artifacts: &[TurnArtifact], budget: usize) -> usize {
+    let mut used = 0usize;
+    for (i, a) in artifacts.iter().enumerate() {
+        let sep = if i > 0 { 2 } else { 0 };
+        let len = artifact_block(a).chars().count() + sep;
+        if used + len > budget {
+            return i;
+        }
+        used += len;
+    }
+    artifacts.len()
+}
 
 /// Does the user's message ask for a whole-content summary? Keyword gate
 /// (id + en) — deliberately cheap; it only gates an in-context NUDGE, never
@@ -1265,6 +1292,50 @@ fn tool_result_body(result: &rig::tool::ToolResult) -> String {
 // demand via `materials()`), the chain digest fed back on budget exhaustion,
 // and `artifact_recall` paging for oversized bodies.
 
+/// Canonical serialization of tool-call args for turn-memory dedup keys.
+/// Object keys are sorted RECURSIVELY — required because `schemars` (via
+/// rig) enables serde_json's `preserve_order`, making `Value::to_string()`
+/// keep the model's insertion order: the same semantic call written with a
+/// different key order would otherwise dedup-fail. Whitespace never
+/// survives parsing, so only key order needs normalizing here. Numeric-form
+/// differences (`5` vs `5.0`) remain distinct keys — acceptable: one model,
+/// one phrasing per turn.
+#[cfg(feature = "litert")]
+fn canonical_args_key(value: &Value) -> String {
+    fn write(v: &Value, out: &mut String) {
+        match v {
+            Value::Object(map) => {
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                out.push('{');
+                for (i, k) in keys.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&serde_json::to_string(k).unwrap_or_default());
+                    out.push(':');
+                    write(&map[*k], out);
+                }
+                out.push('}');
+            }
+            Value::Array(arr) => {
+                out.push('[');
+                for (i, item) in arr.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    write(item, out);
+                }
+                out.push(']');
+            }
+            other => out.push_str(&other.to_string()),
+        }
+    }
+    let mut s = String::new();
+    write(value, &mut s);
+    s
+}
+
 /// One stored process result. `content` is the tool's verbatim output body,
 /// already capped at `TOOL_RESULT_MATERIALS_CHARS`.
 #[cfg(feature = "litert")]
@@ -1373,17 +1444,63 @@ impl TurnMemory {
         Ok((page, next))
     }
 
-    /// The cloud-materials package: joined "--- tool ---" bodies, capped at
-    /// `TOOL_RESULT_MATERIALS_CHARS` (each entry is already capped, so the
-    /// join only trims separators' overflow).
+    /// The cloud-materials package: whole "--- tool ---" blocks joined in turn
+    /// order under the `TOOL_RESULT_MATERIALS_CHARS` cap. Artifacts that do
+    /// not fit are omitted EXPLICITLY via a trailing note (handles + tools +
+    /// sizes) — the writer must never receive a silently truncated package.
     fn materials(&self) -> String {
-        let joined = self
-            .artifacts
+        // A single giant read (entry bodies are capped near the package budget)
+        // can leave the greedy prefix empty — always ship at least the head
+        // block rather than an empty package; its tail gets the standard
+        // ellipsis marker below.
+        let keep = fitting_materials_prefix(&self.artifacts, TOOL_RESULT_MATERIALS_CHARS)
+            .max(self.artifacts.len().min(1));
+        let note = if keep == self.artifacts.len() {
+            None
+        } else {
+            // Refit reserving room for the note itself so every kept block
+            // stays whole AND the final package stays within the cap.
+            let keep =
+                keep.min(fitting_materials_prefix(
+                    &self.artifacts,
+                    TOOL_RESULT_MATERIALS_CHARS.saturating_sub(MATERIALS_NOTE_RESERVE),
+                ));
+            let listed = self.artifacts[keep..]
+                .iter()
+                .map(|a| {
+                    format!(
+                        "{} {} {} chars",
+                        a.handle,
+                        a.tool,
+                        a.content.chars().count()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            Some(format!(
+                "[MATERIALS NOTE: {} of {} stored results did not fit this package \
+                 ({}-char cap). Omitted: {}. Ground the answer ONLY in the included \
+                 results; do not imply coverage of the omitted ones.]",
+                self.artifacts.len() - keep,
+                self.artifacts.len(),
+                TOOL_RESULT_MATERIALS_CHARS,
+                listed,
+            ))
+        };
+        let note_text = note.map(|n| format!("\n\n{n}")).unwrap_or_default();
+        let budget = TOOL_RESULT_MATERIALS_CHARS.saturating_sub(note_text.chars().count());
+        let joined = self.artifacts[..keep]
             .iter()
-            .map(|a| format!("--- {} ---\n{}", a.tool, a.content))
+            .map(artifact_block)
             .collect::<Vec<_>>()
             .join("\n\n");
-        truncate_chars(&joined, TOOL_RESULT_MATERIALS_CHARS)
+        let mut out = if joined.chars().count() > budget {
+            truncate_chars(&joined, budget)
+        } else {
+            joined
+        };
+        out.push_str(&note_text);
+        out
     }
 
     /// Total stored content chars — the cloud-close trigger metric.
@@ -2406,7 +2523,8 @@ pub fn agent_chat(
                     // handle + excerpt — the full text stays in the log for
                     // artifact_recall and the cloud-subagent materials, so
                     // truncation is recoverable, never destructive.
-                    let handle = memory.record(&tool, &exec_args.to_string(), body.clone());
+                    let handle =
+                        memory.record(&tool, &canonical_args_key(&exec_args), body.clone());
                     let model_body = if body.chars().count() > TOOL_RESULT_MODEL_CHARS {
                         let total = body.chars().count();
                         let excerpt: String = body.chars().take(ARTIFACT_EXCERPT_CHARS).collect();
@@ -2453,7 +2571,11 @@ pub fn agent_chat(
     }
 }
 
-#[cfg(test)]
+// Nearly every unit here exercises litert-gated machinery (TurnMemory,
+// personas, toolsets, aliases) — run this module only when litert is on so
+// narrower feature combos (e.g. analytics-sql) can still compile their own
+// tests.
+#[cfg(all(test, feature = "litert"))]
 mod tests {
     use super::*;
 
@@ -2483,6 +2605,46 @@ mod tests {
         // Case-insensitive handle lookup (via page).
         assert!(m.page("MEM1", 0).is_ok());
         assert!(m.page("nope", 0).is_err());
+    }
+
+    #[test]
+    fn turn_memory_dedup_key_ignores_key_order() {
+        let mut m = TurnMemory::default();
+        // Same semantic args written with different key order → same handle
+        // (serde_json runs with preserve_order via schemars/rig, so plain
+        // to_string would keep insertion order and dedup-fail).
+        let a: Value = serde_json::from_str(r#"{"query":"btc","limit":5}"#).unwrap();
+        let b: Value = serde_json::from_str(r#"{"limit":5,  "query":"btc"}"#).unwrap();
+        assert_eq!(
+            m.record("web_search", &canonical_args_key(&a), "r1".into()),
+            "mem1"
+        );
+        assert_eq!(
+            m.record("web_search", &canonical_args_key(&b), "r2".into()),
+            "mem1",
+            "key-order difference must not duplicate the entry"
+        );
+        // Genuinely different args still get their own entry.
+        let d: Value = serde_json::from_str(r#"{"query":"eth","limit":5}"#).unwrap();
+        assert_eq!(
+            m.record("web_search", &canonical_args_key(&d), "r4".into()),
+            "mem2"
+        );
+        // Nested objects are sorted recursively too — same semantics written
+        // with different inner and outer key orders dedup to one entry.
+        let n1: Value =
+            serde_json::from_str(r#"{"opts":{"z":1,"a":2},"query":"btc","limit":5}"#).unwrap();
+        let n2: Value =
+            serde_json::from_str(r#"{"limit":5,"opts":{"a":2,"z":1},"query":"btc"}"#).unwrap();
+        assert_eq!(
+            m.record("web_search", &canonical_args_key(&n1), "r5".into()),
+            "mem3"
+        );
+        assert_eq!(
+            m.record("web_search", &canonical_args_key(&n2), "r6".into()),
+            "mem3",
+        );
+        assert_eq!(m.artifacts.len(), 3);
     }
 
     #[test]
@@ -2521,16 +2683,51 @@ mod tests {
     }
 
     #[test]
-    fn turn_memory_materials_joins_and_caps() {
+    fn turn_memory_materials_all_fit_has_no_note() {
+        let mut m = TurnMemory::default();
+        m.record("office_list_files", "a", "{\"files\":[]}".into());
+        m.record("binance_price", "b", "{\"price\":\"1\"}".into());
+        let materials = m.materials();
+        assert!(materials.contains("--- office_list_files ---"));
+        assert!(materials.contains("--- binance_price ---"));
+        // Everything fit → no packaging note, no ellipsis.
+        assert!(!materials.contains("MATERIALS NOTE"), "got {materials}");
+        assert!(!materials.contains('…'));
+    }
+
+    #[test]
+    fn turn_memory_materials_overflow_lists_omitted() {
         let mut m = TurnMemory::default();
         m.record("office_list_files", "a", "{\"files\":[]}".into());
         m.record("office_read_document", "b", "x".repeat(50_000));
+        m.record("pdf_extract_text", "c", "y".repeat(40_000));
         let materials = m.materials();
-        assert!(materials.contains("--- office_list_files ---"));
-        assert!(materials.contains("--- office_read_document ---"));
-        // 32k cap + the truncation marker.
+        // Kept blocks stay WHOLE (no mid-body cut), the small head included.
+        assert!(materials.contains("{\"files\":[]}"));
+        assert!(!materials.contains('…'), "no silent mid-block truncation");
+        // The omission is explicit and lists every dropped artifact.
+        assert!(materials.contains("[MATERIALS NOTE: 2 of 3"), "got {materials}");
+        assert!(materials.contains("mem2 office_read_document"), "got {materials}");
+        assert!(materials.contains("mem3 pdf_extract_text"), "got {materials}");
+        // The package never exceeds the cap despite the note.
+        assert!(materials.chars().count() <= TOOL_RESULT_MATERIALS_CHARS);
+    }
+
+    #[test]
+    fn turn_memory_materials_single_giant_head_truncates() {
+        // One entry whose body alone reaches the package cap: it must still
+        // ship (head block, ellipsis tail) instead of an empty package.
+        let mut m = TurnMemory::default();
+        m.record(
+            "office_read_document",
+            "a",
+            format!("{}tail", "z".repeat(TOOL_RESULT_MATERIALS_CHARS)),
+        );
+        let materials = m.materials();
+        assert_eq!(m.artifacts.len(), 1);
+        assert!(materials.starts_with("--- office_read_document ---"));
+        assert!(materials.contains('…'), "giant head must be capped");
         assert!(materials.chars().count() <= TOOL_RESULT_MATERIALS_CHARS + 60);
-        assert!(materials.contains("…"), "cap marker missing");
     }
 
     #[test]

@@ -29,6 +29,22 @@ knowledge panel with a native file picker; a process-local cache reloaded at
 each agent turn registers the tools without restart. Env vars remain an
 ops/dev override and win on name clash.
 
+**Remote sources shipped (2026-08-24, feature `analytics-sql`)**: sqlx 0.8
+(`runtime-tokio-rustls`, `postgres`, `mysql` — no sqlite; local stays on
+libsql) in `logic/sql_remote.rs`. Profile sources may now be
+`postgres://`/`postgresql://`/`mysql://`/`mariadb://` URLs (saved via the
+same ops/UI, validated for scheme; file-existence check skipped). Design:
+dialect from the URL scheme; identifier validated against information_schema
+via BOUND PARAMETER before quoting (pg `"…"`, mysql backticks); temporal
+columns CAST to text at the SQL layer (`col::text` / `CAST(… AS CHAR)`) so
+no chrono dep; binary/array columns reject the dump naming the column
+(same contract as SQLite BLOBs); cell decode cascades wide→narrow ints →
+floats → bool → text into the crate's neutral RawCell. URLs are REDACTED
+(`user:***@host`) in every error path — passwords never reach logs or the
+model. CI: linux-check gains a `cargo check --features analytics-sql`
+compile gate; live-server integration tests stay local-only (no DB service
+in CI yet).
+
 **Mobile readiness (2026-08-24)**: the analytics crate compiles clean for
 android arm64 (`cargo ndk -t arm64-v8a -P 24 check -p analytics`) and iOS
 (`cargo check -p analytics --target aarch64-apple-ios`); polars' enabled

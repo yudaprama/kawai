@@ -320,21 +320,23 @@ fn normalize_profile_name(name: &str) -> Result<String, String> {
     Ok(n)
 }
 
-/// Validate a source string: a local SQLite path or `sqlite:` URL whose file
-/// must exist right now (fail fast beats a broken profile discovered later).
+/// Validate a source string: a local SQLite path / `sqlite:` URL whose file
+/// must exist right now, or a remote Postgres/MySQL URL (existence is only
+/// checkable at connect time). Remote URLs require the `analytics-sql`
+/// feature — saving still works without it so users can stage profiles
+/// before switching builds.
 fn validate_source(source: &str) -> Result<String, String> {
     let s = source.trim();
     if s.is_empty() || s.len() > 1024 {
-        return Err("source must be a non-empty path (max 1024 chars)".into());
+        return Err("source must be a non-empty path or URL (max 1024 chars)".into());
     }
-    let path = sqlite_path(s);
-    // Postgres/MySQL URLs are rejected explicitly until sqlx lands — better
-    // than silently storing a source no tool can open.
-    if path.as_os_str().to_string_lossy().contains("://")
-        && !s.starts_with("sqlite:")
-    {
+    if looks_remote(s) {
+        return Ok(s.to_string());
+    }    let path = sqlite_path(s);
+    let path_str = path.as_os_str().to_string_lossy();
+    if path_str.contains("://") && !s.starts_with("sqlite:") {
         return Err(format!(
-            "only local SQLite sources are supported right now (got {s})"
+            "unsupported scheme: only sqlite paths and postgres://mysql:// URLs are accepted (got {s})"
         ));
     }
     if !path.is_file() {
@@ -409,6 +411,16 @@ fn sqlite_path(value: &str) -> std::path::PathBuf {
         .or_else(|| v.strip_prefix("sqlite:"))
         .unwrap_or(v);
     std::path::PathBuf::from(v)
+}
+
+/// Scheme-only remote detection, compiled regardless of the `analytics-sql`
+/// feature so remote profiles can be saved on any build; the TOOLS then
+/// error with a rebuild hint when the feature is missing.
+fn looks_remote(source: &str) -> bool {
+    let s = source.trim().to_ascii_lowercase();
+    ["postgres://", "postgresql://", "mysql://", "mariadb://"]
+        .iter()
+        .any(|p| s.starts_with(p))
 }
 
 async fn open_sqlite(profile: &str) -> Result<libsql::Connection, analytics::ToolError> {
@@ -498,8 +510,24 @@ impl PortableTool for DataTablesTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<String, DataToolError> {
-        let conn = open_sqlite(&args.profile).await.map_err(derr)?;
-        let items = list_objects(&conn).await.map_err(derr)?;
+        let src = profile_value(&args.profile).map_err(derr)?;
+        let items = if looks_remote(&src) {
+            #[cfg(feature = "analytics-sql")]
+            {
+                super::sql_remote::list_objects(&src)
+                    .await
+                    .map_err(|e| DataToolError(e))?
+            }
+            #[cfg(not(feature = "analytics-sql"))]
+            return Err(derr(analytics::ToolError(
+                "remote SQL sources (postgres://mysql://) need a build with the \
+                 analytics-sql feature"
+                    .into(),
+            )));
+        } else {
+            let conn = open_sqlite(&args.profile).await.map_err(derr)?;
+            list_objects(&conn).await.map_err(derr)?
+        };
         let tables: Vec<Value> = items
             .into_iter()
             .map(|(name, kind)| json!({ "name": name, "kind": kind }))
@@ -528,7 +556,7 @@ pub struct DataImportTool(pub String, pub i64);
 /// lives in the crate — this is only value mapping.
 fn build_parquet_bytes(
     columns: &[String],
-    rows: Vec<Vec<SqlValue>>,
+    rows: &[Vec<SqlValue>],
 ) -> Result<(Vec<u8>, usize), analytics::ToolError> {
     for (ci, name) in columns.iter().enumerate() {
         if rows.iter().any(|r| matches!(r[ci], SqlValue::Blob(_))) {
@@ -579,7 +607,53 @@ impl PortableTool for DataImportTool {
         let user = self.0.clone();
         let session_id = self.1;
         let cap = max_rows();
+        let src = profile_value(&args.profile).map_err(derr)?;
 
+        // ── remote (Postgres/MySQL) branch ────────────────────────────────
+        if looks_remote(&src) {
+            #[cfg(feature = "analytics-sql")]
+            {
+                let known = super::sql_remote::list_objects(&src)
+                    .await
+                    .map_err(|e| DataToolError(e))?;
+                if !known.iter().any(|(n, _)| n == &args.table) {
+                    return Err(derr(analytics::ToolError(format!(
+                        "no table or view named {:?}; available: {}",
+                        args.table,
+                        if known.is_empty() {
+                            "(none)".into()
+                        } else {
+                            known.into_iter().map(|(n, _)| n).collect::<Vec<_>>().join(", ")
+                        }
+                    ))));
+                }
+                // cap+1 fetch → truncation is exact.
+                let (columns, mut cells) =
+                    super::sql_remote::dump_rows(&src, &args.table, cap).await.map_err(|e| DataToolError(e))?;
+                let truncated = cells.len() > cap;
+                if truncated {
+                    cells.truncate(cap);
+                }
+                let exported_at = unix_now_secs();
+                let (bytes, rows) = run_blocking(move || {
+                    analytics::rows_to_parquet(&columns, &cells)
+                })
+                .await?;
+                return persist_and_reply(
+                    &user, session_id, &args.profile, &args.table,
+                    bytes, rows, truncated, cap, exported_at,
+                )
+                .await;
+            }
+            #[cfg(not(feature = "analytics-sql"))]
+            return Err(derr(analytics::ToolError(
+                "remote SQL sources (postgres://mysql://) need a build with the \
+                 analytics-sql feature"
+                    .into(),
+            )));
+        }
+
+        // ── local SQLite branch ───────────────────────────────────────────
         let conn = open_sqlite(&args.profile).await.map_err(derr)?;
 
         // Validate the identifier against the catalog via a BOUND PARAMETER
@@ -664,45 +738,64 @@ impl PortableTool for DataImportTool {
         if truncated {
             raw.truncate(cap);
         }
-        let exported_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-
+        let exported_at = unix_now_secs();
         let table = args.table.clone();
-        let (bytes, rows) = run_blocking(move || build_parquet_bytes(&columns, raw)).await?;
-
-        // Timestamped name: re-importing the same table creates a fresh
-        // snapshot instead of colliding with the previous one.
-        let name = sanitize_snapshot_name(&table, exported_at);
-        let file = store::import_bytes(&user, &name, &bytes).map_err(DataToolError)?;
-
-        // Associate with THIS session (best-effort — association failure
-        // must not lose the imported file; office_list_files still finds it).
-        if let Err(e) =
-            super::rag::knowledge_add_to_session(&user, session_id, &[file.id.clone()]).await
-        {
-            eprintln!("[analytics] session association skipped: {e}");
-        }
-
-        let hint = if truncated {
-            format!("TRUNCATED at the {cap}-row cap — analysis covers the FIRST {cap} rows only.")
-        } else {
-            "complete".to_string()
-        };
-        Ok(json!({
-            "fileId": file.id,
-            "fileName": file.original_name,
-            "source": { "profile": args.profile, "table": table },
-            "rows": rows,
-            "truncated": truncated,
-            "maxRows": cap,
-            "exportedAtUnix": exported_at,
-            "note": hint,
-            "nextStep": "run data_schema on fileId, then data_query",
-        })
-        .to_string())
+        let (bytes, rows) = run_blocking(move || build_parquet_bytes(&columns, &raw)).await?;
+        persist_and_reply(
+            &user, session_id, &args.profile, &table, bytes, rows, truncated, cap, exported_at,
+        )
+        .await
     }
+}
+
+fn unix_now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Shared tail of both dump branches: write the snapshot into the office
+/// store under a timestamped name, associate it with THIS session
+/// (best-effort — an association failure must not lose the imported file;
+/// office_list_files still finds it), and reply with the handle + stats.
+async fn persist_and_reply(
+    user: &str,
+    session_id: i64,
+    profile: &str,
+    table: &str,
+    bytes: Vec<u8>,
+    rows: usize,
+    truncated: bool,
+    cap: usize,
+    exported_at: u64,
+) -> Result<String, DataToolError> {
+    // Timestamped name: re-importing the same table creates a fresh
+    // snapshot instead of colliding with the previous one.
+    let name = sanitize_snapshot_name(table, exported_at);
+    let file = store::import_bytes(user, &name, &bytes).map_err(DataToolError)?;
+    if let Err(e) =
+        super::rag::knowledge_add_to_session(user, session_id, &[file.id.clone()]).await
+    {
+        eprintln!("[analytics] session association skipped: {e}");
+    }
+    let hint = if truncated {
+        format!("TRUNCATED at the {cap}-row cap — analysis covers the FIRST {cap} rows only.")
+    } else {
+        "complete".to_string()
+    };
+    Ok(json!({
+        "fileId": file.id,
+        "fileName": file.original_name,
+        "source": { "profile": profile, "table": table },
+        "rows": rows,
+        "truncated": truncated,
+        "maxRows": cap,
+        "exportedAtUnix": exported_at,
+        "note": hint,
+        "nextStep": "run data_schema on fileId, then data_query",
+    })
+    .to_string())
 }
 
 fn sanitize_snapshot_name(table: &str, exported_at_unix: u64) -> String {
@@ -1059,6 +1152,7 @@ mod sql_tests {
                     column: "a".into(),
                     operator: "gte".into(),
                     value: "0".into(),
+                    date_part: None,
                 }]),
                 ..Default::default()
             },
