@@ -50,8 +50,55 @@ pub fn run() {
         });
 
     // The office ops exist only with "office"; agent_chat only with "litert".
-    // Four literal lists keep generate_handler! static per feature combo.
-    #[cfg(all(feature = "litert", feature = "office"))]
+    // Literal lists keep generate_handler! static per feature combo; the
+    // analytics ops (sql_profile_*) get their own list — they exist only
+    // under the `analytics` feature (which implies office).
+    #[cfg(all(feature = "litert", feature = "office", not(feature = "analytics")))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        commands::greet,
+        commands::list_agents,
+        commands::generate_activity,
+        commands::cancel_stream,
+        commands::set_session,
+        commands::logout,
+        commands::whoami,
+        commands::create_chat_session,
+        commands::list_chat_sessions,
+        commands::rename_chat_session,
+        commands::set_chat_session_archived,
+        commands::list_chat_messages,
+        commands::append_chat_message,
+        commands::delete_chat_session,
+        commands::generate_session_title,
+        commands::local_load_model,
+        commands::local_chat,
+        commands::local_llm_reset,
+        commands::local_llm_set_thinking,
+        commands::local_llm_unload,
+        commands::local_llm_get_test_tools,
+        commands::local_llm_get_rig_tools,
+        commands::office_import_file,
+        commands::office_list_files,
+        commands::office_read_document,
+        commands::knowledge_context,
+        commands::office_export_file,
+        commands::office_capabilities,
+        commands::office_index_file,
+        commands::knowledge_search,
+        commands::knowledge_forget,
+        commands::list_session_files,
+        commands::knowledge_list,
+        commands::knowledge_add_to_session,
+        commands::knowledge_import_youtube,
+        commands::office_delete_file,
+        commands::office_restore_backup,
+        commands::office_read_file,
+        commands::tauri_open_file,
+        commands::agent_chat,
+        commands::frontend_log
+    ]);
+
+    #[cfg(all(feature = "litert", feature = "office", feature = "analytics"))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         commands::greet,
         commands::list_agents,

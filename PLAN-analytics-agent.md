@@ -29,6 +29,17 @@ knowledge panel with a native file picker; a process-local cache reloaded at
 each agent turn registers the tools without restart. Env vars remain an
 ops/dev override and win on name clash.
 
+**Mobile readiness (2026-08-24)**: the analytics crate compiles clean for
+android arm64 (`cargo ndk -t arm64-v8a -P 24 check -p analytics`) and iOS
+(`cargo check -p analytics --target aarch64-apple-ios`); polars' enabled
+features map to pure-Rust sub-crates only (cloud/http/aws stay off), and
+libsql core already ships on both targets via kawai's own DB layer. The only
+mobile blockers sit OUTSIDE this feature — the `office`→embedding wall
+(ort-sys/openssl-sys have no mobile prebuilts) and the on-device LLM engine
+(Roadmap 13) — both owned by separate tracks. No SQL-specific work remains;
+if a UI path is wanted before the mobile orchestrator lands, the deferred
+non-agent data-explorer op pair (§4) is the drop-in shape.
+
 Implementation deltas from the original design (discovered while building):
 
 - **No `rig` dep in the crate.** The tool structs live kawai-side

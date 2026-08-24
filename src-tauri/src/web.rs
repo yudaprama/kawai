@@ -873,15 +873,19 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
             post(office_restore_backup_handler),
         )
         .route("/api/office_export_file", post(office_export_file_handler))
-        .route("/api/sql_profile_list", post(sql_profile_list_handler))
-        .route("/api/sql_profile_save", post(sql_profile_save_handler))
-        .route("/api/sql_profile_delete", post(sql_profile_delete_handler))
         .route("/api/office_read_file", post(office_read_file_handler))
         .route("/api/tauri_open_file", post(tauri_open_file_handler))
         .route(
             "/api/office_capabilities",
             post(office_capabilities_handler),
         );
+
+    // SQL data-source profiles: analytics-only (implies office).
+    #[cfg(feature = "analytics")]
+    let protected = protected
+        .route("/api/sql_profile_list", post(sql_profile_list_handler))
+        .route("/api/sql_profile_save", post(sql_profile_save_handler))
+        .route("/api/sql_profile_delete", post(sql_profile_delete_handler));
 
     Router::new()
         .merge(public)
