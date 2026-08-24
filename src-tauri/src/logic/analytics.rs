@@ -152,7 +152,8 @@ impl PortableTool for DataQueryTool {
                         "properties": {
                             "column": { "type": "string" },
                             "operator": { "type": "string", "enum": ["eq","neq","gt","gte","lt","lte","contains"] },
-                            "value": { "type": "string", "description": "Always a string; parsed to the column's real type (\"1500\", \"2026-01-31\", \"true\")." }
+                            "value": { "type": "string", "description": "Always a string; parsed to the column's real type (\"1500\", \"2026-01-31\", \"true\")." },
+                            "datePart": { "type": "string", "enum": ["year","month","day"], "description": "Compare a calendar part of a date/datetime column instead of the raw value — e.g. January = {column: tanggal, operator: eq, value: \"1\", datePart: month}. Value must be an integer string." }
                         },
                         "required": ["column","operator","value"]
                     }

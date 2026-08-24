@@ -188,6 +188,22 @@ async fn main() {
     }
     println!("[analytics_smoke] PASS data_query(xlsx): date range filter");
 
+    // Calendar-part filter: "January" as datePart month == 1.
+    let out = DataQueryTool(user.to_string())
+        .call(
+            serde_json::from_value(serde_json::json!({
+                "fileId": xlsx.id,
+                "filters": [{ "column": "tanggal", "operator": "eq", "value": "1", "datePart": "month" }]
+            }))
+            .expect("query args"),
+        )
+        .await
+        .expect("data_query(datePart)");
+    if rows_of(&out).len() != 3 {
+        die(&format!("datePart month=1 should return 3 rows: {out}"));
+    }
+    println!("[analytics_smoke] PASS data_query(xlsx): datePart month filter");
+
     // Cache invalidation: rewrite the workbook with one more row (new size +
     // mtime) — the sidecar must rebuild, not serve stale data.
     store::import_bytes(user, "smoke-sales-v2.xlsx", &sales_xlsx_bytes()).expect("import v2");
