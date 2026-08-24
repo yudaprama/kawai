@@ -242,7 +242,11 @@ pub async fn set_chat_session_archived(
 ) -> Result<ChatSession, DbError> {
     let conn = db_connection(user_id).await?;
     chat_session_owned(&conn, session_id).await?;
-    let archived_at = if archived { Some(unix_now() as i64) } else { None };
+    let archived_at = if archived {
+        Some(unix_now() as i64)
+    } else {
+        None
+    };
     conn.execute(
         "UPDATE sessions SET archived = ?, archived_at = ? WHERE id = ?",
         (archived as i64, archived_at, session_id),
@@ -309,8 +313,11 @@ pub async fn delete_chat_session(user_id: &str, session_id: i64) -> Result<(), D
         vec![session_id],
     )
     .await?;
-    conn.execute("DELETE FROM messages WHERE session_id = ?", vec![session_id])
-        .await?;
+    conn.execute(
+        "DELETE FROM messages WHERE session_id = ?",
+        vec![session_id],
+    )
+    .await?;
     conn.execute("DELETE FROM sessions WHERE id = ?", vec![session_id])
         .await?;
     Ok(())

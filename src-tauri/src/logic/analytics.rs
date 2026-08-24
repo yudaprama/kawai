@@ -1,0 +1,1106 @@
+//! Data analysis agent tools (`builtin.analytics`): structured queries over
+//! the user's stored tabular files (csv, tsv, parquet, xlsx/xlsm).
+//!
+//! Thin `PortableTool` wrappers — ALL query logic lives in the
+//! `analytics` crate (pure functions over a path); these structs only bind
+//! the server-side user id, resolve file ids through the office store, and
+//! push the CPU-bound work onto the blocking pool. Same layering as
+//! `KnowledgeSearchTool`: the model can never supply a user id or escape
+//! its own store.
+
+use std::fmt;
+
+use rig::tool::PortableTool;
+use serde::Deserialize;
+use serde_json::{json, Value};
+
+use super::office::store;
+
+/// Error type for every tool here. One string — the agent loop feeds it
+/// back to the model verbatim as the tool result.
+#[derive(Debug)]
+pub struct DataToolError(pub String);
+
+impl fmt::Display for DataToolError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for DataToolError {}
+
+fn derr(e: analytics::ToolError) -> DataToolError {
+    DataToolError(e.0)
+}
+
+/// Tabular extensions the data tools accept (everything else gets a
+/// guidance error naming the supported set).
+const TABULAR_EXTS: [&str; 5] = ["csv", "tsv", "parquet", "xlsx", "xlsm"];
+
+fn resolve_tabular(
+    user_id: &str,
+    file_id: &str,
+) -> Result<std::path::PathBuf, analytics::ToolError> {
+    let (path, info) = store::resolve(user_id, file_id).map_err(analytics::ToolError)?;
+    let ext = info.ext.to_ascii_lowercase();
+    if !TABULAR_EXTS.contains(&ext.as_str()) {
+        return Err(analytics::ToolError(format!(
+            "file {file_id} is .{ext} — data tools accept {}",
+            TABULAR_EXTS.join(", ")
+        )));
+    }
+    Ok(path)
+}
+
+/// CPU-bound polars work never runs on the async runtime threads.
+async fn run_blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, analytics::ToolError> + Send + 'static,
+) -> Result<T, DataToolError> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| DataToolError(format!("join: {e}")))?
+        .map_err(derr)
+}
+
+// -- data_schema ---------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SchemaArgs {
+    pub file_id: String,
+    pub sheet: Option<String>,
+}
+
+/// REQUIRED before the first data_query on a file. Returns column names,
+/// dtypes, sample values and (for Excel) the sheet list.
+pub struct DataTableSchemaTool(pub String);
+
+impl PortableTool for DataTableSchemaTool {
+    const NAME: &'static str = "data_schema";
+    type Args = SchemaArgs;
+    type Output = String;
+    type Error = DataToolError;
+
+    fn description(&self) -> String {
+        "REQUIRED before the first data_query on a file. Returns the column names, data types, sample values and row count of a stored tabular file (csv/parquet/Excel), plus the sheet names for Excel files.".into()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "fileId": { "type": "string", "description": "File id from office_list_files or the attachment block" },
+                "sheet": { "type": "string", "description": "Excel sheet name. Optional — defaults to the first sheet with data." }
+            },
+            "required": ["fileId"]
+        })
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<String, DataToolError> {
+        let user = self.0.clone();
+        run_blocking(move || {
+            let path = resolve_tabular(&user, &args.file_id)?;
+            let info = analytics::discover(&path, args.sheet.as_deref())?;
+            serde_json::to_string(&info)
+                .map_err(|e| analytics::ToolError(format!("serialize failed: {e}")))
+        })
+        .await
+    }
+}
+
+// -- data_query ----------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryArgs {
+    pub file_id: String,
+    pub sheet: Option<String>,
+    #[serde(flatten)]
+    pub q: analytics::QueryArgs,
+}
+
+/// Structured query over one stored tabular file: filters → group_by →
+/// aggregations → sort → limit (or plain row selection). Numeric/date
+/// filter values are always strings — parsed to the column's real type.
+pub struct DataQueryTool(pub String);
+
+impl PortableTool for DataQueryTool {
+    const NAME: &'static str = "data_query";
+    type Args = QueryArgs;
+    type Output = String;
+    type Error = DataToolError;
+
+    fn description(&self) -> String {
+        "Run a structured query on a stored tabular file (csv/parquet/Excel): filter rows, optionally group, aggregate (sum/avg/min/max/count/count_distinct), sort, and limit. Call data_schema first to learn the columns.".into()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "fileId": { "type": "string", "description": "File id from office_list_files or the attachment block" },
+                "sheet": { "type": "string", "description": "Excel sheet name. Optional — defaults to the first sheet with data." },
+                "columns": {
+                    "type": "array", "items": { "type": "string" },
+                    "description": "Row-selection mode: columns to return without aggregation. Omit when using aggregations."
+                },
+                "filters": {
+                    "type": "array",
+                    "description": "WHERE conditions, AND-combined.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "column": { "type": "string" },
+                            "operator": { "type": "string", "enum": ["eq","neq","gt","gte","lt","lte","contains"] },
+                            "value": { "type": "string", "description": "Always a string; parsed to the column's real type (\"1500\", \"2026-01-31\", \"true\")." }
+                        },
+                        "required": ["column","operator","value"]
+                    }
+                },
+                "groupBy": {
+                    "type": "array", "items": { "type": "string" },
+                    "description": "Columns to group by. With no aggregations this returns row_count per group."
+                },
+                "aggregations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "column": { "type": "string" },
+                            "function": { "type": "string", "enum": ["sum","avg","min","max","count","count_distinct"] },
+                            "alias": { "type": "string" }
+                        },
+                        "required": ["column","function","alias"]
+                    }
+                },
+                "sortBy": { "type": "string", "description": "Output column to sort by (a group_by column or an aggregation alias; in row mode any column)." },
+                "descending": { "type": "boolean", "description": "Default false." },
+                "limit": { "type": "integer", "description": "Max rows returned. Default 10, max 100." }
+            },
+            "required": ["fileId"]
+        })
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<String, DataToolError> {
+        let user = self.0.clone();
+        run_blocking(move || {
+            let path = resolve_tabular(&user, &args.file_id)?;
+            analytics::query(&path, args.sheet.as_deref(), args.q)
+        })
+        .await
+    }
+}
+
+// ── SQL sources: named-profile snapshots ────────────────────────────────────
+//
+// Credential pattern copied from `rig-components/binance/src/account.rs`:
+// credentials live in the environment, NEVER in model-supplied arguments.
+// The user configures one env var per source (`KAWAI_SQL_PROFILE_<NAME>` =
+// local SQLite path / `sqlite:` URL); the model only ever sees and passes
+// back the NAME. An unknown name is an error listing the valid ones — host/
+// path selection is structurally out of the model's reach. The tools
+// REGISTER only when ≥1 profile exists (capability probe, like the binance
+// account tools and the web-read engines), so without configuration the
+// model never even sees them.
+//
+// v1 scope: local SQLite via the existing libsql dep (fully offline,
+// unit-testable). External Postgres/MySQL via sqlx stays deferred — see
+// PLAN-analytics-agent.md Phase 4.
+
+use libsql::Value as SqlValue;
+
+/// Env-var prefix for user-configured database sources.
+pub const PROFILE_ENV_PREFIX: &str = "KAWAI_SQL_PROFILE_";
+
+/// Hard cap on rows per snapshot — the dump runs as a synchronous agent-tool
+/// call and must stay bounded. Override with `KAWAI_SQL_MAX_ROWS`.
+const DEFAULT_MAX_ROWS: usize = 100_000;
+
+fn max_rows() -> usize {
+    std::env::var("KAWAI_SQL_MAX_ROWS")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .filter(|&v| v > 0)
+        .unwrap_or(DEFAULT_MAX_ROWS)
+}
+
+/// All configured profiles, sorted by name: `(name, raw value)`. Names are
+/// lowercased so lookups are case-insensitive. Two sources merge here: the
+/// per-user DB table (managed by the in-app Settings UI via
+/// [`sql_profile_save`] / [`sql_profile_delete`]) and legacy env vars — env
+/// wins on a name clash so ops can always override.
+pub fn sql_profiles() -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = std::env::vars()
+        .filter_map(|(k, v)| {
+            k.strip_prefix(PROFILE_ENV_PREFIX)
+                .filter(|_| !v.trim().is_empty())
+                .map(|name| (name.to_ascii_lowercase(), v))
+        })
+        .collect();
+    for p in db_profile_cache() {
+        if !out.iter().any(|e| e.0 == p.name) {
+            out.push((p.name, p.source));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+// ── profile storage (per-user DB + process cache) ───────────────────────────
+
+/// One saved data source, as shown in the settings UI.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SqlProfile {
+    pub name: String,
+    pub source: String,
+}
+
+/// Process-local mirror of the user's `sql_profiles` table. The toolset
+/// builder is sync (and runs per turn), so registration probes read this
+/// cache instead of hitting the DB; the async ops below refresh it on every
+/// mutation and `refresh_profile_cache` re-loads it at turn start.
+fn db_profile_cache() -> Vec<SqlProfile> {
+    static CACHE: std::sync::OnceLock<std::sync::RwLock<Vec<SqlProfile>>> =
+        std::sync::OnceLock::new();
+    let lock = CACHE.get_or_init(|| std::sync::RwLock::new(Vec::new()));
+    lock.read().map(|g| g.clone()).unwrap_or_default()
+}
+
+fn set_db_profile_cache(profiles: Vec<SqlProfile>) {
+    static CACHE: std::sync::OnceLock<std::sync::RwLock<Vec<SqlProfile>>> =
+        std::sync::OnceLock::new();
+    if let Ok(mut g) = CACHE
+        .get_or_init(|| std::sync::RwLock::new(Vec::new()))
+        .write()
+    {
+        *g = profiles;
+    }
+}
+
+/// Reload the cache from the user's table. Called at the start of each
+/// agent turn (analytics feature) so freshly saved profiles register their
+/// tools without an app restart.
+pub async fn refresh_profile_cache(user_id: &str) {
+    match sql_profile_list(user_id).await {
+        Ok(list) => set_db_profile_cache(list),
+        Err(e) => eprintln!("[analytics] profile cache refresh skipped: {e}"),
+    }
+}
+
+/// List the user's saved data sources (DB rows only — env profiles are ops
+/// overrides, not user data).
+pub async fn sql_profile_list(user_id: &str) -> Result<Vec<SqlProfile>, String> {
+    let conn = crate::logic::db_connection(user_id).await.map_err(|e| e.to_string())?;
+    let mut rows = conn
+        .query("SELECT name, source FROM sql_profiles ORDER BY name", libsql::params![])
+        .await
+        .map_err(|e| format!("sql_profiles: {e}"))?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await.map_err(|e| format!("sql_profiles row: {e}"))? {
+        let name = val_text(row.get_value(0).map_err(|e| format!("{e}"))?).unwrap_or_default();
+        let source = val_text(row.get_value(1).map_err(|e| format!("{e}"))?).unwrap_or_default();
+        out.push(SqlProfile { name, source });
+    }
+    Ok(out)
+}
+
+/// Normalize a profile name: lowercase, `[a-z0-9_-]`, ≤32 chars.
+fn normalize_profile_name(name: &str) -> Result<String, String> {
+    let n = name.trim().to_ascii_lowercase();
+    if n.is_empty() || n.len() > 32 {
+        return Err("profile name must be 1–32 characters".into());
+    }
+    if !n.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_') {
+        return Err(
+            "profile name may only contain lowercase letters, digits, '-' and '_'".into(),
+        );
+    }
+    Ok(n)
+}
+
+/// Validate a source string: a local SQLite path or `sqlite:` URL whose file
+/// must exist right now (fail fast beats a broken profile discovered later).
+fn validate_source(source: &str) -> Result<String, String> {
+    let s = source.trim();
+    if s.is_empty() || s.len() > 1024 {
+        return Err("source must be a non-empty path (max 1024 chars)".into());
+    }
+    let path = sqlite_path(s);
+    // Postgres/MySQL URLs are rejected explicitly until sqlx lands — better
+    // than silently storing a source no tool can open.
+    if path.as_os_str().to_string_lossy().contains("://")
+        && !s.starts_with("sqlite:")
+    {
+        return Err(format!(
+            "only local SQLite sources are supported right now (got {s})"
+        ));
+    }
+    if !path.is_file() {
+        return Err(format!("database file not found: {}", path.display()));
+    }
+    Ok(s.to_string())
+}
+
+/// Save (insert or update) one named data source for this user.
+pub async fn sql_profile_save(user_id: &str, name: &str, source: &str) -> Result<SqlProfile, String> {
+    let name = normalize_profile_name(name)?;
+    let source = validate_source(source)?;
+    let conn = crate::logic::db_connection(user_id).await.map_err(|e| e.to_string())?;
+    let created_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    conn.execute(
+        "INSERT INTO sql_profiles (name, source, created_at) VALUES (?, ?, ?)
+         ON CONFLICT(name) DO UPDATE SET source = excluded.source",
+        libsql::params![name.clone(), source.clone(), created_at],
+    )
+    .await
+    .map_err(|e| format!("save profile: {e}"))?;
+    refresh_profile_cache(user_id).await;
+    Ok(SqlProfile { name, source })
+}
+
+/// Delete one named data source. Unknown names are fine (idempotent).
+pub async fn sql_profile_delete(user_id: &str, name: &str) -> Result<(), String> {
+    let name = normalize_profile_name(name)?;
+    let conn = crate::logic::db_connection(user_id).await.map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM sql_profiles WHERE name = ?", libsql::params![name])
+        .await
+        .map_err(|e| format!("delete profile: {e}"))?;
+    refresh_profile_cache(user_id).await;
+    Ok(())
+}
+
+/// Capability probe: whether the SQL tools should register at all.
+pub fn has_sql_profiles() -> bool {
+    !sql_profiles().is_empty()
+}
+
+fn profile_value(name: &str) -> Result<String, analytics::ToolError> {
+    let profiles = sql_profiles();
+    profiles
+        .iter()
+        .find(|(n, _)| n == &name.to_ascii_lowercase())
+        .map(|(_, v)| v.clone())
+        .ok_or_else(|| {
+            let list = if profiles.is_empty() {
+                "(none — configure KAWAI_SQL_PROFILE_<NAME> in .env)".to_string()
+            } else {
+                profiles
+                    .iter()
+                    .map(|(n, _)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            analytics::ToolError(format!(
+                "unknown SQL profile {name:?}; configured profiles: {list}"
+            ))
+        })
+}
+
+/// Profile value → local SQLite path (`sqlite:` URL forms accepted).
+fn sqlite_path(value: &str) -> std::path::PathBuf {
+    let v = value.trim();
+    let v = v
+        .strip_prefix("sqlite://")
+        .or_else(|| v.strip_prefix("sqlite:"))
+        .unwrap_or(v);
+    std::path::PathBuf::from(v)
+}
+
+async fn open_sqlite(profile: &str) -> Result<libsql::Connection, analytics::ToolError> {
+    let path = sqlite_path(&profile_value(profile)?);
+    if !path.is_file() {
+        return Err(analytics::ToolError(format!(
+            "database file not found for profile {profile:?}: {}",
+            path.display()
+        )));
+    }
+    let db = libsql::Builder::new_local(&path)
+        .build()
+        .await
+        .map_err(|e| analytics::ToolError(format!("open {}: {e}", path.display())))?;
+    db.connect()
+        .map_err(|e| analytics::ToolError(format!("connect {}: {e}", path.display())))
+}
+
+/// Quote an identifier for embedding in SQL TEXT (PRAGMA / SELECT). Only
+/// ever called on names that were first verified against `sqlite_master`
+/// via a bound parameter — interpolation happens after validation, with
+/// embedded quotes escaped.
+fn quote_ident(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+fn sql_err(context: &str, e: impl std::fmt::Display) -> analytics::ToolError {
+    analytics::ToolError(format!("{context}: {e}"))
+}
+
+fn val_text(v: SqlValue) -> Option<String> {
+    match v {
+        SqlValue::Text(s) => Some(s),
+        _ => None,
+    }
+}
+
+async fn list_objects(
+    conn: &libsql::Connection,
+) -> Result<Vec<(String, String)>, analytics::ToolError> {
+    let mut rows = conn
+        .query(
+            "SELECT name, type FROM sqlite_master \
+             WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY name",
+            libsql::params![],
+        )
+        .await
+        .map_err(|e| sql_err("listing tables failed", e))?;
+    let mut items = Vec::new();
+    while let Some(row) = rows.next().await.map_err(|e| sql_err("table listing", e))? {
+        let name = val_text(row.get_value(0).map_err(|e| sql_err("row", e))?).unwrap_or_default();
+        let kind = val_text(row.get_value(1).map_err(|e| sql_err("row", e))?)
+            .unwrap_or_else(|| "table".into());
+        items.push((name, kind));
+    }
+    Ok(items)
+}
+
+// -- data_tables ---------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct SqlTablesArgs {
+    pub profile: String,
+}
+
+/// List the tables/views of one configured SQL source.
+pub struct DataTablesTool;
+
+impl PortableTool for DataTablesTool {
+    const NAME: &'static str = "data_tables";
+    type Args = SqlTablesArgs;
+    type Output = String;
+    type Error = DataToolError;
+
+    fn description(&self) -> String {
+        "List the tables and views of a pre-configured SQL database (SQLite) by profile name. Profiles are configured server-side by the user — you can only reference them by name.".into()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "profile": { "type": "string", "description": "Configured database profile name (from KAWAI_SQL_PROFILE_<NAME>)" }
+            },
+            "required": ["profile"]
+        })
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<String, DataToolError> {
+        let conn = open_sqlite(&args.profile).await.map_err(derr)?;
+        let items = list_objects(&conn).await.map_err(derr)?;
+        let tables: Vec<Value> = items
+            .into_iter()
+            .map(|(name, kind)| json!({ "name": name, "kind": kind }))
+            .collect();
+        Ok(json!({ "profile": args.profile, "tables": tables }).to_string())
+    }
+}
+
+// -- data_import ---------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct SqlImportArgs {
+    pub profile: String,
+    pub table: String,
+}
+
+/// Snapshot one SQL table/view into a typed parquet file in the office store
+/// and associate it with the current session, so `data_schema`/`data_query`
+/// take over from there. The SOURCE DATABASE IS NEVER WRITTEN — this is a
+/// read-only dump behind a validated identifier and a hard row cap.
+pub struct DataImportTool(pub String, pub i64);
+
+/// Convert raw libsql rows to the crate's neutral cell type and serialize a
+/// typed parquet snapshot. BLOB columns are a guidance error (they have no
+/// faithful scalar representation in this pipeline). ALL polars knowledge
+/// lives in the crate — this is only value mapping.
+fn build_parquet_bytes(
+    columns: &[String],
+    rows: Vec<Vec<SqlValue>>,
+) -> Result<(Vec<u8>, usize), analytics::ToolError> {
+    for (ci, name) in columns.iter().enumerate() {
+        if rows.iter().any(|r| matches!(r[ci], SqlValue::Blob(_))) {
+            return Err(analytics::ToolError(format!(
+                "column {name:?} holds BLOB values — snapshot export supports scalar types only"
+            )));
+        }
+    }
+    let mapped: Vec<Vec<analytics::RawCell>> = rows
+        .iter()
+        .map(|r| {
+            r.iter()
+                .map(|v| match v {
+                    SqlValue::Null => analytics::RawCell::Null,
+                    SqlValue::Integer(i) => analytics::RawCell::Int(*i),
+                    SqlValue::Real(f) => analytics::RawCell::Float(*f),
+                    SqlValue::Text(t) => analytics::RawCell::Text(t.clone()),
+                    SqlValue::Blob(_) => unreachable!("rejected above"),
+                })
+                .collect()
+        })
+        .collect();
+    analytics::rows_to_parquet(columns, &mapped)
+}
+
+impl PortableTool for DataImportTool {
+    const NAME: &'static str = "data_import";
+    type Args = SqlImportArgs;
+    type Output = String;
+    type Error = DataToolError;
+
+    fn description(&self) -> String {
+        "Snapshot ONE table (or view) of a pre-configured SQL database into a local parquet file you can then inspect with data_schema and query with data_query. Read-only: the source database is never modified. State which profile/table you will import and get user confirmation first.".into()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "profile": { "type": "string", "description": "Configured database profile name (from KAWAI_SQL_PROFILE_<NAME>)" },
+                "table": { "type": "string", "description": "Exact table or view name as listed by data_tables" }
+            },
+            "required": ["profile", "table"]
+        })
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<String, DataToolError> {
+        let user = self.0.clone();
+        let session_id = self.1;
+        let cap = max_rows();
+
+        let conn = open_sqlite(&args.profile).await.map_err(derr)?;
+
+        // Validate the identifier against the catalog via a BOUND PARAMETER
+        // before any quoting happens.
+        let mut hit = conn
+            .query(
+                "SELECT type FROM sqlite_master WHERE name = ?1 AND type IN ('table','view')",
+                libsql::params![args.table.clone()],
+            )
+            .await
+            .map_err(|e| derr(sql_err("lookup failed", e)))?;
+        if hit
+            .next()
+            .await
+            .map_err(|e| derr(sql_err("lookup", e)))?
+            .is_none()
+        {
+            let known = list_objects(&conn)
+                .await
+                .map(|items| {
+                    items
+                        .into_iter()
+                        .map(|(n, _)| n)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
+            return Err(derr(analytics::ToolError(format!(
+                "no table or view named {:?}; available: {}",
+                args.table,
+                if known.is_empty() {
+                    "(none)".into()
+                } else {
+                    known
+                }
+            ))));
+        }
+        drop(hit);
+
+        // Column layout (names keep their exact case/spaces).
+        let quoted = quote_ident(&args.table);
+        let mut info = conn
+            .query(&format!("PRAGMA table_info({quoted})"), libsql::params![])
+            .await
+            .map_err(|e| derr(sql_err("schema lookup failed", e)))?;
+        let mut columns: Vec<String> = Vec::new();
+        while let Some(row) = info.next().await.map_err(|e| derr(sql_err("schema", e)))? {
+            if let Some(n) = val_text(row.get_value(1).map_err(|e| derr(sql_err("schema", e)))?) {
+                columns.push(n);
+            }
+        }
+        drop(info);
+        if columns.is_empty() {
+            return Err(derr(analytics::ToolError(format!(
+                "table {:?} has no columns",
+                args.table
+            ))));
+        }
+
+        // Dump with a hard row cap: fetch cap+1 rows so truncation is exact.
+        let limit = cap.saturating_add(1) as i64;
+        let mut rows_q = conn
+            .query(
+                &format!("SELECT * FROM {quoted} LIMIT {limit}"),
+                libsql::params![],
+            )
+            .await
+            .map_err(|e| derr(sql_err("read failed", e)))?;
+        let mut raw: Vec<Vec<SqlValue>> = Vec::new();
+        while let Some(row) = rows_q.next().await.map_err(|e| derr(sql_err("read", e)))? {
+            let mut r = Vec::with_capacity(columns.len());
+            for ci in 0..columns.len() {
+                r.push(
+                    row.get_value(ci as i32)
+                        .map_err(|e| derr(sql_err("cell", e)))?,
+                );
+            }
+            raw.push(r);
+        }
+        drop(rows_q);
+        let truncated = raw.len() > cap;
+        if truncated {
+            raw.truncate(cap);
+        }
+        let exported_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let table = args.table.clone();
+        let (bytes, rows) = run_blocking(move || build_parquet_bytes(&columns, raw)).await?;
+
+        // Timestamped name: re-importing the same table creates a fresh
+        // snapshot instead of colliding with the previous one.
+        let name = sanitize_snapshot_name(&table, exported_at);
+        let file = store::import_bytes(&user, &name, &bytes).map_err(DataToolError)?;
+
+        // Associate with THIS session (best-effort — association failure
+        // must not lose the imported file; office_list_files still finds it).
+        if let Err(e) =
+            super::rag::knowledge_add_to_session(&user, session_id, &[file.id.clone()]).await
+        {
+            eprintln!("[analytics] session association skipped: {e}");
+        }
+
+        let hint = if truncated {
+            format!("TRUNCATED at the {cap}-row cap — analysis covers the FIRST {cap} rows only.")
+        } else {
+            "complete".to_string()
+        };
+        Ok(json!({
+            "fileId": file.id,
+            "fileName": file.original_name,
+            "source": { "profile": args.profile, "table": table },
+            "rows": rows,
+            "truncated": truncated,
+            "maxRows": cap,
+            "exportedAtUnix": exported_at,
+            "note": hint,
+            "nextStep": "run data_schema on fileId, then data_query",
+        })
+        .to_string())
+    }
+}
+
+fn sanitize_snapshot_name(table: &str, exported_at_unix: u64) -> String {
+    let slug: String = table
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(40)
+        .collect();
+    format!("{slug}-snapshot-{exported_at_unix}.parquet")
+}
+
+// ── toolset builder ──────────────────────────────────────────────────────────
+
+/// Build the data analysis ToolSet for one user + session. File ids are
+/// resolved through the office store at dispatch — the model only ever sees
+/// short alias handles (`doc1`, …). The SQL snapshot tools ride along only
+/// when at least one database profile is configured (capability probe).
+pub fn toolset(user_id: &str, session_id: i64) -> rig::tool::ToolSet {
+    let mut set = rig::tool::ToolSet::default();
+    set.add_tool(DataTableSchemaTool(user_id.to_string()));
+    set.add_tool(DataQueryTool(user_id.to_string()));
+    // Id discovery: the same list tool the office agent uses.
+    set.add_tool(super::office::tools::ListFilesTool(user_id.to_string()));
+    if has_sql_profiles() {
+        set.add_tool(DataTablesTool);
+        set.add_tool(DataImportTool(user_id.to_string(), session_id));
+    }
+    set
+}
+
+#[cfg(test)]
+mod sql_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// Env vars are process-global — every test that touches profiles or the
+    /// row cap takes this lock so parallel tests can't observe each other's
+    /// variables.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvVar(String);
+    impl EnvVar {
+        fn set(key: &str, value: &str) -> Self {
+            // SAFETY-free zone: tests are serialized by ENV_LOCK.
+            std::env::set_var(key, value);
+            Self(key.to_string())
+        }
+    }
+    impl Drop for EnvVar {
+        fn drop(&mut self) {
+            std::env::remove_var(&self.0);
+        }
+    }
+
+    async fn make_db(path: &std::path::Path) {
+        let db = libsql::Builder::new_local(path).build().await.unwrap();
+        let conn = db.connect().unwrap();
+        conn.execute(
+            "CREATE TABLE sales (
+                id INTEGER PRIMARY KEY,
+                produk TEXT,
+                harga REAL,
+                qty INTEGER,
+                catatan TEXT
+            )",
+            libsql::params![],
+        )
+        .await
+        .unwrap();
+        let rows = [
+            ("laptop", 1000.0, 1, Some("promo A")),
+            ("mouse", 20.0, 2, None),
+            ("laptop", 1500.0, 1, Some("premium")),
+            ("monitor", 300.0, 3, None),
+            ("mouse", 25.0, 2, Some("bundling")),
+        ];
+        for (i, (produk, harga, qty, note)) in rows.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO sales (produk, harga, qty, catatan) VALUES (?, ?, ?, ?)",
+                libsql::params![*produk, *harga, *qty as i64, *note],
+            )
+            .await
+            .unwrap();
+            let _ = i;
+        }
+        // A view and an internal table that must NOT be listed.
+        conn.execute(
+            "CREATE VIEW murah AS SELECT produk, harga FROM sales WHERE harga < 100",
+            libsql::params![],
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn data_tables_lists_tables_and_views_rejects_unknown_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        make_db(dir.path().join("shop.db").as_path()).await;
+        let _guard = ENV_LOCK.lock();
+
+        let _env = EnvVar::set(
+            "KAWAI_SQL_PROFILE_TESTLIST",
+            dir.path().join("shop.db").to_str().unwrap(),
+        );
+
+        assert!(has_sql_profiles());
+        let names: Vec<String> = sql_profiles().into_iter().map(|(n, _)| n).collect();
+        assert_eq!(names, vec!["testlist".to_string()]);
+
+        let out = DataTablesTool
+            .call(SqlTablesArgs {
+                profile: "TestList".into(),
+            }) // case-insensitive
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let tables: Vec<(String, String)> = v["tables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| {
+                (
+                    t["name"].as_str().unwrap().into(),
+                    t["kind"].as_str().unwrap().into(),
+                )
+            })
+            .collect();
+        assert!(tables.contains(&("sales".into(), "table".into())));
+        assert!(tables.contains(&("murah".into(), "view".into())));
+
+        let e = DataTablesTool
+            .call(SqlTablesArgs {
+                profile: "nope".into(),
+            })
+            .await
+            .unwrap_err();
+        assert!(e.0.contains("unknown SQL profile"), "{}", e.0);
+        assert!(e.0.contains("testlist"), "{}", e.0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn import_e2e_dump_then_discover_then_query() {
+        let dir = tempfile::tempdir().unwrap();
+        make_db(dir.path().join("shop.db").as_path()).await;
+        let _guard = ENV_LOCK.lock();
+
+        let _env = EnvVar::set(
+            "KAWAI_SQL_PROFILE_E2E",
+            dir.path().join("shop.db").to_str().unwrap(),
+        );
+
+        let tool = DataImportTool("demo".into(), 42);
+
+        // Unknown table → error lists valid candidates.
+        let e = tool
+            .call(SqlImportArgs {
+                profile: "e2e".into(),
+                table: "salez".into(),
+            })
+            .await
+            .unwrap_err();
+        assert!(
+            e.0.contains("no table or view named") && e.0.contains("sales"),
+            "{}",
+            e.0
+        );
+
+        let out = tool
+            .call(SqlImportArgs {
+                profile: "e2e".into(),
+                table: "sales".into(),
+            })
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["rows"], 5);
+        assert_eq!(v["truncated"], false);
+        let file_id = v["fileId"].as_str().unwrap().to_string();
+
+        // The snapshot landed in the store as a parquet file…
+        let (path, info) = store::resolve("demo", &file_id).unwrap();
+        assert_eq!(info.ext, "parquet");
+        assert!(info.original_name.starts_with("sales-snapshot-"));
+
+        // …associated with the session.
+        let conn = crate::logic::db_connection("demo").await.unwrap();
+        let sids = super::super::rag::session_file_ids(&conn, 42)
+            .await
+            .unwrap();
+        assert!(sids.contains(&file_id));
+
+        // …typed correctly (INTEGER→integer, REAL→float, NULL-able TEXT→text).
+        let sch = analytics::discover(&path, None).unwrap();
+        let dtypes: Vec<&str> = sch.columns.iter().map(|c| c.dtype.as_str()).collect();
+        assert_eq!(
+            dtypes,
+            ["integer", "text", "float", "integer", "text"],
+            "{sch:?}"
+        );
+
+        // …and queryable: sum(harga) over the snapshot matches the DB.
+        let out = analytics::query(
+            &path,
+            None,
+            analytics::QueryArgs {
+                aggregations: Some(vec![analytics::AggOp {
+                    column: "harga".into(),
+                    function: "sum".into(),
+                    alias: "total".into(),
+                }]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let parsed: Value = serde_json::from_str(&out).unwrap();
+        let total = parsed["rows"][0]["total"].as_f64().unwrap();
+        assert!((total - 2845.0).abs() < 1e-9, "{total}");
+
+        // Group-by works too.
+        let out = analytics::query(
+            &path,
+            None,
+            analytics::QueryArgs {
+                group_by: Some(vec!["produk".into()]),
+                aggregations: Some(vec![analytics::AggOp {
+                    column: "harga".into(),
+                    function: "sum".into(),
+                    alias: "total".into(),
+                }]),
+                sort_by: Some("total".into()),
+                descending: Some(true),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let parsed: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["rows"][0]["produk"], "laptop");
+        assert_eq!(parsed["rows"][0]["total"].as_f64().unwrap(), 2500.0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn import_respects_row_cap_and_reports_truncation() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("big.db");
+        {
+            let db = libsql::Builder::new_local(&db_path).build().await.unwrap();
+            let conn = db.connect().unwrap();
+            conn.execute("CREATE TABLE t (n INTEGER)", libsql::params![])
+                .await
+                .unwrap();
+            for i in 0..10 {
+                conn.execute("INSERT INTO t VALUES (?)", libsql::params![i])
+                    .await
+                    .unwrap();
+            }
+        }
+        let _guard = ENV_LOCK.lock();
+        let _env_profile = EnvVar::set("KAWAI_SQL_PROFILE_CAP", db_path.to_str().unwrap());
+        let _env_cap = EnvVar::set("KAWAI_SQL_MAX_ROWS", "4");
+
+        let out = DataImportTool("demo".into(), 1)
+            .call(SqlImportArgs {
+                profile: "cap".into(),
+                table: "t".into(),
+            })
+            .await
+            .unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["rows"], 4);
+        assert_eq!(v["truncated"], true);
+        assert_eq!(v["maxRows"], 4);
+        assert!(v["note"].as_str().unwrap().contains("TRUNCATED"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn blob_column_is_a_guidance_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("blob.db");
+        {
+            let db = libsql::Builder::new_local(&db_path).build().await.unwrap();
+            let conn = db.connect().unwrap();
+            conn.execute(
+                "CREATE TABLE b (id INTEGER, payload BLOB)",
+                libsql::params![],
+            )
+            .await
+            .unwrap();
+            conn.execute("INSERT INTO b VALUES (1, X'0102')", libsql::params![])
+                .await
+                .unwrap();
+        }
+        let _guard = ENV_LOCK.lock();
+
+        let _env = EnvVar::set("KAWAI_SQL_PROFILE_BLOB", db_path.to_str().unwrap());
+
+        let e = DataImportTool("demo".into(), 1)
+            .call(SqlImportArgs {
+                profile: "blob".into(),
+                table: "b".into(),
+            })
+            .await
+            .unwrap_err();
+        assert!(e.0.contains("BLOB") && e.0.contains("payload"), "{}", e.0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn mixed_null_and_text_columns_stay_queryable() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("nulls.db");
+        {
+            let db = libsql::Builder::new_local(&db_path).build().await.unwrap();
+            let conn = db.connect().unwrap();
+            conn.execute("CREATE TABLE n (a INTEGER, b TEXT)", libsql::params![])
+                .await
+                .unwrap();
+            conn.execute("INSERT INTO n VALUES (NULL, 'x')", libsql::params![])
+                .await
+                .unwrap();
+            conn.execute("INSERT INTO n VALUES (7, NULL)", libsql::params![])
+                .await
+                .unwrap();
+        }
+        let _guard = ENV_LOCK.lock();
+
+        let _env = EnvVar::set("KAWAI_SQL_PROFILE_NULLS", db_path.to_str().unwrap());
+
+        let out = DataImportTool("demo".into(), 1)
+            .call(SqlImportArgs {
+                profile: "nulls".into(),
+                table: "n".into(),
+            })
+            .await
+            .unwrap();
+        let file_id: String = serde_json::from_str::<Value>(&out).unwrap()["fileId"]
+            .as_str()
+            .unwrap()
+            .into();
+        let (path, _) = store::resolve("demo", &file_id).unwrap();
+        let sch = analytics::discover(&path, None).unwrap();
+        let dtypes: Vec<&str> = sch.columns.iter().map(|c| c.dtype.as_str()).collect();
+        assert_eq!(dtypes, ["integer", "text"], "{sch:?}");
+        // The null survived as a real null.
+        let out = analytics::query(
+            &path,
+            None,
+            analytics::QueryArgs {
+                filters: Some(vec![analytics::FilterOp {
+                    column: "a".into(),
+                    operator: "gte".into(),
+                    value: "0".into(),
+                }]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let parsed: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["_meta"]["rows_returned"], 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn weird_identifier_names_are_handled_safely() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("weird.db");
+        {
+            let db = libsql::Builder::new_local(&db_path).build().await.unwrap();
+            let conn = db.connect().unwrap();
+            conn.execute(
+                "CREATE TABLE \"order items\" (\"qty total\" INTEGER)",
+                libsql::params![],
+            )
+            .await
+            .unwrap();
+            conn.execute("INSERT INTO \"order items\" VALUES (5)", libsql::params![])
+                .await
+                .unwrap();
+        }
+        let _guard = ENV_LOCK.lock();
+
+        let _env = EnvVar::set("KAWAI_SQL_PROFILE_WEIRD", db_path.to_str().unwrap());
+
+        let out = DataImportTool("demo".into(), 1)
+            .call(SqlImportArgs {
+                profile: "weird".into(),
+                table: "order items".into(),
+            })
+            .await
+            .unwrap();
+        let file_id: String = serde_json::from_str::<Value>(&out).unwrap()["fileId"]
+            .as_str()
+            .unwrap()
+            .into();
+        let (path, _) = store::resolve("demo", &file_id).unwrap();
+        let sch = analytics::discover(&path, None).unwrap();
+        assert_eq!(sch.columns[0].name, "qty total");
+    }
+}

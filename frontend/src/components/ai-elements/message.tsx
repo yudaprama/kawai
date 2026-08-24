@@ -312,11 +312,7 @@ export const MessageResponse = memo(
       typeof children === "string"
         ? (() => {
             try {
-              const out = wrapHTMLInCodeBlock(children);
-              if (out.length > 10000) {
-                console.log(`Large markdown block detected (${out.length} chars)`);
-              }
-              return out;
+              return wrapHTMLInCodeBlock(children);
             } catch {
               return children;
             }

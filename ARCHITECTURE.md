@@ -147,7 +147,7 @@ kawai/
         ├── main.rs           # desktop binary entry
         ├── lib.rs            # Tauri builder + module decls
         ├── logic.rs          # PURE LOGIC (no Tauri/Axum deps); rig + libsql + db token
-        ├── logic/            # domain modules: agent, db, rag, remote, office/
+        ├── logic/            # domain modules: agent, db, rag, remote, office/, analytics/
         ├── auth.rs           # PURE AUTH; Clerk JWKS verify + EdDSA mint + Session
         ├── commands.rs       # #[tauri::command] wrappers
         ├── web.rs            # Axum router + auth_middleware

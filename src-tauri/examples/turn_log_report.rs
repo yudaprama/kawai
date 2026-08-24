@@ -66,8 +66,14 @@ async fn main() {
         e.1 += r.latency_ms;
     }
 
-    println!("turn_log report — user {user:?}, last {days}d, {} rows", rows.len());
-    println!("{:<32} {:>7} {:>10} {:>10} {:>9} {:>9} {:>9}", "agent / provider", "calls", "in-tok", "out-tok", "avg-ms", "escal", "errors");
+    println!(
+        "turn_log report — user {user:?}, last {days}d, {} rows",
+        rows.len()
+    );
+    println!(
+        "{:<32} {:>7} {:>10} {:>10} {:>9} {:>9} {:>9}",
+        "agent / provider", "calls", "in-tok", "out-tok", "avg-ms", "escal", "errors"
+    );
     for k in &keys {
         let c = count[k] as f64;
         println!(
@@ -97,7 +103,10 @@ async fn main() {
     if !tools.is_empty() {
         println!("\ncloud tools:");
         for t in &tools {
-            println!("  {:<20} {:>5} calls · {:>8} out-tokens", t, t_count[t], t_out[t]);
+            println!(
+                "  {:<20} {:>5} calls · {:>8} out-tokens",
+                t, t_count[t], t_out[t]
+            );
         }
     }
 

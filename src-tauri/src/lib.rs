@@ -92,6 +92,9 @@ pub fn run() {
         commands::office_restore_backup,
         commands::office_read_file,
         commands::tauri_open_file,
+        commands::sql_profile_list,
+        commands::sql_profile_save,
+        commands::sql_profile_delete,
         commands::agent_chat,
         commands::frontend_log
     ]);

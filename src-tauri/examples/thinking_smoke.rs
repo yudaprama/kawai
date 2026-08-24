@@ -41,7 +41,12 @@ async fn main() {
     local_llm::reset_conversation("smoke").await.ok();
 
     let start = Instant::now();
-    let mut stream = Box::pin(local_llm::local_chat("smoke".into(), PROMPT.into(), None, None));
+    let mut stream = Box::pin(local_llm::local_chat(
+        "smoke".into(),
+        PROMPT.into(),
+        None,
+        None,
+    ));
     let mut saw_thinking = false;
     let mut saw_call = false;
     while let Some(ev) = stream.next().await {

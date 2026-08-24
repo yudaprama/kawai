@@ -12,7 +12,9 @@ const DEFAULT_BUDGETS: &[i32] = &[16384, 24576, 31999];
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let mut args = std::env::args().skip(1);
-    let model = args.next().expect("usage: kv_sweep <model.litertlm> [budgets_csv]");
+    let model = args
+        .next()
+        .expect("usage: kv_sweep <model.litertlm> [budgets_csv]");
     let budgets: Vec<i32> = args
         .next()
         .map(|s| {
@@ -36,7 +38,10 @@ async fn main() {
         match local_llm::load_model("kv_sweep", &model, false, false, 1, None).await {
             Ok(info) => {
                 let load_s = t_load.elapsed().as_secs_f64();
-                println!("  load: {} [{}] in {load_s:.2}s", info.model_path, info.backend);
+                println!(
+                    "  load: {} [{}] in {load_s:.2}s",
+                    info.model_path, info.backend
+                );
 
                 // Single-turn latency probe (same prompt as local_llm_smoke)
                 let t0 = std::time::Instant::now();
@@ -55,7 +60,11 @@ async fn main() {
                         }
                         tokens += 1;
                     }
-                    if matches!(ev, local_llm::LocalChatEvent::Finished | local_llm::LocalChatEvent::Error { .. }) {
+                    if matches!(
+                        ev,
+                        local_llm::LocalChatEvent::Finished
+                            | local_llm::LocalChatEvent::Error { .. }
+                    ) {
                         break;
                     }
                 }

@@ -34,6 +34,7 @@ pub enum AuthError {
     NoKey(String),
     JwksNotConfigured,
     FetchJwks(String),
+    Internal(String),
 }
 
 impl std::fmt::Display for AuthError {
@@ -45,6 +46,7 @@ impl std::fmt::Display for AuthError {
             AuthError::NoKey(k) => write!(f, "no key for kid={k} in JWKS"),
             AuthError::JwksNotConfigured => write!(f, "JWKS URI not configured"),
             AuthError::FetchJwks(m) => write!(f, "JWKS fetch failed: {m}"),
+            AuthError::Internal(m) => write!(f, "internal error: {m}"),
         }
     }
 }
@@ -141,7 +143,13 @@ impl Verifier {
 
     /// Return the cached JWK for `kid`, fetching the JWKS once on miss.
     async fn jwk_for(&self, kid: &str) -> Result<Value, AuthError> {
-        if let Some(jwk) = self.keys.read().unwrap().get(kid).cloned() {
+        if let Some(jwk) = self
+            .keys
+            .read()
+            .map_err(|_| AuthError::Internal("keys lock poisoned".to_string()))?
+            .get(kid)
+            .cloned()
+        {
             return Ok(jwk);
         }
         let jwks_uri = self.jwks_uri.as_ref().ok_or(AuthError::JwksNotConfigured)?;
@@ -156,7 +164,10 @@ impl Verifier {
             .and_then(|v| v.as_array())
             .ok_or_else(|| AuthError::FetchJwks("JWKS has no keys[] array".into()))?;
         {
-            let mut cache = self.keys.write().unwrap();
+            let mut cache = self
+                .keys
+                .write()
+                .map_err(|_| AuthError::Internal("keys lock poisoned".to_string()))?;
             for k in arr {
                 if let Some(this_kid) = k.get("kid").and_then(|v| v.as_str()) {
                     cache.insert(this_kid.to_string(), k.clone());
@@ -165,7 +176,7 @@ impl Verifier {
         }
         self.keys
             .read()
-            .unwrap()
+            .map_err(|_| AuthError::Internal("keys lock poisoned".to_string()))?
             .get(kid)
             .cloned()
             .ok_or_else(|| AuthError::NoKey(kid.to_string()))

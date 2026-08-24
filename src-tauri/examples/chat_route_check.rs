@@ -60,16 +60,28 @@ async fn main() {
     }
     println!("── RESULT ──");
     println!("delegated_to_cloud = {}", tool.as_deref().unwrap_or("-"));
+    println!("subagent thinking = {thinking} chars (last provider: {thinking_provider})",);
     println!(
-        "subagent thinking = {thinking} chars (last provider: {thinking_provider})",
+        "local answer ({} chars): {}",
+        answer.chars().count(),
+        &answer.chars().take(200).collect::<String>()
     );
-    println!("local answer ({} chars): {}", answer.chars().count(), &answer.chars().take(200).collect::<String>());
 
     let since = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_secs() as i64 - 3600;
-    for r in db::list_turn_log(SMOKE_USER, since).await.unwrap_or_default() {
-        println!("turn_log: {} / {} · {} · {:?}ms", r.provider, r.tool.as_deref().unwrap_or("-"), r.outcome, r.latency_ms);
+        .as_secs() as i64
+        - 3600;
+    for r in db::list_turn_log(SMOKE_USER, since)
+        .await
+        .unwrap_or_default()
+    {
+        println!(
+            "turn_log: {} / {} · {} · {:?}ms",
+            r.provider,
+            r.tool.as_deref().unwrap_or("-"),
+            r.outcome,
+            r.latency_ms
+        );
     }
 }

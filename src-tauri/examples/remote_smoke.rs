@@ -22,7 +22,9 @@ async fn main() {
     };
     println!("[remote_smoke] pool primary: {}", remote.provider_label());
 
-    let task = std::env::args().nth(1).unwrap_or_else(|| DEFAULT_TASK.into());
+    let task = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| DEFAULT_TASK.into());
     let materials = "Context: the on-device model is a 2B-parameter CPU model; the cloud model is a large hosted model.";
 
     let t0 = std::time::Instant::now();
@@ -41,7 +43,11 @@ async fn main() {
                 chars += text.chars().count();
                 print!("{text}");
             }
-            Ok(RemoteEvent::Reasoning { provider, text, reset }) => {
+            Ok(RemoteEvent::Reasoning {
+                provider,
+                text,
+                reset,
+            }) => {
                 if reset {
                     eprintln!(
                         "[remote_smoke] reasoning ({provider}, buffer reset, {} chars)",
@@ -51,7 +57,9 @@ async fn main() {
                     reasoning_chars += text.chars().count();
                 }
             }
-            Ok(RemoteEvent::Done { usage: u, provider, .. }) => {
+            Ok(RemoteEvent::Done {
+                usage: u, provider, ..
+            }) => {
                 usage = Some(u);
                 winner = provider;
             }

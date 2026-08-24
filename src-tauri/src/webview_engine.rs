@@ -66,19 +66,14 @@ impl WebViewFetch for TauriWebViewFetch {
 
 async fn run(app: &AppHandle, url: &str, js: &str) -> Result<String, ScrapeError> {
     let label = format!("kawai-scrape-{}", COUNTER.fetch_add(1, Ordering::Relaxed));
-    let parsed =
-        tauri::Url::parse(url).map_err(|e| ScrapeError(format!("bad url: {e}")))?;
+    let parsed = tauri::Url::parse(url).map_err(|e| ScrapeError(format!("bad url: {e}")))?;
     let app = app.clone();
     let label = label.clone();
     let build = tokio::task::spawn_blocking(move || {
-        WebviewWindowBuilder::new(
-            &app,
-            &label,
-            WebviewUrl::External(parsed),
-        )
-        .visible(false)
-        .on_navigation(|u| matches!(u.scheme(), "http" | "https"))
-        .build()
+        WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed))
+            .visible(false)
+            .on_navigation(|u| matches!(u.scheme(), "http" | "https"))
+            .build()
     })
     .await
     .map_err(|e| ScrapeError(format!("window spawn: {e}")))?

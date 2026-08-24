@@ -1,7 +1,5 @@
 use crate::auth::{Claims, Verifier};
-use crate::logic::{
-    self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo,
-};
+use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo};
 use axum::{
     extract::{Json, Request},
     http::{header, HeaderValue, StatusCode},
@@ -515,6 +513,55 @@ async fn knowledge_add_to_session_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
+// ── SQL data-source profiles (analytics agent) ──────────────────────────────
+
+#[cfg(feature = "analytics")]
+async fn sql_profile_list_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<logic::analytics::SqlProfile>>, (StatusCode, String)> {
+    logic::analytics::sql_profile_list(&claims.sub)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[cfg(feature = "analytics")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SqlProfileSaveRequest {
+    name: String,
+    source: String,
+}
+
+#[cfg(feature = "analytics")]
+async fn sql_profile_save_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<SqlProfileSaveRequest>,
+) -> Result<Json<logic::analytics::SqlProfile>, (StatusCode, String)> {
+    logic::analytics::sql_profile_save(&claims.sub, &req.name, &req.source)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+#[cfg(feature = "analytics")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SqlProfileDeleteRequest {
+    name: String,
+}
+
+#[cfg(feature = "analytics")]
+async fn sql_profile_delete_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<SqlProfileDeleteRequest>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    logic::analytics::sql_profile_delete(&claims.sub, &req.name)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
 #[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -664,8 +711,14 @@ async fn agent_chat_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<AgentChatRequest>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
-    let s = logic::agent::agent_chat(claims.sub, req.agent_id, req.session_id, req.message, req.file_ids)
-        .map(|event| Ok::<_, Infallible>(agent_event_to_sse(event)));
+    let s = logic::agent::agent_chat(
+        claims.sub,
+        req.agent_id,
+        req.session_id,
+        req.message,
+        req.file_ids,
+    )
+    .map(|event| Ok::<_, Infallible>(agent_event_to_sse(event)));
     Sse::new(s).keep_alive(KeepAlive::default())
 }
 
@@ -820,6 +873,9 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
             post(office_restore_backup_handler),
         )
         .route("/api/office_export_file", post(office_export_file_handler))
+        .route("/api/sql_profile_list", post(sql_profile_list_handler))
+        .route("/api/sql_profile_save", post(sql_profile_save_handler))
+        .route("/api/sql_profile_delete", post(sql_profile_delete_handler))
         .route("/api/office_read_file", post(office_read_file_handler))
         .route("/api/tauri_open_file", post(tauri_open_file_handler))
         .route(
@@ -834,9 +890,11 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .fallback_service(ServeDir::new(dist_dir))
 }
 
-pub async fn serve(addr: &str, dist_dir: PathBuf, verifier: Verifier) {
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+pub async fn serve(addr: &str, dist_dir: PathBuf, verifier: Verifier) -> Result<(), String> {
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .map_err(|e| format!("bind {addr}: {e}"))?;
     axum::serve(listener, router(dist_dir, verifier))
         .await
-        .unwrap();
+        .map_err(|e| format!("serve kawai-web: {e}"))
 }

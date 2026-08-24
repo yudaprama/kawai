@@ -16,5 +16,8 @@ async fn main() {
             "⚠️  KAWAI_AUTH_DEV_USER_ID set — auth bypassed (dev only, DO NOT use in production)"
         );
     }
-    kawai_lib::web::serve("0.0.0.0:3000", dist_dir, verifier).await;
+    if let Err(e) = kawai_lib::web::serve("0.0.0.0:3000", dist_dir, verifier).await {
+        eprintln!("fatal: {e}");
+        std::process::exit(1);
+    }
 }

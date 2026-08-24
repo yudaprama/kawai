@@ -23,8 +23,10 @@ use serde::Serialize;
 
 pub use error::OfficeToolError;
 pub use ooxml::read_document;
-pub use store::{export_file, file_path, import_base64, import_bytes, import_path, list_files, read_file_b64};
-pub use store::{OfficeFile, ReadFileResult, ReadDocumentResult};
+pub use store::{
+    export_file, file_path, import_base64, import_bytes, import_path, list_files, read_file_b64,
+};
+pub use store::{OfficeFile, ReadDocumentResult, ReadFileResult};
 
 // ── capability probe ────────────────────────────────────────────────────────
 
@@ -145,10 +147,7 @@ pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
     };
     let mut set = ToolSet::default();
     set.add_tool(tools::ListFilesTool(t.user_id.clone()));
-    set.add_tool(tools::KnowledgeSearchTool(
-        t.user_id.clone(),
-        session_id,
-    ));
+    set.add_tool(tools::KnowledgeSearchTool(t.user_id.clone(), session_id));
     set.add_tool(tools::CreateDocumentTool(t.user_id.clone()));
     // ReadDocumentTool is pure-Rust (office_oxide); always available.
     set.add_tool(tools::ReadDocumentTool(t.user_id.clone()));

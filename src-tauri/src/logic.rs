@@ -103,11 +103,15 @@ pub mod db_migrations;
 #[cfg(feature = "litert")]
 pub use local_llm;
 pub mod agent;
-pub mod remote;
 #[cfg(feature = "office")]
 pub mod office;
 #[cfg(feature = "office")]
 pub mod rag;
+pub mod remote;
+// Data analysis agent tools (builtin.analytics). Implies office — the
+// tabular files live in the office store.
+#[cfg(feature = "analytics")]
+pub mod analytics;
 
 pub use db::*;
 
@@ -139,8 +143,7 @@ pub async fn generate_session_title(user_id: &str, session_id: i64) -> Result<()
     }
 
     // Vault Workers AI credentials.
-    let (account_id, api_key) =
-        kawai_constants::cloudflare::get_cf_workers_ai_account_id_and_key();
+    let (account_id, api_key) = kawai_constants::cloudflare::get_cf_workers_ai_account_id_and_key();
     if account_id.is_empty() || api_key.is_empty() {
         eprintln!("[generate_session_title] kawai-vault workers-ai credentials empty — keeping offline title");
         return Ok(());

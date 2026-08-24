@@ -9,9 +9,7 @@ fn main() {
         match target_os.as_str() {
             // macOS: Contents/Frameworks/ (tauri-litert.json places libs there)
             "macos" => {
-                println!(
-                    "cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks"
-                );
+                println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
             }
             // Linux: lib/ next to the executable (tauri-litert.json places libs there)
             "linux" => {

@@ -1,14 +1,12 @@
 use crate::auth::{Session, Verifier};
-use crate::logic::{
-    self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo,
-};
+use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
-use tauri::State;
 #[cfg(feature = "office")]
 use tauri::Manager;
+use tauri::State;
 #[cfg(feature = "office")]
 use tauri_plugin_opener::OpenerExt;
 use tokio_util::sync::CancellationToken;
@@ -19,6 +17,36 @@ pub type StreamRegistry = Arc<Mutex<HashMap<String, CancellationToken>>>;
 
 pub fn new_registry() -> StreamRegistry {
     Arc::new(Mutex::new(HashMap::new()))
+}
+
+/// RAII guard that removes a stream entry from the registry on drop.
+/// Prevents stale cancellation tokens after early returns (e.g. channel send errors).
+struct StreamGuard {
+    registry: StreamRegistry,
+    stream_id: String,
+}
+
+impl Drop for StreamGuard {
+    fn drop(&mut self) {
+        if let Ok(mut map) = self.registry.lock() {
+            map.remove(&self.stream_id);
+        }
+    }
+}
+
+fn register_stream(
+    registry: &StreamRegistry,
+    stream_id: &str,
+    token: CancellationToken,
+) -> StreamGuard {
+    registry
+        .lock()
+        .unwrap()
+        .insert(stream_id.to_string(), token);
+    StreamGuard {
+        registry: Arc::clone(registry),
+        stream_id: stream_id.to_string(),
+    }
 }
 
 #[tauri::command]
@@ -49,10 +77,7 @@ pub async fn generate_activity(
     let registry = Arc::clone(&registry);
 
     let token = CancellationToken::new();
-    registry
-        .lock()
-        .unwrap()
-        .insert(stream_id.clone(), token.clone());
+    let _guard = register_stream(&registry, &stream_id, token.clone());
 
     let input = ActivityInput {
         events,
@@ -70,14 +95,15 @@ pub async fn generate_activity(
         }
     }
 
-    registry.lock().unwrap().remove(&stream_id);
     Ok(())
 }
 
 #[tauri::command]
 pub fn cancel_stream(stream_id: String, registry: State<'_, StreamRegistry>) {
-    if let Some(token) = registry.lock().unwrap().get(&stream_id) {
-        token.cancel();
+    if let Ok(map) = registry.lock() {
+        if let Some(token) = map.get(&stream_id) {
+            token.cancel();
+        }
     }
 }
 
@@ -98,22 +124,27 @@ pub async fn set_session(
 ) -> Result<UserInfo, String> {
     let claims = verifier.verify(&token).await.map_err(|e| e.to_string())?;
     let user_id = claims.sub.clone();
-    *session.write().unwrap() = Some(claims);
+    *session
+        .write()
+        .map_err(|_| "session state unavailable (lock poisoned)".to_string())? = Some(claims);
     Ok(logic::whoami(&user_id))
 }
 
 #[tauri::command]
 pub fn logout(session: State<'_, Session>) {
-    *session.write().unwrap() = None;
+    if let Ok(mut guard) = session.write() {
+        *guard = None;
+    }
 }
 
 /// Requires an active session. Demonstrates the auth-required pattern: the
 /// wrapper resolves identity, `logic.rs` receives `user_id`.
 #[tauri::command]
 pub fn whoami(session: State<'_, Session>) -> Result<UserInfo, String> {
-    session
+    let guard = session
         .read()
-        .unwrap()
+        .map_err(|_| "session state unavailable (lock poisoned)".to_string())?;
+    guard
         .clone()
         .map(|c| logic::whoami(&c.sub))
         .ok_or_else(|| "not authenticated".to_string())
@@ -122,9 +153,10 @@ pub fn whoami(session: State<'_, Session>) -> Result<UserInfo, String> {
 /// Pull the authenticated user id from the in-process session (desktop/mobile).
 /// The web twin reads identity from the `Extension<Claims>` the middleware injects.
 fn session_user_id(session: &Session) -> Result<String, String> {
-    session
+    let guard = session
         .read()
-        .unwrap()
+        .map_err(|_| "session state unavailable (lock poisoned)".to_string())?;
+    guard
         .clone()
         .map(|c| c.sub)
         .ok_or_else(|| "not authenticated".to_string())
@@ -287,10 +319,7 @@ pub async fn local_chat(
     let registry = Arc::clone(&registry);
 
     let token = CancellationToken::new();
-    registry
-        .lock()
-        .unwrap()
-        .insert(stream_id.clone(), token.clone());
+    let _guard = register_stream(&registry, &stream_id, token.clone());
 
     let mut stream = Box::pin(logic::local_llm::local_chat(user_id, prompt, image, audio));
     loop {
@@ -303,7 +332,6 @@ pub async fn local_chat(
         }
     }
 
-    registry.lock().unwrap().remove(&stream_id);
     Ok(())
 }
 
@@ -502,6 +530,42 @@ pub async fn knowledge_add_to_session(
         .map_err(|e| e.to_string())
 }
 
+// ── SQL data-source profiles (analytics agent) ──────────────────────────────
+
+/// Authenticated RPC: list the user's saved SQL data sources.
+#[cfg(feature = "analytics")]
+#[tauri::command]
+pub async fn sql_profile_list(
+    session: State<'_, Session>,
+) -> Result<Vec<logic::analytics::SqlProfile>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::analytics::sql_profile_list(&user_id).await
+}
+
+/// Authenticated RPC: save (insert or update) a named SQLite source.
+#[cfg(feature = "analytics")]
+#[tauri::command]
+pub async fn sql_profile_save(
+    name: String,
+    source: String,
+    session: State<'_, Session>,
+) -> Result<logic::analytics::SqlProfile, String> {
+    let user_id = session_user_id(&session)?;
+    logic::analytics::sql_profile_save(&user_id, &name, &source).await
+}
+
+/// Authenticated RPC: delete a named SQL data source (idempotent).
+#[cfg(feature = "analytics")]
+#[tauri::command]
+pub async fn sql_profile_delete(
+    name: String,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::analytics::sql_profile_delete(&user_id, &name).await
+}
+
+
 /// Authenticated RPC: ingest a YouTube video into the knowledge base
 /// (transcript → markdown document → indexed; deduped per video).
 #[cfg(feature = "office")]
@@ -616,10 +680,7 @@ pub async fn agent_chat(
     let registry = Arc::clone(&registry);
 
     let token = CancellationToken::new();
-    registry
-        .lock()
-        .unwrap()
-        .insert(stream_id.clone(), token.clone());
+    let _guard = register_stream(&registry, &stream_id, token.clone());
 
     let mut stream = Box::pin(logic::agent::agent_chat(
         user_id,
@@ -638,6 +699,5 @@ pub async fn agent_chat(
         }
     }
 
-    registry.lock().unwrap().remove(&stream_id);
     Ok(())
 }

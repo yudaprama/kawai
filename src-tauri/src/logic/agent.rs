@@ -207,7 +207,9 @@ fn materials_embeds_results(materials: &str, results: &str) -> bool {
     if r_chars.len() < 400 {
         return materials.contains(results);
     }
-    let probe: String = r_chars[r_chars.len() / 2..r_chars.len() / 2 + 200].iter().collect();
+    let probe: String = r_chars[r_chars.len() / 2..r_chars.len() / 2 + 200]
+        .iter()
+        .collect();
     materials.contains(&probe)
 }
 
@@ -315,8 +317,7 @@ pub fn list_agents() -> Vec<AgentInfo> {
         AgentInfo {
             id: ANALYTICS_AGENT_ID.to_string(),
             name: "Analytics".into(),
-            description: "Structured queries over your data files: filter, aggregate, rank."
-                .into(),
+            description: "Structured queries over your data files: filter, aggregate, rank.".into(),
             #[cfg(feature = "analytics")]
             tools: true,
             #[cfg(not(feature = "analytics"))]
@@ -326,8 +327,7 @@ pub fn list_agents() -> Vec<AgentInfo> {
 }
 
 #[cfg(all(feature = "litert", not(feature = "office")))]
-const OFFICE_PERSONA: &str =
-    "You are kawai, a helpful, concise personal assistant.";
+const OFFICE_PERSONA: &str = "You are kawai, a helpful, concise personal assistant.";
 
 #[cfg(all(feature = "litert", feature = "office"))]
 const OFFICE_PERSONA: &str = "You are kawai's office agent. You read, create, edit, merge and inspect documents (docx, xlsx, pptx, pdf, youtube transcript) through tools.\n\
@@ -366,6 +366,7 @@ Rules:\n\
 - Compose queries from the schema: filters[] for conditions, groupBy + aggregations for totals/averages/counts, sortBy + descending + limit for rankings (top N = descending true). Numeric and date filter values are always strings (\"1500\", \"2026-01-31\").\n\
 - \"How many per X\" with no metric → groupBy [\"X\"] alone (row_count is implicit).\n\
 - Files are addressed by their handle (doc1, doc2 …) exactly as shown in the attachment list or office_list_files. If unsure which file holds the data, ask or call office_list_files.\n\
+- SQL sources (only when data_tables is offered): databases are pre-configured server-side and addressed by PROFILE NAME — never ask for connection strings or credentials. data_tables(profile) lists tables; before data_import(profile, table), state which profile/table you will snapshot and wait for the user's confirmation. After an import, run data_schema on the returned fileId.\n\
 - If a response: message reports an error (unknown column, bad value), fix the arguments from the valid-columns list it shows and call again — do not give up after one failure.\n\
 - Compute NOTHING yourself: sums, averages, growth rates, comparisons all come from data_query results.\n\
 - After each response: message, either call another tool or give the final answer.\n\
@@ -420,7 +421,7 @@ fn toolset_for(
             set
         }
         #[cfg(feature = "analytics")]
-        ANALYTICS_AGENT_ID => crate::logic::analytics::toolset(user_id),
+        ANALYTICS_AGENT_ID => crate::logic::analytics::toolset(user_id, session_id),
         _ => {
             let _ = user_id;
             let _ = session_id;
@@ -638,7 +639,10 @@ impl rig::tool::PortableTool for DeepWrite {
     async fn call(&self, _args: Self::Args) -> Result<String, Self::Error> {
         // Reached only if the loop's interception is bypassed (should not
         // happen); fail soft so the model learns the tool is unavailable.
-        Ok("ERROR: deep_write is dispatched internally and is unavailable here. Answer directly.".into())
+        Ok(
+            "ERROR: deep_write is dispatched internally and is unavailable here. Answer directly."
+                .into(),
+        )
     }
 }
 
@@ -884,7 +888,11 @@ fn compact_transcript(rows: &[db::ChatMessage], budget: usize) -> String {
     let mut used = 0usize;
     let mut dropped_older = false;
     for (i, row) in rows.iter().enumerate().rev() {
-        let role = if row.role == "user" { "USER" } else { "ASSISTANT" };
+        let role = if row.role == "user" {
+            "USER"
+        } else {
+            "ASSISTANT"
+        };
         let cap = if i == rows.len() - 1 {
             TRANSCRIPT_LAST_MSG_CHARS
         } else {
@@ -1041,8 +1049,7 @@ fn parse_native_tool_call(text: &str) -> Option<Result<(String, Value), String>>
             continue;
         }
         let args_span = balanced_braces(body, open);
-        let parsed = args_span
-            .and_then(|raw| parse_native_body(&format!("{name} {raw}")));
+        let parsed = args_span.and_then(|raw| parse_native_body(&format!("{name} {raw}")));
         if let Some(Ok((n, v))) = parsed {
             return Some(Ok((n, v)));
         }
@@ -1051,7 +1058,11 @@ fn parse_native_tool_call(text: &str) -> Option<Result<(String, Value), String>>
         // call once bare keys are re-quoted.
         let fixed = quote_bare_keys(body);
         if let Some(open2) = fixed.find('{') {
-            let name2 = fixed[..open2].trim().trim_end_matches(':').trim().to_string();
+            let name2 = fixed[..open2]
+                .trim()
+                .trim_end_matches(':')
+                .trim()
+                .to_string();
             if name2 == name {
                 let reparsed = balanced_braces(&fixed, open2)
                     .and_then(|raw| parse_native_body(&format!("{name} {raw}")));
@@ -1066,9 +1077,7 @@ fn parse_native_tool_call(text: &str) -> Option<Result<(String, Value), String>>
         // round teaches the correct shape (raw-persisting the line is the
         // worst outcome). Unbalanced braces stay prose ("call:" + garbage).
         if args_span.is_some() && first_broken.is_none() {
-            first_broken = Some(format!(
-                "call:{name}{{...}} — args are not valid JSON"
-            ));
+            first_broken = Some(format!("call:{name}{{...}} — args are not valid JSON"));
         }
     }
     first_broken.map(Err)
@@ -1102,7 +1111,10 @@ fn balanced_braces(body: &str, open: usize) -> Option<&str> {
 /// Validate `NAME {json}` (or bare `NAME`) from a native call body.
 fn parse_native_body(body: &str) -> Option<Result<(String, Value), String>> {
     let (name, args_raw) = match body.find('{') {
-        Some(i) => (body[..i].trim().trim_end_matches(':').trim(), body[i..].trim()),
+        Some(i) => (
+            body[..i].trim().trim_end_matches(':').trim(),
+            body[i..].trim(),
+        ),
         None => (body.trim(), ""),
     };
     if name.is_empty()
@@ -1161,9 +1173,7 @@ fn quote_bare_keys(s: &str) -> String {
             }
             if i < chars.len() && (chars[i].is_ascii_alphabetic() || chars[i] == '_') {
                 let ks = i;
-                while i < chars.len()
-                    && (chars[i].is_ascii_alphanumeric() || chars[i] == '_')
-                {
+                while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
                     i += 1;
                 }
                 let ident: String = chars[ks..i].iter().collect();
@@ -1303,7 +1313,14 @@ impl TurnMemory {
     fn chain_digest(&self) -> String {
         self.artifacts
             .iter()
-            .map(|a| format!("{} {} {} chars", a.handle, a.tool, a.content.chars().count()))
+            .map(|a| {
+                format!(
+                    "{} {} {} chars",
+                    a.handle,
+                    a.tool,
+                    a.content.chars().count()
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -1341,7 +1358,12 @@ impl TurnMemory {
                 total.saturating_sub(1)
             ));
         }
-        let page: String = a.content.chars().skip(offset).take(ARTIFACT_PAGE_CHARS).collect();
+        let page: String = a
+            .content
+            .chars()
+            .skip(offset)
+            .take(ARTIFACT_PAGE_CHARS)
+            .collect();
         let served = page.chars().count();
         let next = if offset + served < total {
             Some(offset + served)
@@ -1366,7 +1388,10 @@ impl TurnMemory {
 
     /// Total stored content chars — the cloud-close trigger metric.
     fn total_content_chars(&self) -> usize {
-        self.artifacts.iter().map(|a| a.content.chars().count()).sum()
+        self.artifacts
+            .iter()
+            .map(|a| a.content.chars().count())
+            .sum()
     }
 }
 
@@ -1397,7 +1422,9 @@ Rules:\n\
 /// Strip code fences / prose and parse the draft JSON into document blocks.
 /// Accepts {\"blocks\":[...]} or a bare top-level [...] array.
 #[cfg(all(feature = "litert", feature = "office"))]
-pub fn extract_draft_blocks(raw: &str) -> Result<Vec<crate::logic::office::ooxml::DocBlock>, String> {
+pub fn extract_draft_blocks(
+    raw: &str,
+) -> Result<Vec<crate::logic::office::ooxml::DocBlock>, String> {
     let unfenced = raw
         .trim()
         .trim_start_matches("```json")
@@ -1458,8 +1485,7 @@ pub fn agent_chat(
     agent_id: String,
     session_id: Option<i64>,
     message: String,
-    #[allow(unused_variables)]
-    file_ids: Vec<String>,
+    #[allow(unused_variables)] file_ids: Vec<String>,
 ) -> impl Stream<Item = AgentChatEvent> {
     use crate::logic::local_llm::LocalChatEvent;
     use async_stream::stream;
@@ -1496,6 +1522,10 @@ pub fn agent_chat(
             },
         };
         // Built after `sid` exists: the knowledge tool binds the session id.
+        // Analytics: refresh the SQL-profile cache first so a source saved
+        // moments ago registers its tools on this very turn.
+        #[cfg(feature = "analytics")]
+        crate::logic::analytics::refresh_profile_cache(&user_id).await;
         let toolset = toolset_for(&agent_id, &user_id, sid, remote.as_ref());
         eprintln!(
             "[agent_chat] toolset for agent={agent_id} remote.is_some()={} has_toolset={}",
@@ -2458,7 +2488,9 @@ mod tests {
     #[test]
     fn turn_memory_pages_full_range() {
         let mut m = TurnMemory::default();
-        let body: String = (0..10_000).map(|i| char::from_digit(i % 10, 10).unwrap()).collect();
+        let body: String = (0..10_000)
+            .map(|i| char::from_digit(i % 10, 10).unwrap())
+            .collect();
         m.record("office_read_document", "k", body.clone());
 
         let (p1, next1) = m.page("mem1", 0).unwrap();
@@ -2509,8 +2541,14 @@ mod tests {
         m.record("office_list_files", "a", "12345".into()); // 5 chars
         m.record("binance_price", "b", "6789".into()); // 4 chars
         let digest = m.chain_digest();
-        assert!(digest.contains("mem1 office_list_files 5 chars"), "got {digest}");
-        assert!(digest.contains("mem2 binance_price 4 chars"), "got {digest}");
+        assert!(
+            digest.contains("mem1 office_list_files 5 chars"),
+            "got {digest}"
+        );
+        assert!(
+            digest.contains("mem2 binance_price 4 chars"),
+            "got {digest}"
+        );
         assert_eq!(m.total_content_chars(), 9);
     }
 
@@ -2532,7 +2570,11 @@ mod tests {
         let mut m = TurnMemory::default();
         assert!(!cloud_close_eligible(true, 0, &m));
         // Real payload + remote configured + subagent budget untouched.
-        m.record("office_read_document", "a", "x".repeat(CLOUD_CLOSE_MIN_CHARS));
+        m.record(
+            "office_read_document",
+            "a",
+            "x".repeat(CLOUD_CLOSE_MIN_CHARS),
+        );
         assert!(cloud_close_eligible(true, 0, &m));
         // Pure-local build (no vault keys) → never.
         assert!(!cloud_close_eligible(false, 0, &m));
@@ -2683,7 +2725,10 @@ mod tests {
             Some(Ok((tool, args))) => {
                 assert_eq!(tool, "knowledge_search");
                 assert_eq!(args["mode"], "keyword");
-                assert_eq!(args["query"], "Gw Coba Trading Forex Selama 42 Hari Tanpa Pengalaman");
+                assert_eq!(
+                    args["query"],
+                    "Gw Coba Trading Forex Selama 42 Hari Tanpa Pengalaman"
+                );
             }
             other => panic!("expected Ok, got {other:?}"),
         }
@@ -2724,7 +2769,10 @@ mod tests {
             Some(Ok((tool, args))) => {
                 assert_eq!(tool, "knowledge_search");
                 assert_eq!(args["mode"], "keyword");
-                assert_eq!(args["query"], "Gw Coba Trading Forex Selama 42 Hari Tanpa Pengalaman");
+                assert_eq!(
+                    args["query"],
+                    "Gw Coba Trading Forex Selama 42 Hari Tanpa Pengalaman"
+                );
             }
             other => panic!("expected Ok, got {other:?}"),
         }
@@ -2777,7 +2825,10 @@ mod tests {
         let text = "I need to replace \"June\" with \"August\" in all documents.\n\ncall:office_edit_document_document{\"fileId\": \"f36.pdf\",\"operations\": [{\"type\": \"replace_text\", \"find\": \"June, \"August\"}]}\ncall:office_edit_document{\"file_Id\": \"f7\",\"operations\": [{\"type\": \"replace_text\", \"find\": \"June\", \"August\"}]}\ncall:office_edit_document{\"file_Id\": \"f\": \"operations\": [{\"type\": \"replace_text\", \"find\": \"June\", \"August\"}]}";
         match parse_tool_call(text) {
             Some(Err(detail)) => {
-                assert!(detail.contains("call:"), "detail should name the call: {detail}");
+                assert!(
+                    detail.contains("call:"),
+                    "detail should name the call: {detail}"
+                );
             }
             other => panic!("expected Err (malformed), got {other:?}"),
         }
@@ -2798,7 +2849,10 @@ mod tests {
 
     #[test]
     fn quote_bare_keys_supplies_missing_opening_quote() {
-        assert_eq!(quote_bare_keys(r#"{"a": "x",b": "y"}"#), r#"{"a": "x","b": "y"}"#);
+        assert_eq!(
+            quote_bare_keys(r#"{"a": "x",b": "y"}"#),
+            r#"{"a": "x","b": "y"}"#
+        );
     }
 
     #[test]
@@ -2837,7 +2891,10 @@ mod tests {
     #[cfg(feature = "litert")]
     #[test]
     fn materials_embed_detection() {
-        let results = format!("--- office_read_document ---\n{}", "transcript line. ".repeat(200));
+        let results = format!(
+            "--- office_read_document ---\n{}",
+            "transcript line. ".repeat(200)
+        );
         // Paraphrase does not embed → append needed.
         assert!(!materials_embeds_results(
             "video tentang trading forex selama 42 hari, tiga porto",
@@ -2969,7 +3026,10 @@ mod tests {
         // A 3000-char newest answer fits whole under the last-message cap;
         // an equally long OLDER message would be cut to 2000.
         let newest = "y".repeat(3000);
-        let rows = vec![msg("assistant", &"z".repeat(3000)), msg("assistant", &newest)];
+        let rows = vec![
+            msg("assistant", &"z".repeat(3000)),
+            msg("assistant", &newest),
+        ];
         let out = compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS);
         assert!(out.contains(&newest)); // whole, no '…' inside it
         assert!(out.matches('…').count() == 1); // only the older row truncated
@@ -3027,8 +3087,13 @@ mod tests {
         let raw = r#"{"blocks":[{"type":"title","text":"Report"},{"type":"heading","text":"Q3","level":2},{"type":"paragraph","text":"Revenue grew."},{"type":"bullets","items":["a","b"]},{"type":"table","rows":[["x","y"]]},{"type":"paragraph","text":"End."}]}"#;
         let blocks = extract_draft_blocks(raw).expect("parse");
         assert_eq!(blocks.len(), 6);
-        assert!(matches!(&blocks[0], crate::logic::office::ooxml::DocBlock::Title { text } if text == "Report"));
-        assert!(matches!(&blocks[1], crate::logic::office::ooxml::DocBlock::Heading { level: Some(2), .. }));
+        assert!(
+            matches!(&blocks[0], crate::logic::office::ooxml::DocBlock::Title { text } if text == "Report")
+        );
+        assert!(matches!(
+            &blocks[1],
+            crate::logic::office::ooxml::DocBlock::Heading { level: Some(2), .. }
+        ));
     }
 
     #[cfg(all(feature = "litert", feature = "office"))]
@@ -3187,5 +3252,4 @@ mod tests {
         assert!(out.contains("call:office_create_document{"));
         assert!(!out.contains("```tool"));
     }
-
 }

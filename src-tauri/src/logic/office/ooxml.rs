@@ -25,9 +25,17 @@ pub enum DocBlock {
     #[serde(rename = "title")]
     Title { text: String },
     #[serde(rename = "heading")]
-    Heading { text: String, #[serde(default)] level: Option<u8> },
+    Heading {
+        text: String,
+        #[serde(default)]
+        level: Option<u8>,
+    },
     #[serde(rename = "paragraph")]
-    Paragraph { text: String, #[serde(default)] bold: Option<bool> },
+    Paragraph {
+        text: String,
+        #[serde(default)]
+        bold: Option<bool>,
+    },
     #[serde(rename = "bullets")]
     Bullets { items: Vec<String> },
     #[serde(rename = "table")]
@@ -68,7 +76,10 @@ pub async fn create_document_from_blocks(
 /// (ATX headings, pipe tables, `-` bullets, `**bold**`).
 fn blocks_to_markdown(blocks: &[DocBlock]) -> Result<String, String> {
     if blocks.is_empty() {
-        return Err("blocks must not be empty — add at least one title/paragraph/bullets/table block".into());
+        return Err(
+            "blocks must not be empty — add at least one title/paragraph/bullets/table block"
+                .into(),
+        );
     }
     let mut md = String::new();
     for b in blocks {
@@ -177,8 +188,7 @@ pub async fn document_info(user_id: &str, file_id: &str) -> Result<Value, String
     if info.ext == "pdf" {
         return Err("use pdf_info for PDF files".into());
     }
-    let doc = Document::open(&path)
-        .map_err(|e| format!("office_oxide read failed: {e}"))?;
+    let doc = Document::open(&path).map_err(|e| format!("office_oxide read failed: {e}"))?;
     let ir = doc.to_ir();
     let words = doc.plain_text().split_whitespace().count();
 
@@ -193,7 +203,7 @@ pub async fn document_info(user_id: &str, file_id: &str) -> Result<Value, String
                 .filter(|e| matches!(e, Element::Paragraph(_) | Element::Heading(_)))
                 .count();
             (Some(p), None, None)
-        },
+        }
     };
 
     let m = ir.metadata;
@@ -283,8 +293,8 @@ pub async fn edit_document(
 
     let ext = info.ext.clone();
     let tmp = path.with_extension(format!("{}.tmp", info.ext));
-    let mut doc = EditableDocument::open(&path)
-        .map_err(|e| format!("open for edit failed: {e}"))?;
+    let mut doc =
+        EditableDocument::open(&path).map_err(|e| format!("open for edit failed: {e}"))?;
 
     let mut op_results = Vec::new();
     let mut rows_modified = 0u64;
@@ -323,11 +333,7 @@ pub async fn edit_document(
 
 /// Apply a single edit op to the open document, returning the number of
 /// affected units (paragraphs, cells, slides, …).
-fn apply_edit_op(
-    doc: &mut EditableDocument,
-    ext: &str,
-    op: &Value,
-) -> Result<u64, String> {
+fn apply_edit_op(doc: &mut EditableDocument, ext: &str, op: &Value) -> Result<u64, String> {
     let ty = op.get("type").and_then(|t| t.as_str()).unwrap_or_default();
     match (ext, ty) {
         ("docx", "replace_text") => {
@@ -381,10 +387,12 @@ fn apply_edit_op(
                 .ok_or("set_cell requires cells[]")?;
             let mut count = 0u64;
             for c in cells {
-                let cell = c.get("cell").and_then(|v| v.as_str()).ok_or("cell ref missing")?;
+                let cell = c
+                    .get("cell")
+                    .and_then(|v| v.as_str())
+                    .ok_or("cell ref missing")?;
                 let value = parse_xlsx_edit_cell_value(c.get("value"))?;
-                doc.set_cell(0, cell, value)
-                    .map_err(|e| e.to_string())?;
+                doc.set_cell(0, cell, value).map_err(|e| e.to_string())?;
                 count += 1;
             }
             Ok(count)
@@ -417,7 +425,11 @@ fn parse_docx_blocks(op: &Value) -> Result<Vec<DocxBlock>, String> {
         .ok_or("append_paragraphs requires paragraphs[]")?;
     let mut blocks = Vec::new();
     for p in arr {
-        let kind = match p.get("type").and_then(|v| v.as_str()).unwrap_or("paragraph") {
+        let kind = match p
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("paragraph")
+        {
             "paragraph" => DocxBlockKind::Paragraph,
             "title" => DocxBlockKind::Title,
             "heading1" => DocxBlockKind::Heading1,
@@ -434,15 +446,28 @@ fn parse_docx_blocks(op: &Value) -> Result<Vec<DocxBlock>, String> {
         let mut docx_runs = Vec::new();
         for r in runs {
             docx_runs.push(DocxRun {
-                text: r.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                text: r
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 bold: r.get("bold").and_then(|v| v.as_bool()).unwrap_or(false),
                 italic: r.get("italic").and_then(|v| v.as_bool()).unwrap_or(false),
                 size: r.get("size").and_then(|v| v.as_f64()),
-                color: r.get("color").and_then(|v| v.as_str()).map(|s| s.to_string()),
-                font: r.get("font").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                color: r
+                    .get("color")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                font: r
+                    .get("font")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
             });
         }
-        blocks.push(DocxBlock { kind, runs: docx_runs });
+        blocks.push(DocxBlock {
+            kind,
+            runs: docx_runs,
+        });
     }
     Ok(blocks)
 }
@@ -460,7 +485,12 @@ fn parse_docx_table(op: &Value) -> Result<Vec<Vec<String>>, String> {
             .ok_or("row missing cells[]")?;
         let mut r = Vec::new();
         for c in cells {
-            r.push(c.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string());
+            r.push(
+                c.get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            );
         }
         out.push(r);
     }
@@ -478,10 +508,22 @@ fn parse_docx_format(op: &Value) -> Result<DocxFormat, String> {
             other => return Err(format!("unknown alignment {other:?}")),
         });
     }
-    fmt.spacing_before = op.get("spacing_before").and_then(|v| v.as_u64()).map(|v| v as u32);
-    fmt.spacing_after = op.get("spacing_after").and_then(|v| v.as_u64()).map(|v| v as u32);
-    fmt.indent_left = op.get("indent_left").and_then(|v| v.as_u64()).map(|v| v as u32);
-    fmt.indent_right = op.get("indent_right").and_then(|v| v.as_u64()).map(|v| v as u32);
+    fmt.spacing_before = op
+        .get("spacing_before")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+    fmt.spacing_after = op
+        .get("spacing_after")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+    fmt.indent_left = op
+        .get("indent_left")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+    fmt.indent_right = op
+        .get("indent_right")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
     Ok(fmt)
 }
 
@@ -558,7 +600,11 @@ fn parse_pptx_slides(op: &Value) -> Result<Vec<PptxSlideSpec>, String> {
         .ok_or("append_slides requires slides[]")?;
     let mut out = Vec::new();
     for s in slides {
-        let title = s.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let title = s
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let body = s
             .get("body")
             .and_then(|v| v.as_array())
@@ -637,11 +683,23 @@ mod tests {
 
     fn blocks() -> Vec<DocBlock> {
         vec![
-            DocBlock::Title { text: "Report".into() },
-            DocBlock::Heading { text: "S1".into(), level: Some(2) },
-            DocBlock::Paragraph { text: "it's a \"test\"".into(), bold: Some(true) },
-            DocBlock::Bullets { items: vec!["one".into(), "two".into()] },
-            DocBlock::Table { rows: vec![vec!["a".into(), "b".into()], vec!["c".into(), "d".into()]] },
+            DocBlock::Title {
+                text: "Report".into(),
+            },
+            DocBlock::Heading {
+                text: "S1".into(),
+                level: Some(2),
+            },
+            DocBlock::Paragraph {
+                text: "it's a \"test\"".into(),
+                bold: Some(true),
+            },
+            DocBlock::Bullets {
+                items: vec!["one".into(), "two".into()],
+            },
+            DocBlock::Table {
+                rows: vec![vec!["a".into(), "b".into()], vec!["c".into(), "d".into()]],
+            },
         ]
     }
 
@@ -685,11 +743,8 @@ mod tests {
             let bytes = w.into_inner();
             assert!(bytes.len() > 500, "{ext} suspiciously small");
             // Round-trip: office_oxide can read its own output back.
-            let doc = office_oxide::Document::from_reader(
-                std::io::Cursor::new(bytes.clone()),
-                fmt,
-            )
-            .unwrap_or_else(|e| panic!("{ext} read-back: {e}"));
+            let doc = office_oxide::Document::from_reader(std::io::Cursor::new(bytes.clone()), fmt)
+                .unwrap_or_else(|e| panic!("{ext} read-back: {e}"));
             let text = doc.plain_text();
             if ext == "xlsx" {
                 // An H1 section title becomes the SHEET NAME in xlsx.

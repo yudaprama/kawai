@@ -61,7 +61,11 @@ async fn main() {
         tokens,
         chars,
         elapsed,
-        if elapsed > 0.0 { tokens as f64 / elapsed } else { 0.0 }
+        if elapsed > 0.0 {
+            tokens as f64 / elapsed
+        } else {
+            0.0
+        }
     );
 
     // Second turn: proves the conversation history survives restoration.

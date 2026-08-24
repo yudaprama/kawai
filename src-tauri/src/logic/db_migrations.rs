@@ -46,6 +46,11 @@ fn migrations() -> Vec<Migration> {
         version: "0005_remap_chat_agent",
         sql: include_str!("../../migrations/0005_remap_chat_agent.sql"),
     });
+    #[cfg(feature = "analytics")]
+    m.push(Migration {
+        version: "0006_sql_profiles",
+        sql: include_str!("../../migrations/0006_sql_profiles.sql"),
+    });
     m
 }
 
@@ -180,20 +185,22 @@ mod tests {
         while let Some(r) = rows.next().await.unwrap() {
             versions.push(r.get::<String>(0).unwrap());
         }
-        let mut expected = vec![
-            "0001_baseline",
-            "0002_backfill_untitled_sessions",
-        ];
+        let mut expected = vec!["0001_baseline", "0002_backfill_untitled_sessions"];
         #[cfg(feature = "office")]
         expected.push("0003_office_tables");
         expected.push("0004_session_archive");
         expected.push("0005_remap_chat_agent");
+        #[cfg(feature = "analytics")]
+        expected.push("0006_sql_profiles");
         assert_eq!(versions, expected);
 
         // Core tables exist.
         for table in ["sessions", "messages", "turn_log", "schema_migrations"] {
             let mut r = conn
-                .query("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", vec![table])
+                .query(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+                    vec![table],
+                )
                 .await
                 .unwrap();
             assert!(r.next().await.unwrap().is_some(), "missing table {table}");
@@ -219,10 +226,7 @@ mod tests {
 
         ensure_schema(&conn, &dir).await.unwrap();
 
-        let mut r = conn
-            .query("SELECT title FROM sessions", ())
-            .await
-            .unwrap();
+        let mut r = conn.query("SELECT title FROM sessions", ()).await.unwrap();
         let row = r.next().await.unwrap().unwrap();
         assert_eq!(row.get::<String>(0).unwrap(), "(untitled)");
     }
@@ -267,10 +271,7 @@ mod tests {
         ensure_schema(&conn, &dir).await.unwrap();
 
         // Verify both archive columns exist via PRAGMA (works for libsql).
-        let mut r = conn
-            .query("PRAGMA table_info(sessions)", ())
-            .await
-            .unwrap();
+        let mut r = conn.query("PRAGMA table_info(sessions)", ()).await.unwrap();
         let mut columns = Vec::new();
         while let Some(row) = r.next().await.unwrap() {
             columns.push(row.get::<String>(1).unwrap());

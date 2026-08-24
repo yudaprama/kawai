@@ -44,13 +44,20 @@ Results: cloud smoke 3.6s, 193 output tokens; local tests 40/40. Next: calibrati
         let mut usage = None;
         let mut winner = String::new();
         let mut hit_cap = false;
-        let stream = remote.stream(DRAFT_SYSTEM, task, materials).await.expect("stream");
+        let stream = remote
+            .stream(DRAFT_SYSTEM, task, materials)
+            .await
+            .expect("stream");
         let mut stream = Box::pin(stream);
         while let Some(ev) = stream.next().await {
             match ev {
                 Ok(RemoteEvent::Token { text }) => raw.push_str(&text),
                 Ok(RemoteEvent::Reasoning { .. }) => {}
-                Ok(RemoteEvent::Done { usage: u, provider, hit_cap: c }) => {
+                Ok(RemoteEvent::Done {
+                    usage: u,
+                    provider,
+                    hit_cap: c,
+                }) => {
                     usage = Some(u);
                     winner = provider;
                     hit_cap = c;

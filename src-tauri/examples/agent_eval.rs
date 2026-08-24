@@ -56,7 +56,12 @@ const TOOLS: &str = r#"[
 ///   "==[a,b,c]"    — list equality
 ///   "re:pattern"   — regex over the JSON-encoded value (for arrays/objects)
 ///   "in:a|b|None"  — membership; "None" accepts a missing field
-struct Scenario(&'static str, &'static str, Option<&'static str>, &'static [(&'static str, &'static str)]);
+struct Scenario(
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+    &'static [(&'static str, &'static str)],
+);
 
 const NONE: &[(&str, &str)] = &[];
 
@@ -100,6 +105,51 @@ const SCENARIOS: &[Scenario] = &[
         &[("query", "re:late|fee|invoice")]),
 ];
 
+/// Analytics suite (`EVAL_SUITE=analytics`): data_schema/data_query selection
+/// and argument composition over a FIXED schema stated in the system prompt
+/// (single-turn eval — there is no real discovery round-trip). Kept separate
+/// from the office suite so its manifest/context never shifts the T01-T20
+/// baseline.
+const ANALYTICS_SYSTEM: &str = "You are a data analysis assistant. The user's library contains these files:\n\
+- doc1 = sales_2026.csv (columns: produk [text], kategori [text], pendapatan [integer], jumlah [integer], tanggal [date YYYY-MM-DD])\n\
+- doc2 = transactions.xlsx (sheets: Sales, Returns; Sales columns: produk [text], kategori [text], pendapatan [integer], tanggal [date YYYY-MM-DD])\n";
+
+const ANALYTICS_TOOLS: &str = r#"[
+  {"type":"function","function":{"name":"data_schema","description":"REQUIRED before the first data_query on a file. Returns the column names, data types, sample values and row count of a stored tabular file (csv/parquet/Excel), plus the sheet names for Excel files.","parameters":{"type":"object","properties":{"fileId":{"type":"string","description":"File id from office_list_files or the attachment block"},"sheet":{"type":"string","description":"Excel sheet name. Optional — defaults to the first sheet with data."}},"required":["fileId"]}}},
+  {"type":"function","function":{"name":"data_query","description":"Run a structured query on a stored tabular file (csv/parquet/Excel): filter rows, optionally group, aggregate (sum/avg/min/max/count/count_distinct), sort, and limit. Call data_schema first to learn the columns.","parameters":{"type":"object","properties":{"fileId":{"type":"string"},"sheet":{"type":"string"},"columns":{"type":"array","items":{"type":"string"}},"filters":{"type":"array","items":{"type":"object","properties":{"column":{"type":"string"},"operator":{"type":"string","enum":["eq","neq","gt","gte","lt","lte","contains"]},"value":{"type":"string"}},"required":["column","operator","value"]}},"groupBy":{"type":"array","items":{"type":"string"}},"aggregations":{"type":"array","items":{"type":"object","properties":{"column":{"type":"string"},"function":{"type":"string","enum":["sum","avg","min","max","count","count_distinct"]},"alias":{"type":"string"}},"required":["column","function","alias"]}},"sortBy":{"type":"string"},"descending":{"type":"boolean"},"limit":{"type":"integer"}},"required":["fileId"]}}},
+  {"type":"function","function":{"name":"office_list_files","description":"List the user's stored files. Returns id, originalName, ext, bytes, createdAt.","parameters":{"type":"object","properties":{},"required":[]}}}
+]"#;
+
+const NONE_A: &[(&str, &str)] = &[];
+
+#[allow(clippy::type_complexity)]
+const ANALYTICS_SCENARIOS: &[Scenario] = &[
+    // Discovery-first discipline.
+    Scenario("A01 schema-first", "What columns does sales_2026.csv have?", Some("data_schema"),
+        &[("fileId", "==doc1")]),
+    // Single aggregate without grouping → plain select.
+    Scenario("A02 sum-all", "What is the total revenue across all rows?", Some("data_query"),
+        &[("fileId", "==doc1"), ("aggregations/0/function", "==sum"), ("aggregations/0/column", "==pendapatan")]),
+    // Group + rank: top-N shape (descending true, bounded).
+    Scenario("A03 group-rank", "Show the top 3 products by total revenue.", Some("data_query"),
+        &[("fileId", "==doc1"), ("groupBy/0", "==produk"), ("aggregations/0/function", "==sum"), ("descending", "==true")]),
+    // Implicit row_count: group_by alone, no metric invented.
+    Scenario("A04 count-per-group", "How many rows are there for each kategori?", Some("data_query"),
+        &[("fileId", "==doc1"), ("groupBy/0", "==kategori")]),
+    // Date range from a natural-language month (gte the month start).
+    Scenario("A05 date-filter", "Show only January 2026 transactions.", Some("data_query"),
+        &[("fileId", "==doc1"), ("filters/0/value", "re:2026-01"), ("filters/0/operator", "in:gte|gt|eq")]),
+    // Avg per group, ranked.
+    Scenario("A06 avg-per-group", "Average revenue per product, highest first.", Some("data_query"),
+        &[("fileId", "==doc1"), ("groupBy/0", "==produk"), ("aggregations/0/function", "==avg"), ("descending", "==true")]),
+    // Row-selection mode: projected columns + limit, no aggregation.
+    Scenario("A07 row-select", "Show me the first 5 rows of sales_2026.csv with only produk and pendapatan.", Some("data_query"),
+        &[("fileId", "==doc1"), ("columns/0", "==produk"), ("columns/1", "==pendapatan"), ("limit", "==5")]),
+    // Excel sheet targeting through data_schema.
+    Scenario("A08 sheet-select", "What columns are in the Returns sheet of transactions.xlsx?", Some("data_schema"),
+        &[("fileId", "==doc2"), ("sheet", "==Returns")]),
+];
+
 /// Filler tools for the TOOL_INFLATE=N experiment: realistic names/descriptions
 /// modeled on the rig-components weather/finance/news/entertainment categories.
 /// Measures how manifest size affects selection accuracy + latency on E4B.
@@ -131,7 +181,7 @@ const FILLER_TOOLS: &str = r#"[
   {"type":"function","function":{"name":"finance_get_market_overview","description":"Get major indices and market summary.","parameters":{"type":"object","properties":{},"required":[]}}}
 ]"#;
 
-fn prompt_for(message: &str) -> String {
+fn prompt_for(message: &str, system: &str, tools_json: &str) -> String {
     let inflate: usize = std::env::var("TOOL_INFLATE")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -139,15 +189,18 @@ fn prompt_for(message: &str) -> String {
     let tools = if inflate > 0 {
         let fillers: Vec<Value> = serde_json::from_str(FILLER_TOOLS).unwrap();
         let take: Vec<&Value> = fillers.iter().take(inflate.min(fillers.len())).collect();
-        let base: Vec<Value> = serde_json::from_str(TOOLS).unwrap();
+        let base: Vec<Value> = serde_json::from_str(tools_json).unwrap();
         let all: Vec<&Value> = base.iter().chain(take.iter().copied()).collect();
         serde_json::to_string(&all).unwrap()
     } else {
-        TOOLS.to_string()
+        tools_json.to_string()
     };
-    println!("manifest tools: {}", serde_json::from_str::<Vec<Value>>(&tools).unwrap().len());
+    println!(
+        "manifest tools: {}",
+        serde_json::from_str::<Vec<Value>>(&tools).unwrap().len()
+    );
     format!(
-        "<agent_context>\n{SYSTEM}\nAvailable tools (JSON schemas):\n{tools}\n\n\
+        "<agent_context>\n{system}\nAvailable tools (JSON schemas):\n{tools}\n\n\
          To call a tool, reply with exactly ONE line in this format:\n\
          call:<name>{{\"arg\": \"value\", ...}}\n\
          Supply exactly the parameters listed for that tool (omit optional ones). After the call: line, STOP.\n\
@@ -166,12 +219,25 @@ fn parse_call(text: &str) -> Option<Result<(String, Value), String>> {
     let json_part = &rest[open..];
     match serde_json::from_str::<Value>(json_part) {
         Ok(v) => Some(Ok((name, v))),
-        Err(_) => Some(Err(format!("malformed json: {}", json_part.chars().take(60).collect::<String>()))),
+        Err(_) => Some(Err(format!(
+            "malformed json: {}",
+            json_part.chars().take(60).collect::<String>()
+        ))),
     }
 }
 
+/// Slash-path lookup: `aggregations/0/function` walks objects by key and
+/// arrays by index (flat keys behave exactly as before).
 fn get<'a>(args: &'a Value, path: &str) -> Option<&'a Value> {
-    args.as_object().and_then(|m| m.get(path))
+    let mut cur = args;
+    for seg in path.split('/') {
+        cur = match cur {
+            Value::Object(m) => m.get(seg)?,
+            Value::Array(a) => a.get(seg.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    Some(cur)
 }
 
 fn check_asserts(args: &Value, asserts: &[(&str, &str)]) -> Result<(), String> {
@@ -193,7 +259,11 @@ fn check_asserts(args: &Value, asserts: &[(&str, &str)]) -> Result<(), String> {
             let want: Vec<&str> = list.split(',').map(str::trim).collect();
             let got: Vec<String> = v
                 .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default();
             if got != want {
                 return Err(format!("{path}={got:?} != {want:?}"));
@@ -211,7 +281,9 @@ fn check_asserts(args: &Value, asserts: &[(&str, &str)]) -> Result<(), String> {
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let mut args = std::env::args().skip(1);
-    let model = args.next().expect("usage: agent_eval <model.litertlm> [report.md]");
+    let model = args
+        .next()
+        .expect("usage: agent_eval <model.litertlm> [report.md]");
     // Optional second arg: write a markdown report (consumed by CI job summary
     // + artifact). Env EVAL_MIN_PASS (default: all scenarios) sets the gate —
     // exit code 1 below it, so CI fails on regressions.
@@ -226,16 +298,33 @@ async fn main() {
         .await
         .expect("load_model");
     let load_s = t_load.elapsed().as_secs_f64();
-    let tool_count = serde_json::from_str::<Vec<Value>>(TOOLS).unwrap().len();
-    println!("model {} [{}] (load {load_s:.1}s)\n", info.model_path, info.backend);
+    // Suite selection: EVAL_SUITE=analytics swaps the scenario set, system
+    // context and tool manifest (the office baseline stays byte-identical).
+    let suite = std::env::var("EVAL_SUITE").unwrap_or_default();
+    let (suite_name, system, tools_json, scenarios): (&str, &str, &str, &[Scenario]) =
+        if suite == "analytics" {
+            ("analytics", ANALYTICS_SYSTEM, ANALYTICS_TOOLS, ANALYTICS_SCENARIOS)
+        } else {
+            ("office", SYSTEM, TOOLS, SCENARIOS)
+        };
+    let tool_count = serde_json::from_str::<Vec<Value>>(tools_json).unwrap().len();
+    println!(
+        "model {} [{}] (load {load_s:.1}s)\n",
+        info.model_path, info.backend
+    );
 
     let mut pass = 0usize;
     let mut rows: Vec<(String, bool, String, f64)> = Vec::new();
-    for Scenario(id, prompt, want_tool, asserts) in SCENARIOS {
+    for Scenario(id, prompt, want_tool, asserts) in scenarios {
         let _ = local_llm::reset_conversation("eval").await;
         let t = std::time::Instant::now();
         let mut text = String::new();
-        let mut stream = Box::pin(local_llm::local_chat("eval".into(), prompt_for(prompt), None, None));
+        let mut stream = Box::pin(local_llm::local_chat(
+            "eval".into(),
+            prompt_for(prompt, system, tools_json),
+            None,
+            None,
+        ));
         while let Some(ev) = stream.next().await {
             match ev {
                 local_llm::LocalChatEvent::Token { text: t } => text.push_str(&t),
@@ -274,7 +363,10 @@ async fn main() {
         if ok {
             pass += 1;
         }
-        println!("{} {id:18} {note} ({secs:.1}s)", if ok { "PASS" } else { "FAIL" });
+        println!(
+            "{} {id:18} {note} ({secs:.1}s)",
+            if ok { "PASS" } else { "FAIL" }
+        );
         rows.push((id.to_string(), ok, note, secs));
     }
     let total = SCENARIOS.len();
@@ -300,7 +392,7 @@ async fn main() {
         let mut md = String::new();
         md.push_str("# agent_eval — orchestration quality report\n\n");
         md.push_str(&format!(
-            "- **date**: {} (unix)\n- **model**: `{}` [{}]\n- **load time**: {load_s:.1}s\n- **manifest tools**: {tool_count} (E4B ceiling: 30 — see PLAN L14)\n- **score**: **{pass}/{total} ({pct:.0}%)**\n- **gate**: {min_pass}/{total} — {}\n\n",
+            "- **date**: {} (unix)\n- **suite**: {suite_name}\n- **model**: `{}` [{}]\n- **load time**: {load_s:.1}s\n- **manifest tools**: {tool_count} (E4B ceiling: 30 — see PLAN L14)\n- **score**: **{pass}/{total} ({pct:.0}%)**\n- **gate**: {min_pass}/{total} — {}\n\n",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())

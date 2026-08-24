@@ -446,7 +446,7 @@ checks when shared code changes).
 ### Phase 4 — UI (vanilla JS, no build step)
 1. `src/lib/office.js`: file list, import (drag-drop → base64), export,
    capabilities badge.
-2. Agent pane: agent switcher chip (`builtin.chat` / `builtin.office`),
+2. Agent pane: agent switcher chip (`builtin.office`),
    `toolCall`/`toolResult` collapsible rows, file chips.
 3. Manual pass `bun tauri dev` (litert env recipe); errors via `errText`.
 

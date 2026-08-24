@@ -4,6 +4,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { KnowledgeFileInfo } from "@/lib/api";
 import { KnowledgeFileRow, KnowledgeSectionLabel } from "@/components/knowledge-file-row";
 import { FileIcon } from "@/components/file-icon";
+import { SqlProfilesSection } from "@/components/sql-profiles-section";
 import { PlusIcon, VideoIcon } from "lucide-react";
 
 export function KnowledgePanel({
@@ -88,7 +89,11 @@ export function KnowledgePanel({
                 <TabsTrigger value="library">
                   {sessionId != null ? "Library" : "Documents"}
                 </TabsTrigger>
+                <TabsTrigger value="databases">Databases</TabsTrigger>
               </TabsList>
+              <TabsContent value="databases">
+                <SqlProfilesSection />
+              </TabsContent>
               <TabsContent value="session">
                 {sessionId != null && (
                   <div>

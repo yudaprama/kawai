@@ -20,7 +20,11 @@ use kawai_lib::logic::{db, local_llm};
 
 const SMOKE_USER: &str = "smoke";
 
-async fn run_turn(agent_id: &str, session_id: Option<i64>, message: &str) -> (Option<i64>, Vec<String>) {
+async fn run_turn(
+    agent_id: &str,
+    session_id: Option<i64>,
+    message: &str,
+) -> (Option<i64>, Vec<String>) {
     let mut saw_cloud_call = false;
     let mut cloud_summary = String::new();
     let mut answer_chars = 0usize;
@@ -96,7 +100,12 @@ async fn main() {
 
     // 2. LIGHT turn on the office agent — must stay local (no cloud call).
     println!("── office agent · LIGHT turn (expect local answer, no cloud) ──");
-    let (sid, events) = run_turn("builtin.office", None, "In one short sentence: what is 7 times 8?").await;
+    let (sid, events) = run_turn(
+        "builtin.office",
+        None,
+        "In one short sentence: what is 7 times 8?",
+    )
+    .await;
     let light_ok = events.iter().any(|e| e == "finished")
         && !events.iter().any(|e| e.starts_with("ERROR"))
         && !events.iter().any(|e| e.contains("deep_write"));
@@ -114,8 +123,8 @@ async fn main() {
     )
     .await;
     let _ = sid2;
-    let heavy_ok = events2.iter().any(|e| e == "finished")
-        && !events2.iter().any(|e| e.starts_with("ERROR"));
+    let heavy_ok =
+        events2.iter().any(|e| e == "finished") && !events2.iter().any(|e| e.starts_with("ERROR"));
     let delegated = events2.iter().any(|e| e.contains("deep_write"));
     all_pass &= verdict("heavy turn completes", heavy_ok);
     all_pass &= verdict("heavy turn delegates to deep_write", delegated);
@@ -129,8 +138,8 @@ async fn main() {
          What Shipped (bullets), Risks (table), Next Steps (bullets).",
     )
     .await;
-    let office_ok = events3.iter().any(|e| e == "finished")
-        && !events3.iter().any(|e| e.starts_with("ERROR"));
+    let office_ok =
+        events3.iter().any(|e| e == "finished") && !events3.iter().any(|e| e.starts_with("ERROR"));
     let drafted = events3.iter().any(|e| e.contains("draft_document"));
     all_pass &= verdict("office turn completes", office_ok);
     all_pass &= verdict("office turn uses draft_document", drafted);
@@ -163,19 +172,32 @@ async fn main() {
         .unwrap()
         .as_secs() as i64
         - 3600;
-    let rows = db::list_turn_log(SMOKE_USER, since).await.unwrap_or_default();
+    let rows = db::list_turn_log(SMOKE_USER, since)
+        .await
+        .unwrap_or_default();
     println!("  {} rows", rows.len());
     for r in rows.iter().take(8) {
         println!(
             "  {} / {} · {} {} · {:?}ms · {}",
-            r.agent_id, r.provider, r.tool.as_deref().unwrap_or("-"), r.outcome, r.latency_ms,
+            r.agent_id,
+            r.provider,
+            r.tool.as_deref().unwrap_or("-"),
+            r.outcome,
+            r.latency_ms,
             r.output_tokens.unwrap_or(0)
         );
     }
     all_pass &= verdict("turn_log rows written", rows.len() >= 2);
 
     let _ = sid;
-    println!("{}", if all_pass { "AGENT SMOKE: ALL PASS" } else { "AGENT SMOKE: FAILURES — see above" });
+    println!(
+        "{}",
+        if all_pass {
+            "AGENT SMOKE: ALL PASS"
+        } else {
+            "AGENT SMOKE: FAILURES — see above"
+        }
+    );
     if !all_pass {
         std::process::exit(1);
     }

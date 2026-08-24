@@ -53,7 +53,9 @@ async fn debug_dump_serp(query: &str) {
         .unwrap_or_default();
     let tool = BrowserMarkdownExtractTool::new(ToolOptions::new().with_client(client));
     let mut u = url::Url::parse("https://www.bing.com/search").unwrap();
-    u.query_pairs_mut().append_pair("q", query).append_pair("count", "20");
+    u.query_pairs_mut()
+        .append_pair("q", query)
+        .append_pair("count", "20");
     let args = BrowserMarkdownExtractArgs {
         url: Some(u.into()),
         html: None,
@@ -63,7 +65,11 @@ async fn debug_dump_serp(query: &str) {
     };
     match tool.call(args).await {
         Ok(out) => {
-            println!("=== RAW ({}) ===\n{}", out.len(), &out[..out.len().min(4000)]);
+            println!(
+                "=== RAW ({}) ===\n{}",
+                out.len(),
+                &out[..out.len().min(4000)]
+            );
         }
         Err(e) => eprintln!("cloudflare error: {e}"),
     }

@@ -93,8 +93,17 @@ pub(crate) fn allowed_ext(name: &str) -> Option<String> {
         // office documents (tool-edited) + images and markdown (knowledge
         // ingestion sources: image descriptions, YouTube transcripts)
         "docx" | "xlsx" | "pptx" | "pdf" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "md"
+        // tabular data files: queried structurally by the data analysis
+        // agent (data_schema/data_query), never prose-indexed
+        | "csv" | "tsv" | "parquet"
     )
     .then_some(ext)
+}
+
+/// Extensions the RAG pipeline must NOT prose-index — they are queried
+/// structurally by the analytics agent instead (`logic::analytics`).
+pub(crate) fn is_tabular_ext(ext: &str) -> bool {
+    matches!(ext, "csv" | "tsv" | "parquet" | "xlsx" | "xlsm")
 }
 
 fn user_dir(user_id: &str) -> Result<PathBuf, String> {

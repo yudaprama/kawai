@@ -27,11 +27,13 @@
 
 use std::collections::HashMap;
 
-use rig_core::Embed;
 use rig_core::embeddings::EmbeddingsBuilder;
 use rig_core::vector_store::request::{SearchFilter, VectorSearchRequest};
 use rig_core::vector_store::{InsertDocuments, VectorStoreIndex};
-use rig_libsql::{Column, ColumnValue, LibsqlSearchFilter, LibsqlVectorStore, LibsqlVectorStoreTable};
+use rig_core::Embed;
+use rig_libsql::{
+    Column, ColumnValue, LibsqlSearchFilter, LibsqlVectorStore, LibsqlVectorStoreTable,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use text_splitter::{ChunkConfig, MarkdownSplitter, TextSplitter};
@@ -120,7 +122,11 @@ pub async fn session_file_ids(
         .await
         .map_err(|e| format!("session files: {e}"))?;
     let mut out = Vec::new();
-    while let Some(row) = rows.next().await.map_err(|e| format!("session files: {e}"))? {
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|e| format!("session files: {e}"))?
+    {
         out.push(row.get(0).map_err(|e| format!("session files: {e}"))?);
     }
     Ok(out)
@@ -186,7 +192,10 @@ async fn set_index_status(
 }
 
 /// Current stored status of one file's index (`None` when never indexed).
-async fn rag_file_status(conn: &libsql::Connection, file_id: &str) -> Result<Option<String>, String> {
+async fn rag_file_status(
+    conn: &libsql::Connection,
+    file_id: &str,
+) -> Result<Option<String>, String> {
     let mut rows = conn
         .query(
             "SELECT status FROM rag_files WHERE file_id = ?",
@@ -269,7 +278,11 @@ pub async fn knowledge_list(
         let updated_at: i64 = row.get(4).map_err(|e| format!("rag_files: {e}"))?;
         let entry = if status == "indexing" && now.saturating_sub(updated_at) > STALE_INDEXING_SECS
         {
-            ("failed".to_string(), chunks, Some("indexing interrupted".to_string()))
+            (
+                "failed".to_string(),
+                chunks,
+                Some("indexing interrupted".to_string()),
+            )
         } else {
             (status, chunks, error)
         };
@@ -398,9 +411,7 @@ async fn extract_text(user_id: &str, file_id: &str, ext: &str) -> Result<Option<
                 .map(Some)
                 .map_err(|e| format!("ooxml: {e}"))
         }
-        "png" | "jpg" | "jpeg" | "gif" | "webp" => {
-            describe_image(user_id, file_id).await.map(Some)
-        }
+        "png" | "jpg" | "jpeg" | "gif" | "webp" => describe_image(user_id, file_id).await.map(Some),
         "md" => {
             let (path, _info) = crate::logic::office::store::resolve(user_id, file_id)
                 .map_err(|e| format!("resolve: {e}"))?;
@@ -615,8 +626,15 @@ pub async fn office_index_file(
     session_id: Option<i64>,
     file_id: String,
 ) -> Result<usize, String> {
-    let (_file_path, info) =
-        crate::logic::office::store::resolve(&user_id, &file_id).map_err(|e| format!("resolve: {e}"))?;
+    let (_file_path, info) = crate::logic::office::store::resolve(&user_id, &file_id)
+        .map_err(|e| format!("resolve: {e}"))?;
+
+    // Tabular files are queried structurally by the data analysis agent —
+    // never prose-indexed, and never given a rag_files row (the panel shows
+    // no index badge for them).
+    if crate::logic::office::store::is_tabular_ext(&info.ext) {
+        return Ok(0);
+    }
 
     let conn = crate::logic::db_connection(&user_id)
         .await
@@ -848,12 +866,9 @@ pub async fn forget_file(
         purge_file_chunks(&conn, fid).await?;
         // The file may still sit in the library, but nothing is indexed
         // anymore — reset its status row so the panel shows `not indexed`.
-        conn.execute(
-            "DELETE FROM rag_files WHERE file_id = ?",
-            vec![fid.clone()],
-        )
-        .await
-        .map_err(|e| format!("rag_files delete: {e}"))?;
+        conn.execute("DELETE FROM rag_files WHERE file_id = ?", vec![fid.clone()])
+            .await
+            .map_err(|e| format!("rag_files delete: {e}"))?;
     }
     Ok(orphans.len())
 }
@@ -872,11 +887,7 @@ async fn file_chunk_count(conn: &libsql::Connection, file_id: &str) -> Result<i6
         Err(e) if e.to_string().contains("no such table") => return Ok(0),
         Err(e) => return Err(format!("chunk count: {e}")),
     };
-    match rows
-        .next()
-        .await
-        .map_err(|e| format!("chunk count: {e}"))?
-    {
+    match rows.next().await.map_err(|e| format!("chunk count: {e}"))? {
         Some(row) => row.get(0).map_err(|e| format!("chunk count: {e}")),
         None => Ok(0),
     }
@@ -947,7 +958,9 @@ pub async fn knowledge_import_youtube(
     let prefix = format!("yt-{video_id} ");
     if let Some(existing) = crate::logic::office::list_files(user_id)?
         .into_iter()
-        .find(|f| f.original_name.starts_with(&prefix) || f.original_name == format!("yt-{video_id}.md"))
+        .find(|f| {
+            f.original_name.starts_with(&prefix) || f.original_name == format!("yt-{video_id}.md")
+        })
     {
         if let Some(sid) = session_id {
             knowledge_add_to_session(user_id, sid, &[existing.id.clone()]).await?;
@@ -986,9 +999,8 @@ pub async fn knowledge_import_youtube(
         .filter(|t| !t.is_empty())
         .collect::<Vec<_>>()
         .join(" ");
-    let markdown = format!(
-        "# {title} (YouTube)\n\nSource: https://youtu.be/{video_id}\n\n{body}\n"
-    );
+    let markdown =
+        format!("# {title} (YouTube)\n\nSource: https://youtu.be/{video_id}\n\n{body}\n");
 
     let file = crate::logic::office::store::import_bytes(
         user_id,
@@ -1102,7 +1114,11 @@ mod tests {
     fn rrf_fuse_rewards_dual_side_hits() {
         // "a" ranks 1st (vector) + 2nd (lexical) → beats "b" (1st lexical only
         // is "c"; b is 2nd vector) and outranks single-side winners.
-        let out = rrf_fuse(vec![chunk("a"), chunk("b")], vec![chunk("c"), chunk("a")], 2);
+        let out = rrf_fuse(
+            vec![chunk("a"), chunk("b")],
+            vec![chunk("c"), chunk("a")],
+            2,
+        );
         assert_eq!(out[0].id, "a");
         assert_eq!(out.len(), 2);
     }
@@ -1118,7 +1134,10 @@ mod tests {
         "CREATE TABLE rag_chunks (id TEXT PRIMARY KEY, content TEXT, file_id TEXT, source TEXT, locator TEXT)";
 
     async fn memory_conn() -> libsql::Connection {
-        let db = libsql::Builder::new_local(":memory:").build().await.unwrap();
+        let db = libsql::Builder::new_local(":memory:")
+            .build()
+            .await
+            .unwrap();
         let conn = db.connect().unwrap();
         conn.execute_batch(RAG_CHUNKS_SCHEMA).await.unwrap();
         conn

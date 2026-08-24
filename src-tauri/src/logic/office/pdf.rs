@@ -78,12 +78,16 @@ pub async fn pdf_extract_text(
     let pages = pages.map(|s| s.to_string());
     run_blocking(move || {
         let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open: {e}"))?;
-        let count = doc.page_count().map_err(|e| format!("pdf page_count: {e}"))?;
+        let count = doc
+            .page_count()
+            .map_err(|e| format!("pdf page_count: {e}"))?;
         let options = ConversionOptions::default();
         let indices = resolve_pages(pages.as_deref(), count)?;
         let mut out = String::new();
         for &i in &indices {
-            let md = doc.to_markdown(i, &options).map_err(|e| format!("pdf to_markdown: {e}"))?;
+            let md = doc
+                .to_markdown(i, &options)
+                .map_err(|e| format!("pdf to_markdown: {e}"))?;
             out.push_str(&format!("--- page {} ---\n{}\n", i + 1, md));
         }
         Ok(out)
@@ -104,9 +108,14 @@ pub async fn pdf_search_text(
     let pages = pages.map(|s| s.to_string());
     run_blocking(move || -> Result<Value, String> {
         let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open: {e}"))?;
-        let count = doc.page_count().map_err(|e| format!("pdf page_count: {e}"))?;
+        let count = doc
+            .page_count()
+            .map_err(|e| format!("pdf page_count: {e}"))?;
         let indices = resolve_pages(pages.as_deref(), count)?;
-        let page_range = indices.first().zip(indices.last()).map(|(&min, &max)| (min, max));
+        let page_range = indices
+            .first()
+            .zip(indices.last())
+            .map(|(&min, &max)| (min, max));
         let options = SearchOptions {
             case_insensitive: false,
             page_range,
@@ -121,14 +130,11 @@ pub async fn pdf_search_text(
             if !indices.contains(&r.page) {
                 continue;
             }
-            by_page
-                .entry(r.page + 1)
-                .or_default()
-                .push(json!({
-                    "text": r.text,
-                    "start_index": r.start_index,
-                    "end_index": r.end_index,
-                }));
+            by_page.entry(r.page + 1).or_default().push(json!({
+                "text": r.text,
+                "start_index": r.start_index,
+                "end_index": r.end_index,
+            }));
         }
         let entries: Vec<Value> = by_page
             .into_iter()
@@ -157,13 +163,18 @@ pub async fn pdf_replace_text(
     run_blocking(move || {
         let re = regex::Regex::new(&pattern).map_err(|e| format!("bad regex '{pattern}': {e}"))?;
         let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open: {e}"))?;
-        let count = doc.page_count().map_err(|e| format!("pdf page_count: {e}"))?;
+        let count = doc
+            .page_count()
+            .map_err(|e| format!("pdf page_count: {e}"))?;
         drop(doc);
         let indices = resolve_pages(pages.as_deref(), count)?;
 
-        let mut editor = DocumentEditor::open(&path).map_err(|e| format!("pdf open editor: {e}"))?;
+        let mut editor =
+            DocumentEditor::open(&path).map_err(|e| format!("pdf open editor: {e}"))?;
         for &i in &indices {
-            let mut page = editor.get_page(i).map_err(|e| format!("pdf get_page: {e}"))?;
+            let mut page = editor
+                .get_page(i)
+                .map_err(|e| format!("pdf get_page: {e}"))?;
             let matches = page.find_text(|t| re.is_match(t.text()));
             for t in matches {
                 let old = t.text().to_string();
@@ -172,7 +183,9 @@ pub async fn pdf_replace_text(
                 page.set_text(id, updated.into_owned())
                     .map_err(|e| format!("pdf set_text: {e}"))?;
             }
-            editor.save_page(page).map_err(|e| format!("pdf save_page: {e}"))?;
+            editor
+                .save_page(page)
+                .map_err(|e| format!("pdf save_page: {e}"))?;
         }
         editor.save(&tmp_out).map_err(|e| format!("pdf save: {e}"))
     })
@@ -203,9 +216,13 @@ pub async fn pdf_merge(
     let data = run_blocking(move || {
         let mut editor = DocumentEditor::open(&paths[0]).map_err(|e| format!("pdf open: {e}"))?;
         for src in &paths[1..] {
-            editor.merge_from(src).map_err(|e| format!("pdf merge_from: {e}"))?;
+            editor
+                .merge_from(src)
+                .map_err(|e| format!("pdf merge_from: {e}"))?;
         }
-        editor.save_to_bytes().map_err(|e| format!("pdf save_to_bytes: {e}"))
+        editor
+            .save_to_bytes()
+            .map_err(|e| format!("pdf save_to_bytes: {e}"))
     })
     .await?;
     store::import_bytes(user_id, &name, &data)
@@ -221,7 +238,9 @@ pub async fn pdf_split(
     let ranges = ranges.map(|s| s.to_string());
     let parts = run_blocking(move || {
         let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open: {e}"))?;
-        let count = doc.page_count().map_err(|e| format!("pdf page_count: {e}"))?;
+        let count = doc
+            .page_count()
+            .map_err(|e| format!("pdf page_count: {e}"))?;
         drop(doc);
 
         let groups: Vec<Vec<usize>> = match ranges.as_deref() {
@@ -261,10 +280,16 @@ pub async fn pdf_split(
             let keep: std::collections::HashSet<usize> = group.iter().copied().collect();
             for i in (0..count).rev() {
                 if !keep.contains(&i) {
-                    editor.remove_page(i).map_err(|e| format!("pdf remove_page: {e}"))?;
+                    editor
+                        .remove_page(i)
+                        .map_err(|e| format!("pdf remove_page: {e}"))?;
                 }
             }
-            out.push(editor.save_to_bytes().map_err(|e| format!("pdf save_to_bytes: {e}"))?);
+            out.push(
+                editor
+                    .save_to_bytes()
+                    .map_err(|e| format!("pdf save_to_bytes: {e}"))?,
+            );
         }
         Ok(out)
     })
@@ -284,15 +309,22 @@ pub async fn pdf_info(user_id: &str, file_id: &str) -> Result<Value, String> {
     let (path, _) = require_pdf(user_id, file_id)?;
     run_blocking(move || -> Result<Value, String> {
         let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open: {e}"))?;
-        let count = doc.page_count().map_err(|e| format!("pdf page_count: {e}"))?;
+        let count = doc
+            .page_count()
+            .map_err(|e| format!("pdf page_count: {e}"))?;
         let (major, minor) = doc.version();
         drop(doc);
 
-        let mut editor = DocumentEditor::open(&path).map_err(|e| format!("pdf open editor: {e}"))?;
+        let mut editor =
+            DocumentEditor::open(&path).map_err(|e| format!("pdf open editor: {e}"))?;
         let mut pages = Vec::new();
         for i in 0..count {
-            let mb = editor.get_page_media_box(i).map_err(|e| format!("pdf media_box: {e}"))?;
-            let rot = editor.get_page_rotation(i).map_err(|e| format!("pdf rotation: {e}"))?;
+            let mb = editor
+                .get_page_media_box(i)
+                .map_err(|e| format!("pdf media_box: {e}"))?;
+            let rot = editor
+                .get_page_rotation(i)
+                .map_err(|e| format!("pdf rotation: {e}"))?;
             pages.push(json!({ "page": i + 1, "width": mb[2], "height": mb[3], "rotation": rot }));
         }
         Ok(json!({

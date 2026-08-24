@@ -102,6 +102,12 @@ url = { version = "2", optional = true }
 [target.'cfg(not(target_os = "android"))'.dependencies]
 binance = { path = "../rig-components/binance", optional = true }
 
+# Data analysis agent (builtin.analytics): structured queries over stored
+# tabular files (csv/tsv/parquet + xlsx via the office_oxide bridge) through
+# the polars-backed rig-components/analytics crate. Implies `office` — the
+# data files live in the office store.
+analytics = { path = "../rig-components/analytics", optional = true }
+
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -122,6 +128,10 @@ office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core",
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
 binance = ["dep:binance"]
+# Data analysis agent (logic::agent ANALYTICS_AGENT_ID): data_schema +
+# data_query over the office store's tabular files. Implies `office` —
+# the files live in the office store and reuse its import UI.
+analytics = ["dep:analytics", "office"]
 
 [[bin]]
 name = "kawai"
@@ -147,6 +157,10 @@ required-features = ["litert"]
 [[example]]
 name = "binance_smoke"
 required-features = ["binance"]
+
+[[example]]
+name = "analytics_smoke"
+required-features = ["analytics"]
 
 [[example]]
 name = "chat_route_check"
@@ -176,3 +190,6 @@ required-features = ["litert"]
 # graph (including pdf_oxide). Prevents duplicate FFI symbols on Linux.
 [patch.crates-io]
 office_oxide = { path = "../office_oxide" }
+
+[dev-dependencies]
+tempfile = "3"

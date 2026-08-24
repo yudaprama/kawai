@@ -141,14 +141,10 @@ impl PortableTool for KnowledgeSearchTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<String, OfficeToolError> {
-        let hits = crate::logic::rag::knowledge_search(
-            self.0.clone(),
-            self.1,
-            args.query,
-            args.mode,
-        )
-        .await
-        .map_err(oerr)?;
+        let hits =
+            crate::logic::rag::knowledge_search(self.0.clone(), self.1, args.query, args.mode)
+                .await
+                .map_err(oerr)?;
         if hits.is_empty() {
             return Ok(
                 json!({ "hits": [], "note": "No documents match. Either nothing was uploaded in this conversation, or none of them contains the answer. Retry with ONE distinctive keyword (an exact code, name, or date word) — long phrases often miss." })
@@ -624,8 +620,16 @@ mod tests {
         let real = "f87328470555963000-0000";
         let mangled1 = "f83247805963000-000";
         let mangled2 = "f3787545960300-000";
-        assert!(lcs_ratio(mangled1, real) >= 0.6, "{}", lcs_ratio(mangled1, real));
-        assert!(lcs_ratio(mangled2, real) >= 0.6, "{}", lcs_ratio(mangled2, real));
+        assert!(
+            lcs_ratio(mangled1, real) >= 0.6,
+            "{}",
+            lcs_ratio(mangled1, real)
+        );
+        assert!(
+            lcs_ratio(mangled2, real) >= 0.6,
+            "{}",
+            lcs_ratio(mangled2, real)
+        );
     }
 
     #[test]
@@ -635,6 +639,8 @@ mod tests {
 
     #[test]
     fn lcs_ratio_exact_is_one() {
-        assert!((lcs_ratio("f87328470555963000-0000", "f87328470555963000-0000") - 1.0).abs() < 1e-9);
+        assert!(
+            (lcs_ratio("f87328470555963000-0000", "f87328470555963000-0000") - 1.0).abs() < 1e-9
+        );
     }
 }

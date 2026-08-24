@@ -237,7 +237,9 @@ pub struct RemoteUsage {
 /// stream and carries the provider-reported usage plus the label of the
 /// candidate that actually won (failover may have skipped earlier ones).
 pub enum RemoteEvent {
-    Token { text: String },
+    Token {
+        text: String,
+    },
     /// Provider reasoning (thinking) text, surfaced for live display.
     /// `provider` = the candidate actually streaming (failover may switch
     /// mid-call). `reset` carries replace semantics: `true` ⇒ `text` is the
@@ -245,10 +247,18 @@ pub enum RemoteEvent {
     /// superseding its deltas, or a cleared buffer after a failover);
     /// `false` ⇒ `text` is a delta to append. Never counts toward the
     /// failover boundary — only a `Token` commits a candidate.
-    Reasoning { provider: String, text: String, reset: bool },
+    Reasoning {
+        provider: String,
+        text: String,
+        reset: bool,
+    },
     /// `hit_cap` = the provider stopped at max_tokens (answer is truncated
     /// mid-flight); surfaced so consumers can flag it honestly.
-    Done { usage: RemoteUsage, provider: String, hit_cap: bool },
+    Done {
+        usage: RemoteUsage,
+        provider: String,
+        hit_cap: bool,
+    },
 }
 
 /// A configured remote completion pool.
@@ -343,12 +353,8 @@ impl RemoteLlm {
         system: &str,
         task: &str,
         materials: &str,
-    ) -> Result<
-        std::pin::Pin<
-            Box<dyn Stream<Item = Result<RemoteEvent, String>> + Send>,
-        >,
-        String,
-    > {
+    ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<RemoteEvent, String>> + Send>>, String>
+    {
         let materials = truncate_chars(materials, self.materials_cap);
         let prompt = if materials.trim().is_empty() {
             format!("Task:\n{task}")
@@ -610,7 +616,11 @@ fn random_id() -> String {
     (0..26)
         .map(|_| {
             let idx = rng.random_range(0..36);
-            if idx < 10 { (b'0' + idx as u8) as char } else { (b'a' + idx as u8 - 10) as char }
+            if idx < 10 {
+                (b'0' + idx as u8) as char
+            } else {
+                (b'a' + idx as u8 - 10) as char
+            }
         })
         .collect()
 }

@@ -123,6 +123,41 @@ jobs:
         run: cargo check --features binance,webread
         working-directory: src-tauri
 
+      # Data analysis agent: polars + office_oxide xlsx bridge — pure Rust,
+      # plain compile gate + the crate's unit tests (AST translation, dtype
+      # coercion, sidecar cache; fixture parquet/csv/xlsx built in-test).
+      - name: cargo check (analytics feature)
+        run: cargo check --features analytics
+        working-directory: src-tauri
+
+      - name: cargo test (rig-components/analytics)
+        run: cargo test -p analytics
+        working-directory: rig-components
+
+      # Webread crate: engine-chain unit tests — htmd markdown render,
+      # {t,x,h} payload split, plain-text fallback, search relevance gate.
+      - name: cargo test (rig-components/webread)
+        run: cargo test -p webread
+        working-directory: rig-components
+
+      # The tier-0 extractor JS must stay parseable — a syntax error fails
+      # SILENTLY (eval never returns a payload → every read falls through to
+      # Cloudflare). Node parses the const and checks the payload shape; no
+      # DOM here, so the catch path ({t,x,e}) is the expected outcome.
+      - name: webview EXTRACTOR JS sanity (parse + JSON shape)
+        run: |
+          python3 - <<'EOF'
+          import re
+          src = open('src-tauri/src/webview_engine.rs').read()
+          m = re.search(r'const EXTRACTOR: &str = r#"(.*?)"#;', src, re.S)
+          open('/tmp/extractor.js', 'w').write(
+              "const out = (" + m.group(1) + ");\n"
+              + "const p = JSON.parse(out);\n"
+              + "if (!('x' in p)) { throw new Error('payload missing x'); }\n"
+              + "console.log('extractor ok');\n")
+          EOF
+          node /tmp/extractor.js
+
   # ── Full gate: unit tests + on-device smoke + hybrid cloud smokes ─────────
   macos-smoke:
     runs-on: macos-26
@@ -233,6 +268,13 @@ jobs:
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
         run: cargo run --example binance_smoke --features binance
 
+      # ── Smoke (offline): analytics agent tools — csv + the xlsx bridge
+      #    (typed conversion, sidecar cache) through the office store, on
+      #    every OS. No network, no model.
+      - name: analytics_smoke (data_schema/data_query + xlsx bridge)
+        run: cargo run --example analytics_smoke --features analytics
+        working-directory: src-tauri
+
       # ── Smoke 5: orchestration-quality gate (PLAN H1/L12). 20 office
       #    scenarios against E4B, scored on tool selection + arguments.
       #    Gate 19/20 (temp=1.0 sampling allows a one-scenario flake; a real
@@ -268,12 +310,40 @@ jobs:
             ${{ github.workspace }}/agent-eval-report.md
           cat ${{ github.workspace }}/agent-eval-report.md >> "$GITHUB_STEP_SUMMARY"
 
+      # ── Analytics suite (EVAL_SUITE=analytics): data_schema/data_query
+      #    selection + argument composition over a stated schema. Gate 7/8 —
+      #    temp sampling allows one flake. macOS-only: the office suite
+      #    already gates the model on all three runners.
+      - name: agent_eval (analytics suite)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: /tmp/kawai-ci
+          KAWAI_LLM_MAX_TOKENS: "8192"
+          EVAL_SUITE: analytics
+          EVAL_MIN_PASS: "7"
+        run: |
+          cargo run --release --example agent_eval --features litert,office -- \
+            ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
+            ${{ github.workspace }}/agent-eval-report-analytics.md
+          cat ${{ github.workspace }}/agent-eval-report-analytics.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload eval report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: agent-eval-report
           path: agent-eval-report.md
+          if-no-files-found: warn
+
+      - name: Upload analytics eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-report-analytics
+          path: agent-eval-report-analytics.md
           if-no-files-found: warn
 
   # ── Linux full gate: bazel-built litert-lm + unit tests + all smokes ─────
@@ -398,6 +468,13 @@ jobs:
         env:
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
         run: cargo run --example binance_smoke --features binance
+
+      # ── Smoke (offline): analytics agent tools — csv + the xlsx bridge
+      #    (typed conversion, sidecar cache) through the office store, on
+      #    every OS. No network, no model.
+      - name: analytics_smoke (data_schema/data_query + xlsx bridge)
+        run: cargo run --example analytics_smoke --features analytics
+        working-directory: src-tauri
 
       # ── Smoke 5: orchestration-quality gate ──
       - name: Cache E4B eval model
@@ -582,6 +659,13 @@ jobs:
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
         shell: bash
         run: cargo run --example binance_smoke --features binance
+
+      # ── Smoke (offline): analytics agent tools — csv + the xlsx bridge
+      #    (typed conversion, sidecar cache) through the office store, on
+      #    every OS. No network, no model.
+      - name: analytics_smoke (data_schema/data_query + xlsx bridge)
+        run: cargo run --example analytics_smoke --features analytics
+        working-directory: src-tauri
 
       # ── Smoke 5: orchestration-quality gate ──
       - name: Cache E4B eval model
