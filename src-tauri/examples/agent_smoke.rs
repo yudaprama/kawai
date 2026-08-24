@@ -135,6 +135,27 @@ async fn main() {
     all_pass &= verdict("office turn completes", office_ok);
     all_pass &= verdict("office turn uses draft_document", drafted);
 
+    // 4b. Turn-memory e2e (binance): an oversized tool result must be STORED
+    //     (not lossy-truncated) and the turn must CLOSE via deep_write from
+    //     the full log. Exercises TurnMemory + artifact_recall registration +
+    //     the cloud-close condition in one production turn.
+    #[cfg(feature = "binance")]
+    {
+        println!("── binance agent · MEMORY turn (expect stored handle + deep_write close) ──");
+        let (_, events4) = run_turn(
+            "builtin.binance",
+            None,
+            "Pull the last 500 daily klines for BTCUSDT, then write a thorough trend analysis \
+             report: structure, momentum, volatility, and what the candle data suggests.",
+        )
+        .await;
+        let mem_ok = events4.iter().any(|e| e == "finished")
+            && !events4.iter().any(|e| e.starts_with("ERROR"));
+        let closed = events4.iter().any(|e| e.contains("deep_write"));
+        all_pass &= verdict("memory turn completes", mem_ok);
+        all_pass &= verdict("memory turn closes via deep_write", closed);
+    }
+
     // 5. turn_log actually captured the turns.
     println!("── turn_log ──");
     let since = std::time::SystemTime::now()

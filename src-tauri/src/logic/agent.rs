@@ -108,6 +108,9 @@ const DEEP_WRITE_TOOL: &str = "deep_write";
 /// The draft_document subagent tool name (office-gated; writes a real file).
 #[cfg(feature = "litert")]
 const DRAFT_DOCUMENT_TOOL: &str = "draft_document";
+/// The turn-memory recall tool name (dispatch is special-cased in the loop).
+#[cfg(feature = "litert")]
+const ARTIFACT_RECALL_TOOL: &str = "artifact_recall";
 /// Overall wall-clock deadline for one cloud subagent call.
 #[cfg(feature = "litert")]
 const REMOTE_TIMEOUT_SECS: u64 = 600;
@@ -118,6 +121,16 @@ const DRAFT_JSON_MAX_CHARS: usize = 120_000;
 /// Display-only: never persisted, never fed into the local conversation.
 #[cfg(feature = "litert")]
 const SUBAGENT_THINKING_MAX_CHARS: usize = 16_000;
+#[cfg(feature = "litert")]
+/// Inline excerpt in the handle response for an oversized tool result.
+const ARTIFACT_EXCERPT_CHARS: usize = 2_400;
+#[cfg(feature = "litert")]
+/// Chars served per `artifact_recall` page.
+const ARTIFACT_PAGE_CHARS: usize = 3_600;
+#[cfg(feature = "litert")]
+/// Memory-log payload (chars) a turn must gather before the end-of-turn cloud
+/// close is offered. Keeps trivial turns (list files, price checks) local.
+const CLOUD_CLOSE_MIN_CHARS: usize = 6_000;
 
 /// Does the user's message ask for a whole-content summary? Keyword gate
 /// (id + en) — deliberately cheap; it only gates an in-context NUDGE, never
@@ -196,6 +209,36 @@ fn materials_embeds_results(materials: &str, results: &str) -> bool {
     }
     let probe: String = r_chars[r_chars.len() / 2..r_chars.len() / 2 + 200].iter().collect();
     materials.contains(&probe)
+}
+
+/// Parse `artifact_recall` args into (handle, offset). `None` when the handle
+/// is missing/blank — the caller feeds a teaching error back to the model.
+#[cfg(feature = "litert")]
+fn recall_args(args: &Value) -> Option<(String, usize)> {
+    let handle = args
+        .get("handle")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|h| !h.is_empty())?;
+    let offset = args.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
+    Some((handle.to_string(), offset))
+}
+
+/// End-of-turn cloud close eligibility (PLAN-turn-scoped-tool-memory §3.4):
+/// the turn's process log carries real payload, the cloud tier is configured,
+/// and the per-turn subagent budget is untouched. When eligible, the
+/// tool-result feedback and budget-exhausted prompts direct the model to
+/// deliver the final answer via `deep_write` — the cloud writer synthesizes
+/// from the full log (rendered as materials), not from the excerpts local saw.
+#[cfg(feature = "litert")]
+fn cloud_close_eligible(
+    remote_configured: bool,
+    subagent_calls_used: usize,
+    memory: &TurnMemory,
+) -> bool {
+    remote_configured
+        && subagent_calls_used == 0
+        && memory.total_content_chars() >= CLOUD_CLOSE_MIN_CHARS
 }
 
 /// Persona of the deep_write subagent (the cloud writer). Runs on the remote
@@ -343,6 +386,20 @@ fn toolset_for(
             ToolSet::default()
         }
     };
+    // Turn-memory recall rides with every toolset that can produce
+    // oversized outputs — pure-local agents included (the loop intercepts
+    // it before rig dispatch; see ArtifactRecall).
+    match agent_id {
+        #[cfg(feature = "office")]
+        OFFICE_AGENT_ID => {
+            set.add_tool(ArtifactRecall);
+        }
+        #[cfg(feature = "binance")]
+        BINANCE_AGENT_ID => {
+            set.add_tool(ArtifactRecall);
+        }
+        _ => {}
+    }
     if remote.is_none() {
         // Pure-local: only agents with domain tools get a toolset (the
         // pre-hybrid behavior, byte-for-byte).
@@ -583,6 +640,51 @@ You provide the brief, the gathered materials and the filename; the writer compo
 
     async fn call(&self, _args: Self::Args) -> Result<String, Self::Error> {
         Ok("ERROR: draft_document is dispatched internally and is unavailable here. Use office_create_document or answer directly.".into())
+    }
+}
+
+/// Manifest entry + arg schema for `artifact_recall` — pages the turn's
+/// stored process log (`TurnMemory`). The registered `call` is never reached
+/// (the agent loop dispatches the name itself, before the rig ToolSet); this
+/// impl exists so the tool manifest and arg validation see a normal tool.
+#[cfg(feature = "litert")]
+struct ArtifactRecall;
+
+#[cfg(feature = "litert")]
+#[derive(Deserialize)]
+#[allow(dead_code)] // fields are read by the loop's interception; `call` is never reached
+struct ArtifactRecallArgs {
+    handle: String,
+    offset: Option<u64>,
+}
+
+#[cfg(feature = "litert")]
+impl rig::tool::PortableTool for ArtifactRecall {
+    const NAME: &'static str = ARTIFACT_RECALL_TOOL;
+    type Args = ArtifactRecallArgs;
+    type Output = String;
+    type Error = std::convert::Infallible;
+
+    fn description(&self) -> String {
+        "Read a stored slice of an oversized tool result from THIS turn. When a tool response says \
+         '[stored as memN — N chars total]', call this with that handle to page through the full \
+         content (3600 chars per call)."
+            .into()
+    }
+
+    fn parameters(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "handle": { "type": "string", "description": "Stored-output handle, e.g. mem1" },
+                "offset": { "type": "integer", "description": "Char offset to read from (default 0)" }
+            },
+            "required": ["handle"]
+        })
+    }
+
+    async fn call(&self, _args: Self::Args) -> Result<String, Self::Error> {
+        Ok("ERROR: artifact_recall is dispatched internally and is unavailable here. Answer directly.".into())
     }
 }
 
@@ -1097,6 +1199,130 @@ fn tool_result_body(result: &rig::tool::ToolResult) -> String {
     "<non-text output>".to_string()
 }
 
+// ── Turn memory: the turn's process log ─────────────────────────────────────
+//
+// Every completed process this user message (plain tool result, recall page,
+// subagent receipt) appends one entry. The log lives only for the duration of
+// the `agent_chat` stream — dropped when the turn ends, never persisted. It
+// serves three consumers: the cloud-subagent `materials` package (rendered on
+// demand via `materials()`), the chain digest fed back on budget exhaustion,
+// and `artifact_recall` paging for oversized bodies.
+
+/// One stored process result. `content` is the tool's verbatim output body,
+/// already capped at `TOOL_RESULT_MATERIALS_CHARS`.
+#[cfg(feature = "litert")]
+struct TurnArtifact {
+    handle: String,
+    tool: String,
+    /// Canonical (tool, resolved-args) string — exact-match dedup key.
+    args_key: String,
+    content: String,
+}
+
+/// Turn-scoped append-only log of completed processes. Touched only inside
+/// the single `agent_chat` stream — no locking needed.
+#[cfg(feature = "litert")]
+#[derive(Default)]
+struct TurnMemory {
+    artifacts: Vec<TurnArtifact>,
+}
+
+#[cfg(feature = "litert")]
+impl TurnMemory {
+    /// Append one completed process. A repeat of the same tool + resolved args
+    /// returns the existing handle — the log grows per DISTINCT step, never
+    /// per repeat. Returns the handle ("mem1", "mem2", … sequential).
+    fn record(&mut self, tool: &str, args_key: &str, content: String) -> String {
+        if let Some(existing) = self
+            .artifacts
+            .iter()
+            .find(|a| a.tool == tool && a.args_key == args_key)
+        {
+            return existing.handle.clone();
+        }
+        let handle = format!("mem{}", self.artifacts.len() + 1);
+        self.artifacts.push(TurnArtifact {
+            handle: handle.clone(),
+            tool: tool.to_string(),
+            args_key: args_key.to_string(),
+            content: truncate_chars(&content, TOOL_RESULT_MATERIALS_CHARS),
+        });
+        handle
+    }
+
+    /// The whole chain as a compact block (valid handles + chars + tool) —
+    /// fed on budget exhaustion so the model closes the turn knowing what it
+    /// already gathered.
+    fn chain_digest(&self) -> String {
+        self.artifacts
+            .iter()
+            .map(|a| format!("{} {} {} chars", a.handle, a.tool, a.content.chars().count()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Paged slice for `artifact_recall`: (page_text, next_offset). `None`
+    /// next_offset = no more content. Err carries a teaching message (valid
+    /// handles / valid range) — errors are prompts, not failures.
+    fn page(&self, handle: &str, offset: usize) -> Result<(String, Option<usize>), String> {
+        let Some(a) = self
+            .artifacts
+            .iter()
+            .find(|a| a.handle.eq_ignore_ascii_case(handle))
+        else {
+            let valid = self
+                .artifacts
+                .iter()
+                .map(|a| format!("{} ({} chars)", a.handle, a.content.chars().count()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!(
+                "unknown handle {handle:?}. Valid handles this turn: {}",
+                if valid.is_empty() {
+                    "none — no tool output is stored".to_string()
+                } else {
+                    valid
+                }
+            ));
+        };
+        let total = a.content.chars().count();
+        if offset >= total {
+            return Err(format!(
+                "offset {offset} is past the end of {} ({} chars). Valid range: 0..{}",
+                a.handle,
+                total,
+                total.saturating_sub(1)
+            ));
+        }
+        let page: String = a.content.chars().skip(offset).take(ARTIFACT_PAGE_CHARS).collect();
+        let served = page.chars().count();
+        let next = if offset + served < total {
+            Some(offset + served)
+        } else {
+            None
+        };
+        Ok((page, next))
+    }
+
+    /// The cloud-materials package: joined "--- tool ---" bodies, capped at
+    /// `TOOL_RESULT_MATERIALS_CHARS` (each entry is already capped, so the
+    /// join only trims separators' overflow).
+    fn materials(&self) -> String {
+        let joined = self
+            .artifacts
+            .iter()
+            .map(|a| format!("--- {} ---\n{}", a.tool, a.content))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        truncate_chars(&joined, TOOL_RESULT_MATERIALS_CHARS)
+    }
+
+    /// Total stored content chars — the cloud-close trigger metric.
+    fn total_content_chars(&self) -> usize {
+        self.artifacts.iter().map(|a| a.content.chars().count()).sum()
+    }
+}
+
 /// A cloud subagent delegation queued for the next loop iteration.
 #[cfg(feature = "litert")]
 struct PendingSubagent {
@@ -1300,10 +1526,12 @@ pub fn agent_chat(
         // loop iteration — one code path for both entry points.
         let mut pending_subagent: Option<PendingSubagent> = None;
         let mut subagent_calls_used = 0usize;
-        // Excerpts returned by plain tools this turn (already model-capped).
-        // The cloud subagents are stateless — this is the deterministic
-        // hand-off so a delegation never loses what the model just gathered.
-        let mut turn_tool_results = String::new();
+        // The turn's process log: every completed process (tool result,
+        // recall page) appends one entry. Cloud-subagent materials are
+        // rendered from it on demand — the cloud subagents are stateless and
+        // this is the deterministic hand-off so a delegation never loses what
+        // the model gathered. Oversized bodies page back via artifact_recall.
+        let mut memory = TurnMemory::default();
         let turn_started = std::time::Instant::now();
 
         let final_answer = loop {
@@ -1816,9 +2044,10 @@ pub fn agent_chat(
                             eprintln!("[agent_chat] malformed fence twice ({detail}) — escalating to deep_write");
                             let mut materials =
                                 compact_transcript(&prior_turns, TRANSCRIPT_BUDGET_CHARS);
-                            if !turn_tool_results.is_empty() {
+                            let gathered = memory.materials();
+                            if !gathered.is_empty() {
                                 materials = format!(
-                                    "{materials}\n\n[tool results gathered this turn]{turn_tool_results}"
+                                    "{materials}\n\n[tool results gathered this turn]\n{gathered}"
                                 )
                                 .trim()
                                 .to_string();
@@ -1875,16 +2104,17 @@ pub fn agent_chat(
                             .and_then(Value::as_str)
                             .map(str::to_string)
                             .unwrap_or_default();
-                        // The model only ever saw the model-capped slice of
-                        // each result; its `materials` is at best a paraphrase
-                        // of that slice. The cloud writer needs the full text
-                        // — append the turn's accumulated tool results unless
-                        // the model already embedded them verbatim (probe a
-                        // mid-slice; a paraphrase never contains it).
-                        if !turn_tool_results.is_empty() {
-                            if !materials_embeds_results(&materials, &turn_tool_results) {
+                        // The model only ever saw the excerpt slice of each
+                        // result; its `materials` is at best a paraphrase of
+                        // that slice. The cloud writer needs the full text —
+                        // append the turn's process log unless the model
+                        // already embedded it verbatim (probe a mid-slice; a
+                        // paraphrase never contains it).
+                        let gathered = memory.materials();
+                        if !gathered.is_empty() {
+                            if !materials_embeds_results(&materials, &gathered) {
                                 materials = format!(
-                                    "{materials}\n\n[tool results gathered this turn]{turn_tool_results}"
+                                    "{materials}\n\n[tool results gathered this turn]\n{gathered}"
                                 )
                                 .trim()
                                 .to_string();
@@ -1941,20 +2171,111 @@ pub fn agent_chat(
                             return;
                         }
                         budget_notified = true;
-                        prompt = "TOOL_BUDGET_EXHAUSTED — you have used all tool calls for this turn. Answer the user now with what you have (NO call: line).".into();
+                        // Same cloud-close offer as the feedback prompt, plus
+                        // the chain digest — a model that paged itself out of
+                        // tools still closes from the full materials.
+                        let chain = memory.chain_digest();
+                        prompt = if cloud_close_eligible(
+                            remote.is_some(),
+                            subagent_calls_used,
+                            &memory,
+                        ) {
+                            format!(
+                                "TOOL_BUDGET_EXHAUSTED — you have used all tool calls for this turn.\n\n\
+                                 [work completed this turn]\n{chain}\n\n\
+                                 The full content of every item above is attached automatically. \
+                                 Deliver the final answer via deep_write now: ONE call:deep_write \
+                                 line with a complete task brief. Do not answer inline."
+                            )
+                        } else if chain.is_empty() {
+                            "TOOL_BUDGET_EXHAUSTED — you have used all tool calls for this turn. Answer the user now with what you have (NO call: line).".into()
+                        } else {
+                            format!(
+                                "TOOL_BUDGET_EXHAUSTED — you have used all tool calls for this turn.\n\n\
+                                 [work completed this turn]\n{chain}\n\n\
+                                 Answer the user now with what you have (NO call: line)."
+                            )
+                        };
                         continue;
                     }
+
+                    // Turn-memory recall: intercepted before the generic
+                    // ToolSet dispatch — it pages the turn's stored process
+                    // log, no rig tool runs. Counts toward the same budget.
+                    if tool == ARTIFACT_RECALL_TOOL {
+                        match recall_args(&args) {
+                            None => {
+                                yield AgentChatEvent::ToolResult {
+                                    tool: tool.clone(),
+                                    ok: false,
+                                    summary: format!("{ARTIFACT_RECALL_TOOL} requires a 'handle'"),
+                                };
+                                prompt = format!(
+                                    "response:{ARTIFACT_RECALL_TOOL}:\nERROR: 'handle' is required \
+                                     — a memN handle from a stored tool result. Retry with a valid \
+                                     handle, or answer the user directly (NO call: line)."
+                                );
+                            }
+                            Some((handle, offset)) => {
+                                yield AgentChatEvent::ToolCall { tool: tool.clone(), args: args.clone() };
+                                calls_used += 1;
+                                eprintln!(
+                                    "[agent_chat] recall {calls_used}/{MAX_TOOL_CALLS}: {handle}@{offset}"
+                                );
+                                match memory.page(&handle, offset) {
+                                    Ok((page, next)) => {
+                                        let end = offset + page.chars().count();
+                                        let more = match next {
+                                            Some(n) => format!("next offset: {n}"),
+                                            None => "end of stored output".to_string(),
+                                        };
+                                        let body = format!("{page}\n[chars {offset}..{end} — {more}]");
+                                        yield AgentChatEvent::ToolResult {
+                                            tool: tool.clone(),
+                                            ok: true,
+                                            summary: truncate_chars(&body, TOOL_RESULT_UI_CHARS),
+                                        };
+                                        memory.record(
+                                            ARTIFACT_RECALL_TOOL,
+                                            &format!("{handle}@{offset}"),
+                                            page,
+                                        );
+                                        prompt = format!(
+                                            "response:{ARTIFACT_RECALL_TOOL}:\n{body}\n\nContinue. \
+                                             If you need another slice, reply with a single call: line; \
+                                             otherwise answer the user directly."
+                                        );
+                                    }
+                                    Err(msg) => {
+                                        yield AgentChatEvent::ToolResult {
+                                            tool: tool.clone(),
+                                            ok: false,
+                                            summary: truncate_chars(&msg, TOOL_RESULT_UI_CHARS),
+                                        };
+                                        prompt = format!(
+                                            "response:{ARTIFACT_RECALL_TOOL}:\nERROR: {msg}\n\n\
+                                             Retry with a valid handle and offset, or answer the \
+                                             user directly (NO call: line)."
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
                     yield AgentChatEvent::ToolCall { tool: tool.clone(), args: args.clone() };
                     calls_used += 1;
                     eprintln!("[agent_chat] tool call {calls_used}/{MAX_TOOL_CALLS}: {tool} args={}", truncate_chars(&args.to_string(), 300));
 
+                    // Resolve any short alias (doc1) the model emitted back to
+                    // the real store id before the rig tool runs — the model
+                    // never sees the real id. The resolved args also key the
+                    // turn-memory dedup.
+                    let exec_args = alias_resolve_args(sid, &args);
                     let result = match toolset.as_ref() {
                         Some(set) => {
                             let mut ctx = ToolContext::default();
-                            // Resolve any short alias (doc1) the model emitted
-                            // back to the real store id before the rig tool
-                            // runs — the model never sees the real id.
-                            let exec_args = alias_resolve_args(sid, &args);
                             set.execute(&tool, exec_args.to_string(), &mut ctx).await
                         }
                         None => {
@@ -2002,25 +2323,47 @@ pub fn agent_chat(
                     } else {
                         None
                     };
-                    // Cap what re-enters the conversation: uncapped outputs
-                    // (60k chars) permanently burn the K/V budget. Tell the
-                    // model the output was cut so it can narrow its query.
-                    // The cloud-materials accumulation gets a much larger
-                    // slice — delegation needs the full text, local does not.
-                    let materials_body = truncate_chars(&body, TOOL_RESULT_MATERIALS_CHARS);
-                    let model_body =
-                        if body.chars().count() > TOOL_RESULT_MODEL_CHARS {
-                            format!(
-                                "{}\n[output truncated — narrow the query or read specific pages]",
-                                truncate_chars(&body, TOOL_RESULT_MODEL_CHARS)
-                            )
-                        } else {
-                            body
-                        };
-                    turn_tool_results.push_str(&format!("\n\n--- {tool} ---\n{materials_body}"));
-                    prompt = format!(
-                        "response:{tool}:\n{model_body}\n\nContinue. If you need another tool, reply with a single call: line; otherwise answer the user directly."
-                    );
+                    // Append the completed process to the turn's process log
+                    // (dedup on tool + resolved args), then decide what
+                    // re-enters the conversation. Oversized bodies become a
+                    // handle + excerpt — the full text stays in the log for
+                    // artifact_recall and the cloud-subagent materials, so
+                    // truncation is recoverable, never destructive.
+                    let handle = memory.record(&tool, &exec_args.to_string(), body.clone());
+                    let model_body = if body.chars().count() > TOOL_RESULT_MODEL_CHARS {
+                        let total = body.chars().count();
+                        let excerpt: String = body.chars().take(ARTIFACT_EXCERPT_CHARS).collect();
+                        format!(
+                            "[stored as {handle} — {total} chars total]\n{excerpt}\n\
+                             [end of excerpt — the full output is stored for this turn. \
+                             To read more call artifact_recall with \
+                             {{\"handle\": \"{handle}\", \"offset\": {ARTIFACT_EXCERPT_CHARS}}}]"
+                        )
+                    } else {
+                        body
+                    };
+                    // Cloud close: real payload gathered + cloud budget
+                    // untouched → direct the model to delegate the final
+                    // answer (cloud synthesizes from the full log; local
+                    // only saw excerpts). A nudge, not a hard gate — the
+                    // persona's short-reply rule still lets trivial answers
+                    // through, and an ignoring model just answers locally.
+                    prompt = if cloud_close_eligible(remote.is_some(), subagent_calls_used, &memory)
+                    {
+                        format!(
+                            "response:{tool}:\n{model_body}\n\n\
+                             You have gathered substantial materials this turn — the full content of \
+                             every stored result is attached automatically. Deliver the final answer \
+                             via deep_write now: ONE call:deep_write line with a complete task brief \
+                             (audience, structure, focus, length). Do NOT write the long answer \
+                             yourself. If one more tool call is essential, make that single call, \
+                             then delegate."
+                        )
+                    } else {
+                        format!(
+                            "response:{tool}:\n{model_body}\n\nContinue. If you need another tool, reply with a single call: line; otherwise answer the user directly."
+                        )
+                    };
                     if let Some(nudge) = summary_nudge {
                         prompt.push_str(&nudge);
                     }
@@ -2036,6 +2379,123 @@ pub fn agent_chat(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn turn_memory_record_is_sequential_and_deduped() {
+        let mut m = TurnMemory::default();
+        assert_eq!(
+            m.record("office_read_document", "args-a", "hello".into()),
+            "mem1"
+        );
+        // Same tool + same args → same handle, no growth.
+        assert_eq!(
+            m.record("office_read_document", "args-a", "hello again".into()),
+            "mem1"
+        );
+        // Same tool, different args → new entry.
+        assert_eq!(
+            m.record("office_read_document", "args-b", "other".into()),
+            "mem2"
+        );
+        // Different tool, same args string → new entry.
+        assert_eq!(
+            m.record("pdf_extract_text", "args-a", "pdf text".into()),
+            "mem3"
+        );
+        assert_eq!(m.artifacts.len(), 3);
+        // Case-insensitive handle lookup (via page).
+        assert!(m.page("MEM1", 0).is_ok());
+        assert!(m.page("nope", 0).is_err());
+    }
+
+    #[test]
+    fn turn_memory_pages_full_range() {
+        let mut m = TurnMemory::default();
+        let body: String = (0..10_000).map(|i| char::from_digit(i % 10, 10).unwrap()).collect();
+        m.record("office_read_document", "k", body.clone());
+
+        let (p1, next1) = m.page("mem1", 0).unwrap();
+        assert_eq!(p1.chars().count(), ARTIFACT_PAGE_CHARS);
+        assert_eq!(next1, Some(ARTIFACT_PAGE_CHARS));
+        // The page is the verbatim head of the body.
+        let expected: String = body.chars().take(ARTIFACT_PAGE_CHARS).collect();
+        assert_eq!(p1, expected);
+
+        // Walk to the end.
+        let mut offset = 0usize;
+        let mut total = 0usize;
+        while let Ok((page, next)) = m.page("mem1", offset) {
+            total += page.chars().count();
+            match next {
+                Some(n) => offset = n,
+                None => break,
+            }
+        }
+        assert_eq!(total, 10_000);
+
+        // Past-the-end offset teaches the valid range.
+        let err = m.page("mem1", 10_000).unwrap_err();
+        assert!(err.contains("Valid range"), "got {err}");
+        // Unknown handle teaches valid handles.
+        let err2 = m.page("memX", 0).unwrap_err();
+        assert!(err2.contains("mem1"), "got {err2}");
+    }
+
+    #[test]
+    fn turn_memory_materials_joins_and_caps() {
+        let mut m = TurnMemory::default();
+        m.record("office_list_files", "a", "{\"files\":[]}".into());
+        m.record("office_read_document", "b", "x".repeat(50_000));
+        let materials = m.materials();
+        assert!(materials.contains("--- office_list_files ---"));
+        assert!(materials.contains("--- office_read_document ---"));
+        // 32k cap + the truncation marker.
+        assert!(materials.chars().count() <= TOOL_RESULT_MATERIALS_CHARS + 60);
+        assert!(materials.contains("…"), "cap marker missing");
+    }
+
+    #[test]
+    fn turn_memory_chain_digest_and_total() {
+        let mut m = TurnMemory::default();
+        assert_eq!(m.total_content_chars(), 0);
+        assert!(m.chain_digest().is_empty());
+        m.record("office_list_files", "a", "12345".into()); // 5 chars
+        m.record("binance_price", "b", "6789".into()); // 4 chars
+        let digest = m.chain_digest();
+        assert!(digest.contains("mem1 office_list_files 5 chars"), "got {digest}");
+        assert!(digest.contains("mem2 binance_price 4 chars"), "got {digest}");
+        assert_eq!(m.total_content_chars(), 9);
+    }
+
+    #[test]
+    fn recall_args_parses_and_rejects() {
+        let ok = serde_json::json!({"handle": "mem1", "offset": 2400});
+        assert_eq!(recall_args(&ok), Some(("mem1".into(), 2400)));
+        let no_offset = serde_json::json!({"handle": "mem2"});
+        assert_eq!(recall_args(&no_offset), Some(("mem2".into(), 0)));
+        // Blank/missing handle → None (teaching error path).
+        assert_eq!(recall_args(&serde_json::json!({"handle": "  "})), None);
+        assert_eq!(recall_args(&serde_json::json!({"offset": 5})), None);
+        assert_eq!(recall_args(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn cloud_close_condition_matrix() {
+        // No payload → never eligible.
+        let mut m = TurnMemory::default();
+        assert!(!cloud_close_eligible(true, 0, &m));
+        // Real payload + remote configured + subagent budget untouched.
+        m.record("office_read_document", "a", "x".repeat(CLOUD_CLOSE_MIN_CHARS));
+        assert!(cloud_close_eligible(true, 0, &m));
+        // Pure-local build (no vault keys) → never.
+        assert!(!cloud_close_eligible(false, 0, &m));
+        // Cloud call already spent this turn (MAX_SUBAGENT_CALLS = 1).
+        assert!(!cloud_close_eligible(true, 1, &m));
+        // Below threshold → trivial turns stay local.
+        let mut small = TurnMemory::default();
+        small.record("office_list_files", "a", "x".repeat(1_000));
+        assert!(!cloud_close_eligible(true, 0, &small));
+    }
 
     #[test]
     fn alias_assign_is_stable_and_sequential() {
