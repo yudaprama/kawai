@@ -3,6 +3,14 @@
 Read this before touching the code. Full design lives in `ARCHITECTURE.md`.
 This file is the operational rulebook.
 
+## 🚨 GIT SAFETY — ABSOLUTE, NON-OVERRIDABLE RULE 🚨
+
+***NEVER EVER run `git reset` (any mode: `--hard`, `--mixed`, `--soft`), `git revert`, `git checkout <path>`, `git restore`, `git clean`, `git stash drop/pop`, `git commit --amend`, `git rebase`, force-push, or ANY OTHER command that rewrites, moves, or discards commits, staged state, or working-tree content.***
+
+***NOT to fix a wrong commit message. NOT to untangle mixed-up changes. NOT because the diff "looks like someone else's work". NOT as part of restructuring commits. NOT EVEN ONCE, NOT EVEN SOFT/MIXED, NOT WITHOUT AN EXPLICIT PER-COMMAND ORDER FROM THE USER IN THE CURRENT MESSAGE.***
+
+Git usage from an agent is ADDITIVE ONLY: `status`, `log`, `diff`, `show`, `add`, `commit`. If a commit turns out wrong, mislabeled, or tangled: LEAVE IT IN PLACE, report it to the user, and wait — only the user decides whether history gets touched.
+
 ## What this project is
 
 **Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from `rig-components/` (per-category crates of generated rig tools — `registry::toolset_for(names)`). UI: three-pane layout (left sidebar = agent list, center = active agent's chat/content, right sidebar = sessions of the selected agent), dark theme.

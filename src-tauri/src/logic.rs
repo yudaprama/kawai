@@ -103,6 +103,9 @@ pub mod db_migrations;
 #[cfg(feature = "litert")]
 pub use local_llm;
 pub mod agent;
+// Session-scoped evidence cache for the agent loop (cross-turn reuse of
+// unchanged-file reads). In-process only — no SQLite, no schema.
+pub mod evidence_cache;
 #[cfg(feature = "office")]
 pub mod office;
 #[cfg(feature = "office")]
@@ -118,6 +121,14 @@ pub mod analytics;
 pub mod sql_remote;
 
 pub use db::*;
+
+/// Delete a chat session and drop its session-scoped state (the agent loop's
+/// evidence cache). Explicit definition shadowing the `db::*` glob re-export
+/// so both transport wrappers get the cleanup without changes.
+pub async fn delete_chat_session(user_id: &str, session_id: i64) -> Result<(), DbError> {
+    evidence_cache::drop_session(user_id, session_id);
+    db::delete_chat_session(user_id, session_id).await
+}
 
 /// Generate a concise session title with a remote LLM (Cloudflare Workers AI).
 /// Uses a custom request/response to avoid rig's strict OpenAI-compatible

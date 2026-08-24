@@ -123,7 +123,7 @@ const DRAFT_JSON_MAX_CHARS: usize = 120_000;
 const SUBAGENT_THINKING_MAX_CHARS: usize = 16_000;
 #[cfg(feature = "litert")]
 /// Inline excerpt in the handle response for an oversized tool result.
-const ARTIFACT_EXCERPT_CHARS: usize = 2_400;
+const ARTIFACT_EXCERPT_CHARS: usize = 3_200;
 #[cfg(feature = "litert")]
 /// Chars served per `artifact_recall` page.
 const ARTIFACT_PAGE_CHARS: usize = 3_600;
@@ -2467,6 +2467,48 @@ pub fn agent_chat(
                     // never sees the real id. The resolved args also key the
                     // turn-memory dedup.
                     let exec_args = alias_resolve_args(sid, &args);
+                    let args_key = canonical_args_key(&exec_args);
+                    // Session evidence cache: a LATER turn of this session
+                    // re-reading an unchanged file is served from the parked
+                    // cache instead of re-dispatching the tool (cross-turn
+                    // memory; freshness = file fingerprint).
+                    if let Some((cached_body, age_secs)) =
+                        crate::logic::evidence_cache::probe(&user_id, sid, &tool, &exec_args)
+                    {
+                        eprintln!(
+                            "[agent_chat] cache hit {calls_used}/{MAX_TOOL_CALLS}: {tool} ({age_secs}s old)"
+                        );
+                        yield AgentChatEvent::ToolCall { tool: tool.clone(), args: args.clone() };
+                        yield AgentChatEvent::ToolResult {
+                            tool: tool.clone(),
+                            ok: true,
+                            summary: truncate_chars(&cached_body, TOOL_RESULT_UI_CHARS),
+                        };
+                        memory.record(&tool, &args_key, cached_body.clone());
+                        prompt = if cloud_close_eligible(
+                            remote.is_some(),
+                            subagent_calls_used,
+                            &memory,
+                        ) {
+                            format!(
+                                "response:{tool}:\n{cached_body}\n\n\
+                                 You have gathered substantial materials this turn — the full content of \
+                                 every stored result is attached automatically. Deliver the final answer \
+                                 via deep_write now: ONE call:deep_write line with a complete task brief \
+                                 (audience, structure, focus, length). Do NOT write the long answer \
+                                 yourself. If one more tool call is essential, make that single call, \
+                                 then delegate."
+                            )
+                        } else {
+                            format!(
+                                "response:{tool}:\n{cached_body}\n\n[Served from this session's cache — \
+                                 {age_secs}s old; the underlying file is unchanged.]\n\nContinue. If you \
+                                 need another tool, reply with a single call: line; otherwise answer the \
+                                 user directly."
+                            )
+                        };
+                        continue;
+                    }
                     let result = match toolset.as_ref() {
                         Some(set) => {
                             let mut ctx = ToolContext::default();
@@ -2523,8 +2565,18 @@ pub fn agent_chat(
                     // handle + excerpt — the full text stays in the log for
                     // artifact_recall and the cloud-subagent materials, so
                     // truncation is recoverable, never destructive.
-                    let handle =
-                        memory.record(&tool, &canonical_args_key(&exec_args), body.clone());
+                    let handle = memory.record(&tool, &args_key, body.clone());
+                    // Park the completed read for later turns of this session
+                    // (only cacheable deterministic reads actually store).
+                    if ok {
+                        crate::logic::evidence_cache::store_result(
+                            &user_id,
+                            sid,
+                            &tool,
+                            &exec_args,
+                            &body,
+                        );
+                    }
                     let model_body = if body.chars().count() > TOOL_RESULT_MODEL_CHARS {
                         let total = body.chars().count();
                         let excerpt: String = body.chars().take(ARTIFACT_EXCERPT_CHARS).collect();
