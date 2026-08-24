@@ -11,6 +11,8 @@ This file is the operational rulebook.
 
 Git usage from an agent is ADDITIVE ONLY: `status`, `log`, `diff`, `show`, `add`, `commit`. If a commit turns out wrong, mislabeled, or tangled: LEAVE IT IN PLACE, report it to the user, and wait — only the user decides whether history gets touched.
 
+**MULTIPLE CODING AGENTS WORK IN THIS REPOSITORY IN PARALLEL.** Expect foreign changes in `git status` / `git log` at any moment. Never assume uncommitted work or a recent commit is yours; NEVER "clean up", revert, re-commit, or build on top of another agent's in-flight changes. Stage and commit ONLY files you yourself edited; if the tree looks tangled or a diff makes no sense to you, report it and stop.
+
 ## What this project is
 
 **Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from `rig-components/` (per-category crates of generated rig tools — `registry::toolset_for(names)`). UI: three-pane layout (left sidebar = agent list, center = active agent's chat/content, right sidebar = sessions of the selected agent), dark theme.
