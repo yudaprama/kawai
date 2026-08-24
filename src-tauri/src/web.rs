@@ -728,6 +728,7 @@ fn agent_event_to_sse(event: logic::agent::AgentChatEvent) -> SseFrame {
     let name = match &event {
         AgentChatEvent::Started { .. } => "started",
         AgentChatEvent::Token { .. } => "token",
+        AgentChatEvent::Thinking { .. } => "thinking",
         AgentChatEvent::ToolCall { .. } => "toolCall",
         AgentChatEvent::SubagentThinking { .. } => "subagentThinking",
         AgentChatEvent::ToolResult { .. } => "toolResult",

@@ -779,6 +779,12 @@ pub enum AgentChatEvent {
         tool: String,
         args: Value,
     },
+    /// On-device model reasoning (thinking mode), streamed live for display.
+    /// `text` is a DELTA (append, unlike `SubagentThinking`'s full-buffer
+    /// replace). Display-only: never persisted, never enters the conversation.
+    Thinking {
+        text: String,
+    },
     /// Cloud-subagent reasoning (thinking), streamed live for display.
     /// `text` is the FULL visible buffer so far (replace, not append);
     /// `provider` labels the cloud candidate currently streaming.
@@ -2140,10 +2146,10 @@ pub fn agent_chat(
                                 yield AgentChatEvent::Token { text: t };
                             }
                         }
-                        // Thinking-mode reasoning: observed (telemetry) but
-                        // never part of the answer text or persistence.
+                        // Thinking-mode reasoning: streamed to the UI for
+                        // display; never part of the answer text or persistence.
                         LocalChatEvent::Thinking { text: t } => {
-                            eprintln!("[agent_chat] thinking: {}", truncate_chars(&t, 120));
+                            yield AgentChatEvent::Thinking { text: t };
                         }
                         LocalChatEvent::ToolCall { id: _, tool, args } => {
                             yield AgentChatEvent::ToolCall { tool, args };

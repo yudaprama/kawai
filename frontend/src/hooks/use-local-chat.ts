@@ -12,6 +12,7 @@ import { useChatSessions } from "./use-chat-sessions";
 export type LocalChatEvent =
   | { type: "started"; sessionId?: number }
   | { type: "token"; text: string }
+  | { type: "thinking"; text: string }
   | { type: "toolCall"; id?: string | null; tool: string; args: unknown }
   | { type: "subagentThinking"; provider: string; text: string }
   | { type: "toolResult"; id?: string | null; tool: string; ok: boolean; summary: string }
@@ -161,6 +162,14 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
               full += ev.text;
               if (reasoning) reasoning.done = true;
               syncStreamingDisplay(`${chunks} chunks · ${chars} chars · ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+            } else if (ev.type === "thinking") {
+              // On-device reasoning: delta — append within the same model call,
+              // start fresh when a cloud subagent's buffer owned the part before.
+              reasoning =
+                reasoning && reasoning.provider === "on-device"
+                  ? { ...reasoning, text: reasoning.text + ev.text, done: false }
+                  : { provider: "on-device", text: ev.text, done: false };
+              syncStreamingDisplay();
             } else if (ev.type === "subagentThinking") {
               reasoning = { provider: ev.provider, text: ev.text, done: false };
               syncStreamingDisplay();

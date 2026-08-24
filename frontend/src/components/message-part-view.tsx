@@ -25,7 +25,12 @@ export function MessagePartView({ message }: { message: UIMessage }) {
     typeof reasoningPart?.providerMetadata?.provider === "string"
       ? reasoningPart.providerMetadata.provider
       : undefined;
-  const reasoningLabel = reasoningProvider ? `cloud writer (${reasoningProvider})` : "cloud writer";
+  const reasoningLabel =
+    reasoningProvider === "on-device"
+      ? "on-device model"
+      : reasoningProvider
+        ? `cloud writer (${reasoningProvider})`
+        : "cloud writer";
 
   return (
     <Message from={message.role} className={message.role === "assistant" ? "items-start" : undefined}>

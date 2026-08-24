@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus, UIMessage } from "@/lib/ai-types";
 import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
-import { CheckIcon, PanelRightCloseIcon, PanelRightIcon, PanelRightOpenIcon } from "lucide-react";
+import { BrainIcon, CheckIcon, PanelRightCloseIcon, PanelRightIcon, PanelRightOpenIcon } from "lucide-react";
 import { ChatComposer } from "@/panels/chat-composer";
 
 interface AgentPresentation {
@@ -39,6 +39,8 @@ export function ConversationPanel({
   modelLoading,
   modelError,
   modelStatus,
+  thinking,
+  onToggleThinking,
   chatError,
   historyError,
   onRetryHistory,
@@ -62,6 +64,8 @@ export function ConversationPanel({
   modelLoading: boolean;
   modelError: boolean;
   modelStatus: string;
+  thinking: boolean;
+  onToggleThinking: () => void;
   chatError: string | null;
   historyError: string | null;
   onRetryHistory: () => void;
@@ -104,6 +108,14 @@ export function ConversationPanel({
           </span>
         )}
         <div className="ml-auto flex items-center gap-1">
+          <Button
+            onClick={onToggleThinking}
+            size="icon"
+            title={thinking ? "Thinking mode: on" : "Thinking mode: off"}
+            variant={thinking ? "secondary" : "ghost"}
+          >
+            <BrainIcon className="size-4" />
+          </Button>
           <Button onClick={onToggleCanvas} size="icon" title="Toggle canvas (⌘2)" variant={canvasOpen ? "ghost" : "secondary"}>
             <PanelRightIcon className="size-4" />
           </Button>

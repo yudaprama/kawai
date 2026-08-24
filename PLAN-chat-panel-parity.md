@@ -25,7 +25,7 @@ web structs, event-union updates in BOTH `use-local-chat.ts` and `agent.rs`.
 | 8 | Edit user message → truncate & resend (`handleEditUser`) | — | **P2** — needs new DB op + context strategy | M |
 | 9 | Regenerate response (`handleRegenerate`) | — | **P2** — same infra as edit | M |
 | 10 | Continue generation (`canContinue` + floating actions) | — | **P2** — needs backend support | M |
-| 11 | Reasoning/thinking rendering (`Reasoning` collapsible) | toggle exists (`local_llm_set_thinking`) but thinking text is not surfaced | **P3** — needs event variant + C-API verification | M |
+| 11 | Reasoning/thinking rendering (`Reasoning` collapsible) | ✅ shipped (P3, see §4) | **done** | M |
 | 12 | Tool inspector side panel (`ChatInspector`) | inline JSON dump only | **P4** — nice to have | M |
 | 13 | TTS speak per message | — | **P4** — Web Speech API, free | S |
 | 14 | Share message | — | **P4** — clipboard share, free | S |
@@ -167,32 +167,27 @@ only.
 
 ---
 
-## 4. P3 — reasoning / thinking rendering
+## 4. P3 — reasoning / thinking rendering ✅
 
-Current state: `set_thinking` flips the LiteRT thinking config, but thinking
-text arrives inside the same `Token` stream (`chunk_text` extracts all
-`content[].text`; the C callback has no thought flag in our wrapper) — so
-thinking and answer are currently **interleaved into one text part**.
+Shipped. The full chain, end to end:
 
-Plan:
-
-1. **Verify the C API first** (spike): check whether LiteRT-LM's stream
-   chunks tag thought parts (JSON shape of the chunk envelope — look for a
-   `thought`/`role` marker on parts, or a separate callback in
-   `conversation.rs`). If yes → emit a new `LocalChatEvent::Thought { text }`
-   variant. If no → fallback: frontend separates `<think>…</think>`-style
-   markers emitted by Gemma's template, if present.
-2. Event plumbing (all of these, per Landmines): `LocalChatEvent` in
-   `local-llm/src/lib.rs` (+`#[serde(tag="type")]`), SSE mapping in
-   `web.rs local_event_to_sse`, `agent.rs` matcher arm, `LocalChatEvent`
-   union in `use-local-chat.ts`.
-3. Frontend: accumulate thought text into a `reasoning` part
-   (`ai-types.ts` already has the shape) and render with the vendored
-   `ai-elements/reasoning` (`Reasoning/ReasoningTrigger/ReasoningContent`),
-   auto-open while streaming, collapsed when done (web behavior).
-4. Surface the existing `toggleThinking` in the UI (header dropdown next to
-   theme — "Thinking" switch calling `local_llm_set_thinking`). Currently
-   the hook has the toggle but nothing in `App.tsx` exposes it.
+- **Extraction (already in `local-llm`):** `chunk_thinking` tags thought
+  parts in the LiteRT stream envelope; `local_chat` emits them as
+  `LocalChatEvent::Thinking { text }` deltas (never mixed into `Token`).
+- **`agent_chat` plumbing:** `AgentChatEvent::Thinking { text }` — delta
+  semantics (append), unlike `SubagentThinking`'s full-buffer replace.
+  `agent.rs` forwards the local model's thinking to the stream (display-only:
+  never persisted, never enters the conversation); `web.rs` maps it to the
+  `thinking` SSE event; the Tauri `Channel` serializes it as
+  `{"type":"thinking","text":…}`.
+- **Frontend:** `use-local-chat.ts` accumulates `thinking` deltas into the
+  message's `reasoning` part (provider `on-device`; a cloud subagent's
+  buffer still replaces it); `message-part-view.tsx` renders it with the
+  vendored `Reasoning` collapsible (auto-open while streaming, collapsed
+  when done) and labels it "on-device model" (vs "cloud writer (…)").
+- **Toggle UI:** header brain-icon button in `conversation-panel.tsx` calls
+  the existing `toggleThinking` hook action (`local_llm_set_thinking`,
+  optimistic with rollback); active state shows as `secondary` variant.
 
 ---
 
