@@ -134,7 +134,7 @@ jobs:
         run: cargo test -p analytics
         working-directory: rig-components
 
-      # Webread crate: engine-chain unit tests — htmd markdown render,
+      # Webread crate: engine-chain unit tests — html-to-markdown-rs render,
       # {t,x,h} payload split, plain-text fallback, search relevance gate.
       - name: cargo test (rig-components/webread)
         run: cargo test -p webread

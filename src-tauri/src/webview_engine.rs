@@ -122,8 +122,8 @@ async fn eval_string(w: &WebviewWindow, js: &str) -> Result<String, ScrapeError>
 /// throwaway, so stripping nodes in place is safe. Returns the
 /// `{"t":title,"x":plain-text,"h":main-content html}` payload
 /// `webread::scrape::split_payload` expects (`h` is rendered to markdown
-/// Rust-side via htmd; `x` is the fallback when conversion yields too
-/// little). Steps:
+/// Rust-side via html-to-markdown-rs; `x` is the fallback when conversion
+/// yields too little). Steps:
 ///   1. Strip invisible/noise elements (script, style, noscript, template, svg, iframe, canvas)
 ///   2. Strip structural noise (landmark roles, site chrome, ad/comment/share/cookie containers)
 ///   3. Try to find the main content area (<article>, <main>, or high-text-density parent)
