@@ -67,7 +67,7 @@ export function ConversationPanel({
   onRetryHistory: () => void;
   lastUserText: string | null;
   onStop: () => void;
-  onSend: (text: string, fileIds?: string[]) => void;
+  onSend: (text: string, fileIds?: string[], images?: import("@/lib/ai-types").FileUIPart[]) => void;
   canvasOpen: boolean;
   inSession: boolean;
   sessionsCollapsed: boolean;
@@ -191,7 +191,7 @@ export function ConversationPanel({
               agentName={agent.name}
               onStop={onStop}
               status={status}
-              onSubmit={onSend}
+              onSubmit={(text, fileIds, images) => onSend(text, fileIds, images)}
               lastUserText={lastUserText}
               onImageToKnowledge={onImageToKnowledge}
             />

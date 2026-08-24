@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { useAuth } from "./use-auth";
 import { type AgentInfo, type ChatSessionInfo } from "@/lib/api";
 import { streamOperation, type StreamControl } from "@/lib/stream";
-import type { ChatStatus, ToolUIPart, UIMessage, UIMessagePart } from "@/lib/ai-types";
+import type { ChatStatus, FileUIPart, ToolUIPart, UIMessage, UIMessagePart } from "@/lib/ai-types";
 import { stripToolMarkup, toFriendlyError } from "@/lib/chat-helpers";
 import { useChatModel } from "./use-chat-model";
 import { useChatSessions } from "./use-chat-sessions";
@@ -98,14 +98,16 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
   }, [unloadModel, patch]);
 
   const send = useCallback(
-    async (text: string, imageB64?: string, fileIds?: string[]) => {
+    async (text: string, fileIds?: string[], images?: FileUIPart[]) => {
       const prompt = text.trim();
-      if ((!prompt && !imageB64) || streamCtrl.current) return;
+      if ((!prompt && (!images || images.length === 0)) || streamCtrl.current) return;
 
       const userParts: UIMessagePart[] = [];
       if (prompt) userParts.push({ type: "text", text: prompt, state: "done" });
-      if (imageB64) {
-        userParts.push({ type: "file", mediaType: "image/png", url: `data:image/png;base64,${imageB64}` });
+      if (images) {
+        for (const img of images) {
+          userParts.push({ type: "file", mediaType: img.mediaType, url: img.url, filename: img.filename });
+        }
       }
       const userMessage: UIMessage = { id: nanoid(), role: "user", parts: userParts };
       const assistantId = nanoid();

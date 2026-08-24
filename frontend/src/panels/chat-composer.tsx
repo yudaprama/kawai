@@ -14,7 +14,7 @@ import {
   usePromptInputController,
 } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
-import type { ChatStatus } from "@/lib/ai-types";
+import type { ChatStatus, FileUIPart } from "@/lib/ai-types";
 import { AtSignIcon, XIcon } from "lucide-react";
 
 export function ChatComposer({
@@ -28,7 +28,7 @@ export function ChatComposer({
   agentName: string;
   status: ChatStatus;
   onStop: () => void;
-  onSubmit: (text: string, fileIds?: string[]) => void;
+  onSubmit: (text: string, fileIds?: string[], images?: FileUIPart[]) => void;
   lastUserText: string | null;
   onImageToKnowledge: (dataUrl: string, name: string) => void;
 }) {
@@ -68,7 +68,7 @@ function ChatComposerInner({
   agentName: string;
   status: ChatStatus;
   onStop: () => void;
-  onSubmit: (text: string, fileIds?: string[]) => void;
+  onSubmit: (text: string, fileIds?: string[], images?: FileUIPart[]) => void;
   lastUserText: string | null;
   onImageToKnowledge: (dataUrl: string, name: string) => void;
 }) {
@@ -151,8 +151,14 @@ function ChatComposerInner({
         }
       }
       const ids = mentions.map((m) => m.id);
-      if (message.text.trim() || ids.length > 0) {
-        onSubmit(message.text, ids);
+      const imageParts: FileUIPart[] = message.files.map((f) => ({
+        type: "file",
+        mediaType: f.mediaType,
+        url: f.url,
+        filename: f.fileName,
+      }));
+      if (message.text.trim() || ids.length > 0 || imageParts.length > 0) {
+        onSubmit(message.text, ids.length > 0 ? ids : undefined, imageParts.length > 0 ? imageParts : undefined);
       }
       setMentions([]);
     },

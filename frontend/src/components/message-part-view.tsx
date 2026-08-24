@@ -10,6 +10,7 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 export function MessagePartView({ message }: { message: UIMessage }) {
   const textPart = message.parts.find((p) => p.type === "text");
   const { handleCopy, copied } = useCopyButton(textPart?.text ?? "");
+  const isUser = message.role === "user";
 
   const fileParts = message.parts.filter(
     (p): p is Extract<typeof p, { type: "file" }> => p.type === "file",
@@ -77,7 +78,7 @@ export function MessagePartView({ message }: { message: UIMessage }) {
         </MessageContent>
       )}
       {textPart && textPart.text.length > 0 && (
-        <div className="flex items-center gap-1 opacity-60 transition-opacity group-hover:opacity-100">
+        <div className={`flex items-center gap-1 opacity-60 transition-opacity group-hover:opacity-100 ${isUser ? "justify-end" : ""}`}>
           <Button onClick={handleCopy} size="icon" variant="ghost" title="Copy message">
             {copied ? <CheckIcon className="size-3.5 text-green-500" /> : <CopyIcon className="size-3.5" />}
           </Button>

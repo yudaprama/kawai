@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocalChat } from "@/hooks/use-local-chat";
 import { useKnowledgeActions } from "@/hooks/use-knowledge-actions";
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
@@ -40,6 +40,13 @@ export default function App() {
   const { status } = chat;
   const busy = status === "submitted" || status === "streaming";
   const inSession = chat.sessionId != null || chat.messages.length > 0;
+
+  const onSendWithImages = useCallback(
+    (text: string, fileIds?: string[], images?: import("@/lib/ai-types").FileUIPart[]) => {
+      void chat.send(text, fileIds, images);
+    },
+    [chat],
+  );
 
   const ka = useKnowledgeActions(chat);
 
@@ -113,7 +120,7 @@ export default function App() {
         onRetryHistory={() => void chat.retryHistoryLoad()}
         lastUserText={lastUserText}
         onStop={chat.stop}
-        onSend={(text, fileIds) => void chat.send(text, undefined, fileIds)}
+        onSend={onSendWithImages}
         canvasOpen={canvasOpen}
         inSession={inSession}
         sessionsCollapsed={sessionsCollapsed}
