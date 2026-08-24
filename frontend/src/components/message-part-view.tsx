@@ -11,6 +11,9 @@ export function MessagePartView({ message }: { message: UIMessage }) {
   const textPart = message.parts.find((p) => p.type === "text");
   const { handleCopy, copied } = useCopyButton(textPart?.text ?? "");
 
+  const fileParts = message.parts.filter(
+    (p): p is Extract<typeof p, { type: "file" }> => p.type === "file",
+  );
   const toolParts = message.parts.filter(
     (p): p is Extract<typeof p, { type: `tool-${string}` }> => p.type.startsWith("tool-"),
   );
@@ -25,6 +28,18 @@ export function MessagePartView({ message }: { message: UIMessage }) {
 
   return (
     <Message from={message.role} className={message.role === "assistant" ? "items-start" : undefined}>
+      {fileParts.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {fileParts.map((part, idx) => (
+            <img
+              key={`${part.url.slice(0, 32)}-${idx}`}
+              src={part.url}
+              alt={part.filename ?? "attached image"}
+              className="max-h-48 max-w-xs rounded-md border object-contain"
+            />
+          ))}
+        </div>
+      )}
       {toolParts.map((part) => {
         const output = part.output as { ok?: boolean; summary?: string } | undefined;
         const displayOutput = output?.summary ?? part.output;
@@ -61,9 +76,9 @@ export function MessagePartView({ message }: { message: UIMessage }) {
           <MessageResponse>{textPart.text}</MessageResponse>
         </MessageContent>
       )}
-      {message.role === "assistant" && textPart && textPart.text.length > 0 && (
+      {textPart && textPart.text.length > 0 && (
         <div className="flex items-center gap-1 opacity-60 transition-opacity group-hover:opacity-100">
-          <Button onClick={handleCopy} size="icon" variant="ghost">
+          <Button onClick={handleCopy} size="icon" variant="ghost" title="Copy message">
             {copied ? <CheckIcon className="size-3.5 text-green-500" /> : <CopyIcon className="size-3.5" />}
           </Button>
         </div>

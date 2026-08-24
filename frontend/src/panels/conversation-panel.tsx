@@ -40,6 +40,9 @@ export function ConversationPanel({
   modelError,
   modelStatus,
   chatError,
+  historyError,
+  onRetryHistory,
+  lastUserText,
   onStop,
   onSend,
   canvasOpen,
@@ -60,6 +63,9 @@ export function ConversationPanel({
   modelError: boolean;
   modelStatus: string;
   chatError: string | null;
+  historyError: string | null;
+  onRetryHistory: () => void;
+  lastUserText: string | null;
   onStop: () => void;
   onSend: (text: string, fileIds?: string[]) => void;
   canvasOpen: boolean;
@@ -115,6 +121,14 @@ export function ConversationPanel({
       {chatError && (
         <div className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 rounded-md border px-3 py-2 text-sm">
           {chatError}
+        </div>
+      )}
+      {historyError && (
+        <div className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+          <span className="min-w-0 flex-1">Gagal memuat riwayat: {historyError}</span>
+          <Button onClick={onRetryHistory} size="sm" variant="outline">
+            Coba lagi
+          </Button>
         </div>
       )}
 
@@ -178,6 +192,7 @@ export function ConversationPanel({
               onStop={onStop}
               status={status}
               onSubmit={onSend}
+              lastUserText={lastUserText}
               onImageToKnowledge={onImageToKnowledge}
             />
           </div>

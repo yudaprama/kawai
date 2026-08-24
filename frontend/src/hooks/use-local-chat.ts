@@ -29,6 +29,7 @@ export interface LocalChatState {
   messages: UIMessage[];
   status: ChatStatus;
   error: string | null;
+  historyError: string | null;
   stats: string;
   sessions: ChatSessionInfo[];
   archivedSessions: ChatSessionInfo[];
@@ -48,6 +49,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     messages: [],
     status: "ready",
     error: null,
+    historyError: null,
     stats: "",
     sessions: [],
     archivedSessions: [],
@@ -66,7 +68,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     if (authError) patch({ authError });
   }, [effectiveUserId, authError]);
 
-  const clearMessages = useCallback(() => patch({ messages: [], stats: "" } as Partial<LocalChatState>), [patch]);
+  const clearMessages = useCallback(() => patch({ messages: [], stats: "", historyError: null } as Partial<LocalChatState>), [patch]);
 
   const { loadModel, resetModelContext, toggleThinking, unloadModel } = useChatModel({ patch, state });
   const {
@@ -78,6 +80,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     deleteSession,
     renameSession,
     setSessionArchived,
+    retryHistoryLoad,
     groupedSessions,
   } = useChatSessions({ agentId, patch, state, resetModelContext, streamCtrl, clearMessages });
 
@@ -227,6 +230,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     deleteSession,
     renameSession,
     setSessionArchived,
+    retryHistoryLoad,
     toggleThinking,
     unloadModel: unloadModelWithGuard,
     reloadModel: loadModel,

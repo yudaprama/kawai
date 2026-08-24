@@ -22,12 +22,14 @@ export function ChatComposer({
   status,
   onStop,
   onSubmit,
+  lastUserText,
   onImageToKnowledge,
 }: {
   agentName: string;
   status: ChatStatus;
   onStop: () => void;
   onSubmit: (text: string, fileIds?: string[]) => void;
+  lastUserText: string | null;
   onImageToKnowledge: (dataUrl: string, name: string) => void;
 }) {
   return (
@@ -37,6 +39,7 @@ export function ChatComposer({
         onStop={onStop}
         status={status}
         onSubmit={onSubmit}
+        lastUserText={lastUserText}
         onImageToKnowledge={onImageToKnowledge}
       />
     </PromptInputProvider>
@@ -59,12 +62,14 @@ function ChatComposerInner({
   status,
   onStop,
   onSubmit,
+  lastUserText,
   onImageToKnowledge,
 }: {
   agentName: string;
   status: ChatStatus;
   onStop: () => void;
   onSubmit: (text: string, fileIds?: string[]) => void;
+  lastUserText: string | null;
   onImageToKnowledge: (dataUrl: string, name: string) => void;
 }) {
   const controller = usePromptInputController();
@@ -128,6 +133,16 @@ function ChatComposerInner({
     [controller],
   );
 
+  const handleTextareaKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "ArrowUp" && controller.textInput.value === "" && lastUserText) {
+        e.preventDefault();
+        controller.textInput.setInput(lastUserText);
+      }
+    },
+    [controller, lastUserText],
+  );
+
   const handleSubmit = useCallback(
     async (message: { text: string; files: { url: string; mediaType: string; fileName?: string }[] }) => {
       for (const file of message.files) {
@@ -178,7 +193,7 @@ function ChatComposerInner({
         </div>
       )}
       <PromptInputBody>
-        <PromptInputTextarea placeholder={`Message ${agentName}…`} onChange={handleComposerChange} />
+        <PromptInputTextarea placeholder={`Message ${agentName}…`} onChange={handleComposerChange} onKeyDown={handleTextareaKeyDown} />
       </PromptInputBody>
       <PromptInputFooter>
         <PromptInputTools>

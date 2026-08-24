@@ -69,7 +69,7 @@ export function useChatSessions({
     if (streamCtrl.current) return;
     await resetModelContext();
     sessionIdRef.current = null;
-    patch({ sessionId: null });
+    patch({ sessionId: null, historyError: null });
     clearMessages();
   }, [patch, resetModelContext, streamCtrl, clearMessages]);
 
@@ -78,13 +78,14 @@ export function useChatSessions({
       if (streamCtrl.current) return;
       await resetModelContext();
       sessionIdRef.current = sessionId;
-      patch({ sessionId });
+      patch({ sessionId, historyError: null });
       clearMessages();
       try {
         const rows = await call<ChatMessageInfo[]>("list_chat_messages", { sessionId });
-        patch({ messages: historyToMessages(rows) });
+        patch({ messages: historyToMessages(rows), historyError: null });
       } catch (err) {
         logError("list_chat_messages", err);
+        patch({ historyError: errText(err) });
       }
     },
     [patch, resetModelContext, streamCtrl, clearMessages],
@@ -94,7 +95,7 @@ export function useChatSessions({
     if (streamCtrl.current) return;
     await resetModelContext();
     sessionIdRef.current = null;
-    patch({ sessionId: null });
+    patch({ sessionId: null, historyError: null });
     clearMessages();
   }, [patch, resetModelContext, streamCtrl, clearMessages]);
 
@@ -152,13 +153,26 @@ export function useChatSessions({
       if (archived && sessionIdRef.current === sessionId) {
         await resetModelContext();
         sessionIdRef.current = null;
-        patch({ sessionId: null });
+        patch({ sessionId: null, historyError: null });
         clearMessages();
       }
       void loadSessions();
     },
     [patch, loadSessions, resetModelContext, clearMessages],
   );
+
+  const retryHistoryLoad = useCallback(async () => {
+    const sid = sessionIdRef.current;
+    if (sid == null || streamCtrl.current) return;
+    patch({ historyError: null });
+    try {
+      const rows = await call<ChatMessageInfo[]>("list_chat_messages", { sessionId: sid });
+      patch({ messages: historyToMessages(rows), historyError: null });
+    } catch (err) {
+      logError("list_chat_messages", err);
+      patch({ historyError: errText(err) });
+    }
+  }, [patch, streamCtrl]);
 
   const agentSessions = state.sessions.filter((s) => s.agentId === agentId);
   const groupedSessions = agentSessions.length
@@ -180,6 +194,7 @@ export function useChatSessions({
     deleteSession,
     renameSession,
     setSessionArchived,
+    retryHistoryLoad,
     groupedSessions,
   };
 }

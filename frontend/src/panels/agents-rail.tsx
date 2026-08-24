@@ -8,6 +8,7 @@ import {
 import { useTheme, type Theme } from "@/hooks/use-theme";
 import type { AgentInfo } from "@/lib/api";
 import {
+  BarChart3Icon,
   BotIcon,
   BriefcaseIcon,
   CheckIcon,
@@ -44,6 +45,15 @@ const AGENT_META: Record<string, AgentPresentation> = {
       "Analyze BTCUSDT on the daily",
       "RSI and MACD for ETHUSDT",
       "Order book depth for SOLUSDT",
+    ],
+  },
+  "builtin.analytics": {
+    icon: BarChart3Icon,
+    subtitle: "csv · parquet · excel",
+    prompts: [
+      "Total penjualan per kategori bulan ini",
+      "Rata-rata transaksi di atas $500",
+      "Top 10 produk by pendapatan",
     ],
   },
 };

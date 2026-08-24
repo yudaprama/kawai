@@ -606,10 +606,10 @@ fn reasoning_text(reasoning: &rig::message::Reasoning) -> String {
 /// Generate a random 26-char alphanumeric ID for OpenCode headers.
 fn random_id() -> String {
     use rand::Rng;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     (0..26)
         .map(|_| {
-            let idx = rng.gen_range(0..36);
+            let idx = rng.random_range(0..36);
             if idx < 10 { (b'0' + idx as u8) as char } else { (b'a' + idx as u8 - 10) as char }
         })
         .collect()

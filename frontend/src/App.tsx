@@ -56,6 +56,29 @@ export default function App() {
     onNewChat: () => void chat.newChat(),
   });
 
+  // Esc stops generation (global, mirrors web/ chat-composer.tsx:450-461)
+  useEffect(() => {
+    if (!busy) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        chat.stop();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [busy, chat]);
+
+  const lastUserText = (() => {
+    for (let i = chat.messages.length - 1; i >= 0; i--) {
+      const m = chat.messages[i];
+      if (m.role !== "user") continue;
+      const t = m.parts.find((p) => p.type === "text")?.text;
+      if (t) return t;
+    }
+    return null;
+  })();
+
   if (!agent) {
     return <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center" />;
   }
@@ -86,6 +109,9 @@ export default function App() {
         modelError={chat.modelError}
         modelStatus={chat.modelStatus}
         chatError={chat.error}
+        historyError={chat.historyError}
+        onRetryHistory={() => void chat.retryHistoryLoad()}
+        lastUserText={lastUserText}
         onStop={chat.stop}
         onSend={(text, fileIds) => void chat.send(text, undefined, fileIds)}
         canvasOpen={canvasOpen}

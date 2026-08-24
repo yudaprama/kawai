@@ -268,6 +268,8 @@ pub const OFFICE_AGENT_ID: &str = "builtin.office";
 
 pub const BINANCE_AGENT_ID: &str = "builtin.binance";
 
+pub const ANALYTICS_AGENT_ID: &str = "builtin.analytics";
+
 /// One catalog entry served to the UI by the `list_agents` op. The backend is
 /// the single source of truth for agent ids — the frontend fetches this and
 /// never hardcodes ids (presentation — icon, suggested prompts — stays in the
@@ -310,6 +312,16 @@ pub fn list_agents() -> Vec<AgentInfo> {
             #[cfg(any(not(feature = "binance"), target_os = "android"))]
             tools: false,
         },
+        AgentInfo {
+            id: ANALYTICS_AGENT_ID.to_string(),
+            name: "Analytics".into(),
+            description: "Structured queries over your data files: filter, aggregate, rank."
+                .into(),
+            #[cfg(feature = "analytics")]
+            tools: true,
+            #[cfg(not(feature = "analytics"))]
+            tools: false,
+        },
     ]
 }
 
@@ -346,12 +358,27 @@ Rules:\n\
 - After each response: message, either call another tool or give the final answer.\n\
 - Final answers: short, factual, no JSON dumps.";
 
+#[cfg(all(feature = "litert", feature = "analytics"))]
+const ANALYTICS_PERSONA: &str = "You are kawai's data analysis agent. You answer questions about the user's tabular data files (csv, parquet, Excel) by running structured queries through tools.\n\
+Rules:\n\
+- Call at most ONE tool per reply, as a single call:<name>{...} line, then stop and wait for the response: message.\n\
+- BEFORE the first data_query on a file, call data_schema on it — never guess column names, types, or formats. For Excel files the result lists the sheet names; pass \"sheet\" when the user means another sheet.\n\
+- Compose queries from the schema: filters[] for conditions, groupBy + aggregations for totals/averages/counts, sortBy + descending + limit for rankings (top N = descending true). Numeric and date filter values are always strings (\"1500\", \"2026-01-31\").\n\
+- \"How many per X\" with no metric → groupBy [\"X\"] alone (row_count is implicit).\n\
+- Files are addressed by their handle (doc1, doc2 …) exactly as shown in the attachment list or office_list_files. If unsure which file holds the data, ask or call office_list_files.\n\
+- If a response: message reports an error (unknown column, bad value), fix the arguments from the valid-columns list it shows and call again — do not give up after one failure.\n\
+- Compute NOTHING yourself: sums, averages, growth rates, comparisons all come from data_query results.\n\
+- After each response: message, either call another tool or give the final answer.\n\
+- Final answers: short, factual, cite the numbers you queried; no JSON dumps.";
+
 #[cfg(feature = "litert")]
 fn persona_for(agent_id: &str) -> Option<&'static str> {
     match agent_id {
         OFFICE_AGENT_ID => Some(OFFICE_PERSONA),
         #[cfg(all(feature = "binance", not(target_os = "android")))]
         BINANCE_AGENT_ID => Some(BINANCE_PERSONA),
+        #[cfg(all(feature = "litert", feature = "analytics"))]
+        ANALYTICS_AGENT_ID => Some(ANALYTICS_PERSONA),
         _ => None,
     }
 }
@@ -392,6 +419,8 @@ fn toolset_for(
             }
             set
         }
+        #[cfg(feature = "analytics")]
+        ANALYTICS_AGENT_ID => crate::logic::analytics::toolset(user_id),
         _ => {
             let _ = user_id;
             let _ = session_id;
@@ -410,6 +439,10 @@ fn toolset_for(
         BINANCE_AGENT_ID => {
             set.add_tool(ArtifactRecall);
         }
+        #[cfg(feature = "analytics")]
+        ANALYTICS_AGENT_ID => {
+            set.add_tool(ArtifactRecall);
+        }
         _ => {}
     }
     if remote.is_none() {
@@ -420,6 +453,8 @@ fn toolset_for(
             OFFICE_AGENT_ID => Some(set),
             #[cfg(all(feature = "binance", not(target_os = "android")))]
             BINANCE_AGENT_ID => Some(set),
+            #[cfg(feature = "analytics")]
+            ANALYTICS_AGENT_ID => Some(set),
             _ => None,
         };
     }
