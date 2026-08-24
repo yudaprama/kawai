@@ -86,15 +86,17 @@ async fn run(app: &AppHandle, url: &str, js: &str) -> Result<String, ScrapeError
 
 async fn extract(w: &WebviewWindow, js: &str) -> Result<String, ScrapeError> {
     let started = Instant::now();
+    // Polls that land during provisional navigation are dropped by WKWebView
+    // WITHOUT the callback ever firing (channel closes) — treat every failed
+    // or incomplete poll as retryable until the deadline, never a hard fail.
     loop {
         if started.elapsed() >= DEADLINE {
             return Err(ScrapeError("webview render timeout".into()));
         }
-        let state = eval_string(w, "document.readyState").await?;
-        if state.contains("complete") {
-            break;
+        match eval_string(w, "document.readyState").await {
+            Ok(state) if state.contains("complete") => break,
+            _ => tokio::time::sleep(Duration::from_millis(300)).await,
         }
-        tokio::time::sleep(Duration::from_millis(300)).await;
     }
     tokio::time::sleep(SETTLE).await;
     eval_string(w, js).await

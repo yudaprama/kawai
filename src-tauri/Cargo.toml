@@ -163,6 +163,10 @@ name = "analytics_smoke"
 required-features = ["analytics"]
 
 [[example]]
+name = "web_read_check"
+required-features = ["office"]
+
+[[example]]
 name = "chat_route_check"
 required-features = ["litert"]
 
