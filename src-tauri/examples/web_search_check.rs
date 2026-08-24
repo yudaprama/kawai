@@ -6,7 +6,7 @@
 //! Usage: cargo run --example web_search_check --features office
 //!        cargo run --example web_search_check --features office -- <query> [maxResults]
 
-use kawai_lib::logic::scrape::search_web;
+use webread::search_web;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {

@@ -1,14 +1,14 @@
-//! Tauri-side `WebViewFetch` engine: hidden `WebviewWindow` + `eval`
-//! extractor, registered once in `lib.rs` (office builds). Lives outside
-//! `logic/` because it owns transport types; `logic::scrape` stays pure and
-//! treats it as an injected trait object.
+//! Tauri-side implementation of the `webread::WebViewFetch` engine: hidden
+//! `WebviewWindow` + `eval` extractor, registered once in `lib.rs`
+//! (webread builds). Lives outside `logic/` because it owns transport types;
+//! `webread::scrape` stays pure and treats it as an injected trait object.
 //!
 //! Lifecycle: one throwaway hidden window per fetch, `readyState` polled to
 //! `complete` plus a settle delay, extractor evaluated via
 //! `eval_with_callback` (external pages have no Tauri IPC — the callback IS
 //! the return channel), window closed on every exit path. `fetch_text` runs
 //! the built-in readability extractor; `eval_page` runs caller-supplied
-//! extractor JS (e.g. the Bing SERP harvester in `logic::scrape`). The whole
+//! extractor JS (e.g. the Bing SERP harvester in `webread::scrape`). The whole
 //! dance runs inside a spawned task holding the slot permit, so a
 //! caller-side timeout drops the future without leaking the window: the task
 //! still runs to its own deadline and tears itself down.
@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use futures_util::future::BoxFuture;
 use tauri::{AppHandle, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
-use crate::logic::scrape::{ScrapeError, WebViewFetch};
+use webread::{ScrapeError, WebViewFetch};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 /// One hidden window at a time app-wide; waiters fall through to Cloudflare.
@@ -123,5 +123,5 @@ async fn eval_string(w: &WebviewWindow, js: &str) -> Result<String, ScrapeError>
 
 /// Readability-style harvest executed in the page context. The window is
 /// throwaway, so stripping nodes in place is safe. Returns the
-/// `{"t":title,"x":body}` payload `logic::scrape::split_payload` expects.
+/// `{"t":title,"x":body}` payload `webread::scrape::split_payload` expects.
 const EXTRACTOR: &str = r#"(function(){try{var t=document.title||"";var r=document.body||document.documentElement;if(r){r.querySelectorAll("script,style,noscript,template,svg,iframe").forEach(function(n){n.remove()});}var x=(r&&(r.innerText||r.textContent)||"").replace(/[ \t]+/g," ").replace(/\n{3,}/g,"\n\n").trim();if(x.length>1500000){x=x.substring(0,1500000);}return JSON.stringify({t:t,x:x});}catch(e){return JSON.stringify({t:"",x:"",e:String(e)});}})()"#;

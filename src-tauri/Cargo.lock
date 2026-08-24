@@ -4880,6 +4880,7 @@ dependencies = [
  "tokio-util",
  "tower-http",
  "url",
+ "webread",
  "youtube_transcript",
 ]
 
@@ -10917,6 +10918,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
 dependencies = [
  "rustls-pki-types",
+]
+
+[[package]]
+name = "webread"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "browser",
+ "futures-util",
+ "kawai-constants",
+ "reqwest 0.13.4",
+ "rig",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
 ]
 
 [[package]]

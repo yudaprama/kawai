@@ -1,7 +1,7 @@
 # Implementation Plan — Web read tiering: on-device webview first, Cloudflare fallback (kawai)
 
 Status: **IMPLEMENTED (2026-08-23)** — phase 1 (desktop) shipped: `web_read`
-tool on the office agent, `logic/scrape.rs` engine chain + budgets + cache,
+tool on the office agent, `rig-components/webread/src/scrape.rs` engine chain + budgets + cache,
 `webview_engine.rs` hidden-webview tier registered in `lib.rs`. This doc is
 now a design record; live status in `AGENTS.md` → Roadmap 5 ✅.
 
@@ -42,7 +42,7 @@ are unnecessary for the office agent's read-a-URL use case.
 > body for auditability (`turn_log`), never in the tool manifest.
 
 ```
-agent (Gemma 4) ── web_read(url) ──▶ logic::scrape::read_markdown(user_id, url)
+agent (Gemma 4) ── web_read(url) ──▶ webread::scrape::read_markdown(user_id, url)
                                          │
                                          ├─ cache hit (15 min TTL)? ──▶ return (+engine: cache)
                                          │
@@ -105,7 +105,7 @@ with one arg. Engine choice is an infrastructure concern, not an LLM decision.
 (`logic::db::set_data_root`, `office::store::set_docs_dir`):
 
 ```rust
-// src-tauri/src/logic/scrape.rs  (PURE — no tauri/axum)
+// rig-components/webread/src/scrape.rs  (PURE — no tauri/axum)
 pub mod scrape;   // added in logic.rs
 
 /// Injected at app startup by the Tauri shell (lib.rs setup hook).
@@ -171,7 +171,7 @@ Tier 0 output is checked before being trusted. A page is a **miss** if any of:
 - the page is nothing but a meta-refresh/JS redirect to a challenge path.
 
 False positives cost one CF call — acceptable. Detection lives in
-`logic/scrape.rs` (pure), so both engines are judged by the same rule.
+`rig-components/webread/src/scrape.rs` (pure), so both engines are judged by the same rule.
 
 ### 3.4 Tier 1 — reuse the generated CF tool, single code path
 
@@ -191,7 +191,7 @@ This adds `browser = { path = "../rig-components/tools/browser" }` to
 ### 3.5 The tool
 
 ```rust
-// logic/scrape.rs
+// rig-components/webread/src/scrape.rs
 pub struct WebReadTool;
 impl PortableTool for WebReadTool {
     const NAME: &'static str = "web_read";
@@ -328,7 +328,7 @@ corrections so they don't resurface as decisions:
 | File | Change |
 |---|---|
 | `src-tauri/src/logic.rs` | `#[cfg(feature = "office")] pub mod scrape;` |
-| `src-tauri/src/logic/scrape.rs` | NEW — trait, engine chain, detection, cache, budgets, `WebReadTool` (+ unit tests) |
+| `rig-components/webread/src/scrape.rs` | NEW — trait, engine chain, detection, cache, budgets, `WebReadTool` (+ unit tests) |
 | `src-tauri/src/webview_engine.rs` | NEW — tauri-side `WebViewFetch` impl (hidden window, `eval_with_callback` + mpsc, guaranteed teardown) |
 | `src-tauri/src/lib.rs` | office module gate + setup hook: `scrape::set_webview_engine(Some(...))` |
 | `src-tauri/src/logic/office/mod.rs` | `toolset()` registers `WebReadTool` when `scrape::any_engine()` |

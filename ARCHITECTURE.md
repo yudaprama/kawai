@@ -96,15 +96,15 @@ sequenceDiagram
 
 **Design invariant:** Gemma 4 local is the *permanent orchestrator*; the cloud is the most expensive *tool* the model may choose for heavy synthesis. No user-facing provider switch — zero-config `zai`, `off` as the only kill-switch. Unset/`off`/no-key ⇒ pure-local agents.
 
-## Web read tiering (`web_read`, office feature)
+## Web read tiering (`web_read`, webread feature)
 
-One agent tool, one engine chain — the model asks to read a URL, the backend picks the cheapest engine that succeeds (`logic/scrape.rs`):
+One agent tool, one engine chain — the model asks to read a URL, the backend picks the cheapest engine that succeeds (`rig-components/webread/src/scrape.rs`):
 
 1. **Cache** — 15-min LRU (64/user) keyed by normalized URL, cross-engine.
 2. **Tier 0: on-device webview** — `webview_engine.rs` renders the page in a hidden `WebviewWindow` (`WebviewUrl::External`, `visible(false)`), polls `readyState`, harvests text via `eval_with_callback` (external pages have no Tauri IPC — the eval callback is the only return channel), always tears the window down. Free, device-native TLS.
 3. **Tier 1: Cloudflare `/markdown`** — the generated `browser` crate tool (vault key pool). Tier-0 misses (anti-bot markers, thin content, timeout, busy slot) fall through. Bounded by `KAWAI_CF_PER_USER_DAILY` (25) + `KAWAI_CF_GLOBAL_DAILY` (300); exhaustion returns a guidance-carrying result, not an error.
 
-Purity: `logic/scrape.rs` defines the `WebViewFetch` trait; the tauri shell injects the implementation at startup (`lib.rs`). `kawai-web` registers nothing and degrades to Cloudflare-only; no engine anywhere ⇒ the tool is not registered (capability-probe rule). Content is capped at 12k chars per read.
+Purity: `rig-components/webread/src/scrape.rs` defines the `WebViewFetch` trait; the tauri shell injects the implementation at startup (`lib.rs`). `kawai-web` registers nothing and degrades to Cloudflare-only; no engine anywhere ⇒ the tool is not registered (capability-probe rule). Content is capped at 12k chars per read. The tools are reusable by any agent: office registers them under `any_engine()`; binance behind the standalone `webread` cargo feature (`office` implies `webread`).
 
 ## Directory layout
 
@@ -147,7 +147,7 @@ kawai/
         ├── main.rs           # desktop binary entry
         ├── lib.rs            # Tauri builder + module decls
         ├── logic.rs          # PURE LOGIC (no Tauri/Axum deps); rig + libsql + db token
-        ├── logic/            # domain modules: agent, db, rag, remote, scrape, office/
+        ├── logic/            # domain modules: agent, db, rag, remote, office/
         ├── auth.rs           # PURE AUTH; Clerk JWKS verify + EdDSA mint + Session
         ├── commands.rs       # #[tauri::command] wrappers
         ├── web.rs            # Axum router + auth_middleware

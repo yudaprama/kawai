@@ -205,9 +205,9 @@ on-device generation takes 5–30 s depending on the call-line length.
   (user) or `KAWAI_CF_GLOBAL_DAILY` (dev-wallet fuse) cap hit; the tool
   result carries guidance, it is NOT an error.
 - **Root cause (engine never "webview" on desktop)**: engine not registered —
-  check `logic::scrape::set_webview_engine` runs in the `lib.rs` setup hook
-  (office feature only); `kawai-web` and non-office builds are Cloudflare-only
-  by design.
+  check `webread::set_webview_engine` runs in the `lib.rs` setup hook
+  (webread feature only); `kawai-web` and non-webread builds are
+  Cloudflare-only by design.
 - **Action**: budget → raise the env cap or wait for the UTC-day rollover;
   walled page → nothing to fix locally (excluded by design); missing tier 0 →
   verify the office feature is compiled in.

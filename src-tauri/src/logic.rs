@@ -108,8 +108,6 @@ pub mod remote;
 pub mod office;
 #[cfg(feature = "office")]
 pub mod rag;
-#[cfg(feature = "office")]
-pub mod scrape;
 
 pub use db::*;
 

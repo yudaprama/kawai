@@ -86,9 +86,12 @@ rig-core = { version = "0.42", optional = true }
 office_oxide = { path = "../office_oxide", optional = true }
 pdf_oxide = { git = "https://github.com/yfedoseev/pdf_oxide", optional = true }
 regex = { version = "1", optional = true }
-# Web read tiering (office feature): Cloudflare Browser Rendering fallback
-# tier via the generated browser tool crate (reqwest-only, mobile-safe), plus
-# the `url` crate for pure URL normalization in logic::scrape.
+# Web read + search tiering (webread/office features): the reusable
+# rig-components/webread tool crate — engine chain + budgets + cache for the
+# `web_read` / `web_search` agent tools. `browser` (tier-1 Cloudflare
+# Browser Rendering) rides inside webread but stays listed so the headless
+# example can drive it directly.
+webread = { path = "../rig-components/webread", optional = true }
 browser = { path = "../rig-components/tools/browser", optional = true }
 url = { version = "2", optional = true }
 # Binance agent tools (builtin.binance): keyless public market data via the
@@ -103,11 +106,15 @@ libc = "0.2"
 default = []
 web = ["dep:axum", "dep:tower-http"]
 litert = ["dep:local-llm", "local-llm/rig-tools"]
+# Web read/search tiering as a standalone feature so any agent can reuse the
+# tools without `office`; `office` implies it (behavior-preserving).
+webread = ["dep:webread", "dep:browser", "dep:url"]
 # Office document tools (logic::office): pure-Rust create/read/edit/info via
 # office_oxide and PDF via pdf_oxide (both in-process) — plus the RAG pipeline
 # (kawai-embedding → rig-libsql, with in-tree chunking) for idle-time
-# knowledge indexing.
-office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "dep:browser", "dep:url"]
+# knowledge indexing. Enables the `webread` FEATURE (not just `dep:webread`)
+# so its bundled deps ride along.
+office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
 binance = ["dep:binance"]
