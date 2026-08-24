@@ -6,8 +6,7 @@ Live status stays in `AGENTS.md` → Roadmap (Binance agent entry).
 
 Decision context (2026-08-24): the fork/submodule
 `rig-components/nautilus_trader/` (upstream nautechsystems/nautilus_trader) was
-added as a **reference-only** submodule — same standing as
-`rig-components/binance/binance-connector-rust/`. It is NOT a workspace member
+added as a **reference-only** submodule. It is NOT a workspace member
 of `rig-components/Cargo.toml` and NOT a path dependency of anything; it must
 stay out of the build graph unless a stage below is explicitly started.
 
@@ -329,8 +328,7 @@ staging whenever the question recurs:
 ## 6. Housekeeping (one-time, this doc's commit)
 
 - [x] `AGENTS.md` — layout tree now notes `rig-components/nautilus_trader/`
-      is a reference-only submodule (same treatment as
-      `binance-connector-rust/`), pointing at this doc. (done 2026-08-24)
+      is a reference-only submodule, pointing at this doc. (done 2026-08-24)
 - [x] Verify `rig-components/Cargo.toml` `[members]` does NOT include
       `nautilus_trader` (already true as of 2026-08-24; guard against
       accidental `cargo add`/workspace globs).

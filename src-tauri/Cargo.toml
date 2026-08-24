@@ -95,10 +95,10 @@ webread = { path = "../rig-components/webread", optional = true }
 browser = { path = "../rig-components/tools/browser", optional = true }
 url = { version = "2", optional = true }
 # Binance agent tools (builtin.binance): keyless public market data via the
-# crates.io binance-sdk (rustls, spot-only) + in-process TA via rig-components/ta.
-# Android excluded: binance-sdk's own reqwest dep carries default-tls
-# (native-tls → openssl-sys), which has no NDK prebuilds; desktop/iOS resolve
-# it natively (macOS/iOS use Security.framework).
+# binance-sdk fork submodule (rig-components/binance-connector-rust, patched
+# rustls-only) + in-process TA via rig-components/ta.
+# Android still excluded: never exercised on NDK (un-excluding needs a
+# `cargo ndk check --features binance` pass).
 [target.'cfg(not(target_os = "android"))'.dependencies]
 binance = { path = "../rig-components/binance", optional = true }
 
@@ -107,6 +107,15 @@ binance = { path = "../rig-components/binance", optional = true }
 # the polars-backed rig-components/analytics crate. Implies `office` — the
 # data files live in the office store.
 analytics = { path = "../rig-components/analytics", optional = true }
+
+# Remote SQL sources for the analytics snapshot tools (data_tables /
+# data_import over Postgres/MySQL). rustls on purpose — mobile has no
+# openssl prebuilts. SQLite stays on the existing libsql dep (always on).
+sqlx = { version = "0.8", optional = true, default-features = false, features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "mysql",
+] }
 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]
@@ -132,6 +141,9 @@ binance = ["dep:binance"]
 # data_query over the office store's tabular files. Implies `office` —
 # the files live in the office store and reuse its import UI.
 analytics = ["dep:analytics", "office"]
+# Remote SQL sources (Postgres/MySQL) for the analytics snapshot tools.
+# Implies `analytics`; SQLite needs no feature (libsql rides along).
+analytics-sql = ["analytics", "dep:sqlx"]
 
 [[bin]]
 name = "kawai"
