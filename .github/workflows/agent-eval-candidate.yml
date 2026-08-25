@@ -1,0 +1,173 @@
+name: agent-eval-candidate
+
+# Candidate-orchestrator eval — manual only (workflow_dispatch).
+# Runs agent_eval on any .litertlm candidate against the office/analytics
+# suites and, optionally, the E4B baseline in the same job for an
+# apples-to-apples comparison. REPORT-ONLY by design: EVAL_MIN_PASS stays
+# unset (agent_eval defaults it to usize::MAX → exit 0), because a low
+# candidate score is measurement data, not a regression — the E4B gates
+# live in ci.yml and are never touched by this workflow.
+# Example dispatch (verified fixture): model_name=Qwen3-4B-int4,
+# model_url=https://huggingface.co/litert-community/Qwen3-4B/resolve/main/qwen3_4b_mixed_int4.litertlm
+# (2.7GB mixed int4 — same quant class as the 3.4GB E4B default.)
+# Shares the bazel cache with ci.yml/kv-sweep and the E4B model cache
+# (gemma-4-E4B-it-litertlm), so baseline runs are ~free after ci.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_name:
+        description: 'Candidate basename without .litertlm — cache key + report label'
+        default: 'Qwen3-4B-int4'
+        type: string
+      model_url:
+        description: 'URL of the candidate .litertlm'
+        default: 'https://huggingface.co/litert-community/Qwen3-4B/resolve/main/qwen3_4b_mixed_int4.litertlm'
+        type: string
+      suites:
+        description: 'Comma-separated suites (office|analytics)'
+        default: 'office,analytics'
+        type: string
+      with_baseline:
+        description: 'Also run the E4B baseline for comparison'
+        default: true
+        type: boolean
+
+concurrency:
+  group: agent-eval-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  agent-eval-candidate:
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      SUITES: ${{ inputs.suites }}
+    steps:
+      - name: Sanitize model name
+        # Single source of truth for the model label: filesystem-safe
+        # everywhere (cache key, download path, report names, artifact).
+        run: |
+          name='${{ inputs.model_name }}'
+          echo "MODEL_NAME=${name//[^A-Za-z0-9._-]/-}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            /private/var/tmp/_bazel_runner
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos26-arm64-
+
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+
+      - name: Build litert-lm dylib
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_arm64"
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=macos_arm64 --jobs=6
+          mkdir -p ../../native
+          cp bazel-bin/c/liblitert-lm.dylib ../../native/
+          install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
+          bash ../../../scripts/bundle-litert-dylibs.sh
+
+      - name: Cache candidate model
+        id: cand-model
+        uses: actions/cache@v4
+        with:
+          # Separate dir from the baseline: actions/cache saves the WHOLE
+          # path, so a shared dir would store both models under both keys
+          # (~12GB total, evicting other repo caches).
+          path: cand-model
+          key: ${{ env.MODEL_NAME }}-litertlm
+
+      - name: Download candidate model
+        if: steps.cand-model.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p cand-model
+          curl -fL --retry 3 -o "cand-model/${MODEL_NAME}.litertlm" "${{ inputs.model_url }}"
+
+      - name: Cache E4B baseline model
+        id: base-model
+        if: ${{ inputs.with_baseline }}
+        uses: actions/cache@v4
+        with:
+          # Same key as ci.yml/kv-sweep — restores their cache into this dir;
+          # on a miss only this dir (E4B alone) is saved back.
+          path: base-model
+          key: gemma-4-E4B-it-litertlm
+
+      - name: Download E4B baseline model
+        if: ${{ inputs.with_baseline && steps.base-model.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          mkdir -p base-model
+          curl -fL --retry 3 -o base-model/gemma-4-E4B-it.litertlm \
+            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
+
+      - name: agent_eval (candidate vs baseline — report only)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: /tmp/kawai-ci
+          KAWAI_LLM_MAX_TOKENS: "8192"
+          # EVAL_MIN_PASS deliberately unset → report-only (exit 0).
+        run: |
+          set -uo pipefail
+          REPORTS=${{ github.workspace }}/reports
+          mkdir -p "$REPORTS"
+          MODELS=("${MODEL_NAME}|${{ github.workspace }}/cand-model/${MODEL_NAME}.litertlm")
+          if [ "${{ inputs.with_baseline }}" = "true" ]; then
+            MODELS+=("gemma-4-E4B-it|${{ github.workspace }}/base-model/gemma-4-E4B-it.litertlm")
+          fi
+          echo "# agent_eval — candidate vs baseline (report-only)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "- candidate: ${MODEL_NAME}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "- suites: ${SUITES}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" | tee -a "$GITHUB_STEP_SUMMARY"
+          for s in ${SUITES//,/ }; do
+            case "$s" in
+              office|analytics) ;;
+              *) echo "- unknown suite '$s' (office|analytics) — skipped" | tee -a "$GITHUB_STEP_SUMMARY"; continue ;;
+            esac
+            for entry in "${MODELS[@]}"; do
+              m="${entry%%|*}"; p="${entry#*|}"
+              REPORT="$REPORTS/agent-eval-${m}-${s}.md"
+              echo "## ${m} — ${s} suite" | tee -a "$GITHUB_STEP_SUMMARY"
+              if EVAL_SUITE=$s cargo run --release --example agent_eval --features litert,office -- \
+                "$p" "$REPORT"; then
+                cat "$REPORT" >> "$GITHUB_STEP_SUMMARY" || true
+              else
+                # A candidate that cannot load or crashes is data too.
+                echo "- agent_eval FAILED for ${m}/${s} (load error or crash)" | tee -a "$GITHUB_STEP_SUMMARY"
+              fi
+              echo "" | tee -a "$GITHUB_STEP_SUMMARY"
+            done
+          done
+
+      - name: Upload eval reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-candidate-${{ env.MODEL_NAME }}
+          path: reports/
+          if-no-files-found: warn
