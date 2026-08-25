@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
-import { call, errText, type ChatMessageInfo, type ChatSessionInfo } from "@/lib/api";
-import { showErrorToast } from "@/lib/utils";
-import { logError, logWarn } from "@/lib/logger";
+import { type ChatMessageInfo, type ChatSessionInfo, call, errText } from "@/lib/api";
 import { historyToMessages, sessionPeriod } from "@/lib/chat-helpers";
-import type { LocalChatState } from "./use-local-chat";
+import { logError, logWarn } from "@/lib/logger";
 import type { StreamControl } from "@/lib/stream";
+import { showErrorToast } from "@/lib/utils";
+import type { LocalChatState } from "./use-local-chat";
 
 export function useChatSessions({
   agentId,
@@ -81,7 +81,9 @@ export function useChatSessions({
       patch({ sessionId, historyError: null });
       clearMessages();
       try {
-        const rows = await call<ChatMessageInfo[]>("list_chat_messages", { sessionId });
+        const rows = await call<ChatMessageInfo[]>("list_chat_messages", {
+          sessionId,
+        });
         patch({ messages: historyToMessages(rows), historyError: null });
       } catch (err) {
         logError("list_chat_messages", err);
@@ -129,12 +131,19 @@ export function useChatSessions({
         sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, title: trimmed } : s)),
       });
       try {
-        const updated = await call<ChatSessionInfo>("rename_chat_session", { sessionId, title: trimmed });
-        patch({ sessions: state.sessions.map((s) => (s.id === sessionId ? updated : s)) });
+        const updated = await call<ChatSessionInfo>("rename_chat_session", {
+          sessionId,
+          title: trimmed,
+        });
+        patch({
+          sessions: state.sessions.map((s) => (s.id === sessionId ? updated : s)),
+        });
       } catch (err) {
         logError("rename_chat_session", err);
         showErrorToast(`Couldn't rename the session — ${errText(err)}`);
-        patch({ sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, title: prior } : s)) });
+        patch({
+          sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, title: prior } : s)),
+        });
       }
     },
     [state.sessions, patch],
@@ -143,7 +152,10 @@ export function useChatSessions({
   const setSessionArchived = useCallback(
     async (sessionId: number, archived: boolean) => {
       try {
-        await call<ChatSessionInfo>("set_chat_session_archived", { sessionId, archived });
+        await call<ChatSessionInfo>("set_chat_session_archived", {
+          sessionId,
+          archived,
+        });
       } catch (err) {
         logError("set_chat_session_archived", err);
         showErrorToast(`${archived ? "Couldn't archive" : "Couldn't restore"} the session — ${errText(err)}`);
@@ -166,7 +178,9 @@ export function useChatSessions({
     if (sid == null || streamCtrl.current) return;
     patch({ historyError: null });
     try {
-      const rows = await call<ChatMessageInfo[]>("list_chat_messages", { sessionId: sid });
+      const rows = await call<ChatMessageInfo[]>("list_chat_messages", {
+        sessionId: sid,
+      });
       patch({ messages: historyToMessages(rows), historyError: null });
     } catch (err) {
       logError("list_chat_messages", err);

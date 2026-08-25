@@ -1,3 +1,13 @@
+import {
+  BookOpenIcon,
+  BrainIcon,
+  type CheckIcon,
+  HistoryIcon,
+  MenuIcon,
+  PanelRightCloseIcon,
+  PanelRightIcon,
+  PanelRightOpenIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   Conversation,
@@ -10,16 +20,6 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus, UIMessage } from "@/lib/ai-types";
 import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
-import {
-  BookOpenIcon,
-  BrainIcon,
-  CheckIcon,
-  HistoryIcon,
-  MenuIcon,
-  PanelRightCloseIcon,
-  PanelRightIcon,
-  PanelRightOpenIcon,
-} from "lucide-react";
 import { ChatComposer } from "@/panels/chat-composer";
 
 interface AgentPresentation {
@@ -116,18 +116,14 @@ export function ConversationPanel({
     <main className="bg-background flex min-w-0 flex-1 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2.5 border-b px-4">
         {onOpenMobileAgents && (
-          <Button
-            className="md:hidden"
-            onClick={onOpenMobileAgents}
-            size="icon"
-            title="Agents"
-            variant="ghost"
-          >
+          <Button className="md:hidden" onClick={onOpenMobileAgents} size="icon" title="Agents" variant="ghost">
             <MenuIcon className="size-4" />
           </Button>
         )}
         <span className="truncate text-sm font-medium">
-          {inSession ? (sessions.find((s) => s.id === sessionId)?.title ?? `${agent.name} agent`) : `${agent.name} agent`}
+          {inSession
+            ? (sessions.find((s) => s.id === sessionId)?.title ?? `${agent.name} agent`)
+            : `${agent.name} agent`}
         </span>
         {modelLoading && (
           <span className="text-muted-foreground hidden items-center gap-1.5 text-xs sm:inline-flex">
@@ -138,13 +134,7 @@ export function ConversationPanel({
         <div className="ml-auto flex items-center gap-1">
           {/* Mobile: agents/sessions/knowledge drawers */}
           {onOpenMobileSessions && (
-            <Button
-              className="md:hidden"
-              onClick={onOpenMobileSessions}
-              size="icon"
-              title="Sessions"
-              variant="ghost"
-            >
+            <Button className="md:hidden" onClick={onOpenMobileSessions} size="icon" title="Sessions" variant="ghost">
               <HistoryIcon className="size-4" />
             </Button>
           )}
@@ -234,6 +224,7 @@ export function ConversationPanel({
                       className="border bg-card hover:bg-accent rounded-full border px-3 py-1 text-xs"
                       key={prompt}
                       onClick={() => void onSend(prompt)}
+                      type="button"
                     >
                       {prompt}
                     </button>
@@ -242,7 +233,10 @@ export function ConversationPanel({
               </div>
             ) : (
               <Conversation className="h-full">
-                {messages.length > VIRTUALIZE_THRESHOLD && !forceAll && status !== "streaming" && status !== "submitted" ? (
+                {messages.length > VIRTUALIZE_THRESHOLD &&
+                !forceAll &&
+                status !== "streaming" &&
+                status !== "submitted" ? (
                   <ConversationVirtualizedContent
                     items={messages}
                     estimateSize={estimateMessageSize}

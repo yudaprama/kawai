@@ -1,12 +1,3 @@
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { useTheme, type Theme } from "@/hooks/use-theme";
-import type { AgentInfo } from "@/lib/api";
 import {
   BarChart3Icon,
   BotIcon,
@@ -19,6 +10,15 @@ import {
   SunIcon,
   TrendingUpIcon,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { type Theme, useTheme } from "@/hooks/use-theme";
+import type { AgentInfo } from "@/lib/api";
 
 interface AgentPresentation {
   icon: typeof BriefcaseIcon;
@@ -41,11 +41,7 @@ const AGENT_META: Record<string, AgentPresentation> = {
   "builtin.binance": {
     icon: TrendingUpIcon,
     subtitle: "crypto · market data · TA",
-    prompts: [
-      "Analyze BTCUSDT on the daily",
-      "RSI and MACD for ETHUSDT",
-      "Order book depth for SOLUSDT",
-    ],
+    prompts: ["Analyze BTCUSDT on the daily", "RSI and MACD for ETHUSDT", "Order book depth for SOLUSDT"],
   },
   "builtin.analytics": {
     icon: BarChart3Icon,
@@ -85,9 +81,7 @@ function ThemeControl({ collapsed }: { collapsed: boolean }) {
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
-      {!collapsed && (
-        <span className="text-muted-foreground ml-2 truncate text-xs">Appearance</span>
-      )}
+      {!collapsed && <span className="text-muted-foreground ml-2 truncate text-xs">Appearance</span>}
     </DropdownMenu>
   );
 }
@@ -115,9 +109,7 @@ export function AgentsRail({
         collapsed ? "w-16" : "w-[210px]"
       }`}
     >
-      <div
-        className={`flex h-12 shrink-0 items-center gap-2 px-3 ${collapsed ? "justify-center px-0" : ""}`}
-      >
+      <div className={`flex h-12 shrink-0 items-center gap-2 px-3 ${collapsed ? "justify-center px-0" : ""}`}>
         {!collapsed && <span className="font-mono text-xs text-muted-foreground">kawai</span>}
         <Button
           className={collapsed ? "" : "ml-auto"}
@@ -131,9 +123,7 @@ export function AgentsRail({
       </div>
 
       {!collapsed && (
-        <p className="px-3 pt-2 pb-1.5 text-[11px] tracking-wider text-muted-foreground uppercase">
-          Agents
-        </p>
+        <p className="px-3 pt-2 pb-1.5 text-[11px] tracking-wider text-muted-foreground uppercase">Agents</p>
       )}
 
       <nav className={`flex flex-col gap-1 ${collapsed ? "px-1.5" : "px-2"}`}>
@@ -149,6 +139,7 @@ export function AgentsRail({
               disabled={busy && !active}
               key={a.id}
               onClick={() => onSelectAgent(a.id)}
+              type="button"
               title={busy && !active ? "Tunggu jawaban selesai" : `${a.name} · ${meta.subtitle}`}
             >
               <span
@@ -161,9 +152,7 @@ export function AgentsRail({
               {!collapsed && (
                 <span className="flex min-w-0 flex-col">
                   <span className="text-sm leading-tight font-medium">{a.name}</span>
-                  <span className="text-muted-foreground truncate text-xs leading-tight">
-                    {meta.subtitle}
-                  </span>
+                  <span className="text-muted-foreground truncate text-xs leading-tight">{meta.subtitle}</span>
                 </span>
               )}
             </button>
@@ -171,9 +160,7 @@ export function AgentsRail({
         })}
       </nav>
 
-      <div
-        className={`mt-auto flex items-center gap-2.5 border-t p-3 ${collapsed ? "flex-col p-1.5" : ""}`}
-      >
+      <div className={`mt-auto flex items-center gap-2.5 border-t p-3 ${collapsed ? "flex-col p-1.5" : ""}`}>
         <span className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
           {(userId ?? "d").charAt(0).toUpperCase()}
         </span>
@@ -181,9 +168,7 @@ export function AgentsRail({
           <ThemeControl collapsed />
         ) : (
           <div className="flex w-full items-center justify-between gap-2">
-            <span className="truncate font-mono text-xs text-muted-foreground">
-              {userId ?? "demo"}
-            </span>
+            <span className="truncate font-mono text-xs text-muted-foreground">{userId ?? "demo"}</span>
             <ThemeControl collapsed={false} />
           </div>
         )}

@@ -1,4 +1,3 @@
-import type { ComponentType } from "react";
 import {
   Brain,
   Camera,
@@ -15,6 +14,7 @@ import {
   Users,
   Wrench,
 } from "lucide-react";
+import type { ComponentType } from "react";
 
 export type ToolIconProps = {
   className?: string;
@@ -102,10 +102,7 @@ export const extractExtensionName = (toolCallName: string): string => {
   return idx === -1 ? "" : toolCallName.substring(0, idx);
 };
 
-export const getToolCallIcon = (
-  toolCallName: string,
-  useExtensionIcon = false
-): ComponentType<ToolIconProps> => {
+export const getToolCallIcon = (toolCallName: string, useExtensionIcon = false): ComponentType<ToolIconProps> => {
   if (useExtensionIcon) {
     const ext = extractExtensionName(toolCallName);
     return getExtensionIcon(ext);

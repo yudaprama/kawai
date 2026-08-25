@@ -19,10 +19,7 @@ export function useKnowledgeFiles(enabled: boolean) {
   const refresh = useCallback(async () => {
     const sessionId = sessionIdRef.current;
     try {
-      const rows = await call<KnowledgeFileInfo[]>(
-        "knowledge_list",
-        sessionId != null ? { sessionId } : undefined,
-      );
+      const rows = await call<KnowledgeFileInfo[]>("knowledge_list", sessionId != null ? { sessionId } : undefined);
       setFiles(rows);
       setUnavailable(false);
     } catch (err) {
@@ -46,9 +43,7 @@ export function useKnowledgeFiles(enabled: boolean) {
 
   /** Optimistically mark files as being (re)indexed (import / add / retry). */
   const markIndexing = useCallback((fileIds: string[]) => {
-    setFiles((prev) =>
-      prev.map((f) => (fileIds.includes(f.id) ? { ...f, status: "indexing", error: null } : f)),
-    );
+    setFiles((prev) => prev.map((f) => (fileIds.includes(f.id) ? { ...f, status: "indexing", error: null } : f)));
   }, []);
 
   /** Optimistically flip session association before the backend confirms. */

@@ -1,5 +1,5 @@
-import { type ReactNode, useEffect } from "react";
 import { ErrorBoundary as SentryReactErrorBoundary } from "@sentry/react";
+import { type ReactNode, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { call } from "@/lib/api";
 
@@ -8,9 +8,7 @@ export function ErrorFallback({ error, onRetry }: { error: Error | null; onRetry
     <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
       <div className="space-y-1">
         <h2 className="text-lg font-semibold">Something went wrong</h2>
-        <p className="text-muted-foreground max-w-md text-sm">
-          {error?.message || "An unexpected error occurred."}
-        </p>
+        <p className="text-muted-foreground max-w-md text-sm">{error?.message || "An unexpected error occurred."}</p>
       </div>
       <div className="flex gap-2">
         <Button onClick={onRetry} variant="outline">
@@ -22,13 +20,7 @@ export function ErrorFallback({ error, onRetry }: { error: Error | null; onRetry
   );
 }
 
-function SentryFallback({
-  error,
-  resetError,
-}: {
-  error: unknown;
-  resetError: () => void;
-}) {
+function SentryFallback({ error, resetError }: { error: unknown; resetError: () => void }) {
   useEffect(() => {
     console.error("Uncaught render error:", error);
     // Mirror to platform log — Sentry already captured the exception.
@@ -44,9 +36,7 @@ function SentryFallback({
 export function SentryErrorBoundary({ children }: { children: ReactNode }) {
   return (
     <SentryReactErrorBoundary
-      fallback={({ error, resetError }) => (
-        <SentryFallback error={error} resetError={resetError} />
-      )}
+      fallback={({ error, resetError }) => <SentryFallback error={error} resetError={resetError} />}
       beforeCapture={(scope) => {
         scope.setTag("boundary", "root");
       }}

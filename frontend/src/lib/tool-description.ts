@@ -1,12 +1,6 @@
 import { extractToolName } from "./tool-icon";
 
-type ToolArgValue =
-  | string
-  | number
-  | boolean
-  | null
-  | ToolArgValue[]
-  | { [key: string]: ToolArgValue };
+type ToolArgValue = string | number | boolean | null | ToolArgValue[] | { [key: string]: ToolArgValue };
 
 interface ToolGraphNode {
   tool: string;
@@ -15,9 +9,7 @@ interface ToolGraphNode {
 }
 
 function snakeToTitleCase(s: string): string {
-  return s
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function getStringValue(value: ToolArgValue): string {
@@ -29,10 +21,7 @@ function getStringValue(value: ToolArgValue): string {
  * `desktop/src/components/ToolCallWithResponse.tsx:593` `getToolDescription`.
  * Falls back to `Title Case` + compact args for unknown tools.
  */
-export function getToolDescription(
-  rawToolName: string,
-  rawArgs: unknown
-): string | null {
+export function getToolDescription(rawToolName: string, rawArgs: unknown): string | null {
   const args = (rawArgs ?? {}) as Record<string, ToolArgValue>;
   const toolName = extractToolName(rawToolName);
 
@@ -89,7 +78,7 @@ export function getToolDescription(
     case "delegate": {
       if (args.instructions) {
         const instr = getStringValue(args.instructions);
-        const truncated = instr.length > 80 ? instr.substring(0, 80) + "…" : instr;
+        const truncated = instr.length > 80 ? `${instr.substring(0, 80)}…` : instr;
         return `delegating: ${truncated}`;
       }
       if (args.source) return `delegating to ${getStringValue(args.source)}`;
@@ -116,7 +105,7 @@ export function getToolDescription(
     case "knowledge_search": {
       const q = args.query ?? args.q;
       if (typeof q === "string" && q.trim()) {
-        const truncated = q.length > 60 ? q.slice(0, 60) + "…" : q;
+        const truncated = q.length > 60 ? `${q.slice(0, 60)}…` : q;
         // mode-aware hint
         const mode = typeof args.mode === "string" ? ` · ${args.mode}` : "";
         return `searching knowledge: "${truncated}"${mode}`;
@@ -149,7 +138,7 @@ export function getToolDescription(
     const [key, value] = entries[0];
     const stringValue = getStringValue(value);
     // truncate long single values
-    const truncated = stringValue.length > 50 ? stringValue.slice(0, 50) + "…" : stringValue;
+    const truncated = stringValue.length > 50 ? `${stringValue.slice(0, 50)}…` : stringValue;
     return `${toolDisplayName} ${key}: ${truncated}`;
   }
   const keys = entries.map(([k]) => k).join(", ");

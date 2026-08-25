@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
 import { DatabaseIcon, FolderOpenIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { call, errText } from "@/lib/api";
 
 type SqlProfile = { name: string; source: string };
@@ -38,7 +38,12 @@ export function SqlProfilesSection() {
       const picked = await open({
         multiple: false,
         title: "Pilih file database SQLite",
-        filters: [{ name: "SQLite database", extensions: ["db", "sqlite", "sqlite3", "db3"] }],
+        filters: [
+          {
+            name: "SQLite database",
+            extensions: ["db", "sqlite", "sqlite3", "db3"],
+          },
+        ],
       });
       if (typeof picked === "string") setSource(picked);
     } catch (err) {
@@ -51,7 +56,10 @@ export function SqlProfilesSection() {
     setSaving(true);
     setError(null);
     try {
-      await call("sql_profile_save", { name: name.trim(), source: source.trim() });
+      await call("sql_profile_save", {
+        name: name.trim(),
+        source: source.trim(),
+      });
       setName("");
       setSource("");
       setAdding(false);
@@ -86,11 +94,7 @@ export function SqlProfilesSection() {
       </div>
       {adding && (
         <div className="mb-2 flex flex-col gap-2 rounded-md border p-2">
-          <Input
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Nama profil, mis. keuangan"
-            value={name}
-          />
+          <Input onChange={(e) => setName(e.target.value)} placeholder="Nama profil, mis. keuangan" value={name} />
           <div className="flex gap-2">
             <Input
               onChange={(e) => setSource(e.target.value)}
@@ -121,10 +125,7 @@ export function SqlProfilesSection() {
       ) : (
         <ul className="flex flex-col gap-1">
           {profiles.map((p) => (
-            <li
-              className="group flex items-center justify-between rounded-md border px-2 py-1.5"
-              key={p.name}
-            >
+            <li className="group flex items-center justify-between rounded-md border px-2 py-1.5" key={p.name}>
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{p.name}</p>
                 <p className="text-muted-foreground truncate text-xs">{p.source}</p>

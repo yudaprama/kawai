@@ -17,7 +17,16 @@ bun install           # install all deps (must be done before tauri dev/build)
 bun run dev           # vite dev server on :1420
 bun run build         # tsc -b && vite build → dist/
 bun run typecheck     # tsc -b --force (no build output)
+bun run lint          # biome check frontend/src (vendored dirs excluded)
+bun run lint:fix      # biome check --write (safe fixes + formatting)
+bun run format        # biome format --write frontend/src
+bun run test          # vitest run — unit tests for pure helpers
 ```
+
+Lint/format is Biome (`biome.jsonc` at the repo root). The vendored trees
+(`lib/streamdown/**`, `components/ai-elements/**`, `components/ui/**`) and CSS
+are excluded from both linter and formatter so re-syncs from `web/` stay
+diff-clean. CI runs `lint` + `test` + `build` in the `web` job.
 
 ## What's vendored (do NOT edit these unless syncing from `web/`)
 
@@ -141,13 +150,17 @@ User prompt → App.tsx → use-local-chat.send()
 
 ## Testing / verification
 
-There are no unit tests in the frontend. Verification is:
-
 ```sh
 # From kawai/:
+bun run lint           # biome check — lint + format gate (vendored dirs excluded)
+bun run test           # vitest run — unit tests for pure helpers (lib/*.test.ts)
 bun run build          # tsc -b + vite build — check for type errors and build failures
 bun run typecheck      # tsc -b --force — type-only check, faster
 ```
+
+Unit tests cover pure helpers only (`chat-helpers`, `base64`, `knowledge`,
+`utils`) — colocated `*.test.ts` files, no DOM/component tests. They run in
+the CI `web` job alongside lint and build.
 
 ## Gotchas
 
@@ -157,4 +170,5 @@ bun run typecheck      # tsc -b --force — type-only check, faster
 - **Tauri `invoke` rejects with a bare string, not an Error.** Always use `errText()` from `@/lib/api` to normalize error messages.
 - **Streaming commands must register a `stream_id`** — the frontend generates a `crypto.randomUUID()` in `streamOperation()` and passes it to the backend. The `cancel()` method invokes `cancel_stream` with that ID.
 - **No `window.__TAURI__`** — the frontend uses `@tauri-apps/api/core` imports. The `withGlobalTauri` flag is a leftover from the deleted vanilla frontend.
+- **Sentry is env-gated.** `main.tsx` initializes Sentry only when `VITE_SENTRY_DSN` is set at build time (`.env.local` or release CI). Without it the SDK is inert — `logger.ts` calls no-op — and the error boundary still renders its fallback locally.
 - **The vendored `PromptInput` still captures pasted images** into attachment state. `ChatComposerInner.handleSubmit` intercepts them at submit: each image is awaited through the knowledge import (`imageToKnowledge` — session ensured first, imported file IDs returned) and its IDs join the @-mention IDs on the send.

@@ -1,8 +1,5 @@
-import { useCallback, useState, type ChangeEvent } from "react";
-import { SpeechInput } from "@/components/ai-elements/speech-input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { call, type KnowledgeFileInfo } from "@/lib/api";
-import { logWarn } from "@/lib/logger";
+import { AtSignIcon, XIcon } from "lucide-react";
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   PromptInput,
   PromptInputBody,
@@ -13,9 +10,13 @@ import {
   PromptInputTools,
   usePromptInputController,
 } from "@/components/ai-elements/prompt-input";
+import { SpeechInput } from "@/components/ai-elements/speech-input";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { ChatStatus } from "@/lib/ai-types";
-import { AtSignIcon, XIcon } from "lucide-react";
+import { call, type KnowledgeFileInfo } from "@/lib/api";
+import { activeMentionRange } from "@/lib/chat-helpers";
+import { logWarn } from "@/lib/logger";
 
 export function ChatComposer({
   agentName,
@@ -46,17 +47,6 @@ export function ChatComposer({
   );
 }
 
-function activeMentionQuery(value: string, caret: number): string | null {
-  const upTo = value.slice(0, caret);
-  const at = upTo.lastIndexOf("@");
-  if (at === -1) return null;
-  const before = at === 0 ? " " : upTo[at - 1];
-  if (!/\s/.test(before)) return null;
-  const query = upTo.slice(at + 1);
-  if (/\s/.test(query)) return null;
-  return query;
-}
-
 function ChatComposerInner({
   agentName,
   status,
@@ -77,16 +67,26 @@ function ChatComposerInner({
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionFiles, setMentionFiles] = useState<KnowledgeFileInfo[] | null>(null);
   const [mentionQuery, setMentionQuery] = useState("");
+  const mentionRange = useRef<{ start: number; end: number } | null>(null);
 
-  const loadMentionFiles = useCallback(async () => {
-    if (mentionFiles) return;
-    try {
-      setMentionFiles(await call<KnowledgeFileInfo[]>("knowledge_list"));
-    } catch (err) {
-      logWarn("knowledge_list", err);
-      setMentionFiles([]);
-    }
-  }, [mentionFiles]);
+  // Fresh fetch on every popover open — files imported after mount appear
+  // without remounting the composer. Typing keeps the popover open and does
+  // NOT re-fetch (filtering happens client-side over the loaded list).
+  useEffect(() => {
+    if (!mentionOpen) return;
+    let cancelled = false;
+    call<KnowledgeFileInfo[]>("knowledge_list")
+      .then((rows) => {
+        if (!cancelled) setMentionFiles(rows);
+      })
+      .catch((err) => {
+        logWarn("knowledge_list", err);
+        if (!cancelled) setMentionFiles([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mentionOpen]);
 
   const toggleMention = useCallback((file: KnowledgeFileInfo) => {
     setMentions((prev) =>
@@ -94,41 +94,38 @@ function ChatComposerInner({
     );
   }, []);
 
-  const handleComposerChange = useCallback(
-    (e: ChangeEvent<HTMLTextAreaElement>) => {
-      const value = e.target.value;
-      const caret = e.target.selectionStart ?? value.length;
-      const q = activeMentionQuery(value, caret);
-      setMentionQuery(q ?? "");
-      if (q !== null) {
-        setMentionOpen(true);
-        void loadMentionFiles();
-      } else {
-        setMentionOpen(false);
-      }
-    },
-    [loadMentionFiles],
-  );
+  const handleComposerChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    const caret = e.target.selectionStart ?? value.length;
+    const m = activeMentionRange(value, caret);
+    setMentionQuery(m?.query ?? "");
+    mentionRange.current = m ? { start: m.start, end: m.end } : null;
+    setMentionOpen(m !== null);
+  }, []);
 
   const pickMention = useCallback(
     (file: KnowledgeFileInfo) => {
       setMentions((prev) => (prev.some((m) => m.id === file.id) ? prev : [...prev, file]));
-      const value = controller.textInput.value;
-      const token = "@" + mentionQuery;
-      const idx = value.lastIndexOf(token);
-      if (idx !== -1) {
-        const next = (value.slice(0, idx) + value.slice(idx + token.length)).replace(/\s{2,}/g, " ");
-        controller.textInput.setInput(next);
+      const range = mentionRange.current;
+      if (range) {
+        // Remove exactly the "@query" span captured at last keystroke — never
+        // an earlier "@" occurrence elsewhere in the text.
+        const value = controller.textInput.value;
+        if (range.end <= value.length && value[range.start] === "@") {
+          const next = (value.slice(0, range.start) + value.slice(range.end)).replace(/\s{2,}/g, " ");
+          controller.textInput.setInput(next);
+        }
+        mentionRange.current = null;
       }
       setMentionOpen(false);
       setMentionQuery("");
     },
-    [controller, mentionQuery],
+    [controller],
   );
 
   const handleTranscription = useCallback(
     (transcript: string) => {
-      controller.textInput.setInput((controller.textInput.value.trimEnd() + " " + transcript).trimStart());
+      controller.textInput.setInput(`${controller.textInput.value.trimEnd()} ${transcript}`.trimStart());
     },
     [controller],
   );
@@ -194,17 +191,15 @@ function ChatComposerInner({
         </div>
       )}
       <PromptInputBody>
-        <PromptInputTextarea placeholder={`Message ${agentName}…`} onChange={handleComposerChange} onKeyDown={handleTextareaKeyDown} />
+        <PromptInputTextarea
+          placeholder={`Message ${agentName}…`}
+          onChange={handleComposerChange}
+          onKeyDown={handleTextareaKeyDown}
+        />
       </PromptInputBody>
       <PromptInputFooter>
         <PromptInputTools>
-          <Popover
-            onOpenChange={(open) => {
-              setMentionOpen(open);
-              if (open) void loadMentionFiles();
-            }}
-            open={mentionOpen}
-          >
+          <Popover onOpenChange={setMentionOpen} open={mentionOpen}>
             <PopoverTrigger asChild={true}>
               <Button className="size-8 [&_svg]:size-4" size="icon" title="Mention a file (@)" variant="ghost">
                 <AtSignIcon />

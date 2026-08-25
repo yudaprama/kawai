@@ -1,11 +1,12 @@
+import { PlusIcon, VideoIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { FileIcon } from "@/components/file-icon";
+import { KnowledgeFileRow, KnowledgeSectionLabel } from "@/components/knowledge-file-row";
+import { SqlProfilesSection } from "@/components/sql-profiles-section";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { KnowledgeFileInfo } from "@/lib/api";
-import { KnowledgeFileRow, KnowledgeSectionLabel } from "@/components/knowledge-file-row";
-import { FileIcon } from "@/components/file-icon";
-import { SqlProfilesSection } from "@/components/sql-profiles-section";
-import { PlusIcon, VideoIcon } from "lucide-react";
 
 export function KnowledgePanel({
   knowledge,
@@ -40,6 +41,16 @@ export function KnowledgePanel({
   onDeleteFile: (file: KnowledgeFileInfo) => void;
   onPreview: (file: KnowledgeFileInfo) => void;
 }) {
+  type KnowledgeTab = "session" | "library" | "databases";
+  const [tab, setTab] = useState<KnowledgeTab>(sessionId != null ? "session" : "library");
+  const prevSessionId = useRef(sessionId);
+  useEffect(() => {
+    // The panel is already mounted when a lazy first message creates the
+    // session — follow that null → non-null transition to the session tab,
+    // but never yank the user away from a tab they picked themselves.
+    if (sessionId != null && prevSessionId.current == null) setTab("session");
+    prevSessionId.current = sessionId;
+  }, [sessionId]);
   return (
     <section className="flex min-w-0 flex-1 flex-col border-l">
       <div className="flex h-10 shrink-0 items-center justify-between gap-4 border-b px-3">
@@ -83,12 +94,10 @@ export function KnowledgePanel({
               Loading knowledge…
             </div>
           ) : (
-            <Tabs defaultValue={sessionId != null ? "session" : "library"}>
+            <Tabs onValueChange={(v) => setTab(v as KnowledgeTab)} value={tab}>
               <TabsList className="mb-3">
                 <TabsTrigger value="session">In this session</TabsTrigger>
-                <TabsTrigger value="library">
-                  {sessionId != null ? "Library" : "Documents"}
-                </TabsTrigger>
+                <TabsTrigger value="library">{sessionId != null ? "Library" : "Documents"}</TabsTrigger>
                 <TabsTrigger value="databases">Databases</TabsTrigger>
               </TabsList>
               <TabsContent value="databases">
@@ -97,10 +106,7 @@ export function KnowledgePanel({
               <TabsContent value="session">
                 {sessionId != null && (
                   <div>
-                    <KnowledgeSectionLabel
-                      count={sessionFiles.length}
-                      label="In this session"
-                    />
+                    <KnowledgeSectionLabel count={sessionFiles.length} label="In this session" />
                     {sessionFiles.length > 0 ? (
                       <>
                         <div className="flex flex-col gap-1.5">
@@ -126,10 +132,8 @@ export function KnowledgePanel({
                       </>
                     ) : (
                       <div className="text-muted-foreground/70 rounded-lg border border-dashed px-3 py-3 text-xs">
-                        No documents in this session yet — press{" "}
-                        <span className="font-medium">+</span> on a library document
-                        below, or import new files; the agent can then search them in
-                        this chat.
+                        No documents in this session yet — press <span className="font-medium">+</span> on a library
+                        document below, or import new files; the agent can then search them in this chat.
                       </div>
                     )}
                   </div>
@@ -143,8 +147,8 @@ export function KnowledgePanel({
                   />
                   {knowledge.files.length === 0 ? (
                     <div className="text-muted-foreground/70 rounded-lg border border-dashed px-3 py-3 text-xs">
-                      No sources yet — import .docx, .xlsx, .pptx, .pdf or images with
-                      &quot;Add files&quot;, or paste a YouTube link with &quot;Link&quot;.
+                      No sources yet — import .docx, .xlsx, .pptx, .pdf or images with &quot;Add files&quot;, or paste a
+                      YouTube link with &quot;Link&quot;.
                     </div>
                   ) : (
                     <div className="flex flex-col gap-1.5">

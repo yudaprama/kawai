@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
 import { nanoid } from "nanoid";
-import { useAuth } from "./use-auth";
-import { type AgentInfo, type ChatSessionInfo } from "@/lib/api";
-import { streamOperation, type StreamControl } from "@/lib/stream";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatStatus, ToolUIPart, UIMessage, UIMessagePart } from "@/lib/ai-types";
+import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
 import { stripToolMarkup, toFriendlyError } from "@/lib/chat-helpers";
+import { type StreamControl, streamOperation } from "@/lib/stream";
+import { useAuth } from "./use-auth";
 import { useChatModel } from "./use-chat-model";
 import { useChatSessions } from "./use-chat-sessions";
 
@@ -15,7 +15,13 @@ export type LocalChatEvent =
   | { type: "thinking"; text: string }
   | { type: "toolCall"; id?: string | null; tool: string; args: unknown }
   | { type: "subagentThinking"; provider: string; text: string }
-  | { type: "toolResult"; id?: string | null; tool: string; ok: boolean; summary: string }
+  | {
+      type: "toolResult";
+      id?: string | null;
+      tool: string;
+      ok: boolean;
+      summary: string;
+    }
   | { type: "finished" }
   | { type: "error"; message: string };
 
@@ -65,9 +71,12 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
   useEffect(() => {
     if (effectiveUserId) patch({ userId: effectiveUserId });
     if (authError) patch({ authError });
-  }, [effectiveUserId, authError]);
+  }, [effectiveUserId, authError, patch]);
 
-  const clearMessages = useCallback(() => patch({ messages: [], historyError: null } as Partial<LocalChatState>), [patch]);
+  const clearMessages = useCallback(
+    () => patch({ messages: [], historyError: null } as Partial<LocalChatState>),
+    [patch],
+  );
 
   const { loadModel, resetModelContext, toggleThinking, unloadModel } = useChatModel({ patch, state });
   const {
@@ -81,11 +90,25 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     setSessionArchived,
     retryHistoryLoad,
     groupedSessions,
-  } = useChatSessions({ agentId, patch, state, resetModelContext, streamCtrl, clearMessages });
+  } = useChatSessions({
+    agentId,
+    patch,
+    state,
+    resetModelContext,
+    streamCtrl,
+    clearMessages,
+  });
+
+  // Finalizes the in-flight assistant message (marks streaming parts done).
+  // Populated by send() while a stream is active; invoked by stop() because
+  // cancel_stream means the channel usually never emits a terminal event.
+  const finalizeAssistant = useRef<(() => void) | null>(null);
 
   const stop = useCallback(() => {
     streamCtrl.current?.cancel();
     streamCtrl.current = null;
+    finalizeAssistant.current?.();
+    finalizeAssistant.current = null;
     patch({ status: "ready" });
   }, [patch]);
 
@@ -107,7 +130,11 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         parts: [{ type: "text", text: prompt, state: "done" }],
       };
       const assistantId = nanoid();
-      const assistantMessage: UIMessage = { id: assistantId, role: "assistant", parts: [] };
+      const assistantMessage: UIMessage = {
+        id: assistantId,
+        role: "assistant",
+        parts: [],
+      };
 
       setState((prev) => ({
         ...prev,
@@ -121,8 +148,15 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
       let toolParts: ToolUIPart[] = [];
       let reasoning: { provider: string; text: string; done: boolean } | null = null;
       const reasoningPart = (): UIMessagePart[] =>
-        reasoning && reasoning.text
-          ? [{ type: "reasoning", text: reasoning.text, state: reasoning.done ? ("done" as const) : ("streaming" as const), providerMetadata: { provider: reasoning.provider } }]
+        reasoning?.text
+          ? [
+              {
+                type: "reasoning",
+                text: reasoning.text,
+                state: reasoning.done ? ("done" as const) : ("streaming" as const),
+                providerMetadata: { provider: reasoning.provider },
+              },
+            ]
           : [];
 
       const setAssistantParts = (parts: UIMessagePart[], status?: ChatStatus) => {
@@ -135,14 +169,38 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
       const syncStreamingDisplay = () => {
         const displayText = stripToolMarkup(full);
         setAssistantParts(
-          displayText ? [{ type: "text", text: displayText, state: "streaming" as const }, ...toolParts, ...reasoningPart()] : [...toolParts, ...reasoningPart()],
+          displayText
+            ? [
+                {
+                  type: "text",
+                  text: displayText,
+                  state: "streaming" as const,
+                },
+                ...toolParts,
+                ...reasoningPart(),
+              ]
+            : [...toolParts, ...reasoningPart()],
           "streaming",
+        );
+      };
+      finalizeAssistant.current = () => {
+        if (reasoning) reasoning.done = true;
+        const displayText = stripToolMarkup(full);
+        setAssistantParts(
+          displayText
+            ? [{ type: "text", text: displayText, state: "done" as const }, ...toolParts, ...reasoningPart()]
+            : [...toolParts, ...reasoningPart()],
         );
       };
 
       streamCtrl.current = streamOperation<LocalChatEvent>(
         "agent_chat",
-        { agentId, sessionId, message: prompt, ...(fileIds && fileIds.length > 0 ? { fileIds } : {}) },
+        {
+          agentId,
+          sessionId,
+          message: prompt,
+          ...(fileIds && fileIds.length > 0 ? { fileIds } : {}),
+        },
         {
           onEvent: (ev) => {
             if (ev.type === "token") {
@@ -154,21 +212,36 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
               // start fresh when a cloud subagent's buffer owned the part before.
               reasoning =
                 reasoning && reasoning.provider === "on-device"
-                  ? { ...reasoning, text: reasoning.text + ev.text, done: false }
+                  ? {
+                      ...reasoning,
+                      text: reasoning.text + ev.text,
+                      done: false,
+                    }
                   : { provider: "on-device", text: ev.text, done: false };
               syncStreamingDisplay();
             } else if (ev.type === "subagentThinking") {
               reasoning = { provider: ev.provider, text: ev.text, done: false };
               syncStreamingDisplay();
             } else if (ev.type === "toolCall") {
-              const part: ToolUIPart = { type: `tool-${ev.tool}`, toolCallId: ev.id ?? nanoid(), state: "input-available", input: ev.args };
+              const part: ToolUIPart = {
+                type: `tool-${ev.tool}`,
+                toolCallId: ev.id ?? nanoid(),
+                state: "input-available",
+                input: ev.args,
+              };
               toolParts = [...toolParts, part];
               syncStreamingDisplay();
             } else if (ev.type === "toolResult") {
               toolParts = toolParts.map((p) =>
                 p.type === `tool-${ev.tool}` &&
-                ((ev.id != null && p.toolCallId === ev.id) || (ev.id == null && p.state !== "output-available" && p.state !== "output-error"))
-                  ? { ...p, state: ev.ok ? ("output-available" as const) : ("output-error" as const), output: { ok: ev.ok, summary: ev.summary }, ...(ev.ok ? {} : { errorText: ev.summary }) }
+                ((ev.id != null && p.toolCallId === ev.id) ||
+                  (ev.id == null && p.state !== "output-available" && p.state !== "output-error"))
+                  ? {
+                      ...p,
+                      state: ev.ok ? ("output-available" as const) : ("output-error" as const),
+                      output: { ok: ev.ok, summary: ev.summary },
+                      ...(ev.ok ? {} : { errorText: ev.summary }),
+                    }
                   : p,
               );
               syncStreamingDisplay();
@@ -176,16 +249,20 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
           },
           onDone: () => {
             streamCtrl.current = null;
+            finalizeAssistant.current = null;
             if (reasoning) reasoning.done = true;
             const displayText = stripToolMarkup(full);
             setAssistantParts(
-              displayText ? [{ type: "text", text: displayText, state: "done" as const }, ...toolParts, ...reasoningPart()] : [...toolParts, ...reasoningPart()],
+              displayText
+                ? [{ type: "text", text: displayText, state: "done" as const }, ...toolParts, ...reasoningPart()]
+                : [...toolParts, ...reasoningPart()],
               "ready",
             );
             void loadSessions();
           },
           onError: (err) => {
             streamCtrl.current = null;
+            finalizeAssistant.current = null;
             const msg = toFriendlyError(err.message);
             const lower = err.message.toLowerCase();
             const isBusyRace = lower.includes("already running") || lower.includes("generation is already");
@@ -196,7 +273,22 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
                 status: "ready",
                 error: msg,
                 messages: prev.messages.map((m) =>
-                  m.id === assistantId ? { ...m, parts: full ? [{ type: "text", text: full, state: "done" as const }, ...toolParts, ...reasoningPart()] : [...toolParts, ...reasoningPart()] } : m,
+                  m.id === assistantId
+                    ? {
+                        ...m,
+                        parts: full
+                          ? [
+                              {
+                                type: "text",
+                                text: full,
+                                state: "done" as const,
+                              },
+                              ...toolParts,
+                              ...reasoningPart(),
+                            ]
+                          : [...toolParts, ...reasoningPart()],
+                      }
+                    : m,
                 ),
               }));
               return;
@@ -206,7 +298,22 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
               status: "error",
               error: msg,
               messages: prev.messages.map((m) =>
-                m.id === assistantId ? { ...m, parts: full ? [{ type: "text", text: full, state: "done" as const }, ...toolParts, ...reasoningPart()] : [...toolParts, ...reasoningPart()] } : m,
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      parts: full
+                        ? [
+                            {
+                              type: "text",
+                              text: full,
+                              state: "done" as const,
+                            },
+                            ...toolParts,
+                            ...reasoningPart(),
+                          ]
+                        : [...toolParts, ...reasoningPart()],
+                    }
+                  : m,
               ),
             }));
           },

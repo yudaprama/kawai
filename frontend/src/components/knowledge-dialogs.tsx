@@ -1,6 +1,5 @@
+import { FilePreview } from "@/components/file-preview";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
 import {
   Dialog,
   DialogClose,
@@ -10,17 +9,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FilePreview } from "@/components/file-preview";
-import { knowledgeFileToPreview } from "@/lib/preview-file";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import type { KnowledgeFileInfo } from "@/lib/api";
+import { knowledgeFileToPreview } from "@/lib/preview-file";
 
-export function PreviewDialog({
-  file,
-  onClose,
-}: {
-  file: KnowledgeFileInfo | null;
-  onClose: () => void;
-}) {
+export function PreviewDialog({ file, onClose }: { file: KnowledgeFileInfo | null; onClose: () => void }) {
   return (
     <Dialog open={file != null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex h-[80vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">

@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { ChevronDownIcon, ChevronRightIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { SessionRow } from "@/components/session-row";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
-import { ChevronDownIcon, ChevronRightIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
-import { SessionRow } from "@/components/session-row";
 import { useSessionFilter } from "@/hooks/use-session-filter";
+import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
 import { agentPresentation } from "@/panels/agents-rail";
 
 interface SessionGroup {
@@ -41,8 +41,25 @@ export function SessionsPanel({
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
+  // Two-click delete confirm (same pattern as knowledge files): first click
+  // arms the row, second click within the window actually deletes.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  useEffect(() => {
+    if (confirmDeleteId == null) return;
+    const t = setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDeleteId]);
   const { filteredGroups, filteredArchived, q } = useSessionFilter(groupedSessions, archivedSessions, query);
   const CapabilityIcon = agentPresentation(agent.id).icon;
+
+  const requestDelete = (sessionId: number) => {
+    if (confirmDeleteId === sessionId) {
+      setConfirmDeleteId(null);
+      onDeleteSession(sessionId);
+      return;
+    }
+    setConfirmDeleteId(sessionId);
+  };
 
   const startRename = (session: ChatSessionInfo) => {
     setRenamingId(session.id);
@@ -56,9 +73,7 @@ export function SessionsPanel({
   return (
     <aside className="bg-sidebar/40 flex w-[240px] shrink-0 flex-col border-l">
       <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
-        <span className="text-[11px] tracking-wider text-muted-foreground uppercase">
-          Sessions
-        </span>
+        <span className="text-[11px] tracking-wider text-muted-foreground uppercase">Sessions</span>
         <Button disabled={busy} onClick={onNewChat} size="xs" variant="default">
           <PlusIcon className="size-3" />
           New
@@ -105,6 +120,7 @@ export function SessionsPanel({
             <div className="flex flex-col gap-0.5">
               {group.sessions.map((session) => (
                 <SessionRow
+                  confirmDelete={confirmDeleteId === session.id}
                   key={session.id}
                   session={session}
                   active={activeSessionId === session.id}
@@ -117,16 +133,14 @@ export function SessionsPanel({
                   onCommitRename={commitRename}
                   onCancelRename={() => setRenamingId(null)}
                   onArchive={() => onArchiveSession(session.id, true)}
-                  onDelete={() => onDeleteSession(session.id)}
+                  onDelete={() => requestDelete(session.id)}
                 />
               ))}
             </div>
           </div>
         ))}
         {q && filteredGroups.length === 0 && filteredArchived.length === 0 && (
-          <p className="text-muted-foreground/70 px-2.5 py-2 text-xs">
-            No sessions match “{query.trim()}”.
-          </p>
+          <p className="text-muted-foreground/70 px-2.5 py-2 text-xs">No sessions match “{query.trim()}”.</p>
         )}
         {filteredArchived.length > 0 && (
           <div>
@@ -135,17 +149,14 @@ export function SessionsPanel({
               onClick={() => setArchiveOpen((v) => !v)}
               type="button"
             >
-              {archiveOpen ? (
-                <ChevronDownIcon className="size-3" />
-              ) : (
-                <ChevronRightIcon className="size-3" />
-              )}
+              {archiveOpen ? <ChevronDownIcon className="size-3" /> : <ChevronRightIcon className="size-3" />}
               Archived ({filteredArchived.length})
             </button>
             {archiveOpen && (
               <div className="flex flex-col gap-0.5">
                 {filteredArchived.map((session) => (
                   <SessionRow
+                    confirmDelete={confirmDeleteId === session.id}
                     key={session.id}
                     session={session}
                     busy={busy}
@@ -157,7 +168,7 @@ export function SessionsPanel({
                     onCommitRename={() => {}}
                     onCancelRename={() => {}}
                     onArchive={() => onArchiveSession(session.id, false)}
-                    onDelete={() => onDeleteSession(session.id)}
+                    onDelete={() => requestDelete(session.id)}
                     archivedStyle
                   />
                 ))}

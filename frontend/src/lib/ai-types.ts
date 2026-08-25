@@ -81,11 +81,8 @@ export interface ToolUIPart extends ToolUIPartBase {
   type: `tool-${string}`;
 }
 
-export interface DynamicToolUIPart<
-  TName extends string = string,
-  TInput = unknown,
-  TOutput = unknown,
-> extends ToolUIPartBase {
+export interface DynamicToolUIPart<TName extends string = string, TInput = unknown, TOutput = unknown>
+  extends ToolUIPartBase {
   type: "dynamic-tool";
   toolName: TName;
   input?: TInput;
@@ -101,9 +98,7 @@ export type UIMessagePart =
   | ToolUIPart
   | DynamicToolUIPart;
 
-export interface UIMessage<
-  PARTS extends UIMessagePart[] = UIMessagePart[],
-> {
+export interface UIMessage<PARTS extends UIMessagePart[] = UIMessagePart[]> {
   id: string;
   role: "system" | "user" | "assistant";
   metadata?: UIMessageMetadata;

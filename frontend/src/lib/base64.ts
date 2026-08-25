@@ -23,7 +23,9 @@ export function base64ToText(b64: string): string {
 export function dataUrlToFile(dataUrl: string, name: string): File {
   const [meta, b64] = dataUrl.split(",", 2);
   const mime = meta.slice(5, meta.indexOf(";")) || "application/octet-stream";
-  return new File([base64ToBytes(b64 ?? "") as unknown as BlobPart], name, { type: mime });
+  return new File([base64ToBytes(b64 ?? "") as unknown as BlobPart], name, {
+    type: mime,
+  });
 }
 
 export function fileToBase64(file: File): Promise<string> {

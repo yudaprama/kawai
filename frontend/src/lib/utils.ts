@@ -1,10 +1,10 @@
-import { clsx, type ClassValue } from "clsx"
-import { toast } from "sonner"
-import { twMerge } from "tailwind-merge"
-import { errText } from "@/lib/api"
+import { type ClassValue, clsx } from "clsx";
+import { toast } from "sonner";
+import { twMerge } from "tailwind-merge";
+import { errText } from "@/lib/api";
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,8 +1,8 @@
+import { CheckIcon, EyeIcon, PlusIcon, RotateCcwIcon, TrashIcon, XIcon } from "lucide-react";
 import { FileIcon } from "@/components/file-icon";
 import { Spinner } from "@/components/ui/spinner";
 import type { KnowledgeFileInfo } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
-import { CheckIcon, EyeIcon, PlusIcon, RotateCcwIcon, TrashIcon, XIcon } from "lucide-react";
 
 export function KnowledgeStatusBadge({ file }: { file: KnowledgeFileInfo }) {
   if (file.status === "indexing") {
@@ -117,7 +117,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
           </button>
         ) : (
           <button
-            aria-label={`Add ${file.originalName} to this session}`}
+            aria-label={`Add ${file.originalName} to this session`}
             className="text-muted-foreground hover:text-foreground rounded p-1"
             onClick={() => actions.onAdd(file)}
             title="Add to this session — makes this document searchable by the agent in this chat"

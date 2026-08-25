@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { useLocalChat } from "@/hooks/use-local-chat";
-import { useKnowledgeActions } from "@/hooks/use-knowledge-actions";
-import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
-import { call, type AgentInfo } from "@/lib/api";
-import { logWarn } from "@/lib/logger";
 import { LinkDialog, PreviewDialog } from "@/components/knowledge-dialogs";
+import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
+import { useKnowledgeActions } from "@/hooks/use-knowledge-actions";
+import { useLocalChat } from "@/hooks/use-local-chat";
+import { type AgentInfo, call } from "@/lib/api";
+import { logWarn } from "@/lib/logger";
 import { AgentsRail, agentPresentation } from "@/panels/agents-rail";
 import { ConversationPanel } from "@/panels/conversation-panel";
 import { KnowledgePanel } from "@/panels/knowledge-panel";
@@ -34,8 +34,7 @@ export default function App() {
     if (agents.length && activeAgentId == null) setActiveAgentId(agents[0].id);
   }, [agents, activeAgentId]);
 
-  const agent =
-    (activeAgentId != null && agents.find((a) => a.id === activeAgentId)) || agents[0] || null;
+  const agent = (activeAgentId != null && agents.find((a) => a.id === activeAgentId)) || agents[0] || null;
   const presentation = agent ? agentPresentation(agent.id) : agentPresentation("");
   const chat = useLocalChat(agent ?? { id: "", tools: false });
   const { status } = chat;
@@ -52,8 +51,9 @@ export default function App() {
   const ka = useKnowledgeActions(chat);
 
   useEffect(() => {
+    if (activeAgentId == null) return;
     void chat.selectAgent();
-  }, [activeAgentId]);
+  }, [activeAgentId, chat.selectAgent]);
 
   useAppShortcuts({
     busy,
@@ -192,6 +192,7 @@ export default function App() {
             aria-label="Close navigation"
             className="absolute inset-0 bg-black/50"
             onClick={() => setMobileDrawer(null)}
+            type="button"
           />
           {mobileDrawer === "agents" && (
             <div className="bg-background relative flex h-full w-[210px] max-w-[85vw] flex-col shadow-xl">
@@ -239,6 +240,7 @@ export default function App() {
                 aria-label="Close knowledge"
                 className="bg-background/80 hover:bg-accent absolute top-2 right-2 z-10 rounded-md border px-2 py-1 text-xs shadow-sm"
                 onClick={() => setMobileDrawer(null)}
+                type="button"
               >
                 Close
               </button>

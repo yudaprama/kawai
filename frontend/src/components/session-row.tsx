@@ -1,6 +1,6 @@
+import { ArchiveIcon, ArchiveRestoreIcon, PencilIcon, TrashIcon } from "lucide-react";
 import { RenameInput } from "@/components/rename-input";
 import type { ChatSessionInfo } from "@/lib/api";
-import { ArchiveIcon, ArchiveRestoreIcon, PencilIcon, TrashIcon } from "lucide-react";
 
 export function SessionRow({
   session,
@@ -8,6 +8,7 @@ export function SessionRow({
   busy,
   renaming,
   renameValue,
+  confirmDelete,
   onChangeRename,
   onSelect,
   onStartRename,
@@ -22,6 +23,8 @@ export function SessionRow({
   busy: boolean;
   renaming: boolean;
   renameValue: string;
+  /** Delete is armed (first click done) — restyle + hint before the real delete. */
+  confirmDelete?: boolean;
   onChangeRename: (v: string) => void;
   onSelect: () => void;
   onStartRename: () => void;
@@ -32,7 +35,9 @@ export function SessionRow({
   archivedStyle?: boolean;
 }) {
   if (renaming) {
-    return <RenameInput onChange={onChangeRename} onCancel={onCancelRename} onCommit={onCommitRename} value={renameValue} />;
+    return (
+      <RenameInput onChange={onChangeRename} onCancel={onCancelRename} onCommit={onCommitRename} value={renameValue} />
+    );
   }
   return (
     <div
@@ -72,9 +77,10 @@ export function SessionRow({
         </button>
         <button
           aria-label={`Delete ${session.title || `session ${session.id}`}`}
-          className="text-muted-foreground hover:text-destructive disabled:opacity-30"
+          className={`disabled:opacity-30 ${confirmDelete ? "text-destructive" : "text-muted-foreground hover:text-destructive"}`}
           disabled={busy}
           onClick={onDelete}
+          title={confirmDelete ? "Click again to confirm — deletes the session and its messages" : "Delete session"}
           type="button"
         >
           <TrashIcon className="size-3.5" />

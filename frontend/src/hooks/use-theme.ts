@@ -6,10 +6,7 @@ export type ResolvedTheme = "light" | "dark";
 const STORAGE_KEY = "kawai-theme";
 
 function systemPrefersDark(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches
-  );
+  return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
 
 function applyTheme(theme: Theme): ResolvedTheme {

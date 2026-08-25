@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { call, errText } from "@/lib/api";
 import type { UserInfo } from "@/lib/api";
+import { call, errText } from "@/lib/api";
 
 export function useAuth() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -13,10 +13,9 @@ export function useAuth() {
       setAuthError(null);
     } catch {
       try {
-        const u: UserInfo = await call<UserInfo>(
-          "set_session",
-          { token: "dev-clerk-unavailable" },
-        );
+        const u: UserInfo = await call<UserInfo>("set_session", {
+          token: "dev-clerk-unavailable",
+        });
         setUserId(u.userId);
         setAuthError(null);
       } catch (err) {

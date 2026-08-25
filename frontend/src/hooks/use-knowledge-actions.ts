@@ -2,14 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useKnowledgeFiles } from "@/hooks/use-knowledge-files";
 import { useRetryableToast } from "@/hooks/use-retryable-toast";
-import { platform, runningInTauri } from "@/platform";
 import { call, errText, type KnowledgeFileInfo, type OfficeFileInfo } from "@/lib/api";
+import { dataUrlToFile, fileToBase64 } from "@/lib/base64";
+import { ADD_FILE_ACCEPT } from "@/lib/extensions";
+import type { KnowledgeSource } from "@/lib/knowledge";
+import { classifySource, isYouTubeUrl } from "@/lib/knowledge";
 import { logWarn } from "@/lib/logger";
 import { showErrorToast } from "@/lib/utils";
-import { ADD_FILE_ACCEPT } from "@/lib/extensions";
-import { dataUrlToFile, fileToBase64 } from "@/lib/base64";
-import { classifySource, isYouTubeUrl } from "@/lib/knowledge";
-import type { KnowledgeSource } from "@/lib/knowledge";
+import { platform, runningInTauri } from "@/platform";
 
 export function useKnowledgeActions(chat: {
   sessionId: number | null;
@@ -37,19 +37,21 @@ export function useKnowledgeActions(chat: {
   }, [confirmDeleteId]);
 
   const importKnowledgeFiles = useCallback(
-    async (
-      items: { sourcePath?: string; file?: File; name: string }[],
-      opts?: { sessionId?: number | null },
-    ) => {
+    async (items: { sourcePath?: string; file?: File; name: string }[], opts?: { sessionId?: number | null }) => {
       const sessionId = opts && "sessionId" in opts ? opts.sessionId : chat.sessionId;
       const importedIds: string[] = [];
       for (const item of items) {
         let imported: OfficeFileInfo | undefined;
         if (item.sourcePath) {
-          imported = await call<OfficeFileInfo>("office_import_file", { sourcePath: item.sourcePath });
+          imported = await call<OfficeFileInfo>("office_import_file", {
+            sourcePath: item.sourcePath,
+          });
         } else if (item.file) {
           const dataBase64 = await fileToBase64(item.file);
-          imported = await call<OfficeFileInfo>("office_import_file", { dataBase64, name: item.name });
+          imported = await call<OfficeFileInfo>("office_import_file", {
+            dataBase64,
+            name: item.name,
+          });
         }
         if (imported?.id) importedIds.push(imported.id);
       }
@@ -74,17 +76,27 @@ export function useKnowledgeActions(chat: {
     let picked: KnowledgeSource[];
     try {
       if (runningInTauri) {
-        const paths = await platform.pickFilePaths({ accept: ADD_FILE_ACCEPT, multiple: true });
+        const paths = await platform.pickFilePaths({
+          accept: ADD_FILE_ACCEPT,
+          multiple: true,
+        });
         if (!paths?.length) return;
         picked = paths.map((p) => classifySource(p.split(/[\\/]/).pop() ?? p, { path: p }));
       } else {
-        const pickedFiles = await platform.pickFiles({ accept: ADD_FILE_ACCEPT, multiple: true });
+        const pickedFiles = await platform.pickFiles({
+          accept: ADD_FILE_ACCEPT,
+          multiple: true,
+        });
         if (!pickedFiles?.length) return;
         picked = pickedFiles.map((f) => classifySource(f.name, { file: f }));
       }
       for (const item of picked) {
         if (item.kind === "file") {
-          toImport.push({ name: item.name, sourcePath: item.sourcePath, file: item.file });
+          toImport.push({
+            name: item.name,
+            sourcePath: item.sourcePath,
+            file: item.file,
+          });
         } else {
           showErrorToast(`Unsupported file type: ${item.name}`);
         }
@@ -113,10 +125,17 @@ export function useKnowledgeActions(chat: {
       const ext = mime.split("/")[1] ?? "png";
       try {
         const importedIds = await importKnowledgeFiles(
-          [{ name: `${name}.${ext}`, file: dataUrlToFile(dataUrl, `${name}.${ext}`) }],
+          [
+            {
+              name: `${name}.${ext}`,
+              file: dataUrlToFile(dataUrl, `${name}.${ext}`),
+            },
+          ],
           { sessionId: sid },
         );
-        toast.success("Image saved to knowledge", { description: "Indexing runs in the background." });
+        toast.success("Image saved to knowledge", {
+          description: "Indexing runs in the background.",
+        });
         return importedIds;
       } catch (err) {
         showErrorToast(err);
@@ -137,7 +156,10 @@ export function useKnowledgeActions(chat: {
       knowledge.markInSession([file.id], true);
       if (file.chunks === 0 || file.status === "failed") knowledge.markIndexing([file.id]);
       try {
-        await call<number>("knowledge_add_to_session", { sessionId: sid, fileIds: [file.id] });
+        await call<number>("knowledge_add_to_session", {
+          sessionId: sid,
+          fileIds: [file.id],
+        });
       } catch (err) {
         showErrorToast(err);
       } finally {
@@ -152,7 +174,10 @@ export function useKnowledgeActions(chat: {
       if (chat.sessionId == null) return;
       knowledge.markInSession([file.id], false);
       try {
-        await call<number>("knowledge_forget", { sessionId: chat.sessionId, fileIds: [file.id] });
+        await call<number>("knowledge_forget", {
+          sessionId: chat.sessionId,
+          fileIds: [file.id],
+        });
       } catch (err) {
         showErrorToast(err);
       } finally {
@@ -166,7 +191,10 @@ export function useKnowledgeActions(chat: {
     async (file: KnowledgeFileInfo) => {
       knowledge.markIndexing([file.id]);
       try {
-        await call<number>("office_index_file", { sessionId: chat.sessionId, fileId: file.id });
+        await call<number>("office_index_file", {
+          sessionId: chat.sessionId,
+          fileId: file.id,
+        });
       } catch (err) {
         logWarn("office_index_file", err);
       } finally {
@@ -212,13 +240,18 @@ export function useKnowledgeActions(chat: {
     setLinkPromptOpen(false);
     setLinking(true);
     const importVideo = async () => {
-      const info = await call<OfficeFileInfo>("knowledge_import_youtube", { url, sessionId: chat.sessionId });
+      const info = await call<OfficeFileInfo>("knowledge_import_youtube", {
+        url,
+        sessionId: chat.sessionId,
+      });
       await knowledge.refresh();
       return info;
     };
     try {
       const info = await importVideo();
-      toast.success(`Imported ${info.originalName}`, { description: "Indexing runs in the background." });
+      toast.success(`Imported ${info.originalName}`, {
+        description: "Indexing runs in the background.",
+      });
     } catch (err) {
       logWarn("knowledge_import_youtube", err);
       runWithRetry(`Couldn't import the YouTube video — ${errText(err)}`, importVideo);

@@ -41,7 +41,9 @@ export function useFilePreview(file: PreviewFile) {
     setData(undefined);
     setError(null);
     setIsLoading(true);
-    call<{ mime: string; dataBase64: string }>("office_read_file", { fileId: file.id })
+    call<{ mime: string; dataBase64: string }>("office_read_file", {
+      fileId: file.id,
+    })
       .then((res) => {
         if (cancelled) return;
         const dataUrl = `data:${res.mime};base64,${res.dataBase64}`;

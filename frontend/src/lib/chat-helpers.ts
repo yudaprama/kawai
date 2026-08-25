@@ -1,5 +1,5 @@
-import type { ChatMessageInfo } from "@/lib/api";
 import type { UIMessage } from "@/lib/ai-types";
+import type { ChatMessageInfo } from "@/lib/api";
 
 export function historyToMessages(rows: ChatMessageInfo[]): UIMessage[] {
   return rows.map((row) => ({
@@ -37,4 +37,20 @@ export function stripToolMarkup(s: string): string {
     .replace(/<\|(?:tool_call[^>]*|tool_response[^>]*|channel>[^>]*|message\||end\|)>/gi, "")
     .replace(/\b(?:call|response):[a-z0-9_]+\s*\{[^{}]*\}/gi, "")
     .trim();
+}
+
+/** The @-mention currently being typed at `caret`: its query plus the exact
+ *  [start, end) span of "@query" in `value`, or null when no mention is
+ *  active (@ must follow whitespace/start and the query must not contain
+ *  whitespace). The span lets callers delete exactly what was typed instead
+ *  of guessing with string search. */
+export function activeMentionRange(value: string, caret: number): { query: string; start: number; end: number } | null {
+  const upTo = value.slice(0, caret);
+  const at = upTo.lastIndexOf("@");
+  if (at === -1) return null;
+  const before = at === 0 ? " " : upTo[at - 1];
+  if (!/\s/.test(before)) return null;
+  const query = upTo.slice(at + 1);
+  if (/\s/.test(query)) return null;
+  return { query, start: at, end: caret };
 }

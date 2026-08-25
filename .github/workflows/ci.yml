@@ -44,6 +44,12 @@ jobs:
       - name: Install JS deps
         run: bun install
 
+      - name: Lint frontend (biome — vendored dirs excluded)
+        run: bun run lint
+
+      - name: Test frontend (vitest — pure helpers)
+        run: bun run test
+
       - name: Build frontend (tsc -b + vite)
         run: bun run build
 

@@ -1,14 +1,14 @@
+import { Download, ExternalLink, FileWarning } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { BundledLanguage } from "shiki";
-import { Download, ExternalLink, FileWarning } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import { MessageResponse } from "@/components/ai-elements/message";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { errText, tauriOpenFile } from "@/lib/api";
-import { fileKind, shikiLanguage, type FileKind } from "@/lib/file-types";
-import { useFilePreview, type PreviewFile } from "@/lib/preview-file";
+import { type FileKind, fileKind, shikiLanguage } from "@/lib/file-types";
 import { logWarn } from "@/lib/logger";
+import { type PreviewFile, useFilePreview } from "@/lib/preview-file";
 import { runningInTauri } from "@/platform";
 
 const FALLBACK_REASON: Partial<Record<FileKind, string>> = {
@@ -83,7 +83,12 @@ function VideoPreview({ file }: { file: PreviewFile }) {
 function PdfPreview({ file }: { file: PreviewFile }) {
   // Desktop opens the file in the OS default viewer rather than embedding an
   // iframe (which can't render PDFs reliably under a restrictive sandbox).
-  if (runningInTauri) return <DesktopFileOpen file={file} />;
+  // The branch happens in a wrapper so `useFilePreview` stays unconditional
+  // inside whichever child actually renders (rules of hooks).
+  return runningInTauri ? <DesktopFileOpen file={file} /> : <PdfEmbedPreview file={file} />;
+}
+
+function PdfEmbedPreview({ file }: { file: PreviewFile }) {
   const { data, isLoading, error } = useFilePreview(file);
   if (isLoading || error || !data?.dataUrl) return <PreviewLoading />;
   return (
@@ -130,9 +135,7 @@ function DesktopFileOpen({ file }: { file: PreviewFile }) {
         <p className="text-foreground text-sm font-medium">
           {error ? "Couldn't open this file" : "Opened in your default app"}
         </p>
-        <p className="text-xs">
-          {error ?? `${file.name} should now be open in another window.`}
-        </p>
+        <p className="text-xs">{error ?? `${file.name} should now be open in another window.`}</p>
       </div>
       <div className="flex gap-2">
         <Button variant="secondary" size="sm" onClick={open}>
@@ -150,13 +153,7 @@ function DesktopFileOpen({ file }: { file: PreviewFile }) {
   );
 }
 
-function TextPreview({
-  file,
-  render,
-}: {
-  file: PreviewFile;
-  render: "markdown" | "code";
-}) {
+function TextPreview({ file, render }: { file: PreviewFile; render: "markdown" | "code" }) {
   const { data, isLoading, error } = useFilePreview(file);
 
   if (isLoading) return <PreviewLoading />;
@@ -196,17 +193,10 @@ function PreviewLoading() {
   );
 }
 
-function FallbackPreview({
-  file,
-  kind,
-}: {
-  file: PreviewFile;
-  kind: FileKind;
-}) {
+function FallbackPreview({ file, kind }: { file: PreviewFile; kind: FileKind }) {
   const { data } = useFilePreview(file);
   const href = data?.dataUrl ?? "#";
-  const reason =
-    FALLBACK_REASON[kind] ?? FALLBACK_REASON.unknown ?? "Preview isn't available for this file type.";
+  const reason = FALLBACK_REASON[kind] ?? FALLBACK_REASON.unknown ?? "Preview isn't available for this file type.";
 
   return (
     <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">

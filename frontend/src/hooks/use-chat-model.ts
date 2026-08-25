@@ -1,19 +1,17 @@
 import { useCallback, useEffect } from "react";
 import { call, errText, type LocalModelInfo } from "@/lib/api";
-import { logError, logWarn } from "@/lib/logger";
 import { toFriendlyError } from "@/lib/chat-helpers";
+import { logError, logWarn } from "@/lib/logger";
 import type { LocalChatState } from "./use-local-chat";
 
-export function useChatModel({
-  patch,
-  state,
-}: {
-  patch: (p: Partial<LocalChatState>) => void;
-  state: LocalChatState;
-}) {
+export function useChatModel({ patch, state }: { patch: (p: Partial<LocalChatState>) => void; state: LocalChatState }) {
   const loadModel = useCallback(async () => {
     if (state.modelLoaded || state.modelLoading) return;
-    patch({ modelLoading: true, modelError: false, modelStatus: "loading model…" } as Partial<LocalChatState>);
+    patch({
+      modelLoading: true,
+      modelError: false,
+      modelStatus: "loading model…",
+    } as Partial<LocalChatState>);
     // Note: model may be downloading from HuggingFace on first launch —
     // this takes 5-15 min depending on connection. The backend's ensure_model()
     // logs progress to stderr (visible in `app.log`).
@@ -25,7 +23,11 @@ export function useChatModel({
         modelStatus: `${info.modelPath.split("/").pop()} · ${info.backend}`,
       });
     } catch (err) {
-      patch({ modelLoading: false, modelError: true, modelStatus: toFriendlyError(errText(err)) });
+      patch({
+        modelLoading: false,
+        modelError: true,
+        modelStatus: toFriendlyError(errText(err)),
+      });
     }
   }, [patch, state.modelLoaded, state.modelLoading]);
 
@@ -55,21 +57,18 @@ export function useChatModel({
     }
   }, [state.thinking, patch]);
 
-  const unloadModel = useCallback(
-    async () => {
-      try {
-        await call("local_llm_unload");
-        patch({
-          modelLoaded: false,
-          modelStatus: "",
-          thinking: false,
-        } as Partial<LocalChatState>);
-      } catch (err) {
-        logError("local_llm_unload", err);
-      }
-    },
-    [patch],
-  );
+  const unloadModel = useCallback(async () => {
+    try {
+      await call("local_llm_unload");
+      patch({
+        modelLoaded: false,
+        modelStatus: "",
+        thinking: false,
+      } as Partial<LocalChatState>);
+    } catch (err) {
+      logError("local_llm_unload", err);
+    }
+  }, [patch]);
 
   return { loadModel, resetModelContext, toggleThinking, unloadModel };
 }
