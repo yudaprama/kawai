@@ -2,16 +2,33 @@ name: kv-sweep
 
 # H7 K/V budget sweep — weekly + manual (PLAN H7)
 # Measures peak RSS + TTFT/decode at 8192 / 12288 / 16384 (ceiling 32003).
+# Manual dispatch accepts budgets / model_name / model_url overrides so any
+# .litertlm (e.g. a candidate orchestrator model) can be swept without
+# editing this file; the weekly cron uses the defaults below.
 # The 14GB runner caps what fits: K/V state costs ~2MB per slot upfront
 # (footprint 6GB @8192, 23GB @16384, 46GB @24576 was jetsam-killed on the
 # first run) — so this workflow is the LOW-RAM floor measurement. Budgets
 # above 16384 belong on target hardware via scripts/kv_sweep.sh.
 # Separated from ci.yml so the per-PR gates stay fast:
 # ci.yml runs on every push/PR (no schedule), this workflow runs only on
-# manual dispatch or weekly cron. Both share the same bazel + E4B caches.
+# manual dispatch or weekly cron. Both share the same bazel cache; the
+# model cache is keyed by model_name (default E4B, shared with ci.yml).
 
 on:
   workflow_dispatch:
+    inputs:
+      budgets:
+        description: 'Comma-separated K/V budgets to sweep (ceiling 32003)'
+        default: '8192,12288,16384'
+        type: string
+      model_name:
+        description: 'Model basename without .litertlm — also the cache key'
+        default: 'gemma-4-E4B-it'
+        type: string
+      model_url:
+        description: 'URL of the .litertlm file to download'
+        default: 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm'
+        type: string
   schedule:
     - cron: '0 3 * * 1' # Mon 03:00 UTC
 
@@ -23,6 +40,12 @@ jobs:
   kv-sweep:
     runs-on: macos-26
     timeout-minutes: 90
+    env:
+      # Scheduled runs have an empty `inputs` context → fall back to the
+      # weekly-cron defaults.
+      MODEL_NAME: ${{ inputs.model_name || 'gemma-4-E4B-it' }}
+      MODEL_URL: ${{ inputs.model_url || 'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm' }}
+      BUDGETS: ${{ inputs.budgets || '8192,12288,16384' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,21 +84,20 @@ jobs:
           install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
           bash ../../../scripts/bundle-litert-dylibs.sh
 
-      - name: Cache E4B eval model
+      - name: Cache eval model
         id: eval-model
         uses: actions/cache@v4
         with:
           path: eval-model
-          key: gemma-4-E4B-it-litertlm
+          key: ${{ inputs.model_name || 'gemma-4-E4B-it' }}-litertlm
 
-      - name: Download E4B eval model
+      - name: Download eval model
         if: steps.eval-model.outputs.cache-hit != 'true'
         run: |
           mkdir -p eval-model
-          curl -fL --retry 3 -o eval-model/gemma-4-E4B-it.litertlm \
-            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
+          curl -fL --retry 3 -o "eval-model/${MODEL_NAME}.litertlm" "$MODEL_URL"
 
-      - name: kv_sweep (H7 — 8192 / 12288 / 16384 + RSS)
+      - name: kv_sweep (H7 — budget sweep + RSS)
         working-directory: src-tauri
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
@@ -85,13 +107,14 @@ jobs:
           set -uo pipefail
           REPORT=${{ github.workspace }}/kv-sweep-report.md
           echo "# kv_sweep — H7 K/V budget sweep" | tee "$REPORT"
-          echo "- model: gemma-4-E4B-it (14GB runner — low-RAM floor; high budgets on target hardware via scripts/kv_sweep.sh)" | tee -a "$REPORT"
-          echo "- budgets: 8192, 12288, 16384 (ceiling 32003)" | tee -a "$REPORT"
+          echo "- model: ${MODEL_NAME} (14GB runner — low-RAM floor; high budgets on target hardware via scripts/kv_sweep.sh)" | tee -a "$REPORT"
+          echo "- budgets: ${BUDGETS} (ceiling 32003)" | tee -a "$REPORT"
           echo "" | tee -a "$REPORT"
-          for b in 8192 12288 16384; do
+          for b in ${BUDGETS//,/ }; do
+            [[ "$b" =~ ^[0-9]+$ ]] || { echo "- skipping non-numeric budget '$b'" | tee -a "$REPORT"; continue; }
             echo "## budget $b" | tee -a "$REPORT"
             # One OOM kill must not fail the job or skip later budgets.
-            if KAWAI_LLM_MAX_TOKENS=$b /usr/bin/time -l cargo run --release --example kv_sweep --features litert -- ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm $b 2>&1 | tee "/tmp/kv_sweep_$b.log"; then
+            if KAWAI_LLM_MAX_TOKENS=$b /usr/bin/time -l cargo run --release --example kv_sweep --features litert -- "${{ github.workspace }}/eval-model/${MODEL_NAME}.litertlm" "$b" 2>&1 | tee "/tmp/kv_sweep_$b.log"; then
               grep -E "load:|turn:" "/tmp/kv_sweep_$b.log" | tee -a "$REPORT" || true
             else
               echo "- DIED before finishing the turn (OOM-class on this runner)" | tee -a "$REPORT"
@@ -106,6 +129,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kv-sweep-report
+          name: kv-sweep-report-${{ env.MODEL_NAME }}
           path: kv-sweep-report.md
           if-no-files-found: warn
