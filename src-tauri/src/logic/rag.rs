@@ -9,8 +9,10 @@
 //! Pipeline: office extractors (office_oxide for OOXML, pdf_oxide in-process for
 //! PDF) → in-tree chunker →
 //! `kawai-embedding` (local fastembed ONNX fallback, desktop/web only, no API key) →
-//! `rig-libsql` vector store. All deps are gated behind the `office` feature
-//! and share the single rig-core rev used by the rest of the graph.
+//! libSQL native vector tables (`rag_chunks` + `rag_chunks_embeddings` +
+//! `rag_chunks_embedding_map`, written and queried with plain SQL — libSQL's
+//! `vector(?)` / `vector_distance_cos` functions). All deps are gated behind
+//! the `office` feature.
 //! On Android/iOS the fastembed fallback is absent; the embedder uses only
 //! remote providers (OpenRouter / NVIDIA / Gemini) or the `ErrorProvider` when
 //! no vault keys are configured.
@@ -30,18 +32,9 @@
 
 use std::collections::HashMap;
 
-use rig_core::embeddings::EmbeddingsBuilder;
-use rig_core::vector_store::request::{SearchFilter, VectorSearchRequest};
-use rig_core::vector_store::{InsertDocuments, VectorStoreIndex};
-use rig_core::Embed;
-use rig_libsql::{
-    Column, ColumnValue, LibsqlSearchFilter, LibsqlVectorStore, LibsqlVectorStoreTable,
-};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use text_splitter::{ChunkConfig, MarkdownSplitter, TextSplitter};
 
-use kawai_embedding::TenantAwareEmbedder;
 
 const CHUNK_CHARS: usize = 1500;
 const CHUNK_OVERLAP: usize = 200;
@@ -49,44 +42,213 @@ const CHUNK_OVERLAP: usize = 200;
 const RRF_K: f64 = 60.0;
 
 /// A single embedded chunk of an indexed office document.
-#[derive(Clone, Debug, Deserialize, Serialize, Embed)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RagChunk {
     pub id: String,
-    #[embed]
     pub content: String,
     pub file_id: String,
     pub source: String,
     pub locator: String,
 }
 
-impl LibsqlVectorStoreTable for RagChunk {
-    fn name() -> &'static str {
-        "rag_chunks"
-    }
+// ── libSQL native vector store (plain SQL) ──────────────────────────────────
+//
+// Physical layout (unchanged from the era when this was driven through a
+// vector-store helper crate — existing indexed databases keep working):
+//
+//   rag_chunks                (id TEXT PRIMARY KEY, content, file_id, source, locator)
+//   rag_chunks_embeddings     (embedding FLOAT32(dims)) — one row per vector
+//   rag_chunks_embedding_map  (embedding_rowid → document_rowid)
+//
+// The embeddings table carries a `libsql_vector_idx` index; scoring uses the
+// exact scalar `vector_distance_cos` (cosine similarity = 1 − distance). The
+// searches here always scope to a session's candidate files first, so they
+// score exactly over that small candidate set rather than going through the
+// ANN index + re-filter path.
 
-    fn schema() -> Vec<Column> {
-        vec![
-            Column::new("id", "TEXT PRIMARY KEY"),
-            Column::new("content", "TEXT"),
-            Column::new("file_id", "TEXT"),
-            Column::new("source", "TEXT"),
-            Column::new("locator", "TEXT"),
-        ]
-    }
+/// Serialize an embedding into the little-endian `f32` byte blob libSQL's
+/// `vector(?)` / `vector_distance_cos` SQL functions expect.
+fn vec_to_le_bytes(v: &[f64]) -> Vec<u8> {
+    v.iter()
+        .map(|x| *x as f32)
+        .flat_map(f32::to_le_bytes)
+        .collect()
+}
 
-    fn id(&self) -> String {
-        self.id.clone()
-    }
+/// Create the vector-store tables + indexes if they do not exist. `dims` must
+/// match the embedding model's dimension (FLOAT32 columns are sized on
+/// creation and never migrate — re-index after a dimension change).
+async fn ensure_vector_schema(conn: &libsql::Connection, dims: usize) -> Result<(), String> {
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS rag_chunks (\
+             id TEXT PRIMARY KEY,\
+             content TEXT,\
+             file_id TEXT,\
+             source TEXT,\
+             locator TEXT\
+         );
+         CREATE INDEX IF NOT EXISTS idx_rag_chunks_id ON rag_chunks(id);
+         CREATE TABLE IF NOT EXISTS rag_chunks_embeddings (
+             embedding FLOAT32({dims})
+         );
+         CREATE INDEX IF NOT EXISTS rag_chunks_embeddings_idx
+             ON rag_chunks_embeddings (libsql_vector_idx(embedding));
+         CREATE TABLE IF NOT EXISTS rag_chunks_embedding_map (
+             embedding_rowid INTEGER PRIMARY KEY,
+             document_rowid INTEGER NOT NULL
+         );
+         CREATE INDEX IF NOT EXISTS idx_rag_chunks_embedding_map_document_rowid
+             ON rag_chunks_embedding_map(document_rowid);"
+    );
+    conn.execute_batch(&sql)
+        .await
+        .map_err(|e| format!("vector schema: {e}"))?;
+    Ok(())
+}
 
-    fn column_values(&self) -> Vec<(&'static str, Box<dyn ColumnValue>)> {
-        vec![
-            ("id", Box::new(self.id.clone())),
-            ("content", Box::new(self.content.clone())),
-            ("file_id", Box::new(self.file_id.clone())),
-            ("source", Box::new(self.source.clone())),
-            ("locator", Box::new(self.locator.clone())),
-        ]
+/// Insert chunks with their embeddings, replacing any previous rows for the
+/// same chunk ids (re-index of an already-indexed file). One transaction.
+async fn insert_chunks(
+    conn: &libsql::Connection,
+    docs: &[RagChunk],
+    embeddings: &[Vec<f64>],
+) -> Result<(), String> {
+    let mut tx = conn
+        .transaction()
+        .await
+        .map_err(|e| format!("insert tx: {e}"))?;
+    for (doc, embedding) in docs.iter().zip(embeddings) {
+        // Replace any previous embedding rows for this chunk id.
+        let existing: Option<i64> = {
+            let mut rows = tx
+                .query(
+                    "SELECT rowid FROM rag_chunks WHERE id = ?",
+                    vec![libsql::Value::Text(doc.id.clone())],
+                )
+                .await
+                .map_err(|e| format!("insert lookup: {e}"))?;
+            match rows.next().await.map_err(|e| format!("insert lookup: {e}"))? {
+                Some(row) => row.get::<i64>(0).ok(),
+                None => None,
+            }
+        };
+        if let Some(document_rowid) = existing {
+            tx.execute(
+                "DELETE FROM rag_chunks_embeddings
+                 WHERE rowid IN (
+                     SELECT embedding_rowid FROM rag_chunks_embedding_map
+                     WHERE document_rowid = ?
+                 )",
+                vec![libsql::Value::Integer(document_rowid)],
+            )
+            .await
+            .map_err(|e| format!("insert purge: {e}"))?;
+            tx.execute(
+                "DELETE FROM rag_chunks_embedding_map WHERE document_rowid = ?",
+                vec![libsql::Value::Integer(document_rowid)],
+            )
+            .await
+            .map_err(|e| format!("insert purge: {e}"))?;
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO rag_chunks (id, content, file_id, source, locator)
+             VALUES (?, ?, ?, ?, ?)",
+            vec![
+                libsql::Value::Text(doc.id.clone()),
+                libsql::Value::Text(doc.content.clone()),
+                libsql::Value::Text(doc.file_id.clone()),
+                libsql::Value::Text(doc.source.clone()),
+                libsql::Value::Text(doc.locator.clone()),
+            ],
+        )
+        .await
+        .map_err(|e| format!("insert chunk: {e}"))?;
+        let document_rowid = tx.last_insert_rowid();
+        let mut rows = tx
+            .query(
+                "INSERT INTO rag_chunks_embeddings (embedding) VALUES (vector(?)) RETURNING rowid",
+                vec![libsql::Value::Blob(vec_to_le_bytes(embedding))],
+            )
+            .await
+            .map_err(|e| format!("insert embedding: {e}"))?;
+        let embedding_rowid = match rows.next().await.map_err(|e| format!("insert embedding: {e}"))? {
+            Some(row) => row
+                .get::<i64>(0)
+                .map_err(|e| format!("insert embedding rowid: {e}"))?,
+            None => return Err("insert embedding: no rowid".to_string()),
+        };
+        drop(rows);
+        tx.execute(
+            "INSERT INTO rag_chunks_embedding_map (embedding_rowid, document_rowid) VALUES (?, ?)",
+            vec![
+                libsql::Value::Integer(embedding_rowid),
+                libsql::Value::Integer(document_rowid),
+            ],
+        )
+        .await
+        .map_err(|e| format!("insert map: {e}"))?;
     }
+    tx.commit().await.map_err(|e| format!("insert commit: {e}"))
+}
+
+/// Exact cosine top-k over the candidate files' chunks (best embedding per
+/// chunk; today one vector per chunk, the window keeps that true if it ever
+/// changes). Params bind the query vector twice — libSQL positional `?`
+/// placeholders do not reuse.
+async fn vector_search_top_k(
+    conn: &libsql::Connection,
+    query_vec: &[f64],
+    candidates: &[String],
+    k: usize,
+) -> Result<Vec<RagChunk>, String> {
+    if candidates.is_empty() || k == 0 {
+        return Ok(Vec::new());
+    }
+    let blob = libsql::Value::Blob(vec_to_le_bytes(query_vec));
+    let mut params: Vec<libsql::Value> = Vec::with_capacity(candidates.len() + 3);
+    params.push(blob.clone());
+    params.push(blob);
+    for fid in candidates {
+        params.push(libsql::Value::Text(fid.clone()));
+    }
+    params.push(libsql::Value::Integer(k as i64));
+    let placeholders = vec!["?"; candidates.len()].join(", ");
+    let sql = format!(
+        "WITH ranked AS (
+             SELECT m.document_rowid AS document_rowid,
+                    1 - vector_distance_cos(?, e.embedding) AS score,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY m.document_rowid
+                        ORDER BY 1 - vector_distance_cos(?, e.embedding) DESC,
+                                 m.document_rowid ASC
+                    ) AS rank
+             FROM rag_chunks_embeddings e
+             JOIN rag_chunks_embedding_map m ON e.rowid = m.embedding_rowid
+             JOIN rag_chunks d ON m.document_rowid = d.rowid
+             WHERE d.file_id IN ({placeholders})
+         )
+         SELECT d.id, d.content, d.file_id, d.source, d.locator
+         FROM ranked
+         JOIN rag_chunks d ON ranked.document_rowid = d.rowid
+         WHERE ranked.rank = 1
+         ORDER BY ranked.score DESC, d.id ASC
+         LIMIT ?"
+    );
+    let mut rows = conn
+        .query(&sql, params)
+        .await
+        .map_err(|e| format!("vector search: {e}"))?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await.map_err(|e| format!("vector search: {e}"))? {
+        out.push(RagChunk {
+            id: row.get(0).map_err(|e| format!("vector search: {e}"))?,
+            content: row.get(1).map_err(|e| format!("vector search: {e}"))?,
+            file_id: row.get(2).map_err(|e| format!("vector search: {e}"))?,
+            source: row.get(3).map_err(|e| format!("vector search: {e}"))?,
+            locator: row.get(4).map_err(|e| format!("vector search: {e}"))?,
+        });
+    }
+    Ok(out)
 }
 
 // ── session ↔ file association ──────────────────────────────────────────────
@@ -681,13 +843,9 @@ async fn index_file_inner(
         associate_session_files(conn, sid, &[file_id.to_string()]).await?;
     }
 
-    let store: LibsqlVectorStore<TenantAwareEmbedder, RagChunk> =
-        LibsqlVectorStore::new(conn.clone(), &model)
-            .await
-            .map_err(|e| format!("store: {e}"))?;
-
-    // FTS mirror + triggers must exist before the inserts below so BM25 sees
-    // them; the backfill inside also covers chunks indexed pre-FTS.
+    // Vector tables + indexes first (FTS triggers + backfill below read from
+    // rag_chunks), then the FTS mirror — both no-ops when they already exist.
+    ensure_vector_schema(conn, model.dimension()).await?;
     ensure_fts(conn).await?;
 
     let docs: Vec<RagChunk> = chunks
@@ -702,17 +860,19 @@ async fn index_file_inner(
         })
         .collect();
 
-    let embeddings = EmbeddingsBuilder::new(model)
-        .documents(docs.clone())
-        .map_err(|e| format!("builder: {e}"))?
-        .build()
+    let embeddings = model
+        .embed_strings(docs.iter().map(|d| d.content.clone()).collect())
         .await
         .map_err(|e| format!("embed: {e}"))?;
+    if embeddings.len() != docs.len() {
+        return Err(format!(
+            "embed: provider returned {} vectors for {} chunks",
+            embeddings.len(),
+            docs.len()
+        ));
+    }
 
-    store
-        .insert_documents(embeddings)
-        .await
-        .map_err(|e| format!("insert: {e}"))?;
+    insert_chunks(conn, &docs, &embeddings).await?;
 
     Ok(docs.len())
 }
@@ -750,29 +910,17 @@ pub async fn knowledge_search(
         Vec::new()
     } else {
         let model = kawai_embedding::build_providers_from_env();
-        let store: LibsqlVectorStore<TenantAwareEmbedder, RagChunk> =
-            LibsqlVectorStore::new(conn.clone(), &model)
-                .await
-                .map_err(|e| format!("store: {e}"))?;
-        let index = store.index(model);
-
-        let mut file_filter = LibsqlSearchFilter::eq("file_id", json!(candidates[0]));
-        for fid in &candidates[1..] {
-            file_filter = file_filter.or(LibsqlSearchFilter::eq("file_id", json!(fid)));
-        }
-
-        let req = VectorSearchRequest::builder()
-            .query(&query)
-            .samples(K)
-            .filter(file_filter)
-            .build();
-
-        index
-            .top_n::<RagChunk>(req)
+        let query_vec = model
+            .embed_strings(vec![query.clone()])
             .await
-            .map_err(|e| format!("search: {e}"))?
+            .map_err(|e| format!("embed query: {e}"))?;
+        let query_vec = query_vec
             .into_iter()
-            .map(|(_, _, doc)| doc)
+            .next()
+            .ok_or_else(|| "embed query: empty response".to_string())?;
+        vector_search_top_k(&conn, &query_vec, &candidates, K as usize)
+            .await?
+            .into_iter()
             .collect()
     };
 
@@ -1084,6 +1232,68 @@ mod tests {
             source: String::new(),
             locator: String::new(),
         }
+    }
+
+    /// Full ingest → search round-trip against the REAL vector tables + a
+    /// REAL embedder (vault remote providers or local fastembed download).
+    /// Ignored by default — run explicitly:
+    /// `cargo test --features office --lib rag::tests::e2e -- --ignored`
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "network: embeds via vault providers or fastembed model download"]
+    async fn e2e_index_then_hybrid_semantic_keyword_search() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::logic::db::set_data_root(dir.path());
+        let user = "e2e-rag-user";
+
+        let doc = "# Annual Report 2026\n\nRenewable energy capacity grew 41%. \
+                   The invoice INV-88421 mentions late payment fees of 2% per month. \
+                   Payment terms are net-45 for enterprise customers.";
+        let file = crate::logic::office::store::import_bytes(user, "annual-report.md", doc.as_bytes())
+            .unwrap();
+        let sid = crate::logic::db::create_chat_session(user, None)
+            .await
+            .unwrap()
+            .id;
+
+        let n = office_index_file(user.to_string(), Some(sid), file.id.clone())
+            .await
+            .unwrap();
+        assert!(n > 0, "expected chunks indexed, got {n}");
+
+        // All three modes must surface the indexed content.
+        for (label, mode, query) in [
+            ("hybrid", Some(SearchMode::Hybrid), "renewable energy growth"),
+            ("semantic", Some(SearchMode::Semantic), "environmentally friendly power"),
+            ("keyword", Some(SearchMode::Keyword), "INV-88421"),
+            ("default-mode", None, "payment terms"),
+        ] {
+            let hits = knowledge_search(user.to_string(), sid, query.to_string(), mode)
+                .await
+                .unwrap_or_else(|e| panic!("{label}: {e}"));
+            assert!(
+                !hits.is_empty(),
+                "{label} search returned no hits for {query:?}"
+            );
+        }
+
+        // Re-index replaces rather than duplicates.
+        let n2 = office_index_file(user.to_string(), Some(sid), file.id.clone())
+            .await
+            .unwrap();
+        assert_eq!(n2, n);
+        let conn = crate::logic::db_connection(user).await.unwrap();
+        let count: i64 = conn
+            .query("SELECT COUNT(*) FROM rag_chunks", ())
+            .await
+            .unwrap()
+            .next()
+            .await
+            .unwrap()
+            .unwrap()
+            .get(0)
+            .unwrap();
+        assert_eq!(count as usize, n, "re-index must replace, not duplicate");
+        drop(dir);
     }
 
     #[test]

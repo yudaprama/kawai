@@ -45,9 +45,9 @@ kawai-tools = { path = "../kawai-tools" }
 # every call site uses Builder::new_local; re-add "remote" with sqld sync).
 libsql = { version = "0.9.30", default-features = false, features = ["core"] }
 jsonwebtoken = "9"
-# rustls (not default features) keeps the TLS stack aligned with libsql/rig
+# rustls (not default features) keeps the TLS stack aligned with libsql
 # and compiles for android arm64 + ios arm64. Used only for JWKS fetch in auth.rs.
-# 0.13 matches rig-core/kawai-embedding/youtube_transcript — one reqwest in the graph.
+# 0.13 matches kawai-embedding/youtube_transcript — one reqwest in the graph.
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream"] }
 # Loads KAWAI_AUTH_* from the project-root .env in dev (no-op if absent).
 dotenvy = "0.15"
@@ -60,15 +60,11 @@ base64 = { version = "0.22", optional = true }
 tauri-plugin-dialog = "2"
 # RAG pipeline for office knowledge files (gated behind "office"):
 #   kawai-embedding — embed (local fastembed ONNX fallback, desktop/web only, no API key)
-#   rig-libsql     — vector store (insert_documents / search)
-# Uses the same crates.io rig-core 0.42 source as the rest of the graph
-# so the vector-store seam unifies with kawai-embedding's EmbeddingModel.
 kawai-embedding = { path = "../kawai-embedding", optional = true }
 # Markdown-aware + char-based chunking for RAG indexing (office feature only).
 # Replaces the in-tree chunk_text sliding window with text-splitter's
 # MarkdownSplitter (heading-aware locators) / TextSplitter.
 text-splitter = { version = "0.27", features = ["markdown"], optional = true }
-rig-libsql = { path = "../rig-libsql", optional = true }
 # Image understanding for knowledge ingestion (office feature): describe
 # images to text via the ragloader DescriberChain (local stub → JigsawStack
 # VOCR). Pulls jigsawstack (reqwest 0.12) transitively.
@@ -76,9 +72,6 @@ ragloader = { path = "../rig-components/ragloader", optional = true }
 # YouTube transcript fetching for knowledge ingestion (office feature).
 # Uses reqwest 0.13 — coexists with our direct 0.12 (like the rustls pair).
 youtube_transcript = { path = "../rig-components/youtube_transcript", optional = true }
-# rig-core is a direct dep (not just transitive) because logic::rag uses its
-# `Embed` derive + `EmbeddingsBuilder`/`InsertDocuments` traits directly.
-rig-core = { version = "0.42", optional = true }
 # Pure-Rust office create/read/edit (vendored submodule): markdown → IR →
 # docx/xlsx/pptx (in-process), raw-part surgery for in-place edits. PDF
 # operations via pdf_oxide (fetched from GitHub, no local submodule).
@@ -129,10 +122,10 @@ litert = ["dep:local-llm", "local-llm/agent-tools"]
 webread = ["dep:webread", "dep:browser", "dep:url"]
 # Office document tools (logic::office): pure-Rust create/read/edit/info via
 # office_oxide and PDF via pdf_oxide (both in-process) — plus the RAG pipeline
-# (kawai-embedding → rig-libsql, with in-tree chunking) for idle-time
+# (kawai-embedding, with in-tree chunking) for idle-time
 # knowledge indexing. Enables the `webread` FEATURE (not just `dep:webread`)
 # so its bundled deps ride along.
-office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread"]
+office = ["dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
 binance = ["dep:binance"]
