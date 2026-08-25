@@ -38,10 +38,7 @@ use std::time::{Duration, Instant};
 
 use futures_core::Stream;
 use futures_util::StreamExt;
-use rig::client::CompletionClient;
-use rig::completion::{CompletionError, CompletionModel};
-use rig::http_client::HeaderMap;
-use rig::providers::openai;
+use reqwest::header::{HeaderMap, HeaderValue};
 
 /// Default cap on the `materials` string sent to the cloud (chars ≈ /4
 /// tokens). Enforced server-side so no caller can blow the request budget.
@@ -217,12 +214,20 @@ const ENDPOINTS: &[EndpointDef] = &[
     },
 ];
 
-/// One failover candidate: a built rig model + its telemetry label. Clone so
-/// the failover loop can run inside the returned stream ('static).
+/// One failover candidate: a prebuilt HTTP client + endpoint + auth headers +
+/// its telemetry label. Clone so the failover loop can run inside the returned
+/// stream ('static); the reqwest client is Arc-backed (cheap).
 #[derive(Clone)]
 pub struct Candidate {
     label: &'static str,
-    model: std::sync::Arc<openai::CompletionModel>,
+    http: reqwest::Client,
+    /// `{base_url}/chat/completions` — every provider in the pool is
+    /// OpenAI-compatible.
+    url: String,
+    model: &'static str,
+    /// Authorization + provider-specific headers (OpenCode session headers),
+    /// prebuilt once per process.
+    headers: HeaderMap,
 }
 
 /// Per-call token usage captured from the stream's terminal record
@@ -280,22 +285,39 @@ impl RemoteLlm {
                 continue;
             }
             let mut headers = HeaderMap::new();
+            let bearer = format!("Bearer {api_key}");
+            match HeaderValue::from_str(&bearer) {
+                Ok(v) => headers.insert(reqwest::header::AUTHORIZATION, v),
+                Err(e) => {
+                    eprintln!(
+                        "[remote] bearer header invalid for {} — skipped: {e}",
+                        def.label
+                    );
+                    continue;
+                }
+            };
             if def.label == "opencode" {
                 let session_id = random_id();
                 let project_id = random_id();
                 let request_id = random_id();
-                headers.insert("x-opencode-client", "cli".parse().unwrap());
-                headers.insert("x-opencode-session", session_id.parse().unwrap());
-                headers.insert("x-opencode-project", project_id.parse().unwrap());
-                headers.insert("x-opencode-request", request_id.parse().unwrap());
-                headers.insert("User-Agent", "opencode/latest/1.3.15/cli".parse().unwrap());
+                let mut insert = |name: &'static str, value: String| {
+                    if let Ok(v) = HeaderValue::from_str(&value) {
+                        headers.insert(name, v);
+                    }
+                };
+                insert("x-opencode-client", "cli".to_string());
+                insert("x-opencode-session", session_id);
+                insert("x-opencode-project", project_id);
+                insert("x-opencode-request", request_id);
+                insert("User-Agent", "opencode/latest/1.3.15/cli".to_string());
             }
-            let client = openai::CompletionsClient::builder()
-                .base_url(def.base_url)
-                .api_key(rig::client::BearerAuth::from(api_key))
-                .http_headers(headers)
+            // No overall timeout: a 16k-token stream can legitimately run for
+            // minutes, and the consumer (agent.rs) already enforces its own
+            // REMOTE_TIMEOUT_SECS watchdog. Connect-phase failures are bounded.
+            let http = reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(30))
                 .build();
-            let client = match client {
+            let http = match http {
                 Ok(c) => c,
                 Err(e) => {
                     eprintln!(
@@ -307,7 +329,10 @@ impl RemoteLlm {
             };
             candidates.push(Candidate {
                 label: def.label,
-                model: std::sync::Arc::new(client.completion_model(def.model)),
+                http,
+                url: format!("{}/chat/completions", def.base_url),
+                model: def.model,
+                headers,
             });
         }
         if candidates.is_empty() {
@@ -373,84 +398,130 @@ impl RemoteLlm {
         let stream = async_stream::stream! {
             let labels: Vec<&str> = candidates.iter().map(|c| c.label).collect();
             let mut last_err = String::new();
-            // Reasoning mirror: the full display buffer the consumer sees via
-            // reset events. `part_start` is where the CURRENT reasoning part
-            // begins — a complete `Reasoning` block replaces only its own
-            // part's deltas, never the parts before it.
-            let mut reasoning_buf = String::new();
-            let mut reasoning_part_start = 0usize;
-            let mut reasoning_id: Option<String> = None;
+            // Whether the current candidate attempt already streamed reasoning
+            // — the next attempt opens by clearing the visible thinking so it
+            // tracks the candidate that actually serves the call.
+            let mut reasoning_emitted = false;
             for idx in MODEL_HEALTH.order_indices(&labels) {
                 let cand = &candidates[idx];
-                if !reasoning_buf.is_empty() {
-                    // Reasoning from an abandoned candidate attempt — clear
-                    // the visible thinking so it tracks the candidate that
-                    // actually serves the call.
-                    reasoning_buf.clear();
-                    reasoning_part_start = 0;
-                    reasoning_id = None;
+                if reasoning_emitted {
+                    reasoning_emitted = false;
                     yield Ok(RemoteEvent::Reasoning {
                         provider: cand.label.to_string(),
                         text: String::new(),
                         reset: true,
                     });
                 }
-                let mut request = cand
-                    .model
-                    .completion_request(prompt.clone())
-                    .preamble(system.clone())
-                    .temperature(0.4)
-                    .max_tokens(max_output_tokens);
-                if cand.label == "zai" {
-                    // GLM keeps thinking OFF by default on this endpoint;
-                    // enable it so the reasoning channel streams. The field
-                    // is zai-specific — never sent to other providers.
-                    request = request.additional_params(
-                        serde_json::json!({"thinking": {"type": "enabled"}}),
-                    );
-                }
-                let request = request.build();
-                let mut response = match cand.model.stream(request).await {
+                let body = request_body(cand, &system, &prompt, max_output_tokens);
+                let sent = cand
+                    .http
+                    .post(&cand.url)
+                    .headers(cand.headers.clone())
+                    .json(&body)
+                    .send()
+                    .await;
+                let response = match sent {
                     Ok(r) => r,
                     Err(e) => {
-                        if failover_worthy(&e) {
-                            MODEL_HEALTH.mark_unhealthy(cand.label, retry_after(&e));
-                            last_err = e.to_string();
-                            eprintln!(
-                                "[remote] attempt {} failed ({}) — trying next candidate",
-                                cand.label,
-                                describe_error(&e)
-                            );
-                            continue;
-                        }
-                        yield Err(e.to_string());
-                        return;
+                        // Transport/connection failure — always failover-worthy.
+                        MODEL_HEALTH.mark_unhealthy(cand.label, None);
+                        last_err = format!("{}: transport error: {e}", cand.label);
+                        eprintln!(
+                            "[remote] attempt {} failed (transport error) — trying next candidate",
+                            cand.label
+                        );
+                        continue;
                     }
                 };
-                let mut yielded_any = false;
+                let status = response.status();
+                if !status.is_success() {
+                    let retry_after = response
+                        .headers()
+                        .get("retry-after")
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|v| v.trim().parse::<u64>().ok())
+                        .map(Duration::from_secs);
+                    let snippet = response
+                        .text()
+                        .await
+                        .unwrap_or_default();
+                    let snippet: String = snippet.chars().take(200).collect();
+                    let message =
+                        format!("{}: status {}: {}", cand.label, status.as_u16(), snippet);
+                    if is_retryable_status(status.as_u16()) {
+                        MODEL_HEALTH.mark_unhealthy(cand.label, retry_after);
+                        last_err = message;
+                        eprintln!(
+                            "[remote] attempt {} failed (status {}) — trying next candidate",
+                            cand.label,
+                            status.as_u16()
+                        );
+                        continue;
+                    }
+                    yield Err(message);
+                    return;
+                }
+
+                // ── SSE stream: line-buffer, classify each `data:` frame ──
+                let mut saw_text = false;
+                let mut usage = RemoteUsage::default();
+                let mut finish_length = false;
+                let mut hard_err: Option<String> = None;
                 let mut broke_pre_text = false;
-                while let Some(item) = response.next().await {
-                    match item {
-                        Ok(rig::streaming::StreamedAssistantContent::Text(t)) => {
-                            if !t.text.is_empty() {
-                                if !yielded_any {
+                let mut lines = SseLineBuf::default();
+                let mut byte_stream = response.bytes_stream();
+                'candidate: while let Some(chunk) = byte_stream.next().await {
+                    let bytes = match chunk {
+                        Ok(b) => b,
+                        Err(e) => {
+                            if saw_text {
+                                // Committed mid-stream: propagate, never retry
+                                // (retrying would duplicate output).
+                                hard_err = Some(format!("{}: stream error: {e}", cand.label));
+                                break 'candidate;
+                            }
+                            MODEL_HEALTH.mark_unhealthy(cand.label, None);
+                            last_err = format!("{}: stream error: {e}", cand.label);
+                            broke_pre_text = true;
+                            eprintln!(
+                                "[remote] attempt {} errored before any text (transport error) — trying next candidate",
+                                cand.label
+                            );
+                            break 'candidate;
+                        }
+                    };
+                    for line in lines.push(&bytes) {
+                        let Some(payload) = sse_data_payload(&line) else {
+                            continue;
+                        };
+                        if payload == "[DONE]" {
+                            break 'candidate;
+                        }
+                        let Ok(frame) = serde_json::from_str::<SseChunk>(payload) else {
+                            // Tolerant skip: unknown/corrupt frames never kill
+                            // the stream (comment/keep-alive lines are filtered
+                            // in sse_data_payload).
+                            continue;
+                        };
+                        if let Some(u) = frame.usage {
+                            usage = RemoteUsage {
+                                input_tokens: u.prompt_tokens,
+                                output_tokens: u.completion_tokens,
+                            };
+                        }
+                        for choice in &frame.choices {
+                            if choice.finish_reason.as_deref() == Some("length") {
+                                finish_length = true;
+                            }
+                            if let Some(text) = choice.delta.text() {
+                                if !saw_text {
                                     MODEL_HEALTH.mark_healthy(cand.label);
                                 }
-                                yielded_any = true;
-                                yield Ok(RemoteEvent::Token { text: t.text });
+                                saw_text = true;
+                                yield Ok(RemoteEvent::Token { text });
                             }
-                        }
-                        Ok(rig::streaming::StreamedAssistantContent::ReasoningDelta {
-                            id,
-                            reasoning,
-                            ..
-                        }) => {
-                            if !reasoning.is_empty() {
-                                if reasoning_id.as_deref() != Some(id.as_str()) {
-                                    reasoning_id = Some(id);
-                                    reasoning_part_start = reasoning_buf.len();
-                                }
-                                reasoning_buf.push_str(&reasoning);
+                            if let Some(reasoning) = choice.delta.reasoning() {
+                                reasoning_emitted = true;
                                 yield Ok(RemoteEvent::Reasoning {
                                     provider: cand.label.to_string(),
                                     text: reasoning,
@@ -458,48 +529,49 @@ impl RemoteLlm {
                                 });
                             }
                         }
-                        Ok(rig::streaming::StreamedAssistantContent::Reasoning {
-                            reasoning,
-                            id,
-                        }) => {
-                            let text = reasoning_text(&reasoning);
-                            if !text.is_empty() {
-                                if reasoning_id.as_deref() != Some(id.as_str()) {
-                                    reasoning_id = Some(id.clone());
-                                    reasoning_part_start = reasoning_buf.len();
+                    }
+                }
+                // Flush a trailing unterminated line (tolerant: some providers
+                // end the stream without a final newline).
+                for line in lines.flush() {
+                    if let Some(payload) = sse_data_payload(&line) {
+                        if payload != "[DONE]" {
+                            if let Ok(frame) = serde_json::from_str::<SseChunk>(payload) {
+                                if let Some(u) = frame.usage {
+                                    usage = RemoteUsage {
+                                        input_tokens: u.prompt_tokens,
+                                        output_tokens: u.completion_tokens,
+                                    };
                                 }
-                                // A complete block supersedes its own part's
-                                // deltas: splice it in at the part boundary.
-                                reasoning_buf.truncate(reasoning_part_start);
-                                reasoning_buf.push_str(&text);
-                                yield Ok(RemoteEvent::Reasoning {
-                                    provider: cand.label.to_string(),
-                                    text: reasoning_buf.clone(),
-                                    reset: true,
-                                });
+                                for choice in &frame.choices {
+                                    if choice.finish_reason.as_deref() == Some("length") {
+                                        finish_length = true;
+                                    }
+                                    if let Some(text) = choice.delta.text() {
+                                        if !saw_text {
+                                            MODEL_HEALTH.mark_healthy(cand.label);
+                                        }
+                                        saw_text = true;
+                                        yield Ok(RemoteEvent::Token { text });
+                                    }
+                                    if let Some(reasoning) = choice.delta.reasoning() {
+                                        reasoning_emitted = true;
+                                        yield Ok(RemoteEvent::Reasoning {
+                                            provider: cand.label.to_string(),
+                                            text: reasoning,
+                                            reset: false,
+                                        });
+                                    }
+                                }
                             }
-                        }
-                        // No tools are sent, so any other content kind is
-                        // ignored (tool-call deltas are provider-internal).
-                        Ok(_) => {}
-                        Err(e) => {
-                            if !yielded_any && failover_worthy(&e) {
-                                MODEL_HEALTH.mark_unhealthy(cand.label, retry_after(&e));
-                                last_err = e.to_string();
-                                broke_pre_text = true;
-                                eprintln!(
-                                    "[remote] attempt {} errored before any text ({}) — trying next candidate",
-                                    cand.label,
-                                    describe_error(&e)
-                                );
-                                break;
-                            }
-                            yield Err(e.to_string());
-                            return;
                         }
                     }
                 }
-                if !yielded_any {
+                if let Some(e) = hard_err {
+                    yield Err(e);
+                    return;
+                }
+                if !saw_text {
                     if !broke_pre_text {
                         // Stream ended cleanly with ZERO text: an empty
                         // completion. Nothing was committed to the consumer —
@@ -513,17 +585,11 @@ impl RemoteLlm {
                     }
                     continue;
                 }
-                // Terminal record (usage) is populated by the time the stream ends.
-                let usage = response
-                    .response
-                    .as_ref()
-                    .map(|f| RemoteUsage {
-                        input_tokens: f.usage.input_tokens,
-                        output_tokens: f.usage.output_tokens,
-                    })
-                    .unwrap_or_default();
-                let hit_cap = usage.output_tokens > 0
-                    && usage.output_tokens >= max_output_tokens;
+                // hit_cap: the provider stopped at max_tokens — signaled
+                // directly by finish_reason=length, with the usage-based check
+                // as fallback for providers that report neither.
+                let hit_cap = finish_length
+                    || (usage.output_tokens > 0 && usage.output_tokens >= max_output_tokens);
                 yield Ok(RemoteEvent::Done { usage, provider: cand.label.to_string(), hit_cap });
                 return;
             }
@@ -553,35 +619,157 @@ fn is_retryable_status(status: u16) -> bool {
     matches!(status, 401 | 404 | 429 | 500 | 502 | 503 | 504)
 }
 
-/// An error is failover-worthy when it carries a retryable status OR carries
-/// no status at all (transport/connection failure — the plano proxy treats
-/// those as failover-worthy too).
-fn failover_worthy(e: &CompletionError) -> bool {
-    match e.provider_response_status() {
-        Some(status) => is_retryable_status(status.as_u16()),
-        None => true,
+// ---------------------------------------------------------------------------
+// OpenAI-compatible SSE wire types
+// ---------------------------------------------------------------------------
+
+/// Build the chat-completions request body. Wire shape shared by every
+/// provider in the pool; `stream_options.include_usage` requests the terminal
+/// usage frame (some providers emit it unconditionally, the flag makes the
+/// rest follow).
+fn request_body(cand: &Candidate, system: &str, prompt: &str, max_output_tokens: u64) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": cand.model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.4,
+        "max_tokens": max_output_tokens,
+        "stream": true,
+        "stream_options": {"include_usage": true},
+    });
+    if cand.label == "zai" {
+        // GLM keeps thinking OFF by default on this endpoint; enable it so
+        // the reasoning channel streams. The field is zai-specific — never
+        // sent to other providers.
+        body["thinking"] = serde_json::json!({"type": "enabled"});
+    }
+    body
+}
+
+/// One streamed `data:` frame.
+#[derive(serde::Deserialize, Default)]
+struct SseChunk {
+    #[serde(default)]
+    choices: Vec<SseChoice>,
+    #[serde(default)]
+    usage: Option<SseUsage>,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct SseChoice {
+    #[serde(default)]
+    delta: SseDelta,
+    #[serde(default)]
+    finish_reason: Option<String>,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct SseDelta {
+    /// String on the standard wire; a few compatible providers (e.g.
+    /// Mistral's reasoning models) stream an array of content parts instead.
+    #[serde(default)]
+    content: Option<serde_json::Value>,
+    /// A structured-output refusal streams here with `content` held at
+    /// `null` — its deltas are the turn's visible text.
+    #[serde(default)]
+    refusal: Option<String>,
+    /// GLM/zai spelling of the reasoning channel.
+    #[serde(default)]
+    reasoning_content: Option<String>,
+    /// Groq-style spelling of the same channel. A separate field rather than
+    /// a serde alias so a delta carrying BOTH keys is not a duplicate-field
+    /// error that drops the whole chunk.
+    #[serde(default)]
+    reasoning: Option<String>,
+}
+
+impl SseDelta {
+    /// Visible text: prefer non-empty `content`, fall back to `refusal`.
+    fn text(&self) -> Option<String> {
+        match &self.content {
+            Some(serde_json::Value::String(s)) if !s.is_empty() => Some(s.clone()),
+            Some(serde_json::Value::Array(parts)) => {
+                let joined = joined_text_parts(parts);
+                (!joined.is_empty()).then_some(joined)
+            }
+            _ => self.refusal.clone().filter(|r| !r.is_empty()),
+        }
+    }
+
+    /// Reasoning delta: `reasoning_content` first, Groq-style `reasoning`
+    /// as fallback.
+    fn reasoning(&self) -> Option<String> {
+        self.reasoning_content
+            .clone()
+            .or_else(|| self.reasoning.clone())
+            .filter(|r| !r.is_empty())
     }
 }
 
-/// Parse an integer-seconds `Retry-After` from the headers rig preserved on
-/// the error. HTTP-date form is not parsed (falls back to the tracker
-/// default).
-fn retry_after(e: &CompletionError) -> Option<Duration> {
-    e.provider_response_headers()?
-        .get("retry-after")?
-        .to_str()
-        .ok()?
-        .trim()
-        .parse::<u64>()
-        .ok()
-        .map(Duration::from_secs)
+/// Join an array-of-parts `content` into display text (`{"type":"text",
+/// "text":…}` parts; non-text parts are skipped).
+fn joined_text_parts(parts: &[serde_json::Value]) -> String {
+    parts
+        .iter()
+        .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+        .collect::<Vec<_>>()
+        .join("")
 }
 
-/// Short human-readable error class for the lost-attempt log line.
-fn describe_error(e: &CompletionError) -> String {
-    match e.provider_response_status() {
-        Some(status) => format!("status {}", status.as_u16()),
-        None => "transport error".to_string(),
+#[derive(serde::Deserialize)]
+struct SseUsage {
+    #[serde(default)]
+    prompt_tokens: u64,
+    #[serde(default)]
+    completion_tokens: u64,
+}
+
+/// Extract the JSON payload of an SSE data line. Returns `None` for blank
+/// lines, `: keep-alive` comments, and non-`data:` fields (event/id/retry).
+fn sse_data_payload(line: &str) -> Option<&str> {
+    let line = line.trim_start_matches('\u{feff}');
+    if line.is_empty() || line.starts_with(':') {
+        return None;
+    }
+    let payload = line.strip_prefix("data:")?;
+    Some(payload.trim_start())
+}
+
+/// Byte-stream line splitter: feeds raw chunk bytes, returns every complete
+/// `\n`-terminated line (tolerating `\r\n`), and can flush a trailing
+/// unterminated line at stream end.
+#[derive(Default)]
+struct SseLineBuf {
+    buf: Vec<u8>,
+}
+
+impl SseLineBuf {
+    fn push(&mut self, bytes: &[u8]) -> Vec<String> {
+        self.buf.extend_from_slice(bytes);
+        let mut lines = Vec::new();
+        while let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
+            let rest = self.buf.split_off(pos + 1);
+            let mut line = std::mem::replace(&mut self.buf, rest);
+            line.pop(); // the \n
+            if line.last() == Some(&b'\r') {
+                line.pop();
+            }
+            lines.push(String::from_utf8_lossy(&line).into_owned());
+        }
+        lines
+    }
+
+    fn flush(&mut self) -> Vec<String> {
+        if self.buf.is_empty() {
+            return Vec::new();
+        }
+        let mut line = std::mem::take(&mut self.buf);
+        if line.last() == Some(&b'\r') {
+            line.pop();
+        }
+        vec![String::from_utf8_lossy(&line).into_owned()]
     }
 }
 
@@ -592,21 +780,6 @@ fn truncate_chars(s: &str, max: usize) -> String {
         let t: String = s.chars().take(max).collect();
         format!("{t}\n[materials truncated at {max} chars by the server]")
     }
-}
-
-/// Flatten a complete reasoning block into display text. Encrypted/redacted
-/// payloads carry nothing readable and are skipped.
-fn reasoning_text(reasoning: &rig::message::Reasoning) -> String {
-    reasoning
-        .content
-        .iter()
-        .filter_map(|block| match block {
-            rig::message::ReasoningContent::Text { text, .. } => Some(text.as_str()),
-            rig::message::ReasoningContent::Summary(text) => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n")
 }
 
 /// Generate a random 26-char alphanumeric ID for OpenCode headers.
@@ -719,6 +892,104 @@ mod tests {
         let labels = ["zai", "openrouter"];
         assert_eq!(t.order_indices(&labels), vec![0, 1]);
         // Even if later mid-stream error occurs, yielded_any=true means NO failover
-        // (stream() yields Err directly). This is verified by the `!yielded_any && failover_worthy` guard.
+        // (stream() yields Err directly). This is verified by the `!saw_text` guard.
+    }
+
+    // ── SSE wire parsing ─────────────────────────────────────────────────
+
+    #[test]
+    fn sse_data_payload_filters_non_data_lines() {
+        assert_eq!(sse_data_payload("data: {\"a\":1}"), Some("{\"a\":1}"));
+        assert_eq!(sse_data_payload("data:{\"a\":1}"), Some("{\"a\":1}"));
+        assert_eq!(sse_data_payload("[DONE]"), None);
+        assert_eq!(sse_data_payload(""), None);
+        assert_eq!(sse_data_payload(": keep-alive"), None);
+        assert_eq!(sse_data_payload("event: message"), None);
+    }
+
+    #[test]
+    fn sse_line_buf_splits_across_chunks_and_handles_crlf() {
+        let mut buf = SseLineBuf::default();
+        assert!(buf.push(b"data: {\"a\"").is_empty());
+        let lines = buf.push(b":1}\r\ndata: [DONE]\n");
+        assert_eq!(lines, vec!["data: {\"a\":1}", "data: [DONE]"]);
+        assert!(buf.buf.is_empty());
+    }
+
+    #[test]
+    fn sse_line_buf_flush_returns_trailing_unterminated_line() {
+        let mut buf = SseLineBuf::default();
+        buf.push(b"data: {\"z\":9}");
+        assert_eq!(buf.flush(), vec!["data: {\"z\":9}"]);
+        assert!(buf.flush().is_empty());
+    }
+
+    #[test]
+    fn sse_chunk_maps_content_reasoning_usage_length() {
+        let frame: SseChunk = serde_json::from_str(
+            r#"{"choices":[{"delta":{"content":"hi","reasoning_content":"think"},"finish_reason":null}],"usage":null}"#,
+        )
+        .unwrap();
+        assert_eq!(frame.choices[0].delta.text().as_deref(), Some("hi"));
+        assert_eq!(frame.choices[0].delta.reasoning().as_deref(), Some("think"));
+        assert!(frame.usage.is_none());
+
+        let frame: SseChunk = serde_json::from_str(
+            r#"{"choices":[{"delta":{},"finish_reason":"length"}],"usage":{"prompt_tokens":10,"completion_tokens":64}}"#,
+        )
+        .unwrap();
+        assert_eq!(frame.choices[0].finish_reason.as_deref(), Some("length"));
+        let u = frame.usage.unwrap();
+        assert_eq!((u.prompt_tokens, u.completion_tokens), (10, 64));
+    }
+
+    #[test]
+    fn sse_chunk_handles_groq_reasoning_alias_and_array_content() {
+        let frame: SseChunk = serde_json::from_str(
+            r#"{"choices":[{"delta":{"reasoning":"groq-think","content":[{"type":"text","text":"par"},{"type":"text","text":"ts"}]}}]}"#,
+        )
+        .unwrap();
+        assert_eq!(frame.choices[0].delta.reasoning().as_deref(), Some("groq-think"));
+        assert_eq!(frame.choices[0].delta.text().as_deref(), Some("parts"));
+    }
+
+    #[test]
+    fn sse_chunk_refusal_is_visible_text() {
+        let frame: SseChunk =
+            serde_json::from_str(r#"{"choices":[{"delta":{"content":null,"refusal":"no"}}]}"#)
+                .unwrap();
+        assert_eq!(frame.choices[0].delta.text().as_deref(), Some("no"));
+    }
+
+    #[test]
+    fn sse_chunk_tolerates_deltaless_choices_and_unknown_fields() {
+        // Azure-style prompt-filter frame + unknown extensions never error.
+        let frame: SseChunk =
+            serde_json::from_str(r#"{"choices":[{}],"prompt_filter_results":[1],"new_field":true}"#)
+                .unwrap();
+        assert!(frame.choices[0].delta.text().is_none());
+    }
+
+    #[test]
+    fn request_body_shape_and_zai_thinking_flag() {
+        let mk = |label: &'static str| Candidate {
+            label,
+            http: reqwest::Client::new(),
+            url: "https://example.invalid/chat/completions".into(),
+            model: "m",
+            headers: HeaderMap::new(),
+        };
+        let plain = request_body(&mk("venice"), "sys", "prompt", 512);
+        assert_eq!(plain["model"], "m");
+        assert_eq!(plain["temperature"], 0.4);
+        assert_eq!(plain["max_tokens"], 512);
+        assert_eq!(plain["stream"], true);
+        assert_eq!(plain["stream_options"]["include_usage"], true);
+        assert_eq!(plain["messages"][0]["role"], "system");
+        assert_eq!(plain["messages"][1]["content"], "prompt");
+        assert!(plain.get("thinking").is_none());
+
+        let zai = request_body(&mk("zai"), "sys", "prompt", 512);
+        assert_eq!(zai["thinking"]["type"], "enabled");
     }
 }

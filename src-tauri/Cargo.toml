@@ -40,8 +40,6 @@ tower-http = { version = "0.6", optional = true, features = ["fs"] }
 local-llm = { path = "../local-llm", optional = true }
 # The agent tool seam (tool trait + registry) shared with rig-components.
 kawai-tools = { path = "../kawai-tools" }
-# Cloud subagent completions (logic/remote.rs): OpenAI-compatible streaming.
-rig = "0.42"
 # default-features=false keeps only the local-SQLite core: replication/remote
 # would pull tonic 0.11 + hyper 0.14 + axum 0.6 + rustls 0.22 (dead weight —
 # every call site uses Builder::new_local; re-add "remote" with sqld sync).
@@ -50,7 +48,7 @@ jsonwebtoken = "9"
 # rustls (not default features) keeps the TLS stack aligned with libsql/rig
 # and compiles for android arm64 + ios arm64. Used only for JWKS fetch in auth.rs.
 # 0.13 matches rig-core/kawai-embedding/youtube_transcript — one reqwest in the graph.
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream"] }
 # Loads KAWAI_AUTH_* from the project-root .env in dev (no-op if absent).
 dotenvy = "0.15"
 # Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
