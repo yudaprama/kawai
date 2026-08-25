@@ -31,7 +31,6 @@ export interface LocalChatState {
   status: ChatStatus;
   error: string | null;
   historyError: string | null;
-  stats: string;
   sessions: ChatSessionInfo[];
   archivedSessions: ChatSessionInfo[];
   sessionId: number | null;
@@ -51,7 +50,6 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     status: "ready",
     error: null,
     historyError: null,
-    stats: "",
     sessions: [],
     archivedSessions: [],
     sessionId: null,
@@ -69,7 +67,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     if (authError) patch({ authError });
   }, [effectiveUserId, authError]);
 
-  const clearMessages = useCallback(() => patch({ messages: [], stats: "", historyError: null } as Partial<LocalChatState>), [patch]);
+  const clearMessages = useCallback(() => patch({ messages: [], historyError: null } as Partial<LocalChatState>), [patch]);
 
   const { loadModel, resetModelContext, toggleThinking, unloadModel } = useChatModel({ patch, state });
   const {
@@ -93,9 +91,9 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
 
   const unloadModelWithGuard = useCallback(async () => {
     if (streamCtrl.current) return;
-    await unloadModel(streamCtrl.current != null);
+    await unloadModel();
     // unloadModel in useChatModel only clears model fields; we also clear messages per original semantics
-    patch({ messages: [], stats: "" } as Partial<LocalChatState>);
+    patch({ messages: [] } as Partial<LocalChatState>);
   }, [unloadModel, patch]);
 
   const send = useCallback(
@@ -116,13 +114,9 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         messages: [...prev.messages, userMessage, assistantMessage],
         status: "submitted",
         error: null,
-        stats: "",
       }));
 
       const sessionId = await ensureSessionId(prompt);
-      const t0 = performance.now();
-      let chunks = 0;
-      let chars = 0;
       let full = "";
       let toolParts: ToolUIPart[] = [];
       let reasoning: { provider: string; text: string; done: boolean } | null = null;
@@ -131,20 +125,18 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
           ? [{ type: "reasoning", text: reasoning.text, state: reasoning.done ? ("done" as const) : ("streaming" as const), providerMetadata: { provider: reasoning.provider } }]
           : [];
 
-      const setAssistantParts = (parts: UIMessagePart[], status?: ChatStatus, stats?: string) => {
+      const setAssistantParts = (parts: UIMessagePart[], status?: ChatStatus) => {
         setState((prev) => ({
           ...prev,
           ...(status ? { status } : {}),
-          ...(stats != null ? { stats } : {}),
           messages: prev.messages.map((m) => (m.id === assistantId ? { ...m, parts } : m)),
         }));
       };
-      const syncStreamingDisplay = (stats?: string) => {
+      const syncStreamingDisplay = () => {
         const displayText = stripToolMarkup(full);
         setAssistantParts(
           displayText ? [{ type: "text", text: displayText, state: "streaming" as const }, ...toolParts, ...reasoningPart()] : [...toolParts, ...reasoningPart()],
           "streaming",
-          stats,
         );
       };
 
@@ -154,11 +146,9 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         {
           onEvent: (ev) => {
             if (ev.type === "token") {
-              chunks += 1;
-              chars += ev.text.length;
               full += ev.text;
               if (reasoning) reasoning.done = true;
-              syncStreamingDisplay(`${chunks} chunks · ${chars} chars · ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+              syncStreamingDisplay();
             } else if (ev.type === "thinking") {
               // On-device reasoning: delta — append within the same model call,
               // start fresh when a cloud subagent's buffer owned the part before.
@@ -191,7 +181,6 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
             setAssistantParts(
               displayText ? [{ type: "text", text: displayText, state: "done" as const }, ...toolParts, ...reasoningPart()] : [...toolParts, ...reasoningPart()],
               "ready",
-              `done · ${chunks} chunks · ${chars} chars · ${((performance.now() - t0) / 1000).toFixed(1)}s`,
             );
             void loadSessions();
           },

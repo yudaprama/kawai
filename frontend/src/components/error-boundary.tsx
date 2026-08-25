@@ -1,16 +1,7 @@
-import { Component, type ReactNode, useEffect } from "react";
-import * as Sentry from "@sentry/react";
+import { type ReactNode, useEffect } from "react";
 import { ErrorBoundary as SentryReactErrorBoundary } from "@sentry/react";
 import { Button } from "@/components/ui/button";
 import { call } from "@/lib/api";
-
-interface ErrorBoundaryProps {
-  children: ReactNode;
-}
-
-interface ErrorBoundaryState {
-  error: Error | null;
-}
 
 export function ErrorFallback({ error, onRetry }: { error: Error | null; onRetry: () => void }) {
   return (
@@ -31,34 +22,6 @@ export function ErrorFallback({ error, onRetry }: { error: Error | null; onRetry
   );
 }
 
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { error: null };
-
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { error };
-  }
-
-  componentDidCatch(error: Error) {
-    // Use logger semantics: console + Sentry + frontend_log are handled here directly
-    // to avoid double-capture via logError's own Sentry call + boundary auto-capture.
-    console.error("Uncaught render error:", error);
-    Sentry.captureException(error, { tags: { boundary: "legacy" } });
-    call("frontend_log", { level: "error", message: String(error) }).catch(() => {});
-  }
-
-  render() {
-    if (this.state.error) {
-      return (
-        <ErrorFallback
-          error={this.state.error}
-          onRetry={() => this.setState({ error: null })}
-        />
-      );
-    }
-    return this.props.children;
-  }
-}
-
 function SentryFallback({
   error,
   resetError,
@@ -75,9 +38,9 @@ function SentryFallback({
   return <ErrorFallback error={error as Error} onRetry={resetError} />;
 }
 
-/** Sentry-native boundary — prefer this in new code. Automatically calls
- *  `Sentry.captureException` + renders the same fallback. Also mirrors to
- *  `frontend_log` so shipped builds stay diagnosable without devtools. */
+/** Sentry-native boundary — automatically calls `Sentry.captureException` +
+ *  renders the fallback UI. Also mirrors to `frontend_log` so shipped builds
+ *  stay diagnosable without devtools. */
 export function SentryErrorBoundary({ children }: { children: ReactNode }) {
   return (
     <SentryReactErrorBoundary

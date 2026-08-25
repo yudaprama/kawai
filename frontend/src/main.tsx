@@ -28,7 +28,6 @@ Sentry.init({
     // Make Sentry → console 1:1 so every Sentry event is also visible in DevTools/WKWebView console.
     // This fixes "terkirim ke Sentry tapi tidak terprint ke console".
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
       console.error("[Sentry] captured:", event);
     }
     return event;

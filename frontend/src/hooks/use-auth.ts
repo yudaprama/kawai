@@ -5,10 +5,8 @@ import type { UserInfo } from "@/lib/api";
 export function useAuth() {
   const [userId, setUserId] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
 
   const bootstrap = useCallback(async () => {
-    setIsLoading(true);
     try {
       const u: UserInfo = await call<UserInfo>("whoami");
       setUserId(u.userId);
@@ -25,7 +23,6 @@ export function useAuth() {
         setAuthError(errText(err));
       }
     }
-    setIsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -33,5 +30,5 @@ export function useAuth() {
     return () => {};
   }, [bootstrap]);
 
-  return { userId, authError, isLoading, refresh: bootstrap };
+  return { userId, authError, refresh: bootstrap };
 }

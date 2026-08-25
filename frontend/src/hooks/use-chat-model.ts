@@ -56,8 +56,7 @@ export function useChatModel({
   }, [state.thinking, patch]);
 
   const unloadModel = useCallback(
-    async (streamActive: boolean) => {
-      if (streamActive) return;
+    async () => {
       try {
         await call("local_llm_unload");
         patch({
