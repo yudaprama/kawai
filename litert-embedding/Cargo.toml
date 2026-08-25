@@ -1,0 +1,39 @@
+[package]
+name = "litert-embedding"
+version = "0.1.0"
+edition = "2021"
+description = "Local text embedder over the LiteRT-LM embedding engine (.litertlm embedding models) — standalone evaluation crate, wired nowhere yet"
+license = "MIT"
+publish = false
+
+[lib]
+name = "litert_embedding"
+
+[lints.clippy]
+dbg_macro = "forbid"
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
+expect_used = "deny"
+expect_fun_call = "deny"
+indexing_slicing = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+todo = "forbid"
+unimplemented = "forbid"
+unreachable = "deny"
+unwrap_used = "deny"
+
+[dependencies]
+cognee-litert-lm = { path = "../cognee-litert-lm" }
+# One rig-core source for the whole kawai graph (0.42). Only the core
+# `EmbeddingModel` trait is needed, so no HTTP feature is enabled.
+rig-core = { version = "0.42", default-features = false }
+tokio = { version = "1", features = ["rt"] }
+futures = "0.3"
+thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[[example]]
+name = "smoke"
