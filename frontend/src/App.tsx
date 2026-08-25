@@ -63,14 +63,26 @@ export default function App() {
     onNewChat: () => void chat.newChat(),
   });
 
-  // Esc stops generation (global, mirrors web/ chat-composer.tsx:450-461)
+  // Esc stops generation (global, mirrors web/ chat-composer.tsx:450-461) —
+  // but keeps its local meaning inside other editable contexts: renaming a
+  // session, dialog inputs, etc. The main chat composer opts back in via
+  // data-chat-composer so Esc stops the stream from where you're typing.
   useEffect(() => {
     if (!busy) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        chat.stop();
-      }
+      if (e.key !== "Escape") return;
+      const target = e.target;
+      const el = target instanceof HTMLElement ? target : null;
+      const inEditable =
+        el != null &&
+        (el.isContentEditable ||
+          el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.tagName === "SELECT" ||
+          el.closest("[role=dialog]") != null);
+      if (inEditable && el?.closest("[data-chat-composer]") == null) return;
+      e.preventDefault();
+      chat.stop();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

@@ -192,6 +192,7 @@ function ChatComposerInner({
       )}
       <PromptInputBody>
         <PromptInputTextarea
+          data-chat-composer=""
           placeholder={`Message ${agentName}…`}
           onChange={handleComposerChange}
           onKeyDown={handleTextareaKeyDown}

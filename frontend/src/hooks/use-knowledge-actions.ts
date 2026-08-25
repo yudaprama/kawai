@@ -37,23 +37,40 @@ export function useKnowledgeActions(chat: {
   }, [confirmDeleteId]);
 
   const importKnowledgeFiles = useCallback(
-    async (items: { sourcePath?: string; file?: File; name: string }[], opts?: { sessionId?: number | null }) => {
+    async (
+      items: { sourcePath?: string; file?: File; name: string }[],
+      opts?: { sessionId?: number | null },
+    ): Promise<{ importedIds: string[]; failed: { name: string; error: string }[] }> => {
       const sessionId = opts && "sessionId" in opts ? opts.sessionId : chat.sessionId;
+      // All imports run in parallel and independently — one bad file must
+      // not abort the rest of the batch.
+      const settled = await Promise.allSettled(
+        items.map(async (item) => {
+          if (item.sourcePath) {
+            return call<OfficeFileInfo>("office_import_file", {
+              sourcePath: item.sourcePath,
+            });
+          }
+          if (item.file) {
+            const dataBase64 = await fileToBase64(item.file);
+            return call<OfficeFileInfo>("office_import_file", {
+              dataBase64,
+              name: item.name,
+            });
+          }
+          throw new Error("nothing to import");
+        }),
+      );
       const importedIds: string[] = [];
-      for (const item of items) {
-        let imported: OfficeFileInfo | undefined;
-        if (item.sourcePath) {
-          imported = await call<OfficeFileInfo>("office_import_file", {
-            sourcePath: item.sourcePath,
-          });
-        } else if (item.file) {
-          const dataBase64 = await fileToBase64(item.file);
-          imported = await call<OfficeFileInfo>("office_import_file", {
-            dataBase64,
-            name: item.name,
-          });
+      const failed: { name: string; error: string }[] = [];
+      for (const [i, res] of settled.entries()) {
+        if (res.status === "fulfilled" && res.value?.id) {
+          importedIds.push(res.value.id);
+        } else {
+          const reason = res.status === "rejected" ? res.reason : new Error("import returned no id");
+          logWarn("office_import_file", reason);
+          failed.push({ name: items[i]?.name ?? "?", error: errText(reason) });
         }
-        if (imported?.id) importedIds.push(imported.id);
       }
       if (importedIds.length) {
         const runs = importedIds.map((fileId) =>
@@ -65,7 +82,7 @@ export function useKnowledgeActions(chat: {
         knowledge.markIndexing(importedIds);
         void Promise.allSettled(runs);
       }
-      return importedIds;
+      return { importedIds, failed };
     },
     [chat.sessionId, knowledge],
   );
@@ -101,11 +118,16 @@ export function useKnowledgeActions(chat: {
           showErrorToast(`Unsupported file type: ${item.name}`);
         }
       }
-      await importKnowledgeFiles(toImport);
-      if (toImport.length) {
-        toast.success(`Imported ${toImport.length} file${toImport.length > 1 ? "s" : ""}`, {
+      const { importedIds, failed } = await importKnowledgeFiles(toImport);
+      if (importedIds.length) {
+        toast.success(`Imported ${importedIds.length} file${importedIds.length > 1 ? "s" : ""}`, {
           description: "Indexing runs in the background.",
         });
+      }
+      if (failed.length) {
+        showErrorToast(
+          `Couldn't import ${failed.length} file${failed.length > 1 ? "s" : ""}: ${failed.map((f) => f.name).join(", ")}`,
+        );
       }
     } catch (err) {
       logWarn("office_import_file", err);
@@ -124,7 +146,7 @@ export function useKnowledgeActions(chat: {
       const mime = dataUrl.slice(5, dataUrl.indexOf(";"));
       const ext = mime.split("/")[1] ?? "png";
       try {
-        const importedIds = await importKnowledgeFiles(
+        const { importedIds, failed } = await importKnowledgeFiles(
           [
             {
               name: `${name}.${ext}`,
@@ -133,6 +155,10 @@ export function useKnowledgeActions(chat: {
           ],
           { sessionId: sid },
         );
+        if (failed.length || importedIds.length === 0) {
+          showErrorToast(failed[0]?.error ?? "Couldn't save the image");
+          return [];
+        }
         toast.success("Image saved to knowledge", {
           description: "Indexing runs in the background.",
         });
