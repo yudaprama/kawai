@@ -93,6 +93,142 @@ pub fn resolve_model_path() -> Result<String, String> {
         ))
 }
 
+/// Download the on-device model from HuggingFace Hub if not locally present.
+/// Uses reqwest with resume support. Downloads to `~/.kawai/models/<filename>`
+/// so subsequent `resolve_model_path()` calls find it. Prints progress to
+/// stderr (visible in the Tauri dev console and `app.log`).
+///
+/// Repo: `litert-community/gemma-4-E4B-it-litert-lm` (Apache-2.0, public,
+/// not gated — no token needed).
+#[cfg(feature = "litert")]
+pub async fn ensure_model() -> Result<String, String> {
+    let filename = "gemma-4-E4B-it.litertlm";
+    let repo_id = "litert-community/gemma-4-E4B-it-litert-lm";
+    let model_url = format!(
+        "https://huggingface.co/{repo_id}/resolve/main/{filename}"
+    );
+
+    // Fast path: already on disk.
+    if let Ok(path) = resolve_model_path() {
+        eprintln!("[ensure_model] found locally: {path}");
+        return Ok(path);
+    }
+
+    // Determine target: ~/.kawai/models/<filename>
+    let home = std::env::var("HOME")
+        .map_err(|_| "HOME not set — cannot download model".to_string())?;
+    let model_dir = std::path::PathBuf::from(&home).join(".kawai/models");
+    let target_path = model_dir.join(filename);
+    let tmp_path = model_dir.join(format!("{filename}.part"));
+
+    std::fs::create_dir_all(&model_dir)
+        .map_err(|e| format!("create model dir ~/.kawai/models: {e}"))?;
+
+    // Check for a partial download (supports resume).
+    let existing_size = std::fs::metadata(&tmp_path)
+        .ok()
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|e| format!("reqwest client: {e}"))?;
+
+    let response = if existing_size > 0 {
+        eprintln!(
+            "[ensure_model] resuming partial download ({:.1} MB already done)",
+            existing_size as f64 / 1e6
+        );
+        client
+            .get(&model_url)
+            .header("Range", format!("bytes={}-", existing_size))
+            .send()
+            .await
+            .map_err(|e| format!("http request (resume): {e}"))?
+    } else {
+        client
+            .get(&model_url)
+            .send()
+            .await
+            .map_err(|e| format!("http request: {e}"))?
+    };
+
+    if response.status() == 206 || response.status().is_success() {
+        download_stream(response, &tmp_path, existing_size, filename).await?;
+    } else {
+        return Err(format!(
+            "download failed: HTTP {} for {model_url}",
+            response.status()
+        ));
+    }
+
+    // Atomically move the completed file into place.
+    std::fs::rename(&tmp_path, &target_path)
+        .map_err(|e| format!("rename to target: {e}"))?;
+
+    eprintln!(
+        "[ensure_model] download complete: {}",
+        target_path.display()
+    );
+
+    Ok(target_path.to_string_lossy().into_owned())
+}
+
+/// Helper: stream a download response to a temp file with progress logging.
+#[cfg(feature = "litert")]
+async fn download_stream(
+    response: reqwest::Response,
+    tmp_path: &std::path::Path,
+    existing_size: u64,
+    filename: &str,
+) -> Result<(), String> {
+    use std::io::Write;
+    use futures_util::StreamExt;
+
+    let total_size = existing_size
+        + response
+            .content_length()
+            .unwrap_or(0);
+
+    eprintln!(
+        "[ensure_model] downloading {filename} ({:.1} GB) ...",
+        total_size as f64 / 1e9
+    );
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(existing_size > 0)
+        .write(true)
+        .open(tmp_path)
+        .map_err(|e| format!("open tmp file: {e}"))?;
+
+    let mut stream = response.bytes_stream();
+    let mut downloaded = existing_size;
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("download chunk: {e}"))?;
+        file.write_all(&chunk)
+            .map_err(|e| format!("write chunk: {e}"))?;
+        downloaded += chunk.len() as u64;
+
+        // Log progress every ~100 MB.
+        let prev_mb = (downloaded - chunk.len() as u64) / 100_000_000;
+        let cur_mb = downloaded / 100_000_000;
+        if cur_mb > prev_mb && total_size > 0 {
+            let pct = downloaded as f64 / total_size as f64 * 100.0;
+            eprintln!(
+                "[ensure_model] {:.1}/{:.1} GB ({:.0}%)",
+                downloaded as f64 / 1e9,
+                total_size as f64 / 1e9,
+                pct
+            );
+        }
+    }
+
+    eprintln!("[ensure_model] finalizing ...");
+    Ok(())
+}
+
 // Database (local SQLite), chat-session persistence lives in `db`; the
 // on-device LLM in `local_llm`; office tooling in `office`; the prompt-based
 // tool-calling agent loop in `agent`; the cloud subagent client (hybrid LLM

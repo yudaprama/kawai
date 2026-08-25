@@ -48,8 +48,9 @@ Findings locked in during research (2026-08-19):
    `knowledge_search` finds them by meaning ("gambar kucing oranye") without
    any OCR/VOCR cloud call. Today they land in `failed` status
    (`describe_image` needs JigsawStack, rag.rs:452) — this removes that gap.
-2. Text pipeline untouched: `rag_chunks` stays fastembed-1024; hybrid
-   BM25+vector keeps working exactly as now.
+2. Text pipeline remains 1024-dimensional; desktop/web uses the local
+   fastembed fallback, while Android/iOS exclude fastembed/ONNX entirely and
+   use configured remote embedding providers only.
 3. Media vectors live in their own table/space (`rag_media_chunks`) so the
    768-ish dim never collides with the 1024 schema.
 4. All existing ops/behaviors preserved: no new commands, no web route
@@ -59,9 +60,9 @@ Findings locked in during research (2026-08-19):
 
 - Audio indexing (API shape supports it; no audio ingestion path exists yet —
   revisit when the office store accepts audio).
-- Replacing fastembed as the text embedder (that's Option B — one full
-  re-index, drop ort-sys, unblock iOS office; separate decision, only worth
-  it if we want to consolidate).
+- Replacing the desktop/web fastembed fallback as the text embedder (that's
+  Option B — a full re-index and removal of the local ONNX path; separate
+  decision, only worth it if we want to consolidate).
 - Multimodal *chat* input (images into `local_chat` prompts) — different
   surface, tracked elsewhere.
 - Zero-downtime migration — not applicable; media table starts empty.
@@ -177,10 +178,10 @@ Key decisions:
   litert` / `cargo check --features litert,office` (+ web combo) all green.
 - Mobile: `cargo ndk -t arm64-v8a -P 24 check --features litert,office` and
   `cargo check --target aarch64-apple-ios --features litert,office` — the
-  litert path must NOT drag ort-sys into these builds (it shouldn't; the
-  media path only adds cognee-litert-lm usage, and office's fastembed dep
-  remains iOS-blocked exactly as documented — that pre-existing failure is
-  NOT in scope).
+  litert and office paths must NOT drag `ort-sys` into these builds. The
+  `kawai-embedding` fastembed dependency and provider are target-gated out on
+  Android/iOS; mobile RAG uses remote providers when configured and otherwise
+  returns the normal no-provider configuration error.
 - Unit tests (no model needed): media table naming/purge SQL, rrf_fuse with
   3 rankings, caption-chunk id determinism, mode gating.
 - With a model present: manual index + search of one image; verify

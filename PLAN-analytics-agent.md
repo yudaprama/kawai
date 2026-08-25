@@ -50,9 +50,10 @@ android arm64 (`cargo ndk -t arm64-v8a -P 24 check -p analytics`) and iOS
 (`cargo check -p analytics --target aarch64-apple-ios`); polars' enabled
 features map to pure-Rust sub-crates only (cloud/http/aws stay off), and
 libsql core already ships on both targets via kawai's own DB layer. The only
-mobile blockers sit OUTSIDE this feature — the `office`→embedding wall
-(ort-sys/openssl-sys have no mobile prebuilts) and the on-device LLM engine
-(Roadmap 13) — both owned by separate tracks. No SQL-specific work remains;
+mobile blockers sit OUTSIDE this feature — the `office`→embedding path
+(ONNX/fastembed is `#[cfg]`-gated out on Android/iOS; remote embedding
+providers still work, but the on-device LLM engine is Roadmap 13) — both
+owned by separate tracks. No SQL-specific work remains;
 if a UI path is wanted before the mobile orchestrator lands, the deferred
 non-agent data-explorer op pair (§4) is the drop-in shape.
 

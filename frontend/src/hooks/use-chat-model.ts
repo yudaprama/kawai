@@ -14,6 +14,9 @@ export function useChatModel({
   const loadModel = useCallback(async () => {
     if (state.modelLoaded || state.modelLoading) return;
     patch({ modelLoading: true, modelError: false, modelStatus: "loading model…" } as Partial<LocalChatState>);
+    // Note: model may be downloading from HuggingFace on first launch —
+    // this takes 5-15 min depending on connection. The backend's ensure_model()
+    // logs progress to stderr (visible in `app.log`).
     try {
       const info = await call<LocalModelInfo>("local_load_model", {});
       patch({

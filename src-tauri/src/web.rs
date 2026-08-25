@@ -267,7 +267,14 @@ async fn local_load_model_handler(
 ) -> Result<Json<logic::local_llm::LocalModelInfo>, (StatusCode, String)> {
     let model_path = match req.model_path {
         Some(p) if !p.is_empty() => p,
-        _ => logic::resolve_model_path()?,
+        _ => {
+            // Try local candidates first, then download from HuggingFace Hub.
+            match logic::resolve_model_path() {
+                Ok(p) => p,
+                Err(_) => logic::ensure_model().await
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?,
+            }
+        }
     };
     logic::local_llm::load_model(
         &claims.sub,

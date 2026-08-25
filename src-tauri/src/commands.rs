@@ -284,7 +284,13 @@ pub async fn local_load_model(
     let user_id = session_user_id(&session)?;
     let model_path = match model_path {
         Some(p) if !p.is_empty() => p,
-        _ => logic::resolve_model_path()?,
+        _ => {
+            // Try local candidates first, then download from HuggingFace Hub.
+            match logic::resolve_model_path() {
+                Ok(p) => p,
+                Err(_) => logic::ensure_model().await?,
+            }
+        }
     };
     let result = logic::local_llm::load_model(
         &user_id,

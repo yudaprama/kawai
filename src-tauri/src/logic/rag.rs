@@ -8,9 +8,12 @@
 //!
 //! Pipeline: office extractors (office_oxide for OOXML, pdf_oxide in-process for
 //! PDF) → in-tree chunker →
-//! `kawai-embedding` (local fastembed ONNX fallback, no API key) →
+//! `kawai-embedding` (local fastembed ONNX fallback, desktop/web only, no API key) →
 //! `rig-libsql` vector store. All deps are gated behind the `office` feature
 //! and share the single rig-core rev used by the rest of the graph.
+//! On Android/iOS the fastembed fallback is absent; the embedder uses only
+//! remote providers (OpenRouter / NVIDIA / Gemini) or the `ErrorProvider` when
+//! no vault keys are configured.
 //!
 //! Scoping: user isolation is structural — one database file per user
 //! (`db_connection(user_id)`), so no `user_id` column anywhere. Chunks belong

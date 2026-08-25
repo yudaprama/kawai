@@ -41,6 +41,7 @@ export function ConversationPanel({
   modelStatus,
   thinking,
   onToggleThinking,
+  onRetryModel,
   chatError,
   historyError,
   onRetryHistory,
@@ -66,6 +67,7 @@ export function ConversationPanel({
   modelStatus: string;
   thinking: boolean;
   onToggleThinking: () => void;
+  onRetryModel: () => void;
   chatError: string | null;
   historyError: string | null;
   onRetryHistory: () => void;
@@ -104,7 +106,7 @@ export function ConversationPanel({
         {modelLoading && (
           <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs">
             <Spinner className="size-3" />
-            warming up
+            {modelStatus || "warming up"}
           </span>
         )}
         <div className="ml-auto flex items-center gap-1">
@@ -126,8 +128,11 @@ export function ConversationPanel({
       </header>
 
       {modelError && (
-        <div className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 rounded-md border px-3 py-2 text-sm">
-          {modelStatus}
+        <div className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+          <span className="min-w-0 flex-1">{modelStatus}</span>
+          <Button onClick={onRetryModel} size="sm" variant="outline">
+            Retry
+          </Button>
         </div>
       )}
       {chatError && (

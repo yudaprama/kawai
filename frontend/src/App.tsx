@@ -117,6 +117,7 @@ export default function App() {
         modelStatus={chat.modelStatus}
         thinking={chat.thinking}
         onToggleThinking={() => void chat.toggleThinking()}
+        onRetryModel={() => void chat.reloadModel()}
         chatError={chat.error}
         historyError={chat.historyError}
         onRetryHistory={() => void chat.retryHistoryLoad()}

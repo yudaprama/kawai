@@ -60,7 +60,7 @@ kawai-constants = { git = "https://github.com/yudaprama/kawai-vault" }
 base64 = { version = "0.22", optional = true }
 tauri-plugin-dialog = "2"
 # RAG pipeline for office knowledge files (gated behind "office"):
-#   kawai-embedding — embed (local fastembed ONNX fallback, no API key)
+#   kawai-embedding — embed (local fastembed ONNX fallback, desktop/web only, no API key)
 #   rig-libsql     — vector store (insert_documents / search)
 # Uses the same crates.io rig-core 0.42 source as the rest of the graph
 # so the vector-store seam unifies with kawai-embedding's EmbeddingModel.
