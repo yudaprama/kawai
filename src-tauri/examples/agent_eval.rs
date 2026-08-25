@@ -112,11 +112,13 @@ const SCENARIOS: &[Scenario] = &[
 /// baseline.
 const ANALYTICS_SYSTEM: &str = "You are a data analysis assistant. The user's library contains these files:\n\
 - doc1 = sales_2026.csv (columns: produk [text], kategori [text], pendapatan [integer], jumlah [integer], tanggal [date YYYY-MM-DD])\n\
-- doc2 = transactions.xlsx (sheets: Sales, Returns; Sales columns: produk [text], kategori [text], pendapatan [integer], tanggal [date YYYY-MM-DD])\n";
+- doc2 = transactions.xlsx (sheets: Sales, Returns; Sales columns: produk [text], kategori [text], pendapatan [integer], tanggal [date YYYY-MM-DD])\n\
+- doc3 = prices_2026.csv (columns: ts [date YYYY-MM-DD], open [float], high [float], low [float], close [float], volume [float]; one row per trading day, oldest first)\n";
 
 const ANALYTICS_TOOLS: &str = r#"[
   {"type":"function","function":{"name":"data_schema","description":"REQUIRED before the first data_query on a file. Returns the column names, data types, sample values and row count of a stored tabular file (csv/parquet/Excel), plus the sheet names for Excel files.","parameters":{"type":"object","properties":{"fileId":{"type":"string","description":"File id from office_list_files or the attachment block"},"sheet":{"type":"string","description":"Excel sheet name. Optional — defaults to the first sheet with data."}},"required":["fileId"]}}},
   {"type":"function","function":{"name":"data_query","description":"Run a structured query on a stored tabular file (csv/parquet/Excel): filter rows, optionally group, aggregate (sum/avg/min/max/count/count_distinct), sort, and limit. Call data_schema first to learn the columns.","parameters":{"type":"object","properties":{"fileId":{"type":"string"},"sheet":{"type":"string"},"columns":{"type":"array","items":{"type":"string"}},"filters":{"type":"array","items":{"type":"object","properties":{"column":{"type":"string"},"operator":{"type":"string","enum":["eq","neq","gt","gte","lt","lte","contains"]},"value":{"type":"string"}},"required":["column","operator","value"]}},"groupBy":{"type":"array","items":{"type":"string"}},"aggregations":{"type":"array","items":{"type":"object","properties":{"column":{"type":"string"},"function":{"type":"string","enum":["sum","avg","min","max","count","count_distinct"]},"alias":{"type":"string"}},"required":["column","function","alias"]}},"sortBy":{"type":"string"},"descending":{"type":"boolean"},"limit":{"type":"integer"}},"required":["fileId"]}}},
+  {"type":"function","function":{"name":"data_ta","description":"Compute technical-analysis indicators (EMA/SMA/WMA, RSI, MACD, PPO, Bollinger, Keltner, ChandelierExit, ATR, TrueRange, CCI, stochastic, MFI, OBV, ROC, SD, MAD, ER, rolling max/min) over a numeric time series in a stored tabular file. Indicators are stateful — pass timestamp (a date column to sort ascending by) unless rows are already ordered. Returns only each indicator's final value plus skip reasons; call data_schema first to learn the columns.","parameters":{"type":"object","properties":{"fileId":{"type":"string"},"sheet":{"type":"string"},"timestamp":{"type":"string","description":"Column to sort ascending by before folding"},"close":{"type":"string","description":"Required numeric input column"},"high":{"type":"string","description":"Required when using atr/tr/cci/stoch/kc/ce/mfi"},"low":{"type":"string","description":"Required when using atr/tr/cci/stoch/kc/ce/mfi"},"volume":{"type":"string","description":"Required when using obv/mfi"},"indicators":{"type":"array","minItems":1,"items":{"type":"object","properties":{"kind":{"type":"string","enum":["ema","sma","wma","rsi","roc","sd","mad","er","max","min","macd","ppo","bb","atr","tr","cci","stoch","stoch_slow","kc","ce","obv","mfi"]},"column":{"type":"string"},"period":{"type":"integer"},"fast":{"type":"integer"},"slow":{"type":"integer"},"signal":{"type":"integer"},"multiplier":{"type":"number"},"alias":{"type":"string"}},"required":["kind"]}}},"required":["fileId","close","indicators"]}}},
   {"type":"function","function":{"name":"office_list_files","description":"List the user's stored files. Returns id, originalName, ext, bytes, createdAt.","parameters":{"type":"object","properties":{},"required":[]}}}
 ]"#;
 
@@ -148,6 +150,16 @@ const ANALYTICS_SCENARIOS: &[Scenario] = &[
     // Excel sheet targeting through data_schema.
     Scenario("A08 sheet-select", "What columns are in the Returns sheet of transactions.xlsx?", Some("data_schema"),
         &[("fileId", "==doc2"), ("sheet", "==Returns")]),
+    // Technical-analysis selection: momentum on the close series, with the
+    // timestamp-sort discipline the stateful folds require.
+    Scenario("A09 ta-rsi", "Is prices_2026.csv overbought or oversold right now? Compute RSI(14).", Some("data_ta"),
+        &[("fileId", "==doc3"), ("close", "==close"), ("timestamp", "==ts"), ("indicators/0/kind", "==rsi")]),
+    // Volatility needs the high/low role columns, not just close.
+    Scenario("A10 ta-atr", "How volatile is the price in prices_2026.csv? Compute ATR(14).", Some("data_ta"),
+        &[("fileId", "==doc3"), ("indicators/0/kind", "==atr"), ("high", "==high"), ("low", "==low")]),
+    // Multi-param momentum default (fast/slow/signal omitted → defaults).
+    Scenario("A11 ta-macd", "Compute MACD on the close prices of prices_2026.csv.", Some("data_ta"),
+        &[("fileId", "==doc3"), ("close", "==close"), ("indicators/0/kind", "==macd")]),
 ];
 
 /// Filler tools for the TOOL_INFLATE=N experiment: realistic names/descriptions
@@ -369,7 +381,7 @@ async fn main() {
         );
         rows.push((id.to_string(), ok, note, secs));
     }
-    let total = SCENARIOS.len();
+    let total = scenarios.len();
     let pct = 100.0 * pass as f64 / total as f64;
     let min_pass = min_pass.min(total);
     let gate_ok = pass >= min_pass;
