@@ -24,8 +24,22 @@ export type LocalChatEvent =
       /** Structured payload for rich rendering (present only on success). */
       data?: unknown;
     }
+  | {
+      type: "confirmationRequest";
+      tool: string;
+      prompt: string;
+      acceptText: string;
+      declineText: string;
+    }
   | { type: "finished" }
   | { type: "error"; message: string };
+
+export interface PendingConfirmation {
+  tool: string;
+  prompt: string;
+  acceptText: string;
+  declineText: string;
+}
 
 export interface LocalChatState {
   userId: string | null;
@@ -39,6 +53,8 @@ export interface LocalChatState {
   status: ChatStatus;
   error: string | null;
   historyError: string | null;
+  /** A tool waiting for explicit user confirmation (data_import card). */
+  confirmation: PendingConfirmation | null;
   sessions: ChatSessionInfo[];
   archivedSessions: ChatSessionInfo[];
   sessionId: number | null;
@@ -58,6 +74,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
     status: "ready",
     error: null,
     historyError: null,
+    confirmation: null,
     sessions: [],
     archivedSessions: [],
     sessionId: null,
@@ -76,7 +93,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
   }, [effectiveUserId, authError, patch]);
 
   const clearMessages = useCallback(
-    () => patch({ messages: [], historyError: null } as Partial<LocalChatState>),
+    () => patch({ messages: [], historyError: null, confirmation: null } as Partial<LocalChatState>),
     [patch],
   );
 
@@ -143,6 +160,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         messages: [...prev.messages, userMessage, assistantMessage],
         status: "submitted",
         error: null,
+        confirmation: null,
       }));
 
       const sessionId = await ensureSessionId(prompt);
@@ -233,6 +251,15 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
               };
               toolParts = [...toolParts, part];
               syncStreamingDisplay();
+            } else if (ev.type === "confirmationRequest") {
+              patch({
+                confirmation: {
+                  tool: ev.tool,
+                  prompt: ev.prompt,
+                  acceptText: ev.acceptText,
+                  declineText: ev.declineText,
+                },
+              });
             } else if (ev.type === "toolResult") {
               toolParts = toolParts.map((p) =>
                 p.type === `tool-${ev.tool}` &&
@@ -325,7 +352,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         },
       );
     },
-    [agentId, ensureSessionId, loadSessions],
+    [agentId, ensureSessionId, loadSessions, patch],
   );
 
   return {

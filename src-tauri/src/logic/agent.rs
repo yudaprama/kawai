@@ -134,6 +134,10 @@ const DRAFT_DOCUMENT_TOOL: &str = "draft_document";
 /// The turn-memory recall tool name (dispatch is special-cased in the loop).
 #[cfg(feature = "litert")]
 const ARTIFACT_RECALL_TOOL: &str = "artifact_recall";
+/// The SQL snapshot tool name (analytics-gated; dispatch is intercepted
+/// behind an explicit user confirmation).
+#[cfg(all(feature = "litert", feature = "analytics"))]
+const DATA_IMPORT_TOOL: &str = "data_import";
 /// Overall wall-clock deadline for one cloud subagent call.
 #[cfg(feature = "litert")]
 const REMOTE_TIMEOUT_SECS: u64 = 600;
@@ -218,6 +222,22 @@ fn is_summary_request(message: &str) -> bool {
     ["ringkas", "rangkum", "summar", "tldr", "tl;dr"]
         .iter()
         .any(|k| m.contains(k))
+}
+
+/// Does the user's message affirmatively agree to proceed? Word-token gate
+/// (id + en) backing the data_import confirmation: "ya, lanjutkan" passes,
+/// "yang" does not. Only gates a tool that re-asks when wrong — a miss just
+/// means one extra confirmation round.
+#[cfg(all(feature = "litert", feature = "analytics"))]
+fn is_affirmative(message: &str) -> bool {
+    const WORDS: [&str; 15] = [
+        "ya", "yes", "y", "ok", "oke", "okay", "setuju", "lanjut", "lanjutkan", "confirm",
+        "proceed", "sure", "silakan", "silahkan", "gas",
+    ];
+    message
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|t| WORDS.contains(&t))
 }
 
 /// Directive appended to a successful knowledge_search response: when the
@@ -890,6 +910,19 @@ pub enum AgentChatEvent {
         /// frontend renders the summary.
         #[serde(skip_serializing_if = "Option::is_none")]
         data: Option<serde_json::Value>,
+    },
+    /// A tool call was intercepted pending explicit user confirmation
+    /// (data_import). The UI renders a confirm/cancel card; the user's
+    /// reply arrives as the next normal message (the button texts are
+    /// backend-composed so the accept wording always satisfies the gate).
+    ConfirmationRequest {
+        tool: String,
+        /// Human-readable summary of what needs confirming.
+        prompt: String,
+        /// Pre-built reply for the UI's accept button.
+        accept_text: String,
+        /// Pre-built reply for the UI's decline button.
+        decline_text: String,
     },
     Finished,
     Error {
@@ -2663,7 +2696,50 @@ pub fn agent_chat(
                                 );
                             }
                             Some((handle, offset)) => {
-                                yield AgentChatEvent::ToolCall { tool: tool.clone(), args: args.clone() };
+                    // data_import confirmation gate: the snapshot is cheap
+                    // and read-only, but it touches a user-named external
+                    // database — require an explicit yes in the user's
+                    // CURRENT message before it runs. That covers both the
+                    // confirm-card reply and the model asking first ("import
+                    // X, ya?" → "ya" → the call passes straight through).
+                    #[cfg(feature = "analytics")]
+                    if tool == DATA_IMPORT_TOOL && !is_affirmative(&message) {
+                        calls_used += 1;
+                        let profile = args
+                            .get("profile")
+                            .and_then(Value::as_str)
+                            .unwrap_or("?")
+                            .to_string();
+                        let table = args
+                            .get("table")
+                            .and_then(Value::as_str)
+                            .unwrap_or("?")
+                            .to_string();
+                        eprintln!(
+                            "[agent_chat] data_import pending confirmation: {profile}/{table}"
+                        );
+                        yield AgentChatEvent::ConfirmationRequest {
+                            tool: tool.clone(),
+                            prompt: format!(
+                                "Import tabel `{table}` dari database `{profile}`?"
+                            ),
+                            accept_text: format!(
+                                "Ya, lanjutkan import tabel {table} dari {profile}."
+                            ),
+                            decline_text: format!(
+                                "Batal, jangan import tabel {table} dari {profile}."
+                            ),
+                        };
+                        prompt = format!(
+                            "response:{tool}:\nPENDING: this import needs the user's explicit \
+                             confirmation. Ask them now in ONE short sentence (database \
+                             {profile}, table {table}) and stop — NO further call: lines this \
+                             turn. When they agree, call {tool} again with the same arguments."
+                        );
+                        continue;
+                    }
+
+                    yield AgentChatEvent::ToolCall { tool: tool.clone(), args: args.clone() };
                                 calls_used += 1;
                                 eprintln!(
                                     "[agent_chat] recall {calls_used}/{MAX_TOOL_CALLS}: {handle}@{offset}"
@@ -3824,6 +3900,19 @@ mod tests {
         assert!(out.contains("call:"));
         // Materials stay a one-line pointer — the loop attaches tool results.
         assert!(out.contains("attached automatically"));
+    }
+
+    /// The data_import confirmation gate: word-token matching so Indonesian
+    /// substrings ("yang", "kayak") never read as agreement.
+    #[cfg(all(feature = "litert", feature = "analytics"))]
+    #[test]
+    fn affirmative_messages_are_token_matched() {
+        assert!(is_affirmative("Ya, lanjutkan import tabel customers dari keuangan."));
+        assert!(is_affirmative("oke gas"));
+        assert!(is_affirmative("Yes, proceed please"));
+        assert!(!is_affirmative("yang mana tabelnya?"));
+        assert!(!is_affirmative("kayaknya nanti dulu deh"));
+        assert!(!is_affirmative("tampilkan dulu skemanya"));
     }
 
     #[cfg(feature = "litert")]

@@ -2,6 +2,7 @@ import {
   BookOpenIcon,
   BrainIcon,
   type CheckIcon,
+  DatabaseIcon,
   HistoryIcon,
   MenuIcon,
   PanelRightCloseIcon,
@@ -20,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus, UIMessage } from "@/lib/ai-types";
 import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
+import type { PendingConfirmation } from "@/hooks/use-local-chat";
 import { ChatComposer } from "@/panels/chat-composer";
 
 interface AgentPresentation {
@@ -57,6 +59,7 @@ export function ConversationPanel({
   lastUserText,
   onStop,
   onSend,
+  confirmation,
   canvasOpen,
   inSession,
   sessionsCollapsed,
@@ -86,6 +89,7 @@ export function ConversationPanel({
   lastUserText: string | null;
   onStop: () => void;
   onSend: (text: string, fileIds?: string[]) => void;
+  confirmation: PendingConfirmation | null;
   canvasOpen: boolean;
   inSession: boolean;
   sessionsCollapsed: boolean;
@@ -98,6 +102,7 @@ export function ConversationPanel({
   onOpenMobileKnowledge?: () => void;
 }) {
   const [forceAll, setForceAll] = useState(false);
+  const busy = status === "submitted" || status === "streaming";
   useEffect(() => {
     if (messages.length <= VIRTUALIZE_THRESHOLD || forceAll) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -259,6 +264,27 @@ export function ConversationPanel({
           </div>
 
           <div className="shrink-0 px-4 pb-4">
+            {confirmation && (
+              <div className="bg-card mb-2 flex items-center gap-3 rounded-lg border p-3">
+                <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
+                  <DatabaseIcon className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">Konfirmasi import</p>
+                  <p className="text-muted-foreground truncate text-xs" title={confirmation.prompt}>
+                    {confirmation.prompt}
+                  </p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button disabled={busy} onClick={() => onSend(confirmation.acceptText)} size="sm">
+                    Import
+                  </Button>
+                  <Button disabled={busy} onClick={() => onSend(confirmation.declineText)} size="sm" variant="ghost">
+                    Batal
+                  </Button>
+                </div>
+              </div>
+            )}
             <ChatComposer
               agentName={agent.name}
               onStop={onStop}

@@ -757,6 +757,7 @@ fn agent_event_to_sse(event: logic::agent::AgentChatEvent) -> SseFrame {
         AgentChatEvent::ToolCall { .. } => "toolCall",
         AgentChatEvent::SubagentThinking { .. } => "subagentThinking",
         AgentChatEvent::ToolResult { .. } => "toolResult",
+        AgentChatEvent::ConfirmationRequest { .. } => "confirmationRequest",
         AgentChatEvent::Finished => "finished",
         AgentChatEvent::Error { .. } => "error",
     };

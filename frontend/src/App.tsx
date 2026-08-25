@@ -169,6 +169,7 @@ export default function App() {
         lastUserText={lastUserText}
         onStop={chat.stop}
         onSend={onSend}
+        confirmation={chat.confirmation}
         canvasOpen={canvasOpen}
         inSession={inSession}
         sessionsCollapsed={sessionsCollapsed}
