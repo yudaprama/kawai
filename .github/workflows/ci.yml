@@ -85,6 +85,33 @@ jobs:
   linux-check:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    # Real database engines for the remote-SQL snapshot gate below — the
+    # data_tables/data_import live checks need servers, not mocks.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: kawai_check
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: mysql
+          MYSQL_DATABASE: kawai_check
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -proot --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -140,12 +167,26 @@ jobs:
         run: cargo check --features analytics
         working-directory: src-tauri
 
-      # Remote SQL sources (sqlx, rustls): pure-Rust compile gate for the
-      # data_tables/data_import remote branch. Live-server tests stay local
-      # (KAWAI_SQL_TEST_PG/MYSQL) — CI has no database service here.
+      # Remote SQL sources (sqlx, rustls): compile gate + LIVE-server checks
+      # against the service containers — data_tables/data_import/dump typing
+      # run for real (--deep seeds fixture tables — basic, temporal/NULL,
+      # binary-guard, zero-row — and drops them after).
+      # This is the gate class that catches catalog/dump scope mismatches.
       - name: cargo check (analytics-sql feature)
         run: cargo check --features analytics-sql
         working-directory: src-tauri
+
+      - name: sql_remote_check (live Postgres service container)
+        working-directory: src-tauri
+        env:
+          KAWAI_SQL_PROFILE_CHECK: postgres://postgres:postgres@127.0.0.1:5432/kawai_check
+        run: cargo run --quiet --example sql_remote_check --features analytics-sql -- --deep
+
+      - name: sql_remote_check (live MySQL service container)
+        working-directory: src-tauri
+        env:
+          KAWAI_SQL_PROFILE_CHECK: mysql://root:mysql@127.0.0.1:3306/kawai_check
+        run: cargo run --quiet --example sql_remote_check --features analytics-sql -- --deep
 
       - name: cargo test (crates/analytics)
         run: cargo test -p analytics

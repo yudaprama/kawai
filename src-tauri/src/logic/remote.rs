@@ -27,6 +27,8 @@
 //! Configuration (`.env`):
 //! ```text
 //! KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS  default 8192
+//! KAWAI_REMOTE_LLM_MATERIALS_CHARS    optional absolute ceiling on every
+//!                                     provider's materials budget (fuse)
 //! ```
 //!
 //! No keys in the vault ⇒ `from_env() -> None` disables subagents entirely —
@@ -40,9 +42,19 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue};
 
-/// Default cap on the `materials` string sent to the cloud (chars ≈ /4
-/// tokens). Enforced server-side so no caller can blow the request budget.
-const DEFAULT_MATERIALS_CHARS: usize = 24_000;
+/// Per-provider cap on the `materials` string (chars ≈ /3–4 tokens). These
+/// are CONSERVATIVE prompt-capacity floors, not measured model maxima — the
+/// point is that a frontier-context backend must not be starved by a number
+/// sized for the weakest fallback. The orchestrator builds its package
+/// against the budget of the candidate expected to serve
+/// ([`RemoteLlm::materials_budget`]); at request time every candidate
+/// truncates the package to ITS OWN floor, so a failover to a smaller
+/// backend can never overflow it.
+const ZAI_MATERIALS_CHARS: usize = 131_072; // glm-5.3 — frontier-class context
+const VENICE_MATERIALS_CHARS: usize = 49_152; // stealth model — unknown window
+const OPENCODE_MATERIALS_CHARS: usize = 49_152; // stealth model — unknown window
+const OPENROUTER_MATERIALS_CHARS: usize = 49_152; // stealth model — unknown window
+const OLLAMA_MATERIALS_CHARS: usize = 32_768; // cloud-hosted compact model
 /// Default output-token cap for one subagent call. Generous on purpose:
 /// hitting the cap truncates the answer mid-sentence (provider stops at
 /// max_tokens), and a summary that runs long must still finish.
@@ -178,6 +190,8 @@ struct EndpointDef {
     base_url: &'static str,
     model: &'static str,
     key: fn() -> String,
+    /// Server-side floor on the materials package this candidate accepts.
+    materials_budget: usize,
 }
 
 /// Fixed priority order (index 0 tried first while healthy).
@@ -187,30 +201,35 @@ const ENDPOINTS: &[EndpointDef] = &[
         base_url: ZAI_BASE_URL,
         model: ZAI_MODEL,
         key: kawai_constants::llm::get_zai,
+        materials_budget: ZAI_MATERIALS_CHARS,
     },
     EndpointDef {
         label: "venice",
         base_url: VENICE_BASE_URL,
         model: VENICE_MODEL,
         key: kawai_constants::llm::get_venice,
+        materials_budget: VENICE_MATERIALS_CHARS,
     },
     EndpointDef {
         label: "opencode",
         base_url: OPENCODE_BASE_URL,
         model: OPENCODE_MODEL,
         key: kawai_constants::llm::get_opencode,
+        materials_budget: OPENCODE_MATERIALS_CHARS,
     },
     EndpointDef {
         label: "openrouter",
         base_url: OPENROUTER_BASE_URL,
         model: OPENROUTER_MODEL,
         key: kawai_constants::llm::get_openrouter,
+        materials_budget: OPENROUTER_MATERIALS_CHARS,
     },
     EndpointDef {
         label: "ollama",
         base_url: OLLAMA_BASE_URL,
         model: OLLAMA_MODEL,
         key: kawai_constants::llm::get_ollama,
+        materials_budget: OLLAMA_MATERIALS_CHARS,
     },
 ];
 
@@ -228,6 +247,8 @@ pub struct Candidate {
     /// Authorization + provider-specific headers (OpenCode session headers),
     /// prebuilt once per process.
     headers: HeaderMap,
+    /// Server-side floor on the materials package this candidate accepts.
+    materials_budget: usize,
 }
 
 /// Per-call token usage captured from the stream's terminal record
@@ -271,7 +292,10 @@ pub struct RemoteLlm {
     /// Health-ordered candidates; index 0 is the preferred primary.
     candidates: Vec<Candidate>,
     max_output_tokens: u64,
-    materials_cap: usize,
+    /// Env override (`KAWAI_REMOTE_LLM_MATERIALS_CHARS`): an absolute ceiling
+    /// applied to EVERY provider's budget (a dev-wallet fuse — can only
+    /// lower, never raise). `None` = per-provider floors stand as defined.
+    max_materials_chars: Option<usize>,
 }
 
 impl RemoteLlm {
@@ -333,6 +357,7 @@ impl RemoteLlm {
                 url: format!("{}/chat/completions", def.base_url),
                 model: def.model,
                 headers,
+                materials_budget: def.materials_budget,
             });
         }
         if candidates.is_empty() {
@@ -345,10 +370,14 @@ impl RemoteLlm {
             .and_then(|v| v.trim().parse().ok())
             .filter(|&v| v > 0)
             .unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS);
+        let max_materials_chars = std::env::var("KAWAI_REMOTE_LLM_MATERIALS_CHARS")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .filter(|&v| v > 0);
         Some(Self {
             candidates,
             max_output_tokens,
-            materials_cap: DEFAULT_MATERIALS_CHARS,
+            max_materials_chars,
         })
     }
 
@@ -359,20 +388,36 @@ impl RemoteLlm {
         self.candidates[0].label
     }
 
-    /// Server-side materials cap (exposed for the manifest description).
-    pub fn materials_cap(&self) -> usize {
-        self.materials_cap
+    /// Effective materials budget of the candidate expected to serve the next
+    /// call (first in priority order among the currently healthy ones; a
+    /// fully cooled pool still serves via the last-resort order, so index 0
+    /// of that order is always a real candidate). The orchestrator sizes its
+    /// `materials` package against this number.
+    pub fn materials_budget(&self) -> usize {
+        let labels: Vec<&str> = self.candidates.iter().map(|c| c.label).collect();
+        let primary = MODEL_HEALTH.order_indices(&labels)[0];
+        self.effective_budget(&self.candidates[primary])
+    }
+
+    /// Per-candidate budget with the env ceiling applied.
+    fn effective_budget(&self, cand: &Candidate) -> usize {
+        match self.max_materials_chars {
+            Some(cap) => cand.materials_budget.min(cap),
+            None => cand.materials_budget,
+        }
     }
 
     /// One stateless streaming completion with provider failover (see module
     /// docs). `system` is the subagent persona; `task` is the model-written
-    /// brief; `materials` is the curated context package (truncated to the
-    /// cap here — never trust the caller). The whole candidate loop runs
-    /// INSIDE the returned stream: the failover boundary is the first TEXT
-    /// token yielded, so a zero-text completion (empty answer, reasoning-only
-    /// stream) transparently retries the next candidate. Returns a boxed
-    /// `Send` stream (the consumer lives inside Tauri command futures, which
-    /// must be `Send`).
+    /// brief; `materials` is the curated context package. The package is
+    /// truncated PER CANDIDATE to that backend's own materials floor — a
+    /// frontier primary receives the full-size package while a failover to a
+    /// smaller backend can never overflow it (never trust the caller). The
+    /// whole candidate loop runs INSIDE the returned stream: the failover
+    /// boundary is the first TEXT token yielded, so a zero-text completion
+    /// (empty answer, reasoning-only stream) transparently retries the next
+    /// candidate. Returns a boxed `Send` stream (the consumer lives inside
+    /// Tauri command futures, which must be `Send`).
     pub async fn stream(
         &self,
         system: &str,
@@ -380,20 +425,12 @@ impl RemoteLlm {
         materials: &str,
     ) -> Result<std::pin::Pin<Box<dyn Stream<Item = Result<RemoteEvent, String>> + Send>>, String>
     {
-        let materials = truncate_chars(materials, self.materials_cap);
-        let prompt = if materials.trim().is_empty() {
-            format!("Task:\n{task}")
-        } else {
-            format!(
-                "Task:\n{task}\n\n\
-                 Materials (curated by the on-device orchestrator — the ONLY context you have; \
-                 no chat history is included):\n<materials>\n{materials}\n</materials>"
-            )
-        };
-
         let candidates = self.candidates.clone();
         let max_output_tokens = self.max_output_tokens;
+        let max_materials_chars = self.max_materials_chars;
         let system = system.to_string();
+        let task = task.to_string();
+        let materials = materials.to_string();
 
         let stream = async_stream::stream! {
             let labels: Vec<&str> = candidates.iter().map(|c| c.label).collect();
@@ -412,6 +449,17 @@ impl RemoteLlm {
                         reset: true,
                     });
                 }
+                let materials_c =
+                    truncate_chars(materials.trim(), cand.materials_budget.min(max_materials_chars.unwrap_or(usize::MAX)));
+                let prompt = if materials_c.is_empty() {
+                    format!("Task:\n{task}")
+                } else {
+                    format!(
+                        "Task:\n{task}\n\n\
+                         Materials (curated by the on-device orchestrator — the ONLY context you have; \
+                         no chat history is included):\n<materials>\n{materials_c}\n</materials>"
+                    )
+                };
                 let body = request_body(cand, &system, &prompt, max_output_tokens);
                 let sent = cand
                     .http
@@ -866,6 +914,15 @@ mod tests {
         }
     }
 
+    #[test]
+    fn materials_budgets_frontier_first_and_all_positive() {
+        for def in ENDPOINTS {
+            assert!(def.materials_budget > 0, "{} must accept materials", def.label);
+        }
+        // The frontier primary is never starved below a fallback floor.
+        assert!(ZAI_MATERIALS_CHARS >= VENICE_MATERIALS_CHARS);
+    }
+
     // H5 failover boundary regression: empty completion (zero text) must be
     // treated as failover-worthy — it marks the candidate unhealthy and the
     // next candidate is tried. See stream() `!yielded_any` branch.
@@ -978,6 +1035,7 @@ mod tests {
             url: "https://example.invalid/chat/completions".into(),
             model: "m",
             headers: HeaderMap::new(),
+            materials_budget: 1_000,
         };
         let plain = request_body(&mk("venice"), "sys", "prompt", 512);
         assert_eq!(plain["model"], "m");

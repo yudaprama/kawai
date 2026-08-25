@@ -83,7 +83,28 @@ pub(crate) fn sanitize_component(name: &str) -> String {
     } else {
         trimmed
     };
-    s.chars().take(48).collect()
+    // Bound the length WITHOUT chopping off a trailing extension: the
+    // on-disk name is what type detection reads back (analytics scan(),
+    // office openers), and a blind cut turns ".parquet" into ".parque" —
+    // a file the store's own metadata calls parquet but no scanner opens.
+    const MAX_COMPONENT: usize = 48;
+    if s.chars().count() <= MAX_COMPONENT {
+        return s;
+    }
+    let ext_chars = std::path::Path::new(&s)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.chars().count() + 1) // + the dot
+        .unwrap_or(0);
+    if ext_chars == 0 || ext_chars >= MAX_COMPONENT {
+        return s.chars().take(MAX_COMPONENT).collect();
+    }
+    let mut bounded: String = s.chars().take(MAX_COMPONENT - ext_chars).collect();
+    match s.rfind('.') {
+        Some(dot) => bounded.push_str(&s[dot..]),
+        None => {}
+    }
+    bounded
 }
 
 pub(crate) fn allowed_ext(name: &str) -> Option<String> {
@@ -493,5 +514,24 @@ mod tests {
         assert!(sanitize_component("../../etc/passwd").starts_with("etc_passwd"));
         assert_eq!(sanitize_component("..."), "file");
         assert!(sanitize_component(&"a".repeat(200)).len() <= 48);
+    }
+
+    #[test]
+    fn sanitize_bounds_length_but_preserves_extension() {
+        // 49 chars: the blind 48-cut used to yield ".parque" and every
+        // scanner that reads the DISK name rejected the file.
+        let long = "kawai_sql_check_empty-snapshot-1787694719.parquet";
+        assert_eq!(long.chars().count(), 49);
+        let out = sanitize_component(long);
+        assert!(out.chars().count() <= 48, "{out}");
+        assert!(out.ends_with(".parquet"), "extension must survive: {out}");
+        assert_eq!(
+            std::path::Path::new(&out)
+                .extension()
+                .and_then(|e| e.to_str()),
+            Some("parquet")
+        );
+        // No extension → plain cut is fine.
+        assert_eq!(sanitize_component(&"a".repeat(60)), "a".repeat(48));
     }
 }

@@ -101,14 +101,18 @@ fn pg_kind(table_type: &str) -> String {
     if table_type == "VIEW" { "view" } else { "table" }.to_string()
 }
 
-/// Tables + views visible to the connecting user, sorted by name.
+/// Tables + views visible to the connecting user, sorted by name. Scoped to
+/// the session's default schema — the SAME scope `dump_rows` reads from, so
+/// everything `data_tables` offers is actually importable (MySQL already
+/// scoped to DATABASE(); Postgres previously listed every non-system schema,
+/// offering tables the dump could never resolve).
 pub async fn list_objects(url: &str) -> Result<Vec<(String, String)>, String> {
     let pool = connect(url).await?;
     match &pool {
         Pool::Pg(p) => {
             let rows = sqlx::query(
                 "SELECT table_name, table_type FROM information_schema.tables \
-                 WHERE table_schema NOT IN ('pg_catalog', 'information_schema') \
+                 WHERE table_schema = current_schema() \
                    AND table_type IN ('BASE TABLE', 'VIEW') ORDER BY 1",
             )
             .fetch_all(p)

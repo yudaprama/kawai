@@ -74,13 +74,18 @@ const TOOL_RESULT_UI_CHARS: usize = 500;
 /// reach 60k chars (office_read_document) — uncapped, a single call
 /// permanently burns the K/V budget. When capped, the model is told to
 /// narrow its query.
-const TOOL_RESULT_MODEL_CHARS: usize = 4000;
-#[cfg(feature = "litert")]
-/// Cap on tool results accumulated for cloud-subagent `materials` this turn.
-/// Cloud-facing only (big remote context) — the accumulation never enters the
-/// local K/V state, so it can far exceed TOOL_RESULT_MODEL_CHARS. Whole-doc
-/// reads (summaries) need the full text, not top-k excerpts.
-const TOOL_RESULT_MATERIALS_CHARS: usize = 32_000;
+    const TOOL_RESULT_MODEL_CHARS: usize = 4000;
+    #[cfg(feature = "litert")]
+    /// Fallback/floor budget for the cloud-materials package when no remote
+    /// pool is configured to ask for a bigger one. The REAL package budget
+    /// comes from `RemoteLlm::materials_budget()` (per-provider floors).
+    const TOOL_RESULT_MATERIALS_CHARS: usize = 32_000;
+    #[cfg(feature = "litert")]
+    /// Per-entry storage cap in the turn log (chars). Deliberately larger
+    /// than any single package budget: entries are stored WHOLE so a
+    /// whole-doc read survives verbatim for the cloud writer; the package
+    /// selection decides what fits, not the recorder.
+    const TOOL_RESULT_ENTRY_MAX_CHARS: usize = 96_000;
 #[cfg(feature = "litert")]
 /// Per-message cap inside a replayed transcript (all but the newest message).
 const TRANSCRIPT_MSG_CHARS: usize = 2000;
@@ -131,10 +136,19 @@ const ARTIFACT_PAGE_CHARS: usize = 3_600;
 /// close is offered. Keeps trivial turns (list files, price checks) local.
 const CLOUD_CLOSE_MIN_CHARS: usize = 6_000;
 #[cfg(feature = "litert")]
-/// Headroom carved out of the materials package for the omission note whenever
-/// any artifact doesn't fit. Worst case ≈ MAX_TOOL_CALLS entries × ~50 chars
-/// of listing each — far below this reserve.
-const MATERIALS_NOTE_RESERVE: usize = 600;
+    /// Headroom carved out of the materials package for the omission note whenever
+    /// any artifact doesn't fit. Worst case ≈ MAX_TOOL_CALLS entries × ~50 chars
+    /// of listing each — far below this reserve.
+    const MATERIALS_NOTE_RESERVE: usize = 600;
+    #[cfg(feature = "litert")]
+    /// Marker identifying a package that omitted stored artifacts — also the
+    /// trigger for the deep_write staging round (the writer may fetch what
+    /// was omitted before composing).
+    const MATERIALS_NOTE_MARKER: &str = "[MATERIALS NOTE:";
+    #[cfg(feature = "litert")]
+    /// Max slices one deep_write staging round may request (each page is
+    /// ARTIFACT_PAGE_CHARS) — bounds the extra latency + prompt growth.
+    const STAGING_MAX_REQUESTS: usize = 6;
 
 /// One "--- tool ---" block of the cloud-materials package.
 #[cfg(feature = "litert")]
@@ -142,20 +156,38 @@ fn artifact_block(a: &TurnArtifact) -> String {
     format!("--- {} ---\n{}", a.tool, a.content)
 }
 
-/// Largest prefix of artifacts whose joined blocks stay within `budget`
-/// (accounting for the "\n\n" separator before every non-first block).
+/// Distinct lowercase terms (≥3 alphanumeric chars) from the user's message —
+/// the relevance signal for materials packing. Order-preserving and capped;
+/// pure heuristic on purpose.
 #[cfg(feature = "litert")]
-fn fitting_materials_prefix(artifacts: &[TurnArtifact], budget: usize) -> usize {
-    let mut used = 0usize;
-    for (i, a) in artifacts.iter().enumerate() {
-        let sep = if i > 0 { 2 } else { 0 };
-        let len = artifact_block(a).chars().count() + sep;
-        if used + len > budget {
-            return i;
+fn focus_terms(message: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for term in message.to_lowercase().split(|c: char| !c.is_alphanumeric()) {
+        if term.chars().count() >= 3 && !out.iter().any(|t| t == term) {
+            out.push(term.to_string());
+            if out.len() >= 32 {
+                break;
+            }
         }
-        used += len;
     }
-    artifacts.len()
+    out
+}
+
+/// Relevance score of one artifact for the package: distinct focus-term hits
+/// dominate, recency breaks ties (later entries carry more of the turn's
+/// conclusion). Deterministic — same log + message ⇒ same package.
+#[cfg(feature = "litert")]
+fn relevance_score(a: &TurnArtifact, terms: &[String], idx: usize) -> usize {
+    if terms.is_empty() {
+        return idx;
+    }
+    let body = a.content.to_lowercase();
+    let tool = a.tool.to_lowercase();
+    let hits = terms
+        .iter()
+        .filter(|t| body.contains(t.as_str()) || tool.contains(t.as_str()))
+        .count();
+    hits * 8 + idx
 }
 
 /// Does the user's message ask for a whole-content summary? Keyword gate
@@ -279,6 +311,42 @@ Rules:\n\
 - If the materials are insufficient for part of the task, complete the rest and note the gap briefly.\n\
 - Output ONLY the requested artifact in clean markdown. No preamble, no meta commentary, no code fences around the whole answer.\n\
 - Match the requested structure, audience and length from the task brief.";
+
+/// Staging persona for the deep_write two-phase round. When the base package
+/// carried omissions, the cloud writer FIRST states what else it needs (or
+/// that it is ready) — the resolved slices ride into the real writing call,
+/// so composition never starts from a knowingly incomplete package.
+#[cfg(feature = "litert")]
+const DEEP_WRITE_STAGING_SYSTEM: &str = "You are staging context for a long-form writing task. You receive the task brief \
+and PARTIAL materials; a [MATERIALS NOTE] lists stored results that were omitted from this package. \
+Reply with ONLY one JSON object, nothing else:\n\
+- Need more context? {\"requests\": [{\"handle\": \"memN\", \"offset\": 0}]} — up to 6 entries; each returns ~3600 chars read forward from offset (offset 0 = the start).\n\
+- The included materials already suffice? {\"ready\": true}";
+
+/// Parse a staging response into (handle, offset) requests. Returns `None`
+/// for prose, {"ready": true}, or any non-conforming payload — every such
+/// case degrades to the plain single-shot write against the base package.
+#[cfg(feature = "litert")]
+fn parse_staging_requests(raw: &str) -> Option<Vec<(String, usize)>> {
+    let trimmed = raw.trim();
+    let start = trimmed.find('{')?;
+    let end = trimmed.rfind('}')?;
+    if end < start {
+        return None;
+    }
+    let value: Value = serde_json::from_str(&trimmed[start..=end]).ok()?;
+    let reqs = value.get("requests")?.as_array()?;
+    let mut out = Vec::new();
+    for r in reqs {
+        let handle = r.get("handle")?.as_str()?.trim();
+        if handle.is_empty() {
+            return None;
+        }
+        let offset = r.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
+        out.push((handle.to_string(), offset));
+    }
+    (!out.is_empty()).then_some(out)
+}
 
 /// Extra persona rule for agents carrying the deep_write subagent: tells the
 /// local model WHEN to delegate (the core quality lever of the hybrid tier).
@@ -1343,7 +1411,7 @@ fn canonical_args_key(value: &Value) -> String {
 }
 
 /// One stored process result. `content` is the tool's verbatim output body,
-/// already capped at `TOOL_RESULT_MATERIALS_CHARS`.
+/// already capped at `TOOL_RESULT_ENTRY_MAX_CHARS`.
 #[cfg(feature = "litert")]
 struct TurnArtifact {
     handle: String,
@@ -1379,7 +1447,7 @@ impl TurnMemory {
             handle: handle.clone(),
             tool: tool.to_string(),
             args_key: args_key.to_string(),
-            content: truncate_chars(&content, TOOL_RESULT_MATERIALS_CHARS),
+            content: truncate_chars(&content, TOOL_RESULT_ENTRY_MAX_CHARS),
         });
         handle
     }
@@ -1451,29 +1519,64 @@ impl TurnMemory {
     }
 
     /// The cloud-materials package: whole "--- tool ---" blocks joined in turn
-    /// order under the `TOOL_RESULT_MATERIALS_CHARS` cap. Artifacts that do
-    /// not fit are omitted EXPLICITLY via a trailing note (handles + tools +
-    /// sizes) — the writer must never receive a silently truncated package.
-    fn materials(&self) -> String {
-        // A single giant read (entry bodies are capped near the package budget)
-        // can leave the greedy prefix empty — always ship at least the head
-        // block rather than an empty package; its tail gets the standard
-        // ellipsis marker below.
-        let keep = fitting_materials_prefix(&self.artifacts, TOOL_RESULT_MATERIALS_CHARS)
-            .max(self.artifacts.len().min(1));
-        let note = if keep == self.artifacts.len() {
+    /// order under `budget` (per-provider — see `RemoteLlm::materials_budget`).
+    /// Selection is RELEVANCE-ranked — distinct terms from the user's message
+    /// dominate, recency breaks ties — but rendering stays chronological, so a
+    /// giant early read can no longer crowd out a small decisive one. Blocks
+    /// ship WHOLE; artifacts that do not fit are omitted EXPLICITLY via a
+    /// trailing note (handles + tools + sizes) — the writer must never receive
+    /// a silently truncated package.
+    fn materials(&self, focus: &str, budget: usize) -> String {
+        let n = self.artifacts.len();
+        if n == 0 {
+            return String::new();
+        }
+        let terms = focus_terms(focus);
+        let block_chars: Vec<usize> = self
+            .artifacts
+            .iter()
+            .map(|a| artifact_block(a).chars().count())
+            .collect();
+        let mut ranked: Vec<usize> = (0..n).collect();
+        ranked.sort_by_key(|&i| {
+            std::cmp::Reverse((relevance_score(&self.artifacts[i], &terms, i), i))
+        });
+        // First-fit over the ranking; kept blocks stay WHOLE (no mid-body cut).
+        let fits = |avail: usize| -> Vec<usize> {
+            let mut used = 0usize;
+            let mut sel = Vec::new();
+            for &i in &ranked {
+                let sep = if sel.is_empty() { 0 } else { 2 };
+                if used + sep + block_chars[i] <= avail {
+                    used += sep + block_chars[i];
+                    sel.push(i);
+                }
+            }
+            sel
+        };
+        let mut selected = fits(budget);
+        if selected.len() < n {
+            // Refit reserving room for the omission note so the final package
+            // (note included) stays within budget.
+            selected = fits(budget.saturating_sub(MATERIALS_NOTE_RESERVE));
+        }
+        // A single giant read can leave the selection empty — always ship at
+        // least the top-ranked head block rather than an empty package; its
+        // tail gets the standard ellipsis marker below.
+        if selected.is_empty() {
+            selected.push(ranked[0]);
+        }
+        selected.sort_unstable(); // chronological render
+
+        let note = if selected.len() == n {
             None
         } else {
-            // Refit reserving room for the note itself so every kept block
-            // stays whole AND the final package stays within the cap.
-            let keep =
-                keep.min(fitting_materials_prefix(
-                    &self.artifacts,
-                    TOOL_RESULT_MATERIALS_CHARS.saturating_sub(MATERIALS_NOTE_RESERVE),
-                ));
-            let listed = self.artifacts[keep..]
+            let listed = self
+                .artifacts
                 .iter()
-                .map(|a| {
+                .enumerate()
+                .filter(|(i, _)| !selected.contains(i))
+                .map(|(_, a)| {
                     format!(
                         "{} {} {} chars",
                         a.handle,
@@ -1487,26 +1590,57 @@ impl TurnMemory {
                 "[MATERIALS NOTE: {} of {} stored results did not fit this package \
                  ({}-char cap). Omitted: {}. Ground the answer ONLY in the included \
                  results; do not imply coverage of the omitted ones.]",
-                self.artifacts.len() - keep,
-                self.artifacts.len(),
-                TOOL_RESULT_MATERIALS_CHARS,
+                n - selected.len(),
+                n,
+                budget,
                 listed,
             ))
         };
-        let note_text = note.map(|n| format!("\n\n{n}")).unwrap_or_default();
-        let budget = TOOL_RESULT_MATERIALS_CHARS.saturating_sub(note_text.chars().count());
-        let joined = self.artifacts[..keep]
+        let note_text = note.map(|m| format!("\n\n{m}")).unwrap_or_default();
+        let avail = budget.saturating_sub(note_text.chars().count());
+        let joined = selected
             .iter()
-            .map(artifact_block)
+            .map(|&i| artifact_block(&self.artifacts[i]))
             .collect::<Vec<_>>()
             .join("\n\n");
-        let mut out = if joined.chars().count() > budget {
-            truncate_chars(&joined, budget)
+        let mut out = if joined.chars().count() > avail {
+            truncate_chars(&joined, avail)
         } else {
             joined
         };
         out.push_str(&note_text);
         out
+    }
+
+    /// Resolve deep_write staging requests into "[ADDITIONAL SLICES …]" blocks
+    /// of verbatim pages from this log. Invalid handles/offsets are skipped —
+    /// the writer asked, we serve what exists; duplicates dedup on
+    /// (handle, offset); bounded by STAGING_MAX_REQUESTS pages total.
+    fn staging_slices(&self, reqs: &[(String, usize)]) -> String {
+        let mut seen: std::collections::HashSet<(String, usize)> = Default::default();
+        let mut blocks: Vec<String> = Vec::new();
+        for (handle, offset) in reqs.iter().take(STAGING_MAX_REQUESTS) {
+            if !seen.insert((handle.to_lowercase(), *offset)) {
+                continue;
+            }
+            if let Ok((page_text, _)) = self.page(handle, *offset) {
+                blocks.push(format!(
+                    "--- requested slice {} @{} ---\n{}",
+                    handle, offset, page_text
+                ));
+            }
+            if blocks.len() >= STAGING_MAX_REQUESTS {
+                break;
+            }
+        }
+        if blocks.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "[ADDITIONAL SLICES fetched at this writer's request]\n{}",
+                blocks.join("\n\n")
+            )
+        }
     }
 
     /// Total stored content chars — the cloud-close trigger metric.
@@ -1779,6 +1913,78 @@ pub fn agent_chat(
                 // empty stream so the shared loop sees `failed`.
                 let started = std::time::Instant::now();
                 let system = if is_draft { DRAFT_DOCUMENT_SYSTEM } else { DEEP_WRITE_SYSTEM };
+                // deep_write staging round: when the base package omitted
+                // stored artifacts ([MATERIALS NOTE]), give the writer ONE
+                // bounded round to fetch what it needs before composing. Any
+                // non-conforming response degrades to the plain single-shot
+                // write against the base package — the turn never dies here.
+                let mut materials_for_call = call.materials.clone();
+                if !is_draft && call.materials.contains(MATERIALS_NOTE_MARKER) {
+                    let stage_started = std::time::Instant::now();
+                    let mut raw = String::new();
+                    let mut stage_failed: Option<String> = None;
+                    match remote
+                        .as_ref()
+                        .expect("pending_subagent implies remote")
+                        .stream(DEEP_WRITE_STAGING_SYSTEM, &call.task, &call.materials)
+                        .await
+                    {
+                        Ok(s) => {
+                            let mut s = Box::pin(s);
+                            loop {
+                                if stage_started.elapsed()
+                                    > std::time::Duration::from_secs(REMOTE_TIMEOUT_SECS)
+                                {
+                                    stage_failed = Some("staging round timed out".into());
+                                    break;
+                                }
+                                match s.next().await {
+                                    Some(Ok(crate::logic::remote::RemoteEvent::Token { text })) => {
+                                        // Requests are tiny JSON; the cap only
+                                        // guards a runaway model.
+                                        if raw.chars().count() < 4_000 {
+                                            raw.push_str(&text);
+                                        }
+                                    }
+                                    Some(Ok(_)) => {}
+                                    Some(Err(e)) => {
+                                        stage_failed = Some(e);
+                                        break;
+                                    }
+                                    None => break,
+                                }
+                            }
+                        }
+                        Err(e) => stage_failed = Some(e),
+                    }
+                    match stage_failed {
+                        Some(e) => eprintln!(
+                            "[agent_chat] deep_write staging unavailable ({e}) — single-shot fallback"
+                        ),
+                        None => match parse_staging_requests(&raw) {
+                            Some(reqs) => {
+                                let slices = memory.staging_slices(&reqs);
+                                if slices.is_empty() {
+                                    eprintln!(
+                                        "[agent_chat] deep_write staging: no valid slice for {} request(s)",
+                                        reqs.len()
+                                    );
+                                } else {
+                                    eprintln!(
+                                        "[agent_chat] deep_write staging: +{} chars from {} request(s)",
+                                        slices.chars().count(),
+                                        reqs.len()
+                                    );
+                                    materials_for_call =
+                                        format!("{}\n\n{slices}", call.materials);
+                                }
+                            }
+                            None => eprintln!(
+                                "[agent_chat] deep_write staging: writer ready with the base package"
+                            ),
+                        },
+                    }
+                }
                 let mut answer = String::new();
                 // Mirror of the cloud reasoning buffer (capped) — the
                 // authoritative display text re-emitted per event.
@@ -1794,7 +2000,7 @@ pub fn agent_chat(
                 > = match remote
                     .as_ref()
                     .expect("pending_subagent implies remote")
-                    .stream(system, &call.task, &call.materials)
+                    .stream(system, &call.task, &materials_for_call)
                     .await
                 {
                     Ok(s) => Box::pin(s),
@@ -1884,7 +2090,7 @@ pub fn agent_chat(
                         match remote
                             .as_ref()
                             .unwrap()
-                            .stream(DRAFT_DOCUMENT_SYSTEM, &retry_task, &call.materials)
+                            .stream(DRAFT_DOCUMENT_SYSTEM, &retry_task, &materials_for_call)
                             .await
                         {
                             Ok(s) => {
@@ -2244,7 +2450,11 @@ pub fn agent_chat(
                             eprintln!("[agent_chat] malformed fence twice ({detail}) — escalating to deep_write");
                             let mut materials =
                                 compact_transcript(&prior_turns, TRANSCRIPT_BUDGET_CHARS);
-                            let gathered = memory.materials();
+                            let package_budget = remote
+                                .as_ref()
+                                .map(|r| r.materials_budget())
+                                .unwrap_or(TOOL_RESULT_MATERIALS_CHARS);
+                            let gathered = memory.materials(&message, package_budget);
                             if !gathered.is_empty() {
                                 materials = format!(
                                     "{materials}\n\n[tool results gathered this turn]\n{gathered}"
@@ -2309,8 +2519,14 @@ pub fn agent_chat(
                         // that slice. The cloud writer needs the full text —
                         // append the turn's process log unless the model
                         // already embedded it verbatim (probe a mid-slice; a
-                        // paraphrase never contains it).
-                        let gathered = memory.materials();
+                        // paraphrase never contains it). The package budget
+                        // follows the provider pool: a frontier primary gets
+                        // the full-size package, not the fallback floor.
+                        let package_budget = remote
+                            .as_ref()
+                            .map(|r| r.materials_budget())
+                            .unwrap_or(TOOL_RESULT_MATERIALS_CHARS);
+                        let gathered = memory.materials(&message, package_budget);
                         if !gathered.is_empty() {
                             if !materials_embeds_results(&materials, &gathered) {
                                 materials = format!(
@@ -2742,7 +2958,7 @@ mod tests {
         let mut m = TurnMemory::default();
         m.record("office_list_files", "a", "{\"files\":[]}".into());
         m.record("binance_price", "b", "{\"price\":\"1\"}".into());
-        let materials = m.materials();
+        let materials = m.materials("", TOOL_RESULT_MATERIALS_CHARS);
         assert!(materials.contains("--- office_list_files ---"));
         assert!(materials.contains("--- binance_price ---"));
         // Everything fit → no packaging note, no ellipsis.
@@ -2756,7 +2972,7 @@ mod tests {
         m.record("office_list_files", "a", "{\"files\":[]}".into());
         m.record("office_read_document", "b", "x".repeat(50_000));
         m.record("pdf_extract_text", "c", "y".repeat(40_000));
-        let materials = m.materials();
+        let materials = m.materials("", TOOL_RESULT_MATERIALS_CHARS);
         // Kept blocks stay WHOLE (no mid-body cut), the small head included.
         assert!(materials.contains("{\"files\":[]}"));
         assert!(!materials.contains('…'), "no silent mid-block truncation");
@@ -2778,11 +2994,96 @@ mod tests {
             "a",
             format!("{}tail", "z".repeat(TOOL_RESULT_MATERIALS_CHARS)),
         );
-        let materials = m.materials();
+        let materials = m.materials("", TOOL_RESULT_MATERIALS_CHARS);
         assert_eq!(m.artifacts.len(), 1);
         assert!(materials.starts_with("--- office_read_document ---"));
         assert!(materials.contains('…'), "giant head must be capped");
         assert!(materials.chars().count() <= TOOL_RESULT_MATERIALS_CHARS + 60);
+    }
+
+    #[test]
+    fn turn_memory_materials_ranking_prefers_focus_match() {
+        // A giant early read that has NOTHING to do with the question must
+        // not crowd out the small decisive hit — selection is relevance-
+        // ranked, not first-come-first-served.
+        let mut m = TurnMemory::default();
+        m.record("office_read_document", "a", "x".repeat(31_980));
+        m.record(
+            "binance_price",
+            "b",
+            r#"{"symbol":"BTCUSDT","price":"64000"}"#.into(),
+        );
+        let materials = m.materials("apa harga binance sekarang", 32_000);
+        // The focus-matched small block ships whole…
+        assert!(materials.contains("BTCUSDT"), "got {materials}");
+        assert!(materials.contains("--- binance_price ---"));
+        // …the irrelevant giant is dropped EXPLICITLY, not silently.
+        assert!(materials.contains("[MATERIALS NOTE: 1 of 2"), "got {materials}");
+        assert!(materials.contains("mem1 office_read_document"));
+        assert!(!materials.contains('…'));
+    }
+
+    #[test]
+    fn turn_memory_materials_renders_chronologically_when_all_fit() {
+        let mut m = TurnMemory::default();
+        m.record("web_search", "a", "alpha result".into());
+        m.record("web_read", "b", "beta page body".into());
+        // Focus matches BOTH blocks; chronological order must survive.
+        let materials = m.materials("alpha beta page", 32_000);
+        let a = materials.find("--- web_search ---").unwrap();
+        let b = materials.find("--- web_read ---").unwrap();
+        assert!(a < b, "blocks must render in turn order");
+    }
+
+    #[test]
+    fn turn_memory_materials_budget_scales_with_provider() {
+        // The same log under a frontier-sized budget ships EVERYTHING —
+        // the fallback floor must not starve a big-context provider.
+        let mut m = TurnMemory::default();
+        m.record("office_list_files", "a", "{\"files\":[]}".into());
+        m.record("office_read_document", "b", "x".repeat(50_000));
+        m.record("pdf_extract_text", "c", "y".repeat(40_000));
+        let materials = m.materials("", 131_072);
+        assert!(materials.contains("{\"files\":[]}"));
+        assert!(materials.contains("--- office_read_document ---"));
+        assert!(materials.contains("--- pdf_extract_text ---"));
+        assert!(!materials.contains("MATERIALS NOTE"), "got {materials}");
+    }
+
+    #[test]
+    fn staging_requests_parse_and_degrade() {
+        // Valid request list.
+        let reqs = parse_staging_requests(
+            r#"{"requests": [{"handle": "mem2", "offset": 3600}, {"handle": "mem1"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(reqs, vec![("mem2".into(), 3600), ("mem1".into(), 0)]);
+        // Ready / prose / garbage all degrade to None (single-shot fallback).
+        assert!(parse_staging_requests(r#"{"ready": true}"#).is_none());
+        assert!(parse_staging_requests("I can write this from the given materials.").is_none());
+        assert!(parse_staging_requests("").is_none());
+        // Missing handle inside an entry poisons the payload → None.
+        assert!(parse_staging_requests(r#"{"requests": [{"offset": 5}]}"#).is_none());
+    }
+
+    #[test]
+    fn staging_slices_serve_pages_and_skip_invalid() {
+        let mut m = TurnMemory::default();
+        m.record("office_read_document", "a", "abcdefgh".repeat(1_000)); // 8000 chars
+        m.record("pdf_extract_text", "b", "tiny".into());
+
+        let slices = m.staging_slices(&[
+            ("mem1".into(), 7_000),           // valid: tail page (1000 chars)
+            ("memX".into(), 0),               // unknown handle — skipped
+            ("mem1".into(), 999_999),         // past-the-end — skipped
+            ("MEM1".into(), 7_000),           // case-insensitive dedup
+        ]);
+        assert!(slices.contains("[ADDITIONAL SLICES fetched at this writer's request]"));
+        assert!(slices.contains("--- requested slice mem1 @7000 ---"));
+        assert!(slices.chars().count() < 4_000);
+
+        // Nothing resolvable → empty string (caller keeps the base package).
+        assert_eq!(m.staging_slices(&[("nope".into(), 0)]), "");
     }
 
     #[test]

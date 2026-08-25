@@ -167,6 +167,10 @@ name = "analytics_smoke"
 required-features = ["analytics"]
 
 [[example]]
+name = "sql_remote_check"
+required-features = ["analytics-sql"]
+
+[[example]]
 name = "web_read_check"
 required-features = ["office"]
 
