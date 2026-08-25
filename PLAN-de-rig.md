@@ -4,8 +4,11 @@ Status: **IN PROGRESS**. Phase 1 (`kawai-tools` crate) + Phase 2 (atomic
 tool-seam flip: all `rig-components` tool crates, `src-tauri`
 office/analytics/agent, `local-llm` renamed feature `agent-tools`, gen
 template, `providers/` + `rig-examples/` deleted) shipped 2026-08-25.
-Pending: Phase 3 (cloud client), Phase 4 (RAG/embeddings), Phase 5 (purge +
-docs). Live status lands in AGENTS.md → Roadmap when phases ship.
+Phase 3 (hand-rolled OpenAI-compatible SSE client in `logic/remote.rs`;
+`rig` facade dep removed from src-tauri) shipped 2026-08-25 — verified by
+`remote_smoke` + `draft_smoke` + `agent_eval` 20/20 on E4B.
+Pending: Phase 4 (RAG/embeddings), Phase 5 (purge + docs). Live status
+lands in AGENTS.md → Roadmap when phases ship.
 
 ## Why
 
