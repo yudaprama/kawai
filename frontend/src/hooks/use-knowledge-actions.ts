@@ -7,6 +7,7 @@ import { dataUrlToFile, fileToBase64 } from "@/lib/base64";
 import { ADD_FILE_ACCEPT } from "@/lib/extensions";
 import type { KnowledgeSource } from "@/lib/knowledge";
 import { classifySource, isYouTubeUrl } from "@/lib/knowledge";
+import { isTabularExt } from "@/lib/extensions";
 import { logWarn } from "@/lib/logger";
 import { showErrorToast } from "@/lib/utils";
 import { platform, runningInTauri } from "@/platform";
@@ -51,7 +52,7 @@ export function useKnowledgeActions(chat: {
     async (
       items: { sourcePath?: string; file?: File; name: string }[],
       opts?: { sessionId?: number | null },
-    ): Promise<{ importedIds: string[]; failed: { name: string; error: string }[] }> => {
+    ): Promise<{ importedIds: string[]; failed: { name: string; error: string }[]; indexing: number }> => {
       const sessionId = opts && "sessionId" in opts ? opts.sessionId : chat.sessionId;
       // All imports run in parallel and independently — one bad file must
       // not abort the rest of the batch.
@@ -72,28 +73,49 @@ export function useKnowledgeActions(chat: {
           throw new Error("nothing to import");
         }),
       );
-      const importedIds: string[] = [];
+      const imported: OfficeFileInfo[] = [];
       const failed: { name: string; error: string }[] = [];
       for (const [i, res] of settled.entries()) {
         if (res.status === "fulfilled" && res.value?.id) {
-          importedIds.push(res.value.id);
+          imported.push(res.value);
         } else {
           const reason = res.status === "rejected" ? res.reason : new Error("import returned no id");
           logWarn("office_import_file", reason);
           failed.push({ name: items[i]?.name ?? "?", error: errText(reason) });
         }
       }
+      const importedIds = imported.map((f) => f.id);
+      const indexableIds = imported.filter((f) => !isTabularExt(f.ext)).map((f) => f.id);
+      const tabularIds = imported.filter((f) => isTabularExt(f.ext)).map((f) => f.id);
       if (importedIds.length) {
-        const runs = importedIds.map((fileId) =>
-          call<number>("office_index_file", { sessionId, fileId })
-            .catch((e) => logWarn("office_index_file", e))
-            .finally(() => void refreshKnowledge()),
-        );
+        // Tabular files (csv/tsv/parquet/xlsx) are queried structurally by
+        // the analytics agent — no RAG indexing. They only need the session
+        // association, which office_index_file skips for them.
+        const runs: Promise<unknown>[] = [];
+        if (tabularIds.length && sessionId != null) {
+          runs.push(
+            call<number>("knowledge_add_to_session", {
+              sessionId,
+              fileIds: tabularIds,
+            })
+              .catch((e) => logWarn("knowledge_add_to_session", e))
+              .finally(() => void refreshKnowledge()),
+          );
+        }
+        if (indexableIds.length) {
+          runs.push(
+            ...indexableIds.map((fileId) =>
+              call<number>("office_index_file", { sessionId, fileId })
+                .catch((e) => logWarn("office_index_file", e))
+                .finally(() => void refreshKnowledge()),
+            ),
+          );
+        }
         await refreshKnowledge();
-        markIndexing(importedIds);
+        markIndexing(indexableIds);
         void Promise.allSettled(runs);
       }
-      return { importedIds, failed };
+      return { importedIds, failed, indexing: indexableIds.length };
     },
     [chat.sessionId, refreshKnowledge, markIndexing],
   );
@@ -129,10 +151,10 @@ export function useKnowledgeActions(chat: {
           showErrorToast(`Unsupported file type: ${item.name}`);
         }
       }
-      const { importedIds, failed } = await importKnowledgeFiles(toImport);
+      const { importedIds, failed, indexing } = await importKnowledgeFiles(toImport);
       if (importedIds.length) {
         toast.success(`Imported ${importedIds.length} file${importedIds.length > 1 ? "s" : ""}`, {
-          description: "Indexing runs in the background.",
+          description: indexing > 0 ? "Indexing runs in the background." : "Ready — the Analytics agent can query it.",
         });
       }
       if (failed.length) {
@@ -191,7 +213,10 @@ export function useKnowledgeActions(chat: {
         setKnowledgeSessionId(sid);
       }
       markInSession([file.id], true);
-      if (file.chunks === 0 || file.status === "failed") markIndexing([file.id]);
+      // Tabular files are never prose-indexed — no "Indexing…" state to show.
+      if (!isTabularExt(file.ext) && (file.chunks === 0 || file.status === "failed")) {
+        markIndexing([file.id]);
+      }
       try {
         await call<number>("knowledge_add_to_session", {
           sessionId: sid,

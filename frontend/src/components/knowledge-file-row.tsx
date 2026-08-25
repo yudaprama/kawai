@@ -1,10 +1,21 @@
 import { CheckIcon, EyeIcon, PlusIcon, RotateCcwIcon, TrashIcon, XIcon } from "lucide-react";
 import { FileIcon } from "@/components/file-icon";
 import { Spinner } from "@/components/ui/spinner";
+import { isTabularExt } from "@/lib/extensions";
 import type { KnowledgeFileInfo } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
 
 export function KnowledgeStatusBadge({ file }: { file: KnowledgeFileInfo }) {
+  if (isTabularExt(file.ext)) {
+    return (
+      <span
+        className="text-muted-foreground/70 text-xs"
+        title="Tabular data — queried structurally by the Analytics agent, not prose-indexed"
+      >
+        data
+      </span>
+    );
+  }
   if (file.status === "indexing") {
     return (
       <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
@@ -60,6 +71,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
   confirmDelete: boolean;
   actions: KnowledgeRowActions;
 }) {
+  const tabular = isTabularExt(file.ext);
   return (
     <div className="bg-card group/file flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
       {inSessionList ? (
@@ -110,7 +122,11 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
             aria-label={`Remove ${file.originalName} from this session`}
             className="text-muted-foreground hover:text-foreground rounded p-1"
             onClick={() => actions.onRemove(file)}
-            title="Remove from this session — the agent stops searching it here"
+            title={
+              tabular
+                ? "Remove from this session — the agent stops seeing this data file here"
+                : "Remove from this session — the agent stops searching it here"
+            }
             type="button"
           >
             <XIcon className="size-3.5" />
@@ -120,7 +136,11 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
             aria-label={`Add ${file.originalName} to this session`}
             className="text-muted-foreground hover:text-foreground rounded p-1"
             onClick={() => actions.onAdd(file)}
-            title="Add to this session — makes this document searchable by the agent in this chat"
+            title={
+              tabular
+                ? "Add to this session — makes this data file queryable by the agent in this chat"
+                : "Add to this session — makes this document searchable by the agent in this chat"
+            }
             type="button"
           >
             <PlusIcon className="size-3.5" />
