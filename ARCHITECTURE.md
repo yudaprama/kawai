@@ -96,6 +96,88 @@ sequenceDiagram
 
 **Design invariant:** Gemma 4 local is the *permanent orchestrator*; the cloud is the most expensive *tool* the model may choose for heavy synthesis. No user-facing provider switch — zero-config `zai`, `off` as the only kill-switch. Unset/`off`/no-key ⇒ pure-local agents.
 
+## Agent catalog & toolset map
+
+Three catalog agents (`logic/agent.rs:list_agents()`), each a persona + curated toolset. Toolsets are built per-call by `toolset_for(agent_id, user_id, session_id, remote)` — tools that require runtime resources (webread engines, SQL profiles, Binance credentials) are registered only when available (capability-probe rule).
+
+### `builtin.office` — Office
+
+Document assistant for docx/xlsx/pptx/pdf/YouTube transcripts.
+
+| Tool | Source | Notes |
+|------|--------|-------|
+| `office_list_files` | `office::tools` | List all stored files |
+| `knowledge_search` | `office::tools` | Hybrid retrieval (vector + BM25) over session-scoped indexed chunks |
+| `office_create_document` | `office::tools` | Create docx/xlsx/pptx from markdown blocks (exact-content only) |
+| `office_read_document` | `office::tools` | Read docx/xlsx/pptx as markdown |
+| `office_document_info` | `office::tools` | File metadata + structure |
+| `office_edit_document` | `office::tools` | In-place edits (declarative ops, pure Rust) |
+| `office_restore_backup` | `office::tools` | Undo last edit (swap pre-edit snapshot) |
+| `pdf_extract_text` | `office::tools` | PDF → page-separated markdown |
+| `pdf_search_text` | `office::tools` | Regex search across PDF text |
+| `pdf_replace_text` | `office::tools` | Regex find-replace in PDF (DOM-based) |
+| `pdf_merge` | `office::tools` | Merge multiple PDFs |
+| `pdf_split` | `office::tools` | Split PDF by page range |
+| `pdf_info` | `office::tools` | PDF metadata |
+| `web_read` | `webread` | Read a URL → markdown *(capability-probe: engine must exist)* |
+| `web_search` | `webread` | Bing SERP → markdown *(capability-probe: engine must exist)* |
+| `artifact_recall` | `agent.rs` | Page through oversized tool results from this turn |
+| `deep_write` | `agent.rs` | **Subagent only.** Cloud long-form synthesis — streamed to user as final answer *(remote only)* |
+| `draft_document` | `agent.rs` | **Subagent only.** Cloud document composition → file created in-process *(remote only)* |
+
+Persona rules: `OFFICE_PERSONA` in `logic/agent.rs` (office feature); `DRAFT_DOCUMENT_RULE` appended when remote is configured.
+
+### `builtin.binance` — Binance
+
+Crypto market data and technical analysis on Binance spot.
+
+| Tool | Source | Notes |
+|------|--------|-------|
+| `binance_price` | `rig-components/binance` | 24h price stats |
+| `binance_depth` | `rig-components/binance` | Order book + derived spread/mid |
+| `binance_klines` | `rig-components/binance` | Raw OHLCV candle data |
+| `binance_ta_analyze` | `rig-components/binance` | Fetches klines + runs indicator suites in-process (ema/sma/rsi/macd/bb/atr + 12 more) |
+| `binance_balances` | `rig-components/binance` | Signed read-only spot balances *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
+| `binance_open_orders` | `rig-components/binance` | Signed read-only open orders *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
+| `web_read` | `webread` | Read a URL → markdown *(capability-probe: engine must exist)* |
+| `web_search` | `webread` | Bing SERP → markdown *(capability-probe: engine must exist)* |
+| `artifact_recall` | `agent.rs` | Page through oversized tool results from this turn |
+| `deep_write` | `agent.rs` | **Subagent only.** Cloud long-form synthesis *(remote only)* |
+
+No `draft_document` — this agent does not create files.
+
+Persona: `BINANCE_PERSONA` in `logic/agent.rs` (binance + not-android).
+
+### `builtin.analytics` — Analytics
+
+Structured queries over tabular data files (csv/parquet/Excel) and SQL sources.
+
+| Tool | Source | Notes |
+|------|--------|-------|
+| `data_schema` | `logic::analytics` | Discover columns, dtypes, sample rows, sheet names (for xlsx) |
+| `data_query` | `logic::analytics` | AST queries: filters → groupBy → aggregations → sort → limit |
+| `office_list_files` | `office::tools` | Shared with office agent — list stored files |
+| `data_tables` | `logic::analytics` | List tables from configured SQL sources *(only when SQL profiles exist)* |
+| `data_import` | `logic::analytics` | Snapshot a SQL table → csv in office store *(only when SQL profiles exist)* |
+| `artifact_recall` | `agent.rs` | Page through oversized tool results from this turn |
+| `deep_write` | `agent.rs` | **Subagent only.** Cloud long-form synthesis *(remote only)* |
+
+No `draft_document` — analytics produces data answers, not documents.
+
+Persona: `ANALYTICS_PERSONA` in `logic/agent.rs` (analytics feature).
+
+### Subagent wiring
+
+Subagents are tools whose implementation calls a cloud LLM. They are **registered in the ToolSet for manifest visibility** but **intercepted by the loop before rig dispatch** — the cloud streams tokens directly to the user; rig never sees them.
+
+| Subagent | Agents that get it | When registered | Behavior |
+|----------|-------------------|-----------------|----------|
+| `deep_write` | all three | `remote.is_some()` | Streams completion from cloud (default: zai/glm-5.3); result is the final answer token stream to the user. Turn-scoped: materials rendered from `TurnMemory` on demand. |
+| `draft_document` | office only | `remote.is_some()` + `office` feature | Cloud writes structured JSON `blocks` → file created in-process by Rust (`ooxml::create_document_from_blocks`). Local only sees a short receipt; cloud JSON never enters local K/V context. |
+| `artifact_recall` | all three | always (all agents with tools) | Pages the turn-local process log (`TurnMemory`) for oversized tool results — dispatched by the loop, not rig. |
+
+**Failure handling:** cloud timeout or error → local degrades to answering from its own knowledge; the turn never dies. `draft_document` JSON parse failure → one automatic correction round with the cloud, then falls back.
+
 ## Web read tiering (`web_read`, webread feature)
 
 One agent tool, one engine chain — the model asks to read a URL, the backend picks the cheapest engine that succeeds (`rig-components/webread/src/scrape.rs`):
