@@ -111,7 +111,7 @@ export function AgentsRail({
 }) {
   return (
     <aside
-      className={`bg-sidebar/40 hidden shrink-0 flex-col border-r transition-[width] duration-150 md:flex ${
+      className={`bg-sidebar/40 flex shrink-0 flex-col border-r transition-[width] duration-150 ${
         collapsed ? "w-16" : "w-[210px]"
       }`}
     >

@@ -41,7 +41,7 @@ export function KnowledgePanel({
   onPreview: (file: KnowledgeFileInfo) => void;
 }) {
   return (
-    <section className="hidden min-w-0 flex-1 flex-col border-l md:flex">
+    <section className="flex min-w-0 flex-1 flex-col border-l">
       <div className="flex h-10 shrink-0 items-center justify-between gap-4 border-b px-3">
         <span className="text-sm font-medium">Knowledge</span>
         <div className="flex items-center gap-1">
@@ -101,24 +101,25 @@ export function KnowledgePanel({
                       count={sessionFiles.length}
                       label="In this session"
                     />
-{sessionFiles.length > 0 ? (
-                              <>
-                                <div className="flex flex-col gap-1.5">
-                                  {sessionFiles.map((file) => (
-                                    <KnowledgeFileRow
-                                      confirmDelete={confirmDeleteId === file.id}
-                                      file={file}
-                                      inSessionList
-                                      key={file.id}
-                                      actions={{
-                                        onAdd: onAddToSession,
-                                        onDelete: onDeleteFile,
-                                        onPreview: onPreview,
-                                        onRemove: onRemoveFromSession,
-                                        onRetry: onRetryIndex,
-                                      }}/>
-                                  ))}
-                                </div>
+                    {sessionFiles.length > 0 ? (
+                      <>
+                        <div className="flex flex-col gap-1.5">
+                          {sessionFiles.map((file) => (
+                            <KnowledgeFileRow
+                              confirmDelete={confirmDeleteId === file.id}
+                              file={file}
+                              inSessionList
+                              key={file.id}
+                              actions={{
+                                onAdd: onAddToSession,
+                                onDelete: onDeleteFile,
+                                onPreview: onPreview,
+                                onRemove: onRemoveFromSession,
+                                onRetry: onRetryIndex,
+                              }}
+                            />
+                          ))}
+                        </div>
                         <p className="text-muted-foreground/70 mt-1.5 px-1 text-xs">
                           The agent can search these documents in this chat.
                         </p>
@@ -140,28 +141,29 @@ export function KnowledgePanel({
                     count={knowledge.files.length}
                     label={sessionId != null ? "Library" : "Documents"}
                   />
-{knowledge.files.length === 0 ? (
-                            <div className="text-muted-foreground/70 rounded-lg border border-dashed px-3 py-3 text-xs">
-                              No sources yet — import .docx, .xlsx, .pptx, .pdf or images with
-                              "Add files", or paste a YouTube link with "Link".
-                            </div>
-                          ) : (
-                            <div className="flex flex-col gap-1.5">
-                              {knowledge.files.map((file) => (
-                                <KnowledgeFileRow
-                                  confirmDelete={confirmDeleteId === file.id}
-                                  file={file}
-                                  inSessionList={file.inSession && sessionId != null}
-                                  key={file.id}
-                                  actions={{
-                                    onAdd: onAddToSession,
-                                    onDelete: onDeleteFile,
-                                    onPreview: onPreview,
-                                    onRemove: onRemoveFromSession,
-                                    onRetry: onRetryIndex,
-                                  }}/>
-                              ))}
-                            </div>
+                  {knowledge.files.length === 0 ? (
+                    <div className="text-muted-foreground/70 rounded-lg border border-dashed px-3 py-3 text-xs">
+                      No sources yet — import .docx, .xlsx, .pptx, .pdf or images with
+                      &quot;Add files&quot;, or paste a YouTube link with &quot;Link&quot;.
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {knowledge.files.map((file) => (
+                        <KnowledgeFileRow
+                          confirmDelete={confirmDeleteId === file.id}
+                          file={file}
+                          inSessionList={file.inSession && sessionId != null}
+                          key={file.id}
+                          actions={{
+                            onAdd: onAddToSession,
+                            onDelete: onDeleteFile,
+                            onPreview: onPreview,
+                            onRemove: onRemoveFromSession,
+                            onRetry: onRetryIndex,
+                          }}
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
               </TabsContent>

@@ -10,7 +10,16 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus, UIMessage } from "@/lib/ai-types";
 import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
-import { BrainIcon, CheckIcon, PanelRightCloseIcon, PanelRightIcon, PanelRightOpenIcon } from "lucide-react";
+import {
+  BookOpenIcon,
+  BrainIcon,
+  CheckIcon,
+  HistoryIcon,
+  MenuIcon,
+  PanelRightCloseIcon,
+  PanelRightIcon,
+  PanelRightOpenIcon,
+} from "lucide-react";
 import { ChatComposer } from "@/panels/chat-composer";
 
 interface AgentPresentation {
@@ -55,6 +64,9 @@ export function ConversationPanel({
   onToggleSessions,
   onImageToKnowledge,
   canvas,
+  onOpenMobileAgents,
+  onOpenMobileSessions,
+  onOpenMobileKnowledge,
 }: {
   agent: AgentInfo;
   presentation: AgentPresentation;
@@ -81,6 +93,9 @@ export function ConversationPanel({
   onToggleSessions: () => void;
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
   canvas: React.ReactNode;
+  onOpenMobileAgents?: () => void;
+  onOpenMobileSessions?: () => void;
+  onOpenMobileKnowledge?: () => void;
 }) {
   const [forceAll, setForceAll] = useState(false);
   useEffect(() => {
@@ -100,16 +115,50 @@ export function ConversationPanel({
   return (
     <main className="bg-background flex min-w-0 flex-1 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2.5 border-b px-4">
+        {onOpenMobileAgents && (
+          <Button
+            className="md:hidden"
+            onClick={onOpenMobileAgents}
+            size="icon"
+            title="Agents"
+            variant="ghost"
+          >
+            <MenuIcon className="size-4" />
+          </Button>
+        )}
         <span className="truncate text-sm font-medium">
           {inSession ? (sessions.find((s) => s.id === sessionId)?.title ?? `${agent.name} agent`) : `${agent.name} agent`}
         </span>
         {modelLoading && (
-          <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs">
+          <span className="text-muted-foreground hidden items-center gap-1.5 text-xs sm:inline-flex">
             <Spinner className="size-3" />
             {modelStatus || "warming up"}
           </span>
         )}
         <div className="ml-auto flex items-center gap-1">
+          {/* Mobile: agents/sessions/knowledge drawers */}
+          {onOpenMobileSessions && (
+            <Button
+              className="md:hidden"
+              onClick={onOpenMobileSessions}
+              size="icon"
+              title="Sessions"
+              variant="ghost"
+            >
+              <HistoryIcon className="size-4" />
+            </Button>
+          )}
+          {onOpenMobileKnowledge && (
+            <Button
+              className="md:hidden"
+              onClick={onOpenMobileKnowledge}
+              size="icon"
+              title="Knowledge"
+              variant={canvasOpen ? "ghost" : "secondary"}
+            >
+              <BookOpenIcon className="size-4" />
+            </Button>
+          )}
           <Button
             onClick={onToggleThinking}
             size="icon"
@@ -118,10 +167,22 @@ export function ConversationPanel({
           >
             <BrainIcon className="size-4" />
           </Button>
-          <Button onClick={onToggleCanvas} size="icon" title="Toggle canvas (⌘2)" variant={canvasOpen ? "ghost" : "secondary"}>
+          <Button
+            className="hidden md:inline-flex"
+            onClick={onToggleCanvas}
+            size="icon"
+            title="Toggle canvas (⌘2)"
+            variant={canvasOpen ? "ghost" : "secondary"}
+          >
             <PanelRightIcon className="size-4" />
           </Button>
-          <Button onClick={onToggleSessions} size="icon" title="Toggle sessions pane (⌘3)" variant="ghost">
+          <Button
+            className="hidden md:inline-flex"
+            onClick={onToggleSessions}
+            size="icon"
+            title="Toggle sessions pane (⌘3)"
+            variant="ghost"
+          >
             {sessionsCollapsed ? <PanelRightOpenIcon className="size-4" /> : <PanelRightCloseIcon className="size-4" />}
           </Button>
         </div>
@@ -215,7 +276,7 @@ export function ConversationPanel({
           </div>
         </section>
 
-        {canvas}
+        {canvas && <div className="hidden min-h-0 flex-1 md:flex">{canvas}</div>}
       </div>
     </main>
   );

@@ -54,7 +54,7 @@ export function SessionsPanel({
   };
 
   return (
-    <aside className="bg-sidebar/40 hidden w-[240px] shrink-0 flex-col border-l md:flex">
+    <aside className="bg-sidebar/40 flex w-[240px] shrink-0 flex-col border-l">
       <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
         <span className="text-[11px] tracking-wider text-muted-foreground uppercase">
           Sessions
