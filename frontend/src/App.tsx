@@ -41,9 +41,9 @@ export default function App() {
   const busy = status === "submitted" || status === "streaming";
   const inSession = chat.sessionId != null || chat.messages.length > 0;
 
-  const onSendWithImages = useCallback(
-    (text: string, fileIds?: string[], images?: import("@/lib/ai-types").FileUIPart[]) => {
-      void chat.send(text, fileIds, images);
+  const onSend = useCallback(
+    (text: string, fileIds?: string[]) => {
+      void chat.send(text, fileIds);
     },
     [chat],
   );
@@ -123,13 +123,13 @@ export default function App() {
         onRetryHistory={() => void chat.retryHistoryLoad()}
         lastUserText={lastUserText}
         onStop={chat.stop}
-        onSend={onSendWithImages}
+        onSend={onSend}
         canvasOpen={canvasOpen}
         inSession={inSession}
         sessionsCollapsed={sessionsCollapsed}
         onToggleCanvas={() => setCanvasOpen((v) => !v)}
         onToggleSessions={() => setSessionsCollapsed((v) => !v)}
-        onImageToKnowledge={(dataUrl, name) => void ka.imageToKnowledge(dataUrl, name)}
+        onImageToKnowledge={ka.imageToKnowledge}
         canvas={
           canvasOpen ? (
             <KnowledgePanel

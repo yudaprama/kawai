@@ -37,7 +37,11 @@ export function useKnowledgeActions(chat: {
   }, [confirmDeleteId]);
 
   const importKnowledgeFiles = useCallback(
-    async (items: { sourcePath?: string; file?: File; name: string }[]) => {
+    async (
+      items: { sourcePath?: string; file?: File; name: string }[],
+      opts?: { sessionId?: number | null },
+    ) => {
+      const sessionId = opts && "sessionId" in opts ? opts.sessionId : chat.sessionId;
       const importedIds: string[] = [];
       for (const item of items) {
         let imported: OfficeFileInfo | undefined;
@@ -51,7 +55,7 @@ export function useKnowledgeActions(chat: {
       }
       if (importedIds.length) {
         const runs = importedIds.map((fileId) =>
-          call<number>("office_index_file", { sessionId: chat.sessionId, fileId })
+          call<number>("office_index_file", { sessionId, fileId })
             .catch((e) => logWarn("office_index_file", e))
             .finally(() => void knowledge.refresh()),
         );
@@ -59,6 +63,7 @@ export function useKnowledgeActions(chat: {
         knowledge.markIndexing(importedIds);
         void Promise.allSettled(runs);
       }
+      return importedIds;
     },
     [chat.sessionId, knowledge],
   );
@@ -99,17 +104,26 @@ export function useKnowledgeActions(chat: {
   }, [importKnowledgeFiles]);
 
   const imageToKnowledge = useCallback(
-    async (dataUrl: string, name: string) => {
+    async (dataUrl: string, name: string): Promise<string[]> => {
+      let sid = chat.sessionId;
+      if (sid == null) {
+        sid = await chat.ensureSessionId(name);
+      }
       const mime = dataUrl.slice(5, dataUrl.indexOf(";"));
       const ext = mime.split("/")[1] ?? "png";
       try {
-        await importKnowledgeFiles([{ name: `${name}.${ext}`, file: dataUrlToFile(dataUrl, `${name}.${ext}`) }]);
+        const importedIds = await importKnowledgeFiles(
+          [{ name: `${name}.${ext}`, file: dataUrlToFile(dataUrl, `${name}.${ext}`) }],
+          { sessionId: sid },
+        );
         toast.success("Image saved to knowledge", { description: "Indexing runs in the background." });
+        return importedIds;
       } catch (err) {
         showErrorToast(err);
+        return [];
       }
     },
-    [importKnowledgeFiles],
+    [chat.sessionId, chat.ensureSessionId, importKnowledgeFiles],
   );
 
   const addToSession = useCallback(

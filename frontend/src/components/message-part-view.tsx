@@ -12,9 +12,6 @@ export function MessagePartView({ message }: { message: UIMessage }) {
   const { handleCopy, copied } = useCopyButton(textPart?.text ?? "");
   const isUser = message.role === "user";
 
-  const fileParts = message.parts.filter(
-    (p): p is Extract<typeof p, { type: "file" }> => p.type === "file",
-  );
   const toolParts = message.parts.filter(
     (p): p is Extract<typeof p, { type: `tool-${string}` }> => p.type.startsWith("tool-"),
   );
@@ -34,18 +31,6 @@ export function MessagePartView({ message }: { message: UIMessage }) {
 
   return (
     <Message from={message.role} className={message.role === "assistant" ? "items-start" : undefined}>
-      {fileParts.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {fileParts.map((part, idx) => (
-            <img
-              key={`${part.url.slice(0, 32)}-${idx}`}
-              src={part.url}
-              alt={part.filename ?? "attached image"}
-              className="max-h-48 max-w-xs rounded-md border object-contain"
-            />
-          ))}
-        </div>
-      )}
       {toolParts.map((part) => {
         const output = part.output as { ok?: boolean; summary?: string } | undefined;
         const displayOutput = output?.summary ?? part.output;

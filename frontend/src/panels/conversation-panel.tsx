@@ -73,13 +73,13 @@ export function ConversationPanel({
   onRetryHistory: () => void;
   lastUserText: string | null;
   onStop: () => void;
-  onSend: (text: string, fileIds?: string[], images?: import("@/lib/ai-types").FileUIPart[]) => void;
+  onSend: (text: string, fileIds?: string[]) => void;
   canvasOpen: boolean;
   inSession: boolean;
   sessionsCollapsed: boolean;
   onToggleCanvas: () => void;
   onToggleSessions: () => void;
-  onImageToKnowledge: (dataUrl: string, name: string) => void;
+  onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
   canvas: React.ReactNode;
 }) {
   const [forceAll, setForceAll] = useState(false);
@@ -208,7 +208,7 @@ export function ConversationPanel({
               agentName={agent.name}
               onStop={onStop}
               status={status}
-              onSubmit={(text, fileIds, images) => onSend(text, fileIds, images)}
+              onSubmit={(text, fileIds) => onSend(text, fileIds)}
               lastUserText={lastUserText}
               onImageToKnowledge={onImageToKnowledge}
             />

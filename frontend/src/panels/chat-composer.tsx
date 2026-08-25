@@ -14,7 +14,7 @@ import {
   usePromptInputController,
 } from "@/components/ai-elements/prompt-input";
 import { Button } from "@/components/ui/button";
-import type { ChatStatus, FileUIPart } from "@/lib/ai-types";
+import type { ChatStatus } from "@/lib/ai-types";
 import { AtSignIcon, XIcon } from "lucide-react";
 
 export function ChatComposer({
@@ -28,9 +28,9 @@ export function ChatComposer({
   agentName: string;
   status: ChatStatus;
   onStop: () => void;
-  onSubmit: (text: string, fileIds?: string[], images?: FileUIPart[]) => void;
+  onSubmit: (text: string, fileIds?: string[]) => void;
   lastUserText: string | null;
-  onImageToKnowledge: (dataUrl: string, name: string) => void;
+  onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
 }) {
   return (
     <PromptInputProvider>
@@ -68,9 +68,9 @@ function ChatComposerInner({
   agentName: string;
   status: ChatStatus;
   onStop: () => void;
-  onSubmit: (text: string, fileIds?: string[], images?: FileUIPart[]) => void;
+  onSubmit: (text: string, fileIds?: string[]) => void;
   lastUserText: string | null;
-  onImageToKnowledge: (dataUrl: string, name: string) => void;
+  onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
 }) {
   const controller = usePromptInputController();
   const [mentions, setMentions] = useState<KnowledgeFileInfo[]>([]);
@@ -145,20 +145,15 @@ function ChatComposerInner({
 
   const handleSubmit = useCallback(
     async (message: { text: string; files: { url: string; mediaType: string; fileName?: string }[] }) => {
+      const ids = mentions.map((m) => m.id);
       for (const file of message.files) {
         if (file.mediaType.startsWith("image/") && file.url.startsWith("data:")) {
-          onImageToKnowledge(file.url, file.fileName ?? "pasted-image");
+          const imported = await onImageToKnowledge(file.url, file.fileName ?? "pasted-image");
+          ids.push(...imported);
         }
       }
-      const ids = mentions.map((m) => m.id);
-      const imageParts: FileUIPart[] = message.files.map((f) => ({
-        type: "file",
-        mediaType: f.mediaType,
-        url: f.url,
-        filename: f.fileName,
-      }));
-      if (message.text.trim() || ids.length > 0 || imageParts.length > 0) {
-        onSubmit(message.text, ids.length > 0 ? ids : undefined, imageParts.length > 0 ? imageParts : undefined);
+      if (message.text.trim() || ids.length > 0) {
+        onSubmit(message.text, ids.length > 0 ? ids : undefined);
       }
       setMentions([]);
     },
