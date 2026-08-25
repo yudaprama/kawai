@@ -78,8 +78,8 @@ jobs:
           key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-macos26-arm64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + components + kawai-embedding + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm components kawai-embedding office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide
 
       - name: Build litert-lm dylib
         run: |

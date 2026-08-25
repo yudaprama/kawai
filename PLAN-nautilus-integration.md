@@ -33,7 +33,7 @@ stay out of the build graph unless a stage below is explicitly started.
 
 ## 1. Stage R — active reference use (available now, zero build cost)
 
-**Trigger: any work on `components/binance/` or the Binance agent.**
+**Trigger: any work on `crates/binance/` or the Binance agent.**
 
 What to consult, and for what:
 

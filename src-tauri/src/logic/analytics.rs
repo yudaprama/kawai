@@ -268,7 +268,7 @@ impl AgentTool for DataTaTool {
 
 // ── SQL sources: named-profile snapshots ────────────────────────────────────
 //
-// Credential pattern copied from `components/binance/src/account.rs`:
+// Credential pattern copied from `crates/binance/src/account.rs`:
 // credentials live in the environment, NEVER in model-supplied arguments.
 // The user configures one env var per source (`KAWAI_SQL_PROFILE_<NAME>` =
 // local SQLite path / `sqlite:` URL); the model only ever sees and passes

@@ -1,7 +1,7 @@
 # Implementation Plan — Analytics agent (`builtin.analytics`): Polars-backed tabular query tools
 
 Status: **IMPLEMENTED (2026-08-24)** — all phases shipped: the
-`components/analytics` crate (30 unit tests green), the kawai wiring
+`crates/analytics` crate (30 unit tests green), the kawai wiring
 (`builtin.analytics` agent + `logic/analytics.rs` tools + store allowlist +
 RAG tabular skip + frontend rail entry), the xlsx bridge, and the gates
 (`analytics_smoke` offline e2e in all three CI smoke jobs, `cargo test -p
@@ -171,7 +171,7 @@ covers the `file_id` key — no agent.rs change needed for that part).
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| New crate | `components/analytics` | binance/webread pattern: hand-written `PortableTool`s, transport-agnostic, zero kawai deps. All Polars knowledge lives here, unit-testable with fixture files. |
+| New crate | `crates/analytics` | binance/webread pattern: hand-written `PortableTool`s, transport-agnostic, zero kawai deps. All Polars knowledge lives here, unit-testable with fixture files. |
 | Polars dep | `polars 0.55`, features `lazy, parquet, csv, json, strings` only | Minimal feature set keeps compile cost + mobile surface down. No `temporal` extractors, no `excel` (phase 4), no rayon tuning. |
 | Kawai-side glue | `src-tauri/src/logic/analytics.rs` (feature `analytics`) | The tools resolve `file_id` via `office::store::resolve` — that needs kawai state, so the tool structs live kawai-side exactly like `KnowledgeSearchTool`. The crate exposes pure `discover(path)` / `query(path, args)` fns. |
 | File intake | office store ext allowlist += `csv \| tsv \| parquet` (`xlsx` already accepted) | Single intake invariant: the knowledge panel stays the ONLY door. Reuses import UI, per-user isolation, `session_files`, aliases, delete. |
@@ -285,17 +285,17 @@ discovery call. All error paths are `Err`, never a silently-degraded
 
 ## 4. Phases
 
-### Phase 1 — `components/analytics` crate (no kawai wiring)
+### Phase 1 — `crates/analytics` crate (no kawai wiring)
 
 Files:
-- `components/analytics/Cargo.toml` — deps: `polars 0.55` (features
+- `crates/analytics/Cargo.toml` — deps: `polars 0.55` (features
   above), `serde`, `serde_json`; dev-deps `tokio`. Lints mirror binance
   (`unexpected_cfgs = warn`).
-- `components/analytics/src/lib.rs` — `ToolError`/`terr` + public fns:
+- `crates/analytics/src/lib.rs` — `ToolError`/`terr` + public fns:
   - `discover(path: &Path) -> Result<SchemaInfo, ToolError>`
   - `query(path: &Path, args: &QueryArgs) -> Result<String, ToolError>`
   - `QueryArgs`, `FilterOp`, `AggOp` (`#[derive(Deserialize)]`, camelCase-tolerant)
-- `components/analytics/src/engine.rs` — AST → LazyFrame translation,
+- `crates/analytics/src/engine.rs` — AST → LazyFrame translation,
   literal coercion, schema validation (the only file that touches polars
   exprs).
 - Add `"analytics"` to `components/Cargo.toml` workspace members.
@@ -311,7 +311,7 @@ Gate: `cargo test -p analytics` green. No changes to src-tauri yet.
 ### Phase 2 — kawai wiring
 
 Files:
-- `src-tauri/Cargo.toml` — `analytics = { path = "../components/analytics", optional = true }`;
+- `src-tauri/Cargo.toml` — `analytics = { path = "../crates/analytics", optional = true }`;
   feature `analytics = ["dep:analytics", "office"]`; `[[example]]
   analytics_smoke` (required-features `["analytics"]`).
 - `src-tauri/src/logic/analytics.rs` — kawai-side tools + builder:
@@ -389,7 +389,7 @@ Rules:
   Text-to-SQL against the source DB (small local orchestrator, injection
   surface, dialect drift). Design decisions:
   - **Credentials follow the binance pattern**
-    (`components/binance/src/account.rs`): named profiles live in env
+    (`crates/binance/src/account.rs`): named profiles live in env
     (`KAWAI_SQL_PROFILE_<NAME>=<connection-url>`), NEVER as a model-supplied
     argument. Tool args are `profile` + `table` only; unknown profile name ⇒
     error listing the valid names — host/port always come from user config,

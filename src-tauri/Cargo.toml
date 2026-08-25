@@ -68,10 +68,10 @@ text-splitter = { version = "0.27", features = ["markdown"], optional = true }
 # Image understanding for knowledge ingestion (office feature): describe
 # images to text via the ragloader DescriberChain (local stub → JigsawStack
 # VOCR). Pulls jigsawstack (reqwest 0.12) transitively.
-ragloader = { path = "../components/ragloader", optional = true }
+ragloader = { path = "../crates/ragloader", optional = true }
 # YouTube transcript fetching for knowledge ingestion (office feature).
 # Uses reqwest 0.13 — coexists with our direct 0.12 (like the rustls pair).
-youtube_transcript = { path = "../components/youtube_transcript", optional = true }
+youtube_transcript = { path = "../crates/youtube_transcript", optional = true }
 # Pure-Rust office create/read/edit (vendored submodule): markdown → IR →
 # docx/xlsx/pptx (in-process), raw-part surgery for in-place edits. PDF
 # operations via pdf_oxide (fetched from GitHub, no local submodule).
@@ -83,8 +83,8 @@ regex = { version = "1", optional = true }
 # `web_read` / `web_search` agent tools. `browser` (tier-1 Cloudflare
 # Browser Rendering) rides inside webread but stays listed so the headless
 # example can drive it directly.
-webread = { path = "../components/webread", optional = true }
-browser = { path = "../components/tools/browser", optional = true }
+webread = { path = "../crates/webread", optional = true }
+browser = { path = "../crates/tools/browser", optional = true }
 url = { version = "2", optional = true }
 # Binance agent tools (builtin.binance): keyless public market data via the
 # binance-sdk fork submodule (components/binance-connector-rust, patched
@@ -92,13 +92,13 @@ url = { version = "2", optional = true }
 # Android still excluded: never exercised on NDK (un-excluding needs a
 # `cargo ndk check --features binance` pass).
 [target.'cfg(not(target_os = "android"))'.dependencies]
-binance = { path = "../components/binance", optional = true }
+binance = { path = "../crates/binance", optional = true }
 
 # Data analysis agent (builtin.analytics): structured queries over stored
 # tabular files (csv/tsv/parquet + xlsx via the office_oxide bridge) through
 # the polars-backed components/analytics crate. Implies `office` — the
 # data files live in the office store.
-analytics = { path = "../components/analytics", optional = true }
+analytics = { path = "../crates/analytics", optional = true }
 
 # Remote SQL sources for the analytics snapshot tools (data_tables /
 # data_import over Postgres/MySQL). rustls on purpose — mobile has no

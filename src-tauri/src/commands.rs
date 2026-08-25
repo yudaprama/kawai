@@ -373,7 +373,7 @@ pub fn local_llm_get_test_tools() -> Result<String, String> {
     Ok(logic::local_llm::get_test_tools_json())
 }
 
-/// Authenticated RPC: get components tool definitions for native function calling.
+/// Authenticated RPC: get crates tool definitions for native function calling.
 #[cfg(feature = "litert")]
 #[tauri::command]
 #[allow(dead_code)]
