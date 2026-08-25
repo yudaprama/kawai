@@ -1,5 +1,6 @@
 //! Data analysis agent tools (`builtin.analytics`): structured queries over
-//! the user's stored tabular files (csv, tsv, parquet, xlsx/xlsm).
+//! the user's stored tabular files (csv, tsv, parquet, xlsx/xlsm), plus a
+//! technical-analysis suite over their numeric column series.
 //!
 //! Thin `PortableTool` wrappers — ALL query logic lives in the
 //! `analytics` crate (pure functions over a path); these structs only bind
@@ -187,6 +188,79 @@ impl PortableTool for DataQueryTool {
         run_blocking(move || {
             let path = resolve_tabular(&user, &args.file_id)?;
             analytics::query(&path, args.sheet.as_deref(), args.q)
+        })
+        .await
+    }
+}
+
+// -- data_ta -------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaToolArgs {
+    pub file_id: String,
+    pub sheet: Option<String>,
+    #[serde(flatten)]
+    pub ta: analytics::ta_suite::TaArgs,
+}
+
+/// Technical-analysis indicators over an ordered numeric series in one
+/// stored tabular file. The crate returns only the FINAL value per
+/// indicator (plus warm-up skips), so output stays small regardless of row
+/// count — same contract as `binance_ta_analyze`, but the series comes from
+/// any stored csv/tsv/parquet/xlsx column instead of Binance klines.
+pub struct DataTaTool(pub String);
+
+impl PortableTool for DataTaTool {
+    const NAME: &'static str = "data_ta";
+    type Args = TaToolArgs;
+    type Output = String;
+    type Error = DataToolError;
+
+    fn description(&self) -> String {
+        "Compute technical-analysis indicators (EMA/SMA/WMA, RSI, MACD, PPO, Bollinger, Keltner, ChandelierExit, ATR, TrueRange, CCI, stochastic, MFI, OBV, ROC, SD, MAD, ER, rolling max/min) over a numeric time series in a stored tabular file (csv/parquet/Excel). Indicators are stateful — rows are folded in order, so pass \"timestamp\" (a date/datetime/epoch column to sort ascending by) unless rows are already ordered. Returns only each indicator's final value plus skip reasons; call data_schema first to learn the columns.".into()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "fileId": { "type": "string", "description": "File id from office_list_files or the attachment block" },
+                "sheet": { "type": "string", "description": "Excel sheet name. Optional — defaults to the first sheet with data." },
+                "timestamp": { "type": "string", "description": "Column to sort ascending by before folding (recommended: your date/time column). Without it, file row order is used as-is." },
+                "close": { "type": "string", "description": "Required. Numeric input column for close-only indicators." },
+                "high": { "type": "string", "description": "High-price column. Required when using atr/tr/cci/stoch/kc/ce/mfi." },
+                "low": { "type": "string", "description": "Low-price column. Required when using atr/tr/cci/stoch/kc/ce/mfi." },
+                "volume": { "type": "string", "description": "Volume column. Required when using obv/mfi." },
+                "indicators": {
+                    "type": "array",
+                    "minItems": 1,
+                    "description": "Indicators to compute over the series.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "kind": { "type": "string", "enum": ["ema","sma","wma","rsi","roc","sd","mad","er","max","min","macd","ppo","bb","atr","tr","cci","stoch","stoch_slow","kc","ce","obv","mfi"] },
+                            "column": { "type": "string", "description": "Input column override for close-only kinds; defaults to close." },
+                            "period": { "type": "integer", "description": "Window period. Defaults per kind (ema 9, sma 9, wma 9, rsi 14, roc 9, sd 20, mad 9, er 14, max/min 14, bb 20, atr 14, cci 20, stoch 14, stoch_slow 14, kc 10, ce 22)." },
+                            "fast": { "type": "integer", "description": "macd/ppo fast period (default 12). Must be < slow." },
+                            "slow": { "type": "integer", "description": "macd/ppo slow period (default 26)." },
+                            "signal": { "type": "integer", "description": "macd/ppo signal EMA period (default 9); stoch_slow smoothing EMA (default 3)." },
+                            "multiplier": { "type": "number", "description": "bb/kc band width and ce distance (defaults 2.0, 2.0, 3.0)." },
+                            "alias": { "type": "string", "description": "Output key override; defaults like rsi14, macd12_26_9, bb20_2." }
+                        },
+                        "required": ["kind"]
+                    }
+                }
+            },
+            "required": ["fileId", "close", "indicators"]
+        })
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<String, DataToolError> {
+        let user = self.0.clone();
+        run_blocking(move || {
+            let path = resolve_tabular(&user, &args.file_id)?;
+            analytics::ta_suite::analyze(&path, args.sheet.as_deref(), args.ta)
         })
         .await
     }
@@ -823,6 +897,7 @@ pub fn toolset(user_id: &str, session_id: i64) -> rig::tool::ToolSet {
     let mut set = rig::tool::ToolSet::default();
     set.add_tool(DataTableSchemaTool(user_id.to_string()));
     set.add_tool(DataQueryTool(user_id.to_string()));
+    set.add_tool(DataTaTool(user_id.to_string()));
     // Id discovery: the same list tool the office agent uses.
     set.add_tool(super::office::tools::ListFilesTool(user_id.to_string()));
     if has_sql_profiles() {

@@ -2,13 +2,13 @@
 // feature "analytics"): import a small CSV into the office store →
 // data_schema (columns/dtypes) → data_query (row selection), then the xlsx
 // bridge (typed columns, resolved dates, sheets echo, sidecar cache),
-// aggregate queries, the self-correcting error contract, and the tabular-ext
-// guard. Fully offline: fixtures are generated in-process, no network, no
-// model.
+// aggregate queries, the self-correcting error contract, the tabular-ext
+// guard, and the data_ta technical-analysis suite over an OHLCV series.
+// Fully offline: fixtures are generated in-process, no network, no model.
 //
 // Usage:
 //   cargo run --example analytics_smoke --features analytics
-use kawai_lib::logic::analytics::{self as data, DataQueryTool, DataTableSchemaTool};
+use kawai_lib::logic::analytics::{self as data, DataQueryTool, DataTableSchemaTool, DataTaTool};
 use kawai_lib::logic::office::store;
 use rig::tool::PortableTool;
 use serde_json::Value;
@@ -258,6 +258,111 @@ async fn main() {
         die(&format!("non-tabular error lacks guidance: {err}"));
     }
     println!("[analytics_smoke] PASS ext guard: {err}");
+
+    // ── data_ta: technical-analysis suite over an OHLCV csv ──────────────
+    // Deterministic random walk (same PRNG recipe as the binance fixtures).
+    let mut ohlcv = String::from("ts,open,high,low,close,volume\n");
+    let mut price = 100.0f64;
+    let mut seed = 0x2545F4914F6CDD1Du64;
+    for i in 0..60 {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let noise = ((seed >> 33) % 200) as f64 / 100.0 - 1.0;
+        price *= 1.0 + (0.05 + noise * 0.005) / 100.0;
+        ohlcv.push_str(&format!(
+            "{},{:.4},{:.4},{:.4},{:.4},{}\n",
+            1_700_000_000_000 + i as i64 * 86_400_000,
+            price * 0.999,
+            price * 1.01,
+            price * 0.99,
+            price,
+            1_000 + (i % 7),
+        ));
+    }
+    let ta_file =
+        store::import_bytes(user, "smoke-ohlcv.csv", ohlcv.as_bytes()).expect("import ohlcv");
+    let out = DataTaTool(user.to_string())
+        .call(
+            serde_json::from_value(serde_json::json!({
+                "fileId": ta_file.id,
+                "timestamp": "ts",
+                "close": "close",
+                "high": "high",
+                "low": "low",
+                "volume": "volume",
+                "indicators": [
+                    { "kind": "ema", "period": 21 },
+                    { "kind": "rsi" },
+                    { "kind": "macd" },
+                    { "kind": "atr" }
+                ]
+            }))
+            .expect("ta args"),
+        )
+        .await
+        .expect("data_ta");
+    let tv: Value = serde_json::from_str(&out).unwrap();
+    if tv["_meta"]["rowsUsed"].as_i64() != Some(60) || !tv["_meta"]["skipped"].is_null() {
+        die(&format!("data_ta meta wrong: {out}"));
+    }
+    let ema21 = tv["indicators"]["ema21"].as_f64().unwrap_or_else(|| die("ema21 missing"));
+    if !(90.0..200.0).contains(&ema21) {
+        die(&format!("ema21 implausible: {ema21}"));
+    }
+    let rsi = tv["indicators"]["rsi14"].as_f64().unwrap_or_else(|| die("rsi missing"));
+    if !(0.0..=100.0).contains(&rsi) {
+        die(&format!("rsi unbounded: {rsi}"));
+    }
+    if tv["indicators"]["macd12_26_9"]["histogram"].as_f64().is_none()
+        || tv["indicators"]["atr14"].as_f64().unwrap_or(0.0) <= 0.0
+    {
+        die(&format!("macd/atr output wrong: {out}"));
+    }
+    println!("[analytics_smoke] PASS data_ta: ema/rsi/macd/atr final values over sorted OHLCV");
+
+    // Short series (header + 5 data rows) → both indicators exceed their
+    // warm-up windows and come back as skipped entries instead of values.
+    let short = store::import_bytes(
+        user,
+        "smoke-ohlcv-short.csv",
+        ohlcv.lines().take(6).collect::<Vec<_>>().join("\n").as_bytes(),
+    )
+    .expect("import short ohlcv");
+    let out = DataTaTool(user.to_string())
+        .call(
+            serde_json::from_value(serde_json::json!({
+                "fileId": short.id,
+                "timestamp": "ts",
+                "close": "close",
+                "indicators": [{ "kind": "sma" }, { "kind": "bb" }]
+            }))
+            .expect("ta args"),
+        )
+        .await
+        .expect("data_ta(short)");
+    let sv: Value = serde_json::from_str(&out).unwrap();
+    let skipped = sv["_meta"]["skipped"].as_array().cloned().unwrap_or_default();
+    if skipped.len() != 2 || !skipped.iter().any(|s| s["alias"] == "bb20_2") {
+        die(&format!("expected both indicators skipped with reasons: {out}"));
+    }
+    println!("[analytics_smoke] PASS data_ta: warm-up skips reported instead of fake values");
+
+    // Unknown kind → guidance error listing the valid kinds.
+    let err = DataTaTool(user.to_string())
+        .call(
+            serde_json::from_value(serde_json::json!({
+                "fileId": ta_file.id, "close": "close",
+                "indicators": [{ "kind": "fibonacci" }]
+            }))
+            .expect("ta args"),
+        )
+        .await
+        .expect_err("unknown kind must fail");
+    if !err.0.contains("unknown indicator kind") || !err.0.contains("rsi") {
+        die(&format!("unknown-kind error lacks guidance: {err}"));
+    }
+    println!("[analytics_smoke] PASS data_ta error contract: {err}");
 
     println!("[analytics_smoke] ALL PASS");
 }

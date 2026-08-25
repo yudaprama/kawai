@@ -102,6 +102,7 @@ dependencies = [
  "polars",
  "serde",
  "serde_json",
+ "ta",
 ]
 
 [[package]]
