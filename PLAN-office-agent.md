@@ -116,7 +116,7 @@ office = []   # no new crates — the engines are external binaries
 # the CLIs are the engines. rig is already a dep (pinned rev 4232abdb).
 ```
 
-No new rig pin (Landmines: one-rig-core rule). Do NOT create a
+No new external deps. Do NOT create a
 `rig-components/tools/office` crate — those are generated HTTP catalogs; office
 tools are local-file tools that need kawai's document store.
 
@@ -469,7 +469,7 @@ checks when shared code changes).
 | R3 | Tauri resources lose exec bit / macOS fences | First-use copy to app-data + chmod (§3.2); manual check in Phase 1.6. |
 | R4 | Binary size (+~30-60 MB Go CLIs, +~100-200 MB office-runtime with frameworks + sdkjs) | Acceptable vs GB-scale models; ship create (docbuilder) as an opt-in download later if size hurts. |
 | R5 | Version skew: ooxcli op set vs prompt docs | Pin tag in `office-bin.lock`; prompt docs generated from the probe/manifest, op list unit-tested against `ooxcli edit --help` output in CI-ish test. |
-| R6 | Two rig-cores landmine | Zero new rig deps; existing pin only. |
+| R6 | Tool-seam consistency (kawai-tools `AgentTool`) | Office tools implement the repo-root `kawai-tools` trait like every other agent tool. |
 | R7 | Loop holds the conversation slot across a user turn (N generations + tool exec) | Intentional: reset/unload/load already reject while taken; loop restores unconditionally like `local_chat`. Document in code. |
 | R8 | docbuilder silent-no-op when misinvoked (exit 0, no output, no error — observed on runtime-v6 without `builder.CloseFile()`; **runtime-v8 produces output in both cases**, verified 2026-08-17) | Keep the exact recipe (§3.1: flags + cwd=binDir + `<outDir>` substitution + output-path stat); runner appends `builder.CloseFile();` + trailing newline defensively; e2e create test in Phase 2. Free license = CreateFile only — fine (edit goes via ooxcli). |
 | R9 | CLI stderr format drift | Errors surfaced verbatim to the model as TOOL_ERROR (it can react); we never parse stderr beyond display. |

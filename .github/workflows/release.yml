@@ -151,11 +151,11 @@ jobs:
       # local-llm's manifest path-deps the rig-components tools (finance,
       # weather_geo) — those crates compile under the litert feature, so
       # rig-components is required, not optional. The office feature also
-      # path-deps kawai-embedding (fastembed) and rig-libsql (vector store).
+      # path-deps kawai-embedding (fastembed).
       # flutter_gemma/litert-lm-rs are NOT needed — skip them to keep the
       # checkout lean.
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
 
       - name: Build litert-lm dylib
         run: |
@@ -232,8 +232,8 @@ jobs:
           key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
 
       # LiteRT-LM's .bazelrc pins CC=clang (action_env); the runner default is
       # clang-14, whose std lib lacks std::source_location in C++20 mode
@@ -332,9 +332,9 @@ jobs:
           key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-windows-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + office_oxide)
         shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
 
       - name: Install bazelisk
         shell: pwsh
@@ -427,8 +427,8 @@ jobs:
       # must exist. local-llm path-deps rig-components tools, so that
       # manifest needs rig-components present too. Shallow, non-recursive:
       # only crate manifests, not C sources.
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide, manifest only)
-        run: git submodule update --init local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + office_oxide, manifest only)
+        run: git submodule update --init local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

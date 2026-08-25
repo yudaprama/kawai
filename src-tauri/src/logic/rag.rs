@@ -617,13 +617,14 @@ async fn describe_image(user_id: &str, file_id: &str) -> Result<String, String> 
 
 /// Create the FTS5 mirror of `rag_chunks` plus the triggers that keep it in
 /// sync, then backfill rows written before the mirror existed. Every write
-/// path (rig-libsql inserts, `purge_file_chunks`, the orphan pass in
+/// path (`insert_chunks`, `purge_file_chunks`, the orphan pass in
 /// `forget_file`) issues plain INSERT/DELETE on `rag_chunks`, so the triggers
-/// cover them without touching any caller. rig-libsql uses `INSERT OR REPLACE`:
-/// on a replace SQLite assigns a NEW rowid and (recursive triggers off) fires
-/// only the insert trigger, leaving the old FTS row as a ghost — harmless,
-/// because `bm25_search` joins on `rag_chunks.rowid`, which the ghost no longer
-/// matches. Must be called only after `rag_chunks` itself exists.
+/// cover them without touching any caller. `insert_chunks` uses
+/// `INSERT OR REPLACE`: on a replace SQLite assigns a NEW rowid and
+/// (recursive triggers off) fires only the insert trigger, leaving the old FTS
+/// row as a ghost — harmless, because `bm25_search` joins on
+/// `rag_chunks.rowid`, which the ghost no longer matches. Must be called only
+/// after `rag_chunks` itself exists.
 async fn ensure_fts(conn: &libsql::Connection) -> Result<(), String> {
     conn.execute_batch(
         "CREATE VIRTUAL TABLE IF NOT EXISTS rag_chunks_fts USING fts5(content, tokenize='unicode61');

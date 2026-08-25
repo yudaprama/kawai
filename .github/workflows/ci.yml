@@ -61,7 +61,7 @@ jobs:
       # a real path dep (binance feature) — cargo resolution needs its manifest.
       - name: Init submodules (manifest only)
         run: |
-          git submodule update --init local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+          git submodule update --init local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
           git -C rig-components submodule update --init binance-connector-rust
 
       - uses: dtolnay/rust-toolchain@stable
@@ -102,7 +102,7 @@ jobs:
       # Recursive: the litert feature runs bindgen, which parses the C headers
       # of the NESTED submodule cognee-litert-lm/vendor/LiteRT-LM.
       - name: Init submodules (recursive — bindgen needs nested LiteRT-LM headers)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -206,8 +206,8 @@ jobs:
           key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-macos26-arm64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
 
       - name: Build litert-lm dylib
         run: |
@@ -397,8 +397,8 @@ jobs:
           key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
 
       # Tauri needs GTK/webkit headers; bindgen + bazel need clang-18.
       # clang-18 via apt.llvm.org — ubuntu-22.04 keeps glibc >= 2.35.
@@ -567,9 +567,9 @@ jobs:
           key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-windows-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + rig-libsql + office_oxide)
+      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + office_oxide)
         shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding rig-libsql office_oxide
+        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
 
       - name: Install bazelisk
         shell: pwsh

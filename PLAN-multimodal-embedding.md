@@ -124,10 +124,11 @@ Key decisions:
 
 ### W2 — `rag.rs`: media table + purge coverage
 
-- `RagMediaChunk` implementing `LibsqlVectorStoreTable` (columns: id, file_id,
+- `RagMediaChunk` with its vector tables (columns: id, file_id,
   source, locator, content=short caption for display in RagHit). NOTE:
-  rig-libsql derives `<table>_embeddings`/`_embedding_map` names from
-  `name()` — so `rag_media_chunks` automatically gets its own
+  the vector tables follow the `<table>`/`<table>_embeddings`/
+  `<table>_embedding_map` layout `rag.rs::ensure_vector_schema` creates —
+  so `rag_media_chunks` gets its own
   `rag_media_chunks_embeddings` etc. No FTS mirror for media in v1 (caption
   chunk already covers the lexical side) — revisit if captions get rich.
 - Media-side store construction needs an `EmbeddingModel` impl to hand to
@@ -203,7 +204,7 @@ Key decisions:
   simply stays off until a proper file lands.
 - **Threads**: embedding engine CPU threads not yet tunable via binding for
   the main backend (`set_audio_num_threads` only) — fine for one-shot calls.
-- **rig-libsql `INSERT OR REPLACE` rowid-churn note** (FTS ghost rows,
+- **Vector-store `INSERT OR REPLACE` rowid-churn note** (FTS ghost rows,
   rag.rs:477-481): applies only to tables with FTS mirrors; media table has
   none in v1, so no ghost-row concern there.
 

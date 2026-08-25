@@ -11,7 +11,7 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 - Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`hooks/use-local-chat.ts` + `lib/ai-types.ts`).
 - Backend: Rust, single core logic.
 - Auth: MVP = dev-bypass (`set_session` with any token, backend-gated by `KAWAI_AUTH_DEV_USER_ID`). Backend retains Clerk JWKS verification (`auth.rs`, public keys only) for the future prod flow (browser + deep link, Roadmap 6).
-- LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). `rig` is on crates.io `0.42` (declared + used for the cloudflare title provider and the vector-store seam); remote providers are optional configuration. **Hybrid cloud-subagent tier (2026-08-20):** the local model delegates heavy synthesis to cloud subagent *tools* (`deep_write`, `draft_document`) via prompt-based tool calling when a remote LLM is configured (default `zai` via kawai-vault compiled-in key; `logic/remote.rs`). Agent tier uses prompt-based tool calling on the local model; `rig-components/` (per-category crates of generated rig tools, `registry::toolset_for(names)`) provides the toolsets, usable standalone without a rig provider. Design record: `PLAN-hybrid-llm-subagents.md`.
+- LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `logic/remote.rs` (provider pool with health-aware failover); remote providers are optional configuration. **Hybrid cloud-subagent tier (2026-08-20):** the local model delegates heavy synthesis to cloud subagent *tools* (`deep_write`, `draft_document`) via prompt-based tool calling when a remote LLM is configured (default `zai` via kawai-vault compiled-in key; `logic/remote.rs`). Agent tier uses prompt-based tool calling on the local model; `rig-components/` (per-category crates of generated agent tools implementing `kawai_tools::AgentTool`, `registry::toolset_for(names)`) provides the toolsets. Design record: `PLAN-hybrid-llm-subagents.md`.
 - Persistence: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
 ## Layer diagram
@@ -168,13 +168,13 @@ Persona: `ANALYTICS_PERSONA` in `logic/agent.rs` (analytics feature).
 
 ### Subagent wiring
 
-Subagents are tools whose implementation calls a cloud LLM. They are **registered in the ToolSet for manifest visibility** but **intercepted by the loop before rig dispatch** — the cloud streams tokens directly to the user; rig never sees them.
+Subagents are tools whose implementation calls a cloud LLM. They are **registered in the ToolSet for manifest visibility** but **intercepted by the loop before dispatch** — the cloud streams tokens directly to the user; the local model never sees their raw output.
 
 | Subagent | Agents that get it | When registered | Behavior |
 |----------|-------------------|-----------------|----------|
 | `deep_write` | all three | `remote.is_some()` | Streams completion from cloud (default: zai/glm-5.3); result is the final answer token stream to the user. Turn-scoped: materials rendered from `TurnMemory` on demand. |
 | `draft_document` | office only | `remote.is_some()` + `office` feature | Cloud writes structured JSON `blocks` → file created in-process by Rust (`ooxml::create_document_from_blocks`). Local only sees a short receipt; cloud JSON never enters local K/V context. |
-| `artifact_recall` | all three | always (all agents with tools) | Pages the turn-local process log (`TurnMemory`) for oversized tool results — dispatched by the loop, not rig. |
+| `artifact_recall` | all three | always (all agents with tools) | Pages the turn-local process log (`TurnMemory`) for oversized tool results — dispatched by the loop, not the ToolSet. |
 
 **Failure handling:** cloud timeout or error → local degrades to answering from its own knowledge; the turn never dies. `draft_document` JSON parse failure → one automatic correction round with the cloud, then falls back.
 
@@ -228,7 +228,7 @@ kawai/
     └── src/
         ├── main.rs           # desktop binary entry
         ├── lib.rs            # Tauri builder + module decls
-        ├── logic.rs          # PURE LOGIC (no Tauri/Axum deps); rig + libsql + db token
+        ├── logic.rs          # PURE LOGIC (no Tauri/Axum deps); libsql + db token
         ├── logic/            # domain modules: agent, db, rag, remote, office/, analytics/
         ├── auth.rs           # PURE AUTH; Clerk JWKS verify + EdDSA mint + Session
         ├── commands.rs       # #[tauri::command] wrappers
@@ -240,7 +240,7 @@ kawai/
 
 ## Layers
 
-1. **`logic.rs`** — the only place for business logic. Pure async fns, no Tauri/Axum imports. Returns `T` (RPC) or `impl Stream<Item = Event>` (streaming). Events tagged `#[serde(tag = "type")]`. Home of `rig` (LLM), `libsql` (per-user DB), and `mint_db_token` (EdDSA token sqld accepts).
+1. **`logic.rs`** — the only place for business logic. Pure async fns, no Tauri/Axum imports. Returns `T` (RPC) or `impl Stream<Item = Event>` (streaming). Events tagged `#[serde(tag = "type")]`. Home of `libsql` (per-user DB), the remote SSE client (`remote.rs`), and `mint_db_token` (EdDSA token sqld accepts).
 2. **`auth.rs`** — pure auth. `Verifier` validates Clerk session JWTs against the public JWKS (cached by `kid`); `Session` holds the in-process identity for desktop/mobile; `mint` helpers live in `logic.rs`. No transport imports.
 3. **`commands.rs`** — thin wrappers. Each core fn → one `#[tauri::command]`. Streaming commands take a `Channel<E>` plus the business args. Auth-required commands read `State<Session>` and pass `claims.sub` as `user_id`.
 4. **`web.rs`** — thin wrappers. Each core fn → one Axum route. `auth_middleware` reads the `kawai_session` cookie, verifies it, and injects `Extension<Claims>`. No frontend static serving (Tauri desktop handles frontend).
@@ -264,7 +264,7 @@ kawai/
 
 ## Core dependencies (in `logic.rs` / `auth.rs`)
 
-- **`rig`** — on crates.io `0.42` (same semver source as `rig-libsql` and `rig-components`; the `Vec<Embedding>` `insert_documents` change rig-libsql needs is in this release). Used for the cloudflare session-title provider and the libsql vector-store seam. Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers via rig become optional configuration later, not a requirement.
+- **`reqwest`** — remote tier transport: the OpenAI-compatible SSE client in `logic/remote.rs` (provider pool, health-aware failover) and JWKS fetch in `auth.rs`. rustls-only. Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers are optional configuration, not a requirement.
 - **`libsql`** — per-user DB against self-hosted sqld. Desktop/mobile: local embedded replica per user; web: remote connection (no per-user local file). Builder selection lives in `logic.rs` behind `cfg(feature = "web")`. Connections are per-op (fresh EdDSA token each call).
 - **`jsonwebtoken`** — RS256 (Clerk JWKS verify in `auth.rs`) and EdDSA (sqld token mint in `logic.rs`). Two versions coexist (9.x direct + 10.x transitive) — expected.
 - All compile clean across desktop, android arm64, and ios arm64 (default/web/litert feature combos). One rustls (0.23) across the graph — libsql runs core-only (`Builder::new_local` everywhere; re-add its `remote` feature with sqld sync).

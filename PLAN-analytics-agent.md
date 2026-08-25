@@ -59,7 +59,7 @@ non-agent data-explorer op pair (§4) is the drop-in shape.
 
 Implementation deltas from the original design (discovered while building):
 
-- **No `rig` dep in the crate.** The tool structs live kawai-side
+- **No agent-tool dep in the crate.** The tool structs live kawai-side
   (`logic/analytics.rs`, Phase 2) exactly like `KnowledgeSearchTool`; the
   crate is pure functions over a path (matches the decision table).
 - **`query()` takes `QueryArgs` by value**; both entry points take an
@@ -289,7 +289,7 @@ discovery call. All error paths are `Err`, never a silently-degraded
 
 Files:
 - `rig-components/analytics/Cargo.toml` — deps: `polars 0.55` (features
-  above), `rig`, `serde`, `serde_json`; dev-deps `tokio`. Lints mirror binance
+  above), `serde`, `serde_json`; dev-deps `tokio`. Lints mirror binance
   (`unexpected_cfgs = warn`).
 - `rig-components/analytics/src/lib.rs` — `ToolError`/`terr` + public fns:
   - `discover(path: &Path) -> Result<SchemaInfo, ToolError>`

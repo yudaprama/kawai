@@ -1,21 +1,13 @@
 # Implementation Plan — Remove rig from the kawai graph
 
-Status: **IN PROGRESS — phases 1-4 shipped**.
-- Phase 1 (2026-08-25): `kawai-tools` crate (AgentTool trait + ToolSet).
-- Phase 2 (2026-08-25): atomic tool-seam flip (all `rig-components` tool
-  crates, src-tauri office/analytics/agent, local-llm `agent-tools`,
-  gen template; `providers/` + `rig-examples/` deleted).
-- Phase 3 (2026-08-25): hand-rolled OpenAI-compatible SSE client in
-  `logic/remote.rs`; `rig` facade removed (remote_smoke + draft_smoke +
-  agent_eval 20/20).
-- Phase 4 (2026-08-25): rag.rs owns the vector store as plain SQL over the
-  same libSQL native vector tables (zero data migration); kawai-embedding on
-  direct fastembed (lazy blocking-pool init); cognee-litert-lm embedder
-  de-rigged; rig-libsql + rig-core deps removed — no rig in the src-tauri
-  graph. E2E rag test (ingest → hybrid/semantic/keyword → reindex-replaces)
-  added as an ignored test.
-Pending: Phase 5 (purge: retire the rig-libsql submodule, reqwest version
-collapse check, docs hygiene across AGENTS/ARCHITECTURE/PLANs).
+Status: **IMPLEMENTED (2026-08-25)** — all five phases shipped. The tool seam
+is the repo-root `kawai-tools` crate (`AgentTool` + `ToolSet`), cloud
+subagents stream through the hand-rolled OpenAI-compatible SSE client in
+`logic/remote.rs`, RAG owns its vector path as plain SQL over the same libSQL
+native vector tables (zero data migration), `kawai-embedding` uses `fastembed`
+directly, and the `rig`/`rig-core`/`rig-fastembed` deps plus the `rig-libsql`
+submodule are gone. This doc is now a design record; live status in
+`AGENTS.md` → Roadmap 5 ✅ (de-rig entry).
 
 ## Why
 
