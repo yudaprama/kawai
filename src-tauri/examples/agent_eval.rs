@@ -414,7 +414,7 @@ async fn main() {
         if gate_ok { "OK" } else { "FAILED" }
     );
     println!(
-        "[latency H4] load {load_s:.1}s | avg {avg:.1}s p50 {p50:.1}s p95 {p95:.1}s | decode ~9-10 tok/s (E4B CPU) TTFT 7-8s cold — see PLAN L1/L12"
+        "[latency H4] load {load_s:.1}s | avg {avg:.1}s p50 {p50:.1}s p95 {p95:.1}s | E4B CPU reference: ~9-10 tok/s decode, TTFT 7-8s cold — this model may differ (see PLAN L1/L12)"
     );
     println!("[latency H4] budget suggestion: tool-routing turns <12s, long synthesis via deep_write (cloud) with 600s deadline; see logic/agent.rs REMOTE_TIMEOUT_SECS");
 
