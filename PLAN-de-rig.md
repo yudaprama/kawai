@@ -4,8 +4,9 @@ Status: **IMPLEMENTED (2026-08-25)** — all five phases shipped. The tool seam
 is the repo-root `kawai-tools` crate (`AgentTool` + `ToolSet`), cloud
 subagents stream through the hand-rolled OpenAI-compatible SSE client in
 `logic/remote.rs`, RAG owns its vector path as plain SQL over the same libSQL
-native vector tables (zero data migration), `kawai-embedding` uses `fastembed`
-directly, and the `rig`/`rig-core`/`rig-fastembed` deps plus the `rig-libsql`
+native vector tables (zero data migration), `kawai-embedding` runs its local
+fallback through LiteRT directly (the `fastembed` ONNX dep it used at de-rig
+time was later replaced — 2026-08-26), and the `rig`/`rig-core` deps plus the `rig-libsql`
 submodule are gone. This doc is now a design record; live status in
 `AGENTS.md` → Roadmap 5 ✅ (de-rig entry).
 

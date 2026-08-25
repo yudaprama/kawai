@@ -8,12 +8,13 @@
 //!
 //! Pipeline: office extractors (office_oxide for OOXML, pdf_oxide in-process for
 //! PDF) → in-tree chunker →
-//! `kawai-embedding` (local fastembed ONNX fallback, desktop/web only, no API key) →
+//! `kawai-embedding` (local LiteRT embedder fallback under the `litert`
+//! feature, desktop only, no API key) →
 //! libSQL native vector tables (`rag_chunks` + `rag_chunks_embeddings` +
 //! `rag_chunks_embedding_map`, written and queried with plain SQL — libSQL's
 //! `vector(?)` / `vector_distance_cos` functions). All deps are gated behind
 //! the `office` feature.
-//! On Android/iOS the fastembed fallback is absent; the embedder uses only
+//! On Android/iOS the LiteRT fallback is absent; the embedder uses only
 //! remote providers (OpenRouter / NVIDIA / Gemini) or the `ErrorProvider` when
 //! no vault keys are configured.
 //!
@@ -1236,11 +1237,11 @@ mod tests {
     }
 
     /// Full ingest → search round-trip against the REAL vector tables + a
-    /// REAL embedder (vault remote providers or local fastembed download).
+    /// REAL embedder (vault remote providers or the local LiteRT embedder).
     /// Ignored by default — run explicitly:
     /// `cargo test --features office --lib rag::tests::e2e -- --ignored`
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "network: embeds via vault providers or fastembed model download"]
+    #[ignore = "network: embeds via vault providers or downloads the local embedding model"]
     async fn e2e_index_then_hybrid_semantic_keyword_search() {
         let dir = tempfile::tempdir().unwrap();
         crate::logic::db::set_data_root(dir.path());

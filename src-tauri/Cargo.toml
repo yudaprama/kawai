@@ -59,7 +59,8 @@ kawai-constants = { git = "https://github.com/yudaprama/kawai-vault" }
 base64 = { version = "0.22", optional = true }
 tauri-plugin-dialog = "2"
 # RAG pipeline for office knowledge files (gated behind "office"):
-#   kawai-embedding — embed (local fastembed ONNX fallback, desktop/web only, no API key)
+#   kawai-embedding — embed (local LiteRT embedder fallback under the litert
+#   feature, desktop only, no API key)
 kawai-embedding = { path = "../kawai-embedding", optional = true }
 # Markdown-aware + char-based chunking for RAG indexing (office feature only).
 # Replaces the in-tree chunk_text sliding window with text-splitter's
@@ -116,7 +117,7 @@ libc = "0.2"
 [features]
 default = []
 web = ["dep:axum", "dep:tower-http"]
-litert = ["dep:local-llm", "local-llm/agent-tools"]
+litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert"]
 # Web read/search tiering as a standalone feature so any agent can reuse the
 # tools without `office`; `office` implies it (behavior-preserving).
 webread = ["dep:webread", "dep:browser", "dep:url"]
