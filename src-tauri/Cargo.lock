@@ -888,7 +888,7 @@ name = "binance"
 version = "0.1.0"
 dependencies = [
  "binance-sdk",
- "rig",
+ "kawai-tools",
  "serde",
  "serde_json",
  "ta",
@@ -1188,8 +1188,8 @@ name = "browser"
 version = "0.1.0"
 dependencies = [
  "kawai-constants",
+ "kawai-tools",
  "reqwest 0.13.4",
- "rig",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -3444,8 +3444,8 @@ name = "finance"
 version = "0.1.0"
 dependencies = [
  "kawai-constants",
+ "kawai-tools",
  "reqwest 0.13.4",
- "rig",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -5090,6 +5090,7 @@ dependencies = [
  "jsonwebtoken",
  "kawai-constants",
  "kawai-embedding",
+ "kawai-tools",
  "libc",
  "libsql",
  "local-llm",
@@ -5143,6 +5144,14 @@ dependencies = [
  "thiserror 2.0.20",
  "tracing",
  "whatlang",
+]
+
+[[package]]
+name = "kawai-tools"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6038,7 +6047,7 @@ dependencies = [
  "cognee-litert-lm",
  "finance",
  "futures-core",
- "rig",
+ "kawai-tools",
  "serde",
  "serde_json",
  "tokio",
@@ -12151,8 +12160,8 @@ dependencies = [
 name = "weather_geo"
 version = "0.1.0"
 dependencies = [
+ "kawai-tools",
  "reqwest 0.13.4",
- "rig",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -12270,8 +12279,8 @@ dependencies = [
  "futures-util",
  "html-to-markdown-rs",
  "kawai-constants",
+ "kawai-tools",
  "reqwest 0.13.4",
- "rig",
  "serde",
  "serde_json",
  "tokio",

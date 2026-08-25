@@ -1,4 +1,4 @@
-use rig::tool::PortableTool;
+use kawai_tools::AgentTool;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -81,7 +81,7 @@ pub struct ListFilesArgs {}
 
 pub struct ListFilesTool(pub String);
 
-impl PortableTool for ListFilesTool {
+impl AgentTool for ListFilesTool {
     const NAME: &'static str = "office_list_files";
     type Args = ListFilesArgs;
     type Output = String;
@@ -115,7 +115,7 @@ pub struct KnowledgeSearchArgs {
 /// the model only supplies the query (and an optional retrieval mode).
 pub struct KnowledgeSearchTool(pub String, pub i64);
 
-impl PortableTool for KnowledgeSearchTool {
+impl AgentTool for KnowledgeSearchTool {
     const NAME: &'static str = "knowledge_search";
     type Args = KnowledgeSearchArgs;
     type Output = String;
@@ -165,7 +165,7 @@ pub struct FileIdArgs {
 
 pub struct ReadDocumentTool(pub String);
 
-impl PortableTool for ReadDocumentTool {
+impl AgentTool for ReadDocumentTool {
     const NAME: &'static str = "office_read_document";
     type Args = FileIdArgs;
     type Output = String;
@@ -195,7 +195,7 @@ impl PortableTool for ReadDocumentTool {
 
 pub struct DocumentInfoTool(pub String);
 
-impl PortableTool for DocumentInfoTool {
+impl AgentTool for DocumentInfoTool {
     const NAME: &'static str = "office_document_info";
     type Args = FileIdArgs;
     type Output = String;
@@ -238,7 +238,7 @@ pub struct EditDocumentArgs {
 
 pub struct EditDocumentTool(pub String);
 
-impl PortableTool for EditDocumentTool {
+impl AgentTool for EditDocumentTool {
     const NAME: &'static str = "office_edit_document";
     type Args = EditDocumentArgs;
     type Output = String;
@@ -302,7 +302,7 @@ pub struct CreateDocumentArgs {
 
 pub struct CreateDocumentTool(pub String);
 
-impl PortableTool for CreateDocumentTool {
+impl AgentTool for CreateDocumentTool {
     const NAME: &'static str = "office_create_document";
     type Args = CreateDocumentArgs;
     type Output = String;
@@ -344,7 +344,7 @@ Example args: {\"filename\":\"report.docx\",\"blocks\":[{\"type\":\"title\",\"te
 
 pub struct RestoreBackupTool(pub String);
 
-impl PortableTool for RestoreBackupTool {
+impl AgentTool for RestoreBackupTool {
     const NAME: &'static str = "office_restore_backup";
     type Args = FileIdArgs;
     type Output = String;
@@ -388,7 +388,7 @@ pub struct PdfPagesArgs {
 
 pub struct PdfExtractTextTool(pub String);
 
-impl PortableTool for PdfExtractTextTool {
+impl AgentTool for PdfExtractTextTool {
     const NAME: &'static str = "pdf_extract_text";
     type Args = PdfPagesArgs;
     type Output = String;
@@ -427,7 +427,7 @@ pub struct PdfSearchArgs {
 
 pub struct PdfSearchTextTool(pub String);
 
-impl PortableTool for PdfSearchTextTool {
+impl AgentTool for PdfSearchTextTool {
     const NAME: &'static str = "pdf_search_text";
     type Args = PdfSearchArgs;
     type Output = String;
@@ -469,7 +469,7 @@ pub struct PdfReplaceArgs {
 
 pub struct PdfReplaceTextTool(pub String);
 
-impl PortableTool for PdfReplaceTextTool {
+impl AgentTool for PdfReplaceTextTool {
     const NAME: &'static str = "pdf_replace_text";
     type Args = PdfReplaceArgs;
     type Output = String;
@@ -515,7 +515,7 @@ pub struct PdfMergeArgs {
 
 pub struct PdfMergeTool(pub String);
 
-impl PortableTool for PdfMergeTool {
+impl AgentTool for PdfMergeTool {
     const NAME: &'static str = "pdf_merge";
     type Args = PdfMergeArgs;
     type Output = String;
@@ -553,7 +553,7 @@ pub struct PdfSplitArgs {
 
 pub struct PdfSplitTool(pub String);
 
-impl PortableTool for PdfSplitTool {
+impl AgentTool for PdfSplitTool {
     const NAME: &'static str = "pdf_split";
     type Args = PdfSplitArgs;
     type Output = String;
@@ -584,7 +584,7 @@ impl PortableTool for PdfSplitTool {
 
 pub struct PdfInfoTool(pub String);
 
-impl PortableTool for PdfInfoTool {
+impl AgentTool for PdfInfoTool {
     const NAME: &'static str = "pdf_info";
     type Args = FileIdArgs;
     type Output = String;

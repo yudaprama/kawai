@@ -9,8 +9,8 @@
 //! Files live in a per-user on-disk store addressed ONLY by opaque file ids —
 //! path traversal is impossible by construction.
 //!
-//! Tools implement rig's `PortableTool` so the agent loop dispatches them
-//! through a `rig::tool::ToolSet`.
+//! Tools implement `AgentTool` so the agent loop dispatches them
+//! through a `kawai_tools::ToolSet`.
 
 pub mod error;
 pub mod ooxml;
@@ -18,7 +18,7 @@ pub mod pdf;
 pub mod store;
 pub mod tools;
 
-use rig::tool::ToolSet;
+use kawai_tools::ToolSet;
 use serde::Serialize;
 
 pub use error::OfficeToolError;

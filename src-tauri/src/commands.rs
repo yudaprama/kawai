@@ -379,7 +379,7 @@ pub fn local_llm_get_test_tools() -> Result<String, String> {
 #[allow(dead_code)]
 pub fn local_llm_get_rig_tools(tool_names: Vec<String>) -> Result<String, String> {
     let names: Vec<&str> = tool_names.iter().map(|s| s.as_str()).collect();
-    Ok(logic::local_llm::get_rig_tools_json(&names))
+    Ok(logic::local_llm::get_agent_tools_json(&names))
 }
 
 // ── Office document ops (feature "office") ──────────────────────────────────

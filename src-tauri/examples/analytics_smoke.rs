@@ -10,7 +10,7 @@
 //   cargo run --example analytics_smoke --features analytics
 use kawai_lib::logic::analytics::{self as data, DataQueryTool, DataTableSchemaTool, DataTaTool};
 use kawai_lib::logic::office::store;
-use rig::tool::PortableTool;
+use kawai_tools::AgentTool;
 use serde_json::Value;
 
 const CSV: &str = "city,sales\njakarta,100\nbandung,80\njakarta,60\n";

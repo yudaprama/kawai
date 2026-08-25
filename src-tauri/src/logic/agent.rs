@@ -56,9 +56,8 @@ use futures_core::Stream;
 #[cfg(feature = "litert")]
 use futures_util::StreamExt;
 #[cfg(feature = "litert")]
-use rig::tool::ToolContext;
 #[cfg(feature = "litert")]
-use rig::tool::ToolSet;
+use kawai_tools::ToolSet;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -640,7 +639,7 @@ struct DeepWriteArgs {
 }
 
 #[cfg(feature = "litert")]
-impl rig::tool::PortableTool for DeepWrite {
+impl kawai_tools::AgentTool for DeepWrite {
     const NAME: &'static str = DEEP_WRITE_TOOL;
     type Args = DeepWriteArgs;
     type Output = String;
@@ -692,7 +691,7 @@ struct DraftDocumentArgs {
 }
 
 #[cfg(all(feature = "litert", feature = "office"))]
-impl rig::tool::PortableTool for DraftDocument {
+impl kawai_tools::AgentTool for DraftDocument {
     const NAME: &'static str = DRAFT_DOCUMENT_TOOL;
     type Args = DraftDocumentArgs;
     type Output = String;
@@ -738,7 +737,7 @@ struct ArtifactRecallArgs {
 }
 
 #[cfg(feature = "litert")]
-impl rig::tool::PortableTool for ArtifactRecall {
+impl kawai_tools::AgentTool for ArtifactRecall {
     const NAME: &'static str = ARTIFACT_RECALL_TOOL;
     type Args = ArtifactRecallArgs;
     type Output = String;
@@ -1278,14 +1277,14 @@ fn truncate_chars(s: &str, max: usize) -> String {
 
 /// Render a ToolResult into the text fed back to the model.
 #[cfg(feature = "litert")]
-fn tool_result_body(result: &rig::tool::ToolResult) -> String {
-    if let Some(text) = result.output().as_text() {
+fn tool_result_body(result: &kawai_tools::ToolResult) -> String {
+    if let Some(text) = result.text() {
         if !text.trim().is_empty() {
             return text.to_string();
         }
     }
-    if let Some(err) = result.error() {
-        return format!("ERROR: {}", err.message());
+    if let Some(err) = result.error_message() {
+        return format!("ERROR: {err}");
     }
     "<non-text output>".to_string()
 }
@@ -2517,10 +2516,7 @@ pub fn agent_chat(
                         continue;
                     }
                     let result = match toolset.as_ref() {
-                        Some(set) => {
-                            let mut ctx = ToolContext::default();
-                            set.execute(&tool, exec_args.to_string(), &mut ctx).await
-                        }
+                        Some(set) => set.execute(&tool, exec_args.to_string()).await,
                         None => {
                             // No tools registered for this agent: feed the
                             // hallucinated call straight back as an error.
@@ -3399,7 +3395,7 @@ mod tests {
 
     #[cfg(feature = "litert")]
     mod echo {
-        use rig::tool::PortableTool;
+        use kawai_tools::AgentTool;
         use serde::Deserialize;
         use serde_json::{json, Value};
 
@@ -3410,7 +3406,7 @@ mod tests {
             pub message: String,
         }
 
-        impl PortableTool for EchoTool {
+        impl AgentTool for EchoTool {
             const NAME: &'static str = "echo_tool";
             type Args = EchoArgs;
             type Output = String;

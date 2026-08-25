@@ -2,7 +2,7 @@
 //! the user's stored tabular files (csv, tsv, parquet, xlsx/xlsm), plus a
 //! technical-analysis suite over their numeric column series.
 //!
-//! Thin `PortableTool` wrappers — ALL query logic lives in the
+//! Thin `AgentTool` wrappers — ALL query logic lives in the
 //! `analytics` crate (pure functions over a path); these structs only bind
 //! the server-side user id, resolve file ids through the office store, and
 //! push the CPU-bound work onto the blocking pool. Same layering as
@@ -11,7 +11,7 @@
 
 use std::fmt;
 
-use rig::tool::PortableTool;
+use kawai_tools::AgentTool;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -76,7 +76,7 @@ pub struct SchemaArgs {
 /// dtypes, sample values and (for Excel) the sheet list.
 pub struct DataTableSchemaTool(pub String);
 
-impl PortableTool for DataTableSchemaTool {
+impl AgentTool for DataTableSchemaTool {
     const NAME: &'static str = "data_schema";
     type Args = SchemaArgs;
     type Output = String;
@@ -125,7 +125,7 @@ pub struct QueryArgs {
 /// filter values are always strings — parsed to the column's real type.
 pub struct DataQueryTool(pub String);
 
-impl PortableTool for DataQueryTool {
+impl AgentTool for DataQueryTool {
     const NAME: &'static str = "data_query";
     type Args = QueryArgs;
     type Output = String;
@@ -211,7 +211,7 @@ pub struct TaToolArgs {
 /// any stored csv/tsv/parquet/xlsx column instead of Binance klines.
 pub struct DataTaTool(pub String);
 
-impl PortableTool for DataTaTool {
+impl AgentTool for DataTaTool {
     const NAME: &'static str = "data_ta";
     type Args = TaToolArgs;
     type Output = String;
@@ -563,7 +563,7 @@ pub struct SqlTablesArgs {
 /// List the tables/views of one configured SQL source.
 pub struct DataTablesTool;
 
-impl PortableTool for DataTablesTool {
+impl AgentTool for DataTablesTool {
     const NAME: &'static str = "data_tables";
     type Args = SqlTablesArgs;
     type Output = String;
@@ -656,7 +656,7 @@ fn build_parquet_bytes(
     analytics::rows_to_parquet(columns, &mapped)
 }
 
-impl PortableTool for DataImportTool {
+impl AgentTool for DataImportTool {
     const NAME: &'static str = "data_import";
     type Args = SqlImportArgs;
     type Output = String;
@@ -893,8 +893,8 @@ fn sanitize_snapshot_name(table: &str, exported_at_unix: u64) -> String {
 /// resolved through the office store at dispatch — the model only ever sees
 /// short alias handles (`doc1`, …). The SQL snapshot tools ride along only
 /// when at least one database profile is configured (capability probe).
-pub fn toolset(user_id: &str, session_id: i64) -> rig::tool::ToolSet {
-    let mut set = rig::tool::ToolSet::default();
+pub fn toolset(user_id: &str, session_id: i64) -> kawai_tools::ToolSet {
+    let mut set = kawai_tools::ToolSet::default();
     set.add_tool(DataTableSchemaTool(user_id.to_string()));
     set.add_tool(DataQueryTool(user_id.to_string()));
     set.add_tool(DataTaTool(user_id.to_string()));

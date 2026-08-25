@@ -51,7 +51,7 @@ async fn debug_dump_serp(query: &str) {
     use browser::generated::BrowserMarkdownExtractArgs;
     use browser::generated::BrowserMarkdownExtractTool;
     use browser::httpclient::ToolOptions;
-    use rig::tool::PortableTool;
+    use kawai_tools::AgentTool;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()

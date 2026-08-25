@@ -1,6 +1,11 @@
 # Implementation Plan — Remove rig from the kawai graph
 
-Status: **PLANNED**. Live status lands in AGENTS.md → Roadmap when phases ship.
+Status: **IN PROGRESS**. Phase 1 (`kawai-tools` crate) + Phase 2 (atomic
+tool-seam flip: all `rig-components` tool crates, `src-tauri`
+office/analytics/agent, `local-llm` renamed feature `agent-tools`, gen
+template, `providers/` + `rig-examples/` deleted) shipped 2026-08-25.
+Pending: Phase 3 (cloud client), Phase 4 (RAG/embeddings), Phase 5 (purge +
+docs). Live status lands in AGENTS.md → Roadmap when phases ship.
 
 ## Why
 

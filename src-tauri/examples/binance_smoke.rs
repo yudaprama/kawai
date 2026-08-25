@@ -16,7 +16,7 @@ use binance::{
     DepthArgs, DepthTool, KlinesArgs, KlinesTool, PriceArgs, PriceTool, TaAnalyzeArgs,
     TaAnalyzeTool,
 };
-use rig::tool::PortableTool;
+use kawai_tools::AgentTool;
 use serde_json::Value;
 
 /// Tools return compact JSON text — parse once per step.

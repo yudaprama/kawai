@@ -46,6 +46,9 @@ async fn run_turn(
             AgentChatEvent::Token { text } => {
                 answer_chars += text.chars().count();
             }
+            AgentChatEvent::Thinking { .. } => {
+                // Local-model thinking deltas — not tracked by this smoke.
+            }
             AgentChatEvent::ToolCall { tool, .. } => {
                 if tool.starts_with("deep_write") || tool.starts_with("draft_document") {
                     saw_cloud_call = true;

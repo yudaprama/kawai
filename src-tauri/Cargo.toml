@@ -38,8 +38,9 @@ tower-http = { version = "0.6", optional = true, features = ["fs"] }
 # High-level streaming chat over LiteRT-LM (on-device Gemma 4, etc.).
 # Pulls in cognee-litert-lm transitively. Gated behind `litert`.
 local-llm = { path = "../local-llm", optional = true }
-# One rig-core source for the whole graph (src-tauri + rig-tools + rig-libsql).
-# Every consumer uses crates.io "0.42" uniformly — see ARCHITECTURE.md.
+# The agent tool seam (tool trait + registry) shared with rig-components.
+kawai-tools = { path = "../kawai-tools" }
+# Cloud subagent completions (logic/remote.rs): OpenAI-compatible streaming.
 rig = "0.42"
 # default-features=false keeps only the local-SQLite core: replication/remote
 # would pull tonic 0.11 + hyper 0.14 + axum 0.6 + rustls 0.22 (dead weight —
@@ -124,7 +125,7 @@ libc = "0.2"
 [features]
 default = []
 web = ["dep:axum", "dep:tower-http"]
-litert = ["dep:local-llm", "local-llm/rig-tools"]
+litert = ["dep:local-llm", "local-llm/agent-tools"]
 # Web read/search tiering as a standalone feature so any agent can reuse the
 # tools without `office`; `office` implies it (behavior-preserving).
 webread = ["dep:webread", "dep:browser", "dep:url"]
