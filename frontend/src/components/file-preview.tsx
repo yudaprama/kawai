@@ -3,10 +3,12 @@ import { useCallback, useEffect, useState } from "react";
 import type { BundledLanguage } from "shiki";
 import { CodeBlock } from "@/components/ai-elements/code-block";
 import { MessageResponse } from "@/components/ai-elements/message";
+import { renderDataSchema } from "@/components/ai-elements/tool-renderers/data";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { errText, tauriOpenFile } from "@/lib/api";
-import { type FileKind, fileKind, shikiLanguage } from "@/lib/file-types";
+import { call, errText, tauriOpenFile } from "@/lib/api";
+import { isTabularExt } from "@/lib/extensions";
+import { type FileKind, fileExtension, fileKind, shikiLanguage } from "@/lib/file-types";
 import { logWarn } from "@/lib/logger";
 import { type PreviewFile, useFilePreview } from "@/lib/preview-file";
 import { runningInTauri } from "@/platform";
@@ -26,6 +28,10 @@ const FALLBACK_REASON: Partial<Record<FileKind, string>> = {
  * bytes. Anything the browser can't render natively shows a download fallback.
  */
 export function FilePreview({ file }: { file: PreviewFile }) {
+  // Tabular data files (csv/tsv/parquet/xlsx) preview their schema via the
+  // analytics engine instead of raw bytes — parquet/xlsx have no browser
+  // renderer and a raw csv dump doesn't show dtypes.
+  if (isTabularExt(fileExtension(file.name))) return <DataPreviewPane file={file} />;
   const kind = fileKind(file.name);
   switch (kind) {
     case "image":
@@ -191,6 +197,46 @@ function PreviewLoading() {
       <Spinner className="size-4" /> Loading…
     </div>
   );
+}
+
+/**
+ * Tabular files render their discovered schema (columns, dtypes, samples)
+ * via the same renderer as the data_schema tool card. Falls back to the
+ * generic download card when the analytics feature is absent or the file
+ * can't be discovered.
+ */
+function DataPreviewPane({ file }: { file: PreviewFile }) {
+  const [data, setData] = useState<unknown>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
+    setData(null);
+    setError(null);
+    call<unknown>("data_preview", { fileId: file.id })
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errText(e));
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [file.id]);
+
+  if (isLoading) return <PreviewLoading />;
+  const rendered = data != null ? renderDataSchema(data) : null;
+  if (rendered == null) {
+    if (error) logWarn("data_preview", error);
+    return <FallbackPreview file={file} kind="unknown" />;
+  }
+  return <div className="min-h-0 flex-1 overflow-auto p-4">{rendered}</div>;
 }
 
 function FallbackPreview({ file, kind }: { file: PreviewFile; kind: FileKind }) {

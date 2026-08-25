@@ -266,6 +266,23 @@ impl AgentTool for DataTaTool {
     }
 }
 
+/// Re-exported so the transport wrappers can name the preview's return type.
+pub use analytics::SchemaInfo;
+
+/// Schema preview for the Knowledge panel: the same discovery the
+/// `data_schema` tool runs (columns, dtypes, samples, row count), minus the
+/// agent-loop indirection. Excel files preview their first sheet with data.
+pub async fn data_preview(user_id: &str, file_id: &str) -> Result<SchemaInfo, String> {
+    let user = user_id.to_string();
+    let fid = file_id.to_string();
+    run_blocking(move || {
+        let path = resolve_tabular(&user, &fid)?;
+        analytics::discover(&path, None)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 // ── SQL sources: named-profile snapshots ────────────────────────────────────
 //
 // Credential pattern copied from `crates/binance/src/account.rs`:

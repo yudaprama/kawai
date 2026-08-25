@@ -538,6 +538,18 @@ pub async fn knowledge_add_to_session(
 
 // ── SQL data-source profiles (analytics agent) ──────────────────────────────
 
+/// Authenticated RPC: schema preview of a stored tabular file (csv/tsv/
+/// parquet/xlsx) for the Knowledge panel — columns, dtypes, samples.
+#[cfg(feature = "analytics")]
+#[tauri::command]
+pub async fn data_preview(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::analytics::SchemaInfo, String> {
+    let user_id = session_user_id(&session)?;
+    logic::analytics::data_preview(&user_id, &file_id).await
+}
+
 /// Authenticated RPC: list the user's saved SQL data sources.
 #[cfg(feature = "analytics")]
 #[tauri::command]

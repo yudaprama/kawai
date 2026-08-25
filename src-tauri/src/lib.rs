@@ -139,6 +139,7 @@ pub fn run() {
         commands::office_restore_backup,
         commands::office_read_file,
         commands::tauri_open_file,
+        commands::data_preview,
         commands::sql_profile_list,
         commands::sql_profile_save,
         commands::sql_profile_delete,

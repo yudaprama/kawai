@@ -523,6 +523,24 @@ async fn knowledge_add_to_session_handler(
 // ── SQL data-source profiles (analytics agent) ──────────────────────────────
 
 #[cfg(feature = "analytics")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DataPreviewRequest {
+    file_id: String,
+}
+
+#[cfg(feature = "analytics")]
+async fn data_preview_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<DataPreviewRequest>,
+) -> Result<Json<logic::analytics::SchemaInfo>, (StatusCode, String)> {
+    logic::analytics::data_preview(&claims.sub, &req.file_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+#[cfg(feature = "analytics")]
 async fn sql_profile_list_handler(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<logic::analytics::SqlProfile>>, (StatusCode, String)> {
@@ -891,6 +909,7 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
     // SQL data-source profiles: analytics-only (implies office).
     #[cfg(feature = "analytics")]
     let protected = protected
+        .route("/api/data_preview", post(data_preview_handler))
         .route("/api/sql_profile_list", post(sql_profile_list_handler))
         .route("/api/sql_profile_save", post(sql_profile_save_handler))
         .route("/api/sql_profile_delete", post(sql_profile_delete_handler));
