@@ -113,6 +113,7 @@ export default function App() {
   }
 
   // Reusable knowledge props for desktop + mobile drawer
+  const showDatabases = agents.some((a) => a.id === "builtin.analytics" && a.tools);
   const knowledgePanel = (
     <KnowledgePanel
       knowledge={ka.knowledge}
@@ -121,6 +122,7 @@ export default function App() {
       importing={ka.importing}
       linking={ka.linking}
       confirmDeleteId={ka.confirmDeleteId}
+      showDatabases={showDatabases}
       onAddFiles={() => void ka.addKnowledgeFiles()}
       onAddLink={ka.addKnowledgeLink}
       onAddToSession={ka.addToSession}

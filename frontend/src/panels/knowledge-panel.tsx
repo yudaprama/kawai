@@ -15,6 +15,7 @@ export function KnowledgePanel({
   importing,
   linking,
   confirmDeleteId,
+  showDatabases,
   onAddFiles,
   onAddLink,
   onAddToSession,
@@ -33,6 +34,8 @@ export function KnowledgePanel({
   importing: boolean;
   linking: boolean;
   confirmDeleteId: string | null;
+  /** Whether the analytics agent is available (catalog-driven) — gates the Databases tab. */
+  showDatabases: boolean;
   onAddFiles: () => void;
   onAddLink: () => void;
   onAddToSession: (file: KnowledgeFileInfo) => void;
@@ -94,11 +97,14 @@ export function KnowledgePanel({
               Loading knowledge…
             </div>
           ) : (
-            <Tabs onValueChange={(v) => setTab(v as KnowledgeTab)} value={tab}>
+            <Tabs
+              onValueChange={(v) => setTab(v as KnowledgeTab)}
+              value={tab === "databases" && !showDatabases ? "library" : tab}
+            >
               <TabsList className="mb-3">
                 <TabsTrigger value="session">In this session</TabsTrigger>
                 <TabsTrigger value="library">{sessionId != null ? "Library" : "Documents"}</TabsTrigger>
-                <TabsTrigger value="databases">Databases</TabsTrigger>
+                {showDatabases && <TabsTrigger value="databases">Databases</TabsTrigger>}
               </TabsList>
               <TabsContent value="databases">
                 <SqlProfilesSection />

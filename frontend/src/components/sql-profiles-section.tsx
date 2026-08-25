@@ -8,6 +8,9 @@ import { call, errText } from "@/lib/api";
 
 type SqlProfile = { name: string; source: string };
 
+/** Mirror of the backend's name rule: lowercase [a-z0-9_-], 1–32 chars. */
+const NAME_OK = /^[a-z0-9_-]{1,32}$/;
+
 export function SqlProfilesSection() {
   const [profiles, setProfiles] = useState<SqlProfile[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -52,12 +55,13 @@ export function SqlProfilesSection() {
   };
 
   const save = async () => {
-    if (!name.trim() || !source.trim()) return;
+    const finalName = name.trim().toLowerCase();
+    if (!NAME_OK.test(finalName) || !source.trim()) return;
     setSaving(true);
     setError(null);
     try {
       await call("sql_profile_save", {
-        name: name.trim(),
+        name: finalName,
         source: source.trim(),
       });
       setName("");
@@ -95,6 +99,9 @@ export function SqlProfilesSection() {
       {adding && (
         <div className="mb-2 flex flex-col gap-2 rounded-md border p-2">
           <Input onChange={(e) => setName(e.target.value)} placeholder="Nama profil, mis. keuangan" value={name} />
+          {name.length > 0 && !NAME_OK.test(name.trim().toLowerCase()) && (
+            <p className="text-xs text-amber-500">Nama: huruf kecil, angka, "-" atau "_", maks 32 karakter.</p>
+          )}
           <div className="flex gap-2">
             <Input
               onChange={(e) => setSource(e.target.value)}
