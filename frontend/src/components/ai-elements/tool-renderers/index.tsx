@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 
 import {
+  BarChart3Icon,
   BookMarkedIcon,
   BookOpenIcon,
   ClapperboardIcon,
@@ -27,6 +28,7 @@ import { jikanCards, mealCards, drinkCards, bookCards, repoCards, paperCards, qu
 import { renderGeocode, renderIpLocation, renderIss } from "./geo";
 import { renderConnectorTools } from "./connector";
 import { renderWebSearch, renderWebSearchSuggest } from "./search";
+import { renderDataSchema, renderDataQuery, renderDataTa, renderDataTables, renderDataImport } from "./data";
 
 // ---------------------------------------------------------------------------
 // registry
@@ -37,6 +39,11 @@ type ToolRenderer = (output: unknown) => ReactNode;
 const registry: Record<string, ToolRenderer> = {
   web_search: renderWebSearch,
   web_search_suggest: renderWebSearchSuggest,
+  data_schema: renderDataSchema,
+  data_query: renderDataQuery,
+  data_ta: renderDataTa,
+  data_tables: renderDataTables,
+  data_import: renderDataImport,
   connector_list_tools: renderConnectorTools,
   connector_find_tools: renderConnectorTools,
   get_bible_verse: renderBibleVerse,
@@ -119,6 +126,7 @@ type IconComponent = ComponentType<{ className?: string }>;
 
 /** Ordered [predicate, icon] — first match wins. Keeps new tools covered. */
 const iconRules: Array<[(name: string) => boolean, IconComponent]> = [
+  [(n) => /^data_/.test(n), BarChart3Icon],
   [(n) => /web_search|^search$/.test(n), SearchIcon],
   [(n) => n.startsWith("browser_"), GlobeIcon],
   [

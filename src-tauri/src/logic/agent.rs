@@ -69,6 +69,25 @@ const MAX_TOOL_CALLS: usize = 8;
 #[cfg(feature = "litert")]
 /// How many chars of a tool result are echoed into the UI event.
 const TOOL_RESULT_UI_CHARS: usize = 500;
+
+/// Upper bound on the structured `data` payload riding a ToolResult event.
+/// Generous enough for a full `data_query` row set (engine-capped at 30k
+/// chars), small enough to keep IPC trivial.
+const TOOL_RESULT_DATA_CHARS: usize = 32_000;
+
+/// Parse a successful tool body into a structured UI payload. Only whole
+/// JSON objects/arrays qualify (scalar strings render fine as summaries);
+/// oversized documents fall back to the summary path.
+fn ui_payload(body: &str) -> Option<serde_json::Value> {
+    let v = serde_json::from_str::<serde_json::Value>(body).ok()?;
+    if !v.is_object() && !v.is_array() {
+        return None;
+    }
+    if serde_json::to_string(&v).ok()?.len() > TOOL_RESULT_DATA_CHARS {
+        return None;
+    }
+    Some(v)
+}
 #[cfg(feature = "litert")]
 /// Cap on a tool result fed BACK into the conversation (chars). Tool outputs
 /// reach 60k chars (office_read_document) — uncapped, a single call
@@ -865,6 +884,12 @@ pub enum AgentChatEvent {
         tool: String,
         ok: bool,
         summary: String,
+        /// Structured payload for rich UI rendering (tables, cards). Only
+        /// set on success paths where the full tool body is available and it
+        /// parses as a bounded JSON object/array — otherwise absent and the
+        /// frontend renders the summary.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        data: Option<serde_json::Value>,
     },
     Finished,
     Error {
@@ -2201,6 +2226,7 @@ pub fn agent_chat(
                                                 &receipt.to_string(),
                                                 TOOL_RESULT_UI_CHARS,
                                             ),
+                                            data: None,
                                         };
                                         // Receipt back to local — short enough to
                                         // be safe in K/V; local closes the turn.
@@ -2265,6 +2291,7 @@ pub fn agent_chat(
                         tool: call.tool.clone(),
                         ok: false,
                         summary: truncate_chars(&err, TOOL_RESULT_UI_CHARS),
+                        data: None,
                     };
                     prompt = format!(
                         "response:{}:\nERROR: {err}\n\nThe cloud writer is unavailable. \
@@ -2296,6 +2323,7 @@ pub fn agent_chat(
                     summary: format!(
                         "cloud writer produced the answer ({provider}) — streamed above"
                     ),
+                    data: None,
                 };
                 // The cloud answer streamed to the user but never entered the
                 // engine: its conversation ends on the model's own
@@ -2361,7 +2389,7 @@ pub fn agent_chat(
                             yield AgentChatEvent::ToolCall { tool, args };
                         }
                         LocalChatEvent::ToolResult { id: _, tool, ok, summary } => {
-                            yield AgentChatEvent::ToolResult { tool, ok, summary };
+                            yield AgentChatEvent::ToolResult { tool, ok, summary, data: None };
                         }
                         LocalChatEvent::Error { message } => {
                             generation_error = Some(message);
@@ -2561,6 +2589,7 @@ pub fn agent_chat(
                                 tool: tool.clone(),
                                 ok: false,
                                 summary: format!("{tool} requires a non-empty 'task'"),
+                                data: None,
                             };
                             prompt = format!(
                                 "response:{tool}:\nERROR: 'task' must be a non-empty \
@@ -2625,6 +2654,7 @@ pub fn agent_chat(
                                     tool: tool.clone(),
                                     ok: false,
                                     summary: format!("{ARTIFACT_RECALL_TOOL} requires a 'handle'"),
+                                    data: None,
                                 };
                                 prompt = format!(
                                     "response:{ARTIFACT_RECALL_TOOL}:\nERROR: 'handle' is required \
@@ -2650,6 +2680,7 @@ pub fn agent_chat(
                                             tool: tool.clone(),
                                             ok: true,
                                             summary: truncate_chars(&body, TOOL_RESULT_UI_CHARS),
+                                            data: None,
                                         };
                                         memory.record(
                                             ARTIFACT_RECALL_TOOL,
@@ -2667,6 +2698,7 @@ pub fn agent_chat(
                                             tool: tool.clone(),
                                             ok: false,
                                             summary: truncate_chars(&msg, TOOL_RESULT_UI_CHARS),
+                                            data: None,
                                         };
                                         prompt = format!(
                                             "response:{ARTIFACT_RECALL_TOOL}:\nERROR: {msg}\n\n\
@@ -2705,6 +2737,7 @@ pub fn agent_chat(
                             tool: tool.clone(),
                             ok: true,
                             summary: truncate_chars(&cached_body, TOOL_RESULT_UI_CHARS),
+                            data: ui_payload(&cached_body),
                         };
                         memory.record(&tool, &args_key, cached_body.clone());
                         prompt = if cloud_close_eligible(
@@ -2743,6 +2776,7 @@ pub fn agent_chat(
                                 tool: tool.clone(),
                                 ok: false,
                                 summary: truncate_chars(&body, TOOL_RESULT_UI_CHARS),
+                                data: None,
                             };
                             prompt = format!("response:{tool}:\nERROR: tool {tool:?} does not exist (no tools are available)\n\nAnswer the user directly now — no tools are available.");
                             continue
@@ -2756,6 +2790,7 @@ pub fn agent_chat(
                         tool: tool.clone(),
                         ok,
                         summary: truncate_chars(&body, TOOL_RESULT_UI_CHARS),
+                        data: if ok { ui_payload(&body) } else { None },
                     };
                     // Summary requests must not stop at excerpts: nudge the
                     // model toward full read + delegation with the file id

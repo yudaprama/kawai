@@ -3,6 +3,7 @@ import { Message, MessageContent, MessageResponse } from "@/components/ai-elemen
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
+import { renderToolOutput } from "@/components/ai-elements/tool-renderers";
 import { Button } from "@/components/ui/button";
 import { useCopyButton } from "@/hooks/use-copy-button";
 import type { UIMessage } from "@/lib/ai-types";
@@ -30,14 +31,21 @@ export function MessagePartView({ message }: { message: UIMessage }) {
   return (
     <Message from={message.role} className={message.role === "assistant" ? "items-start" : undefined}>
       {toolParts.map((part) => {
-        const output = part.output as { ok?: boolean; summary?: string } | undefined;
+        const output = part.output as { ok?: boolean; summary?: string; data?: unknown } | undefined;
         const displayOutput = output?.summary ?? part.output;
+        // Rich renderer first (needs the structured `data` payload); null →
+        // generic JSON fallback below.
+        const toolName = part.type.replace(/^tool-/, "");
+        const rich =
+          part.state === "output-available" && output?.data != null ? renderToolOutput(toolName, output.data) : null;
         return (
           <Tool key={part.toolCallId}>
             <ToolHeader state={part.state} type={part.type} input={part.input} />
             <ToolContent>
               {part.input != null && <ToolInput input={part.input} />}
-              {displayOutput != null && <ToolOutput output={displayOutput} errorText={part.errorText} />}
+              {rich != null
+                ? rich
+                : displayOutput != null && <ToolOutput output={displayOutput} errorText={part.errorText} />}
             </ToolContent>
           </Tool>
         );

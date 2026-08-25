@@ -21,6 +21,8 @@ export type LocalChatEvent =
       tool: string;
       ok: boolean;
       summary: string;
+      /** Structured payload for rich rendering (present only on success). */
+      data?: unknown;
     }
   | { type: "finished" }
   | { type: "error"; message: string };
@@ -239,7 +241,10 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
                   ? {
                       ...p,
                       state: ev.ok ? ("output-available" as const) : ("output-error" as const),
-                      output: { ok: ev.ok, summary: ev.summary },
+                      output:
+                        ev.data != null
+                          ? { ok: ev.ok, summary: ev.summary, data: ev.data }
+                          : { ok: ev.ok, summary: ev.summary },
                       ...(ev.ok ? {} : { errorText: ev.summary }),
                     }
                   : p,
