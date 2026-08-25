@@ -304,6 +304,10 @@ async fn main() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(usize::MAX);
+    // EVAL_DEBUG=1 → dump each failed scenario's RAW model output (truncated)
+    // to stdout and into the report, so prompt-shape regressions are
+    // diagnosable from CI artifacts instead of guessed at.
+    let debug_raw = std::env::var("EVAL_DEBUG").map(|v| v == "1").unwrap_or(false);
 
     let t_load = std::time::Instant::now();
     let info = local_llm::load_model("eval", &model, false, false, 1, None)
@@ -327,6 +331,7 @@ async fn main() {
 
     let mut pass = 0usize;
     let mut rows: Vec<(String, bool, String, f64)> = Vec::new();
+    let mut raws: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
     for Scenario(id, prompt, want_tool, asserts) in scenarios {
         let _ = local_llm::reset_conversation("eval").await;
         let t = std::time::Instant::now();
@@ -379,6 +384,19 @@ async fn main() {
             "{} {id:18} {note} ({secs:.1}s)",
             if ok { "PASS" } else { "FAIL" }
         );
+        if debug_raw && !ok {
+            let mut raw = text.trim().to_string();
+            if raw.is_empty() {
+                raw = "(empty stream output)".into();
+            }
+            let truncated = raw.chars().count() > 600;
+            let mut out: String = raw.chars().take(600).collect();
+            if truncated {
+                out.push_str("…");
+            }
+            println!("[raw {id}] {out}");
+            raws.insert(id, out);
+        }
         rows.push((id.to_string(), ok, note, secs));
     }
     let total = scenarios.len();
@@ -420,6 +438,14 @@ async fn main() {
                 if *ok { "✅" } else { "❌" },
                 note.replace('|', "\\|")
             ));
+        }
+        if debug_raw && !raws.is_empty() {
+            md.push_str("\n## Raw model outputs (failed scenarios, truncated to 600 chars)\n\n");
+            for (id, _ok, _note, _) in &rows {
+                if let Some(raw) = raws.get(id.as_str()) {
+                    md.push_str(&format!("### {id}\n```\n{raw}\n```\n\n"));
+                }
+            }
         }
         std::fs::write(&path, md).expect("write report");
         println!("report written to {path}");
