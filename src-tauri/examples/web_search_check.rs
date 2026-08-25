@@ -29,7 +29,12 @@ async fn main() {
         out.engine, out.count, out.error
     );
     for h in &out.hits {
-        println!("  - {} | {}\n    {}", h.title, h.url, h.snippet);
+        let content_note = if h.content.is_empty() {
+            " [content: unreadable]".to_string()
+        } else {
+            format!(" [content: {} chars]", h.content.chars().count())
+        };
+        println!("  - {} | {}\n    {}{}", h.title, h.url, h.snippet, content_note);
     }
     if out.hits.is_empty() {
         eprintln!(
