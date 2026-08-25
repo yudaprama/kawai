@@ -15,8 +15,19 @@ export function useKnowledgeActions(chat: {
   sessionId: number | null;
   ensureSessionId: (hint?: string) => Promise<number | null>;
 }) {
+  // Destructure the stable callbacks — `knowledge` itself is a fresh object
+  // literal every render, so depending on it would rebuild every callback
+  // below on each render and defeat memoization.
   const knowledge = useKnowledgeFiles(true);
-  const sessionFiles = chat.sessionId != null ? knowledge.files.filter((f) => f.inSession) : [];
+  const {
+    files: knowledgeFiles,
+    refresh: refreshKnowledge,
+    setSessionId: setKnowledgeSessionId,
+    markIndexing,
+    markInSession,
+    remove: removeKnowledgeRows,
+  } = knowledge;
+  const sessionFiles = chat.sessionId != null ? knowledgeFiles.filter((f) => f.inSession) : [];
 
   const [importing, setImporting] = useState(false);
   const [linking, setLinking] = useState(false);
@@ -27,8 +38,8 @@ export function useKnowledgeActions(chat: {
   const runWithRetry = useRetryableToast();
 
   useEffect(() => {
-    knowledge.setSessionId(chat.sessionId);
-  }, [chat.sessionId, knowledge]);
+    setKnowledgeSessionId(chat.sessionId);
+  }, [chat.sessionId, setKnowledgeSessionId]);
 
   useEffect(() => {
     if (!confirmDeleteId) return;
@@ -76,15 +87,15 @@ export function useKnowledgeActions(chat: {
         const runs = importedIds.map((fileId) =>
           call<number>("office_index_file", { sessionId, fileId })
             .catch((e) => logWarn("office_index_file", e))
-            .finally(() => void knowledge.refresh()),
+            .finally(() => void refreshKnowledge()),
         );
-        await knowledge.refresh();
-        knowledge.markIndexing(importedIds);
+        await refreshKnowledge();
+        markIndexing(importedIds);
         void Promise.allSettled(runs);
       }
       return { importedIds, failed };
     },
-    [chat.sessionId, knowledge],
+    [chat.sessionId, refreshKnowledge, markIndexing],
   );
 
   const addKnowledgeFiles = useCallback(async () => {
@@ -177,10 +188,10 @@ export function useKnowledgeActions(chat: {
       if (sid == null) {
         sid = await chat.ensureSessionId(file.originalName);
         if (sid == null) return;
-        knowledge.setSessionId(sid);
+        setKnowledgeSessionId(sid);
       }
-      knowledge.markInSession([file.id], true);
-      if (file.chunks === 0 || file.status === "failed") knowledge.markIndexing([file.id]);
+      markInSession([file.id], true);
+      if (file.chunks === 0 || file.status === "failed") markIndexing([file.id]);
       try {
         await call<number>("knowledge_add_to_session", {
           sessionId: sid,
@@ -189,16 +200,16 @@ export function useKnowledgeActions(chat: {
       } catch (err) {
         showErrorToast(err);
       } finally {
-        await knowledge.refresh();
+        await refreshKnowledge();
       }
     },
-    [chat.sessionId, chat.ensureSessionId, knowledge],
+    [chat.sessionId, chat.ensureSessionId, setKnowledgeSessionId, markInSession, markIndexing, refreshKnowledge],
   );
 
   const removeFromSession = useCallback(
     async (file: KnowledgeFileInfo) => {
       if (chat.sessionId == null) return;
-      knowledge.markInSession([file.id], false);
+      markInSession([file.id], false);
       try {
         await call<number>("knowledge_forget", {
           sessionId: chat.sessionId,
@@ -207,15 +218,15 @@ export function useKnowledgeActions(chat: {
       } catch (err) {
         showErrorToast(err);
       } finally {
-        await knowledge.refresh();
+        await refreshKnowledge();
       }
     },
-    [chat.sessionId, knowledge],
+    [chat.sessionId, markInSession, refreshKnowledge],
   );
 
   const retryIndex = useCallback(
     async (file: KnowledgeFileInfo) => {
-      knowledge.markIndexing([file.id]);
+      markIndexing([file.id]);
       try {
         await call<number>("office_index_file", {
           sessionId: chat.sessionId,
@@ -224,10 +235,10 @@ export function useKnowledgeActions(chat: {
       } catch (err) {
         logWarn("office_index_file", err);
       } finally {
-        await knowledge.refresh();
+        await refreshKnowledge();
       }
     },
-    [chat.sessionId, knowledge],
+    [chat.sessionId, markIndexing, refreshKnowledge],
   );
 
   const deleteFile = useCallback(
@@ -237,15 +248,15 @@ export function useKnowledgeActions(chat: {
         return;
       }
       setConfirmDeleteId(null);
-      knowledge.remove([file.id]);
+      removeKnowledgeRows([file.id]);
       try {
         await call("office_delete_file", { fileId: file.id });
       } catch (err) {
         showErrorToast(err);
-        await knowledge.refresh();
+        await refreshKnowledge();
       }
     },
-    [confirmDeleteId, knowledge],
+    [confirmDeleteId, removeKnowledgeRows, refreshKnowledge],
   );
 
   const openPreview = useCallback((file: KnowledgeFileInfo) => setPreviewFile(file), []);
@@ -270,7 +281,7 @@ export function useKnowledgeActions(chat: {
         url,
         sessionId: chat.sessionId,
       });
-      await knowledge.refresh();
+      await refreshKnowledge();
       return info;
     };
     try {
@@ -284,7 +295,7 @@ export function useKnowledgeActions(chat: {
     } finally {
       setLinking(false);
     }
-  }, [chat.sessionId, knowledge, linkUrl, runWithRetry]);
+  }, [chat.sessionId, refreshKnowledge, linkUrl, runWithRetry]);
 
   return {
     knowledge,

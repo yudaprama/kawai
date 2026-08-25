@@ -151,26 +151,70 @@ export function useChatSessions({
 
   const setSessionArchived = useCallback(
     async (sessionId: number, archived: boolean) => {
+      const priorSessions = state.sessions;
+      const priorArchived = state.archivedSessions;
+      const byCreatedDesc = (a: ChatSessionInfo, b: ChatSessionInfo) => (b.createdAt ?? 0) - (a.createdAt ?? 0);
+
+      let optimisticSessions: ChatSessionInfo[];
+      let optimisticArchived: ChatSessionInfo[];
+      if (archived) {
+        const moving = priorSessions.find((s) => s.id === sessionId);
+        optimisticSessions = priorSessions.filter((s) => s.id !== sessionId);
+        optimisticArchived = moving
+          ? [...priorArchived, { ...moving, archived: true, archivedAt: Math.floor(Date.now() / 1000) }].sort(
+              byCreatedDesc,
+            )
+          : [...priorArchived].sort(byCreatedDesc);
+      } else {
+        const moving = priorArchived.find((s) => s.id === sessionId);
+        optimisticArchived = priorArchived.filter((s) => s.id !== sessionId);
+        optimisticSessions = moving
+          ? [...priorSessions, { ...moving, archived: false, archivedAt: null }].sort(byCreatedDesc)
+          : [...priorSessions].sort(byCreatedDesc);
+      }
+      patch({ sessions: optimisticSessions, archivedSessions: optimisticArchived });
+
+      let updated: ChatSessionInfo;
       try {
-        await call<ChatSessionInfo>("set_chat_session_archived", {
+        updated = await call<ChatSessionInfo>("set_chat_session_archived", {
           sessionId,
           archived,
         });
       } catch (err) {
         logError("set_chat_session_archived", err);
         showErrorToast(`${archived ? "Couldn't archive" : "Couldn't restore"} the session — ${errText(err)}`);
-        await loadSessions();
+        patch({ sessions: priorSessions, archivedSessions: priorArchived });
         return;
       }
+
+      // Reconcile with server truth — the optimistically moved row may have
+      // stale fields; replace it wherever it landed and ensure it lives in the
+      // correct list.
+      let finalSessions = optimisticSessions.map((s) => (s.id === sessionId ? updated : s));
+      let finalArchived = optimisticArchived.map((s) => (s.id === sessionId ? updated : s));
+      const inSessions = finalSessions.some((s) => s.id === sessionId);
+      const inArchived = finalArchived.some((s) => s.id === sessionId);
+      if (archived && inSessions && !inArchived) {
+        finalSessions = finalSessions.filter((s) => s.id !== sessionId);
+        finalArchived = [...finalArchived.filter((s) => s.id !== sessionId), updated].sort(byCreatedDesc);
+      } else if (!archived && inArchived && !inSessions) {
+        finalArchived = finalArchived.filter((s) => s.id !== sessionId);
+        finalSessions = [...finalSessions.filter((s) => s.id !== sessionId), updated].sort(byCreatedDesc);
+      } else if (archived && !inSessions && !inArchived) {
+        finalArchived = [...finalArchived, updated].sort(byCreatedDesc);
+      } else if (!archived && !inSessions && !inArchived) {
+        finalSessions = [...finalSessions, updated].sort(byCreatedDesc);
+      }
+      patch({ sessions: finalSessions, archivedSessions: finalArchived });
+
       if (archived && sessionIdRef.current === sessionId) {
         await resetModelContext();
         sessionIdRef.current = null;
         patch({ sessionId: null, historyError: null });
         clearMessages();
       }
-      void loadSessions();
     },
-    [patch, loadSessions, resetModelContext, clearMessages],
+    [state.sessions, state.archivedSessions, patch, resetModelContext, clearMessages],
   );
 
   const retryHistoryLoad = useCallback(async () => {
