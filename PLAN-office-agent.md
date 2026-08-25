@@ -12,7 +12,7 @@
 >   bundled binary.
 > - **ooxcli: dismantled** — OOXML read (`office_oxide::Document::to_markdown`),
 >   info (Document IR + counts), and edit (`office_oxide::EditableDocument`
->   raw-part surgery) all run in-process; the `rig-components` `officeedit` /
+>   raw-part surgery) all run in-process; the `components` `officeedit` /
 >   `officemarkdown` tools and `ragloader` extraction were ported off the
 >   subprocess too. No external engine binary remains anywhere in the stack.
 >   See AGENTS.md Roadmap 5 for details.
@@ -117,7 +117,7 @@ office = []   # no new crates — the engines are external binaries
 ```
 
 No new external deps. Do NOT create a
-`rig-components/tools/office` crate — those are generated HTTP catalogs; office
+`components/tools/office` crate — those are generated HTTP catalogs; office
 tools are local-file tools that need kawai's document store.
 
 ---
@@ -149,7 +149,7 @@ machine — `TestCreateDocument_Docx` passes with
   chmod, version-stamp cache). Reference Go client:
   `components/tool/officecreate` (env vars `DOCBUILDER_PATH` /
   `ONLYOFFICE_SDKJS_DIR`, invocation below).
-- **A Rust rig Tool already exists**: `rig-components/tools/officecreate/`
+- **A Rust rig Tool already exists**: `components/tools/officecreate/`
   (parent workspace, same rig pin `4232abdb`) — `OfficeCreateTool` with
   `with_binary`/`with_timeout_secs`, `<outDir>` substitution, output routing.
   Reuse it (git dep or vendored port) rather than writing a third client.
@@ -481,7 +481,7 @@ checks when shared code changes).
 
 - Rendering conversion docx/xlsx/pptx → pdf (x2t runtime tree bundling).
 - `pdfcli metadata set` / `images` tools; extracted-image serving op.
-- Reusing `rig-components/tools/officecreate` as a git dep (needs publishing the
+- Reusing `components/tools/officecreate` as a git dep (needs publishing the
    crate to a kawai-reachable git repo; v1 ports/execs the same recipe).
 - File pick/save dialogs (tauri-plugin-dialog).
 - Multi-device file sync (sqld blobs or content-addressed store).

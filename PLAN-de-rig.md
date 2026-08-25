@@ -18,7 +18,7 @@ Decision context (2026-08-25): rig has drifted from load-bearing to plumbing.
 - Embeddings already run through kawai's own `KawaiProvider` trait with raw-reqwest HTTP (`kawai-embedding/src/lib.rs`); rig supplies only type seams.
 - The vector store is our own crate (`rig-libsql`) implementing rig's traits over libsql we already own.
 
-What rig costs: permanent cross-crate version coordination ("one rig-core source" landmine spans `src-tauri`, `rig-components/*`, `rig-libsql`, `kawai-embedding`, `local-llm`, plus the `gen` template), dep-graph weight, and upgrade churn — for zero behavior the app exercises.
+What rig costs: permanent cross-crate version coordination ("one rig-core source" landmine spans `src-tauri`, `components/*`, `rig-libsql`, `kawai-embedding`, `local-llm`, plus the `gen` template), dep-graph weight, and upgrade churn — for zero behavior the app exercises.
 
 Replacement budget: ~700 LOC total — a ~150-line tool trait/registry crate, a ~300-line OpenAI-compatible SSE client, ~200 lines of direct-SQL vector ops, plus mechanical porting of existing tool impls.
 
@@ -26,12 +26,12 @@ Replacement budget: ~700 LOC total — a ~150-line tool trait/registry crate, a 
 
 | # | Surface | Files | Rig items used |
 |---|---|---|---|
-| 1 | Tool seam | `src-tauri/src/logic/{office/tools.rs,office/mod.rs,analytics.rs,agent.rs}`; `src-tauri/examples/{web_search_check,analytics_smoke,binance_smoke}.rs`; `rig-components/{binance,webread,analytics}/src/*`; `rig-components/tools/*/*.gen.rs` + `httpclient.rs` (ToolBase); `rig-components/gen/src/main.rs:162` (template emits `use rig::tool::PortableTool;`); `local-llm` (`rig-tools` feature) | `PortableTool`, `ToolSet`, `ToolContext`, `ToolResult`, `ToolOutput` |
+| 1 | Tool seam | `src-tauri/src/logic/{office/tools.rs,office/mod.rs,analytics.rs,agent.rs}`; `src-tauri/examples/{web_search_check,analytics_smoke,binance_smoke}.rs`; `components/{binance,webread,analytics}/src/*`; `components/tools/*/*.gen.rs` + `httpclient.rs` (ToolBase); `components/gen/src/main.rs:162` (template emits `use rig::tool::PortableTool;`); `local-llm` (`rig-tools` feature) | `PortableTool`, `ToolSet`, `ToolContext`, `ToolResult`, `ToolOutput` |
 | 2 | Cloud client | `src-tauri/src/logic/remote.rs` | `providers::openai::{CompletionModel, Client}`, `streaming::StreamedAssistantContent`, `message::Reasoning{Content}`, `http_client::HeaderMap`, `client::{CompletionClient, BearerAuth}` |
 | 3 | Vector seam | `src-tauri/src/logic/rag.rs:33-38` | `Embed` derive, `EmbeddingsBuilder`, `InsertDocuments`, `VectorStoreIndex`, `VectorSearchRequest`, `LibsqlSearchFilter` |
 | 4 | Vector store impl | `rig-libsql/` (workspace member) | implements `InsertDocuments`, `VectorStoreIndex`; uses `embeddings::{Embedding, EmbeddingModel}` |
 | 5 | Embedding providers | `kawai-embedding/src/lib.rs:36,591,642`; `cognee-litert-lm/src/embedder.rs:13` | `rig_core::embeddings::{Embedding, EmbeddingError, EmbeddingModel}`; `rig_fastembed` (desktop-only fastembed wrapper) |
-| 6 | Dead weight | `rig-examples/` (upstream reference examples); `rig-components/providers/{ollama,opencode,openrouter,venice,zai}` (referenced by **no** Cargo.toml) | delete outright |
+| 6 | Dead weight | `rig-examples/` (upstream reference examples); `components/providers/{ollama,opencode,openrouter,venice,zai}` (referenced by **no** Cargo.toml) | delete outright |
 
 Not touched: `binance-connector-rust` fork, `ta`, `jigsawstack`, `ragloader`, `youtube_transcript`, `webread` engine chain (only its tool wrappers carry the trait).
 
@@ -67,11 +67,11 @@ New workspace member at repo root. Mirror the rig surface the code actually uses
 ### Phase 2 — atomic tool-seam flip (one commit; cannot be split)
 The whole graph shares one `ToolSet` type, so every `PortableTool` impl flips together:
 
-1. Update `rig-components/gen/src/main.rs` template to emit `kawai_tools::AgentTool`; regenerate all `.gen.rs` files (`cargo run -p rig-components-gen -- --category <each>`), commit regenerated output.
-2. Flip `impl rig::tool::PortableTool for X` → `impl AgentTool for X` in: `rig-components/{binance,webread,analytics}`, `tools/*/httpclient.rs` ToolBase, `src-tauri` office/analytics tools, `agent.rs` subagents (`DeepWrite`/`DraftDocument`/`ArtifactRecall` stubs), examples.
+1. Update `components/gen/src/main.rs` template to emit `kawai_tools::AgentTool`; regenerate all `.gen.rs` files (`cargo run -p components-gen -- --category <each>`), commit regenerated output.
+2. Flip `impl rig::tool::PortableTool for X` → `impl AgentTool for X` in: `components/{binance,webread,analytics}`, `tools/*/httpclient.rs` ToolBase, `src-tauri` office/analytics tools, `agent.rs` subagents (`DeepWrite`/`DraftDocument`/`ArtifactRecall` stubs), examples.
 3. Swap `toolset_for` builders + the `agent.rs` dispatch site (~3402) + `tool_result_body` onto `kawai_tools::ToolSet`.
 4. `local-llm`: retarget its `rig-tools` feature (or drop the feature — audit its actual use first).
-5. Delete `rig-examples/` and `rig-components/providers/*`.
+5. Delete `rig-examples/` and `components/providers/*`.
 
 Mechanical, broad, low-risk — gated by `cargo check` × feature matrix + `cargo test -p analytics -p webread` + the three smoke examples that construct tools directly.
 
@@ -91,9 +91,9 @@ Verify: `remote_smoke`, `draft_smoke`, `turn_log_report`, then `agent_eval` (E4B
 Verify: knowledge ingest e2e (import → ready badge → hybrid/semantic/keyword search), `cargo test --features litert,office --lib`, mobile checks (shared-code change): `cargo ndk -t arm64-v8a -P 24 check` + `cargo check --target aarch64-apple-ios`.
 
 ### Phase 5 — purge + docs hygiene (same-commit rule)
-- Strip `rig`/`rig-core`/`rig-libsql`/`rig-fastembed` from every Cargo.toml; refresh both lockfiles (`rig-components/Cargo.lock` + root).
+- Strip `rig`/`rig-core`/`rig-libsql`/`rig-fastembed` from every Cargo.toml; refresh both lockfiles (`components/Cargo.lock` + root).
 - Confirm the reqwest pair may collapse to one version in the graph (0.12 vs 0.13 landmine shrinks or dies).
-- Grep-clean mentions: `grep -rn "rig" AGENTS.md ARCHITECTURE.md PLAN-*.md scripts/ .github/` — rewrite "one rig-core source" landmine, Where-things-live entries (`rig-components` keeps its name as the tool-crate family? see Open questions), roadmap text, script comments. Rename decision below gates how far the grep can go.
+- Grep-clean mentions: `grep -rn "rig" AGENTS.md ARCHITECTURE.md PLAN-*.md scripts/ .github/` — rewrite "one rig-core source" landmine, Where-things-live entries (`components` keeps its name as the tool-crate family? see Open questions), roadmap text, script comments. Rename decision below gates how far the grep can go.
 - Full battery: `bun run build`, `cargo check`, `--features web/litert/office/binance/webread/analytics`, `-p analytics`/`-p webread` tests, smokes, mobile.
 
 ## Risks & mitigations
@@ -109,5 +109,5 @@ Verify: knowledge ingest e2e (import → ready badge → hybrid/semantic/keyword
 ## Open questions (defaults chosen; flip freely)
 
 1. **Crate name**: default `kawai-tools`. Alternative: fold the trait into an existing leaf crate to avoid a new member — rejected: every tool crate would then depend on that crate's deps.
-2. **`rig-components` directory rename** (e.g. `components/` or `toolkits/`): renaming maximizes doc cleanliness but churns every Cargo.toml path + submodule-adjacent CI. Default: keep the directory name, treat "rig-components" as historical branding; revisit post-MVP.
+2. **`components` directory rename** (e.g. `components/` or `toolkits/`): renaming maximizes doc cleanliness but churns every Cargo.toml path + submodule-adjacent CI. Default: keep the directory name, treat "components" as historical branding; revisit post-MVP.
 3. **async runtime of `AgentTool::call`**: default boxed future (`Pin<Box<dyn Future>>`) for dyn-compatibility, matching how the dispatch loop consumes tools; `#[async_trait]` is already in-tree (ragloader).

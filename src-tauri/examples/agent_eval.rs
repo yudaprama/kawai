@@ -3,7 +3,7 @@
 // tool selection, arguments, aliases, ordering, and refusal shape. One model
 // load, one conversation reset per scenario. Baseline: E4B 20/20 (100%).
 // Usage: cargo run --release --example agent_eval --features litert,office -- /path/to/model.litertlm
-// (needs `office` for the regex crate; the scenario set mirrors the rig-components office schema)
+// (needs `office` for the regex crate; the scenario set mirrors the components office schema)
 use futures_util::StreamExt;
 use kawai_lib::logic::local_llm;
 use serde_json::Value;
@@ -163,7 +163,7 @@ const ANALYTICS_SCENARIOS: &[Scenario] = &[
 ];
 
 /// Filler tools for the TOOL_INFLATE=N experiment: realistic names/descriptions
-/// modeled on the rig-components weather/finance/news/entertainment categories.
+/// modeled on the components weather/finance/news/entertainment categories.
 /// Measures how manifest size affects selection accuracy + latency on E4B.
 const FILLER_TOOLS: &str = r#"[
   {"type":"function","function":{"name":"weather_get_forecast","description":"Get the weather forecast for a city for up to 7 days.","parameters":{"type":"object","properties":{"city":{"type":"string","description":"City name"},"days":{"type":"integer","description":"Number of forecast days"}},"required":["city"]}}},

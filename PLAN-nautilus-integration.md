@@ -5,17 +5,17 @@ doc is scheduled work; every stage below is gated on an explicit user request.
 Live status stays in `AGENTS.md` → Roadmap (Binance agent entry).
 
 Decision context (2026-08-24): the fork/submodule
-`rig-components/nautilus_trader/` (upstream nautechsystems/nautilus_trader) was
+`components/nautilus_trader/` (upstream nautechsystems/nautilus_trader) was
 added as a **reference-only** submodule. It is NOT a workspace member
-of `rig-components/Cargo.toml` and NOT a path dependency of anything; it must
+of `components/Cargo.toml` and NOT a path dependency of anything; it must
 stay out of the build graph unless a stage below is explicitly started.
 
 ---
 
 ## 0. Ground rules (apply to every stage)
 
-- **`rig-components/nautilus_trader/` stays reference-only** until a stage is
-  explicitly started. Never add it to `rig-components/Cargo.toml` `[members]`
+- **`components/nautilus_trader/` stays reference-only** until a stage is
+  explicitly started. Never add it to `components/Cargo.toml` `[members]`
   or as a path dep "to try something".
 - **Nothing from nautilus becomes a dependency while the current tool works.**
   The Binance agent Phase 1 (keyless reads via crates.io `binance-sdk` +
@@ -33,7 +33,7 @@ stay out of the build graph unless a stage below is explicitly started.
 
 ## 1. Stage R — active reference use (available now, zero build cost)
 
-**Trigger: any work on `rig-components/binance/` or the Binance agent.**
+**Trigger: any work on `components/binance/` or the Binance agent.**
 
 What to consult, and for what:
 
@@ -327,12 +327,12 @@ staging whenever the question recurs:
 
 ## 6. Housekeeping (one-time, this doc's commit)
 
-- [x] `AGENTS.md` — layout tree now notes `rig-components/nautilus_trader/`
+- [x] `AGENTS.md` — layout tree now notes `components/nautilus_trader/`
       is a reference-only submodule, pointing at this doc. (done 2026-08-24)
-- [x] Verify `rig-components/Cargo.toml` `[members]` does NOT include
+- [x] Verify `components/Cargo.toml` `[members]` does NOT include
       `nautilus_trader` (already true as of 2026-08-24; guard against
       accidental `cargo add`/workspace globs).
-- [ ] Never run `cargo` commands inside `rig-components/nautilus_trader/` in
+- [ ] Never run `cargo` commands inside `components/nautilus_trader/` in
       CI or scripts — its toolchain pin (`rust-toolchain.toml`) and lockfile
       are the submodule's own business.
 - [ ] When Stage 3 is ever started: the server-side design (§4) supersedes the

@@ -1,7 +1,7 @@
 # Implementation Plan — Web read tiering: on-device webview first, Cloudflare fallback (kawai)
 
 Status: **IMPLEMENTED (2026-08-23)** — phase 1 (desktop) shipped: `web_read`
-tool on the office agent, `rig-components/webread/src/scrape.rs` engine chain + budgets + cache,
+tool on the office agent, `components/webread/src/scrape.rs` engine chain + budgets + cache,
 `webview_engine.rs` hidden-webview tier registered in `lib.rs`. This doc is
 now a design record; live status in `AGENTS.md` → Roadmap 5 ✅.
 
@@ -19,7 +19,7 @@ Implementation deltas from the original design (discovered while building):
   (the dependency and feature are not declared in the crate manifest).
   It stays as shipped.
 
-Decision context (2026-08-23): the existing `rig-components/tools/browser`
+Decision context (2026-08-23): the existing `components/tools/browser`
 crate ships five generated Cloudflare Browser Rendering tools. They are real
 but (a) **not wired into any agent toolset**, and (b) every call costs money
 against a **compiled-in vault token shared by all users** — quota and spend are
@@ -105,7 +105,7 @@ with one arg. Engine choice is an infrastructure concern, not an LLM decision.
 (`logic::db::set_data_root`, `office::store::set_docs_dir`):
 
 ```rust
-// rig-components/webread/src/scrape.rs  (PURE — no tauri/axum)
+// components/webread/src/scrape.rs  (PURE — no tauri/axum)
 pub mod scrape;   // added in logic.rs
 
 /// Injected at app startup by the Tauri shell (lib.rs setup hook).
@@ -171,7 +171,7 @@ Tier 0 output is checked before being trusted. A page is a **miss** if any of:
 - the page is nothing but a meta-refresh/JS redirect to a challenge path.
 
 False positives cost one CF call — acceptable. Detection lives in
-`rig-components/webread/src/scrape.rs` (pure), so both engines are judged by the same rule.
+`components/webread/src/scrape.rs` (pure), so both engines are judged by the same rule.
 
 ### 3.4 Tier 1 — reuse the generated CF tool, single code path
 
@@ -185,13 +185,13 @@ use browser::cloudflare::BrowserMarkdownExtractTool; // via generated re-export
 // 30 s timeout; CF session cold-start is the slow path.
 ```
 
-This adds `browser = { path = "../rig-components/tools/browser" }` to
+This adds `browser = { path = "../components/tools/browser" }` to
 `src-tauri/Cargo.toml` (pure reqwest+rustls deps — mobile/web checks safe).
 
 ### 3.5 The tool
 
 ```rust
-// rig-components/webread/src/scrape.rs
+// components/webread/src/scrape.rs
 pub struct WebReadTool;
 impl PortableTool for WebReadTool {
     const NAME: &'static str = "web_read";
@@ -267,7 +267,7 @@ set.add_tool(tools::WebReadTool);   // registered when scrape::any_engine()
 
 ## 4. Cleanup riding this change (same-commit, per doc hygiene)
 
-1. ~~Delete `rig-components/tools/browser/src/fallback.rs`~~ — **kept**: the
+1. ~~Delete `components/tools/browser/src/fallback.rs`~~ — **kept**: the
    generated Cloudflare tools call `crate::fallback::*` on their error paths
    and the no-feature half of the file is live (see the status deltas above).
    Its dead `browser-oxide` half (undeclared dep + feature) stays inert.
@@ -328,12 +328,12 @@ corrections so they don't resurface as decisions:
 | File | Change |
 |---|---|
 | `src-tauri/src/logic.rs` | `#[cfg(feature = "office")] pub mod scrape;` |
-| `rig-components/webread/src/scrape.rs` | NEW — trait, engine chain, detection, cache, budgets, `WebReadTool` (+ unit tests) |
+| `components/webread/src/scrape.rs` | NEW — trait, engine chain, detection, cache, budgets, `WebReadTool` (+ unit tests) |
 | `src-tauri/src/webview_engine.rs` | NEW — tauri-side `WebViewFetch` impl (hidden window, `eval_with_callback` + mpsc, guaranteed teardown) |
 | `src-tauri/src/lib.rs` | office module gate + setup hook: `scrape::set_webview_engine(Some(...))` |
 | `src-tauri/src/logic/office/mod.rs` | `toolset()` registers `WebReadTool` when `scrape::any_engine()` |
 | `src-tauri/Cargo.toml` | `browser` path dep + `url` dep (both office-gated); tokio gains `sync` feature |
-| `rig-components/tools/browser` | unchanged |
+| `components/tools/browser` | unchanged |
 | `AGENTS.md` / `ARCHITECTURE.md` | updated with this change |
 
 No changes: `commands.rs`, `web.rs`, `generate_handler!`, frontend,

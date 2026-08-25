@@ -55,14 +55,14 @@ jobs:
 
       # Cargo parses local-llm's and cognee-litert-lm's manifests even without
       # the litert feature (optional deps still resolve) — the dirs must
-      # exist. local-llm path-deps rig-components tools; office needs
+      # exist. local-llm path-deps components tools; office needs
       # office_oxide. Shallow, non-recursive: manifests only, no C sources.
-      # Exception: rig-components' nested binance-connector-rust submodule is
+      # Exception: components' nested binance-connector-rust submodule is
       # a real path dep (binance feature) — cargo resolution needs its manifest.
       - name: Init submodules (manifest only)
         run: |
-          git submodule update --init local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
-          git -C rig-components submodule update --init binance-connector-rust
+          git submodule update --init local-llm cognee-litert-lm components kawai-embedding office_oxide
+          git -C components submodule update --init binance-connector-rust
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -102,7 +102,7 @@ jobs:
       # Recursive: the litert feature runs bindgen, which parses the C headers
       # of the NESTED submodule cognee-litert-lm/vendor/LiteRT-LM.
       - name: Init submodules (recursive — bindgen needs nested LiteRT-LM headers)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
+        run: git submodule update --init --recursive local-llm cognee-litert-lm components kawai-embedding office_oxide
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -147,15 +147,15 @@ jobs:
         run: cargo check --features analytics-sql
         working-directory: src-tauri
 
-      - name: cargo test (rig-components/analytics)
+      - name: cargo test (components/analytics)
         run: cargo test -p analytics
-        working-directory: rig-components
+        working-directory: components
 
       # Webread crate: engine-chain unit tests — html-to-markdown-rs render,
       # {t,x,h} payload split, plain-text fallback, search relevance gate.
-      - name: cargo test (rig-components/webread)
+      - name: cargo test (components/webread)
         run: cargo test -p webread
-        working-directory: rig-components
+        working-directory: components
 
       # The tier-0 extractor JS must stay parseable — a syntax error fails
       # SILENTLY (eval never returns a payload → every read falls through to
@@ -206,8 +206,8 @@ jobs:
           key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-macos26-arm64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + components + kawai-embedding + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm components kawai-embedding office_oxide
 
       - name: Build litert-lm dylib
         run: |
@@ -397,8 +397,8 @@ jobs:
           key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + components + kawai-embedding + office_oxide)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm components kawai-embedding office_oxide
 
       # Tauri needs GTK/webkit headers; bindgen + bazel need clang-18.
       # clang-18 via apt.llvm.org — ubuntu-22.04 keeps glibc >= 2.35.
@@ -567,9 +567,9 @@ jobs:
           key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-windows-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + rig-components + kawai-embedding + office_oxide)
+      - name: Init submodules (local-llm + cognee-litert-lm + components + kawai-embedding + office_oxide)
         shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm rig-components kawai-embedding office_oxide
+        run: git submodule update --init --recursive local-llm cognee-litert-lm components kawai-embedding office_oxide
 
       - name: Install bazelisk
         shell: pwsh

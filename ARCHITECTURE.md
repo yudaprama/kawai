@@ -5,13 +5,13 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 
 ## Goals
 
-- Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from `rig-components/` (per-category crates of generated rig tools, `registry::toolset_for(names)`). UI: three-pane — left = agents rail, center = active agent chat + canvas, right = sessions sidebar.
+- Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from `components/` (per-category crates of generated rig tools, `registry::toolset_for(names)`). UI: three-pane — left = agents rail, center = active agent chat + canvas, right = sessions sidebar.
 - End state: **desktop + mobile + web from one core**; app logic is 100% shared, only transport and launcher differ per target.
 - Current phase: **MVP, desktop-first** (macOS, on-device LLM, dev-bypass auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
 - Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`hooks/use-local-chat.ts` + `lib/ai-types.ts`).
 - Backend: Rust, single core logic.
 - Auth: MVP = dev-bypass (`set_session` with any token, backend-gated by `KAWAI_AUTH_DEV_USER_ID`). Backend retains Clerk JWKS verification (`auth.rs`, public keys only) for the future prod flow (browser + deep link, Roadmap 6).
-- LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `logic/remote.rs` (provider pool with health-aware failover); remote providers are optional configuration. **Hybrid cloud-subagent tier (2026-08-20):** the local model delegates heavy synthesis to cloud subagent *tools* (`deep_write`, `draft_document`) via prompt-based tool calling when a remote LLM is configured (default `zai` via kawai-vault compiled-in key; `logic/remote.rs`). Agent tier uses prompt-based tool calling on the local model; `rig-components/` (per-category crates of generated agent tools implementing `kawai_tools::AgentTool`, `registry::toolset_for(names)`) provides the toolsets. Design record: `PLAN-hybrid-llm-subagents.md`.
+- LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `logic/remote.rs` (provider pool with health-aware failover); remote providers are optional configuration. **Hybrid cloud-subagent tier (2026-08-20):** the local model delegates heavy synthesis to cloud subagent *tools* (`deep_write`, `draft_document`) via prompt-based tool calling when a remote LLM is configured (default `zai` via kawai-vault compiled-in key; `logic/remote.rs`). Agent tier uses prompt-based tool calling on the local model; `components/` (per-category crates of generated agent tools implementing `kawai_tools::AgentTool`, `registry::toolset_for(names)`) provides the toolsets. Design record: `PLAN-hybrid-llm-subagents.md`.
 - Persistence: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
 ## Layer diagram
@@ -133,12 +133,12 @@ Crypto market data and technical analysis on Binance spot.
 
 | Tool | Source | Notes |
 |------|--------|-------|
-| `binance_price` | `rig-components/binance` | 24h price stats |
-| `binance_depth` | `rig-components/binance` | Order book + derived spread/mid |
-| `binance_klines` | `rig-components/binance` | Raw OHLCV candle data |
-| `binance_ta_analyze` | `rig-components/binance` | Fetches klines + runs indicator suites in-process (ema/sma/rsi/macd/bb/atr + 12 more) |
-| `binance_balances` | `rig-components/binance` | Signed read-only spot balances *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
-| `binance_open_orders` | `rig-components/binance` | Signed read-only open orders *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
+| `binance_price` | `components/binance` | 24h price stats |
+| `binance_depth` | `components/binance` | Order book + derived spread/mid |
+| `binance_klines` | `components/binance` | Raw OHLCV candle data |
+| `binance_ta_analyze` | `components/binance` | Fetches klines + runs indicator suites in-process (ema/sma/rsi/macd/bb/atr + 12 more) |
+| `binance_balances` | `components/binance` | Signed read-only spot balances *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
+| `binance_open_orders` | `components/binance` | Signed read-only open orders *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
 | `web_read` | `webread` | Read a URL → markdown *(capability-probe: engine must exist)* |
 | `web_search` | `webread` | Bing SERP → markdown *(capability-probe: engine must exist)* |
 | `artifact_recall` | `agent.rs` | Page through oversized tool results from this turn |
@@ -180,13 +180,13 @@ Subagents are tools whose implementation calls a cloud LLM. They are **registere
 
 ## Web read tiering (`web_read`, webread feature)
 
-One agent tool, one engine chain — the model asks to read a URL, the backend picks the cheapest engine that succeeds (`rig-components/webread/src/scrape.rs`):
+One agent tool, one engine chain — the model asks to read a URL, the backend picks the cheapest engine that succeeds (`components/webread/src/scrape.rs`):
 
 1. **Cache** — 15-min LRU (64/user) keyed by normalized URL, cross-engine.
 2. **Tier 0: on-device webview** — `webview_engine.rs` renders the page in a hidden `WebviewWindow` (`WebviewUrl::External`, `visible(false)`), polls `readyState`, harvests text via `eval_with_callback` (external pages have no Tauri IPC — the eval callback is the only return channel), always tears the window down. Free, device-native TLS.
 3. **Tier 1: Cloudflare `/markdown`** — the generated `browser` crate tool (vault key pool). Tier-0 misses (anti-bot markers, thin content, timeout, busy slot) fall through. Bounded by `KAWAI_CF_PER_USER_DAILY` (25) + `KAWAI_CF_GLOBAL_DAILY` (300); exhaustion returns a guidance-carrying result, not an error.
 
-Purity: `rig-components/webread/src/scrape.rs` defines the `WebViewFetch` trait; the tauri shell injects the implementation at startup (`lib.rs`). `kawai-web` registers nothing and degrades to Cloudflare-only; no engine anywhere ⇒ the tool is not registered (capability-probe rule). Content is capped at 12k chars per read. The tools are reusable by any agent: office registers them under `any_engine()`; binance behind the standalone `webread` cargo feature (`office` implies `webread`).
+Purity: `components/webread/src/scrape.rs` defines the `WebViewFetch` trait; the tauri shell injects the implementation at startup (`lib.rs`). `kawai-web` registers nothing and degrades to Cloudflare-only; no engine anywhere ⇒ the tool is not registered (capability-probe rule). Content is capped at 12k chars per read. The tools are reusable by any agent: office registers them under `any_engine()`; binance behind the standalone `webread` cargo feature (`office` implies `webread`).
 
 ## Directory layout
 
@@ -213,7 +213,7 @@ kawai/
 │       │   ├── ai-elements/  # vendored chat components (from web/, trimmed)
 │       │   └── ui/           # shadcn primitives (from web/)
 │       └── platform/         # slim capability adapter (browser APIs only)
-├── rig-components/           # per-category rig tool crates (agent-tier tool library)
+├── components/           # per-category rig tool crates (agent-tier tool library)
 ├── scripts/
 │   ├── dev-sqld.sh           # dev launcher for self-hosted sqld
 │   └── bundle-litert-dylibs.sh  # prep LiteRT dylibs into native/ for .app bundling

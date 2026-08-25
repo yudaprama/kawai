@@ -97,7 +97,7 @@ selective context stays the strategy; engine choice does not rescue long session
 
 **L11 — Needle 2 as pre-router: killed in one spike (2026-08-22).**
 Tested `cactus-needle` 2.0.9 standalone (engine 14MB, ~28MB RAM, no JAX at
-runtime) with our raw rig-components office schemas (3 tools: list / search /
+runtime) with our raw components office schemas (3 tools: list / search /
 pdf_replace with alias enums). The grammar constraint works perfectly — every
 call was schema-valid JSON, enums respected, zero malformed output — but the
 semantics failed 0/4: multi-call spam (3 parallel calls for a single-file edit),
@@ -162,7 +162,7 @@ Alias handles (L5) make prompt-based FC *reliable enough* but not *structurally
 valid*. Options evaluated:
 - (a) keep prompt-based + alias (current) — **chosen**;
 - (b) ~~Needle 2 spike~~ **killed 2026-08-22** (L11): standalone Python spike,
-  our raw rig-components office schemas, 4 workload tests — 0/4 semantically
+  our raw components office schemas, 4 workload tests — 0/4 semantically
   correct (wrong tool, swapped args, multi-call spam), confidence head honestly
   scored every failure ~0.000x;
 - (c) rig native FC if a local rig provider path exists (currently we avoid rig
