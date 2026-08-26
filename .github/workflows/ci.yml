@@ -692,7 +692,11 @@ jobs:
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-        run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/lfm2.5-1.2b-instruct-int8.litertlm
+        # $GITHUB_WORKSPACE, not the ${{ github.workspace }} expression: the
+        # expression is inlined into the bash script as D:\a\kawai\kawai and,
+        # unquoted, bash eats the backslashes as escapes (\a → a) → the model
+        # path arrives mangled. Runtime env expansion keeps them intact.
+        run: cargo run --example local_llm_smoke --features litert -- "$GITHUB_WORKSPACE/smoke-model/lfm2.5-1.2b-instruct-int8.litertlm"
 
       # ── Smoke 2 + 3: hybrid cloud tier ──
       - name: remote_smoke (cloud streaming + usage)
@@ -755,9 +759,9 @@ jobs:
           EVAL_MIN_PASS: "19"
         run: |
           cargo run --release --example agent_eval --features litert,office -- \
-            ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
-            ${{ github.workspace }}/agent-eval-report-windows.md
-          cat ${{ github.workspace }}/agent-eval-report-windows.md >> "$GITHUB_STEP_SUMMARY"
+            "$GITHUB_WORKSPACE/eval-model/gemma-4-E4B-it.litertlm" \
+            "$GITHUB_WORKSPACE/agent-eval-report-windows.md"
+          cat "$GITHUB_WORKSPACE/agent-eval-report-windows.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload eval report
         if: always()

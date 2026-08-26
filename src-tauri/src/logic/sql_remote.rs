@@ -8,7 +8,7 @@
 
 use sqlx::mysql::MySqlPoolOptions;
 use sqlx::postgres::PgPoolOptions;
-use sqlx::Row;
+use sqlx::{Column, Row, TypeInfo};
 
 use analytics::RawCell;
 
@@ -101,6 +101,20 @@ fn pg_kind(table_type: &str) -> String {
     if table_type == "VIEW" { "view" } else { "table" }.to_string()
 }
 
+/// MySQL reports information_schema identifier columns with a BINARY charset
+/// (VARBINARY/BINARY), so `try_get::<String>` rejects them — a strict decode
+/// here silently emptied the whole catalog. Decode tolerantly: String when the
+/// column is textual, lossy UTF-8 from bytes when it is binary-typed.
+fn my_text(row: &sqlx::mysql::MySqlRow, i: usize) -> Option<String> {
+    let ty = row.column(i).type_info().name().to_ascii_uppercase();
+    if ty.contains("BINARY") || ty.contains("BLOB") {
+        let b: Vec<u8> = row.try_get(i).ok()?;
+        Some(String::from_utf8_lossy(&b).into_owned())
+    } else {
+        row.try_get::<String, _>(i).ok()
+    }
+}
+
 /// Tables + views visible to the connecting user, sorted by name. Scoped to
 /// the session's default schema — the SAME scope `dump_rows` reads from, so
 /// everything `data_tables` offers is actually importable (MySQL already
@@ -141,8 +155,8 @@ pub async fn list_objects(url: &str) -> Result<Vec<(String, String)>, String> {
                 .iter()
                 .filter_map(|r| {
                     Some((
-                        r.try_get::<String, usize>(0).ok()?,
-                        pg_kind(&r.try_get::<String, usize>(1).unwrap_or_default()),
+                        my_text(r, 0)?,
+                        pg_kind(&my_text(r, 1).unwrap_or_default()),
                     ))
                 })
                 .collect())
@@ -193,8 +207,8 @@ async fn table_columns(
                 .iter()
                 .filter_map(|r| {
                     Some((
-                        r.try_get::<String, usize>(0).ok()?,
-                        r.try_get::<String, usize>(1).unwrap_or_default(),
+                        my_text(r, 0)?,
+                        my_text(r, 1).unwrap_or_default(),
                     ))
                 })
                 .collect())
