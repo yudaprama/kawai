@@ -290,9 +290,17 @@ fn check_asserts(args: &Value, asserts: &[(&str, &str)]) -> Result<(), String> {
                 return Err(format!("{path}={got:?} != {want:?}"));
             }
         } else if let Some(want) = spec.strip_prefix("==") {
-            let got = v.and_then(Value::as_str);
-            if got != Some(want) {
-                return Err(format!("{path}={got:?} != {want:?}"));
+            // Stringify scalars: bools (`descending==true`) and numbers
+            // (`limit==5`) are legal arg values — as_str alone would read
+            // them as None and fail every such assert.
+            let got = v.map(|v| match v {
+                Value::String(s) => s.clone(),
+                Value::Bool(b) => b.to_string(),
+                Value::Number(n) => n.to_string(),
+                other => other.to_string(),
+            });
+            if got.as_deref() != Some(want) {
+                return Err(format!("{path}={:?} != {want:?}", got.as_deref()));
             }
         }
     }
