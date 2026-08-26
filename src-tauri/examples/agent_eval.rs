@@ -171,6 +171,17 @@ const ANALYTICS_SCENARIOS: &[Scenario] = &[
     // Multi-param momentum default (fast/slow/signal omitted → defaults).
     Scenario("A11 ta-macd", "Compute MACD on the close prices of prices_2026.csv.", Some("data_ta"),
         &[("fileId", "==doc3"), ("close", "==close"), ("indicators/0/kind", "==macd")]),
+    // Set-membership filter: comma-separated list coerced to the column dtype.
+    Scenario("A12 in-filter", "Show rows for the laptop and mouse products only.", Some("data_query"),
+        &[("fileId", "==doc1"), ("filters/0/operator", "==in"), ("filters/0/value", "re:laptop")]),
+    // Post-aggregation threshold on an alias (HAVING).
+    Scenario("A13 having", "Which products have total revenue above 2000?", Some("data_query"),
+        &[("fileId", "==doc1"), ("groupBy/0", "==produk"), ("aggregations/0/function", "==sum"),
+          ("having/0/column", "==total"), ("having/0/operator", "==gt"), ("having/0/value", "==2000")]),
+    // Pagination: page 2 of a sorted list = offset past page 1.
+    Scenario("A14 offset-page", "Show products ranked 3rd to 5th by total revenue.", Some("data_query"),
+        &[("fileId", "==doc1"), ("groupBy/0", "==produk"), ("aggregations/0/function", "==sum"),
+          ("sortBy", "==total"), ("descending", "==true"), ("offset", "==2"), ("limit", "==3")]),
 ];
 
 /// Filler tools for the TOOL_INFLATE=N experiment: realistic names/descriptions

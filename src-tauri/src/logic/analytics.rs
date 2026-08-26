@@ -153,8 +153,8 @@ impl AgentTool for DataQueryTool {
                         "type": "object",
                         "properties": {
                             "column": { "type": "string" },
-                            "operator": { "type": "string", "enum": ["eq","neq","gt","gte","lt","lte","contains"] },
-                            "value": { "type": "string", "description": "Always a string; parsed to the column's real type (\"1500\", \"2026-01-31\", \"true\")." },
+                            "operator": { "type": "string", "enum": ["eq","neq","gt","gte","lt","lte","contains","in"] },
+                            "value": { "type": "string", "description": "Always a string; parsed to the column's real type (\"1500\", \"2026-01-31\", \"true\"). For operator \"in\": a comma-separated list (\"laptop, mouse\")." },
                             "datePart": { "type": "string", "enum": ["year","month","day"], "description": "Compare a calendar part of a date/datetime column instead of the raw value — e.g. January = {column: tanggal, operator: eq, value: \"1\", datePart: month}. Value must be an integer string." }
                         },
                         "required": ["column","operator","value"]
@@ -176,9 +176,23 @@ impl AgentTool for DataQueryTool {
                         "required": ["column","function","alias"]
                     }
                 },
+                "having": {
+                    "type": "array",
+                    "description": "Post-aggregation filter over the OUTPUT (aggregate mode only): columns are group_by keys or aggregation aliases (incl. implicit row_count). Same shape as filters; contains/datePart not supported.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "column": { "type": "string" },
+                            "operator": { "type": "string", "enum": ["eq","neq","gt","gte","lt","lte","in"] },
+                            "value": { "type": "string", "description": "Always a string; parsed to the output column's type." }
+                        },
+                        "required": ["column","operator","value"]
+                    }
+                },
                 "sortBy": { "type": "string", "description": "Output column to sort by (a group_by column or an aggregation alias; in row mode any column)." },
                 "descending": { "type": "boolean", "description": "Default false." },
-                "limit": { "type": "integer", "description": "Max rows returned. Default 10, max 100." }
+                "limit": { "type": "integer", "description": "Max rows returned. Default 10, max 100." },
+                "offset": { "type": "integer", "description": "Rows to skip AFTER sorting — paginate with offset+limit (page 2 of 10-row pages = offset 10). Default 0." }
             },
             "required": ["fileId"]
         })

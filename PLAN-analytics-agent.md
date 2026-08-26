@@ -150,7 +150,7 @@ agent_chat loop (builtin.analytics)
         │    columns {name, dtype, samples[3]}, row count (parquet metadata)
         │
         ├─ data_query(file_id, …)        ← the AST:
-        │    filters[] → (lazy) → group_by[] → aggregations[] → sort → limit
+        │    filters[] → (lazy) → group_by[] → aggregations[] → having[] → sort → offset+limit
         │    OR columns[] row-selection mode
         │    in-process polars, spawn_blocking, JSON rows out (≤30k chars)
         │
@@ -375,10 +375,13 @@ Rules:
 - Docs: `AGENTS.md` (layout tree ×3, Roadmap 5 ✅ entry, MVP-3 CI list,
   verify matrix) + `ARCHITECTURE.md` (logic/ modules).
 
-### Phase 4 — deferred (do not start without the user asking)
+### Phase 4 — partially shipped 2026-08-26 (`having`, `in`, `offset`; `not_in`/`is_null`,
+multi-key sort, and date-part filters beyond year/month/day remain deferred):
 
-- `having`, `in`/`not_in`/`is_null` operators, multi-key sort,
-  date-part filters (`month == 1`) instead of gte/lte ranges.
+- ~~`having`, `in` operators~~ shipped: `in` = comma-separated membership
+  (dtype-coerced per item, ≤50 values), `having` = post-aggregation filter on
+  group keys / aggregation aliases (incl. implicit row_count; contains/datePart
+  are guidance errors), `offset` = post-sort skip for offset+limit pagination.
 - Registering the data tools on the office agent (cross-listing).
 - A non-agent data-explorer op pair (`commands.rs` + `web.rs`) if the UI ever
   needs query results outside `agent_chat`.
