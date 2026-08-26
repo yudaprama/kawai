@@ -176,6 +176,16 @@ pub async fn read_document(user_id: &str, file_id: &str) -> Result<String, Strin
             .await
             .map_err(|e| format!("read markdown failed: {e}"));
     }
+    if info.ext == "html" {
+        // Presentation decks (and any other stored html) read back as
+        // markdown via the deterministic deck parser.
+        let html = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("read html failed: {e}"))?;
+        return Ok(super::deck::deck_to_markdown(&super::deck::parse_deck(
+            &html,
+        )));
+    }
     let doc = office_oxide::Document::open(&path)
         .map_err(|e| format!("office_oxide read failed: {e}"))?;
     Ok(doc.to_markdown_with_baseurl(Some(&format!("/office-files/{file_id}"))))
@@ -187,6 +197,23 @@ pub async fn document_info(user_id: &str, file_id: &str) -> Result<Value, String
     let (path, info) = store::resolve(user_id, file_id)?;
     if info.ext == "pdf" {
         return Err("use pdf_info for PDF files".into());
+    }
+    if info.ext == "html" {
+        let html = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("read html failed: {e}"))?;
+        let deck = super::deck::parse_deck(&html);
+        let words = super::deck::deck_to_markdown(&deck)
+            .split_whitespace()
+            .count();
+        return Ok(serde_json::json!({
+            "format": info.ext,
+            "wordCount": words,
+            "paragraphCount": Value::Null,
+            "slideCount": deck.slides.len(),
+            "sheetCount": Value::Null,
+            "metadata": { "title": deck.title },
+        }));
     }
     let doc = Document::open(&path).map_err(|e| format!("office_oxide read failed: {e}"))?;
     let ir = doc.to_ir();

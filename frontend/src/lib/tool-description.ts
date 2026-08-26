@@ -51,6 +51,12 @@ export function getToolDescription(rawToolName: string, rawArgs: unknown): strin
     case "create_file":
       if (args.name) return `creating ${getStringValue(args.name)}`;
       break;
+    case "office_create_deck":
+      if (args.filename) return `creating deck ${getStringValue(args.filename)}`;
+      break;
+    case "office_export_deck":
+      if (args.fileId) return `exporting deck ${getStringValue(args.fileId)} to pptx`;
+      break;
     case "update_file":
       if (args.fileId) return `updating file ${getStringValue(args.fileId)}`;
       break;

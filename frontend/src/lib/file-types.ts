@@ -7,7 +7,16 @@
  * download link.
  */
 
-export type FileKind = "image" | "video-native" | "video-fallback" | "pdf" | "text" | "markdown" | "office" | "unknown";
+export type FileKind =
+  | "image"
+  | "video-native"
+  | "video-fallback"
+  | "pdf"
+  | "html"
+  | "text"
+  | "markdown"
+  | "office"
+  | "unknown";
 
 export const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "svg", "bmp", "tiff", "tif"]);
 
@@ -18,6 +27,10 @@ const VIDEO_NATIVE_EXTENSIONS = new Set(["mp4", "webm", "m4v", "ogg", "ogv"]);
 const VIDEO_FALLBACK_EXTENSIONS = new Set(["mkv", "avi", "mov", "wmv", "flv", "mpeg", "mpg", "3gp"]);
 
 const OFFICE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx"]);
+
+// Decks (reveal.js html from the office agent) render in a sandboxed iframe;
+// other html files preview the same way.
+const HTML_EXTENSIONS = new Set(["html", "htm"]);
 
 // Markdown is rendered with streamdown; everything else below goes through
 // shiki via the CodeBlock component.
@@ -87,6 +100,7 @@ export function fileKind(name: string): FileKind {
   if (VIDEO_NATIVE_EXTENSIONS.has(ext)) return "video-native";
   if (VIDEO_FALLBACK_EXTENSIONS.has(ext)) return "video-fallback";
   if (OFFICE_EXTENSIONS.has(ext)) return "office";
+  if (HTML_EXTENSIONS.has(ext)) return "html";
   if (MARKDOWN_EXTENSIONS.has(ext)) return "markdown";
   if (TEXT_EXTENSIONS.has(ext)) return "text";
   return "unknown";

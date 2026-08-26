@@ -399,7 +399,7 @@ const DEEP_WRITE_RULE: &str = "- Long, analytical, comparative or creative answe
 /// document in the cloud and writes the file itself. `office_create_document`
 /// is only for exact-content files (the user supplied the literal text).
 #[cfg(all(feature = "litert", feature = "office"))]
-const DRAFT_DOCUMENT_RULE: &str = "- Document-content rule (STRICT): when the document's content must be WRITTEN or COMPOSED (the user describes what it should contain or say — reports, proposals, summaries, updates, decks from their files), you MUST call draft_document. Do NOT compose document content yourself and do NOT pass your own made-up content to office_create_document — that tool is ONLY for files whose exact text the user already gave you (transcribe verbatim, e.g. 'a docx containing exactly these lines'). If you are writing ANY of the document's body yourself, that is a draft_document turn.";
+const DRAFT_DOCUMENT_RULE: &str = "- Document-content rule (STRICT): when the document's content must be WRITTEN or COMPOSED (the user describes what it should contain or say — reports, proposals, summaries, updates from their files), you MUST call draft_document. Do NOT compose document content yourself and do NOT pass your own made-up content to office_create_document — that tool is ONLY for files whose exact text the user already gave you (transcribe verbatim, e.g. 'a docx containing exactly these lines'). If you are writing ANY of the document's body yourself, that is a draft_document turn. EXCEPTION: presentation DECKS — author those locally with office_create_deck (never draft_document).";
 
 pub const OFFICE_AGENT_ID: &str = "builtin.office";
 
@@ -471,6 +471,7 @@ Rules:\n\
 - Factual questions about uploaded documents or imported YouTube videos (numbers, names, dates, invoice codes, table contents): call knowledge_search FIRST — it finds the relevant passages for you.\n\
 - General-knowledge questions unrelated to the user's files (history, science, geography, small talk, math): answer directly in plain text with NO tool call.\n\
 - Summarizing a WHOLE document or video: office_list_files to find its id → office_read_document to get the full text → delegate to deep_write with a clear task brief (materials: one-line pointer or omit — the system attaches the full text automatically). NEVER summarize long content yourself from search excerpts.\n\
+- Presentation decks (slides, presentations): DEFAULT to office_create_deck — one slides[] entry per slide ({title, bodyHtml}); bodyHtml uses simple semantic HTML (h3 subheads, short p, ul bullets, table, <img data-file=\"ID\"> for stored charts/images), one idea per slide. When the user explicitly needs a PowerPoint .pptx file, create the deck first, then office_export_deck on it — office_create_document(.pptx) is only for transcribing exact text the user supplied.\n\
 - NEVER say you cannot access a video, transcript, or document: imported content is searchable via knowledge_search. If a search returns no hits, you may say you cannot find the content.\n\
 - Tools address stored files by their file id, never by path. File ids appear in tool results as short handles like `doc1`, `doc2` — copy the handle EXACTLY as shown (never guess or lengthen it). If you don't know a file's handle, call office_list_files first.\n\
 - Never invent arguments: if a required input is missing, ask the user.\n\
@@ -813,7 +814,7 @@ impl kawai_tools::AgentTool for DraftDocument {
 
     fn description(&self) -> String {
         "Compose a real document (docx/xlsx/pptx) in the cloud and write it to the user's store. \
-Use for documents with real composed content: reports, proposals, summaries, decks built from the user's files. \
+Use for documents with real composed content: reports, proposals, summaries built from the user's files (NOT presentation decks — those go to office_create_deck). \
 You provide the brief, the gathered materials and the filename; the writer composes the full content and the file is created for you."
             .into()
     }

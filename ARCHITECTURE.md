@@ -102,14 +102,16 @@ Three catalog agents (`logic/agent.rs:list_agents()`), each a persona + curated 
 
 ### `builtin.office` — Office
 
-Document assistant for docx/xlsx/pptx/pdf/YouTube transcripts.
+Document assistant for docx/xlsx/pptx/pdf/HTML decks/YouTube transcripts.
 
 | Tool | Source | Notes |
 |------|--------|-------|
 | `office_list_files` | `office::tools` | List all stored files |
 | `knowledge_search` | `office::tools` | Hybrid retrieval (vector + BM25) over session-scoped indexed chunks |
 | `office_create_document` | `office::tools` | Create docx/xlsx/pptx from markdown blocks (exact-content only) |
-| `office_read_document` | `office::tools` | Read docx/xlsx/pptx as markdown |
+| `office_create_deck` | `office::tools` | Create a reveal.js HTML deck (default for presentations): sanitized model HTML + vendored runtime, one self-contained `.html`; `<img data-file>` embeds stored charts |
+| `office_export_deck` | `office::tools` | Deterministic deck → `.pptx` conversion (parse → PptxWriter, no LLM) |
+| `office_read_document` | `office::tools` | Read docx/xlsx/pptx/html-decks as markdown |
 | `office_document_info` | `office::tools` | File metadata + structure |
 | `office_edit_document` | `office::tools` | In-place edits (declarative ops, pure Rust) |
 | `office_restore_backup` | `office::tools` | Undo last edit (swap pre-edit snapshot) |

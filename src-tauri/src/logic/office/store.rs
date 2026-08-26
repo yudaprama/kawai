@@ -109,11 +109,15 @@ pub(crate) fn sanitize_component(name: &str) -> String {
 
 pub(crate) fn allowed_ext(name: &str) -> Option<String> {
     let ext = Path::new(name).extension()?.to_str()?.to_ascii_lowercase();
+    // Canonical spelling: `.htm` decks are stored as `.html`.
+    let ext = if ext == "htm" { "html".to_string() } else { ext };
     matches!(
         ext.as_str(),
         // office documents (tool-edited) + images and markdown (knowledge
         // ingestion sources: image descriptions, YouTube transcripts)
         "docx" | "xlsx" | "pptx" | "pdf" | "png" | "jpg" | "jpeg" | "gif" | "webp" | "md"
+        // presentation decks authored by office_create_deck (reveal.js html)
+        | "html"
         // charts rendered by the analytics agent (data_chart → svg)
         | "svg"
         // tabular data files: queried structurally by the data analysis
@@ -141,7 +145,7 @@ fn user_dir(user_id: &str) -> Result<PathBuf, String> {
 
 pub fn import_bytes(user_id: &str, name: &str, data: &[u8]) -> Result<OfficeFile, String> {
     let ext = allowed_ext(name).ok_or_else(|| {
-        format!("unsupported file type: {name} (allowed: .docx, .xlsx, .pptx, .pdf, images, .md)")
+        format!("unsupported file type: {name} (allowed: .docx, .xlsx, .pptx, .pdf, .html, images, .md)")
     })?;
     let dir = user_dir(user_id)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -360,6 +364,7 @@ fn mime_for_ext(ext: &str) -> &'static str {
         "m4v" => "video/x-m4v",
         "ogg" | "ogv" => "video/ogg",
         "md" | "markdown" => "text/markdown",
+        "html" => "text/html",
         "txt" => "text/plain",
         _ => "application/octet-stream",
     }
@@ -440,6 +445,8 @@ mod tests {
     fn ext_allowlist() {
         assert_eq!(allowed_ext("report.DOCX").as_deref(), Some("docx"));
         assert_eq!(allowed_ext("a.pdf").as_deref(), Some("pdf"));
+        assert_eq!(allowed_ext("deck.html").as_deref(), Some("html"));
+        assert_eq!(allowed_ext("deck.htm").as_deref(), Some("html"));
         assert_eq!(allowed_ext("a.txt"), None);
         assert_eq!(allowed_ext("noext"), None);
     }

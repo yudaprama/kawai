@@ -40,6 +40,8 @@ export function FilePreview({ file }: { file: PreviewFile }) {
       return <VideoPreview file={file} />;
     case "pdf":
       return <PdfPreview file={file} />;
+    case "html":
+      return <HtmlPreview file={file} />;
     case "markdown":
       return <TextPreview file={file} render="markdown" />;
     case "text":
@@ -104,6 +106,27 @@ function PdfEmbedPreview({ file }: { file: PreviewFile }) {
         title={file.name}
         sandbox="allow-scripts allow-same-origin allow-downloads"
         className="h-full min-h-0 w-full flex-1 rounded-lg border"
+      />
+    </div>
+  );
+}
+
+/**
+ * Decks and other html files render in a sandboxed iframe over the `data:`
+ * URL. Scripts run (the deck runtime needs them) but the document stays in an
+ * opaque origin with no access to the app — deck bodies are sanitized
+ * server-side before the file is ever stored.
+ */
+function HtmlPreview({ file }: { file: PreviewFile }) {
+  const { data, isLoading, error } = useFilePreview(file);
+  if (isLoading || error || !data?.dataUrl) return <PreviewLoading />;
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <iframe
+        src={data.dataUrl}
+        title={file.name}
+        sandbox="allow-scripts"
+        className="h-full min-h-0 w-full flex-1 rounded-lg border bg-black"
       />
     </div>
   );

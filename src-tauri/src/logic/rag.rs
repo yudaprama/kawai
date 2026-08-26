@@ -578,10 +578,10 @@ async fn extract_text(user_id: &str, file_id: &str, ext: &str) -> Result<Option<
                 .map_err(|e| format!("ooxml: {e}"))
         }
         "png" | "jpg" | "jpeg" | "gif" | "webp" => describe_image(user_id, file_id).await.map(Some),
-        "md" => {
-            let (path, _info) = crate::logic::office::store::resolve(user_id, file_id)
-                .map_err(|e| format!("resolve: {e}"))?;
-            tokio::fs::read_to_string(&path)
+        "html" | "md" => {
+            // Decks (html) read back as markdown through the deck parser;
+            // plain markdown (YouTube transcripts) is read as-is.
+            crate::logic::office::read_document(user_id, file_id)
                 .await
                 .map(Some)
                 .map_err(|e| format!("read: {e}"))

@@ -47,7 +47,9 @@ export function useFilePreview(file: PreviewFile) {
       .then((res) => {
         if (cancelled) return;
         const dataUrl = `data:${res.mime};base64,${res.dataBase64}`;
-        const isText = res.mime.startsWith("text/");
+        // text/html renders via the iframe preview — decoding it as text
+        // would only be used by nobody.
+        const isText = res.mime.startsWith("text/") && !res.mime.includes("html");
         setData({
           mime: res.mime,
           dataBase64: res.dataBase64,

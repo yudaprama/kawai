@@ -12,6 +12,7 @@
 //! Tools implement `AgentTool` so the agent loop dispatches them
 //! through a `kawai_tools::ToolSet`.
 
+pub mod deck;
 pub mod error;
 pub mod ooxml;
 pub mod pdf;
@@ -149,6 +150,10 @@ pub fn toolset(user_id: &str, session_id: i64) -> ToolSet {
     set.add_tool(tools::ListFilesTool(t.user_id.clone()));
     set.add_tool(tools::KnowledgeSearchTool(t.user_id.clone(), session_id));
     set.add_tool(tools::CreateDocumentTool(t.user_id.clone()));
+    // Presentation decks: reveal.js HTML is the default authoring target;
+    // pptx is a deterministic export of it (office_export_deck).
+    set.add_tool(tools::CreateDeckTool(t.user_id.clone()));
+    set.add_tool(tools::ExportDeckTool(t.user_id.clone()));
     // ReadDocumentTool is pure-Rust (office_oxide); always available.
     set.add_tool(tools::ReadDocumentTool(t.user_id.clone()));
     // Document info + edit are pure-Rust via office_oxide — always available.

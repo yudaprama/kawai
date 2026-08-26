@@ -88,7 +88,7 @@ impl AgentTool for ListFilesTool {
     type Error = OfficeToolError;
 
     fn description(&self) -> String {
-        "List the user's stored office documents (docx, xlsx, pptx, pdf). Returns id, originalName, ext, bytes, createdAt. Every other tool addresses files by that id.".into()
+        "List the user's stored office documents (docx, xlsx, pptx, pdf, html decks, images, charts). Returns id, originalName, ext, bytes, createdAt. Every other tool addresses files by that id.".into()
     }
 
     fn parameters(&self) -> Value {
@@ -337,6 +337,186 @@ Example args: {\"filename\":\"report.docx\",\"blocks\":[{\"type\":\"title\",\"te
             .await
             .map_err(oerr)?;
         Ok(json!({ "success": true, "file": file }).to_string())
+    }
+}
+
+// -- office_create_deck -------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateDeckArgs {
+    pub filename: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    pub slides: Vec<super::deck::DeckSlide>,
+}
+
+pub struct CreateDeckTool(pub String);
+
+impl AgentTool for CreateDeckTool {
+    const NAME: &'static str = "office_create_deck";
+    type Args = CreateDeckArgs;
+    type Output = String;
+    type Error = OfficeToolError;
+
+    fn description(&self) -> String {
+        "Create a presentation deck as ONE self-contained reveal.js HTML file the user can present directly in the app. THIS IS THE DEFAULT for slides/decks/presentations. \
+slides = one entry per slide, IN ORDER: {\"title\":\"Slide title\",\"bodyHtml\":\"<h3>subhead</h3><p>one short idea</p><ul><li>point</li></ul><table><tr><td>a</td><td>b</td></tr></table>\"}. \
+bodyHtml is simple semantic HTML only — h3 subheads, short p paragraphs (≤15 words), ul bullet lists (≤5 items), tables for data, and <img data-file=\"<file id>\"> to embed a stored image or chart (analytics svg charts work). Keep every slide to ONE idea; never dump raw <section> tags. \
+Inline style attributes (color, background, text-align, font-size) are allowed; scripts and external URLs are stripped automatically. \
+For a PowerPoint .pptx file: create the deck first, then call office_export_deck. office_create_document(.pptx) is only for transcribing literal text the user gave you. \
+Example args: {\"filename\":\"q3-review.html\",\"title\":\"Q3 Review\",\"slides\":[{\"title\":\"Revenue\",\"bodyHtml\":\"<ul><li>Up 12% QoQ</li><li>APAC leads</li></ul>\"}]}"
+            .into()
+    }
+
+    fn parameters(&self) -> Value {
+        schema!({
+            "type": "object",
+            "properties": {
+                "filename": { "type": "string", "description": "Output filename, e.g. q3-review.html (extension optional)" },
+                "title": { "type": "string", "description": "Deck title shown on the first slide context / browser tab" },
+                "slides": {
+                    "type": "array",
+                    "description": "Slides in order; each {title, bodyHtml} (see tool description)",
+                    "items": { "type": "object" }
+                }
+            },
+            "required": ["filename", "slides"]
+        })
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<String, OfficeToolError> {
+        if args.slides.is_empty() {
+            return Err(oerr("slides must not be empty — one entry per slide"));
+        }
+        let name = normalize_html_filename(&args.filename);
+        let title = args
+            .title
+            .filter(|t| !t.trim().is_empty())
+            .unwrap_or_else(|| name.trim_end_matches(".html").to_string());
+
+        let mut slides = args.slides;
+        // Resolve <img data-file="…"> handles to inline data URLs from the
+        // store (charts, images) BEFORE sanitizing — the sanitizer then sees
+        // only trusted data: URLs.
+        let mut resolved = std::collections::HashMap::new();
+        for handle in super::deck::collect_file_refs(&slides) {
+            let id = match store::resolve(&self.0, &handle) {
+                Ok((_, info)) => Ok(info.id),
+                Err(exact) => match resolve_file_id_fuzzy(&self.0, &handle) {
+                    Some(fixed) => store::resolve(&self.0, &fixed).map(|(_, i)| i.id),
+                    None => Err(exact),
+                },
+            };
+            let Ok(id) = id else {
+                continue; // substitute_file_refs leaves a visible placeholder
+            };
+            if let Ok((info, bytes)) = store::read_file(&self.0, &id) {
+                if let Some(mime) = super::deck::image_mime_for_ext(&info.ext) {
+                    resolved.insert(handle.clone(), (mime.to_string(), bytes));
+                }
+            }
+        }
+        super::deck::substitute_file_refs(&mut slides, &resolved);
+        for slide in &mut slides {
+            slide.body_html = super::deck::sanitize_html_fragment(&slide.body_html);
+        }
+
+        let html = super::deck::render_deck(&title, &slides);
+        let file = store::import_bytes(&self.0, &name, html.as_bytes()).map_err(oerr)?;
+        Ok(json!({ "success": true, "file": file, "slides": slides.len() })
+            .to_string())
+    }
+}
+
+/// Force the `.html` extension (`.htm` canonicalized by the store).
+fn normalize_html_filename(name: &str) -> String {
+    let trimmed = name.trim();
+    if trimmed.to_ascii_lowercase().ends_with(".html")
+        || trimmed.to_ascii_lowercase().ends_with(".htm")
+    {
+        trimmed.to_string()
+    } else {
+        format!("{}.html", trimmed.trim_end_matches('.'))
+    }
+}
+
+// -- office_export_deck -------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportDeckArgs {
+    pub file_id: String,
+    #[serde(default)]
+    pub filename: Option<String>,
+}
+
+pub struct ExportDeckTool(pub String);
+
+impl AgentTool for ExportDeckTool {
+    const NAME: &'static str = "office_export_deck";
+    type Args = ExportDeckArgs;
+    type Output = String;
+    type Error = OfficeToolError;
+
+    fn description(&self) -> String {
+        "Convert a stored deck (.html created by office_create_deck) into a real PowerPoint .pptx file. Deterministic conversion, no rewriting: slide titles → pptx slide titles, bullet lists / paragraphs / tables kept in order, png/jpg/gif images embedded; custom layout, colors and svg charts do NOT carry over (the deck itself stays unchanged). Use when the user needs a .pptx / PowerPoint file of a deck."
+            .into()
+    }
+
+    fn parameters(&self) -> Value {
+        schema!({
+            "type": "object",
+            "properties": {
+                "fileId": { "type": "string", "description": "Stored deck file id (from office_create_deck's result or office_list_files)" },
+                "filename": { "type": "string", "description": "Optional output filename; defaults to the deck's name with .pptx" }
+            },
+            "required": ["fileId"]
+        })
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<String, OfficeToolError> {
+        let (path, info) = match store::resolve(&self.0, &args.file_id) {
+            Ok(v) => v,
+            Err(exact) => match resolve_file_id_fuzzy(&self.0, &args.file_id) {
+                Some(fixed) => store::resolve(&self.0, &fixed)
+                    .map_err(|e| oerr(format!("{e} (fuzzy matched from {:?})", args.file_id)))?,
+                None => return Err(oerr(exact)),
+            },
+        };
+        if info.ext != "html" {
+            return Err(oerr(
+                "office_export_deck converts .html decks (from office_create_deck)",
+            ));
+        }
+        let html = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| oerr(format!("read deck: {e}")))?;
+        let deck = super::deck::parse_deck(&html);
+        if deck.slides.is_empty() {
+            return Err(oerr("the deck has no slides to export"));
+        }
+        let (bytes, stats) = super::deck::export_pptx(&deck).map_err(oerr)?;
+        let name = match args.filename {
+            Some(n) if n.to_ascii_lowercase().ends_with(".pptx") => n,
+            Some(n) => format!("{}.pptx", n.trim_end_matches('.')),
+            None => format!(
+                "{}.pptx",
+                info.original_name
+                    .trim_end_matches(".html")
+                    .trim_end_matches(".htm")
+            ),
+        };
+        let file = store::import_bytes(&self.0, &name, &bytes).map_err(oerr)?;
+        Ok(json!({
+            "success": true,
+            "file": file,
+            "slides": stats.slides,
+            "imagesKept": stats.images_kept,
+            "imagesDropped": stats.images_dropped,
+            "note": "pptx keeps text, bullets and tables in order; custom layout, colors and svg charts do not carry over — the html deck remains the source of truth"
+        })
+        .to_string())
     }
 }
 

@@ -3,10 +3,12 @@ import {
   Camera,
   Code2,
   Eye,
+  FileDown,
   FilePenLine,
   FilePlus,
   FileText,
   Monitor,
+  Presentation,
   Save,
   Search,
   Table2,
@@ -69,6 +71,10 @@ export const getToolIcon = (toolName: string): ComponentType<ToolIconProps> => {
     case "office_index_file":
     case "office_import_file":
       return FileText;
+    case "office_create_deck":
+      return Presentation;
+    case "office_export_deck":
+      return FileDown;
     default:
       return Wrench;
   }
