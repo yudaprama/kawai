@@ -298,6 +298,8 @@ pub struct ChartToolArgs {
     pub y: Option<String>,
     pub color: Option<String>,
     pub stack: Option<analytics::chart::StackMode>,
+    pub x_scale: Option<analytics::chart::XScale>,
+    pub y_scale: Option<analytics::chart::YScale>,
     pub title: Option<String>,
 }
 
@@ -315,7 +317,7 @@ impl AgentTool for DataChartTool {
     type Error = DataToolError;
 
     fn description(&self) -> String {
-        "Render a chart (bar/line/point/area/histogram/pie) from a stored tabular file and save it as an svg the user sees rendered. Takes the same filters/groupBy/aggregations/sortBy as data_query, plus mark, x (category/time column; numeric column for histogram), y (numeric column or aggregation alias — omit for histogram, which counts rows itself), optional color (grouping column — omit for pie), stack (bar/area composition of color series) and title. x and y must appear in the query result — for aggregates use the group_by column as x and the aggregation alias as y. Pie: one row per category (aggregate with groupBy + sum first; ≤20 slices), largest slice sorted first; single-series bar slices are auto-sorted descending by y when no sortBy is given. Charts plot at most 2000 rows — aggregate or filter long series first.".into()
+        "Render a chart (bar/line/point/area/histogram/pie) from a stored tabular file and save it as an svg the user sees rendered. Takes the same filters/groupBy/aggregations/sortBy as data_query, plus mark, x (category/time column; numeric for histogram), y (numeric column or aggregation alias — omit for histogram, which counts rows itself), optional color (grouping column — omit for pie), stack (bar/area composition of color series), xScale (temporal — parse x as ISO dates and space proportionally; line/area/point/bar only), yScale (log — y must be >0) and title. x and y must appear in the query result — for aggregates use the group_by column as x and the aggregation alias as y. Pie: one row per category (aggregate with groupBy + sum first; ≤20 slices), largest slice sorted first; single-series bar slices are auto-sorted descending by y when no sortBy is given. Charts plot at most 2000 rows — aggregate or filter long series first.".into()
     }
 
     fn parameters(&self) -> Value {
@@ -329,6 +331,8 @@ impl AgentTool for DataChartTool {
                 "y": { "type": "string", "description": "Vertical-axis NUMERIC column in the query result — often an aggregation alias (e.g. \"total\" from sum). OMIT for histogram; REQUIRED for pie (the slice value)." },
                 "color": { "type": "string", "description": "Optional grouping column — draws one series per distinct value. Omit for pie (category x is the slice label)." },
                 "stack": { "type": "string", "enum": ["stacked","normalized","grouped"], "description": "How bar/area composes the color series: stacked (cumulative), normalized (100% share), grouped (side by side). Needs color." },
+                "xScale": { "type": "string", "enum": ["temporal"], "description": "Set to \"temporal\" to parse x as ISO dates (YYYY-MM-DD) and space proportionally; implies chronological sort. Line/point/area/bar only." },
+                "yScale": { "type": "string", "enum": ["log"], "description": "Set to \"log\" for logarithmic y (all y values must be >0); useful for skewed distributions." },
                 "title": { "type": "string", "description": "Chart title. Optional — defaults to \"<y> by <x>\" (\"distribution of <x>\" for histogram)." },
                 "filters": {
                     "type": "array",
@@ -385,6 +389,8 @@ impl AgentTool for DataChartTool {
                 y: args.y,
                 color: args.color,
                 stack: args.stack,
+                x_scale: args.x_scale,
+                y_scale: args.y_scale,
                 title: args.title,
             };
             analytics::chart::render(&path, args.sheet.as_deref(), &args.q, &spec)

@@ -28,6 +28,7 @@ dist-ssr
 *.sw?
 models/
 flutter_gemma/
+charton/
 
 # bazel/litert instrumentation artifacts (LLVM_PROFILE_FILE redirects these to /dev/null in dev)
 *.profraw

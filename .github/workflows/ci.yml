@@ -392,7 +392,7 @@ jobs:
           KAWAI_LLM_MAX_TOKENS: "8192"
           EVAL_SUITE: analytics
           EVAL_DEBUG: "1"
-          EVAL_MIN_PASS: "15"
+          EVAL_MIN_PASS: "16"
         run: |
           cargo run --release --example agent_eval --features litert,office -- \
             ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
