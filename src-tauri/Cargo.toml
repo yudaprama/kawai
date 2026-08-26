@@ -53,7 +53,7 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls", "j
 dotenvy = "0.15"
 # Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
 # Private repo — CI authenticates via the insteadOf git rewrite (release.yml).
-kawai-constants = { git = "https://github.com/yudaprama/kawai-vault" }
+kawai-constants = { path = "../kawai-vault/constants" }
 # Office tool store imports (drag-drop/web base64 blobs). Gated behind
 # "office" so non-office builds stay dep-free.
 base64 = { version = "0.22", optional = true }

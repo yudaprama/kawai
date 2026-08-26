@@ -154,8 +154,8 @@ jobs:
       # path-deps kawai-embedding (litert embedder).
       # flutter_gemma/litert-lm-rs are NOT needed — skip them to keep the
       # checkout lean.
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
 
       - name: Build litert-lm dylib
         run: |
@@ -232,8 +232,8 @@ jobs:
           key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
 
       # LiteRT-LM's .bazelrc pins CC=clang (action_env); the runner default is
       # clang-14, whose std lib lacks std::source_location in C++20 mode
@@ -332,9 +332,9 @@ jobs:
           key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-windows-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide)
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
         shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
 
       - name: Install bazelisk
         shell: pwsh
@@ -427,8 +427,8 @@ jobs:
       # must exist. local-llm path-deps crates tools, so that
       # manifest needs crates present too. Shallow, non-recursive:
       # only crate manifests, not C sources.
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide, manifest only)
-        run: git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault, manifest only)
+        run: git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
