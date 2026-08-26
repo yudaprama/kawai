@@ -316,31 +316,9 @@ fn max_rows() -> usize {
         .unwrap_or(DEFAULT_MAX_ROWS)
 }
 
-/// All configured profiles, sorted by name: `(name, raw value)`. Names are
-/// lowercased so lookups are case-insensitive. Two sources merge here: the
-/// per-user DB table (managed by the in-app Settings UI via
-/// [`sql_profile_save`] / [`sql_profile_delete`]) and legacy env vars — env
-/// wins on a name clash so ops can always override.
-pub fn sql_profiles() -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = std::env::vars()
-        .filter_map(|(k, v)| {
-            k.strip_prefix(PROFILE_ENV_PREFIX)
-                .filter(|_| !v.trim().is_empty())
-                .map(|name| (name.to_ascii_lowercase(), v))
-        })
-        .collect();
-    for p in db_profile_cache() {
-        if !out.iter().any(|e| e.0 == p.name) {
-            out.push((p.name, p.source));
-        }
-    }
-    out.sort_by(|a, b| a.0.cmp(&b.0));
-    out
-}
-
-// ── profile storage (per-user DB + process cache) ───────────────────────────
-
-/// One saved data source, as shown in the settings UI.
+/// One saved data source, as shown in the settings UI. Also the unit baked
+/// into the SQL tools per turn — the model can only ever reach sources from
+/// this set.
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SqlProfile {
@@ -348,36 +326,34 @@ pub struct SqlProfile {
     pub source: String,
 }
 
-/// Process-local mirror of the user's `sql_profiles` table. The toolset
-/// builder is sync (and runs per turn), so registration probes read this
-/// cache instead of hitting the DB; the async ops below refresh it on every
-/// mutation and `refresh_profile_cache` re-loads it at turn start.
-fn db_profile_cache() -> Vec<SqlProfile> {
-    static CACHE: std::sync::OnceLock<std::sync::RwLock<Vec<SqlProfile>>> =
-        std::sync::OnceLock::new();
-    let lock = CACHE.get_or_init(|| std::sync::RwLock::new(Vec::new()));
-    lock.read().map(|g| g.clone()).unwrap_or_default()
-}
-
-fn set_db_profile_cache(profiles: Vec<SqlProfile>) {
-    static CACHE: std::sync::OnceLock<std::sync::RwLock<Vec<SqlProfile>>> =
-        std::sync::OnceLock::new();
-    if let Ok(mut g) = CACHE
-        .get_or_init(|| std::sync::RwLock::new(Vec::new()))
-        .write()
-    {
-        *g = profiles;
+/// All configured profiles for ONE user, sorted by name. Two sources merge
+/// here: the per-user DB table (managed by the in-app Settings UI via
+/// [`sql_profile_save`] / [`sql_profile_delete`]) and env vars — env wins on
+/// a name clash so ops can always override. Fetched per turn and baked into
+/// the SQL tool constructors (see [`toolset`]); there is deliberately NO
+/// process-global cache, so one user's turn can never resolve another
+/// user's sources in multi-user web mode. A DB error degrades to env-only
+/// (same failure shape the old cache had, minus the staleness).
+pub async fn effective_profiles(user_id: &str) -> Vec<SqlProfile> {
+    let mut out: Vec<SqlProfile> = std::env::vars()
+        .filter_map(|(k, v)| {
+            k.strip_prefix(PROFILE_ENV_PREFIX)
+                .filter(|_| !v.trim().is_empty())
+                .map(|name| SqlProfile {
+                    name: name.to_ascii_lowercase(),
+                    source: v,
+                })
+        })
+        .collect();
+    if let Ok(list) = sql_profile_list(user_id).await {
+        for p in list {
+            if !out.iter().any(|e| e.name == p.name) {
+                out.push(p);
+            }
+        }
     }
-}
-
-/// Reload the cache from the user's table. Called at the start of each
-/// agent turn (analytics feature) so freshly saved profiles register their
-/// tools without an app restart.
-pub async fn refresh_profile_cache(user_id: &str) {
-    match sql_profile_list(user_id).await {
-        Ok(list) => set_db_profile_cache(list),
-        Err(e) => eprintln!("[analytics] profile cache refresh skipped: {e}"),
-    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
 }
 
 /// List the user's saved data sources (DB rows only — env profiles are ops
@@ -452,7 +428,8 @@ pub async fn sql_profile_save(user_id: &str, name: &str, source: &str) -> Result
     )
     .await
     .map_err(|e| format!("save profile: {e}"))?;
-    refresh_profile_cache(user_id).await;
+    // No cache to refresh — the next agent turn fetches effective_profiles
+    // fresh, so the new source registers its tools on that turn.
     Ok(SqlProfile { name, source })
 }
 
@@ -463,13 +440,13 @@ pub async fn sql_profile_delete(user_id: &str, name: &str) -> Result<(), String>
     conn.execute("DELETE FROM sql_profiles WHERE name = ?", libsql::params![name])
         .await
         .map_err(|e| format!("delete profile: {e}"))?;
-    refresh_profile_cache(user_id).await;
     Ok(())
 }
 
-/// Capability probe: whether the SQL tools should register at all.
-pub fn has_sql_profiles() -> bool {
-    !sql_profiles().is_empty()
+/// Capability probe for the settings UI: whether any source is configured
+/// at all (env + this user's saved rows).
+pub async fn has_any_profile(user_id: &str) -> bool {
+    !effective_profiles(user_id).await.is_empty()
 }
 
 /// Result of a `sql_profile_test` probe, as shown in the settings UI.
@@ -501,8 +478,8 @@ pub async fn sql_profile_test(user_id: &str, name: &str) -> Result<SqlProfileTes
     }
 
     let name = normalize_profile_name(name)?;
-    refresh_profile_cache(user_id).await;
-    let src = match profile_value(&name) {
+    let profiles = effective_profiles(user_id).await;
+    let src = match profile_value(&profiles, &name) {
         Ok(v) => v,
         Err(e) => return Ok(fail("unknown", e.0)),
     };
@@ -527,7 +504,7 @@ pub async fn sql_profile_test(user_id: &str, name: &str) -> Result<SqlProfileTes
             ));
         }
     } else {
-        let conn = match open_sqlite(&name).await {
+        let conn = match open_sqlite_source(&src).await {
             Ok(c) => c,
             Err(e) => return Ok(fail("sqlite", e.0)),
         };
@@ -545,19 +522,22 @@ pub async fn sql_profile_test(user_id: &str, name: &str) -> Result<SqlProfileTes
     })
 }
 
-fn profile_value(name: &str) -> Result<String, analytics::ToolError> {
-    let profiles = sql_profiles();
+/// Resolve one profile by name (case-insensitive) against the caller-baked
+/// set — the ONLY path from a model-supplied profile name to a connection
+/// source. Unknown names error with the valid list so the turn self-corrects.
+fn profile_value<'a>(profiles: &'a [SqlProfile], name: &str) -> Result<&'a str, analytics::ToolError> {
+    let lower = name.to_ascii_lowercase();
     profiles
         .iter()
-        .find(|(n, _)| n == &name.to_ascii_lowercase())
-        .map(|(_, v)| v.clone())
+        .find(|p| p.name == lower)
+        .map(|p| p.source.as_str())
         .ok_or_else(|| {
             let list = if profiles.is_empty() {
                 "(none — configure KAWAI_SQL_PROFILE_<NAME> in .env)".to_string()
             } else {
                 profiles
                     .iter()
-                    .map(|(n, _)| n.as_str())
+                    .map(|p| p.name.as_str())
                     .collect::<Vec<_>>()
                     .join(", ")
             };
@@ -587,11 +567,11 @@ fn looks_remote(source: &str) -> bool {
         .any(|p| s.starts_with(p))
 }
 
-async fn open_sqlite(profile: &str) -> Result<libsql::Connection, analytics::ToolError> {
-    let path = sqlite_path(&profile_value(profile)?);
+async fn open_sqlite_source(src: &str) -> Result<libsql::Connection, analytics::ToolError> {
+    let path = sqlite_path(src);
     if !path.is_file() {
         return Err(analytics::ToolError(format!(
-            "database file not found for profile {profile:?}: {}",
+            "database file not found: {}",
             path.display()
         )));
     }
@@ -650,8 +630,10 @@ pub struct SqlTablesArgs {
     pub profile: String,
 }
 
-/// List the tables/views of one configured SQL source.
-pub struct DataTablesTool;
+/// List the tables/views of one configured SQL source. The baked profile set
+/// is captured at turn start for the CALLING user — the model can only ever
+/// list sources from it, never another user's.
+pub struct DataTablesTool(pub std::sync::Arc<Vec<SqlProfile>>);
 
 impl AgentTool for DataTablesTool {
     const NAME: &'static str = "data_tables";
@@ -674,7 +656,7 @@ impl AgentTool for DataTablesTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<String, DataToolError> {
-        let src = profile_value(&args.profile).map_err(derr)?;
+        let src = profile_value(&self.0, &args.profile).map_err(derr)?;
         let items = if looks_remote(&src) {
             #[cfg(feature = "analytics-sql")]
             {
@@ -689,7 +671,7 @@ impl AgentTool for DataTablesTool {
                     .into(),
             )));
         } else {
-            let conn = open_sqlite(&args.profile).await.map_err(derr)?;
+            let conn = open_sqlite_source(&src).await.map_err(derr)?;
             list_objects(&conn).await.map_err(derr)?
         };
         let tables: Vec<Value> = items
@@ -711,8 +693,14 @@ pub struct SqlImportArgs {
 /// Snapshot one SQL table/view into a typed parquet file in the office store
 /// and associate it with the current session, so `data_schema`/`data_query`
 /// take over from there. The SOURCE DATABASE IS NEVER WRITTEN — this is a
-/// read-only dump behind a validated identifier and a hard row cap.
-pub struct DataImportTool(pub String, pub i64);
+/// read-only dump behind a validated identifier, a hard row cap, and the
+/// per-turn baked profile set (user-scoped: only the calling user's sources
+/// are resolvable).
+pub struct DataImportTool(
+    pub String,
+    pub i64,
+    pub std::sync::Arc<Vec<SqlProfile>>,
+);
 
 /// Convert raw libsql rows to the crate's neutral cell type and serialize a
 /// typed parquet snapshot. BLOB columns are a guidance error (they have no
@@ -771,7 +759,7 @@ impl AgentTool for DataImportTool {
         let user = self.0.clone();
         let session_id = self.1;
         let cap = max_rows();
-        let src = profile_value(&args.profile).map_err(derr)?;
+        let src = profile_value(&self.2, &args.profile).map_err(derr)?.to_string();
 
         // ── remote (Postgres/MySQL) branch ────────────────────────────────
         if looks_remote(&src) {
@@ -818,7 +806,7 @@ impl AgentTool for DataImportTool {
         }
 
         // ── local SQLite branch ───────────────────────────────────────────
-        let conn = open_sqlite(&args.profile).await.map_err(derr)?;
+        let conn = open_sqlite_source(&src).await.map_err(derr)?;
 
         // Validate the identifier against the catalog via a BOUND PARAMETER
         // before any quoting happens.
@@ -981,18 +969,25 @@ fn sanitize_snapshot_name(table: &str, exported_at_unix: u64) -> String {
 
 /// Build the data analysis ToolSet for one user + session. File ids are
 /// resolved through the office store at dispatch — the model only ever sees
-/// short alias handles (`doc1`, …). The SQL snapshot tools ride along only
-/// when at least one database profile is configured (capability probe).
-pub fn toolset(user_id: &str, session_id: i64) -> kawai_tools::ToolSet {
+/// short alias handles (`doc1`, …). `profiles` is the caller's fetched
+/// [`effective_profiles`] snapshot: the SQL snapshot tools ride along only
+/// when it is non-empty, and they can resolve ONLY those sources — no shared
+/// state exists for another user's turn to leak in (multi-user web mode).
+pub fn toolset(
+    user_id: &str,
+    session_id: i64,
+    profiles: &[SqlProfile],
+) -> kawai_tools::ToolSet {
     let mut set = kawai_tools::ToolSet::default();
     set.add_tool(DataTableSchemaTool(user_id.to_string()));
     set.add_tool(DataQueryTool(user_id.to_string()));
     set.add_tool(DataTaTool(user_id.to_string()));
     // Id discovery: the same list tool the office agent uses.
     set.add_tool(super::office::tools::ListFilesTool(user_id.to_string()));
-    if has_sql_profiles() {
-        set.add_tool(DataTablesTool);
-        set.add_tool(DataImportTool(user_id.to_string(), session_id));
+    if !profiles.is_empty() {
+        let baked = std::sync::Arc::new(profiles.to_vec());
+        set.add_tool(DataTablesTool(baked.clone()));
+        set.add_tool(DataImportTool(user_id.to_string(), session_id, baked));
     }
     set
 }
@@ -1061,22 +1056,25 @@ mod sql_tests {
         .unwrap();
     }
 
+    /// The per-turn snapshot shape the agent loop bakes into the tools.
+    fn baked(name: &str, source: &str) -> std::sync::Arc<Vec<SqlProfile>> {
+        std::sync::Arc::new(vec![SqlProfile {
+            name: name.into(),
+            source: source.into(),
+        }])
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn data_tables_lists_tables_and_views_rejects_unknown_profile() {
         let dir = tempfile::tempdir().unwrap();
         make_db(dir.path().join("shop.db").as_path()).await;
         let _guard = ENV_LOCK.lock();
 
-        let _env = EnvVar::set(
-            "KAWAI_SQL_PROFILE_TESTLIST",
-            dir.path().join("shop.db").to_str().unwrap(),
-        );
+        let src = dir.path().join("shop.db").to_str().unwrap().to_string();
+        let _env = EnvVar::set("KAWAI_SQL_PROFILE_TESTLIST", &src);
+        let profiles = baked("testlist", &src);
 
-        assert!(has_sql_profiles());
-        let names: Vec<String> = sql_profiles().into_iter().map(|(n, _)| n).collect();
-        assert_eq!(names, vec!["testlist".to_string()]);
-
-        let out = DataTablesTool
+        let out = DataTablesTool(profiles.clone())
             .call(SqlTablesArgs {
                 profile: "TestList".into(),
             }) // case-insensitive
@@ -1097,7 +1095,7 @@ mod sql_tests {
         assert!(tables.contains(&("sales".into(), "table".into())));
         assert!(tables.contains(&("murah".into(), "view".into())));
 
-        let e = DataTablesTool
+        let e = DataTablesTool(profiles)
             .call(SqlTablesArgs {
                 profile: "nope".into(),
             })
@@ -1118,7 +1116,11 @@ mod sql_tests {
             dir.path().join("shop.db").to_str().unwrap(),
         );
 
-        let tool = DataImportTool("demo".into(), 42);
+        let tool = DataImportTool(
+            "demo".into(),
+            42,
+            baked("e2e", dir.path().join("shop.db").to_str().unwrap()),
+        );
 
         // Unknown table → error lists valid candidates.
         let e = tool
@@ -1227,7 +1229,7 @@ mod sql_tests {
         let _env_profile = EnvVar::set("KAWAI_SQL_PROFILE_CAP", db_path.to_str().unwrap());
         let _env_cap = EnvVar::set("KAWAI_SQL_MAX_ROWS", "4");
 
-        let out = DataImportTool("demo".into(), 1)
+        let out = DataImportTool("demo".into(), 1, baked("cap", db_path.to_str().unwrap()))
             .call(SqlImportArgs {
                 profile: "cap".into(),
                 table: "t".into(),
@@ -1262,7 +1264,7 @@ mod sql_tests {
 
         let _env = EnvVar::set("KAWAI_SQL_PROFILE_BLOB", db_path.to_str().unwrap());
 
-        let e = DataImportTool("demo".into(), 1)
+        let e = DataImportTool("demo".into(), 1, baked("blob", db_path.to_str().unwrap()))
             .call(SqlImportArgs {
                 profile: "blob".into(),
                 table: "b".into(),
@@ -1293,7 +1295,7 @@ mod sql_tests {
 
         let _env = EnvVar::set("KAWAI_SQL_PROFILE_NULLS", db_path.to_str().unwrap());
 
-        let out = DataImportTool("demo".into(), 1)
+        let out = DataImportTool("demo".into(), 1, baked("nulls", db_path.to_str().unwrap()))
             .call(SqlImportArgs {
                 profile: "nulls".into(),
                 table: "n".into(),
@@ -1348,7 +1350,7 @@ mod sql_tests {
 
         let _env = EnvVar::set("KAWAI_SQL_PROFILE_WEIRD", db_path.to_str().unwrap());
 
-        let out = DataImportTool("demo".into(), 1)
+        let out = DataImportTool("demo".into(), 1, baked("weird", db_path.to_str().unwrap()))
             .call(SqlImportArgs {
                 profile: "weird".into(),
                 table: "order items".into(),
@@ -1362,5 +1364,46 @@ mod sql_tests {
         let (path, _) = store::resolve("demo", &file_id).unwrap();
         let sch = analytics::discover(&path, None).unwrap();
         assert_eq!(sch.columns[0].name, "qty total");
+    }
+
+    /// THE leak regression: profiles saved by one user must never surface in
+    /// another user's set (the old process-global cache made a concurrent
+    /// turn's refresh visible to everyone in multi-user web mode). Env vars
+    /// stay global by design and win a name clash.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn effective_profiles_are_user_scoped_and_env_wins_clash() {
+        let dir = tempfile::tempdir().unwrap();
+        for f in ["a.db", "b.db", "env.db"] {
+            make_db(dir.path().join(f).as_path()).await;
+        }
+        let _guard = ENV_LOCK.lock();
+
+        sql_profile_save("scope-a", "private", dir.path().join("a.db").to_str().unwrap())
+            .await
+            .unwrap();
+        let _env = EnvVar::set(
+            "KAWAI_SQL_PROFILE_SHARED",
+            dir.path().join("env.db").to_str().unwrap(),
+        );
+        sql_profile_save("scope-b", "shared", dir.path().join("b.db").to_str().unwrap())
+            .await
+            .unwrap();
+
+        // user-c: only the env profile — never scope-a's or scope-b's rows.
+        let c = effective_profiles("scope-c").await;
+        assert!(!c.iter().any(|p| p.name == "private"), "{c:?}");
+        assert!(
+            !c.iter().any(|p| p.name == "shared" && p.source.ends_with("b.db")),
+            "{c:?}"
+        );
+
+        // scope-b sees its own row only where env has no opinion; env wins.
+        let b = effective_profiles("scope-b").await;
+        let shared = b.iter().find(|p| p.name == "shared").expect("shared present");
+        assert!(shared.source.ends_with("env.db"), "{shared:?}");
+
+        // scope-a still resolves its own save.
+        let a = effective_profiles("scope-a").await;
+        assert!(a.iter().any(|p| p.name == "private"), "{a:?}");
     }
 }

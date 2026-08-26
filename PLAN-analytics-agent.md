@@ -12,7 +12,8 @@ Roadmap 5 ✅.
 `data_tables(profile)` + `data_import(profile, table)` live in
 `logic/analytics.rs` per the design below: named profiles from env
 (`KAWAI_SQL_PROFILE_<NAME>` = local SQLite path), capability-probe
-registration (`has_sql_profiles()`), bound-parameter identifier validation
+registration (non-empty `effective_profiles(user)` snapshot per turn),
+bound-parameter identifier validation
 before quoting, hard row cap (`KAWAI_SQL_MAX_ROWS`, default 100k), typed dump
 via the crate's neutral `RawCell` + `rows_to_parquet` API (polars stays
 crate-side; src-tauri never sees it), snapshot lands in the office store and
@@ -419,7 +420,9 @@ Rules:
   - **Intake door — DECIDED (2026-08-24): agent tools.** `data_tables(profile)`
     + `data_import(profile, table)` land as kawai-side `PortableTool`s in
     `logic/analytics.rs` (the `KnowledgeSearchTool` pattern), registered under
-    a `has_sql_profiles()` capability probe (binance rule). The tool layer is
+    a non-empty-profiles capability probe (binance rule) — the profile set is
+    fetched per turn via `effective_profiles(user_id)` and baked into the tool
+    constructors, so tools resolve only their own user's sources. The tool layer is
     orchestrator-agnostic — whichever LLM drives the `agent_chat` loop calls
     them through the same call:/response: protocol (local Gemma 4 first;
     remote-delegated flows reuse the same tools unchanged). Core dump logic

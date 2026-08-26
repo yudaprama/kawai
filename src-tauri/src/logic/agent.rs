@@ -536,6 +536,9 @@ fn toolset_for(
     user_id: &str,
     session_id: i64,
     remote: Option<&crate::logic::remote::RemoteLlm>,
+    // The calling user's SQL-profile snapshot, fetched per turn by agent_chat
+    // (analytics feature only — see the ANALYTICS_AGENT_ID arm).
+    #[cfg(feature = "analytics")] sql_profiles: &[crate::logic::analytics::SqlProfile],
 ) -> Option<ToolSet> {
     let mut set = match agent_id {
         #[cfg(feature = "office")]
@@ -555,7 +558,7 @@ fn toolset_for(
             set
         }
         #[cfg(feature = "analytics")]
-        ANALYTICS_AGENT_ID => crate::logic::analytics::toolset(user_id, session_id),
+        ANALYTICS_AGENT_ID => crate::logic::analytics::toolset(user_id, session_id, sql_profiles),
         _ => {
             let _ = user_id;
             let _ = session_id;
@@ -1927,10 +1930,16 @@ pub fn agent_chat(
             },
         };
         // Built after `sid` exists: the knowledge tool binds the session id.
-        // Analytics: refresh the SQL-profile cache first so a source saved
-        // moments ago registers its tools on this very turn.
+        // Analytics: fetch THIS user's SQL profiles now, so a source saved
+        // moments ago registers its tools this very turn — and so the tools
+        // resolve only sources baked for the calling user (no process-global
+        // cache that a concurrent turn could cross-contaminate in web mode).
         #[cfg(feature = "analytics")]
-        crate::logic::analytics::refresh_profile_cache(&user_id).await;
+        let toolset = {
+            let sql_profiles = crate::logic::analytics::effective_profiles(&user_id).await;
+            toolset_for(&agent_id, &user_id, sid, remote.as_ref(), &sql_profiles)
+        };
+        #[cfg(not(feature = "analytics"))]
         let toolset = toolset_for(&agent_id, &user_id, sid, remote.as_ref());
         eprintln!(
             "[agent_chat] toolset for agent={agent_id} remote.is_some()={} has_toolset={}",

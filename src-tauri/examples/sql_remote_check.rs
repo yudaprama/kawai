@@ -36,6 +36,12 @@ fn expect(cond: bool, what: &str) {
     }
 }
 
+/// The per-turn profile snapshot the tools are constructed with (env-only
+/// here — this example configures its source through KAWAI_SQL_PROFILE_CHECK).
+async fn baked_profiles() -> std::sync::Arc<Vec<data::SqlProfile>> {
+    std::sync::Arc::new(data::effective_profiles("check-user").await)
+}
+
 async fn pg_pool(url: &str) -> sqlx::PgPool {
     sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
@@ -170,7 +176,7 @@ async fn drop_all(url: &str) {
 /// One full chain over a named table: import → schema → query. Returns the
 /// parsed import receipt.
 async fn roundtrip(table: &str) -> Value {
-    let import = DataImportTool("check-user".into(), 1)
+    let import = DataImportTool("check-user".into(), 1, baked_profiles().await)
         .call(data::SqlImportArgs {
             profile: "check".into(),
             table: table.to_string(),
@@ -236,7 +242,7 @@ async fn main() {
     }
 
     // 1. data_tables — live catalog listing through the profile name only.
-    let out = DataTablesTool
+    let out = DataTablesTool(baked_profiles().await)
         .call(data::SqlTablesArgs {
             profile: "check".into(),
         })
@@ -277,7 +283,7 @@ async fn main() {
 
         // 3b. Binary column contract: the import must FAIL with guidance
         //     naming the offending column — never a panic or silent loss.
-        let bin_err = DataImportTool("check-user".into(), 1)
+        let bin_err = DataImportTool("check-user".into(), 1, baked_profiles().await)
             .call(data::SqlImportArgs {
                 profile: "check".into(),
                 table: BIN_TABLE.to_string(),
