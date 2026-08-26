@@ -55,6 +55,8 @@ const VENICE_MATERIALS_CHARS: usize = 49_152; // stealth model — unknown windo
 const OPENCODE_MATERIALS_CHARS: usize = 49_152; // stealth model — unknown window
 const OPENROUTER_MATERIALS_CHARS: usize = 49_152; // stealth model — unknown window
 const OLLAMA_MATERIALS_CHARS: usize = 32_768; // cloud-hosted compact model
+const POOLSIDE_MATERIALS_CHARS: usize = 32_768; // poolside/laguna-s-2.1 — software-engineering model
+const EMPERO_MATERIALS_CHARS: usize = 32_768; // free community Qwen 27B
 /// Default output-token cap for one subagent call. Generous on purpose:
 /// hitting the cap truncates the answer mid-sentence (provider stops at
 /// max_tokens), and a summary that runs long must still finish.
@@ -72,6 +74,11 @@ const OPENROUTER_MODEL: &str = "stealth/ox-alpha";
 const OLLAMA_BASE_URL: &str = "https://ollama.com/v1";
 const OLLAMA_MODEL: &str = "nemotron-3-nano:30b";
 
+/// Poolside — OpenAI-compatible inference API. Model focused on software-
+/// engineering tasks (code gen, reasoning). Key from kawai-vault.
+const POOLSIDE_BASE_URL: &str = "https://inference.poolside.ai/v1";
+const POOLSIDE_MODEL: &str = "poolside/laguna-s-2.1";
+
 /// Venice AI — OpenAI-compatible gateway.
 const VENICE_BASE_URL: &str = "https://api.venice.ai/api/v1";
 const VENICE_MODEL: &str = "stealth-ox-alpha";
@@ -79,6 +86,12 @@ const VENICE_MODEL: &str = "stealth-ox-alpha";
 /// OpenCode Zen — OpenAI-compatible gateway.
 const OPENCODE_BASE_URL: &str = "https://opencode.ai/zen/v1";
 const OPENCODE_MODEL: &str = "x-preview-f-free";
+
+/// Empero free community tier — OpenAI-compatible, API key is always "free".
+/// Qwen3.8-27B-FP8, thinking is ON by default; we disable it via
+/// chat_template_kwargs so subagent output is focused.
+const EMPERO_BASE_URL: &str = "https://free.empero.org/v1";
+const EMPERO_MODEL: &str = "Qwen/Qwen3.8-27B-FP8";
 
 // ---------------------------------------------------------------------------
 // Health tracker (failover state)
@@ -231,7 +244,33 @@ const ENDPOINTS: &[EndpointDef] = &[
         key: kawai_constants::llm::get_ollama,
         materials_budget: OLLAMA_MATERIALS_CHARS,
     },
+    EndpointDef {
+        label: "poolside",
+        base_url: POOLSIDE_BASE_URL,
+        model: POOLSIDE_MODEL,
+        key: kawai_constants::llm::get_poolside,
+        materials_budget: POOLSIDE_MATERIALS_CHARS,
+    },
+    EndpointDef {
+        label: "empero",
+        base_url: EMPERO_BASE_URL,
+        model: EMPERO_MODEL,
+        key: get_empero_free_key,
+        materials_budget: EMPERO_MATERIALS_CHARS,
+    },
 ];
+
+/// Empero's API key is always the literal string `free` — not sourced from
+/// the vault. Kept as a named fn so `ENDPOINTS` (array of fn pointers) can
+/// reference it without a closure.
+
+
+/// Empero's API key is always the literal string `free` — not sourced from
+/// the vault. Kept as a named fn so `ENDPOINTS` (array of fn pointers) can
+/// reference it without a closure.
+fn get_empero_free_key() -> String {
+    "free".to_string()
+}
 
 /// One failover candidate: a prebuilt HTTP client + endpoint + auth headers +
 /// its telemetry label. Clone so the failover loop can run inside the returned
@@ -693,6 +732,12 @@ fn request_body(cand: &Candidate, system: &str, prompt: &str, max_output_tokens:
         // sent to other providers.
         body["thinking"] = serde_json::json!({"type": "enabled"});
     }
+    if cand.label == "empero" {
+        // Qwen3.8 emits reasoning by default via the chat template; disable
+        // it so subagent output stays focused and doesn't burn token budget.
+        body["chat_template_kwargs"] =
+            serde_json::json!({"enable_thinking": false});
+    }
     body
 }
 
@@ -1049,5 +1094,9 @@ mod tests {
 
         let zai = request_body(&mk("zai"), "sys", "prompt", 512);
         assert_eq!(zai["thinking"]["type"], "enabled");
+
+        let empero = request_body(&mk("empero"), "sys", "prompt", 512);
+        assert_eq!(empero["chat_template_kwargs"]["enable_thinking"], false);
+        assert!(empero.get("thinking").is_none());
     }
 }

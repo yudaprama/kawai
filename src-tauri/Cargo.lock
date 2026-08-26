@@ -3555,11 +3555,11 @@ dependencies = [
 [[package]]
 name = "kawai-constants"
 version = "0.1.0"
-source = "git+https://github.com/yudaprama/kawai-vault#9188e5744b29d3f08174dac8586ad982287e0258"
+source = "git+https://github.com/yudaprama/kawai-vault#43b2829f9b3eaa139e726ea077127f1ec4225ba0"
 dependencies = [
  "kawai-vault",
  "lazy_static",
- "rand 0.8.7",
+ "rand 0.9.5",
 ]
 
 [[package]]
@@ -3588,7 +3588,7 @@ dependencies = [
 [[package]]
 name = "kawai-vault"
 version = "0.1.0"
-source = "git+https://github.com/yudaprama/kawai-vault#9188e5744b29d3f08174dac8586ad982287e0258"
+source = "git+https://github.com/yudaprama/kawai-vault#43b2829f9b3eaa139e726ea077127f1ec4225ba0"
 dependencies = [
  "base64 0.22.1",
 ]
