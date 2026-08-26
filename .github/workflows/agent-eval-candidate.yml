@@ -140,6 +140,8 @@ jobs:
           # Unset, agent_eval gates on ALL scenarios (usize::MAX clamped to
           # the total) and exits 1 on any miss — that is ci.yml's behavior.
           EVAL_MIN_PASS: "0"
+          # Raw model output for failed scenarios rides the report artifact.
+          EVAL_DEBUG: "1"
         run: |
           set -uo pipefail
           REPORTS=${{ github.workspace }}/reports

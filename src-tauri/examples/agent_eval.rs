@@ -113,7 +113,15 @@ const SCENARIOS: &[Scenario] = &[
 const ANALYTICS_SYSTEM: &str = "You are a data analysis assistant. The user's library contains these files:\n\
 - doc1 = sales_2026.csv (columns: produk [text], kategori [text], pendapatan [integer], jumlah [integer], tanggal [date YYYY-MM-DD])\n\
 - doc2 = transactions.xlsx (sheets: Sales, Returns; Sales columns: produk [text], kategori [text], pendapatan [integer], tanggal [date YYYY-MM-DD])\n\
-- doc3 = prices_2026.csv (columns: ts [date YYYY-MM-DD], open [float], high [float], low [float], close [float], volume [float]; one row per trading day, oldest first)\n";
+- doc3 = prices_2026.csv (columns: ts [date YYYY-MM-DD], open [float], high [float], low [float], close [float], volume [float]; one row per trading day, row order NOT guaranteed)\n\
+Rules:\n\
+- fileId is ALWAYS the docN handle from the list above (\"doc1\", \"doc2\", \"doc3\") — never a filename.\n\
+- Questions asking FOR data (sums, counts, averages, rows) go straight to data_query or data_ta — no discovery round-trip. Only literal column/sheet questions get data_schema.\n\
+- Ranking asks (\"top N\", \"highest first\") need sortBy + descending=true; \"first N rows\" needs limit; indicator folds always pass timestamp, plus the role columns each indicator needs (high/low for atr/tr/cci/stoch/kc/ce, volume for obv/mfi).\n\
+Examples of the exact reply format — ONE call:<name>{...} line per reply:\n\
+User: Show the top 3 products by total revenue.\ncall:data_query{\"fileId\":\"doc1\",\"groupBy\":[\"produk\"],\"aggregations\":[{\"column\":\"pendapatan\",\"function\":\"sum\",\"alias\":\"total\"}],\"sortBy\":\"total\",\"descending\":true}\n\
+User: Show me the first 5 rows with only produk and pendapatan.\ncall:data_query{\"fileId\":\"doc1\",\"columns\":[\"produk\",\"pendapatan\"],\"limit\":5}\n\
+User: Compute RSI(14).\ncall:data_ta{\"fileId\":\"doc3\",\"timestamp\":\"ts\",\"close\":\"close\",\"indicators\":[{\"kind\":\"rsi\"}]}\n";
 
 const ANALYTICS_TOOLS: &str = r#"[
   {"type":"function","function":{"name":"data_schema","description":"REQUIRED before the first data_query on a file. Returns the column names, data types, sample values and row count of a stored tabular file (csv/parquet/Excel), plus the sheet names for Excel files.","parameters":{"type":"object","properties":{"fileId":{"type":"string","description":"File id from office_list_files or the attachment block"},"sheet":{"type":"string","description":"Excel sheet name. Optional — defaults to the first sheet with data."}},"required":["fileId"]}}},
@@ -138,8 +146,9 @@ const ANALYTICS_SCENARIOS: &[Scenario] = &[
     // Implicit row_count: group_by alone, no metric invented.
     Scenario("A04 count-per-group", "How many rows are there for each kategori?", Some("data_query"),
         &[("fileId", "==doc1"), ("groupBy/0", "==kategori")]),
-    // Date range from a natural-language month (gte the month start).
-    Scenario("A05 date-filter", "Show only January 2026 transactions.", Some("data_query"),
+    // Date range from a natural-language month (gte the month start). Names
+    // the dataset ("sales") — "transactions" would collide with doc2's name.
+    Scenario("A05 date-filter", "Show only the January 2026 rows from the sales CSV.", Some("data_query"),
         &[("fileId", "==doc1"), ("filters/0/value", "re:2026-01"), ("filters/0/operator", "in:gte|gt|eq")]),
     // Avg per group, ranked.
     Scenario("A06 avg-per-group", "Average revenue per product, highest first.", Some("data_query"),
