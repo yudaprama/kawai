@@ -295,8 +295,9 @@ pub struct ChartToolArgs {
     pub q: analytics::QueryArgs,
     pub mark: analytics::chart::ChartMark,
     pub x: String,
-    pub y: String,
+    pub y: Option<String>,
     pub color: Option<String>,
+    pub stack: Option<analytics::chart::StackMode>,
     pub title: Option<String>,
 }
 
@@ -314,7 +315,7 @@ impl AgentTool for DataChartTool {
     type Error = DataToolError;
 
     fn description(&self) -> String {
-        "Render a chart (bar/line/point/area) from a stored tabular file and save it as an svg the user sees rendered. Takes the same filters/groupBy/aggregations/sortBy as data_query, plus mark, x (category/time column), y (numeric column or aggregation alias), optional color (grouping column) and title. x and y must appear in the query result — for aggregates use the group_by column as x and the aggregation alias as y.".into()
+        "Render a chart (bar/line/point/area/histogram) from a stored tabular file and save it as an svg the user sees rendered. Takes the same filters/groupBy/aggregations/sortBy as data_query, plus mark, x (category/time column; numeric column for histogram), y (numeric column or aggregation alias — omit for histogram, which counts rows itself), optional color (grouping column), stack (bar/area composition of color series) and title. x and y must appear in the query result — for aggregates use the group_by column as x and the aggregation alias as y.".into()
     }
 
     fn parameters(&self) -> Value {
@@ -323,11 +324,12 @@ impl AgentTool for DataChartTool {
             "properties": {
                 "fileId": { "type": "string", "description": "File id from office_list_files or the attachment block" },
                 "sheet": { "type": "string", "description": "Excel sheet name. Optional — defaults to the first sheet with data." },
-                "mark": { "type": "string", "enum": ["bar","line","point","area"], "description": "bar: category comparisons; line: trends over time; point: relationships; area: cumulative volume." },
-                "x": { "type": "string", "description": "Horizontal-axis column in the query result (category, label, or date)." },
-                "y": { "type": "string", "description": "Vertical-axis NUMERIC column in the query result — often an aggregation alias (e.g. \"total\" from sum)." },
+                "mark": { "type": "string", "enum": ["bar","line","point","area","histogram"], "description": "bar: category comparisons; line: trends over time; point: relationships; area: cumulative volume; histogram: distribution of one numeric column (omit y — row counts are computed)." },
+                "x": { "type": "string", "description": "Horizontal-axis column in the query result (category, label, or date; numeric for histogram)." },
+                "y": { "type": "string", "description": "Vertical-axis NUMERIC column in the query result — often an aggregation alias (e.g. \"total\" from sum). OMIT for histogram." },
                 "color": { "type": "string", "description": "Optional grouping column — draws one series per distinct value." },
-                "title": { "type": "string", "description": "Chart title. Optional — defaults to \"<y> by <x>\"." },
+                "stack": { "type": "string", "enum": ["stacked","normalized","grouped"], "description": "How bar/area composes the color series: stacked (cumulative), normalized (100% share), grouped (side by side). Needs color." },
+                "title": { "type": "string", "description": "Chart title. Optional — defaults to \"<y> by <x>\" (\"distribution of <x>\" for histogram)." },
                 "filters": {
                     "type": "array",
                     "description": "WHERE conditions, AND-combined (same as data_query).",
@@ -359,7 +361,7 @@ impl AgentTool for DataChartTool {
                 "descending": { "type": "boolean", "description": "Default false." },
                 "limit": { "type": "integer", "description": "Max rows plotted. Default 500, max 2000." }
             },
-            "required": ["fileId", "mark", "x", "y"]
+            "required": ["fileId", "mark", "x"]
         })
     }
 
@@ -371,8 +373,9 @@ impl AgentTool for DataChartTool {
             analytics::chart::ChartMark::Line => "line",
             analytics::chart::ChartMark::Point => "point",
             analytics::chart::ChartMark::Area => "area",
+            analytics::chart::ChartMark::Histogram => "histogram",
         };
-        let name = chart_file_name(args.title.as_deref(), &args.y, &args.x);
+        let name = chart_file_name(args.title.as_deref(), args.y.as_deref(), &args.x);
         let rendered = run_blocking(move || {
             let path = resolve_tabular(&user, &args.file_id)?;
             let spec = analytics::chart::ChartSpec {
@@ -380,6 +383,7 @@ impl AgentTool for DataChartTool {
                 x: args.x,
                 y: args.y,
                 color: args.color,
+                stack: args.stack,
                 title: args.title,
             };
             analytics::chart::render(&path, args.sheet.as_deref(), &args.q, &spec)
@@ -406,10 +410,11 @@ impl AgentTool for DataChartTool {
 
 /// Timestamped store name: re-rendering the same chart creates a fresh file
 /// instead of colliding with the previous one.
-fn chart_file_name(title: Option<&str>, y: &str, x: &str) -> String {
-    let base = title
-        .map(str::to_string)
-        .unwrap_or_else(|| format!("{y} by {x}"));
+fn chart_file_name(title: Option<&str>, y: Option<&str>, x: &str) -> String {
+    let base = title.map(str::to_string).unwrap_or_else(|| match y {
+        Some(y) => format!("{y} by {x}"),
+        None => format!("distribution of {x}"),
+    });
     let slug: String = base
         .to_ascii_lowercase()
         .chars()

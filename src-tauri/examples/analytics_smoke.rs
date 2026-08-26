@@ -415,5 +415,40 @@ async fn main() {
     }
     println!("[analytics_smoke] PASS data_chart error contract: {err}");
 
+    // Histogram: distribution of the raw sales values (no y — count implied).
+    let out = data::DataChartTool(user.to_string(), 1)
+        .call(
+            serde_json::from_value(serde_json::json!({
+                "fileId": stored.id, "mark": "histogram", "x": "sales"
+            }))
+            .expect("chart args"),
+        )
+        .await
+        .expect("data_chart(histogram)");
+    let hv: Value = serde_json::from_str(&out).unwrap();
+    if hv["mark"] != "histogram" || hv["rows"].as_i64() != Some(3) {
+        die(&format!("histogram reply wrong: {out}"));
+    }
+    println!("[analytics_smoke] PASS data_chart histogram: distribution svg");
+
+    // Stacked bar with a color series composes to cumulative totals.
+    let stack_csv = "bulan,nilai,wilayah\n1,10,utara\n1,5,selatan\n2,20,utara\n2,8,selatan\n";
+    let stacked = store::import_bytes(user, "smoke-stack.csv", stack_csv.as_bytes()).expect("import stack csv");
+    let out = data::DataChartTool(user.to_string(), 1)
+        .call(
+            serde_json::from_value(serde_json::json!({
+                "fileId": stacked.id, "mark": "bar", "x": "bulan", "y": "nilai",
+                "color": "wilayah", "stack": "stacked"
+            }))
+            .expect("chart args"),
+        )
+        .await
+        .expect("data_chart(stacked)");
+    let sv: Value = serde_json::from_str(&out).unwrap();
+    if sv["rows"].as_i64() != Some(4) {
+        die(&format!("stacked reply wrong: {out}"));
+    }
+    println!("[analytics_smoke] PASS data_chart stacked bar with color series");
+
     println!("[analytics_smoke] ALL PASS");
 }
