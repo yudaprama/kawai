@@ -255,6 +255,10 @@ pub mod analytics;
 // feature — sqlx stays out of builds that only serve local SQLite.
 #[cfg(feature = "analytics-sql")]
 pub mod sql_remote;
+// GraphRAG (libSQL-native, feature "graph"): Naive/Local/Global/Hybrid/Mix
+// over one DB file. No office/analytics dependency.
+#[cfg(feature = "graph")]
+pub mod graph;
 
 pub use db::*;
 

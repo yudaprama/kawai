@@ -570,6 +570,12 @@ fn toolset_for(
             ToolSet::default()
         }
     };
+    // GraphRAG tools ride with the office agent when the graph feature is on
+    // (libSQL-native, no extra deps). Zero cost when off.
+    #[cfg(feature = "graph")]
+    if agent_id == OFFICE_AGENT_ID {
+        crate::logic::graph::extend_toolset(&mut set, user_id);
+    }
     // Turn-memory recall rides with every toolset that can produce
     // oversized outputs — pure-local agents included (the loop intercepts
     // it before rig dispatch; see ArtifactRecall).
@@ -590,9 +596,9 @@ fn toolset_for(
     }
     if remote.is_none() {
         // Pure-local: only agents with domain tools get a toolset (the
-        // pre-hybrid behavior, byte-for-byte).
+        // pre-hybrid behavior, byte-for-byte). Graph rides with office when on.
         return match agent_id {
-            #[cfg(feature = "office")]
+            #[cfg(any(feature = "office", feature = "graph"))]
             OFFICE_AGENT_ID => Some(set),
             #[cfg(all(feature = "binance", not(target_os = "android")))]
             BINANCE_AGENT_ID => Some(set),

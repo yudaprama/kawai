@@ -95,6 +95,12 @@ pub fn run() {
         commands::office_read_file,
         commands::tauri_open_file,
         commands::agent_chat,
+        commands::graph_index_file,
+        commands::graph_index_text,
+        commands::graph_search,
+        commands::graph_list,
+        commands::graph_forget,
+        commands::graph_stats,
         commands::frontend_log
     ]);
 
@@ -145,6 +151,12 @@ pub fn run() {
         commands::sql_profile_delete,
         commands::sql_profile_test,
         commands::agent_chat,
+        commands::graph_index_file,
+        commands::graph_index_text,
+        commands::graph_search,
+        commands::graph_list,
+        commands::graph_forget,
+        commands::graph_stats,
         commands::frontend_log
     ]);
 
@@ -172,6 +184,12 @@ pub fn run() {
         commands::local_llm_unload,
         commands::local_llm_get_test_tools,
         commands::agent_chat,
+        commands::graph_index_file,
+        commands::graph_index_text,
+        commands::graph_search,
+        commands::graph_list,
+        commands::graph_forget,
+        commands::graph_stats,
         commands::frontend_log
     ]);
 
@@ -208,6 +226,12 @@ pub fn run() {
         commands::office_restore_backup,
         commands::office_read_file,
         commands::tauri_open_file,
+        commands::graph_index_file,
+        commands::graph_index_text,
+        commands::graph_search,
+        commands::graph_list,
+        commands::graph_forget,
+        commands::graph_stats,
         commands::frontend_log
     ]);
 
@@ -228,6 +252,12 @@ pub fn run() {
         commands::append_chat_message,
         commands::delete_chat_session,
         commands::generate_session_title,
+        commands::graph_index_file,
+        commands::graph_index_text,
+        commands::graph_search,
+        commands::graph_list,
+        commands::graph_forget,
+        commands::graph_stats,
         commands::frontend_log
     ]);
 

@@ -688,6 +688,126 @@ pub fn office_capabilities(
     Ok(logic::office::capabilities())
 }
 
+// ── GraphRAG ops (feature "graph") ────────────────────────────────────────
+// Always compiled (so lib.rs generate_handler is static); inner dispatch is
+// cfg-gated so the binary is zero-cost when the feature is off.
+
+#[tauri::command]
+pub async fn graph_index_file(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<serde_json::Value, String> {
+    let user_id = session_user_id(&session)?;
+    #[cfg(feature = "graph")]
+    {
+        let (nodes, edges) = logic::graph::graph_index_file(user_id, file_id).await?;
+        Ok(serde_json::json!({"nodes": nodes, "edges": edges}))
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = (user_id, file_id);
+        Err("graph feature not enabled (build with --features graph)".into())
+    }
+}
+
+#[tauri::command]
+pub async fn graph_index_text(
+    file_id: String,
+    text: String,
+    session: State<'_, Session>,
+) -> Result<serde_json::Value, String> {
+    let user_id = session_user_id(&session)?;
+    #[cfg(feature = "graph")]
+    {
+        let (nodes, edges) = logic::graph::graph_index_text(&user_id, &file_id, &text).await?;
+        Ok(serde_json::json!({"nodes": nodes, "edges": edges}))
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = (user_id, file_id, text);
+        Err("graph feature not enabled (build with --features graph)".into())
+    }
+}
+
+#[tauri::command]
+pub async fn graph_search(
+    query: String,
+    mode: Option<String>,
+    limit: Option<usize>,
+    session: State<'_, Session>,
+) -> Result<serde_json::Value, String> {
+    let user_id = session_user_id(&session)?;
+    #[cfg(feature = "graph")]
+    {
+        let m = match mode.as_deref().unwrap_or("hybrid") {
+            "naive" => logic::graph::GraphSearchMode::Naive,
+            "local" => logic::graph::GraphSearchMode::Local,
+            "global" => logic::graph::GraphSearchMode::Global,
+            "mix" => logic::graph::GraphSearchMode::Mix,
+            _ => logic::graph::GraphSearchMode::Hybrid,
+        };
+        let hits = logic::graph::graph_search(user_id, query, Some(m), limit).await?;
+        Ok(serde_json::to_value(hits).unwrap_or(serde_json::Value::Array(vec![])))
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = (user_id, query, mode, limit);
+        Err("graph feature not enabled (build with --features graph)".into())
+    }
+}
+
+#[tauri::command]
+pub async fn graph_list(
+    limit: Option<usize>,
+    session: State<'_, Session>,
+) -> Result<serde_json::Value, String> {
+    let user_id = session_user_id(&session)?;
+    #[cfg(feature = "graph")]
+    {
+        let (nodes, edges) = logic::graph::graph_list(&user_id, limit).await?;
+        Ok(serde_json::json!({"nodes": nodes, "edges": edges}))
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = (user_id, limit);
+        Err("graph feature not enabled (build with --features graph)".into())
+    }
+}
+
+#[tauri::command]
+pub async fn graph_forget(
+    file_ids: Vec<String>,
+    session: State<'_, Session>,
+) -> Result<usize, String> {
+    let user_id = session_user_id(&session)?;
+    #[cfg(feature = "graph")]
+    {
+        logic::graph::graph_forget(&user_id, file_ids).await
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = (user_id, file_ids);
+        Err("graph feature not enabled (build with --features graph)".into())
+    }
+}
+
+#[tauri::command]
+pub async fn graph_stats(
+    session: State<'_, Session>,
+) -> Result<serde_json::Value, String> {
+    let user_id = session_user_id(&session)?;
+    #[cfg(feature = "graph")]
+    {
+        let stats = logic::graph::graph_stats(&user_id).await?;
+        Ok(serde_json::to_value(stats).unwrap_or(serde_json::json!({})))
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = user_id;
+        Err("graph feature not enabled (build with --features graph)".into())
+    }
+}
+
 /// Authenticated streaming: agent chat (prompt-based tool calling on the
 /// on-device model). Tool chatter arrives as toolCall/toolResult events; only
 /// the final answer is persisted. Same stream_id + Channel + cancellation

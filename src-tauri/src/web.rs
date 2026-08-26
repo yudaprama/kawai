@@ -737,6 +737,152 @@ async fn tauri_open_file_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
+// ── GraphRAG ops (feature "graph") ────────────────────────────────────────
+// Always compiled so the router is static; inner dispatch is cfg-gated.
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphIndexFileRequest {
+    file_id: String,
+}
+async fn graph_index_file_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<GraphIndexFileRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    #[cfg(feature = "graph")]
+    {
+        let (n, e) = logic::graph::graph_index_file(claims.sub, req.file_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        Ok(Json(serde_json::json!({"nodes": n, "edges": e})))
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = (claims, req);
+        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled (build with --features graph)".into()))
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphIndexTextRequest {
+    file_id: String,
+    text: String,
+}
+async fn graph_index_text_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<GraphIndexTextRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    #[cfg(feature = "graph")]
+    {
+        let (n, e) = logic::graph::graph_index_text(&claims.sub, &req.file_id, &req.text)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        Ok(Json(serde_json::json!({"nodes": n, "edges": e})))
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = (claims, req);
+        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled".into()))
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphSearchRequest {
+    query: String,
+    mode: Option<String>,
+    limit: Option<usize>,
+}
+async fn graph_search_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<GraphSearchRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    #[cfg(feature = "graph")]
+    {
+        let m = match req.mode.as_deref().unwrap_or("hybrid") {
+            "naive" => logic::graph::GraphSearchMode::Naive,
+            "local" => logic::graph::GraphSearchMode::Local,
+            "global" => logic::graph::GraphSearchMode::Global,
+            "mix" => logic::graph::GraphSearchMode::Mix,
+            _ => logic::graph::GraphSearchMode::Hybrid,
+        };
+        let hits = logic::graph::graph_search(claims.sub, req.query, Some(m), req.limit)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        Ok(Json(serde_json::to_value(hits).unwrap_or(serde_json::Value::Array(vec![]))))
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = (claims, req);
+        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled".into()))
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphListRequest {
+    limit: Option<usize>,
+}
+async fn graph_list_handler(
+    Extension(claims): Extension<Claims>,
+    body: Option<Json<GraphListRequest>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    #[cfg(feature = "graph")]
+    {
+        let lim = body.and_then(|Json(r)| r.limit);
+        let (nodes, edges) = logic::graph::graph_list(&claims.sub, lim)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        Ok(Json(serde_json::json!({"nodes": nodes, "edges": edges})))
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = (claims, body);
+        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled".into()))
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GraphForgetRequest {
+    file_ids: Vec<String>,
+}
+async fn graph_forget_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<GraphForgetRequest>,
+) -> Result<Json<usize>, (StatusCode, String)> {
+    #[cfg(feature = "graph")]
+    {
+        logic::graph::graph_forget(&claims.sub, req.file_ids)
+            .await
+            .map(Json)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = (claims, req);
+        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled".into()))
+    }
+}
+
+async fn graph_stats_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    #[cfg(feature = "graph")]
+    {
+        let stats = logic::graph::graph_stats(&claims.sub)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        Ok(Json(serde_json::to_value(stats).unwrap_or(serde_json::json!({}))))
+    }
+    #[cfg(not(feature = "graph"))]
+    {
+        let _ = claims;
+        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled".into()))
+    }
+}
+
 /// Protected streaming: agent chat (tool-calling loop) via SSE.
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
@@ -933,6 +1079,16 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/sql_profile_save", post(sql_profile_save_handler))
         .route("/api/sql_profile_delete", post(sql_profile_delete_handler))
         .route("/api/sql_profile_test", post(sql_profile_test_handler));
+
+    // GraphRAG: always registered (handler is no-op when feature off) so the
+    // URL contract is stable; real work only with --features graph.
+    let protected = protected
+        .route("/api/graph_index_file", post(graph_index_file_handler))
+        .route("/api/graph_index_text", post(graph_index_text_handler))
+        .route("/api/graph_search", post(graph_search_handler))
+        .route("/api/graph_list", post(graph_list_handler))
+        .route("/api/graph_forget", post(graph_forget_handler))
+        .route("/api/graph_stats", post(graph_stats_handler));
 
     Router::new()
         .merge(public)

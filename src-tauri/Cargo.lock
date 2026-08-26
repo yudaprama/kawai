@@ -2629,6 +2629,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "graph"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "kawai-tools",
+ "regex",
+ "serde",
+ "serde_json",
+ "text-splitter",
+ "tokio",
+]
+
+[[package]]
 name = "grid"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3579,6 +3592,7 @@ dependencies = [
  "dotenvy",
  "futures-core",
  "futures-util",
+ "graph",
  "jsonwebtoken",
  "kawai-constants 0.1.0",
  "kawai-embedding",

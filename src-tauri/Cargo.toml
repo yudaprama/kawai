@@ -100,6 +100,9 @@ binance = { path = "../crates/binance", optional = true }
 # the polars-backed components/analytics crate. Implies `office` — the
 # data files live in the office store.
 analytics = { path = "../crates/analytics", optional = true }
+# libSQL-native GraphRAG engine — pure crate (crates/graph). Feature-gated
+# so it can be included/excluded as a module (@crates/graph).
+graph = { path = "../crates/graph", optional = true }
 
 # Remote SQL sources for the analytics snapshot tools (data_tables /
 # data_import over Postgres/MySQL). rustls on purpose — mobile has no
@@ -118,6 +121,10 @@ libc = "0.2"
 default = []
 web = ["dep:axum", "dep:tower-http"]
 litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert"]
+# GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
+# Include with --features graph, exclude by omitting it (zero cost when off).
+# Standalone — includes the pure `graph` crate + its DB deps.
+graph = ["dep:graph", "dep:kawai-embedding", "dep:text-splitter", "dep:regex"]
 # Web read/search tiering as a standalone feature so any agent can reuse the
 # tools without `office`; `office` implies it (behavior-preserving).
 webread = ["dep:webread", "dep:browser", "dep:url"]

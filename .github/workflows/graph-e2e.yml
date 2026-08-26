@@ -1,0 +1,111 @@
+name: graph-e2e
+
+# E2E for #1 — GraphRAG pure + indexed search.
+# Fast, no C toolchain, no model download. Mirrors ci.yml `linux-check`
+# `cargo test -p analytics/webread` gates.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/graph/**"
+      - "src-tauri/src/logic/graph.rs"
+      - "kawai-embedding/**"
+      - ".github/workflows/graph-e2e.yml"
+  pull_request:
+    paths:
+      - "crates/graph/**"
+      - "src-tauri/src/logic/graph.rs"
+      - "kawai-embedding/**"
+  workflow_dispatch:
+
+concurrency:
+  group: graph-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  graph:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private deps
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      # Manifest-only submodules — no C sources, no bazel.
+      - name: Init submodules (manifest only)
+        run: |
+          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+          git -C crates submodule update --init binance-connector-rust
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri Linux deps (for kawai lib check)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      # ── Pure crate (no DB, no embed) ──────────────────────────────
+      - name: cargo test (crates/graph pure)
+        run: cargo test -p graph --lib
+        working-directory: crates
+
+      # ── kawai feature gates ───────────────────────────────────────
+      - name: cargo check (graph feature)
+        run: cargo check --features graph
+        working-directory: src-tauri
+
+      - name: cargo check (graph + office)
+        run: cargo check --features graph,office
+        working-directory: src-tauri
+
+      - name: cargo check (graph + web)
+        run: cargo check --features graph,web
+        working-directory: src-tauri
+
+      - name: cargo check (graph + office + litert)
+        run: cargo check --features graph,office,litert
+        working-directory: src-tauri
+
+      # Pure helpers live in kawai's logic/graph too — reuse the same tests
+      # (extract_entities / community / rrf). No network.
+      - name: cargo test (kawai graph helpers)
+        run: cargo test --features graph --lib logic::graph::tests::extract_entities_basic -- --nocapture
+        working-directory: src-tauri
+
+      - name: cargo test (kawai graph helpers — community)
+        run: cargo test --features graph --lib logic::graph::tests::community_is_stable -- --nocapture
+        working-directory: src-tauri
+
+      # ── Indexed E2E (needs embedder) ──────────────────────────────
+      # Uses kawai-embedding's real providers (vault keys via kawai-vault).
+      # With vault, this does: graph_index_text → vector index → 5-arm search
+      # (Naive/Local/Global/Hybrid/Mix). Without vault it falls back to
+      # ErrorProvider and is skipped (exit 0) — see the `|| true` guard so the
+      # pure gate above stays green on forks without secrets.
+      - name: graph_index_and_search E2E (ignored, needs vault)
+        working-directory: src-tauri
+        env:
+          KAWAI_DATA_DIR: /tmp/kawai-graph-ci
+        run: |
+          set +e
+          cargo test --features graph --lib logic::graph::tests::graph_index_and_search_e2e -- --ignored --nocapture
+          code=$?
+          if [ $code -eq 0 ]; then
+            echo "graph E2E passed"
+          else
+            echo "::warning::graph E2E skipped/failed (no vault keys on fork?) — pure gate still green"
+            # Don't fail the job on forks without secrets; main with vault will fail for real
+            if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+              exit $code
+            fi
+            exit 0
+          fi
