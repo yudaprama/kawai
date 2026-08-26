@@ -315,7 +315,7 @@ impl AgentTool for DataChartTool {
     type Error = DataToolError;
 
     fn description(&self) -> String {
-        "Render a chart (bar/line/point/area/histogram) from a stored tabular file and save it as an svg the user sees rendered. Takes the same filters/groupBy/aggregations/sortBy as data_query, plus mark, x (category/time column; numeric column for histogram), y (numeric column or aggregation alias — omit for histogram, which counts rows itself), optional color (grouping column), stack (bar/area composition of color series) and title. x and y must appear in the query result — for aggregates use the group_by column as x and the aggregation alias as y.".into()
+        "Render a chart (bar/line/point/area/histogram/pie) from a stored tabular file and save it as an svg the user sees rendered. Takes the same filters/groupBy/aggregations/sortBy as data_query, plus mark, x (category/time column; numeric column for histogram), y (numeric column or aggregation alias — omit for histogram, which counts rows itself), optional color (grouping column — omit for pie), stack (bar/area composition of color series) and title. x and y must appear in the query result — for aggregates use the group_by column as x and the aggregation alias as y. Pie: one row per category (aggregate with groupBy + sum first; ≤20 slices), largest slice sorted first; single-series bar slices are auto-sorted descending by y when no sortBy is given. Charts plot at most 2000 rows — aggregate or filter long series first.".into()
     }
 
     fn parameters(&self) -> Value {
@@ -324,10 +324,10 @@ impl AgentTool for DataChartTool {
             "properties": {
                 "fileId": { "type": "string", "description": "File id from office_list_files or the attachment block" },
                 "sheet": { "type": "string", "description": "Excel sheet name. Optional — defaults to the first sheet with data." },
-                "mark": { "type": "string", "enum": ["bar","line","point","area","histogram"], "description": "bar: category comparisons; line: trends over time; point: relationships; area: cumulative volume; histogram: distribution of one numeric column (omit y — row counts are computed)." },
+                "mark": { "type": "string", "enum": ["bar","line","point","area","histogram","pie"], "description": "bar: category comparisons (auto-sorted descending by y when single-series and no sortBy); line: trends over time; point: relationships; area: cumulative volume; histogram: distribution of one numeric column (omit y — row counts are computed); pie: share of a total per category (aggregate with groupBy + sum first; ≤20 slices; largest slice sorted first)." },
                 "x": { "type": "string", "description": "Horizontal-axis column in the query result (category, label, or date; numeric for histogram)." },
-                "y": { "type": "string", "description": "Vertical-axis NUMERIC column in the query result — often an aggregation alias (e.g. \"total\" from sum). OMIT for histogram." },
-                "color": { "type": "string", "description": "Optional grouping column — draws one series per distinct value." },
+                "y": { "type": "string", "description": "Vertical-axis NUMERIC column in the query result — often an aggregation alias (e.g. \"total\" from sum). OMIT for histogram; REQUIRED for pie (the slice value)." },
+                "color": { "type": "string", "description": "Optional grouping column — draws one series per distinct value. Omit for pie (category x is the slice label)." },
                 "stack": { "type": "string", "enum": ["stacked","normalized","grouped"], "description": "How bar/area composes the color series: stacked (cumulative), normalized (100% share), grouped (side by side). Needs color." },
                 "title": { "type": "string", "description": "Chart title. Optional — defaults to \"<y> by <x>\" (\"distribution of <x>\" for histogram)." },
                 "filters": {
@@ -374,6 +374,7 @@ impl AgentTool for DataChartTool {
             analytics::chart::ChartMark::Point => "point",
             analytics::chart::ChartMark::Area => "area",
             analytics::chart::ChartMark::Histogram => "histogram",
+            analytics::chart::ChartMark::Pie => "pie",
         };
         let name = chart_file_name(args.title.as_deref(), args.y.as_deref(), &args.x);
         let rendered = run_blocking(move || {

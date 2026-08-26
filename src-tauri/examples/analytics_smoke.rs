@@ -450,5 +450,53 @@ async fn main() {
     }
     println!("[analytics_smoke] PASS data_chart stacked bar with color series");
 
+    // Pie: share per category — one row per slice (aggregated).
+    let out = data::DataChartTool(user.to_string(), 1)
+        .call(
+            serde_json::from_value(serde_json::json!({
+                "fileId": stored.id,
+                "mark": "pie",
+                "x": "city",
+                "y": "total",
+                "groupBy": ["city"],
+                "aggregations": [
+                    { "column": "sales", "function": "sum", "alias": "total" }
+                ],
+                "title": "Share by city"
+            }))
+            .expect("chart args"),
+        )
+        .await
+        .expect("data_chart(pie)");
+    let pv: Value = serde_json::from_str(&out).unwrap();
+    if pv["mark"] != "pie" || pv["rows"].as_i64() != Some(2) {
+        die(&format!("pie reply wrong: {out}"));
+    }
+    let pie_id = pv["fileId"].as_str().unwrap_or_else(|| die("pie fileId missing")).to_string();
+    let (pi, pb) = store::read_file(user, &pie_id).expect("read pie svg");
+    let psvg = String::from_utf8(pb).unwrap();
+    if pi.ext != "svg" || !psvg.starts_with("<svg") || !psvg.contains("Share by city") {
+        die(&format!("stored pie wrong: {} {} bytes", pi.ext, psvg.len()));
+    }
+    println!("[analytics_smoke] PASS data_chart pie (polar, auto-sorted) → {} bytes", psvg.len());
+
+    // Pie with a color channel is a guidance error (category is the slice label).
+    let err = data::DataChartTool(user.to_string(), 1)
+        .call(
+            serde_json::from_value(serde_json::json!({
+                "fileId": stored.id, "mark": "pie", "x": "city", "y": "total",
+                "color": "city",
+                "groupBy": ["city"],
+                "aggregations": [{ "column": "sales", "function": "sum", "alias": "total" }]
+            }))
+            .expect("chart args"),
+        )
+        .await
+        .expect_err("pie color must fail");
+    if !err.0.contains("color") {
+        die(&format!("pie color error lacks guidance: {err}"));
+    }
+    println!("[analytics_smoke] PASS data_chart pie error contract: {err}");
+
     println!("[analytics_smoke] ALL PASS");
 }

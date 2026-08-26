@@ -61,7 +61,7 @@ async fn run_turn(
                     text.chars().count()
                 ));
             }
-            AgentChatEvent::ToolResult { tool, ok, summary } => {
+            AgentChatEvent::ToolResult { tool, ok, summary, .. } => {
                 if saw_cloud_call && tool == "deep_write" {
                     cloud_summary = summary;
                 }
@@ -69,6 +69,7 @@ async fn run_turn(
             }
             AgentChatEvent::Finished => events.push("finished".into()),
             AgentChatEvent::Error { message } => events.push(format!("ERROR: {message}")),
+            AgentChatEvent::ConfirmationRequest { .. } => events.push("confirmation_request".into()),
         }
     }
     println!("  answer: {answer_chars} chars · cloud_call={saw_cloud_call}");
