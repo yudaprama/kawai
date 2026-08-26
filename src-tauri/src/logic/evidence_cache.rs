@@ -1,8 +1,9 @@
 //! Session-scoped evidence cache for the agent loop (cross-turn memory).
 //!
-//! `TurnMemory` dies with the turn; this cache lets a LATER turn of the SAME
-//! session reuse a prior read of an unchanged local file without
-//! re-dispatching the tool. Scope rules:
+//! The persistent process log (`session_artifacts`) keeps tool RESULTS
+//! recallable across turns; this cache complements it on the execution side:
+//! a LATER turn of the SAME session reuses a prior read of an unchanged local
+//! file without re-dispatching the tool. Scope rules:
 //!
 //! - Keyed `(user_id, session_id)` — switching sessions parks the old
 //!   session's entries (resumable on switch-back), never crosses sessions;

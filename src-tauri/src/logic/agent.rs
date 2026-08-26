@@ -1037,12 +1037,20 @@ fn compact_args(params: &Value) -> Value {
 /// a char budget (oldest turns drop first). Each message is individually
 /// capped; the NEWEST message gets the larger [`TRANSCRIPT_LAST_MSG_CHARS`]
 /// cap and is ALWAYS included (partially if needed) — follow-up turns center
-/// on it. Empty string when there is nothing (left) to replay.
+/// on it. The evidence digest always ships too: its room is reserved before
+/// any message claims budget. Empty string when there is nothing (left) to
+/// replay.
 #[cfg(feature = "litert")]
-fn compact_transcript(rows: &[db::ChatMessage], budget: usize) -> String {
+fn compact_transcript(rows: &[db::ChatMessage], budget: usize, evidence_digest: &str) -> String {
     if rows.is_empty() || budget == 0 {
         return String::new();
     }
+    let digest_block = if evidence_digest.is_empty() {
+        String::new()
+    } else {
+        format!("\n\n{evidence_digest}")
+    };
+    let msg_budget = budget.saturating_sub(digest_block.chars().count());
     let mut kept: Vec<String> = Vec::new();
     let mut used = 0usize;
     let mut dropped_older = false;
@@ -1052,16 +1060,24 @@ fn compact_transcript(rows: &[db::ChatMessage], budget: usize) -> String {
         } else {
             "ASSISTANT"
         };
-        let cap = if i == rows.len() - 1 {
+        // Clamp every per-message cap so one line (role prefix + possible
+        // ellipsis included) can never exceed `msg_budget` — the digest
+        // reservation then keeps the grand total within `budget`, which the
+        // overflow-retry transcript MUST fit.
+        let cap = (if i == rows.len() - 1 {
             TRANSCRIPT_LAST_MSG_CHARS
         } else {
             TRANSCRIPT_MSG_CHARS
-        };
+        })
+        .min(msg_budget.saturating_sub("ASSISTANT: ".len() + 1));
         let line = format!("{role}: {}", truncate_chars(row.content.trim(), cap));
         let add = line.chars().count() + 1;
         // The newest message is always kept — even when it alone fills the
-        // budget (older turns then drop, which is the right trade).
-        if !kept.is_empty() && used + add > budget {
+        // budget (older turns then drop, which is the right trade). The clamp
+        // above keeps it within `msg_budget`, so the digest reservation can
+        // never push the total past `budget` (the overflow-retry transcript
+        // MUST fit).
+        if !kept.is_empty() && used + add > msg_budget {
             dropped_older = true;
             break;
         }
@@ -1076,6 +1092,7 @@ fn compact_transcript(rows: &[db::ChatMessage], budget: usize) -> String {
     if dropped_older {
         body = format!("(older turns omitted)\n{body}");
     }
+    body.push_str(&digest_block);
     body
 }
 
@@ -1471,6 +1488,7 @@ fn canonical_args_key(value: &Value) -> String {
 /// One stored process result. `content` is the tool's verbatim output body,
 /// already capped at `TOOL_RESULT_ENTRY_MAX_CHARS`.
 #[cfg(feature = "litert")]
+#[derive(Clone)]
 struct TurnArtifact {
     handle: String,
     tool: String,
@@ -1479,16 +1497,67 @@ struct TurnArtifact {
     content: String,
 }
 
-/// Turn-scoped append-only log of completed processes. Touched only inside
-/// the single `agent_chat` stream — no locking needed.
+/// Session-scoped append-only log of completed processes. Restored from the
+/// per-session SQLite table at stream start, so handles stay valid across
+/// turns and restarts; new records flush back to the DB as they are made.
+/// Touched only inside the single `agent_chat` stream — no locking needed.
 #[cfg(feature = "litert")]
 #[derive(Default)]
 struct TurnMemory {
     artifacts: Vec<TurnArtifact>,
+    /// Artifacts already flushed to the DB this stream (`take_unpersisted`
+    /// advances it).
+    persisted: usize,
 }
 
 #[cfg(feature = "litert")]
 impl TurnMemory {
+    /// Seed the log with prior turns' stored results so recall handles keep
+    /// working after an epoch break; numbering continues from here.
+    fn restore(&mut self, prior: Vec<TurnArtifact>) {
+        self.persisted = prior.len();
+        self.artifacts = prior;
+    }
+
+    /// Clone out the artifacts recorded since the last flush and advance the
+    /// cursor — the caller persists them to the session's DB rows.
+    fn take_unpersisted(&mut self) -> Vec<TurnArtifact> {
+        let fresh = self.artifacts[self.persisted.min(self.artifacts.len())..].to_vec();
+        self.persisted = self.artifacts.len();
+        fresh
+    }
+
+    /// One-line inventory of stored results for the replayed transcript: the
+    /// model learns WHICH handles exist across epoch breaks even though the
+    /// bodies do not replay. Oldest-first, capped.
+    fn evidence_digest(&self) -> String {
+        if self.artifacts.is_empty() {
+            return String::new();
+        }
+        const MAX_ITEMS: usize = 24;
+        let mut parts: Vec<String> = self
+            .artifacts
+            .iter()
+            .take(MAX_ITEMS)
+            .map(|a| {
+                format!(
+                    "{} {} {} chars",
+                    a.handle,
+                    a.tool,
+                    a.content.chars().count()
+                )
+            })
+            .collect();
+        if self.artifacts.len() > MAX_ITEMS {
+            parts.push(format!("… {} more", self.artifacts.len() - MAX_ITEMS));
+        }
+        format!(
+            "[Stored tool results from this session's earlier work — call \
+             artifact_recall to read any of them: {}]",
+            parts.join("; ")
+        )
+    }
+
     /// Append one completed process. A repeat of the same tool + resolved args
     /// returns the existing handle — the log grows per DISTINCT step, never
     /// per repeat. Returns the handle ("mem1", "mem2", … sequential).
@@ -1710,6 +1779,27 @@ impl TurnMemory {
     }
 }
 
+/// Flush artifacts recorded since the last flush to the session's persistent
+/// log (best-effort: a failed write only degrades those entries to
+/// turn-scoped visibility; the turn never dies).
+#[cfg(feature = "litert")]
+async fn flush_new_artifacts(user_id: &str, sid: i64, memory: &mut TurnMemory) {
+    for a in memory.take_unpersisted() {
+        if let Err(e) = db::append_session_artifact(
+            user_id,
+            sid,
+            &a.handle,
+            &a.tool,
+            &a.args_key,
+            &a.content,
+        )
+        .await
+        {
+            eprintln!("[agent_chat] artifact persist {} failed: {e}", a.handle);
+        }
+    }
+}
+
 /// A cloud subagent delegation queued for the next loop iteration.
 #[cfg(feature = "litert")]
 struct PendingSubagent {
@@ -1918,12 +2008,35 @@ pub fn agent_chat(
         // loop iteration — one code path for both entry points.
         let mut pending_subagent: Option<PendingSubagent> = None;
         let mut subagent_calls_used = 0usize;
-        // The turn's process log: every completed process (tool result,
-        // recall page) appends one entry. Cloud-subagent materials are
-        // rendered from it on demand — the cloud subagents are stateless and
-        // this is the deterministic hand-off so a delegation never loses what
-        // the model gathered. Oversized bodies page back via artifact_recall.
+        // The process log: every completed process (tool result, recall
+        // page) appends one entry. Cloud-subagent materials are rendered from
+        // it on demand — the cloud subagents are stateless and this is the
+        // deterministic hand-off so a delegation never loses what the model
+        // gathered. Oversized bodies page back via artifact_recall.
+        // Prior turns' entries are restored from the DB so handles survive
+        // epoch breaks (restart / session switch); new records flush back.
         let mut memory = TurnMemory::default();
+        match db::list_session_artifacts(&user_id, sid).await {
+            Ok(rows) => {
+                memory.restore(
+                    rows.into_iter()
+                        .map(|r| TurnArtifact {
+                            handle: r.handle,
+                            tool: r.tool,
+                            args_key: r.args_key,
+                            content: r.content,
+                        })
+                        .collect(),
+                );
+                if !memory.artifacts.is_empty() {
+                    eprintln!(
+                        "[agent_chat] restored {} stored result(s) for session {sid}",
+                        memory.artifacts.len()
+                    );
+                }
+            }
+            Err(e) => eprintln!("[agent_chat] artifact restore failed: {e}"),
+        }
         let turn_started = std::time::Instant::now();
 
         let final_answer = loop {
@@ -2389,7 +2502,8 @@ pub fn agent_chat(
                 } else {
                     TRANSCRIPT_BUDGET_CHARS
                 };
-                let transcript = compact_transcript(&prior_turns, budget);
+                let transcript =
+                    compact_transcript(&prior_turns, budget, &memory.evidence_digest());
                 prompt = build_prompt(persona, toolset.as_ref(), &transcript, &message_for_model);
                 manifest_pending = true;
             }
@@ -2509,8 +2623,11 @@ pub fn agent_chat(
                         // (transcript as materials) instead of failing.
                         if remote.is_some() && subagent_calls_used < MAX_SUBAGENT_CALLS {
                             eprintln!("[agent_chat] malformed fence twice ({detail}) — escalating to deep_write");
-                            let mut materials =
-                                compact_transcript(&prior_turns, TRANSCRIPT_BUDGET_CHARS);
+                            let mut materials = compact_transcript(
+                                &prior_turns,
+                                TRANSCRIPT_BUDGET_CHARS,
+                                &memory.evidence_digest(),
+                            );
                             let package_budget = remote
                                 .as_ref()
                                 .map(|r| r.materials_budget())
@@ -2518,7 +2635,7 @@ pub fn agent_chat(
                             let gathered = memory.materials(&message, package_budget);
                             if !gathered.is_empty() {
                                 materials = format!(
-                                    "{materials}\n\n[tool results gathered this turn]\n{gathered}"
+                                    "{materials}\n\n[tool results gathered this session]\n{gathered}"
                                 )
                                 .trim()
                                 .to_string();
@@ -2578,7 +2695,7 @@ pub fn agent_chat(
                         // The model only ever saw the excerpt slice of each
                         // result; its `materials` is at best a paraphrase of
                         // that slice. The cloud writer needs the full text —
-                        // append the turn's process log unless the model
+                        // append the session's process log unless the model
                         // already embedded it verbatim (probe a mid-slice; a
                         // paraphrase never contains it). The package budget
                         // follows the provider pool: a frontier primary gets
@@ -2591,7 +2708,7 @@ pub fn agent_chat(
                         if !gathered.is_empty() {
                             if !materials_embeds_results(&materials, &gathered) {
                                 materials = format!(
-                                    "{materials}\n\n[tool results gathered this turn]\n{gathered}"
+                                    "{materials}\n\n[tool results gathered this session]\n{gathered}"
                                 )
                                 .trim()
                                 .to_string();
@@ -2601,8 +2718,11 @@ pub fn agent_chat(
                             // conversation") — the small model cannot copy
                             // the history into `materials` itself, so hand it
                             // the session transcript deterministically.
-                            let replay =
-                                compact_transcript(&prior_turns, TRANSCRIPT_BUDGET_CHARS);
+                            let replay = compact_transcript(
+                                &prior_turns,
+                                TRANSCRIPT_BUDGET_CHARS,
+                                &memory.evidence_digest(),
+                            );
                             if !replay.is_empty()
                                 && !materials.contains(&replay)
                             {
@@ -2763,6 +2883,7 @@ pub fn agent_chat(
                                             &format!("{handle}@{offset}"),
                                             page,
                                         );
+                                        flush_new_artifacts(&user_id, sid, &mut memory).await;
                                         prompt = format!(
                                             "response:{ARTIFACT_RECALL_TOOL}:\n{body}\n\nContinue. \
                                              If you need another slice, reply with a single call: line; \
@@ -2816,6 +2937,7 @@ pub fn agent_chat(
                             data: ui_payload(&cached_body),
                         };
                         memory.record(&tool, &args_key, cached_body.clone());
+                        flush_new_artifacts(&user_id, sid, &mut memory).await;
                         prompt = if cloud_close_eligible(
                             remote.is_some(),
                             subagent_calls_used,
@@ -2907,12 +3029,13 @@ pub fn agent_chat(
                             &body,
                         );
                     }
+                    flush_new_artifacts(&user_id, sid, &mut memory).await;
                     let model_body = if body.chars().count() > TOOL_RESULT_MODEL_CHARS {
                         let total = body.chars().count();
                         let excerpt: String = body.chars().take(ARTIFACT_EXCERPT_CHARS).collect();
                         format!(
                             "[stored as {handle} — {total} chars total]\n{excerpt}\n\
-                             [end of excerpt — the full output is stored for this turn. \
+                             [end of excerpt — the full output stays stored for this session. \
                              To read more call artifact_recall with \
                              {{\"handle\": \"{handle}\", \"offset\": {ARTIFACT_EXCERPT_CHARS}}}]"
                         )
@@ -3062,6 +3185,67 @@ mod tests {
         // Unknown handle teaches valid handles.
         let err2 = m.page("memX", 0).unwrap_err();
         assert!(err2.contains("mem1"), "got {err2}");
+    }
+
+    #[test]
+    fn restored_artifacts_continue_numbering_and_dedup() {
+        let mut m = TurnMemory::default();
+        m.restore(vec![TurnArtifact {
+            handle: "mem1".into(),
+            tool: "office_read_document".into(),
+            args_key: "file:doc1".into(),
+            content: "body".into(),
+        }]);
+        // New records continue the restored numbering…
+        assert_eq!(m.record("binance_price", "sym:BTCUSDT", "{}".into()), "mem2");
+        // …and re-running a restored call returns its existing handle.
+        assert_eq!(
+            m.record("office_read_document", "file:doc1", "other".into()),
+            "mem1"
+        );
+        assert_eq!(m.artifacts.len(), 2);
+    }
+
+    #[test]
+    fn take_unpersisted_advances_cursor_once() {
+        let mut m = TurnMemory::default();
+        m.record("t", "a", "one".into());
+        let fresh = m.take_unpersisted();
+        assert_eq!(fresh.iter().map(|a| a.handle.as_str()).collect::<Vec<_>>(), ["mem1"]);
+        // Cursor advanced: nothing new since the last flush.
+        assert!(m.take_unpersisted().is_empty());
+        m.record("t2", "b", "two".into());
+        let fresh2 = m.take_unpersisted();
+        assert_eq!(fresh2.iter().map(|a| a.handle.as_str()).collect::<Vec<_>>(), ["mem2"]);
+    }
+
+    #[test]
+    fn restored_entries_are_not_reflushed() {
+        let mut m = TurnMemory::default();
+        m.restore(vec![TurnArtifact {
+            handle: "mem1".into(),
+            tool: "office_read_document".into(),
+            args_key: "file:doc1".into(),
+            content: "body".into(),
+        }]);
+        // Restore marks prior entries as already persisted.
+        assert!(m.take_unpersisted().is_empty());
+    }
+
+    #[test]
+    fn evidence_digest_lists_handles_and_caps_items() {
+        let mut m = TurnMemory::default();
+        assert_eq!(m.evidence_digest(), "");
+        m.record("office_read_document", "a", "x".repeat(100));
+        let d = m.evidence_digest();
+        assert!(d.contains("mem1 office_read_document 100 chars"), "got {d}");
+        assert!(d.contains("artifact_recall"));
+        for i in 0..24 {
+            m.record("web_read", &format!("k{i}"), "y".into());
+        }
+        let d = m.evidence_digest();
+        assert!(d.contains("… 1 more"), "got {d}");
+        assert!(!d.contains("mem25 "), "capped items must not render");
     }
 
     #[test]
@@ -3654,7 +3838,7 @@ mod tests {
     #[cfg(feature = "litert")]
     #[test]
     fn transcript_empty_when_no_history() {
-        assert_eq!(compact_transcript(&[], 1000), "");
+        assert_eq!(compact_transcript(&[], 1000, ""), "");
     }
 
     #[cfg(feature = "litert")]
@@ -3667,7 +3851,7 @@ mod tests {
         ];
         // Budget fits only the last two lines: the oldest pair must drop and
         // the omission must be flagged.
-        let out = compact_transcript(&rows, 40);
+        let out = compact_transcript(&rows, 40, "");
         assert!(out.starts_with("(older turns omitted)"));
         assert!(out.contains("USER: newest question"));
         assert!(!out.contains("oldest question"));
@@ -3679,7 +3863,7 @@ mod tests {
         // The single row is the NEWEST message: capped at the larger
         // last-message cap (still truncated — the '…' marker must appear).
         let rows = vec![msg("user", &"x".repeat(10_000))];
-        let out = compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS);
+        let out = compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS, "");
         assert!(out.chars().count() <= TRANSCRIPT_LAST_MSG_CHARS + "USER: ".len() + 2);
         assert!(out.contains('…'));
     }
@@ -3694,7 +3878,7 @@ mod tests {
             msg("assistant", &"z".repeat(3000)),
             msg("assistant", &newest),
         ];
-        let out = compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS);
+        let out = compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS, "");
         assert!(out.contains(&newest)); // whole, no '…' inside it
         assert!(out.matches('…').count() == 1); // only the older row truncated
     }
@@ -3705,9 +3889,35 @@ mod tests {
         // Newest alone exceeds the whole budget — still included (partially),
         // never dropped to an empty transcript.
         let rows = vec![msg("user", "old"), msg("assistant", &"a".repeat(9000))];
-        let out = compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS);
+        let out = compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS, "");
         assert!(out.contains("ASSISTANT: aaaa"));
         assert!(!out.contains("USER: old"));
+    }
+
+    #[cfg(feature = "litert")]
+    #[test]
+    fn transcript_appends_evidence_digest_within_budget() {
+        let digest = "[Stored tool results — mem1 office_read_document 12000 chars]";
+        let rows = vec![msg("user", "hello"), msg("assistant", "hi there")];
+        let out = compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS, digest);
+        assert!(out.ends_with(digest));
+        assert!(out.contains("\n\n[Stored"));
+
+        // The digest's room is reserved BEFORE messages claim budget: the
+        // whole output (digest included) stays within the cap while the
+        // newest message still survives.
+        let long_newest = "a".repeat(6000);
+        let rows2 = vec![msg("assistant", &long_newest)];
+        let out2 = compact_transcript(&rows2, TRANSCRIPT_BUDGET_CHARS, digest);
+        assert!(out2.ends_with(digest));
+        assert!(out2.contains("ASSISTANT: aaa"));
+        assert!(out2.chars().count() <= TRANSCRIPT_BUDGET_CHARS);
+
+        // Empty digest renders nothing extra.
+        assert_eq!(
+            compact_transcript(&rows, TRANSCRIPT_BUDGET_CHARS, ""),
+            "USER: hello\nASSISTANT: hi there"
+        );
     }
 
     #[cfg(feature = "litert")]

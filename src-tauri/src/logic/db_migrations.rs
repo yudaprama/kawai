@@ -51,6 +51,10 @@ fn migrations() -> Vec<Migration> {
         version: "0006_sql_profiles",
         sql: include_str!("../../migrations/0006_sql_profiles.sql"),
     });
+    m.push(Migration {
+        version: "0007_session_artifacts",
+        sql: include_str!("../../migrations/0007_session_artifacts.sql"),
+    });
     m
 }
 
@@ -192,10 +196,17 @@ mod tests {
         expected.push("0005_remap_chat_agent");
         #[cfg(feature = "analytics")]
         expected.push("0006_sql_profiles");
+        expected.push("0007_session_artifacts");
         assert_eq!(versions, expected);
 
         // Core tables exist.
-        for table in ["sessions", "messages", "turn_log", "schema_migrations"] {
+        for table in [
+            "sessions",
+            "messages",
+            "turn_log",
+            "schema_migrations",
+            "session_artifacts",
+        ] {
             let mut r = conn
                 .query(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
@@ -293,5 +304,48 @@ mod tests {
         let row = r.next().await.unwrap().unwrap();
         assert_eq!(row.get::<i64>(0).unwrap(), 0);
         assert!(row.get::<Option<i64>>(1).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn session_artifacts_table_round_trips() {
+        let (conn, dir) = open_temp().await;
+        ensure_schema(&conn, &dir).await.unwrap();
+
+        conn.execute(
+            "INSERT INTO session_artifacts (session_id, handle, tool, args_key, content, created_at) \
+             VALUES (1, 'mem1', 'office_read_document', 'file:doc1', 'body', 0)",
+            (),
+        )
+        .await
+        .unwrap();
+
+        // Insertion order is the rowid; the PK makes a re-flush idempotent.
+        conn.execute(
+            "INSERT OR IGNORE INTO session_artifacts (session_id, handle, tool, args_key, content, created_at) \
+             VALUES (1, 'mem1', 'office_read_document', 'file:doc1', 'body', 0)",
+            (),
+        )
+        .await
+        .unwrap();
+        conn.execute(
+            "INSERT INTO session_artifacts (session_id, handle, tool, args_key, content, created_at) \
+             VALUES (1, 'mem2', 'binance_price', 'symbol:BTCUSDT', '{\"price\":\"1\"}', 0)",
+            (),
+        )
+        .await
+        .unwrap();
+
+        let mut rows = conn
+            .query(
+                "SELECT handle FROM session_artifacts WHERE session_id = 1 ORDER BY rowid",
+                (),
+            )
+            .await
+            .unwrap();
+        let mut handles = Vec::new();
+        while let Some(row) = rows.next().await.unwrap() {
+            handles.push(row.get::<String>(0).unwrap());
+        }
+        assert_eq!(handles, vec!["mem1", "mem2"]);
     }
 }

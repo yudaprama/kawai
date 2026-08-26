@@ -318,6 +318,11 @@ pub async fn delete_chat_session(user_id: &str, session_id: i64) -> Result<(), D
         vec![session_id],
     )
     .await?;
+    conn.execute(
+        "DELETE FROM session_artifacts WHERE session_id = ?",
+        vec![session_id],
+    )
+    .await?;
     conn.execute("DELETE FROM sessions WHERE id = ?", vec![session_id])
         .await?;
     Ok(())
@@ -360,6 +365,66 @@ pub async fn append_chat_message(
         content: row.get(3)?,
         created_at: row.get(4)?,
     })
+}
+
+/// One stored tool result from a session's cross-turn process log. `content`
+/// is the verbatim (per-entry capped) tool output body.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionArtifact {
+    pub handle: String,
+    pub tool: String,
+    pub args_key: String,
+    pub content: String,
+}
+
+/// Append one completed process to a session's persistent artifact log
+/// (existence verified). Idempotent on (session_id, handle) — a re-flush of
+/// an already-stored handle is a no-op.
+pub async fn append_session_artifact(
+    user_id: &str,
+    session_id: i64,
+    handle: &str,
+    tool: &str,
+    args_key: &str,
+    content: &str,
+) -> Result<(), DbError> {
+    let conn = db_connection(user_id).await?;
+    chat_session_owned(&conn, session_id).await?;
+    let now = unix_now() as i64;
+    conn.execute(
+        "INSERT OR IGNORE INTO session_artifacts \
+         (session_id, handle, tool, args_key, content, created_at) \
+         VALUES (?, ?, ?, ?, ?, ?)",
+        (session_id, handle, tool, args_key, content, now),
+    )
+    .await?;
+    Ok(())
+}
+
+/// List a session's stored artifacts in insertion order (mem1, mem2, …).
+pub async fn list_session_artifacts(
+    user_id: &str,
+    session_id: i64,
+) -> Result<Vec<SessionArtifact>, DbError> {
+    let conn = db_connection(user_id).await?;
+    chat_session_owned(&conn, session_id).await?;
+    let mut rows = conn
+        .query(
+            "SELECT handle, tool, args_key, content FROM session_artifacts \
+             WHERE session_id = ? ORDER BY rowid",
+            vec![session_id],
+        )
+        .await?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next().await? {
+        out.push(SessionArtifact {
+            handle: row.get(0)?,
+            tool: row.get(1)?,
+            args_key: row.get(2)?,
+            content: row.get(3)?,
+        });
+    }
+    Ok(out)
 }
 
 /// One telemetry row per completed generation (local answer, cloud subagent

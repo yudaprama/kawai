@@ -172,9 +172,9 @@ Subagents are tools whose implementation calls a cloud LLM. They are **registere
 
 | Subagent | Agents that get it | When registered | Behavior |
 |----------|-------------------|-----------------|----------|
-| `deep_write` | all three | `remote.is_some()` | Streams completion from cloud (default: zai/glm-5.3); result is the final answer token stream to the user. Turn-scoped: materials rendered from `TurnMemory` on demand. |
+| `deep_write` | all three | `remote.is_some()` | Streams completion from cloud (default: zai/glm-5.3); result is the final answer token stream to the user. Materials rendered from `TurnMemory` on demand. |
 | `draft_document` | office only | `remote.is_some()` + `office` feature | Cloud writes structured JSON `blocks` → file created in-process by Rust (`ooxml::create_document_from_blocks`). Local only sees a short receipt; cloud JSON never enters local K/V context. |
-| `artifact_recall` | all three | always (all agents with tools) | Pages the turn-local process log (`TurnMemory`) for oversized tool results — dispatched by the loop, not the ToolSet. |
+| `artifact_recall` | all three | always (all agents with tools) | Pages the session's persistent process log (`TurnMemory`, backed by the `session_artifacts` table) for oversized tool results — dispatched by the loop, not the ToolSet. |
 
 **Failure handling:** cloud timeout or error → local degrades to answering from its own knowledge; the turn never dies. `draft_document` JSON parse failure → one automatic correction round with the cloud, then falls back.
 
