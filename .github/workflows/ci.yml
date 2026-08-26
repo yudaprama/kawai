@@ -377,10 +377,11 @@ jobs:
           cat ${{ github.workspace }}/agent-eval-report.md >> "$GITHUB_STEP_SUMMARY"
 
       # ── Analytics suite (EVAL_SUITE=analytics): data_schema/data_query/data_ta
-      #    selection + argument composition over a stated schema (A01-A14,
-      #    incl. in/offset/having). GATED at 13/14 — one-scenario tolerance,
-      #    mirroring the office gate's 19/20; the report artifact carries
-      #    EVAL_DEBUG raw dumps for any failure diagnosis.
+      #    selection + argument composition over a stated schema (A01-A16,
+      #    incl. in/offset/having + data_chart bar/line). GATED at 14/16 —
+      #    one-scenario tolerance, mirroring the office gate's 19/20; the
+      #    report artifact carries EVAL_DEBUG raw dumps for any failure
+      #    diagnosis.
       - name: agent_eval (analytics suite)
         working-directory: src-tauri
         env:
@@ -391,7 +392,7 @@ jobs:
           KAWAI_LLM_MAX_TOKENS: "8192"
           EVAL_SUITE: analytics
           EVAL_DEBUG: "1"
-          EVAL_MIN_PASS: "13"
+          EVAL_MIN_PASS: "14"
         run: |
           cargo run --release --example agent_eval --features litert,office -- \
             ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
