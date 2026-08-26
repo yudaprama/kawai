@@ -52,7 +52,7 @@ const TOOLS: &str = r#"[
 ]"#;
 
 /// (id, prompt, expected tool, arg asserts). Assert spec grammar:
-///   "==value"      — string equality
+///   "==value"      — scalar equality (string, bool, or number)
 ///   "==[a,b,c]"    — list equality
 ///   "re:pattern"   — regex over the JSON-encoded value (for arrays/objects)
 ///   "in:a|b|None"  — membership; "None" accepts a missing field
@@ -148,8 +148,10 @@ const ANALYTICS_SCENARIOS: &[Scenario] = &[
         &[("fileId", "==doc1"), ("groupBy/0", "==kategori")]),
     // Date range from a natural-language month (gte the month start). Names
     // the dataset ("sales") — "transactions" would collide with doc2's name.
+    // contains("2026-01") is accepted alongside range ops: production
+    // data_query supports it and it answers the question on ISO dates.
     Scenario("A05 date-filter", "Show only the January 2026 rows from the sales CSV.", Some("data_query"),
-        &[("fileId", "==doc1"), ("filters/0/value", "re:2026-01"), ("filters/0/operator", "in:gte|gt|eq")]),
+        &[("fileId", "==doc1"), ("filters/0/value", "re:2026-01"), ("filters/0/operator", "in:gte|gt|eq|contains")]),
     // Avg per group, ranked.
     Scenario("A06 avg-per-group", "Average revenue per product, highest first.", Some("data_query"),
         &[("fileId", "==doc1"), ("groupBy/0", "==produk"), ("aggregations/0/function", "==avg"), ("descending", "==true")]),
@@ -470,5 +472,69 @@ async fn main() {
     if !gate_ok {
         eprintln!("EVAL FAILED: {pass}/{total} below gate {min_pass}/{total}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{check_asserts, get, parse_call};
+    use serde_json::json;
+
+    #[test]
+    fn get_walks_objects_and_arrays_and_reports_missing() {
+        let args = json!({"fileId": "doc1", "aggregations": [{"function": "sum"}], "flag": true});
+        assert_eq!(get(&args, "fileId"), Some(&json!("doc1")));
+        assert_eq!(get(&args, "aggregations/0/function"), Some(&json!("sum")));
+        assert_eq!(get(&args, "missing"), None);
+        assert_eq!(get(&args, "aggregations/3/function"), None);
+        assert_eq!(get(&args, "fileId/nested"), None);
+    }
+
+    #[test]
+    fn eq_assert_matches_bool_and_number_scalars() {
+        // Regression: the old as_str-only extraction read bool/number args as
+        // None, so every descending/limit assert failed unconditionally and
+        // A03/A06/A07 were impossible to pass.
+        let args = json!({"descending": true, "limit": 5});
+        check_asserts(&args, &[("descending", "==true")]).unwrap();
+        check_asserts(&args, &[("limit", "==5")]).unwrap();
+        assert!(check_asserts(&args, &[("descending", "==false")]).is_err());
+        assert!(check_asserts(&args, &[("limit", "==7")]).is_err());
+        assert!(check_asserts(&args, &[("nope", "==true")]).is_err());
+    }
+
+    #[test]
+    fn eq_assert_still_matches_strings() {
+        let args = json!({"fileId": "doc2"});
+        check_asserts(&args, &[("fileId", "==doc2")]).unwrap();
+        assert!(check_asserts(&args, &[("fileId", "==doc1")]).is_err());
+    }
+
+    #[test]
+    fn membership_regex_and_list_asserts() {
+        let args = json!({"operator": "contains", "count": 3, "files": ["doc1", "doc2"]});
+        check_asserts(&args, &[("operator", "in:eq|gte|contains")]).unwrap();
+        assert!(check_asserts(&args, &[("operator", "in:eq|lt")]).is_err());
+        // A present value never satisfies the "None" escape hatch.
+        assert!(check_asserts(&args, &[("operator", "in:eq|None")]).is_err());
+        // A missing key does.
+        check_asserts(&json!({}), &[("absent", "in:eq|None")]).unwrap();
+        check_asserts(&args, &[("count", "re:3")]).unwrap();
+        assert!(check_asserts(&args, &[("count", "re:^7$")]).is_err());
+        check_asserts(&args, &[("files", "==[doc1,doc2]")]).unwrap();
+        assert!(check_asserts(&args, &[("files", "==[doc2,doc1]")]).is_err());
+    }
+
+    #[test]
+    fn parse_call_finds_the_first_call_line() {
+        let text = "Sure!\ncall:data_query{\"fileId\":\"doc1\",\"limit\":5}\nextra prose";
+        let (name, args) = parse_call(text).unwrap().unwrap();
+        assert_eq!(name, "data_query");
+        assert_eq!(args["limit"], json!(5));
+        assert!(parse_call("no call here").is_none());
+        assert!(matches!(
+            parse_call("call:data_{not json"),
+            Some(Err(_))
+        ));
     }
 }

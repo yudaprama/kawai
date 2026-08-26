@@ -198,6 +198,14 @@ jobs:
         run: cargo test -p webread
         working-directory: crates
 
+      # agent_eval harness unit tests: assert grammar (scalar == over
+      # string/bool/number, in:, re:, list), slash-path lookup, call-line
+      # parsing. Pure Rust — no model file needed. Guards the scorer itself:
+      # a string-only == extraction here once made A03/A06/A07 unpassable.
+      - name: cargo test (agent_eval harness)
+        run: cargo test --quiet --example agent_eval --features litert,office
+        working-directory: src-tauri
+
       # The tier-0 extractor JS must stay parseable — a syntax error fails
       # SILENTLY (eval never returns a payload → every read falls through to
       # Cloudflare). Node parses the const and checks the payload shape; no
