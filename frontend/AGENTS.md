@@ -64,6 +64,11 @@ frontend/
 │   │   ├── utils.ts        # cn(), formatBytes, isRecord, errText alias + showErrorToast
 │   │   ├── preview-file.ts # useFilePreview() hook — fetches + decodes office store files
 │   │   ├── preview-bridge.ts # event bridge: tool-renderer cards → App PreviewDialog (no callbacks through vendored tree)
+│   │   ├── html-security.ts # containsHTML() — wraps raw HTML outside code fences in safe ```html blocks
+│   │   ├── url-security.ts  # SAFE/BLOCKED_PROTOCOLS + customUrlTransform() gating rendered markdown links
+│   │   ├── logger.ts        # logError/Warn/Info → Sentry (env-gated) + backend frontend_log + toast
+│   │   ├── tool-icon.ts     # tool name → lucide icon for tool cards (getToolCallIcon, extractToolName)
+│   │   ├── tool-description.ts # getToolDescription(name, args) — one-line summary for tool cards
 │   │   └── streamdown/     # vendored streaming markdown renderer
 │   ├── hooks/
 │   │   ├── use-local-chat.ts    # facade: composes use-chat-model + use-chat-sessions + send/stop
@@ -71,8 +76,10 @@ frontend/
 │   │   ├── use-chat-sessions.ts     # session slice: CRUD, ensureSessionId, groupedSessions
 │   │   ├── use-knowledge-actions.ts # knowledge mutations: import, index, session binding, delete + UI state
 │   │   ├── use-knowledge-files.ts # knowledge panel list: refresh, markIndexing, markInSession, remove
+│   │   ├── use-context-onboarding.ts # empty-data onboarding policy for agents with a sources tab (profile probe + tab focus)
 │   │   ├── use-session-filter.ts    # filteredGroups / filteredArchived from query (extracted from SessionsPanel)
 │   │   ├── use-app-shortcuts.ts     # ⌘1/2/3 + ⌘N global shortcuts (extracted from App)
+│   │   ├── use-auth.ts          # useAuth(): whoami → set_session dev-bypass bootstrap (userId | null)
 │   │   ├── use-streamdown.ts    # streamdown plugins (cjk, code, math, mermaid) + translations
 │   │   ├── use-theme.ts         # dark/light/system theme with localStorage persistence
 │   │   ├── use-copy-button.ts   # copy button with Check/Copy icon swap
@@ -90,12 +97,14 @@ frontend/
 │   │   ├── message-part-view.tsx  # MessagePartView: tool cards + reasoning + text + copy
 │   │   ├── knowledge-file-row.tsx # KnowledgeFileRow + StatusBadge + SectionLabel
 │   │   ├── knowledge-dialogs.tsx  # PreviewDialog + LinkDialog (extracted from App)
-│   │   └── session-row.tsx        # SessionRow: active/archived row with rename/archive/delete
+│   │   ├── session-row.tsx        # SessionRow: active/archived row with rename/archive/delete
+│   │   └── sql-profiles-section.tsx # SQL data sources (Knowledge panel): list/add/edit/test/delete profiles
 │   ├── panels/
+│   │   ├── registry.tsx            # per-agent context-pane composition (CONTEXT_TABS, keyed by agent id)
 │   │   ├── agents-rail.tsx        # pane 1: agent catalog rail
 │   │   ├── conversation-panel.tsx # pane 2: chat + model status (virtualization)
 │   │   ├── chat-composer.tsx      # composer: @-mention + file chips + speech
-│   │   ├── knowledge-panel.tsx    # canvas pane: knowledge base (session/library tabs)
+│   │   ├── context-panel.tsx      # right context pane: renders the tabs the registry gives it (session/library/databases)
 │   │   └── sessions-panel.tsx     # pane 3: session list — search, inline rename, archive/restore, delete
 │   ├── platform/
 │   │   ├── types.ts        # Platform interface (pickFiles, dictation, screenshots, clipboard, share)
@@ -146,7 +155,7 @@ User prompt → App.tsx → use-local-chat.send()
 - **File @-mentions carry IDs, not content.** The composer's @ button opens a `knowledge_list` popover; picked files render as chips and their IDs ride along on the next send (`onSubmit(text, fileIds)` → `chat.send(text, fileIds)` → `agent_chat` `fileIds`). The backend binds them to the session and lists them in the model prompt. Chips clear after submit.
 - **Auth bootstrap is in use-local-chat.ts** (lines 96-118). The hook first tries `whoami`, then falls back to `set_session` with a dev token. This is the MVP dev-bypass — no Clerk UI is wired in the React frontend.
 - **Theme is applied before React mounts** via an inline script in `index.html:7-20`. The `use-theme.ts` hook writes to the same `localStorage` key (`"kawai-theme"`).
-- **Agent presentation is a frontend map** (`AGENT_META` in `panels/agents-rail.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry.
+- **Agent presentation is a frontend map** (`AGENT_META` in `panels/agents-rail.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry. The right context pane follows the same pattern — `CONTEXT_TABS` in `panels/registry.tsx` decides which tabs each agent gets; agents absent from the map (or tool-less) get no pane and its toggles disappear.
 - **`file-preview.tsx`** uses `useFilePreview` from `lib/preview-file.ts` which calls `office_read_file` — every mount triggers a backend call. The preview switch mounts only one renderer at a time, so only one fetch happens.
 - **`useKnowledgeFiles`** (in `use-knowledge-files.ts`) is feature-gated — if the backend rejects `knowledge_list` (no `office` feature), it settles on an empty list with `unavailable=true`.
 

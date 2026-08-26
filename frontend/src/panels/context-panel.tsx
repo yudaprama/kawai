@@ -7,18 +7,23 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { KnowledgeFileInfo } from "@/lib/api";
+import type { ContextTabId, ContextTabSpec } from "@/panels/registry";
 
-type KnowledgeTab = "session" | "library" | "databases";
-
-export function KnowledgePanel({
+/**
+ * The right context pane: per-agent tab composition arrives via the registry
+ * (`contextTabsFor`) — this shell only renders whatever tabs it is given.
+ * Office/analytics share the file lists (one store backs both); analytics
+ * additionally gets the SQL sources tab its tools are built on.
+ */
+export function ContextPanel({
+  tabs,
   knowledge,
   sessionId,
   sessionFiles,
   importing,
   linking,
   confirmDeleteId,
-  showDatabases,
-  focusTab,
+  focus,
   onAddFiles,
   onAddLink,
   onAddToSession,
@@ -27,6 +32,8 @@ export function KnowledgePanel({
   onDeleteFile,
   onPreview,
 }: {
+  /** Registry-driven composition — an empty list never reaches here (App hides the pane). */
+  tabs: ContextTabSpec[];
   knowledge: {
     unavailable: boolean;
     loaded: boolean;
@@ -37,11 +44,10 @@ export function KnowledgePanel({
   importing: boolean;
   linking: boolean;
   confirmDeleteId: string | null;
-  /** Whether the analytics agent is available (catalog-driven) — gates the Databases tab. */
-  showDatabases: boolean;
-  /** Imperative tab switch (e.g. the analytics onboarding's "Connect
-   *  database" CTA) — increment `n` to re-fire for the same tab. */
-  focusTab?: { tab: KnowledgeTab; n: number };
+  /** Imperative tab switch (e.g. the onboarding's "Connect database" CTA) —
+   *  increment `n` to re-fire for the same tab; ignored when the agent's
+   *  composition has no such tab. */
+  focus?: { tab: ContextTabId; n: number };
   onAddFiles: () => void;
   onAddLink: () => void;
   onAddToSession: (file: KnowledgeFileInfo) => void;
@@ -50,7 +56,7 @@ export function KnowledgePanel({
   onDeleteFile: (file: KnowledgeFileInfo) => void;
   onPreview: (file: KnowledgeFileInfo) => void;
 }) {
-  const [tab, setTab] = useState<KnowledgeTab>(sessionId != null ? "session" : "library");
+  const [tab, setTab] = useState<ContextTabId>(sessionId != null ? "session" : "library");
   const prevSessionId = useRef(sessionId);
   useEffect(() => {
     // The panel is already mounted when a lazy first message creates the
@@ -60,12 +66,17 @@ export function KnowledgePanel({
     prevSessionId.current = sessionId;
   }, [sessionId]);
   useEffect(() => {
-    if (focusTab && focusTab.n > 0 && (focusTab.tab !== "databases" || showDatabases)) {
-      setTab(focusTab.tab);
+    if (focus && focus.n > 0 && tabs.some((t) => t.id === focus.tab)) {
+      setTab(focus.tab);
     }
-  }, [focusTab, showDatabases]);
+  }, [focus, tabs]);
+  // Agent switches preserve this component's state — clamp to a tab the
+  // current composition actually offers.
+  const activeTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0]?.id as ContextTabId | undefined);
+  if (!activeTab) return null;
+
   return (
-    <section className="flex min-w-0 flex-1 flex-col border-l">
+    <section className="border-l flex min-w-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center justify-between gap-4 border-b px-3">
         <span className="text-sm font-medium">Knowledge</span>
         <div className="flex items-center gap-1">
@@ -107,16 +118,16 @@ export function KnowledgePanel({
               Loading knowledge…
             </div>
           ) : (
-            <Tabs
-              onValueChange={(v) => setTab(v as KnowledgeTab)}
-              value={tab === "databases" && !showDatabases ? "library" : tab}
-            >
+            <Tabs onValueChange={(v) => setTab(v as ContextTabId)} value={activeTab}>
               <TabsList className="mb-3">
-                <TabsTrigger value="session">In this session</TabsTrigger>
-                <TabsTrigger value="library">{sessionId != null ? "Library" : "Documents"}</TabsTrigger>
-                {showDatabases && <TabsTrigger value="databases">Databases</TabsTrigger>}
+                {tabs.map((t) => (
+                  <TabsTrigger key={t.id} value={t.id}>
+                    {/* Pre-session the library IS the whole document list. */}
+                    {t.id === "library" && sessionId == null ? "Documents" : t.label}
+                  </TabsTrigger>
+                ))}
               </TabsList>
-              <TabsContent value="databases">
+              <TabsContent value="sources">
                 <SqlProfilesSection />
               </TabsContent>
               <TabsContent value="session">

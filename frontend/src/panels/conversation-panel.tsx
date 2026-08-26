@@ -95,12 +95,15 @@ export function ConversationPanel({
   canvasOpen: boolean;
   inSession: boolean;
   sessionsCollapsed: boolean;
-  onToggleCanvas: () => void;
+  /** Absent when the active agent's registry composition has no context pane —
+   *  the toggle and the pane itself stay hidden. */
+  onToggleCanvas?: () => void;
   onToggleSessions: () => void;
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
-  canvas: React.ReactNode;
-  /** Analytics-agent empty-session onboarding — non-null only when the user
-   *  has no tabular files and no SQL profiles yet; replaces the prompt chips. */
+  canvas?: React.ReactNode;
+  /** Empty-data onboarding (registry-driven, see useContextOnboarding) —
+   *  non-null only when the user has no data files/sources yet; replaces the
+   *  prompt chips. */
   onboarding: { onImport: () => void; onConnect: () => void } | null;
   onOpenMobileAgents?: () => void;
   onOpenMobileSessions?: () => void;
@@ -167,15 +170,17 @@ export function ConversationPanel({
           >
             <BrainIcon className="size-4" />
           </Button>
-          <Button
-            className="hidden md:inline-flex"
-            onClick={onToggleCanvas}
-            size="icon"
-            title="Toggle canvas (⌘2)"
-            variant={canvasOpen ? "ghost" : "secondary"}
-          >
-            <PanelRightIcon className="size-4" />
-          </Button>
+          {onToggleCanvas && (
+            <Button
+              className="hidden md:inline-flex"
+              onClick={onToggleCanvas}
+              size="icon"
+              title="Toggle canvas (⌘2)"
+              variant={canvasOpen ? "ghost" : "secondary"}
+            >
+              <PanelRightIcon className="size-4" />
+            </Button>
+          )}
           <Button
             className="hidden md:inline-flex"
             onClick={onToggleSessions}
@@ -211,7 +216,7 @@ export function ConversationPanel({
       )}
 
       <div className="flex min-h-0 flex-1">
-        <section className={`flex min-w-0 flex-col ${canvasOpen ? "md:w-[55%] md:flex-none" : "w-full"}`}>
+        <section className={`flex min-w-0 flex-col ${canvas && canvasOpen ? "md:w-[55%] md:flex-none" : "w-full"}`}>
           <div className="relative min-h-0 flex-1">
             {status === "submitted" && (
               <div className="text-muted-foreground absolute inset-x-0 top-3 z-10 flex justify-center">

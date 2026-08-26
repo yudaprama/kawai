@@ -3,13 +3,14 @@ import { LinkDialog, PreviewDialog } from "@/components/knowledge-dialogs";
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
 import { useKnowledgeActions } from "@/hooks/use-knowledge-actions";
 import { useLocalChat } from "@/hooks/use-local-chat";
+import { useContextOnboarding } from "@/hooks/use-context-onboarding";
 import { type AgentInfo, call } from "@/lib/api";
-import { isTabularExt } from "@/lib/extensions";
 import { logWarn } from "@/lib/logger";
 import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
 import { AgentsRail, agentPresentation } from "@/panels/agents-rail";
+import { ContextPanel } from "@/panels/context-panel";
+import { contextTabsFor } from "@/panels/registry";
 import { ConversationPanel } from "@/panels/conversation-panel";
-import { KnowledgePanel } from "@/panels/knowledge-panel";
 import { SessionsPanel } from "@/panels/sessions-panel";
 
 export default function App() {
@@ -19,8 +20,6 @@ export default function App() {
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(true);
   const [mobileDrawer, setMobileDrawer] = useState<null | "agents" | "sessions" | "knowledge">(null);
-  const [dbFocus, setDbFocus] = useState(0);
-  const [profileCount, setProfileCount] = useState<number | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -54,26 +53,23 @@ export default function App() {
 
   const ka = useKnowledgeActions(chat);
 
-  // Analytics onboarding: count SQL profiles while the analytics agent sits
-  // on an empty session — the onboarding card shows only when the user has
-  // no tabular files AND no profiles. Canvas/drawer toggles re-run it so a
-  // just-connected database is picked up.
-  const analyticsActive = agent?.id === "builtin.analytics" && agent.tools;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: canvasOpen/mobileDrawer are deliberate refresh triggers (pick up a just-connected database)
-  useEffect(() => {
-    if (!analyticsActive || inSession) return;
-    let disposed = false;
-    call<{ name: string }[]>("sql_profile_list")
-      .then((list) => {
-        if (!disposed) setProfileCount(list.length);
-      })
-      .catch(() => {
-        if (!disposed) setProfileCount(null);
-      });
-    return () => {
-      disposed = true;
-    };
-  }, [analyticsActive, inSession, canvasOpen, mobileDrawer]);
+  // Per-agent right-pane composition + empty-data onboarding policy — both
+  // registry-driven; App only wires shell capabilities (canvas/drawer) in.
+  const contextTabs = contextTabsFor(agent);
+  const hasContextPane = contextTabs.length > 0;
+  const { onboarding, sourcesFocus } = useContextOnboarding({
+    agent,
+    inSession,
+    knowledgeLoaded: ka.knowledge.loaded,
+    files: ka.knowledge.files,
+    canvasOpen,
+    mobileDrawer,
+    openContextPane: () => {
+      setCanvasOpen(true);
+      setMobileDrawer((d) => d ?? "knowledge");
+    },
+    importFiles: () => void ka.addKnowledgeFiles(),
+  });
 
   // Preview bridge: tool cards inside the vendored renderer tree emit an
   // event instead of threading app callbacks; resolve to a knowledge row
@@ -100,19 +96,6 @@ export default function App() {
     window.addEventListener(OPEN_PREVIEW_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_PREVIEW_EVENT, onOpen);
   }, [ka.setPreviewFile, ka.knowledge.files]);
-
-  const hasTabular = ka.knowledge.files.some((f) => isTabularExt(f.ext));
-  const onboarding =
-    analyticsActive && !inSession && ka.knowledge.loaded && profileCount === 0 && !hasTabular
-      ? {
-          onImport: () => void ka.addKnowledgeFiles(),
-          onConnect: () => {
-            setCanvasOpen(true);
-            setMobileDrawer((d) => d ?? "knowledge");
-            setDbFocus((n) => n + 1);
-          },
-        }
-      : null;
 
   useEffect(() => {
     if (activeAgentId == null) return;
@@ -176,18 +159,18 @@ export default function App() {
     return <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center" />;
   }
 
-  // Reusable knowledge props for desktop + mobile drawer
-  const showDatabases = agents.some((a) => a.id === "builtin.analytics" && a.tools);
-  const knowledgePanel = (
-    <KnowledgePanel
+  // Context pane — rendered only when the agent's registry composition has
+  // tabs; reused for the desktop canvas and the mobile drawer.
+  const contextPanel = hasContextPane ? (
+    <ContextPanel
+      tabs={contextTabs}
       knowledge={ka.knowledge}
       sessionId={chat.sessionId}
       sessionFiles={ka.sessionFiles}
       importing={ka.importing}
       linking={ka.linking}
       confirmDeleteId={ka.confirmDeleteId}
-      showDatabases={showDatabases}
-      focusTab={dbFocus ? { tab: "databases", n: dbFocus } : undefined}
+      focus={sourcesFocus ? { tab: "sources", n: sourcesFocus } : undefined}
       onAddFiles={() => void ka.addKnowledgeFiles()}
       onAddLink={ka.addKnowledgeLink}
       onAddToSession={ka.addToSession}
@@ -196,7 +179,7 @@ export default function App() {
       onDeleteFile={ka.deleteFile}
       onPreview={ka.openPreview}
     />
-  );
+  ) : null;
 
   return (
     <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">
@@ -235,17 +218,17 @@ export default function App() {
         onStop={chat.stop}
         onSend={onSend}
         confirmation={chat.confirmation}
-        canvasOpen={canvasOpen}
         inSession={inSession}
         sessionsCollapsed={sessionsCollapsed}
-        onToggleCanvas={() => setCanvasOpen((v) => !v)}
         onToggleSessions={() => setSessionsCollapsed((v) => !v)}
         onImageToKnowledge={ka.imageToKnowledge}
         onboarding={onboarding}
         onOpenMobileAgents={() => setMobileDrawer("agents")}
         onOpenMobileSessions={() => setMobileDrawer("sessions")}
-        onOpenMobileKnowledge={() => setMobileDrawer("knowledge")}
-        canvas={canvasOpen ? knowledgePanel : null}
+        onOpenMobileKnowledge={hasContextPane ? () => setMobileDrawer("knowledge") : undefined}
+        canvasOpen={canvasOpen}
+        onToggleCanvas={hasContextPane ? () => setCanvasOpen((v) => !v) : undefined}
+        canvas={canvasOpen ? contextPanel : null}
       />
 
       {!sessionsCollapsed && (
@@ -315,7 +298,7 @@ export default function App() {
               />
             </div>
           )}
-          {mobileDrawer === "knowledge" && (
+          {mobileDrawer === "knowledge" && contextPanel && (
             <div className="bg-background relative ml-auto flex h-full w-[360px] max-w-[90vw] flex-col shadow-xl">
               <button
                 aria-label="Close knowledge"
@@ -325,7 +308,7 @@ export default function App() {
               >
                 Close
               </button>
-              <div className="min-h-0 flex-1 overflow-hidden pt-0">{knowledgePanel}</div>
+              <div className="min-h-0 flex-1 overflow-hidden pt-0">{contextPanel}</div>
             </div>
           )}
         </div>
