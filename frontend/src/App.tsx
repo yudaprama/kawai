@@ -4,7 +4,9 @@ import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
 import { useKnowledgeActions } from "@/hooks/use-knowledge-actions";
 import { useLocalChat } from "@/hooks/use-local-chat";
 import { type AgentInfo, call } from "@/lib/api";
+import { isTabularExt } from "@/lib/extensions";
 import { logWarn } from "@/lib/logger";
+import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
 import { AgentsRail, agentPresentation } from "@/panels/agents-rail";
 import { ConversationPanel } from "@/panels/conversation-panel";
 import { KnowledgePanel } from "@/panels/knowledge-panel";
@@ -17,6 +19,8 @@ export default function App() {
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(true);
   const [mobileDrawer, setMobileDrawer] = useState<null | "agents" | "sessions" | "knowledge">(null);
+  const [dbFocus, setDbFocus] = useState(0);
+  const [profileCount, setProfileCount] = useState<number | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -49,6 +53,66 @@ export default function App() {
   );
 
   const ka = useKnowledgeActions(chat);
+
+  // Analytics onboarding: count SQL profiles while the analytics agent sits
+  // on an empty session — the onboarding card shows only when the user has
+  // no tabular files AND no profiles. Canvas/drawer toggles re-run it so a
+  // just-connected database is picked up.
+  const analyticsActive = agent?.id === "builtin.analytics" && agent.tools;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: canvasOpen/mobileDrawer are deliberate refresh triggers (pick up a just-connected database)
+  useEffect(() => {
+    if (!analyticsActive || inSession) return;
+    let disposed = false;
+    call<{ name: string }[]>("sql_profile_list")
+      .then((list) => {
+        if (!disposed) setProfileCount(list.length);
+      })
+      .catch(() => {
+        if (!disposed) setProfileCount(null);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [analyticsActive, inSession, canvasOpen, mobileDrawer]);
+
+  // Preview bridge: tool cards inside the vendored renderer tree emit an
+  // event instead of threading app callbacks; resolve to a knowledge row
+  // when the file is already listed, else synthesize one (tabular previews
+  // only need id + name — data_preview does the rest).
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const { fileId, name } = (e as CustomEvent<OpenPreviewDetail>).detail;
+      const known = ka.knowledge.files.find((f) => f.id === fileId);
+      ka.setPreviewFile(
+        known ?? {
+          id: fileId,
+          originalName: name,
+          ext: (name.split(".").pop() ?? "").toLowerCase(),
+          bytes: 0,
+          createdAt: 0,
+          status: "not_indexed",
+          chunks: 0,
+          error: null,
+          inSession: true,
+        },
+      );
+    };
+    window.addEventListener(OPEN_PREVIEW_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_PREVIEW_EVENT, onOpen);
+  }, [ka.setPreviewFile, ka.knowledge.files]);
+
+  const hasTabular = ka.knowledge.files.some((f) => isTabularExt(f.ext));
+  const onboarding =
+    analyticsActive && !inSession && ka.knowledge.loaded && profileCount === 0 && !hasTabular
+      ? {
+          onImport: () => void ka.addKnowledgeFiles(),
+          onConnect: () => {
+            setCanvasOpen(true);
+            setMobileDrawer((d) => d ?? "knowledge");
+            setDbFocus((n) => n + 1);
+          },
+        }
+      : null;
 
   useEffect(() => {
     if (activeAgentId == null) return;
@@ -123,6 +187,7 @@ export default function App() {
       linking={ka.linking}
       confirmDeleteId={ka.confirmDeleteId}
       showDatabases={showDatabases}
+      focusTab={dbFocus ? { tab: "databases", n: dbFocus } : undefined}
       onAddFiles={() => void ka.addKnowledgeFiles()}
       onAddLink={ka.addKnowledgeLink}
       onAddToSession={ka.addToSession}
@@ -176,6 +241,7 @@ export default function App() {
         onToggleCanvas={() => setCanvasOpen((v) => !v)}
         onToggleSessions={() => setSessionsCollapsed((v) => !v)}
         onImageToKnowledge={ka.imageToKnowledge}
+        onboarding={onboarding}
         onOpenMobileAgents={() => setMobileDrawer("agents")}
         onOpenMobileSessions={() => setMobileDrawer("sessions")}
         onOpenMobileKnowledge={() => setMobileDrawer("knowledge")}

@@ -92,3 +92,12 @@ export interface RagHit {
   locator: string;
   content: string;
 }
+
+/** Probe result of `sql_profile_test` — `ok: false` carries the reason inline. */
+export interface SqlProfileTest {
+  ok: boolean;
+  engine: string;
+  tables: number;
+  sample: string[];
+  error: string | null;
+}

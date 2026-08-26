@@ -8,6 +8,7 @@ import {
   PanelRightCloseIcon,
   PanelRightIcon,
   PanelRightOpenIcon,
+  UploadIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -67,6 +68,7 @@ export function ConversationPanel({
   onToggleSessions,
   onImageToKnowledge,
   canvas,
+  onboarding,
   onOpenMobileAgents,
   onOpenMobileSessions,
   onOpenMobileKnowledge,
@@ -97,6 +99,9 @@ export function ConversationPanel({
   onToggleSessions: () => void;
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
   canvas: React.ReactNode;
+  /** Analytics-agent empty-session onboarding — non-null only when the user
+   *  has no tabular files and no SQL profiles yet; replaces the prompt chips. */
+  onboarding: { onImport: () => void; onConnect: () => void } | null;
   onOpenMobileAgents?: () => void;
   onOpenMobileSessions?: () => void;
   onOpenMobileKnowledge?: () => void;
@@ -223,18 +228,38 @@ export function ConversationPanel({
                 </span>
                 <h2 className="text-lg font-semibold text-foreground">{agent.name} agent</h2>
                 <p className="-mt-1 text-sm">{agent.description}</p>
-                <div className="mt-3 flex flex-wrap justify-center gap-2">
-                  {presentation.prompts.map((prompt) => (
-                    <button
-                      className="border bg-card hover:bg-accent rounded-full border px-3 py-1 text-xs"
-                      key={prompt}
-                      onClick={() => void onSend(prompt)}
-                      type="button"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
+                {onboarding ? (
+                  <div className="mt-3 w-full max-w-sm rounded-lg border border-dashed p-4 text-left">
+                    <p className="text-sm font-medium text-foreground">No data connected yet</p>
+                    <p className="mt-1 text-xs">
+                      Import a CSV / Excel / parquet file or connect a SQLite / Postgres database, then ask things like
+                      &quot;Total sales per category&quot;.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button onClick={onboarding.onImport} size="sm">
+                        <UploadIcon className="size-3.5" />
+                        Import data file
+                      </Button>
+                      <Button onClick={onboarding.onConnect} size="sm" variant="outline">
+                        <DatabaseIcon className="size-3.5" />
+                        Connect database
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-wrap justify-center gap-2">
+                    {presentation.prompts.map((prompt) => (
+                      <button
+                        className="border bg-card hover:bg-accent rounded-full border px-3 py-1 text-xs"
+                        key={prompt}
+                        onClick={() => void onSend(prompt)}
+                        type="button"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <Conversation className="h-full">

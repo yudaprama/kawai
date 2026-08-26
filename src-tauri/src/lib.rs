@@ -143,6 +143,7 @@ pub fn run() {
         commands::sql_profile_list,
         commands::sql_profile_save,
         commands::sql_profile_delete,
+        commands::sql_profile_test,
         commands::agent_chat,
         commands::frontend_log
     ]);

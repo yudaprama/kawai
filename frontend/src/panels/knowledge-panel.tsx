@@ -8,6 +8,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { KnowledgeFileInfo } from "@/lib/api";
 
+type KnowledgeTab = "session" | "library" | "databases";
+
 export function KnowledgePanel({
   knowledge,
   sessionId,
@@ -16,6 +18,7 @@ export function KnowledgePanel({
   linking,
   confirmDeleteId,
   showDatabases,
+  focusTab,
   onAddFiles,
   onAddLink,
   onAddToSession,
@@ -36,6 +39,9 @@ export function KnowledgePanel({
   confirmDeleteId: string | null;
   /** Whether the analytics agent is available (catalog-driven) — gates the Databases tab. */
   showDatabases: boolean;
+  /** Imperative tab switch (e.g. the analytics onboarding's "Connect
+   *  database" CTA) — increment `n` to re-fire for the same tab. */
+  focusTab?: { tab: KnowledgeTab; n: number };
   onAddFiles: () => void;
   onAddLink: () => void;
   onAddToSession: (file: KnowledgeFileInfo) => void;
@@ -44,7 +50,6 @@ export function KnowledgePanel({
   onDeleteFile: (file: KnowledgeFileInfo) => void;
   onPreview: (file: KnowledgeFileInfo) => void;
 }) {
-  type KnowledgeTab = "session" | "library" | "databases";
   const [tab, setTab] = useState<KnowledgeTab>(sessionId != null ? "session" : "library");
   const prevSessionId = useRef(sessionId);
   useEffect(() => {
@@ -54,6 +59,11 @@ export function KnowledgePanel({
     if (sessionId != null && prevSessionId.current == null) setTab("session");
     prevSessionId.current = sessionId;
   }, [sessionId]);
+  useEffect(() => {
+    if (focusTab && focusTab.n > 0 && (focusTab.tab !== "databases" || showDatabases)) {
+      setTab(focusTab.tab);
+    }
+  }, [focusTab, showDatabases]);
   return (
     <section className="flex min-w-0 flex-1 flex-col border-l">
       <div className="flex h-10 shrink-0 items-center justify-between gap-4 border-b px-3">

@@ -587,6 +587,24 @@ async fn sql_profile_delete_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
+#[cfg(feature = "analytics")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SqlProfileTestRequest {
+    name: String,
+}
+
+#[cfg(feature = "analytics")]
+async fn sql_profile_test_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<SqlProfileTestRequest>,
+) -> Result<Json<logic::analytics::SqlProfileTest>, (StatusCode, String)> {
+    logic::analytics::sql_profile_test(&claims.sub, &req.name)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
 #[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -913,7 +931,8 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/data_preview", post(data_preview_handler))
         .route("/api/sql_profile_list", post(sql_profile_list_handler))
         .route("/api/sql_profile_save", post(sql_profile_save_handler))
-        .route("/api/sql_profile_delete", post(sql_profile_delete_handler));
+        .route("/api/sql_profile_delete", post(sql_profile_delete_handler))
+        .route("/api/sql_profile_test", post(sql_profile_test_handler));
 
     Router::new()
         .merge(public)

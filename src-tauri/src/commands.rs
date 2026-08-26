@@ -583,6 +583,17 @@ pub async fn sql_profile_delete(
     logic::analytics::sql_profile_delete(&user_id, &name).await
 }
 
+/// Authenticated RPC: probe one saved SQL data source (open + list tables).
+#[cfg(feature = "analytics")]
+#[tauri::command]
+pub async fn sql_profile_test(
+    name: String,
+    session: State<'_, Session>,
+) -> Result<logic::analytics::SqlProfileTest, String> {
+    let user_id = session_user_id(&session)?;
+    logic::analytics::sql_profile_test(&user_id, &name).await
+}
+
 
 /// Authenticated RPC: ingest a YouTube video into the knowledge base
 /// (transcript → markdown document → indexed; deduped per video).

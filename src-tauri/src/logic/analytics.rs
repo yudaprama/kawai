@@ -472,6 +472,79 @@ pub fn has_sql_profiles() -> bool {
     !sql_profiles().is_empty()
 }
 
+/// Result of a `sql_profile_test` probe, as shown in the settings UI.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SqlProfileTest {
+    pub ok: bool,
+    /// "sqlite" | "remote" | "unknown" — how the source was reached.
+    pub engine: String,
+    pub tables: usize,
+    /// First few table names, for a quick glance in the UI.
+    pub sample: Vec<String>,
+    /// Failure reason when `ok` is false.
+    pub error: Option<String>,
+}
+
+/// Probe one saved data source: open a connection and list its tables. The
+/// RPC itself never fails on a bad source — connection problems come back as
+/// `ok: false` so the UI can render the reason inline.
+pub async fn sql_profile_test(user_id: &str, name: &str) -> Result<SqlProfileTest, String> {
+    fn fail(engine: &str, error: String) -> SqlProfileTest {
+        SqlProfileTest {
+            ok: false,
+            engine: engine.to_string(),
+            tables: 0,
+            sample: Vec::new(),
+            error: Some(error),
+        }
+    }
+
+    let name = normalize_profile_name(name)?;
+    refresh_profile_cache(user_id).await;
+    let src = match profile_value(&name) {
+        Ok(v) => v,
+        Err(e) => return Ok(fail("unknown", e.0)),
+    };
+    let (engine, items) = if looks_remote(&src) {
+        #[cfg(feature = "analytics-sql")]
+        {
+            match super::sql_remote::list_objects(&src)
+                .await
+                .map_err(|e| fail("remote", e))
+            {
+                Ok(items) => ("remote", items),
+                Err(res) => return Ok(res),
+            }
+        }
+        #[cfg(not(feature = "analytics-sql"))]
+        {
+            return Ok(fail(
+                "remote",
+                "remote SQL sources (postgres://mysql://) need a build with the \
+                 analytics-sql feature"
+                    .into(),
+            ));
+        }
+    } else {
+        let conn = match open_sqlite(&name).await {
+            Ok(c) => c,
+            Err(e) => return Ok(fail("sqlite", e.0)),
+        };
+        match list_objects(&conn).await {
+            Ok(items) => ("sqlite", items),
+            Err(e) => return Ok(fail("sqlite", e.0)),
+        }
+    };
+    Ok(SqlProfileTest {
+        ok: true,
+        engine: engine.to_string(),
+        tables: items.len(),
+        sample: items.iter().take(5).map(|(n, _)| n.clone()).collect(),
+        error: None,
+    })
+}
+
 fn profile_value(name: &str) -> Result<String, analytics::ToolError> {
     let profiles = sql_profiles();
     profiles

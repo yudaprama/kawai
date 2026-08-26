@@ -56,12 +56,14 @@ frontend/
 │   │   ├── base64.ts       # bytesToBase64, base64ToBytes, dataUrlToFile, fileToBase64
 │   │   ├── extensions.ts   # ADD_FILE_ACCEPT, OFFICE_EXTS, IMAGE_EXTS (single source)
 │   │   ├── knowledge.ts    # isYouTubeUrl, classifySource — pure knowledge helpers
+│   │   ├── analytics.ts    # analytics agent: detectQueryChart, rowsToCsv, maskSource, isRemoteSource (pure, tested)
 │   │   ├── chat-helpers.ts # historyToMessages, toFriendlyError, sessionPeriod, stripToolMarkup
 │   │   ├── clipboard.ts    # clipboard read/write helpers (browser APIs)
 │   │   ├── download.ts     # triggerDownload() — creates and clicks a temp <a>
 │   │   ├── file-types.ts   # fileExtension(), fileKind(), shikiLanguage(), guessMimeType()
 │   │   ├── utils.ts        # cn(), formatBytes, isRecord, errText alias + showErrorToast
 │   │   ├── preview-file.ts # useFilePreview() hook — fetches + decodes office store files
+│   │   ├── preview-bridge.ts # event bridge: tool-renderer cards → App PreviewDialog (no callbacks through vendored tree)
 │   │   └── streamdown/     # vendored streaming markdown renderer
 │   ├── hooks/
 │   │   ├── use-local-chat.ts    # facade: composes use-chat-model + use-chat-sessions + send/stop
