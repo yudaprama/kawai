@@ -61,7 +61,7 @@ jobs:
       # a real path dep (binance feature) — cargo resolution needs its manifest.
       - name: Init submodules (manifest only)
         run: |
-          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide
+          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
           git -C crates submodule update --init binance-connector-rust
 
       - uses: dtolnay/rust-toolchain@stable
@@ -129,7 +129,7 @@ jobs:
       # Recursive: the litert feature runs bindgen, which parses the C headers
       # of the NESTED submodule cognee-litert-lm/vendor/LiteRT-LM.
       - name: Init submodules (recursive — bindgen needs nested LiteRT-LM headers)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -255,8 +255,8 @@ jobs:
           key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-macos26-arm64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
 
       - name: Build litert-lm dylib
         run: |
@@ -376,15 +376,13 @@ jobs:
             ${{ github.workspace }}/agent-eval-report.md
           cat ${{ github.workspace }}/agent-eval-report.md >> "$GITHUB_STEP_SUMMARY"
 
-      # ── Analytics suite (EVAL_SUITE=analytics): data_schema/data_query
-      #    selection + argument composition over a stated schema. REPORT-ONLY
-      #    for now (continue-on-error): E4B collapses this suite on CI
-      #    (0-1/8 since it landed, while office stays 19-20/20) — root cause
-      #    under diagnosis via the EVAL_DEBUG raw dumps in the report.
-      #    Re-gate (EVAL_MIN_PASS) once the base suite is reproducibly green.
+      # ── Analytics suite (EVAL_SUITE=analytics): data_schema/data_query/data_ta
+      #    selection + argument composition over a stated schema (A01-A11).
+      #    GATED at 10/11 — one-scenario tolerance, mirroring the office
+      #    gate's 19/20; the report artifact carries EVAL_DEBUG raw dumps for
+      #    any failure diagnosis.
       - name: agent_eval (analytics suite)
         working-directory: src-tauri
-        continue-on-error: true
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
@@ -393,6 +391,7 @@ jobs:
           KAWAI_LLM_MAX_TOKENS: "8192"
           EVAL_SUITE: analytics
           EVAL_DEBUG: "1"
+          EVAL_MIN_PASS: "10"
         run: |
           cargo run --release --example agent_eval --features litert,office -- \
             ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
@@ -446,8 +445,8 @@ jobs:
           key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
 
       # Tauri needs GTK/webkit headers; bindgen + bazel need clang-18.
       # clang-18 via apt.llvm.org — ubuntu-22.04 keeps glibc >= 2.35.
@@ -616,9 +615,9 @@ jobs:
           key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-windows-x86_64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide)
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
         shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
 
       - name: Install bazelisk
         shell: pwsh
