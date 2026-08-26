@@ -108,7 +108,7 @@ async fn main() {
         .expect("data_query");
     println!("[analytics_smoke] data_query → {rows}");
 
-    let _ = data::toolset(user, 1);
+    let _ = data::toolset(user, 1, &[]);
     println!("[analytics_smoke] PASS csv wrapper roundtrip");
 
     // ── xlsx bridge: typed conversion + sidecar cache ────────────────────
@@ -363,6 +363,57 @@ async fn main() {
         die(&format!("unknown-kind error lacks guidance: {err}"));
     }
     println!("[analytics_smoke] PASS data_ta error contract: {err}");
+
+    // ── data_chart: aggregated bar chart → svg in the office store ───────
+    let out = data::DataChartTool(user.to_string(), 1)
+        .call(
+            serde_json::from_value(serde_json::json!({
+                "fileId": stored.id,
+                "mark": "bar",
+                "x": "city",
+                "y": "total",
+                "groupBy": ["city"],
+                "aggregations": [
+                    { "column": "sales", "function": "sum", "alias": "total" }
+                ],
+                "sortBy": "total",
+                "descending": true,
+                "title": "Sales by city"
+            }))
+            .expect("chart args"),
+        )
+        .await
+        .expect("data_chart");
+    let cv: Value = serde_json::from_str(&out).unwrap();
+    if cv["rows"].as_i64() != Some(2) || cv["mark"] != "bar" {
+        die(&format!("data_chart reply wrong: {out}"));
+    }
+    let chart_id = cv["fileId"].as_str().unwrap_or_else(|| die("fileId missing")).to_string();
+    let (info, bytes) = store::read_file(user, &chart_id).expect("read chart svg");
+    let svg = String::from_utf8(bytes).unwrap();
+    if info.ext != "svg" || !svg.starts_with("<svg") || !svg.contains("Sales by city") {
+        die(&format!("stored chart wrong: {} {} bytes, head: {}", info.ext, svg.len(), &svg[..40.min(svg.len())]));
+    }
+    println!(
+        "[analytics_smoke] PASS data_chart: grouped bar → {}-byte svg in store ({})",
+        svg.len(),
+        info.original_name
+    );
+
+    // Missing y in the query result → guidance error, not a render failure.
+    let err = data::DataChartTool(user.to_string(), 1)
+        .call(
+            serde_json::from_value(serde_json::json!({
+                "fileId": stored.id, "mark": "line", "x": "city", "y": "nope"
+            }))
+            .expect("chart args"),
+        )
+        .await
+        .expect_err("unknown y must fail");
+    if !err.0.contains("nope") {
+        die(&format!("data_chart error lacks guidance: {err}"));
+    }
+    println!("[analytics_smoke] PASS data_chart error contract: {err}");
 
     println!("[analytics_smoke] ALL PASS");
 }

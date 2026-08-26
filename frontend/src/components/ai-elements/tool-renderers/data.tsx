@@ -307,6 +307,37 @@ export function renderDataTables(output: unknown): ReactNode {
   );
 }
 
+/** data_chart → { fileId, fileName, mark, x, rows, note } */
+export function renderDataChart(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || !str(d.fileId)) return null;
+  const fileId = str(d.fileId) ?? "";
+  const fileName = str(d.fileName);
+  const mark = str(d.mark) ?? "chart";
+  const rows = typeof d.rows === "number" ? fmtNum(d.rows) : null;
+  const items: Metric[] = [
+    {
+      label: fileName ?? `${mark} chart`,
+      value: `${mark} chart`,
+      sub: rows ? `${rows} rows plotted` : undefined,
+    },
+  ];
+  return (
+    <div className="not-prose space-y-1.5">
+      <MetricGrid items={items} />
+      {fileId && (
+        <button
+          className="text-primary hover:underline text-xs"
+          onClick={() => emitOpenPreview(fileId, fileName ?? "chart")}
+          type="button"
+        >
+          Open chart
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** data_import → { fileId, fileName, source: { profile, table }, rows, truncated, maxRows } */
 export function renderDataImport(output: unknown): ReactNode {
   const d = parse(output);

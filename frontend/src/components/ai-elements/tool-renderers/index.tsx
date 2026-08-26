@@ -28,7 +28,7 @@ import { jikanCards, mealCards, drinkCards, bookCards, repoCards, paperCards, qu
 import { renderGeocode, renderIpLocation, renderIss } from "./geo";
 import { renderConnectorTools } from "./connector";
 import { renderWebSearch, renderWebSearchSuggest } from "./search";
-import { renderDataSchema, renderDataQuery, renderDataTa, renderDataTables, renderDataImport } from "./data";
+import { renderDataSchema, renderDataQuery, renderDataTa, renderDataChart, renderDataTables, renderDataImport } from "./data";
 
 // ---------------------------------------------------------------------------
 // registry
@@ -42,6 +42,7 @@ const registry: Record<string, ToolRenderer> = {
   data_schema: renderDataSchema,
   data_query: renderDataQuery,
   data_ta: renderDataTa,
+  data_chart: renderDataChart,
   data_tables: renderDataTables,
   data_import: renderDataImport,
   connector_list_tools: renderConnectorTools,

@@ -1,6 +1,7 @@
 //! Data analysis agent tools (`builtin.analytics`): structured queries over
-//! the user's stored tabular files (csv, tsv, parquet, xlsx/xlsm), plus a
-//! technical-analysis suite over their numeric column series.
+//! the user's stored tabular files (csv, tsv, parquet, xlsx/xlsm), a
+//! technical-analysis suite over their numeric column series, and svg chart
+//! rendering of query results (saved into the office store).
 //!
 //! Thin `AgentTool` wrappers — ALL query logic lives in the
 //! `analytics` crate (pure functions over a path); these structs only bind
@@ -268,6 +269,150 @@ impl AgentTool for DataTaTool {
 
 /// Re-exported so the transport wrappers can name the preview's return type.
 pub use analytics::SchemaInfo;
+
+// -- data_chart ----------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChartToolArgs {
+    pub file_id: String,
+    pub sheet: Option<String>,
+    #[serde(flatten)]
+    pub q: analytics::QueryArgs,
+    pub mark: analytics::chart::ChartMark,
+    pub x: String,
+    pub y: String,
+    pub color: Option<String>,
+    pub title: Option<String>,
+}
+
+/// Render one chart from a stored tabular file and save it into the office
+/// store as an svg (associated with the session, so the preview bridge can
+/// render it inline). The data pipeline is the same `data_query` AST —
+/// filters/aggregations shape the DataFrame; `mark`/`x`/`y`/`color` map it
+/// onto the chart.
+pub struct DataChartTool(pub String, pub i64);
+
+impl AgentTool for DataChartTool {
+    const NAME: &'static str = "data_chart";
+    type Args = ChartToolArgs;
+    type Output = String;
+    type Error = DataToolError;
+
+    fn description(&self) -> String {
+        "Render a chart (bar/line/point/area) from a stored tabular file and save it as an svg the user sees rendered. Takes the same filters/groupBy/aggregations/sortBy as data_query, plus mark, x (category/time column), y (numeric column or aggregation alias), optional color (grouping column) and title. x and y must appear in the query result — for aggregates use the group_by column as x and the aggregation alias as y.".into()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "fileId": { "type": "string", "description": "File id from office_list_files or the attachment block" },
+                "sheet": { "type": "string", "description": "Excel sheet name. Optional — defaults to the first sheet with data." },
+                "mark": { "type": "string", "enum": ["bar","line","point","area"], "description": "bar: category comparisons; line: trends over time; point: relationships; area: cumulative volume." },
+                "x": { "type": "string", "description": "Horizontal-axis column in the query result (category, label, or date)." },
+                "y": { "type": "string", "description": "Vertical-axis NUMERIC column in the query result — often an aggregation alias (e.g. \"total\" from sum)." },
+                "color": { "type": "string", "description": "Optional grouping column — draws one series per distinct value." },
+                "title": { "type": "string", "description": "Chart title. Optional — defaults to \"<y> by <x>\"." },
+                "filters": {
+                    "type": "array",
+                    "description": "WHERE conditions, AND-combined (same as data_query).",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "column": { "type": "string" },
+                            "operator": { "type": "string", "enum": ["eq","neq","gt","gte","lt","lte","contains"] },
+                            "value": { "type": "string" },
+                            "datePart": { "type": "string", "enum": ["year","month","day"] }
+                        },
+                        "required": ["column","operator","value"]
+                    }
+                },
+                "groupBy": { "type": "array", "items": { "type": "string" }, "description": "Columns to group by (same as data_query)." },
+                "aggregations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "column": { "type": "string" },
+                            "function": { "type": "string", "enum": ["sum","avg","min","max","count","count_distinct"] },
+                            "alias": { "type": "string" }
+                        },
+                        "required": ["column","function","alias"]
+                    }
+                },
+                "sortBy": { "type": "string", "description": "Output column to sort by." },
+                "descending": { "type": "boolean", "description": "Default false." },
+                "limit": { "type": "integer", "description": "Max rows plotted. Default 500, max 2000." }
+            },
+            "required": ["fileId", "mark", "x", "y"]
+        })
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<String, DataToolError> {
+        let user = self.0.clone();
+        let x_col = args.x.clone();
+        let mark = match args.mark {
+            analytics::chart::ChartMark::Bar => "bar",
+            analytics::chart::ChartMark::Line => "line",
+            analytics::chart::ChartMark::Point => "point",
+            analytics::chart::ChartMark::Area => "area",
+        };
+        let name = chart_file_name(args.title.as_deref(), &args.y, &args.x);
+        let rendered = run_blocking(move || {
+            let path = resolve_tabular(&user, &args.file_id)?;
+            let spec = analytics::chart::ChartSpec {
+                mark: args.mark,
+                x: args.x,
+                y: args.y,
+                color: args.color,
+                title: args.title,
+            };
+            analytics::chart::render(&path, args.sheet.as_deref(), &args.q, &spec)
+        })
+        .await?;
+        let file = store::import_bytes(&self.0, &name, rendered.svg.as_bytes())
+            .map_err(DataToolError)?;
+        if let Err(e) =
+            super::rag::knowledge_add_to_session(&self.0, self.1, &[file.id.clone()]).await
+        {
+            eprintln!("[analytics] session association skipped: {e}");
+        }
+        Ok(json!({
+            "fileId": file.id,
+            "fileName": file.original_name,
+            "mark": mark,
+            "x": x_col,
+            "rows": rendered.rows,
+            "note": "chart saved as svg — the user sees it rendered; explain the key takeaways in your final answer",
+        })
+        .to_string())
+    }
+}
+
+/// Timestamped store name: re-rendering the same chart creates a fresh file
+/// instead of colliding with the previous one.
+fn chart_file_name(title: Option<&str>, y: &str, x: &str) -> String {
+    let base = title
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{y} by {x}"));
+    let slug: String = base
+        .to_ascii_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let slug = slug
+        .split('-')
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    let bounded: String = slug.chars().take(40).collect();
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("chart-{bounded}-{ts}.svg")
+}
 
 /// Schema preview for the Knowledge panel: the same discovery the
 /// `data_schema` tool runs (columns, dtypes, samples, row count), minus the
@@ -982,6 +1127,7 @@ pub fn toolset(
     set.add_tool(DataTableSchemaTool(user_id.to_string()));
     set.add_tool(DataQueryTool(user_id.to_string()));
     set.add_tool(DataTaTool(user_id.to_string()));
+    set.add_tool(DataChartTool(user_id.to_string(), session_id));
     // Id discovery: the same list tool the office agent uses.
     set.add_tool(super::office::tools::ListFilesTool(user_id.to_string()));
     if !profiles.is_empty() {
