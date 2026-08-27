@@ -104,9 +104,7 @@ pub fn resolve_model_path() -> Result<String, String> {
 pub async fn ensure_model() -> Result<String, String> {
     let filename = "gemma-4-E4B-it.litertlm";
     let repo_id = "litert-community/gemma-4-E4B-it-litert-lm";
-    let model_url = format!(
-        "https://huggingface.co/{repo_id}/resolve/main/{filename}"
-    );
+    let model_url = format!("https://huggingface.co/{repo_id}/resolve/main/{filename}");
 
     // Fast path: already on disk.
     if let Ok(path) = resolve_model_path() {
@@ -115,8 +113,8 @@ pub async fn ensure_model() -> Result<String, String> {
     }
 
     // Determine target: ~/.kawai/models/<filename>
-    let home = std::env::var("HOME")
-        .map_err(|_| "HOME not set — cannot download model".to_string())?;
+    let home =
+        std::env::var("HOME").map_err(|_| "HOME not set — cannot download model".to_string())?;
     let model_dir = std::path::PathBuf::from(&home).join(".kawai/models");
     let target_path = model_dir.join(filename);
     let tmp_path = model_dir.join(format!("{filename}.part"));
@@ -163,8 +161,7 @@ pub async fn ensure_model() -> Result<String, String> {
     }
 
     // Atomically move the completed file into place.
-    std::fs::rename(&tmp_path, &target_path)
-        .map_err(|e| format!("rename to target: {e}"))?;
+    std::fs::rename(&tmp_path, &target_path).map_err(|e| format!("rename to target: {e}"))?;
 
     eprintln!(
         "[ensure_model] download complete: {}",
@@ -182,13 +179,10 @@ async fn download_stream(
     existing_size: u64,
     filename: &str,
 ) -> Result<(), String> {
-    use std::io::Write;
     use futures_util::StreamExt;
+    use std::io::Write;
 
-    let total_size = existing_size
-        + response
-            .content_length()
-            .unwrap_or(0);
+    let total_size = existing_size + response.content_length().unwrap_or(0);
 
     eprintln!(
         "[ensure_model] downloading {filename} ({:.1} GB) ...",
@@ -242,6 +236,7 @@ pub mod agent;
 // Session-scoped evidence cache for the agent loop (cross-turn reuse of
 // unchanged-file reads). In-process only — no SQLite, no schema.
 pub mod evidence_cache;
+pub mod knowledge;
 #[cfg(feature = "office")]
 pub mod office;
 #[cfg(feature = "office")]
@@ -259,6 +254,9 @@ pub mod sql_remote;
 // over one DB file. No office/analytics dependency.
 #[cfg(feature = "graph")]
 pub mod graph;
+// When graph + office are both on, logic::graph re-exports from knowledge::graph.
+// When only graph is on (no office), logic::graph compiles the full implementation
+// directly (graph.rs handles both cases internally).
 // Skills — reusable SKILL.md instruction sets (ungated; plain libsql).
 pub mod skills;
 // L1 memories — atomic long-term memory items + cloud extraction (ungated
