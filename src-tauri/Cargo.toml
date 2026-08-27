@@ -49,6 +49,7 @@ kawai-skills = { path = "../crates/skills" }
 kawai-memory = { path = "../crates/memory" }
 kawai-office = { path = "../crates/office", optional = true }
 kawai-knowledge = { path = "../crates/knowledge", optional = true }
+kawai-analytics = { path = "../crates/analytics-tools", optional = true }
 # The agent tool seam (tool trait + registry) shared with components.
 kawai-tools = { path = "../kawai-tools" }
 # default-features=false keeps only the local-SQLite core: replication/remote
@@ -151,10 +152,10 @@ binance = ["dep:binance"]
 # Data analysis agent (logic::agent ANALYTICS_AGENT_ID): data_schema +
 # data_query over the office store's tabular files. Implies `office` —
 # the files live in the office store and reuse its import UI.
-analytics = ["dep:analytics", "office", "kawai-db/analytics"]
+analytics = ["dep:analytics", "office", "kawai-db/analytics", "dep:kawai-analytics"]
 # Remote SQL sources (Postgres/MySQL) for the analytics snapshot tools.
 # Implies `analytics`; SQLite needs no feature (libsql rides along).
-analytics-sql = ["analytics", "dep:sqlx"]
+analytics-sql = ["analytics", "kawai-analytics/analytics-sql"]
 
 [[bin]]
 name = "kawai"

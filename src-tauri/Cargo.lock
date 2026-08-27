@@ -3594,6 +3594,7 @@ dependencies = [
  "futures-util",
  "graph",
  "jsonwebtoken",
+ "kawai-analytics",
  "kawai-auth",
  "kawai-constants 0.1.0",
  "kawai-db",
@@ -3628,6 +3629,22 @@ dependencies = [
  "url",
  "webread",
  "youtube_transcript",
+]
+
+[[package]]
+name = "kawai-analytics"
+version = "0.1.0"
+dependencies = [
+ "analytics",
+ "kawai-db",
+ "kawai-knowledge",
+ "kawai-office",
+ "kawai-tools",
+ "libsql",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
 ]
 
 [[package]]
