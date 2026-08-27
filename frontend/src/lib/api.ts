@@ -101,3 +101,32 @@ export interface SqlProfileTest {
   sample: string[];
   error: string | null;
 }
+
+/** List projection of a skill (SKILL.md body omitted) — mirror of `logic::skills::SkillSummary`. */
+export interface SkillSummary {
+  id: string;
+  name: string;
+  description: string;
+  version: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** A stored skill including its SKILL.md body — mirror of `logic::skills::Skill`. */
+export interface SkillInfo extends SkillSummary {
+  content: string;
+}
+
+/** An L1 memory item — mirror of `logic::memory::MemoryItem`. */
+export interface MemoryItem {
+  id: string;
+  kind: "preference" | "rule" | "event" | "fact" | "goal";
+  title: string;
+  content: string;
+  sourceSessionId: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** All valid memory kinds (kind filter in the Memory page). */
+export const MEMORY_KINDS = ["preference", "rule", "event", "fact", "goal"] as const;

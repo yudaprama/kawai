@@ -55,6 +55,14 @@ fn migrations() -> Vec<Migration> {
         version: "0007_session_artifacts",
         sql: include_str!("../../migrations/0007_session_artifacts.sql"),
     });
+    m.push(Migration {
+        version: "0008_skills",
+        sql: include_str!("../../migrations/0008_skills.sql"),
+    });
+    m.push(Migration {
+        version: "0009_memories",
+        sql: include_str!("../../migrations/0009_memories.sql"),
+    });
     m
 }
 
@@ -197,6 +205,8 @@ mod tests {
         #[cfg(feature = "analytics")]
         expected.push("0006_sql_profiles");
         expected.push("0007_session_artifacts");
+        expected.push("0008_skills");
+        expected.push("0009_memories");
         assert_eq!(versions, expected);
 
         // Core tables exist.
@@ -347,5 +357,42 @@ mod tests {
             handles.push(row.get::<String>(0).unwrap());
         }
         assert_eq!(handles, vec!["mem1", "mem2"]);
+    }
+
+    #[tokio::test]
+    async fn skills_table_accepts_rows_and_enforces_unique_name() {
+        let (conn, dir) = open_temp().await;
+        ensure_schema(&conn, &dir).await.unwrap();
+
+        conn.execute(
+            "INSERT INTO skills (id, name, description, content, version, created_at, updated_at) \
+             VALUES ('skl-a', 'pdf-flow', 'PDF tricks', '# PDF', 1, 0, 0)",
+            (),
+        )
+        .await
+        .unwrap();
+
+        // Duplicate name must violate the unique index.
+        let dup = conn
+            .execute(
+                "INSERT INTO skills (id, name, description, content, version, created_at, updated_at) \
+                 VALUES ('skl-b', 'pdf-flow', 'dup', '# dup', 1, 0, 0)",
+                (),
+            )
+            .await;
+        assert!(dup.is_err(), "duplicate skill name must be rejected");
+
+        // Defaults: version=1, empty description.
+        let mut r = conn
+            .query(
+                "INSERT INTO skills (id, name, content, created_at, updated_at) \
+                 VALUES ('skl-c', 'bare', '# bare', 0, 0) RETURNING version, description",
+                (),
+            )
+            .await
+            .unwrap();
+        let row = r.next().await.unwrap().unwrap();
+        assert_eq!(row.get::<i64>(0).unwrap(), 1);
+        assert_eq!(row.get::<String>(1).unwrap(), "");
     }
 }

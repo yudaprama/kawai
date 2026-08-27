@@ -42,7 +42,9 @@ export function SessionRow({
   return (
     <div
       className={`group/session flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
-        active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"
+        active
+          ? "bg-[var(--tea-color-bg-brand-lighten-default)] text-foreground"
+          : "hover:bg-[var(--tea-color-bg-secondary-default)]"
       }`}
     >
       <button

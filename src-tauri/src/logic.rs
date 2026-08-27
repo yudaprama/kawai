@@ -259,6 +259,11 @@ pub mod sql_remote;
 // over one DB file. No office/analytics dependency.
 #[cfg(feature = "graph")]
 pub mod graph;
+// Skills — reusable SKILL.md instruction sets (ungated; plain libsql).
+pub mod skills;
+// L1 memories — atomic long-term memory items + cloud extraction (ungated
+// CRUD; extraction needs the hybrid vault, manual CRUD never does).
+pub mod memory;
 
 pub use db::*;
 

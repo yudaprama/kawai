@@ -77,6 +77,183 @@ struct DeleteChatSessionRequest {
     session_id: i64,
 }
 
+// ── Skills (ungated; plain libsql CRUD) ────────────────────────────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillCreateRequest {
+    name: String,
+    description: Option<String>,
+    content: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillGetRequest {
+    skill_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillUpdateRequest {
+    skill_id: String,
+    name: Option<String>,
+    description: Option<String>,
+    content: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillDeleteRequest {
+    skill_id: String,
+}
+
+// ── L1 memories (ungated CRUD; extraction uses the hybrid cloud tier) ──────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryCreateRequest {
+    kind: String,
+    title: String,
+    content: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryUpdateRequest {
+    memory_id: String,
+    kind: Option<String>,
+    title: Option<String>,
+    content: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryDeleteRequest {
+    memory_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryExtractRequest {
+    session_id: i64,
+}
+
+async fn memory_create_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<MemoryCreateRequest>,
+) -> Result<Json<logic::memory::MemoryItem>, (StatusCode, String)> {
+    logic::memory::memory_create(&claims.sub, &req.kind, &req.title, &req.content)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn memory_list_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<logic::memory::MemoryItem>>, (StatusCode, String)> {
+    logic::memory::memory_list(&claims.sub)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn memory_update_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<MemoryUpdateRequest>,
+) -> Result<Json<Option<logic::memory::MemoryItem>>, (StatusCode, String)> {
+    logic::memory::memory_update(
+        &claims.sub,
+        &req.memory_id,
+        req.kind.as_deref(),
+        req.title.as_deref(),
+        req.content.as_deref(),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn memory_delete_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<MemoryDeleteRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    logic::memory::memory_delete(&claims.sub, &req.memory_id)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn memory_extract_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<MemoryExtractRequest>,
+) -> Result<Json<Vec<logic::memory::MemoryItem>>, (StatusCode, String)> {
+    logic::memory::memory_extract(&claims.sub, req.session_id)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn skill_create_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<SkillCreateRequest>,
+) -> Result<Json<logic::skills::Skill>, (StatusCode, String)> {
+    logic::skills::skill_create(
+        &claims.sub,
+        &req.name,
+        req.description.as_deref().unwrap_or(""),
+        &req.content,
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn skill_list_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<logic::skills::SkillSummary>>, (StatusCode, String)> {
+    logic::skills::skill_list(&claims.sub)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn skill_get_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<SkillGetRequest>,
+) -> Result<Json<Option<logic::skills::Skill>>, (StatusCode, String)> {
+    logic::skills::skill_get(&claims.sub, &req.skill_id)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn skill_update_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<SkillUpdateRequest>,
+) -> Result<Json<Option<logic::skills::Skill>>, (StatusCode, String)> {
+    logic::skills::skill_update(
+        &claims.sub,
+        &req.skill_id,
+        req.name.as_deref(),
+        req.description.as_deref(),
+        req.content.as_deref(),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn skill_delete_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<SkillDeleteRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    logic::skills::skill_delete(&claims.sub, &req.skill_id)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GenerateSessionTitleRequest {
@@ -1017,6 +1194,16 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
             "/api/delete_chat_session",
             post(delete_chat_session_handler),
         )
+        .route("/api/skill_create", post(skill_create_handler))
+        .route("/api/skill_list", post(skill_list_handler))
+        .route("/api/skill_get", post(skill_get_handler))
+        .route("/api/skill_update", post(skill_update_handler))
+        .route("/api/skill_delete", post(skill_delete_handler))
+        .route("/api/memory_create", post(memory_create_handler))
+        .route("/api/memory_list", post(memory_list_handler))
+        .route("/api/memory_update", post(memory_update_handler))
+        .route("/api/memory_delete", post(memory_delete_handler))
+        .route("/api/memory_extract", post(memory_extract_handler))
         .route_layer(from_fn(auth_middleware));
 
     let protected = protected.route(

@@ -3,8 +3,7 @@ import { AssetListPanel } from "@/components/asset/asset-list-panel";
 import { AssetPageHeader } from "@/components/asset/asset-page-header";
 import { AssetSplitLayout } from "@/components/asset/asset-split-layout";
 import { Button } from "@/components/ui/button";
-import { AssetShell } from "@/panels/assets/asset-shell";
-import { EmptyPane } from "@/panels/assets/skills-page";
+import { AssetShell, EmptyPane } from "@/panels/assets/asset-shell";
 
 /**
  * Code asset page — CodeSourcesPanel structure (Tea asset-management UI) over

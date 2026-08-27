@@ -142,7 +142,7 @@ export function AgentsRail({
               <button
                 className={`flex w-full items-center rounded-lg text-left transition-colors disabled:opacity-50 ${
                   collapsed ? "justify-center p-2" : "gap-2.5 px-2.5 py-2"
-                } ${active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
+                } ${active ? "bg-[var(--tea-color-bg-brand-default)] text-[var(--tea-color-text-on-bg-brand-default)]" : "hover:bg-[var(--tea-color-bg-secondary-default)]"}`}
                 disabled={busy && !active && assetView == null}
                 key={a.id}
                 onClick={() => onSelectAgent(a.id)}
@@ -179,7 +179,7 @@ export function AgentsRail({
               <button
                 className={`flex w-full items-center rounded-lg text-left transition-colors ${
                   collapsed ? "justify-center p-2" : "gap-2.5 px-2.5 py-2"
-                } ${active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
+                } ${active ? "bg-[var(--tea-color-bg-brand-default)] text-[var(--tea-color-text-on-bg-brand-default)]" : "hover:bg-[var(--tea-color-bg-secondary-default)]"}`}
                 key={asset.id}
                 onClick={() => onSelectAsset(asset.id)}
                 title={`${asset.label} · ${asset.subtitle}`}

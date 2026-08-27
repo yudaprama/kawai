@@ -90,6 +90,8 @@ frontend/
 │   │   ├── use-theme.ts         # dark/light/system theme with localStorage persistence
 │   │   ├── use-copy-button.ts   # copy button with Check/Copy icon swap
 │   │   ├── use-retryable-toast.ts # run a promise; on failure toast with a Retry action
+│   │   ├── use-skills.ts     # skills asset page: list + create/get/update/remove over the skill_* ops (optimistic)
+│   │   ├── use-memories.ts   # memory page L1: list + create/update/remove + memory_extract (cloud tier; guidance toast offline)
 │   │   └── use-copy-to-clipboard.ts # copy-to-clipboard primitive with timed reset
 │   ├── components/
 │   │   ├── ai-elements/    # vendored chat components (from web/ SPA, trimmed)
@@ -113,8 +115,8 @@ frontend/
 │   │   │   ├── asset-nav.tsx      # ASSET_NAV + AssetViewId — the rail's Assets section metadata
 │   │   │   ├── asset-shell.tsx    # shared shell: back-to-chat header + scroll body
 │   │   │   ├── wiki-page.tsx      # knowledge base as wiki sources (Tea panel structure): header + Sources list (status/pages/chunks) + Pages|Graph detail tabs (Pages = live preview)
-│   │   │   ├── memory-page.tsx    # ChatMemoryPanel structure: header + agent filter + Blocks list + L0–L3 layer tabs (L0 transcript real; L1–L3 honest empty — no pipeline tier yet)
-│   │   │   ├── skills-page.tsx    # SkillsPanel structure shell + EmptyPane (no skill storage tier yet) 
+│   │   │   ├── memory-page.tsx    # ChatMemoryPanel structure: header + agent filter + Blocks list + L0–L3 layer tabs (L0 transcript + L1 memories CRUD/extract real; L2/L3 honest empty — no pipeline tier yet)
+│   │   │   ├── skills-page.tsx    # Skills over the real skill_* ops: list ↔ detail (markdown body via streamdown) + create/edit dialog + delete (use-skills hook)
 │   │   │   └── code-page.tsx      # CodeSourcesPanel structure shell (no repo indexing tier yet)
 │   │   ├── conversation-panel.tsx # pane 2: chat + model status (virtualization)
 │   │   ├── chat-composer.tsx      # composer: @-mention + file chips + speech

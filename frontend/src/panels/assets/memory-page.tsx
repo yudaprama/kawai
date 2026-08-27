@@ -1,4 +1,4 @@
-import { LayersIcon } from "lucide-react";
+import { LayersIcon, PencilIcon, PlusIcon, SparklesIcon, TrashIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   AssetBadge,
@@ -11,19 +11,41 @@ import {
 } from "@/components/asset/asset-list-panel";
 import { AssetPageHeader } from "@/components/asset/asset-page-header";
 import { AssetSplitLayout } from "@/components/asset/asset-split-layout";
+import { MessageResponse } from "@/components/ai-elements/message";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type AgentInfo, type ChatMessageInfo, type ChatSessionInfo, call, errText } from "@/lib/api";
+import { Textarea } from "@/components/ui/textarea";
+import { useMemories } from "@/hooks/use-memories";
+import {
+  type AgentInfo,
+  MEMORY_KINDS,
+  type ChatMessageInfo,
+  type ChatSessionInfo,
+  type MemoryItem,
+  call,
+} from "@/lib/api";
 import { AssetShell } from "@/panels/assets/asset-shell";
+
+type MemoryTab = "l0" | "l1" | "l2" | "l3";
 
 /**
  * Memory asset page — ChatMemoryPanel structure (Tea asset-management UI):
- * page header with an agent filter, session blocks on the left, and the
- * layer tabs L0–L3 on the right. L0 (raw conversations) is fully real;
- * L1–L3 (extracted memories / scenes / persona) are the memory pipeline
- * tiers this build doesn't have — the tabs state that plainly.
+ * page header with an agent filter, session blocks on the left, layer tabs on
+ * the right. L0 (raw conversations) and L1 (atomic memories — global, with
+ * cloud extraction + manual CRUD) are real; L2/L3 (scenes, persona) have no
+ * pipeline tier yet and say so.
  */
 export function MemoryAssetPage({
   sessions,
@@ -40,6 +62,9 @@ export function MemoryAssetPage({
   const [messages, setMessages] = useState<ChatMessageInfo[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<MemoryTab>("l0");
+
+  const memories = useMemories(true);
 
   const agentName = useMemo(() => {
     const map = new Map(agents.map((a) => [a.id, a.name]));
@@ -73,7 +98,7 @@ export function MemoryAssetPage({
         if (!cancelled) setMessages(rows);
       })
       .catch((e) => {
-        if (!cancelled) setError(errText(e));
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -101,7 +126,7 @@ export function MemoryAssetPage({
             </SelectContent>
           </Select>
         }
-        subtitle={`${filtered.length} memory ${filtered.length === 1 ? "block" : "blocks"} · L0 raw conversations`}
+        subtitle={`${filtered.length} memory ${filtered.length === 1 ? "block" : "blocks"} · ${memories.memories.length} L1 ${memories.memories.length === 1 ? "memory" : "memories"}`}
         title="Chat Memory"
       />
       <div className="mb-3 mt-3 flex shrink-0 items-center">
@@ -119,7 +144,15 @@ export function MemoryAssetPage({
       <AssetSplitLayout
         detail={
           active ? (
-            <BlockDetail error={error} loading={loading} messages={messages} session={active} />
+            <BlockDetail
+              error={error}
+              loading={loading}
+              memories={memories}
+              messages={messages}
+              session={active}
+              tab={tab}
+              onTabChange={setTab}
+            />
           ) : (
             <div className="_alp-detail-empty">Select a memory block to inspect its layers</div>
           )
@@ -162,11 +195,17 @@ function BlockDetail({
   messages,
   loading,
   error,
+  memories,
+  tab,
+  onTabChange,
 }: {
   session: ChatSessionInfo;
   messages: ChatMessageInfo[] | null;
   loading: boolean;
   error: string | null;
+  memories: ReturnType<typeof useMemories>;
+  tab: MemoryTab;
+  onTabChange: (t: MemoryTab) => void;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -176,7 +215,7 @@ function BlockDetail({
           block #{session.id} · {new Date((session.createdAt ?? 0) * 1000).toLocaleString()}
         </p>
       </div>
-      <Tabs className="flex min-h-0 flex-1 flex-col" value="l0">
+      <Tabs className="flex min-h-0 flex-1 flex-col" onValueChange={(v) => onTabChange(v as MemoryTab)} value={tab}>
         <div className="shrink-0 border-b px-4">
           <TabsList className="h-9">
             <TabsTrigger value="l0">L0 · Conversations</TabsTrigger>
@@ -188,11 +227,8 @@ function BlockDetail({
         <TabsContent className="flex min-h-0 flex-1 flex-col" value="l0">
           <Transcript error={error} loading={loading} messages={messages} />
         </TabsContent>
-        <TabsContent value="l1">
-          <LayerEmpty
-            description="L1 holds atomic memories (preferences, rules, facts, goals) extracted from conversations with dedup and conflict resolution. The extraction pipeline isn't part of this build yet."
-            label="No extracted memories"
-          />
+        <TabsContent className="flex min-h-0 flex-1 flex-col" value="l1">
+          <L1Pane memories={memories} session={session} />
         </TabsContent>
         <TabsContent value="l2">
           <LayerEmpty
@@ -208,6 +244,204 @@ function BlockDetail({
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+/** L1 — atomic memories. Global list; extraction pulls from the selected block. */
+function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories>; session: ChatSessionInfo }) {
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editing, setEditing] = useState<MemoryItem | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (confirmDeleteId == null) return;
+    const t = setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDeleteId]);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-4 py-2">
+        <Button
+          disabled={memories.extracting}
+          onClick={() => void memories.extract(session.id)}
+          size="xs"
+          title="Distill durable facts from this block's transcript via the cloud tier (needs a configured vault)"
+          variant="outline"
+        >
+          {memories.extracting ? <Spinner className="size-3" /> : <SparklesIcon className="size-3" />}
+          {memories.extracting ? "Extracting…" : "Extract from this block"}
+        </Button>
+        <Button
+          onClick={() => {
+            setEditing(null);
+            setEditorOpen(true);
+          }}
+          size="xs"
+          variant="outline"
+        >
+          <PlusIcon className="size-3" />
+          Add memory
+        </Button>
+        <span className="text-muted-foreground ml-auto text-xs">
+          {memories.memories.length} global {memories.memories.length === 1 ? "memory" : "memories"}
+        </span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {!memories.loaded ? (
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
+            <Spinner className="size-4" /> Loading…
+          </div>
+        ) : memories.memories.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            No memories yet — extract them from a block above, or add one manually.
+          </p>
+        ) : (
+          <ol className="flex flex-col gap-2">
+            {memories.memories.map((m) => (
+              <li className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3" key={m.id}>
+                <div className="flex items-start gap-2">
+                  <span className="text-muted-foreground shrink-0 rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 font-mono text-[10px] uppercase">
+                    {m.kind}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium" title={m.title}>
+                      {m.title}
+                    </p>
+                    <div className="streamdown mt-1 text-xs">
+                      <MessageResponse mode="static">{m.content}</MessageResponse>
+                    </div>
+                    <p className="text-muted-foreground mt-1.5 text-[11px]">
+                      {m.sourceSessionId != null ? `from block #${m.sourceSessionId} · ` : "manual · "}
+                      {new Date(m.updatedAt * 1000).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <button
+                      aria-label={`Edit ${m.title}`}
+                      className="text-muted-foreground hover:text-foreground rounded p-1"
+                      onClick={() => {
+                        setEditing(m);
+                        setEditorOpen(true);
+                      }}
+                      title="Edit memory"
+                      type="button"
+                    >
+                      <PencilIcon className="size-3.5" />
+                    </button>
+                    <button
+                      aria-label={`Delete ${m.title}`}
+                      className={`rounded p-1 ${confirmDeleteId === m.id ? "text-destructive" : "text-muted-foreground hover:text-destructive"}`}
+                      onClick={async () => {
+                        if (confirmDeleteId !== m.id) {
+                          setConfirmDeleteId(m.id);
+                          return;
+                        }
+                        setConfirmDeleteId(null);
+                        await memories.remove(m.id);
+                      }}
+                      title={confirmDeleteId === m.id ? "Click again to confirm" : "Delete memory"}
+                      type="button"
+                    >
+                      <TrashIcon className="size-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+      {editorOpen && (
+        <MemoryEditorDialog
+          initial={editing}
+          onClose={() => setEditorOpen(false)}
+          onSave={async (kind, title, content) => {
+            const saved =
+              editing != null
+                ? await memories.update(editing.id, { kind, title, content })
+                : await memories.create(kind, title, content);
+            if (saved) setEditorOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function MemoryEditorDialog({
+  initial,
+  onClose,
+  onSave,
+}: {
+  initial: MemoryItem | null;
+  onClose: () => void;
+  onSave: (kind: MemoryItem["kind"], title: string, content: string) => void;
+}) {
+  const [kind, setKind] = useState<MemoryItem["kind"]>(initial?.kind ?? "fact");
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [content, setContent] = useState(initial?.content ?? "");
+  const valid = title.trim().length > 0 && content.trim().length > 0;
+
+  return (
+    <Dialog onOpenChange={(open) => !open && onClose()} open>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{initial ? `Edit “${initial.title}”` : "New memory"}</DialogTitle>
+          <DialogDescription>An atomic, durable fact about the user the agents should remember.</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="grid gap-1.5">
+            <label className="text-sm font-medium" htmlFor="memory-kind">
+              Kind
+            </label>
+            <Select onValueChange={(v) => setKind(v as MemoryItem["kind"])} value={kind}>
+              <SelectTrigger className="w-full" id="memory-kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MEMORY_KINDS.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {k}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-1.5">
+            <label className="text-sm font-medium" htmlFor="memory-title">
+              Title
+            </label>
+            <Input
+              id="memory-title"
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Prefers dark UIs"
+              value={title}
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <label className="text-sm font-medium" htmlFor="memory-content">
+              Content
+            </label>
+            <Textarea
+              className="min-h-[100px]"
+              id="memory-content"
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Always ships dark-mode-first interfaces; light mode only on request."
+              value={content}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline">Cancel</Button>
+          </DialogClose>
+          <Button disabled={!valid} onClick={() => onSave(kind, title, content)}>
+            {initial ? "Save" : "Create"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

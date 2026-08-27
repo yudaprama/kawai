@@ -1929,6 +1929,18 @@ pub fn agent_chat(
             base_persona
         };
 
+        // Skills tier: the user's curated instruction sets ride the persona
+        // (bounded block — see skills::prompt_block). The opener is built
+        // below on fresh sessions/epochs, so a skill saved mid-session applies
+        // from the next one; DB failure degrades to an empty block (the chat
+        // must never die because the skills table is unreadable).
+        let skills_block = crate::logic::skills::prompt_block(&user_id).await;
+        let persona_with_skills = if skills_block.is_empty() {
+            persona.to_string()
+        } else {
+            format!("{persona}\n\n{skills_block}")
+        };
+
         // Lazy session creation, then persist the user turn (seeds the title).
         let sid = match session_id {
             Some(id) => id,
@@ -2524,7 +2536,7 @@ pub fn agent_chat(
                 };
                 let transcript =
                     compact_transcript(&prior_turns, budget, &memory.evidence_digest());
-                prompt = build_prompt(persona, toolset.as_ref(), &transcript, &message_for_model);
+                prompt = build_prompt(&persona_with_skills, toolset.as_ref(), &transcript, &message_for_model);
                 manifest_pending = true;
             }
 

@@ -33,3 +33,16 @@ export function AssetShell({
     </main>
   );
 }
+
+/** Shared honest empty state for asset panes awaiting their backend tier. */
+export function EmptyPane({ label, description, icon }: { label: string; description: string; icon: ReactNode }) {
+  return (
+    <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="bg-muted flex size-12 items-center justify-center rounded-lg">{icon}</div>
+      <div className="space-y-1">
+        <p className="text-foreground text-sm font-medium">{label}</p>
+        <p className="max-w-md text-xs leading-relaxed">{description}</p>
+      </div>
+    </div>
+  );
+}

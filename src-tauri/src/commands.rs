@@ -254,6 +254,146 @@ pub async fn delete_chat_session(
         .map_err(|e| e.to_string())
 }
 
+// ── Skills (ungated; plain libsql CRUD) ────────────────────────────────────
+
+/// Authenticated RPC: create a skill (SKILL.md body stored verbatim).
+#[tauri::command]
+pub async fn skill_create(
+    name: String,
+    description: Option<String>,
+    content: String,
+    session: State<'_, Session>,
+) -> Result<logic::skills::Skill, String> {
+    let user_id = session_user_id(&session)?;
+    logic::skills::skill_create(&user_id, &name, description.as_deref().unwrap_or(""), &content)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: list skills (summaries, newest-updated first).
+#[tauri::command]
+pub async fn skill_list(session: State<'_, Session>) -> Result<Vec<logic::skills::SkillSummary>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::skills::skill_list(&user_id).await.map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: fetch one skill including its body; None → null.
+#[tauri::command]
+pub async fn skill_get(
+    skill_id: String,
+    session: State<'_, Session>,
+) -> Result<Option<logic::skills::Skill>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::skills::skill_get(&user_id, &skill_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: update any subset of name/description/content;
+/// bumps the version. None for unknown ids.
+#[tauri::command]
+pub async fn skill_update(
+    skill_id: String,
+    name: Option<String>,
+    description: Option<String>,
+    content: Option<String>,
+    session: State<'_, Session>,
+) -> Result<Option<logic::skills::Skill>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::skills::skill_update(
+        &user_id,
+        &skill_id,
+        name.as_deref(),
+        description.as_deref(),
+        content.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: delete a skill; returns whether a row was removed.
+#[tauri::command]
+pub async fn skill_delete(
+    skill_id: String,
+    session: State<'_, Session>,
+) -> Result<bool, String> {
+    let user_id = session_user_id(&session)?;
+    logic::skills::skill_delete(&user_id, &skill_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ── L1 memories (ungated CRUD; extraction uses the hybrid cloud tier) ──────
+
+/// Authenticated RPC: create a memory item manually.
+#[tauri::command]
+pub async fn memory_create(
+    kind: String,
+    title: String,
+    content: String,
+    session: State<'_, Session>,
+) -> Result<logic::memory::MemoryItem, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_create(&user_id, &kind, &title, &content)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: list all memories, newest-updated first.
+#[tauri::command]
+pub async fn memory_list(
+    session: State<'_, Session>,
+) -> Result<Vec<logic::memory::MemoryItem>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_list(&user_id).await.map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: update a memory's kind/title/content (any subset).
+#[tauri::command]
+pub async fn memory_update(
+    memory_id: String,
+    kind: Option<String>,
+    title: Option<String>,
+    content: Option<String>,
+    session: State<'_, Session>,
+) -> Result<Option<logic::memory::MemoryItem>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_update(
+        &user_id,
+        &memory_id,
+        kind.as_deref(),
+        title.as_deref(),
+        content.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: delete a memory; returns whether a row was removed.
+#[tauri::command]
+pub async fn memory_delete(
+    memory_id: String,
+    session: State<'_, Session>,
+) -> Result<bool, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_delete(&user_id, &memory_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: extract memories from a session's transcript via the
+/// cloud tier (needs the hybrid vault); dedups and stores the results.
+#[tauri::command]
+pub async fn memory_extract(
+    session_id: i64,
+    session: State<'_, Session>,
+) -> Result<Vec<logic::memory::MemoryItem>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_extract(&user_id, session_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: generate a concise session title with a remote LLM
 /// (Cloudflare Workers AI). Fire-and-forget: the caller ignores the result and
 /// the offline substr fallback stays if it fails.
