@@ -146,6 +146,67 @@ pub async fn memory_delete(user_id: &str, memory_id: &str) -> Result<bool, DbErr
     Ok(n > 0)
 }
 
+// ── agent injection ─────────────────────────────────────────────────────────
+//
+// Like skills: rides the persona in the opener (rebuilt per session/epoch),
+// so a memory saved mid-session applies from the next session.
+
+/// Per-memory entry cap (chars) in the prompt block.
+const PROMPT_MEMORY_MAX_CHARS: usize = 800;
+/// Total cap (chars) across the block — protects the on-device prefill
+/// budget. Newest-updated win; the block notes the omission.
+const PROMPT_MEMORY_TOTAL_MAX_CHARS: usize = 4_000;
+/// How many memories enter the block at most (even short ones).
+const PROMPT_MEMORY_MAX_ITEMS: usize = 24;
+
+/// Render the user's L1 memories (newest-updated first) as a `<memories>`
+/// prompt block appended to the agent persona; empty string when there are
+/// none. DB failure degrades to an empty block.
+pub async fn prompt_block(user_id: &str) -> String {
+    let items = match memory_list(user_id).await {
+        Ok(items) => items,
+        Err(_) => return String::new(),
+    };
+    if items.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::from(
+        "<memories>\nDurable facts about the user, distilled from past conversations. Treat them as standing context — they apply until the user says otherwise.\n",
+    );
+    let mut total = 0usize;
+    let mut included = 0usize;
+    for m in items.iter().take(PROMPT_MEMORY_MAX_ITEMS) {
+        let body = m.content.trim();
+        let body = if body.chars().count() > PROMPT_MEMORY_MAX_CHARS {
+            let mut cut: String = body.chars().take(PROMPT_MEMORY_MAX_CHARS).collect();
+            cut.push_str("…");
+            cut
+        } else {
+            body.to_string()
+        };
+        let entry = format!("- ({}) {}: {}\n", m.kind, m.title, body);
+        total += entry.chars().count();
+        if total > PROMPT_MEMORY_TOTAL_MAX_CHARS {
+            break;
+        }
+        out.push_str(&entry);
+        included += 1;
+    }
+    if included == 0 {
+        return String::new();
+    }
+    if included < items.len().min(PROMPT_MEMORY_MAX_ITEMS) {
+        out.push_str(&format!(
+            "({} older memor{} omitted for space)\n",
+            items.len() - included,
+            if items.len() - included == 1 { "y" } else { "ies" }
+        ));
+    }
+    out.push_str("</memories>");
+    out
+}
+
 /// How much transcript (chars, tail-kept) the extractor may send.
 const EXTRACT_TRANSCRIPT_CHARS: usize = 24_000;
 
@@ -355,5 +416,35 @@ mod tests {
         assert!(!memory_delete(user, "mem-nope").await.unwrap());
         assert!(memory_delete(user, &m.id).await.unwrap());
         assert!(memory_list(user).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn prompt_block_renders_and_caps() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::logic::db::set_data_root(dir.path());
+        std::mem::forget(dir);
+        let user = "memories-prompt-user";
+
+        // Empty tier → empty block.
+        assert!(prompt_block(user).await.is_empty());
+
+        memory_create(user, "preference", "Dark mode", "Always dark UIs")
+            .await
+            .unwrap();
+        let block = prompt_block(user).await;
+        assert!(block.starts_with("<memories>"));
+        assert!(block.ends_with("</memories>"));
+        assert!(block.contains("(preference) Dark mode: Always dark UIs"));
+
+        // Many long memories → the block stays bounded and notes omissions.
+        let long = "x".repeat(PROMPT_MEMORY_MAX_CHARS + 100);
+        for i in 0..40 {
+            memory_create(user, "fact", &format!("bulk-{i}"), &long)
+                .await
+                .unwrap();
+        }
+        let capped = prompt_block(user).await;
+        assert!(capped.chars().count() < PROMPT_MEMORY_TOTAL_MAX_CHARS + 400);
+        assert!(capped.contains("omitted for space"));
     }
 }

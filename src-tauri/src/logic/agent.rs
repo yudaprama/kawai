@@ -1935,10 +1935,14 @@ pub fn agent_chat(
         // from the next one; DB failure degrades to an empty block (the chat
         // must never die because the skills table is unreadable).
         let skills_block = crate::logic::skills::prompt_block(&user_id).await;
-        let persona_with_skills = if skills_block.is_empty() {
-            persona.to_string()
-        } else {
-            format!("{persona}\n\n{skills_block}")
+        // L1 memories: durable facts about the user, same injection contract
+        // as skills (bounded, per-session, degrades to empty on DB failure).
+        let memories_block = crate::logic::memory::prompt_block(&user_id).await;
+        let persona_with_injections = match (skills_block.is_empty(), memories_block.is_empty()) {
+            (true, true) => persona.to_string(),
+            (false, true) => format!("{persona}\n\n{skills_block}"),
+            (true, false) => format!("{persona}\n\n{memories_block}"),
+            (false, false) => format!("{persona}\n\n{skills_block}\n\n{memories_block}"),
         };
 
         // Lazy session creation, then persist the user turn (seeds the title).
@@ -2536,7 +2540,7 @@ pub fn agent_chat(
                 };
                 let transcript =
                     compact_transcript(&prior_turns, budget, &memory.evidence_digest());
-                prompt = build_prompt(&persona_with_skills, toolset.as_ref(), &transcript, &message_for_model);
+                prompt = build_prompt(&persona_with_injections, toolset.as_ref(), &transcript, &message_for_model);
                 manifest_pending = true;
             }
 
