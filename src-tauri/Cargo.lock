@@ -3594,6 +3594,7 @@ dependencies = [
  "futures-util",
  "graph",
  "jsonwebtoken",
+ "kawai-agent",
  "kawai-analytics",
  "kawai-auth",
  "kawai-constants 0.1.0",
@@ -3629,6 +3630,38 @@ dependencies = [
  "url",
  "webread",
  "youtube_transcript",
+]
+
+[[package]]
+name = "kawai-agent"
+version = "0.1.0"
+dependencies = [
+ "analytics",
+ "async-stream",
+ "binance",
+ "browser",
+ "futures-core",
+ "futures-util",
+ "graph",
+ "kawai-analytics",
+ "kawai-db",
+ "kawai-embedding",
+ "kawai-knowledge",
+ "kawai-memory",
+ "kawai-office",
+ "kawai-skills",
+ "kawai-tools",
+ "libsql",
+ "local-llm",
+ "rand 0.9.5",
+ "regex",
+ "remote-llm",
+ "serde",
+ "serde_json",
+ "text-splitter",
+ "tokio",
+ "url",
+ "webread",
 ]
 
 [[package]]
@@ -3682,7 +3715,9 @@ dependencies = [
 name = "kawai-db"
 version = "0.1.0"
 dependencies = [
+ "kawai-constants 0.1.0",
  "libsql",
+ "reqwest 0.13.4",
  "serde",
  "serde_json",
  "tokio",

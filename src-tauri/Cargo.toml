@@ -50,6 +50,7 @@ kawai-memory = { path = "../crates/memory" }
 kawai-office = { path = "../crates/office", optional = true }
 kawai-knowledge = { path = "../crates/knowledge", optional = true }
 kawai-analytics = { path = "../crates/analytics-tools", optional = true }
+kawai-agent = { path = "../crates/agent", optional = true }
 # The agent tool seam (tool trait + registry) shared with components.
 kawai-tools = { path = "../kawai-tools" }
 # default-features=false keeps only the local-SQLite core: replication/remote
@@ -132,27 +133,27 @@ libc = "0.2"
 [features]
 default = []
 web = ["dep:axum", "dep:tower-http"]
-litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert"]
+litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "dep:kawai-agent", "kawai-agent/litert"]
 # GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
 # Include with --features graph, exclude by omitting it (zero cost when off).
 # Standalone — includes the pure `graph` crate + its DB deps.
-graph = ["dep:graph", "dep:kawai-embedding", "dep:text-splitter", "dep:regex", "dep:kawai-knowledge", "kawai-knowledge/graph"]
+graph = ["dep:graph", "dep:kawai-embedding", "dep:text-splitter", "dep:regex", "dep:kawai-knowledge", "kawai-knowledge/graph", "kawai-agent/graph"]
 # Web read/search tiering as a standalone feature so any agent can reuse the
 # tools without `office`; `office` implies it (behavior-preserving).
-webread = ["dep:webread", "dep:browser", "dep:url"]
+webread = ["dep:webread", "dep:browser", "dep:url", "kawai-agent/webread"]
 # Office document tools (logic::office): pure-Rust create/read/edit/info via
 # office_oxide and PDF via pdf_oxide (both in-process) — plus the RAG pipeline
 # (kawai-embedding, with in-tree chunking) for idle-time
 # knowledge indexing. Enables the `webread` FEATURE (not just `dep:webread`)
 # so its bundled deps ride along.
-office = ["dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office", "dep:kawai-office", "dep:kawai-knowledge", "kawai-knowledge/office"]
+office = ["dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office", "dep:kawai-office", "dep:kawai-knowledge", "kawai-knowledge/office", "kawai-agent/office"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
-binance = ["dep:binance"]
+binance = ["dep:binance", "kawai-agent/binance"]
 # Data analysis agent (logic::agent ANALYTICS_AGENT_ID): data_schema +
 # data_query over the office store's tabular files. Implies `office` —
 # the files live in the office store and reuse its import UI.
-analytics = ["dep:analytics", "office", "kawai-db/analytics", "dep:kawai-analytics"]
+analytics = ["dep:analytics", "office", "kawai-db/analytics", "dep:kawai-analytics", "kawai-agent/analytics"]
 # Remote SQL sources (Postgres/MySQL) for the analytics snapshot tools.
 # Implies `analytics`; SQLite needs no feature (libsql rides along).
 analytics-sql = ["analytics", "kawai-analytics/analytics-sql"]
