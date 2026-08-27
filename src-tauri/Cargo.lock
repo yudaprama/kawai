@@ -3596,7 +3596,10 @@ dependencies = [
  "jsonwebtoken",
  "kawai-auth",
  "kawai-constants 0.1.0",
+ "kawai-db",
  "kawai-embedding",
+ "kawai-memory",
+ "kawai-skills",
  "kawai-tools",
  "libc",
  "libsql",
@@ -3657,6 +3660,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "kawai-db"
+version = "0.1.0"
+dependencies = [
+ "libsql",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "kawai-embedding"
 version = "0.1.0"
 dependencies = [
@@ -3669,6 +3682,32 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "kawai-memory"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "kawai-db",
+ "libsql",
+ "rand 0.9.5",
+ "remote-llm",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "kawai-skills"
+version = "0.1.0"
+dependencies = [
+ "kawai-db",
+ "libsql",
+ "rand 0.9.5",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

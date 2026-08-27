@@ -38,11 +38,15 @@ tower-http = { version = "0.6", optional = true, features = ["fs"] }
 # High-level streaming chat over LiteRT-LM (on-device Gemma 4, etc.).
 # Pulls in cognee-litert-lm transitively. Gated behind `litert`.
 local-llm = { path = "../local-llm", optional = true }
-# Phase-1 extracted crates (pure, no transport). Re-exported via
-# `src/auth.rs` and `src/logic/remote.rs` shims so `crate::auth::*` and
-# `crate::logic::remote::*` remain stable.
+# Phase-1/2 extracted crates (pure, no transport). Re-exported via
+# `src/auth.rs`, `src/logic/remote.rs`, `src/logic/db.rs`/`db_migrations.rs`,
+# `src/logic/skills.rs`/`memory.rs` shims so `crate::auth::*` and
+# `crate::logic::*` remain stable.
 kawai-auth = { path = "../crates/auth" }
 remote-llm = { path = "../crates/remote-llm" }
+kawai-db = { path = "../crates/db" }
+kawai-skills = { path = "../crates/skills" }
+kawai-memory = { path = "../crates/memory" }
 # The agent tool seam (tool trait + registry) shared with components.
 kawai-tools = { path = "../kawai-tools" }
 # default-features=false keeps only the local-SQLite core: replication/remote
@@ -138,14 +142,14 @@ webread = ["dep:webread", "dep:browser", "dep:url"]
 # (kawai-embedding, with in-tree chunking) for idle-time
 # knowledge indexing. Enables the `webread` FEATURE (not just `dep:webread`)
 # so its bundled deps ride along.
-office = ["dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread"]
+office = ["dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
 binance = ["dep:binance"]
 # Data analysis agent (logic::agent ANALYTICS_AGENT_ID): data_schema +
 # data_query over the office store's tabular files. Implies `office` —
 # the files live in the office store and reuse its import UI.
-analytics = ["dep:analytics", "office"]
+analytics = ["dep:analytics", "office", "kawai-db/analytics"]
 # Remote SQL sources (Postgres/MySQL) for the analytics snapshot tools.
 # Implies `analytics`; SQLite needs no feature (libsql rides along).
 analytics-sql = ["analytics", "dep:sqlx"]
