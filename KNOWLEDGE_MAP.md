@@ -2,8 +2,6 @@
 
 > One file, 8 implementations. Separate layers, 1 `libSQL` per-user (`~/.kawai/models` + `kawai.db`). All `feature`-gated — `cargo check` without `graph`/`office` costs nothing.
 
-**Audience:** kawai contributors comparing our stack to TencentDB-Agent-Memory. For the product overview see `ARCHITECTURE.md`; this is the deep dive.
-
 **TL;DR:** Kawai keeps document knowledge (RAG + GraphRAG) and long-term memory (Skills + L1) in a single per-user `libSQL` file. Document retrieval is hybrid vector+FTS5 with RRF (`k=60`); GraphRAG adds 5 arms over the same DB. Skills and L1 memories are plain-SQLite CRUD today — versioned/bounded prompt injection into the agent, no vectors yet.
 
 ---
@@ -27,12 +25,12 @@
 
 | # | Crate / File | Role | Input → Output | `libSQL` Tables | Feature | Tool / RPC |
 |---|---|---|---|---|---|---|
-| **1** | `crates/ragloader` — `load_file()`, `parse.rs`, `chunk.rs`, `image.rs` | Upstream parser — `docx/xlsx/pptx→office_oxide`, `pdf→pdf_oxide`, `md→MarkdownSplitter`, `txt→TextSplitter` | `Path` → `Vec<Chunk>` | — (stateless) | `office` | Used by `logic/rag.rs:599` `describe_image()` |
-| **2** | `kawai-embedding` — `TenantAwareEmbedder` | Multi-provider embedder — `OpenAI 1024` / `Nvidia` / `Gemini` / `LitertProvider EmbeddingGemma 768d` | `Vec<String>` → `Vec<Vec<f64>>` | `dims` for `FLOAT32(dims)` | `kawai-embedding` (+ `litert`) | `logic/rag.rs:914`, `logic/graph.rs:759` — `build_providers_from_env()` |
-| **3** | `src-tauri/src/logic/rag.rs` — `CHUNK=1500/200`, `ensure_vector_schema`, `ensure_fts`, `vector_search_top_k`, `bm25_search`, `rrf_fuse` | Classic RAG — chunk → embed → insert → `knowledge_search()` | `query, mode` → `Vec<RagHit>` | `rag_chunks` / `_embeddings` / `_map` + `rag_chunks_fts` + `rag_files` + `session_files` | `office` | `commands.rs:468` `knowledge_search` · `web.rs:413` `KnowledgeSearchTool` |
-| **4** | `src-tauri/src/logic/office` — `knowledge_context()` | Context injector (not retrieval) | `Vec<file_id>` → `KnowledgeContext` | — | `office` | `commands.rs:438` (cap `12k/file, 36k total`) |
+| **1** | `crates/ragloader` — `load_file()`, `parse.rs`, `chunk.rs`, `image.rs` | Upstream parser — `docx/xlsx/pptx→office_oxide`, `pdf→pdf_oxide`, `md→MarkdownSplitter`, `txt→TextSplitter` | `Path` → `Vec<Chunk>` | — (stateless) | `office` | Used by `logic/rag.rs` `describe_image()` |
+| **2** | `kawai-embedding` — `TenantAwareEmbedder` | Multi-provider embedder — `OpenAI 1024` / `Nvidia` / `Gemini` / `LitertProvider EmbeddingGemma 768d` | `Vec<String>` → `Vec<Vec<f64>>` | `dims` for `FLOAT32(dims)` | `kawai-embedding` (+ `litert`) | `logic/rag.rs`, `logic/graph.rs` — `build_providers_from_env()` |
+| **3** | `src-tauri/src/logic/rag.rs` — `CHUNK=1500/200`, `ensure_vector_schema`, `ensure_fts`, `vector_search_top_k`, `bm25_search`, `rrf_fuse` | Classic RAG — chunk → embed → insert → `knowledge_search()` | `query, mode` → `Vec<RagHit>` | `rag_chunks` / `_embeddings` / `_map` + `rag_chunks_fts` + `rag_files` + `session_files` | `office` | `commands.rs` `knowledge_search` · `web.rs` `KnowledgeSearchTool` |
+| **4** | `src-tauri/src/logic/office` — `knowledge_context()` | Context injector (not retrieval) | `Vec<file_id>` → `KnowledgeContext` | — | `office` | `commands.rs` (cap `12k/file, 36k total`) |
 | **5** | `crates/graph` | Pure graph helpers — no DB/embed | `text` → entities, `community_of()`, `rrf_fuse_graph()`, `local_traversal_sql()` | — | `graph` (optional) | `toolset()` stub |
-| **6** | `src-tauri/src/logic/graph.rs` — `ensure_graph_schema`, `vector_search_nodes/edges`, `local_traversal`, `global_community_hits`, `graph_search(mode)` | GraphRAG — `chunk 1200/150` → regex entities → `graph_nodes/edges` → embed → `graph_search` | `query, mode` → `Vec<GraphHit>` | `graph_nodes / _embeddings / _map` + `graph_edges / _...` + `graph_files` | `graph` | `commands.rs:695` `graph_*` · `web.rs:740` · `agent.rs:580` |
+| **6** | `src-tauri/src/logic/graph.rs` — `ensure_graph_schema`, `vector_search_nodes/edges`, `local_traversal`, `global_community_hits`, `graph_search(mode)` | GraphRAG — `chunk 1200/150` → regex entities → `graph_nodes/edges` → embed → `graph_search` | `query, mode` → `Vec<GraphHit>` | `graph_nodes / _embeddings / _map` + `graph_edges / _...` + `graph_files` | `graph` | `commands.rs` `graph_*` · `web.rs` · `agent.rs` |
 
 ### 2.2 Skills & Memories (long-term, plain SQLite)
 
@@ -47,20 +45,20 @@
 
 | Arm | Idea | SQL / Rust | Location |
 |---|---|---|---|
-| **Naive** | Query → embed → vector (plain) | `vector_distance_cos` + `ROW_NUMBER() OVER (PARTITION BY docid)` | `graph.rs:120` ← `graph:145` |
-| **Local** | Extract entities → 1–2 hop | `LIKE %token%` → `WITH RECURSIVE … depth<2 JOIN graph_edges` | `graph:73,153` + `graph.rs:190` |
-| **Global** | Embed relationship → community | `vector_search_edges` → `community_id IN (…)` | `graph.rs:385` ← `graph:167,64` |
-| **Hybrid** | Local+Global+Naive → equal RRF | `tokio::join!` → `1/(60+rank+1)` | `graph.rs:732` ← `graph:113` |
-| **Mix** | Weighted RRF (production default) | Same + weights `0.2 / 0.5 / 0.3` | `graph.rs:811` via `mode="mix"` |
+| **Naive** | Query → embed → vector (plain) | `vector_distance_cos` + `ROW_NUMBER() OVER (PARTITION BY docid)` | `graph.rs` `vector_search_nodes()` |
+| **Local** | Extract entities → 1–2 hop | `LIKE %token%` → `WITH RECURSIVE … depth<2 JOIN graph_edges` | `crates/graph` `local_seed_tokens()` + `graph.rs` `local_traversal()` |
+| **Global** | Embed relationship → community | `vector_search_edges` → `community_id IN (…)` | `graph.rs` `global_community_hits()` |
+| **Hybrid** | Local+Global+Naive → equal RRF | `tokio::join!` → `1/(60+rank+1)` | `graph.rs` `graph_search()` hybrid arm + `crates/graph` `rrf_fuse_graph()` |
+| **Mix** | Weighted RRF (production default) | Same + weights `0.2 / 0.5 / 0.3` | `graph.rs` `graph_search()` mix arm via `mode="mix"` |
 
-Classic `rag` Naive is only `rag.rs:199` `vector_search_top_k` + `bm25_search`.
+Classic `rag` Naive is only `rag.rs` `vector_search_top_k` + `bm25_search`.
 
 ---
 
 ## 4. Features
 
 ```toml
-# src-tauri/Cargo.toml:117
+# src-tauri/Cargo.toml
 [features]
 graph  = ["dep:graph","dep:kawai-embedding","dep:text-splitter","dep:regex"]
 office = ["dep:ragloader","dep:kawai-embedding",...,"webread"]
@@ -127,7 +125,7 @@ Kawai: 8 implementations, 1 `kawai.db` per-user. Tencent: 4 modules (`MemoryCore
 | **Vector store** | libSQL `FLOAT32(dims)` + `libsql_vector_idx` + map | Prod TCVDB; standalone `vec0` | ⚠️ Adapter | Same hybrid logic, different engine. Tencent `NoopEmbeddingService` has no kawai equivalent. |
 | **Keyword search** | FTS5 `rag_chunks_fts` + `bm25() ASC` | FTS5 + BM25 | ✅ High | Same `VIRTUAL USING FTS5` pattern. |
 | **Hybrid ranking** | `rrf_fuse()` `1/(60+rank+1)` | RRF `k=60`, `candidateK=limit×3` | ✅ Identical | Kawai `Mix 0.2/0.5/0.3` is a superset of Tencent 2-way. |
-| **Graph extraction** | Regex `\b[A-Z][a-z]+`, FNV `%8` | LLM two-stage → `[[]]` wikilinks; Code AST | ❌ Different | Kawai cheap/zero-LLM; Tencent LLM + AST. |
+| **Graph extraction** | Regex `\b[A-Z][a-z]+`, FNV `%8` | LLM two-stage → `[[]]` wikilinks; Code AST | ❌ Different | Kawai entity extraction is zero-LLM (regex); embedding still uses `build_providers_from_env()` (may hit remote). Tencent LLM + AST for extraction. |
 | **Graph traversal** | `WITH RECURSIVE depth<2` + `community_id IN` | `graphology` BFS `hop/decay/maxNodes=200` | ⚠️ Partial | Same topology; kawai lacks `decay`/`maxNodes` tuning. |
 | **Layered memory** | L0 `sessions/messages`; L1 `memories` + `memory_extract` + `prompt_block()` | L0 JSONL+vec0, L1 JSONL+vec0 dedup, L2 `scene_blocks`, L3 `persona.md` | ⚠️ L0+L1 basic | Extraction: cloud one-shot + title dedup vs. vector+LLM dedup. Kawai injects via `<memories>` block (all L1). |
 | **Skills** | `skills` CRUD + `prompt_block()` — no vectors yet | `skills`+`skill_vec(vec0)`+FTS5, RRF, TTL | ⚠️ Basic | CRUD + injection shipped; vector/FTS5 not yet. |
@@ -148,7 +146,7 @@ Kawai: 8 implementations, 1 `kawai.db` per-user. Tencent: 4 modules (`MemoryCore
 
 ### 9.1 TurnMemory — Per-Session Process Log
 
-* **Location:** `logic/agent.rs:1520` `TurnMemory` + `session_artifacts` (`migrations/0007`)
+* **Location:** `logic/agent.rs` `TurnMemory` + `session_artifacts` (`migrations/0007`)
 * **Content:** `TurnArtifact { handle:"mem1", tool, args_key, content(truncated 32k)}` — one entry per distinct `tool+args_key` (handle `mem1, mem2 …`).
 * **Lifecycle:** `restore()` → `record()` per tool → `take_unpersisted()` → `flush_new_artifacts()` — survives turns & restarts.
 * **Use:** (a) paging via `artifact_recall(handle, offset)`; (b) `materials()` for cloud subagents; (c) `staging_slices()` for `deep_write`; (d) `evidence_digest()` for replay.
