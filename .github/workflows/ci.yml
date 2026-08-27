@@ -62,7 +62,7 @@ jobs:
       - name: Init submodules (manifest only)
         run: |
           git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
-          git -C crates submodule update --init binance-connector-rust
+          git -C crates submodule update --init vendor/binance-connector-rust
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -188,13 +188,13 @@ jobs:
           KAWAI_SQL_PROFILE_CHECK: mysql://root:mysql@127.0.0.1:3306/kawai_check
         run: cargo run --quiet --example sql_remote_check --features analytics-sql -- --deep
 
-      - name: cargo test (crates/analytics)
+      - name: cargo test (crates/engines/analytics)
         run: cargo test -p analytics
         working-directory: crates
 
       # Webread crate: engine-chain unit tests — html-to-markdown-rs render,
       # {t,x,h} payload split, plain-text fallback, search relevance gate.
-      - name: cargo test (crates/webread)
+      - name: cargo test (crates/toolsets/webread)
         run: cargo test -p webread
         working-directory: crates
 

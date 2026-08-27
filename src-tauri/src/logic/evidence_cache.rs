@@ -1,4 +1,4 @@
-//! Compatibility shim — implementation lives in `crates/agent` (kawai-agent crate).
+//! Compatibility shim — implementation lives in `crates/engines/agent` (kawai-agent crate).
 
 #[cfg(feature = "litert")]
 pub use kawai_agent::evidence_cache::*;

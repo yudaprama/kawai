@@ -42,15 +42,15 @@ local-llm = { path = "../local-llm", optional = true }
 # `src/auth.rs`, `src/logic/remote.rs`, `src/logic/db.rs`/`db_migrations.rs`,
 # `src/logic/skills.rs`/`memory.rs`, `src/logic/office` shims so
 # `crate::auth::*` and `crate::logic::*` remain stable.
-kawai-auth = { path = "../crates/auth" }
-remote-llm = { path = "../crates/remote-llm" }
-kawai-db = { path = "../crates/db" }
-kawai-skills = { path = "../crates/skills" }
-kawai-memory = { path = "../crates/memory" }
-kawai-office = { path = "../crates/office", optional = true }
-kawai-knowledge = { path = "../crates/knowledge", optional = true }
-kawai-analytics = { path = "../crates/analytics-tools", optional = true }
-kawai-agent = { path = "../crates/agent", optional = true }
+kawai-auth = { path = "../crates/foundation/auth" }
+remote-llm = { path = "../crates/foundation/remote-llm" }
+kawai-db = { path = "../crates/foundation/db" }
+kawai-skills = { path = "../crates/foundation/skills" }
+kawai-memory = { path = "../crates/foundation/memory" }
+kawai-office = { path = "../crates/engines/office", optional = true }
+kawai-knowledge = { path = "../crates/engines/knowledge", optional = true }
+kawai-analytics = { path = "../crates/toolsets/analytics-tools", optional = true }
+kawai-agent = { path = "../crates/engines/agent", optional = true }
 # The agent tool seam (tool trait + registry) shared with components.
 kawai-tools = { path = "../kawai-tools" }
 # default-features=false keeps only the local-SQLite core: replication/remote
@@ -82,10 +82,10 @@ text-splitter = { version = "0.27", features = ["markdown"], optional = true }
 # Image understanding for knowledge ingestion (office feature): describe
 # images to text via the ragloader DescriberChain (local stub → JigsawStack
 # VOCR). Pulls jigsawstack (reqwest 0.12) transitively.
-ragloader = { path = "../crates/ragloader", optional = true }
+ragloader = { path = "../crates/integrations/ragloader", optional = true }
 # YouTube transcript fetching for knowledge ingestion (office feature).
 # Uses reqwest 0.13 — coexists with our direct 0.12 (like the rustls pair).
-youtube_transcript = { path = "../crates/youtube_transcript", optional = true }
+youtube_transcript = { path = "../crates/integrations/youtube-transcript", optional = true }
 # Pure-Rust office create/read/edit (vendored submodule): markdown → IR →
 # docx/xlsx/pptx (in-process), raw-part surgery for in-place edits. PDF
 # operations via pdf_oxide (fetched from GitHub, no local submodule).
@@ -93,29 +93,29 @@ office_oxide = { path = "../office_oxide", optional = true }
 pdf_oxide = { git = "https://github.com/yfedoseev/pdf_oxide", optional = true }
 regex = { version = "1", optional = true }
 # Web read + search tiering (webread/office features): the reusable
-# components/webread tool crate — engine chain + budgets + cache for the
+# crates/toolsets/webread tool crate — engine chain + budgets + cache for the
 # `web_read` / `web_search` agent tools. `browser` (tier-1 Cloudflare
 # Browser Rendering) rides inside webread but stays listed so the headless
 # example can drive it directly.
-webread = { path = "../crates/webread", optional = true }
-browser = { path = "../crates/tools/browser", optional = true }
+webread = { path = "../crates/toolsets/webread", optional = true }
+browser = { path = "../crates/generated-tools/browser", optional = true }
 url = { version = "2", optional = true }
 # Binance agent tools (builtin.binance): keyless public market data via the
-# binance-sdk fork submodule (components/binance-connector-rust, patched
-# rustls-only) + in-process TA via components/ta.
+# binance-sdk fork submodule (crates/vendor/binance-connector-rust, patched
+# rustls-only) + in-process TA via crates/vendor/ta.
 # Android still excluded: never exercised on NDK (un-excluding needs a
 # `cargo ndk check --features binance` pass).
 [target.'cfg(not(target_os = "android"))'.dependencies]
-binance = { path = "../crates/binance", optional = true }
+binance = { path = "../crates/toolsets/binance", optional = true }
 
 # Data analysis agent (builtin.analytics): structured queries over stored
 # tabular files (csv/tsv/parquet + xlsx via the office_oxide bridge) through
-# the polars-backed components/analytics crate. Implies `office` — the
+# the polars-backed crates/engines/analytics crate. Implies `office` — the
 # data files live in the office store.
-analytics = { path = "../crates/analytics", optional = true }
-# libSQL-native GraphRAG engine — pure crate (crates/graph). Feature-gated
-# so it can be included/excluded as a module (@crates/graph).
-graph = { path = "../crates/graph", optional = true }
+analytics = { path = "../crates/engines/analytics", optional = true }
+# libSQL-native GraphRAG engine — pure crate (crates/engines/graph). Feature-gated
+# so it can be included/excluded as a module (@crates/engines/graph).
+graph = { path = "../crates/engines/graph", optional = true }
 
 # Remote SQL sources for the analytics snapshot tools (data_tables /
 # data_import over Postgres/MySQL). rustls on purpose — mobile has no

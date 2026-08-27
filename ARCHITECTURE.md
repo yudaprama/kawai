@@ -135,12 +135,12 @@ Crypto market data and technical analysis on Binance spot.
 
 | Tool | Source | Notes |
 |------|--------|-------|
-| `binance_price` | `crates/binance` | 24h price stats |
-| `binance_depth` | `crates/binance` | Order book + derived spread/mid |
-| `binance_klines` | `crates/binance` | Raw OHLCV candle data |
-| `binance_ta_analyze` | `crates/binance` | Fetches klines + runs indicator suites in-process (ema/sma/rsi/macd/bb/atr + 12 more) |
-| `binance_balances` | `crates/binance` | Signed read-only spot balances *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
-| `binance_open_orders` | `crates/binance` | Signed read-only open orders *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
+| `binance_price` | `crates/toolsets/binance` | 24h price stats |
+| `binance_depth` | `crates/toolsets/binance` | Order book + derived spread/mid |
+| `binance_klines` | `crates/toolsets/binance` | Raw OHLCV candle data |
+| `binance_ta_analyze` | `crates/toolsets/binance` | Fetches klines + runs indicator suites in-process (ema/sma/rsi/macd/bb/atr + 12 more) |
+| `binance_balances` | `crates/toolsets/binance` | Signed read-only spot balances *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
+| `binance_open_orders` | `crates/toolsets/binance` | Signed read-only open orders *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
 | `web_read` | `webread` | Read a URL → markdown *(capability-probe: engine must exist)* |
 | `web_search` | `webread` | Bing SERP → markdown *(capability-probe: engine must exist)* |
 | `artifact_recall` | `agent.rs` | Page through oversized tool results from this turn |
@@ -182,13 +182,13 @@ Subagents are tools whose implementation calls a cloud LLM. They are **registere
 
 ## Web read tiering (`web_read`, webread feature)
 
-One agent tool, one engine chain — the model asks to read a URL, the backend picks the cheapest engine that succeeds (`crates/webread/src/scrape.rs`):
+One agent tool, one engine chain — the model asks to read a URL, the backend picks the cheapest engine that succeeds (`crates/toolsets/webread/src/scrape.rs`):
 
 1. **Cache** — 15-min LRU (64/user) keyed by normalized URL, cross-engine.
 2. **Tier 0: on-device webview** — `webview_engine.rs` renders the page in a hidden `WebviewWindow` (`WebviewUrl::External`, `visible(false)`), polls `readyState`, harvests text via `eval_with_callback` (external pages have no Tauri IPC — the eval callback is the only return channel), always tears the window down. Free, device-native TLS.
 3. **Tier 1: Cloudflare `/markdown`** — the generated `browser` crate tool (vault key pool). Tier-0 misses (anti-bot markers, thin content, timeout, busy slot) fall through. Bounded by `KAWAI_CF_PER_USER_DAILY` (25) + `KAWAI_CF_GLOBAL_DAILY` (300); exhaustion returns a guidance-carrying result, not an error.
 
-Purity: `crates/webread/src/scrape.rs` defines the `WebViewFetch` trait; the tauri shell injects the implementation at startup (`lib.rs`). `kawai-web` registers nothing and degrades to Cloudflare-only; no engine anywhere ⇒ the tool is not registered (capability-probe rule). Content is capped at 12k chars per read. The tools are reusable by any agent: office registers them under `any_engine()`; binance behind the standalone `webread` cargo feature (`office` implies `webread`).
+Purity: `crates/toolsets/webread/src/scrape.rs` defines the `WebViewFetch` trait; the tauri shell injects the implementation at startup (`lib.rs`). `kawai-web` registers nothing and degrades to Cloudflare-only; no engine anywhere ⇒ the tool is not registered (capability-probe rule). Content is capped at 12k chars per read. The tools are reusable by any agent: office registers them under `any_engine()`; binance behind the standalone `webread` cargo feature (`office` implies `webread`).
 
 ## Directory layout
 
@@ -230,7 +230,7 @@ kawai/
     ├── Cargo.toml            # axum/tower-http behind "web"; kawai-* crates behind litert/office/analytics/graph/webread
     ├── tauri.conf.json       # devUrl :1420, frontendDist ../dist, beforeBuildCommand "bun run build"
     ├── build.rs              # tauri_build + embeds @executable_path/../Frameworks rpath
-    ├── migrations/           # versioned SQLite schema (now also in crates/db/migrations/, include_str! via kawai-db)
+    ├── migrations/           # versioned SQLite schema (now also in crates/foundation/db/migrations/, include_str! via kawai-db)
     ├── examples/             # headless dev tools (all require litert feature)
     └── src/
         ├── main.rs           # desktop binary entry

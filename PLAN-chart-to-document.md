@@ -2,7 +2,7 @@
 
 Status: **DRAFT (2026-08-26)** — not started. Scope proposal for review; no
 code has been written against this plan. Prerequisite context: `data_chart`
-shipped (`crates/analytics` `chart` module + `DataChartTool`, office store
+shipped (`crates/engines/analytics` `chart` module + `DataChartTool`, office store
 accepts `.svg`); this plan opens the "full report with charts" use case the
 chart tier was chosen for.
 

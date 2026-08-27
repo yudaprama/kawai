@@ -1,4 +1,4 @@
-//! Compatibility shim — implementation lives in `crates/knowledge` (kawai-knowledge crate).
+//! Compatibility shim — implementation lives in `crates/engines/knowledge` (kawai-knowledge crate).
 
-#[cfg(feature = "office")]
+#[cfg(any(feature = "office", feature = "graph"))]
 pub use kawai_knowledge::*;

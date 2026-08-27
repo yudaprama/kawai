@@ -172,7 +172,7 @@ with exact commands, §4 the post-fix verification block.
 - **Tauri invoke rejects with a bare string, not an `Error`.** Read it via a helper (`errText` in `frontend/src/lib/api.ts`).
 - **Web request structs need `#[serde(rename_all = "camelCase")]`.** Tauri maps camelCase invoke args → snake_case params automatically; Axum `Json<T>` does NOT — without the rename, camelCase bodies 422 (bit us 2026-08-16 with the chat ops). Every web request struct with a multi-word field carries the rename.
 - **Tool call events in `LocalChatEvent`.** The `local_chat` stream emits `ToolCall` and `ToolResult` variants (not just `Token`). The frontend (`use-local-chat.ts`) AND `agent.rs` both match on the union — add arms for new variants in all matchers or events are silently dropped.
-- **pdf_oxide is a git dep (crates.io-free), not a submodule.** `src-tauri` pulls it from `https://github.com/yfedoseev/pdf_oxide` behind the `office` feature; `crates/ragloader` and `crates/tools/pdf` resolve it through the workspace (same version source as src-tauri's lockfile). MSRV 1.88, default features only (`icc` + `legacy-crypto`; no `rendering`/`ocr`/`fips` — keeps it C-dep-free). Cold compile of the office feature grows by a few minutes (pure Rust, cached afterwards).
+- **pdf_oxide is a git dep (crates.io-free), not a submodule.** `src-tauri` pulls it from `https://github.com/yfedoseev/pdf_oxide` behind the `office` feature; `crates/integrations/ragloader` and `crates/office-tools/pdf` resolve it through the workspace (same version source as src-tauri's lockfile). MSRV 1.88, default features only (`icc` + `legacy-crypto`; no `rendering`/`ocr`/`fips` — keeps it C-dep-free). Cold compile of the office feature grows by a few minutes (pure Rust, cached afterwards).
 - **PDF text replace is DOM-based, not content-stream regex.** `pdf_replace_text` composes `find_text` (regex predicate per element) + `set_text` — a match that spans fragmented sibling text elements in the content stream is NOT found, and replaced text keeps the original element bbox (no reflow). Fine for token substitutions (dates, names, codes); heavy rewrites should regenerate the source document (the `pdf_replace_text` tool description says exactly this).
 
 ## Where things live
@@ -181,19 +181,33 @@ with exact commands, §4 the post-fix verification block.
 frontend/                        # React 19 + Vite + Tailwind v4 SPA (vite root) — full file-level map lives in frontend/AGENTS.md
 src-tauri/src/logic.rs           # PURE helpers (greet/whoami/generate_activity, resolve_model_path/ensure_model auto-download, delete_chat_session → evidence_cache); re-exports db::*; generate_session_title now in kawai-db
 src-tauri/src/logic/             # thin shims → crates/* (pub use kawai_*::*), one per domain — logic.rs stays pure, wrappers stay thin
-crates/auth (kawai-auth)         # pure auth — Verifier/Claims/Session, JWKS verify + dev bypass, dotenv loader (no tauri/axum)
-crates/remote-llm (remote-llm)   # hybrid cloud pool (zai→venice→opencode→openrouter→ollama→poolside→empero, health-aware failover, SSE)
-crates/db (kawai-db)             # per-user SQLite — libsql Builder::new_local, user_data_dir/DataRoot, sessions/messages/artifacts/turn_log + migrations 0001-0009 (office/analytics gated) + generate_session_title (Workers AI)
-crates/skills (kawai-skills)     # SKILL.md CRUD (skl-* base62, unique name, version bump) + prompt_block 4k/skill, 12k total (ungated)
-crates/memory (kawai-memory)     # L1 memories CRUD (preference/rule/event/fact/goal, mem-* base62) + memory_extract via remote-llm + prompt_block 800/4k/24
-crates/office (kawai-office)     # per-user docs store (opaque ids, meta.json, kawai-db) + ooxml (DocBlock→docx/xlsx/pptx, office_oxide) + pdf (pdf_oxide search/replace/merge/split/info) + deck (reveal.js html, assets/reveal.*) + AgentTool wrappers (office_* , pdf_*)
-crates/knowledge (kawai-knowledge) # RAG — chunk 1500/200 (MarkdownSplitter) → embed (kawai-embedding) → libSQL vector + FTS5/BM25 RRF, session_files scoping, KnowledgeSearchTool; GraphRAG 5 arms (graph/*)
-crates/analytics-tools (kawai-analytics) # thin AgentTool wrappers over crates/analytics engine — data_schema/query/ta/chart (spawn_blocking) + sql_profiles/effective_profiles + DataTablesTool/DataImportTool (sqlx Postgres/MySQL, analytics-sql)
-crates/agent (kawai-agent)       # prompt-based tool-calling loop (opener/delta K/V, TurnMemory session_artifacts, alias, parsing, subagents DeepWrite/DraftDocument/ArtifactRecall) + evidence_cache LRU FileScoped, catalog toolset_for
-crates/webread (webread)         # web read + search tiering (feature "webread", implied by "office"; reusable by any agent): web_read + web_search PortableTools — on-device webview engine (injected trait) → Cloudflare /markdown fallback; web_search = Bing SERP over the same chain with every hit's page auto-fetched; challenge detection, daily budgets, LRU cache
+crates/
+├── foundation/                     # shared infrastructure
+│   ├── auth/ (kawai-auth)         # pure auth — Verifier/Claims/Session, JWKS verify + dev bypass, dotenv loader (no tauri/axum)
+│   ├── db/ (kawai-db)             # per-user SQLite — libsql Builder::new_local, user_data_dir/DataRoot, sessions/messages/artifacts/turn_log + migrations 0001-0009 (office/analytics gated) + generate_session_title (Workers AI)
+│   ├── remote-llm/ (remote-llm)   # hybrid cloud pool (zai→venice→opencode→openrouter→ollama→poolside→empero, health-aware failover, SSE)
+│   ├── skills/ (kawai-skills)     # SKILL.md CRUD (skl-* base62, unique name, version bump) + prompt_block 4k/skill, 12k total (ungated)
+│   └── memory/ (kawai-memory)     # L1 memories CRUD (preference/rule/event/fact/goal, mem-* base62) + memory_extract via remote-llm + prompt_block 800/4k/24
+├── engines/                        # domain logic & business engines
+│   ├── agent/ (kawai-agent)       # prompt-based tool-calling loop (opener/delta K/V, TurnMemory session_artifacts, alias, parsing, subagents DeepWrite/DraftDocument/ArtifactRecall) + evidence_cache LRU FileScoped, catalog toolset_for
+│   ├── analytics/ (analytics)      # polars engine (discover/query/ta_suite/chart, office_oxide xlsx bridge) — pure, no kawai deps
+│   ├── graph/ (graph)             # standalone libSQL GraphRAG (Naive/Local/Global/Hybrid/Mix) — pure, used by kawai-knowledge/graph via kawai-agent
+│   ├── knowledge/ (kawai-knowledge) # RAG — chunk 1500/200 (MarkdownSplitter) → embed (kawai-embedding) → libSQL vector + FTS5/BM25 RRF, session_files scoping, KnowledgeSearchTool; GraphRAG 5 arms (graph/*)
+│   └── office/ (kawai-office)     # per-user docs store (opaque ids, meta.json, kawai-db) + ooxml (DocBlock→docx/xlsx/pptx, office_oxide) + pdf (pdf_oxide search/replace/merge/split/info) + deck (reveal.js html, assets/reveal.*) + AgentTool wrappers (office_* , pdf_*)
+├── toolsets/                       # agent toolset adapters
+│   ├── analytics-tools/ (kawai-analytics) # thin AgentTool wrappers over crates/engines/analytics engine — data_schema/query/ta/chart (spawn_blocking) + sql_profiles/effective_profiles + DataTablesTool/DataImportTool (sqlx Postgres/MySQL, analytics-sql)
+│   ├── binance/                   # Binance agent tools (hand-written, feature "binance"): keyless public spot market data via binance-sdk + in-process TA over ta
+│   └── webread/ (webread)         # web read + search tiering (feature "webread", implied by "office"; reusable by any agent): web_read + web_search PortableTools — on-device webview engine (injected trait) → Cloudflare /markdown fallback; web_search = Bing SERP over the same chain with every hit's page auto-fetched; challenge detection, daily budgets, LRU cache
+├── integrations/                   # external service clients
+│   ├── jigsawstack/               # JigsawStack API client (VOCR, NLP, etc.)
+│   ├── ragloader/                 # document parsing + chunking for RAG ingestion (docx/xlsx/pptx via office_oxide, PDF via pdf_oxide)
+│   └── youtube-transcript/        # YouTube InnerTube transcript extraction
+├── generated-tools/               # auto-generated per-category AgentTool crates (crates-gen)
+├── office-tools/                  # handwritten office/PDF AgentTool crates
+├── vendor/                        # vendored dependencies (binance-sdk, ta)
+└── xtask/                         # build utilities (crates-gen)
+
 src-tauri/src/webview_engine.rs  # tauri-side webread::WebViewFetch: hidden WebviewWindow + eval_with_callback extractor (webread feature; registered in lib.rs, never in kawai-web)
-crates/analytics (analytics)      # polars engine (discover/query/ta_suite/chart, office_oxide xlsx bridge) — pure, no kawai deps
-crates/graph (graph)             # standalone libSQL GraphRAG (Naive/Local/Global/Hybrid/Mix) — pure, used by kawai-knowledge/graph via kawai-agent
 src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), binance_smoke (keyless market data + TA; geo-blocked hosts skip), analytics_smoke (data_schema/data_query/data_ta + xlsx bridge; offline), sql_remote_check (LIVE remote SQL — --deep seeds fixture tables), web_read_check (desktop webview chain e2e), turn_log_report (hybrid calibration), agent_eval (H1 gate — office ≥19/20 + analytics ≥16/18)
 src-tauri/src/logging.rs         # stderr tee → platform log dir (macOS ~/Library/Logs/, Linux $XDG_STATE_HOME)
 src-tauri/src/auth.rs            # shim → kawai-auth (pure auth; Clerk JWKS verify + Session)
@@ -207,10 +221,7 @@ cognee-litert-lm/                # Rust bindings for the LiteRT-LM C API (+ stan
 cognee-litert-lm/vendor/LiteRT-LM         # submodule = upstream google-ai-edge main + macOS patches
 cognee-litert-lm/native/         # gitignored: prepared LiteRT-LM dylibs (bundle-litert-dylibs.sh fills this)
 office_oxide/                    # submodule (path dep, office feature): pure-Rust docx/xlsx/pptx CREATE + read + EDIT + info (markdown → IR; raw-part surgery for in-place edits)
-crates/                  # per-category agent tool crates (generated; each has registry::toolset_for; tools implement kawai_tools::AgentTool)
-crates/binance/          # Binance agent tools (hand-written, feature "binance"): keyless public spot market data via binance-sdk + in-process TA over ta
-crates/binance-connector-rust/  # submodule fork of binance/binance-connector-rust = source of `binance-sdk` 68.1.1, path-depped by crates/binance; patch reqwest default-features=false so TLS is rustls-only
-crates/ta/               # vendored `ta` v0.5.0 (publish=false) — final values only, warm-up skips; consumers: binance + analytics ta_suite
+
 models/                          # .litertlm model files (gitignored, GB-scale)
 .env                             # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)
 scripts/bundle-litert-dylibs.sh  # prep all LiteRT dylibs into native/ for bundling into the .app
@@ -279,11 +290,11 @@ KAWAI_LLM_MAX_TOKENS=16384       # optional context budget (K/V state entries) f
 # an empty vault is the off state.
 KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS=8192  # per-subagent-call output cap
 KAWAI_REMOTE_LLM_MATERIALS_CHARS=        # optional absolute ceiling on every provider's materials budget (fuse; can only lower)
-# ── Binance agent tools (crates/binance) ──
+# ── Binance agent tools (crates/toolsets/binance) ──
 KAWAI_BINANCE_REST_BASE=https://data-api.binance.vision  # optional REST base override; default = api.binance.com (451 geo-blocks some hosting regions — the mirror is the market-data-only endpoint). CI smoke sets it. Also where a testnet base (https://testnet.binance.vision) would go.
 BINANCE_API_KEY=  # optional READ-ONLY spot keys; set BOTH to register the binance_balances/binance_open_orders account tools (never compiled in, no trade permission)
 BINANCE_API_SECRET=
-# ── Web read tiering — Cloudflare fallback budgets (crates/webread) ──
+# ── Web read tiering — Cloudflare fallback budgets (crates/toolsets/webread) ──
 # Per-user and global daily caps on Cloudflare Browser Rendering calls (the
 # on-device webview tier is free and unbudgeted). Exhaustion returns a
 # guidance-carrying tool result, not an error.
@@ -304,7 +315,7 @@ Priority order: **shipped → post-MVP/pre-release → end state**. Items after 
 - **L1 memories**: atomic long-term memory items (`memories` table; kinds preference/rule/event/fact/goal) behind ungated `memory_create/list/update/delete` + `memory_extract` (session transcript → cloud one-shot → JSON candidates → case-insensitive title dedup → stored with `source_session_id`). Extraction needs the hybrid vault; manual CRUD works offline. `memory::prompt_block()` injects L1 memories into the agent persona at opener build (800 char/entry · 4k total · 24 items max; a memory saved mid-session applies from the next session — the opener is per-session). Managed from the Memory asset page's L1 tab (global list + extract-from-block). L2 scenes / L3 persona are not built.
 - **Knowledge/RAG (office)**: the Knowledge panel is the only intake — file import, pasted images (ragloader DescriberChain), YouTube transcript import (`knowledge_import_youtube`). `office_index_file` chunks (1500/200) and embeds via the local LiteRT EmbeddingGemma 300M embedder (768d, desktop) or remote providers (mobile) into libSQL vector tables; FTS5/BM25 mirror fused via RRF. `knowledge_search(query, mode)` is a query-only agent tool — `hybrid` (default) / `semantic` / `keyword`; `user_id`+`session_id` bind server-side at toolset build (the model can never supply them). Index status tracked in `rag_files`.
 - **Hybrid cloud subagents**: with a remote LLM configured, the `deep_write`/`draft_document` agent tools delegate long-form synthesis to a cloud provider pool while local stays orchestrator (`agent_chat` resets engine context on takeover so a former `local_chat` session can't overflow the K/V budget). The persistent process log (TurnMemory, backed by the per-session `session_artifacts` SQLite table) records every completed process and survives turns + restarts; oversized results (>4k chars) page back via `artifact_recall(handle, offset)`; subagent `materials` render relevance-ranked from the log under per-provider budgets (with an explicit omissions note + one staging round when slices were dropped); when the vault is configured and the log is big enough, feedback prompts direct the model to close via `deep_write`. Pool/failover details: Configuration below.
-- **Web read/search (`crates/webread`)**: engine chain — tier 0 on-device hidden webview (`src-tauri/src/webview_engine.rs`) → tier 1 Cloudflare Browser Rendering (per-user/global daily budgets, shared concurrency gate) → MediaWiki full-text search as final fallback (`web_search` only). Challenge detection, 15-min LRU cache, 12k-char cap; every search hit's page auto-fetches through the read chain so the model never needs a follow-up read. Tools register under `any_engine()` (desktop webview + CF; kawai-web degrades to CF-only, no engine ⇒ unregistered).
+- **Web read/search (`crates/toolsets/webread`)**: engine chain — tier 0 on-device hidden webview (`src-tauri/src/webview_engine.rs`) → tier 1 Cloudflare Browser Rendering (per-user/global daily budgets, shared concurrency gate) → MediaWiki full-text search as final fallback (`web_search` only). Challenge detection, 15-min LRU cache, 12k-char cap; every search hit's page auto-fetches through the read chain so the model never needs a follow-up read. Tools register under `any_engine()` (desktop webview + CF; kawai-web degrades to CF-only, no engine ⇒ unregistered).
 - **Office + PDF + decks**: office_oxide (docx/xlsx/pptx read/edit/create) and the pdf_oxide git dep (extract/search/replace/merge/split/info — all in-process) behind the `office` feature. Presentation decks default to `office_create_deck`: self-contained reveal.js `.html` (runtime vendored, model HTML sanitized to a script-free vocabulary, `<img data-file>` embeds stored charts) previewable/presentable in-app; `office_export_deck` converts a deck to `.pptx` deterministically (parse → PptxWriter — no LLM); decks read back as markdown (`office_read_document`, RAG-indexable).
 - **Analytics**: polars-backed `data_schema`/`data_query` (AST with dtype-aware coercion + self-correcting errors)/`data_ta` (indicator folds, final values only)/`data_chart` (charton SVG render of a query result: bar/line/point/area/histogram/pie — stacked/normalized/grouped bar/area, auto-sorted single-series bar and pie slices, temporal x / log y, saved into the office store as session-associated svg; 500 default / 2000 max, pie ≤20) over office-store tabular files; xlsx/xlsm convert once to typed parquet sidecars via office_oxide; named SQL sources (`sql_profiles`, `analytics-sql` feature) snapshot via `data_tables`/`data_import`.
 - **Schema migrations**: hand-rolled runner in `logic/db_migrations.rs` applied by every `db_connection` — see Database below for how to add one.

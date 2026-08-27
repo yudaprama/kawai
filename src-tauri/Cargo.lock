@@ -3419,7 +3419,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
- "kawai-constants 0.1.0 (git+https://github.com/yudaprama/kawai-vault.git)",
+ "kawai-constants 0.1.0",
  "log",
  "rand 0.9.5",
  "reqwest 0.13.4",
@@ -9220,7 +9220,7 @@ dependencies = [
  "browser",
  "futures-util",
  "html-to-markdown-rs",
- "kawai-constants 0.1.0 (git+https://github.com/yudaprama/kawai-vault.git)",
+ "kawai-constants 0.1.0",
  "kawai-tools",
  "reqwest 0.13.4",
  "serde",

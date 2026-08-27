@@ -6,61 +6,64 @@
 
 ---
 
-## 0. Kapan Pakai Apa — baca ini dulu
+## 0. When to Use What — read this first
 
-> **Untuk pemakaian harian, Anda hampir tidak pernah memilih apa pun.** Keputusan yang benar-benar ada hanya tiga: (1) masukkan file ke sesi atau tidak, (2) simpan sesuatu sebagai **Skill** atau sebagai **Memory**, (3) selesai. Mode pencarian dipilih **model**, bukan Anda.
+> **In day-to-day use you almost never choose anything.** Only three real decisions exist: (1) attach a file to the session or not, (2) save something as a **Skill** or as a **Memory**, (3) done. The retrieval mode is picked by the **model**, not by you.
 
-### Lima laci — satu pertanyaan per laci
+### Five drawers — one question each
 
-| Laci | Menjawab pertanyaan | Siapa yang mengisi | Anda perlu apa |
+| Drawer | Answers the question | Who fills it | What you do |
 |---|---|---|---|
-| **Knowledge (RAG)** | "Apa isi dokumen saya?" | Anda: import file/YouTube ke sesi (Knowledge panel) | Import → tanya biasa |
-| **Skills** | "Bagaimana saya mau agent bekerja?" (prosedur, gaya, aturan kerja) | Anda: tulis manual (Assets → Skills) | Tulis sekali, berlaku mulai sesi berikutnya |
-| **L1 Memory** | "Siapa saya?" (fakta, preferensi, target) | Anda manual, atau extract dari transkrip sesi | Sebut di chat → minta extract; atau tulis manual |
-| **Evidence sesi** | "Apa yang barusan terjadi di sesi ini?" | Otomatis (TurnMemory + evidence cache) | Tidak perlu apa-apa |
-| **GraphRAG** | (belum melayani chat apa pun) | — | Abaikan — RPC-only, belum terhubung ke toolset agent (lihat §4) |
+| **Knowledge (RAG)** | "What's in my documents?" | You: import files/YouTube into the session (Knowledge panel) | Import → just ask |
+| **Skills** | "How do I want the agent to work?" (procedures, style, working rules) | You: write manually (Assets → Skills) | Write once; applies from the next session |
+| **L1 Memory** | "Who am I?" (facts, preferences, goals) | You manually, or extracted from a session transcript | Mention it in chat → extract; or write manually |
+| **Session evidence** | "What just happened in this session?" | Automatic (TurnMemory + evidence cache) | Nothing |
+| **GraphRAG** | (serves nothing in chat yet) | — | Ignore — RPC-only, not wired to the agent toolset (see §4) |
 
-### Tabel situasi
+### Situation table
 
-| Situasi nyata | Yang Anda lakukan | Yang terjadi di dalam |
+| Real situation | What you do | What happens inside |
 |---|---|---|
-| "Jawab dari PDF kontrak ini" | Import ke sesi → tanya | RAG hybrid (vektor + BM25) carikan potongan; agent membaca file bila perlu |
-| "Cari INV-88421 di dokumen" | Tanya biasa | Model memilih mode `keyword` (BM25, exact match) |
-| "Jelaskan konsep X dari paper ini" | Tanya biasa | Model memilih `semantic`/`hybrid` (vektor) |
-| "Kalau diminta laporan bulanan, selalu pakai format ini" | Tulis **Skill** | Diinjeksi ke persona di sesi berikutnya |
-| "Ingat, saya trading crypto dan risk-averse" | Bilang di chat → extract (atau tulis **Memory** manual) | Masuk `<memories>`, diinjeksi tiap sesi |
-| Bingung Skill vs Memory? | Skill = *cara kerja*; Memory = *fakta tentang Anda* | — |
+| "Answer from this PDF contract" | Import into the session → ask | Hybrid RAG (vector + BM25) fetches passages; the agent reads the file if needed |
+| "Find INV-88421 in the documents" | Just ask | Model picks `keyword` mode (BM25, exact match) |
+| "Explain concept X from this paper" | Just ask | Model picks `semantic`/`hybrid` (vector) |
+| "Whenever I ask for a monthly report, always use this format" | Write a **Skill** | Injected into the persona from the next session |
+| "Remember, I trade crypto and I'm risk-averse" | Say it in chat → extract (or write a **Memory** manually) | Goes into `<memories>`, injected every session |
+| Confused Skill vs Memory? | Skill = *how to work*; Memory = *facts about you* | — |
 
-Yang **tidak** bisa diputuskan siapa pun di chat: GraphRAG (5 arms) dan "fusi rag+graph". `graph_search` tidak terdaftar sebagai agent tool — hanya callable via RPC (`commands.rs`/`web.rs`) — dan tidak ada tool gabungan rag+graph; `tokio::join!` di kode hanya memfusi 3 arm graph dengan sesamanya.
+What **nobody** can decide in chat: GraphRAG (5 arms) and "rag+graph fusion". `graph_search` is not registered as an agent tool — it is only callable via RPC (`commands.rs`/`web.rs`) — and no combined rag+graph tool exists; the `tokio::join!` in the code fuses the 3 graph arms with each other only.
+
+For the technology behind all of these drawers, see §3.4.
 
 ---
 
-## 1. Module Layout
+## 1. Module Layout (knowledge-scoped)
+
+Only what this document covers — the rest of the repo (auth, analytics, binance, webread, generated tools, …) is out of scope here; see `AGENTS.md` for the full map.
 
 ```
-crates/
-├── auth (kawai-auth)        OIDC JWT Verifier/Claims/Session (pure, no transport)
-├── remote-llm (remote-llm)  Hybrid cloud pool (zai→empero, health-aware failover, SSE)
-├── db (kawai-db)            Per-user SQLite (sessions/messages/artifacts/turn_log + migrations 0001-0009, office/analytics gated)
-├── skills (kawai-skills)    SKILL.md CRUD + prompt injection (4k/skill, 12k total, ungated)
-├── memory (kawai-memory)    L1 memories CRUD + cloud extraction + prompt injection (ungated)
-├── office (kawai-office)    Document store (opaque ids, meta.json, kawai-db) + ooxml/pdf/deck + AgentTool wrappers (office_* , pdf_*)
-├── knowledge (kawai-knowledge)  RAG (types/schema/search/ingest/session/tools KnowledgeSearchTool) + GraphRAG graph/* (5 arms)
-├── analytics-tools (kawai-analytics)  Thin wrappers over crates/analytics engine (data_schema/query/ta/chart + sql_profiles + sql_remote)
-├── agent (kawai-agent)      Prompt-based tool-calling loop (opener/delta, TurnMemory, subagents DeepWrite/DraftDocument/ArtifactRecall, evidence_cache LRU)
-├── analytics (analytics)    Polars engine (discover/query/ta_suite/chart, office_oxide bridge)
-├── graph (graph)            Standalone libSQL GraphRAG (Naive/Local/Global/Hybrid/Mix, pure)
-├── webread (webread)        Tiered web_read/search (webview → Cloudflare /markdown, LRU, budgets)
-└── tools/*, ragloader, etc  Per-category AgentTool crates + parsers
+crates/ (git submodule)
+├── foundation/
+│   ├── db/ (kawai-db)          Per-user SQLite — owns every knowledge table (rag_* / graph_* / skills / memories / session_artifacts) + migrations 0001-0009
+│   ├── skills/ (kawai-skills)  SKILL.md CRUD + prompt injection (4k/skill, 12k total, ungated)
+│   └── memory/ (kawai-memory)  L1 memories CRUD + cloud extraction (via remote-llm) + prompt injection (ungated)
+├── engines/
+│   ├── agent/ (kawai-agent)    Tool-calling loop + working memory (TurnMemory → session_artifacts, evidence_cache LRU); consumes knowledge_search
+│   ├── graph/ (graph)          Standalone libSQL GraphRAG (Naive/Local/Global/Hybrid/Mix, pure)
+│   ├── knowledge/ (kawai-knowledge)  RAG (types/schema/search/ingest/session/tools, KnowledgeSearchTool) + GraphRAG graph/* (5 arms)
+│   └── office/ (kawai-office)  Document store (opaque ids, meta.json, kawai-db) — the intake feeding RAG/graph indexing
+└── integrations/
+    ├── ragloader/              Upstream parser (docx/xlsx/pptx/pdf/md/images) for ingest
+    └── youtube-transcript/     YouTube import (knowledge_import_youtube)
 
-src-tauri/src/
-├── logic.rs                 Pure helpers (greet/whoami/generate_activity, resolve_model_path/ensure_model, generate_session_title → kawai-db, delete_chat_session → evidence_cache)
-├── logic/                   Thin shims: db/db_migrations/skills/memory/office/knowledge/rag/graph/analytics/sql_remote/agent/evidence_cache → crates/* (pub use kawai_*)
-├── auth.rs                  Shim → kawai-auth
-└── logic/knowledge, logic/rag, logic/graph shims → kawai-knowledge / kawai-knowledge::graph
+kawai-embedding/                Multi-provider embedder (OpenAI/NVIDIA/Gemini/LiteRT) — repo root, outside the submodule; used by ingest + query
+
+src-tauri/src/ (transport edge only)
+├── logic/knowledge, logic/rag, logic/graph   thin `pub use kawai_knowledge::*` re-exports (call-site compat)
+└── commands.rs / web.rs        expose knowledge_* / graph_* ops — knowledge_search is the only retrieval tool wired into the agent toolset
 ```
 
-**Backward compat:** `logic::rag::*`, `logic::graph::*`, `logic::db::*`, `logic::skills::*`, `logic::memory::*`, `logic::office::*`, `logic::knowledge::*`, `logic::analytics::*`, `logic::agent::*`, `logic::evidence_cache::*` are thin `pub use kawai_*::*` shims — all existing call sites (`commands.rs`, `web.rs`, `agent.rs`) continue to work unchanged. `crates/` is a git submodule (`https://github.com/yudaprama/crates.git`).
+**Backward compat:** the `logic::*` shims (`rag`, `graph`, `knowledge`, `db`, `skills`, `memory`, `office`, `agent`, `evidence_cache`, …) are thin `pub use kawai_*::*` re-exports — existing call sites (`commands.rs`, `web.rs`, `agent.rs`) keep working unchanged.
 
 ---
 
@@ -82,21 +85,21 @@ Per-user `logic::db_connection(user_id)` → `~/Library/Application Support/pro.
 
 | # | Crate | Role | Input → Output | `libSQL` Tables | Feature |
 |---|---|---|---|---|---|
-| **1** | `crates/ragloader` | Upstream parser — `docx/xlsx/pptx→office_oxide`, `pdf→pdf_oxide`, `md→MarkdownSplitter`, images→`DescriberChain` | `Path` → `Vec<Chunk>` | — (stateless) | `office` |
+| **1** | `crates/integrations/ragloader` | Upstream parser — `docx/xlsx/pptx→office_oxide`, `pdf→pdf_oxide`, `md→MarkdownSplitter`, images→`DescriberChain` | `Path` → `Vec<Chunk>` | — (stateless) | `office` |
 | **2** | `kawai-embedding` | Multi-provider embedder — `OpenAI 1024` / `Nvidia` / `Gemini` / `LitertProvider EmbeddingGemma 768d` | `Vec<String>` → `Vec<Vec<f64>>` | — | `kawai-embedding` |
 | **3** | `kawai-knowledge` `schema`+`ingest` | Classic RAG — schema DDL, chunk → embed → insert (1500/200) | `Path` → indexed chunks | `rag_chunks` / `_embeddings` / `_map` + `rag_chunks_fts` + `rag_files` + `session_files` | `kawai-knowledge/office` (via `office`) |
 | **4** | `kawai-knowledge` `search`+`tools` | Retrieval — vector + BM25 + RRF (`k=60`) + `KnowledgeSearchTool` (`kawai_tools::AgentTool`) | `query, mode` → `Vec<RagHit>` | — | `kawai-knowledge/office` |
 | **5** | `kawai-knowledge` `session` | Session-scoped file management — association, list, add, forget, import, delete | — | `session_files` | `kawai-knowledge/office` |
-| **6** | `crates/graph` (`graph`) **and** `kawai-knowledge` `graph/schema`+`ingest` | GraphRAG indexing — entity extraction (`\b[A-Z][a-z]+`, FNV `%8`), embedding, node/edge storage | `text` → `graph_nodes/edges` | `graph_nodes / _embeddings / _map` + `graph_edges / _...` + `graph_files` | `graph` (`kawai-knowledge/graph` + `graph` crate) |
-| **7** | `kawai-knowledge` `graph/search` / `crates/graph` | GraphRAG retrieval — 5 arms (Naive/Local/Global/Hybrid/Mix) + RRF | `query, mode` → `Vec<GraphHit>` | — | `graph` |
-| **8** | `kawai-knowledge` `graph/tools` / `crates/graph` | Agent toolset — `graph_search`, `graph_list`, `graph_forget`, `graph_stats` | — | — | `graph` |
+| **6** | `crates/engines/graph` (`graph`) **and** `kawai-knowledge` `graph/schema`+`ingest` | GraphRAG indexing — entity extraction (`\b[A-Z][a-z]+`, FNV `%8`), embedding, node/edge storage | `text` → `graph_nodes/edges` | `graph_nodes / _embeddings / _map` + `graph_edges / _...` + `graph_files` | `graph` (`kawai-knowledge/graph` + `graph` crate) |
+| **7** | `kawai-knowledge` `graph/search` / `crates/engines/graph` | GraphRAG retrieval — 5 arms (Naive/Local/Global/Hybrid/Mix) + RRF | `query, mode` → `Vec<GraphHit>` | — | `graph` |
+| **8** | `kawai-knowledge` `graph/tools` / `crates/engines/graph` | Agent toolset — `graph_search`, `graph_list`, `graph_forget`, `graph_stats` | — | — | `graph` |
 
 ### 3.2 Skills & Memories (long-term, plain SQLite) — `kawai-skills` + `kawai-memory`
 
 | # | Crate | Role | `libSQL` Tables | Feature |
 |---|---|---|---|---|
-| **9** | `kawai-skills` (`crates/skills`) | SKILL.md CRUD (unique name, version bump, `skl-` base62 id) + bounded prompt injection (4k/skill, 12k total, `prompt_block()`) | `skills` — `migrations/0008_skills.sql` | ungated |
-| **10** | `kawai-memory` (`crates/memory`) | L1 memories — atomic items (`preference/rule/event/fact/goal`); cloud extraction (tail 24k chars → `remote-llm` one-shot → JSON → title dedup, `kawai-knowledge` not needed) + prompt injection (800 char/entry · 4k total · 24 items max, `prompt_block()`) | `memories` — `migrations/0009_memories.sql` | ungated CRUD; extraction needs `remote-llm` vault |
+| **9** | `kawai-skills` (`crates/foundation/skills`) | SKILL.md CRUD (unique name, version bump, `skl-` base62 id) + bounded prompt injection (4k/skill, 12k total, `prompt_block()`) | `skills` — `migrations/0008_skills.sql` | ungated |
+| **10** | `kawai-memory` (`crates/foundation/memory`) | L1 memories — atomic items (`preference/rule/event/fact/goal`); cloud extraction (tail 24k chars → `remote-llm` one-shot → JSON → title dedup, `kawai-knowledge` not needed) + prompt injection (800 char/entry · 4k total · 24 items max, `prompt_block()`) | `memories` — `migrations/0009_memories.sql` | ungated CRUD; extraction needs `remote-llm` vault |
 
 ### 3.3 Agent Working Memory — `kawai-agent`
 
@@ -105,6 +108,24 @@ Per-user `logic::db_connection(user_id)` → `~/Library/Application Support/pro.
 | **11** | `kawai-agent` `evidence_cache` + `artifacts::TurnMemory` | Per-session process log (`session_artifacts` handles `mem1…`) + cross-turn file-read LRU (`FileScoped` probe, `mtime+size` fingerprint, 64 entries / 1M chars / 8 sessions) — verbatim tool outputs, survives turns & restarts. `evidence_cache` is `kawai_agent::evidence_cache` (in-process, no SQLite beyond `session_artifacts`). | `session_artifacts` — `migrations/0007` (log) + in-process LRU | ungated (LRU) + `kawai-agent` (`litert` for loop) |
 
 **Not semantic:** no embedding, no dedup, no summarization — *episodic/operational*. Complementary to L1 memories, not competing. **Don't index `session_artifacts.content` into `rag_chunks`** — it would pollute the document vector space with transient tool output.
+
+### 3.4 Tech Stack — the technology behind knowledge
+
+One principle first: all knowledge runs **in-process inside a single SQLite file** — no servers, no external services. The stack, layer by layer:
+
+| Layer | Technology | Where | Role & notes |
+|---|---|---|---|
+| Database | **libSQL** 0.9 (SQLite fork), crate `libsql` (feature `core`) | All tables: `rag_*`, `graph_*`, `skills`, `memories`, `session_artifacts` | One `kawai.db` file per user (`Builder::new_local`). Chosen because it is embeddable with no server, one file = per-user isolation + backup unit, and a path to future sync (sqld). Access = raw SQL via `libsql::Connection`, no ORM. |
+| Vector | **libSQL native vectors**: `FLOAT32(dims)` columns, `vector(?)` + `vector_distance_cos()` functions | `rag_chunks_embeddings`, `graph_nodes/edges_embeddings` (+ `_map` join tables) | Cosine similarity computed inside SQL. Search = **brute-force scan** with a `file_id` pre-filter — not ANN. The `libsql_vector_idx` index is created in the DDL but never used by any query. |
+| Keyword | **FTS5** (built into SQLite) + `bm25()` | `rag_chunks_fts` + trigger mirror | Virtual table + triggers created at runtime on first index (`ensure_fts`). Query tokens are OR-ed so free-form input cannot trigger FTS syntax errors. |
+| Hybrid fusion | **Hand-rolled RRF in Rust** (k=60) | `crates/engines/knowledge/src/search.rs` (`rrf_fuse`) | Not a DB-engine feature — vector and BM25 rankings are merged in application code. |
+| Chunking | **`text-splitter` 0.27** — `MarkdownSplitter`, char-based | RAG 1500/200; graph 1200/150 | Markdown-aware: chunks follow headings, never cut through structure. |
+| Embedding | **`kawai-embedding`** multi-provider, selected via env | OpenAI (1024d) / NVIDIA / Gemini / **LiteRT EmbeddingGemma 768d on-device** | The local (LiteRT) provider makes the pipeline fully offline-capable. The provider's dimension determines the table schema: switching to a different-dims provider = mandatory re-index (§9 #4). |
+| Document parsing | **`ragloader`** → office_oxide (docx/xlsx/pptx, pure Rust, submodule), **pdf_oxide** (git dep, pure Rust), YouTube transcript, DescriberChain (vision for images) | `crates/integrations/ragloader` | All in-process — no office server, no external CLI. |
+| Entity extraction (graph) | **`regex` crate** only | `graph/types.rs` `extract_entities` | No LLM/NLP — this is GraphRAG's current quality ceiling (TitleCase phrases only, see §4). |
+| Runtime | **tokio** async; agent tools = `kawai_tools::AgentTool` | All crates | SQLite connection opened per operation (`db_connection(user_id)`); idempotent migrations run on every connection. |
+
+**Deliberately not in the stack** (not hidden omissions): a reranker (e.g. NVIDIA), an external vector server (pgvector/Qdrant/Milvus), an LLM in the graph ingest path, semantic dedup/summarization for memory. Local-first MVP = zero infrastructure; these gaps are documented in §4/§8.
 
 ---
 
