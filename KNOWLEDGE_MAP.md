@@ -1,8 +1,37 @@
 # Knowledge Architecture — Kawai
 
-> Document knowledge (RAG + GraphRAG), long-term memory (Skills + L1), and the agent's working memory. One `libSQL` per-user (`kawai.db`). All `feature`-gated — `cargo check` without `graph`/`office` costs nothing.
+> Document knowledge (RAG), long-term memory (Skills + L1), and the agent's working memory. One `libSQL` per-user (`kawai.db`). All `feature`-gated — `cargo check` without `graph`/`office` costs nothing. GraphRAG exists in the same DB but is **RPC-only** (not wired to the agent toolset).
 
-**TL;DR:** Kawai keeps document knowledge (RAG + GraphRAG) and long-term memory (Skills + L1) in a single per-user `libSQL` file. Document retrieval is hybrid vector+FTS5 with RRF (`k=60`); GraphRAG adds 5 arms over the same DB. Skills and L1 memories are plain-SQLite CRUD — versioned/bounded prompt injection into the agent, no vectors yet.
+**TL;DR:** In chat, the agent has exactly **one** retrieval tool — `knowledge_search(query, mode)` — and the **model** picks the mode (`hybrid` = vector+BM25 fused via RRF, `semantic`, `keyword`). Skills and L1 memories are plain-SQLite CRUD with bounded prompt injection at opener build. GraphRAG (5 arms) is stored in the same DB and callable via RPC, but no agent toolset registers it — experimental, not part of the chat path. Start at §0 for "when to use what".
+
+---
+
+## 0. Kapan Pakai Apa — baca ini dulu
+
+> **Untuk pemakaian harian, Anda hampir tidak pernah memilih apa pun.** Keputusan yang benar-benar ada hanya tiga: (1) masukkan file ke sesi atau tidak, (2) simpan sesuatu sebagai **Skill** atau sebagai **Memory**, (3) selesai. Mode pencarian dipilih **model**, bukan Anda.
+
+### Lima laci — satu pertanyaan per laci
+
+| Laci | Menjawab pertanyaan | Siapa yang mengisi | Anda perlu apa |
+|---|---|---|---|
+| **Knowledge (RAG)** | "Apa isi dokumen saya?" | Anda: import file/YouTube ke sesi (Knowledge panel) | Import → tanya biasa |
+| **Skills** | "Bagaimana saya mau agent bekerja?" (prosedur, gaya, aturan kerja) | Anda: tulis manual (Assets → Skills) | Tulis sekali, berlaku mulai sesi berikutnya |
+| **L1 Memory** | "Siapa saya?" (fakta, preferensi, target) | Anda manual, atau extract dari transkrip sesi | Sebut di chat → minta extract; atau tulis manual |
+| **Evidence sesi** | "Apa yang barusan terjadi di sesi ini?" | Otomatis (TurnMemory + evidence cache) | Tidak perlu apa-apa |
+| **GraphRAG** | (belum melayani chat apa pun) | — | Abaikan — RPC-only, belum terhubung ke toolset agent (lihat §4) |
+
+### Tabel situasi
+
+| Situasi nyata | Yang Anda lakukan | Yang terjadi di dalam |
+|---|---|---|
+| "Jawab dari PDF kontrak ini" | Import ke sesi → tanya | RAG hybrid (vektor + BM25) carikan potongan; agent membaca file bila perlu |
+| "Cari INV-88421 di dokumen" | Tanya biasa | Model memilih mode `keyword` (BM25, exact match) |
+| "Jelaskan konsep X dari paper ini" | Tanya biasa | Model memilih `semantic`/`hybrid` (vektor) |
+| "Kalau diminta laporan bulanan, selalu pakai format ini" | Tulis **Skill** | Diinjeksi ke persona di sesi berikutnya |
+| "Ingat, saya trading crypto dan risk-averse" | Bilang di chat → extract (atau tulis **Memory** manual) | Masuk `<memories>`, diinjeksi tiap sesi |
+| Bingung Skill vs Memory? | Skill = *cara kerja*; Memory = *fakta tentang Anda* | — |
+
+Yang **tidak** bisa diputuskan siapa pun di chat: GraphRAG (5 arms) dan "fusi rag+graph". `graph_search` tidak terdaftar sebagai agent tool — hanya callable via RPC (`commands.rs`/`web.rs`) — dan tidak ada tool gabungan rag+graph; `tokio::join!` di kode hanya memfusi 3 arm graph dengan sesamanya.
 
 ---
 
@@ -81,13 +110,15 @@ Per-user `logic::db_connection(user_id)` → `~/Library/Application Support/pro.
 
 ## 4. GraphRAG — 5 Arms
 
+> **Status: RPC-only & experimental.** The `graph_*` ops are exposed via `commands.rs`/`web.rs` only — no agent toolset registers `GraphSearchTool`, so the chat model cannot reach any arm. Known caveats in today's code: `community_of()` is an FNV-1a hash bucket (`% 8`), not community detection; edge descriptions are boilerplate `"{a} relates to {b}"` (embedded as-is); `local_traversal` has no deterministic `ORDER BY` before `LIMIT`; nodes/edges never cross files (multi-hop works within one file only); graph search is user-wide — it does **not** scope by `session_files` the way RAG does (see §9 note).
+
 | Arm | Idea | SQL / Rust | Location |
 |---|---|---|---|
 | **Naive** | Query → embed → vector (plain) | `vector_distance_cos` + `ROW_NUMBER() OVER (PARTITION BY docid)` | `graph/search.rs` `vector_search_nodes()` |
 | **Local** | Extract entities → 1–2 hop | `LIKE %token%` → `WITH RECURSIVE … depth<2 JOIN graph_edges` | `graph/search.rs` `local_traversal()` |
 | **Global** | Embed relationship → community | `vector_search_edges` → `community_id IN (…)` | `graph/search.rs` `global_community_hits()` |
 | **Hybrid** | Local+Global+Naive → equal RRF | `tokio::join!` → `1/(60+rank+1)` | `graph/search.rs` `graph_search()` hybrid arm |
-| **Mix** | Weighted RRF (production default) | Same + weights `0.2 / 0.5 / 0.3` | `graph/search.rs` `graph_search()` mix arm via `mode="mix"` |
+| **Mix** | Weighted RRF (default mode) | Same + weights `0.2 / 0.5 / 0.3` | `graph/search.rs` `graph_search()` mix arm via `mode="mix"` |
 
 ---
 
@@ -119,13 +150,16 @@ cargo check -p graph -p kawai-agent --features litert,office  # pure crates
 
 ## 6. When to Use Which
 
-| Query type | Best path | Why |
+**Production chat reality:** the agent has exactly one retrieval tool — `knowledge_search(query, mode)`. The model picks `mode`; callers pick nothing. GraphRAG arms are RPC-only (§4), and **no rag+graph fusion tool exists** — the `tokio::join!` in `graph_search` fuses the three graph arms with each other, not with RAG.
+
+| Retrieval situation | Tool + mode | Mechanism |
 |---|---|---|
-| Exact keyword (`INV-88421`) | `rag` `mode=keyword` (FTS5) | BM25 matches codes/numbers exactly |
-| Paraphrase / synonym | `rag` `mode=semantic` or `graph` `naive` | Vector similarity captures meaning |
-| Multi-hop (`Alice→Bob→Jakarta`) | `graph` `mode=local` (2-hop) | Recursive CTE traverses edges |
-| Big picture / themes | `graph` `mode=global` (community) | Community expansion surfaces clusters |
-| Most comprehensive | `graph` `mode=mix` or **fusion** `rag+graph` (`tokio::join!` → RRF) | All arms combined |
+| Exact code/number/name (`INV-88421`) | `knowledge_search` `mode=keyword` | FTS5/BM25 exact match; skips the embedder |
+| Paraphrase / concept ("explain X") | `knowledge_search` `mode=semantic` or `hybrid` | Vector similarity |
+| Default (model doesn't know which) | `knowledge_search` `mode=hybrid` | Both sides fused via RRF |
+| (RPC-only — not reachable from chat) | `graph_search` `naive/local/global/hybrid/mix` | §4 |
+
+Notes: RRF `k=60` is the rank-smoothing constant, **not** the result count — each side contributes top-8 and the fused result is top-8 (`const K: u64 = 8`, `search.rs`). Results are scoped to the session's files (`session_files`).
 
 ---
 
@@ -153,21 +187,21 @@ bun run build
 | Embedding | `OpenAI 1024` / `Nvidia` / `Gemini` / `EmbeddingGemma 768d` | Any OpenAI-compatible + `embeddinggemma-300m-q8_0` | Same 300M model, different provider wiring |
 | Vector store | libSQL `FLOAT32(dims)` + `libsql_vector_idx` | Prod TCVDB; standalone `vec0` | Same hybrid logic, different engine |
 | Keyword search | FTS5 `rag_chunks_fts` + `bm25() ASC` | FTS5 + BM25 | Identical pattern |
-| Hybrid ranking | RRF `k=60` + Mix weights `0.2/0.5/0.3` | RRF `k=60`, `candidateK=limit×3` | Kawai is a superset |
-| Graph extraction | Regex `\b[A-Z][a-z]+`, FNV `%8` | LLM two-stage → `[[]]` wikilinks; Code AST | Zero-LLM vs. LLM+AST |
+| Hybrid ranking | RRF `k=60` (rag) + weighted 3-arm RRF `0.2/0.5/0.3` (graph, RPC-only) | RRF `k=60`, `candidateK=limit×3` | Same constant; no rag+graph fusion in kawai |
+| Graph extraction | Regex `\b[A-Z][a-z]+` (TitleCase only — misses lowercase words/acronyms), FNV `%8` | LLM two-stage → `[[]]` wikilinks; Code AST | Zero-LLM vs. LLM+AST |
 | Graph traversal | `WITH RECURSIVE depth<2` + `community_id IN` | `graphology` BFS `hop/decay/maxNodes=200` | Same topology; kawai lacks `decay`/`maxNodes` tuning |
 | Layered memory | L0 `sessions/messages`; L1 `memories` + `prompt_block()` | L0–L3 (JSONL + vec0 + LLM dedup) | Kawai L0+L1 basic; Tencent has L2 scenes + L3 persona |
 | Skills | CRUD + `prompt_block()` — no vectors yet | CRUD + `vec0` + FTS5 + RRF + TTL | Kawai vector/FTS5 not yet |
 | Storage | Per-user `~/Library/.../kawai.db` | COS STS + Redis + OTEL/Langfuse/Kafka | Per-user ↔ per-namespace mapping is 1:1 |
 
-**Don't delete `rag` for `graph`** — lexical vs. relations. Production is `rag+graph → RRF`.
+**Don't delete `rag` for `graph`** — lexical and relational retrieval are complementary. Production chat uses `knowledge_search` only; the graph arms stay RPC-only/experimental (§4) until a `GraphSearchTool` is registered in an agent toolset.
 
 ---
 
 ## 9. Architecture Invariants
 
 1. **User isolation is structural** — one DB file per user (`db_connection(user_id)`), no `user_id` columns.
-2. **Chunks belong to files; files belong to sessions** — `session_files(session_id, file_id)` scopes search.
+2. **Chunks belong to files; files belong to sessions** — `session_files(session_id, file_id)` scopes RAG search. (Graph search is user-wide today — §4.)
 3. **Session id is bound server-side** — the model never provides `user_id` or `session_id`.
 4. **Don't mix 768d and 1024d** — cross-dim mixing blocked; re-index on switch.
 5. **Don't index transient tool output** — `session_artifacts` stays out of `rag_chunks`.
