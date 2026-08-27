@@ -3598,6 +3598,7 @@ dependencies = [
  "kawai-constants 0.1.0",
  "kawai-db",
  "kawai-embedding",
+ "kawai-knowledge",
  "kawai-memory",
  "kawai-office",
  "kawai-skills",
@@ -3683,6 +3684,27 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "kawai-knowledge"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "kawai-db",
+ "kawai-embedding",
+ "kawai-office",
+ "kawai-tools",
+ "libsql",
+ "office_oxide",
+ "pdf_oxide",
+ "ragloader",
+ "regex",
+ "serde",
+ "serde_json",
+ "text-splitter",
+ "tokio",
+ "youtube_transcript",
 ]
 
 [[package]]

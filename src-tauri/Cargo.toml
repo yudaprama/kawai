@@ -48,6 +48,7 @@ kawai-db = { path = "../crates/db" }
 kawai-skills = { path = "../crates/skills" }
 kawai-memory = { path = "../crates/memory" }
 kawai-office = { path = "../crates/office", optional = true }
+kawai-knowledge = { path = "../crates/knowledge", optional = true }
 # The agent tool seam (tool trait + registry) shared with components.
 kawai-tools = { path = "../kawai-tools" }
 # default-features=false keeps only the local-SQLite core: replication/remote
@@ -134,7 +135,7 @@ litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert"]
 # GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
 # Include with --features graph, exclude by omitting it (zero cost when off).
 # Standalone — includes the pure `graph` crate + its DB deps.
-graph = ["dep:graph", "dep:kawai-embedding", "dep:text-splitter", "dep:regex"]
+graph = ["dep:graph", "dep:kawai-embedding", "dep:text-splitter", "dep:regex", "dep:kawai-knowledge", "kawai-knowledge/graph"]
 # Web read/search tiering as a standalone feature so any agent can reuse the
 # tools without `office`; `office` implies it (behavior-preserving).
 webread = ["dep:webread", "dep:browser", "dep:url"]
@@ -143,7 +144,7 @@ webread = ["dep:webread", "dep:browser", "dep:url"]
 # (kawai-embedding, with in-tree chunking) for idle-time
 # knowledge indexing. Enables the `webread` FEATURE (not just `dep:webread`)
 # so its bundled deps ride along.
-office = ["dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office", "dep:kawai-office"]
+office = ["dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office", "dep:kawai-office", "dep:kawai-knowledge", "kawai-knowledge/office"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
 binance = ["dep:binance"]

@@ -162,6 +162,13 @@ pub fn toolset_for(
             ToolSet::default()
         }
     };
+    #[cfg(feature = "office")]
+    if agent_id == OFFICE_AGENT_ID {
+        set.add_tool(kawai_knowledge::tools::KnowledgeSearchTool(
+            user_id.to_string(),
+            session_id,
+        ));
+    }
     #[cfg(feature = "graph")]
     if agent_id == OFFICE_AGENT_ID {
         crate::logic::graph::extend_toolset(&mut set, user_id);
