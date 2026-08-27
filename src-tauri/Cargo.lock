@@ -3594,6 +3594,7 @@ dependencies = [
  "futures-util",
  "graph",
  "jsonwebtoken",
+ "kawai-auth",
  "kawai-constants 0.1.0",
  "kawai-embedding",
  "kawai-tools",
@@ -3605,6 +3606,7 @@ dependencies = [
  "ragloader",
  "rand 0.9.5",
  "regex",
+ "remote-llm",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
@@ -3621,6 +3623,18 @@ dependencies = [
  "url",
  "webread",
  "youtube_transcript",
+]
+
+[[package]]
+name = "kawai-auth"
+version = "0.1.0"
+dependencies = [
+ "dotenvy",
+ "jsonwebtoken",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -6202,6 +6216,21 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "remote-llm"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "futures-core",
+ "futures-util",
+ "kawai-constants 0.1.0",
+ "rand 0.9.5",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "rend"
