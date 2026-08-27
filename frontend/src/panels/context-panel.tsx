@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { KnowledgeFileInfo } from "@/lib/api";
 import type { ContextTabId, ContextTabSpec } from "@/panels/registry";
+import { KnowledgeLibrary } from "@/panels/knowledge-library";
 
 /**
  * The right context pane: per-agent tab composition arrives via the registry
@@ -167,36 +168,16 @@ export function ContextPanel({
                 )}
               </TabsContent>
               <TabsContent value="library">
-                <div>
-                  <KnowledgeSectionLabel
-                    count={knowledge.files.length}
-                    label={sessionId != null ? "Library" : "Documents"}
-                  />
-                  {knowledge.files.length === 0 ? (
-                    <div className="text-muted-foreground/70 rounded-lg border border-dashed px-3 py-3 text-xs">
-                      No sources yet — import .docx, .xlsx, .pptx, .pdf or images with &quot;Add files&quot;, or paste a
-                      YouTube link with &quot;Link&quot;.
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-1.5">
-                      {knowledge.files.map((file) => (
-                        <KnowledgeFileRow
-                          confirmDelete={confirmDeleteId === file.id}
-                          file={file}
-                          inSessionList={file.inSession && sessionId != null}
-                          key={file.id}
-                          actions={{
-                            onAdd: onAddToSession,
-                            onDelete: onDeleteFile,
-                            onPreview: onPreview,
-                            onRemove: onRemoveFromSession,
-                            onRetry: onRetryIndex,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <KnowledgeLibrary
+                  confirmDeleteId={confirmDeleteId}
+                  files={knowledge.files}
+                  loaded={knowledge.loaded}
+                  sessionId={sessionId}
+                  onAdd={onAddToSession}
+                  onDelete={onDeleteFile}
+                  onRemove={onRemoveFromSession}
+                  onRetry={onRetryIndex}
+                />
               </TabsContent>
             </Tabs>
           )}

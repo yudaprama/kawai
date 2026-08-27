@@ -28,15 +28,21 @@ Lint/format is Biome (`biome.jsonc` at the repo root). The vendored trees
 are excluded from both linter and formatter so re-syncs from `web/` stay
 diff-clean. CI runs `lint` + `test` + `build` in the `web` job.
 
-## What's vendored (do NOT edit these unless syncing from `web/`)
+## What's vendored (do NOT edit these unless syncing from upstream)
 
-The following are copied from the `web/` SPA and trimmed. Updates from `web/` require the same trims to be reapplied:
+From the `web/` SPA (updates require the same trims to be reapplied):
 
 - `src/components/ai-elements/` — chat UI components (conversation, message, tool, prompt-input, etc.)
 - `src/components/ui/` — shadcn primitives (button, dialog, input, etc.)
 - `src/lib/streamdown/` — markdown/streaming renderer (remark, rehype, mermaid, code highlighting)
 
 **Trims applied when vendoring**: replace `ai` imports → `@/lib/ai-types`, strip `react-i18next`, slim `@/platform` to the local adapter (`src/platform/`), remove Lexical, `@xyflow`, `tokenlens`.
+
+From `TencentDB-Agent-Memory/MemoryPanel/web/` (MIT; the Tea-style asset-management UI):
+
+- `src/components/asset/` — `AssetSplitLayout` (drag-resizable split, width persisted to localStorage), `AssetListPanel` (+ 4-line item subcomponents: Name/Id/Desc/Badges/Meta/Time), `AssetPageHeader`. CSS is namespaced (`_alp-*`, `_asset-split-*`) and themed through the `--tea-*` tokens in `index.css`.
+
+**Trims applied when vendoring**: strip `react-i18next` (literal aria-labels), swap `tea-component` `Card` → `@/components/ui/card`, drop multi-tenant pieces (UserBadge, scope toggles), adapt the split height to the app shell (`calc(100dvh - 150px)` instead of the full-page console layout).
 
 ## Architecture
 
@@ -48,7 +54,7 @@ frontend/
 ├── src/
 │   ├── main.tsx            # React root + TooltipProvider + Toaster (sonner)
 │   ├── App.tsx             # main app: three-pane UI (agents rail, chat+canvas, sessions sidebar)
-│   ├── index.css           # Tailwind v4 + shadcn + custom CSS variables ("Hatchet" design tokens)
+│   ├── index.css           # Tailwind v4 + shadcn semantics aliased to Tea design tokens (--tea-* in :root/.dark; source: tea-component@2.8.0 default theme)
 │   ├── lib/
 │   │   ├── ai-types.ts     # LOCAL type shim: UIMessage, UIMessagePart, ToolUIPart, etc. (no ai-sdk dep)
 │   │   ├── api.ts          # call() — RPC via Tauri invoke + errText helper + backend payload types
@@ -90,6 +96,7 @@ frontend/
 │   │   │   ├── tool-renderers/   # per-domain tool result cards (cards, connector, finance, geo, media, etc.)
 │   │   │   └── ... (conversation, message, tool, prompt-input, code-block, artifact, etc.)
 │   │   ├── ui/             # shadcn primitives (vendored from web/)
+│   │   ├── asset/          # vendored Tea-style asset-management primitives (from TencentDB-Agent-Memory MemoryPanel): asset-split-layout, asset-list-panel (+ item subcomponents), asset-page-header
 │   │   ├── rename-input.tsx # inline rename field (Enter/blur commit, Escape cancel)
 │   │   ├── error-boundary.tsx # top-level render crash fallback (Try again / Reload app; mirrors to frontend_log)
 │   │   ├── file-icon.tsx   # CDN file-type icons (jsdelivr @lobehub/assets-fileicon)
@@ -101,10 +108,18 @@ frontend/
 │   │   └── sql-profiles-section.tsx # SQL data sources (Knowledge panel): list/add/edit/test/delete profiles
 │   ├── panels/
 │   │   ├── registry.tsx            # per-agent context-pane composition (CONTEXT_TABS, keyed by agent id)
-│   │   ├── agents-rail.tsx        # pane 1: agent catalog rail
+│   │   ├── agents-rail.tsx        # pane 1: agent catalog rail + Assets section (Wiki/Code/Skills/Memory navigation)
+│   │   ├── assets/                # center-pane asset workspace pages (opened from the rail's Assets section; assetView state in App swaps chat → asset page, Esc/agent click returns)
+│   │   │   ├── asset-nav.tsx      # ASSET_NAV + AssetViewId — the rail's Assets section metadata
+│   │   │   ├── asset-shell.tsx    # shared shell: back-to-chat header + scroll body
+│   │   │   ├── wiki-page.tsx      # knowledge base as wiki sources (Tea panel structure): header + Sources list (status/pages/chunks) + Pages|Graph detail tabs (Pages = live preview)
+│   │   │   ├── memory-page.tsx    # ChatMemoryPanel structure: header + agent filter + Blocks list + L0–L3 layer tabs (L0 transcript real; L1–L3 honest empty — no pipeline tier yet)
+│   │   │   ├── skills-page.tsx    # SkillsPanel structure shell + EmptyPane (no skill storage tier yet) 
+│   │   │   └── code-page.tsx      # CodeSourcesPanel structure shell (no repo indexing tier yet)
 │   │   ├── conversation-panel.tsx # pane 2: chat + model status (virtualization)
 │   │   ├── chat-composer.tsx      # composer: @-mention + file chips + speech
 │   │   ├── context-panel.tsx      # right context pane: renders the tabs the registry gives it (session/library/databases)
+│   │   ├── knowledge-library.tsx  # library tab as a Tea-style asset manager: file list ↔ detail (inline preview + session binding) on the vendored asset primitives
 │   │   └── sessions-panel.tsx     # pane 3: session list — search, inline rename, archive/restore, delete
 │   ├── platform/
 │   │   ├── types.ts        # Platform interface (pickFiles, dictation, screenshots, clipboard, share)
@@ -139,7 +154,7 @@ User prompt → App.tsx → use-local-chat.send()
 | Imports | `@/` alias for all local imports (`@/lib/api`, `@/components/ui/button`, `@/hooks/use-theme`) |
 | Lucide icons | Import individually: `import { MoonIcon, SunIcon } from "lucide-react"` |
 | Styling | Tailwind v4 utility classes + `cn()` from `@/lib/utils` for conditional classes |
-| CSS | `index.css` uses CSS variables for theme (Hatchet design tokens); `.dark` variant |
+| CSS | `index.css` defines the raw `--tea-*` tokens (light + dark) and aliases the shadcn semantics to them — theme both via the tea vars, never hardcode colors |
 | Components | Prefer `ai-elements/` → `ui/` first; add new shadcn components via `bunx shadcn@latest add` only when nothing fits |
 | Hooks | Custom hooks in `hooks/`; each hook is a single file |
 | Platform | All platform capabilities go through the `Platform` interface in `platform/types.ts` — never use browser globals directly in components |
@@ -156,6 +171,7 @@ User prompt → App.tsx → use-local-chat.send()
 - **Auth bootstrap is in use-local-chat.ts** (lines 96-118). The hook first tries `whoami`, then falls back to `set_session` with a dev token. This is the MVP dev-bypass — no Clerk UI is wired in the React frontend.
 - **Theme is applied before React mounts** via an inline script in `index.html:7-20`. The `use-theme.ts` hook writes to the same `localStorage` key (`"kawai-theme"`).
 - **Agent presentation is a frontend map** (`AGENT_META` in `panels/agents-rail.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry. The right context pane follows the same pattern — `CONTEXT_TABS` in `panels/registry.tsx` decides which tabs each agent gets; agents absent from the map (or tool-less) get no pane and its toggles disappear.
+- **Asset workspace navigation is frontend-owned** (`ASSET_NAV` in `panels/assets/asset-nav.tsx`; `assetView` state in `App.tsx`). Opening an asset swaps the center pane (chat → asset page) without touching the chat state — the stream keeps folding in the background; Esc or an agent click returns. Wiki reuses the app's knowledge state, Memory reads `list_chat_sessions`/`list_chat_messages` directly; Skills/Code pages state plainly that their backend tier doesn't exist yet.
 - **`file-preview.tsx`** uses `useFilePreview` from `lib/preview-file.ts` which calls `office_read_file` — every mount triggers a backend call. The preview switch mounts only one renderer at a time, so only one fetch happens.
 - **`useKnowledgeFiles`** (in `use-knowledge-files.ts`) is feature-gated — if the backend rejects `knowledge_list` (no `office` feature), it settles on an empty list with `unavailable=true`.
 

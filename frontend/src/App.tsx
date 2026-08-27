@@ -8,6 +8,11 @@ import { type AgentInfo, call } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
 import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
 import { AgentsRail, agentPresentation } from "@/panels/agents-rail";
+import type { AssetViewId } from "@/panels/assets/asset-nav";
+import { CodeAssetPage } from "@/panels/assets/code-page";
+import { MemoryAssetPage } from "@/panels/assets/memory-page";
+import { SkillsAssetPage } from "@/panels/assets/skills-page";
+import { WikiAssetPage } from "@/panels/assets/wiki-page";
 import { ContextPanel } from "@/panels/context-panel";
 import { contextTabsFor } from "@/panels/registry";
 import { ConversationPanel } from "@/panels/conversation-panel";
@@ -19,6 +24,7 @@ export default function App() {
   const [agentsRail, setAgentsRail] = useState(false);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(true);
+  const [assetView, setAssetView] = useState<AssetViewId | null>(null);
   const [mobileDrawer, setMobileDrawer] = useState<null | "agents" | "sessions" | "knowledge">(null);
 
   useEffect(() => {
@@ -145,6 +151,17 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mobileDrawer, busy]);
 
+  // Esc leaves the asset workspace back to chat (view-only switch, safe while
+  // streaming — the stream keeps folding into chat state in the background).
+  useEffect(() => {
+    if (assetView == null) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAssetView(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [assetView]);
+
   const lastUserText = (() => {
     for (let i = chat.messages.length - 1; i >= 0; i--) {
       const m = chat.messages[i];
@@ -161,6 +178,37 @@ export default function App() {
 
   // Context pane — rendered only when the agent's registry composition has
   // tabs; reused for the desktop canvas and the mobile drawer.
+  // Asset workspace — replaces the chat center pane while an asset view is
+  // open (Wiki = knowledge base, Memory = raw conversations; Skills/Code have
+  // no backend tier yet and state that plainly). Data comes from the same app
+  // state the chat uses, so switching views never re-fetches or resets chat.
+  const assetWorkspace =
+    assetView === "wiki" ? (
+      <WikiAssetPage
+        confirmDeleteId={ka.confirmDeleteId}
+        files={ka.knowledge.files}
+        importing={ka.importing}
+        loaded={ka.knowledge.loaded}
+        sessionId={chat.sessionId}
+        onAdd={ka.addToSession}
+        onBack={() => setAssetView(null)}
+        onDelete={ka.deleteFile}
+        onImport={() => void ka.addKnowledgeFiles()}
+        onRemove={ka.removeFromSession}
+        onRetry={ka.retryIndex}
+      />
+    ) : assetView === "memory" ? (
+      <MemoryAssetPage
+        agents={agents}
+        sessions={[...chat.sessions, ...chat.archivedSessions]}
+        onBack={() => setAssetView(null)}
+      />
+    ) : assetView === "skills" ? (
+      <SkillsAssetPage onBack={() => setAssetView(null)} />
+    ) : assetView === "code" ? (
+      <CodeAssetPage onBack={() => setAssetView(null)} />
+    ) : null;
+
   const contextPanel = hasContextPane ? (
     <ContextPanel
       tabs={contextTabs}
@@ -187,51 +235,56 @@ export default function App() {
         <AgentsRail
           agents={agents}
           activeAgentId={activeAgentId}
+          assetView={assetView}
           collapsed={agentsRail}
           userId={chat.userId}
           busy={busy}
           onSelectAgent={(id) => {
             if (busy && id !== activeAgentId) return;
+            setAssetView(null);
             setActiveAgentId(id);
           }}
+          onSelectAsset={(id) => setAssetView(id)}
           onToggle={() => setAgentsRail((v) => !v)}
         />
       </div>
 
-      <ConversationPanel
-        agent={agent}
-        presentation={presentation}
-        messages={chat.messages}
-        status={status}
-        sessionId={chat.sessionId}
-        sessions={chat.sessions}
-        modelLoading={chat.modelLoading}
-        modelError={chat.modelError}
-        modelStatus={chat.modelStatus}
-        thinking={chat.thinking}
-        onToggleThinking={() => void chat.toggleThinking()}
-        onRetryModel={() => void chat.reloadModel()}
-        chatError={chat.error}
-        historyError={chat.historyError}
-        onRetryHistory={() => void chat.retryHistoryLoad()}
-        lastUserText={lastUserText}
-        onStop={chat.stop}
-        onSend={onSend}
-        confirmation={chat.confirmation}
-        inSession={inSession}
-        sessionsCollapsed={sessionsCollapsed}
-        onToggleSessions={() => setSessionsCollapsed((v) => !v)}
-        onImageToKnowledge={ka.imageToKnowledge}
-        onboarding={onboarding}
-        onOpenMobileAgents={() => setMobileDrawer("agents")}
-        onOpenMobileSessions={() => setMobileDrawer("sessions")}
-        onOpenMobileKnowledge={hasContextPane ? () => setMobileDrawer("knowledge") : undefined}
-        canvasOpen={canvasOpen}
-        onToggleCanvas={hasContextPane ? () => setCanvasOpen((v) => !v) : undefined}
-        canvas={canvasOpen ? contextPanel : null}
-      />
+      {assetWorkspace ?? (
+        <ConversationPanel
+          agent={agent}
+          presentation={presentation}
+          messages={chat.messages}
+          status={status}
+          sessionId={chat.sessionId}
+          sessions={chat.sessions}
+          modelLoading={chat.modelLoading}
+          modelError={chat.modelError}
+          modelStatus={chat.modelStatus}
+          thinking={chat.thinking}
+          onToggleThinking={() => void chat.toggleThinking()}
+          onRetryModel={() => void chat.reloadModel()}
+          chatError={chat.error}
+          historyError={chat.historyError}
+          onRetryHistory={() => void chat.retryHistoryLoad()}
+          lastUserText={lastUserText}
+          onStop={chat.stop}
+          onSend={onSend}
+          confirmation={chat.confirmation}
+          inSession={inSession}
+          sessionsCollapsed={sessionsCollapsed}
+          onToggleSessions={() => setSessionsCollapsed((v) => !v)}
+          onImageToKnowledge={ka.imageToKnowledge}
+          onboarding={onboarding}
+          onOpenMobileAgents={() => setMobileDrawer("agents")}
+          onOpenMobileSessions={() => setMobileDrawer("sessions")}
+          onOpenMobileKnowledge={hasContextPane ? () => setMobileDrawer("knowledge") : undefined}
+          canvasOpen={canvasOpen}
+          onToggleCanvas={hasContextPane ? () => setCanvasOpen((v) => !v) : undefined}
+          canvas={canvasOpen ? contextPanel : null}
+        />
+      )}
 
-      {!sessionsCollapsed && (
+      {!sessionsCollapsed && assetView == null && (
         <div className="hidden shrink-0 md:flex">
           <SessionsPanel
             agent={agent}
@@ -263,12 +316,18 @@ export default function App() {
               <AgentsRail
                 agents={agents}
                 activeAgentId={activeAgentId}
+                assetView={assetView}
                 collapsed={false}
                 userId={chat.userId}
                 busy={busy}
                 onSelectAgent={(id) => {
                   if (busy && id !== activeAgentId) return;
+                  setAssetView(null);
                   setActiveAgentId(id);
+                  setMobileDrawer(null);
+                }}
+                onSelectAsset={(id) => {
+                  setAssetView(id);
                   setMobileDrawer(null);
                 }}
                 onToggle={() => setMobileDrawer(null)}

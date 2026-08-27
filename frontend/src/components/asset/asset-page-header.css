@@ -1,0 +1,76 @@
+/**
+ * AssetPageHeader — shared asset page header styles.
+ * Vendored from TencentDB-Agent-Memory's MemoryPanel (MIT).
+ */
+
+._asset-page-header-main,
+._asset-page-header-right,
+._asset-page-header-filters,
+._asset-page-header-actions {
+  display: flex;
+  align-items: center;
+}
+
+._asset-page-header-main {
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* Title on the left; filters + actions collected on the right */
+._asset-page-header-right {
+  min-width: 0;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+._asset-page-header-title {
+  margin: 0;
+  flex: 0 0 auto;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  color: var(--tea-color-text-primary);
+}
+
+._asset-page-header-filters,
+._asset-page-header-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Filters size to their content */
+._asset-page-header-filters > * {
+  flex: 0 0 auto;
+}
+
+._asset-page-header-actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
+._asset-page-header-subtitle {
+  margin-top: 8px;
+  font: var(--tea-typography-body-sm);
+  color: var(--tea-color-text-tertiary);
+}
+
+@media (max-width: 720px) {
+  ._asset-page-header-main,
+  ._asset-page-header-right,
+  ._asset-page-header-filters,
+  ._asset-page-header-actions {
+    align-items: flex-start;
+  }
+
+  ._asset-page-header-right {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  ._asset-page-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}

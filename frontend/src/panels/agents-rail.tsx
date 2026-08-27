@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { type Theme, useTheme } from "@/hooks/use-theme";
 import type { AgentInfo } from "@/lib/api";
+import { type AssetViewId, ASSET_NAV } from "@/panels/assets/asset-nav";
 
 interface AgentPresentation {
   icon: typeof BriefcaseIcon;
@@ -89,18 +90,23 @@ function ThemeControl({ collapsed }: { collapsed: boolean }) {
 export function AgentsRail({
   agents,
   activeAgentId,
+  assetView,
   collapsed,
   userId,
   busy,
   onSelectAgent,
+  onSelectAsset,
   onToggle,
 }: {
   agents: AgentInfo[];
   activeAgentId: string | null;
+  /** Open asset workspace (center pane replaces chat); null = chat view. */
+  assetView: AssetViewId | null;
   collapsed: boolean;
   userId: string | null;
   busy?: boolean;
   onSelectAgent: (id: string) => void;
+  onSelectAsset: (id: AssetViewId) => void;
   onToggle: () => void;
 }) {
   return (
@@ -122,43 +128,81 @@ export function AgentsRail({
         </Button>
       </div>
 
-      {!collapsed && (
-        <p className="px-3 pt-2 pb-1.5 text-[11px] tracking-wider text-muted-foreground uppercase">Agents</p>
-      )}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {!collapsed && (
+          <p className="px-3 pt-2 pb-1.5 text-[11px] tracking-wider text-muted-foreground uppercase">Agents</p>
+        )}
 
-      <nav className={`flex flex-col gap-1 ${collapsed ? "px-1.5" : "px-2"}`}>
-        {agents.map((a) => {
-          const meta = agentPresentation(a.id);
-          const Icon = meta.icon;
-          const active = a.id === activeAgentId;
-          return (
-            <button
-              className={`flex w-full items-center rounded-lg text-left transition-colors disabled:opacity-50 ${
-                collapsed ? "justify-center p-2" : "gap-2.5 px-2.5 py-2"
-              } ${active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
-              disabled={busy && !active}
-              key={a.id}
-              onClick={() => onSelectAgent(a.id)}
-              type="button"
-              title={busy && !active ? "Tunggu jawaban selesai" : `${a.name} · ${meta.subtitle}`}
-            >
-              <span
-                className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${
-                  active ? "bg-background/60" : "bg-muted"
-                }`}
+        <nav className={`flex flex-col gap-1 ${collapsed ? "px-1.5" : "px-2"}`}>
+          {agents.map((a) => {
+            const meta = agentPresentation(a.id);
+            const Icon = meta.icon;
+            const active = assetView == null && a.id === activeAgentId;
+            return (
+              <button
+                className={`flex w-full items-center rounded-lg text-left transition-colors disabled:opacity-50 ${
+                  collapsed ? "justify-center p-2" : "gap-2.5 px-2.5 py-2"
+                } ${active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
+                disabled={busy && !active && assetView == null}
+                key={a.id}
+                onClick={() => onSelectAgent(a.id)}
+                type="button"
+                title={busy && !active && assetView == null ? "Tunggu jawaban selesai" : `${a.name} · ${meta.subtitle}`}
               >
-                <Icon className="size-[15px]" />
-              </span>
-              {!collapsed && (
-                <span className="flex min-w-0 flex-col">
-                  <span className="text-sm leading-tight font-medium">{a.name}</span>
-                  <span className="text-muted-foreground truncate text-xs leading-tight">{meta.subtitle}</span>
+                <span
+                  className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${
+                    active ? "bg-background/60" : "bg-muted"
+                  }`}
+                >
+                  <Icon className="size-[15px]" />
                 </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
+                {!collapsed && (
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-sm leading-tight font-medium">{a.name}</span>
+                    <span className="text-muted-foreground truncate text-xs leading-tight">{meta.subtitle}</span>
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {!collapsed && (
+          <p className="px-3 pt-4 pb-1.5 text-[11px] tracking-wider text-muted-foreground uppercase">Assets</p>
+        )}
+
+        <nav className={`flex flex-col gap-1 pb-2 ${collapsed ? "px-1.5" : "px-2"}`}>
+          {ASSET_NAV.map((asset) => {
+            const Icon = asset.icon;
+            const active = assetView === asset.id;
+            return (
+              <button
+                className={`flex w-full items-center rounded-lg text-left transition-colors ${
+                  collapsed ? "justify-center p-2" : "gap-2.5 px-2.5 py-2"
+                } ${active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50"}`}
+                key={asset.id}
+                onClick={() => onSelectAsset(asset.id)}
+                title={`${asset.label} · ${asset.subtitle}`}
+                type="button"
+              >
+                <span
+                  className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${
+                    active ? "bg-background/60" : "bg-muted"
+                  }`}
+                >
+                  <Icon className="size-[15px]" />
+                </span>
+                {!collapsed && (
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-sm leading-tight font-medium">{asset.label}</span>
+                    <span className="text-muted-foreground truncate text-xs leading-tight">{asset.subtitle}</span>
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
 
       <div className={`mt-auto flex items-center gap-2.5 border-t p-3 ${collapsed ? "flex-col p-1.5" : ""}`}>
         <span className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">

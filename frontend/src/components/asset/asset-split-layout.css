@@ -1,0 +1,86 @@
+/**
+ * AssetSplitLayout — asset-management split view styles.
+ *
+ * Vendored from TencentDB-Agent-Memory's MemoryPanel (MIT), adapted to the
+ * kawai knowledge pane: the columns live inside the app shell (header + tabs
+ * above), so the height fills the remaining viewport instead of a full page.
+ * Column widths are injected inline by the component (grid-template-columns:
+ * <sidebar>px 6px minmax(0,1fr)).
+ */
+
+._asset-split {
+  display: grid;
+  /* Fill the pane below the panel header/tabs; never shorter than the list
+     panel's own minimum. */
+  height: calc(100dvh - 150px);
+  min-height: 480px;
+  align-items: stretch;
+  gap: 0;
+}
+
+._asset-split-sidebar,
+._asset-split-detail {
+  min-width: 0;
+}
+
+/* Detail: fill height, scroll internally */
+._asset-split-detail {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Sidebar: same — long lists scroll inside, short ones still fill */
+._asset-split-sidebar {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ===== Drag handle ===== */
+._asset-split-resizer {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: col-resize;
+}
+
+._asset-split-resizer-bar {
+  width: 2px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--tea-color-border-primary-default);
+  transition: background-color 0.15s ease-in-out;
+}
+
+._asset-split-resizer:hover ._asset-split-resizer-bar,
+._asset-split--dragging ._asset-split-resizer-bar {
+  background: var(--tea-color-border-brand-default);
+}
+
+._asset-split--dragging {
+  cursor: col-resize;
+}
+
+@media (max-width: 960px) {
+  ._asset-split {
+    grid-template-columns: minmax(0, 1fr) !important;
+    height: auto;
+  }
+
+  /* Narrow screens stack the panes; hide the handle, drop height limits */
+  ._asset-split-resizer {
+    display: none;
+  }
+
+  ._asset-split-sidebar,
+  ._asset-split-detail {
+    height: auto;
+    max-height: none;
+    overflow-y: visible;
+  }
+}

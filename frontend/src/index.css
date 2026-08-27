@@ -4,140 +4,188 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Hatchet design tokens. Values are kept as HSL channels so they work with
- * both Tailwind's opacity modifiers and the existing shadcn components. */
+/* Tea Design tokens — resolved from tea-component@2.8.0's default theme
+ * (tea-component/dist/themes/default-pack.css, MIT). The asset-management
+ * components (components/asset/*, vendored from TencentDB-Agent-Memory's
+ * MemoryPanel) consume the --tea-* names verbatim; the shadcn semantic
+ * variables alias them so the whole app follows one palette. `.dark`
+ * overrides only the raw tea tokens — custom-property aliases resolve per
+ * element, so the :root mappings pick the dark values up automatically. */
 :root {
-  --background: oklch(0.9940 0 0);
-  --foreground: oklch(0 0 0);
-  --card: oklch(0.9940 0 0);
-  --card-foreground: oklch(0 0 0);
-  --popover: oklch(0.9911 0 0);
-  --popover-foreground: oklch(0 0 0);
-  --primary: oklch(0.8545 0.1675 159.6564);
-  --primary-foreground: oklch(0 0 0);
-  --secondary: oklch(0.9933 0.0011 197.1390);
-  --secondary-foreground: oklch(0.1344 0 0);
-  --muted: oklch(0.9702 0 0);
-  --muted-foreground: oklch(0.4386 0 0);
-  --accent: oklch(0.9947 0.0074 164.9465);
-  --accent-foreground: oklch(0.6184 0.1489 155.4444);
-  --destructive: oklch(0.6665 0.2111 2.8306);
-  --destructive-foreground: oklch(1.0000 0 0);
-  --border: oklch(0.9722 0.0034 247.8581);
-  --input: oklch(0.9401 0 0);
-  --ring: oklch(0.8545 0.1675 159.6564);
-  --chart-1: oklch(0.8545 0.1675 159.6564);
-  --chart-2: oklch(0.8979 0.1884 146.5522);
-  --chart-3: oklch(0.6658 0.2215 29.2981);
-  --chart-4: oklch(0.7507 0.1401 230.8266);
-  --chart-5: oklch(0.8257 0.1067 48.5116);
-  --sidebar: oklch(1.0000 0 0);
-  --sidebar-foreground: oklch(0 0 0);
-  --sidebar-primary: oklch(0 0 0);
-  --sidebar-primary-foreground: oklch(1.0000 0 0);
-  --sidebar-accent: oklch(0.9752 0.0307 168.3924);
-  --sidebar-accent-foreground: oklch(0 0 0);
-  --sidebar-border: oklch(0.9401 0 0);
-  --sidebar-ring: oklch(0 0 0);
-  --font-sans: Plus Jakarta Sans, sans-serif;
-  --font-serif: Lora, serif;
-  --font-mono: IBM Plex Mono, monospace;
-  --radius: 1.4rem;
-  --shadow-x: 0px;
-  --shadow-y: 1px;
-  --shadow-blur: 3px;
-  --shadow-spread: 0px;
-  --shadow-opacity: 0.1;
-  --shadow-color: oklch(0 0 0);
-  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 2px 4px -1px hsl(0 0% 0% / 0.10);
-  --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 4px 6px -1px hsl(0 0% 0% / 0.10);
-  --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 8px 10px -1px hsl(0 0% 0% / 0.10);
-  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+  color-scheme: light;
+
+  /* Fonts (Tea typography primitives) */
+  --tea-font-family-default:
+    -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", Helvetica,
+    "Microsoft YaHei UI", "Microsoft YaHei", SimSun, Arial, sans-serif;
+  --tea-font-family-code: Consolas, Menlo, Monaco, Andale Mono, Ubuntu Mono, monospace;
+  --tea-typography-body-sm: normal 400 12px/20px var(--tea-font-family-default);
+
+  /* Surfaces */
+  --tea-color-bg-page-default: #f2f4f8;
+  --tea-color-bg-primary-default: #fff;
+  --tea-color-bg-primary-hover: #f2f4f8;
+  --tea-color-bg-secondary-default: #f2f4f8;
+  --tea-color-bg-secondary-hover: #e9ecf1;
+  --tea-color-bg-container-default: #fff;
+
+  /* Brand */
+  --tea-color-bg-brand-default: #0052d9;
+  --tea-color-bg-brand-hover: #266fe8;
+  --tea-color-bg-brand-lighten-default: #e3ecff;
+  --tea-color-text-brand-default: #0052d9;
+  --tea-color-text-on-bg-brand-default: hsla(0, 0%, 100%, 0.9);
+  --tea-color-border-brand-default: #0052d9;
+
+  /* Text */
+  --tea-color-text-primary: rgba(0, 0, 0, 0.9);
+  --tea-color-text-secondary: rgba(0, 0, 0, 0.7);
+  --tea-color-text-tertiary: rgba(0, 0, 0, 0.5);
+  --tea-color-text-disabled: rgba(0, 0, 0, 0.3);
+  --tea-color-text-link-default: #0052d9;
+
+  /* Borders */
+  --tea-color-border-primary-default: #e6e9ef;
+  --tea-color-border-secondary-default: #e9ecf1;
+
+  /* Functional */
+  --tea-color-bg-error-default: #f64041;
+  --tea-color-text-error-default: #f64041;
+  --tea-color-text-on-bg-error-default: hsla(0, 0%, 100%, 0.9);
+  --tea-color-bg-success-default: #0cbf5b;
+  --tea-color-text-success-default: #0cbf5b;
+  --tea-color-text-on-bg-success-default: hsla(0, 0%, 100%, 0.9);
+  --tea-color-bg-warning-default: #ff7800;
+  --tea-color-text-warning-default: #ff7800;
+  --tea-color-text-on-bg-warning-default: hsla(0, 0%, 100%, 0.9);
+  --tea-color-bg-inverse-default: #202020;
+  --tea-color-text-on-bg-inverse-default: hsla(0, 0%, 100%, 0.9);
+
+  /* Shadows */
+  --tea-shadow-xs: 0 1px 4px 0 rgba(0, 0, 0, 0.05);
+  --tea-shadow-sm: 0 2px 8px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --tea-shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.1), 0 8px 12px -8px rgba(0, 0, 0, 0.05);
+
+  /* ── shadcn semantics → Tea (mirrors the MemoryPanel Tailwind/Tea bridge) ──
+   * background is the page grey; cards/popovers sit on it as white panels. */
+  --background: var(--tea-color-bg-page-default);
+  --foreground: var(--tea-color-text-primary);
+  --card: var(--tea-color-bg-primary-default);
+  --card-foreground: var(--tea-color-text-primary);
+  --popover: var(--tea-color-bg-primary-default);
+  --popover-foreground: var(--tea-color-text-primary);
+  --primary: var(--tea-color-bg-brand-default);
+  --primary-foreground: var(--tea-color-text-on-bg-brand-default);
+  --secondary: var(--tea-color-bg-secondary-default);
+  --secondary-foreground: var(--tea-color-text-primary);
+  --muted: var(--tea-color-bg-secondary-default);
+  --muted-foreground: var(--tea-color-text-secondary);
+  --accent: var(--tea-color-bg-secondary-default);
+  --accent-foreground: var(--tea-color-text-primary);
+  --destructive: var(--tea-color-bg-error-default);
+  --destructive-foreground: var(--tea-color-text-on-bg-error-default);
+  --success: var(--tea-color-bg-success-default);
+  --success-foreground: var(--tea-color-text-on-bg-success-default);
+  --warning: var(--tea-color-bg-warning-default);
+  --warning-foreground: var(--tea-color-text-on-bg-warning-default);
+  --border: var(--tea-color-border-primary-default);
+  --input: var(--tea-color-border-primary-default);
+  --ring: var(--tea-color-border-brand-default);
+  --chart-1: #0052d9;
+  --chart-2: #0cbf5b;
+  --chart-3: #ff7800;
+  --chart-4: #f64041;
+  --chart-5: #4787f0;
+  --sidebar: var(--tea-color-bg-primary-default);
+  --sidebar-foreground: var(--tea-color-text-primary);
+  --sidebar-primary: var(--tea-color-bg-brand-default);
+  --sidebar-primary-foreground: var(--tea-color-text-on-bg-brand-default);
+  --sidebar-accent: var(--tea-color-bg-secondary-default);
+  --sidebar-accent-foreground: var(--tea-color-text-primary);
+  --sidebar-border: var(--tea-color-border-primary-default);
+  --sidebar-ring: var(--tea-color-border-brand-default);
+
+  /* ── kawai extras ── */
+  --font-sans: var(--tea-font-family-default);
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-mono: var(--tea-font-family-code);
+  --radius: 0.375rem;
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
-  --brand: 212 100% 60%;
-  --success: 193 100% 27%;
-  --danger: 287 69% 57%;
-  --terminal-bg: #f8fafc;
-  --terminal-fg: #1e293b;
-  --terminal-red: #dc2626;
-  --terminal-green: #16a34a;
-  --terminal-yellow: #ca8a04;
-  --terminal-blue: #2563eb;
-  --terminal-magenta: #c026d3;
-  --terminal-cyan: #0891b2;
-  --shadow-offset-x: 0;
+  --shadow-2xs: var(--tea-shadow-xs);
+  --shadow-xs: var(--tea-shadow-xs);
+  --shadow-sm: var(--tea-shadow-sm);
+  --shadow: var(--tea-shadow-sm);
+  --shadow-md: var(--tea-shadow-md);
+  --shadow-lg: var(--tea-shadow-md);
+  --shadow-xl: 0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 8px 20px -8px rgba(0, 0, 0, 0.08);
+  --shadow-2xl: 0 16px 48px -8px rgba(0, 0, 0, 0.25);
+  --shadow-color: rgb(0 0 0);
+  --shadow-opacity: 0.1;
+  --shadow-blur: 3px;
+  --shadow-spread: 0px;
+  --shadow-offset-x: 0px;
   --shadow-offset-y: 1px;
   --letter-spacing: 0em;
 }
 
 .dark {
-  --background: oklch(0 0 0);
-  --foreground: oklch(0.9551 0 0);
-  --card: oklch(0.1448 0 0);
-  --card-foreground: oklch(0.9551 0 0);
-  --popover: oklch(0.2210 0.0015 197.0452);
-  --popover-foreground: oklch(0.9551 0 0);
-  --primary: oklch(0.8545 0.1675 159.6564);
-  --primary-foreground: oklch(0 0 0);
-  --secondary: oklch(0.4700 0.0900 160.0079);
-  --secondary-foreground: oklch(0.9551 0 0);
-  --muted: oklch(0.2653 0.0037 286.1465);
-  --muted-foreground: oklch(0.6731 0 0);
-  --accent: oklch(0.3004 0.0609 159.8938);
-  --accent-foreground: oklch(0.9970 0 0);
-  --destructive: oklch(0.7425 0.1696 1.0847);
-  --destructive-foreground: oklch(1.0000 0 0);
-  --border: oklch(0.2138 0.0019 286.2347);
-  --input: oklch(0.3523 0 0);
-  --ring: oklch(0.8545 0.1675 159.6564);
-  --chart-1: oklch(0.8545 0.1675 159.6564);
-  --chart-2: oklch(0.9173 0.1562 144.8458);
-  --chart-3: oklch(0.8531 0.0883 357.4250);
-  --chart-4: oklch(0.8104 0.1216 228.4326);
-  --chart-5: oklch(0.8257 0.1067 48.5116);
-  --sidebar: oklch(0.1448 0 0);
-  --sidebar-foreground: oklch(0.9551 0 0);
-  --sidebar-primary: oklch(0.8545 0.1675 159.6564);
-  --sidebar-primary-foreground: oklch(1.0000 0 0);
-  --sidebar-accent: oklch(0.2824 0.0678 156.5634);
-  --sidebar-accent-foreground: oklch(0.8545 0.1675 159.6564);
-  --sidebar-border: oklch(0.3452 0.0098 241.9410);
-  --sidebar-ring: oklch(0.8545 0.1675 159.6564);
+  color-scheme: dark;
 
-  --terminal-bg: #1e293b;
-  --terminal-fg: #e2e8f0;
-  --terminal-red: #f87171;
-  --terminal-green: #4ade80;
-  --terminal-yellow: #facc15;
-  --terminal-blue: #60a5fa;
-  --terminal-magenta: #e879f9;
-  --terminal-cyan: #22d3ee;
-  --radius: 1.4rem;
-  --font-sans: Plus Jakarta Sans, sans-serif;
-  --font-serif: Lora, serif;
-  --font-mono: IBM Plex Mono, monospace;
-  --shadow-color: oklch(0 0 0);
-  --shadow-opacity: 0.1;
-  --shadow-blur: 3px;
-  --shadow-spread: 0px;
-  --shadow-offset-x: 0;
-  --shadow-offset-y: 1px;
-  --letter-spacing: 0em;
-  --spacing: 0.25rem;
-  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
-  --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
-  --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 2px 4px -1px hsl(0 0% 0% / 0.10);
-  --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 4px 6px -1px hsl(0 0% 0% / 0.10);
-  --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 8px 10px -1px hsl(0 0% 0% / 0.10);
-  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+  /* Surfaces */
+  --tea-color-bg-page-default: #181818;
+  --tea-color-bg-primary-default: #202020;
+  --tea-color-bg-primary-hover: #2c2c2c;
+  --tea-color-bg-secondary-default: #2c2c2c;
+  --tea-color-bg-secondary-hover: #383838;
+  --tea-color-bg-container-default: #202020;
+
+  /* Brand */
+  --tea-color-bg-brand-default: #2174ff;
+  --tea-color-bg-brand-hover: #478dff;
+  --tea-color-bg-brand-lighten-default: #1d2852;
+  --tea-color-text-brand-default: #69a1ff;
+  --tea-color-text-on-bg-brand-default: hsla(0, 0%, 100%, 0.9);
+  --tea-color-border-brand-default: #69a1ff;
+
+  /* Text */
+  --tea-color-text-primary: hsla(0, 0%, 100%, 0.9);
+  --tea-color-text-secondary: hsla(0, 0%, 100%, 0.55);
+  --tea-color-text-tertiary: hsla(0, 0%, 100%, 0.5);
+  --tea-color-text-disabled: hsla(0, 0%, 100%, 0.35);
+  --tea-color-text-link-default: #69a1ff;
+
+  /* Borders */
+  --tea-color-border-primary-default: #383838;
+  --tea-color-border-secondary-default: #383838;
+
+  /* Functional */
+  --tea-color-bg-error-default: #fb6e77;
+  --tea-color-text-error-default: #fb6e77;
+  --tea-color-text-on-bg-error-default: hsla(0, 0%, 100%, 0.9);
+  --tea-color-bg-success-default: #07a872;
+  --tea-color-text-success-default: #07a872;
+  --tea-color-text-on-bg-success-default: hsla(0, 0%, 100%, 0.9);
+  --tea-color-bg-warning-default: #ed8139;
+  --tea-color-text-warning-default: #ed8139;
+  --tea-color-text-on-bg-warning-default: hsla(0, 0%, 100%, 0.9);
+  --tea-color-bg-inverse-default: #fff;
+  --tea-color-text-on-bg-inverse-default: rgba(0, 0, 0, 0.9);
+
+  /* Shadows */
+  --tea-shadow-xs: 2px 4px 8px 0 rgba(0, 0, 0, 0.2);
+  --tea-shadow-sm: 0 2px 12px 0 rgba(0, 0, 0, 0.2), 2px 4px 8px 0 rgba(0, 0, 0, 0.2);
+  --tea-shadow-md: 0 4px 24px -4px rgba(0, 0, 0, 0.3), 0 4px 24px -8px rgba(0, 0, 0, 0.2);
+
+  --chart-1: #69a1ff;
+  --chart-2: #07a872;
+  --chart-3: #ed8139;
+  --chart-4: #fb6e77;
+  --chart-5: #8cb8ff;
+
+  --shadow-xl: 0 12px 32px -4px rgba(0, 0, 0, 0.45), 0 8px 20px -8px rgba(0, 0, 0, 0.35);
+  --shadow-2xl: 0 16px 48px -8px rgba(0, 0, 0, 0.55);
 }
 
 @theme inline {
@@ -174,9 +222,9 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --font-sans: Plus Jakarta Sans, sans-serif;
-  --font-mono: IBM Plex Mono, monospace;
-  --font-serif: Lora, serif;
+  --font-sans: var(--tea-font-family-default);
+  --font-mono: var(--tea-font-family-code);
+  --font-serif: Georgia, "Times New Roman", serif;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -191,7 +239,7 @@
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
-  --radius: 1.4rem;
+  --radius: 0.375rem;
   --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
   --tracking-tight: calc(var(--tracking-normal) - 0.025em);
   --tracking-wide: calc(var(--tracking-normal) + 0.025em);
@@ -226,6 +274,12 @@
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+
+  /* Press feedback (MemoryPanel's global interaction polish) */
+  button:not(:disabled):active,
+  [role="button"]:not(:disabled):active {
+    transform: scale(0.97);
+  }
 }
 
 html,
@@ -248,36 +302,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: color-mix(in srgb, var(--foreground) 12%, transparent);
   border-radius: 4px;
 }
 
-.dark ::-webkit-scrollbar-thumb {
-  background: var(--muted);
-}
-
-::-webkit-scrollbar-thumb:hover,
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
-}
-
-.terminal-root,
-.terminal-root .react-lazylog,
-.terminal-root .log-line {
-  background-color: var(--terminal-bg) !important;
-  color: var(--terminal-fg) !important;
-}
-
-.terminal-root .log-line {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 150ms ease;
-}
-
-.terminal-root .log-line:hover {
-  background-color: color-mix(in srgb, var(--muted) 30%, transparent) !important;
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--foreground) 20%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
