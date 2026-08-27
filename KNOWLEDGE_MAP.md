@@ -9,28 +9,29 @@
 ## 1. Module Layout
 
 ```
-logic/
-├── knowledge/              ← document knowledge subsystem (rag + graph)
-│   ├── types.rs            RagChunk, RagHit, IndexStatus, KnowledgeFileInfo, SearchMode
-│   ├── schema.rs           libSQL DDL (vector tables, FTS5 mirror), insert/search SQL
-│   ├── search.rs           vector_search, bm25_search, RRF fusion, knowledge_search
-│   ├── ingest.rs           chunking (MarkdownSplitter), text extraction, index pipeline
-│   ├── session.rs          file association, knowledge panel list, management ops
-│   └── graph/              ← GraphRAG (feature "graph")
-│       ├── types.rs        GraphHit, GraphSearchMode, GraphStats, entity extraction
-│       ├── schema.rs       graph DDL, file status, purge, batch insert
-│       ├── search.rs       vector/CTE/community arms, RRF, graph_search
-│       ├── ingest.rs       entity extraction, chunking, graph_index_file/text
-│       └── tools.rs        GraphToolError, toolset, graph_list, graph_forget, graph_stats
-├── skills.rs               SKILL.md CRUD + prompt injection (ungated)
-├── memory.rs               L1 memories CRUD + cloud extraction + prompt injection (ungated)
-├── agent.rs                prompt-based tool-calling loop, TurnMemory, cloud subagents
-├── office/                 document editing/extraction, file store, decks, PDF
-├── analytics.rs            tabular query engine, SQL sources, chart generation
-└── db.rs / db_migrations.rs   per-user SQLite, schema migrations
+crates/
+├── auth (kawai-auth)        OIDC JWT Verifier/Claims/Session (pure, no transport)
+├── remote-llm (remote-llm)  Hybrid cloud pool (zai→empero, health-aware failover, SSE)
+├── db (kawai-db)            Per-user SQLite (sessions/messages/artifacts/turn_log + migrations 0001-0009, office/analytics gated)
+├── skills (kawai-skills)    SKILL.md CRUD + prompt injection (4k/skill, 12k total, ungated)
+├── memory (kawai-memory)    L1 memories CRUD + cloud extraction + prompt injection (ungated)
+├── office (kawai-office)    Document store (opaque ids, meta.json, kawai-db) + ooxml/pdf/deck + AgentTool wrappers (office_* , pdf_*)
+├── knowledge (kawai-knowledge)  RAG (types/schema/search/ingest/session/tools KnowledgeSearchTool) + GraphRAG graph/* (5 arms)
+├── analytics-tools (kawai-analytics)  Thin wrappers over crates/analytics engine (data_schema/query/ta/chart + sql_profiles + sql_remote)
+├── agent (kawai-agent)      Prompt-based tool-calling loop (opener/delta, TurnMemory, subagents DeepWrite/DraftDocument/ArtifactRecall, evidence_cache LRU)
+├── analytics (analytics)    Polars engine (discover/query/ta_suite/chart, office_oxide bridge)
+├── graph (graph)            Standalone libSQL GraphRAG (Naive/Local/Global/Hybrid/Mix, pure)
+├── webread (webread)        Tiered web_read/search (webview → Cloudflare /markdown, LRU, budgets)
+└── tools/*, ragloader, etc  Per-category AgentTool crates + parsers
+
+src-tauri/src/
+├── logic.rs                 Pure helpers (greet/whoami/generate_activity, resolve_model_path/ensure_model, generate_session_title → kawai-db, delete_chat_session → evidence_cache)
+├── logic/                   Thin shims: db/db_migrations/skills/memory/office/knowledge/rag/graph/analytics/sql_remote/agent/evidence_cache → crates/* (pub use kawai_*)
+├── auth.rs                  Shim → kawai-auth
+└── logic/knowledge, logic/rag, logic/graph shims → kawai-knowledge / kawai-knowledge::graph
 ```
 
-**Backward compat:** `logic::rag::*` and `logic::graph::*` are thin re-export shims — all existing call sites (`commands.rs`, `web.rs`, `agent.rs`) continue to work unchanged.
+**Backward compat:** `logic::rag::*`, `logic::graph::*`, `logic::db::*`, `logic::skills::*`, `logic::memory::*`, `logic::office::*`, `logic::knowledge::*`, `logic::analytics::*`, `logic::agent::*`, `logic::evidence_cache::*` are thin `pub use kawai_*::*` shims — all existing call sites (`commands.rs`, `web.rs`, `agent.rs`) continue to work unchanged. `crates/` is a git submodule (`https://github.com/yudaprama/crates.git`).
 
 ---
 
@@ -48,31 +49,31 @@ Per-user `logic::db_connection(user_id)` → `~/Library/Application Support/pro.
 
 ## 3. Component Map
 
-### 3.1 Document Knowledge (RAG + Graph)
+### 3.1 Document Knowledge (RAG + Graph) — `kawai-knowledge` + `graph`
 
-| # | Crate / File | Role | Input → Output | `libSQL` Tables | Feature |
+| # | Crate | Role | Input → Output | `libSQL` Tables | Feature |
 |---|---|---|---|---|---|
 | **1** | `crates/ragloader` | Upstream parser — `docx/xlsx/pptx→office_oxide`, `pdf→pdf_oxide`, `md→MarkdownSplitter`, images→`DescriberChain` | `Path` → `Vec<Chunk>` | — (stateless) | `office` |
 | **2** | `kawai-embedding` | Multi-provider embedder — `OpenAI 1024` / `Nvidia` / `Gemini` / `LitertProvider EmbeddingGemma 768d` | `Vec<String>` → `Vec<Vec<f64>>` | — | `kawai-embedding` |
-| **3** | `knowledge/schema.rs` + `knowledge/ingest.rs` | Classic RAG — schema DDL, chunk → embed → insert | `Path` → indexed chunks | `rag_chunks` / `_embeddings` / `_map` + `rag_chunks_fts` + `rag_files` + `session_files` | `office` |
-| **4** | `knowledge/search.rs` | Retrieval — vector + BM25 + RRF fusion | `query, mode` → `Vec<RagHit>` | — | `office` |
-| **5** | `knowledge/session.rs` | Session-scoped file management — association, list, add, forget, import, delete | — | `session_files` | `office` |
-| **6** | `knowledge/graph/schema.rs` + `knowledge/graph/ingest.rs` | GraphRAG indexing — entity extraction, embedding, node/edge storage | `text` → `graph_nodes/edges` | `graph_nodes / _embeddings / _map` + `graph_edges / _...` + `graph_files` | `graph` |
-| **7** | `knowledge/graph/search.rs` | GraphRAG retrieval — 5 arms (Naive/Local/Global/Hybrid/Mix) + RRF | `query, mode` → `Vec<GraphHit>` | — | `graph` |
-| **8** | `knowledge/graph/tools.rs` | Agent toolset — `graph_search`, `graph_list`, `graph_forget`, `graph_stats` | — | — | `graph` |
+| **3** | `kawai-knowledge` `schema`+`ingest` | Classic RAG — schema DDL, chunk → embed → insert (1500/200) | `Path` → indexed chunks | `rag_chunks` / `_embeddings` / `_map` + `rag_chunks_fts` + `rag_files` + `session_files` | `kawai-knowledge/office` (via `office`) |
+| **4** | `kawai-knowledge` `search`+`tools` | Retrieval — vector + BM25 + RRF (`k=60`) + `KnowledgeSearchTool` (`kawai_tools::AgentTool`) | `query, mode` → `Vec<RagHit>` | — | `kawai-knowledge/office` |
+| **5** | `kawai-knowledge` `session` | Session-scoped file management — association, list, add, forget, import, delete | — | `session_files` | `kawai-knowledge/office` |
+| **6** | `crates/graph` (`graph`) **and** `kawai-knowledge` `graph/schema`+`ingest` | GraphRAG indexing — entity extraction (`\b[A-Z][a-z]+`, FNV `%8`), embedding, node/edge storage | `text` → `graph_nodes/edges` | `graph_nodes / _embeddings / _map` + `graph_edges / _...` + `graph_files` | `graph` (`kawai-knowledge/graph` + `graph` crate) |
+| **7** | `kawai-knowledge` `graph/search` / `crates/graph` | GraphRAG retrieval — 5 arms (Naive/Local/Global/Hybrid/Mix) + RRF | `query, mode` → `Vec<GraphHit>` | — | `graph` |
+| **8** | `kawai-knowledge` `graph/tools` / `crates/graph` | Agent toolset — `graph_search`, `graph_list`, `graph_forget`, `graph_stats` | — | — | `graph` |
 
-### 3.2 Skills & Memories (long-term, plain SQLite)
+### 3.2 Skills & Memories (long-term, plain SQLite) — `kawai-skills` + `kawai-memory`
 
-| # | File | Role | `libSQL` Tables | Feature |
+| # | Crate | Role | `libSQL` Tables | Feature |
 |---|---|---|---|---|
-| **9** | `skills.rs` | SKILL.md CRUD (unique name, version bump, `skl-` base62 id) + bounded prompt injection (4k/skill, 12k total) | `skills` — `migrations/0008_skills.sql` | ungated |
-| **10** | `memory.rs` | L1 memories — atomic items (`preference/rule/event/fact/goal`); cloud extraction (tail 24k chars → RemoteLlm one-shot → JSON → title dedup) + prompt injection (800 char/entry · 4k total · 24 items max) | `memories` — `migrations/0009_memories.sql` | ungated CRUD; extraction needs vault |
+| **9** | `kawai-skills` (`crates/skills`) | SKILL.md CRUD (unique name, version bump, `skl-` base62 id) + bounded prompt injection (4k/skill, 12k total, `prompt_block()`) | `skills` — `migrations/0008_skills.sql` | ungated |
+| **10** | `kawai-memory` (`crates/memory`) | L1 memories — atomic items (`preference/rule/event/fact/goal`); cloud extraction (tail 24k chars → `remote-llm` one-shot → JSON → title dedup, `kawai-knowledge` not needed) + prompt injection (800 char/entry · 4k total · 24 items max, `prompt_block()`) | `memories` — `migrations/0009_memories.sql` | ungated CRUD; extraction needs `remote-llm` vault |
 
-### 3.3 Agent Working Memory
+### 3.3 Agent Working Memory — `kawai-agent`
 
-| # | File | Role | Storage | Feature |
+| # | Crate / File | Role | Storage | Feature |
 |---|---|---|---|---|
-| **11** | `agent.rs` `TurnMemory` | Per-session process log — verbatim tool outputs, one entry per distinct `tool+args_key` (handle `mem1, mem2 …`). Survives turns & restarts. | `session_artifacts` — `migrations/0007` | ungated |
+| **11** | `kawai-agent` `evidence_cache` + `artifacts::TurnMemory` | Per-session process log (`session_artifacts` handles `mem1…`) + cross-turn file-read LRU (`FileScoped` probe, `mtime+size` fingerprint, 64 entries / 1M chars / 8 sessions) — verbatim tool outputs, survives turns & restarts. `evidence_cache` is `kawai_agent::evidence_cache` (in-process, no SQLite beyond `session_artifacts`). | `session_artifacts` — `migrations/0007` (log) + in-process LRU | ungated (LRU) + `kawai-agent` (`litert` for loop) |
 
 **Not semantic:** no embedding, no dedup, no summarization — *episodic/operational*. Complementary to L1 memories, not competing. **Don't index `session_artifacts.content` into `rag_chunks`** — it would pollute the document vector space with transient tool output.
 
@@ -94,19 +95,25 @@ Per-user `logic::db_connection(user_id)` → `~/Library/Application Support/pro.
 
 ```toml
 # src-tauri/Cargo.toml
-graph  = ["dep:graph","dep:kawai-embedding","dep:text-splitter","dep:regex"]
-office = ["dep:ragloader","dep:kawai-embedding",...,"webread"]
+kawai-auth, remote-llm, kawai-db, kawai-skills, kawai-memory # always
+graph  = ["dep:graph","dep:kawai-embedding","dep:text-splitter","dep:regex","dep:kawai-knowledge","kawai-knowledge/graph","kawai-agent/graph"]
+office = ["dep:base64","dep:kawai-embedding","dep:text-splitter","dep:ragloader","dep:youtube_transcript","dep:office_oxide","dep:pdf_oxide","dep:regex","webread","kawai-db/office","dep:kawai-office","dep:kawai-knowledge","kawai-knowledge/office","kawai-agent/office"]
+# office always pulls kawai-knowledge; analytics pulls office + kawai-analytics
+analytics = ["dep:analytics","office","kawai-db/analytics","dep:kawai-analytics","kawai-agent/analytics"]
 ```
 
 ```sh
-cargo check                          # no graph/office → stubs, zero DB
-cargo check --features graph         # GraphRAG only
-cargo check --features graph,office  # RAG + GraphRAG (1 DB, separate tables)
-cargo check -p graph                 # pure crate only
+cargo check                                          # no office/graph → kawai-knowledge/graph stubs, kawai-office/knowledge not compiled, zero DB
+cargo check -p kawai-db -p kawai-skills -p kawai-memory  # storage only (no office/graph)
+cargo check -p kawai-office --features office        # store + ooxml/pdf/deck
+cargo check -p kawai-knowledge --features office     # RAG (vector + FTS5)
+cargo check -p kawai-knowledge --features office,graph  # RAG + GraphRAG (1 DB, separate tables)
+cargo check --features graph,office,litert           # full desktop (office+graph+agent)
+cargo check -p graph -p kawai-agent --features litert,office  # pure crates
 ```
 
 *Include:* `bun tauri build -- --features graph,office,litert`
-*Exclude:* drop `graph` from `--features` — no `graph_nodes/edges`.
+*Exclude:* drop `graph`/`office` from `--features` — `kawai-knowledge`/`kawai-office` not compiled, no `rag_*`/`graph_*` tables.
 
 ---
 
@@ -125,9 +132,13 @@ cargo check -p graph                 # pure crate only
 ## 7. Verification
 
 ```sh
-cargo check --features graph,web,office,litert
-cargo test --features 'office,graph' --lib -- knowledge
-cargo test -p graph --lib
+cargo check --features graph,office,litert
+cargo check -p kawai-db --lib && cargo test -p kawai-db  # 6 migrations tests
+cargo test -p kawai-skills -p kawai-memory --lib          # skills 1/1, memory 4/4
+cargo test -p kawai-knowledge --features office,graph     # RAG + GraphRAG
+cargo test -p kawai-office --lib
+cargo test -p kawai-analytics --lib  # polars engine; wrapper tests in kawai-analytics
+cargo test -p graph --lib && cargo test -p kawai-agent --features litert,office,analytics,graph
 cargo test -p ragloader --lib
 bun run build
 ```

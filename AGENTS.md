@@ -179,45 +179,41 @@ with exact commands, §4 the post-fix verification block.
 
 ```
 frontend/                        # React 19 + Vite + Tailwind v4 SPA (vite root) — full file-level map lives in frontend/AGENTS.md
-src-tauri/src/logic.rs           # PURE logic; libsql + local_llm (litert) + db token minting + ensure_model (auto-download from HF Hub)
-src-tauri/src/logic/analytics.rs # data analysis agent tools (feature "analytics"): data_schema/data_query over office-store tabular files (csv/tsv/parquet/xlsx/xlsm); file-id resolution via office store + spawn_blocking dispatch
-src-tauri/src/logic/rag.rs       # office-gated RAG: chunk/embed/index (status tracked in rag_files) + session-scoped knowledge_search + knowledge_list/add_to_session/import_youtube/delete_file + image description (ragloader)
-src-tauri/src/logic/office/     # office domain (feature "office"): mod.rs + store.rs + ooxml.rs + pdf.rs + deck.rs + tools.rs
-src-tauri/src/logic/office/deck.rs # reveal.js decks (office): render/sanitize self-contained .html decks (runtime vendored in office/assets/), parse back to markdown, deterministic export to .pptx
-src-tauri/src/logic/agent.rs     # prompt-based tool-calling loop (features litert) — personas (office, binance) + agent_chat + cloud subagent interception (deep_write / draft_document)
-src-tauri/src/logic/skills.rs    # skills tier (ungated): SKILL.md CRUD over `skills` table — skill_create/list/get/update/delete; version bumps on update; prompt_block() injects the user's skills into the agent persona (4k/12k char caps)
-src-tauri/src/logic/memory.rs    # L1 memories tier (ungated): atomic items (preference/rule/event/fact/goal) — memory_create/list/update/delete + memory_extract (transcript → RemoteLlm one-shot → JSON → title dedup); prompt_block() injects L1 memories into the agent persona (800 char/entry · 4k total · 24 items max)
-crates/webread/          # web read + search tiering (feature "webread", implied by "office"; reusable by any agent): web_read + web_search PortableTools — on-device webview engine (injected trait) → Cloudflare /markdown fallback; web_search = Bing SERP over the same chain (DOM extractor on tier 0, markdown-link parse on tier 1) with every hit's page auto-fetched in parallel through the read chain; challenge detection, daily budgets, LRU cache
+src-tauri/src/logic.rs           # PURE helpers (greet/whoami/generate_activity, resolve_model_path/ensure_model auto-download, delete_chat_session → evidence_cache); re-exports db::*; generate_session_title now in kawai-db
+src-tauri/src/logic/             # thin shims → crates/* (pub use kawai_*::*), one per domain — logic.rs stays pure, wrappers stay thin
+crates/auth (kawai-auth)         # pure auth — Verifier/Claims/Session, JWKS verify + dev bypass, dotenv loader (no tauri/axum)
+crates/remote-llm (remote-llm)   # hybrid cloud pool (zai→venice→opencode→openrouter→ollama→poolside→empero, health-aware failover, SSE)
+crates/db (kawai-db)             # per-user SQLite — libsql Builder::new_local, user_data_dir/DataRoot, sessions/messages/artifacts/turn_log + migrations 0001-0009 (office/analytics gated) + generate_session_title (Workers AI)
+crates/skills (kawai-skills)     # SKILL.md CRUD (skl-* base62, unique name, version bump) + prompt_block 4k/skill, 12k total (ungated)
+crates/memory (kawai-memory)     # L1 memories CRUD (preference/rule/event/fact/goal, mem-* base62) + memory_extract via remote-llm + prompt_block 800/4k/24
+crates/office (kawai-office)     # per-user docs store (opaque ids, meta.json, kawai-db) + ooxml (DocBlock→docx/xlsx/pptx, office_oxide) + pdf (pdf_oxide search/replace/merge/split/info) + deck (reveal.js html, assets/reveal.*) + AgentTool wrappers (office_* , pdf_*)
+crates/knowledge (kawai-knowledge) # RAG — chunk 1500/200 (MarkdownSplitter) → embed (kawai-embedding) → libSQL vector + FTS5/BM25 RRF, session_files scoping, KnowledgeSearchTool; GraphRAG 5 arms (graph/*)
+crates/analytics-tools (kawai-analytics) # thin AgentTool wrappers over crates/analytics engine — data_schema/query/ta/chart (spawn_blocking) + sql_profiles/effective_profiles + DataTablesTool/DataImportTool (sqlx Postgres/MySQL, analytics-sql)
+crates/agent (kawai-agent)       # prompt-based tool-calling loop (opener/delta K/V, TurnMemory session_artifacts, alias, parsing, subagents DeepWrite/DraftDocument/ArtifactRecall) + evidence_cache LRU FileScoped, catalog toolset_for
+crates/webread (webread)         # web read + search tiering (feature "webread", implied by "office"; reusable by any agent): web_read + web_search PortableTools — on-device webview engine (injected trait) → Cloudflare /markdown fallback; web_search = Bing SERP over the same chain with every hit's page auto-fetched; challenge detection, daily budgets, LRU cache
 src-tauri/src/webview_engine.rs  # tauri-side webread::WebViewFetch: hidden WebviewWindow + eval_with_callback extractor (webread feature; registered in lib.rs, never in kawai-web)
-src-tauri/src/logic/remote.rs    # hybrid-tier cloud client (RemoteLlm): one stateless streaming completion per subagent call; zai default (kawai-vault key), OpenAI-compatible endpoints
-src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), binance_smoke (keyless market data + TA; geo-blocked hosts skip), analytics_smoke (data_schema/data_query/data_ta + xlsx bridge; offline), sql_remote_check (data_tables/data_import against a LIVE remote SQL source; --deep seeds fixture tables — basic, temporal/NULL, binary-guard, zero-row — and drops them; offline-safe), web_read_check (desktop tier-0 webview chain e2e — real hidden window + markdown render), turn_log_report (hybrid calibration), agent_eval (H1 orchestration-quality gate — office suite 20 scenarios ≥19 E4B + analytics suite 18 scenarios ≥16)
+crates/analytics (analytics)      # polars engine (discover/query/ta_suite/chart, office_oxide xlsx bridge) — pure, no kawai deps
+crates/graph (graph)             # standalone libSQL GraphRAG (Naive/Local/Global/Hybrid/Mix) — pure, used by kawai-knowledge/graph via kawai-agent
+src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), binance_smoke (keyless market data + TA; geo-blocked hosts skip), analytics_smoke (data_schema/data_query/data_ta + xlsx bridge; offline), sql_remote_check (LIVE remote SQL — --deep seeds fixture tables), web_read_check (desktop webview chain e2e), turn_log_report (hybrid calibration), agent_eval (H1 gate — office ≥19/20 + analytics ≥16/18)
 src-tauri/src/logging.rs         # stderr tee → platform log dir (macOS ~/Library/Logs/, Linux $XDG_STATE_HOME)
-src-tauri/src/auth.rs            # PURE auth; Clerk JWKS verify + EdDSA mint + Session
+src-tauri/src/auth.rs            # shim → kawai-auth (pure auth; Clerk JWKS verify + Session)
 src-tauri/src/commands.rs        # #[tauri::command] wrappers + Channel + cancel registry
 src-tauri/src/web.rs             # Axum routes (feature-gated "web") + auth_middleware
 src-tauri/src/bin/web.rs         # standalone web server entry
 src-tauri/src/lib.rs             # Tauri builder; .manage(...); generate_handler!
-src-tauri/examples/local_llm_smoke.rs  # headless local-LLM smoke test (features litert)
-src-tauri/Cargo.toml             # axum/tower-http behind "web"; cognee-litert-lm behind "litert"
+src-tauri/Cargo.toml             # axum/tower-http behind "web"; cognee-litert-lm + kawai-* crates behind litert/office/analytics/graph/webread
 src-tauri/build.rs               # tauri_build + embeds @executable_path/../Frameworks rpath (litert+macOS)
-cognee-litert-lm/                # Rust bindings for the LiteRT-LM C API (+ standalone .tflite text-embedding runner: c/tflite_embed.{h,cc}, src/tflite_embed.rs) (path dep)
+cognee-litert-lm/                # Rust bindings for the LiteRT-LM C API (+ standalone .tflite text-embedding runner) (path dep)
 cognee-litert-lm/vendor/LiteRT-LM         # submodule = upstream google-ai-edge main + macOS patches
 cognee-litert-lm/native/         # gitignored: prepared LiteRT-LM dylibs (bundle-litert-dylibs.sh fills this)
 office_oxide/                    # submodule (path dep, office feature): pure-Rust docx/xlsx/pptx CREATE + read + EDIT + info (markdown → IR; raw-part surgery for in-place edits)
 crates/                  # per-category agent tool crates (generated; each has registry::toolset_for; tools implement kawai_tools::AgentTool)
-crates/binance/          # Binance agent tools (hand-written, feature "binance"): keyless public spot market data via binance-sdk + in-process TA over ta (binance_price / binance_depth / binance_klines / binance_ta_analyze); signed read-only account tools (binance_balances / binance_open_orders) register only when BINANCE_API_KEY/SECRET are set
-crates/binance-connector-rust/  # submodule fork of binance/binance-connector-rust = the source of crates.io `binance-sdk` 68.1.1, path-depped by crates/binance and a crates workspace member; carries a small patch set (reqwest default-features=false, tokio-tungstenite off native-tls) so the TLS backend is rustls-only and openssl-sys/native-tls stay out of every target's graph — keep upstream syncs re-applying it
-crates/analytics/        # polars-backed tabular query engine (feature "analytics"): data_schema discovery + data_query AST (filters/group_by/aggregations/sort/limit, dtype-aware coercion, self-correcting errors) + ta_suite::analyze (technical-analysis indicator folds over any numeric column series via the vendored `ta` crate — final values only, warm-up skips reported); xlsx/xlsm → typed parquet sidecar bridge via office_oxide (date-styled serials → Date/Datetime, sidecar cache fingerprinted on mtime+size)
-crates/ta/               # vendored `ta` technical-analysis library v0.5.0 (publish=false workspace member; pure Rust, stateful indicators behind Next<T>/Reset/Period). Consumers: binance (`binance_ta_analyze`, fixed-period bundle over klines) and analytics (`ta_suite::analyze`, parameterized kinds over stored files)
-crates/nautilus_trader/  # submodule fork of nautechsystems/nautilus_trader — REFERENCE-ONLY (see PLAN-nautilus-integration.md): formula/pattern/fixture source for the Binance agent tiers; NOT a workspace member, never a path dep, never built by kawai CI
+crates/binance/          # Binance agent tools (hand-written, feature "binance"): keyless public spot market data via binance-sdk + in-process TA over ta
+crates/binance-connector-rust/  # submodule fork of binance/binance-connector-rust = source of `binance-sdk` 68.1.1, path-depped by crates/binance; patch reqwest default-features=false so TLS is rustls-only
+crates/ta/               # vendored `ta` v0.5.0 (publish=false) — final values only, warm-up skips; consumers: binance + analytics ta_suite
 models/                          # .litertlm model files (gitignored, GB-scale)
-design-demos/                    # UI mock HTML files (standalone)
 .env                             # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)
-.env.local                       # VITE_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (gitignored)
-scripts/dev.sh                   # dev launcher: tauri dev with litert rpath + dev-bypass auth + profraw off
-scripts/kv_sweep.sh              # K/V budget sweep wrapper (peak RSS per budget) over the kv_sweep example
 scripts/bundle-litert-dylibs.sh  # prep all LiteRT dylibs into native/ for bundling into the .app
-.github/tauri-litert.json        # merges LiteRT dylibs into `bundle.macOS.files` (Contents/Frameworks)
 app.log                          # symlink → platform log dir (macOS ~/Library/Logs/kawai/)
 ```
 
