@@ -215,7 +215,7 @@ kawai/
 │       │   ├── ai-elements/  # vendored chat components (from web/, trimmed)
 │       │   └── ui/           # shadcn primitives (from web/)
 │       └── platform/         # slim capability adapter (browser APIs only)
-├── crates/                     # per-category agent tool crates (kawai_tools::AgentTool; registry::toolset_for)
+├── crates/                     # agent crates (kawai_tools::AgentTool) — auth/remote-llm/db/skills/memory/office/knowledge/analytics-tools/agent + analytics/graph/webread/ragloader + per-category tools/* (registry::toolset_for)
 ├── local-llm/                  # on-device LLM engine bindings (litert feature; KAWAI_LLM_MAX_TOKENS)
 ├── cognee-litert-lm/           # Rust bindings for the LiteRT-LM C API (+ vendored upstream submodule)
 ├── office_oxide/               # submodule: pure-Rust docx/xlsx/pptx create/read/edit (office feature)
@@ -227,17 +227,17 @@ kawai/
 ├── .env                      # KAWAI_AUTH_* + KAWAI_DB_* (gitignored)
 ├── .env.local                # VITE_CLERK_PUBLISHABLE_KEY (gitignored; reference only)
 └── src-tauri/
-    ├── Cargo.toml
+    ├── Cargo.toml            # axum/tower-http behind "web"; kawai-* crates behind litert/office/analytics/graph/webread
     ├── tauri.conf.json       # devUrl :1420, frontendDist ../dist, beforeBuildCommand "bun run build"
     ├── build.rs              # tauri_build + embeds @executable_path/../Frameworks rpath
-    ├── migrations/           # versioned SQLite schema (include_str! loaded by db_migrations.rs)
+    ├── migrations/           # versioned SQLite schema (now also in crates/db/migrations/, include_str! via kawai-db)
     ├── examples/             # headless dev tools (all require litert feature)
     └── src/
         ├── main.rs           # desktop binary entry
         ├── lib.rs            # Tauri builder + module decls
-        ├── logic.rs          # PURE LOGIC (no Tauri/Axum deps); libsql + db token
-        ├── logic/            # domain modules: agent, db, db_migrations, rag, remote, sql_remote, evidence_cache, office/, analytics/
-        ├── auth.rs           # PURE AUTH; Clerk JWKS verify + EdDSA mint + Session
+        ├── logic.rs          # PURE helpers (greet/whoami/generate_activity, resolve_model_path/ensure_model, generate_session_title → kawai-db)
+        ├── logic/            # thin shims → crates/* (pub use kawai_*::*): db/db_migrations/skills/memory/office/knowledge/rag/graph/analytics/sql_remote/agent/evidence_cache
+        ├── auth.rs           # shim → kawai-auth (pure auth; Clerk JWKS verify + Session)
         ├── commands.rs       # #[tauri::command] wrappers
         ├── web.rs            # Axum router + auth_middleware
         ├── webview_engine.rs # on-device webview fetch engine (office feature)
