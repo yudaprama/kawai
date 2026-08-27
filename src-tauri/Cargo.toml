@@ -38,15 +38,16 @@ tower-http = { version = "0.6", optional = true, features = ["fs"] }
 # High-level streaming chat over LiteRT-LM (on-device Gemma 4, etc.).
 # Pulls in cognee-litert-lm transitively. Gated behind `litert`.
 local-llm = { path = "../local-llm", optional = true }
-# Phase-1/2 extracted crates (pure, no transport). Re-exported via
+# Phase-1/2/3 extracted crates (pure, no transport). Re-exported via
 # `src/auth.rs`, `src/logic/remote.rs`, `src/logic/db.rs`/`db_migrations.rs`,
-# `src/logic/skills.rs`/`memory.rs` shims so `crate::auth::*` and
-# `crate::logic::*` remain stable.
+# `src/logic/skills.rs`/`memory.rs`, `src/logic/office` shims so
+# `crate::auth::*` and `crate::logic::*` remain stable.
 kawai-auth = { path = "../crates/auth" }
 remote-llm = { path = "../crates/remote-llm" }
 kawai-db = { path = "../crates/db" }
 kawai-skills = { path = "../crates/skills" }
 kawai-memory = { path = "../crates/memory" }
+kawai-office = { path = "../crates/office", optional = true }
 # The agent tool seam (tool trait + registry) shared with components.
 kawai-tools = { path = "../kawai-tools" }
 # default-features=false keeps only the local-SQLite core: replication/remote
@@ -142,7 +143,7 @@ webread = ["dep:webread", "dep:browser", "dep:url"]
 # (kawai-embedding, with in-tree chunking) for idle-time
 # knowledge indexing. Enables the `webread` FEATURE (not just `dep:webread`)
 # so its bundled deps ride along.
-office = ["dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office"]
+office = ["dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office", "dep:kawai-office"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
 binance = ["dep:binance"]

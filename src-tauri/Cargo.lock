@@ -3599,6 +3599,7 @@ dependencies = [
  "kawai-db",
  "kawai-embedding",
  "kawai-memory",
+ "kawai-office",
  "kawai-skills",
  "kawai-tools",
  "libc",
@@ -3696,6 +3697,23 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "kawai-office"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "kawai-db",
+ "kawai-tools",
+ "office_oxide",
+ "pdf_oxide",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+ "webread",
 ]
 
 [[package]]

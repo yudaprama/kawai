@@ -172,15 +172,15 @@ pub fn toolset_for(
     match agent_id {
         #[cfg(feature = "office")]
         OFFICE_AGENT_ID => {
-            set.add_tool(super::ArtifactRecall);
+            set.add_tool(super::subagents::ArtifactRecall);
         }
         #[cfg(all(feature = "binance", not(target_os = "android")))]
         BINANCE_AGENT_ID => {
-            set.add_tool(super::ArtifactRecall);
+            set.add_tool(super::subagents::ArtifactRecall);
         }
         #[cfg(feature = "analytics")]
         ANALYTICS_AGENT_ID => {
-            set.add_tool(super::ArtifactRecall);
+            set.add_tool(super::subagents::ArtifactRecall);
         }
         _ => {}
     }
@@ -197,10 +197,10 @@ pub fn toolset_for(
             _ => None,
         };
     }
-    set.add_tool(super::DeepWrite);
+    set.add_tool(super::subagents::DeepWrite);
     #[cfg(feature = "office")]
     if agent_id == OFFICE_AGENT_ID {
-        set.add_tool(super::DraftDocument);
+        set.add_tool(super::subagents::DraftDocument);
     }
     Some(set)
 }
