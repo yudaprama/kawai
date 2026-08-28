@@ -94,7 +94,7 @@ sequenceDiagram
 
 ## Agent catalog & toolset map
 
-Three catalog agents are composed by `src-tauri/src/agent_registry.rs`, each as an `AgentDefinition` containing persona, metadata, a per-turn tool builder, and capability resolvers. Domain definitions live in `crates/engines/office/src/agent.rs`, `crates/toolsets/binance/src/agent.rs`, and `crates/toolsets/analytics-tools/src/agent.rs`. Tools that require runtime resources (webread engines, SQL profiles, Binance credentials) are registered only when available (capability-probe rule).
+Three catalog agents are composed by `src-tauri/src/agent_registry.rs`, each as an `AgentDefinition` containing persona, metadata, a per-turn tool builder, and capability resolvers. Domain definitions live in `crates/engines/office/src/agent.rs`, `crates/toolsets/binance/src/agent.rs`, and `crates/toolsets/analytics-tools/src/agent.rs`. Tools that require runtime resources (webread engines, SQL profiles, Binance credentials) are registered only when available (capability-probe rule). Cross-cutting `codegraph_explore`/`codegraph_status` (feature `codegraph`, sidecar cached) are added to every agent when `litert` + `codegraph` are on.
 
 ### `builtin.office` — Office
 
@@ -186,6 +186,14 @@ One agent tool, one engine chain — the model asks to read a URL, the backend p
 
 Purity: `crates/toolsets/webread/src/scrape.rs` defines the `WebViewFetch` trait; the tauri shell injects the implementation at startup (`lib.rs`). `kawai-web` registers nothing and degrades to Cloudflare-only; no engine anywhere ⇒ the tool is not registered (capability-probe rule). Content is capped at 12k chars per read. The tools are reusable by any agent: office registers them under `any_engine()`; binance behind the standalone `webread` cargo feature (`office` implies `webread`).
 
+## CodeGraph bridge (`codegraph_explore`, `codegraph` feature)
+
+Surgical code context for frequent agent invocations — the model asks how code works, the backend returns verbatim source + call paths + blast radius in one call (`crates/toolsets/codegraph/src/lib.rs`):
+
+1. **Sidecar** — `codegraph explore --json` via `tokio::process::Command` (`CODEGRAPH_BIN` override, default `codegraph` on PATH). Full pipeline (extract + resolution + graph + search) runs in the external CLI; results are guidance-shaped on not-indexed.
+2. **Cache** — 15-min LRU (64 entries, global) + single-flight dedup. Repeat queries (1-5 explores/turn is typical) coelesce; hits are free and bypass the 12/min budget on cache misses. `explore_with_cache` is shared by the AgentTool and the Tauri `logic/codegraph.rs` wrapper.
+3. **Wiring** — `crates/toolsets/codegraph` provides `CodegraphExploreTool`/`CodegraphStatusTool` (`kawai_tools::AgentTool`). `src-tauri/src/agent_registry.rs` adds both to every agent when `litert` + `codegraph` are on. Tauri `codegraph_explore/status/is_available` + Axum `/api/codegraph_*` are thin wrappers (auth at edge, `user_id` first arg). Frontend `CodeAssetPage` (`frontend/src/panels/assets/code-page.tsx`) shows status + explore input + result view; `frontend/src/lib/api.ts` exposes `codegraphExplore`/`codegraphStatus`. Zero cost when feature off.
+
 ## Directory layout
 
 ```
@@ -211,7 +219,7 @@ kawai/
 │       │   ├── ai-elements/  # vendored chat components (from web/, trimmed)
 │       │   └── ui/           # shadcn primitives (from web/)
 │       └── platform/         # slim capability adapter (browser APIs only)
-├── crates/                     # agent crates (kawai_tools::AgentTool) — auth/remote-llm/db/skills/memory/office/knowledge/analytics-tools/agent + analytics/graph/webread/ragloader + per-category tools/*
+├── crates/                     # agent crates (kawai_tools::AgentTool) — auth/remote-llm/db/skills/memory/office/knowledge/analytics-tools/agent/codegraph + analytics/graph/webread/ragloader + per-category tools/*
 ├── local-llm/                  # on-device LLM engine bindings (litert feature; KAWAI_LLM_MAX_TOKENS)
 ├── cognee-litert-lm/           # Rust bindings for the LiteRT-LM C API (+ vendored upstream submodule)
 ├── office_oxide/               # submodule: pure-Rust docx/xlsx/pptx create/read/edit (office feature)
@@ -223,7 +231,7 @@ kawai/
 ├── .env                      # KAWAI_AUTH_* + KAWAI_DB_* (gitignored)
 ├── .env.local                # VITE_CLERK_PUBLISHABLE_KEY (gitignored; reference only)
 └── src-tauri/
-    ├── Cargo.toml            # axum/tower-http behind "web"; kawai-* crates behind litert/office/analytics/graph/webread
+    ├── Cargo.toml            # axum/tower-http behind "web"; kawai-* crates behind litert/office/analytics/graph/webread/codegraph
     ├── tauri.conf.json       # devUrl :1420, frontendDist ../dist, beforeBuildCommand "bun run build"
     ├── build.rs              # tauri_build + embeds @executable_path/../Frameworks rpath
     ├── migrations/           # versioned SQLite schema (now also in crates/foundation/db/migrations/, include_str! via kawai-db)
