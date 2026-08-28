@@ -275,10 +275,12 @@
     cursor: pointer;
   }
 
-  /* Press feedback (MemoryPanel's global interaction polish) */
-  button:not(:disabled):active,
-  [role="button"]:not(:disabled):active {
-    transform: scale(0.97);
+  /* Press feedback stays subtle and respects reduced-motion users. */
+  @media (prefers-reduced-motion: no-preference) {
+    button:not(:disabled):active,
+    [role="button"]:not(:disabled):active {
+      transform: scale(0.97);
+    }
   }
 }
 

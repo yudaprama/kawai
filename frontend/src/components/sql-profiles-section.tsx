@@ -152,7 +152,9 @@ export function SqlProfilesSection() {
             value={name}
           />
           {name.length > 0 && !NAME_OK.test(name.trim().toLowerCase()) && (
-            <p className="text-xs text-amber-500">Nama: huruf kecil, angka, "-" atau "_", maks 32 karakter.</p>
+            <p className="text-xs text-amber-500">
+              Nama: huruf kecil, angka, &quot;-&quot; atau &quot;_&quot;, maks 32 karakter.
+            </p>
           )}
           <div className="flex gap-2">
             <Input

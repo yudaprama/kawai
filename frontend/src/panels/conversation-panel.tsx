@@ -129,7 +129,15 @@ export function ConversationPanel({
     <main className="bg-background flex min-w-0 flex-1 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2.5 border-b px-4">
         {onOpenMobileAgents && (
-          <Button className="md:hidden" onClick={onOpenMobileAgents} size="icon" title="Agents" variant="ghost">
+          <Button
+            aria-label="Open agents"
+            aria-haspopup="dialog"
+            className="md:hidden"
+            onClick={onOpenMobileAgents}
+            size="icon"
+            title="Agents"
+            variant="ghost"
+          >
             <MenuIcon className="size-4" />
           </Button>
         )}
@@ -147,12 +155,22 @@ export function ConversationPanel({
         <div className="ml-auto flex items-center gap-1">
           {/* Mobile: agents/sessions/knowledge drawers */}
           {onOpenMobileSessions && (
-            <Button className="md:hidden" onClick={onOpenMobileSessions} size="icon" title="Sessions" variant="ghost">
+            <Button
+              aria-haspopup="dialog"
+              aria-label="Open sessions"
+              className="md:hidden"
+              onClick={onOpenMobileSessions}
+              size="icon"
+              title="Sessions"
+              variant="ghost"
+            >
               <HistoryIcon className="size-4" />
             </Button>
           )}
           {onOpenMobileKnowledge && (
             <Button
+              aria-haspopup="dialog"
+              aria-label="Open knowledge"
               className="md:hidden"
               onClick={onOpenMobileKnowledge}
               size="icon"
@@ -163,32 +181,41 @@ export function ConversationPanel({
             </Button>
           )}
           <Button
+            aria-label={thinking ? "Turn thinking mode off" : "Turn thinking mode on"}
+            aria-pressed={thinking}
             onClick={onToggleThinking}
-            size="icon"
+            size="sm"
             title={thinking ? "Thinking mode: on" : "Thinking mode: off"}
             variant={thinking ? "secondary" : "ghost"}
           >
             <BrainIcon className="size-4" />
+            <span className="hidden lg:inline">Thinking</span>
           </Button>
           {onToggleCanvas && (
             <Button
+              aria-label={canvasOpen ? "Close canvas" : "Open canvas"}
+              aria-pressed={canvasOpen}
               className="hidden md:inline-flex"
               onClick={onToggleCanvas}
-              size="icon"
-              title="Toggle canvas (⌘2)"
+              size="sm"
+              title={canvasOpen ? "Close canvas (⌘2)" : "Open canvas (⌘2)"}
               variant={canvasOpen ? "ghost" : "secondary"}
             >
               <PanelRightIcon className="size-4" />
+              <span className="hidden lg:inline">Canvas</span>
             </Button>
           )}
           <Button
+            aria-label={sessionsCollapsed ? "Show sessions" : "Hide sessions"}
+            aria-expanded={!sessionsCollapsed}
             className="hidden md:inline-flex"
             onClick={onToggleSessions}
-            size="icon"
-            title="Toggle sessions pane (⌘3)"
+            size="sm"
+            title={sessionsCollapsed ? "Show sessions pane (⌘3)" : "Hide sessions pane (⌘3)"}
             variant="ghost"
           >
             {sessionsCollapsed ? <PanelRightOpenIcon className="size-4" /> : <PanelRightCloseIcon className="size-4" />}
+            <span className="hidden lg:inline">Sessions</span>
           </Button>
         </div>
       </header>
@@ -215,8 +242,8 @@ export function ConversationPanel({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1">
-        <section className={`flex min-w-0 flex-col ${canvas && canvasOpen ? "md:w-[55%] md:flex-none" : "w-full"}`}>
+      <div className="relative flex min-h-0 flex-1">
+        <section className={`flex min-w-0 flex-col ${canvas && canvasOpen ? "xl:w-[55%] xl:flex-none" : "w-full"}`}>
           <div className="relative min-h-0 flex-1">
             {status === "submitted" && (
               <div className="text-muted-foreground absolute inset-x-0 top-3 z-10 flex justify-center">
@@ -255,7 +282,7 @@ export function ConversationPanel({
                   <div className="mt-3 flex flex-wrap justify-center gap-2">
                     {presentation.prompts.map((prompt) => (
                       <button
-                        className="border bg-card hover:bg-accent rounded-full border px-3 py-1 text-xs"
+                        className="border bg-card hover:bg-accent rounded-full px-3 py-1 text-xs"
                         key={prompt}
                         onClick={() => void onSend(prompt)}
                         type="button"
@@ -326,7 +353,13 @@ export function ConversationPanel({
           </div>
         </section>
 
-        {canvas && <div className="hidden min-h-0 flex-1 md:flex">{canvas}</div>}
+        {/* Canvas: an inline third pane from xl; an overlay drawer over the
+            conversation at md–lg so the chat never loses its reading width. */}
+        {canvas && (
+          <div className="bg-background hidden min-h-0 md:flex md:absolute md:inset-y-0 md:right-0 md:z-20 md:w-[min(460px,85%)] md:shadow-xl xl:static xl:w-auto xl:flex-1 xl:shadow-none">
+            {canvas}
+          </div>
+        )}
       </div>
     </main>
   );

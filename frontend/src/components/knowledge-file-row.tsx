@@ -96,7 +96,15 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
           <KnowledgeStatusBadge file={file} />
         </p>
       </div>
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/file:opacity-100">
+      {/* Hover-revealed on fine pointers; always visible on touch/narrow
+          layouts, while focused, and while delete is armed. */}
+      <div
+        className={`flex shrink-0 items-center gap-0.5 ${
+          confirmDelete
+            ? "opacity-100"
+            : "opacity-0 transition-opacity focus-within:opacity-100 group-hover/file:opacity-100 max-lg:opacity-100"
+        }`}
+      >
         <button
           aria-label={`Preview ${file.originalName}`}
           className="text-muted-foreground hover:text-foreground rounded p-1"
@@ -148,7 +156,11 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
         )}
         <button
           aria-label={`Delete ${file.originalName}`}
-          className={`rounded p-1 ${confirmDelete ? "text-destructive" : "text-muted-foreground hover:text-destructive"}`}
+          className={`rounded p-1 ${
+            confirmDelete
+              ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              : "text-muted-foreground hover:text-destructive"
+          }`}
           onClick={() => actions.onDelete(file)}
           title={confirmDelete ? "Click again to confirm — deletes the document everywhere" : "Delete document"}
           type="button"

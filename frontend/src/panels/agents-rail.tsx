@@ -118,6 +118,8 @@ export function AgentsRail({
       <div className={`flex h-12 shrink-0 items-center gap-2 px-3 ${collapsed ? "justify-center px-0" : ""}`}>
         {!collapsed && <span className="font-mono text-xs text-muted-foreground">kawai</span>}
         <Button
+          aria-expanded={!collapsed}
+          aria-label="Toggle agents rail"
           className={collapsed ? "" : "ml-auto"}
           onClick={onToggle}
           size="icon"

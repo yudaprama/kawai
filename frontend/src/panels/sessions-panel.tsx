@@ -42,11 +42,12 @@ export function SessionsPanel({
   const [renameValue, setRenameValue] = useState("");
   const [archiveOpen, setArchiveOpen] = useState(false);
   // Two-click delete confirm (same pattern as knowledge files): first click
-  // arms the row, second click within the window actually deletes.
+  // arms the row (destructive tint + visible confirm button), second click
+  // within the window actually deletes.
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   useEffect(() => {
     if (confirmDeleteId == null) return;
-    const t = setTimeout(() => setConfirmDeleteId(null), 3000);
+    const t = setTimeout(() => setConfirmDeleteId(null), 5000);
     return () => clearTimeout(t);
   }, [confirmDeleteId]);
   const { filteredGroups, filteredArchived, q } = useSessionFilter(groupedSessions, archivedSessions, query);
@@ -76,7 +77,7 @@ export function SessionsPanel({
         <span className="text-[11px] tracking-wider text-muted-foreground uppercase">Sessions</span>
         <Button disabled={busy} onClick={onNewChat} size="xs" variant="default">
           <PlusIcon className="size-3" />
-          New
+          New chat
         </Button>
       </div>
       {railCollapsed && (
