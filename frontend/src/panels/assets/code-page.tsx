@@ -6,7 +6,14 @@ import { AssetSplitLayout } from "@/components/asset/asset-split-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AssetShell } from "@/panels/assets/asset-shell";
-import { codegraphExplore, codegraphInit, codegraphIsAvailable, codegraphStatus, type CodegraphStatusResult, errText } from "@/lib/api";
+import {
+  codegraphExplore,
+  codegraphInit,
+  codegraphIsAvailable,
+  codegraphStatus,
+  type CodegraphStatusResult,
+  errText,
+} from "@/lib/api";
 
 function StatusBadge({ status }: { status: CodegraphStatusResult | null }) {
   if (!status) return null;
@@ -113,7 +120,9 @@ export function CodeAssetPage({ onBack }: { onBack: () => void }) {
             </Button>
           </div>
         }
-        subtitle={statusLoading ? "checking…" : status ? status.message.slice(0, 80) : statusError ?? "code-aware search"}
+        subtitle={
+          statusLoading ? "checking…" : status ? status.message.slice(0, 80) : (statusError ?? "code-aware search")
+        }
         title="Code Graph"
       />
       <div className="mt-3 space-y-3">
@@ -129,7 +138,10 @@ export function CodeAssetPage({ onBack }: { onBack: () => void }) {
         </div>
         {isFeatureOff && (
           <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-            CodeGraph not compiled in. Build: <code className="rounded bg-muted px-1">cargo check --features codegraph</code> + <code className="rounded bg-muted px-1">bun tauri dev -- --features codegraph</code>. Or set <code className="rounded bg-muted px-1">CODEGRAPH_BIN</code>.
+            CodeGraph not compiled in. Build:{" "}
+            <code className="rounded bg-muted px-1">cargo check --features codegraph</code> +{" "}
+            <code className="rounded bg-muted px-1">bun tauri dev -- --features codegraph</code>. Or set{" "}
+            <code className="rounded bg-muted px-1">CODEGRAPH_BIN</code>.
           </div>
         )}
 
@@ -151,7 +163,9 @@ export function CodeAssetPage({ onBack }: { onBack: () => void }) {
                 <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
                   <GitBranchIcon className="size-5 opacity-50" />
                   <span>No explore yet — type a symbol or question above.</span>
-                  <span className="text-xs">Tip: agent calls this 1-5× per turn; results are LRU-cached 15 min and single-flight deduped.</span>
+                  <span className="text-xs">
+                    Tip: agent calls this 1-5× per turn; results are LRU-cached 15 min and single-flight deduped.
+                  </span>
                 </div>
               )}
             </div>
@@ -160,7 +174,11 @@ export function CodeAssetPage({ onBack }: { onBack: () => void }) {
             <div className="space-y-3">
               <AssetListPanel
                 count={String(sidebarItems.length)}
-                emptyText={statusLoading ? "Checking CodeGraph…" : statusError ?? "No status — is codegraph installed? npm i -g @colbymchenry/codegraph"}
+                emptyText={
+                  statusLoading
+                    ? "Checking CodeGraph…"
+                    : (statusError ?? "No status — is codegraph installed? npm i -g @colbymchenry/codegraph")
+                }
                 getItemId={(s: CodegraphStatusResult) => s.backend}
                 items={sidebarItems}
                 onSelect={() => {}}
@@ -172,7 +190,9 @@ export function CodeAssetPage({ onBack }: { onBack: () => void }) {
                     </div>
                     <div className="line-clamp-3 text-xs text-muted-foreground">{s.message}</div>
                     {isAvailable === false && (
-                      <div className="text-xs text-amber-600 dark:text-amber-400">Binary not found on PATH — install codegraph CLI or set CODEGRAPH_BIN.</div>
+                      <div className="text-xs text-amber-600 dark:text-amber-400">
+                        Binary not found on PATH — install codegraph CLI or set CODEGRAPH_BIN.
+                      </div>
                     )}
                   </div>
                 )}

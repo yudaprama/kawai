@@ -52,10 +52,19 @@ export type {
 };
 
 /** Frontend-only — role is stricter than backend (only "user"|"assistant", not generic "system") */
-export type ChatMessageInfo = { id: number; sessionId: number; role: "user" | "assistant"; content: string; createdAt: number | null; };
+export type ChatMessageInfo = {
+  id: number;
+  sessionId: number;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: number | null;
+};
 
 export type KnowledgeIndexStatus = "not_indexed" | "indexing" | "ready" | "failed";
-export interface KnowledgeContext { context: string; files: OfficeFileInfo[]; }
+export interface KnowledgeContext {
+  context: string;
+  files: OfficeFileInfo[];
+}
 export const MEMORY_KINDS = ["preference", "rule", "event", "fact", "goal"] as const;
 
 // ---- Frontend-local overrides for generated types ----

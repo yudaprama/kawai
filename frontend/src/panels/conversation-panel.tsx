@@ -132,7 +132,7 @@ export function ConversationPanel({
           <Button
             aria-label="Open agents"
             aria-haspopup="dialog"
-            className="md:hidden"
+            className="lg:hidden"
             onClick={onOpenMobileAgents}
             size="icon"
             title="Agents"
@@ -158,7 +158,7 @@ export function ConversationPanel({
             <Button
               aria-haspopup="dialog"
               aria-label="Open sessions"
-              className="md:hidden"
+              className="lg:hidden"
               onClick={onOpenMobileSessions}
               size="icon"
               title="Sessions"
@@ -171,7 +171,7 @@ export function ConversationPanel({
             <Button
               aria-haspopup="dialog"
               aria-label="Open knowledge"
-              className="md:hidden"
+              className="lg:hidden"
               onClick={onOpenMobileKnowledge}
               size="icon"
               title="Knowledge"
@@ -196,7 +196,7 @@ export function ConversationPanel({
             <Button
               aria-label={canvasOpen ? "Close canvas" : "Open canvas"}
               aria-pressed={canvasOpen}
-              className="hidden md:inline-flex"
+              className="hidden lg:inline-flex"
               onClick={onToggleCanvas}
               size="sm"
               title={canvasOpen ? "Close canvas (⌘2)" : "Open canvas (⌘2)"}
@@ -209,7 +209,7 @@ export function ConversationPanel({
           <Button
             aria-label={sessionsCollapsed ? "Show sessions" : "Hide sessions"}
             aria-expanded={!sessionsCollapsed}
-            className="hidden md:inline-flex"
+            className="hidden lg:inline-flex"
             onClick={onToggleSessions}
             size="sm"
             title={sessionsCollapsed ? "Show sessions pane (⌘3)" : "Hide sessions pane (⌘3)"}
@@ -359,7 +359,7 @@ export function ConversationPanel({
         {/* Canvas: an inline third pane from xl; an overlay drawer over the
             conversation at md–lg so the chat never loses its reading width. */}
         {canvas && (
-          <div className="bg-background hidden min-h-0 md:flex md:absolute md:inset-y-0 md:right-0 md:z-20 md:w-[min(460px,85%)] md:shadow-xl xl:static xl:w-auto xl:flex-1 xl:shadow-none">
+          <div className="bg-background hidden min-h-0 lg:flex lg:absolute lg:inset-y-0 lg:right-0 lg:z-20 lg:w-[min(460px,85%)] lg:shadow-xl xl:static xl:w-auto xl:flex-1 xl:shadow-none">
             {canvas}
           </div>
         )}

@@ -108,7 +108,7 @@ export function AgentsRail({
   return (
     <aside
       className={`bg-sidebar/40 flex shrink-0 flex-col border-r transition-[width] duration-150 ${
-        collapsed ? "w-16" : "w-[210px]"
+        collapsed ? "w-16" : "w-[190px] lg:w-[190px] xl:w-[210px]"
       }`}
     >
       <div className={`flex h-12 shrink-0 items-center gap-2 px-3 ${collapsed ? "justify-center px-0" : ""}`}>

@@ -231,7 +231,7 @@ export default function App() {
 
   return (
     <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">
-      <div className="hidden shrink-0 md:flex">
+      <div className="hidden shrink-0 lg:flex">
         <AgentsRail
           agents={agents}
           activeAgentId={activeAgentId}
@@ -285,7 +285,7 @@ export default function App() {
       )}
 
       {!sessionsCollapsed && assetView == null && (
-        <div className="hidden shrink-0 md:flex">
+        <div className="hidden shrink-0 lg:flex">
           <SessionsPanel
             agent={agent}
             railCollapsed={agentsRail}
@@ -304,7 +304,7 @@ export default function App() {
 
       {/* Mobile drawers — replace hidden rails under 768px */}
       {mobileDrawer && (
-        <div className="fixed inset-0 z-50 flex md:hidden" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-50 flex lg:hidden" role="dialog" aria-modal="true">
           <button
             aria-label="Close navigation"
             className="absolute inset-0 bg-black/50"
