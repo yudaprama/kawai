@@ -175,10 +175,6 @@ jobs:
         run: cargo check --features codegraph
         working-directory: src-tauri
 
-      - name: cargo check (codegraph-native + litert; in-process kernel rlib)
-        run: cargo check --features codegraph-native,litert
-        working-directory: src-tauri
-
       # Remote SQL sources (sqlx, rustls): compile gate + LIVE-server checks
       # against the service containers — data_tables/data_import/dump typing
       # run for real (--deep seeds fixture tables — basic, temporal/NULL,

@@ -1,16 +1,10 @@
-// logic/codegraph — feature-gated CodeGraph bridge (phase0 + phase1).
+// logic/codegraph — feature-gated CodeGraph bridge (sidecar only).
 //
-// Phase0 (feature `codegraph`): sidecar — spawns the external `codegraph` CLI
-// (`codegraph explore/status`) via tokio::process. Zero extra crates, zero
-// cost when the feature is off. Works with the existing npm/bundle install
-// (`codegraph --version` on PATH). Pure logic: no tauri/axum imports.
-//
-// Phase1 (feature `codegraph-native`): in-process extraction via
-// `codegraph-kernel` as an `rlib` (requires patching
-// `codegraph/codegraph-kernel/Cargo.toml`: `crate-type = ["cdylib","rlib"]`
-// and `napi` behind `feature = "napi"`). Phase1 implies phase0 and falls
-// back to the sidecar when the kernel is unavailable. Until the patch lands,
-// `codegraph-native` is a stub that delegates to phase0.
+// Sidecar (feature `codegraph`): spawns the external `codegraph` CLI
+// (`codegraph explore/status`) via tokio::process, shared LRU cache with the
+// AgentTool crate. Zero extra crates, zero cost when the feature is off.
+// Works with the existing npm/bundle install (`codegraph --version` on PATH).
+// Pure logic: no tauri/axum imports.
 
 use serde::{Deserialize, Serialize};
 
@@ -138,11 +132,6 @@ pub async fn codegraph_explore(
 ) -> Result<CodegraphExploreResult, String> {
     #[cfg(feature = "codegraph")]
     {
-        #[cfg(feature = "codegraph-native")]
-        {
-            // TODO: try in-process kernel extract first; on success return backend="native".
-            let _ = _user_id;
-        }
         // Shared cache path — same implementation as the AgentTool.
         match ::codegraph::explore_with_cache(query.clone(), project_path.clone()).await {
             Ok(output) => Ok(CodegraphExploreResult {

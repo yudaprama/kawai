@@ -135,11 +135,8 @@ libc = "0.2"
 [features]
 default = []
 web = ["dep:axum", "dep:tower-http"]
-# CodeGraph — two tiers, both optional (zero cost when off):
-#   codegraph        = phase0 sidecar as AgentTool + LRU cache (crate `codegraph`), plus Tauri/web wrappers
-#   codegraph-native = phase1 in-process extraction (codegraph-kernel rlib, no Node)
+# CodeGraph — sidecar only (AgentTool + LRU cache, zero cost off)
 codegraph = ["dep:codegraph"]
-codegraph-native = ["codegraph", "codegraph/native"]
 litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "dep:kawai-agent", "kawai-agent/litert"]
 # GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
 # Include with --features graph, exclude by omitting it (zero cost when off).
