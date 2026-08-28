@@ -15,7 +15,7 @@ Git usage from an agent is ADDITIVE ONLY: `status`, `log`, `diff`, `show`, `add`
 
 ## What this project is
 
-**Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from `crates/` (per-category crates of generated agent tools implementing `kawai_tools::AgentTool` — `registry::toolset_for(names)`). UI: three-pane layout (left sidebar = agent list, center = active agent's chat/content, right sidebar = sessions of the selected agent), dark theme.
+**Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from domain crates and the application registry (per-category crates of generated agent tools implementing `kawai_tools::AgentTool`). UI: three-pane layout (left sidebar = agent list, center = active agent's chat/content, right sidebar = sessions of the selected agent), dark theme.
 
 Desktop/mobile app (Tauri), with a standalone web server binary.
 **End state: desktop + mobile + web from one core. Current phase: MVP, desktop-first — see "Current phase" below.**
@@ -25,7 +25,7 @@ Desktop/mobile app (Tauri), with a standalone web server binary.
 - **Backend**: Rust. Single core logic, two thin transport wrappers.
 - **Transport**: Tauri `Channel`+`invoke` (desktop/mobile); HTTP `fetch`+SSE (web — backend only, no web frontend).
 - **LLM (on-device)**: LiteRT-LM via `cognee-litert-lm` (path dep, vendored at `cognee-litert-lm/vendor/LiteRT-LM` = upstream `google-ai-edge` main). Behind the `litert` cargo feature. Gemma 4 / Qwen `.litertlm` verified streaming on macOS arm64 CPU. **Auto-download**: if the model is not found locally, `logic::ensure_model()` downloads `gemma-4-E4B-it.litertlm` (3.7 GB) from the public `litert-community/gemma-4-E4B-it-litert-lm` HuggingFace repo (Apache-2.0, no token required) into `~/.kawai/models/` with resume support and progress logging to stderr.
-- **LLM (remote)**: hand-rolled OpenAI-compatible SSE client in `logic/remote.rs` (reqwest POST `/chat/completions`, stream parser). Local Gemma 4 is always the orchestrator; a remote provider pool with health-aware failover serves only the hybrid cloud-subagent tier (details: Configuration below + Roadmap Shipped).
+- **LLM (remote)**: hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (reqwest POST `/chat/completions`, stream parser). Local Gemma 4 is always the orchestrator; a remote provider pool with health-aware failover serves only the hybrid cloud-subagent tier (details: Configuration below + Roadmap Shipped).
 - **DB**: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
 ## Current phase: MVP (desktop-first)
@@ -183,13 +183,14 @@ src-tauri/src/logic.rs           # PURE helpers (greet/whoami/generate_activity,
 src-tauri/src/logic/             # thin shims → crates/* (pub use kawai_*::*), one per domain — logic.rs stays pure, wrappers stay thin
 crates/
 ├── foundation/                     # shared infrastructure
+│   ├── agent-contract/ (kawai-agent-contract) # AgentContext/SqlProfile/ToolBuilder/AgentInfo/AgentDefinition (capabilities + capability/confirmation/summary resolvers)/AgentRegistry — no domain deps
 │   ├── auth/ (kawai-auth)         # pure auth — Verifier/Claims/Session, JWKS verify + dev bypass, dotenv loader (no tauri/axum)
 │   ├── db/ (kawai-db)             # per-user SQLite — libsql Builder::new_local, user_data_dir/DataRoot, sessions/messages/artifacts/turn_log + migrations 0001-0009 (office/analytics gated) + generate_session_title (Workers AI)
 │   ├── remote-llm/ (remote-llm)   # hybrid cloud pool (zai→venice→opencode→openrouter→ollama→poolside→empero, health-aware failover, SSE)
 │   ├── skills/ (kawai-skills)     # SKILL.md CRUD (skl-* base62, unique name, version bump) + prompt_block 4k/skill, 12k total (ungated)
 │   └── memory/ (kawai-memory)     # L1 memories CRUD (preference/rule/event/fact/goal, mem-* base62) + memory_extract via remote-llm + prompt_block 800/4k/24
 ├── engines/                        # domain logic & business engines
-│   ├── agent/ (kawai-agent)       # prompt-based tool-calling loop (opener/delta K/V, TurnMemory session_artifacts, alias, parsing, subagents DeepWrite/DraftDocument/ArtifactRecall) + evidence_cache LRU FileScoped, catalog toolset_for
+│   ├── agent/ (kawai-agent)       # registry-injected prompt tool-calling runtime (opener/delta K/V, TurnState, TurnMemory, alias, parsing, subagents, evidence_cache); catalog.rs only holds agent ID constants — built-in composition lives in src-tauri/src/agent_registry.rs
 │   ├── analytics/ (analytics)      # polars engine (discover/query/ta_suite/chart, office_oxide xlsx bridge) — pure, no kawai deps
 │   ├── graph/ (graph)             # standalone libSQL GraphRAG (Naive/Local/Global/Hybrid/Mix) — pure, used by kawai-knowledge/graph via kawai-agent
 │   ├── knowledge/ (kawai-knowledge) # RAG — chunk 1500/200 (MarkdownSplitter) → embed (kawai-embedding) → libSQL vector + FTS5/BM25 RRF, session_files scoping, KnowledgeSearchTool; GraphRAG 5 arms (graph/*)
@@ -281,7 +282,7 @@ KAWAI_MODEL_PATH=/path/to/gemma-4-E4B-it.litertlm  # optional on-device model; r
 KAWAI_EMBED_MODEL_PATH=/path/to/embeddinggemma.tflite  # optional local embedding graph (litert feature); resolved by kawai-embedding (env → ./models/ → ~/.kawai/models); auto-downloaded from ghanashyamvtatti/embeddinggemma-300m-litert if absent
 KAWAI_EMBED_SPM_PATH=/path/to/sentencepiece.model  # optional tokenizer for the local embedding graph; same resolution/download flow
 KAWAI_LLM_MAX_TOKENS=16384       # optional context budget (K/V state entries) for the on-device conversation; default 16384, clamped below the model's max (Gemma 4: 32003). Larger = more K/V memory; raise for longer sessions before the prefill-overflow reset.
-# ── Hybrid LLM tier — cloud subagents (logic/remote.rs, PLAN-hybrid-llm-subagents.md) ──
+# ── Hybrid LLM tier — cloud subagents (crates/foundation/remote-llm, PLAN-hybrid-llm-subagents.md) ──
 # Provider pool with health-aware failover: every provider with a vault key
 # joins the pool in fixed priority (zai → venice → opencode → openrouter →
 # ollama → poolside); empero (free, always on) joins after poolside. A retryable failure (429/5xx/401/404/transport)
@@ -310,7 +311,7 @@ Priority order: **shipped → post-MVP/pre-release → end state**. Items after 
 ### Shipped — current architecture (details: `ARCHITECTURE.md`, `PLAN-*.md`)
 
 - **Chat history**: `sessions(agent_id, title, …)` + `messages(session_id, role, content, …)` in the per-user SQLite DB; ops `create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message`/`delete_chat_session` (both wrappers). Sessions are lazy (created on first message), first user message seeds the title, engine context stays in-memory (restart shows history, model context starts fresh).
-- **Agent tier (the product's core)**: agent = persona + curated toolset from `crates/` (`registry::toolset_for(names)`, tools implement `kawai_tools::AgentTool`). Local Gemma 4 is the permanent orchestrator doing prompt-based tool calling (the LiteRT-LM Conversation API has no native function calling); the dispatch loop lives in `logic/agent.rs`. Catalog served by `list_agents`: `builtin.office` (default; subsumes plain chat), `builtin.binance` (`binance` feature), `builtin.analytics` (`analytics` feature). Three-pane UI (agents rail / chat+canvas / per-agent sessions) on the React frontend.
+- **Agent tier (the product's core)**: agent = an `AgentDefinition` (persona, curated tool builder, capability resolvers) registered in the application composition root (`src-tauri/src/agent_registry.rs`). Domain definitions live in `crates/engines/office/src/agent.rs`, `crates/toolsets/binance/src/agent.rs`, and `crates/toolsets/analytics-tools/src/agent.rs`; the registry is injected into the reusable `kawai-agent` runtime. Local Gemma 4 is the permanent orchestrator doing prompt-based tool calling (the LiteRT-LM Conversation API has no native function calling). Catalog served by `list_agents`: `builtin.office` (default), `builtin.binance` (`binance` feature), `builtin.analytics` (`analytics` feature). Three-pane UI (agents rail / chat+canvas / per-agent sessions) on the React frontend.
 - **Skills**: reusable SKILL.md instruction sets — `skills` table (unique name, version counter bumped per update) behind ungated `skill_create/list/get/update/delete` ops (both wrappers). Managed from the Skills asset page (rail → Assets → Skills: list ↔ markdown detail + create/edit dialog). `skills::prompt_block()` injects the user's skills into the agent persona at opener build (4k/skill, 12k total caps; a skill saved mid-session applies from the next session — the opener is per-session).
 - **L1 memories**: atomic long-term memory items (`memories` table; kinds preference/rule/event/fact/goal) behind ungated `memory_create/list/update/delete` + `memory_extract` (session transcript → cloud one-shot → JSON candidates → case-insensitive title dedup → stored with `source_session_id`). Extraction needs the hybrid vault; manual CRUD works offline. `memory::prompt_block()` injects L1 memories into the agent persona at opener build (800 char/entry · 4k total · 24 items max; a memory saved mid-session applies from the next session — the opener is per-session). Managed from the Memory asset page's L1 tab (global list + extract-from-block). L2 scenes / L3 persona are not built.
 - **Knowledge/RAG (office)**: the Knowledge panel is the only intake — file import, pasted images (ragloader DescriberChain), YouTube transcript import (`knowledge_import_youtube`). `office_index_file` chunks (1500/200) and embeds via the local LiteRT EmbeddingGemma 300M embedder (768d, desktop) or remote providers (mobile) into libSQL vector tables; FTS5/BM25 mirror fused via RRF. `knowledge_search(query, mode)` is a query-only agent tool — `hybrid` (default) / `semantic` / `keyword`; `user_id`+`session_id` bind server-side at toolset build (the model can never supply them). Index status tracked in `rag_files`.

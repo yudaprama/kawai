@@ -11,7 +11,7 @@ UX change; old rows keep rendering via plain `content`.
   column. `src-tauri/src/logic/db.rs:278` (`list_chat_messages`) selects exactly
   those 5 columns; `:339` (`append_chat_message`) inserts `(session_id, role,
   content, created_at)` and seeds the session title on first user message.
-- **Write path** — `src-tauri/src/logic/agent.rs` is the sole writer for
+- **Write path** — `crates/engines/agent/src/lib.rs` is the sole writer for
   assistant turns. Two append sites stream the final answer as a **plain string**:
   the local-answer branch (`:2087` `append_chat_message(sid, "assistant", &answer)`)
   and the cloud subagent passthrough (`:2628` same, inside the `deep_write`
@@ -68,7 +68,7 @@ the payload per row is small (a handful of tool summaries + text).
     `None`, the column stays NULL (legacy behavior). Overload via a private
     `append_chat_message_with_parts` to keep the public signature stable for
     `commands.rs`/`web.rs`.
-- **`logic/agent.rs`** — at each assistant append site, serialize the turn's
+- **`crates/engines/agent/src/lib.rs`** — at each assistant append site, serialize the turn's
   accumulated parts to JSON and pass it through:
   - Build a `Vec<StoredPart>` from the locals already in scope:
     `full` → `{type:"text", text: stripToolMarkup(full)}` (the same display
@@ -145,7 +145,7 @@ ship; v1's win is history rendering alone.
 src-tauri/migrations/0007_messages_parts.sql   NEW  ALTER TABLE messages ADD COLUMN parts TEXT
 src-tauri/src/logic/db_migrations.rs          ADD  Migration entry for 0007
 src-tauri/src/logic/db.rs                     MOD  ChatMessage.parts field; list/append handle parts
-src-tauri/src/logic/agent.rs                  MOD  serialize parts at the two assistant append sites
+crates/engines/agent/src/lib.rs                  MOD  serialize parts at the two assistant append sites
 frontend/src/lib/api.ts                       MOD  ChatMessageInfo.parts? field
 frontend/src/lib/chat-helpers.ts              MOD  historyToMessages: parse parts when present
 frontend/src/lib/chat-helpers.test.ts         ADD  cases for parts round-trip + fallback

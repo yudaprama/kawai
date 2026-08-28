@@ -71,7 +71,7 @@ libraries the egents use, exposed as CLIs.
 src/main.js ──(agent_chat: stream op)──▶ commands.rs / web.rs   (thin wrappers)
                                             │  user_id (edge-resolved), args
                                             ▼
-                                   logic::agent::agent_chat    (PURE loop)
+                                   kawai-agent::agent_chat_with_registry    (PURE loop)
                                      │            │
                                      │            └── logic::office::*   (PURE tools)
                                      │                   │ document store (fs)
@@ -80,7 +80,7 @@ src/main.js ──(agent_chat: stream op)──▶ commands.rs / web.rs   (thin 
                             logic::local_llm         (existing LiteRT engine)
 ```
 
-- **`logic::agent`** — generic prompt-based tool-calling loop: tool manifest
+- **`kawai-agent`** — generic prompt-based tool-calling loop: tool manifest
   rendering into the prompt, JSON tool-call parsing, dispatch via rig
   `ToolSet`, iteration cap, event stream. Knows nothing about office.
 - **`logic::office`** — office domain: the per-user document store + CLI
@@ -100,7 +100,7 @@ src-tauri/src/logic/mod.rs        # re-exports; greet/whoami/activity stay here
 src-tauri/src/logic/db.rs         # DbError, token mint, chat sessions
 src-tauri/src/logic/local_llm.rs  # moved verbatim from `pub mod local_llm`
 src-tauri/src/logic/office.rs     # NEW (Phase 1-2) — see §4-§5
-src-tauri/src/logic/agent.rs      # NEW (Phase 3) — see §6
+crates/engines/agent/src/lib.rs      # NEW (Phase 3) — see §6
 ```
 
 ### Feature gates & deps
@@ -307,7 +307,7 @@ No `#[cfg]` gymnastics; `std::process::Command` compiles everywhere.
 
 ---
 
-## 6. Agent runtime — `logic::agent` (the Roadmap-5 slice)
+## 6. Agent runtime — `kawai-agent` (the Roadmap-5 slice)
 
 ### 6.1 Tool contract
 
@@ -436,7 +436,7 @@ checks when shared code changes).
 4. Tests: each op end-to-end on fixtures (create → edit → read round-trip).
 
 ### Phase 3 — agent runtime (feature `litert`)
-1. `logic/agent.rs`: manifest renderer (probe-filtered), fence parser,
+1. `crates/engines/agent/src/lib.rs`: manifest renderer (probe-filtered), fence parser,
    dispatch loop, repair-once, cap-5, cancellation-safe slot handling.
 2. Spike on Gemma 4: fence reliability + context re-send cost; record
    findings; adjust protocol if needed (§6.2 fallbacks).

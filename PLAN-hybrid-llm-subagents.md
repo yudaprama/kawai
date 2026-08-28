@@ -2,7 +2,7 @@
 
 Status: **IMPLEMENTED (2026-08-20)** — shipped in commit `3c79675`. Local Gemma 4
 orchestrates; cloud subagents `deep_write` / `draft_document` are wired via
-`agent_chat` prompt-based tool calling (`logic/remote.rs`, `logic/agent.rs`). CI
+`agent_chat` prompt-based tool calling (`crates/foundation/remote-llm`, `crates/engines/agent/src/lib.rs`). CI
 smoke gate lives in `.github/workflows/ci.yml`. This doc is now a design record;
 the live status lives in `AGENTS.md` → Roadmap 5 ✅ and `ARCHITECTURE.md` → LLM.
 
@@ -42,7 +42,7 @@ turn is a collaboration; every light turn is pure local.
 
 Why this works technically: cloud is stateless, so it can join/leave mid-turn
 at zero reconciliation cost — the full prompt is always rebuilt from SQLite
-(`compact_transcript` + `build_prompt` already exist in `logic/agent.rs`).
+(`compact_transcript` + `build_prompt` already exist in `crates/engines/agent/src/lib.rs`).
 LiteRT stays stateful exactly as it is (K/V cache + opener/delta manifest
 protocol untouched).
 
@@ -63,7 +63,7 @@ output is identical for identical input → Rust.
 2. Zero new UX surface: no provider toggle, no mode switch, no per-agent
    backend pickers. Choosing an agent stays the only user decision. (A small
    provenance badge is allowed, not required, in v1.)
-3. Minimal new architecture: one new module (`logic/remote.rs`), subagents
+3. Minimal new architecture: one new module (`crates/foundation/remote-llm`), subagents
    registered through the existing rig `ToolSet`, the existing fence-tool loop
    drives everything. No second tool-calling implementation.
 4. Cost/privacy by construction: cloud receives only a curated task package
@@ -101,8 +101,8 @@ output is identical for identical input → Rust.
 user message
      │
      ▼
-logic::agent::agent_chat            (PURE loop — unchanged skeleton)
-  │  session mgmt, SQLite persistence, tool dispatch, budgets, repair
+kawai-agent::agent_chat_with_registry (PURE registry-injected loop)
+  │  session mgmt, SQLite persistence, tool dispatch, budgets, repair; TurnState owns loop state
   │
   ├─ every turn ──────────────► logic::local_llm::local_chat   (LOCAL, stateful)
   │      │                        delta prompt via manifest protocol
@@ -115,7 +115,7 @@ logic::agent::agent_chat            (PURE loop — unchanged skeleton)
   │              │        → executed locally in Rust, result fed back
   │              │
   │              └── subagent tool (deep_write, draft_document, …)
-  │                       → logic::remote.rs  (NEW — one stateless call)
+  │                       → crates/foundation/remote-llm  (one stateless call)
   │                          rig 0.42 streaming client, task brief + materials
   │                       → result streams to user + persists
   │
@@ -128,8 +128,8 @@ tracking), SQLite schema for sessions/messages, event unions
 (`LocalChatEvent` / `AgentChatEvent` shapes), both transport wrappers,
 frontend chat flow.
 
-New: `logic/remote.rs` (cloud client), subagent tool impls, a `final: true`
-convention in the loop, a telemetry table, `.env` keys for the provider.
+Current implementation: `crates/foundation/remote-llm` (cloud client), subagent tool implementations in `kawai-agent`, a `final: true`
+convention in the loop, a telemetry table, `.env` keys for the provider. The runtime receives an application-composed `AgentRegistry`; built-in definitions and cross-cutting tool/capability mappings live in `src-tauri/src/agent_registry.rs` and domain definition modules.
 
 ### Why not the alternatives (decision log)
 
@@ -238,7 +238,7 @@ local: knowledge_search / extract (plain tools, on-device)
 
 ---
 
-## 5. `logic/remote.rs` (new module)
+## 5. `crates/foundation/remote-llm` (module)
 
 Pure module — no tauri/axum types. One public surface:
 
@@ -272,14 +272,14 @@ impl RemoteLlm {
 
 ---
 
-## 6. Loop modifications in `logic/agent.rs`
+## 6. Loop modifications in `crates/engines/agent/src/lib.rs`
 
 The loop skeleton, session handling, persistence, `MAX_TOOL_CALLS`,
 `repairs_used`, overflow recovery — all unchanged. Three additions:
 
 ### 6.1 Subagent registration
 
-Where toolsets are built (`toolset_for`): when `RemoteLlm::from_env()` is
+Where the application builds per-turn `AgentDefinition` toolsets: when `RemoteLlm::from_env()` is
 `Some`, append `deep_write` to the toolset (v1: every agent that has any
 tools). Tool manifest rendering into the prompt picks it up automatically —
 the manifest/delta protocol re-sends definitions only when the epoch resets,
@@ -350,7 +350,7 @@ costs per agent per day.
 
 **✅ Implemented 2026-08-20** (all items below landed and verified):
 
-1. ✅ `src-tauri/src/logic/remote.rs` — `RemoteLlm` (streaming, usage capture,
+1. ✅ `crates/foundation/remote-llm` — `RemoteLlm` (streaming, usage capture,
    caps, cancellation-by-drop). One code path: OpenAI-compatible
    `CompletionsClient` for all providers (`zai` default w/ kawai-vault key
    fallback → glm-5.3, or `openai`/`openrouter`/`custom` via env).
@@ -430,7 +430,7 @@ justification today; the rest stay telemetry-gated per this section's rule:
 4. ☐ **`critic` / parallel fan-out** — deferred: both need ≥2 cloud calls
    per turn (budget is 1); revisit when MAX_SUBAGENT_CALLS grows.
 5. ☐ **Per-agent subagent allowlists** — deferred: with a 2-agent catalog
-   the `toolset_for` match arms ARE the allowlist; introduce a declarative
+   the application-composed definition builders ARE the allowlist; introduce a declarative
    field when the catalog grows.
 
 ---
@@ -485,8 +485,8 @@ justification today; the rest stay telemetry-gated per this section's rule:
 ## 12. File-level change map (Phase 1)
 
 ```
-src-tauri/src/logic/remote.rs        NEW  RemoteLlm + streaming + usage capture
-src-tauri/src/logic/agent.rs         ADD  deep_write tool, final:true branch,
+crates/foundation/remote-llm/       RemoteLlm + streaming + usage capture
+crates/engines/agent/src/lib.rs      Registry-injected loop; state and helpers split across runtime/prompt/policy/dispatch/subagents,
                                          escalation, turn_log writes, persona line
 src-tauri/src/logic/mod.rs           ADD  pub mod remote;
 src-tauri/src/logic/db.rs            ADD  turn_log table + insert helper

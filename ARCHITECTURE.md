@@ -5,13 +5,13 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 
 ## Goals
 
-- Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from `crates/` (per-category crates of agent tools implementing `kawai_tools::AgentTool`, `registry::toolset_for(names)`). UI: three-pane — left = agents rail, center = active agent chat + canvas, right = sessions sidebar.
+- Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from domain crates, composed through `AgentDefinition` tool builders. UI: three-pane — left = agents rail, center = active agent chat + canvas, right = sessions sidebar.
 - End state: **desktop + mobile + web from one core**; app logic is 100% shared, only transport and launcher differ per target.
 - Current phase: **MVP, desktop-first** (macOS, on-device LLM, dev-bypass auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
 - Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`hooks/use-local-chat.ts` + `lib/ai-types.ts`).
-- Backend: Rust, single core logic.
+- Backend: Rust, single core logic. Built-in agent composition is owned by the application root (`src-tauri/src/agent_registry.rs`); the reusable orchestration engine consumes an injected `AgentRegistry`.
 - Auth: MVP = dev-bypass (`set_session` with any token, backend-gated by `KAWAI_AUTH_DEV_USER_ID`). Backend retains Clerk JWKS verification (`auth.rs`, public keys only) for the future prod flow (browser + deep link — see AGENTS.md Roadmap).
-- LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `logic/remote.rs` (provider pool with health-aware failover); remote providers are optional configuration. **Hybrid cloud-subagent tier (2026-08-20):** the local model delegates heavy synthesis to cloud subagent *tools* (`deep_write`, `draft_document`) via prompt-based tool calling when a remote LLM is configured (default `zai` via kawai-vault compiled-in key; `logic/remote.rs`). Agent tier uses prompt-based tool calling on the local model; `crates/` (per-category crates of generated agent tools implementing `kawai_tools::AgentTool`, `registry::toolset_for(names)`) provides the toolsets. Design record: `PLAN-hybrid-llm-subagents.md`.
+- LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool with health-aware failover); remote providers are optional configuration. The local model delegates heavy synthesis to cloud subagent tools (`deep_write`, `draft_document`) when a remote LLM is configured. Agent toolsets come from domain crates and are composed by the application root. Design record: `PLAN-hybrid-llm-subagents.md`.
 - Persistence: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
 ## Layer diagram
@@ -44,7 +44,7 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 
 ## Request flow — `agent_chat` end-to-end
 
-What happens when a user sends a prompt (the agent-tier chat transport; the standalone `local_chat` op remains but the frontend no longer invokes it):
+What happens when a user sends a prompt (the agent-tier chat transport; the standalone `local_chat` op remains but the frontend no longer invokes it). The transport supplies the application-composed registry; the runtime does not construct the built-in catalog:
 
 ```mermaid
 sequenceDiagram
@@ -52,21 +52,21 @@ sequenceDiagram
     actor U as User
     participant FE as Frontend (use-local-chat)
     participant CMD as commands.rs::agent_chat
-    participant AC as logic::agent_chat
+    participant AC as kawai-agent::agent_chat_with_registry
     participant LLM as local_llm (Gemma 4)
     participant CLOUD as RemoteLlm (zai)
 
     U->>FE: type prompt, send
     FE->>CMD: streamOperation("agent_chat", {agentId, sessionId, message, streamId})
     CMD->>CMD: resolve user_id from Session; register cancel token
-    CMD->>AC: agent_chat(user_id, agent_id, sid, message)
-    AC->>AC: remote = from_env(); toolset_for(...)  (adds deep_write if remote)
+    CMD->>AC: agent_chat_with_registry(registry, user_id, agent_id, sid, message)
+    AC->>AC: application composition root builds AgentRegistry + per-turn toolset
     AC->>AC: reset conversation (takeover); build prompt
     AC->>LLM: local_chat(stream)
     LLM-->>FE: Token events (live render)
     LLM-->>AC: full text
     AC->>AC: parse_tool_call(text)
-    alt tool call = deep_write / draft_document AND remote set
+    alt registered cloud capability AND remote set
         AC->>CLOUD: completion(task)  (stream)
         CLOUD-->>FE: Token events (answer)
         CLOUD-->>AC: result
@@ -80,17 +80,13 @@ sequenceDiagram
 
 1. **Frontend capture & invoke.** `App.tsx` → `hooks/use-local-chat.ts` calls `streamOperation("agent_chat", { agentId, sessionId, message, streamId })` (use-local-chat.ts hardcodes `"agent_chat"`). Streaming arrives over a Tauri `Channel` as `#[serde(tag="type")]` events; the frontend mirrors the union in `LocalChatEvent` (`Started`, `Token`, `ToolCall`, `ToolResult`, `Finished`, `Error`).
 
-2. **Transport — Tauri command.** `commands.rs::agent_chat` takes `stream_id`, `on_event: Channel`, `State<Session>`, `State<StreamRegistry>`. The wrapper resolves `user_id` from the session claims (identity at the edge, never inside `logic.rs`), registers a `CancellationToken` keyed by `stream_id`, then calls `logic::agent_chat(...)`. (Web: the equivalent Axum route in `web.rs` mounts on the protected router and takes `Extension<auth::Claims>`.)
+2. **Transport — Tauri command.** `commands.rs::agent_chat` takes `stream_id`, `on_event: Channel`, `State<Session>`, `State<StreamRegistry>`. The wrapper resolves `user_id` from the session claims (identity at the edge, never inside `logic.rs`), registers a `CancellationToken` keyed by `stream_id`, then calls `kawai-agent::agent_chat_with_registry(...)`. (Web: the equivalent Axum route in `web.rs` mounts on the protected router and takes `Extension<auth::Claims>`.)
 
-3. **Setup (`logic/agent.rs`).** `agent_chat` resolves the agent (`get_agent(agent_id)`), builds the persona (system prompt — richer when a remote is configured), and calls `remote = RemoteLlm::from_env()` — default `zai` (glm-5.3) using a **compiled-in kawai-vault key** (zero-config — providers/models/keys compile in; an empty vault ⇒ `from_env()` returns `None` ⇒ pure-local). It builds `toolset = toolset_for(agent_id, user_id, sid, remote.as_ref())`, which adds `deep_write` **only when `remote.is_some()`** and `draft_document` under the `office` feature. It `yield`s `Started`, loads `prior_turns` from SQLite, and appends the user message.
+3. **Setup (`src-tauri/src/agent_registry.rs` + `kawai-agent`).** The transport obtains the application-composed `AgentRegistry`; `agent_chat_with_registry` resolves the enabled `AgentDefinition`, builds the persona and per-turn toolset, and calls `remote = RemoteLlm::from_env()` — default `zai` (glm-5.3) using a **compiled-in kawai-vault key** (zero-config — providers/models/keys compile in; an empty vault ⇒ `from_env()` returns `None` ⇒ pure-local). Domain crates provide their definitions; the application root adds cross-cutting tools and capability mappings. It `yield`s `Started`, loads `prior_turns` from SQLite, and appends the user message.
 
-4. **Generation loop — local model is the orchestrator.** If the conversation manifest isn't injected yet, `agent_chat` **resets the engine conversation** (singleton per user; clears any framing left by `local_chat`) and builds the full prompt = persona + tool manifest + `compact_transcript(prior_turns)` + the user message. It calls `local_llm::local_chat` (LiteRT-LM Conversation API, on-device Gemma 4) — tokens stream out as `Token` events rendered live. On completion `parse_tool_call(&text)`:
-   - **tool call + tool ∈ {`deep_write`, `draft_document`} + `remote.is_some()`** → *intercept* (don't run a Rust tool), delegate to the cloud subagent (step 5).
-   - other native tool → dispatch via `toolset` (Rust execution), `yield ToolResult`, loop again.
-   - **no tool call** → final answer.
-   - prefill K/V overflow (`KAWAI_LLM_MAX_TOKENS`, default 16384) → reset + retry once.
+4. **Generation loop — local model is the orchestrator.** If the conversation manifest isn't injected yet, `agent_chat_with_registry` **resets the engine conversation** (singleton per user; clears any framing left by `local_chat`) and builds the full prompt = definition persona + injected skills/memories + tool manifest + `compact_transcript(prior_turns)` + the user message. It calls `local_llm::local_chat` (LiteRT-LM Conversation API, on-device Gemma 4) — tokens stream out as `Token` events rendered live. On completion `parse_tool_call(&text)` resolves cross-cutting behavior through the definition's capability resolver, then dispatches either to a runtime capability or the injected `ToolSet`; a call-free response is final. Prefill K/V overflow (`KAWAI_LLM_MAX_TOKENS`, default 16384) resets and retries once.
 
-5. **Cloud subagent delegation (`logic/remote.rs`).** `deep_write` streams a completion from `zai` and the long-form result is streamed back to the frontend as the answer (with a `ToolResult` card: "cloud writer produced the answer (zai)"). `draft_document` has the cloud write a file via the office engine. The result is fed back into the loop so Gemma 4 can synthesize the final response.
+5. **Cloud subagent delegation (`crates/engines/agent/src/subagents.rs`).** The application-composed cloud capabilities are registered as manifest-visible tools. `deep_write` streams a completion from the remote pool and the long-form result is streamed back to the frontend as the answer; `draft_document` has the cloud write structured document content and the office engine creates the file. The result is fed back into the loop so Gemma 4 can synthesize the final response.
 
 6. **Finalize.** The final answer triggers `db::log_turn` (`logic/db.rs`) — one row in `turn_log`: `provider` (`local` | `zai`), `tool` (`deep_write`/`draft_document`/`NULL`), `latency_ms`, `outcome=answer` — used to calibrate delegation via `turn_log_report`. `agent_chat` `yield`s `Finished`; the frontend completes the UIMessage parts (text + tool cards).
 
@@ -98,7 +94,7 @@ sequenceDiagram
 
 ## Agent catalog & toolset map
 
-Three catalog agents (`logic/agent.rs:list_agents()`), each a persona + curated toolset. Toolsets are built per-call by `toolset_for(agent_id, user_id, session_id, remote)` — tools that require runtime resources (webread engines, SQL profiles, Binance credentials) are registered only when available (capability-probe rule).
+Three catalog agents are composed by `src-tauri/src/agent_registry.rs`, each as an `AgentDefinition` containing persona, metadata, a per-turn tool builder, and capability resolvers. Domain definitions live in `crates/engines/office/src/agent.rs`, `crates/toolsets/binance/src/agent.rs`, and `crates/toolsets/analytics-tools/src/agent.rs`. Tools that require runtime resources (webread engines, SQL profiles, Binance credentials) are registered only when available (capability-probe rule).
 
 ### `builtin.office` — Office
 
@@ -127,7 +123,7 @@ Document assistant for docx/xlsx/pptx/pdf/HTML decks/YouTube transcripts.
 | `deep_write` | `agent.rs` | **Subagent only.** Cloud long-form synthesis — streamed to user as final answer *(remote only)* |
 | `draft_document` | `agent.rs` | **Subagent only.** Cloud document composition → file created in-process *(remote only)* |
 
-Persona rules: `OFFICE_PERSONA` in `logic/agent.rs` (office feature); `DRAFT_DOCUMENT_RULE` appended when remote is configured.
+Persona rules: the Office definition in `crates/engines/office/src/agent.rs`; remote writing rules are appended by the runtime when the definition advertises the document-drafter capability.
 
 ### `builtin.binance` — Binance
 
@@ -148,7 +144,7 @@ Crypto market data and technical analysis on Binance spot.
 
 No `draft_document` — this agent does not create files.
 
-Persona: `BINANCE_PERSONA` in `logic/agent.rs` (binance + not-android).
+Persona: the Binance definition in `crates/toolsets/binance/src/agent.rs` (binance + not-android).
 
 ### `builtin.analytics` — Analytics
 
@@ -166,7 +162,7 @@ Structured queries over tabular data files (csv/parquet/Excel) and SQL sources.
 
 No `draft_document` — analytics produces data answers, not documents.
 
-Persona: `ANALYTICS_PERSONA` in `logic/agent.rs` (analytics feature).
+Persona: the Analytics definition in `crates/toolsets/analytics-tools/src/agent.rs` (analytics feature).
 
 ### Subagent wiring
 
@@ -215,7 +211,7 @@ kawai/
 │       │   ├── ai-elements/  # vendored chat components (from web/, trimmed)
 │       │   └── ui/           # shadcn primitives (from web/)
 │       └── platform/         # slim capability adapter (browser APIs only)
-├── crates/                     # agent crates (kawai_tools::AgentTool) — auth/remote-llm/db/skills/memory/office/knowledge/analytics-tools/agent + analytics/graph/webread/ragloader + per-category tools/* (registry::toolset_for)
+├── crates/                     # agent crates (kawai_tools::AgentTool) — auth/remote-llm/db/skills/memory/office/knowledge/analytics-tools/agent + analytics/graph/webread/ragloader + per-category tools/*
 ├── local-llm/                  # on-device LLM engine bindings (litert feature; KAWAI_LLM_MAX_TOKENS)
 ├── cognee-litert-lm/           # Rust bindings for the LiteRT-LM C API (+ vendored upstream submodule)
 ├── office_oxide/               # submodule: pure-Rust docx/xlsx/pptx create/read/edit (office feature)
@@ -258,7 +254,7 @@ kawai/
 
 ## Core dependencies (in `logic.rs` / `auth.rs`)
 
-- **`reqwest`** — remote tier transport: the OpenAI-compatible SSE client in `logic/remote.rs` (provider pool, health-aware failover) and JWKS fetch in `auth.rs`. rustls-only. Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers are optional configuration, not a requirement.
+- **`reqwest`** — remote tier transport: the OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool, health-aware failover) and JWKS fetch in `auth.rs`. rustls-only. Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers are optional configuration, not a requirement.
 - **`libsql`** — per-user local SQLite via `Builder::new_local`; connections are per-op and migrations run on every open. Post-MVP: sqld embedded replicas.
 - **`jsonwebtoken`** — RS256 (Clerk JWKS verify in `auth.rs`) and EdDSA (sqld token mint in `logic.rs`). Two versions coexist (9.x direct + 10.x transitive) — expected.
 - All compile clean across desktop, android arm64, and ios arm64 (default/web/litert feature combos). One rustls (0.23) across the graph — libsql runs core-only (`Builder::new_local` everywhere; re-add its `remote` feature with sqld sync).

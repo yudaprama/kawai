@@ -102,7 +102,7 @@ delta is the part template).
 | 3 | pptx slide media + shape tree entry | office_oxide | M |
 | 4 | Rasterizer decision + `image` feature (O1) | office_oxide | S–M |
 | 5 | `CreateDocumentTool` schema (Image block) + store-side resolve | kawai `logic/office` | S |
-| 6 | Persona guidance: chart→report composition (office agent + analytics agent share the pattern) | kawai `logic/agent.rs` | S |
+| 6 | Persona guidance: chart→report composition (office agent + analytics agent share the pattern) | kawai `crates/engines/agent/src/lib.rs` | S |
 | 7 | Frontend: nothing new (docx preview renders embedded images already — verify) | — | S |
 | 8 | Smoke: chart → create_document → re-read shows image marker; eval scenario T21 ("report with chart") | kawai | S |
 

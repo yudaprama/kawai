@@ -143,32 +143,6 @@ One principle first: all knowledge runs **in-process inside a single SQLite file
 
 ---
 
-## 5. Feature Gates
-
-```toml
-# src-tauri/Cargo.toml
-kawai-auth, remote-llm, kawai-db, kawai-skills, kawai-memory # always
-graph  = ["dep:graph","dep:kawai-embedding","dep:text-splitter","dep:regex","dep:kawai-knowledge","kawai-knowledge/graph","kawai-agent/graph"]
-office = ["dep:base64","dep:kawai-embedding","dep:text-splitter","dep:ragloader","dep:youtube_transcript","dep:office_oxide","dep:pdf_oxide","dep:regex","webread","kawai-db/office","dep:kawai-office","dep:kawai-knowledge","kawai-knowledge/office","kawai-agent/office"]
-# office always pulls kawai-knowledge; analytics pulls office + kawai-analytics
-analytics = ["dep:analytics","office","kawai-db/analytics","dep:kawai-analytics","kawai-agent/analytics"]
-```
-
-```sh
-cargo check                                          # no office/graph → kawai-knowledge/graph stubs, kawai-office/knowledge not compiled, zero DB
-cargo check -p kawai-db -p kawai-skills -p kawai-memory  # storage only (no office/graph)
-cargo check -p kawai-office --features office        # store + ooxml/pdf/deck
-cargo check -p kawai-knowledge --features office     # RAG (vector + FTS5)
-cargo check -p kawai-knowledge --features office,graph  # RAG + GraphRAG (1 DB, separate tables)
-cargo check --features graph,office,litert           # full desktop (office+graph+agent)
-cargo check -p graph -p kawai-agent --features litert,office  # pure crates
-```
-
-*Include:* `bun tauri build -- --features graph,office,litert`
-*Exclude:* drop `graph`/`office` from `--features` — `kawai-knowledge`/`kawai-office` not compiled, no `rag_*`/`graph_*` tables.
-
----
-
 ## 6. When to Use Which
 
 **Production chat reality:** the agent has exactly one retrieval tool — `knowledge_search(query, mode)`. The model picks `mode`; callers pick nothing. GraphRAG arms are RPC-only (§4), and **no rag+graph fusion tool exists** — the `tokio::join!` in `graph_search` fuses the three graph arms with each other, not with RAG.
@@ -181,22 +155,6 @@ cargo check -p graph -p kawai-agent --features litert,office  # pure crates
 | (RPC-only — not reachable from chat) | `graph_search` `naive/local/global/hybrid/mix` | §4 |
 
 Notes: RRF `k=60` is the rank-smoothing constant, **not** the result count — each side contributes top-8 and the fused result is top-8 (`const K: u64 = 8`, `search.rs`). Results are scoped to the session's files (`session_files`).
-
----
-
-## 7. Verification
-
-```sh
-cargo check --features graph,office,litert
-cargo check -p kawai-db --lib && cargo test -p kawai-db  # 6 migrations tests
-cargo test -p kawai-skills -p kawai-memory --lib          # skills 1/1, memory 4/4
-cargo test -p kawai-knowledge --features office,graph     # RAG + GraphRAG
-cargo test -p kawai-office --lib
-cargo test -p kawai-analytics --lib  # polars engine; wrapper tests in kawai-analytics
-cargo test -p graph --lib && cargo test -p kawai-agent --features litert,office,analytics,graph
-cargo test -p ragloader --lib
-bun run build
-```
 
 ---
 
@@ -227,3 +185,16 @@ bun run build
 4. **Don't mix 768d and 1024d** — cross-dim mixing blocked; re-index on switch.
 5. **Don't index transient tool output** — `session_artifacts` stays out of `rag_chunks`.
 6. **Skills and L1 memories inject at opener build** — mid-session saves apply from the next session.
+
+---
+
+## 10. Decision Record
+
+Binding decisions about the knowledge/memory architecture — future agents: align with these, don't relitigate them.
+
+- **Hybrid RAG (`knowledge_search`) is the only production retrieval path.** Vector + BM25 + RRF, session-scoped. Don't add competing retrieval entry points to the agent toolset.
+- **GraphRAG: parked.** Experimental, RPC-only (`commands.rs`/`web.rs`), not registered in any agent toolset — zero investment, not deleted. Revisit only for real thematic cross-document questions over large corpora; if revived, rebuild with LLM-based extraction (reference design: the Tencent wiki engine), not regex. See §4.
+- **TencentDB-Agent-Memory: reference only.** The vendored checkout is a reading source, never a runtime dependency — nothing is compiled or linked from it. What was adopted is the interaction pattern (Memory page: session blocks + layer tabs + extract-from-block + provenance `from block #N`), rebuilt natively on kawai's stack (libSQL, kawai-memory, remote-llm). No Tencent code runs.
+- **Frontend (asset pages): keep — production.** The Tencent-derived part is the interaction pattern only, reimplemented natively in React/Tailwind — no Tencent code, styles, or dependencies. Backing per view: **Skills** fully backed; **Memory** backed for L0/L1 (L2/L3 = placeholder tabs); **Wiki** backed (the real knowledge store in the WikiSources panel shape) except its Graph tab; **Code** an honest empty state (no backend tier). Placeholder views must never be "filled in" ad hoc — each missing tier (wiki graph, code graph, L2/L3) waits for a concrete trigger like the ones below. If placeholders confuse end users, hiding them is a trivial follow-up edit. `persona.tsx` remains an unused vendored component and is never wired to memory features.
+- **L2 (Scenes) / L3 (Persona): deferred with a concrete trigger.** They exist today only as explicitly-empty placeholder tabs in the Memory page — no backend, no tables. Build L2 when the flat L1 memory list becomes hard to scan (dozens+ of memories, need context grouping); build L3 when the agent needs a single unified user profile. Until then: no investment.
+- **`frontend/src/components/ai-elements/persona.tsx` is unrelated to the L3 persona concept** — it's an unused vendored AI-Elements Rive-avatar component. Different thing, coincidental name.

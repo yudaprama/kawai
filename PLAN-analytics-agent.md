@@ -331,11 +331,11 @@ Files:
   import-time auto-index: skip tabular exts (associate only, no rag_files
   row). `office_index_file` on a tabular ext → guidance error pointing at the
   analytics agent.
-- `src-tauri/src/logic/agent.rs`:
+- `crates/engines/agent/src/lib.rs`:
   - `ANALYTICS_AGENT_ID = "builtin.analytics"`.
   - `list_agents()` entry (tools: true under `#[cfg(feature = "analytics")]`).
   - `ANALYTICS_PERSONA` (draft below) + `persona_for` arm.
-  - `toolset_for` arm: `analytics::toolset(user_id)` + `ArtifactRecall` +
+  - application-composed Analytics `AgentDefinition` builder: `analytics::toolset(user_id)` + `ArtifactRecall` +
     the pure-local `Some(set)` return arm.
   - `attachment_prompt_block`: no change (already office-gated, agent-agnostic).
 - `src-tauri/src/lib.rs` — `mod analytics;` (cfg-gated).

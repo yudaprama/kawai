@@ -91,7 +91,7 @@ on-device generation takes 5–30 s depending on the call-line length.
   `<|tool_call>...<tool_call|>` wrappers, bare `call:NAME{json}` (plus keys
   missing their opening quote, `<|"|>` escapes).
 - **Action**: copy the exact shape from `messages`, add a `parse_tool_call`
-  unit test in `src-tauri/src/logic/agent.rs` with it, extend the parser. The
+  unit test in `crates/engines/agent/src/lib.rs` with it, extend the parser. The
   frontend `stripToolMarkup` (use-local-chat.ts) is the display safety net —
   if the markup reaches it too, extend its regex.
 

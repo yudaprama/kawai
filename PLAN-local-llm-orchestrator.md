@@ -38,7 +38,7 @@ to default instead of crashing). The LiteRT-LM magic number caps the *model's*
 max sequence at **32003** — far below the 128K Gemma 4 is marketed at (that figure
 is for a different runtime/rope config). Every prefill token occupies a K/V entry
 **permanently**; long sessions hit the budget and trigger the overflow-reset
-recovery (`logic/agent.rs:27-30`).
+recovery (`crates/engines/agent/src/lib.rs:27-30`).
 
 **L4 — Prompt-based tool calling is the structural fragility.**
 LiteRT-LM's Conversation API has **no native function calling**. We declare tools
@@ -175,12 +175,12 @@ End-to-end turn latency = local plan + tool exec + (local or cloud) synthesis.
 per turn and logs the K/V budget (`local-llm/src/lib.rs:315`, `examples/local_llm_smoke.rs:29`).
 Baseline (2026-08-22, E4B): decode 9.3–10.3 tok/s, TTFT 7.4–8.2s cold, load 0.4–1.2s warm.
 Budget suggestion is now emitted: tool-routing turns <12s, long synthesis via `deep_write` (600s deadline,
-`logic/agent.rs:104`). Remaining is periodic re-measurement, not new harness.
+`crates/engines/agent/src/lib.rs:104`). Remaining is periodic re-measurement, not new harness.
 
 **H5 — ~~Validate the failover boundary~~ DONE 2026-08-23 (regression).**
 The hybrid failover boundary is "first text token handed to consumer" (Roadmap 5).
 Covered by unit tests `failover_boundary_empty_stream_marks_unhealthy` and
-`failover_boundary_yielded_token_commits_provider` (`src-tauri/src/logic/remote.rs:594`),
+`failover_boundary_yielded_token_commits_provider` (`crates/foundation/remote-llm/src/lib.rs`),
 exercising the `!yielded_any` empty-completion branch and the `!yielded_any && failover_worthy`
 guard (`remote.rs:387`). Gated by `cargo test --features litert,office --lib` on all three
 platforms (`ci.yml` + `kv-sweep.yml` reuse the same gate). Manual cloud smoke (`remote_smoke`,
