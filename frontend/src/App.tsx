@@ -17,6 +17,7 @@ import { ContextPanel } from "@/panels/context-panel";
 import { contextTabsFor } from "@/panels/registry";
 import { ConversationPanel } from "@/panels/conversation-panel";
 import { SessionsPanel } from "@/panels/sessions-panel";
+import { ToolWorkbench } from "@/panels/tool-workbench";
 
 export default function App() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -25,6 +26,7 @@ export default function App() {
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(true);
   const [assetView, setAssetView] = useState<AssetViewId | null>(null);
+  const [toolWorkbenchId, setToolWorkbenchId] = useState<string | null>(null);
   const [mobileDrawer, setMobileDrawer] = useState<null | "agents" | "sessions" | "knowledge">(null);
 
   useEffect(() => {
@@ -182,8 +184,9 @@ export default function App() {
   // open (Wiki = knowledge base, Memory = raw conversations; Skills/Code have
   // no backend tier yet and state that plainly). Data comes from the same app
   // state the chat uses, so switching views never re-fetches or resets chat.
-  const assetWorkspace =
-    assetView === "wiki" ? (
+  const assetWorkspace = toolWorkbenchId ? (
+    <ToolWorkbench messages={chat.messages} onBack={() => setToolWorkbenchId(null)} toolCallId={toolWorkbenchId} />
+  ) : assetView === "wiki" ? (
       <WikiAssetPage
         confirmDeleteId={ka.confirmDeleteId}
         files={ka.knowledge.files}
@@ -244,7 +247,7 @@ export default function App() {
             setAssetView(null);
             setActiveAgentId(id);
           }}
-          onSelectAsset={(id) => setAssetView(id)}
+          onSelectAsset={(id) => { setToolWorkbenchId(null); setAssetView(id); }}
           onToggle={() => setAgentsRail((v) => !v)}
         />
       </div>
@@ -278,6 +281,7 @@ export default function App() {
           onOpenMobileAgents={() => setMobileDrawer("agents")}
           onOpenMobileSessions={() => setMobileDrawer("sessions")}
           onOpenMobileKnowledge={hasContextPane ? () => setMobileDrawer("knowledge") : undefined}
+          onOpenTool={(id) => { setToolWorkbenchId(id); setAssetView(null); }}
           canvasOpen={canvasOpen}
           onToggleCanvas={hasContextPane ? () => setCanvasOpen((v) => !v) : undefined}
           canvas={canvasOpen ? contextPanel : null}
@@ -327,6 +331,7 @@ export default function App() {
                   setMobileDrawer(null);
                 }}
                 onSelectAsset={(id) => {
+                  setToolWorkbenchId(null);
                   setAssetView(id);
                   setMobileDrawer(null);
                 }}

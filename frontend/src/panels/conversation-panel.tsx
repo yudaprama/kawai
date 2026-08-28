@@ -72,6 +72,7 @@ export function ConversationPanel({
   onOpenMobileAgents,
   onOpenMobileSessions,
   onOpenMobileKnowledge,
+  onOpenTool,
 }: {
   agent: AgentInfo;
   presentation: AgentPresentation;
@@ -108,6 +109,7 @@ export function ConversationPanel({
   onOpenMobileAgents?: () => void;
   onOpenMobileSessions?: () => void;
   onOpenMobileKnowledge?: () => void;
+  onOpenTool?: (toolCallId: string) => void;
 }) {
   const [forceAll, setForceAll] = useState(false);
   const busy = status === "submitted" || status === "streaming";
@@ -309,12 +311,12 @@ export function ConversationPanel({
                     overscan={8}
                     className="mx-auto max-w-2xl px-4 pt-6 pb-4"
                   >
-                    {(message) => <MessagePartView message={message} />}
+                    {(message) => <MessagePartView message={message} onOpenTool={onOpenTool} />}
                   </ConversationVirtualizedContent>
                 ) : (
                   <ConversationContent className="mx-auto max-w-2xl px-4 pt-6 pb-4">
                     {messages.map((message) => (
-                      <MessagePartView key={message.id} message={message} />
+                      <MessagePartView key={message.id} message={message} onOpenTool={onOpenTool} />
                     ))}
                   </ConversationContent>
                 )}

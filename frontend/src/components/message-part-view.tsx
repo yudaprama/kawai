@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useCopyButton } from "@/hooks/use-copy-button";
 import type { UIMessage } from "@/lib/ai-types";
 
-export function MessagePartView({ message }: { message: UIMessage }) {
+export function MessagePartView({ message, onOpenTool }: { message: UIMessage; onOpenTool?: (toolCallId: string) => void }) {
   const textPart = message.parts.find((p) => p.type === "text");
   const { handleCopy, copied } = useCopyButton(textPart?.text ?? "");
   const isUser = message.role === "user";
@@ -46,6 +46,11 @@ export function MessagePartView({ message }: { message: UIMessage }) {
               {rich != null
                 ? rich
                 : displayOutput != null && <ToolOutput output={displayOutput} errorText={part.errorText} />}
+              {part.state === "output-available" && onOpenTool && (
+                <Button className="mt-2" onClick={() => onOpenTool(part.toolCallId)} size="xs" variant="outline">
+                  Open in workbench
+                </Button>
+              )}
             </ToolContent>
           </Tool>
         );
