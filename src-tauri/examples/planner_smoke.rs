@@ -18,9 +18,121 @@ use kawai_lib::logic::{db, local_llm};
 
 const SMOKE_USER: &str = "smoke-planner";
 
+// ── --plan-only mode ─────────────────────────────────────────────────────
+// Cloud-only planner quality check: NO on-device model, NO agent loop.
+// Streams PLAN_SYSTEM completions from the remote pool for a few multi-step
+// tasks and validates each plan with the production parser
+// (extract_plan_steps) against the binance tool catalog. Scores what a local
+// machine can measure cheaply: parse-validity, tool accuracy, step counts,
+// latency. Execution quality stays with the full-loop smoke / real usage.
+
+const PLAN_TASKS: [&str; 3] = [
+    "Pull 30 days of daily klines for BTCUSDT and ETHUSDT, compare their volatility over that \
+     window, then deliver a thorough comparative report with sections.",
+    "Fetch the current average prices of BTCUSDT and ETHUSDT, then write a short advisory note \
+     for a first-time buyer comparing the two assets.",
+    "Analyze 14 days of hourly klines for SOLUSDT: compute trend and momentum, then draft an \
+     executive summary a portfolio manager can read in one minute.",
+];
+
+const BINANCE_TOOLS: [&str; 8] = [
+    "binance_klines",
+    "binance_ticker",
+    "binance_ta_analyze",
+    "binance_trades",
+    "binance_depth",
+    "binance_exchange_info",
+    "artifact_recall",
+    "deep_write",
+];
+
+async fn plan_only_mode() {
+    use kawai_agent::subagents::PLAN_SYSTEM;
+    use kawai_lib::logic::remote::RemoteLlm;
+
+    let Some(remote) = RemoteLlm::from_env() else {
+        eprintln!("[plan-only] remote pool unavailable (no vault keys) — nothing to test.");
+        std::process::exit(1);
+    };
+    let tools: Vec<String> = BINANCE_TOOLS.iter().map(|s| s.to_string()).collect();
+    // Mirror the production loop: the planner MUST see the executing agent's
+    // tool catalog, else it invents plausible tool names (observed: with an
+    // empty package zai produced "get_klines"/"fetch_klines").
+    let materials = format!(
+        "[tools available to the executing assistant]\n{}",
+        BINANCE_TOOLS
+            .iter()
+            .map(|t| format!("- {t}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let mut pass = 0usize;
+    for (i, task) in PLAN_TASKS.iter().enumerate() {
+        print!("\n── task {} — {}… ", i + 1, &task[..48]);
+        let started = std::time::Instant::now();
+        let mut raw = String::new();
+        let mut provider = String::new();
+        match remote.stream(PLAN_SYSTEM, task, &materials).await {
+            Ok(s) => {
+                let mut s = Box::pin(s);
+                while let Some(item) = s.next().await {
+                    match item {
+                        Ok(remote_llm::RemoteEvent::Token { text }) => {
+                            raw.push_str(&text);
+                        }
+                        Ok(remote_llm::RemoteEvent::Done { provider: p, .. }) => {
+                            provider = p;
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("STREAM ERROR: {e}");
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                println!("POOL ERROR: {e}");
+            }
+        }
+        let latency = started.elapsed().as_secs_f32();
+        match kawai_agent::subagents::extract_plan_steps(raw.trim(), &tools) {
+            Ok(steps) => {
+                pass += 1;
+                println!("VALID via {provider} in {latency:.1}s — {} steps", steps.len());
+                for (n, s) in steps.iter().enumerate() {
+                    println!(
+                        "   {}. [{:>18}] {}",
+                        n + 1,
+                        s.tool.as_deref().unwrap_or("(reason)"),
+                        &s.goal[..s.goal.len().min(80)]
+                    );
+                }
+            }
+            Err(e) => {
+                println!("INVALID via {provider} in {latency:.1}s — {e}");
+                println!("   raw head: {}", &raw.chars().take(160).collect::<String>());
+            }
+        }
+    }
+    println!(
+        "\nPLAN-ONLY: {pass}/{} plans valid — this checks plan QUALITY, not execution \
+         (full-loop smoke / real usage covers that).",
+        PLAN_TASKS.len()
+    );
+    if pass < PLAN_TASKS.len() {
+        std::process::exit(1);
+    }
+}
+
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     kawai_lib::auth::load_dotenv();
+    if std::env::args().any(|a| a == "--plan-only") {
+        plan_only_mode().await;
+        return;
+    }
     std::env::set_var("KAWAI_DATA_DIR", "/tmp/kawai-planner-smoke");
 
     let model = kawai_lib::logic::resolve_model_path().expect("model path");

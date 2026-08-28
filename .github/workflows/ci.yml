@@ -339,6 +339,20 @@ jobs:
           KAWAI_DATA_DIR: /tmp/kawai-ci
         run: cargo run --example draft_smoke --features litert,office
 
+      # ── Smoke 3b: planner quality (PLAN-planner-subagent.md). Cloud-only —
+      #    no on-device model. Streams PLAN_SYSTEM completions for a few
+      #    multi-step tasks and validates each plan with the production
+      #    parser against the binance tool catalog (tool-name accuracy, step
+      #    shape, done_when presence). The full-loop planner turn is manual,
+      #    like agent_smoke (examples/planner_smoke.rs without --plan-only).
+      - name: planner_smoke --plan-only (cloud plan quality)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+        run: cargo run --example planner_smoke --features litert,binance -- --plan-only
+
       # ── Smoke 4 (macOS): keyless Binance market data + TA. Geo-blocked hosts
       #    SKIP (exit 0), not fail — see the example header.
       - name: binance_smoke (keyless market data + TA)
