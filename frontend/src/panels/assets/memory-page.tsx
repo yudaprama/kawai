@@ -480,7 +480,13 @@ function Transcript({
                 <span className="font-semibold">{m.role}</span>
                 {m.createdAt != null && <span>{formatTime(m.createdAt)}</span>}
               </div>
-              <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+              {m.role === "assistant" ? (
+                <div className="streamdown text-sm">
+                  <MessageResponse mode="static">{m.content}</MessageResponse>
+                </div>
+              ) : (
+                <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+              )}
             </li>
           ))}
         </ol>
