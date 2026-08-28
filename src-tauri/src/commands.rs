@@ -57,8 +57,8 @@ pub fn greet(name: String) -> String {
 /// Public RPC: the agent catalog (id, name, description, tools) in UI order.
 /// Static data — no user scope, so no auth state.
 #[tauri::command]
-pub fn list_agents() -> Vec<logic::agent::AgentInfo> {
-    logic::agent::list_agents()
+pub fn list_agents() -> Vec<crate::agent_registry::AgentInfo> {
+    crate::agent_registry::builtin().list()
 }
 
 /// Streaming command. The `stream_id` lets the client request early
@@ -265,16 +265,25 @@ pub async fn skill_create(
     session: State<'_, Session>,
 ) -> Result<logic::skills::Skill, String> {
     let user_id = session_user_id(&session)?;
-    logic::skills::skill_create(&user_id, &name, description.as_deref().unwrap_or(""), &content)
-        .await
-        .map_err(|e| e.to_string())
+    logic::skills::skill_create(
+        &user_id,
+        &name,
+        description.as_deref().unwrap_or(""),
+        &content,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Authenticated RPC: list skills (summaries, newest-updated first).
 #[tauri::command]
-pub async fn skill_list(session: State<'_, Session>) -> Result<Vec<logic::skills::SkillSummary>, String> {
+pub async fn skill_list(
+    session: State<'_, Session>,
+) -> Result<Vec<logic::skills::SkillSummary>, String> {
     let user_id = session_user_id(&session)?;
-    logic::skills::skill_list(&user_id).await.map_err(|e| e.to_string())
+    logic::skills::skill_list(&user_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Authenticated RPC: fetch one skill including its body; None → null.
@@ -313,10 +322,7 @@ pub async fn skill_update(
 
 /// Authenticated RPC: delete a skill; returns whether a row was removed.
 #[tauri::command]
-pub async fn skill_delete(
-    skill_id: String,
-    session: State<'_, Session>,
-) -> Result<bool, String> {
+pub async fn skill_delete(skill_id: String, session: State<'_, Session>) -> Result<bool, String> {
     let user_id = session_user_id(&session)?;
     logic::skills::skill_delete(&user_id, &skill_id)
         .await
@@ -345,7 +351,9 @@ pub async fn memory_list(
     session: State<'_, Session>,
 ) -> Result<Vec<logic::memory::MemoryItem>, String> {
     let user_id = session_user_id(&session)?;
-    logic::memory::memory_list(&user_id).await.map_err(|e| e.to_string())
+    logic::memory::memory_list(&user_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Authenticated RPC: update a memory's kind/title/content (any subset).
@@ -371,10 +379,7 @@ pub async fn memory_update(
 
 /// Authenticated RPC: delete a memory; returns whether a row was removed.
 #[tauri::command]
-pub async fn memory_delete(
-    memory_id: String,
-    session: State<'_, Session>,
-) -> Result<bool, String> {
+pub async fn memory_delete(memory_id: String, session: State<'_, Session>) -> Result<bool, String> {
     let user_id = session_user_id(&session)?;
     logic::memory::memory_delete(&user_id, &memory_id)
         .await
@@ -715,10 +720,7 @@ pub async fn sql_profile_save(
 /// Authenticated RPC: delete a named SQL data source (idempotent).
 #[cfg(feature = "analytics")]
 #[tauri::command]
-pub async fn sql_profile_delete(
-    name: String,
-    session: State<'_, Session>,
-) -> Result<(), String> {
+pub async fn sql_profile_delete(name: String, session: State<'_, Session>) -> Result<(), String> {
     let user_id = session_user_id(&session)?;
     logic::analytics::sql_profile_delete(&user_id, &name).await
 }
@@ -733,7 +735,6 @@ pub async fn sql_profile_test(
     let user_id = session_user_id(&session)?;
     logic::analytics::sql_profile_test(&user_id, &name).await
 }
-
 
 /// Authenticated RPC: ingest a YouTube video into the knowledge base
 /// (transcript → markdown document → indexed; deduped per video).
@@ -932,9 +933,7 @@ pub async fn graph_forget(
 }
 
 #[tauri::command]
-pub async fn graph_stats(
-    session: State<'_, Session>,
-) -> Result<serde_json::Value, String> {
+pub async fn graph_stats(session: State<'_, Session>) -> Result<serde_json::Value, String> {
     let user_id = session_user_id(&session)?;
     #[cfg(feature = "graph")]
     {
@@ -946,6 +945,34 @@ pub async fn graph_stats(
         let _ = user_id;
         Err("graph feature not enabled (build with --features graph)".into())
     }
+}
+
+// ── CodeGraph bridge (feature `codegraph` → sidecar, `codegraph-native` → native) ─
+// Always compiled (like graph ops) so `generate_handler!` stays stable; inner
+// dispatch checks the feature and returns a guidance error when off.
+
+#[tauri::command]
+pub async fn codegraph_explore(
+    query: String,
+    project_path: Option<String>,
+    session: State<'_, Session>,
+) -> Result<logic::codegraph::CodegraphExploreResult, String> {
+    let user_id = session_user_id(&session)?;
+    logic::codegraph::codegraph_explore(&user_id, query, project_path).await
+}
+
+#[tauri::command]
+pub async fn codegraph_status(
+    project_path: Option<String>,
+    session: State<'_, Session>,
+) -> Result<logic::codegraph::CodegraphStatusResult, String> {
+    let user_id = session_user_id(&session)?;
+    logic::codegraph::codegraph_status(&user_id, project_path).await
+}
+
+#[tauri::command]
+pub async fn codegraph_is_available() -> bool {
+    logic::codegraph::codegraph_is_available().await
 }
 
 /// Authenticated streaming: agent chat (prompt-based tool calling on the
@@ -971,7 +998,8 @@ pub async fn agent_chat(
     let token = CancellationToken::new();
     let _guard = register_stream(&registry, &stream_id, token.clone());
 
-    let mut stream = Box::pin(logic::agent::agent_chat(
+    let mut stream = Box::pin(logic::agent::agent_chat_with_registry(
+        crate::agent_registry::builtin(),
         user_id,
         agent_id,
         session_id,

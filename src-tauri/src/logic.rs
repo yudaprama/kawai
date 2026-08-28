@@ -262,6 +262,9 @@ pub mod skills;
 // L1 memories — atomic long-term memory items + cloud extraction (ungated
 // CRUD; extraction needs the hybrid vault, manual CRUD never does).
 pub mod memory;
+// CodeGraph bridge — phase0 sidecar (`codegraph` feature) + phase1 native
+// (`codegraph-native` implies `codegraph`; kernel rlib wired when available).
+pub mod codegraph;
 
 pub use db::*;
 

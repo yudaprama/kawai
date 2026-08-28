@@ -51,6 +51,8 @@ kawai-office = { path = "../crates/engines/office", optional = true }
 kawai-knowledge = { path = "../crates/engines/knowledge", optional = true }
 kawai-analytics = { path = "../crates/toolsets/analytics-tools", optional = true }
 kawai-agent = { path = "../crates/engines/agent", optional = true }
+codegraph = { path = "../crates/toolsets/codegraph", optional = true }
+kawai-agent-contract = { path = "../crates/foundation/agent-contract" }
 # The agent tool seam (tool trait + registry) shared with components.
 kawai-tools = { path = "../kawai-tools" }
 # default-features=false keeps only the local-SQLite core: replication/remote
@@ -133,6 +135,11 @@ libc = "0.2"
 [features]
 default = []
 web = ["dep:axum", "dep:tower-http"]
+# CodeGraph — two tiers, both optional (zero cost when off):
+#   codegraph        = phase0 sidecar as AgentTool + LRU cache (crate `codegraph`), plus Tauri/web wrappers
+#   codegraph-native = phase1 in-process extraction (codegraph-kernel rlib, no Node)
+codegraph = ["dep:codegraph"]
+codegraph-native = ["codegraph", "codegraph/native"]
 litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "dep:kawai-agent", "kawai-agent/litert"]
 # GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
 # Include with --features graph, exclude by omitting it (zero cost when off).

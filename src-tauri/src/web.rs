@@ -270,8 +270,8 @@ async fn greet_handler(Json(req): Json<GreetRequest>) -> Json<String> {
 }
 
 /// Public RPC: the agent catalog (same op as the Tauri `list_agents` command).
-async fn list_agents_handler() -> Json<Vec<logic::agent::AgentInfo>> {
-    Json(logic::agent::list_agents())
+async fn list_agents_handler() -> Json<Vec<crate::agent_registry::AgentInfo>> {
+    Json(crate::agent_registry::builtin().list())
 }
 
 async fn generate_activity_handler(
@@ -448,7 +448,8 @@ async fn local_load_model_handler(
             // Try local candidates first, then download from HuggingFace Hub.
             match logic::resolve_model_path() {
                 Ok(p) => p,
-                Err(_) => logic::ensure_model().await
+                Err(_) => logic::ensure_model()
+                    .await
                     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?,
             }
         }
@@ -914,6 +915,42 @@ async fn tauri_open_file_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
+// ── CodeGraph bridge (feature `codegraph` → sidecar, `codegraph-native` → native) ─
+// Always compiled so the router is static; inner dispatch is cfg-gated.
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodegraphExploreRequest {
+    query: String,
+    project_path: Option<String>,
+}
+async fn codegraph_explore_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<CodegraphExploreRequest>,
+) -> Result<Json<logic::codegraph::CodegraphExploreResult>, (StatusCode, String)> {
+    logic::codegraph::codegraph_explore(&claims.sub, req.query, req.project_path)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e))
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodegraphStatusRequest {
+    project_path: Option<String>,
+}
+async fn codegraph_status_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<CodegraphStatusRequest>,
+) -> Result<Json<logic::codegraph::CodegraphStatusResult>, (StatusCode, String)> {
+    logic::codegraph::codegraph_status(&claims.sub, req.project_path)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e))
+}
+async fn codegraph_is_available_handler() -> Json<bool> {
+    Json(logic::codegraph::codegraph_is_available().await)
+}
+
 // ── GraphRAG ops (feature "graph") ────────────────────────────────────────
 // Always compiled so the router is static; inner dispatch is cfg-gated.
 
@@ -936,7 +973,10 @@ async fn graph_index_file_handler(
     #[cfg(not(feature = "graph"))]
     {
         let _ = (claims, req);
-        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled (build with --features graph)".into()))
+        Err((
+            StatusCode::NOT_IMPLEMENTED,
+            "graph feature not enabled (build with --features graph)".into(),
+        ))
     }
 }
 
@@ -960,7 +1000,10 @@ async fn graph_index_text_handler(
     #[cfg(not(feature = "graph"))]
     {
         let _ = (claims, req);
-        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled".into()))
+        Err((
+            StatusCode::NOT_IMPLEMENTED,
+            "graph feature not enabled".into(),
+        ))
     }
 }
 
@@ -987,12 +1030,17 @@ async fn graph_search_handler(
         let hits = logic::graph::graph_search(claims.sub, req.query, Some(m), req.limit)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-        Ok(Json(serde_json::to_value(hits).unwrap_or(serde_json::Value::Array(vec![]))))
+        Ok(Json(
+            serde_json::to_value(hits).unwrap_or(serde_json::Value::Array(vec![])),
+        ))
     }
     #[cfg(not(feature = "graph"))]
     {
         let _ = (claims, req);
-        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled".into()))
+        Err((
+            StatusCode::NOT_IMPLEMENTED,
+            "graph feature not enabled".into(),
+        ))
     }
 }
 
@@ -1016,7 +1064,10 @@ async fn graph_list_handler(
     #[cfg(not(feature = "graph"))]
     {
         let _ = (claims, body);
-        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled".into()))
+        Err((
+            StatusCode::NOT_IMPLEMENTED,
+            "graph feature not enabled".into(),
+        ))
     }
 }
 
@@ -1039,7 +1090,10 @@ async fn graph_forget_handler(
     #[cfg(not(feature = "graph"))]
     {
         let _ = (claims, req);
-        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled".into()))
+        Err((
+            StatusCode::NOT_IMPLEMENTED,
+            "graph feature not enabled".into(),
+        ))
     }
 }
 
@@ -1051,12 +1105,17 @@ async fn graph_stats_handler(
         let stats = logic::graph::graph_stats(&claims.sub)
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-        Ok(Json(serde_json::to_value(stats).unwrap_or(serde_json::json!({}))))
+        Ok(Json(
+            serde_json::to_value(stats).unwrap_or(serde_json::json!({})),
+        ))
     }
     #[cfg(not(feature = "graph"))]
     {
         let _ = claims;
-        Err((StatusCode::NOT_IMPLEMENTED, "graph feature not enabled".into()))
+        Err((
+            StatusCode::NOT_IMPLEMENTED,
+            "graph feature not enabled".into(),
+        ))
     }
 }
 
@@ -1077,7 +1136,8 @@ async fn agent_chat_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<AgentChatRequest>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
-    let s = logic::agent::agent_chat(
+    let s = logic::agent::agent_chat_with_registry(
+        crate::agent_registry::builtin(),
         claims.sub,
         req.agent_id,
         req.session_id,
@@ -1266,6 +1326,13 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/sql_profile_save", post(sql_profile_save_handler))
         .route("/api/sql_profile_delete", post(sql_profile_delete_handler))
         .route("/api/sql_profile_test", post(sql_profile_test_handler));
+
+    // CodeGraph bridge: always registered (no-op when feature off) so the
+    // URL contract is stable; real work only with --features codegraph.
+    let protected = protected
+        .route("/api/codegraph_explore", post(codegraph_explore_handler))
+        .route("/api/codegraph_status", post(codegraph_status_handler))
+        .route("/api/codegraph_is_available", post(codegraph_is_available_handler));
 
     // GraphRAG: always registered (handler is no-op when feature off) so the
     // URL contract is stable; real work only with --features graph.

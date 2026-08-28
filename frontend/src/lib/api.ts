@@ -130,3 +130,31 @@ export interface MemoryItem {
 
 /** All valid memory kinds (kind filter in the Memory page). */
 export const MEMORY_KINDS = ["preference", "rule", "event", "fact", "goal"] as const;
+
+// ---- CodeGraph bridge (feature `codegraph`) ----
+
+export interface CodegraphExploreResult {
+  query: string;
+  output: string;
+  isError: boolean;
+  backend: string;
+}
+
+export interface CodegraphStatusResult {
+  available: boolean;
+  backend: string;
+  version: string | null;
+  message: string;
+}
+
+export function codegraphExplore(query: string, projectPath?: string): Promise<CodegraphExploreResult> {
+  return call<CodegraphExploreResult>("codegraph_explore", { query, projectPath: projectPath ?? null });
+}
+
+export function codegraphStatus(projectPath?: string): Promise<CodegraphStatusResult> {
+  return call<CodegraphStatusResult>("codegraph_status", { projectPath: projectPath ?? null });
+}
+
+export function codegraphIsAvailable(): Promise<boolean> {
+  return call<boolean>("codegraph_is_available");
+}
