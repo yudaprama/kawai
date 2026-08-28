@@ -27,7 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { useSkills } from "@/hooks/use-skills";
-import type { SkillInfo } from "@/lib/api";
+import type { SkillInfo } from "@/generated/api-types";
 import { AssetShell } from "@/panels/assets/asset-shell";
 
 /**
