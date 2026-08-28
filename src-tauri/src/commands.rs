@@ -975,6 +975,15 @@ pub async fn codegraph_is_available() -> bool {
     logic::codegraph::codegraph_is_available().await
 }
 
+#[tauri::command]
+pub async fn codegraph_init(
+    project_path: Option<String>,
+    session: State<'_, Session>,
+) -> Result<logic::codegraph::CodegraphStatusResult, String> {
+    let user_id = session_user_id(&session)?;
+    logic::codegraph::codegraph_init(&user_id, project_path).await
+}
+
 /// Authenticated streaming: agent chat (prompt-based tool calling on the
 /// on-device model). Tool chatter arrives as toolCall/toolResult events; only
 /// the final answer is persisted. Same stream_id + Channel + cancellation

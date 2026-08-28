@@ -158,3 +158,7 @@ export function codegraphStatus(projectPath?: string): Promise<CodegraphStatusRe
 export function codegraphIsAvailable(): Promise<boolean> {
   return call<boolean>("codegraph_is_available");
 }
+
+export function codegraphInit(projectPath?: string): Promise<CodegraphStatusResult> {
+  return call<CodegraphStatusResult>("codegraph_init", { projectPath: projectPath ?? null });
+}

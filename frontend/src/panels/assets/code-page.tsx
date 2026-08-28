@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { SearchIcon, GitBranchIcon, CheckIcon, AlertCircleIcon } from "lucide-react";
+import { SearchIcon, GitBranchIcon, CheckIcon, AlertCircleIcon, PlusIcon } from "lucide-react";
 import { AssetListPanel } from "@/components/asset/asset-list-panel";
 import { AssetPageHeader } from "@/components/asset/asset-page-header";
 import { AssetSplitLayout } from "@/components/asset/asset-split-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AssetShell } from "@/panels/assets/asset-shell";
-import { codegraphExplore, codegraphIsAvailable, codegraphStatus, type CodegraphStatusResult, errText } from "@/lib/api";
+import { codegraphExplore, codegraphInit, codegraphIsAvailable, codegraphStatus, type CodegraphStatusResult, errText } from "@/lib/api";
 
 function StatusBadge({ status }: { status: CodegraphStatusResult | null }) {
   if (!status) return null;
@@ -33,6 +33,7 @@ export function CodeAssetPage({ onBack }: { onBack: () => void }) {
   const [exploreLoading, setExploreLoading] = useState(false);
   const [exploreError, setExploreError] = useState<string | null>(null);
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
+  const [initLoading, setInitLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,12 +62,36 @@ export function CodeAssetPage({ onBack }: { onBack: () => void }) {
       const msg = errText(e);
       // Feature not enabled → show guidance, not a crash
       if (msg.includes("codegraph feature not enabled")) {
-        setExploreError("CodeGraph feature not compiled in this build. Rebuild with --features codegraph (phase0 sidecar) or --features codegraph-native.");
+        setExploreError("CodeGraph feature not compiled in this build. Rebuild with --features codegraph.");
       } else {
         setExploreError(msg);
       }
     } finally {
       setExploreLoading(false);
+    }
+  }
+
+  async function handleInit() {
+    setInitLoading(true);
+    setStatusError(null);
+    try {
+      const res = await codegraphInit();
+      setStatus(res);
+      setStatusError(null);
+    } catch (e) {
+      const msg = errText(e);
+      if (msg.includes("codegraph feature not enabled")) {
+        setStatusError("CodeGraph feature not compiled in this build. Rebuild with --features codegraph.");
+      } else {
+        setStatusError(msg);
+      }
+    } finally {
+      setInitLoading(false);
+      // Refresh status after init
+      try {
+        const s = await codegraphStatus();
+        setStatus(s);
+      } catch {}
     }
   }
 
@@ -77,14 +102,16 @@ export function CodeAssetPage({ onBack }: { onBack: () => void }) {
     <AssetShell onBack={onBack} subtitle="code graph" title="Code">
       <AssetPageHeader
         actions={
-          <Button
-            disabled={exploreLoading || !query.trim()}
-            onClick={handleExplore}
-            size="sm"
-          >
-            <SearchIcon className="size-3.5" />
-            Explore
-          </Button>
+          <div className="flex gap-2">
+            <Button disabled={initLoading} onClick={handleInit} size="sm" variant="outline">
+              <PlusIcon className="size-3.5" />
+              {initLoading ? "Indexing…" : "Register repo"}
+            </Button>
+            <Button disabled={exploreLoading || !query.trim()} onClick={handleExplore} size="sm">
+              <SearchIcon className="size-3.5" />
+              Explore
+            </Button>
+          </div>
         }
         subtitle={statusLoading ? "checking…" : status ? status.message.slice(0, 80) : statusError ?? "code-aware search"}
         title="Code Graph"
@@ -155,7 +182,7 @@ export function CodeAssetPage({ onBack }: { onBack: () => void }) {
                 <div className="font-medium text-foreground">Hot-path notes</div>
                 <ul className="mt-1 list-disc pl-4">
                   <li>Agent `codegraph_explore` is LRU-cached (64, 15m) + single-flight — frequent calls coelesce.</li>
-                  <li>Sidecar: `codegraph explore --json` via `CODEGRAPH_BIN`. Native (`--features codegraph-native`) uses in-process `codegraph-kernel` rlib.</li>
+                  <li>Sidecar: `codegraph explore --json` via `CODEGRAPH_BIN` (default `codegraph` on PATH).</li>
                   <li>Treat returned source as already Read.</li>
                 </ul>
               </div>

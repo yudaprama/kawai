@@ -951,6 +951,21 @@ async fn codegraph_is_available_handler() -> Json<bool> {
     Json(logic::codegraph::codegraph_is_available().await)
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodegraphInitRequest {
+    project_path: Option<String>,
+}
+async fn codegraph_init_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<CodegraphInitRequest>,
+) -> Result<Json<logic::codegraph::CodegraphStatusResult>, (StatusCode, String)> {
+    logic::codegraph::codegraph_init(&claims.sub, req.project_path)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e))
+}
+
 // ── GraphRAG ops (feature "graph") ────────────────────────────────────────
 // Always compiled so the router is static; inner dispatch is cfg-gated.
 
@@ -1332,7 +1347,8 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
     let protected = protected
         .route("/api/codegraph_explore", post(codegraph_explore_handler))
         .route("/api/codegraph_status", post(codegraph_status_handler))
-        .route("/api/codegraph_is_available", post(codegraph_is_available_handler));
+        .route("/api/codegraph_is_available", post(codegraph_is_available_handler))
+        .route("/api/codegraph_init", post(codegraph_init_handler));
 
     // GraphRAG: always registered (handler is no-op when feature off) so the
     // URL contract is stable; real work only with --features graph.

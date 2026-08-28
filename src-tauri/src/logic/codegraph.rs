@@ -212,3 +212,63 @@ pub async fn codegraph_is_available() -> bool {
         false
     }
 }
+
+/// Initialize a CodeGraph index for a project (`codegraph init`). Long-running
+/// for large repos — the CLI builds the full graph. Returns the CLI output.
+pub async fn codegraph_init(
+    _user_id: &str,
+    project_path: Option<String>,
+) -> Result<CodegraphStatusResult, String> {
+    #[cfg(feature = "codegraph")]
+    {
+        use tokio::process::Command;
+        let bin = codegraph_bin();
+        let mut cmd = Command::new(&bin);
+        cmd.arg("init");
+        if let Some(p) = &project_path {
+            if !p.is_empty() {
+                cmd.arg(p);
+            }
+        }
+        // `codegraph init` can take minutes on large repos — give it a generous timeout via the command itself.
+        // We just await the full output; the frontend shows a spinner.
+        let output = cmd.output().await.map_err(|e| {
+            format!("codegraph not available (tried `{bin}`): {e} — install via npm i -g @colbymchenry/codegraph")
+        })?;
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        let combined = if !stdout.trim().is_empty() { stdout.clone() } else { stderr.clone() };
+        let version = sidecar_version().await;
+        if output.status.success() {
+            Ok(CodegraphStatusResult {
+                available: true,
+                backend: "sidecar".to_string(),
+                version,
+                message: if combined.trim().is_empty() {
+                    "codegraph init complete".to_string()
+                } else {
+                    combined
+                },
+            })
+        } else {
+            // Non-zero may still be guidance (already indexed, etc.)
+            let msg = if combined.trim().is_empty() {
+                format!("codegraph init failed: exit {}", output.status)
+            } else {
+                combined
+            };
+            // Treat as ok with is_error-style message — frontend shows it
+            Ok(CodegraphStatusResult {
+                available: version.is_some(),
+                backend: "sidecar".to_string(),
+                version,
+                message: msg,
+            })
+        }
+    }
+    #[cfg(not(feature = "codegraph"))]
+    {
+        let _ = (project_path, _user_id);
+        Err("codegraph feature not enabled (build with --features codegraph)".to_string())
+    }
+}
