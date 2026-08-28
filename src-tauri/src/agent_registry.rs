@@ -537,7 +537,9 @@ mod tests {
         );
     }
 
-    #[cfg(all(feature = "litert", feature = "webread"))]
+    // Binance-only: without the feature the agent has no toolset at all
+    // (build_tools returns None), so the assertions below are meaningless.
+    #[cfg(all(feature = "litert", feature = "webread", feature = "binance"))]
     #[test]
     fn binance_webread_tools_present_when_engine_available() {
         let ctx = AgentContext {
