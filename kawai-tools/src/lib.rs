@@ -179,10 +179,7 @@ fn erase<T: AgentTool + 'static>(tool: T) -> ErasedEntry {
             let parsed = match parse_args::<T::Args>(&args) {
                 Ok(parsed) => parsed,
                 Err(e) => {
-                    return ToolResult::error(format!(
-                        "invalid arguments for {}: {e}",
-                        T::NAME
-                    ));
+                    return ToolResult::error(format!("invalid arguments for {}: {e}", T::NAME));
                 }
             };
             match tool.call(parsed).await {
@@ -217,11 +214,7 @@ impl ToolSet {
                 self.entries.insert(T::NAME.to_string(), Arc::clone(&entry));
             }
         }
-        match self
-            .definitions
-            .iter_mut()
-            .find(|d| d.name == T::NAME)
-        {
+        match self.definitions.iter_mut().find(|d| d.name == T::NAME) {
             Some(existing) => *existing = entry.definition.clone(),
             None => self.definitions.push(entry.definition.clone()),
         }
@@ -306,7 +299,9 @@ mod tests {
 
         async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
             let n = args.repeat.unwrap_or(1);
-            Ok(std::iter::repeat_n(args.text, n as usize).collect::<Vec<_>>().join("-"))
+            Ok(std::iter::repeat_n(args.text, n as usize)
+                .collect::<Vec<_>>()
+                .join("-"))
         }
     }
 
@@ -394,9 +389,7 @@ mod tests {
     async fn invalid_args_name_the_tool_and_the_problem() {
         let mut set = ToolSet::new();
         set.add_tool(EchoTool);
-        let result = set
-            .execute("echo", r#"{"repeat": "not a number"}"#)
-            .await;
+        let result = set.execute("echo", r#"{"repeat": "not a number"}"#).await;
         assert!(!result.is_success());
         let msg = result.error_message().unwrap();
         assert!(msg.contains("invalid arguments for echo"), "{msg}");
@@ -434,11 +427,16 @@ mod tests {
             .collect();
         assert_eq!(names, ["echo", "json_out"]);
         assert_eq!(set.len(), 2);
-        assert_eq!(set.get_tool_definitions()[0].description, "Echoes text back.");
-        assert!(set.get_tool_definitions()[0]
-            .parameters
-            .get("properties")
-            .is_some());
+        assert_eq!(
+            set.get_tool_definitions()[0].description,
+            "Echoes text back."
+        );
+        assert!(
+            set.get_tool_definitions()[0]
+                .parameters
+                .get("properties")
+                .is_some()
+        );
     }
 
     #[test]
