@@ -144,6 +144,8 @@ fn add_runtime_tools(
     }
     if remote_configured {
         set.add_tool(kawai_agent::DeepWrite);
+        set.add_tool(kawai_agent::PlanTask);
+        set.add_tool(kawai_agent::PlanRevise);
         #[cfg(feature = "office")]
         if supports_draft_document {
             set.add_tool(kawai_agent::DraftDocument);
