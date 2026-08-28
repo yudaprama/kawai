@@ -21,6 +21,10 @@ const CONTEXT_TABS: Record<string, ContextTabSpec[]> = {
     { id: "session", label: "In this session" },
     { id: "library", label: "Library" },
   ],
+  "builtin.presentation": [
+    { id: "session", label: "In this session" },
+    { id: "library", label: "Library" },
+  ],
   // Analytics adds the SQL data sources its tools are built on. The file
   // lists themselves stay shared with office — one store backs both.
   "builtin.analytics": [

@@ -4,6 +4,8 @@ use serde_json::Value;
 
 pub const OFFICE_AGENT_ID: &str = "builtin.office";
 
+pub const PRESENTATION_AGENT_ID: &str = "builtin.presentation";
+
 pub const BINANCE_AGENT_ID: &str = "builtin.binance";
 
 pub const ANALYTICS_AGENT_ID: &str = "builtin.analytics";
@@ -35,6 +37,16 @@ pub fn list_agents() -> Vec<AgentInfo> {
             id: OFFICE_AGENT_ID.to_string(),
             name: "Office".into(),
             description: "Your on-device assistant for documents, PDFs, spreadsheets, and chat."
+                .into(),
+            #[cfg(feature = "office")]
+            tools: true,
+            #[cfg(not(feature = "office"))]
+            tools: false,
+        },
+        AgentInfo {
+            id: PRESENTATION_AGENT_ID.to_string(),
+            name: "Presentation".into(),
+            description: "Create clear presentation decks from your documents, data, and research."
                 .into(),
             #[cfg(feature = "office")]
             tools: true,
@@ -82,6 +94,20 @@ Rules:\n\
 - After each response: message, either call another tool or give the final answer.\n\
 - Final answers: short, factual, no JSON dumps.";
 
+#[cfg(all(feature = "litert", feature = "office"))]
+const PRESENTATION_PERSONA: &str = "You are kawai's presentation agent. You turn source material into clear, persuasive presentation decks.\n\
+Rules:\n\
+- Call at most ONE tool per reply, as a single call:<name>{...} line, then stop and wait for the response: message.\n\
+- For slides, presentations, pitch decks, and speaker decks: use office_create_deck. Create the reveal.js HTML deck first; only call office_export_deck when the user explicitly needs a PowerPoint .pptx file.\n\
+- Before creating a deck from a user's files, use knowledge_search for factual questions or office_read_document for the full source when the whole document is needed. Use office_list_files when you need to discover file ids.\n\
+- Structure the story deliberately: audience and objective first, then context, insight, evidence, and conclusion or call to action. Keep one idea per slide.\n\
+- Use short headings, short paragraphs, and concise bullet lists. Prefer tables for compact comparisons and <img data-file=\"ID\"> for stored images or charts. Never put raw <section> tags in bodyHtml.\n\
+- Do not use draft_document for presentations. The deck authoring tool is local and deterministic; deep_write may be used for long-form research or narrative planning when available.\n\
+- Tools address stored files by their file id, never by path. Copy handles exactly as shown by office_list_files or tool results.\n\
+- Never invent arguments or claim a deck was created unless a response: message explicitly reported success.\n\
+- After each response: message, either call another tool or give the final answer.\n\
+- Final answers: short, factual, no JSON dumps.";
+
 #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
 const BINANCE_PERSONA: &str = "You are kawai's Binance market agent. You answer crypto market questions using tools on Binance spot data.\n\
 Rules:\n\
@@ -116,6 +142,8 @@ Rules:\n\
 pub fn persona_for(agent_id: &str) -> Option<&'static str> {
     match agent_id {
         OFFICE_AGENT_ID => Some(OFFICE_PERSONA),
+        #[cfg(all(feature = "litert", feature = "office"))]
+        PRESENTATION_AGENT_ID => Some(PRESENTATION_PERSONA),
         #[cfg(all(feature = "binance", not(target_os = "android")))]
         BINANCE_AGENT_ID => Some(BINANCE_PERSONA),
         #[cfg(all(feature = "litert", feature = "analytics"))]
@@ -144,6 +172,8 @@ pub fn toolset_for(
     let mut set = match agent_id {
         #[cfg(feature = "office")]
         OFFICE_AGENT_ID => crate::logic::office::toolset(user_id, session_id),
+        #[cfg(all(feature = "litert", feature = "office"))]
+        PRESENTATION_AGENT_ID => crate::logic::office::presentation_toolset(user_id, session_id),
         #[cfg(all(feature = "binance", not(target_os = "android")))]
         BINANCE_AGENT_ID => {
             let mut set = ::binance::registry::all_tools();
@@ -163,7 +193,7 @@ pub fn toolset_for(
         }
     };
     #[cfg(feature = "office")]
-    if agent_id == OFFICE_AGENT_ID {
+    if agent_id == OFFICE_AGENT_ID || agent_id == PRESENTATION_AGENT_ID {
         set.add_tool(kawai_knowledge::tools::KnowledgeSearchTool(
             user_id.to_string(),
             session_id,
@@ -178,7 +208,7 @@ pub fn toolset_for(
     // it before rig dispatch; see ArtifactRecall).
     match agent_id {
         #[cfg(feature = "office")]
-        OFFICE_AGENT_ID => {
+        OFFICE_AGENT_ID | PRESENTATION_AGENT_ID => {
             set.add_tool(super::subagents::ArtifactRecall);
         }
         #[cfg(all(feature = "binance", not(target_os = "android")))]
@@ -196,7 +226,7 @@ pub fn toolset_for(
         // pre-hybrid behavior, byte-for-byte). Graph rides with office when on.
         return match agent_id {
             #[cfg(any(feature = "office", feature = "graph"))]
-            OFFICE_AGENT_ID => Some(set),
+            OFFICE_AGENT_ID | PRESENTATION_AGENT_ID => Some(set),
             #[cfg(all(feature = "binance", not(target_os = "android")))]
             BINANCE_AGENT_ID => Some(set),
             #[cfg(feature = "analytics")]

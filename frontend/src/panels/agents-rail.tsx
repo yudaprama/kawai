@@ -7,6 +7,7 @@ import {
   MoonIcon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
+  Presentation,
   SunIcon,
   TrendingUpIcon,
 } from "lucide-react";
@@ -38,6 +39,11 @@ const AGENT_META: Record<string, AgentPresentation> = {
     icon: BriefcaseIcon,
     subtitle: "docs · pdf · sheets · chat",
     prompts: ["Summarize this PDF", "Create a weekly report", "Merge these invoices"],
+  },
+  "builtin.presentation": {
+    icon: Presentation,
+    subtitle: "slides · decks · storytelling",
+    prompts: ["Create a pitch deck", "Turn this report into slides", "Make an executive presentation"],
   },
   "builtin.binance": {
     icon: TrendingUpIcon,

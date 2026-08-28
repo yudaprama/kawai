@@ -21,6 +21,7 @@ const FALLBACK_PERSONA: &str = "You are kawai, a helpful, concise personal assis
 // ── Agent IDs ───────────────────────────────────────────────────────────────
 
 pub const OFFICE_AGENT_ID: &str = "builtin.office";
+pub const PRESENTATION_AGENT_ID: &str = "builtin.presentation";
 pub const BINANCE_AGENT_ID: &str = "builtin.binance";
 pub const ANALYTICS_AGENT_ID: &str = "builtin.analytics";
 
@@ -47,6 +48,32 @@ fn office_tools(
         #[cfg(feature = "graph")]
         kawai_knowledge::graph::extend_toolset(&mut set, context.user_id);
         return Some(add_runtime_tools(set, remote_configured, true));
+    }
+    #[cfg(not(feature = "office"))]
+    {
+        let _ = (context, remote_configured);
+        None
+    }
+}
+
+/// Presentation gets deck authoring, source reading, knowledge search, and
+/// cloud synthesis — but not document editing or PDF mutation tools.
+#[cfg(feature = "litert")]
+fn presentation_tools(
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    #[cfg(feature = "office")]
+    {
+        let mut set = (kawai_office::agent::presentation_definition().build_tools)(
+            context,
+            remote_configured,
+        )?;
+        set.add_tool(kawai_knowledge::tools::KnowledgeSearchTool(
+            context.user_id.to_string(),
+            context.session_id,
+        ));
+        return Some(add_runtime_tools(set, remote_configured, false));
     }
     #[cfg(not(feature = "office"))]
     {
@@ -175,6 +202,22 @@ pub fn builtin() -> AgentRegistry {
         )
     };
 
+    let presentation = {
+        #[cfg(feature = "office")]
+        {
+            let mut d = kawai_office::agent::presentation_definition();
+            d.build_tools = presentation_tools;
+            d
+        }
+        #[cfg(not(feature = "office"))]
+        unavailable_definition(
+            PRESENTATION_AGENT_ID,
+            "Presentation",
+            "Create clear presentation decks from your documents, data, and research.",
+            false,
+        )
+    };
+
     let binance = {
         #[cfg(all(feature = "binance", not(target_os = "android")))]
         {
@@ -207,7 +250,7 @@ pub fn builtin() -> AgentRegistry {
         )
     };
 
-    AgentRegistry::new(vec![office, binance, analytics])
+    AgentRegistry::new(vec![office, presentation, binance, analytics])
 }
 
 /// Non-litert build: all agents are disabled placeholders.
@@ -218,6 +261,12 @@ pub fn builtin() -> AgentRegistry {
             OFFICE_AGENT_ID,
             "Office",
             "Your on-device assistant for documents, PDFs, spreadsheets, and chat.",
+            false,
+        ),
+        unavailable_definition(
+            PRESENTATION_AGENT_ID,
+            "Presentation",
+            "Create clear presentation decks from your documents, data, and research.",
             false,
         ),
         unavailable_definition(
@@ -250,7 +299,12 @@ mod tests {
                 .iter()
                 .map(|a| a.id.as_str())
                 .collect::<Vec<_>>(),
-            [OFFICE_AGENT_ID, BINANCE_AGENT_ID, ANALYTICS_AGENT_ID]
+            [
+                OFFICE_AGENT_ID,
+                PRESENTATION_AGENT_ID,
+                BINANCE_AGENT_ID,
+                ANALYTICS_AGENT_ID,
+            ]
         );
     }
 
@@ -261,6 +315,15 @@ mod tests {
         assert!(registry.resolve(OFFICE_AGENT_ID).is_some());
         #[cfg(not(feature = "litert"))]
         assert!(registry.resolve(OFFICE_AGENT_ID).is_none());
+    }
+
+    #[test]
+    fn presentation_is_enabled_with_office_tools() {
+        let registry = builtin();
+        #[cfg(all(feature = "litert", feature = "office"))]
+        assert!(registry.resolve(PRESENTATION_AGENT_ID).is_some());
+        #[cfg(any(not(feature = "litert"), not(feature = "office")))]
+        assert!(registry.resolve(PRESENTATION_AGENT_ID).is_none());
     }
 
     #[test]
@@ -312,6 +375,31 @@ mod tests {
             !names.contains(&"deep_write"),
             "remote off must not add deep_write: {names:?}"
         );
+    }
+
+    #[cfg(all(feature = "litert", feature = "office"))]
+    #[test]
+    fn presentation_toolset_is_focused_on_decks_and_sources() {
+        let ctx = AgentContext {
+            user_id: "u",
+            session_id: 1,
+            sql_profiles: None,
+        };
+        let set = builtin()
+            .build_tools(PRESENTATION_AGENT_ID, &ctx, false)
+            .expect("presentation tools");
+        let names: Vec<&str> = set
+            .get_tool_definitions()
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
+        assert!(names.contains(&"office_create_deck"), "{names:?}");
+        assert!(names.contains(&"office_export_deck"), "{names:?}");
+        assert!(names.contains(&"office_read_document"), "{names:?}");
+        assert!(names.contains(&"knowledge_search"), "{names:?}");
+        assert!(!names.contains(&"office_edit_document"), "{names:?}");
+        assert!(!names.contains(&"pdf_merge"), "{names:?}");
+        assert!(!names.contains(&"draft_document"), "{names:?}");
     }
 
     #[cfg(all(feature = "litert", feature = "office"))]

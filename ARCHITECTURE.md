@@ -94,19 +94,19 @@ sequenceDiagram
 
 ## Agent catalog & toolset map
 
-Three catalog agents are composed by `src-tauri/src/agent_registry.rs`, each as an `AgentDefinition` containing persona, metadata, a per-turn tool builder, and capability resolvers. Domain definitions live in `crates/engines/office/src/agent.rs`, `crates/toolsets/binance/src/agent.rs`, and `crates/toolsets/analytics-tools/src/agent.rs`. Tools that require runtime resources (webread engines, SQL profiles, Binance credentials) are registered only when available (capability-probe rule). Cross-cutting `codegraph_explore`/`codegraph_status` (feature `codegraph`, sidecar cached) are added to every agent when `litert` + `codegraph` are on.
+Four catalog agents are composed by `src-tauri/src/agent_registry.rs`, each as an `AgentDefinition` containing persona, metadata, a per-turn tool builder, and capability resolvers. Domain definitions live in `crates/engines/office/src/agent.rs`, `crates/toolsets/binance/src/agent.rs`, and `crates/toolsets/analytics-tools/src/agent.rs`. Tools that require runtime resources (webread engines, SQL profiles, Binance credentials) are registered only when available (capability-probe rule). Cross-cutting `codegraph_explore`/`codegraph_status` (feature `codegraph`, sidecar cached) are added to every agent when `litert` + `codegraph` are on.
 
 ### `builtin.office` — Office
 
-Document assistant for docx/xlsx/pptx/pdf/HTML decks/YouTube transcripts.
+Document assistant for docx/xlsx/pptx/pdf/HTML decks/YouTube transcripts. It owns document editing, PDF operations, and general file workflows; presentation authoring is focused in `builtin.presentation`.
 
 | Tool | Source | Notes |
 |------|--------|-------|
 | `office_list_files` | `office::tools` | List all stored files |
 | `knowledge_search` | `office::tools` | Hybrid retrieval (vector + BM25) over session-scoped indexed chunks |
 | `office_create_document` | `office::tools` | Create docx/xlsx/pptx from markdown blocks (exact-content only) |
-| `office_create_deck` | `office::tools` | Create a reveal.js HTML deck (default for presentations): sanitized model HTML + vendored runtime, one self-contained `.html`; `<img data-file>` embeds stored charts |
-| `office_export_deck` | `office::tools` | Deterministic deck → `.pptx` conversion (parse → PptxWriter, no LLM) |
+| `office_create_deck` | `office::tools` | Compatibility: create a reveal.js HTML deck; dedicated presentation authoring lives in `builtin.presentation` |
+| `office_export_deck` | `office::tools` | Compatibility: deterministic deck → `.pptx` conversion (parse → PptxWriter, no LLM) |
 | `office_read_document` | `office::tools` | Read docx/xlsx/pptx/html-decks as markdown |
 | `office_document_info` | `office::tools` | File metadata + structure |
 | `office_edit_document` | `office::tools` | In-place edits (declarative ops, pure Rust) |
@@ -124,6 +124,23 @@ Document assistant for docx/xlsx/pptx/pdf/HTML decks/YouTube transcripts.
 | `draft_document` | `agent.rs` | **Subagent only.** Cloud document composition → file created in-process *(remote only)* |
 
 Persona rules: the Office definition in `crates/engines/office/src/agent.rs`; remote writing rules are appended by the runtime when the definition advertises the document-drafter capability.
+
+### `builtin.presentation` — Presentation
+
+Focused deck-authoring agent for presentations, pitch decks, and speaker decks. It shares the office file store and source-reading tools, but does not receive document-editing or PDF-mutation tools.
+
+| Tool | Source | Notes |
+|------|--------|-------|
+| `office_list_files` | `office::tools` | Discover source files and existing decks |
+| `office_read_document` | `office::tools` | Read source documents and existing decks |
+| `office_document_info` | `office::tools` | Inspect source structure before reading |
+| `office_create_deck` | `office::tools` | Create a sanitized, self-contained reveal.js HTML deck |
+| `office_export_deck` | `office::tools` | Deterministic deck → `.pptx` conversion when explicitly requested |
+| `knowledge_search` | `knowledge` | Search session-scoped source material |
+| `web_read` / `web_search` | `webread` | Optional research tools when an engine is available |
+| `artifact_recall` / `deep_write` | `agent.rs` | Runtime memory and optional cloud narrative synthesis |
+
+The Presentation persona emphasizes audience, narrative structure, one idea per slide, concise content, and local deck authoring. It never uses `draft_document` for a presentation.
 
 ### `builtin.binance` — Binance
 
