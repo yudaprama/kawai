@@ -105,7 +105,7 @@ const renderChart = async () => {
         >
           <div
             className={cn(
-              "h-4 w-4 animate-spin rounded-full border-current border-b-2"
+              "h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
             )}
           />
           <span className={cn("text-sm")}>Loading diagram...</span>

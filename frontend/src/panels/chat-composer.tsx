@@ -202,7 +202,13 @@ function ChatComposerInner({
         <PromptInputTools>
           <Popover onOpenChange={setMentionOpen} open={mentionOpen}>
             <PopoverTrigger asChild={true}>
-              <Button className="size-8 [&_svg]:size-4" size="icon" title="Mention a file (@)" variant="ghost">
+              <Button
+                aria-label="Mention a file"
+                className="size-8 [&_svg]:size-4"
+                size="icon"
+                title="Mention a file (@)"
+                variant="ghost"
+              >
                 <AtSignIcon />
               </Button>
             </PopoverTrigger>
@@ -212,8 +218,8 @@ function ChatComposerInner({
               ) : filtered.length === 0 ? (
                 <div className="text-muted-foreground px-2 py-3 text-xs">
                   {remaining.length === 0
-                    ? "No more files — import from the Knowledge panel."
-                    : "No files match — keep typing or import from the Knowledge panel."}
+                    ? "No more files — import one from the Knowledge panel."
+                    : "No files match. Keep typing or import from the Knowledge panel."}
                 </div>
               ) : (
                 <div className="max-h-56 overflow-y-auto">

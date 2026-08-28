@@ -169,7 +169,7 @@ export const DayCalendarEvent = ({
   return (
     <div
       className={cn(
-        "absolute right-2 left-16 overflow-hidden rounded-md border-l-2 border-primary bg-primary/10 px-2 py-1 text-xs",
+        "absolute right-2 left-16 overflow-hidden rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-xs",
         className
       )}
       data-slot="day-calendar-event"

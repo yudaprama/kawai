@@ -66,7 +66,7 @@ export function SessionRow({
         className={`flex shrink-0 items-center gap-1 transition-opacity ${
           confirmDelete
             ? "opacity-100"
-            : "opacity-0 focus-within:opacity-100 group-hover/session:opacity-100 max-lg:opacity-100"
+            : "opacity-70 focus-within:opacity-100 group-hover/session:opacity-100 max-lg:opacity-100"
         }`}
       >
         {!archivedStyle && (
@@ -102,6 +102,7 @@ export function SessionRow({
           type="button"
         >
           <TrashIcon className="size-3.5" />
+          {confirmDelete && <span className="sr-only">Click again to confirm deletion</span>}
         </button>
       </div>
     </div>

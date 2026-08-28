@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-28T11:48:00Z",
+  "title": "Design System: Kawai",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "Kawai Blue", "canonical": "#0052d9", "tonalRamp": ["#001536", "#002b70", "#0041aa", "#0052d9", "#266fe8", "#6698f0", "#a8c4f8", "#e3ecff"] },
+      "page": { "role": "neutral", "displayName": "Page Grey", "canonical": "#f2f4f8", "tonalRamp": ["#20242b", "#3e4652", "#626d7c", "#8993a2", "#aeb6c1", "#cdd2d9", "#e3e6eb", "#f2f4f8"] },
+      "surface": { "role": "neutral", "displayName": "Panel White", "canonical": "#ffffff", "tonalRamp": ["#202020", "#404040", "#606060", "#808080", "#a0a0a0", "#c0c0c0", "#e0e0e0", "#ffffff"] },
+      "border": { "role": "neutral", "displayName": "Line", "canonical": "#e6e9ef", "tonalRamp": ["#30343b", "#535963", "#777d86", "#9ca1a8", "#b9bdc4", "#cdd1d7", "#dce0e6", "#e6e9ef"] },
+      "error": { "role": "tertiary", "displayName": "Error Red", "canonical": "#f64041", "tonalRamp": ["#3a0808", "#720e0f", "#ad1718", "#f64041", "#f76d6e", "#fa9999", "#fcc4c4", "#fee5e5"] },
+      "success": { "role": "secondary", "displayName": "Success Green", "canonical": "#0cbf5b", "tonalRamp": ["#022d15", "#055a2b", "#088642", "#0cbf5b", "#44cf7d", "#7de0a2", "#b5efc8", "#def9e8"] }
+    },
+    "typographyMeta": {
+      "body": { "displayName": "System UI", "purpose": "Native-feeling interface copy and chat-adjacent text." },
+      "mono": { "displayName": "Technical Mono", "purpose": "Ids, metadata, and compact system annotations." }
+    },
+    "shadows": [
+      { "name": "panel-subtle", "value": "0 1px 4px 0 rgba(0, 0, 0, 0.05)", "purpose": "Light separation for asset panels." },
+      { "name": "utility-raised", "value": "0 2px 8px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05)", "purpose": "Popovers and lightly raised controls." },
+      { "name": "drawer", "value": "0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 8px 20px -8px rgba(0, 0, 0, 0.08)", "purpose": "Mobile drawers and context overlays." }
+    ],
+    "motion": [
+      { "name": "state", "value": "150ms ease", "purpose": "Compact navigation, background, and opacity state changes." },
+      { "name": "reduced-motion", "value": "prefers-reduced-motion", "purpose": "Disable non-essential motion for users who request reduced motion." }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "768px", "purpose": "Persistent desktop rails become drawers below this width." },
+      { "name": "wide-canvas", "value": "1280px", "purpose": "Context canvas can share the center as an inline pane." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Compact action button for the main task.",
+      "html": "<button class=\"ds-btn-primary\">New chat</button>",
+      "css": ".ds-btn-primary { background: #0052d9; color: #fff; border: 0; border-radius: 6px; padding: 8px 16px; height: 36px; font: 500 14px/20px -apple-system, BlinkMacSystemFont, sans-serif; transition: background 150ms ease, transform 150ms ease; } .ds-btn-primary:hover { background: #266fe8; } .ds-btn-primary:focus-visible { outline: 3px solid rgba(0,82,217,.35); outline-offset: 1px; } .ds-btn-primary:active { transform: scale(.97); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Quiet secondary action that does not compete with the conversation.",
+      "html": "<button class=\"ds-btn-ghost\">Sessions</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: rgba(0,0,0,.9); border: 0; border-radius: 6px; padding: 8px 12px; height: 36px; font: 500 14px/20px -apple-system, BlinkMacSystemFont, sans-serif; transition: background 150ms ease; } .ds-btn-ghost:hover { background: #f2f4f8; } .ds-btn-ghost:focus-visible { outline: 3px solid rgba(0,82,217,.35); outline-offset: 1px; }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Compact field for filtering sessions and assets.",
+      "html": "<input class=\"ds-input-search\" placeholder=\"Search sessions…\" />",
+      "css": ".ds-input-search { box-sizing: border-box; width: 100%; height: 28px; padding: 4px 12px; border: 1px solid #e6e9ef; border-radius: 6px; background: transparent; color: rgba(0,0,0,.9); font: 400 12px/20px -apple-system, BlinkMacSystemFont, sans-serif; transition: border-color 150ms ease, box-shadow 150ms ease; } .ds-input-search::placeholder { color: rgba(0,0,0,.5); } .ds-input-search:focus-visible { border-color: #0052d9; outline: 3px solid rgba(0,82,217,.2); outline-offset: 0; }"
+    },
+    {
+      "name": "Active Navigation",
+      "kind": "nav",
+      "refersTo": "active-nav",
+      "description": "Selected agent or asset row with a quiet blue wash.",
+      "html": "<button class=\"ds-nav-active\"><span class=\"ds-nav-icon\">◆</span><span>Office</span></button>",
+      "css": ".ds-nav-active { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: #e3ecff; color: rgba(0,0,0,.9); text-align: left; font: 500 14px/20px -apple-system, BlinkMacSystemFont, sans-serif; } .ds-nav-active:hover { background: #e3ecff; } .ds-nav-active:focus-visible { outline: 3px solid rgba(0,82,217,.3); outline-offset: 1px; } .ds-nav-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: rgba(255,255,255,.7); color: #0052d9; font-size: 12px; }"
+    },
+    {
+      "name": "Prompt Chip",
+      "kind": "chip",
+      "refersTo": "prompt-chip",
+      "description": "Low-pressure suggested prompt in the empty conversation state.",
+      "html": "<button class=\"ds-chip\">Summarize this PDF</button>",
+      "css": ".ds-chip { background: #fff; color: rgba(0,0,0,.9); border: 1px solid #e6e9ef; border-radius: 9999px; padding: 4px 12px; font: 400 12px/20px -apple-system, BlinkMacSystemFont, sans-serif; transition: background 150ms ease, border-color 150ms ease; } .ds-chip:hover { background: #f2f4f8; border-color: #d3d8e0; } .ds-chip:focus-visible { outline: 3px solid rgba(0,82,217,.25); outline-offset: 1px; }"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "description": "Quiet white container for asset and context management.",
+      "html": "<section class=\"ds-panel\"><strong>Knowledge</strong><p>Documents in this session</p></section>",
+      "css": ".ds-panel { background: #fff; color: rgba(0,0,0,.9); border: 1px solid #e6e9ef; border-radius: 6px; padding: 16px; box-shadow: 0 1px 4px 0 rgba(0,0,0,.05); } .ds-panel p { color: rgba(0,0,0,.7); font: 400 14px/21px -apple-system, BlinkMacSystemFont, sans-serif; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Control Room",
+    "overview": "The current Kawai interface is a restrained operational workspace where the conversation remains the primary instrument and agents, sessions, knowledge, and assets form a legible perimeter around it. Its calm comes from cool neutral surfaces, compact typography, low-contrast dividers, and a single confident blue for action and focus. The design is desktop-first and information-dense, with progressive disclosure through collapsible rails, drawers, tabs, and archived sections.",
+    "keyCharacteristics": ["Conversation-first composition with utility surfaces around the center.", "Cool paper-grey page background and white layered panels.", "One blue action color used sparingly for active and primary states.", "Compact system typography with monospace metadata and labels.", "Progressive disclosure through collapsible rails, drawers, tabs, and archived sections."],
+    "rules": [
+      { "name": "The One Blue Rule", "body": "Blue establishes action and location; do not turn every informational surface into a branded surface.", "section": "colors" },
+      { "name": "The Tonal Layer Rule", "body": "Prefer page grey, panel white, and soft grey layering before adding shadows or saturated decoration.", "section": "colors" },
+      { "name": "The Quiet Hierarchy Rule", "body": "Use size changes sparingly; increase weight, spacing, and contrast before introducing another font size.", "section": "typography" },
+      { "name": "The Conversation Authority Rule", "body": "Secondary panes may organize work, but they must not make the primary conversation unreadable at the widths the product supports.", "section": "layout" },
+      { "name": "The Flat-at-Rest Rule", "body": "Surfaces are flat or softly layered at rest; elevation appears when a surface floats above the work or requires focus.", "section": "elevation" }
+    ],
+    "dos": ["Do keep the conversation and composer visually dominant on desktop.", "Do use the blue token for action, focus, and orientation rather than decoration.", "Do layer page grey, white panels, and soft grey before reaching for shadows.", "Do preserve visible text labels or explicit accessible names for important controls.", "Do use drawers and progressive disclosure when the shell would otherwise become cramped."],
+    "donts": ["Don't give every pane equal visual weight when the user is trying to read or write in the conversation.", "Don't use thick colored side borders as decorative tabs on rounded cards.", "Don't hide essential session actions from keyboard or touch users behind hover alone.", "Don't mix languages in labels, errors, confirmations, or empty states without an explicit locale strategy.", "Don't add gradients, decorative display typography, or saturated surfaces that compete with tool output."]
+  }
+}

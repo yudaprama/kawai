@@ -165,9 +165,9 @@ export const SpeechInput = ({
       setIsListening(false);
       const err = event as SpeechRecognitionErrorEvent;
       if (err?.error === "not-allowed" || err?.error === "service-not-allowed") {
-        toast.error("Akses mikrofon ditolak. Aktifkan di System Settings → Privacy & Security → Microphone.");
+        toast.error("Microphone access was denied. Enable it in System Settings → Privacy & Security → Microphone.");
       } else if (err?.error === "no-speech") {
-        toast.error("Tidak ada suara terdeteksi, coba lagi.");
+        toast.error("No speech detected. Try again.");
       } else if (err?.error) {
         toast.error(`Speech error: ${err.error}`);
       }
@@ -213,8 +213,8 @@ export const SpeechInput = ({
       const isTauri = isTauriDesktop();
       toast.error(
         isTauri
-          ? "Speech tidak tersedia di aplikasi desktop (WKWebView tidak mendukung Web Speech API). Silakan gunakan sistem dikte macOS (tekan Fn dua kali) atau buka versi web di Chrome/Edge."
-          : "Transkripsi suara tidak tersedia di browser ini. Gunakan Chrome atau Edge untuk speech recognition."
+          ? "Speech is unavailable in this desktop app (WKWebView does not support the Web Speech API). Use macOS system dictation (press Fn twice) or open the web version in Chrome/Edge."
+          : "Speech transcription is unavailable in this browser. Use Chrome or Edge for speech recognition."
       );
       return;
     }
@@ -274,10 +274,10 @@ export const SpeechInput = ({
     } catch (err) {
       setIsListening(false);
       const msg = err instanceof DOMException && err.name === "NotAllowedError"
-        ? "Akses mikrofon ditolak. Aktifkan izin mikrofon untuk Kawai di System Settings → Privacy & Security → Microphone."
+        ? "Microphone access was denied. Enable microphone permission for Kawai in System Settings → Privacy & Security → Microphone."
         : err instanceof DOMException && err.name === "NotFoundError"
-          ? "Mikrofon tidak ditemukan."
-          : "Gagal memulai rekaman suara.";
+          ? "No microphone was found."
+          : "Could not start recording.";
       toast.error(msg);
     }
   }, []);
@@ -296,14 +296,14 @@ export const SpeechInput = ({
     if (mode === "none") {
       toast.error(
         isTauriDesktop()
-          ? "Speech tidak didukung di aplikasi desktop ini. WKWebView tidak menyediakan Web Speech API — gunakan dikte sistem (Fn Fn) atau buka Kawai di Chrome/Edge."
-          : "Browser ini tidak mendukung speech recognition. Gunakan Chrome atau Edge."
+          ? "Speech is not supported in this desktop app. WKWebView does not provide the Web Speech API — use system dictation (Fn Fn) or open Kawai in Chrome/Edge."
+          : "This browser does not support speech recognition. Use Chrome or Edge."
       );
       return;
     }
 
     if (mode === "speech-recognition" && !isRecognitionReady) {
-      toast.error("Speech recognition belum siap, coba lagi sebentar.");
+      toast.error("Speech recognition is not ready yet. Try again in a moment.");
       return;
     }
 
@@ -316,8 +316,8 @@ export const SpeechInput = ({
         }
       } catch (err) {
         const msg = err instanceof DOMException && err.name === "NotAllowedError"
-          ? "Akses mikrofon ditolak."
-          : "Gagal memulai speech recognition.";
+          ? "Microphone access was denied."
+          : "Could not start speech recognition."
         toast.error(msg);
       }
       return;
@@ -342,14 +342,14 @@ export const SpeechInput = ({
   const disabledReason =
     mode === "none"
       ? isTauriDesktop()
-        ? "Speech tidak didukung di desktop (WKWebView). Gunakan dikte sistem atau Chrome/Edge."
-        : "Speech tidak didukung di browser ini. Gunakan Chrome/Edge."
+        ? "Speech is unavailable in desktop WKWebView. Use system dictation or Chrome/Edge."
+        : "Speech is unavailable in this browser. Use Chrome or Edge."
       : mode === "speech-recognition" && !isRecognitionReady
         ? "Menyiapkan speech recognition…"
         : mode === "media-recorder" && !onAudioRecorded
           ? isTauriDesktop()
-            ? "Transkripsi belum dikonfigurasi untuk desktop. Gunakan dikte sistem."
-            : "Transkripsi tidak dikonfigurasi."
+            ? "Transcription is not configured for desktop. Use system dictation."
+            : "Transcription is not configured."
           : undefined;
 
   return (
@@ -369,7 +369,7 @@ export const SpeechInput = ({
 
       {/* Main record button */}
       <Button
-        aria-label={isListening ? "Stop recording" : disabledReason ? "Speech tidak tersedia" : "Mulai dikte suara"}
+        aria-label={isListening ? "Stop recording" : disabledReason ? "Speech unavailable" : "Start dictation"}
         className={cn(
           "relative z-10 rounded-full transition-all duration-300",
           isListening
@@ -379,7 +379,7 @@ export const SpeechInput = ({
         )}
         disabled={isDisabled}
         onClick={toggleListening}
-        title={disabledReason ?? (isListening ? "Stop" : "Mulai dikte")}
+        title={disabledReason ?? (isListening ? "Stop" : "Start dictation")}
         {...props}
       >
         {isProcessing && <Spinner />}

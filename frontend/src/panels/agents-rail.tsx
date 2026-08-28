@@ -47,11 +47,7 @@ const AGENT_META: Record<string, AgentPresentation> = {
   "builtin.analytics": {
     icon: BarChart3Icon,
     subtitle: "csv · parquet · excel",
-    prompts: [
-      "Total penjualan per kategori bulan ini",
-      "Rata-rata transaksi di atas $500",
-      "Top 10 produk by pendapatan",
-    ],
+    prompts: ["Total sales by category this month", "Rata-rata transaksi di atas $500", "Top 10 produk by pendapatan"],
   },
 };
 
@@ -132,7 +128,9 @@ export function AgentsRail({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!collapsed && (
-          <p className="px-3 pt-2 pb-1.5 text-[11px] tracking-wider text-muted-foreground uppercase">Agents</p>
+          <p className="px-3 pt-3 pb-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+            Agents
+          </p>
         )}
 
         <nav className={`flex flex-col gap-1 ${collapsed ? "px-1.5" : "px-2"}`}>
@@ -170,7 +168,9 @@ export function AgentsRail({
         </nav>
 
         {!collapsed && (
-          <p className="px-3 pt-4 pb-1.5 text-[11px] tracking-wider text-muted-foreground uppercase">Assets</p>
+          <p className="px-3 pt-6 pb-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+            Assets
+          </p>
         )}
 
         <nav className={`flex flex-col gap-1 pb-2 ${collapsed ? "px-1.5" : "px-2"}`}>
@@ -207,7 +207,10 @@ export function AgentsRail({
       </div>
 
       <div className={`mt-auto flex items-center gap-2.5 border-t p-3 ${collapsed ? "flex-col p-1.5" : ""}`}>
-        <span className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+        <span
+          className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+          title={`Signed in as ${userId ?? "demo"}`}
+        >
           {(userId ?? "d").charAt(0).toUpperCase()}
         </span>
         {collapsed ? (

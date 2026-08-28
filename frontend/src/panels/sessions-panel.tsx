@@ -74,7 +74,7 @@ export function SessionsPanel({
   return (
     <aside className="bg-sidebar/40 flex w-[240px] shrink-0 flex-col border-l">
       <div className="flex h-12 shrink-0 items-center justify-between border-b px-3">
-        <span className="text-[11px] tracking-wider text-muted-foreground uppercase">Sessions</span>
+        <span className="text-xs font-semibold tracking-wide text-foreground">Sessions</span>
         <Button disabled={busy} onClick={onNewChat} size="xs" variant="default">
           <PlusIcon className="size-3" />
           New chat
@@ -98,6 +98,7 @@ export function SessionsPanel({
         <Input
           className="h-7 pl-8 text-xs"
           onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search sessions"
           placeholder="Search sessions…"
           value={query}
         />
@@ -146,7 +147,8 @@ export function SessionsPanel({
         {filteredArchived.length > 0 && (
           <div>
             <button
-              className="text-muted-foreground hover:text-foreground flex w-full items-center gap-1.5 px-2.5 pb-1.5 font-mono text-[11px] tracking-wider uppercase"
+              aria-expanded={archiveOpen}
+              className="text-muted-foreground hover:text-foreground flex w-full items-center gap-1.5 px-2.5 pb-1.5 text-[11px] font-medium tracking-wider uppercase"
               onClick={() => setArchiveOpen((v) => !v)}
               type="button"
             >

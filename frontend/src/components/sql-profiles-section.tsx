@@ -51,7 +51,7 @@ export function SqlProfilesSection() {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const picked = await open({
         multiple: false,
-        title: "Pilih file database SQLite",
+        title: "Choose a SQLite database file",
         filters: [
           {
             name: "SQLite database",
@@ -121,8 +121,8 @@ export function SqlProfilesSection() {
         name: profileName,
         ok: res.ok,
         message: res.ok
-          ? `Terhubung · ${res.tables} tabel${res.sample.length ? `: ${res.sample.join(", ")}` : ""}`
-          : (res.error ?? "Gagal terhubung"),
+          ? `Connected · ${res.tables} table${res.tables === 1 ? "" : "s"}${res.sample.length ? `: ${res.sample.join(", ")}` : ""}`
+          : (res.error ?? "Connection failed"),
       });
     } catch (err) {
       setTest({ name: profileName, ok: false, message: errText(err) });
@@ -136,11 +136,11 @@ export function SqlProfilesSection() {
       <div className="flex items-center justify-between px-1 pb-2">
         <span className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium uppercase">
           <DatabaseIcon className="size-3" />
-          Database terhubung
+          Connected databases
         </span>
         <Button onClick={openAdd} size="xs" variant="ghost">
           <PlusIcon className="size-3" />
-          Hubungkan
+          Add database
         </Button>
       </div>
       {formOpen && (
@@ -148,18 +148,18 @@ export function SqlProfilesSection() {
           <Input
             disabled={editing != null}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Nama profil, mis. keuangan"
+            placeholder="Profile name, e.g. finance"
             value={name}
           />
           {name.length > 0 && !NAME_OK.test(name.trim().toLowerCase()) && (
             <p className="text-xs text-amber-500">
-              Nama: huruf kecil, angka, &quot;-&quot; atau &quot;_&quot;, maks 32 karakter.
+              Use lowercase letters, numbers, hyphens, or underscores (max 32 characters).
             </p>
           )}
           <div className="flex gap-2">
             <Input
               onChange={(e) => setSource(e.target.value)}
-              placeholder="/path/database.db atau postgres://user@host/db"
+              placeholder="/path/database.db or postgres://user@host/db"
               value={source}
             />
             <Button onClick={pickFile} size="sm" variant="outline">
@@ -168,14 +168,13 @@ export function SqlProfilesSection() {
           </div>
           {isRemoteSource(source) && (
             <p className="text-xs text-amber-500">
-              URL remote (postgres/mysql) hanya bisa dipakai oleh build dengan fitur analytics-sql — sumber tetap
-              tersimpan.
+              Remote URLs (Postgres/MySQL) require the analytics-sql build feature; the source will still be saved.
             </p>
           )}
           <div className="flex items-center justify-end gap-2">
             {saving && <Spinner className="size-3" />}
             <Button disabled={saving} onClick={save} size="sm">
-              Simpan
+              Save
             </Button>
           </div>
         </div>
@@ -183,11 +182,11 @@ export function SqlProfilesSection() {
       {error && <p className="px-1 pb-2 text-xs text-red-400">{error}</p>}
       {!loaded ? (
         <div className="text-muted-foreground flex items-center gap-2 px-1 text-xs">
-          <Spinner className="size-3" /> Memuat…
+          <Spinner className="size-3" /> Loading…
         </div>
       ) : profiles.length === 0 ? (
         <p className="text-muted-foreground/70 px-1 text-xs">
-          Belum ada. Agent bisa menganalisis tabel dari file .db yang kamu hubungkan.
+          No databases yet. Connect a .db file to let the agent analyze its tables.
         </p>
       ) : (
         <ul className="flex flex-col gap-1">
@@ -202,26 +201,26 @@ export function SqlProfilesSection() {
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
                   <Button
-                    aria-label={`Tes koneksi ${p.name}`}
+                    aria-label={`Test connection for ${p.name}`}
                     disabled={testing != null}
                     onClick={() => void runTest(p.name)}
                     size="icon-sm"
-                    title="Tes koneksi"
+                    title="Test connection"
                     variant="ghost"
                   >
                     {testing === p.name ? <Spinner className="size-3.5" /> : <DatabaseIcon className="size-3.5" />}
                   </Button>
                   <Button
-                    aria-label={`Ubah profil ${p.name}`}
+                    aria-label={`Edit profile ${p.name}`}
                     onClick={() => openEdit(p)}
                     size="icon-sm"
-                    title="Ubah sumber"
+                    title="Edit source"
                     variant="ghost"
                   >
                     <PencilIcon className="size-3.5" />
                   </Button>
                   <Button
-                    aria-label={`Hapus profil ${p.name}`}
+                    aria-label={`Delete profile ${p.name}`}
                     onClick={() => remove(p.name)}
                     size="icon-sm"
                     variant="ghost"

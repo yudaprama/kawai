@@ -637,7 +637,7 @@ const MemoBlockquote = memo<BlockquoteProps>(
     return (
       <blockquote
         className={cn(
-          "my-4 border-muted-foreground/30 border-l-4 pl-4 text-muted-foreground italic",
+          "my-4 border-y border-muted-foreground/20 bg-muted/30 px-4 py-2 text-muted-foreground italic",
           className
         )}
         data-streamdown="blockquote"

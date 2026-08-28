@@ -79,7 +79,7 @@ export function ContextPanel({
   return (
     <section className="border-l flex min-w-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center justify-between gap-4 border-b px-3">
-        <span className="text-sm font-medium">Knowledge</span>
+        <span className="text-sm font-semibold">Knowledge</span>
         <div className="flex items-center gap-1">
           <Button
             disabled={linking || importing}
@@ -89,7 +89,7 @@ export function ContextPanel({
             variant="ghost"
           >
             {linking ? <Spinner className="size-3" /> : <VideoIcon className="size-3" />}
-            Link
+            Add link
           </Button>
           <Button
             disabled={importing || linking}
@@ -108,10 +108,8 @@ export function ContextPanel({
           {knowledge.unavailable ? (
             <div className="flex h-full flex-col items-center justify-center p-6 text-center">
               <FileIcon name="file" className="text-muted-foreground/40 mb-3 size-5" />
-              <p className="text-muted-foreground text-sm">Knowledge store unavailable</p>
-              <p className="text-muted-foreground/70 mt-1 text-xs">
-                The office feature isn&apos;t enabled in this build
-              </p>
+              <p className="text-muted-foreground text-sm">Knowledge is unavailable</p>
+              <p className="text-muted-foreground/70 mt-1 text-xs">Document tools are not enabled in this build.</p>
             </div>
           ) : !knowledge.loaded ? (
             <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">

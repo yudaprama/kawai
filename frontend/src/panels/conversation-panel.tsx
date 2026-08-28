@@ -183,13 +183,14 @@ export function ConversationPanel({
           <Button
             aria-label={thinking ? "Turn thinking mode off" : "Turn thinking mode on"}
             aria-pressed={thinking}
+            className="inline-flex"
             onClick={onToggleThinking}
             size="sm"
             title={thinking ? "Thinking mode: on" : "Thinking mode: off"}
             variant={thinking ? "secondary" : "ghost"}
           >
             <BrainIcon className="size-4" />
-            <span className="hidden lg:inline">Thinking</span>
+            <span className="hidden xl:inline">Thinking</span>
           </Button>
           {onToggleCanvas && (
             <Button
@@ -202,7 +203,7 @@ export function ConversationPanel({
               variant={canvasOpen ? "ghost" : "secondary"}
             >
               <PanelRightIcon className="size-4" />
-              <span className="hidden lg:inline">Canvas</span>
+              <span className="hidden xl:inline">Canvas</span>
             </Button>
           )}
           <Button
@@ -215,7 +216,7 @@ export function ConversationPanel({
             variant="ghost"
           >
             {sessionsCollapsed ? <PanelRightOpenIcon className="size-4" /> : <PanelRightCloseIcon className="size-4" />}
-            <span className="hidden lg:inline">Sessions</span>
+            <span className="hidden xl:inline">Sessions</span>
           </Button>
         </div>
       </header>
@@ -235,21 +236,23 @@ export function ConversationPanel({
       )}
       {historyError && (
         <div className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
-          <span className="min-w-0 flex-1">Gagal memuat riwayat: {historyError}</span>
+          <span className="min-w-0 flex-1">Failed to load history: {historyError}</span>
           <Button onClick={onRetryHistory} size="sm" variant="outline">
-            Coba lagi
+            Retry
           </Button>
         </div>
       )}
 
       <div className="relative flex min-h-0 flex-1">
-        <section className={`flex min-w-0 flex-col ${canvas && canvasOpen ? "xl:w-[55%] xl:flex-none" : "w-full"}`}>
+        <section
+          className={`flex min-w-0 flex-col ${canvas && canvasOpen ? "xl:w-[55%] xl:min-w-[30rem] xl:flex-none" : "w-full"}`}
+        >
           <div className="relative min-h-0 flex-1">
             {status === "submitted" && (
               <div className="text-muted-foreground absolute inset-x-0 top-3 z-10 flex justify-center">
                 <span className="bg-background/90 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs shadow-sm">
                   <Spinner className="size-3" />
-                  thinking…
+                  Thinking…
                 </span>
               </div>
             )}
@@ -320,14 +323,14 @@ export function ConversationPanel({
             )}
           </div>
 
-          <div className="shrink-0 px-4 pb-4">
+          <div className="shrink-0 px-4 pt-2 pb-4">
             {confirmation && (
               <div className="bg-card mb-2 flex items-center gap-3 rounded-lg border p-3">
                 <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
                   <DatabaseIcon className="size-4" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">Konfirmasi import</p>
+                  <p className="text-sm font-medium">Import confirmation</p>
                   <p className="text-muted-foreground truncate text-xs" title={confirmation.prompt}>
                     {confirmation.prompt}
                   </p>
@@ -337,7 +340,7 @@ export function ConversationPanel({
                     Import
                   </Button>
                   <Button disabled={busy} onClick={() => onSend(confirmation.declineText)} size="sm" variant="ghost">
-                    Batal
+                    Cancel
                   </Button>
                 </div>
               </div>
