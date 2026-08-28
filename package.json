@@ -12,6 +12,7 @@
     "format": "biome format --write frontend/src",
     "test": "vitest run",
     "preview": "vite preview",
+    "generate:events": "cargo run -p kawai-bindings --manifest-path crates/Cargo.toml --bin export-bindings",
     "tauri": "bash scripts/tauri.sh",
     "tauri:dev:litert": "bash scripts/tauri.sh dev",
     "bundle:litert": "bash scripts/bundle-litert-dylibs.sh",

@@ -7,32 +7,11 @@ import { type StreamControl, streamOperation } from "@/lib/stream";
 import { useAuth } from "./use-auth";
 import { useChatModel } from "./use-chat-model";
 import { useChatSessions } from "./use-chat-sessions";
+// Single source of truth — generated from `crates/foundation/events` via `cargo run -p kawai-bindings --bin export-bindings`
+import type { AgentChatEvent } from "@/generated/events";
 
-/** Events emitted by the backend's `local_chat` / `agent_chat` streams. */
-export type LocalChatEvent =
-  | { type: "started"; sessionId?: number }
-  | { type: "token"; text: string }
-  | { type: "thinking"; text: string }
-  | { type: "toolCall"; id?: string | null; tool: string; args: unknown }
-  | { type: "subagentThinking"; provider: string; text: string }
-  | {
-      type: "toolResult";
-      id?: string | null;
-      tool: string;
-      ok: boolean;
-      summary: string;
-      /** Structured payload for rich rendering (present only on success). */
-      data?: unknown;
-    }
-  | {
-      type: "confirmationRequest";
-      tool: string;
-      prompt: string;
-      acceptText: string;
-      declineText: string;
-    }
-  | { type: "finished" }
-  | { type: "error"; message: string };
+// Re-export for callers that still import from this hook (back-compat)
+export type LocalChatEvent = AgentChatEvent;
 
 export interface PendingConfirmation {
   tool: string;

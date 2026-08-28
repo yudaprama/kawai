@@ -161,7 +161,7 @@ User prompt → App.tsx → use-local-chat.send()
 | Hooks | Custom hooks in `hooks/`; each hook is a single file |
 | Platform | All platform capabilities go through the `Platform` interface in `platform/types.ts` — never use browser globals directly in components |
 | Chat state | `use-local-chat.ts` is the single source of truth for all chat state (messages, sessions, model status) |
-| Events | `LocalChatEvent` in `use-local-chat.ts` mirrors the backend's `#[serde(tag = "type")]` enum — add arms for new variants in all matchers or events are silently dropped |
+| Events | `LocalChatEvent` is generated from `crates/foundation/events` via `cargo run -p kawai-bindings --bin export-bindings` — never edit `frontend/src/generated/events.ts` manually. Add variant in the source then regenerate to avoid silent drops. |
 
 ## Non-obvious patterns
 
