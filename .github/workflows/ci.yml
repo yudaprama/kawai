@@ -81,6 +81,10 @@ jobs:
         run: cargo check --features web
         working-directory: src-tauri
 
+      - name: cargo check (codegraph feature; sidecar LRU cache)
+        run: cargo check --features codegraph
+        working-directory: src-tauri
+
   # ── Linux desktop gate: litert + office features compile on Linux ────────
   linux-check:
     runs-on: ubuntu-22.04
@@ -167,6 +171,14 @@ jobs:
         run: cargo check --features analytics
         working-directory: src-tauri
 
+      - name: cargo check (codegraph feature)
+        run: cargo check --features codegraph
+        working-directory: src-tauri
+
+      - name: cargo check (codegraph-native + litert; in-process kernel rlib)
+        run: cargo check --features codegraph-native,litert
+        working-directory: src-tauri
+
       # Remote SQL sources (sqlx, rustls): compile gate + LIVE-server checks
       # against the service containers — data_tables/data_import/dump typing
       # run for real (--deep seeds fixture tables — basic, temporal/NULL,
@@ -196,6 +208,11 @@ jobs:
       # {t,x,h} payload split, plain-text fallback, search relevance gate.
       - name: cargo test (crates/toolsets/webread)
         run: cargo test -p webread
+        working-directory: crates
+
+      # CodeGraph crate: LRU cache + single-flight + rate limit + sidecar contract
+      - name: cargo test (crates/toolsets/codegraph)
+        run: cargo test -p codegraph
         working-directory: crates
 
       # agent_eval harness unit tests: assert grammar (scalar == over

@@ -127,6 +127,8 @@ bun run build                  # frontend: tsc -b + vite build (frontend changes
 cargo check                    # desktop — axum must NOT compile here
 cargo check --features web     # web module + kawai-web bin
 cargo check --features litert  # local LLM (bindgen only; no C lib needed)
+cargo check --features codegraph  # CodeGraph sidecar AgentTool + LRU cache (zero cost off)
+cargo check --features codegraph-native,litert  # CodeGraph native kernel rlib (needs codegraph/ checkout)
 cargo check --features analytics  # data analysis agent (implies office)
 ```
 
@@ -198,6 +200,7 @@ crates/
 ├── toolsets/                       # agent toolset adapters
 │   ├── analytics-tools/ (kawai-analytics) # thin AgentTool wrappers over crates/engines/analytics engine — data_schema/query/ta/chart (spawn_blocking) + sql_profiles/effective_profiles + DataTablesTool/DataImportTool (sqlx Postgres/MySQL, analytics-sql)
 │   ├── binance/                   # Binance agent tools (hand-written, feature "binance"): keyless public spot market data via binance-sdk + in-process TA over ta
+│   ├── codegraph/ (codegraph)     # CodeGraph bridge (feature "codegraph" sidecar cached + "codegraph-native" in-process kernel rlib): codegraph_explore/status AgentTools — 15m LRU + single-flight + 12/min budget
 │   └── webread/ (webread)         # web read + search tiering (feature "webread", implied by "office"; reusable by any agent): web_read + web_search PortableTools — on-device webview engine (injected trait) → Cloudflare /markdown fallback; web_search = Bing SERP over the same chain with every hit's page auto-fetched; challenge detection, daily budgets, LRU cache
 ├── integrations/                   # external service clients
 │   ├── jigsawstack/               # JigsawStack API client (VOCR, NLP, etc.)
@@ -301,6 +304,10 @@ BINANCE_API_SECRET=
 # guidance-carrying tool result, not an error.
 KAWAI_CF_PER_USER_DAILY=25    # default 25
 KAWAI_CF_GLOBAL_DAILY=300     # default 300 (dev-wallet fuse)
+# ── CodeGraph — sidecar binary override (crates/toolsets/codegraph) ──
+# Override the `codegraph` binary path for sidecar mode (default: `codegraph` on PATH).
+# Useful for dev or custom installs: CODEGRAPH_BIN=/opt/codegraph/bin/codegraph
+# CODEGRAPH_BIN=/path/to/codegraph
 ```
 `.env.local` (gitignored) — Clerk publishable key reference: `VITE_CLERK_PUBLISHABLE_KEY` (unused by the React frontend; kept for the future prod-auth flow).
 
@@ -319,8 +326,9 @@ Priority order: **shipped → post-MVP/pre-release → end state**. Items after 
 - **Web read/search (`crates/toolsets/webread`)**: engine chain — tier 0 on-device hidden webview (`src-tauri/src/webview_engine.rs`) → tier 1 Cloudflare Browser Rendering (per-user/global daily budgets, shared concurrency gate) → MediaWiki full-text search as final fallback (`web_search` only). Challenge detection, 15-min LRU cache, 12k-char cap; every search hit's page auto-fetches through the read chain so the model never needs a follow-up read. Tools register under `any_engine()` (desktop webview + CF; kawai-web degrades to CF-only, no engine ⇒ unregistered).
 - **Office + PDF + decks**: office_oxide (docx/xlsx/pptx read/edit/create) and the pdf_oxide git dep (extract/search/replace/merge/split/info — all in-process) behind the `office` feature. Presentation decks default to `office_create_deck`: self-contained reveal.js `.html` (runtime vendored, model HTML sanitized to a script-free vocabulary, `<img data-file>` embeds stored charts) previewable/presentable in-app; `office_export_deck` converts a deck to `.pptx` deterministically (parse → PptxWriter — no LLM); decks read back as markdown (`office_read_document`, RAG-indexable).
 - **Analytics**: polars-backed `data_schema`/`data_query` (AST with dtype-aware coercion + self-correcting errors)/`data_ta` (indicator folds, final values only)/`data_chart` (charton SVG render of a query result: bar/line/point/area/histogram/pie — stacked/normalized/grouped bar/area, auto-sorted single-series bar and pie slices, temporal x / log y, saved into the office store as session-associated svg; 500 default / 2000 max, pie ≤20) over office-store tabular files; xlsx/xlsm convert once to typed parquet sidecars via office_oxide; named SQL sources (`sql_profiles`, `analytics-sql` feature) snapshot via `data_tables`/`data_import`.
+- **CodeGraph**: surgical code context — `crates/toolsets/codegraph` (`codegraph_explore`/`codegraph_status` AgentTools, 15m LRU + single-flight + 12/min budget) via `codegraph` sidecar (`codegraph explore --json`, `CODEGRAPH_BIN` override) or `codegraph-native` in-process `codegraph-kernel` rlib (no Node); wired into every agent via `agent_registry.rs` when `litert` + `codegraph` are on. Frontend `CodeAssetPage` (status + explore input + result view); Tauri `codegraph_explore/status/is_available` + Axum `/api/codegraph_*` (both wrappers, auth at edge). Zero cost when feature off.
 - **Schema migrations**: hand-rolled runner in `logic/db_migrations.rs` applied by every `db_connection` — see Database below for how to add one.
-- **CI gates (`.github/workflows/ci.yml`)**: macos/linux/windows smoke jobs (each bazel-builds the LiteRT-LM C engine natively, then runs `local_llm_smoke` LFM2.5 fixture + `remote_smoke` + `draft_smoke` + `binance_smoke` + `analytics_smoke` + `agent_eval` office ≥19/20 and analytics ≥16/18 on E4B), a web job (bun lint/test/build + `cargo check --features web`), and linux-check (full feature battery + LIVE `sql_remote_check` vs postgres/mysql service containers + analytics/webread unit tests).
+- **CI gates (`.github/workflows/ci.yml`)**: macos/linux/windows smoke jobs (each bazel-builds the LiteRT-LM C engine natively, then runs `local_llm_smoke` LFM2.5 fixture + `remote_smoke` + `draft_smoke` + `binance_smoke` + `analytics_smoke` + `agent_eval` office ≥19/20 and analytics ≥16/18 on E4B), a web job (bun lint/test/build + `cargo check --features web` + `cargo check --features codegraph`), and linux-check (full feature battery + LIVE `sql_remote_check` vs postgres/mysql service containers + analytics/webread + codegraph unit tests).
 - **Distributable macOS build + releases**: `scripts/bundle-litert-dylibs.sh` → `.github/tauri-litert.json` (Contents/Frameworks) + the build.rs rpath — release .app needs no dev env; `.github/workflows/release.yml` bot-bumps the patch version on push to main and builds macOS/Linux/Windows bundles + kawai-web into a DRAFT GitHub release.
 - **(standing) Upstream maintenance**: sentencepiece macOS fix — PR [#3262](https://github.com/google-ai-edge/LiteRT-LM/pull/3262), assume ignored. The submodule stays on our fork branch (`yudaprama/LiteRT-LM@fix/macos-sentencepiece-hdrs-check`); `cognee-litert-lm/tools/update-litert-lm.sh` rebases onto new upstream main. If merged, drop the commit and repoint at google-ai-edge main.
 
