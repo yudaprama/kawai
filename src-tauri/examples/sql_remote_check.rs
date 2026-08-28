@@ -98,22 +98,31 @@ async fn seed_all(url: &str, deep: bool) {
             ))
             .await;
             pg_exec(&pool, &format!("DELETE FROM {DEEP_TABLE}")).await;
-            pg_exec(&pool, &format!(
-                "INSERT INTO {DEEP_TABLE} (id,label,nilai,created_at) VALUES \
+            pg_exec(
+                &pool,
+                &format!(
+                    "INSERT INTO {DEEP_TABLE} (id,label,nilai,created_at) VALUES \
                  (1,'alpha',12.5,'2026-01-15 10:30:00+00'),(2,NULL,NULL,'2026-02-20 08:00:00+00')"
-            ))
+                ),
+            )
             .await;
-            pg_exec(&pool, &format!(
-                "CREATE TABLE IF NOT EXISTS {BIN_TABLE} (id int primary key, payload bytea)"
-            ))
+            pg_exec(
+                &pool,
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {BIN_TABLE} (id int primary key, payload bytea)"
+                ),
+            )
             .await;
             pg_exec(&pool, &format!(
                 "INSERT INTO {BIN_TABLE} (id,payload) VALUES (1,decode('deadbeef','hex')) ON CONFLICT (id) DO NOTHING"
             ))
             .await;
-            pg_exec(&pool, &format!(
-                "CREATE TABLE IF NOT EXISTS {EMPTY_TABLE} (id int primary key, note text)"
-            ))
+            pg_exec(
+                &pool,
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {EMPTY_TABLE} (id int primary key, note text)"
+                ),
+            )
             .await;
         }
     } else {
@@ -126,22 +135,34 @@ async fn seed_all(url: &str, deep: bool) {
             ))
             .await;
             my_exec(&pool, &format!("DELETE FROM {DEEP_TABLE}")).await;
-            my_exec(&pool, &format!(
-                "INSERT INTO {DEEP_TABLE} (id,label,nilai,created_at) VALUES \
+            my_exec(
+                &pool,
+                &format!(
+                    "INSERT INTO {DEEP_TABLE} (id,label,nilai,created_at) VALUES \
                  (1,'alpha',12.5,'2026-01-15 10:30:00'),(2,NULL,NULL,'2026-02-20 08:00:00')"
-            ))
+                ),
+            )
             .await;
-            my_exec(&pool, &format!(
-                "CREATE TABLE IF NOT EXISTS {BIN_TABLE} (id int primary key, payload longblob)"
-            ))
+            my_exec(
+                &pool,
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {BIN_TABLE} (id int primary key, payload longblob)"
+                ),
+            )
             .await;
-            my_exec(&pool, &format!(
-                "INSERT IGNORE INTO {BIN_TABLE} (id,payload) VALUES (1,UNHEX('DEADBEEF'))"
-            ))
+            my_exec(
+                &pool,
+                &format!(
+                    "INSERT IGNORE INTO {BIN_TABLE} (id,payload) VALUES (1,UNHEX('DEADBEEF'))"
+                ),
+            )
             .await;
-            my_exec(&pool, &format!(
+            my_exec(
+                &pool,
+                &format!(
                 "CREATE TABLE IF NOT EXISTS {EMPTY_TABLE} (id int primary key, note varchar(64))"
-            ))
+            ),
+            )
             .await;
         }
     }
@@ -258,10 +279,7 @@ async fn main() {
         .collect();
 
     // 2. Basic chain: the requested table, the demo fixture, or first listed.
-    let table = match (
-        args.first().filter(|a| !a.starts_with("--")).cloned(),
-        demo,
-    ) {
+    let table = match (args.first().filter(|a| !a.starts_with("--")).cloned(), demo) {
         (Some(t), _) => t,
         (None, true) => DEMO_TABLE.to_string(),
         (None, false) => {
@@ -279,7 +297,10 @@ async fn main() {
         // 3a. Temporal CAST + NULLs: timestamps arrive as readable text, all
         //     rows survive, count aggregation matches the source exactly.
         let dv = roundtrip(DEEP_TABLE).await;
-        expect(dv["rows"].as_u64() == Some(2), "deep table must export 2 rows");
+        expect(
+            dv["rows"].as_u64() == Some(2),
+            "deep table must export 2 rows",
+        );
 
         // 3b. Binary column contract: the import must FAIL with guidance
         //     naming the offending column — never a panic or silent loss.
@@ -301,7 +322,10 @@ async fn main() {
         // 3c. Zero-row table: correctly SHAPED empty snapshot (columns known,
         //      rows 0) — not an error, not a broken file.
         let ev = roundtrip(EMPTY_TABLE).await;
-        expect(ev["rows"].as_u64() == Some(0), "empty table must export 0 rows");
+        expect(
+            ev["rows"].as_u64() == Some(0),
+            "empty table must export 0 rows",
+        );
     }
 
     if demo {

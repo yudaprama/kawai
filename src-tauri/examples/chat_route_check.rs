@@ -9,7 +9,7 @@
 //     KAWAI_DATA_DIR=/tmp/kawai-route-check \
 //     cargo run --example chat_route_check --features litert,office
 use futures_util::StreamExt;
-use kawai_lib::logic::agent::{agent_chat, AgentChatEvent};
+use kawai_lib::logic::agent::{agent_chat_with_registry, AgentChatEvent};
 use kawai_lib::logic::{db, local_llm};
 
 const SMOKE_USER: &str = "route-check";
@@ -28,7 +28,8 @@ async fn main() {
 
     let prompt = "Tolong buatkan analisis mendalam tentang tren AI agent 2026, sekitar 3 paragraf";
 
-    let mut stream = Box::pin(agent_chat(
+    let mut stream = Box::pin(agent_chat_with_registry(
+        kawai_lib::agent_registry::builtin(),
         SMOKE_USER.into(),
         "builtin.office".into(),
         None,

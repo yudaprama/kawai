@@ -15,7 +15,7 @@
 // delegation assertions run unconditionally. An empty vault is a broken
 // environment and SHOULD fail loudly here.
 use futures_util::StreamExt;
-use kawai_lib::logic::agent::{agent_chat, AgentChatEvent};
+use kawai_lib::logic::agent::{agent_chat_with_registry, AgentChatEvent};
 use kawai_lib::logic::{db, local_llm};
 
 const SMOKE_USER: &str = "smoke";
@@ -30,7 +30,8 @@ async fn run_turn(
     let mut answer_chars = 0usize;
     let mut events = Vec::new();
     let mut sid = session_id;
-    let mut stream = Box::pin(agent_chat(
+    let mut stream = Box::pin(agent_chat_with_registry(
+        kawai_lib::agent_registry::builtin(),
         SMOKE_USER.into(),
         agent_id.into(),
         session_id,
@@ -61,7 +62,9 @@ async fn run_turn(
                     text.chars().count()
                 ));
             }
-            AgentChatEvent::ToolResult { tool, ok, summary, .. } => {
+            AgentChatEvent::ToolResult {
+                tool, ok, summary, ..
+            } => {
                 if saw_cloud_call && tool == "deep_write" {
                     cloud_summary = summary;
                 }
@@ -69,7 +72,9 @@ async fn run_turn(
             }
             AgentChatEvent::Finished => events.push("finished".into()),
             AgentChatEvent::Error { message } => events.push(format!("ERROR: {message}")),
-            AgentChatEvent::ConfirmationRequest { .. } => events.push("confirmation_request".into()),
+            AgentChatEvent::ConfirmationRequest { .. } => {
+                events.push("confirmation_request".into())
+            }
         }
     }
     println!("  answer: {answer_chars} chars · cloud_call={saw_cloud_call}");

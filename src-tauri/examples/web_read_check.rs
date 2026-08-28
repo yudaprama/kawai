@@ -72,8 +72,7 @@ fn main() {
                 if let (Some(err), Some(hint)) = (&out.error, &out.hint) {
                     eprintln!("[web_read_check] FAIL: {err} — {hint}");
                 }
-                let ok =
-                    out.content.is_some() && (!require_tier0 || tiered);
+                let ok = out.content.is_some() && (!require_tier0 || tiered);
                 std::process::exit(i32::from(!ok));
             });
             Ok(())

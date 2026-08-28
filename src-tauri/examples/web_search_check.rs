@@ -34,7 +34,10 @@ async fn main() {
         } else {
             format!(" [content: {} chars]", h.content.chars().count())
         };
-        println!("  - {} | {}\n    {}{}", h.title, h.url, h.snippet, content_note);
+        println!(
+            "  - {} | {}\n    {}{}",
+            h.title, h.url, h.snippet, content_note
+        );
     }
     if out.hits.is_empty() {
         eprintln!(

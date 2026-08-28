@@ -140,68 +140,214 @@ const NONE_A: &[(&str, &str)] = &[];
 #[allow(clippy::type_complexity)]
 const ANALYTICS_SCENARIOS: &[Scenario] = &[
     // Discovery-first discipline.
-    Scenario("A01 schema-first", "What columns does sales_2026.csv have?", Some("data_schema"),
-        &[("fileId", "==doc1")]),
+    Scenario(
+        "A01 schema-first",
+        "What columns does sales_2026.csv have?",
+        Some("data_schema"),
+        &[("fileId", "==doc1")],
+    ),
     // Single aggregate without grouping → plain select.
-    Scenario("A02 sum-all", "What is the total revenue across all rows?", Some("data_query"),
-        &[("fileId", "==doc1"), ("aggregations/0/function", "==sum"), ("aggregations/0/column", "==pendapatan")]),
+    Scenario(
+        "A02 sum-all",
+        "What is the total revenue across all rows?",
+        Some("data_query"),
+        &[
+            ("fileId", "==doc1"),
+            ("aggregations/0/function", "==sum"),
+            ("aggregations/0/column", "==pendapatan"),
+        ],
+    ),
     // Group + rank: top-N shape (descending true, bounded).
-    Scenario("A03 group-rank", "Show the top 3 products by total revenue.", Some("data_query"),
-        &[("fileId", "==doc1"), ("groupBy/0", "==produk"), ("aggregations/0/function", "==sum"), ("descending", "==true")]),
+    Scenario(
+        "A03 group-rank",
+        "Show the top 3 products by total revenue.",
+        Some("data_query"),
+        &[
+            ("fileId", "==doc1"),
+            ("groupBy/0", "==produk"),
+            ("aggregations/0/function", "==sum"),
+            ("descending", "==true"),
+        ],
+    ),
     // Implicit row_count: group_by alone, no metric invented.
-    Scenario("A04 count-per-group", "How many rows are there for each kategori?", Some("data_query"),
-        &[("fileId", "==doc1"), ("groupBy/0", "==kategori")]),
+    Scenario(
+        "A04 count-per-group",
+        "How many rows are there for each kategori?",
+        Some("data_query"),
+        &[("fileId", "==doc1"), ("groupBy/0", "==kategori")],
+    ),
     // Date range from a natural-language month (gte the month start). Names
     // the dataset ("sales") — "transactions" would collide with doc2's name.
     // contains("2026-01") is accepted alongside range ops: production
     // data_query supports it and it answers the question on ISO dates.
-    Scenario("A05 date-filter", "Show only the January 2026 rows from the sales CSV.", Some("data_query"),
-        &[("fileId", "==doc1"), ("filters/0/value", "re:2026-01"), ("filters/0/operator", "in:gte|gt|eq|contains")]),
+    Scenario(
+        "A05 date-filter",
+        "Show only the January 2026 rows from the sales CSV.",
+        Some("data_query"),
+        &[
+            ("fileId", "==doc1"),
+            ("filters/0/value", "re:2026-01"),
+            ("filters/0/operator", "in:gte|gt|eq|contains"),
+        ],
+    ),
     // Avg per group, ranked.
-    Scenario("A06 avg-per-group", "Average revenue per product, highest first.", Some("data_query"),
-        &[("fileId", "==doc1"), ("groupBy/0", "==produk"), ("aggregations/0/function", "==avg"), ("descending", "==true")]),
+    Scenario(
+        "A06 avg-per-group",
+        "Average revenue per product, highest first.",
+        Some("data_query"),
+        &[
+            ("fileId", "==doc1"),
+            ("groupBy/0", "==produk"),
+            ("aggregations/0/function", "==avg"),
+            ("descending", "==true"),
+        ],
+    ),
     // Row-selection mode: projected columns + limit, no aggregation.
-    Scenario("A07 row-select", "Show me the first 5 rows of sales_2026.csv with only produk and pendapatan.", Some("data_query"),
-        &[("fileId", "==doc1"), ("columns/0", "==produk"), ("columns/1", "==pendapatan"), ("limit", "==5")]),
+    Scenario(
+        "A07 row-select",
+        "Show me the first 5 rows of sales_2026.csv with only produk and pendapatan.",
+        Some("data_query"),
+        &[
+            ("fileId", "==doc1"),
+            ("columns/0", "==produk"),
+            ("columns/1", "==pendapatan"),
+            ("limit", "==5"),
+        ],
+    ),
     // Excel sheet targeting through data_schema.
-    Scenario("A08 sheet-select", "What columns are in the Returns sheet of transactions.xlsx?", Some("data_schema"),
-        &[("fileId", "==doc2"), ("sheet", "==Returns")]),
+    Scenario(
+        "A08 sheet-select",
+        "What columns are in the Returns sheet of transactions.xlsx?",
+        Some("data_schema"),
+        &[("fileId", "==doc2"), ("sheet", "==Returns")],
+    ),
     // Technical-analysis selection: momentum on the close series, with the
     // timestamp-sort discipline the stateful folds require.
-    Scenario("A09 ta-rsi", "Is prices_2026.csv overbought or oversold right now? Compute RSI(14).", Some("data_ta"),
-        &[("fileId", "==doc3"), ("close", "==close"), ("timestamp", "==ts"), ("indicators/0/kind", "==rsi")]),
+    Scenario(
+        "A09 ta-rsi",
+        "Is prices_2026.csv overbought or oversold right now? Compute RSI(14).",
+        Some("data_ta"),
+        &[
+            ("fileId", "==doc3"),
+            ("close", "==close"),
+            ("timestamp", "==ts"),
+            ("indicators/0/kind", "==rsi"),
+        ],
+    ),
     // Volatility needs the high/low role columns, not just close.
-    Scenario("A10 ta-atr", "How volatile is the price in prices_2026.csv? Compute ATR(14).", Some("data_ta"),
-        &[("fileId", "==doc3"), ("indicators/0/kind", "==atr"), ("high", "==high"), ("low", "==low")]),
+    Scenario(
+        "A10 ta-atr",
+        "How volatile is the price in prices_2026.csv? Compute ATR(14).",
+        Some("data_ta"),
+        &[
+            ("fileId", "==doc3"),
+            ("indicators/0/kind", "==atr"),
+            ("high", "==high"),
+            ("low", "==low"),
+        ],
+    ),
     // Multi-param momentum default (fast/slow/signal omitted → defaults).
-    Scenario("A11 ta-macd", "Compute MACD on the close prices of prices_2026.csv.", Some("data_ta"),
-        &[("fileId", "==doc3"), ("close", "==close"), ("indicators/0/kind", "==macd")]),
+    Scenario(
+        "A11 ta-macd",
+        "Compute MACD on the close prices of prices_2026.csv.",
+        Some("data_ta"),
+        &[
+            ("fileId", "==doc3"),
+            ("close", "==close"),
+            ("indicators/0/kind", "==macd"),
+        ],
+    ),
     // Set-membership filter: comma-separated list coerced to the column dtype.
-    Scenario("A12 in-filter", "Show rows for the laptop and mouse products only.", Some("data_query"),
-        &[("fileId", "==doc1"), ("filters/0/operator", "==in"), ("filters/0/value", "re:laptop")]),
+    Scenario(
+        "A12 in-filter",
+        "Show rows for the laptop and mouse products only.",
+        Some("data_query"),
+        &[
+            ("fileId", "==doc1"),
+            ("filters/0/operator", "==in"),
+            ("filters/0/value", "re:laptop"),
+        ],
+    ),
     // Post-aggregation threshold on an alias (HAVING).
-    Scenario("A13 having", "Which products have total revenue above 2000?", Some("data_query"),
-        &[("fileId", "==doc1"), ("groupBy/0", "==produk"), ("aggregations/0/function", "==sum"),
-          ("having/0/column", "==total"), ("having/0/operator", "==gt"), ("having/0/value", "==2000")]),
+    Scenario(
+        "A13 having",
+        "Which products have total revenue above 2000?",
+        Some("data_query"),
+        &[
+            ("fileId", "==doc1"),
+            ("groupBy/0", "==produk"),
+            ("aggregations/0/function", "==sum"),
+            ("having/0/column", "==total"),
+            ("having/0/operator", "==gt"),
+            ("having/0/value", "==2000"),
+        ],
+    ),
     // Pagination: page 2 of a sorted list = offset past page 1.
-    Scenario("A14 offset-page", "Show products ranked 3rd to 5th by total revenue.", Some("data_query"),
-        &[("fileId", "==doc1"), ("groupBy/0", "==produk"), ("aggregations/0/function", "==sum"),
-          ("sortBy", "==total"), ("descending", "==true"), ("offset", "==2"), ("limit", "==3")]),
+    Scenario(
+        "A14 offset-page",
+        "Show products ranked 3rd to 5th by total revenue.",
+        Some("data_query"),
+        &[
+            ("fileId", "==doc1"),
+            ("groupBy/0", "==produk"),
+            ("aggregations/0/function", "==sum"),
+            ("sortBy", "==total"),
+            ("descending", "==true"),
+            ("offset", "==2"),
+            ("limit", "==3"),
+        ],
+    ),
     // Chart selection + aggregation composition: a comparison ask maps to a
     // bar chart whose x is the group column and y the aggregation alias.
-    Scenario("A15 chart-bar", "Graph total revenue per product as a bar chart.", Some("data_chart"),
-        &[("fileId", "==doc1"), ("mark", "==bar"), ("x", "==produk"), ("y", "re:total|pendapatan"),
-          ("aggregations/0/function", "==sum")]),
+    Scenario(
+        "A15 chart-bar",
+        "Graph total revenue per product as a bar chart.",
+        Some("data_chart"),
+        &[
+            ("fileId", "==doc1"),
+            ("mark", "==bar"),
+            ("x", "==produk"),
+            ("y", "re:total|pendapatan"),
+            ("aggregations/0/function", "==sum"),
+        ],
+    ),
     // Time-trend ask maps to a line chart; x is the date column.
-    Scenario("A16 chart-line", "Plot the closing price over time as a line chart.", Some("data_chart"),
-        &[("fileId", "==doc3"), ("mark", "==line"), ("x", "==ts"), ("y", "==close")]),
+    Scenario(
+        "A16 chart-line",
+        "Plot the closing price over time as a line chart.",
+        Some("data_chart"),
+        &[
+            ("fileId", "==doc3"),
+            ("mark", "==line"),
+            ("x", "==ts"),
+            ("y", "==close"),
+        ],
+    ),
     // Distribution ask maps to a histogram: numeric x, NO y (count is implied).
-    Scenario("A17 chart-hist", "Show the distribution of the pendapatan values.", Some("data_chart"),
-        &[("fileId", "==doc1"), ("mark", "==histogram"), ("x", "==pendapatan"), ("y", "absent")]),
+    Scenario(
+        "A17 chart-hist",
+        "Show the distribution of the pendapatan values.",
+        Some("data_chart"),
+        &[
+            ("fileId", "==doc1"),
+            ("mark", "==histogram"),
+            ("x", "==pendapatan"),
+            ("y", "absent"),
+        ],
+    ),
     // Share/breakdown ask maps to a pie: aggregate so one row per category.
-    Scenario("A18 chart-pie", "Show revenue share per kategori as a pie chart.", Some("data_chart"),
-        &[("fileId", "==doc1"), ("mark", "==pie"), ("x", "==kategori"), ("y", "re:total|pendapatan"),
-          ("aggregations/0/function", "==sum")]),
+    Scenario(
+        "A18 chart-pie",
+        "Show revenue share per kategori as a pie chart.",
+        Some("data_chart"),
+        &[
+            ("fileId", "==doc1"),
+            ("mark", "==pie"),
+            ("x", "==kategori"),
+            ("y", "re:total|pendapatan"),
+            ("aggregations/0/function", "==sum"),
+        ],
+    ),
 ];
 
 /// Filler tools for the TOOL_INFLATE=N experiment: realistic names/descriptions
@@ -362,7 +508,9 @@ async fn main() {
     // EVAL_DEBUG=1 → dump each failed scenario's RAW model output (truncated)
     // to stdout and into the report, so prompt-shape regressions are
     // diagnosable from CI artifacts instead of guessed at.
-    let debug_raw = std::env::var("EVAL_DEBUG").map(|v| v == "1").unwrap_or(false);
+    let debug_raw = std::env::var("EVAL_DEBUG")
+        .map(|v| v == "1")
+        .unwrap_or(false);
 
     let t_load = std::time::Instant::now();
     let info = local_llm::load_model("eval", &model, false, false, 1, None)
@@ -374,11 +522,18 @@ async fn main() {
     let suite = std::env::var("EVAL_SUITE").unwrap_or_default();
     let (suite_name, system, tools_json, scenarios): (&str, &str, &str, &[Scenario]) =
         if suite == "analytics" {
-            ("analytics", ANALYTICS_SYSTEM, ANALYTICS_TOOLS, ANALYTICS_SCENARIOS)
+            (
+                "analytics",
+                ANALYTICS_SYSTEM,
+                ANALYTICS_TOOLS,
+                ANALYTICS_SCENARIOS,
+            )
         } else {
             ("office", SYSTEM, TOOLS, SCENARIOS)
         };
-    let tool_count = serde_json::from_str::<Vec<Value>>(tools_json).unwrap().len();
+    let tool_count = serde_json::from_str::<Vec<Value>>(tools_json)
+        .unwrap()
+        .len();
     println!(
         "model {} [{}] (load {load_s:.1}s)\n",
         info.model_path, info.backend
@@ -568,9 +723,6 @@ mod tests {
         assert_eq!(name, "data_query");
         assert_eq!(args["limit"], json!(5));
         assert!(parse_call("no call here").is_none());
-        assert!(matches!(
-            parse_call("call:data_{not json"),
-            Some(Err(_))
-        ));
+        assert!(matches!(parse_call("call:data_{not json"), Some(Err(_))));
     }
 }

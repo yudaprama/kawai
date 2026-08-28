@@ -8,7 +8,7 @@
 //
 // Usage:
 //   cargo run --example analytics_smoke --features analytics
-use kawai_lib::logic::analytics::{self as data, DataQueryTool, DataTableSchemaTool, DataTaTool};
+use kawai_lib::logic::analytics::{self as data, DataQueryTool, DataTaTool, DataTableSchemaTool};
 use kawai_lib::logic::office::store;
 use kawai_tools::AgentTool;
 use serde_json::Value;
@@ -306,15 +306,21 @@ async fn main() {
     if tv["_meta"]["rowsUsed"].as_i64() != Some(60) || !tv["_meta"]["skipped"].is_null() {
         die(&format!("data_ta meta wrong: {out}"));
     }
-    let ema21 = tv["indicators"]["ema21"].as_f64().unwrap_or_else(|| die("ema21 missing"));
+    let ema21 = tv["indicators"]["ema21"]
+        .as_f64()
+        .unwrap_or_else(|| die("ema21 missing"));
     if !(90.0..200.0).contains(&ema21) {
         die(&format!("ema21 implausible: {ema21}"));
     }
-    let rsi = tv["indicators"]["rsi14"].as_f64().unwrap_or_else(|| die("rsi missing"));
+    let rsi = tv["indicators"]["rsi14"]
+        .as_f64()
+        .unwrap_or_else(|| die("rsi missing"));
     if !(0.0..=100.0).contains(&rsi) {
         die(&format!("rsi unbounded: {rsi}"));
     }
-    if tv["indicators"]["macd12_26_9"]["histogram"].as_f64().is_none()
+    if tv["indicators"]["macd12_26_9"]["histogram"]
+        .as_f64()
+        .is_none()
         || tv["indicators"]["atr14"].as_f64().unwrap_or(0.0) <= 0.0
     {
         die(&format!("macd/atr output wrong: {out}"));
@@ -326,7 +332,12 @@ async fn main() {
     let short = store::import_bytes(
         user,
         "smoke-ohlcv-short.csv",
-        ohlcv.lines().take(6).collect::<Vec<_>>().join("\n").as_bytes(),
+        ohlcv
+            .lines()
+            .take(6)
+            .collect::<Vec<_>>()
+            .join("\n")
+            .as_bytes(),
     )
     .expect("import short ohlcv");
     let out = DataTaTool(user.to_string())
@@ -342,9 +353,14 @@ async fn main() {
         .await
         .expect("data_ta(short)");
     let sv: Value = serde_json::from_str(&out).unwrap();
-    let skipped = sv["_meta"]["skipped"].as_array().cloned().unwrap_or_default();
+    let skipped = sv["_meta"]["skipped"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     if skipped.len() != 2 || !skipped.iter().any(|s| s["alias"] == "bb20_2") {
-        die(&format!("expected both indicators skipped with reasons: {out}"));
+        die(&format!(
+            "expected both indicators skipped with reasons: {out}"
+        ));
     }
     println!("[analytics_smoke] PASS data_ta: warm-up skips reported instead of fake values");
 
@@ -388,11 +404,19 @@ async fn main() {
     if cv["rows"].as_i64() != Some(2) || cv["mark"] != "bar" {
         die(&format!("data_chart reply wrong: {out}"));
     }
-    let chart_id = cv["fileId"].as_str().unwrap_or_else(|| die("fileId missing")).to_string();
+    let chart_id = cv["fileId"]
+        .as_str()
+        .unwrap_or_else(|| die("fileId missing"))
+        .to_string();
     let (info, bytes) = store::read_file(user, &chart_id).expect("read chart svg");
     let svg = String::from_utf8(bytes).unwrap();
     if info.ext != "svg" || !svg.starts_with("<svg") || !svg.contains("Sales by city") {
-        die(&format!("stored chart wrong: {} {} bytes, head: {}", info.ext, svg.len(), &svg[..40.min(svg.len())]));
+        die(&format!(
+            "stored chart wrong: {} {} bytes, head: {}",
+            info.ext,
+            svg.len(),
+            &svg[..40.min(svg.len())]
+        ));
     }
     println!(
         "[analytics_smoke] PASS data_chart: grouped bar → {}-byte svg in store ({})",
@@ -433,7 +457,8 @@ async fn main() {
 
     // Stacked bar with a color series composes to cumulative totals.
     let stack_csv = "bulan,nilai,wilayah\n1,10,utara\n1,5,selatan\n2,20,utara\n2,8,selatan\n";
-    let stacked = store::import_bytes(user, "smoke-stack.csv", stack_csv.as_bytes()).expect("import stack csv");
+    let stacked = store::import_bytes(user, "smoke-stack.csv", stack_csv.as_bytes())
+        .expect("import stack csv");
     let out = data::DataChartTool(user.to_string(), 1)
         .call(
             serde_json::from_value(serde_json::json!({
@@ -472,13 +497,23 @@ async fn main() {
     if pv["mark"] != "pie" || pv["rows"].as_i64() != Some(2) {
         die(&format!("pie reply wrong: {out}"));
     }
-    let pie_id = pv["fileId"].as_str().unwrap_or_else(|| die("pie fileId missing")).to_string();
+    let pie_id = pv["fileId"]
+        .as_str()
+        .unwrap_or_else(|| die("pie fileId missing"))
+        .to_string();
     let (pi, pb) = store::read_file(user, &pie_id).expect("read pie svg");
     let psvg = String::from_utf8(pb).unwrap();
     if pi.ext != "svg" || !psvg.starts_with("<svg") || !psvg.contains("Share by city") {
-        die(&format!("stored pie wrong: {} {} bytes", pi.ext, psvg.len()));
+        die(&format!(
+            "stored pie wrong: {} {} bytes",
+            pi.ext,
+            psvg.len()
+        ));
     }
-    println!("[analytics_smoke] PASS data_chart pie (polar, auto-sorted) → {} bytes", psvg.len());
+    println!(
+        "[analytics_smoke] PASS data_chart pie (polar, auto-sorted) → {} bytes",
+        psvg.len()
+    );
 
     // Pie with a color channel is a guidance error (category is the slice label).
     let err = data::DataChartTool(user.to_string(), 1)

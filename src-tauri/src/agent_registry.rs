@@ -105,6 +105,8 @@ fn add_runtime_tools(
     remote_configured: bool,
     supports_draft_document: bool,
 ) -> kawai_tools::ToolSet {
+    #[cfg(not(feature = "office"))]
+    let _ = supports_draft_document;
     set.add_tool(kawai_agent::ArtifactRecall);
     #[cfg(feature = "codegraph")]
     {
