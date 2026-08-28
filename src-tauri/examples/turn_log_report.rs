@@ -110,6 +110,75 @@ async fn main() {
         }
     }
 
+    // ── Planner lens (PLAN-planner-subagent.md §6) ────
+    // Plan/revise volume, revise rate, plan errors, and whether planned
+    // sessions went on to synthesize. Over-planning per TURN is not measurable
+    // from turn_log (no turn id / tool-call rows) — the closest honest proxy
+    // is sessions whose ONLY cloud activity is planning.
+    let is_plan_tool = |t: &str| t == "plan_task" || t == "plan_revise";
+    let plan_rows: Vec<&TurnLogRow> = rows
+        .iter()
+        .filter(|r| r.tool.as_deref().is_some_and(is_plan_tool))
+        .collect();
+    if plan_rows.is_empty() {
+        println!("\nplanner: no plan_task/plan_revise rows in window.");
+    } else {
+        let plans = plan_rows
+            .iter()
+            .filter(|r| r.tool.as_deref() == Some("plan_task"))
+            .count();
+        let revisions = plan_rows.len() - plans;
+        let plan_errors = plan_rows.iter().filter(|r| r.outcome == "error").count();
+        let (pn, plms): (u64, i64) = plan_rows
+            .iter()
+            .fold((0, 0), |(n, s), r| (n + 1, s + r.latency_ms));
+        let plan_sessions: std::collections::HashSet<i64> =
+            plan_rows.iter().map(|r| r.session_id).collect();
+        let synth_sessions: std::collections::HashSet<i64> = rows
+            .iter()
+            .filter(|r| {
+                matches!(r.tool.as_deref(), Some("deep_write") | Some("draft_document"))
+            })
+            .map(|r| r.session_id)
+            .collect();
+        let followed = plan_sessions
+            .iter()
+            .filter(|s| synth_sessions.contains(s))
+            .count();
+        let plan_only: Vec<i64> = plan_sessions
+            .iter()
+            .filter(|s| {
+                !rows.iter().any(|r| {
+                    r.session_id == **s && r.tool.as_deref().is_some_and(|t| !is_plan_tool(t))
+                })
+            })
+            .copied()
+            .collect();
+        println!("\nplanner lens:");
+        println!(
+            "  {:>4} plan_task · {:>4} plan_revise · {:>4} errors · avg {:>5.0} ms",
+            plans,
+            revisions,
+            plan_errors,
+            plms as f64 / pn as f64
+        );
+        println!(
+            "  revise rate: {:>5.1}%  (>50% suggests plans go stale fast)",
+            100.0 * revisions as f64 / plans.max(1) as f64
+        );
+        println!(
+            "  planned sessions: {} · went on to synthesize: {}",
+            plan_sessions.len(),
+            followed
+        );
+        if !plan_only.is_empty() {
+            println!(
+                "  ⚠ sessions whose ONLY cloud activity is planning (over-planning proxy): {:?}",
+                plan_only
+            );
+        }
+    }
+
     // Under-delegation lens per agent: local-share of answered turns.
     println!("\ndelegation share (answer rows only):");
     let agents: Vec<String> = rows.iter().map(|r| r.agent_id.clone()).collect::<Vec<_>>();
