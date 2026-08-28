@@ -117,7 +117,7 @@ frontend/
 │   │   │   ├── wiki-page.tsx      # knowledge base as wiki sources (Tea panel structure): header + Sources list (status/pages/chunks) + Pages|Graph detail tabs (Pages = live preview)
 │   │   │   ├── memory-page.tsx    # ChatMemoryPanel structure: header + agent filter + Blocks list + L0–L3 layer tabs (L0 transcript + L1 memories CRUD/extract real; L2/L3 honest empty — no pipeline tier yet)
 │   │   │   ├── skills-page.tsx    # Skills over the real skill_* ops: list ↔ detail (markdown body via streamdown) + create/edit dialog + delete (use-skills hook)
-│   │   │   └── code-page.tsx      # CodeSourcesPanel structure shell (no repo indexing tier yet)
+│   │   │   └── code-page.tsx      # Code asset workspace over the real codegraph_* ops: status + Register repo (codegraph_init) + explore input + result view
 │   │   ├── conversation-panel.tsx # pane 2: chat + model status (virtualization)
 │   │   ├── chat-composer.tsx      # composer: @-mention + file chips + speech
 │   │   ├── context-panel.tsx      # right context pane: renders the tabs the registry gives it (session/library/databases)
