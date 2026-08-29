@@ -515,14 +515,34 @@ async fn main() {
         psvg.len()
     );
 
-    // Pie with a color channel is a guidance error (category is the slice label).
-    let err = data::DataChartTool(user.to_string(), 1)
+    // Pie with a redundant color (== x) is silently dropped, not an error — the
+    // pie still renders (chart.rs filters color==x/y). A distinct color on pie
+    // must fail with guidance.
+    let out = data::DataChartTool(user.to_string(), 1)
         .call(
             serde_json::from_value(serde_json::json!({
                 "fileId": stored.id, "mark": "pie", "x": "city", "y": "total",
                 "color": "city",
                 "groupBy": ["city"],
                 "aggregations": [{ "column": "sales", "function": "sum", "alias": "total" }]
+            }))
+            .expect("chart args"),
+        )
+        .await
+        .expect("pie with redundant color should succeed (color==x is dropped)");
+    let pv2: Value = serde_json::from_str(&out).unwrap();
+    if pv2["mark"] != "pie" {
+        die(&format!("pie redundant color should still render pie: {out}"));
+    }
+    // Distinct color on pie must be a guidance error.
+    let pie_color_csv = "city,sales,region\njakarta,100,west\nbandung,80,east\njakarta,60,west\n";
+    let pie_color_file =
+        store::import_bytes(user, "pie-color.csv", pie_color_csv.as_bytes()).expect("import pie color csv");
+    let err = data::DataChartTool(user.to_string(), 1)
+        .call(
+            serde_json::from_value(serde_json::json!({
+                "fileId": pie_color_file.id, "mark": "pie", "x": "city", "y": "sales",
+                "color": "region"
             }))
             .expect("chart args"),
         )
