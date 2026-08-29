@@ -151,7 +151,7 @@ webread = ["dep:webread", "dep:browser", "dep:url", "kawai-agent/webread"]
 # (kawai-embedding, with in-tree chunking) for idle-time
 # knowledge indexing. Enables the `webread` FEATURE (not just `dep:webread`)
 # so its bundled deps ride along.
-office = ["dep:kawai-vision", "dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office", "dep:kawai-office", "dep:kawai-knowledge", "kawai-knowledge/office", "kawai-agent/office"]
+office = ["dep:kawai-vision", "kawai-vision/paddle-ocr", "dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office", "dep:kawai-office", "dep:kawai-knowledge", "kawai-knowledge/office", "kawai-agent/office"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
 binance = ["dep:binance", "kawai-agent/binance"]
@@ -162,6 +162,10 @@ analytics = ["dep:analytics", "office", "kawai-db/analytics", "dep:kawai-analyti
 # Remote SQL sources (Postgres/MySQL) for the analytics snapshot tools.
 # Implies `analytics`; SQLite needs no feature (libsql rides along).
 analytics-sql = ["analytics", "kawai-analytics/analytics-sql", "dep:sqlx"]
+# On-device OCR via PaddleOCR (rust-paddle-ocr / MNN). Deterministic text
+# extraction from images — scanned docs, screenshots, receipts. Feature-gated
+# in kawai-vision; adds ~3 MB model dir resolution + C++ MNN build overhead.
+paddle-ocr = ["kawai-vision/paddle-ocr"]
 
 [[bin]]
 name = "kawai"

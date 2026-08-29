@@ -211,6 +211,25 @@ jobs:
         run: cargo test -p codegraph
         working-directory: crates
 
+      # PaddleOCR on-device OCR (kawai-vision paddle-ocr feature): compile gate
+      # + live inference smoke. The MNN prebuilt lib downloads during the cargo
+      # build; the tiny model suite (det/rec/keys, ~4 MB total) is downloaded
+      # by the smoke itself via ensure_models() and cached between runs.
+      - name: cargo check (kawai-vision paddle-ocr feature)
+        run: cargo check -p kawai-vision --features paddle-ocr
+        working-directory: crates
+
+      - name: Cache PaddleOCR smoke models
+        id: paddle-models
+        uses: actions/cache@v4
+        with:
+          path: ~/.kawai/models/ocr
+          key: paddle-ocr-v6-tiny-models
+
+      - name: paddle_ocr_smoke (on-device OCR regression)
+        working-directory: crates
+        run: cargo run --quiet -p kawai-vision --features paddle-ocr --example paddle_ocr_smoke
+
       # agent_eval harness unit tests: assert grammar (scalar == over
       # string/bool/number, in:, re:, list), slash-path lookup, call-line
       # parsing. Pure Rust — no model file needed. Guards the scorer itself:
