@@ -286,7 +286,7 @@ KAWAI_EMBED_MODEL_PATH=/path/to/embeddinggemma.tflite  # optional local embeddin
 KAWAI_EMBED_SPM_PATH=/path/to/sentencepiece.model  # optional tokenizer for the local embedding graph; same resolution/download flow
 KAWAI_LLM_MAX_TOKENS=16384       # optional context budget (K/V state entries) for the on-device conversation; default 16384, clamped below the model's max (Gemma 4: 32003). Larger = more K/V memory; raise for longer sessions before the prefill-overflow reset.
 # ── On-device OCR (paddle-ocr feature, crates/foundation/vision) ────────────
-KAWAI_OCR_MODEL_TIER=small       # model tier: tiny (~3MB, English+Chinese), small (~15MB, 50 v6 languages), medium (~69MB, accuracy-first). Default: small. Models auto-downloaded from cadgecharm/PP-OCRv6-mnn on first use.
+KAWAI_OCR_MODEL_TIER=small       # model tier override: tiny (~3MB, English+Chinese), small (~15MB, 50 v6 languages), medium (~69MB, accuracy-first). If unset, tier is auto-detected: <4 CPU cores → tiny, else → small. Models auto-downloaded from cadgecharm/PP-OCRv6-mnn into ~/.kawai/models/ocr/{tier}/.
 # KAWAI_OCR_MODEL_DIR=/path/to/ocr-models  # optional override; otherwise models go to ~/.kawai/models/ocr/{tier}/
 # ── Hybrid LLM tier — cloud subagents (crates/foundation/remote-llm, PLAN-hybrid-llm-subagents.md) ──
 # Provider pool with health-aware failover: every provider with a vault key
