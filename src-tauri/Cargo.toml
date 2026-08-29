@@ -21,6 +21,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+# OS-native credential storage for the session JWT (Keychain/Keystore).
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process", "io-util", "sync"] }
@@ -227,6 +229,33 @@ required-features = ["litert", "office"]
 [[example]]
 name = "turn_log_report"
 required-features = ["litert"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.release.package.analytics]
+opt-level = "z"
+
+[profile.release.package.polars]
+opt-level = "z"
+[profile.release.package.polars-arrow]
+opt-level = "z"
+[profile.release.package.polars-core]
+opt-level = "z"
+[profile.release.package.polars-ops]
+opt-level = "z"
+[profile.release.package.polars-plan]
+opt-level = "z"
+[profile.release.package.polars-lazy]
+opt-level = "z"
+[profile.release.package.polars-stream]
+opt-level = "z"
+[profile.release.package.polars-io]
+opt-level = "z"
+[profile.release.package.polars-parquet]
+opt-level = "z"
 
 # Redirect crates.io office_oxide to the local fork for the entire dependency
 # graph (including pdf_oxide). Prevents duplicate FFI symbols on Linux.

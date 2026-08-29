@@ -124,6 +124,7 @@ pub async fn set_session(
 ) -> Result<UserInfo, String> {
     let claims = verifier.verify(&token).await.map_err(|e| e.to_string())?;
     let user_id = claims.sub.clone();
+    crate::keychain::store(&token)?;
     *session
         .write()
         .map_err(|_| "session state unavailable (lock poisoned)".to_string())? = Some(claims);
@@ -135,6 +136,24 @@ pub fn logout(session: State<'_, Session>) {
     if let Ok(mut guard) = session.write() {
         *guard = None;
     }
+    if let Err(e) = crate::keychain::clear() {
+        eprintln!("[auth] {e}");
+    }
+}
+
+/// Restore and re-verify the token persisted in the OS credential store.
+#[tauri::command]
+pub async fn restore_session(
+    verifier: State<'_, Verifier>,
+    session: State<'_, Session>,
+) -> Result<UserInfo, String> {
+    let Some(token) = crate::keychain::load()? else {
+        return Err("not authenticated".into());
+    };
+    let claims = verifier.verify(&token).await.map_err(|e| e.to_string())?;
+    let user_id = claims.sub.clone();
+    *session.write().map_err(|_| "session state unavailable".to_string())? = Some(claims);
+    Ok(logic::whoami(&user_id))
 }
 
 /// Requires an active session. Demonstrates the auth-required pattern: the

@@ -41,10 +41,7 @@ for lib in \
   libGemmaModelConstraintProvider.dylib \
   libLiteRt.dylib \
   libLiteRtMetalAccelerator.dylib \
-  libLiteRtTopKMetalSampler.dylib \
-  libLiteRtTopKWebGpuSampler.dylib \
-  libLiteRtWebGpuAccelerator.dylib \
-  libwebgpu_dawn.dylib; do
+  libLiteRtTopKMetalSampler.dylib; do
   src="$PREBUILT_DIR/$lib"
   if [ ! -f "$src" ]; then
     echo "  WARNING: $lib not found in prebuilt — skipping"

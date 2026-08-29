@@ -7,30 +7,21 @@
         "../cognee-litert-lm/native/libGemmaModelConstraintProvider.dylib": "Frameworks/libGemmaModelConstraintProvider.dylib",
         "../cognee-litert-lm/native/libLiteRt.dylib": "Frameworks/libLiteRt.dylib",
         "../cognee-litert-lm/native/libLiteRtMetalAccelerator.dylib": "Frameworks/libLiteRtMetalAccelerator.dylib",
-        "../cognee-litert-lm/native/libLiteRtTopKMetalSampler.dylib": "Frameworks/libLiteRtTopKMetalSampler.dylib",
-        "../cognee-litert-lm/native/libLiteRtTopKWebGpuSampler.dylib": "Frameworks/libLiteRtTopKWebGpuSampler.dylib",
-        "../cognee-litert-lm/native/libLiteRtWebGpuAccelerator.dylib": "Frameworks/libLiteRtWebGpuAccelerator.dylib",
-        "../cognee-litert-lm/native/libwebgpu_dawn.dylib": "Frameworks/libwebgpu_dawn.dylib"
+        "../cognee-litert-lm/native/libLiteRtTopKMetalSampler.dylib": "Frameworks/libLiteRtTopKMetalSampler.dylib"
       }
     },
     "linux": {
       "files": {
         "../cognee-litert-lm/native/liblitert-lm.so": "lib/liblitert-lm.so",
         "../cognee-litert-lm/native/libGemmaModelConstraintProvider.so": "lib/libGemmaModelConstraintProvider.so",
-        "../cognee-litert-lm/native/libLiteRt.so": "lib/libLiteRt.so",
-        "../cognee-litert-lm/native/libLiteRtTopKWebGpuSampler.so": "lib/libLiteRtTopKWebGpuSampler.so",
-        "../cognee-litert-lm/native/libLiteRtWebGpuAccelerator.so": "lib/libLiteRtWebGpuAccelerator.so",
-        "../cognee-litert-lm/native/libwebgpu_dawn.so": "lib/libwebgpu_dawn.so"
+        "../cognee-litert-lm/native/libLiteRt.so": "lib/libLiteRt.so"
       }
     },
     "windows": {
       "files": {
         "../cognee-litert-lm/native/litert-lm.dll": "litert-lm.dll",
         "../cognee-litert-lm/native/libGemmaModelConstraintProvider.dll": "libGemmaModelConstraintProvider.dll",
-        "../cognee-litert-lm/native/libLiteRt.dll": "libLiteRt.dll",
-        "../cognee-litert-lm/native/libLiteRtTopKWebGpuSampler.dll": "libLiteRtTopKWebGpuSampler.dll",
-        "../cognee-litert-lm/native/libLiteRtWebGpuAccelerator.dll": "libLiteRtWebGpuAccelerator.dll",
-        "../cognee-litert-lm/native/libwebgpu_dawn.dll": "libwebgpu_dawn.dll"
+        "../cognee-litert-lm/native/libLiteRt.dll": "libLiteRt.dll"
       }
     }
   }

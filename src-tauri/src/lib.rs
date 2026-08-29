@@ -2,6 +2,7 @@ pub mod agent_registry;
 pub mod auth;
 mod commands;
 pub mod logging;
+mod keychain;
 pub mod logic;
 
 #[cfg(feature = "webread")]
@@ -61,6 +62,7 @@ pub fn run() {
         commands::generate_activity,
         commands::cancel_stream,
         commands::set_session,
+        commands::restore_session,
         commands::logout,
         commands::whoami,
         commands::create_chat_session,
@@ -126,6 +128,7 @@ pub fn run() {
         commands::generate_activity,
         commands::cancel_stream,
         commands::set_session,
+        commands::restore_session,
         commands::logout,
         commands::whoami,
         commands::create_chat_session,
@@ -196,6 +199,7 @@ pub fn run() {
         commands::generate_activity,
         commands::cancel_stream,
         commands::set_session,
+        commands::restore_session,
         commands::logout,
         commands::whoami,
         commands::create_chat_session,
@@ -243,6 +247,7 @@ pub fn run() {
         commands::generate_activity,
         commands::cancel_stream,
         commands::set_session,
+        commands::restore_session,
         commands::logout,
         commands::whoami,
         commands::create_chat_session,
@@ -299,6 +304,7 @@ pub fn run() {
         commands::generate_activity,
         commands::cancel_stream,
         commands::set_session,
+        commands::restore_session,
         commands::logout,
         commands::whoami,
         commands::create_chat_session,
