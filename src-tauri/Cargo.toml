@@ -161,7 +161,7 @@ binance = ["dep:binance", "kawai-agent/binance"]
 analytics = ["dep:analytics", "office", "kawai-db/analytics", "dep:kawai-analytics", "kawai-agent/analytics"]
 # Remote SQL sources (Postgres/MySQL) for the analytics snapshot tools.
 # Implies `analytics`; SQLite needs no feature (libsql rides along).
-analytics-sql = ["analytics", "kawai-analytics/analytics-sql"]
+analytics-sql = ["analytics", "kawai-analytics/analytics-sql", "dep:sqlx"]
 
 [[bin]]
 name = "kawai"

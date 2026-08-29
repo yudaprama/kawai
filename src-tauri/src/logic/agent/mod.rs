@@ -8,6 +8,9 @@ pub use crate::agent_registry::{
 #[cfg(feature = "litert")]
 pub use kawai_agent::{agent_chat_with_registry, AgentChatEvent, AgentDefinition, AgentRegistry};
 
+#[cfg(all(feature = "litert", feature = "office"))]
+pub use kawai_agent::extract_draft_blocks;
+
 #[cfg(not(feature = "litert"))]
 mod catalog;
 #[cfg(not(feature = "litert"))]

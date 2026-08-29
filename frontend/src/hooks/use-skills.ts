@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { type SkillInfo, type SkillSummary, call, errText } from "@/lib/api";
 import { logError } from "@/lib/logger";
 import { showErrorToast } from "@/lib/utils";
+import { useLoadOnce } from "./use-load-once";
 
 /**
  * The Skills asset page state: the skill list plus CRUD mutations with
@@ -9,37 +10,25 @@ import { showErrorToast } from "@/lib/utils";
  * drops) — the backend's `version` counter is the source of truth.
  */
 export function useSkills(enabled: boolean) {
-  const [skills, setSkills] = useState<SkillSummary[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const { items: skills, setItems: setSkills, loaded, refresh } = useLoadOnce<SkillSummary>("skill_list", enabled);
   const [busy, setBusy] = useState(false);
 
-  const refresh = useCallback(async () => {
-    try {
-      setSkills(await call<SkillSummary[]>("skill_list"));
-    } catch (err) {
-      logError("skill_list", err);
-    } finally {
-      setLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (enabled && !loaded) void refresh();
-  }, [enabled, loaded, refresh]);
-
-  const create = useCallback(async (name: string, description: string, content: string): Promise<SkillInfo | null> => {
-    setBusy(true);
-    try {
-      const skill = await call<SkillInfo>("skill_create", { name, description, content });
-      setSkills((prev) => [skill, ...prev]);
-      return skill;
-    } catch (err) {
-      showErrorToast(`Couldn't create the skill — ${errText(err)}`);
-      return null;
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  const create = useCallback(
+    async (name: string, description: string, content: string): Promise<SkillInfo | null> => {
+      setBusy(true);
+      try {
+        const skill = await call<SkillInfo>("skill_create", { name, description, content });
+        setSkills((prev) => [skill, ...prev]);
+        return skill;
+      } catch (err) {
+        showErrorToast(`Couldn't create the skill — ${errText(err)}`);
+        return null;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [setSkills],
+  );
 
   const get = useCallback(async (skillId: string): Promise<SkillInfo | null> => {
     try {
@@ -67,19 +56,22 @@ export function useSkills(enabled: boolean) {
         setBusy(false);
       }
     },
-    [],
+    [setSkills],
   );
 
-  const remove = useCallback(async (skillId: string): Promise<boolean> => {
-    try {
-      const removed = await call<boolean>("skill_delete", { skillId });
-      if (removed) setSkills((prev) => prev.filter((s) => s.id !== skillId));
-      return removed;
-    } catch (err) {
-      showErrorToast(`Couldn't delete the skill — ${errText(err)}`);
-      return false;
-    }
-  }, []);
+  const remove = useCallback(
+    async (skillId: string): Promise<boolean> => {
+      try {
+        const removed = await call<boolean>("skill_delete", { skillId });
+        if (removed) setSkills((prev) => prev.filter((s) => s.id !== skillId));
+        return removed;
+      } catch (err) {
+        showErrorToast(`Couldn't delete the skill — ${errText(err)}`);
+        return false;
+      }
+    },
+    [setSkills],
+  );
 
   return { skills, loaded, busy, refresh, create, get, update, remove };
 }

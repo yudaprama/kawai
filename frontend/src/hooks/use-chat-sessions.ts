@@ -28,6 +28,17 @@ export function useChatSessions({
     sessionIdRef.current = state.sessionId;
   }, [state.sessionId]);
 
+  /** Reset to a fresh (no-session) state. Optionally sets the session to an existing id. */
+  const resetSession = useCallback(
+    async (sessionId: number | null) => {
+      await resetModelContext();
+      sessionIdRef.current = sessionId;
+      patch({ sessionId, historyError: null });
+      clearMessages();
+    },
+    [patch, resetModelContext, clearMessages],
+  );
+
   const loadSessions = useCallback(async () => {
     try {
       const [sessions, archivedSessions] = await Promise.all([
@@ -67,19 +78,13 @@ export function useChatSessions({
 
   const newChat = useCallback(async () => {
     if (streamCtrl.current) return;
-    await resetModelContext();
-    sessionIdRef.current = null;
-    patch({ sessionId: null, historyError: null });
-    clearMessages();
-  }, [patch, resetModelContext, streamCtrl, clearMessages]);
+    await resetSession(null);
+  }, [streamCtrl, resetSession]);
 
   const selectSession = useCallback(
     async (sessionId: number) => {
       if (streamCtrl.current) return;
-      await resetModelContext();
-      sessionIdRef.current = sessionId;
-      patch({ sessionId, historyError: null });
-      clearMessages();
+      await resetSession(sessionId);
       try {
         const rows = await call<ChatMessageInfo[]>("list_chat_messages", {
           sessionId,
@@ -90,16 +95,13 @@ export function useChatSessions({
         patch({ historyError: errText(err) });
       }
     },
-    [patch, resetModelContext, streamCtrl, clearMessages],
+    [patch, streamCtrl, resetSession],
   );
 
   const selectAgent = useCallback(async () => {
     if (streamCtrl.current) return;
-    await resetModelContext();
-    sessionIdRef.current = null;
-    patch({ sessionId: null, historyError: null });
-    clearMessages();
-  }, [patch, resetModelContext, streamCtrl, clearMessages]);
+    await resetSession(null);
+  }, [streamCtrl, resetSession]);
 
   const deleteSession = useCallback(
     async (sessionId: number) => {
@@ -112,14 +114,11 @@ export function useChatSessions({
         return;
       }
       if (sessionIdRef.current === sessionId) {
-        await resetModelContext();
-        sessionIdRef.current = null;
-        patch({ sessionId: null });
-        clearMessages();
+        await resetSession(null);
       }
       void loadSessions();
     },
-    [patch, loadSessions, resetModelContext, streamCtrl, clearMessages],
+    [loadSessions, streamCtrl, resetSession],
   );
 
   const renameSession = useCallback(
@@ -208,13 +207,10 @@ export function useChatSessions({
       patch({ sessions: finalSessions, archivedSessions: finalArchived });
 
       if (archived && sessionIdRef.current === sessionId) {
-        await resetModelContext();
-        sessionIdRef.current = null;
-        patch({ sessionId: null, historyError: null });
-        clearMessages();
+        await resetSession(null);
       }
     },
-    [state.sessions, state.archivedSessions, patch, resetModelContext, clearMessages],
+    [state.sessions, state.archivedSessions, patch, resetSession],
   );
 
   const retryHistoryLoad = useCallback(async () => {

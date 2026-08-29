@@ -97,6 +97,10 @@ function PdfPreview({ file }: { file: PreviewFile }) {
 }
 
 function PdfEmbedPreview({ file }: { file: PreviewFile }) {
+  return <IframePreview file={file} sandbox="allow-scripts allow-same-origin allow-downloads" />;
+}
+
+function IframePreview({ file, sandbox }: { file: PreviewFile; sandbox: string }) {
   const { data, isLoading, error } = useFilePreview(file);
   if (isLoading || error || !data?.dataUrl) return <PreviewLoading />;
   return (
@@ -104,7 +108,7 @@ function PdfEmbedPreview({ file }: { file: PreviewFile }) {
       <iframe
         src={data.dataUrl}
         title={file.name}
-        sandbox="allow-scripts allow-same-origin allow-downloads"
+        sandbox={sandbox}
         className="h-full min-h-0 w-full flex-1 rounded-lg border"
       />
     </div>
@@ -118,18 +122,7 @@ function PdfEmbedPreview({ file }: { file: PreviewFile }) {
  * server-side before the file is ever stored.
  */
 function HtmlPreview({ file }: { file: PreviewFile }) {
-  const { data, isLoading, error } = useFilePreview(file);
-  if (isLoading || error || !data?.dataUrl) return <PreviewLoading />;
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <iframe
-        src={data.dataUrl}
-        title={file.name}
-        sandbox="allow-scripts"
-        className="h-full min-h-0 w-full flex-1 rounded-lg border bg-black"
-      />
-    </div>
-  );
+  return <IframePreview file={file} sandbox="allow-scripts" />;
 }
 
 /**

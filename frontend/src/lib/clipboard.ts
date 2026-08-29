@@ -1,28 +1,13 @@
+import { writeClipboardTextViaBrowser } from "@/platform/shared-media";
+
 /**
- * Copy text to the clipboard. The Tauri webview supports the async Clipboard
- * API; the legacy textarea + execCommand path covers the rare denial case.
+ * Copy text to the clipboard. Delegates to the platform's browser fallback
+ * implementation (async Clipboard API + hidden-textarea execCommand).
  *
  * @returns `true` when the copy succeeded, otherwise `false`.
  */
 export async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    try {
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.appendChild(textarea);
-      textarea.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(textarea);
-      return ok;
-    } catch {
-      return false;
-    }
-  }
+  return writeClipboardTextViaBrowser(text);
 }
 
 /**

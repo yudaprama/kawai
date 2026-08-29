@@ -187,39 +187,57 @@ export default function App() {
   // no backend tier yet and state that plainly). Data comes from the same app
   // state the chat uses, so switching views never re-fetches or resets chat.
   const assetWorkspace = toolWorkbenchId ? (
-    <ToolWorkbench messages={chat.messages} onBack={() => setToolWorkbenchId(null)} onOpenPreview={(fileId, name) => ka.setPreviewFile({ id: fileId, originalName: name, ext: name.split(".").pop() ?? "", bytes: 0, createdAt: 0, status: "ready", chunks: 0, error: null, inSession: true, raw: null })} toolCallId={toolWorkbenchId} />
+    <ToolWorkbench
+      messages={chat.messages}
+      onBack={() => setToolWorkbenchId(null)}
+      onOpenPreview={(fileId, name) =>
+        ka.setPreviewFile({
+          id: fileId,
+          originalName: name,
+          ext: name.split(".").pop() ?? "",
+          bytes: 0,
+          createdAt: 0,
+          status: "ready",
+          chunks: 0,
+          error: null,
+          inSession: true,
+          raw: null,
+        })
+      }
+      toolCallId={toolWorkbenchId}
+    />
   ) : assetView === "wiki" ? (
-      <WikiAssetPage
-        confirmDeleteId={ka.confirmDeleteId}
-        files={ka.knowledge.files}
-        importing={ka.importing}
-        loaded={ka.knowledge.loaded}
-        sessionId={chat.sessionId}
-        onAdd={ka.addToSession}
-        onBack={() => setAssetView(null)}
-        onDelete={ka.deleteFile}
-        onImport={() => void ka.addKnowledgeFiles()}
-        onRemove={ka.removeFromSession}
-        onRetry={ka.retryIndex}
-      />
-    ) : assetView === "memory" ? (
-      <MemoryAssetPage
-        agents={agents}
-        sessions={[...chat.sessions, ...chat.archivedSessions]}
-        onBack={() => setAssetView(null)}
-      />
-    ) : assetView === "skills" ? (
-      <SkillsAssetPage onBack={() => setAssetView(null)} />
-    ) : assetView === "code" ? (
-      <CodeAssetPage
-        initialQuery={codeGraphSeed?.query}
-        initialResult={codeGraphSeed?.result}
-        onBack={() => {
-          setCodeGraphSeed(null);
-          setAssetView(null);
-        }}
-      />
-    ) : null;
+    <WikiAssetPage
+      confirmDeleteId={ka.confirmDeleteId}
+      files={ka.knowledge.files}
+      importing={ka.importing}
+      loaded={ka.knowledge.loaded}
+      sessionId={chat.sessionId}
+      onAdd={ka.addToSession}
+      onBack={() => setAssetView(null)}
+      onDelete={ka.deleteFile}
+      onImport={() => void ka.addKnowledgeFiles()}
+      onRemove={ka.removeFromSession}
+      onRetry={ka.retryIndex}
+    />
+  ) : assetView === "memory" ? (
+    <MemoryAssetPage
+      agents={agents}
+      sessions={[...chat.sessions, ...chat.archivedSessions]}
+      onBack={() => setAssetView(null)}
+    />
+  ) : assetView === "skills" ? (
+    <SkillsAssetPage onBack={() => setAssetView(null)} />
+  ) : assetView === "code" ? (
+    <CodeAssetPage
+      initialQuery={codeGraphSeed?.query}
+      initialResult={codeGraphSeed?.result}
+      onBack={() => {
+        setCodeGraphSeed(null);
+        setAssetView(null);
+      }}
+    />
+  ) : null;
 
   const contextPanel = hasContextPane ? (
     <ContextPanel
@@ -256,7 +274,10 @@ export default function App() {
             setAssetView(null);
             setActiveAgentId(id);
           }}
-          onSelectAsset={(id) => { setToolWorkbenchId(null); setAssetView(id); }}
+          onSelectAsset={(id) => {
+            setToolWorkbenchId(null);
+            setAssetView(id);
+          }}
           onToggle={() => setAgentsRail((v) => !v)}
         />
       </div>
@@ -290,8 +311,15 @@ export default function App() {
           onOpenMobileAgents={() => setMobileDrawer("agents")}
           onOpenMobileSessions={() => setMobileDrawer("sessions")}
           onOpenMobileKnowledge={hasContextPane ? () => setMobileDrawer("knowledge") : undefined}
-          onOpenTool={(id) => { setToolWorkbenchId(id); setAssetView(null); }}
-          onOpenCodeGraph={(query, result) => { setCodeGraphSeed({ query, result }); setToolWorkbenchId(null); setAssetView("code"); }}
+          onOpenTool={(id) => {
+            setToolWorkbenchId(id);
+            setAssetView(null);
+          }}
+          onOpenCodeGraph={(query, result) => {
+            setCodeGraphSeed({ query, result });
+            setToolWorkbenchId(null);
+            setAssetView("code");
+          }}
           canvasOpen={canvasOpen}
           onToggleCanvas={hasContextPane ? () => setCanvasOpen((v) => !v) : undefined}
           canvas={canvasOpen ? contextPanel : null}

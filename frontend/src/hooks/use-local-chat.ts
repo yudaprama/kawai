@@ -158,6 +158,10 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
             ]
           : [];
 
+      /** Build the assistant message parts from the current streaming state. */
+      const assistantParts = (text: string, state: "streaming" | "done"): UIMessagePart[] =>
+        text ? [{ type: "text", text, state }, ...toolParts, ...reasoningPart()] : [...toolParts, ...reasoningPart()];
+
       const setAssistantParts = (parts: UIMessagePart[], status?: ChatStatus) => {
         setState((prev) => ({
           ...prev,
@@ -166,30 +170,11 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
         }));
       };
       const syncStreamingDisplay = () => {
-        const displayText = stripToolMarkup(full);
-        setAssistantParts(
-          displayText
-            ? [
-                {
-                  type: "text",
-                  text: displayText,
-                  state: "streaming" as const,
-                },
-                ...toolParts,
-                ...reasoningPart(),
-              ]
-            : [...toolParts, ...reasoningPart()],
-          "streaming",
-        );
+        setAssistantParts(assistantParts(stripToolMarkup(full), "streaming"), "streaming");
       };
       finalizeAssistant.current = () => {
         if (reasoning) reasoning.done = true;
-        const displayText = stripToolMarkup(full);
-        setAssistantParts(
-          displayText
-            ? [{ type: "text", text: displayText, state: "done" as const }, ...toolParts, ...reasoningPart()]
-            : [...toolParts, ...reasoningPart()],
-        );
+        setAssistantParts(assistantParts(stripToolMarkup(full), "done"));
       };
 
       streamCtrl.current = streamOperation<LocalChatEvent>(
@@ -262,13 +247,7 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
             streamCtrl.current = null;
             finalizeAssistant.current = null;
             if (reasoning) reasoning.done = true;
-            const displayText = stripToolMarkup(full);
-            setAssistantParts(
-              displayText
-                ? [{ type: "text", text: displayText, state: "done" as const }, ...toolParts, ...reasoningPart()]
-                : [...toolParts, ...reasoningPart()],
-              "ready",
-            );
+            setAssistantParts(assistantParts(stripToolMarkup(full), "done"), "ready");
             void loadSessions();
           },
           onError: (err) => {
@@ -278,53 +257,13 @@ export function useLocalChat(agent: Pick<AgentInfo, "id">, userId?: string | nul
             const lower = err.message.toLowerCase();
             const isBusyRace = lower.includes("already running") || lower.includes("generation is already");
             if (reasoning) reasoning.done = true;
-            if (isBusyRace) {
-              setState((prev) => ({
-                ...prev,
-                status: "ready",
-                error: msg,
-                messages: prev.messages.map((m) =>
-                  m.id === assistantId
-                    ? {
-                        ...m,
-                        parts: full
-                          ? [
-                              {
-                                type: "text",
-                                text: full,
-                                state: "done" as const,
-                              },
-                              ...toolParts,
-                              ...reasoningPart(),
-                            ]
-                          : [...toolParts, ...reasoningPart()],
-                      }
-                    : m,
-                ),
-              }));
-              return;
-            }
+            const status: ChatStatus = isBusyRace ? "ready" : "error";
             setState((prev) => ({
               ...prev,
-              status: "error",
+              status,
               error: msg,
               messages: prev.messages.map((m) =>
-                m.id === assistantId
-                  ? {
-                      ...m,
-                      parts: full
-                        ? [
-                            {
-                              type: "text",
-                              text: full,
-                              state: "done" as const,
-                            },
-                            ...toolParts,
-                            ...reasoningPart(),
-                          ]
-                        : [...toolParts, ...reasoningPart()],
-                    }
-                  : m,
+                m.id === assistantId ? { ...m, parts: assistantParts(full, "done") } : m,
               ),
             }));
           },

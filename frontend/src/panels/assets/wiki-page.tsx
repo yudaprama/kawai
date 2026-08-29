@@ -11,6 +11,7 @@ import {
 } from "@/components/asset/asset-list-panel";
 import { AssetPageHeader } from "@/components/asset/asset-page-header";
 import { AssetSplitLayout } from "@/components/asset/asset-split-layout";
+import { EmptyPane } from "./asset-shell";
 import { FileIcon } from "@/components/file-icon";
 import { KnowledgeStatusBadge } from "@/components/knowledge-file-row";
 import { Button } from "@/components/ui/button";
@@ -215,24 +216,11 @@ function SourceDetail({
         <TabsContent value="graph">
           <EmptyPane
             description="The page graph links wiki pages by their references and expands search results across hops. A page-graph indexing tier isn't part of this build yet — sources are searched by chunk embeddings and BM25."
+            icon={<GitBranchIcon className="size-5" />}
             label="No page graph for this source"
           />
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
-
-export function EmptyPane({ label, description }: { label: string; description: string }) {
-  return (
-    <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-      <div className="bg-muted flex size-12 items-center justify-center rounded-lg">
-        <GitBranchIcon className="size-5" />
-      </div>
-      <div className="space-y-1">
-        <p className="text-foreground text-sm font-medium">{label}</p>
-        <p className="max-w-md text-xs leading-relaxed">{description}</p>
-      </div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { LayersIcon, PencilIcon, PlusIcon, SparklesIcon, TrashIcon } from "lucide-react";
+import { EmptyPane } from "./asset-shell";
 import { useEffect, useMemo, useState } from "react";
 import {
   AssetBadge,
@@ -231,14 +232,16 @@ function BlockDetail({
           <L1Pane memories={memories} session={session} />
         </TabsContent>
         <TabsContent value="l2">
-          <LayerEmpty
+          <EmptyPane
             description="L2 groups memories into scene blocks — contextual situation summaries the agent navigates. Scene extraction isn't part of this build yet."
+            icon={<LayersIcon className="size-5" />}
             label="No scene blocks"
           />
         </TabsContent>
         <TabsContent value="l3">
-          <LayerEmpty
+          <EmptyPane
             description="L3 is the stable persona synthesized from all scenes — long-term identity and preferences. Persona generation isn't part of this build yet."
+            icon={<LayersIcon className="size-5" />}
             label="No persona"
           />
         </TabsContent>
@@ -491,20 +494,6 @@ function Transcript({
           ))}
         </ol>
       )}
-    </div>
-  );
-}
-
-function LayerEmpty({ label, description }: { label: string; description: string }) {
-  return (
-    <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-      <div className="bg-muted flex size-12 items-center justify-center rounded-lg">
-        <LayersIcon className="size-5" />
-      </div>
-      <div className="space-y-1">
-        <p className="text-foreground text-sm font-medium">{label}</p>
-        <p className="max-w-md text-xs leading-relaxed">{description}</p>
-      </div>
     </div>
   );
 }

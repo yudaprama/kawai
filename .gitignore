@@ -37,3 +37,6 @@ charton/
 .fastembed_cache/
 frontend/.cache/duplicalis/analysis.msgpack
 frontend/.cache/duplicalis/embeddings.json
+jscpd-report/jscpd-report.json
+.cache/duplicalis/analysis.msgpack
+.cache/duplicalis/embeddings.json
