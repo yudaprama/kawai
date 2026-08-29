@@ -68,31 +68,86 @@ fn resolve_pages(pages: Option<&str>, count: usize) -> Result<Vec<usize>, String
 }
 
 /// Extract markdown text from a stored PDF. Output is prefixed per page:
-/// `--- page N ---`.
+/// `--- page N ---`. For scanned PDFs where native text is empty, falls back
+/// to rendering the page to an image and OCR-ing via PaddleOCR (when the
+/// `paddle-ocr` feature is enabled).
 pub async fn pdf_extract_text(
     user_id: &str,
     file_id: &str,
     pages: Option<&str>,
 ) -> Result<String, String> {
     let (path, _) = require_pdf(user_id, file_id)?;
-    let pages = pages.map(|s| s.to_string());
-    run_blocking(move || {
-        let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open: {e}"))?;
+    let pages_spec = pages.map(|s| s.to_string());
+    let path_clone = path.clone();
+    let extracted: Vec<(usize, String)> = run_blocking(move || {
+        let doc = PdfDocument::open(&path_clone).map_err(|e| format!("pdf open: {e}"))?;
         let count = doc
             .page_count()
             .map_err(|e| format!("pdf page_count: {e}"))?;
         let options = ConversionOptions::default();
-        let indices = resolve_pages(pages.as_deref(), count)?;
-        let mut out = String::new();
+        let indices = resolve_pages(pages_spec.as_deref(), count)?;
+        let mut out = Vec::with_capacity(indices.len());
         for &i in &indices {
             let md = doc
                 .to_markdown(i, &options)
                 .map_err(|e| format!("pdf to_markdown: {e}"))?;
-            out.push_str(&format!("--- page {} ---\n{}\n", i + 1, md));
+            out.push((i, md));
         }
         Ok(out)
     })
+    .await?;
+
+    // Per-page OCR fallback for pages where native extraction is blank.
+    #[cfg(feature = "paddle-ocr")]
+    let extracted = {
+        let mut out = Vec::with_capacity(extracted.len());
+        for (idx, md) in extracted {
+            if !md.trim().is_empty() {
+                out.push((idx, md));
+                continue;
+            }
+            match render_and_ocr_page(&path, idx).await {
+                Ok(ocr_text) if !ocr_text.trim().is_empty() => {
+                    out.push((idx, ocr_text));
+                }
+                Ok(_) => out.push((idx, md)),
+                Err(e) => {
+                    eprintln!("pdf ocr fallback failed for page {}: {e}", idx + 1);
+                    out.push((idx, md));
+                }
+            }
+        }
+        out
+    };
+
+    let mut out = String::new();
+    for (idx, md) in extracted {
+        out.push_str(&format!("--- page {} ---\n{}\n", idx + 1, md));
+    }
+    Ok(out)
+}
+
+#[cfg(feature = "paddle-ocr")]
+async fn render_and_ocr_page(path: &PathBuf, page_idx: usize) -> Result<String, String> {
+    let path = path.clone();
+    let png_bytes = spawn_blocking(move || {
+        let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open for render: {e}"))?;
+        let opts = pdf_oxide::rendering::RenderOptions::with_dpi(150);
+        let rendered =
+            pdf_oxide::rendering::render_page(&doc, page_idx, &opts).map_err(|e| {
+                format!("pdf render page {}: {e}", page_idx + 1)
+            })?;
+        Ok::<_, String>(rendered.data)
+    })
     .await
+    .map_err(|e| format!("render join: {e}"))??;
+
+    let source = kawai_vision::ImageSource::local(format!("page_{}.png", page_idx + 1));
+    let desc = kawai_vision::default_chain()
+        .describe(&source, &png_bytes)
+        .await
+        .map_err(|e| format!("ocr page {}: {e}", page_idx + 1))?;
+    Ok(desc.content)
 }
 
 /// Search text in a stored PDF. Returns an array of `{page, matches}` entries

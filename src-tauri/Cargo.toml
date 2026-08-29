@@ -151,7 +151,7 @@ webread = ["dep:webread", "dep:browser", "dep:url", "kawai-agent/webread"]
 # (kawai-embedding, with in-tree chunking) for idle-time
 # knowledge indexing. Enables the `webread` FEATURE (not just `dep:webread`)
 # so its bundled deps ride along.
-office = ["dep:kawai-vision", "kawai-vision/paddle-ocr", "dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office", "dep:kawai-office", "dep:kawai-knowledge", "kawai-knowledge/office", "kawai-agent/office"]
+office = ["dep:kawai-vision", "kawai-vision/paddle-ocr", "dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "ragloader/paddle-ocr", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "pdf_oxide/rendering", "dep:regex", "webread", "kawai-db/office", "dep:kawai-office", "kawai-office/paddle-ocr", "dep:kawai-knowledge", "kawai-knowledge/office", "kawai-agent/office"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
 binance = ["dep:binance", "kawai-agent/binance"]
