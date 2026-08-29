@@ -16,3 +16,7 @@
 [submodule "office_oxide"]
 	path = office_oxide
 	url = https://github.com/yudaprama/office_oxide
+[submodule "rust-paddle-ocr"]
+	path = rust-paddle-ocr
+	url = https://github.com/zibo-chen/rust-paddle-ocr
+	branch = main
