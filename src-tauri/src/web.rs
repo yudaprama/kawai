@@ -467,6 +467,14 @@ async fn local_load_model_handler(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
+/// Protected RPC: return the current on-device model status.
+#[cfg(feature = "litert")]
+async fn local_model_status_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<logic::local_llm::LocalModelStatus>, (StatusCode, String)> {
+    Ok(Json(logic::local_model_status()))
+}
+
 /// Protected streaming: on-device chat via SSE.
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
@@ -1289,6 +1297,7 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
     #[cfg(feature = "litert")]
     let protected = protected
         .route("/api/local_load_model", post(local_load_model_handler))
+        .route("/api/local_model_status", post(local_model_status_handler))
         .route("/api/local_chat", post(local_chat_handler))
         .route("/api/local_llm_reset", post(local_llm_reset_handler))
         .route(

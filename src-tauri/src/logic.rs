@@ -112,6 +112,9 @@ pub async fn ensure_model() -> Result<String, String> {
         return Ok(path);
     }
 
+    // Reset download progress for a fresh attempt.
+    local_llm::reset_download_state();
+
     // Determine target: ~/.kawai/models/<filename>
     let home =
         std::env::var("HOME").map_err(|_| "HOME not set — cannot download model".to_string())?;
@@ -152,8 +155,12 @@ pub async fn ensure_model() -> Result<String, String> {
     };
 
     if response.status() == 206 || response.status().is_success() {
-        download_stream(response, &tmp_path, existing_size, filename).await?;
+        if let Err(e) = download_stream(response, &tmp_path, existing_size, filename).await {
+            local_llm::mark_download_failed();
+            return Err(e);
+        }
     } else {
+        local_llm::mark_download_failed();
         return Err(format!(
             "download failed: HTTP {} for {model_url}",
             response.status()
@@ -162,6 +169,8 @@ pub async fn ensure_model() -> Result<String, String> {
 
     // Atomically move the completed file into place.
     std::fs::rename(&tmp_path, &target_path).map_err(|e| format!("rename to target: {e}"))?;
+
+    local_llm::mark_download_complete();
 
     eprintln!(
         "[ensure_model] download complete: {}",
@@ -184,6 +193,9 @@ async fn download_stream(
 
     let total_size = existing_size + response.content_length().unwrap_or(0);
 
+    // Publish initial total so the frontend can display "0 / 3.7 GB".
+    local_llm::update_download_progress(existing_size, total_size);
+
     eprintln!(
         "[ensure_model] downloading {filename} ({:.1} GB) ...",
         total_size as f64 / 1e9
@@ -204,6 +216,9 @@ async fn download_stream(
         file.write_all(&chunk)
             .map_err(|e| format!("write chunk: {e}"))?;
         downloaded += chunk.len() as u64;
+
+        // Publish progress for the status endpoint (every chunk).
+        local_llm::update_download_progress(downloaded, total_size);
 
         // Log progress every ~100 MB.
         let prev_mb = (downloaded - chunk.len() as u64) / 100_000_000;
@@ -232,6 +247,9 @@ pub mod db;
 pub mod db_migrations;
 #[cfg(feature = "litert")]
 pub use local_llm;
+/// Convenience re-export so wrappers can call `logic::local_model_status()`.
+#[cfg(feature = "litert")]
+pub use local_llm::local_model_status;
 pub mod agent;
 // Session-scoped evidence cache for the agent loop (cross-turn reuse of
 // unchanged-file reads). In-process only — no SQLite, no schema.

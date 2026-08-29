@@ -224,7 +224,7 @@ required-features = ["litert", "office"]
 
 [[example]]
 name = "agent_eval"
-required-features = ["litert", "office"]
+required-features = ["office"]
 
 [[example]]
 name = "turn_log_report"

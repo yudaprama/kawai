@@ -6,10 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": [
-      "frontend/src/**",
-      "!**/*.css"
-    ]
+    "includes": ["frontend/src/**", "!**/*.css"]
   },
   "formatter": {
     "enabled": true,
@@ -23,7 +20,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended"
     }
   },
   "javascript": {
@@ -36,11 +33,7 @@
     {
       // Vendored from the web/ SPA (see frontend/AGENTS.md) — never format or
       // lint these so re-syncs from upstream stay diff-clean.
-      "includes": [
-        "**/lib/streamdown/**",
-        "**/components/ai-elements/**",
-        "**/components/ui/**"
-      ],
+      "includes": ["**/lib/streamdown/**", "**/components/ai-elements/**", "**/components/ui/**"],
       "linter": {
         "enabled": false
       },

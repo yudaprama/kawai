@@ -4,7 +4,9 @@
 // load, one conversation reset per scenario. Baseline: E4B 20/20 (100%).
 // Usage: cargo run --release --example agent_eval --features litert,office -- /path/to/model.litertlm
 // (needs `office` for the regex crate; the scenario set mirrors the crates office schema)
+#[cfg(feature = "litert")]
 use futures_util::StreamExt;
+#[cfg(feature = "litert")]
 use kawai_lib::logic::local_llm;
 use serde_json::Value;
 
@@ -491,6 +493,13 @@ fn check_asserts(args: &Value, asserts: &[(&str, &str)]) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(not(feature = "litert"))]
+fn main() {
+    eprintln!("agent_eval requires --features litert,office (litert feature missing)");
+    std::process::exit(2);
+}
+
+#[cfg(feature = "litert")]
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let mut args = std::env::args().skip(1);

@@ -471,6 +471,16 @@ pub async fn local_load_model(
     result
 }
 
+/// Authenticated RPC: return the current on-device model status.
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub async fn local_model_status(
+    session: State<'_, Session>,
+) -> Result<logic::local_llm::LocalModelStatus, String> {
+    let _user_id = session_user_id(&session)?;
+    Ok(logic::local_model_status())
+}
+
 /// Authenticated streaming: on-device chat. Same stream_id + Channel +
 /// cancellation registry pattern as `generate_activity`; tokens come from the
 /// LiteRT-LM C callback running on the blocking pool.

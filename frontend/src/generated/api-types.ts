@@ -61,6 +61,15 @@ export type LocalModelInfo = {
 	backend: string,
 };
 
+export type LocalModelStatus = {
+	/**  "not_started" | "downloading" | "loading" | "ready" | "failed" */
+	status: string,
+	downloadedBytes: number,
+	totalBytes: number,
+	/**  "remote" while local is not ready, "local" when the engine is loaded. */
+	fallback: string,
+};
+
 export type MemoryItem = {
 	id: string,
 	kind: string,
