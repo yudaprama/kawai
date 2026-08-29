@@ -9,6 +9,21 @@ use tokio::task::spawn_blocking;
 use super::store;
 use super::store::OfficeFile;
 
+/// Structured OCR result for one PDF page.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PdfOcrPage {
+    /// 1-based page number.
+    pub page_number: u32,
+    /// Page width in pixels at the render DPI.
+    pub width: u32,
+    /// Page height in pixels at the render DPI.
+    pub height: u32,
+    /// Flat text for embedding/RAG.
+    pub text: String,
+    /// Structured OCR lines with per-line bbox + confidence.
+    pub ocr_lines: Vec<kawai_vision::OcrLine>,
+}
+
 fn require_pdf(user_id: &str, file_id: &str) -> Result<(PathBuf, OfficeFile), String> {
     let (path, info) = store::resolve(user_id, file_id)?;
     if info.ext != "pdf" {
@@ -103,22 +118,26 @@ pub async fn pdf_extract_text(
         let mut out = Vec::with_capacity(extracted.len());
         for (idx, md) in extracted {
             if !md.trim().is_empty() {
-                out.push((idx, md));
+                out.push((idx, md, None));
                 continue;
             }
             match render_and_ocr_page(&path, idx).await {
-                Ok(ocr_text) if !ocr_text.trim().is_empty() => {
-                    out.push((idx, ocr_text));
+                Ok(desc) if !desc.content.trim().is_empty() => {
+                    out.push((idx, desc.content, desc.ocr_lines));
                 }
-                Ok(_) => out.push((idx, md)),
+                Ok(_) => out.push((idx, md, None)),
                 Err(e) => {
                     eprintln!("pdf ocr fallback failed for page {}: {e}", idx + 1);
-                    out.push((idx, md));
+                    out.push((idx, md, None));
                 }
             }
         }
         out
     };
+
+    #[cfg(not(feature = "paddle-ocr"))]
+    let extracted: Vec<(usize, String, Option<Vec<kawai_vision::OcrLine>>)> =
+        extracted.into_iter().map(|(i, s)| (i, s, None)).collect();
 
     let mut out = String::new();
     for (idx, md) in extracted {
@@ -128,7 +147,7 @@ pub async fn pdf_extract_text(
 }
 
 #[cfg(feature = "paddle-ocr")]
-async fn render_and_ocr_page(path: &PathBuf, page_idx: usize) -> Result<String, String> {
+async fn render_and_ocr_page(path: &PathBuf, page_idx: usize) -> Result<kawai_vision::ImageDescription, String> {
     let path = path.clone();
     let png_bytes = spawn_blocking(move || {
         let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open for render: {e}"))?;
@@ -143,11 +162,85 @@ async fn render_and_ocr_page(path: &PathBuf, page_idx: usize) -> Result<String, 
     .map_err(|e| format!("render join: {e}"))??;
 
     let source = kawai_vision::ImageSource::local(format!("page_{}.png", page_idx + 1));
-    let desc = kawai_vision::default_chain()
+    kawai_vision::default_chain()
         .describe(&source, &png_bytes)
         .await
-        .map_err(|e| format!("ocr page {}: {e}", page_idx + 1))?;
-    Ok(desc.content)
+        .map_err(|e| format!("ocr page {}: {e}", page_idx + 1))
+}
+
+/// Extract text from a stored PDF with structured per-page OCR results.
+/// Returns [`PdfOcrPage`] for every page that was processed — native pages
+/// have empty `ocr_lines`, scanned pages have PaddleOCR `ocr_lines` with
+/// bbox + confidence.
+pub async fn pdf_extract_text_structured(
+    user_id: &str,
+    file_id: &str,
+    pages: Option<&str>,
+) -> Result<Vec<PdfOcrPage>, String> {
+    #[cfg(feature = "paddle-ocr")]
+    {
+        let (path, _) = require_pdf(user_id, file_id)?;
+        let pages_spec = pages.map(|s| s.to_string());
+        let path_clone = path.clone();
+        let extracted: Vec<(usize, String)> = run_blocking(move || {
+            let doc = PdfDocument::open(&path_clone).map_err(|e| format!("pdf open: {e}"))?;
+            let count = doc
+                .page_count()
+                .map_err(|e| format!("pdf page_count: {e}"))?;
+            let options = ConversionOptions::default();
+            let indices = resolve_pages(pages_spec.as_deref(), count)?;
+            let mut out = Vec::with_capacity(indices.len());
+            for &i in &indices {
+                let md = doc
+                    .to_markdown(i, &options)
+                    .map_err(|e| format!("pdf to_markdown: {e}"))?;
+                out.push((i, md));
+            }
+            Ok(out)
+        })
+        .await?;
+
+        let mut result = Vec::with_capacity(extracted.len());
+        for (idx, md) in extracted {
+            if !md.trim().is_empty() {
+                result.push(PdfOcrPage {
+                    page_number: (idx + 1) as u32,
+                    width: 0,
+                    height: 0,
+                    text: md,
+                    ocr_lines: Vec::new(),
+                });
+                continue;
+            }
+            match render_and_ocr_page(&path, idx).await {
+                Ok(desc) => {
+                    result.push(PdfOcrPage {
+                        page_number: (idx + 1) as u32,
+                        width: 0,
+                        height: 0,
+                        text: desc.content,
+                        ocr_lines: desc.ocr_lines.unwrap_or_default(),
+                    });
+                }
+                Err(e) => {
+                    eprintln!("pdf ocr structured failed for page {}: {e}", idx + 1);
+                    result.push(PdfOcrPage {
+                        page_number: (idx + 1) as u32,
+                        width: 0,
+                        height: 0,
+                        text: md,
+                        ocr_lines: Vec::new(),
+                    });
+                }
+            }
+        }
+        Ok(result)
+    }
+    #[cfg(not(feature = "paddle-ocr"))]
+    {
+        let _ = (user_id, file_id, pages);
+        Err("pdf_extract_text_structured requires paddle-ocr feature".into())
+    }
 }
 
 /// Search text in a stored PDF. Returns an array of `{page, matches}` entries
