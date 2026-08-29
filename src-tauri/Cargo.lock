@@ -3877,7 +3877,9 @@ name = "kawai-vision"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "jigsawstack",
+ "local-llm",
  "serde",
  "thiserror 2.0.20",
  "tokio",

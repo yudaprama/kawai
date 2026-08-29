@@ -138,7 +138,7 @@ default = []
 web = ["dep:axum", "dep:tower-http"]
 # CodeGraph — sidecar only (AgentTool + LRU cache, zero cost off)
 codegraph = ["dep:codegraph"]
-litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "dep:kawai-agent", "kawai-agent/litert"]
+litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "dep:kawai-agent", "kawai-agent/litert", "dep:kawai-vision", "kawai-vision/litert", "kawai-knowledge/litert"]
 # GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
 # Include with --features graph, exclude by omitting it (zero cost when off).
 # Standalone — includes the pure `graph` crate + its DB deps.
