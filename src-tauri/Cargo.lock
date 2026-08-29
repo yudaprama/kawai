@@ -3626,6 +3626,7 @@ dependencies = [
  "kawai-office",
  "kawai-skills",
  "kawai-tools",
+ "kawai-vision",
  "libc",
  "libsql",
  "local-llm",
@@ -3791,6 +3792,7 @@ dependencies = [
  "kawai-embedding",
  "kawai-office",
  "kawai-tools",
+ "kawai-vision",
  "libsql",
  "office_oxide",
  "pdf_oxide",
@@ -3868,6 +3870,17 @@ version = "0.1.0"
 source = "git+https://github.com/yudaprama/kawai-vault.git#43b2829f9b3eaa139e726ea077127f1ec4225ba0"
 dependencies = [
  "base64 0.22.1",
+]
+
+[[package]]
+name = "kawai-vision"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "jigsawstack",
+ "serde",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -6152,6 +6165,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "jigsawstack",
+ "kawai-vision",
  "office_oxide",
  "pdf_oxide",
  "serde",

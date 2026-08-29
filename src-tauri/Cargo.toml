@@ -81,9 +81,10 @@ kawai-embedding = { path = "../kawai-embedding", optional = true }
 # Replaces the in-tree chunk_text sliding window with text-splitter's
 # MarkdownSplitter (heading-aware locators) / TextSplitter.
 text-splitter = { version = "0.27", features = ["markdown"], optional = true }
-# Image understanding for knowledge ingestion (office feature): describe
-# images to text via the ragloader DescriberChain (local stub → JigsawStack
-# VOCR). Pulls jigsawstack (reqwest 0.12) transitively.
+# Image understanding — reusable DescriberChain (local stub → JigsawStack VOCR).
+# Single source for RAG indexing (kawai-vision) + ragloader shim. Both ride
+# on the `office` feature so non-office builds stay dep-free.
+kawai-vision = { path = "../crates/foundation/vision", optional = true }
 ragloader = { path = "../crates/integrations/ragloader", optional = true }
 # YouTube transcript fetching for knowledge ingestion (office feature).
 # Uses reqwest 0.13 — coexists with our direct 0.12 (like the rustls pair).
@@ -150,7 +151,7 @@ webread = ["dep:webread", "dep:browser", "dep:url", "kawai-agent/webread"]
 # (kawai-embedding, with in-tree chunking) for idle-time
 # knowledge indexing. Enables the `webread` FEATURE (not just `dep:webread`)
 # so its bundled deps ride along.
-office = ["dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office", "dep:kawai-office", "dep:kawai-knowledge", "kawai-knowledge/office", "kawai-agent/office"]
+office = ["dep:kawai-vision", "dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "webread", "kawai-db/office", "dep:kawai-office", "dep:kawai-knowledge", "kawai-knowledge/office", "kawai-agent/office"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
 binance = ["dep:binance", "kawai-agent/binance"]

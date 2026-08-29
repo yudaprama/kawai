@@ -119,28 +119,24 @@ pub(crate) async fn extract_text(
     }
 }
 
-/// Describe a stored image into indexing-ready text via ragloader's
-/// `DescriberChain` (local model stub first, JigsawStack VOCR when the image
-/// is URL-reachable). Until LiteRT-LM gains multimodal input, purely local
-/// images fail with "no describer supports this source" — surfaced as the
-/// file's `failed` index status, retryable once a describer lands.
+/// Describe a stored image into indexing-ready text via the reusable
+/// `kawai-vision` `DescriberChain` (local stub → JigsawStack VOCR). Single
+/// source for RAG indexing and future live vision.
 pub(crate) async fn describe_image(user_id: &str, file_id: &str) -> Result<String, String> {
     let (path, info) = crate::logic::office::store::resolve(user_id, file_id)
         .map_err(|e| format!("resolve: {e}"))?;
     let data = tokio::fs::read(&path)
         .await
         .map_err(|e| format!("read {}: {e}", path.display()))?;
-    let chain = ragloader::image::default_chain();
-    let source = ragloader::image::ImageSource::local(&info.original_name);
-    let desc = chain
+    let source = kawai_vision::ImageSource::local(&info.original_name);
+    let desc = kawai_vision::default_chain()
         .describe(&source, &data)
         .await
         .map_err(|e| format!("image describe: {e}"))?;
-    let mut text = format!("# {}\n\n{}", info.original_name, desc.content);
-    if !desc.tags.is_empty() {
-        text.push_str(&format!("\n\nTags: {}", desc.tags.join(", ")));
-    }
-    Ok(text)
+    Ok(kawai_vision::format_description(
+        &info.original_name,
+        &desc,
+    ))
 }
 
 // ── indexing ─────────────────────────────────────────────────────────────────
