@@ -142,22 +142,23 @@ pub(crate) async fn describe_image(user_id: &str, file_id: &str) -> Result<Strin
 // ── indexing ─────────────────────────────────────────────────────────────────
 
 /// Core index pipeline: extract → chunk → embed → insert. Called by
-/// [`office_index_file`] after status bookkeeping.
+/// [`office_index_file`] after status bookkeeping. Returns `(chunks, raw_plain_text)`.
 pub(crate) async fn index_file_inner(
     conn: &libsql::Connection,
     user_id: &str,
     session_id: Option<i64>,
     file_id: &str,
     info: &crate::logic::office::OfficeFile,
-) -> Result<usize, String> {
+) -> Result<(usize, String), String> {
     let text = match extract_text(user_id, file_id, &info.ext).await? {
         Some(t) if !t.trim().is_empty() => t,
-        _ => return Ok(0),
+        _ => return Ok((0, String::new())),
     };
 
+    let raw = text.clone();
     let chunks = chunk_markdown(&text, CHUNK_CHARS, CHUNK_OVERLAP);
     if chunks.is_empty() {
-        return Ok(0);
+        return Ok((0, raw));
     }
 
     let source = info.original_name.clone();
@@ -198,7 +199,7 @@ pub(crate) async fn index_file_inner(
 
     insert_chunks(conn, &docs, &embeddings).await?;
 
-    Ok(docs.len())
+    Ok((docs.len(), raw))
 }
 
 /// Index one stored office file for vector search, then associate it with the
@@ -208,7 +209,9 @@ pub(crate) async fn index_file_inner(
 /// without aborting the session — the agent can still fall back to the office
 /// read tools. Progress is recorded in `rag_files` (`indexing` → `ready`/`failed`)
 /// so the panel can show it; a crash mid-run leaves a stale `indexing` row
-/// that `knowledge_list` reports as failed/interrupted.
+/// that `knowledge_list` reports as failed/interrupted. The full plain text
+/// (vision description or document text) is stored in `rag_files.raw` for the
+/// Assets UI to show without re-reading the file.
 pub async fn office_index_file(
     user_id: String,
     session_id: Option<i64>,
@@ -230,8 +233,8 @@ pub async fn office_index_file(
 
     super::schema::set_index_status(&conn, &file_id, "indexing", 0, None).await?;
     match index_file_inner(&conn, &user_id, session_id, &file_id, &info).await {
-        Ok(n) => {
-            super::schema::set_index_status(&conn, &file_id, "ready", n as i64, None).await?;
+        Ok((n, raw)) => {
+            super::schema::set_index_status_with_raw(&conn, &file_id, "ready", n as i64, None, Some(&raw)).await?;
             Ok(n)
         }
         Err(e) => {

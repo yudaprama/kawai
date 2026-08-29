@@ -86,6 +86,9 @@ pub struct KnowledgeFileInfo {
     pub chunks: i64,
     pub error: Option<String>,
     pub in_session: bool,
+    /// Full plain text (vision description or document text) — for the Assets
+    /// panel to show without re-reading the file. `None` when not indexed.
+    pub raw: Option<String>,
 }
 
 /// A single heading found by scanning markdown text, with its char offset.

@@ -47,14 +47,14 @@ pub async fn knowledge_list(
 
     let mut status_rows = conn
         .query(
-            "SELECT file_id, status, chunks, error, updated_at FROM rag_files",
+            "SELECT file_id, status, chunks, error, raw, updated_at FROM rag_files",
             (),
         )
         .await
         .map_err(|e| format!("rag_files: {e}"))?;
-    // (status, chunks, error) per file; stale `indexing` rows become
+    // (status, chunks, error, raw) per file; stale `indexing` rows become
     // failed/interrupted so a crashed run never spins in the UI.
-    let mut statuses: HashMap<String, (String, i64, Option<String>)> = HashMap::new();
+    let mut statuses: HashMap<String, (String, i64, Option<String>, Option<String>)> = HashMap::new();
     let now = unix_secs();
     while let Some(row) = status_rows
         .next()
@@ -65,16 +65,18 @@ pub async fn knowledge_list(
         let status: String = row.get(1).map_err(|e| format!("rag_files: {e}"))?;
         let chunks: i64 = row.get(2).map_err(|e| format!("rag_files: {e}"))?;
         let error: Option<String> = row.get(3).map_err(|e| format!("rag_files: {e}"))?;
-        let updated_at: i64 = row.get(4).map_err(|e| format!("rag_files: {e}"))?;
+        let raw: Option<String> = row.get(4).map_err(|e| format!("rag_files: {e}"))?;
+        let updated_at: i64 = row.get(5).map_err(|e| format!("rag_files: {e}"))?;
         let entry = if status == "indexing" && now.saturating_sub(updated_at) > STALE_INDEXING_SECS
         {
             (
                 "failed".to_string(),
                 chunks,
                 Some("indexing interrupted".to_string()),
+                raw,
             )
         } else {
-            (status, chunks, error)
+            (status, chunks, error, raw)
         };
         statuses.insert(fid, entry);
     }
@@ -84,14 +86,14 @@ pub async fn knowledge_list(
         .into_iter()
         .map(|f| {
             let is_in_session = in_session.contains(&f.id);
-            let (status, chunks, error) = match statuses.get(&f.id) {
-                Some((s, c, e)) => match s.as_str() {
-                    "indexing" => (IndexStatus::Indexing, *c, None),
-                    "ready" => (IndexStatus::Ready, *c, None),
-                    "failed" => (IndexStatus::Failed, *c, e.clone()),
-                    _ => (IndexStatus::NotIndexed, 0, None),
+            let (status, chunks, error, raw) = match statuses.get(&f.id) {
+                Some((s, c, e, r)) => match s.as_str() {
+                    "indexing" => (IndexStatus::Indexing, *c, None, None),
+                    "ready" => (IndexStatus::Ready, *c, None, r.clone()),
+                    "failed" => (IndexStatus::Failed, *c, e.clone(), r.clone()),
+                    _ => (IndexStatus::NotIndexed, 0, None, None),
                 },
-                None => (IndexStatus::NotIndexed, 0, None),
+                None => (IndexStatus::NotIndexed, 0, None, None),
             };
             KnowledgeFileInfo {
                 id: f.id,
@@ -103,6 +105,7 @@ pub async fn knowledge_list(
                 chunks,
                 error,
                 in_session: is_in_session,
+                raw,
             }
         })
         .collect())

@@ -368,7 +368,7 @@ pub async fn session_file_ids(
     Ok(out)
 }
 
-/// Upsert one file's index status row.
+/// Upsert one file's index status row. `raw` is the full plain text (vision description or document text) — stored once when status=ready so the Assets UI can show it without re-reading the file. `None` leaves the existing raw unchanged except when explicitly set via the 6-col path.
 pub(crate) async fn set_index_status(
     conn: &libsql::Connection,
     file_id: &str,
@@ -376,23 +376,53 @@ pub(crate) async fn set_index_status(
     chunks: i64,
     error: Option<&str>,
 ) -> Result<(), String> {
+    set_index_status_with_raw(conn, file_id, status, chunks, error, None).await
+}
+
+/// Upsert with raw plain text. When `raw` is `Some`, the column is overwritten; when `None` it is left as-is (except for backwards compat where a fresh row gets NULL).
+pub(crate) async fn set_index_status_with_raw(
+    conn: &libsql::Connection,
+    file_id: &str,
+    status: &str,
+    chunks: i64,
+    error: Option<&str>,
+    raw: Option<&str>,
+) -> Result<(), String> {
     let error_val = match error {
         Some(e) => libsql::Value::Text(e.to_string()),
         None => libsql::Value::Null,
     };
-    conn.execute(
-        "INSERT INTO rag_files (file_id, status, chunks, error, updated_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(file_id) DO UPDATE SET
-            status = excluded.status,
-            chunks = excluded.chunks,
-            error = excluded.error,
-            updated_at = excluded.updated_at",
-        (file_id, status, chunks, error_val, unix_secs()),
-    )
-    .await
-    .map(|_| ())
-    .map_err(|e| format!("rag_files upsert: {e}"))
+    if let Some(r) = raw {
+        conn.execute(
+            "INSERT INTO rag_files (file_id, status, chunks, error, raw, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(file_id) DO UPDATE SET
+                status = excluded.status,
+                chunks = excluded.chunks,
+                error = excluded.error,
+                raw = excluded.raw,
+                updated_at = excluded.updated_at",
+            (file_id, status, chunks, error_val, r.to_string(), unix_secs()),
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("rag_files upsert: {e}"))
+    } else {
+        // Keep existing raw (or NULL for new rows) — don't overwrite the stored plain text on indexing/failed.
+        conn.execute(
+            "INSERT INTO rag_files (file_id, status, chunks, error, updated_at)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(file_id) DO UPDATE SET
+                status = excluded.status,
+                chunks = excluded.chunks,
+                error = excluded.error,
+                updated_at = excluded.updated_at",
+            (file_id, status, chunks, error_val, unix_secs()),
+        )
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("rag_files upsert: {e}"))
+    }
 }
 
 /// Current stored status of one file's index (`None` when never indexed).

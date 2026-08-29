@@ -49,6 +49,11 @@ export type KnowledgeFileInfo = {
 	chunks: number,
 	error: string | null,
 	inSession: boolean,
+	/**
+	 *  Full plain text (vision description or document text) for the Assets UI.
+	 *  `None` when not yet indexed or for tabular files (never indexed).
+	 */
+	raw: string | null,
 };
 
 export type LocalModelInfo = {

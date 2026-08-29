@@ -206,6 +206,14 @@ function LibraryDetail({
       <div className="bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
         <FilePreview file={knowledgeFileToPreview(file)} />
       </div>
+      {file.raw && (
+        <div className="bg-card flex max-h-[40%] min-h-0 flex-col overflow-hidden rounded-lg border">
+          <div className="border-b px-3 py-1.5 text-xs font-medium">Plain text (vision / extracted)</div>
+          <div className="min-h-0 flex-1 overflow-auto p-3">
+            <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">{file.raw}</pre>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
