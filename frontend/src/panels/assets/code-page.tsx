@@ -31,7 +31,15 @@ function StatusBadge({ status }: { status: CodegraphStatusResult | null }) {
   );
 }
 
-export function CodeAssetPage({ onBack }: { onBack: () => void }) {
+export function CodeAssetPage({
+  onBack,
+  initialQuery,
+  initialResult,
+}: {
+  onBack: () => void;
+  initialQuery?: string;
+  initialResult?: string;
+}) {
   const [status, setStatus] = useState<CodegraphStatusResult | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -41,6 +49,11 @@ export function CodeAssetPage({ onBack }: { onBack: () => void }) {
   const [exploreError, setExploreError] = useState<string | null>(null);
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
   const [initLoading, setInitLoading] = useState(false);
+
+  useEffect(() => {
+    if (initialQuery) setQuery(initialQuery);
+    if (initialResult) setResult(initialResult);
+  }, [initialQuery, initialResult]);
 
   useEffect(() => {
     let cancelled = false;

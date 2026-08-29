@@ -29,6 +29,8 @@ import { renderGeocode, renderIpLocation, renderIss } from "./geo";
 import { renderConnectorTools } from "./connector";
 import { renderWebSearch, renderWebSearchSuggest } from "./search";
 import { renderDataSchema, renderDataQuery, renderDataTa, renderDataChart, renderDataTables, renderDataImport } from "./data";
+import { renderKnowledgeSearch } from "./knowledge";
+import { renderOfficeDocument } from "./artifacts";
 
 // ---------------------------------------------------------------------------
 // registry
@@ -45,6 +47,9 @@ const registry: Record<string, ToolRenderer> = {
   data_chart: renderDataChart,
   data_tables: renderDataTables,
   data_import: renderDataImport,
+  knowledge_search: renderKnowledgeSearch,
+  office_create_document: renderOfficeDocument,
+  office_edit_document: renderOfficeDocument,
   connector_list_tools: renderConnectorTools,
   connector_find_tools: renderConnectorTools,
   get_bible_verse: renderBibleVerse,

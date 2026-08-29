@@ -110,6 +110,7 @@ export function ConversationPanel({
   onOpenMobileSessions?: () => void;
   onOpenMobileKnowledge?: () => void;
   onOpenTool?: (toolCallId: string) => void;
+  onOpenCodeGraph?: (query: string, result: string) => void;
 }) {
   const [forceAll, setForceAll] = useState(false);
   const busy = status === "submitted" || status === "streaming";

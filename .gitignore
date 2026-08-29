@@ -35,3 +35,5 @@ charton/
 
 # fastembed cache
 .fastembed_cache/
+frontend/.cache/duplicalis/analysis.msgpack
+frontend/.cache/duplicalis/embeddings.json

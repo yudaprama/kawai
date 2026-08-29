@@ -1,15 +1,47 @@
 "use client";
 
 import type { ComponentProps } from "react";
-
 import { useCallback } from "react";
-import {
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FILE_ICON_CDN } from "@/components/file-icon";
 import { platform } from "@/platform";
 import { usePromptInputAttachments } from "./prompt-input-context";
 import { Camera, Clipboard, Monitor } from "lucide-react";
+
+/**
+ * Common hook for platform actions that capture content and add it as
+ * attachments. Handles preventDefault, platform call, and attachment.
+ */
+const useAttachmentAction = (
+  platformFn: () => Promise<File | File[] | null>,
+  onCapture?: (event: Event) => void
+) => {
+  const attachments = usePromptInputAttachments();
+
+  return useCallback(
+    async (event: Event) => {
+      event.preventDefault();
+      onCapture?.(event);
+      if (event.defaultPrevented) return;
+
+      try {
+        const result = await platformFn();
+        if (result) {
+          attachments.add(Array.isArray(result) ? result : [result]);
+        }
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          (error.name === "NotAllowedError" || error.name === "AbortError")
+        ) {
+          return;
+        }
+        throw error;
+      }
+    },
+    [onCapture, attachments, platformFn]
+  );
+};
 
 export type PromptInputActionAddAttachmentsProps = ComponentProps<
   typeof DropdownMenuItem
@@ -21,17 +53,8 @@ export const PromptInputActionAddAttachments = ({
   label = "Add photos or files",
   ...props
 }: PromptInputActionAddAttachmentsProps) => {
-  const attachments = usePromptInputAttachments();
-
-  const handleSelect = useCallback(
-    async (e: Event) => {
-      e.preventDefault();
-      const files = await platform.pickFiles({ multiple: true });
-      if (files?.length) {
-        attachments.add(files);
-      }
-    },
-    [attachments]
+  const handleSelect = useAttachmentAction(() =>
+    platform.pickFiles({ multiple: true })
   );
 
   return (
@@ -51,18 +74,7 @@ export const PromptInputActionCapturePhoto = ({
   label = "Take photo",
   ...props
 }: PromptInputActionCapturePhotoProps) => {
-  const attachments = usePromptInputAttachments();
-
-  const handleSelect = useCallback(
-    async (e: Event) => {
-      e.preventDefault();
-      const photo = await platform.capturePhoto();
-      if (photo) {
-        attachments.add([photo]);
-      }
-    },
-    [attachments]
-  );
+  const handleSelect = useAttachmentAction(() => platform.capturePhoto());
 
   if (!platform.canCapturePhoto) return null;
 
@@ -85,31 +97,9 @@ export const PromptInputActionAddScreenshot = ({
   onSelect,
   ...props
 }: PromptInputActionAddScreenshotProps) => {
-  const attachments = usePromptInputAttachments();
-
-  const handleSelect = useCallback(
-    async (event: Event) => {
-      onSelect?.(event);
-      if (event.defaultPrevented) {
-        return;
-      }
-
-      try {
-        const screenshot = await platform.captureScreenshot();
-        if (screenshot) {
-          attachments.add([screenshot]);
-        }
-      } catch (error) {
-        if (
-          error instanceof DOMException &&
-          (error.name === "NotAllowedError" || error.name === "AbortError")
-        ) {
-          return;
-        }
-        throw error;
-      }
-    },
-    [onSelect, attachments]
+  const handleSelect = useAttachmentAction(
+    () => platform.captureScreenshot(),
+    onSelect
   );
 
   if (!platform.canCaptureScreenshot) return null;
@@ -132,17 +122,8 @@ export const PromptInputActionPasteFromClipboard = ({
   label = "Paste image from clipboard",
   ...props
 }: PromptInputActionPasteFromClipboardProps) => {
-  const attachments = usePromptInputAttachments();
-
-  const handleSelect = useCallback(
-    async (e: Event) => {
-      e.preventDefault();
-      const image = await platform.readClipboardImage();
-      if (image) {
-        attachments.add([image]);
-      }
-    },
-    [attachments]
+  const handleSelect = useAttachmentAction(() =>
+    platform.readClipboardImage()
   );
 
   if (!platform.canReadClipboardImage) return null;
