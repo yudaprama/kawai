@@ -234,8 +234,17 @@ required-features = ["litert"]
 lto = "thin"
 codegen-units = 1
 strip = true
+panic = "abort"
 
 [profile.release.package.analytics]
+opt-level = "z"
+[profile.release.package.aws-lc-sys]
+opt-level = "z"
+[profile.release.package.aws-lc-rs]
+opt-level = "z"
+[profile.release.package.pdf_oxide]
+opt-level = "z"
+[profile.release.package.office_oxide]
 opt-level = "z"
 
 [profile.release.package.polars]

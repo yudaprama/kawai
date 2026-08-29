@@ -19,7 +19,7 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist"),
     emptyOutDir: true,
     rollupOptions: {
-      external: [/^shiki(\/.*)?$/],
+      external: [/^shiki(\/.*)?$/, /^mermaid(\/.*)?$/, /^katex(\/.*)?$/, /^rehype-katex(\/.*)?$/],
     },
   },
 
