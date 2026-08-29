@@ -32,7 +32,7 @@ pub fn list_agents() -> Vec<AgentInfo> {
 
 // ── Tool builders ───────────────────────────────────────────────────────────
 
-/// Office gets knowledge_search, graph tools, and cloud subagent tools.
+/// Office gets knowledge_search, vision_describe, graph tools, and cloud subagent tools.
 #[cfg(feature = "litert")]
 fn office_tools(
     context: &AgentContext<'_>,
@@ -45,6 +45,9 @@ fn office_tools(
             context.user_id.to_string(),
             context.session_id,
         ));
+        set.add_tool(kawai_knowledge::tools::VisionDescribeTool(
+            context.user_id.to_string(),
+        ));
         #[cfg(feature = "graph")]
         kawai_knowledge::graph::extend_toolset(&mut set, context.user_id);
         return Some(add_runtime_tools(set, remote_configured, true));
@@ -56,7 +59,7 @@ fn office_tools(
     }
 }
 
-/// Presentation gets deck authoring, source reading, knowledge search, and
+/// Presentation gets deck authoring, source reading, knowledge/vision search, and
 /// cloud synthesis — but not document editing or PDF mutation tools.
 #[cfg(feature = "litert")]
 fn presentation_tools(
@@ -72,6 +75,9 @@ fn presentation_tools(
         set.add_tool(kawai_knowledge::tools::KnowledgeSearchTool(
             context.user_id.to_string(),
             context.session_id,
+        ));
+        set.add_tool(kawai_knowledge::tools::VisionDescribeTool(
+            context.user_id.to_string(),
         ));
         return Some(add_runtime_tools(set, remote_configured, false));
     }
