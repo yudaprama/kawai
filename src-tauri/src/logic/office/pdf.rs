@@ -122,7 +122,7 @@ pub async fn pdf_extract_text(
                 continue;
             }
             match render_and_ocr_page(&path, idx).await {
-                Ok(desc) if !desc.content.trim().is_empty() => {
+                Ok((desc, _width, _height)) if !desc.content.trim().is_empty() => {
                     out.push((idx, desc.content, desc.ocr_lines));
                 }
                 Ok(_) => out.push((idx, md, None)),
@@ -147,7 +147,10 @@ pub async fn pdf_extract_text(
 }
 
 #[cfg(feature = "paddle-ocr")]
-async fn render_and_ocr_page(path: &PathBuf, page_idx: usize) -> Result<kawai_vision::ImageDescription, String> {
+async fn render_and_ocr_page(
+    path: &PathBuf,
+    page_idx: usize,
+) -> Result<(kawai_vision::ImageDescription, u32, u32), String> {
     let path = path.clone();
     let png_bytes = spawn_blocking(move || {
         let doc = PdfDocument::open(&path).map_err(|e| format!("pdf open for render: {e}"))?;
@@ -156,16 +159,18 @@ async fn render_and_ocr_page(path: &PathBuf, page_idx: usize) -> Result<kawai_vi
             pdf_oxide::rendering::render_page(&doc, page_idx, &opts).map_err(|e| {
                 format!("pdf render page {}: {e}", page_idx + 1)
             })?;
-        Ok::<_, String>(rendered.data)
+        Ok::<_, String>((rendered.data, rendered.width, rendered.height))
     })
     .await
     .map_err(|e| format!("render join: {e}"))??;
 
+    let (png_bytes, width, height) = png_bytes;
     let source = kawai_vision::ImageSource::local(format!("page_{}.png", page_idx + 1));
-    kawai_vision::default_chain()
+    let desc = kawai_vision::default_chain()
         .describe(&source, &png_bytes)
         .await
-        .map_err(|e| format!("ocr page {}: {e}", page_idx + 1))
+        .map_err(|e| format!("ocr page {}: {e}", page_idx + 1))?;
+    Ok((desc, width, height))
 }
 
 /// Extract text from a stored PDF with structured per-page OCR results.
@@ -213,11 +218,11 @@ pub async fn pdf_extract_text_structured(
                 continue;
             }
             match render_and_ocr_page(&path, idx).await {
-                Ok(desc) => {
+                Ok((desc, width, height)) => {
                     result.push(PdfOcrPage {
                         page_number: (idx + 1) as u32,
-                        width: 0,
-                        height: 0,
+                        width,
+                        height,
                         text: desc.content,
                         ocr_lines: desc.ocr_lines.unwrap_or_default(),
                     });
