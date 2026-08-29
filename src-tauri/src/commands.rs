@@ -442,7 +442,7 @@ pub async fn local_load_model(
         &model_path,
         gpu.unwrap_or(true),
         speculative_decoding.unwrap_or(false),
-        max_num_images.unwrap_or(0),
+        max_num_images.unwrap_or(1),
         tools_json,
     )
     .await;
