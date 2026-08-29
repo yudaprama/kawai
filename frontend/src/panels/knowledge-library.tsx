@@ -11,9 +11,9 @@ import {
   AssetListPanel,
 } from "@/components/asset/asset-list-panel";
 import { AssetSplitLayout } from "@/components/asset/asset-split-layout";
-import { FileIcon } from "@/components/file-icon";
 import { FilePreview } from "@/components/file-preview";
 import { KnowledgeStatusBadge } from "@/components/knowledge-file-row";
+import { KnowledgeFileSummary } from "@/components/knowledge-file-summary";
 import { Button } from "@/components/ui/button";
 import type { KnowledgeFileInfo } from "@/lib/api";
 import { isTabularExt } from "@/lib/extensions";
@@ -130,15 +130,7 @@ function LibraryDetail({
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-4">
       <div className="shrink-0">
-        <div className="flex items-start gap-2.5">
-          <FileIcon className="mt-0.5 size-5 shrink-0" name={file.originalName} />
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate text-sm font-semibold" title={file.originalName}>
-              {file.originalName}
-            </h3>
-            <AssetItemId>{file.id}</AssetItemId>
-          </div>
-        </div>
+        <KnowledgeFileSummary file={file} subtitle={<AssetItemId>{file.id}</AssetItemId>} />
         <AssetItemBadges>
           <KnowledgeStatusBadge file={file} />
           <AssetBadge>{formatBytes(file.bytes)}</AssetBadge>

@@ -14,6 +14,7 @@ import { AssetSplitLayout } from "@/components/asset/asset-split-layout";
 import { EmptyPane } from "./asset-shell";
 import { FileIcon } from "@/components/file-icon";
 import { KnowledgeStatusBadge } from "@/components/knowledge-file-row";
+import { KnowledgeFileSummary } from "@/components/knowledge-file-summary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -161,42 +162,41 @@ function SourceDetail({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-4 pt-3">
-        <div className="flex items-start gap-2.5">
-          <FileIcon className="mt-0.5 size-5 shrink-0" name={file.originalName} />
-          <div className="min-w-0 flex-1">
-            <h3 className="truncate text-sm font-semibold" title={file.originalName}>
-              {file.originalName}
-            </h3>
+        <KnowledgeFileSummary
+          actions={
+            <>
+              {file.status === "failed" && (
+                <Button onClick={() => onRetry(file)} size="xs" title="Retry indexing" variant="outline">
+                  Retry
+                </Button>
+              )}
+              {inSession ? (
+                <Button onClick={() => onRemove(file)} size="xs" variant="outline">
+                  Remove from session
+                </Button>
+              ) : (
+                <Button onClick={() => onAdd(file)} size="xs" variant="outline">
+                  Add to session
+                </Button>
+              )}
+              <Button
+                className={confirmDelete ? "" : "text-destructive hover:text-destructive"}
+                onClick={() => onDelete(file)}
+                size="xs"
+                title={confirmDelete ? "Click again to confirm — deletes the document everywhere" : "Delete document"}
+                variant="outline"
+              >
+                {confirmDelete ? "Confirm" : "Delete"}
+              </Button>
+            </>
+          }
+          file={file}
+          subtitle={
             <p className="text-muted-foreground mt-0.5 text-xs">
               {formatBytes(file.bytes)} · {new Date(file.createdAt * 1000).toLocaleString()}
             </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {file.status === "failed" && (
-              <Button onClick={() => onRetry(file)} size="xs" title="Retry indexing" variant="outline">
-                Retry
-              </Button>
-            )}
-            {inSession ? (
-              <Button onClick={() => onRemove(file)} size="xs" variant="outline">
-                Remove from session
-              </Button>
-            ) : (
-              <Button onClick={() => onAdd(file)} size="xs" variant="outline">
-                Add to session
-              </Button>
-            )}
-            <Button
-              className={confirmDelete ? "" : "text-destructive hover:text-destructive"}
-              onClick={() => onDelete(file)}
-              size="xs"
-              title={confirmDelete ? "Click again to confirm — deletes the document everywhere" : "Delete document"}
-              variant="outline"
-            >
-              {confirmDelete ? "Confirm" : "Delete"}
-            </Button>
-          </div>
-        </div>
+          }
+        />
       </div>
       <Tabs className="flex min-h-0 flex-1 flex-col gap-0" value="pages">
         <div className="shrink-0 border-b px-4">
