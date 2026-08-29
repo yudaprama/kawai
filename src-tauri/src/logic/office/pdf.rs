@@ -319,11 +319,9 @@ pub async fn pdf_replace_text(
         let count = doc
             .page_count()
             .map_err(|e| format!("pdf page_count: {e}"))?;
-        drop(doc);
         let indices = resolve_pages(pages.as_deref(), count)?;
-
         let mut editor =
-            DocumentEditor::open(&path).map_err(|e| format!("pdf open editor: {e}"))?;
+            DocumentEditor::from_document(doc).map_err(|e| format!("pdf open editor: {e}"))?;
         for &i in &indices {
             let mut page = editor
                 .get_page(i)
@@ -466,10 +464,8 @@ pub async fn pdf_info(user_id: &str, file_id: &str) -> Result<Value, String> {
             .page_count()
             .map_err(|e| format!("pdf page_count: {e}"))?;
         let (major, minor) = doc.version();
-        drop(doc);
-
         let mut editor =
-            DocumentEditor::open(&path).map_err(|e| format!("pdf open editor: {e}"))?;
+            DocumentEditor::from_document(doc).map_err(|e| format!("pdf open editor: {e}"))?;
         let mut pages = Vec::new();
         for i in 0..count {
             let mb = editor
