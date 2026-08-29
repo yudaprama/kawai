@@ -155,7 +155,7 @@ jobs:
       # flutter_gemma/litert-lm-rs are NOT needed — skip them to keep the
       # checkout lean.
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
 
       - name: Build litert-lm dylib
         run: |
@@ -233,7 +233,7 @@ jobs:
           restore-keys: bazel-linux-x86_64-
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
 
       # LiteRT-LM's .bazelrc pins CC=clang (action_env); the runner default is
       # clang-14, whose std lib lacks std::source_location in C++20 mode
@@ -334,7 +334,7 @@ jobs:
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
         shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
 
       - name: Install bazelisk
         shell: pwsh
@@ -428,7 +428,7 @@ jobs:
       # manifest needs crates present too. Shallow, non-recursive:
       # only crate manifests, not C sources.
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault, manifest only)
-        run: git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+        run: git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

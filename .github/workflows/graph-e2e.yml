@@ -39,7 +39,7 @@ jobs:
       # Manifest-only submodules — no C sources, no bazel.
       - name: Init submodules (manifest only)
         run: |
-          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
           git -C crates submodule update --init vendor/binance-connector-rust
 
       - uses: dtolnay/rust-toolchain@stable

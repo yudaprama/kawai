@@ -71,7 +71,7 @@ jobs:
           restore-keys: bazel-macos26-arm64-
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
 
       - name: Build litert-lm dylib
         run: |

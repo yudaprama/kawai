@@ -61,7 +61,7 @@ jobs:
       # a real path dep (binance feature) — cargo resolution needs its manifest.
       - name: Init submodules (manifest only)
         run: |
-          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
           git -C crates submodule update --init vendor/binance-connector-rust
 
       - uses: dtolnay/rust-toolchain@stable
@@ -133,7 +133,7 @@ jobs:
       # Recursive: the litert feature runs bindgen, which parses the C headers
       # of the NESTED submodule cognee-litert-lm/vendor/LiteRT-LM.
       - name: Init submodules (recursive — bindgen needs nested LiteRT-LM headers)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -288,7 +288,7 @@ jobs:
           restore-keys: bazel-macos26-arm64-
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
 
       - name: Build litert-lm dylib
         run: |
@@ -493,7 +493,7 @@ jobs:
           restore-keys: bazel-linux-x86_64-
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
 
       # Tauri needs GTK/webkit headers; bindgen + bazel need clang-18.
       # clang-18 via apt.llvm.org — ubuntu-22.04 keeps glibc >= 2.35.
@@ -664,7 +664,7 @@ jobs:
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
         shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
 
       - name: Install bazelisk
         shell: pwsh
