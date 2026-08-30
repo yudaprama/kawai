@@ -47,6 +47,7 @@ local-llm = { path = "../local-llm", optional = true }
 kawai-auth = { path = "../crates/foundation/auth" }
 remote-llm = { path = "../crates/foundation/remote-llm" }
 kawai-db = { path = "../crates/foundation/db" }
+kawai-paths = { path = "../crates/foundation/paths" }
 kawai-skills = { path = "../crates/foundation/skills" }
 kawai-memory = { path = "../crates/foundation/memory" }
 kawai-office = { path = "../crates/engines/office", optional = true }

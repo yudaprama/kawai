@@ -284,9 +284,6 @@ KAWAI_AUTH_JWKS_URI=...        # Clerk public JWKS
 KAWAI_AUTH_ISSUER=...          # Clerk frontend-API origin
 # KAWAI_AUTH_DEV_USER_ID=dev   # uncomment to accept ANY token as this user (dev only)
 KAWAI_DATA_DIR=/path/to/dir    # optional per-user data root; default on desktop = Tauri app-data dir (~/Library/Application Support/pro.kawai.app on macOS), else /tmp/kawai
-KAWAI_MODEL_PATH=/path/to/gemma-4-E4B-it.litertlm  # optional on-device model; resolved by logic::resolve_model_path (env → ./models/ → ~/.kawai/models); auto-downloaded on first launch from litert-community/gemma-4-E4B-it-litert-lm if absent
-KAWAI_EMBED_MODEL_PATH=/path/to/embeddinggemma.tflite  # optional local embedding graph (litert feature); resolved by kawai-embedding (env → ./models/ → ~/.kawai/models); auto-downloaded from ghanashyamvtatti/embeddinggemma-300m-litert if absent
-KAWAI_EMBED_SPM_PATH=/path/to/sentencepiece.model  # optional tokenizer for the local embedding graph; same resolution/download flow
 KAWAI_LLM_MAX_TOKENS=16384       # optional context budget (K/V state entries) for the on-device conversation; default 16384, clamped below the model's max (Gemma 4: 32003). Larger = more K/V memory; raise for longer sessions before the prefill-overflow reset.
 # ── On-device OCR (paddle-ocr feature, crates/foundation/vision) ────────────
 KAWAI_OCR_MODEL_TIER=small       # model tier override: tiny (~3MB, English+Chinese), small (~15MB, 50 v6 languages), medium (~69MB, accuracy-first). If unset, tier is auto-detected: <4 CPU cores → tiny, else → small. Models auto-downloaded from cadgecharm/PP-OCRv6-mnn into ~/.kawai/models/ocr/{tier}/.

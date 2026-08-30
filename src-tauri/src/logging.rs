@@ -9,14 +9,14 @@
 //!    while still printing to the terminal. Unix only; other platforms get
 //!    mechanism 1 only.
 //!
-//! Log location: `$KAWAI_LOG_FILE`, else `~/Library/Logs/kawai/app.log`
-//! (macOS) / `$XDG_STATE_HOME/kawai/app.log` (Linux) / temp dir fallback.
+//! Log location: delegated to `kawai_paths::log_file()`.
 //! Deliberately OUTSIDE `src-tauri/` so the `tauri dev` file watcher
 //! doesn't rebuild-loop on log writes.
 
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
+use kawai_paths;
 use std::sync::{Mutex, OnceLock};
 
 static WRITER: OnceLock<Mutex<Option<std::fs::File>>> = OnceLock::new();
@@ -26,25 +26,11 @@ fn writer() -> &'static Mutex<Option<std::fs::File>> {
 }
 
 pub fn log_path() -> PathBuf {
-    if let Ok(p) = std::env::var("KAWAI_LOG_FILE") {
-        return PathBuf::from(p);
+    let path = kawai_paths::log_file();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
     }
-    let dir = if cfg!(target_os = "macos") {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join("Library").join("Logs").join("kawai"))
-    } else if cfg!(target_os = "linux") {
-        std::env::var_os("XDG_STATE_HOME")
-            .map(|h| PathBuf::from(h).join("kawai"))
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|h| PathBuf::from(h).join(".local").join("state").join("kawai"))
-            })
-    } else {
-        None
-    };
-    let dir = dir.unwrap_or_else(|| std::env::temp_dir().join("kawai"));
-    let _ = std::fs::create_dir_all(&dir);
-    dir.join("app.log")
+    path
 }
 
 /// Append one timestamped line to the log file.

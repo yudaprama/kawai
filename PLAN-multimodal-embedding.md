@@ -12,8 +12,7 @@ LiteRT directly** (`kawai-embedding::LitertProvider` →
 - Model: `embeddinggemma-300M_seq512_mixed-precision.tflite` +
   `sentencepiece.model` from the ungated HF repo
   `ghanashyamvtatti/embeddinggemma-300m-litert` (auto-downloaded to
-  `~/.kawai/models/`, `.part` resume; overrides `KAWAI_EMBED_MODEL_PATH` /
-  `KAWAI_EMBED_SPM_PATH`).
+  `~/.kawai/models/`, with `.part` resume support).
 - Signature: `text_batch i32[1,512] → encodings f32[1,768]` (BOS-prefixed,
   0-padded input; output already mean-pooled + L2-normalized).
 - Runner: standalone C API in the vendored fork
