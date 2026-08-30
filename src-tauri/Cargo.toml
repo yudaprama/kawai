@@ -58,6 +58,8 @@ codegraph = { path = "../crates/toolsets/codegraph", optional = true }
 kawai-agent-contract = { path = "../crates/foundation/agent-contract" }
 # The agent tool seam (tool trait + registry) shared with components.
 kawai-tools = { path = "../kawai-tools" }
+# Auto-routing: rule-based agent selection for auto mode.
+kawai-router = { path = "../crates/router", optional = true }
 # default-features=false keeps only the local-SQLite core: replication/remote
 # would pull tonic 0.11 + hyper 0.14 + axum 0.6 + rustls 0.22 (dead weight —
 # every call site uses Builder::new_local; re-add "remote" with sqld sync).
@@ -141,7 +143,8 @@ default = []
 web = ["dep:axum", "dep:tower-http"]
 # CodeGraph — sidecar only (AgentTool + LRU cache, zero cost off)
 codegraph = ["dep:codegraph"]
-litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "dep:kawai-agent", "kawai-agent/litert", "dep:kawai-vision", "kawai-vision/litert", "kawai-knowledge/litert"]
+router = ["dep:kawai-router"]
+litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "dep:kawai-agent", "kawai-agent/litert", "dep:kawai-vision", "kawai-vision/litert", "kawai-knowledge/litert", "router"]
 # GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
 # Include with --features graph, exclude by omitting it (zero cost when off).
 # Standalone — includes the pure `graph` crate + its DB deps.

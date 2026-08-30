@@ -899,6 +899,45 @@ async fn office_capabilities_handler(
 #[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct OfficeExportDocumentRequest {
+    markdown: String,
+    format: String,
+}
+
+#[cfg(feature = "office")]
+async fn office_export_document_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<OfficeExportDocumentRequest>,
+) -> Result<Response, (StatusCode, String)> {
+    let _ = &claims.sub;
+    let bytes = logic::office::export_markdown(&req.markdown, &req.format)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let (content_type, ext) = match req.format.to_ascii_lowercase().as_str() {
+        "xlsx" => (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "xlsx",
+        ),
+        "pptx" => (
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "pptx",
+        ),
+        _ => (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "docx",
+        ),
+    };
+    let cd = format!("attachment; filename=\"kawai-export.{ext}\"");
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_DISPOSITION, cd)
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("response build: {e}")))
+}
+
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct OfficeReadFileRequest {
     file_id: String,
 }
@@ -1159,10 +1198,16 @@ async fn agent_chat_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<AgentChatRequest>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
+    // Auto-routing: when agent_id is "auto" or empty, resolve via rule router.
+    #[cfg(feature = "router")]
+    let agent_id = logic::agent::routing::resolve_start_agent(&req.agent_id, &req.message);
+    #[cfg(not(feature = "router"))]
+    let agent_id = req.agent_id;
+
     let s = logic::agent::agent_chat_with_registry(
         crate::agent_registry::builtin(),
         claims.sub,
-        req.agent_id,
+        agent_id,
         req.session_id,
         req.message,
         req.file_ids,
@@ -1335,6 +1380,10 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
             post(office_restore_backup_handler),
         )
         .route("/api/office_export_file", post(office_export_file_handler))
+        .route(
+            "/api/office_export_document",
+            post(office_export_document_handler),
+        )
         .route("/api/office_read_file", post(office_read_file_handler))
         .route("/api/tauri_open_file", post(tauri_open_file_handler))
         .route(

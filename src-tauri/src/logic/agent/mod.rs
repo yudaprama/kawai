@@ -18,3 +18,8 @@ pub use catalog::{
     list_agents, AgentInfo, ANALYTICS_AGENT_ID, BINANCE_AGENT_ID, OFFICE_AGENT_ID,
     PRESENTATION_AGENT_ID,
 };
+
+/// Auto-routing adapter: resolves agent id for unsupervised chat turns.
+/// Gated on `router` feature (chained into `litert` in Cargo.toml).
+#[cfg(feature = "router")]
+pub mod routing;

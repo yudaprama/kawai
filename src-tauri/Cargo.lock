@@ -4001,6 +4001,8 @@ dependencies = [
  "kawai-knowledge",
  "kawai-memory",
  "kawai-office",
+ "kawai-paths",
+ "kawai-router",
  "kawai-skills",
  "kawai-tools",
  "kawai-vision",
@@ -4129,6 +4131,7 @@ name = "kawai-db"
 version = "0.1.0"
 dependencies = [
  "kawai-constants 0.1.0",
+ "kawai-paths",
  "libsql",
  "reqwest 0.13.4",
  "serde",
@@ -4143,6 +4146,7 @@ dependencies = [
  "cognee-litert-lm",
  "futures",
  "kawai-constants 0.1.0 (git+https://github.com/yudaprama/kawai-vault.git)",
+ "kawai-paths",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
@@ -4217,6 +4221,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "kawai-paths"
+version = "0.1.0"
+
+[[package]]
+name = "kawai-router"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "kawai-skills"
 version = "0.1.0"
 dependencies = [
@@ -4260,6 +4279,7 @@ dependencies = [
  "futures-util",
  "image",
  "jigsawstack",
+ "kawai-paths",
  "local-llm",
  "ocr-rs",
  "reqwest 0.12.28",

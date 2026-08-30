@@ -818,6 +818,19 @@ pub fn office_export_file(
     logic::office::export_file(&user_id, &file_id, dest_path.as_deref())
 }
 
+/// Authenticated RPC: render markdown to an office document (docx/xlsx/pptx)
+/// and return the raw file bytes for download (no intermediate store file).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub fn office_export_document(
+    markdown: String,
+    format: String,
+    session: State<'_, Session>,
+) -> Result<Vec<u8>, String> {
+    session_user_id(&session)?;
+    logic::office::export_markdown(&markdown, &format)
+}
+
 /// Authenticated RPC: read a stored document's raw bytes (for in-app preview
 /// — image/video/pdf embeds or text/markdown rendering). Returns base64 plus
 /// a best-effort MIME type so the frontend can build a `data:` URL.
@@ -1035,6 +1048,14 @@ pub async fn agent_chat(
 
     let token = CancellationToken::new();
     let _guard = register_stream(&registry, &stream_id, token.clone());
+
+    // Auto-routing: when agent_id is "auto" or empty, resolve via the
+    // rule-based router. Existing sessions send their stored agent id,
+    // so this only fires for new (unsupervised) conversations.
+    #[cfg(feature = "router")]
+    let agent_id = logic::agent::routing::resolve_start_agent(&agent_id, &message);
+    #[cfg(not(feature = "router"))]
+    let agent_id = agent_id;
 
     let mut stream = Box::pin(logic::agent::agent_chat_with_registry(
         crate::agent_registry::builtin(),

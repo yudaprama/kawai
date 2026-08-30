@@ -42,13 +42,19 @@ export default function App() {
     };
   }, []);
 
+  // Auto is the default: users describe the task and the backend selects the
+  // best specialist. Explicit agent selection remains available as an override.
   useEffect(() => {
-    if (agents.length && activeAgentId == null) setActiveAgentId(agents[0].id);
+    if (agents.length && activeAgentId == null) setActiveAgentId("auto");
   }, [agents, activeAgentId]);
 
+  // `auto` is a routing mode, not a catalog agent. Use the first catalog
+  // entry for presentation/context UI while preserving `auto` for the chat
+  // hook so the request reaches the backend router.
   const agent = (activeAgentId != null && agents.find((a) => a.id === activeAgentId)) || agents[0] || null;
+  const chatAgent = activeAgentId === "auto" ? { id: "auto", tools: true } : agent;
   const presentation = agent ? agentPresentation(agent.id) : agentPresentation("");
-  const chat = useLocalChat(agent ?? { id: "", tools: false });
+  const chat = useLocalChat(chatAgent ?? { id: "auto", tools: true });
   const { status } = chat;
   const busy = status === "submitted" || status === "streaming";
   const inSession = chat.sessionId != null || chat.messages.length > 0;
