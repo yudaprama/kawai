@@ -2,7 +2,7 @@
  * Local replacements for the `ai` (Vercel AI SDK) types used by the vendored
  * ai-elements components. kawai does not use the AI SDK at runtime — the chat
  * stream comes from the Tauri backend (`Channel<LocalChatEvent>`) and is mapped
- * into these UIMessage/part shapes by `hooks/use-local-chat`. Type-only shim:
+ * into these UIMessage/part shapes by `hooks/use-supervisor-plan`. Type-only shim:
  * keep the field names compatible with AI SDK v5+ UIMessage semantics so the
  * vendored components keep working unmodified.
  */

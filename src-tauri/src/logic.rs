@@ -243,7 +243,6 @@ pub use local_llm;
 /// Convenience re-export so wrappers can call `logic::local_model_status()`.
 #[cfg(feature = "litert")]
 pub use local_llm::local_model_status;
-pub mod agent;
 // Session-scoped evidence cache for the agent loop (cross-turn reuse of
 // unchanged-file reads). In-process only — no SQLite, no schema.
 pub mod evidence_cache;

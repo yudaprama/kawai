@@ -1,5 +1,9 @@
 import {
   BookOpenIcon,
+  CheckCircle2Icon,
+  CircleIcon,
+  CircleXIcon,
+  LoaderCircleIcon,
   BrainIcon,
   type CheckIcon,
   DatabaseIcon,
@@ -22,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus, UIMessage } from "@/lib/ai-types";
 import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
-import type { PendingConfirmation } from "@/hooks/use-local-chat";
+import type { SupervisorConfirmation } from "@/hooks/use-supervisor-chat";
 import { ChatComposer } from "@/panels/chat-composer";
 
 interface AgentPresentation {
@@ -60,7 +64,14 @@ export function ConversationPanel({
   lastUserText,
   onStop,
   onSend,
+  onRespondConfirmation,
   confirmation,
+  supervisorStatus,
+  supervisorGoal,
+  supervisorSteps,
+  supervisorError,
+  supervisorFinalOutput,
+  onStopSupervisor,
   canvasOpen,
   inSession,
   sessionsCollapsed,
@@ -92,7 +103,14 @@ export function ConversationPanel({
   lastUserText: string | null;
   onStop: () => void;
   onSend: (text: string, fileIds?: string[]) => void;
-  confirmation: PendingConfirmation | null;
+  onRespondConfirmation: (approved: boolean) => Promise<void>;
+  confirmation: SupervisorConfirmation | null;
+  supervisorStatus: string;
+  supervisorGoal: string | null;
+  supervisorSteps: { stepId: string; tool: string; state: string; output?: string; error?: string }[];
+  supervisorError: string | null;
+  supervisorFinalOutput: string | null;
+  onStopSupervisor: () => void;
   canvasOpen: boolean;
   inSession: boolean;
   sessionsCollapsed: boolean;
@@ -237,6 +255,34 @@ export function ConversationPanel({
           {chatError}
         </div>
       )}
+      {supervisorStatus !== "idle" && (
+        <div className="mx-4 mt-3 rounded-md border bg-card p-3 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="font-medium">Plan {supervisorStatus}</span>
+            {(supervisorStatus === "running" || supervisorStatus === "awaitingConfirmation") && (
+              <Button onClick={onStopSupervisor} size="sm" variant="outline">Stop plan</Button>
+            )}
+            {supervisorGoal && <span className="text-muted-foreground truncate text-xs">{supervisorGoal}</span>}
+          </div>
+          {supervisorSteps.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {supervisorSteps.map((step) => (
+                <div className="flex items-center gap-2 text-xs" key={step.stepId}>
+                  {step.state === "completed" ? <CheckCircle2Icon className="size-3 text-emerald-500" /> : step.state === "failed" ? <CircleXIcon className="text-destructive size-3" /> : step.state === "running" ? <LoaderCircleIcon className="size-3 animate-spin" /> : <CircleIcon className="text-muted-foreground size-3" />}
+                  <span className="font-medium">{step.stepId}</span>
+                  <span className="text-muted-foreground">{step.state}</span>
+                  {step.output && <span className="text-muted-foreground truncate">— {step.output}</span>}
+                  {step.error && <span className="text-destructive truncate">— {step.error}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {supervisorError && <p className="text-destructive mt-2 text-xs">{supervisorError}</p>}
+          {supervisorFinalOutput && (
+            <div className="bg-muted mt-2 rounded p-2 text-xs whitespace-pre-wrap">{supervisorFinalOutput}</div>
+          )}
+        </div>
+      )}
       {historyError && (
         <div className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
           <span className="min-w-0 flex-1">Failed to load history: {historyError}</span>
@@ -339,11 +385,11 @@ export function ConversationPanel({
                   </p>
                 </div>
                 <div className="flex shrink-0 gap-2">
-                  <Button disabled={busy} onClick={() => onSend(confirmation.acceptText)} size="sm">
-                    Import
+                  <Button disabled={busy} onClick={() => void onRespondConfirmation(true)} size="sm">
+                    Approve
                   </Button>
-                  <Button disabled={busy} onClick={() => onSend(confirmation.declineText)} size="sm" variant="ghost">
-                    Cancel
+                  <Button disabled={busy} onClick={() => void onRespondConfirmation(false)} size="sm" variant="ghost">
+                    Reject
                   </Button>
                 </div>
               </div>

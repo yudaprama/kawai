@@ -25,7 +25,7 @@ if (sentryDsn) {
     },
     beforeSend(event) {
       const msg = event.exception?.values?.[0]?.value ?? (event.message as string | undefined) ?? "";
-      // Filter expected transient noise — these are caught & retried in use-local-chat.ts
+      // Filter expected transient noise — these are caught & retried in use-supervisor-chat.ts
       // and would flood Sentry if ever surfaced as unhandled.
       if (msg.toLowerCase().includes("not authenticated") || msg.toLowerCase().includes("no model loaded")) {
         return null;

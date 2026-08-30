@@ -1181,58 +1181,11 @@ async fn graph_stats_handler(
     }
 }
 
-/// Protected streaming: agent chat (tool-calling loop) via SSE.
-#[cfg(feature = "litert")]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AgentChatRequest {
-    agent_id: String,
-    session_id: Option<i64>,
-    message: String,
-    #[serde(default)]
-    file_ids: Vec<String>,
-}
 
-#[cfg(feature = "litert")]
-async fn agent_chat_handler(
-    Extension(claims): Extension<Claims>,
-    Json(req): Json<AgentChatRequest>,
-) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
-    // Auto-routing: when agent_id is "auto" or empty, resolve via rule router.
-    #[cfg(feature = "router")]
-    let agent_id = logic::agent::routing::resolve_start_agent(&req.agent_id, &req.message);
-    #[cfg(not(feature = "router"))]
-    let agent_id = req.agent_id;
 
-    let s = logic::agent::agent_chat_with_registry(
-        crate::agent_registry::builtin(),
-        claims.sub,
-        agent_id,
-        req.session_id,
-        req.message,
-        req.file_ids,
-    )
-    .map(|event| Ok::<_, Infallible>(agent_event_to_sse(event)));
-    Sse::new(s).keep_alive(KeepAlive::default())
-}
 
-#[cfg(feature = "litert")]
-fn agent_event_to_sse(event: logic::agent::AgentChatEvent) -> SseFrame {
-    use logic::agent::AgentChatEvent;
-    let name = match &event {
-        AgentChatEvent::Started { .. } => "started",
-        AgentChatEvent::Token { .. } => "token",
-        AgentChatEvent::Thinking { .. } => "thinking",
-        AgentChatEvent::ToolCall { .. } => "toolCall",
-        AgentChatEvent::SubagentThinking { .. } => "subagentThinking",
-        AgentChatEvent::ToolResult { .. } => "toolResult",
-        AgentChatEvent::ConfirmationRequest { .. } => "confirmationRequest",
-        AgentChatEvent::Finished => "finished",
-        AgentChatEvent::Error { .. } => "error",
-    };
-    let data = serde_json::to_string(&event).unwrap_or_default();
-    SseFrame::default().event(name).data(data)
-}
+
+
 
 /// Reads the `kawai_session` cookie, verifies it, and injects `Claims` as a
 /// request extension. 401 on missing/expired token. Uses `from_fn` (state `()`)
@@ -1350,7 +1303,17 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
             post(local_llm_set_thinking_handler),
         )
         .route("/api/local_llm_unload", post(local_llm_unload_handler))
-        .route("/api/agent_chat", post(agent_chat_handler));
+        ;
+
+    #[cfg(all(feature = "router", feature = "litert"))]
+    let protected = protected.route(
+        "/api/execute_supervisor_plan",
+        post(execute_supervisor_plan_handler),
+    )
+    .route(
+        "/api/respond_supervisor_confirmation",
+        post(respond_supervisor_confirmation_handler),
+    );
 
     #[cfg(feature = "office")]
     let protected = protected
@@ -1432,4 +1395,81 @@ pub async fn serve(addr: &str, dist_dir: PathBuf, verifier: Verifier) -> Result<
     axum::serve(listener, router(dist_dir, verifier))
         .await
         .map_err(|e| format!("serve kawai-web: {e}"))
+}
+
+/// Protected streaming: supervisor plan execution via SSE.
+#[cfg(all(feature = "router", feature = "litert"))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExecuteSupervisorPlanRequest {
+    plan: kawai_router::TaskPlan,
+    session_id: i64,
+    agent_id: Option<String>,
+        stream_id: String,
+}
+
+#[cfg(all(feature = "router", feature = "litert"))]
+async fn execute_supervisor_plan_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<ExecuteSupervisorPlanRequest>,
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, StatusCode> {
+    if !kawai_db::session_exists(&claims.sub, req.session_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let agent_id = req
+        .agent_id
+        .as_deref()
+        .unwrap_or(crate::agent_registry::OFFICE_AGENT_ID);
+    let tool_registry = crate::supervisor::build_supervisor_registry(
+        &claims.sub,
+        req.session_id,
+        agent_id,
+    )
+    .await
+    .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+
+    let stream = crate::supervisor::execute_plan_stream_with_cancel(
+        req.plan, tool_registry,
+        tokio_util::sync::CancellationToken::new(), pending,
+        req.stream_id,
+    );
+    let s = stream.map(|event| {
+        let name = match &event {
+            crate::supervisor::SupervisorEvent::PlanStarted { .. } => "planStarted",
+            crate::supervisor::SupervisorEvent::StepStarted { .. } => "stepStarted",
+            crate::supervisor::SupervisorEvent::StepCompleted { .. } => "stepCompleted",
+            crate::supervisor::SupervisorEvent::StepFailed { .. } => "stepFailed",
+            crate::supervisor::SupervisorEvent::StepSkipped { .. } => "stepSkipped",
+            crate::supervisor::SupervisorEvent::PlanCompleted { .. } => "planCompleted",
+            crate::supervisor::SupervisorEvent::PlanFailed { .. } => "planFailed",
+        };
+        let data = serde_json::to_string(&event).unwrap_or_default();
+        Ok::<_, Infallible>(SseFrame::default().event(name).data(data))
+    });
+    Ok(Sse::new(s).keep_alive(KeepAlive::default()))
+}
+
+#[cfg(all(feature = "router", feature = "litert"))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RespondSupervisorConfirmationRequest {
+    stream_id: String,
+    step_id: String,
+    approved: bool,
+}
+
+#[cfg(all(feature = "router", feature = "litert"))]
+async fn respond_supervisor_confirmation_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+    Json(req): Json<RespondSupervisorConfirmationRequest>,
+) -> Result<StatusCode, StatusCode> {
+    let sender = pending.lock().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .remove(&crate::supervisor::confirmation_key(&req.stream_id, &req.step_id)).ok_or(StatusCode::NOT_FOUND)?;
+    let _ = sender.send(req.approved);
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -583,6 +583,41 @@ pub fn office_import_file(
     }
 }
 
+/// Authenticated RPC: create and validate a deterministic supervisor plan.
+#[cfg(all(feature = "router", feature = "litert"))]
+#[tauri::command]
+pub async fn plan_task(
+    goal: String,
+    session_id: i64,
+    agent_id: String,
+        session: State<'_, Session>,
+) -> Result<kawai_router::TaskPlan, String> {
+    let user_id = session_user_id(&session)?;
+    if !kawai_db::session_exists(&user_id, session_id).await.map_err(|e| e.to_string())? {
+        return Err(format!("session {session_id} not found"));
+    }
+    let registry = crate::supervisor::build_supervisor_registry(
+        &user_id, session_id, &agent_id,
+    ).await.ok_or_else(|| "supervisor toolset unavailable".to_string())?;
+    crate::supervisor::plan_task(&goal, &registry).await
+}
+
+/// Authenticated RPC: respond to a pending supervisor confirmation gate.
+#[cfg(all(feature = "router", feature = "litert"))]
+#[tauri::command]
+pub fn respond_supervisor_confirmation(
+    stream_id: String,
+    step_id: String,
+    approved: bool,
+    registry: State<'_, crate::supervisor::PendingConfirmations>,
+) -> Result<(), String> {
+    let sender = registry.lock().map_err(|e| e.to_string())?.remove(&crate::supervisor::confirmation_key(&stream_id, &step_id))
+        .ok_or_else(|| format!("no pending confirmation for step '{step_id}'"))?;
+    let _ = sender.send(approved);
+    let _ = stream_id;
+    Ok(())
+}
+
 /// Authenticated RPC: list the user's stored office files.
 #[cfg(feature = "office")]
 #[tauri::command]
@@ -1026,45 +1061,51 @@ pub async fn codegraph_init(
     logic::codegraph::codegraph_init(&user_id, project_path).await
 }
 
-/// Authenticated streaming: agent chat (prompt-based tool calling on the
-/// on-device model). Tool chatter arrives as toolCall/toolResult events; only
-/// the final answer is persisted. Same stream_id + Channel + cancellation
-/// registry pattern as local_chat.
-#[cfg(feature = "litert")]
+
+
+// ── Supervisor (router + litert) ────────────────────────────────────────────
+
+/// Streaming supervisor execution: build the tool registry for the user's
+/// session, run the plan deterministically, and stream progress events.
+#[cfg(all(feature = "router", feature = "litert"))]
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn agent_chat(
-    agent_id: String,
-    session_id: Option<i64>,
-    message: String,
-    file_ids: Option<Vec<String>>,
-    stream_id: String,
-    on_event: Channel<logic::agent::AgentChatEvent>,
+pub async fn execute_supervisor_plan(
+    plan: kawai_router::TaskPlan,
+    session_id: i64,
+        stream_id: String,
+    on_event: Channel<crate::supervisor::SupervisorEvent>,
     registry: State<'_, StreamRegistry>,
     session: State<'_, Session>,
+    pending: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
     let user_id = session_user_id(&session)?;
-    let registry = Arc::clone(&registry);
+    let registry_state = Arc::clone(&registry);
 
     let token = CancellationToken::new();
-    let _guard = register_stream(&registry, &stream_id, token.clone());
+    let _guard = register_stream(&registry_state, &stream_id, token.clone());
 
-    // Auto-routing: when agent_id is "auto" or empty, resolve via the
-    // rule-based router. Existing sessions send their stored agent id,
-    // so this only fires for new (unsupervised) conversations.
-    #[cfg(feature = "router")]
-    let agent_id = logic::agent::routing::resolve_start_agent(&agent_id, &message);
-    #[cfg(not(feature = "router"))]
-    let agent_id = agent_id;
+    if !kawai_db::session_exists(&user_id, session_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Err(format!("session {session_id} not found"));
+    }
 
-    let mut stream = Box::pin(logic::agent::agent_chat_with_registry(
-        crate::agent_registry::builtin(),
-        user_id,
-        agent_id,
+    let agent_id = plan
+        .steps
+        .first()
+        .map(|s| s.agent_id.as_str())
+        .unwrap_or(crate::agent_registry::OFFICE_AGENT_ID);
+    let tool_registry = crate::supervisor::build_supervisor_registry(
+        &user_id,
         session_id,
-        message,
-        file_ids.unwrap_or_default(),
-    ));
+        agent_id,
+    )
+    .await
+    .ok_or_else(|| "supervisor toolset unavailable".to_string())?;
+
+    let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone());
+    let mut stream = Box::pin(stream);
     loop {
         tokio::select! {
             _ = token.cancelled() => break,

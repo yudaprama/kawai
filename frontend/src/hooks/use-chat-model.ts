@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { call, errText, type LocalModelInfo, type LocalModelStatus } from "@/lib/api";
 import { toFriendlyError } from "@/lib/chat-helpers";
 import { logError, logWarn } from "@/lib/logger";
-import type { LocalChatState } from "./use-local-chat";
+import type { SupervisorChatState } from "./use-supervisor-chat";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -29,7 +29,7 @@ function statusMessage(st: LocalModelStatus): string {
   }
 }
 
-export function useChatModel({ patch, state }: { patch: (p: Partial<LocalChatState>) => void; state: LocalChatState }) {
+export function useChatModel({ patch, state }: { patch: (p: Partial<SupervisorChatState>) => void; state: SupervisorChatState }) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = useCallback(() => {
@@ -45,7 +45,7 @@ export function useChatModel({ patch, state }: { patch: (p: Partial<LocalChatSta
       modelLoading: true,
       modelError: false,
       modelStatus: "loading model…",
-    } as Partial<LocalChatState>);
+    } as Partial<SupervisorChatState>);
 
     // Check current status before loading — may already be downloading.
     try {
@@ -123,7 +123,7 @@ export function useChatModel({ patch, state }: { patch: (p: Partial<LocalChatSta
         modelLoaded: false,
         modelStatus: "",
         thinking: false,
-      } as Partial<LocalChatState>);
+      } as Partial<SupervisorChatState>);
     } catch (err) {
       logError("local_llm_unload", err);
     }

@@ -199,6 +199,10 @@ name = "binance_smoke"
 required-features = ["binance"]
 
 [[example]]
+name = "planner_smoke"
+required-features = ["litert", "binance"]
+
+[[example]]
 name = "analytics_smoke"
 required-features = ["analytics"]
 
@@ -211,19 +215,11 @@ name = "web_read_check"
 required-features = ["office"]
 
 [[example]]
-name = "chat_route_check"
-required-features = ["litert"]
-
-[[example]]
 name = "thinking_smoke"
 required-features = ["litert", "office"]
 
 [[example]]
 name = "draft_smoke"
-required-features = ["litert", "office"]
-
-[[example]]
-name = "agent_smoke"
 required-features = ["litert", "office"]
 
 [[example]]

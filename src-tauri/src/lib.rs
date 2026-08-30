@@ -5,6 +5,19 @@ pub mod logging;
 mod keychain;
 pub mod logic;
 
+#[cfg(all(feature = "router", feature = "litert"))]
+pub mod supervisor;
+
+#[cfg(all(feature = "router", feature = "litert"))]
+fn supervisor_pending_state() -> crate::supervisor::PendingConfirmations {
+    crate::supervisor::PendingConfirmations::default()
+}
+
+#[cfg(not(all(feature = "router", feature = "litert")))]
+fn supervisor_pending_state() -> () {
+    ()
+}
+
 #[cfg(feature = "webread")]
 pub mod webview_engine;
 
@@ -27,6 +40,7 @@ pub fn run() {
         .manage(commands::new_registry())
         .manage(verifier)
         .manage(auth::new_session())
+        .manage(supervisor_pending_state())
         .setup(|app| {
             // Inject office engine directories from the Tauri app paths
             // (env overrides still win — see logic::office). Resolution:
@@ -51,7 +65,7 @@ pub fn run() {
             Ok(())
         });
 
-    // The office ops exist only with "office"; agent_chat only with "litert".
+    // The office ops exist only with the "office" feature.
     // Literal lists keep generate_handler! static per feature combo; the
     // analytics ops (sql_profile_*) get their own list — they exist only
     // under the `analytics` feature (which implies office).
@@ -109,7 +123,6 @@ pub fn run() {
         commands::office_read_file,
         commands::office_export_document,
         commands::tauri_open_file,
-        commands::agent_chat,
         commands::codegraph_explore,
         commands::codegraph_status,
         commands::codegraph_is_available,
@@ -120,6 +133,9 @@ pub fn run() {
         commands::graph_list,
         commands::graph_forget,
         commands::graph_stats,
+        commands::execute_supervisor_plan,
+        commands::respond_supervisor_confirmation,
+        commands::plan_task,
         commands::frontend_log
     ]);
 
@@ -182,7 +198,6 @@ pub fn run() {
         commands::sql_profile_save,
         commands::sql_profile_delete,
         commands::sql_profile_test,
-        commands::agent_chat,
         commands::codegraph_explore,
         commands::codegraph_status,
         commands::codegraph_is_available,
@@ -193,6 +208,9 @@ pub fn run() {
         commands::graph_list,
         commands::graph_forget,
         commands::graph_stats,
+        commands::execute_supervisor_plan,
+        commands::respond_supervisor_confirmation,
+        commands::plan_task,
         commands::frontend_log
     ]);
 
@@ -231,7 +249,6 @@ pub fn run() {
         commands::local_llm_set_thinking,
         commands::local_llm_unload,
         commands::local_llm_get_test_tools,
-        commands::agent_chat,
         commands::codegraph_explore,
         commands::codegraph_status,
         commands::codegraph_is_available,
@@ -242,6 +259,9 @@ pub fn run() {
         commands::graph_list,
         commands::graph_forget,
         commands::graph_stats,
+        commands::execute_supervisor_plan,
+        commands::respond_supervisor_confirmation,
+        commands::plan_task,
         commands::frontend_log
     ]);
 

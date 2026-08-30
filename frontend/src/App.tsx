@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { LinkDialog, PreviewDialog } from "@/components/knowledge-dialogs";
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
 import { useKnowledgeActions } from "@/hooks/use-knowledge-actions";
-import { useLocalChat } from "@/hooks/use-local-chat";
+import { useSupervisorChat } from "@/hooks/use-supervisor-chat";
+import { useSupervisorPlan } from "@/hooks/use-supervisor-plan";
 import { useContextOnboarding } from "@/hooks/use-context-onboarding";
 import { type AgentInfo, call } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
@@ -54,16 +55,42 @@ export default function App() {
   const agent = (activeAgentId != null && agents.find((a) => a.id === activeAgentId)) || agents[0] || null;
   const chatAgent = activeAgentId === "auto" ? { id: "auto", tools: true } : agent;
   const presentation = agent ? agentPresentation(agent.id) : agentPresentation("");
-  const chat = useLocalChat(chatAgent ?? { id: "auto", tools: true });
+  const chat = useSupervisorChat(chatAgent ?? { id: "auto", tools: true });
+  const supervisor = useSupervisorPlan();
+  const activeConfirmation = supervisor.pendingConfirmation
+    ? {
+        streamId: supervisor.pendingConfirmation.streamId,
+        stepId: supervisor.pendingConfirmation.stepId,
+        tool: "supervisor",
+        prompt: supervisor.pendingConfirmation.description || supervisor.pendingConfirmation.task,
+        acceptText: "Approve",
+        declineText: "Reject",
+      }
+    : null;
+  const displayMessages = supervisor.messages.length > 0 ? supervisor.messages : chat.messages;
+  const respondConfirmation = useCallback(
+    (approved: boolean) =>
+      supervisor.pendingConfirmation ? (approved ? supervisor.approve() : supervisor.reject()) : Promise.resolve(),
+    [chat, supervisor],
+  );
+  const planActive = supervisor.status === "running" || supervisor.status === "awaitingConfirmation";
   const { status } = chat;
   const busy = status === "submitted" || status === "streaming";
   const inSession = chat.sessionId != null || chat.messages.length > 0;
 
   const onSend = useCallback(
-    (text: string, fileIds?: string[]) => {
-      void chat.send(text, fileIds);
+    (text: string, _fileIds?: string[]) => {
+      // Supervisor is the only execution path.
+      void (async () => {
+        const sessionId = chat.sessionId ?? (await chat.ensureSessionId(text));
+        if (sessionId == null) return;
+        const supervisorAgent = activeAgentId === "auto" || activeAgentId == null
+            ? "builtin.office"
+            : activeAgentId;
+        await supervisor.planAndRun(text, sessionId, supervisorAgent);
+      })();
     },
-    [chat],
+    [chat, supervisor],
   );
 
   const ka = useKnowledgeActions(chat);
@@ -292,8 +319,8 @@ export default function App() {
         <ConversationPanel
           agent={agent}
           presentation={presentation}
-          messages={chat.messages}
-          status={status}
+          messages={displayMessages}
+          status={planActive ? ("streaming" as const) : status}
           sessionId={chat.sessionId}
           sessions={chat.sessions}
           modelLoading={chat.modelLoading}
@@ -308,7 +335,14 @@ export default function App() {
           lastUserText={lastUserText}
           onStop={chat.stop}
           onSend={onSend}
-          confirmation={chat.confirmation}
+          confirmation={activeConfirmation}
+          onRespondConfirmation={respondConfirmation}
+          supervisorStatus={supervisor.status}
+          supervisorGoal={supervisor.goal}
+          supervisorSteps={supervisor.steps}
+          supervisorError={supervisor.error}
+          supervisorFinalOutput={supervisor.finalOutput}
+          onStopSupervisor={supervisor.stop}
           inSession={inSession}
           sessionsCollapsed={sessionsCollapsed}
           onToggleSessions={() => setSessionsCollapsed((v) => !v)}
@@ -329,6 +363,7 @@ export default function App() {
           canvasOpen={canvasOpen}
           onToggleCanvas={hasContextPane ? () => setCanvasOpen((v) => !v) : undefined}
           canvas={canvasOpen ? contextPanel : null}
+
         />
       )}
 

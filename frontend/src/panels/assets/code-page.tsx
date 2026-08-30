@@ -145,7 +145,7 @@ export function CodeAssetPage({
             className="flex-1"
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleExplore()}
-            placeholder='Try: "how does agent_chat work" or "mutateElement renderScene"'
+            placeholder='Try: "create quarterly report" or "mutateElement renderScene"'
             value={query}
           />
         </div>

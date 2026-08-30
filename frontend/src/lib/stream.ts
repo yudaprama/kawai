@@ -22,10 +22,11 @@ export function streamOperation<E extends { type: string }>(
   operation: string,
   input: Record<string, unknown> | undefined,
   handlers: StreamHandlers<E>,
+  requestedStreamId?: string,
 ): StreamControl {
   const { onEvent, onDone, onError } = handlers;
   const channel = new Channel<E>();
-  const streamId = crypto.randomUUID();
+  const streamId = requestedStreamId ?? crypto.randomUUID();
 
   channel.onmessage = (msg: E) => {
     switch (msg.type) {

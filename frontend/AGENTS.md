@@ -77,7 +77,8 @@ frontend/
 │   │   ├── tool-description.ts # getToolDescription(name, args) — one-line summary for tool cards
 │   │   └── streamdown/     # vendored streaming markdown renderer
 │   ├── hooks/
-│   │   ├── use-local-chat.ts    # facade: composes use-chat-model + use-chat-sessions + send/stop
+│   │   ├── use-supervisor-chat.ts  # session/history shell slice (facade over use-chat-model + use-chat-sessions)
+│   │   ├── use-supervisor-plan.ts  # Supervisor execution: plan_task → execute_supervisor_plan → UIMessage parts
 │   │   ├── use-chat-model.ts        # model slice: loadModel, resetModelContext, toggleThinking, unloadModel
 │   │   ├── use-chat-sessions.ts     # session slice: CRUD, ensureSessionId, groupedSessions
 │   │   ├── use-knowledge-actions.ts # knowledge mutations: import, index, session binding, delete + UI state
@@ -136,12 +137,13 @@ frontend/
 ### Data flow
 
 ```
-User prompt → App.tsx → use-local-chat.send()
-  → streamOperation("agent_chat", {agentId, sessionId, message})
-  → Tauri Channel<LocalChatEvent> (via @tauri-apps/api/core)
-  → events: "started" | "token" | "toolCall" | "subagentThinking" | "toolResult" | "finished" | "error"
-  → use-local-chat folds events into UIMessage[] parts
-  → App.tsx renders via Conversation/Message/Tool components
+User goal → App.tsx → use-supervisor-plan.planAndRun()
+  → call("plan_task", {goal, sessionId}) → validated TaskPlan
+  → streamOperation("execute_supervisor_plan", {plan, sessionId, streamId})
+  → Tauri Channel<SupervisorEvent> (via @tauri-apps/api/core)
+  → events: "planStarted" | "stepStarted" | "confirmationRequested" | "stepCompleted" | "stepFailed" | "stepSkipped" | "planCompleted" | "planFailed"
+  → use-supervisor-plan folds events into UIMessage[] parts
+  → App.tsx renders via Conversation/Message/Tool components + plan progress panel
 ```
 
 ### Backend communication primitives
@@ -160,17 +162,17 @@ User prompt → App.tsx → use-local-chat.send()
 | Components | Prefer `ai-elements/` → `ui/` first; add new shadcn components via `bunx shadcn@latest add` only when nothing fits |
 | Hooks | Custom hooks in `hooks/`; each hook is a single file |
 | Platform | All platform capabilities go through the `Platform` interface in `platform/types.ts` — never use browser globals directly in components |
-| Chat state | `use-local-chat.ts` is the single source of truth for all chat state (messages, sessions, model status) |
-| Events | `LocalChatEvent` is generated from `crates/foundation/events` via `cargo run -p kawai-bindings --bin export-bindings` — never edit `frontend/src/generated/events.ts` manually. Add variant in the source then regenerate to avoid silent drops. |
+| Chat state | `use-supervisor-plan.ts` owns execution state (plan messages, steps, confirmations); `use-supervisor-chat.ts` owns the session/history shell |
+| Events | `SupervisorEvent` mirrors the Rust enum in `src-tauri/src/supervisor.rs` (scheduler events come from `kawai-router`). `LocalChatEvent` in `frontend/src/generated/events.ts` (raw `local_chat` stream) is generated from `crates/foundation/events` via `cargo run -p kawai-bindings --bin export-bindings` — never edit generated files manually. Add variant in the source then regenerate to avoid silent drops. |
 
 ## Non-obvious patterns
 
-- **`use-local-chat.ts` hardcodes `"agent_chat"`** as the stream operation name for every agent. The `local_chat` path is legacy and no longer invoked by the frontend.
+- **Every submission routes through the Supervisor.** `onSend` calls `planAndRun` (session is ensured lazily first). There is exactly one path — the legacy `agent_chat` engine loop, command, handler, and `AgentChatEvent` are fully removed.
 - **Tool call events strip `\`\`\`tool` fences** from the display text. The backend may emit tool call frames inside code fences; the frontend removes them from the text part and renders them as separate `ToolUIPart` cards.
 - **Session management is lazy.** A session is created on the first user message via `ensureSession()`. The title is seeded from the first message (first 80 chars) and generated server-side.
-- **Image paste goes through knowledge, never the model context.** At submit `ChatComposerInner` awaits `onImageToKnowledge` (import + session-bound index; the session is ensured first, so first-message pastes bind correctly) and rides the returned file IDs along like @-mentions (`onSubmit(text, fileIds)`). No image parts are rendered in the user bubble and no image data enters the `agent_chat` payload.
-- **File @-mentions carry IDs, not content.** The composer's @ button opens a `knowledge_list` popover; picked files render as chips and their IDs ride along on the next send (`onSubmit(text, fileIds)` → `chat.send(text, fileIds)` → `agent_chat` `fileIds`). The backend binds them to the session and lists them in the model prompt. Chips clear after submit.
-- **Auth bootstrap is in use-local-chat.ts** (lines 96-118). The hook first tries `whoami`, then falls back to `set_session` with a dev token. This is the MVP dev-bypass — no Clerk UI is wired in the React frontend.
+- **Image paste goes through knowledge, never the model context.** At submit `ChatComposerInner` awaits `onImageToKnowledge` (import + session-bound index; the session is ensured first, so first-message pastes bind correctly) and rides the returned file IDs along like @-mentions (`onSubmit(text, fileIds)`). No image parts are rendered in the user bubble; image data never enters the plan payload.
+- **File @-mentions carry IDs, not content.** The composer's @ button opens a `knowledge_list` popover; picked files render as chips and their IDs ride along on the next submit (`onSubmit(text, fileIds)`). The backend binds them to the session and the supervisor tools read them from session scope. Chips clear after submit.
+- **Auth bootstrap is in use-supervisor-chat.ts.** The hook first tries `whoami`, then falls back to `set_session` with a dev token. This is the MVP dev-bypass — no Clerk UI is wired in the React frontend.
 - **Theme is applied before React mounts** via an inline script in `index.html:7-20`. The `use-theme.ts` hook writes to the same `localStorage` key (`"kawai-theme"`).
 - **Agent presentation is a frontend map** (`AGENT_META` in `panels/agents-rail.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry. The right context pane follows the same pattern — `CONTEXT_TABS` in `panels/registry.tsx` decides which tabs each agent gets; agents absent from the map (or tool-less) get no pane and its toggles disappear.
 - **Asset workspace navigation is frontend-owned** (`ASSET_NAV` in `panels/assets/asset-nav.tsx`; `assetView` state in `App.tsx`). Opening an asset swaps the center pane (chat → asset page) without touching the chat state — the stream keeps folding in the background; Esc or an agent click returns. Wiki reuses the app's knowledge state, Memory reads `list_chat_sessions`/`list_chat_messages` directly; Skills/Code pages state plainly that their backend tier doesn't exist yet.

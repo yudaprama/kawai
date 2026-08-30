@@ -4,7 +4,7 @@ import { historyToMessages, sessionPeriod } from "@/lib/chat-helpers";
 import { logError, logWarn } from "@/lib/logger";
 import type { StreamControl } from "@/lib/stream";
 import { showErrorToast } from "@/lib/utils";
-import type { LocalChatState } from "./use-local-chat";
+import type { SupervisorChatState } from "./use-supervisor-chat";
 
 export function useChatSessions({
   agentId,
@@ -15,8 +15,8 @@ export function useChatSessions({
   clearMessages,
 }: {
   agentId: string;
-  patch: (p: Partial<LocalChatState>) => void;
-  state: LocalChatState;
+  patch: (p: Partial<SupervisorChatState>) => void;
+  state: SupervisorChatState;
   resetModelContext: () => Promise<void>;
   streamCtrl: React.MutableRefObject<StreamControl | null>;
   clearMessages: () => void;

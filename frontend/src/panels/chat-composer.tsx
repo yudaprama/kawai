@@ -32,6 +32,7 @@ export function ChatComposer({
   onSubmit: (text: string, fileIds?: string[]) => void;
   lastUserText: string | null;
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
+  /** Supervisor plan mode: submits route to the planner instead of the agent. */
 }) {
   return (
     <PromptInputProvider>

@@ -34,7 +34,7 @@ pub fn list_agents() -> Vec<AgentInfo> {
 
 /// Office gets knowledge_search, graph tools, and cloud subagent tools.
 #[cfg(feature = "litert")]
-fn office_tools(
+pub(crate) fn office_tools(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
@@ -59,7 +59,7 @@ fn office_tools(
 /// Presentation gets deck authoring, source reading, knowledge search, and
 /// cloud synthesis — but not document editing or PDF mutation tools.
 #[cfg(feature = "litert")]
-fn presentation_tools(
+pub(crate) fn presentation_tools_for_supervisor(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
@@ -84,7 +84,7 @@ fn presentation_tools(
 
 /// Binance gets web read/search (cross-cutting) and cloud subagent tools.
 #[cfg(feature = "litert")]
-fn binance_tools(
+pub(crate) fn binance_tools_for_supervisor(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
@@ -107,7 +107,7 @@ fn binance_tools(
 
 /// Analytics: delegates entirely to its own tool builder + cloud subagent tools.
 #[cfg(feature = "litert")]
-fn analytics_tools(
+pub(crate) fn analytics_tools_for_supervisor(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
@@ -208,7 +208,7 @@ pub fn builtin() -> AgentRegistry {
         #[cfg(feature = "office")]
         {
             let mut d = kawai_office::agent::presentation_definition();
-            d.build_tools = presentation_tools;
+            d.build_tools = presentation_tools_for_supervisor;
             d
         }
         #[cfg(not(feature = "office"))]
@@ -224,7 +224,7 @@ pub fn builtin() -> AgentRegistry {
         #[cfg(all(feature = "binance", not(target_os = "android")))]
         {
             let mut d = ::binance::agent::definition();
-            d.build_tools = binance_tools;
+            d.build_tools = binance_tools_for_supervisor;
             d
         }
         #[cfg(not(all(feature = "binance", not(target_os = "android"))))]
@@ -240,7 +240,7 @@ pub fn builtin() -> AgentRegistry {
         #[cfg(feature = "analytics")]
         {
             let mut d = kawai_analytics::agent::definition();
-            d.build_tools = analytics_tools;
+            d.build_tools = analytics_tools_for_supervisor;
             d
         }
         #[cfg(not(feature = "analytics"))]

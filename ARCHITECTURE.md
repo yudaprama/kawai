@@ -8,7 +8,7 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 - Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from domain crates, composed through `AgentDefinition` tool builders. UI: three-pane — left = agents rail, center = active agent chat + canvas, right = sessions sidebar.
 - End state: **desktop + mobile + web from one core**; app logic is 100% shared, only transport and launcher differ per target.
 - Current phase: **MVP, desktop-first** (macOS, on-device LLM, dev-bypass auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
-- Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`hooks/use-local-chat.ts` + `lib/ai-types.ts`).
+- Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`hooks/use-supervisor-plan.ts` + `lib/ai-types.ts`).
 - Backend: Rust, single core logic. Built-in agent composition is owned by the application root (`src-tauri/src/agent_registry.rs`); the reusable orchestration engine consumes an injected `AgentRegistry`.
 - Auth: MVP = dev-bypass (`set_session` with any token, backend-gated by `KAWAI_AUTH_DEV_USER_ID`). Backend retains Clerk JWKS verification (`auth.rs`, public keys only) for the future prod flow (browser + deep link — see AGENTS.md Roadmap).
 - LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool with health-aware failover); remote providers are optional configuration. The local model delegates heavy synthesis to cloud subagent tools (`deep_write`, `draft_document`) when a remote LLM is configured. Agent toolsets come from domain crates and are composed by the application root. Design record: `PLAN-hybrid-llm-subagents.md`.
@@ -19,7 +19,7 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 ```
 ┌───────────────────────────────────────────────────────────┐
 │  REACT 19 + VITE (frontend/ → dist/) — Tailwind v4        │
-│  App.tsx → use-local-chat → lib/api.call() /              │
+│  App.tsx → use-supervisor-plan → lib/api.call() /          │
 │                            lib/stream.streamOperation()   │
 ├───────────────────────────────────────────────────────────┤
 │  FRONTEND ABSTRACTION (Tauri-only, no platform branching) │
@@ -42,55 +42,52 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 └───────────────────────────────────────────────────────────┘
 ```
 
-## Request flow — `agent_chat` end-to-end
+## Request flow — Supervisor end-to-end
 
-What happens when a user sends a prompt (the agent-tier chat transport; the standalone `local_chat` op remains but the frontend no longer invokes it). The transport supplies the application-composed registry; the runtime does not construct the built-in catalog:
+What happens when a user sends a prompt. The Supervisor (`kawai-router`) is the **sole desktop execution path**: the LLM only writes a validated plan; a deterministic Rust scheduler executes it against the tool registry. The legacy `agent_chat` prompt-based tool-calling transport is fully removed (engine loop, command, Axum handler, frontend hook, `AgentChatEvent`).
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor U as User
-    participant FE as Frontend (use-local-chat)
-    participant CMD as commands.rs::agent_chat
-    participant AC as kawai-agent::agent_chat_with_registry
-    participant LLM as local_llm (Gemma 4)
-    participant CLOUD as RemoteLlm (zai)
+    participant FE as Frontend (use-supervisor-plan)
+    participant PLAN as commands.rs::plan_task
+    participant REG as supervisor::ToolRegistry
+    participant EXEC as commands.rs::execute_supervisor_plan
+    participant SCHED as kawai-router::run_plan_with_cancel
+    participant TOOLS as ToolSet::execute
 
-    U->>FE: type prompt, send
-    FE->>CMD: streamOperation("agent_chat", {agentId, sessionId, message, streamId})
-    CMD->>CMD: resolve user_id from Session; register cancel token
-    CMD->>AC: agent_chat_with_registry(registry, user_id, agent_id, sid, message)
-    AC->>AC: application composition root builds AgentRegistry + per-turn toolset
-    AC->>AC: reset conversation (takeover); build prompt
-    AC->>LLM: local_chat(stream)
-    LLM-->>FE: Token events (live render)
-    LLM-->>AC: full text
-    AC->>AC: parse_tool_call(text)
-    alt registered cloud capability AND remote set
-        AC->>CLOUD: completion(task)  (stream)
-        CLOUD-->>FE: Token events (answer)
-        CLOUD-->>AC: result
-        AC->>LLM: feed result back (loop)
-    else no tool call
-        AC-->>FE: final answer
+    U->>FE: type goal, send
+    FE->>PLAN: call("plan_task", {goal, sessionId})
+    PLAN->>REG: build_supervisor_registry(user, session)
+    PLAN->>PLAN: plan_prompt_with_tools(registry) → RemoteLlm
+    PLAN->>PLAN: parse_supervisor_plan (extract JSON + validate against registry)
+    PLAN-->>FE: validated TaskPlan
+    FE->>EXEC: streamOperation("execute_supervisor_plan", {plan, sessionId, streamId})
+    EXEC->>SCHED: run_plan_with_cancel(plan, dispatch, limits, cancel)
+    loop per wave (max_parallel steps)
+        SCHED->>TOOLS: dispatch(step, resolved_args, inputs)
+        TOOLS-->>SCHED: StepResult (+ typed Artifacts)
+        SCHED-->>FE: SchedulerEvent (stepStarted/Completed/Failed/Skipped)
     end
-    AC->>AC: db::log_turn (provider, tool, latency)
-    AC-->>FE: Finished
+    opt side-effect step
+        SCHED-->>FE: confirmationRequested (streamId + stepId)
+        U->>FE: approve / reject
+        FE->>EXEC: respond_supervisor_confirmation
+    end
+    SCHED-->>FE: PlanCompleted / PlanFailed
+    FE->>FE: persist user + assistant messages (append_chat_message)
 ```
 
-1. **Frontend capture & invoke.** `App.tsx` → `hooks/use-local-chat.ts` calls `streamOperation("agent_chat", { agentId, sessionId, message, streamId })` (use-local-chat.ts hardcodes `"agent_chat"`). Streaming arrives over a Tauri `Channel` as `#[serde(tag="type")]` events; the frontend mirrors the union in `LocalChatEvent` (`Started`, `Token`, `ToolCall`, `ToolResult`, `Finished`, `Error`).
+1. **Frontend capture & invoke.** `App.tsx` routes every composer submission through `hooks/use-supervisor-plan.ts`: `plan_task` returns a validated `TaskPlan`, then `streamOperation("execute_supervisor_plan", …)` runs it. Events arrive over a Tauri `Channel` as `SupervisorEvent`s (`planStarted`, `stepStarted`, `confirmationRequested`, `stepCompleted`, `stepFailed`, `stepSkipped`, `planCompleted`, `planFailed`) and are folded into `UIMessage[]` parts. There is exactly one execution path.
 
-2. **Transport — Tauri command.** `commands.rs::agent_chat` takes `stream_id`, `on_event: Channel`, `State<Session>`, `State<StreamRegistry>`. The wrapper resolves `user_id` from the session claims (identity at the edge, never inside `logic.rs`), registers a `CancellationToken` keyed by `stream_id`, then calls `kawai-agent::agent_chat_with_registry(...)`. (Web: the equivalent Axum route in `web.rs` mounts on the protected router and takes `Extension<auth::Claims>`.)
+2. **Planner.** `supervisor::plan_task` renders `plan_prompt_with_tools(registry)` (tool name/kind/description/input-schema per registered tool), streams one completion from the remote pool (`RemoteLlm`), then `parse_supervisor_plan` extracts the JSON and validates it: structural invariants (caps, deps, acyclicity) plus every step's dispatch key against the `ToolRegistry`. Invalid plans never reach execution.
 
-3. **Setup (`src-tauri/src/agent_registry.rs` + `kawai-agent`).** The transport obtains the application-composed `AgentRegistry`; `agent_chat_with_registry` resolves the enabled `AgentDefinition`, builds the persona and per-turn toolset, and calls `remote = RemoteLlm::from_env()` — default `zai` (glm-5.3) using a **compiled-in kawai-vault key** (zero-config — providers/models/keys compile in; an empty vault ⇒ `from_env()` returns `None` ⇒ pure-local). Domain crates provide their definitions; the application root adds cross-cutting tools and capability mappings. It `yield`s `Started`, loads `prior_turns` from SQLite, and appends the user message.
+3. **Execution.** `commands.rs::execute_supervisor_plan` validates session ownership, builds the session-bound registry, and runs `kawai-router::run_plan_with_cancel`: wave-based deterministic scheduling (max parallel, per-step timeout/retries/`onError`), argument resolution with artifact references (`{fromStep, output}`), confirmation gates parked on oneshot channels keyed by `streamId + stepId`, and live `SchedulerEvent`s bridged to `SupervisorEvent`s. Tool output is promoted to typed artifacts (`Text`/`File`/`Structured`).
 
-4. **Generation loop — local model is the orchestrator.** If the conversation manifest isn't injected yet, `agent_chat_with_registry` **resets the engine conversation** (singleton per user; clears any framing left by `local_chat`) and builds the full prompt = definition persona + injected skills/memories + tool manifest + `compact_transcript(prior_turns)` + the user message. It calls `local_llm::local_chat` (LiteRT-LM Conversation API, on-device Gemma 4) — tokens stream out as `Token` events rendered live. On completion `parse_tool_call(&text)` resolves cross-cutting behavior through the definition's capability resolver, then dispatches either to a runtime capability or the injected `ToolSet`; a call-free response is final. Prefill K/V overflow (`KAWAI_LLM_MAX_TOKENS`, default 16384) resets and retries once.
+4. **Confirmation.** Side-effect steps with `requiresConfirmation` emit `confirmationRequested` and pause; the frontend approves/rejects via `respond_supervisor_confirmation` (Tauri command + Axum route). Stale pending gates are swept when the plan stream ends.
 
-5. **Cloud subagent delegation (`crates/engines/agent/src/subagents.rs`).** The application-composed cloud capabilities are registered as manifest-visible tools; on dispatch the pending call carries a typed capability (`SubagentKind`) and `run_pending_subagent` selects the matching `SubagentHandler` (`CloudWriterHandler`/`DocumentDrafterHandler`) — the executor never compares tool names. `deep_write` streams a completion from the remote pool and the long-form result is streamed back to the frontend as the answer; `draft_document` has the cloud write structured document content and the office engine creates the file. The result is fed back into the loop so Gemma 4 can synthesize the final response.
-
-6. **Finalize.** The final answer triggers `db::log_turn` (`logic/db.rs`) — one row in `turn_log`: `provider` (`local` | `zai`), `tool` (`deep_write`/`draft_document`/`NULL`), `latency_ms`, `outcome=answer` — used to calibrate delegation via `turn_log_report`. `agent_chat` `yield`s `Finished`; the frontend completes the UIMessage parts (text + tool cards).
-
-**Design invariant:** Gemma 4 local is the *permanent orchestrator*; the cloud is the most expensive *tool* the model may choose for heavy synthesis. No user-facing provider switch and no kill-switch env — an empty vault IS the off state (no keys ⇒ pure-local agents).
+5. **Persistence.** The frontend appends the user goal and the plan's final output to session history via the existing `append_chat_message` op; per-step progress renders from live supervisor state.
 
 ## Agent catalog & toolset map
 
@@ -231,7 +228,7 @@ kawai/
 │       │   ├── stream.ts     # streamOperation(): Channel + cancel_stream
 │       │   └── streamdown/   # vendored markdown/streaming renderer (from web/)
 │       ├── hooks/
-│       │   └── use-local-chat.ts  # LocalChatEvent → UIMessage parts; sessions; model mgmt
+│       │   └── use-supervisor-plan.ts  # SupervisorEvent → UIMessage parts; plan runs; confirmations
 │       ├── components/
 │       │   ├── ai-elements/  # vendored chat components (from web/, trimmed)
 │       │   └── ui/           # shadcn primitives (from web/)
@@ -275,7 +272,7 @@ kawai/
 5. **Launcher**:
    - Desktop/Mobile (`main.rs` → `lib.rs::run()`): Tauri builder, registers commands + `.manage(Verifier)` + `.manage(Session)`. **Does NOT run Axum.**
    - Web (`bin/web.rs`): binds `0.0.0.0:PORT`, serves `/api/*` router. Not a Tauri app.
-6. **Frontend** — React SPA (`frontend/`), bundled by Vite into `dist/` and served by Tauri. RPC via `@tauri-apps/api/core.invoke`; streaming via `Channel` + `cancel_stream`. Chat state lives in `hooks/use-local-chat.ts`, which folds backend stream events (`token`/`toolCall`/`toolResult`/terminals) into `UIMessage[]` parts; `lib/ai-types.ts` defines those shapes locally (no `ai` npm package — field names stay AI-SDK-v5-compatible so the vendored `ai-elements` components render them unmodified).
+6. **Frontend** — React SPA (`frontend/`), bundled by Vite into `dist/` and served by Tauri. RPC via `@tauri-apps/api/core.invoke`; streaming via `Channel` + `cancel_stream`. Chat state lives in `hooks/use-supervisor-plan.ts`, which folds supervisor stream events (`planStarted`/`stepStarted`/`stepCompleted`/`stepFailed`/`stepSkipped`/terminals) into `UIMessage[]` parts; `lib/ai-types.ts` defines those shapes locally (no `ai` npm package — field names stay AI-SDK-v5-compatible so the vendored `ai-elements` components render them unmodified).
 
 ## Core dependencies (in `logic.rs` / `auth.rs`)
 
