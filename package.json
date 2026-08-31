@@ -20,11 +20,11 @@
     "tauri:build:litert-office": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features litert,office --config .github/tauri-litert.json"
   },
   "dependencies": {
-    "@clerk/react": "^6.14.8",
     "@radix-ui/react-label": "^2.1.15",
     "@radix-ui/react-use-controllable-state": "^1.2.6",
     "@rive-app/react-webgl2": "^4.32.0",
     "@sentry/react": "^10.70.0",
+    "@supabase/supabase-js": "^2.112.4",
     "@tanstack/react-virtual": "^3.14.9",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "~2",
