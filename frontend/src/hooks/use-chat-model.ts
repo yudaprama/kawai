@@ -29,7 +29,13 @@ function statusMessage(st: LocalModelStatus): string {
   }
 }
 
-export function useChatModel({ patch, state }: { patch: (p: Partial<SupervisorChatState>) => void; state: SupervisorChatState }) {
+export function useChatModel({
+  patch,
+  state,
+}: {
+  patch: (p: Partial<SupervisorChatState>) => void;
+  state: SupervisorChatState;
+}) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = useCallback(() => {

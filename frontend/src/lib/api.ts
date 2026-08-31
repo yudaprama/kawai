@@ -19,11 +19,7 @@ export function tauriOpenFile(fileId: string): Promise<void> {
   return call<void>("tauri_open_file", { fileId });
 }
 
-export function respondSupervisorConfirmation(
-  streamId: string,
-  stepId: string,
-  approved: boolean,
-): Promise<void> {
+export function respondSupervisorConfirmation(streamId: string, stepId: string, approved: boolean): Promise<void> {
   return call<void>("respond_supervisor_confirmation", { streamId, stepId, approved });
 }
 

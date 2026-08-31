@@ -89,7 +89,6 @@ export function useSupervisorChat(agent: Pick<AgentInfo, "id">, userId?: string 
     clearMessages,
   });
 
-
   const stop = useCallback(() => {
     streamCtrl.current?.cancel();
     streamCtrl.current = null;
@@ -102,7 +101,6 @@ export function useSupervisorChat(agent: Pick<AgentInfo, "id">, userId?: string 
     // unloadModel in useChatModel only clears model fields; we also clear messages per original semantics
     patch({ messages: [] } as Partial<SupervisorChatState>);
   }, [unloadModel, patch]);
-
 
   return {
     ...state,

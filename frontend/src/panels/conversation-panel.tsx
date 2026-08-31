@@ -260,7 +260,9 @@ export function ConversationPanel({
           <div className="flex items-center justify-between">
             <span className="font-medium">Plan {supervisorStatus}</span>
             {(supervisorStatus === "running" || supervisorStatus === "awaitingConfirmation") && (
-              <Button onClick={onStopSupervisor} size="sm" variant="outline">Stop plan</Button>
+              <Button onClick={onStopSupervisor} size="sm" variant="outline">
+                Stop plan
+              </Button>
             )}
             {supervisorGoal && <span className="text-muted-foreground truncate text-xs">{supervisorGoal}</span>}
           </div>
@@ -268,7 +270,15 @@ export function ConversationPanel({
             <div className="mt-2 space-y-1">
               {supervisorSteps.map((step) => (
                 <div className="flex items-center gap-2 text-xs" key={step.stepId}>
-                  {step.state === "completed" ? <CheckCircle2Icon className="size-3 text-emerald-500" /> : step.state === "failed" ? <CircleXIcon className="text-destructive size-3" /> : step.state === "running" ? <LoaderCircleIcon className="size-3 animate-spin" /> : <CircleIcon className="text-muted-foreground size-3" />}
+                  {step.state === "completed" ? (
+                    <CheckCircle2Icon className="size-3 text-emerald-500" />
+                  ) : step.state === "failed" ? (
+                    <CircleXIcon className="text-destructive size-3" />
+                  ) : step.state === "running" ? (
+                    <LoaderCircleIcon className="size-3 animate-spin" />
+                  ) : (
+                    <CircleIcon className="text-muted-foreground size-3" />
+                  )}
                   <span className="font-medium">{step.stepId}</span>
                   <span className="text-muted-foreground">{step.state}</span>
                   {step.output && <span className="text-muted-foreground truncate">— {step.output}</span>}

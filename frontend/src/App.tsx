@@ -84,9 +84,7 @@ export default function App() {
       void (async () => {
         const sessionId = chat.sessionId ?? (await chat.ensureSessionId(text));
         if (sessionId == null) return;
-        const supervisorAgent = activeAgentId === "auto" || activeAgentId == null
-            ? "builtin.office"
-            : activeAgentId;
+        const supervisorAgent = activeAgentId === "auto" || activeAgentId == null ? "builtin.office" : activeAgentId;
         await supervisor.planAndRun(text, sessionId, supervisorAgent);
       })();
     },
@@ -363,7 +361,6 @@ export default function App() {
           canvasOpen={canvasOpen}
           onToggleCanvas={hasContextPane ? () => setCanvasOpen((v) => !v) : undefined}
           canvas={canvasOpen ? contextPanel : null}
-
         />
       )}
 

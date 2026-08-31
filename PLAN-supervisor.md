@@ -280,53 +280,58 @@ Artifact hand-off. Data tidak masuk context — hanya handles.
 
 ### Current execution policy
 
-Supervisor is now the sole desktop execution path. `agent_chat` is no longer selected by the frontend, including as an error fallback, and is no longer registered as a Tauri command or Axum route. The legacy `useLocalChat` hook has been removed. Session/history shell state now lives in `useSupervisorChat`, while Supervisor owns desktop execution, messages, confirmations, and progress.
+Supervisor is the sole desktop execution path. Every composer submission follows:
+
+```text
+goal → plan_task → validated TaskPlan → execute_supervisor_plan → deterministic scheduler
+```
+
+`agent_chat`, `AgentChatEvent`, the prompt-based agent loop, and the legacy `useLocalChat` hook have been removed. Session/history shell state lives in `useSupervisorChat`; execution state, plan progress, and confirmations live in `useSupervisorPlan`.
+
+The planner is remote-LLM-backed. The executor is Rust-only and performs no inference. Tool registries are selected by the active agent: office, presentation, analytics, or Binance. Analytics receives per-user SQL profiles through `effective_profiles(user_id)`.
 
 ### Known follow-ups
 
-- Active dispatch cancellation is not yet interruptible; tool implementations need a cancellation-aware execution contract.
-- The frontend has no planner entry point yet: `useSupervisorPlan.runPlan` exists but nothing in the app produces a validated `TaskPlan` (next milestone: a `plan_task` planner command/agent-chat integration).
-- Registry composition currently uses the office toolset as a broad superset; register analytics/binance/domain-specific tools based on actual feature availability.
-- File artifact detection is envelope-based; add store-aware adapters and explicit output schemas for reliable `File`/`Handle` distinction.
-- Retry backoff is hard-coded seconds; consider a configurable backoff strategy.
-- `max_parallel: 0` should be clamped or rejected at validation time.
+These are enhancements, not migration blockers:
 
-## Implementation Order
+- **Active cancellation:** cancellation currently stops at wave boundaries; active tools need a cancellation-aware execution contract.
+- **Cross-domain plans:** one plan currently uses one agent-scoped registry. Cross-domain workflows need an explicit multi-domain registry policy.
+- **Artifact contracts:** file detection currently recognizes common output envelopes; explicit per-tool output schemas and store-aware adapters would improve reliability.
+- **Scheduler tuning:** `max_parallel` is currently conservative (`2`) and retry backoff is fixed; make them configurable only when workload evidence requires it.
+- **Transport coverage:** executor-level confirmation tests exist; a Tauri Channel/UI-level integration test would add release confidence.
+- **Offline planning:** without a configured remote provider, `plan_task` returns a clear configuration error. A local or rule-based fallback is a product decision.
 
-| Step | What |
+## Delivered implementation
+
+| Area | Status |
 |---|---|
-| 1 | Schema types: `ExecutionPlan`, `PlanStep`, `ExecutionPolicy`, `Artifact` di `crates/router` |
-| 2 | Rust Supervisor executor: read plan → resolve args → dispatch → collect artifacts → onError/retries/parallel |
-| 3 | Tool dispatch: `Tool::Pure` + `Tool::Subagent` enum, registry lookup |
-| 4 | Tool catalog metadata (nama + deskripsi + I/O) untuk planner prompt |
-| 5 | Planner prompt: task → ExecutionPlan JSON |
-| 6 | Subagent handler baru (remote pool): `analyze_data`, `create_deck`, `fetch_market_data` — pola `deep_write` |
-| 7 | `requiresConfirmation` gate |
-| 8 | `allowParallel` untuk step independen |
-| 9 | Integration test |
+| Router schema, validation, artifact references | ✅ Complete |
+| Deterministic scheduler: dependencies, waves, parallelism, retries, timeout, `onError` | ✅ Complete |
+| Tool registry and metadata-driven planner prompt | ✅ Complete |
+| Tauri + Axum Supervisor execution endpoints | ✅ Complete |
+| Office, presentation, analytics, and Binance registry composition | ✅ Complete |
+| Per-user analytics SQL profile binding | ✅ Complete |
+| Typed artifacts and file output mapping | ✅ Complete; schema refinement remains optional |
+| Confirmation gates and composite `streamId + stepId` identity | ✅ Complete |
+| Tauri Channel/SSE progress events | ✅ Complete |
+| Cooperative cancellation | ✅ Complete; active-tool cancellation remains a follow-up |
+| Frontend hard cutover and session persistence | ✅ Complete |
+| Legacy `agent_chat` engine, event, transport, hook, and examples | ✅ Purged |
+| Supervisor confirmation integration tests | ✅ Complete |
 
-## What gets removed
+The original implementation sequence is complete. Future work is tracked under **Known follow-ups** and should be treated as product hardening or feature expansion, not migration work.
 
-| Component | Nasib |
+## Current file map
+
+| Area | Responsibility |
 |---|---|
-| Supervisor persona/Gemma | Tidak perlu — supervisor = Rust |
-| Keyword matching | Sudah terhapus |
-| LLM routing classifier | Hapus — planner + subagent menggantikan |
-| Agent-as-executor | Tidak dibangun — digantikan subagent tools |
-| AgentDefinition sebagai entry point | Agent domain → metadata subagent + persona internal |
-| Frontend agent selection | Hapus |
+| `crates/router/` | Transport-agnostic plan types, validation, registry, scheduler, artifacts, and planner prompt |
+| `src-tauri/src/supervisor.rs` | Composition-root registry adapter, execution stream, confirmation state, Supervisor events, and tests |
+| `src-tauri/src/agent_registry.rs` | Domain toolset composition for office, presentation, analytics, and Binance |
+| `src-tauri/src/commands.rs` | Authenticated Tauri planner, executor, cancellation, and confirmation wrappers |
+| `src-tauri/src/web.rs` | Authenticated Axum planner/executor/confirmation transport wrappers |
+| `frontend/src/hooks/use-supervisor-plan.ts` | Plan creation, execution progress, confirmation actions, UI messages, and persistence |
+| `frontend/src/hooks/use-supervisor-chat.ts` | Session/history shell and auth bootstrap |
+| `.github/workflows/ci.yml` | Supervisor planner smoke coverage |
 
-## File changes summary
-
-| File | Change |
-|---|---|
-| `crates/router/src/types.rs` | ExecutionPlan, PlanStep, ExecutionPolicy, Artifact types |
-| `crates/router/src/scheduler.rs` | Rust executor loop (retries, timeout, onError, parallel) |
-| `crates/router/src/plan.rs` | ExecutionPlan validation |
-| `crates/engines/agent/src/subagents.rs` | analyze_data/create_deck/fetch_market_data handlers + planner prompt |
-| `src-tauri/src/agent_registry.rs` | Tool registry: Tool::Pure + Tool::Subagent |
-| `src-tauri/src/commands.rs` | Rust supervisor entry point |
-| `src-tauri/src/web.rs` | Rust supervisor entry point |
-| `src-tauri/src/logic/agent/routing.rs` | Delete |
-| `crates/router/src/classifier.rs` | Delete |
-| `frontend/src/App.tsx` | Hapus agent selection |
+Legacy agent-chat files and event types are not part of the current architecture.

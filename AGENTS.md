@@ -21,7 +21,7 @@ Desktop/mobile app (Tauri), with a standalone web server binary.
 **End state: desktop + mobile + web from one core. Current phase: MVP, desktop-first — see "Current phase" below.**
 
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind v4 (`frontend/`, alias `@/` → `frontend/src`). UI components vendored from the `web/` SPA (`ai-elements/`, `ui/`, `lib/streamdown/`). NO ai-sdk — `lib/ai-types.ts` is a type-only local shim of the `UIMessage`/parts shapes; streaming is raw Tauri `Channel` mapped by `hooks/use-supervisor-plan.ts` (Supervisor events).
-- **Auth**: dev-bypass via `set_session` for MVP (`KAWAI_AUTH_DEV_USER_ID=demo`). Clerk backend verification (`auth.rs`, public JWKS) remains for the future prod auth flow (post-MVP roadmap: browser + deep link). **No Clerk UI is wired in the React frontend.**
+- **Auth**: dev-bypass via `set_session` for MVP (`KAWAI_AUTH_DEV_USER_ID=demo`). Supabase Auth backend verification (`auth.rs`, public JWKS) for the future prod auth flow (post-MVP roadmap: browser + deep link). **Supabase login UI is wired in the React frontend.**
 - **Backend**: Rust. Single core logic, two thin transport wrappers.
 - **Transport**: Tauri `Channel`+`invoke` (desktop/mobile); HTTP `fetch`+SSE (web — backend only, no web frontend).
 - **LLM (on-device)**: LiteRT-LM via `cognee-litert-lm` (path dep, vendored at `cognee-litert-lm/vendor/LiteRT-LM` = upstream `google-ai-edge` main). Behind the `litert` cargo feature. Gemma 4 / Qwen `.litertlm` verified streaming on macOS arm64 CPU. **Auto-download**: if the model is not found locally, `logic::ensure_model()` downloads `gemma-4-E4B-it.litertlm` (3.7 GB) from the public `litert-community/gemma-4-E4B-it-litert-lm` HuggingFace repo (Apache-2.0, no token required) into `~/.kawai/models/` with resume support and progress logging to stderr.
@@ -56,7 +56,7 @@ Short-term focus is a **macOS desktop MVP**. The end state is unchanged — desk
 5. **No AI SDK.** The chat state is produced by `hooks/use-supervisor-plan.ts` from raw Tauri Supervisor stream events; the UIMessage/part shapes in `lib/ai-types.ts` are a LOCAL type contract only (field names stay AI-SDK-v5-compatible so the vendored ai-elements components work unmodified). Never add a runtime dep on `ai` / `@ai-sdk/*`.
 6. **Web deps stay gated.** `axum`/`tower-http` are `optional`, behind the `web` Cargo feature. The `web` module is `#[cfg(feature = "web")]`. The `kawai-web` binary has `required-features = ["web"]`. Never make axum a non-optional dep — it must stay out of desktop/mobile binaries.
 7. **Events.** `#[serde(tag = "type")]` in `crates/foundation/events` (single source via `specta::Type`); frontend reads `event.type` at runtime. Terminal variants are `finished` / `error`. TS is **generated** — never edit `frontend/src/generated/events.ts` by hand. Add variant in `crates/foundation/events/src/lib.rs` then `cargo run -p kawai-bindings --bin export-bindings` (or `bun run generate:events`) and update matchers in `crates/engines/agent/src/lib.rs` + `frontend/src/hooks/use-supervisor-plan.ts` (for `SupervisorEvent`, mirrored from `crates/router/src/scheduler.rs`) so new variants are not silently dropped.
-8. **Identity is resolved at the transport edge, not in `logic.rs`.** Wrappers verify the token and pass `user_id` (`claims.sub`) into `logic.rs` fns as the first param. The frontend NEVER sends `user_id`. `auth.rs` is pure (no tauri/axum): it does JWKS verification (Clerk).
+8. **Identity is resolved at the transport edge, not in `logic.rs`.** Wrappers verify the token and pass `user_id` (`claims.sub`) into `logic.rs` fns as the first param. The frontend NEVER sends `user_id`. `auth.rs` is pure (no tauri/axum): it does JWKS verification (Supabase Auth).
 9. **DB builder selection is `cfg`-gated in `logic.rs`, not branched on a transport type.** `#[cfg(feature = "web")]` → remote client; `#[cfg(not(feature = "web"))]` → local SQLite. Keeps `logic.rs` pure.
 10. **Vendored components stay in sync with the shim.** `components/ai-elements/*`, `components/ui/*`, `lib/streamdown/` come from the `web/` SPA. When pulling updates from `web/`, re-run the same trims: `ai` imports → `@/lib/ai-types`, strip `react-i18next`, no `@/platform` beyond the slim local adapter (`src/platform/`), no Lexical, no `@xyflow`, no `tokenlens`.
 
@@ -162,7 +162,7 @@ with exact commands, §4 the post-fix verification block.
 - **Cancellation is asymmetric by design.** Web: `AbortController` (connection drop auto-cancels the backend future). Desktop/mobile: frontend `cancel()` calls `invoke('cancel_stream', {streamId})` → `CancellationToken` in the shared registry breaks the `select!` loop. Streaming commands must accept a `stream_id` param and register/clean up a token.
 - **Axum 0.8 `from_fn` hardcodes state to `()`.** A middleware that needs shared state can't use `from_fn` + `State<S>`; use `Extension` (our `auth_middleware` reads `Extension<Verifier>`) or `from_fn_with_state`. Don't fight the type inference by annotating `Router<S>` — switch to `Extension`.
 - **`libsql` positional tuple params start at arity 2.** `(&str,)` is NOT `IntoParams`; use `vec![x]` (or an array) for a single param. Tuples `(A,B)` and up are fine. Params blanket-impl `T: TryInto<Value>` (so `&str`, `String`, `i64`, … all work).
-- **Clerk JWTs are RS256; sqld accepts only EdDSA (post-MVP).** When sqld is added for multi-device sync, never pass a Clerk session JWT to sqld — mint an EdDSA token in the backend first.
+- **Supabase Auth JWTs are HS256 by default; sqld accepts only EdDSA (post-MVP).** When sqld is added for multi-device sync, never pass a Supabase session JWT to sqld — mint an EdDSA token in the backend first.
 - **`dotenvy` does not override existing env vars.** Shell-exported vars win over `.env`. To force dev-bypass auth, `KAWAI_AUTH_DEV_USER_ID=demo cargo run ...`.
 - **Two `reqwest` versions coexist** (0.12 direct + jigsawstack; 0.13 via `youtube_transcript`, office-gated). Expected.
 - **Clerk dev-mode does NOT work in the Tauri webview.** Dev instances need the `dev_browser` third-party cookie; WKWebView (macOS) blocks third-party cookies → `clerk.load()` always rejects. That's why the React frontend doesn't wire Clerk at all for MVP — it calls `set_session(<any-token>)` which only succeeds when the backend runs the dev bypass (see `use-supervisor-chat.ts` bootstrap). Production auth = browser + deep link (post-MVP roadmap); consider reusing the Kratos OIDC deep-link pattern from the main `web/` SPA (`web/src/platform/tauri.ts`) when that lands.
@@ -217,7 +217,7 @@ crates/
 src-tauri/src/webview_engine.rs  # tauri-side webread::WebViewFetch: hidden WebviewWindow + eval_with_callback extractor (webread feature; registered in lib.rs, never in kawai-web)
 src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), binance_smoke (keyless market data + TA; geo-blocked hosts skip), analytics_smoke (data_schema/data_query/data_ta + xlsx bridge; offline), sql_remote_check (LIVE remote SQL — --deep seeds fixture tables), web_read_check (desktop webview chain e2e), turn_log_report (hybrid calibration), agent_eval (H1 gate — office ≥19/20 + analytics ≥16/18)
 src-tauri/src/logging.rs         # stderr tee → platform log dir (macOS ~/Library/Logs/, Linux $XDG_STATE_HOME)
-src-tauri/src/auth.rs            # shim → kawai-auth (pure auth; Clerk JWKS verify + Session)
+src-tauri/src/auth.rs            # shim → kawai-auth (pure auth; Supabase Auth JWKS verify + Session)
 src-tauri/src/commands.rs        # #[tauri::command] wrappers + Channel + cancel registry
 src-tauri/src/web.rs             # Axum routes (feature-gated "web") + auth_middleware
 src-tauri/src/bin/web.rs         # standalone web server entry
@@ -250,9 +250,9 @@ app.log                          # symlink → platform log dir (macOS ~/Library
 
 ## Authentication
 
-- **MVP (current)**: no auth UI. On boot `use-supervisor-chat.ts` calls `whoami`; on failure it calls `set_session(<any-token>)`, which only succeeds when the backend runs the dev bypass (`KAWAI_AUTH_DEV_USER_ID`). Identity = the bypass user until prod auth lands.
+- **MVP (current)**: Supabase Auth UI (email/password + OAuth) in `auth-gate.tsx`. On boot `use-supervisor-chat.ts` calls `whoami`; on failure it calls `set_session(<any-token>)`, which only succeeds when the backend runs the dev bypass (`KAWAI_AUTH_DEV_USER_ID`). Identity = the bypass user until prod auth lands.
 - `set_session` (`commands.rs`) verifies the token and stores the identity in Tauri `State<Session>` (in-memory, per launch).
-- Backend verification: `auth::Verifier` fetches Clerk's **public** JWKS (cached by `kid`) and checks `iss`/`exp`. **No `CLERK_SECRET_KEY` is needed or used by the backend** — asymmetric verification.
+- Backend verification: `auth::Verifier` fetches Supabase Auth's **public** JWKS (cached by `kid`) and checks `iss`/`exp`. **No secret keys are needed by the backend** — asymmetric verification.
 - Identity → logic: wrappers extract `claims.sub` as `user_id` and pass it as the first arg to `logic.rs` fns. `whoami`/`create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message`/`delete_chat_session`/`skill_create`/`skill_list`/`skill_get`/`skill_update`/`skill_delete`/`memory_create`/`memory_list`/`memory_update`/`memory_delete`/`memory_extract`/`local_load_model`/`local_chat` are auth-required (plus the supervisor ops `plan_task`/`execute_supervisor_plan`/`respond_supervisor_confirmation`) (plus the `office`-gated `office_*`/`knowledge_*` ops — incl. `knowledge_list`/`knowledge_add_to_session` — and the `analytics`-gated `sql_profile_list/save/delete/test`); `greet`/`list_agents`/`generate_activity` are public.
 - Auth operations: `set_session`, `logout`, `whoami` (one snake_case string each).
 - **Prod auth (deferred, post-MVP)**: browser + deep link — open system browser → sign-in → redirect `kawai://auth?token=…` → `set_session`. The `web/` SPA's Kratos deep-link flow (`web/src/platform/tauri.ts`) is the proven pattern to copy.
@@ -262,7 +262,7 @@ app.log                          # symlink → platform log dir (macOS ~/Library
 Desktop MVP: single-device, local SQLite file, no sync.
 
 ```
-user → (dev bypass / future Clerk) → Rust backend → user_id
+user → (dev bypass / future Supabase Auth) → Rust backend → user_id
                                                     │
    per-user data directory ◀───────────────────────┘
    <data_root>/<user_id>/          ← one folder per user (backup unit)
@@ -280,8 +280,8 @@ user → (dev bypass / future Clerk) → Rust backend → user_id
 
 Project-root `.env` (gitignored) — backend reads these via `auth::load_dotenv()` at startup:
 ```
-KAWAI_AUTH_JWKS_URI=...        # Clerk public JWKS
-KAWAI_AUTH_ISSUER=...          # Clerk frontend-API origin
+KAWAI_AUTH_JWKS_URI=...        # Supabase Auth public JWKS
+KAWAI_AUTH_ISSUER=...          # Supabase Auth issuer URL
 # KAWAI_AUTH_DEV_USER_ID=dev   # uncomment to accept ANY token as this user (dev only)
 KAWAI_DATA_DIR=/path/to/dir    # optional per-user data root; default on desktop = Tauri app-data dir (~/Library/Application Support/pro.kawai.app on macOS), else /tmp/kawai
 KAWAI_LLM_MAX_TOKENS=16384       # optional context budget (K/V state entries) for the on-device conversation; default 16384, clamped below the model's max (Gemma 4: 32003). Larger = more K/V memory; raise for longer sessions before the prefill-overflow reset.
@@ -312,7 +312,7 @@ KAWAI_CF_GLOBAL_DAILY=300     # default 300 (dev-wallet fuse)
 # Useful for dev or custom installs: CODEGRAPH_BIN=/opt/codegraph/bin/codegraph
 # CODEGRAPH_BIN=/path/to/codegraph
 ```
-`.env.local` (gitignored) — Clerk publishable key reference: `VITE_CLERK_PUBLISHABLE_KEY` (unused by the React frontend; kept for the future prod-auth flow).
+`.env.local` (gitignored) — Supabase frontend env: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
 
 ## Roadmap
 

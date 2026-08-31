@@ -3,7 +3,6 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { SentryErrorBoundary } from "@/components/error-boundary";
 import { AuthGate } from "@/components/auth-gate";
-import { ClerkProvider } from "@clerk/react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import App from "./App";
@@ -45,11 +44,9 @@ if (rootEl) {
     <React.StrictMode>
       <SentryErrorBoundary>
         <TooltipProvider>
-          <ClerkProvider publishableKey={import.meta.env.VITE_CLERK_PUBLISHABLE_KEY}>
-            <AuthGate>
-              <App />
-            </AuthGate>
-          </ClerkProvider>
+          <AuthGate>
+            <App />
+          </AuthGate>
           <Toaster />
         </TooltipProvider>
       </SentryErrorBoundary>

@@ -22,12 +22,7 @@ export type SupervisorEvent =
   | { type: "planCompleted"; finalOutput?: string }
   | { type: "planFailed"; error: string };
 
-export type SupervisorStatus =
-  | "idle"
-  | "running"
-  | "awaitingConfirmation"
-  | "completed"
-  | "failed";
+export type SupervisorStatus = "idle" | "running" | "awaitingConfirmation" | "completed" | "failed";
 
 export interface SupervisorStep {
   stepId: string;
@@ -57,20 +52,12 @@ interface RunPlanOptions {
   agentId?: string;
 }
 
-export async function createSupervisorPlan(
-  goal: string,
-  sessionId: number,
-  agentId: string,
-): Promise<unknown> {
+export async function createSupervisorPlan(goal: string, sessionId: number, agentId: string): Promise<unknown> {
   return call("plan_task", { goal, sessionId, agentId });
 }
 
 /** Persist one message to the session's SQLite history (best-effort). */
-async function persist(
-  sessionId: number,
-  role: "user" | "assistant",
-  content: string,
-): Promise<void> {
+async function persist(sessionId: number, role: "user" | "assistant", content: string): Promise<void> {
   try {
     await call("append_chat_message", { sessionId, role, content });
   } catch {
@@ -96,21 +83,18 @@ export function useSupervisorPlan() {
     setState((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  const upsertStep = useCallback(
-    (stepId: string, tool: string, next: Partial<SupervisorStep>) => {
-      setState((prev) => {
-        const steps = [...prev.steps];
-        const idx = steps.findIndex((s) => s.stepId === stepId);
-        if (idx >= 0) {
-          steps[idx] = { ...steps[idx], ...next };
-        } else {
-          steps.push({ stepId, tool, state: "running", ...next });
-        }
-        return { ...prev, steps };
-      });
-    },
-    [],
-  );
+  const upsertStep = useCallback((stepId: string, tool: string, next: Partial<SupervisorStep>) => {
+    setState((prev) => {
+      const steps = [...prev.steps];
+      const idx = steps.findIndex((s) => s.stepId === stepId);
+      if (idx >= 0) {
+        steps[idx] = { ...steps[idx], ...next };
+      } else {
+        steps.push({ stepId, tool, state: "running", ...next });
+      }
+      return { ...prev, steps };
+    });
+  }, []);
 
   const runPlan = useCallback(
     (options: RunPlanOptions) => {
@@ -141,9 +125,7 @@ export function useSupervisorPlan() {
             role: "assistant",
             parts: [...parts],
           };
-          return exists
-            ? prev.map((m) => (m.id === assistantId ? message : m))
-            : [...prev, message];
+          return exists ? prev.map((m) => (m.id === assistantId ? message : m)) : [...prev, message];
         });
       };
       const stepToolId = (stepId: string) => `step-${stepId}`;
@@ -161,9 +143,7 @@ export function useSupervisorPlan() {
             switch (ev.type) {
               case "planStarted":
                 patch({ goal: ev.goal });
-                parts = [
-                  { type: "text", text: `Goal: ${ev.goal}`, state: "streaming" as const },
-                ];
+                parts = [{ type: "text", text: `Goal: ${ev.goal}`, state: "streaming" as const }];
                 syncAssistant();
                 break;
               case "stepStarted":
@@ -236,15 +216,10 @@ export function useSupervisorPlan() {
                   finalOutput: ev.finalOutput ?? null,
                 });
                 parts = parts.map((p) =>
-                  p.type === "text" && p.state === "streaming"
-                    ? { ...p, state: "done" as const }
-                    : p,
+                  p.type === "text" && p.state === "streaming" ? { ...p, state: "done" as const } : p,
                 );
                 if (ev.finalOutput) {
-                  parts = [
-                    ...parts,
-                    { type: "text", text: ev.finalOutput, state: "done" as const },
-                  ];
+                  parts = [...parts, { type: "text", text: ev.finalOutput, state: "done" as const }];
                 }
                 syncAssistant();
                 void persist(sessionId, "assistant", ev.finalOutput ?? "(plan completed)");
@@ -256,9 +231,7 @@ export function useSupervisorPlan() {
                   error: ev.error,
                 });
                 parts = parts.map((p) =>
-                  p.type === "text" && p.state === "streaming"
-                    ? { ...p, state: "done" as const }
-                    : p,
+                  p.type === "text" && p.state === "streaming" ? { ...p, state: "done" as const } : p,
                 );
                 syncAssistant();
                 void persist(sessionId, "assistant", `Plan failed: ${ev.error}`);
@@ -269,7 +242,11 @@ export function useSupervisorPlan() {
             streamCtrl.current = null;
             setState((prev) =>
               prev.status === "running" || prev.status === "awaitingConfirmation"
-                ? { ...prev, status: prev.status === "awaitingConfirmation" ? prev.status : "completed", pendingConfirmation: null }
+                ? {
+                    ...prev,
+                    status: prev.status === "awaitingConfirmation" ? prev.status : "completed",
+                    pendingConfirmation: null,
+                  }
                 : prev,
             );
           },
