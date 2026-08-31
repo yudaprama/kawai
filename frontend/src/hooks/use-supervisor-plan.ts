@@ -52,6 +52,11 @@ interface RunPlanOptions {
   agentId?: string;
 }
 
+export interface SupervisorPlanCallbacks {
+  onPlanCompleted?: (goal: string | null, output: string | null) => void;
+  onPlanFailed?: (goal: string | null, error: string) => void;
+}
+
 export async function createSupervisorPlan(goal: string, sessionId: number, agentId: string): Promise<unknown> {
   return call("plan_task", { goal, sessionId, agentId });
 }
@@ -65,7 +70,7 @@ async function persist(sessionId: number, role: "user" | "assistant", content: s
   }
 }
 
-export function useSupervisorPlan() {
+export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const [state, setState] = useState<SupervisorPlanState>({
     status: "idle",
     goal: null,
@@ -78,6 +83,7 @@ export function useSupervisorPlan() {
 
   const streamCtrl = useRef<StreamControl | null>(null);
   const streamIdRef = useRef<string>("");
+  const goalRef = useRef<string | null>(null);
 
   const patch = useCallback((partial: Partial<SupervisorPlanState>) => {
     setState((prev) => ({ ...prev, ...partial }));
@@ -103,6 +109,7 @@ export function useSupervisorPlan() {
 
       const streamId = crypto.randomUUID();
       streamIdRef.current = streamId;
+      goalRef.current = null;
 
       setState({
         status: "running",
@@ -142,6 +149,7 @@ export function useSupervisorPlan() {
           onEvent: (ev) => {
             switch (ev.type) {
               case "planStarted":
+                goalRef.current = ev.goal;
                 patch({ goal: ev.goal });
                 parts = [{ type: "text", text: `Goal: ${ev.goal}`, state: "streaming" as const }];
                 syncAssistant();
@@ -223,6 +231,7 @@ export function useSupervisorPlan() {
                 }
                 syncAssistant();
                 void persist(sessionId, "assistant", ev.finalOutput ?? "(plan completed)");
+                callbacks?.onPlanCompleted?.(goalRef.current, ev.finalOutput ?? null);
                 break;
               case "planFailed":
                 patch({
@@ -235,6 +244,7 @@ export function useSupervisorPlan() {
                 );
                 syncAssistant();
                 void persist(sessionId, "assistant", `Plan failed: ${ev.error}`);
+                callbacks?.onPlanFailed?.(goalRef.current, ev.error);
                 break;
             }
           },
@@ -263,7 +273,7 @@ export function useSupervisorPlan() {
         streamId,
       );
     },
-    [patch, upsertStep],
+    [patch, upsertStep, callbacks],
   );
 
   const planAndRun = useCallback(

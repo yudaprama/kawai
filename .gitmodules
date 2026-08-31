@@ -20,3 +20,6 @@
 	path = rust-paddle-ocr
 	url = https://github.com/zibo-chen/rust-paddle-ocr
 	branch = main
+[submodule "openhuman"]
+	path = openhuman
+	url = https://github.com/tinyhumansai/openhuman

@@ -4,6 +4,7 @@ mod commands;
 pub mod logging;
 mod keychain;
 pub mod logic;
+pub mod native_notifications;
 
 #[cfg(all(feature = "router", feature = "litert"))]
 pub mod supervisor;
@@ -37,6 +38,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(commands::new_registry())
         .manage(verifier)
         .manage(auth::new_session())
@@ -136,7 +138,10 @@ pub fn run() {
         commands::execute_supervisor_plan,
         commands::respond_supervisor_confirmation,
         commands::plan_task,
-        commands::frontend_log
+        commands::frontend_log,
+        native_notifications::notification_permission_state,
+        native_notifications::notification_permission_request,
+        native_notifications::show_native_notification
     ]);
 
     #[cfg(all(feature = "litert", feature = "office", feature = "analytics"))]
@@ -211,7 +216,10 @@ pub fn run() {
         commands::execute_supervisor_plan,
         commands::respond_supervisor_confirmation,
         commands::plan_task,
-        commands::frontend_log
+        commands::frontend_log,
+        native_notifications::notification_permission_state,
+        native_notifications::notification_permission_request,
+        native_notifications::show_native_notification
     ]);
 
     #[cfg(all(feature = "litert", not(feature = "office")))]
@@ -262,7 +270,10 @@ pub fn run() {
         commands::execute_supervisor_plan,
         commands::respond_supervisor_confirmation,
         commands::plan_task,
-        commands::frontend_log
+        commands::frontend_log,
+        native_notifications::notification_permission_state,
+        native_notifications::notification_permission_request,
+        native_notifications::show_native_notification
     ]);
 
     #[cfg(all(not(feature = "litert"), feature = "office"))]
@@ -320,7 +331,10 @@ pub fn run() {
         commands::graph_list,
         commands::graph_forget,
         commands::graph_stats,
-        commands::frontend_log
+        commands::frontend_log,
+        native_notifications::notification_permission_state,
+        native_notifications::notification_permission_request,
+        native_notifications::show_native_notification
     ]);
 
     #[cfg(not(any(feature = "litert", feature = "office")))]
@@ -361,7 +375,10 @@ pub fn run() {
         commands::graph_list,
         commands::graph_forget,
         commands::graph_stats,
-        commands::frontend_log
+        commands::frontend_log,
+        native_notifications::notification_permission_state,
+        native_notifications::notification_permission_request,
+        native_notifications::show_native_notification
     ]);
 
     builder

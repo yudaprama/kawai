@@ -5,6 +5,7 @@ import { SentryErrorBoundary } from "@/components/error-boundary";
 import { AuthGate } from "@/components/auth-gate";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { NotificationProvider, useNotificationPermission } from "@/contexts/NotificationContext";
 import App from "./App";
 import "./index.css";
 
@@ -38,15 +39,24 @@ if (sentryDsn) {
   });
 }
 
+function NotificationPermissionGate({ children }: { children: React.ReactNode }) {
+  useNotificationPermission();
+  return <>{children}</>;
+}
+
 const rootEl = document.getElementById("root");
 if (rootEl) {
   ReactDOM.createRoot(rootEl).render(
     <React.StrictMode>
       <SentryErrorBoundary>
         <TooltipProvider>
-          <AuthGate>
-            <App />
-          </AuthGate>
+          <NotificationProvider>
+            <NotificationPermissionGate>
+              <AuthGate>
+                <App />
+              </AuthGate>
+            </NotificationPermissionGate>
+          </NotificationProvider>
           <Toaster />
         </TooltipProvider>
       </SentryErrorBoundary>

@@ -84,6 +84,7 @@ export function ConversationPanel({
   onOpenMobileSessions,
   onOpenMobileKnowledge,
   onOpenTool,
+  headerExtra,
 }: {
   agent: AgentInfo;
   presentation: AgentPresentation;
@@ -129,6 +130,7 @@ export function ConversationPanel({
   onOpenMobileKnowledge?: () => void;
   onOpenTool?: (toolCallId: string) => void;
   onOpenCodeGraph?: (query: string, result: string) => void;
+  headerExtra?: React.ReactNode;
 }) {
   const [forceAll, setForceAll] = useState(false);
   const busy = status === "submitted" || status === "streaming";
@@ -174,6 +176,7 @@ export function ConversationPanel({
           </span>
         )}
         <div className="ml-auto flex items-center gap-1">
+          {headerExtra}
           {/* Mobile: agents/sessions/knowledge drawers */}
           {onOpenMobileSessions && (
             <Button

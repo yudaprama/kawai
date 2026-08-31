@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { LinkDialog, PreviewDialog } from "@/components/knowledge-dialogs";
+import { NotificationCenter } from "@/components/notifications/NotificationCenter";
+import { useNotifications } from "@/contexts/NotificationContext";
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
 import { useKnowledgeActions } from "@/hooks/use-knowledge-actions";
 import { useSupervisorChat } from "@/hooks/use-supervisor-chat";
@@ -56,7 +58,25 @@ export default function App() {
   const chatAgent = activeAgentId === "auto" ? { id: "auto", tools: true } : agent;
   const presentation = agent ? agentPresentation(agent.id) : agentPresentation("");
   const chat = useSupervisorChat(chatAgent ?? { id: "auto", tools: true });
-  const supervisor = useSupervisorPlan();
+  const notifications = useNotifications();
+  const supervisor = useSupervisorPlan({
+    onPlanCompleted: (goal, output) => {
+      notifications.dispatch({
+        id: `plan-completed:${Date.now()}`,
+        category: "agents",
+        title: "Plan completed",
+        body: output ? (output.length > 160 ? `${output.slice(0, 159)}...` : output) : (goal ?? "Task finished"),
+      });
+    },
+    onPlanFailed: (_goal, error) => {
+      notifications.dispatch({
+        id: `plan-failed:${Date.now()}`,
+        category: "system",
+        title: "Plan failed",
+        body: error.length > 160 ? `${error.slice(0, 159)}...` : error,
+      });
+    },
+  });
   const activeConfirmation = supervisor.pendingConfirmation
     ? {
         streamId: supervisor.pendingConfirmation.streamId,
@@ -358,6 +378,7 @@ export default function App() {
             setToolWorkbenchId(null);
             setAssetView("code");
           }}
+          headerExtra={<NotificationCenter />}
           canvasOpen={canvasOpen}
           onToggleCanvas={hasContextPane ? () => setCanvasOpen((v) => !v) : undefined}
           canvas={canvasOpen ? contextPanel : null}
