@@ -34,6 +34,7 @@ import type {
   MemoryItem,
   OfficeFileInfo,
   RagHit,
+  SceneHit,
   SkillInfo,
   SqlProfile,
   SqlProfileTest,
@@ -51,6 +52,7 @@ export type {
   MemoryItem,
   OfficeFileInfo,
   RagHit,
+  SceneHit,
   SkillInfo,
   SqlProfile,
   SqlProfileTest,
@@ -110,11 +112,7 @@ export function codegraphInit(projectPath?: string): Promise<CodegraphStatusResu
  * @param voice - Voice id (optional, defaults to en_US-libritts_r-medium)
  * @param lengthScale - Speech speed (1.0 = normal, <1.0 = faster, >1.0 = slower)
  */
-export function synthesizeSpeech(
-  text: string,
-  voice?: string,
-  lengthScale?: number,
-): Promise<string> {
+export function synthesizeSpeech(text: string, voice?: string, lengthScale?: number): Promise<string> {
   return call<string>("synthesize_speech", {
     text,
     voice: voice ?? null,

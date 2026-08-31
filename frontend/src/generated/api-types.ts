@@ -109,6 +109,13 @@ export type RagHit = {
 	content: string,
 };
 
+export type SceneHit = {
+	id: string,
+	title: string,
+	summary: string,
+	memories: MemoryItem[],
+};
+
 export type SkillInfo = {
 	id: string,
 	name: string,

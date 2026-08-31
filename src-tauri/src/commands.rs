@@ -459,6 +459,50 @@ pub async fn memory_graph_search(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: regenerate ALL L2 scenes (embedding clustering + cloud
+/// LLM naming; needs the hybrid vault). Replace-all semantics.
+#[tauri::command]
+pub async fn memory_scene_extract(
+    session: State<'_, Session>,
+) -> Result<Vec<logic::memory::SceneHit>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_scene_extract(&user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: list stored L2 scenes with their member memories.
+#[tauri::command]
+pub async fn memory_scene_list(
+    session: State<'_, Session>,
+) -> Result<Vec<logic::memory::SceneHit>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_scene_list(&user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: (re)generate the L3 persona from all memories via the
+/// cloud tier; returns the persona text.
+#[tauri::command]
+pub async fn memory_persona_generate(
+    session: State<'_, Session>,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_persona_generate(&user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: the stored L3 persona text, if any.
+#[tauri::command]
+pub async fn memory_persona_get(session: State<'_, Session>) -> Result<Option<String>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_persona_get(&user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: generate a concise session title with a remote LLM
 /// (Cloudflare Workers AI). Fire-and-forget: the caller ignores the result and
 /// the offline substr fallback stays if it fails.

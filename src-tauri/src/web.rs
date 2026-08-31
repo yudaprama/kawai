@@ -241,6 +241,58 @@ async fn memory_graph_search_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemorySceneExtractRequest {}
+
+async fn memory_scene_extract_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<logic::memory::SceneHit>>, (StatusCode, String)> {
+    logic::memory::memory_scene_extract(&claims.sub)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemorySceneListRequest {}
+
+async fn memory_scene_list_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Vec<logic::memory::SceneHit>>, (StatusCode, String)> {
+    logic::memory::memory_scene_list(&claims.sub)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryPersonaGenerateRequest {}
+
+async fn memory_persona_generate_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::memory::memory_persona_generate(&claims.sub)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryPersonaGetRequest {}
+
+async fn memory_persona_get_handler(
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<Option<String>>, (StatusCode, String)> {
+    logic::memory::memory_persona_get(&claims.sub)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
 async fn skill_create_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<SkillCreateRequest>,
@@ -1335,6 +1387,10 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/memory_search", post(memory_search_handler))
         .route("/api/memory_consolidate", post(memory_consolidate_handler))
         .route("/api/memory_graph_search", post(memory_graph_search_handler))
+        .route("/api/memory_scene_extract", post(memory_scene_extract_handler))
+        .route("/api/memory_scene_list", post(memory_scene_list_handler))
+        .route("/api/memory_persona_generate", post(memory_persona_generate_handler))
+        .route("/api/memory_persona_get", post(memory_persona_get_handler))
         .route_layer(from_fn(auth_middleware));
 
     let protected = protected.route(
