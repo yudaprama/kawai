@@ -68,12 +68,10 @@ pub fn run() {
             Ok(())
         });
 
-    // The office ops exist only with the "office" feature.
-    // Literal lists keep generate_handler! static per feature combo; the
-    // analytics ops (sql_profile_*) get their own list — they exist only
-    // under the `analytics` feature (which implies office).
-    #[cfg(all(feature = "litert", feature = "office", not(feature = "analytics")))]
+    // Single generate_handler! — per-entry #[cfg] replaces the five
+    // nearly-identical blocks that were here before.
     let builder = builder.invoke_handler(tauri::generate_handler![
+        // ── base (always registered) ───────────────────────────────────
         commands::greet,
         commands::list_agents,
         commands::generate_activity,
@@ -99,33 +97,8 @@ pub fn run() {
         commands::memory_update,
         commands::memory_delete,
         commands::memory_extract,
+        commands::memory_search,
         commands::generate_session_title,
-        commands::local_load_model,
-        commands::local_model_status,
-        commands::local_chat,
-        commands::local_llm_reset,
-        commands::local_llm_set_thinking,
-        commands::local_llm_unload,
-        commands::local_llm_get_test_tools,
-        commands::local_llm_get_rig_tools,
-        commands::office_import_file,
-        commands::office_list_files,
-        commands::office_read_document,
-        commands::knowledge_context,
-        commands::office_export_file,
-        commands::office_capabilities,
-        commands::office_index_file,
-        commands::knowledge_search,
-        commands::knowledge_forget,
-        commands::list_session_files,
-        commands::knowledge_list,
-        commands::knowledge_add_to_session,
-        commands::knowledge_import_youtube,
-        commands::office_delete_file,
-        commands::office_restore_backup,
-        commands::office_read_file,
-        commands::office_export_document,
-        commands::tauri_open_file,
         commands::codegraph_explore,
         commands::codegraph_status,
         commands::codegraph_is_available,
@@ -136,255 +109,87 @@ pub fn run() {
         commands::graph_list,
         commands::graph_forget,
         commands::graph_stats,
-        commands::execute_supervisor_plan,
-        commands::respond_supervisor_confirmation,
-        commands::plan_task,
         commands::frontend_log,
         commands::synthesize_speech,
         native_notifications::notification_permission_state,
         native_notifications::notification_permission_request,
-        native_notifications::show_native_notification
-    ]);
+        native_notifications::show_native_notification,
 
-    #[cfg(all(feature = "litert", feature = "office", feature = "analytics"))]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        commands::greet,
-        commands::list_agents,
-        commands::generate_activity,
-        commands::cancel_stream,
-        commands::set_session,
-        commands::restore_session,
-        commands::logout,
-        commands::whoami,
-        commands::create_chat_session,
-        commands::list_chat_sessions,
-        commands::rename_chat_session,
-        commands::set_chat_session_archived,
-        commands::list_chat_messages,
-        commands::append_chat_message,
-        commands::delete_chat_session,
-        commands::skill_create,
-        commands::skill_list,
-        commands::skill_get,
-        commands::skill_update,
-        commands::skill_delete,
-        commands::memory_create,
-        commands::memory_list,
-        commands::memory_update,
-        commands::memory_delete,
-        commands::memory_extract,
-        commands::generate_session_title,
+        // ── litert (local LLM + supervisor) ────────────────────────────
+        #[cfg(feature = "litert")]
         commands::local_load_model,
+        #[cfg(feature = "litert")]
         commands::local_model_status,
+        #[cfg(feature = "litert")]
         commands::local_chat,
+        #[cfg(feature = "litert")]
         commands::local_llm_reset,
+        #[cfg(feature = "litert")]
         commands::local_llm_set_thinking,
+        #[cfg(feature = "litert")]
         commands::local_llm_unload,
+        #[cfg(feature = "litert")]
         commands::local_llm_get_test_tools,
+        #[cfg(feature = "litert")]
+        commands::execute_supervisor_plan,
+        #[cfg(feature = "litert")]
+        commands::respond_supervisor_confirmation,
+        #[cfg(feature = "litert")]
+        commands::plan_task,
+
+        // ── litert + office (knowledge context + rig tools) ─────────────
+        #[cfg(all(feature = "litert", feature = "office"))]
         commands::local_llm_get_rig_tools,
-        commands::office_import_file,
-        commands::office_list_files,
-        commands::office_read_document,
+        #[cfg(all(feature = "litert", feature = "office"))]
         commands::knowledge_context,
+
+        // ── office ─────────────────────────────────────────────────────
+        #[cfg(feature = "office")]
+        commands::office_import_file,
+        #[cfg(feature = "office")]
+        commands::office_list_files,
+        #[cfg(feature = "office")]
+        commands::office_read_document,
+        #[cfg(feature = "office")]
         commands::office_export_file,
+        #[cfg(feature = "office")]
         commands::office_capabilities,
+        #[cfg(feature = "office")]
         commands::office_index_file,
+        #[cfg(feature = "office")]
         commands::knowledge_search,
+        #[cfg(feature = "office")]
         commands::knowledge_forget,
+        #[cfg(feature = "office")]
         commands::list_session_files,
+        #[cfg(feature = "office")]
         commands::knowledge_list,
+        #[cfg(feature = "office")]
         commands::knowledge_add_to_session,
+        #[cfg(feature = "office")]
         commands::knowledge_import_youtube,
+        #[cfg(feature = "office")]
         commands::office_delete_file,
+        #[cfg(feature = "office")]
         commands::office_restore_backup,
+        #[cfg(feature = "office")]
         commands::office_read_file,
+        #[cfg(feature = "office")]
         commands::office_export_document,
+        #[cfg(feature = "office")]
         commands::tauri_open_file,
+
+        // ── analytics (implies office) ─────────────────────────────────
+        #[cfg(feature = "analytics")]
         commands::data_preview,
+        #[cfg(feature = "analytics")]
         commands::sql_profile_list,
+        #[cfg(feature = "analytics")]
         commands::sql_profile_save,
+        #[cfg(feature = "analytics")]
         commands::sql_profile_delete,
+        #[cfg(feature = "analytics")]
         commands::sql_profile_test,
-        commands::codegraph_explore,
-        commands::codegraph_status,
-        commands::codegraph_is_available,
-        commands::codegraph_init,
-        commands::graph_index_file,
-        commands::graph_index_text,
-        commands::graph_search,
-        commands::graph_list,
-        commands::graph_forget,
-        commands::graph_stats,
-        commands::execute_supervisor_plan,
-        commands::respond_supervisor_confirmation,
-        commands::plan_task,
-        commands::frontend_log,
-        commands::synthesize_speech,
-        native_notifications::notification_permission_state,
-        native_notifications::notification_permission_request,
-        native_notifications::show_native_notification
-    ]);
-
-    #[cfg(all(feature = "litert", not(feature = "office")))]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        commands::greet,
-        commands::list_agents,
-        commands::generate_activity,
-        commands::cancel_stream,
-        commands::set_session,
-        commands::restore_session,
-        commands::logout,
-        commands::whoami,
-        commands::create_chat_session,
-        commands::list_chat_sessions,
-        commands::rename_chat_session,
-        commands::set_chat_session_archived,
-        commands::list_chat_messages,
-        commands::append_chat_message,
-        commands::delete_chat_session,
-        commands::skill_create,
-        commands::skill_list,
-        commands::skill_get,
-        commands::skill_update,
-        commands::skill_delete,
-        commands::memory_create,
-        commands::memory_list,
-        commands::memory_update,
-        commands::memory_delete,
-        commands::memory_extract,
-        commands::generate_session_title,
-        commands::local_load_model,
-        commands::local_model_status,
-        commands::local_chat,
-        commands::local_llm_reset,
-        commands::local_llm_set_thinking,
-        commands::local_llm_unload,
-        commands::local_llm_get_test_tools,
-        commands::codegraph_explore,
-        commands::codegraph_status,
-        commands::codegraph_is_available,
-        commands::codegraph_init,
-        commands::graph_index_file,
-        commands::graph_index_text,
-        commands::graph_search,
-        commands::graph_list,
-        commands::graph_forget,
-        commands::graph_stats,
-        commands::execute_supervisor_plan,
-        commands::respond_supervisor_confirmation,
-        commands::plan_task,
-        commands::frontend_log,
-        commands::synthesize_speech,
-        native_notifications::notification_permission_state,
-        native_notifications::notification_permission_request,
-        native_notifications::show_native_notification
-    ]);
-
-    #[cfg(all(not(feature = "litert"), feature = "office"))]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        commands::greet,
-        commands::list_agents,
-        commands::generate_activity,
-        commands::cancel_stream,
-        commands::set_session,
-        commands::restore_session,
-        commands::logout,
-        commands::whoami,
-        commands::create_chat_session,
-        commands::list_chat_sessions,
-        commands::rename_chat_session,
-        commands::set_chat_session_archived,
-        commands::list_chat_messages,
-        commands::append_chat_message,
-        commands::delete_chat_session,
-        commands::skill_create,
-        commands::skill_list,
-        commands::skill_get,
-        commands::skill_update,
-        commands::skill_delete,
-        commands::memory_create,
-        commands::memory_list,
-        commands::memory_update,
-        commands::memory_delete,
-        commands::memory_extract,
-        commands::generate_session_title,
-        commands::office_import_file,
-        commands::office_list_files,
-        commands::office_read_document,
-        commands::office_export_file,
-        commands::office_capabilities,
-        commands::office_index_file,
-        commands::knowledge_search,
-        commands::knowledge_forget,
-        commands::list_session_files,
-        commands::knowledge_list,
-        commands::knowledge_add_to_session,
-        commands::knowledge_import_youtube,
-        commands::office_delete_file,
-        commands::office_restore_backup,
-        commands::office_read_file,
-        commands::office_export_document,
-        commands::tauri_open_file,
-        commands::codegraph_explore,
-        commands::codegraph_status,
-        commands::codegraph_is_available,
-        commands::codegraph_init,
-        commands::graph_index_file,
-        commands::graph_index_text,
-        commands::graph_search,
-        commands::graph_list,
-        commands::graph_forget,
-        commands::graph_stats,
-        commands::frontend_log,
-        commands::synthesize_speech,
-        native_notifications::notification_permission_state,
-        native_notifications::notification_permission_request,
-        native_notifications::show_native_notification
-    ]);
-
-    #[cfg(not(any(feature = "litert", feature = "office")))]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        commands::greet,
-        commands::list_agents,
-        commands::generate_activity,
-        commands::cancel_stream,
-        commands::set_session,
-        commands::restore_session,
-        commands::logout,
-        commands::whoami,
-        commands::create_chat_session,
-        commands::list_chat_sessions,
-        commands::rename_chat_session,
-        commands::set_chat_session_archived,
-        commands::list_chat_messages,
-        commands::append_chat_message,
-        commands::delete_chat_session,
-        commands::skill_create,
-        commands::skill_list,
-        commands::skill_get,
-        commands::skill_update,
-        commands::skill_delete,
-        commands::memory_create,
-        commands::memory_list,
-        commands::memory_update,
-        commands::memory_delete,
-        commands::memory_extract,
-        commands::generate_session_title,
-        commands::codegraph_explore,
-        commands::codegraph_status,
-        commands::codegraph_is_available,
-        commands::codegraph_init,
-        commands::graph_index_file,
-        commands::graph_index_text,
-        commands::graph_search,
-        commands::graph_list,
-        commands::graph_forget,
-        commands::graph_stats,
-        commands::frontend_log,
-        commands::synthesize_speech,
-        native_notifications::notification_permission_state,
-        native_notifications::notification_permission_request,
-        native_notifications::show_native_notification
     ]);
 
     builder
