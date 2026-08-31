@@ -98,6 +98,7 @@ pub fn run() {
         commands::memory_delete,
         commands::memory_extract,
         commands::memory_search,
+        commands::memory_consolidate,
         commands::generate_session_title,
         commands::codegraph_explore,
         commands::codegraph_status,

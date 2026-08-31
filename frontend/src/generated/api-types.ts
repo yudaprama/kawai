@@ -39,6 +39,12 @@ export type CodegraphStatusResult = {
 	message: string,
 };
 
+export type ConsolidationReport = {
+	mergedGroups: number,
+	removed: number,
+	created: MemoryItem[],
+};
+
 export type KnowledgeFileInfo = {
 	id: string,
 	originalName: string,
@@ -78,6 +84,10 @@ export type MemoryItem = {
 	sourceSessionId: number | null,
 	createdAt: number,
 	updatedAt: number,
+	confidence: number | null,
+	accessCount: number,
+	lastAccessedAt: number | null,
+	origin: string,
 };
 
 export type OfficeFileInfo = {

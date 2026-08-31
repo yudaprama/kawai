@@ -11,6 +11,31 @@ import { useLoadOnce } from "./use-load-once";
 export function useMemories(enabled: boolean) {
   const { items: memories, setItems: setMemories, loaded, refresh } = useLoadOnce<MemoryItem>("memory_list", enabled);
   const [extracting, setExtracting] = useState(false);
+  const [consolidating, setConsolidating] = useState(false);
+
+  const search = useCallback(async (query: string, limit?: number): Promise<MemoryItem[]> => {
+    try {
+      return await call<MemoryItem[]>("memory_search", { query, limit });
+    } catch (err) {
+      showErrorToast(`Search failed — ${errText(err)}`);
+      return [];
+    }
+  }, []);
+
+  /** Merge redundant memories (embedding clustering + cloud LLM merge). */
+  const consolidate = useCallback(async (): Promise<number> => {
+    setConsolidating(true);
+    try {
+      const report = await call<{ mergedGroups: number; removed: number }>("memory_consolidate", {});
+      if (report.removed > 0) await refresh();
+      return report.removed;
+    } catch (err) {
+      showErrorToast(`Consolidation failed — ${errText(err)}`);
+      return 0;
+    } finally {
+      setConsolidating(false);
+    }
+  }, [refresh]);
 
   const create = useCallback(
     async (kind: MemoryItem["kind"], title: string, content: string): Promise<MemoryItem | null> => {
@@ -75,5 +100,5 @@ export function useMemories(enabled: boolean) {
     [setMemories],
   );
 
-  return { memories, loaded, extracting, refresh, create, update, remove, extract };
+  return { memories, loaded, extracting, consolidating, refresh, create, update, remove, extract, search, consolidate };
 }

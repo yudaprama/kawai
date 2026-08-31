@@ -4243,6 +4243,7 @@ name = "kawai-knowledge"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "graph",
  "kawai-db",
  "kawai-embedding",
  "kawai-office",
@@ -4266,7 +4267,9 @@ version = "0.1.0"
 dependencies = [
  "futures-util",
  "kawai-db",
+ "kawai-embedding",
  "libsql",
+ "log",
  "rand 0.9.5",
  "remote-llm",
  "serde",

@@ -418,6 +418,33 @@ pub async fn memory_extract(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: search memories by semantic similarity (hybrid:
+/// vector cosine + BM25 via RRF fusion). Falls back to newest-first
+/// when the embedding provider is unavailable.
+#[tauri::command]
+pub async fn memory_search(
+    query: String,
+    limit: Option<usize>,
+    session: State<'_, Session>,
+) -> Result<Vec<logic::memory::MemoryItem>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_search(&user_id, &query, limit)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: merge redundant memories (embedding clustering +
+/// cloud LLM merge; needs the hybrid vault).
+#[tauri::command]
+pub async fn memory_consolidate(
+    session: State<'_, Session>,
+) -> Result<logic::memory::ConsolidationReport, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_consolidate(&user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: generate a concise session title with a remote LLM
 /// (Cloudflare Workers AI). Fire-and-forget: the caller ignores the result and
 /// the offline substr fallback stays if it fails.

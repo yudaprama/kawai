@@ -1,4 +1,4 @@
-import { LayersIcon, PencilIcon, PlusIcon, SparklesIcon, TrashIcon } from "lucide-react";
+import { LayersIcon, MergeIcon, PencilIcon, PlusIcon, SearchIcon, SparklesIcon, TrashIcon, XIcon } from "lucide-react";
 import { EmptyPane } from "./asset-shell";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -255,12 +255,17 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<MemoryItem | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<MemoryItem[] | null>(null);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     if (confirmDeleteId == null) return;
     const t = setTimeout(() => setConfirmDeleteId(null), 3000);
     return () => clearTimeout(t);
   }, [confirmDeleteId]);
+
+  const displayList = searchResults ?? memories.memories;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -286,8 +291,71 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
           <PlusIcon className="size-3" />
           Add memory
         </Button>
+        <Button
+          disabled={memories.consolidating || memories.memories.length < 2}
+          onClick={() => void memories.consolidate()}
+          size="xs"
+          title="Merge redundant memories into single items (embedding clustering + cloud LLM; needs a configured vault)"
+          variant="outline"
+        >
+          {memories.consolidating ? <Spinner className="size-3" /> : <MergeIcon className="size-3" />}
+          {memories.consolidating ? "Consolidating…" : "Consolidate"}
+        </Button>
+        <div className="flex items-center gap-1">
+          <Input
+            className="h-7 w-48 text-xs"
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (!searchQuery.trim()) {
+                  setSearchResults(null);
+                  return;
+                }
+                setSearching(true);
+                void memories.search(searchQuery).then((r) => {
+                  setSearchResults(r);
+                  setSearching(false);
+                });
+              }
+            }}
+            placeholder="Semantic search…"
+            value={searchQuery}
+          />
+          {searchResults != null ? (
+            <Button
+              onClick={() => {
+                setSearchResults(null);
+                setSearchQuery("");
+              }}
+              size="xs"
+              title="Clear search"
+              variant="ghost"
+            >
+              <XIcon className="size-3" />
+            </Button>
+          ) : (
+            <Button
+              disabled={!searchQuery.trim() || searching}
+              onClick={() => {
+                if (!searchQuery.trim()) return;
+                setSearching(true);
+                void memories.search(searchQuery).then((r) => {
+                  setSearchResults(r);
+                  setSearching(false);
+                });
+              }}
+              size="xs"
+              title="Search by semantic similarity"
+              variant="ghost"
+            >
+              {searching ? <Spinner className="size-3" /> : <SearchIcon className="size-3" />}
+            </Button>
+          )}
+        </div>
         <span className="text-muted-foreground ml-auto text-xs">
-          {memories.memories.length} global {memories.memories.length === 1 ? "memory" : "memories"}
+          {searchResults != null
+            ? `${searchResults.length} ${searchResults.length === 1 ? "match" : "matches"}`
+            : `${memories.memories.length} global ${memories.memories.length === 1 ? "memory" : "memories"}`}
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -295,13 +363,15 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <Spinner className="size-4" /> Loading…
           </div>
-        ) : memories.memories.length === 0 ? (
+        ) : displayList.length === 0 ? (
           <p className="text-muted-foreground text-sm">
-            No memories yet — extract them from a block above, or add one manually.
+            {searchResults != null
+              ? "No memories match your search."
+              : "No memories yet — extract them from a block above, or add one manually."}
           </p>
         ) : (
           <ol className="flex flex-col gap-2">
-            {memories.memories.map((m) => (
+            {displayList.map((m) => (
               <li className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3" key={m.id}>
                 <div className="flex items-start gap-2">
                   <span className="text-muted-foreground shrink-0 rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 font-mono text-[10px] uppercase">
@@ -315,7 +385,9 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
                       <MessageResponse mode="static">{m.content}</MessageResponse>
                     </div>
                     <p className="text-muted-foreground mt-1.5 text-[11px]">
-                      {m.sourceSessionId != null ? `from block #${m.sourceSessionId} · ` : "manual · "}
+                      {m.origin === "extracted" && m.sourceSessionId != null
+                        ? `extracted · block #${m.sourceSessionId} · `
+                        : `${m.origin} · `}
                       {new Date(m.updatedAt * 1000).toLocaleString()}
                     </p>
                   </div>
