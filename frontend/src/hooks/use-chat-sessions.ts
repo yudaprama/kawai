@@ -81,10 +81,8 @@ export function useChatSessions({
     await resetSession(null);
   }, [streamCtrl, resetSession]);
 
-  const selectSession = useCallback(
+  const loadMessages = useCallback(
     async (sessionId: number) => {
-      if (streamCtrl.current) return;
-      await resetSession(sessionId);
       try {
         const rows = await call<ChatMessageInfo[]>("list_chat_messages", {
           sessionId,
@@ -95,7 +93,16 @@ export function useChatSessions({
         patch({ historyError: errText(err) });
       }
     },
-    [patch, streamCtrl, resetSession],
+    [patch],
+  );
+
+  const selectSession = useCallback(
+    async (sessionId: number) => {
+      if (streamCtrl.current) return;
+      await resetSession(sessionId);
+      await loadMessages(sessionId);
+    },
+    [streamCtrl, resetSession, loadMessages],
   );
 
   const selectAgent = useCallback(async () => {
@@ -217,16 +224,8 @@ export function useChatSessions({
     const sid = sessionIdRef.current;
     if (sid == null || streamCtrl.current) return;
     patch({ historyError: null });
-    try {
-      const rows = await call<ChatMessageInfo[]>("list_chat_messages", {
-        sessionId: sid,
-      });
-      patch({ messages: historyToMessages(rows), historyError: null });
-    } catch (err) {
-      logError("list_chat_messages", err);
-      patch({ historyError: errText(err) });
-    }
-  }, [patch, streamCtrl]);
+    await loadMessages(sid);
+  }, [streamCtrl, loadMessages, patch]);
 
   const agentSessions = state.sessions.filter((s) => s.agentId === agentId);
   const groupedSessions = agentSessions.length

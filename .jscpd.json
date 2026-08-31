@@ -1,0 +1,12 @@
+{
+  "minLines": 5,
+  "minTokens": 50,
+  "ignore": [
+    "**/lib/streamdown/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/AGENTS.md",
+    "**/DESIGN.md"
+  ]
+}

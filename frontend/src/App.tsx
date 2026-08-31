@@ -113,6 +113,17 @@ export default function App() {
 
   const ka = useKnowledgeActions(chat);
 
+  const sessionsPanelBase = {
+    agent,
+    groupedSessions: chat.groupedSessions,
+    archivedSessions: chat.archivedSessions.filter((s) => s.agentId === agent?.id),
+    activeSessionId: chat.sessionId,
+    busy,
+    onDeleteSession: (id: number) => void chat.deleteSession(id),
+    onRenameSession: (id: number, title: string) => void chat.renameSession(id, title),
+    onArchiveSession: (id: number, archived: boolean) => chat.setSessionArchived(id, archived),
+  };
+
   // Per-agent right-pane composition + empty-data onboarding policy — both
   // registry-driven; App only wires shell capabilities (canvas/drawer) in.
   const contextTabs = contextTabsFor(agent);
@@ -388,17 +399,10 @@ export default function App() {
       {!sessionsCollapsed && assetView == null && (
         <div className="hidden shrink-0 lg:flex">
           <SessionsPanel
-            agent={agent}
+            {...sessionsPanelBase}
             railCollapsed={agentsRail}
-            groupedSessions={chat.groupedSessions}
-            archivedSessions={chat.archivedSessions.filter((s) => s.agentId === agent.id)}
-            activeSessionId={chat.sessionId}
-            busy={busy}
             onNewChat={() => void chat.newChat()}
             onSelectSession={(id) => void chat.selectSession(id)}
-            onDeleteSession={(id) => void chat.deleteSession(id)}
-            onRenameSession={(id, title) => void chat.renameSession(id, title)}
-            onArchiveSession={(id, archived) => void chat.setSessionArchived(id, archived)}
           />
         </div>
       )}
@@ -439,12 +443,8 @@ export default function App() {
           {mobileDrawer === "sessions" && (
             <div className="bg-background relative ml-auto flex h-full w-[240px] max-w-[85vw] flex-col shadow-xl">
               <SessionsPanel
-                agent={agent}
+                {...sessionsPanelBase}
                 railCollapsed={false}
-                groupedSessions={chat.groupedSessions}
-                archivedSessions={chat.archivedSessions.filter((s) => s.agentId === agent.id)}
-                activeSessionId={chat.sessionId}
-                busy={busy}
                 onNewChat={() => {
                   void chat.newChat();
                   setMobileDrawer(null);
@@ -453,9 +453,6 @@ export default function App() {
                   void chat.selectSession(id);
                   setMobileDrawer(null);
                 }}
-                onDeleteSession={(id) => void chat.deleteSession(id)}
-                onRenameSession={(id, title) => void chat.renameSession(id, title)}
-                onArchiveSession={(id, archived) => void chat.setSessionArchived(id, archived)}
               />
             </div>
           )}

@@ -18,14 +18,7 @@ import { call, type KnowledgeFileInfo } from "@/lib/api";
 import { activeMentionRange } from "@/lib/chat-helpers";
 import { logWarn } from "@/lib/logger";
 
-export function ChatComposer({
-  agentName,
-  status,
-  onStop,
-  onSubmit,
-  lastUserText,
-  onImageToKnowledge,
-}: {
+type ChatComposerProps = {
   agentName: string;
   status: ChatStatus;
   onStop: () => void;
@@ -33,7 +26,16 @@ export function ChatComposer({
   lastUserText: string | null;
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
   /** Supervisor plan mode: submits route to the planner instead of the agent. */
-}) {
+};
+
+export function ChatComposer({
+  agentName,
+  status,
+  onStop,
+  onSubmit,
+  lastUserText,
+  onImageToKnowledge,
+}: ChatComposerProps) {
   return (
     <PromptInputProvider>
       <ChatComposerInner
@@ -55,14 +57,7 @@ function ChatComposerInner({
   onSubmit,
   lastUserText,
   onImageToKnowledge,
-}: {
-  agentName: string;
-  status: ChatStatus;
-  onStop: () => void;
-  onSubmit: (text: string, fileIds?: string[]) => void;
-  lastUserText: string | null;
-  onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
-}) {
+}: ChatComposerProps) {
   const controller = usePromptInputController();
   const [mentions, setMentions] = useState<KnowledgeFileInfo[]>([]);
   const [mentionOpen, setMentionOpen] = useState(false);
