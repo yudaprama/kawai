@@ -13,6 +13,10 @@ Git usage from an agent is ADDITIVE ONLY: `status`, `log`, `diff`, `show`, `add`
 
 **MULTIPLE CODING AGENTS WORK IN THIS REPOSITORY IN PARALLEL.** Expect foreign changes in `git status` / `git log` at any moment. Never assume uncommitted work or a recent commit is yours; NEVER "clean up", revert, re-commit, or build on top of another agent's in-flight changes. Stage and commit ONLY files you yourself edited; if the tree looks tangled or a diff makes no sense to you, report it and stop.
 
+## 🚨 FORMATTING — NEVER RUN `cargo fmt` 🚨
+
+***NEVER run `cargo fmt`, `rustfmt`, or any other repo-wide formatter — not on the workspace, not on a single crate, not on a single file. NOT EVEN ONCE, NOT WITHOUT AN EXPLICIT PER-COMMAND ORDER FROM THE USER IN THE CURRENT MESSAGE.*** There is no fmt gate in CI and no `rustfmt.toml`; formatting is the user's manual decision. A formatter rewrites files you did not touch, colliding with other agents' in-flight work and polluting your diff with foreign changes. Match the surrounding file's existing style by hand instead. If the tree looks unformatted, report it — only the user runs the formatter.
+
 ## What this project is
 
 **Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from domain crates and the application registry (per-category crates of generated agent tools implementing `kawai_tools::AgentTool`). UI: three-pane layout (left sidebar = agent list, center = active agent's chat/content, right sidebar = sessions of the selected agent), dark theme.
