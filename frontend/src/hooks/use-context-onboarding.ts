@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ContextOnboarding } from "@/panels/registry";
-import { contextTabsFor } from "@/panels/registry";
+import type { ContextOnboarding } from "@/features/agents/registry";
+import { contextTabsFor } from "@/features/agents/registry";
 import { call, type AgentInfo, type KnowledgeFileInfo } from "@/lib/api";
 import { isTabularExt } from "@/lib/extensions";
 

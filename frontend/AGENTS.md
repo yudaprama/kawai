@@ -40,7 +40,7 @@ From the `web/` SPA (updates require the same trims to be reapplied):
 
 From `TencentDB-Agent-Memory/MemoryPanel/web/` (MIT; the Tea-style asset-management UI):
 
-- `src/components/asset/` — `AssetSplitLayout` (drag-resizable split, width persisted to localStorage), `AssetListPanel` (+ 4-line item subcomponents: Name/Id/Desc/Badges/Meta/Time), `AssetPageHeader`. CSS is namespaced (`_alp-*`, `_asset-split-*`) and themed through the `--tea-*` tokens in `index.css`.
+- `src/features/assets/components/asset/` — `AssetSplitLayout` (drag-resizable split, width persisted to localStorage), `AssetListPanel` (+ 4-line item subcomponents: Name/Id/Desc/Badges/Meta/Time), `AssetPageHeader`. CSS is namespaced (`_alp-*`, `_asset-split-*`) and themed through the `--tea-*` tokens in `index.css`.
 
 **Trims applied when vendoring**: strip `react-i18next` (literal aria-labels), swap `tea-component` `Card` → `@/components/ui/card`, drop multi-tenant pieces (UserBadge, scope toggles), adapt the split height to the app shell (`calc(100dvh - 150px)` instead of the full-page console layout).
 
@@ -53,97 +53,60 @@ frontend/
 ├── index.html              # entry point; inline script prevents theme flash (localStorage "kawai-theme")
 ├── src/
 │   ├── main.tsx            # React root + TooltipProvider + Toaster (sonner)
-│   ├── App.tsx             # main app: three-pane UI (agents rail, chat+canvas, sessions sidebar)
-│   ├── index.css           # Tailwind v4 + shadcn semantics aliased to Tea design tokens (--tea-* in :root/.dark; source: tea-component@2.8.0 default theme)
-│   ├── lib/
-│   │   ├── ai-types.ts     # LOCAL type shim: UIMessage, UIMessagePart, ToolUIPart, etc. (no ai-sdk dep)
-│   │   ├── api.ts          # call() — RPC via Tauri invoke + errText helper + backend payload types
-│   │   ├── stream.ts       # streamOperation() — streaming via Tauri Channel + cancel_stream
-│   │   ├── base64.ts       # bytesToBase64, base64ToBytes, dataUrlToFile, fileToBase64
-│   │   ├── extensions.ts   # ADD_FILE_ACCEPT, OFFICE_EXTS, IMAGE_EXTS (single source)
-│   │   ├── knowledge.ts    # isYouTubeUrl, classifySource — pure knowledge helpers
-│   │   ├── analytics.ts    # analytics agent: detectQueryChart, rowsToCsv, maskSource, isRemoteSource (pure, tested)
-│   │   ├── chat-helpers.ts # historyToMessages, toFriendlyError, sessionPeriod, stripToolMarkup
-│   │   ├── clipboard.ts    # clipboard read/write helpers (browser APIs)
-│   │   ├── download.ts     # triggerDownload() — creates and clicks a temp <a>
-│   │   ├── file-types.ts   # fileExtension(), fileKind(), shikiLanguage(), guessMimeType()
-│   │   ├── utils.ts        # cn(), formatBytes, isRecord, errText alias + showErrorToast
-│   │   ├── preview-file.ts # useFilePreview() hook — fetches + decodes office store files
-│   │   ├── preview-bridge.ts # event bridge: tool-renderer cards → App PreviewDialog (no callbacks through vendored tree)
-│   │   ├── html-security.ts # containsHTML() — wraps raw HTML outside code fences in safe ```html blocks
-│   │   ├── url-security.ts  # SAFE/BLOCKED_PROTOCOLS + customUrlTransform() gating rendered markdown links
-│   │   ├── logger.ts        # logError/Warn/Info → Sentry (env-gated) + backend frontend_log + toast
-│   │   ├── tool-icon.ts     # tool name → lucide icon for tool cards (getToolCallIcon, extractToolName)
-│   │   ├── tool-description.ts # getToolDescription(name, args) — one-line summary for tool cards
-│   │   └── streamdown/     # vendored streaming markdown renderer
-│   ├── hooks/
-│   │   ├── use-supervisor-chat.ts  # session/history shell slice (facade over use-chat-model + use-chat-sessions)
-│   │   ├── use-supervisor-plan.ts  # Supervisor execution: plan_task → execute_supervisor_plan → UIMessage parts
-│   │   ├── use-chat-model.ts        # model slice: loadModel, resetModelContext, toggleThinking, unloadModel
-│   │   ├── use-chat-sessions.ts     # session slice: CRUD, ensureSessionId, groupedSessions
-│   │   ├── use-knowledge-actions.ts # knowledge mutations: import, index, session binding, delete + UI state
-│   │   ├── use-knowledge-files.ts # knowledge panel list: refresh, markIndexing, markInSession, remove
-│   │   ├── use-context-onboarding.ts # empty-data onboarding policy for agents with a sources tab (profile probe + tab focus)
-│   │   ├── use-session-filter.ts    # filteredGroups / filteredArchived from query (extracted from SessionsPanel)
-│   │   ├── use-app-shortcuts.ts     # ⌘1/2/3 + ⌘N global shortcuts (extracted from App)
-│   │   ├── use-auth.ts          # useAuth(): whoami → set_session dev-bypass bootstrap (userId | null)
-│   │   ├── use-streamdown.ts    # streamdown plugins (cjk, code, math, mermaid) + translations
-│   │   ├── use-theme.ts         # dark/light/system theme with localStorage persistence
-│   │   ├── use-copy-button.ts   # copy button with Check/Copy icon swap
-│   │   ├── use-retryable-toast.ts # run a promise; on failure toast with a Retry action
-│   │   ├── use-skills.ts     # skills asset page: list + create/get/update/remove over the skill_* ops (optimistic)
-│   │   ├── use-memories.ts   # memory page L1: list + create/update/remove + memory_extract (cloud tier; guidance toast offline)
-│   │   └── use-copy-to-clipboard.ts # copy-to-clipboard primitive with timed reset
+│   ├── app/
+│   │   └── App.tsx         # main app: three-pane UI (agents rail, chat+canvas, sessions sidebar)
+│   ├── index.css           # Tailwind v4 + shadcn semantics aliased to Tea design tokens (--tea-* in :root/.dark)
+│   │
+│   ├── features/           # feature-organized domain code
+│   │   ├── auth/            # authentication: auth-gate.tsx, use-auth.ts, supabase.ts
+│   │   ├── agents/          # agent catalog rail + context pane composition: agents-rail.tsx, registry.tsx, context-panel.tsx
+│   │   ├── chat/            # chat + supervisor execution
+│   │   │   ├── components/  # chat-composer, conversation-panel, message-part-view, session-row, sessions-panel
+│   │   │   ├── hooks/       # use-chat-model, use-chat-sessions, use-supervisor-chat, use-supervisor-plan
+│   │   │   ├── lib/         # chat-helpers (+test)
+│   │   │   └── index.ts    # public barrel export
+│   │   ├── knowledge/       # knowledge/RAG panel
+│   │   │   ├── components/  # knowledge-dialogs, knowledge-file-row, knowledge-file-summary, knowledge-library
+│   │   │   ├── hooks/       # use-knowledge-actions, use-knowledge-files
+│   │   │   └── lib/         # knowledge.ts (+test)
+│   │   ├── memory/          # memory page: components/memory-page.tsx, hooks/use-memories, use-memory-tiers
+│   │   ├── skills/          # skills page: components/skills-page.tsx, hooks/use-skills
+│   │   ├── analytics/       # analytics: components/sql-profiles-section.tsx, lib/analytics.ts (+test)
+│   │   ├── codegraph/       # code asset page: components/code-page.tsx
+│   │   ├── tools/           # tool-workbench.tsx, tool-description.ts, tool-icon.ts
+│   │   └── assets/          # shared asset-management UI primitives
+│   │       ├── components/asset/  # vendored Tea-style: asset-split-layout, asset-list-panel, asset-page-header
+│   │       ├── components/asset-nav.tsx  # ASSET_NAV + AssetViewId — the rail's Assets section metadata
+│   │       ├── components/asset-shell.tsx  # shared shell: back-to-chat header + scroll body
+│   │       └── pages/wiki-page.tsx  # knowledge base as wiki sources
+│   │
 │   ├── components/
-│   │   ├── ai-elements/    # vendored chat components (from web/ SPA, trimmed)
-│   │   │   ├── tool-renderers/   # per-domain tool result cards (cards, connector, finance, geo, media, etc.)
-│   │   │   └── ... (conversation, message, tool, prompt-input, code-block, artifact, etc.)
 │   │   ├── ui/             # shadcn primitives (vendored from web/)
-│   │   ├── asset/          # vendored Tea-style asset-management primitives (from TencentDB-Agent-Memory MemoryPanel): asset-split-layout, asset-list-panel (+ item subcomponents), asset-page-header
-│   │   ├── rename-input.tsx # inline rename field (Enter/blur commit, Escape cancel)
-│   │   ├── error-boundary.tsx # top-level render crash fallback (Try again / Reload app; mirrors to frontend_log)
-│   │   ├── file-icon.tsx   # CDN file-type icons (jsdelivr @lobehub/assets-fileicon)
-│   │   ├── file-preview.tsx # dispatches to renderer by file kind (image, video, pdf, text, markdown, fallback)
-│   │   ├── message-part-view.tsx  # MessagePartView: tool cards + reasoning + text + copy
-│   │   ├── knowledge-file-row.tsx # KnowledgeFileRow + StatusBadge + SectionLabel
-│   │   ├── knowledge-dialogs.tsx  # PreviewDialog + LinkDialog (extracted from App)
-│   │   ├── session-row.tsx        # SessionRow: active/archived row with rename/archive/delete
-│   │   └── sql-profiles-section.tsx # SQL data sources (Knowledge panel): list/add/edit/test/delete profiles
-│   ├── panels/
-│   │   ├── registry.tsx            # per-agent context-pane composition (CONTEXT_TABS, keyed by agent id)
-│   │   ├── agents-rail.tsx        # pane 1: agent catalog rail + Assets section (Wiki/Code/Skills/Memory navigation)
-│   │   ├── assets/                # center-pane asset workspace pages (opened from the rail's Assets section; assetView state in App swaps chat → asset page, Esc/agent click returns)
-│   │   │   ├── asset-nav.tsx      # ASSET_NAV + AssetViewId — the rail's Assets section metadata
-│   │   │   ├── asset-shell.tsx    # shared shell: back-to-chat header + scroll body
-│   │   │   ├── wiki-page.tsx      # knowledge base as wiki sources (Tea panel structure): header + Sources list (status/pages/chunks) + Pages|Graph detail tabs (Pages = live preview)
-│   │   │   ├── memory-page.tsx    # ChatMemoryPanel structure: header + agent filter + Blocks list + L0–L3 layer tabs (L0 transcript + L1 memories CRUD/extract real; L2/L3 honest empty — no pipeline tier yet)
-│   │   │   ├── skills-page.tsx    # Skills over the real skill_* ops: list ↔ detail (markdown body via streamdown) + create/edit dialog + delete (use-skills hook)
-│   │   │   └── code-page.tsx      # Code asset workspace over the real codegraph_* ops: status + Register repo (codegraph_init) + explore input + result view
-│   │   ├── conversation-panel.tsx # pane 2: chat + model status (virtualization)
-│   │   ├── chat-composer.tsx      # composer: @-mention + file chips + speech
-│   │   ├── context-panel.tsx      # right context pane: renders the tabs the registry gives it (session/library/databases)
-│   │   ├── knowledge-library.tsx  # library tab as a Tea-style asset manager: file list ↔ detail (inline preview + session binding) on the vendored asset primitives
-│   │   └── sessions-panel.tsx     # pane 3: session list — search, inline rename, archive/restore, delete
-│   ├── platform/
-│   │   ├── types.ts        # Platform interface (pickFiles, dictation, screenshots, clipboard, share)
-│   │   ├── index.ts        # platform adapter — browser APIs + Tauri dialog for native file picker
-│   │   └── shared-media.ts # capability detection + shared Web API implementations
-│   └── assets/
-│       ├── type.ts         # icon-map type definitions
-│       ├── utils.ts        # getIconNameForFileName, getIconForFilePath, etc.
-│       └── icon-map.json   # filename/extension → icon name mapping
+│   │   ├── ai-elements/    # vendored chat components (from web/ SPA, trimmed)
+│   │   │   └── tool-renderers/   # per-domain tool result cards
+│   │   ├── notifications/   # NotificationCenter, NotificationItem
+│   │   ├── shared/          # cross-feature reusable product UI: file-preview, file-icon, rename-input
+│   │   └── error-boundary.tsx # top-level render crash fallback (mirrors to frontend_log)
+│   ├── hooks/              # truly global hooks (use-theme, use-app-shortcuts, use-session-filter, etc.)
+│   ├── lib/                # infrastructure: api.ts, stream.ts, utils.ts, logger.ts, ai-types.ts, preview-*.ts, ...
+│   │   ├── streamdown/     # vendored streaming markdown renderer
+│   │   └── native-notifications/ # tauriBridge.ts
+│   ├── contexts/           # React contexts (NotificationContext.tsx)
+│   ├── platform/           # platform adapter (types.ts, index.ts, shared-media.ts)
+│   ├── generated/          # generated API types and events (never edit manually)
+│   └── assets/             # static asset helpers (icon-map.json, type.ts, utils.ts)
 ```
 
 ### Data flow
 
 ```
-User goal → App.tsx → use-supervisor-plan.planAndRun()
+User goal → app/App.tsx → use-supervisor-plan.planAndRun()
   → call("plan_task", {goal, sessionId}) → validated TaskPlan
   → streamOperation("execute_supervisor_plan", {plan, sessionId, streamId})
   → Tauri Channel<SupervisorEvent> (via @tauri-apps/api/core)
   → events: "planStarted" | "stepStarted" | "confirmationRequested" | "stepCompleted" | "stepFailed" | "stepSkipped" | "planCompleted" | "planFailed"
   → use-supervisor-plan folds events into UIMessage[] parts
-  → App.tsx renders via Conversation/Message/Tool components + plan progress panel
+  → app/App.tsx renders via Conversation/Message/Tool components + plan progress panel
 ```
 
 ### Backend communication primitives
@@ -162,7 +125,7 @@ User goal → App.tsx → use-supervisor-plan.planAndRun()
 | Components | Prefer `ai-elements/` → `ui/` first; add new shadcn components via `bunx shadcn@latest add` only when nothing fits |
 | Hooks | Custom hooks in `hooks/`; each hook is a single file |
 | Platform | All platform capabilities go through the `Platform` interface in `platform/types.ts` — never use browser globals directly in components |
-| Chat state | `use-supervisor-plan.ts` owns execution state (plan messages, steps, confirmations); `use-supervisor-chat.ts` owns the session/history shell |
+| Chat state | `features/chat/hooks/use-supervisor-plan.ts` owns execution state (plan messages, steps, confirmations); `features/chat/hooks/use-supervisor-chat.ts` owns the session/history shell |
 | Events | `SupervisorEvent` mirrors the Rust enum in `src-tauri/src/supervisor.rs` (scheduler events come from `kawai-router`). `LocalChatEvent` in `frontend/src/generated/events.ts` (raw `local_chat` stream) is generated from `crates/foundation/events` via `cargo run -p kawai-bindings --bin export-bindings` — never edit generated files manually. Add variant in the source then regenerate to avoid silent drops. |
 
 ## Non-obvious patterns
@@ -174,10 +137,10 @@ User goal → App.tsx → use-supervisor-plan.planAndRun()
 - **File @-mentions carry IDs, not content.** The composer's @ button opens a `knowledge_list` popover; picked files render as chips and their IDs ride along on the next submit (`onSubmit(text, fileIds)`). The backend binds them to the session and the supervisor tools read them from session scope. Chips clear after submit.
 - **Auth bootstrap is in use-auth.ts.** On mount: Supabase session → `set_session`; fallback → `whoami` → `restore_session` (OS keychain). Deep-link handler listens for `kawai://auth` callbacks (PKCE code exchange + implicit token). OAuth opens in system browser via `skipBrowserRedirect` + `openUrl`. The dev bypass (`KAWAI_AUTH_DEV_USER_ID`) is env-gated in the Rust backend, never in the frontend.
 - **Theme is applied before React mounts** via an inline script in `index.html:7-20`. The `use-theme.ts` hook writes to the same `localStorage` key (`"kawai-theme"`).
-- **Agent presentation is a frontend map** (`AGENT_META` in `panels/agents-rail.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry. The right context pane follows the same pattern — `CONTEXT_TABS` in `panels/registry.tsx` decides which tabs each agent gets; agents absent from the map (or tool-less) get no pane and its toggles disappear.
-- **Asset workspace navigation is frontend-owned** (`ASSET_NAV` in `panels/assets/asset-nav.tsx`; `assetView` state in `App.tsx`). Opening an asset swaps the center pane (chat → asset page) without touching the chat state — the stream keeps folding in the background; Esc or an agent click returns. Wiki reuses the app's knowledge state, Memory reads `list_chat_sessions`/`list_chat_messages` directly; Skills/Code pages state plainly that their backend tier doesn't exist yet.
-- **`file-preview.tsx`** uses `useFilePreview` from `lib/preview-file.ts` which calls `office_read_file` — every mount triggers a backend call. The preview switch mounts only one renderer at a time, so only one fetch happens.
-- **`useKnowledgeFiles`** (in `use-knowledge-files.ts`) is feature-gated — if the backend rejects `knowledge_list` (no `office` feature), it settles on an empty list with `unavailable=true`.
+- **Agent presentation is a frontend map** (`AGENT_META` in `features/agents/agents-rail.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry. The right context pane follows the same pattern — `CONTEXT_TABS` in `features/agents/registry.tsx` decides which tabs each agent gets; agents absent from the map (or tool-less) get no pane and its toggles disappear.
+- **Asset workspace navigation is frontend-owned** (`ASSET_NAV` in `features/assets/components/asset-nav.tsx`; `assetView` state in `app/App.tsx`). Opening an asset swaps the center pane (chat → asset page) without touching the chat state — the stream keeps folding in the background; Esc or an agent click returns. Wiki reuses the app's knowledge state, Memory reads `list_chat_sessions`/`list_chat_messages` directly; Skills/Code pages state plainly that their backend tier doesn't exist yet.
+- **`file-preview.tsx`** (in `components/shared/`) uses `useFilePreview` from `lib/preview-file.ts` which calls `office_read_file` — every mount triggers a backend call. The preview switch mounts only one renderer at a time, so only one fetch happens.
+- **`useKnowledgeFiles`** (in `features/knowledge/hooks/use-knowledge-files.ts`) is feature-gated — if the backend rejects `knowledge_list` (no `office` feature), it settles on an empty list with `unavailable=true`.
 
 ## Testing / verification
 
@@ -189,9 +152,10 @@ bun run build          # tsc -b + vite build — check for type errors and build
 bun run typecheck      # tsc -b --force — type-only check, faster
 ```
 
-Unit tests cover pure helpers only (`chat-helpers`, `base64`, `knowledge`,
-`utils`) — colocated `*.test.ts` files, no DOM/component tests. They run in
-the CI `web` job alongside lint and build.
+Unit tests cover pure helpers only (`base64`, `utils`, and colocated
+`*.test.ts` files inside `features/chat/lib/`, `features/analytics/lib/`,
+`features/knowledge/lib/`) — no DOM/component tests. They run in the CI
+`web` job alongside lint and build.
 
 ## Gotchas
 

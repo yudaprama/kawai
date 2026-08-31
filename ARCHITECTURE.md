@@ -8,7 +8,7 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 - Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from domain crates, composed through `AgentDefinition` tool builders. UI: three-pane — left = agents rail, center = active agent chat + canvas, right = sessions sidebar.
 - End state: **desktop + mobile + web from one core**; app logic is 100% shared, only transport and launcher differ per target.
 - Current phase: **MVP, desktop-first** (macOS, on-device LLM, dev-bypass auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
-- Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`hooks/use-supervisor-plan.ts` + `lib/ai-types.ts`).
+- Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`features/chat/hooks/use-supervisor-plan.ts` + `lib/ai-types.ts`).
 - Backend: Rust, single core logic. Built-in agent composition is owned by the application root (`src-tauri/src/agent_registry.rs`); the reusable orchestration engine consumes an injected `AgentRegistry`.
 - Auth: MVP = dev-bypass (`set_session` with any token, backend-gated by `KAWAI_AUTH_DEV_USER_ID`). Backend retains Clerk JWKS verification (`auth.rs`, public keys only) for the future prod flow (browser + deep link — see AGENTS.md Roadmap).
 - LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool with health-aware failover); remote providers are optional configuration. The local model delegates heavy synthesis to cloud subagent tools (`deep_write`, `draft_document`) when a remote LLM is configured. Agent toolsets come from domain crates and are composed by the application root. Design record: `PLAN-hybrid-llm-subagents.md`.
@@ -79,7 +79,7 @@ sequenceDiagram
     FE->>FE: persist user + assistant messages (append_chat_message)
 ```
 
-1. **Frontend capture & invoke.** `App.tsx` routes every composer submission through `hooks/use-supervisor-plan.ts`: `plan_task` returns a validated `TaskPlan`, then `streamOperation("execute_supervisor_plan", …)` runs it. Events arrive over a Tauri `Channel` as `SupervisorEvent`s (`planStarted`, `stepStarted`, `confirmationRequested`, `stepCompleted`, `stepFailed`, `stepSkipped`, `planCompleted`, `planFailed`) and are folded into `UIMessage[]` parts. There is exactly one execution path.
+1. **Frontend capture & invoke.** `app/App.tsx` routes every composer submission through `features/chat/hooks/use-supervisor-plan.ts`: `plan_task` returns a validated `TaskPlan`, then `streamOperation("execute_supervisor_plan", …)` runs it. Events arrive over a Tauri `Channel` as `SupervisorEvent`s (`planStarted`, `stepStarted`, `confirmationRequested`, `stepCompleted`, `stepFailed`, `stepSkipped`, `planCompleted`, `planFailed`) and are folded into `UIMessage[]` parts. There is exactly one execution path.
 
 2. **Planner.** `supervisor::plan_task` renders `plan_prompt_with_tools(registry)` (tool name/kind/description/input-schema per registered tool), streams one completion from the remote pool (`RemoteLlm`), then `parse_supervisor_plan` extracts the JSON and validates it: structural invariants (caps, deps, acyclicity) plus every step's dispatch key against the `ToolRegistry`. Invalid plans never reach execution.
 
@@ -206,7 +206,7 @@ Surgical code context for frequent agent invocations — the model asks how code
 
 1. **Sidecar** — `codegraph explore --json` via `tokio::process::Command` (`CODEGRAPH_BIN` override, default `codegraph` on PATH). Full pipeline (extract + resolution + graph + search) runs in the external CLI; results are guidance-shaped on not-indexed.
 2. **Cache** — 15-min LRU (64 entries, global) + single-flight dedup. Repeat queries (1-5 explores/turn is typical) coelesce; hits are free and bypass the 12/min budget on cache misses. `explore_with_cache` is shared by the AgentTool and the Tauri `logic/codegraph.rs` wrapper.
-3. **Wiring** — `crates/toolsets/codegraph` provides `CodegraphExploreTool`/`CodegraphStatusTool` (`kawai_tools::AgentTool`). `src-tauri/src/agent_registry.rs` adds both to every agent when `litert` + `codegraph` are on. Tauri `codegraph_explore/status/is_available/init` + Axum `/api/codegraph_*` are thin wrappers (auth at edge, `user_id` first arg). `codegraph_init` registers a repo (runs `codegraph init` — long-running on large repos) and returns the status shape. Frontend `CodeAssetPage` (`frontend/src/panels/assets/code-page.tsx`) shows status + Register-repo (init) + explore input + result view; `frontend/src/lib/api.ts` exposes `codegraphExplore`/`codegraphStatus`/`codegraphInit`. Zero cost when feature off.
+3. **Wiring** — `crates/toolsets/codegraph` provides `CodegraphExploreTool`/`CodegraphStatusTool` (`kawai_tools::AgentTool`). `src-tauri/src/agent_registry.rs` adds both to every agent when `litert` + `codegraph` are on. Tauri `codegraph_explore/status/is_available/init` + Axum `/api/codegraph_*` are thin wrappers (auth at edge, `user_id` first arg). `codegraph_init` registers a repo (runs `codegraph init` — long-running on large repos) and returns the status shape. Frontend `CodeAssetPage` (`frontend/src/features/codegraph/components/code-page.tsx`) shows status + Register-repo (init) + explore input + result view; `frontend/src/lib/api.ts` exposes `codegraphExplore`/`codegraphStatus`/`codegraphInit`. Zero cost when feature off.
 
 ## Directory layout
 
@@ -221,7 +221,7 @@ kawai/
 │   └── src/
 │       ├── main.tsx          # React root
 │       ├── App.tsx           # three-pane UI: agents rail, chat + canvas (artifact/knowledge panel), sessions sidebar
-│       ├── panels/           # pane components: agents-rail, conversation-panel, sessions-panel, chat-composer, knowledge-panel
+│       ├── features/          # feature-organized domain code (auth, agents, chat, knowledge, memory, skills, analytics, codegraph, tools, assets)
 │       ├── lib/
 │       │   ├── ai-types.ts   # LOCAL UIMessage/part type shim — NO ai-sdk runtime
 │       │   ├── api.ts        # call() RPC + errText + payload types
@@ -272,7 +272,7 @@ kawai/
 5. **Launcher**:
    - Desktop/Mobile (`main.rs` → `lib.rs::run()`): Tauri builder, registers commands + `.manage(Verifier)` + `.manage(Session)`. **Does NOT run Axum.**
    - Web (`bin/web.rs`): binds `0.0.0.0:PORT`, serves `/api/*` router. Not a Tauri app.
-6. **Frontend** — React SPA (`frontend/`), bundled by Vite into `dist/` and served by Tauri. RPC via `@tauri-apps/api/core.invoke`; streaming via `Channel` + `cancel_stream`. Chat state lives in `hooks/use-supervisor-plan.ts`, which folds supervisor stream events (`planStarted`/`stepStarted`/`stepCompleted`/`stepFailed`/`stepSkipped`/terminals) into `UIMessage[]` parts; `lib/ai-types.ts` defines those shapes locally (no `ai` npm package — field names stay AI-SDK-v5-compatible so the vendored `ai-elements` components render them unmodified).
+6. **Frontend** — React SPA (`frontend/`), bundled by Vite into `dist/` and served by Tauri. RPC via `@tauri-apps/api/core.invoke`; streaming via `Channel` + `cancel_stream`. Chat state lives in `features/chat/hooks/use-supervisor-plan.ts`, which folds supervisor stream events (`planStarted`/`stepStarted`/`stepCompleted`/`stepFailed`/`stepSkipped`/terminals) into `UIMessage[]` parts; `lib/ai-types.ts` defines those shapes locally (no `ai` npm package — field names stay AI-SDK-v5-compatible so the vendored `ai-elements` components render them unmodified).
 
 ## Core dependencies (in `logic.rs` / `auth.rs`)
 

@@ -2,11 +2,11 @@ import * as Sentry from "@sentry/react";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { SentryErrorBoundary } from "@/components/error-boundary";
-import { AuthGate } from "@/components/auth-gate";
+import { AuthGate } from "@/features/auth/auth-gate";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NotificationProvider, useNotificationPermission } from "@/contexts/NotificationContext";
-import App from "./App";
+import App from "./app/App";
 import "./index.css";
 
 // Sentry is opt-in: init only when VITE_SENTRY_DSN is set (build-time env,
