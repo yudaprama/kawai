@@ -684,7 +684,7 @@ pub async fn plan_task(
     let registry = crate::supervisor::build_supervisor_registry(
         &user_id, session_id, &agent_id,
     ).await.ok_or_else(|| "supervisor toolset unavailable".to_string())?;
-    crate::supervisor::plan_task(&goal, &registry).await
+    crate::supervisor::plan_task(&user_id, &goal, &registry).await
 }
 
 /// Authenticated RPC: respond to a pending supervisor confirmation gate.

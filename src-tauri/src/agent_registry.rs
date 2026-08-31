@@ -47,7 +47,7 @@ pub(crate) fn office_tools(
         ));
         #[cfg(feature = "graph")]
         kawai_knowledge::graph::extend_toolset(&mut set, context.user_id);
-        return Some(add_runtime_tools(set, remote_configured, true));
+        return Some(add_runtime_tools(set, context, remote_configured, true));
     }
     #[cfg(not(feature = "office"))]
     {
@@ -73,7 +73,7 @@ pub(crate) fn presentation_tools_for_supervisor(
             context.user_id.to_string(),
             context.session_id,
         ));
-        return Some(add_runtime_tools(set, remote_configured, false));
+        return Some(add_runtime_tools(set, context, remote_configured, false));
     }
     #[cfg(not(feature = "office"))]
     {
@@ -96,7 +96,7 @@ pub(crate) fn binance_tools_for_supervisor(
             set.add_tool(webread::WebReadTool(context.user_id.to_string()));
             set.add_tool(webread::WebSearchTool(context.user_id.to_string()));
         }
-        return Some(add_runtime_tools(set, remote_configured, false));
+        return Some(add_runtime_tools(set, context, remote_configured, false));
     }
     #[cfg(not(all(feature = "binance", not(target_os = "android"))))]
     {
@@ -114,7 +114,7 @@ pub(crate) fn analytics_tools_for_supervisor(
     #[cfg(feature = "analytics")]
     {
         let set = (kawai_analytics::agent::definition().build_tools)(context, remote_configured)?;
-        return Some(add_runtime_tools(set, remote_configured, false));
+        return Some(add_runtime_tools(set, context, remote_configured, false));
     }
     #[cfg(not(feature = "analytics"))]
     {
@@ -123,17 +123,24 @@ pub(crate) fn analytics_tools_for_supervisor(
     }
 }
 
-/// Append the runtime-owned cross-cutting tools: artifact_recall (always),
-/// deep_write (when remote is configured), and draft_document (only for
-/// agents whose definition says they support it).
+/// Append the runtime-owned cross-cutting tools: memory recall (always),
+/// artifact_recall (always), deep_write (when remote is configured), and
+/// draft_document (only for agents whose definition says they support it).
 #[cfg(feature = "litert")]
 fn add_runtime_tools(
     mut set: kawai_tools::ToolSet,
+    context: &AgentContext<'_>,
     remote_configured: bool,
     supports_draft_document: bool,
 ) -> kawai_tools::ToolSet {
     #[cfg(not(feature = "office"))]
     let _ = supports_draft_document;
+    set.add_tool(kawai_memory::tools::MemorySearchTool(
+        context.user_id.to_string(),
+    ));
+    set.add_tool(kawai_memory::tools::MemoryGraphSearchTool(
+        context.user_id.to_string(),
+    ));
     set.add_tool(kawai_agent::ArtifactRecall);
     #[cfg(feature = "codegraph")]
     {

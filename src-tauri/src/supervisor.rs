@@ -122,20 +122,57 @@ fn tool_meta_from_definition(def: &kawai_tools::ToolDefinition) -> ToolMeta {
     }
 }
 
+/// Render the user-context blocks that ride the planner call: the L3 persona,
+/// goal-relevant memories (relevance-ranked; bumps access counters), and the
+/// user's skills. Each block degrades to empty on failure. Pure string
+/// assembly so tests can pin the shape.
+fn render_planner_context(
+    persona_block: String,
+    memories_block: String,
+    skills_block: String,
+) -> String {
+    if persona_block.is_empty() && memories_block.is_empty() && skills_block.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("<user-context>\nBackground about the user. Ground decisions in it when relevant; ignore it when not.\n");
+    for block in [persona_block, memories_block, skills_block] {
+        if !block.is_empty() {
+            out.push_str(&block);
+            out.push('\n');
+        }
+    }
+    out.push_str("</user-context>");
+    out
+}
+
 /// Build a [`ToolRegistry`] from the supervisor's toolset.
 ///
 /// The registry contains metadata for the planner prompt and a dispatch
 /// closure that delegates to [`kawai_tools::ToolSet::execute`].
 pub async fn plan_task(
+    user_id: &str,
     goal: &str,
     registry: &ToolRegistry,
 ) -> Result<kawai_router::TaskPlan, String> {
     let remote = remote_llm::RemoteLlm::from_env()
         .ok_or_else(|| "remote LLM is not configured".to_string())?;
+
+    // User context rides the planner call: persona + goal-relevant memories
+    // + skills. All three are best-effort — planning never fails on them.
+    let persona_block = kawai_memory::persona_prompt_block(user_id).await;
+    let memories_block = kawai_memory::prompt_block_relevant(user_id, goal).await;
+    let skills_block = kawai_skills::prompt_block(user_id).await;
+    let context = render_planner_context(persona_block, memories_block, skills_block);
+
     let prompt = kawai_router::plan_prompt_with_tools(registry);
+    let user_message = if context.is_empty() {
+        format!("{prompt}\n\nUser goal:\n{goal}")
+    } else {
+        format!("{context}\n\n{prompt}\n\nUser goal:\n{goal}")
+    };
     let mut stream = remote.stream(
         "You produce valid JSON plans and never execute tools.",
-        &format!("{prompt}\n\nUser goal:\n{goal}"),
+        &user_message,
         "",
     ).await?;
     let mut raw = String::new();
@@ -370,6 +407,22 @@ pub fn execute_plan_stream_with_cancel(
 mod tests {
     use super::*;
     use kawai_router::{StepStatus, TaskStep};
+
+    #[test]
+    fn planner_context_omits_empty_blocks_and_wraps_present_ones() {
+        assert_eq!(render_planner_context(String::new(), String::new(), String::new()), "");
+        let out = render_planner_context(
+            "<persona>likes dark UIs</persona>".into(),
+            String::new(),
+            "<skills>pdf skill</skills>".into(),
+        );
+        assert!(out.starts_with("<user-context>"));
+        assert!(out.contains("<persona>likes dark UIs</persona>"));
+        assert!(out.contains("<skills>pdf skill</skills>"));
+        assert!(out.ends_with("</user-context>"));
+        // No empty block placeholders.
+        assert!(!out.contains("<memories>"));
+    }
 
     /// Registry whose single tool records executions and succeeds.
     fn echo_registry() -> ToolRegistry {

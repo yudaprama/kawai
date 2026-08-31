@@ -1419,7 +1419,8 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
     .route(
         "/api/respond_supervisor_confirmation",
         post(respond_supervisor_confirmation_handler),
-    );
+    )
+    .route("/api/plan_task", post(plan_task_handler));
 
     #[cfg(feature = "office")]
     let protected = protected
@@ -1506,6 +1507,52 @@ pub async fn serve(addr: &str, dist_dir: PathBuf, verifier: Verifier) -> Result<
     axum::serve(listener, router(dist_dir, verifier))
         .await
         .map_err(|e| format!("serve kawai-web: {e}"))
+}
+
+/// Authenticated RPC: plan a task against the agent's tool catalog.
+#[cfg(all(feature = "router", feature = "litert"))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlanTaskRequest {
+    goal: String,
+    session_id: i64,
+    agent_id: Option<String>,
+}
+
+/// Authenticated RPC: plan a task against the agent's tool catalog. The
+/// planner call rides the user's persona + goal-relevant memories + skills.
+#[cfg(all(feature = "router", feature = "litert"))]
+async fn plan_task_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<PlanTaskRequest>,
+) -> Result<Json<kawai_router::TaskPlan>, (StatusCode, String)> {
+    if !kawai_db::session_exists(&claims.sub, req.session_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    {
+        return Err((
+            StatusCode::NOT_FOUND,
+            format!("session {} not found", req.session_id),
+        ));
+    }
+    let agent_id = req
+        .agent_id
+        .as_deref()
+        .unwrap_or(crate::agent_registry::OFFICE_AGENT_ID);
+    let registry = crate::supervisor::build_supervisor_registry(
+        &claims.sub,
+        req.session_id,
+        agent_id,
+    )
+    .await
+    .ok_or((
+        StatusCode::SERVICE_UNAVAILABLE,
+        "supervisor toolset unavailable".to_string(),
+    ))?;
+    crate::supervisor::plan_task(&claims.sub, &req.goal, &registry)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
 /// Protected streaming: supervisor plan execution via SSE.

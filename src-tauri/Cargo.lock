@@ -4268,6 +4268,7 @@ dependencies = [
  "futures-util",
  "kawai-db",
  "kawai-embedding",
+ "kawai-tools",
  "libsql",
  "log",
  "rand 0.9.5",
