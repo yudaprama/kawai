@@ -100,3 +100,24 @@ export function codegraphIsAvailable(): Promise<boolean> {
 export function codegraphInit(projectPath?: string): Promise<CodegraphStatusResult> {
   return call<CodegraphStatusResult>("codegraph_init", { projectPath: projectPath ?? null });
 }
+
+// ── TTS (piper-rs, feature "tts") ──────────────────────────────────────────
+
+/**
+ * Synthesize speech from text using the Piper neural TTS engine.
+ * Returns base64-encoded WAV audio for playback.
+ * @param text - Text to synthesize
+ * @param voice - Voice id (optional, defaults to en_US-libritts_r-medium)
+ * @param lengthScale - Speech speed (1.0 = normal, <1.0 = faster, >1.0 = slower)
+ */
+export function synthesizeSpeech(
+  text: string,
+  voice?: string,
+  lengthScale?: number,
+): Promise<string> {
+  return call<string>("synthesize_speech", {
+    text,
+    voice: voice ?? null,
+    lengthScale: lengthScale ?? null,
+  });
+}

@@ -1118,3 +1118,39 @@ pub async fn execute_supervisor_plan(
 
     Ok(())
 }
+
+// ── TTS (piper-rs, feature "tts") ──────────────────────────────────────────
+
+/// Synthesize speech from text using the Piper neural TTS engine.
+/// Returns base64-encoded WAV audio for playback in the frontend.
+/// When the `tts` feature is off, returns an error immediately.
+#[tauri::command]
+pub async fn synthesize_speech(
+    text: String,
+    voice: Option<String>,
+    length_scale: Option<f32>,
+) -> Result<String, String> {
+    let (samples, sample_rate) = logic::tts::synthesize(
+        &text,
+        voice.as_deref(),
+        length_scale,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let wav = logic::tts::pcm_to_wav(&samples, sample_rate);
+
+    // base64 is available when tts or office feature is on; synthesis only
+    // succeeds when tts is on, so this is always reachable when we get here.
+    #[cfg(any(feature = "tts", feature = "office"))]
+    {
+        use base64::Engine;
+        Ok(base64::engine::general_purpose::STANDARD.encode(&wav))
+    }
+    #[cfg(not(any(feature = "tts", feature = "office")))]
+    {
+        // Dead code: synthesis always fails when tts is off.
+        let _ = wav;
+        Err("base64 not available".into())
+    }
+}

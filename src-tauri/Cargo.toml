@@ -116,6 +116,10 @@ regex = { version = "1", optional = true }
 webread = { path = "../crates/toolsets/webread", optional = true }
 browser = { path = "../crates/generated-tools/browser", optional = true }
 url = { version = "2", optional = true }
+# TTS via piper-rs (neural ONNX Piper TTS). Gated behind `tts` so non-TTS
+# builds stay dep-free. Adds ~40 MB (static ONNX Runtime) + espeak-ng build
+# requirement (cmake + clang).
+piper-rs = { version = "0.2.0", optional = true }
 # Binance agent tools (builtin.binance): keyless public market data via the
 # binance-sdk fork submodule (crates/vendor/binance-connector-rust, patched
 # rustls-only) + in-process TA via crates/vendor/ta.
@@ -180,6 +184,9 @@ analytics-sql = ["analytics", "kawai-analytics/analytics-sql", "dep:sqlx"]
 # extraction from images — scanned docs, screenshots, receipts. Feature-gated
 # in kawai-vision; adds ~3 MB model dir resolution + C++ MNN build overhead.
 paddle-ocr = ["kawai-vision/paddle-ocr"]
+# TTS via piper-rs (neural Piper ONNX models). Adds ~40 MB (static ONNX Runtime)
+# and requires cmake + clang at build time (espeak-ng phonemizer compiled from source).
+tts = ["dep:piper-rs", "dep:base64"]
 
 [[bin]]
 name = "kawai"
@@ -272,6 +279,12 @@ opt-level = "z"
 [profile.release.package.polars-io]
 opt-level = "z"
 [profile.release.package.polars-parquet]
+opt-level = "z"
+[profile.release.package.piper-rs]
+opt-level = "z"
+[profile.release.package.espeak-rs-sys]
+opt-level = "z"
+[profile.release.package.ort-sys]
 opt-level = "z"
 
 # Redirect crates.io office_oxide to the local fork for the entire dependency

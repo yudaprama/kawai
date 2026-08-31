@@ -275,6 +275,9 @@ pub mod memory;
 // CodeGraph bridge — phase0 sidecar (`codegraph` feature) + phase1 native
 // (`codegraph-native` implies `codegraph`; kernel rlib wired when available).
 pub mod codegraph;
+// TTS via piper-rs (neural Piper ONNX models). Feature-gated internally;
+// always compiled so the command stays registered in generate_handler!.
+pub mod tts;
 
 pub use db::*;
 

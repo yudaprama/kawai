@@ -1381,6 +1381,11 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/graph_forget", post(graph_forget_handler))
         .route("/api/graph_stats", post(graph_stats_handler));
 
+    // TTS: always registered so the URL contract is stable; real work only
+    // with --features tts (returns 501 when feature is off).
+    let protected = protected
+        .route("/api/synthesize_speech", post(synthesize_speech_handler));
+
     Router::new()
         .merge(public)
         .merge(protected)
@@ -1472,4 +1477,44 @@ async fn respond_supervisor_confirmation_handler(
         .remove(&crate::supervisor::confirmation_key(&req.stream_id, &req.step_id)).ok_or(StatusCode::NOT_FOUND)?;
     let _ = sender.send(req.approved);
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ── TTS (piper-rs, feature "tts") ──────────────────────────────────────────
+// Always compiled so the router is static; inner dispatch is cfg-gated.
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SynthesizeSpeechRequest {
+    text: String,
+    voice: Option<String>,
+    length_scale: Option<f32>,
+}
+
+/// Protected RPC: synthesize speech via Piper neural TTS.
+/// Returns base64-encoded WAV audio. Returns 501 when tts feature is off.
+async fn synthesize_speech_handler(
+    Json(req): Json<SynthesizeSpeechRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    let (samples, sample_rate) = crate::logic::tts::synthesize(
+        &req.text,
+        req.voice.as_deref(),
+        req.length_scale,
+    )
+    .await
+    .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e.to_string()))?;
+
+    let wav = crate::logic::tts::pcm_to_wav(&samples, sample_rate);
+    // base64 is available when tts or office feature is on; synthesis only
+    // succeeds when tts is on, so this is always reachable when we get here.
+    #[cfg(any(feature = "tts", feature = "office"))]
+    {
+        use base64::Engine;
+        Ok(Json(base64::engine::general_purpose::STANDARD.encode(&wav)))
+    }
+    #[cfg(not(any(feature = "tts", feature = "office")))]
+    {
+        // Dead code: synthesis always fails when tts is off.
+        // But the compiler needs a return path.
+        Err((StatusCode::NOT_IMPLEMENTED, "base64 not available".into()))
+    }
 }

@@ -187,7 +187,7 @@ jobs:
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
-          args: --features litert,office --config .github/tauri-litert.json
+          args: --features litert,office,tts --config .github/tauri-litert.json
 
   build-linux:
     needs: bump
@@ -292,7 +292,7 @@ jobs:
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
-          args: --features litert,office --config .github/tauri-litert.json
+          args: --features litert,office,tts --config .github/tauri-litert.json
 
   build-windows:
     needs: bump
@@ -405,7 +405,7 @@ jobs:
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
-          args: --features litert,office --config .github/tauri-litert.json
+          args: --features litert,office,tts --config .github/tauri-litert.json
 
   build-web:
     needs: bump
@@ -444,7 +444,7 @@ jobs:
       # KAWAI_OFFICE_BIN_DIR / KAWAI_OFFICE_RUNTIME_DIR); without them
       # office_capabilities reports them absent and the agent degrades.
       - name: Build kawai-web binary
-        run: cargo build --release --bin kawai-web --features web,office
+        run: cargo build --release --bin kawai-web --features web,office,tts
         working-directory: src-tauri
       - name: Attach to release
         uses: softprops/action-gh-release@v2

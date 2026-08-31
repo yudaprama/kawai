@@ -139,6 +139,7 @@ pub fn run() {
         commands::respond_supervisor_confirmation,
         commands::plan_task,
         commands::frontend_log,
+        commands::synthesize_speech,
         native_notifications::notification_permission_state,
         native_notifications::notification_permission_request,
         native_notifications::show_native_notification
@@ -217,6 +218,7 @@ pub fn run() {
         commands::respond_supervisor_confirmation,
         commands::plan_task,
         commands::frontend_log,
+        commands::synthesize_speech,
         native_notifications::notification_permission_state,
         native_notifications::notification_permission_request,
         native_notifications::show_native_notification
@@ -271,6 +273,7 @@ pub fn run() {
         commands::respond_supervisor_confirmation,
         commands::plan_task,
         commands::frontend_log,
+        commands::synthesize_speech,
         native_notifications::notification_permission_state,
         native_notifications::notification_permission_request,
         native_notifications::show_native_notification
@@ -332,6 +335,7 @@ pub fn run() {
         commands::graph_forget,
         commands::graph_stats,
         commands::frontend_log,
+        commands::synthesize_speech,
         native_notifications::notification_permission_state,
         native_notifications::notification_permission_request,
         native_notifications::show_native_notification
@@ -376,6 +380,7 @@ pub fn run() {
         commands::graph_forget,
         commands::graph_stats,
         commands::frontend_log,
+        commands::synthesize_speech,
         native_notifications::notification_permission_state,
         native_notifications::notification_permission_request,
         native_notifications::show_native_notification
