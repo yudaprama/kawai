@@ -33,7 +33,14 @@
     {
       // Vendored from the web/ SPA (see frontend/AGENTS.md) — never format or
       // lint these so re-syncs from upstream stay diff-clean.
-      "includes": ["**/lib/streamdown/**", "**/components/ai-elements/**", "**/components/ui/**"],
+      "includes": [
+        "**/lib/streamdown/**",
+        "**/components/ai-elements/**",
+        "**/components/ui/**",
+        // Adapted from OpenHuman (GPLv3) — upstream idioms (SVG pointer
+        // handlers, index keys) would fail lint; kept diff-clean for re-syncs.
+        "**/components/memory-graph/**"
+      ],
       "linter": {
         "enabled": false
       },

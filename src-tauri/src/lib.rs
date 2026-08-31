@@ -100,6 +100,7 @@ pub fn run() {
         commands::memory_search,
         commands::memory_consolidate,
         commands::memory_graph_search,
+        commands::memory_graph_export,
         commands::memory_scene_extract,
         commands::memory_scene_list,
         commands::memory_persona_generate,

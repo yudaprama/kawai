@@ -459,6 +459,19 @@ pub async fn memory_graph_search(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: export the whole entity-memory graph for the UI
+/// visualization (memories newest-first + their entities + mention edges).
+#[tauri::command]
+pub async fn memory_graph_export(
+    limit: Option<usize>,
+    session: State<'_, Session>,
+) -> Result<logic::memory::MemoryGraphExport, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::memory_graph_export(&user_id, limit)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: regenerate ALL L2 scenes (embedding clustering + cloud
 /// LLM naming; needs the hybrid vault). Replace-all semantics.
 #[tauri::command]

@@ -45,6 +45,18 @@ export type ConsolidationReport = {
 	created: MemoryItem[],
 };
 
+export type GraphEdgeExport = {
+	from: string,
+	to: string,
+};
+
+export type GraphNodeExport = {
+	id: string,
+	kind: string,
+	label: string,
+	content: string | null,
+};
+
 export type KnowledgeFileInfo = {
 	id: string,
 	originalName: string,
@@ -74,6 +86,11 @@ export type LocalModelStatus = {
 	totalBytes: number,
 	/**  "remote" while local is not ready, "local" when the engine is loaded. */
 	fallback: string,
+};
+
+export type MemoryGraphExport = {
+	nodes: GraphNodeExport[],
+	edges: GraphEdgeExport[],
 };
 
 export type MemoryGraphHit = {

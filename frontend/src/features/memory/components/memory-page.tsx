@@ -1,5 +1,5 @@
 import { LayersIcon, MergeIcon, PencilIcon, PlusIcon, SearchIcon, SparklesIcon, TrashIcon, XIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AssetBadge,
   AssetItemBadges,
@@ -34,12 +34,20 @@ import {
   MEMORY_KINDS,
   type ChatMessageInfo,
   type ChatSessionInfo,
+  type MemoryGraphExport,
   type MemoryItem,
   call,
+  errText,
 } from "@/lib/api";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 
-type MemoryTab = "l0" | "l1" | "l2" | "l3";
+type MemoryTab = "l0" | "l1" | "l2" | "l3" | "graph";
+
+// Code-split: the force-graph (d3-force + worker) only loads when the user
+// opens the Graph tab.
+const MemoryGraph = lazy(() =>
+  import("@/components/memory-graph/MemoryGraph").then((m) => ({ default: m.MemoryGraph })),
+);
 
 /**
  * Memory asset page — ChatMemoryPanel structure (Tea asset-management UI):
@@ -223,6 +231,7 @@ function BlockDetail({
             <TabsTrigger value="l1">L1 · Memories</TabsTrigger>
             <TabsTrigger value="l2">L2 · Scenes</TabsTrigger>
             <TabsTrigger value="l3">L3 · Persona</TabsTrigger>
+            <TabsTrigger value="graph">Graph</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent className="flex min-h-0 flex-1 flex-col" value="l0">
@@ -237,7 +246,89 @@ function BlockDetail({
         <TabsContent className="flex min-h-0 flex-1 flex-col" value="l3">
           <PersonaPane />
         </TabsContent>
+        <TabsContent className="flex min-h-0 flex-1 flex-col" value="graph">
+          <GraphPane />
+        </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+/** Graph — the whole entity-memory graph, lazily code-split. */
+function GraphPane() {
+  const [data, setData] = useState<MemoryGraphExport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await call<MemoryGraphExport>("memory_graph_export", {}));
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  if (loading && !data) {
+    return (
+      <div className="text-muted-foreground flex flex-1 items-center gap-2 p-4 text-sm">
+        <Spinner className="size-4" /> Building graph…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="flex flex-1 flex-col items-start gap-2 p-4 text-sm">
+        <p className="text-muted-foreground">Couldn't build the graph — {error}</p>
+        <Button onClick={() => void refresh()} size="xs" variant="outline">
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  // Backend only emits these two kind values; specta Option<string> arrives
+  // as `string | null`, normalized to `undefined` for the graph node type.
+  const nodes = (data?.nodes ?? []).map((n) => ({
+    ...n,
+    kind: n.kind as "memory" | "entity",
+    content: n.content ?? undefined,
+  }));
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 items-center gap-1.5 border-b px-4 py-2">
+        <Button disabled={loading} onClick={() => void refresh()} size="xs" variant="outline">
+          {loading ? <Spinner className="size-3" /> : <SearchIcon className="size-3" />}
+          Refresh
+        </Button>
+        <span className="text-muted-foreground ml-auto text-xs">
+          memories (newest 200) + the entities they mention
+        </span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <Suspense
+          fallback={
+            <div className="text-muted-foreground flex h-[640px] items-center justify-center text-sm">
+              <Spinner className="mr-2 size-4" /> Loading graph…
+            </div>
+          }>
+          <MemoryGraph
+            edges={data?.edges ?? []}
+            emptyHint="No memories to graph yet — add or extract memories first."
+            fill
+            nodes={nodes}
+            showLabels
+          />
+        </Suspense>
+      </div>
     </div>
   );
 }

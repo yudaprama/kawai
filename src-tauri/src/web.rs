@@ -243,6 +243,22 @@ async fn memory_graph_search_handler(
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct MemoryGraphExportRequest {
+    limit: Option<usize>,
+}
+
+async fn memory_graph_export_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<MemoryGraphExportRequest>,
+) -> Result<Json<logic::memory::MemoryGraphExport>, (StatusCode, String)> {
+    logic::memory::memory_graph_export(&claims.sub, req.limit)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MemorySceneExtractRequest {}
 
 async fn memory_scene_extract_handler(
@@ -1387,6 +1403,7 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/memory_search", post(memory_search_handler))
         .route("/api/memory_consolidate", post(memory_consolidate_handler))
         .route("/api/memory_graph_search", post(memory_graph_search_handler))
+        .route("/api/memory_graph_export", post(memory_graph_export_handler))
         .route("/api/memory_scene_extract", post(memory_scene_extract_handler))
         .route("/api/memory_scene_list", post(memory_scene_list_handler))
         .route("/api/memory_persona_generate", post(memory_persona_generate_handler))
