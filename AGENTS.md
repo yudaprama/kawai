@@ -18,34 +18,32 @@ Git usage from an agent is ADDITIVE ONLY: `status`, `log`, `diff`, `show`, `add`
 **Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from domain crates and the application registry (per-category crates of generated agent tools implementing `kawai_tools::AgentTool`). UI: three-pane layout (left sidebar = agent list, center = active agent's chat/content, right sidebar = sessions of the selected agent), dark theme.
 
 Desktop/mobile app (Tauri), with a standalone web server binary.
-**End state: desktop + mobile + web from one core. Current phase: MVP, desktop-first — see "Current phase" below.**
+**End state: desktop + mobile + web from one core.**
 
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind v4 (`frontend/`, alias `@/` → `frontend/src`). UI components vendored from the `web/` SPA (`ai-elements/`, `ui/`, `lib/streamdown/`). NO ai-sdk — `lib/ai-types.ts` is a type-only local shim of the `UIMessage`/parts shapes; streaming is raw Tauri `Channel` mapped by `hooks/use-supervisor-plan.ts` (Supervisor events).
-- **Auth**: dev-bypass via `set_session` for MVP (`KAWAI_AUTH_DEV_USER_ID=demo`). Supabase Auth backend verification (`auth.rs`, public JWKS) for the future prod auth flow (post-MVP roadmap: browser + deep link). **Supabase login UI is wired in the React frontend.**
+- **Auth**: dev-bypass via `set_session` (`KAWAI_AUTH_DEV_USER_ID=demo`). Supabase Auth backend verification (`auth.rs`, public JWKS) for the future prod auth flow (browser + deep link). **Supabase login UI is wired in the React frontend.**
 - **Backend**: Rust. Single core logic, two thin transport wrappers.
 - **Transport**: Tauri `Channel`+`invoke` (desktop/mobile); HTTP `fetch`+SSE (web — backend only, no web frontend).
 - **LLM (on-device)**: LiteRT-LM via `cognee-litert-lm` (path dep, vendored at `cognee-litert-lm/vendor/LiteRT-LM` = upstream `google-ai-edge` main). Behind the `litert` cargo feature. Gemma 4 / Qwen `.litertlm` verified streaming on macOS arm64 CPU. **Auto-download**: if the model is not found locally, `logic::ensure_model()` downloads `gemma-4-E4B-it.litertlm` (3.7 GB) from the public `litert-community/gemma-4-E4B-it-litert-lm` HuggingFace repo (Apache-2.0, no token required) into `~/.kawai/models/` with resume support and progress logging to stderr.
 - **LLM (remote)**: hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (reqwest POST `/chat/completions`, stream parser). A remote provider pool with health-aware failover serves the planner and the cloud-subagent tools (details: Configuration below + Roadmap Shipped).
-- **DB**: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
+- **DB**: local SQLite via `libsql` crate (single-device, local file). Future: sqld for multi-device sync.
 
-## Current phase: MVP (desktop-first)
+## Architecture (current state)
 
-Short-term focus is a **macOS desktop MVP**. The end state is unchanged — desktop + mobile + web from one core — so this phase defers *work*, never *architecture*. The invariants below are exactly what keeps mobile/web cheap later; they all stay law during MVP.
+Single core logic, two thin transport wrappers.
 
-**MVP scope (work only these):**
-- macOS desktop app (Tauri, feature `litert`): on-device LLM chat (LiteRT-M), chat history in local SQLite, dev-bypass auth (`KAWAI_AUTH_DEV_USER_ID=demo`).
-- Chat UI (React): session sidebar with period grouping, streaming conversation, tool call cards, thinking toggle.
-- MVP gaps: none remaining — chat history persistence, the distributable build, and the streaming regression gate are all shipped (see Roadmap → Shipped).
+**Invariants (still law):**
+- Every new op gets BOTH wrappers (`commands.rs` + `web.rs`) — keeps web/mobile near-free later.
+- `cargo check --features web` stays green for every change; mobile checks whenever shared code changes (`logic.rs`, `auth.rs`, shared deps).
+- Identity resolved at transport edge (`user_id` as first arg into `logic.rs`) — never shortcut for dev-bypass convenience.
+- Dev bypass stays env-gated (`KAWAI_AUTH_DEV_USER_ID`), off by default, and NEVER in a shipped build.
 
 **Deferred — do NOT start without the user asking (tracked in Roadmap):**
-- Mobile LLM bazel builds + mobile UI; web frontend; LoRA; GPU/Metal; production hardening. (Agent tier, knowledge/RAG, hybrid cloud subagents, web read/search — all shipped; see Roadmap → Shipped.)
-- Prod auth (deep-link) and keychain session persistence are the *first post-MVP milestones* — required before any public release, not part of MVP.
-
-**Still mandatory during MVP (end-state insurance, all cheap):**
-- Every new op still gets BOTH wrappers (`commands.rs` + `web.rs`) — this is what keeps web/mobile near-free later.
-- `cargo check --features web` stays green for every change; mobile checks whenever shared code changes (`logic.rs`, `auth.rs`, shared deps).
-- Identity stays resolved at the transport edge (`user_id` as first arg into `logic.rs`) — never shortcut it for dev-bypass convenience.
-- The dev bypass stays env-gated (`KAWAI_AUTH_DEV_USER_ID`), off by default, and NEVER in a shipped build.
+- Mobile LLM bazel builds + mobile UI
+- Web frontend
+- LoRA, GPU/Metal
+- Production hardening
+- Prod auth (deep-link) and keychain session persistence — required before any public release
 
 ## Non-negotiable invariants
 
@@ -131,7 +129,7 @@ cargo check --features codegraph  # CodeGraph sidecar AgentTool + LRU cache (zer
 cargo check --features analytics  # data analysis agent (implies office)
 ```
 
-For mobile, also (during MVP: only when shared code changes — `logic.rs`, `auth.rs`, shared deps; UI/commands-only changes don't need these): `cargo ndk -t arm64-v8a -P 24 check` and/or `cargo check --target aarch64-apple-ios` (NDK r29 at `/opt/homebrew/share/android-ndk`; sim target needs `rustup target add aarch64-apple-ios-sim`).
+For mobile, also (only when shared code changes — `logic.rs`, `auth.rs`, shared deps; UI/commands-only changes don't need these): `cargo ndk -t arm64-v8a -P 24 check` and/or `cargo check --target aarch64-apple-ios` (NDK r29 at `/opt/homebrew/share/android-ndk`; sim target needs `rustup target add aarch64-apple-ios-sim`).
 
 ## Documentation hygiene
 
@@ -162,10 +160,10 @@ with exact commands, §4 the post-fix verification block.
 - **Cancellation is asymmetric by design.** Web: `AbortController` (connection drop auto-cancels the backend future). Desktop/mobile: frontend `cancel()` calls `invoke('cancel_stream', {streamId})` → `CancellationToken` in the shared registry breaks the `select!` loop. Streaming commands must accept a `stream_id` param and register/clean up a token.
 - **Axum 0.8 `from_fn` hardcodes state to `()`.** A middleware that needs shared state can't use `from_fn` + `State<S>`; use `Extension` (our `auth_middleware` reads `Extension<Verifier>`) or `from_fn_with_state`. Don't fight the type inference by annotating `Router<S>` — switch to `Extension`.
 - **`libsql` positional tuple params start at arity 2.** `(&str,)` is NOT `IntoParams`; use `vec![x]` (or an array) for a single param. Tuples `(A,B)` and up are fine. Params blanket-impl `T: TryInto<Value>` (so `&str`, `String`, `i64`, … all work).
-- **Supabase Auth JWTs are HS256 by default; sqld accepts only EdDSA (post-MVP).** When sqld is added for multi-device sync, never pass a Supabase session JWT to sqld — mint an EdDSA token in the backend first.
+- **Supabase Auth JWTs are HS256 by default; sqld accepts only EdDSA (future).** When sqld is added for multi-device sync, never pass a Supabase session JWT to sqld — mint an EdDSA token in the backend first.
 - **`dotenvy` does not override existing env vars.** Shell-exported vars win over `.env`. To force dev-bypass auth, `KAWAI_AUTH_DEV_USER_ID=demo cargo run ...`.
 - **Two `reqwest` versions coexist** (0.12 direct + jigsawstack; 0.13 via `youtube_transcript`, office-gated). Expected.
-- **Clerk dev-mode does NOT work in the Tauri webview.** Dev instances need the `dev_browser` third-party cookie; WKWebView (macOS) blocks third-party cookies → `clerk.load()` always rejects. That's why the React frontend doesn't wire Clerk at all for MVP — it calls `set_session(<any-token>)` which only succeeds when the backend runs the dev bypass (see `use-supervisor-chat.ts` bootstrap). Production auth = browser + deep link (post-MVP roadmap); consider reusing the Kratos OIDC deep-link pattern from the main `web/` SPA (`web/src/platform/tauri.ts`) when that lands.
+- **Clerk dev-mode does NOT work in the Tauri webview.** Dev instances need the `dev_browser` third-party cookie; WKWebView (macOS) blocks third-party cookies → `clerk.load()` always rejects. That's why the React frontend doesn't wire Clerk at all — it calls `set_session(<any-token>)` which only succeeds when the backend runs the dev bypass (see `use-supervisor-chat.ts` bootstrap). Production auth = browser + deep link; consider reusing the Kratos OIDC deep-link pattern from the main `web/` SPA (`web/src/platform/tauri.ts`) when that lands.
 - **Bazel-built dylibs emit `default.profraw` into the CWD.** If that CWD is `src-tauri/`, the `tauri dev` watcher sees the file change after every run and rebuild-loops the app forever (window opens/closes infinitely). Always set `LLVM_PROFILE_FILE=/dev/null` when running instrumented dylibs from `tauri dev`.
 - **The LiteRT-LM dylib's install name is a bazel-relative path.** `dyld` can't find it from `target/debug/kawai` unless you: (1) copy it out of bazel-bin, (2) `install_name_tool -id @rpath/liblitert-lm.dylib` + re-codesign, (3) embed an rpath in the consuming binary via `RUSTFLAGS="-C link-arg=-Wl,-rpath,<dir>"` (a dependency's `cargo:rustc-link-arg` does NOT propagate to the final binary; the app crate's own `build.rs` DOES — it now embeds `@executable_path/../Frameworks` for litert+macOS), and (4) `scripts/bundle-litert-dylibs.sh` copies all companions into `native/`, strips the baked-in `_solib` rpaths, and adds `@loader_path/../Frameworks` so the bundle (`.github/tauri-litert.json` → `Contents/Frameworks/`) and dev both resolve. `DYLD_LIBRARY_PATH` does NOT survive through the tauri CLI.
 - **LiteRT-LM streaming C calls are fire-and-forget async.** `litert_lm_conversation_send_message_stream` returns before generation starts; tokens arrive on an engine thread. Dropping the engine/conversation mid-generation segfaults. The blocking task must block until the final callback (`recv_timeout` on a channel fed from the callback) — see `logic::local_llm::local_chat`.
@@ -250,16 +248,17 @@ app.log                          # symlink → platform log dir (macOS ~/Library
 
 ## Authentication
 
-- **MVP (current)**: Supabase Auth UI (email/password + OAuth) in `auth-gate.tsx`. On boot `use-supervisor-chat.ts` calls `whoami`; on failure it calls `set_session(<any-token>)`, which only succeeds when the backend runs the dev bypass (`KAWAI_AUTH_DEV_USER_ID`). Identity = the bypass user until prod auth lands.
-- `set_session` (`commands.rs`) verifies the token and stores the identity in Tauri `State<Session>` (in-memory, per launch).
+- **Current**: Supabase Auth UI (email/password + OAuth) in `auth-gate.tsx`. On boot `use-auth.ts` calls `syncSession` (Supabase session → `set_session`); fallback → `whoami` → `restore_session` (OS keychain). Deep-link handler listens for `kawai://auth` callbacks (PKCE code exchange or implicit token).
+- **OAuth flow (system browser)**: OAuth buttons use `skipBrowserRedirect: true` + `openUrl()` to open the provider URL in the system browser (webview blocks third-party OAuth cookies). After authentication, the provider redirects to `kawai://auth?code=<pkce>` (PKCE) or `kawai://auth#access_token=<jwt>` (implicit). The deep-link handler (`use-auth.ts`) extracts the code/token and calls `exchangeCodeForSession` or `set_session`. Requires `kawai://auth` registered in Supabase Dashboard → Auth → URL Configuration → Redirect URLs.
+- **Deep-link plugin**: `tauri-plugin-deep-link` registered in `lib.rs`; scheme `kawai` configured in `tauri.conf.json` → `plugins.deep-link.desktop.schemes`. Cold start handled via `getCurrent()`, warm start via `onOpenUrl()`.
+- `set_session` (`commands.rs`) verifies the token, stores it in the OS keychain (`keychain.rs`), and sets the in-memory `State<Session>`. `restore_session` loads from keychain on app launch.
 - Backend verification: `auth::Verifier` fetches Supabase Auth's **public** JWKS (cached by `kid`) and checks `iss`/`exp`. **No secret keys are needed by the backend** — asymmetric verification.
 - Identity → logic: wrappers extract `claims.sub` as `user_id` and pass it as the first arg to `logic.rs` fns. `whoami`/`create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message`/`delete_chat_session`/`skill_create`/`skill_list`/`skill_get`/`skill_update`/`skill_delete`/`memory_create`/`memory_list`/`memory_update`/`memory_delete`/`memory_extract`/`local_load_model`/`local_chat` are auth-required (plus the supervisor ops `plan_task`/`execute_supervisor_plan`/`respond_supervisor_confirmation`) (plus the `office`-gated `office_*`/`knowledge_*` ops — incl. `knowledge_list`/`knowledge_add_to_session` — and the `analytics`-gated `sql_profile_list/save/delete/test`); `greet`/`list_agents`/`generate_activity` are public.
-- Auth operations: `set_session`, `logout`, `whoami` (one snake_case string each).
-- **Prod auth (deferred, post-MVP)**: browser + deep link — open system browser → sign-in → redirect `kawai://auth?token=…` → `set_session`. The `web/` SPA's Kratos deep-link flow (`web/src/platform/tauri.ts`) is the proven pattern to copy.
+- Auth operations: `set_session`, `logout`, `whoami`, `restore_session` (one snake_case string each).
 
 ## Database (local SQLite via libsql)
 
-Desktop MVP: single-device, local SQLite file, no sync.
+Single-device, local SQLite file, no sync.
 
 ```
 user → (dev bypass / future Supabase Auth) → Rust backend → user_id
@@ -274,7 +273,7 @@ user → (dev bypass / future Supabase Auth) → Rust backend → user_id
 - Adding schema: new `<NNN>_name.sql` in `src-tauri/migrations/` + a `Migration` entry in `migrations()`; cover it with a test in `db_migrations.rs`'s tests module (runs in the CI lib-test gate). Exception: the FTS5 mirror (`rag_chunks_fts` + triggers) and `rag_chunks`/embeddings tables are rag.rs-owned runtime DDL created on first index (`ensure_vector_schema`/`ensure_fts`) because `CREATE TRIGGER` needs `rag_chunks` to exist first.
 - Data root resolution: `KAWAI_DATA_DIR` env → legacy `KAWAI_DB_DIR` env → injected root (`logic::db::set_data_root`; Tauri injects the app-data dir — on macOS `~/Library/Application Support/pro.kawai.app`, from the `pro.kawai.app` identifier in `src-tauri/tauri.conf.json`) → `/tmp/kawai`. `KAWAI_DOCS_DIR` still overrides the docs root to the legacy `<root>/<user_id>/` layout; unset = unified per-user dir. `[A-Za-z0-9_-]` user ids pass through as dir names, anything else hex-encodes.
 - **One data directory per user — no `user_id` columns.** Isolation is structural (per-user folder), matching the future sqld-namespace model (end-state roadmap). The `office` RAG tables (`rag_chunks` + FTS5 mirror, `rag_files` index-status, `session_files`) follow the same rule; `session_files(session_id, file_id)` scopes knowledge search to everything a session has referenced.
-- Post-MVP: sqld for multi-device sync, EdDSA token minting, embedded replicas.
+- Future: sqld for multi-device sync, EdDSA token minting, embedded replicas.
 
 ## Configuration (.env)
 
@@ -316,7 +315,7 @@ KAWAI_CF_GLOBAL_DAILY=300     # default 300 (dev-wallet fuse)
 
 ## Roadmap
 
-Priority order: **shipped → post-MVP/pre-release → end state**. Items after "Shipped" are deferred — do not start them without the user asking. `local_llm_reset` / `local_llm_set_thinking` / `local_llm_unload` are already wired (commands + web routes).
+Priority order: **current architecture → pre-release → end state**. Items in later sections are deferred — do not start them without the user asking. `local_llm_reset` / `local_llm_set_thinking` / `local_llm_unload` are already wired (commands + web routes).
 
 ### Shipped — current architecture (details: `ARCHITECTURE.md`, `PLAN-*.md`)
 
@@ -335,10 +334,9 @@ Priority order: **shipped → post-MVP/pre-release → end state**. Items after 
 - **Distributable macOS build + releases**: `scripts/bundle-litert-dylibs.sh` → `.github/tauri-litert.json` (Contents/Frameworks) + the build.rs rpath — release .app needs no dev env; `.github/workflows/release.yml` bot-bumps the patch version on push to main and builds macOS/Linux/Windows bundles + kawai-web into a DRAFT GitHub release.
 - **(standing) Upstream maintenance**: sentencepiece macOS fix — PR [#3262](https://github.com/google-ai-edge/LiteRT-LM/pull/3262), assume ignored. The submodule stays on our fork branch (`yudaprama/LiteRT-LM@fix/macos-sentencepiece-hdrs-check`); `cognee-litert-lm/tools/update-litert-lm.sh` rebases onto new upstream main. If merged, drop the commit and repoint at google-ai-edge main.
 
-### Open — post-MVP, pre-release
+### Open — pre-release
 
-1. **Production auth = browser + deep link.** Open system browser → sign-in (Clerk or Kratos) → redirect `kawai://auth?token=<jwt>` → `set_session`. Needs the tauri deep-link plugin + a hosted redirect page (or a kawai-web route). The `web/` SPA's Kratos flow (`web/src/platform/tauri.ts`) is the proven pattern; reusing Kratos would unify identity with the main platform.
-2. **Desktop/mobile session persistence.** `State<Session>` is in-memory; lost on restart (the dev bypass re-establishes it automatically — fine for MVP). Persist the token in the OS keychain (`keyring` / tauri-plugin-stronghold) and reload on launch.
+1. **Production auth is wired.** Supabase Auth UI + deep-link flow (`kawai://auth?code=…` / `kawai://auth#access_token=…`) with system browser OAuth + OS keychain session persistence. **Requires Supabase Dashboard config**: Auth → URL Configuration → Redirect URLs → add `kawai://auth`. Dev bypass still env-gated via `KAWAI_AUTH_DEV_USER_ID`.
 3. **DB token broker for sqld sync.** `logic::mint_db_token` reads the Ed25519 private key locally — fine for dev, but the private key MUST NOT ship. Add a `db_token` op: kawai-web verifies the identity → mints a short EdDSA token → the device fetches it and feeds `Builder::new_remote_replica`. The private key stays server-side. Requires sqld setup.
 4. **Production hardening.** `Secure` session cookie (HTTPS only), CORS only if cross-origin, rate limiting, token refresh rotation. Encrypt `kawai.db` at rest: libsql `encryption` feature (`Cipher::Aes256Cbc` via `Builder::encryption_config`) applied in `db_connection`; DB key lives in the OS keychain (same mechanism as item 2 — macOS/Windows/iOS/Android native, Linux Secret Service with 0600-file fallback). Protects chat history + knowledge chunks at rest; NOT a place for API keys — secrets go straight to the keychain.
 5. **Connection pooling + token refresh.** DB connections open per-op (correct, not optimal); pool them for production load.

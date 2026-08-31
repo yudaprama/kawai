@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
@@ -35,14 +36,23 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const handleOAuth = async (provider: "google" | "github") => {
     setLoading(true);
     setError(null);
-    const { error: authError } = await supabase.auth.signInWithOAuth({
+    // skipBrowserRedirect: we open the system browser ourselves.
+    // The deep-link handler in use-auth.ts picks up the callback
+    // kawai://auth?code=<pkce> or kawai://auth#access_token=<jwt>.
+    const { data, error: authError } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: "kawai://auth",
+        skipBrowserRedirect: true,
       },
     });
     setLoading(false);
-    if (authError) setError(authError.message);
+    if (authError) {
+      setError(authError.message);
+      return;
+    }
+    // Open in system browser (webview blocks third-party OAuth cookies)
+    if (data?.url) await openUrl(data.url);
   };
 
   return (

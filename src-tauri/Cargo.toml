@@ -21,6 +21,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-deep-link = "2"
 # OS-native credential storage for the session JWT (Keychain/Keystore).
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 serde = { version = "1", features = ["derive"] }

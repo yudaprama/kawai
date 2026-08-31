@@ -43,6 +43,13 @@
         "notification:allow-request-permission",
         "notification:allow-is-permission-granted"
       ]
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "kawai"
+        ]
+      }
     }
   }
 }
