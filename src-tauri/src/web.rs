@@ -224,6 +224,23 @@ async fn memory_consolidate_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryGraphSearchRequest {
+    query: String,
+    limit: Option<usize>,
+}
+
+async fn memory_graph_search_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<MemoryGraphSearchRequest>,
+) -> Result<Json<Vec<logic::memory::MemoryGraphHit>>, (StatusCode, String)> {
+    logic::memory::memory_graph_search(&claims.sub, &req.query, req.limit)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
 async fn skill_create_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<SkillCreateRequest>,
@@ -1317,6 +1334,7 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/memory_extract", post(memory_extract_handler))
         .route("/api/memory_search", post(memory_search_handler))
         .route("/api/memory_consolidate", post(memory_consolidate_handler))
+        .route("/api/memory_graph_search", post(memory_graph_search_handler))
         .route_layer(from_fn(auth_middleware));
 
     let protected = protected.route(

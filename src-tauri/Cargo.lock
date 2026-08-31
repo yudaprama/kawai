@@ -4271,6 +4271,7 @@ dependencies = [
  "libsql",
  "log",
  "rand 0.9.5",
+ "regex",
  "remote-llm",
  "serde",
  "serde_json",
@@ -4286,6 +4287,7 @@ dependencies = [
  "kawai-db",
  "kawai-tools",
  "kawai-vision",
+ "office-editops",
  "office_oxide",
  "pdf_oxide",
  "regex",
@@ -5461,6 +5463,14 @@ dependencies = [
  "ndarray 0.16.1",
  "rayon",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "office-editops"
+version = "0.1.0"
+dependencies = [
+ "office_oxide",
+ "serde_json",
 ]
 
 [[package]]

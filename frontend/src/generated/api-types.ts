@@ -76,6 +76,11 @@ export type LocalModelStatus = {
 	fallback: string,
 };
 
+export type MemoryGraphHit = {
+	entity: string,
+	memories: MemoryItem[],
+};
+
 export type MemoryItem = {
 	id: string,
 	kind: string,
