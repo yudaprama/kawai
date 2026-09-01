@@ -355,17 +355,21 @@ Actor boundaries marked; loops are Rust-controlled (the LLM only responds).
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │  USER (chat)                                                                     │
 │  "buat pitch deck pakai design system Apple"                                     │
+│       atau: memilih pak di TemplatePicker (pilihan structured)                   │
 └──────────────┬──────────────────────────────────────────────────────────────────┘
                │
 ┌──────────────▼──────────────────────────────────────────────────────────────────┐
 │  REACT (frontend)  — display only, nol logika deck                               │
 │  • ChatComposer mengirim prompt (supervisor stream)                              │
 │  • TemplatePicker → office_list_templates → [Rust: baca bundled + cache saja]    │
+│  • Saat user memilih: office_bind_template → [Rust: simpan binding terstruktur]  │
 │  • menampilkan stream events / error / hasil                                     │
 └──────────────┬──────────────────────────────────────────────────────────────────┘
-               │ prompt
+               │ prompt (binding sudah disimpan Rust, tidak di tangan model)
 ┌──────────────▼──────────────────────────────────────────────────────────────────┐
-│  RUST #1 — resolusi template (templates.rs)         ← LLM tidak pernah pegang ini│
+│  RUST #1 — resolusi template (templates.rs)                                      │
+│  • Jika ada binding user → OVERRIDE args.template_id (model dilampaui)           │
+│  • Jika tidak ada binding → biarkan model menyimpulkan/menanyakan                │
 │  1. bundled packs (in-binary) ──┐                                                │
 │  2. cache ~/.kawai/templates ───┤→ ResolvedPack {directive, themeCss/tokens,     │
 │  3. fetch registry.json (1×) ───┘                reference fixture}              │
