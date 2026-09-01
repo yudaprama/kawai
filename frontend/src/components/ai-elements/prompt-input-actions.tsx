@@ -3,7 +3,7 @@
 import type { ComponentProps } from "react";
 import { useCallback } from "react";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { FILE_ICON_CDN } from "@/components/file-icon";
+import { FILE_ICON_CDN } from "@/components/shared/file-icon";
 import { platform } from "@/platform";
 import { usePromptInputAttachments } from "./prompt-input-context";
 import { Camera, Clipboard, Monitor } from "lucide-react";

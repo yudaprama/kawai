@@ -21,8 +21,8 @@ import {
 import { isValidElement, useState } from "react";
 
 import { CodeBlock } from "./code-block";
-import { getToolCallIcon } from "@/lib/tool-icon";
-import { getToolDescription } from "@/lib/tool-description";
+import { getToolCallIcon } from "@/features/tools/tool-icon";
+import { getToolDescription } from "@/features/tools/tool-description";
 
 export type ToolProps = ComponentProps<typeof Collapsible>;
 

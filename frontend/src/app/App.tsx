@@ -19,19 +19,19 @@ import { WikiAssetPage } from "@/features/assets/pages/wiki-page";
 import { ContextPanel } from "@/features/agents/context-panel";
 import { contextTabsFor } from "@/features/agents/registry";
 import { ConversationPanel } from "@/features/chat/components/conversation-panel";
-import { SessionsPanel } from "@/features/chat/components/sessions-panel";
+import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
 import { ToolWorkbench } from "@/features/tools/tool-workbench";
 
 export default function App() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
   const [agentsRail, setAgentsRail] = useState(false);
-  const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(true);
   const [assetView, setAssetView] = useState<AssetViewId | null>(null);
   const [toolWorkbenchId, setToolWorkbenchId] = useState<string | null>(null);
   const [codeGraphSeed, setCodeGraphSeed] = useState<{ query: string; result: string } | null>(null);
-  const [mobileDrawer, setMobileDrawer] = useState<null | "agents" | "sessions" | "knowledge">(null);
+  const [mobileDrawer, setMobileDrawer] = useState<null | "agents" | "knowledge">(null);
 
   useEffect(() => {
     let disposed = false;
@@ -113,16 +113,7 @@ export default function App() {
 
   const ka = useKnowledgeActions(chat);
 
-  const sessionsPanelBase = {
-    agent,
-    groupedSessions: chat.groupedSessions,
-    archivedSessions: chat.archivedSessions.filter((s) => s.agentId === agent?.id),
-    activeSessionId: chat.sessionId,
-    busy,
-    onDeleteSession: (id: number) => void chat.deleteSession(id),
-    onRenameSession: (id: number, title: string) => void chat.renameSession(id, title),
-    onArchiveSession: (id: number, archived: boolean) => chat.setSessionArchived(id, archived),
-  };
+
 
   // Per-agent right-pane composition + empty-data onboarding policy — both
   // registry-driven; App only wires shell capabilities (canvas/drawer) in.
@@ -178,8 +169,8 @@ export default function App() {
     busy,
     onToggleAgentsRail: () => setAgentsRail((v) => !v),
     onToggleCanvas: () => setCanvasOpen((v) => !v),
-    onToggleSessions: () => setSessionsCollapsed((v) => !v),
     onNewChat: () => void chat.newChat(),
+    onOpenSessions: () => setSessionsOpen(true),
   });
 
   // Esc stops generation (global, mirrors web/ chat-composer.tsx:450-461) —
@@ -373,12 +364,11 @@ export default function App() {
           supervisorFinalOutput={supervisor.finalOutput}
           onStopSupervisor={supervisor.stop}
           inSession={inSession}
-          sessionsCollapsed={sessionsCollapsed}
-          onToggleSessions={() => setSessionsCollapsed((v) => !v)}
+          onOpenSessions={() => setSessionsOpen(true)}
           onImageToKnowledge={ka.imageToKnowledge}
           onboarding={onboarding}
           onOpenMobileAgents={() => setMobileDrawer("agents")}
-          onOpenMobileSessions={() => setMobileDrawer("sessions")}
+
           onOpenMobileKnowledge={hasContextPane ? () => setMobileDrawer("knowledge") : undefined}
           onOpenTool={(id) => {
             setToolWorkbenchId(id);
@@ -396,16 +386,7 @@ export default function App() {
         />
       )}
 
-      {!sessionsCollapsed && assetView == null && (
-        <div className="hidden shrink-0 lg:flex">
-          <SessionsPanel
-            {...sessionsPanelBase}
-            railCollapsed={agentsRail}
-            onNewChat={() => void chat.newChat()}
-            onSelectSession={(id) => void chat.selectSession(id)}
-          />
-        </div>
-      )}
+
 
       {/* Mobile drawers — replace hidden rails under 768px */}
       {mobileDrawer && (
@@ -440,22 +421,7 @@ export default function App() {
               />
             </div>
           )}
-          {mobileDrawer === "sessions" && (
-            <div className="bg-background relative ml-auto flex h-full w-[240px] max-w-[85vw] flex-col shadow-xl">
-              <SessionsPanel
-                {...sessionsPanelBase}
-                railCollapsed={false}
-                onNewChat={() => {
-                  void chat.newChat();
-                  setMobileDrawer(null);
-                }}
-                onSelectSession={(id) => {
-                  void chat.selectSession(id);
-                  setMobileDrawer(null);
-                }}
-              />
-            </div>
-          )}
+
           {mobileDrawer === "knowledge" && contextPanel && (
             <div className="bg-background relative ml-auto flex h-full w-[360px] max-w-[90vw] flex-col shadow-xl">
               <button
@@ -472,6 +438,18 @@ export default function App() {
         </div>
       )}
 
+      <SessionHistoryDialog
+        open={sessionsOpen}
+        onOpenChange={setSessionsOpen}
+        groupedSessions={chat.groupedSessions}
+        archivedSessions={chat.archivedSessions}
+        activeSessionId={chat.sessionId}
+        busy={busy}
+        onSelectSession={(id) => void chat.selectSession(id)}
+        onDeleteSession={(id) => void chat.deleteSession(id)}
+        onRenameSession={(id, title) => void chat.renameSession(id, title)}
+        onArchiveSession={(id, archived) => chat.setSessionArchived(id, archived)}
+      />
       <PreviewDialog file={ka.previewFile} onClose={() => ka.setPreviewFile(null)} />
       <LinkDialog
         open={ka.linkPromptOpen}

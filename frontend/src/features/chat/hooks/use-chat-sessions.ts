@@ -227,12 +227,11 @@ export function useChatSessions({
     await loadMessages(sid);
   }, [streamCtrl, loadMessages, patch]);
 
-  const agentSessions = state.sessions.filter((s) => s.agentId === agentId);
-  const groupedSessions = agentSessions.length
+  const groupedSessions = state.sessions.length
     ? (["Today", "Yesterday", "Earlier"] as const)
         .map((label) => ({
           label,
-          sessions: agentSessions.filter((s) => sessionPeriod(s.createdAt) === label),
+          sessions: state.sessions.filter((s) => sessionPeriod(s.createdAt) === label),
         }))
         .filter((g) => g.sessions.length > 0)
     : [];

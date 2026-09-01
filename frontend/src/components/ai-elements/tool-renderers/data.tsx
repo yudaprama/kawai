@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { DownloadIcon } from "lucide-react";
 import { useState } from "react";
-import { type ChartSpec, detectQueryChart, rowsToCsv } from "@/lib/analytics";
+import { type ChartSpec, detectQueryChart, rowsToCsv } from "@/features/analytics/lib/analytics";
 import { triggerDownload } from "@/lib/download";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { formatBytes } from "@/lib/utils";

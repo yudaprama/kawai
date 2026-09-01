@@ -9,9 +9,7 @@ import {
   DatabaseIcon,
   HistoryIcon,
   MenuIcon,
-  PanelRightCloseIcon,
   PanelRightIcon,
-  PanelRightOpenIcon,
   UploadIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -74,14 +72,12 @@ export function ConversationPanel({
   onStopSupervisor,
   canvasOpen,
   inSession,
-  sessionsCollapsed,
+  onOpenSessions,
   onToggleCanvas,
-  onToggleSessions,
   onImageToKnowledge,
   canvas,
   onboarding,
   onOpenMobileAgents,
-  onOpenMobileSessions,
   onOpenMobileKnowledge,
   onOpenTool,
   headerExtra,
@@ -114,11 +110,10 @@ export function ConversationPanel({
   onStopSupervisor: () => void;
   canvasOpen: boolean;
   inSession: boolean;
-  sessionsCollapsed: boolean;
   /** Absent when the active agent's registry composition has no context pane —
    *  the toggle and the pane itself stay hidden. */
   onToggleCanvas?: () => void;
-  onToggleSessions: () => void;
+  onOpenSessions?: () => void;
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
   canvas?: React.ReactNode;
   /** Empty-data onboarding (registry-driven, see useContextOnboarding) —
@@ -126,7 +121,6 @@ export function ConversationPanel({
    *  prompt chips. */
   onboarding: { onImport: () => void; onConnect: () => void } | null;
   onOpenMobileAgents?: () => void;
-  onOpenMobileSessions?: () => void;
   onOpenMobileKnowledge?: () => void;
   onOpenTool?: (toolCallId: string) => void;
   onOpenCodeGraph?: (query: string, result: string) => void;
@@ -177,13 +171,12 @@ export function ConversationPanel({
         )}
         <div className="ml-auto flex items-center gap-1">
           {headerExtra}
-          {/* Mobile: agents/sessions/knowledge drawers */}
-          {onOpenMobileSessions && (
+          {onOpenSessions && (
             <Button
               aria-haspopup="dialog"
               aria-label="Open sessions"
               className="lg:hidden"
-              onClick={onOpenMobileSessions}
+              onClick={onOpenSessions}
               size="icon"
               title="Sessions"
               variant="ghost"
@@ -191,6 +184,7 @@ export function ConversationPanel({
               <HistoryIcon className="size-4" />
             </Button>
           )}
+
           {onOpenMobileKnowledge && (
             <Button
               aria-haspopup="dialog"
@@ -230,18 +224,19 @@ export function ConversationPanel({
               <span className="hidden xl:inline">Canvas</span>
             </Button>
           )}
-          <Button
-            aria-label={sessionsCollapsed ? "Show sessions" : "Hide sessions"}
-            aria-expanded={!sessionsCollapsed}
-            className="hidden lg:inline-flex"
-            onClick={onToggleSessions}
-            size="sm"
-            title={sessionsCollapsed ? "Show sessions pane (⌘3)" : "Hide sessions pane (⌘3)"}
-            variant="ghost"
-          >
-            {sessionsCollapsed ? <PanelRightOpenIcon className="size-4" /> : <PanelRightCloseIcon className="size-4" />}
-            <span className="hidden xl:inline">Sessions</span>
-          </Button>
+          {onOpenSessions && (
+            <Button
+              aria-label="Open session history"
+              className="hidden lg:inline-flex"
+              onClick={onOpenSessions}
+              size="sm"
+              title="Session history (⌘K)"
+              variant="ghost"
+            >
+              <HistoryIcon className="size-4" />
+              <span className="hidden xl:inline">Sessions</span>
+            </Button>
+          )}
         </div>
       </header>
 

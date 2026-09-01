@@ -4,13 +4,13 @@ export function useAppShortcuts({
   busy,
   onToggleAgentsRail,
   onToggleCanvas,
-  onToggleSessions,
+  onOpenSessions,
   onNewChat,
 }: {
   busy: boolean;
   onToggleAgentsRail: () => void;
   onToggleCanvas: () => void;
-  onToggleSessions: () => void;
+  onOpenSessions: () => void;
   onNewChat: () => void;
 }) {
   useEffect(() => {
@@ -22,9 +22,9 @@ export function useAppShortcuts({
       } else if (e.key === "2") {
         e.preventDefault();
         onToggleCanvas();
-      } else if (e.key === "3") {
+      } else if (e.key === "k" || e.key === "K") {
         e.preventDefault();
-        onToggleSessions();
+        onOpenSessions();
       } else if (e.key === "n" || e.key === "N") {
         e.preventDefault();
         if (!busy) void onNewChat();
@@ -32,5 +32,5 @@ export function useAppShortcuts({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onToggleAgentsRail, onToggleCanvas, onToggleSessions, onNewChat]);
+  }, [busy, onToggleAgentsRail, onToggleCanvas, onOpenSessions, onNewChat]);
 }

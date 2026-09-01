@@ -7,7 +7,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { FileIcon } from "@/components/file-icon";
+import { FileIcon } from "@/components/shared/file-icon";
 import { cn } from "@/lib/utils";
 import {
   ChevronRightIcon,

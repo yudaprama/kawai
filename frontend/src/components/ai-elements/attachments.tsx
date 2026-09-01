@@ -9,7 +9,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { FILE_ICON_CDN } from "@/components/file-icon";
+import { FILE_ICON_CDN } from "@/components/shared/file-icon";
 import { cn } from "@/lib/utils";
 import { PaperclipIcon, XIcon } from "lucide-react";
 import { createContext, useCallback, useContext, useMemo } from "react";
