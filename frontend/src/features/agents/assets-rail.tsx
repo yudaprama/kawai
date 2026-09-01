@@ -88,7 +88,7 @@ function ThemeControl({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-export function AgentsRail({
+export function AssetsRail({
   assetView,
   collapsed,
   userId,

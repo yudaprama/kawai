@@ -78,6 +78,7 @@ export function useSupervisorChat(userId?: string | null) {
     setSessionArchived,
     retryHistoryLoad,
     groupedSessions,
+    loadSessions,
   } = useChatSessions({
     patch,
     state,
@@ -113,5 +114,6 @@ export function useSupervisorChat(userId?: string | null) {
     unloadModel: unloadModelWithGuard,
     reloadModel: loadModel,
     ensureSessionId,
+    refreshSessions: loadSessions,
   };
 }

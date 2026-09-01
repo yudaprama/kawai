@@ -511,9 +511,9 @@ pub async fn memory_persona_get(session: State<'_, Session>) -> Result<Option<St
         .map_err(|e| e.to_string())
 }
 
-/// Authenticated RPC: generate a concise session title with a remote LLM
-/// (Cloudflare Workers AI). Fire-and-forget: the caller ignores the result and
-/// the offline substr fallback stays if it fails.
+/// Authenticated RPC: regenerate a session title via Cloudflare Workers AI
+/// (3-6 words from the session's goal + final output). Fire-and-forget on the
+/// client; the offline substr title stays on failure.
 #[tauri::command]
 pub async fn generate_session_title(
     session_id: i64,

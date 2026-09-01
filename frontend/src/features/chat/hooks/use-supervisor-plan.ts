@@ -75,6 +75,9 @@ interface RunPlanOptions {
 export interface SupervisorPlanCallbacks {
   onPlanCompleted?: (goal: string | null, output: string | null) => void;
   onPlanFailed?: (goal: string | null, error: string) => void;
+  /** Called after a title has been generated (fire-and-forget) so the UI can
+   *  reload the session list. */
+  onTitleGenerated?: () => void;
 }
 
 export async function createSupervisorPlan(goal: string, sessionId: number, agentId: string): Promise<unknown> {
@@ -281,6 +284,11 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 }
                 syncAssistant();
                 callbacks?.onPlanCompleted?.(goalRef.current, ev.finalOutput ?? null);
+                // Fire-and-forget: generate a concise title via Cloudflare Workers AI
+                // while the UI is already showing the completed result.
+                void call("generate_session_title", { sessionId })
+                  .catch(() => {})
+                  .finally(() => callbacks?.onTitleGenerated?.());
                 break;
               }
               case "planFailed":

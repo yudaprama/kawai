@@ -367,12 +367,6 @@ async fn skill_delete_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GenerateSessionTitleRequest {
-    session_id: i64,
-}
-
 #[derive(Serialize)]
 struct ErrorResponse {
     error: String,
@@ -448,8 +442,8 @@ fn db_status(e: &logic::DbError) -> StatusCode {
     }
 }
 
-/// Protected RPC: start a new chat session (agent-ready schema; MVP uses the
-/// implicit builtin agent when `agentId` is absent).
+/// Protected RPC: start a new chat session. Sessions are created lazily on
+/// the first message; no agent identity — supervisor runs in `auto` mode.
 async fn create_chat_session_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<CreateChatSessionRequest>,
@@ -458,6 +452,24 @@ async fn create_chat_session_handler(
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+/// Protected RPC: regenerate a session title via Cloudflare Workers AI
+/// (3-6 words from the session's goal + final output).
+async fn generate_session_title_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<GenerateSessionTitleRequest>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    logic::generate_session_title(&claims.sub, req.session_id)
+        .await
+        .map(|_| StatusCode::NO_CONTENT)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerateSessionTitleRequest {
+    session_id: i64,
 }
 
 /// Protected RPC: list the user's chat sessions, newest first. Defaults to the
@@ -523,16 +535,6 @@ async fn delete_chat_session_handler(
     Json(req): Json<DeleteChatSessionRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     logic::delete_chat_session(&claims.sub, req.session_id)
-        .await
-        .map(|_| StatusCode::NO_CONTENT)
-        .map_err(|e| (db_status(&e), e.to_string()))
-}
-
-async fn generate_session_title_handler(
-    Extension(claims): Extension<Claims>,
-    Json(req): Json<GenerateSessionTitleRequest>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    logic::generate_session_title(&claims.sub, req.session_id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -1413,11 +1415,6 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/memory_persona_get", post(memory_persona_get_handler))
         .route_layer(from_fn(auth_middleware));
 
-    let protected = protected.route(
-        "/api/generate_session_title",
-        post(generate_session_title_handler),
-    );
-
     #[cfg(feature = "litert")]
     let protected = protected
         .route("/api/local_load_model", post(local_load_model_handler))
@@ -1441,6 +1438,12 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         post(respond_supervisor_confirmation_handler),
     )
     .route("/api/plan_task", post(plan_task_handler));
+
+    // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
+    let protected = protected.route(
+        "/api/generate_session_title",
+        post(generate_session_title_handler),
+    );
 
     #[cfg(feature = "office")]
     let protected = protected

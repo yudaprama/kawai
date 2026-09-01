@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useSessionFilter } from "@/hooks/use-session-filter";
 import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
-import { agentPresentation } from "@/features/agents/agents-rail";
+import { agentPresentation } from "@/features/agents/assets-rail";
 
 interface SessionGroup {
   label: string;

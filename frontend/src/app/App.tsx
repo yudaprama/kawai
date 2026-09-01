@@ -10,7 +10,7 @@ import { useContextOnboarding } from "@/hooks/use-context-onboarding";
 import { type AgentInfo, call } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
 import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
-import { AgentsRail, agentPresentation } from "@/features/agents/agents-rail";
+import { AssetsRail, agentPresentation } from "@/features/agents/assets-rail";
 import type { AssetViewId } from "@/features/assets/components/asset-nav";
 import { CodeAssetPage } from "@/features/codegraph/components/code-page";
 import { MemoryAssetPage } from "@/features/memory/components/memory-page";
@@ -68,6 +68,7 @@ export default function App() {
         body: error.length > 160 ? `${error.slice(0, 159)}...` : error,
       });
     },
+    onTitleGenerated: () => chat.refreshSessions(),
   });
   const activeConfirmation = supervisor.pendingConfirmation
     ? {
@@ -301,7 +302,7 @@ export default function App() {
   return (
     <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">
       <div className="hidden shrink-0 lg:flex">
-        <AgentsRail
+        <AssetsRail
           assetView={assetView}
           collapsed={agentsRail}
           userId={chat.userId}
@@ -377,7 +378,7 @@ export default function App() {
           />
           {mobileDrawer === "agents" && (
             <div className="bg-background relative flex h-full w-[210px] max-w-[85vw] flex-col shadow-xl">
-              <AgentsRail
+              <AssetsRail
                 assetView={assetView}
                 collapsed={false}
                 userId={chat.userId}

@@ -19,7 +19,7 @@ Git usage from an agent is ADDITIVE ONLY: `status`, `log`, `diff`, `show`, `add`
 
 ## What this project is
 
-**Product: an AI agents app.** Users pick from a catalog of specialized agents (finance, knowledge, weather, …); each agent is an LLM persona with a curated toolset assembled from domain crates and the application registry (per-category crates of generated agent tools implementing `kawai_tools::AgentTool`). UI: three-pane layout (left sidebar = assets rail, center = chat/canvas with the live plan-progress panel, right sidebar = sessions), dark theme. There is no agent picker: every request runs in `auto` mode — the planner picks tools from the merged all-domain registry.
+**Product: a supervisor-driven AI workspace.** The user states a goal; the remote-LLM planner decomposes it into a `TaskPlan` against the merged all-domain tool registry (per-category crates of generated agent tools implementing `kawai_tools::AgentTool`) and the deterministic Rust scheduler executes it. Domain specialists (office, presentation, analytics, Binance) exist as optional catalog narrowing, not user personas. UI: three-pane layout (left sidebar = assets rail, center = chat/canvas with the live plan-progress panel, right sidebar = sessions), dark theme. There is no agent picker: every request runs in `auto` mode — the planner picks tools from the merged all-domain registry.
 
 Desktop/mobile app (Tauri), with a standalone web server binary.
 **End state: desktop + mobile + web from one core.**
@@ -185,13 +185,13 @@ with exact commands, §4 the post-fix verification block.
 
 ```
 frontend/                        # React 19 + Vite + Tailwind v4 SPA (vite root) — full file-level map lives in frontend/AGENTS.md
-src-tauri/src/logic.rs           # PURE helpers (greet/whoami/generate_activity, resolve_model_path/ensure_model auto-download, delete_chat_session → evidence_cache); re-exports db::*; generate_session_title now in kawai-db
+src-tauri/src/logic.rs           # PURE helpers (greet/whoami/generate_activity, resolve_model_path/ensure_model auto-download, delete_chat_session → evidence_cache); re-exports db::*
 src-tauri/src/logic/             # thin shims → crates/* (pub use kawai_*::*), one per domain — logic.rs stays pure, wrappers stay thin
 crates/
 ├── foundation/                     # shared infrastructure
 │   ├── agent-contract/ (kawai-agent-contract) # AgentContext/SqlProfile/ToolBuilder/AgentInfo/AgentDefinition (capabilities + capability/confirmation/summary resolvers)/AgentRegistry — no domain deps
 │   ├── auth/ (kawai-auth)         # pure auth — Verifier/Claims/Session, JWKS verify + dev bypass, dotenv loader (no tauri/axum)
-│   ├── db/ (kawai-db)             # per-user SQLite — libsql Builder::new_local, user_data_dir/DataRoot, sessions/messages/artifacts/turn_log + migrations 0001-0009 (office/analytics gated) + generate_session_title (Workers AI)
+│   ├── db/ (kawai-db)             # per-user SQLite — libsql Builder::new_local, user_data_dir/DataRoot, sessions/messages/artifacts/turn_log + migrations 0001-0014 (office/analytics gated)
 │   ├── remote-llm/ (remote-llm)   # hybrid cloud pool (zai→venice→opencode→openrouter→ollama→poolside→empero, health-aware failover, SSE)
 │   ├── skills/ (kawai-skills)     # SKILL.md CRUD (skl-* base62, unique name, version bump) + prompt_block 4k/skill, 12k total (ungated)
 │   ├── memory/ (kawai-memory)     # L1 memories CRUD (preference/rule/event/fact/goal, mem-* base62) + hybrid memory_search (vector+BM25/RRF) + memory_graph_search (entity mentions) + L2 memory_scene_* + L3 memory_persona_* + memory_extract + memory_consolidate via remote-llm + importance scoring + prompt_block 800/4k/24
@@ -257,7 +257,7 @@ app.log                          # symlink → platform log dir (macOS ~/Library
 - **Deep-link plugin**: `tauri-plugin-deep-link` registered in `lib.rs`; scheme `kawai` configured in `tauri.conf.json` → `plugins.deep-link.desktop.schemes`. Cold start handled via `getCurrent()`, warm start via `onOpenUrl()`.
 - `set_session` (`commands.rs`) verifies the token, stores it in the OS keychain (`keychain.rs`), and sets the in-memory `State<Session>`. `restore_session` loads from keychain on app launch.
 - Backend verification: `auth::Verifier` fetches Supabase Auth's **public** JWKS (cached by `kid`) and checks `iss`/`exp`. **No secret keys are needed by the backend** — asymmetric verification.
-- Identity → logic: wrappers extract `claims.sub` as `user_id` and pass it as the first arg to `logic.rs` fns. `whoami`/`create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message`/`delete_chat_session`/`skill_create`/`skill_list`/`skill_get`/`skill_update`/`skill_delete`/`memory_create`/`memory_list`/`memory_update`/`memory_delete`/`memory_extract`/`memory_search`/`memory_consolidate`/`memory_graph_search`/`memory_scene_extract`/`memory_scene_list`/`memory_persona_generate`/`memory_persona_get`/`local_load_model`/`local_chat` are auth-required (plus the supervisor ops `plan_task`/`execute_supervisor_plan`/`respond_supervisor_confirmation`) (plus the `office`-gated `office_*`/`knowledge_*` ops — incl. `knowledge_list`/`knowledge_add_to_session` — and the `analytics`-gated `sql_profile_list/save/delete/test`); `greet`/`list_agents`/`generate_activity` are public.
+- Identity → logic: wrappers extract `claims.sub` as `user_id` and pass it as the first arg to `logic.rs` fns. `whoami`/`create_chat_session`/`list_chat_sessions`/`list_chat_messages`/`append_chat_message`/`delete_chat_session`/`skill_create`/`skill_list`/`skill_get`/`skill_update`/`skill_delete`/`memory_create`/`memory_list`/`memory_update`/`memory_delete`/`memory_extract`PLACEHOLDER_X/`local_chat` are auth-required (plus the supervisor ops `plan_task`/`execute_supervisor_plan`/`respond_supervisor_confirmation`) (plus the `office`-gated `office_*`/`knowledge_*` ops — incl. `knowledge_list`/`knowledge_add_to_session` — and the `analytics`-gated `sql_profile_list/save/delete/test`); `greet`/`list_agents`/`generate_activity` are public.
 - Auth operations: `set_session`, `logout`, `whoami`, `restore_session` (one snake_case string each).
 
 ## Database (local SQLite via libsql)
