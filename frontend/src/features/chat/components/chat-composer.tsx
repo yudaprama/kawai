@@ -17,6 +17,7 @@ import type { ChatStatus } from "@/lib/ai-types";
 import { call, type KnowledgeFileInfo } from "@/lib/api";
 import { activeMentionRange } from "@/features/chat/lib/chat-helpers";
 import { logWarn } from "@/lib/logger";
+import { TemplatePicker } from "@/features/chat/components/template-picker";
 
 type ChatComposerProps = {
   agentName: string;
@@ -234,6 +235,12 @@ function ChatComposerInner({
               )}
             </PopoverContent>
           </Popover>
+          <TemplatePicker
+            onPick={(text) => {
+              const cur = controller.textInput.value;
+              controller.textInput.setInput(cur.trim() ? `${cur.trimEnd()} ${text}` : text);
+            }}
+          />
           <SpeechInput className="size-8 [&_svg]:size-4" onTranscriptionChange={handleTranscription} />
         </PromptInputTools>
         <PromptInputSubmit onStop={onStop} status={status} />

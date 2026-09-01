@@ -161,6 +161,8 @@ pub fn run() {
         #[cfg(feature = "office")]
         commands::office_list_files,
         #[cfg(feature = "office")]
+        commands::office_list_templates,
+        #[cfg(feature = "office")]
         commands::office_read_document,
         #[cfg(feature = "office")]
         commands::office_export_file,

@@ -954,6 +954,11 @@ async fn office_restore_backup_handler(
 }
 
 #[cfg(feature = "office")]
+async fn office_list_templates_handler() -> Json<Vec<logic::office::TemplateListing>> {
+    Json(logic::office::list_templates())
+}
+
+#[cfg(feature = "office")]
 async fn office_list_files_handler(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<logic::office::OfficeFile>>, (StatusCode, String)> {
@@ -1443,6 +1448,7 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
     let protected = protected
         .route("/api/office_import_file", post(office_import_file_handler))
         .route("/api/office_list_files", post(office_list_files_handler))
+        .route("/api/office_list_templates", post(office_list_templates_handler))
         .route(
             "/api/office_read_document",
             post(office_read_document_handler),

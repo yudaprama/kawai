@@ -726,6 +726,13 @@ pub fn office_list_files(
     logic::office::list_files(&user_id)
 }
 
+/// Authenticated RPC: list deck template packs (bundled + cached catalogue; no network).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub fn office_list_templates() -> Vec<logic::office::TemplateListing> {
+    logic::office::list_templates()
+}
+
 /// Authenticated RPC: read a stored document as markdown (in-process via office_oxide).
 #[cfg(feature = "office")]
 #[tauri::command]
