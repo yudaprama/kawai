@@ -604,7 +604,7 @@ async fn local_chat_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<LocalChatRequest>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
-    let s = logic::local_llm::local_chat(claims.sub, req.prompt, req.image, req.audio)
+    let s = logic::local_llm::local_chat(claims.sub, req.prompt, req.image, req.audio, true)
         .map(|event| Ok::<_, Infallible>(local_event_to_sse(event)));
     Sse::new(s).keep_alive(KeepAlive::default())
 }

@@ -321,6 +321,15 @@ jobs:
           LLVM_PROFILE_FILE: /dev/null
         run: cargo test --features litert,office --lib
 
+      # ── Unit tests (local-llm: generation gate, FIFO queue, stateless
+      #    reset, tool-call parsing, message builder) ──
+      - name: cargo test (local-llm; generation gate + queue)
+        working-directory: local-llm
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+        run: cargo test --lib
+
       # ── Smoke 1: on-device streaming (Roadmap MVP 3). Small public fixture:
       #    litert-community/LFM2.5-1.2B-Instruct · int8 · 1.25 GB. The previous
       #    fixture (gemma-3-270m-it q8) went gated=auto on HF — anonymous CI
@@ -542,6 +551,15 @@ jobs:
           LLVM_PROFILE_FILE: /dev/null
         run: cargo test --features litert,office --lib
 
+      # ── Unit tests (local-llm: generation gate, FIFO queue, stateless reset) ──
+      - name: cargo test (local-llm; generation gate + queue)
+        working-directory: local-llm
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
+        run: cargo test --lib
+
       # ── Smoke 1: on-device streaming ──
       - name: Cache smoke model fixture
         id: model
@@ -733,6 +751,13 @@ jobs:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
         run: cargo test --features litert,office --lib
+
+      - name: cargo test (local-llm; generation gate + queue)
+        working-directory: local-llm
+        shell: bash
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+        run: cargo test --lib
 
       # ── Smoke 1: on-device streaming ──
       - name: Cache smoke model fixture

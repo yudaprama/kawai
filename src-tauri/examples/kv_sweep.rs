@@ -52,6 +52,7 @@ async fn main() {
                     "Say hello in one sentence.".into(),
                     None,
                     None,
+                    true, // single-turn benchmark
                 ));
                 while let Some(ev) = stream.next().await {
                     if let local_llm::LocalChatEvent::Token { .. } = ev {

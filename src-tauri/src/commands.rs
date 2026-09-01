@@ -594,7 +594,7 @@ pub async fn local_chat(
     let token = CancellationToken::new();
     let _guard = register_stream(&registry, &stream_id, token.clone());
 
-    let mut stream = Box::pin(logic::local_llm::local_chat(user_id, prompt, image, audio));
+    let mut stream = Box::pin(logic::local_llm::local_chat(user_id, prompt, image, audio, true));
     loop {
         tokio::select! {
             _ = token.cancelled() => break,

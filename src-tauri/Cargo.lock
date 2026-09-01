@@ -4156,12 +4156,16 @@ name = "kawai-analytics"
 version = "0.1.0"
 dependencies = [
  "analytics",
+ "futures-util",
  "kawai-agent-contract",
  "kawai-db",
+ "kawai-events",
  "kawai-knowledge",
  "kawai-office",
  "kawai-tools",
  "libsql",
+ "local-llm",
+ "remote-llm",
  "serde",
  "serde_json",
  "sqlx",

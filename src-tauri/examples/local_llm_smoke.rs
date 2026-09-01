@@ -35,6 +35,7 @@ async fn main() {
         "Say hello and introduce yourself in one sentence.".into(),
         None,
         None,
+        true, // turn 1: fresh context
     ));
     while let Some(ev) = stream.next().await {
         match ev {
@@ -68,12 +69,14 @@ async fn main() {
         }
     );
 
-    // Second turn: proves the conversation history survives restoration.
+    // Second turn: proves the conversation history survives restoration and
+    // that the generation gate still serializes calls.
     let mut stream = Box::pin(local_llm::local_chat(
         "smoke".into(),
         "Repeat your name exactly.".into(),
         None,
         None,
+        false, // turn 2: prove conversation history survives
     ));
     while let Some(ev) = stream.next().await {
         if let local_llm::LocalChatEvent::Token { text } = ev {

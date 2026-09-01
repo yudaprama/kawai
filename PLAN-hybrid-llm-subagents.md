@@ -105,7 +105,8 @@ kawai-agent::agent_chat_with_registry (PURE registry-injected loop)
   │  session mgmt, SQLite persistence, tool dispatch, budgets, repair; TurnState owns loop state
   │
   ├─ every turn ──────────────► logic::local_llm::local_chat   (LOCAL, stateful)
-  │      │                        delta prompt via manifest protocol
+  │      │                        fresh=false: accumulate KV across turns
+  │      │                        fresh=true: reset + one-shot (tools opt in)
   │      │
   │      ├─ answers directly (no fence) ──► done. Free/private/offline.
   │      │
@@ -123,9 +124,10 @@ kawai-agent::agent_chat_with_registry (PURE registry-injected loop)
            → turn retried with cloud assistance (§6.3)
 ```
 
-Unchanged: `local_llm` module (stateful conversation, epochs, manifest
-tracking), SQLite schema for sessions/messages, event unions
-(`LocalChatEvent` / `AgentChatEvent` shapes), both transport wrappers,
+Unchanged: `local_llm` module (stateful conversation with FIFO generation
+queue and transparent KV-overflow reset; callers pass `fresh: bool` to opt
+into or skip a context reset), SQLite schema for sessions/messages, event
+unions (`LocalChatEvent` / `AgentChatEvent` shapes), both transport wrappers,
 frontend chat flow.
 
 Current implementation: `crates/foundation/remote-llm` (cloud client), subagent tool implementations in `kawai-agent`, a `final: true`

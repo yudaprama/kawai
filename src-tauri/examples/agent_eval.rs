@@ -560,6 +560,7 @@ async fn main() {
             prompt_for(prompt, system, tools_json),
             None,
             None,
+            false, // context already cleared by reset_conversation above
         ));
         while let Some(ev) = stream.next().await {
             match ev {

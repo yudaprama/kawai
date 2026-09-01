@@ -119,15 +119,12 @@ request and the egent rebuilds context via `buildConversationQuery`. Adopt
 the same for the three ops — they all funnel into one mechanism:
 
 - New pure op **`reset_conversation`** (`local-llm`): drops the in-memory
-  engine conversation (exists partially as `local_llm_reset` — verify whether
-  it also unloads the model; we want conversation-only reset so we don't pay
-  model reload).
-- New pure op **`local_chat` gains `history: Vec<{role, text}>`** (optional
-  param, default empty = current behavior). When non-empty: reset the
-  conversation, replay the history into the prompt as a single formatted
-  transcript (transcript formatting fn shared with `agent.rs`'s prompt
-  builder), then append the new user message. This is exactly
-  `buildConversationQuery` ported to local chat.
+  engine conversation (exists as `local_llm_reset`; conversation-only, model
+  stays loaded).
+- `local_chat` already accepts `fresh: bool` — `fresh=true` resets the KV
+  cache before generating (one-shot tool use), `fresh=false` accumulates
+  across turns. The existing `reset_conversation` op is still available for
+  explicit multi-turn boundaries (e.g. edit/regenerate from the UI).
 - New DB op **`truncate_chat_messages(session_id, from_message_id)`**
   (pure `db.rs` fn + both wrappers): `DELETE FROM messages WHERE session_id =
   ? AND id >= ?`. Index `idx_messages_session` already covers it.
@@ -157,6 +154,8 @@ For `truncate_chat_messages`: `db.rs` pure fn → `commands.rs` command →
 `lib.rs` `generate_handler!` → `call()` from the hook.
 For `local_chat` param changes: touch `commands.rs`/`web.rs` request structs,
 `agent.rs` matcher (unchanged event union), and `use-local-chat.ts`.
+Note: `local_chat` now requires a `fresh: bool` param (added 2026-08-21)
+— one-shot callers pass `true`, multi-turn continuations pass `false`.
 
 **P2.5 (optional add-on): persist image thumbnails.** If image messages
 should survive restarts, extend `append_chat_message` with an optional

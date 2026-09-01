@@ -46,6 +46,7 @@ async fn main() {
         PROMPT.into(),
         None,
         None,
+        false, // already reset explicitly above
     ));
     let mut saw_thinking = false;
     let mut saw_call = false;
