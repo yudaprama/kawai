@@ -295,7 +295,7 @@ React only displays.**
 
 ## LLM (cloud subagent via the remote-llm pool) — content author
 
-The model's entire job is *choosing* and *writing content*. It:
+The model's entire job is *writing content*. It:
 
 1. **Picks `templateId`** — required arg. Reads the bundled pack directives in
    the tool description; asks the user when the request doesn't clearly match
@@ -312,7 +312,7 @@ The model's entire job is *choosing* and *writing content*. It:
    pack's style directive + reference fixture; the model re-invokes with the
    same args, now applying the style.
 
-The model does **not**: render, scale, paginate, persist, validate, export,
+The model does **not**: choose templates (that's user + Rust via `office_bind_template`), render, scale, paginate, persist, validate, export,
 resolve file ids to data URLs, pick fonts, or touch the network. Every
 infrastructure concern is deliberately outside its reach — the historical
 failure mode (models re-implementing slide scaffolding per turn) is
@@ -324,7 +324,7 @@ Rust owns the entire pipeline around the content:
 
 | Stage | Rust component | Role |
 |---|---|---|
-| Template resolution | `templates.rs` | bundled packs (in-binary) → cached registry → one network fetch (`registry.json`, sha-of-schema check, atomic `.part`→rename cache in `kawai_paths::template_packs_dir()`); id unknown → error enumerating all valid ids |
+| Template resolution | `templates.rs` | bundled packs (in-binary) → cached registry → one network fetch (`registry.json`, sha-of-schema check, atomic `.part`→rename cache in `kawai_paths::template_packs_dir()`); id unknown → error enumerating all valid ids. **User picks are structured**: `office_bind_template` stores the choice; `office_create_deck` consumes it and overrides the model's arg — user intent is deterministic, not LLM-mediated |
 | Themes | `deck.rs::DECK_THEMES` + `theme_css()` | vendored open-design token blocks (MIT); design systems supply raw `themeCss` tokens that bypass the id table entirely |
 | Fonts | `deck.rs::font_face_css()` | OFL latin subsets (Inter 400/700, Playfair 700, JetBrains Mono 400) embedded as data:-URL `@font-face` — decks are offline-complete |
 | Rendering | `render_deck_with_theme_tokens()` | fixed reveal.js skeleton + vendored runtime (REVEAL_JS/REVEAL_CSS), theme `:root` tokens, `.deck-scope` layout CSS; the model's HTML is inserted into slide sections verbatim (post-sanitize) |
