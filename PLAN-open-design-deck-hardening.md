@@ -1,6 +1,6 @@
 # PLAN — Deck hardening: lessons ported from open-design
 
-**Status:** proposed
+**Status:** implemented (Phases 1–3 + 6 complete; Phase 4 superseded by mandatory templates; Phase 5 deferred)
 **Origin:** open-design (`ai-orchestration/open-design`) is in production and
 validated by real usage. This plan ports the *architectural* lessons that fit
 kawai's pure-Rust, no-browser architecture. **Nothing Chromium-based is ported**
@@ -283,6 +283,79 @@ Mirror the PaddleOCR/model auto-download machinery:
   next attempt, no partial pack ever served.
 - Every served pack exposes its license; index containing a non-permissive
   entry is rejected at fetch time.
+
+
+---
+
+# Division of labor — LLM vs Rust vs React
+
+Who does what in the deck pipeline, precisely. The invariant underneath:
+**everything deterministic lives in Rust; the LLM only authors content;
+React only displays.**
+
+## LLM (cloud subagent via the remote-llm pool) — content author
+
+The model's entire job is *choosing* and *writing content*. It:
+
+1. **Picks `templateId`** — required arg. Reads the bundled pack directives in
+   the tool description; asks the user when the request doesn't clearly match
+   a pack. It never invents ids.
+2. **Writes slide content** as `slides: [{title, bodyHtml}]`:
+   - semantic HTML (h3/p/ul/table/blockquote),
+   - the class vocabulary (`.card`, `.grid g2`, `.kicker`, `.big-number`, …),
+   - free CSS in `<style>` blocks or `style=` attributes — colors, gradients,
+     layout experiments — within the sanitized subset (no remote `url()`/`@import`),
+   - `<img data-file="<fileId>">` to embed stored charts/images.
+3. **Self-corrects** when the probe or the resolver rejects: error strings are
+   written to be actionable and are returned verbatim.
+4. **Honors the retry handshake** for catalogue packs: first call returns the
+   pack's style directive + reference fixture; the model re-invokes with the
+   same args, now applying the style.
+
+The model does **not**: render, scale, paginate, persist, validate, export,
+resolve file ids to data URLs, pick fonts, or touch the network. Every
+infrastructure concern is deliberately outside its reach — the historical
+failure mode (models re-implementing slide scaffolding per turn) is
+structurally impossible.
+
+## Rust (`crates/engines/office`) — everything deterministic
+
+Rust owns the entire pipeline around the content:
+
+| Stage | Rust component | Role |
+|---|---|---|
+| Template resolution | `templates.rs` | bundled packs (in-binary) → cached registry → one network fetch (`registry.json`, sha-of-schema check, atomic `.part`→rename cache in `kawai_paths::template_packs_dir()`); id unknown → error enumerating all valid ids |
+| Themes | `deck.rs::DECK_THEMES` + `theme_css()` | vendored open-design token blocks (MIT); design systems supply raw `themeCss` tokens that bypass the id table entirely |
+| Fonts | `deck.rs::font_face_css()` | OFL latin subsets (Inter 400/700, Playfair 700, JetBrains Mono 400) embedded as data:-URL `@font-face` — decks are offline-complete |
+| Rendering | `render_deck_with_theme_tokens()` | fixed reveal.js skeleton + vendored runtime (REVEAL_JS/REVEAL_CSS), theme `:root` tokens, `.deck-scope` layout CSS; the model's HTML is inserted into slide sections verbatim (post-sanitize) |
+| Sanitization | `sanitize_html_fragment()` + `sanitize_css()` | drops scripts/handlers/unsafe URLs; CSS-neutralizes `@import` and remote `url()`; keeps class/style/data-file |
+| Validation | `probe_deck()` | rejects unreadable structure, smuggled scripts, unresolved `data-file` refs — before the store accepts anything |
+| Persistence | `store.rs` | opaque file ids, required `ArtifactManifest` (kind/status/source_tool/template) in `<id>.meta.json`; pre-manifest files fail with a typed error |
+| Export | `parse_deck()` → `deck_to_markdown()` / `export_pptx()` | deterministic parse → PptxWriter (no LLM, no browser); markdown readback feeds `office_read_document` + RAG |
+| Registry tooling | `tools/gen-template-registry.py`, `gen-design-systems.py` | idempotent generators; manual packs always win (`ALIASES`), catalogue served from the repo root via raw URL |
+
+## React (frontend) — display only
+
+The frontend holds **zero deck logic**:
+
+- surfaces office-store files (list, open) and renders the deck HTML
+  (self-contained reveal.js document — the webview/iframe is the whole story),
+- shows the tool result / probe error text that the supervisor stream delivers
+  (the model's self-correction loop is driven entirely by those strings),
+- template selection currently happens in chat (model offers cached packs);
+  the template **picker UI** and the Phase-5 slide bridge + thumbnail rail are
+  the only planned frontend additions — both cosmetic layers over a pipeline
+  that works without them.
+
+## The contract in one sentence
+
+The LLM writes **what** each slide says (in a sanitized, class-vocabularied
+HTML dialect); Rust owns **how it looks, whether it's valid, where it lives,
+and how it exports**; React owns **showing it** — and no layer can reach into
+another's responsibilities.
+
+
+---
 
 ## Out of scope (rejected from open-design, on purpose)
 
