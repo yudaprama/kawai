@@ -35,7 +35,7 @@ const PLAN_TASKS: [(&str, &str); 3] = [
 #[tokio::main]
 async fn main() {
     let user = "smoke-planner";
-    let session = kawai_lib::logic::db::create_chat_session(user, Some(BINANCE_AGENT_ID))
+    let session = kawai_lib::logic::db::create_chat_session(user)
         .await
         .expect("create smoke session");
 
@@ -47,7 +47,6 @@ async fn main() {
             user,
             session.id,
             agent_id,
-            true,
         )
         .await
         {

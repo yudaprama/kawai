@@ -7375,6 +7375,8 @@ dependencies = [
  "futures-core",
  "futures-util",
  "kawai-constants 0.1.0",
+ "kawai-events",
+ "local-llm",
  "rand 0.9.5",
  "reqwest 0.13.4",
  "serde",

@@ -56,7 +56,7 @@ export function useSupervisorChat(userId?: string | null) {
     setState((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  const { userId: authUserId, authError } = useAuth();
+  const { userId: authUserId, authError, logout } = useAuth();
   const effectiveUserId = userId ?? authUserId;
   useEffect(() => {
     if (effectiveUserId) patch({ userId: effectiveUserId });
@@ -115,5 +115,6 @@ export function useSupervisorChat(userId?: string | null) {
     reloadModel: loadModel,
     ensureSessionId,
     refreshSessions: loadSessions,
+    logout,
   };
 }

@@ -29,7 +29,7 @@ Desktop/mobile app (Tauri), with a standalone web server binary.
 - **Backend**: Rust. Single core logic, two thin transport wrappers.
 - **Transport**: Tauri `Channel`+`invoke` (desktop/mobile); HTTP `fetch`+SSE (web — backend only, no web frontend).
 - **LLM (on-device)**: LiteRT-LM via `cognee-litert-lm` (path dep, vendored at `cognee-litert-lm/vendor/LiteRT-LM` = upstream `google-ai-edge` main). Behind the `litert` cargo feature. Gemma 4 / Qwen `.litertlm` verified streaming on macOS arm64 CPU. **Auto-download**: if the model is not found locally, `logic::ensure_model()` downloads `gemma-4-E4B-it.litertlm` (3.7 GB) from the public `litert-community/gemma-4-E4B-it-litert-lm` HuggingFace repo (Apache-2.0, no token required) into `~/.kawai/models/` with resume support and progress logging to stderr.
-- **LLM (remote)**: hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (reqwest POST `/chat/completions`, stream parser). A remote provider pool with health-aware failover serves the planner and the cloud-subagent tools (details: Configuration below + Roadmap Shipped).
+- **LLM (remote)**: hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (reqwest POST `/chat/completions`, stream parser). A remote provider pool with health-aware failover serves the planner and the cloud-subagent tools; with the `litert` feature the on-device engine joins as the pool's last candidate, and tool-internal one-shot calls go through `remote_llm::reason` (details: Configuration below + Roadmap Shipped).
 - **DB**: local SQLite via `libsql` crate (single-device, local file). Future: sqld for multi-device sync.
 
 ## Architecture (current state)
@@ -192,7 +192,7 @@ crates/
 │   ├── agent-contract/ (kawai-agent-contract) # AgentContext/SqlProfile/ToolBuilder/AgentInfo/AgentDefinition (capabilities + capability/confirmation/summary resolvers)/AgentRegistry — no domain deps
 │   ├── auth/ (kawai-auth)         # pure auth — Verifier/Claims/Session, JWKS verify + dev bypass, dotenv loader (no tauri/axum)
 │   ├── db/ (kawai-db)             # per-user SQLite — libsql Builder::new_local, user_data_dir/DataRoot, sessions/messages/artifacts/turn_log + migrations 0001-0014 (office/analytics gated)
-│   ├── remote-llm/ (remote-llm)   # hybrid cloud pool (zai→venice→opencode→openrouter→ollama→poolside→empero, health-aware failover, SSE)
+│   ├── remote-llm/ (remote-llm)   # hybrid cloud pool (zai→venice→opencode→openrouter→ollama→poolside→empero, health-aware failover, SSE; litert feature: on-device engine as last candidate) + reason()/extract_json one-shot helpers
 │   ├── skills/ (kawai-skills)     # SKILL.md CRUD (skl-* base62, unique name, version bump) + prompt_block 4k/skill, 12k total (ungated)
 │   ├── memory/ (kawai-memory)     # L1 memories CRUD (preference/rule/event/fact/goal, mem-* base62) + hybrid memory_search (vector+BM25/RRF) + memory_graph_search (entity mentions) + L2 memory_scene_* + L3 memory_persona_* + memory_extract + memory_consolidate via remote-llm + importance scoring + prompt_block 800/4k/24
 │   └── vision/ (kawai-vision)     # image describer chain: PaddleOCR on-device → JigsawStack VOCR → Gemma multimodal; production tier via KAWAI_OCR_MODEL_TIER
@@ -294,10 +294,15 @@ KAWAI_OCR_MODEL_TIER=small       # model tier override: tiny (~3MB, English+Chin
 # ── Hybrid LLM tier — cloud subagents (crates/foundation/remote-llm, PLAN-hybrid-llm-subagents.md) ──
 # Provider pool with health-aware failover: every provider with a vault key
 # joins the pool in fixed priority (zai → venice → opencode → openrouter →
-# ollama → poolside); empero (free, always on) joins after poolside. A retryable failure (429/5xx/401/404/transport)
+# ollama → poolside); empero (free, always on) joins after poolside. With the
+# `litert` feature the on-device engine joins as the LAST candidate (stateless
+# one-shot, fresh KV cache, materials capped at 12k chars) — it only serves
+# when every cloud candidate failed. A retryable failure (429/5xx/401/404/transport)
 # moves that provider to cooldown and the next candidate serves the call.
 # No vault keys ⇒ pool empty ⇒ agents behave pure-local. No kill-switch env —
-# an empty vault is the off state.
+# an empty vault is the off state. Tool-internal one-shot LLM calls go through
+# `remote_llm::reason` (pool → local engine when no keys) and share
+# `remote_llm::reason::extract_json` for fenced/prose-wrapped JSON.
 KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS=8192  # per-subagent-call output cap
 KAWAI_REMOTE_LLM_MATERIALS_CHARS=        # optional absolute ceiling on every provider's materials budget (fuse; can only lower)
 # ── Binance agent tools (crates/toolsets/binance) ──

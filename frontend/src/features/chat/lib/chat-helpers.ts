@@ -42,8 +42,7 @@ function parsePersistedPlan(content: string): PersistedPlanRecord | null {
 /** Render a persisted plan record as readable history text. */
 function planToText(plan: PersistedPlanRecord): string {
   const lines = plan.steps.map((s) => {
-    const mark =
-      s.state === "completed" ? "✓" : s.state === "failed" ? "✗" : s.state === "skipped" ? "→" : "·";
+    const mark = s.state === "completed" ? "✓" : s.state === "failed" ? "✗" : s.state === "skipped" ? "→" : "·";
     return `${mark} ${s.id} [${s.tool}] — ${s.state}`;
   });
   const goal = plan.goal ? `Goal: ${plan.goal}\n` : "";

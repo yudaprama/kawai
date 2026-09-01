@@ -84,7 +84,7 @@ export default function App() {
   const respondConfirmation = useCallback(
     (approved: boolean) =>
       supervisor.pendingConfirmation ? (approved ? supervisor.approve() : supervisor.reject()) : Promise.resolve(),
-    [chat, supervisor],
+    [supervisor],
   );
   const planActive = supervisor.status === "running" || supervisor.status === "awaitingConfirmation";
   const { status } = chat;
@@ -105,8 +105,6 @@ export default function App() {
   );
 
   const ka = useKnowledgeActions(chat);
-
-
 
   // Per-agent right-pane composition + empty-data onboarding policy — both
   // registry-driven; App only wires shell capabilities (canvas/drawer) in.
@@ -262,10 +260,7 @@ export default function App() {
       onRetry={ka.retryIndex}
     />
   ) : assetView === "memory" ? (
-    <MemoryAssetPage
-      sessions={[...chat.sessions, ...chat.archivedSessions]}
-      onBack={() => setAssetView(null)}
-    />
+    <MemoryAssetPage sessions={[...chat.sessions, ...chat.archivedSessions]} onBack={() => setAssetView(null)} />
   ) : assetView === "skills" ? (
     <SkillsAssetPage onBack={() => setAssetView(null)} />
   ) : assetView === "code" ? (
@@ -311,6 +306,7 @@ export default function App() {
             setAssetView(id);
           }}
           onToggle={() => setAgentsRail((v) => !v)}
+          onLogout={() => void chat.logout()}
         />
       </div>
 
@@ -347,7 +343,6 @@ export default function App() {
           onImageToKnowledge={ka.imageToKnowledge}
           onboarding={onboarding}
           onOpenMobileAgents={() => setMobileDrawer("agents")}
-
           onOpenMobileKnowledge={hasContextPane ? () => setMobileDrawer("knowledge") : undefined}
           onOpenTool={(id) => {
             setToolWorkbenchId(id);
@@ -364,8 +359,6 @@ export default function App() {
           canvas={canvasOpen ? contextPanel : null}
         />
       )}
-
-
 
       {/* Mobile drawers — replace hidden rails under 768px */}
       {mobileDrawer && (
@@ -388,6 +381,7 @@ export default function App() {
                   setMobileDrawer(null);
                 }}
                 onToggle={() => setMobileDrawer(null)}
+                onLogout={() => void chat.logout()}
               />
             </div>
           )}

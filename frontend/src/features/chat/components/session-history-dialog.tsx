@@ -2,13 +2,7 @@ import { useEffect, useState } from "react";
 import { SearchIcon, XIcon } from "lucide-react";
 import { SessionRow } from "@/features/chat/components/session-row";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useSessionFilter } from "@/hooks/use-session-filter";
 import type { ChatSessionInfo } from "@/lib/api";
 
@@ -88,9 +82,7 @@ export function SessionHistoryDialog({
       <DialogContent className="gap-0 p-0 sm:max-w-lg">
         <DialogHeader className="border-b px-4 py-3">
           <DialogTitle>Sessions</DialogTitle>
-          <DialogDescription className="sr-only">
-            Browse and manage your chat sessions
-          </DialogDescription>
+          <DialogDescription className="sr-only">Browse and manage your chat sessions</DialogDescription>
         </DialogHeader>
 
         {/* Search */}

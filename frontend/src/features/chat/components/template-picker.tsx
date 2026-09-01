@@ -1,11 +1,7 @@
 import { LayoutTemplateIcon, SearchIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { call } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
 
@@ -23,11 +19,7 @@ export interface TemplateInfo {
  * learns which `templateId` to use (templateId is a required argument on
  * office_create_deck).
  */
-export function TemplatePicker({
-  onPick,
-}: {
-  onPick: (text: string) => void;
-}) {
+export function TemplatePicker({ onPick }: { onPick: (text: string) => void }) {
   const [open, setOpen] = useState(false);
   const [templates, setTemplates] = useState<TemplateInfo[] | null>(null);
   const [query, setQuery] = useState("");
@@ -47,9 +39,7 @@ export function TemplatePicker({
     const list = q
       ? templates.filter(
           (t) =>
-            t.id.toLowerCase().includes(q) ||
-            t.name.toLowerCase().includes(q) ||
-            t.summary.toLowerCase().includes(q),
+            t.id.toLowerCase().includes(q) || t.name.toLowerCase().includes(q) || t.summary.toLowerCase().includes(q),
         )
       : templates;
     // Bundled starters first (offline-guaranteed), then catalogue packs.
@@ -59,9 +49,7 @@ export function TemplatePicker({
   const pick = (t: TemplateInfo) => {
     // Structured binding: Rust overrides the model's templateId on the next
     // office_create_deck — the text insertion is for transparency only.
-    call<boolean>("office_bind_template", { templateId: t.id }).catch((err) =>
-      logWarn("office_bind_template", err),
-    );
+    call<boolean>("office_bind_template", { templateId: t.id }).catch((err) => logWarn("office_bind_template", err));
     onPick(`Use the "${t.id}" template (${t.name}) for the deck.`);
     setOpen(false);
     setQuery("");
@@ -110,14 +98,10 @@ export function TemplatePicker({
                 <span className="flex w-full items-center gap-2">
                   <span className="truncate text-xs font-medium">{t.name}</span>
                   {t.bundled ? (
-                    <span className="text-muted-foreground ml-auto shrink-0 text-[10px] uppercase">
-                      built-in
-                    </span>
+                    <span className="text-muted-foreground ml-auto shrink-0 text-[10px] uppercase">built-in</span>
                   ) : null}
                 </span>
-                <span className="text-muted-foreground line-clamp-2 text-[11px]">
-                  {t.summary}
-                </span>
+                <span className="text-muted-foreground line-clamp-2 text-[11px]">{t.summary}</span>
                 <span className="text-muted-foreground/70 truncate text-[10px]">{t.id}</span>
               </button>
             ))}

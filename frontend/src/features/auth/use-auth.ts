@@ -131,5 +131,9 @@ export function useAuth() {
     };
   }, [syncSession]);
 
-  return { userId, authError, refresh: syncSession };
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
+  }, []);
+
+  return { userId, authError, refresh: syncSession, logout };
 }

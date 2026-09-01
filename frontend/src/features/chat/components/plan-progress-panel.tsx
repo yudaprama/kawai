@@ -1,4 +1,12 @@
-import { CheckCircle2Icon, ChevronDownIcon, CircleIcon, CircleXIcon, FileTextIcon, LoaderCircleIcon, SkipForwardIcon } from "lucide-react";
+import {
+  CheckCircle2Icon,
+  ChevronDownIcon,
+  CircleIcon,
+  CircleXIcon,
+  FileTextIcon,
+  LoaderCircleIcon,
+  SkipForwardIcon,
+} from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -30,11 +38,7 @@ function ArtifactRow({ artifact }: { artifact: SupervisorArtifact }) {
     return <StructuredArtifact />;
   }
   if (artifact.kind === "handle") {
-    return (
-      <span className="text-muted-foreground font-mono text-[11px]">
-        handle: {artifact.handle ?? "?"}
-      </span>
-    );
+    return <span className="text-muted-foreground font-mono text-[11px]">handle: {artifact.handle ?? "?"}</span>;
   }
   return null;
 }
@@ -74,7 +78,9 @@ export function PlanProgressPanel({ status, goal, steps, error, finalOutput, onS
       <div className="flex items-center gap-2">
         <span className="font-medium">Plan</span>
         <span className="text-muted-foreground text-xs">
-          {status === "running" && runningCount > 1 ? `running · ${runningCount} parallel · ${completed}/${steps.length}` : `${status} · ${completed}/${steps.length}`}
+          {status === "running" && runningCount > 1
+            ? `running · ${runningCount} parallel · ${completed}/${steps.length}`
+            : `${status} · ${completed}/${steps.length}`}
         </span>
         {(status === "running" || status === "awaitingConfirmation") && (
           <Button className="ml-auto" onClick={onStop} size="sm" variant="outline">
@@ -94,9 +100,7 @@ export function PlanProgressPanel({ status, goal, steps, error, finalOutput, onS
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="font-medium">{step.stepId}</span>
-                  {step.tool && (
-                    <span className="bg-muted rounded px-1 py-px font-mono text-[10px]">{step.tool}</span>
-                  )}
+                  {step.tool && <span className="bg-muted rounded px-1 py-px font-mono text-[10px]">{step.tool}</span>}
                   {step.dependsOn.length > 0 && (
                     <span className="text-muted-foreground text-[10px]">after {step.dependsOn.join(", ")}</span>
                   )}
@@ -110,8 +114,8 @@ export function PlanProgressPanel({ status, goal, steps, error, finalOutput, onS
                 {step.error && <p className="text-destructive mt-0.5 text-[11px]">{step.error}</p>}
                 {step.artifacts.length > 0 && (
                   <div className="mt-1 flex flex-wrap items-center gap-2">
-                    {step.artifacts.map((a, i) => (
-                      <ArtifactRow artifact={a} key={`${step.stepId}-artifact-${i}`} />
+                    {step.artifacts.map((a) => (
+                      <ArtifactRow artifact={a} key={`${step.stepId}-${a.handle ?? a.kind}`} />
                     ))}
                   </div>
                 )}
@@ -132,9 +136,7 @@ export function PlanProgressPanel({ status, goal, steps, error, finalOutput, onS
             <ChevronDownIcon className={`size-3 transition-transform ${showOutput ? "rotate-180" : ""}`} />
             Final output
           </button>
-          {showOutput && (
-            <div className="bg-muted mt-1 rounded p-2 text-xs whitespace-pre-wrap">{finalOutput}</div>
-          )}
+          {showOutput && <div className="bg-muted mt-1 rounded p-2 text-xs whitespace-pre-wrap">{finalOutput}</div>}
         </div>
       )}
     </div>

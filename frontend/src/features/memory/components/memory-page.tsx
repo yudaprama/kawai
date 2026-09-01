@@ -55,13 +55,7 @@ const MemoryGraph = lazy(() =>
  * cloud extraction + manual CRUD) are real; L2/L3 (scenes, persona) have no
  * pipeline tier yet and say so.
  */
-export function MemoryAssetPage({
-  sessions,
-  onBack,
-}: {
-  sessions: ChatSessionInfo[];
-  onBack: () => void;
-}) {
+export function MemoryAssetPage({ sessions, onBack }: { sessions: ChatSessionInfo[]; onBack: () => void }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessageInfo[] | null>(null);
@@ -153,9 +147,7 @@ export function MemoryAssetPage({
                 <AssetItemHeader>
                   <AssetItemName title={s.title ?? undefined}>{s.title ?? "Untitled"}</AssetItemName>
                 </AssetItemHeader>
-                <AssetItemBadges>
-                  {s.archived && <AssetBadge>archived</AssetBadge>}
-                </AssetItemBadges>
+                <AssetItemBadges>{s.archived && <AssetBadge>archived</AssetBadge>}</AssetItemBadges>
                 <AssetItemMeta>
                   <span>{s.createdAt != null ? new Date(s.createdAt * 1000).toLocaleDateString() : ""}</span>
                   <AssetItemTime>{s.createdAt != null ? formatTime(s.createdAt) : ""}</AssetItemTime>
@@ -283,9 +275,7 @@ function GraphPane() {
           {loading ? <Spinner className="size-3" /> : <SearchIcon className="size-3" />}
           Refresh
         </Button>
-        <span className="text-muted-foreground ml-auto text-xs">
-          memories (newest 200) + the entities they mention
-        </span>
+        <span className="text-muted-foreground ml-auto text-xs">memories (newest 200) + the entities they mention</span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <Suspense
@@ -293,7 +283,8 @@ function GraphPane() {
             <div className="text-muted-foreground flex h-[640px] items-center justify-center text-sm">
               <Spinner className="mr-2 size-4" /> Loading graph…
             </div>
-          }>
+          }
+        >
           <MemoryGraph
             edges={data?.edges ?? []}
             emptyHint="No memories to graph yet — add or extract memories first."

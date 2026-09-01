@@ -3,6 +3,7 @@ import {
   BotIcon,
   BriefcaseIcon,
   CheckIcon,
+  LogOutIcon,
   MonitorIcon,
   MoonIcon,
   PanelLeftCloseIcon,
@@ -94,6 +95,7 @@ export function AssetsRail({
   userId,
   onSelectAsset,
   onToggle,
+  onLogout,
 }: {
   /** Open asset workspace (center pane replaces chat); null = chat view. */
   assetView: AssetViewId | null;
@@ -101,6 +103,7 @@ export function AssetsRail({
   userId: string | null;
   onSelectAsset: (id: AssetViewId) => void;
   onToggle: () => void;
+  onLogout: () => void;
 }) {
   return (
     <aside
@@ -171,11 +174,21 @@ export function AssetsRail({
           {(userId ?? "d").charAt(0).toUpperCase()}
         </span>
         {collapsed ? (
-          <ThemeControl collapsed />
+          <>
+            <ThemeControl collapsed />
+            <Button aria-label="Sign out" onClick={onLogout} size="icon" title="Sign out" variant="ghost">
+              <LogOutIcon className="size-4" />
+            </Button>
+          </>
         ) : (
           <div className="flex w-full items-center justify-between gap-2">
             <span className="truncate font-mono text-xs text-muted-foreground">{userId ?? "demo"}</span>
-            <ThemeControl collapsed={false} />
+            <div className="flex items-center gap-1">
+              <ThemeControl collapsed={false} />
+              <Button aria-label="Sign out" onClick={onLogout} size="icon" title="Sign out" variant="ghost">
+                <LogOutIcon className="size-4" />
+              </Button>
+            </div>
           </div>
         )}
       </div>

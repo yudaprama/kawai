@@ -157,7 +157,7 @@ web = ["dep:axum", "dep:tower-http"]
 # CodeGraph — sidecar only (AgentTool + LRU cache, zero cost off)
 codegraph = ["dep:codegraph"]
 router = ["dep:kawai-router"]
-litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "dep:kawai-agent", "kawai-agent/litert", "dep:kawai-vision", "kawai-vision/litert", "kawai-knowledge/litert", "router"]
+litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "dep:kawai-agent", "kawai-agent/litert", "dep:kawai-vision", "kawai-vision/litert", "kawai-knowledge/litert", "remote-llm/litert", "kawai-analytics?/litert", "router"]
 # GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
 # Include with --features graph, exclude by omitting it (zero cost when off).
 # Standalone — includes the pure `graph` crate + its DB deps.
