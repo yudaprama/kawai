@@ -120,11 +120,16 @@ pub enum SupervisorEvent {
 
 // ── Registry builder ────────────────────────────────────────────────────────
 
-/// Build the most complete toolset available for the supervisor.
+/// Universal execution mode: the plan is built and dispatched against the
+/// merged catalog of every available domain toolset. Explicit agent ids
+/// remain as an optional narrowing hint.
+pub const AUTO_AGENT_ID: &str = "auto";
+
+/// Build the supervisor toolset for a request.
 ///
-/// Uses the office agent's tools as the base (largest set), which already
-/// includes knowledge_search, graph tools, and cloud subagent tool stubs.
-/// Other agents' domain tools can be added here as the supervisor matures.
+/// `auto` merges every available domain toolset into one registry so the
+/// planner can pick tools across domains (cross-domain plans). An explicit
+/// agent id narrows the catalog to that domain's toolset.
 async fn build_supervisor_toolset(
     user_id: &str,
     session_id: i64,
@@ -144,33 +149,64 @@ async fn build_supervisor_toolset(
         },
     };
 
-    // Select the same domain toolset as the active agent. Do not expose the
-    // office superset to analytics/binance plans.
+    // Domain builders. Do not expose the office superset to analytics/binance
+    // plans when a specialist is chosen explicitly.
+    let office = || -> Option<kawai_tools::ToolSet> {
+        #[cfg(feature = "office")]
+        { agent_registry::office_tools(&context, remote_configured) }
+        #[cfg(not(feature = "office"))]
+        {
+            let _ = (&context, remote_configured);
+            None
+        }
+    };
+    let presentation = || -> Option<kawai_tools::ToolSet> {
+        #[cfg(feature = "office")]
+        { agent_registry::presentation_tools_for_supervisor(&context, remote_configured) }
+        #[cfg(not(feature = "office"))]
+        {
+            let _ = (&context, remote_configured);
+            None
+        }
+    };
+    let binance = || -> Option<kawai_tools::ToolSet> {
+        #[cfg(feature = "litert")]
+        { agent_registry::binance_tools_for_supervisor(&context, remote_configured) }
+        #[cfg(not(feature = "litert"))]
+        {
+            let _ = (&context, remote_configured);
+            None
+        }
+    };
+    let analytics = || -> Option<kawai_tools::ToolSet> {
+        #[cfg(feature = "litert")]
+        { agent_registry::analytics_tools_for_supervisor(&context, remote_configured) }
+        #[cfg(not(feature = "litert"))]
+        {
+            let _ = (&context, remote_configured);
+            None
+        }
+    };
+
+    if agent_id == AUTO_AGENT_ID {
+        // Merged catalog: first-wins per tool name. Office first — its
+        // knowledge/memory/subagent tools are the broadest base — then the
+        // specialists fill in their exclusive domain tools.
+        let mut merged: Option<kawai_tools::ToolSet> = None;
+        for set in [office(), presentation(), binance(), analytics()].into_iter().flatten() {
+            match &mut merged {
+                Some(base) => base.merge(&mut { set }),
+                None => merged = Some(set),
+            }
+        }
+        return merged;
+    }
+
     match agent_id {
-        agent_registry::OFFICE_AGENT_ID => {
-            #[cfg(feature = "office")]
-            { agent_registry::office_tools(&context, remote_configured) }
-            #[cfg(not(feature = "office"))]
-            { None }
-        }
-        agent_registry::PRESENTATION_AGENT_ID => {
-            #[cfg(feature = "office")]
-            { agent_registry::presentation_tools_for_supervisor(&context, remote_configured) }
-            #[cfg(not(feature = "office"))]
-            { None }
-        }
-        agent_registry::BINANCE_AGENT_ID => {
-            #[cfg(feature = "litert")]
-            { agent_registry::binance_tools_for_supervisor(&context, remote_configured) }
-            #[cfg(not(feature = "litert"))]
-            { None }
-        }
-        agent_registry::ANALYTICS_AGENT_ID => {
-            #[cfg(feature = "litert")]
-            { agent_registry::analytics_tools_for_supervisor(&context, remote_configured) }
-            #[cfg(not(feature = "litert"))]
-            { None }
-        }
+        agent_registry::OFFICE_AGENT_ID => office(),
+        agent_registry::PRESENTATION_AGENT_ID => presentation(),
+        agent_registry::BINANCE_AGENT_ID => binance(),
+        agent_registry::ANALYTICS_AGENT_ID => analytics(),
         _ => None,
     }
 }

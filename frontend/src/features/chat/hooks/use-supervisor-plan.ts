@@ -90,17 +90,26 @@ async function persist(sessionId: number, role: "user" | "assistant", content: s
   }
 }
 
-/** Compact plan outline persisted alongside the final output so a reopened
- *  session can show what the plan did, not just its final answer. */
-function planSummary(state: SupervisorPlanState): string | null {
-  if (state.steps.length === 0) return null;
-  const lines = state.steps.map((s) => {
-    const mark =
-      s.state === "completed" ? "✓" : s.state === "failed" ? "✗" : s.state === "skipped" ? "→" : "·";
-    const deps = s.dependsOn.length > 0 ? ` (after ${s.dependsOn.join(", ")})` : "";
-    return `${mark} ${s.stepId} [${s.tool}]${deps} — ${s.state}`;
-  });
-  return `[plan]\n${lines.join("\n")}`;
+/** Structured plan record persisted as the assistant message content so a
+ *  reopened session replays the plan, not just prose. Parsed by
+ *  `historyToMessages` (chat-helpers). */
+export interface PersistedPlan {
+  type: "supervisor-plan";
+  v: 1;
+  goal: string | null;
+  steps: { id: string; tool: string; state: SupervisorStep["state"]; output?: string }[];
+  output: string | null;
+}
+
+/** Structured plan record persisted as the assistant message content so a
+ *  reopened session replays the plan, not just prose. Parsed by
+ *  `historyToMessages` (chat-helpers). */
+export interface PersistedPlan {
+  type: "supervisor-plan";
+  v: 1;
+  goal: string | null;
+  steps: { id: string; tool: string; state: SupervisorStep["state"]; output?: string }[];
+  output: string | null;
 }
 
 export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
@@ -165,9 +174,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       });
       stepsRef.current = [];
 
-      // The plan state above is the source of truth; the conversation view is
-      // a projection — one growing assistant message carrying the goal and
-      // final output, plus one tool part per step for the message renderer.
+      // The plan state above is the source of truth and renders through
+      // PlanProgressPanel; the conversation carries only the goal and the
+      // final output — steps are NOT projected into chat tool parts.
       const assistantId = nanoid();
       let parts: UIMessagePart[] = [];
       const syncAssistant = () => {
@@ -181,8 +190,6 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           return exists ? prev.map((m) => (m.id === assistantId ? message : m)) : [...prev, message];
         });
       };
-      const stepToolId = (stepId: string) => `step-${stepId}`;
-
       streamCtrl.current = streamOperation<SupervisorEvent>(
         "execute_supervisor_plan",
         {
@@ -213,16 +220,6 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 break;
               case "stepStarted":
                 upsertStep(ev.stepId, { tool: ev.tool }, { state: "running" });
-                parts = [
-                  ...parts.filter((p) => !("toolCallId" in p && p.toolCallId === stepToolId(ev.stepId))),
-                  {
-                    type: `tool-${ev.tool || "step"}`,
-                    toolCallId: stepToolId(ev.stepId),
-                    state: "input-available" as const,
-                    input: { step: ev.stepId },
-                  } as UIMessagePart,
-                ];
-                syncAssistant();
                 break;
               case "confirmationRequested":
                 upsertStep(ev.stepId, { task: ev.task }, { state: "running" });
@@ -250,29 +247,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                     })),
                   },
                 );
-                parts = parts.map((p) =>
-                  "toolCallId" in p && p.toolCallId === stepToolId(ev.stepId)
-                    ? {
-                        ...p,
-                        state: "output-available" as const,
-                        output: { ok: true, summary: ev.output.slice(0, 2000) },
-                      }
-                    : p,
-                );
-                syncAssistant();
                 break;
               case "stepFailed":
                 upsertStep(ev.stepId, {}, { state: "failed", error: ev.error });
-                parts = parts.map((p) =>
-                  "toolCallId" in p && p.toolCallId === stepToolId(ev.stepId)
-                    ? {
-                        ...p,
-                        state: "output-error" as const,
-                        errorText: ev.error,
-                      }
-                    : p,
-                );
-                syncAssistant();
                 break;
               case "stepSkipped":
                 upsertStep(ev.stepId, {}, { state: "skipped", error: ev.reason });
@@ -283,16 +260,19 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                   pendingConfirmation: null,
                   finalOutput: ev.finalOutput ?? null,
                 });
-                const outline = planSummary({
-                  status: "completed",
+                const record: PersistedPlan = {
+                  type: "supervisor-plan",
+                  v: 1,
                   goal: goalRef.current,
-                  steps: stepsRef.current,
-                  pendingConfirmation: null,
-                  finalOutput: ev.finalOutput ?? null,
-                  error: null,
-                });
-                const finalText = ev.finalOutput ?? "(plan completed)";
-                void persist(sessionId, "assistant", outline ? `${outline}\n\n${finalText}` : finalText);
+                  steps: stepsRef.current.map((s) => ({
+                    id: s.stepId,
+                    tool: s.tool,
+                    state: s.state,
+                    output: s.output,
+                  })),
+                  output: ev.finalOutput ?? null,
+                };
+                void persist(sessionId, "assistant", JSON.stringify(record));
                 parts = parts.map((p) =>
                   p.type === "text" && p.state === "streaming" ? { ...p, state: "done" as const } : p,
                 );

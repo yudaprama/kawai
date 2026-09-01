@@ -288,14 +288,14 @@ goal → plan_task → validated TaskPlan → execute_supervisor_plan → determ
 
 `agent_chat`, `AgentChatEvent`, the prompt-based agent loop, and the legacy `useLocalChat` hook have been removed. Session/history shell state lives in `useSupervisorChat`; execution state, plan progress, and confirmations live in `useSupervisorPlan`.
 
-The planner is remote-LLM-backed. The executor is Rust-only and performs no inference. Tool registries are selected by the active agent: office, presentation, analytics, or Binance. Analytics receives per-user SQL profiles through `effective_profiles(user_id)`.
+The planner is remote-LLM-backed. The executor is Rust-only and performs no inference. Tool registries default to **`auto`**: a merged catalog of every available domain toolset (office → presentation → binance → analytics, first-wins per tool name), so the planner picks tools across domains and plans execute cross-domain. An explicit agent id (`builtin.office`, `builtin.presentation`, `builtin.binance`, `builtin.analytics`) narrows the catalog to that domain — the frontend rail is an optional hint, not a requirement. Analytics receives per-user SQL profiles through `effective_profiles(user_id)`.
 
 ### Known follow-ups
 
 These are enhancements, not migration blockers:
 
 - **Active cancellation:** cancellation currently stops at wave boundaries; active tools need a cancellation-aware execution contract.
-- **Cross-domain plans:** one plan currently uses one agent-scoped registry. Cross-domain workflows need an explicit multi-domain registry policy.
+- **Cross-domain plans: implemented for `auto`.** The `auto` registry merges all domain toolsets, so plans may mix tools from any domain. Per-domain narrowing via explicit agent id remains available; a policy for merging *restricted* cross-domain catalogs (e.g. analytics without office write tools) is open if needed.
 - **Artifact contracts:** file detection currently recognizes common output envelopes; explicit per-tool output schemas and store-aware adapters would improve reliability.
 - **Scheduler tuning:** `max_parallel` is currently conservative (`2`) and retry backoff is fixed; make them configurable only when workload evidence requires it.
 - **Transport coverage:** executor-level confirmation tests exist; a Tauri Channel/UI-level integration test would add release confidence.

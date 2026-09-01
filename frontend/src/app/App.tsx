@@ -24,7 +24,6 @@ import { ToolWorkbench } from "@/features/tools/tool-workbench";
 
 export default function App() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
   const [agentsRail, setAgentsRail] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [canvasOpen, setCanvasOpen] = useState(true);
@@ -45,19 +44,12 @@ export default function App() {
     };
   }, []);
 
-  // Auto is the default: users describe the task and the backend selects the
-  // best specialist. Explicit agent selection remains available as an override.
-  useEffect(() => {
-    if (agents.length && activeAgentId == null) setActiveAgentId("auto");
-  }, [agents, activeAgentId]);
-
-  // `auto` is a routing mode, not a catalog agent. Use the first catalog
-  // entry for presentation/context UI while preserving `auto` for the chat
-  // hook so the request reaches the backend router.
-  const agent = (activeAgentId != null && agents.find((a) => a.id === activeAgentId)) || agents[0] || null;
-  const chatAgent = activeAgentId === "auto" ? { id: "auto", tools: true } : agent;
+  // No agent picker: every request runs in `auto` mode (merged all-domain
+  // registry — the planner picks tools itself). The first catalog agent only
+  // drives presentation/context UI.
+  const agent = agents[0] ?? null;
   const presentation = agent ? agentPresentation(agent.id) : agentPresentation("");
-  const chat = useSupervisorChat(chatAgent ?? { id: "auto", tools: true });
+  const chat = useSupervisorChat();
   const notifications = useNotifications();
   const supervisor = useSupervisorPlan({
     onPlanCompleted: (goal, output) => {
@@ -100,12 +92,12 @@ export default function App() {
 
   const onSend = useCallback(
     (text: string, _fileIds?: string[]) => {
-      // Supervisor is the only execution path.
+      // Supervisor is the only execution path, always in `auto` mode: the
+      // merged all-domain registry — the planner picks tools itself.
       void (async () => {
         const sessionId = chat.sessionId ?? (await chat.ensureSessionId(text));
         if (sessionId == null) return;
-        const supervisorAgent = activeAgentId === "auto" || activeAgentId == null ? "builtin.office" : activeAgentId;
-        await supervisor.planAndRun(text, sessionId, supervisorAgent);
+        await supervisor.planAndRun(text, sessionId, "auto");
       })();
     },
     [chat, supervisor],
@@ -159,11 +151,6 @@ export default function App() {
     window.addEventListener(OPEN_PREVIEW_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_PREVIEW_EVENT, onOpen);
   }, [ka.setPreviewFile, ka.knowledge.files]);
-
-  useEffect(() => {
-    if (activeAgentId == null) return;
-    void chat.selectAgent();
-  }, [activeAgentId, chat.selectAgent]);
 
   useAppShortcuts({
     busy,
@@ -275,7 +262,6 @@ export default function App() {
     />
   ) : assetView === "memory" ? (
     <MemoryAssetPage
-      agents={agents}
       sessions={[...chat.sessions, ...chat.archivedSessions]}
       onBack={() => setAssetView(null)}
     />
@@ -316,17 +302,9 @@ export default function App() {
     <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">
       <div className="hidden shrink-0 lg:flex">
         <AgentsRail
-          agents={agents}
-          activeAgentId={activeAgentId}
           assetView={assetView}
           collapsed={agentsRail}
           userId={chat.userId}
-          busy={busy}
-          onSelectAgent={(id) => {
-            if (busy && id !== activeAgentId) return;
-            setAssetView(null);
-            setActiveAgentId(id);
-          }}
           onSelectAsset={(id) => {
             setToolWorkbenchId(null);
             setAssetView(id);
@@ -400,18 +378,9 @@ export default function App() {
           {mobileDrawer === "agents" && (
             <div className="bg-background relative flex h-full w-[210px] max-w-[85vw] flex-col shadow-xl">
               <AgentsRail
-                agents={agents}
-                activeAgentId={activeAgentId}
                 assetView={assetView}
                 collapsed={false}
                 userId={chat.userId}
-                busy={busy}
-                onSelectAgent={(id) => {
-                  if (busy && id !== activeAgentId) return;
-                  setAssetView(null);
-                  setActiveAgentId(id);
-                  setMobileDrawer(null);
-                }}
                 onSelectAsset={(id) => {
                   setToolWorkbenchId(null);
                   setAssetView(id);

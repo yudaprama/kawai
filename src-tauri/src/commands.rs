@@ -181,17 +181,12 @@ fn session_user_id(session: &Session) -> Result<String, String> {
         .ok_or_else(|| "not authenticated".to_string())
 }
 
-/// Authenticated RPC: start a new chat session (agent-ready schema; MVP uses
-/// the implicit builtin agent when `agentId` is absent).
+/// Authenticated RPC: start a new chat session. Sessions are created lazily
+/// on the first message; no agent identity — supervisor runs in `auto` mode.
 #[tauri::command]
-pub async fn create_chat_session(
-    agent_id: Option<String>,
-    session: State<'_, Session>,
-) -> Result<ChatSession, String> {
+pub async fn create_chat_session(session: State<'_, Session>) -> Result<ChatSession, String> {
     let user_id = session_user_id(&session)?;
-    logic::create_chat_session(&user_id, agent_id.as_deref())
-        .await
-        .map_err(|e| e.to_string())
+    logic::create_chat_session(&user_id).await.map_err(|e| e.to_string())
 }
 
 /// Authenticated RPC: list the user's chat sessions, newest first. Defaults to

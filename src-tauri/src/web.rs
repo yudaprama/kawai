@@ -33,9 +33,7 @@ struct SetSessionRequest {
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-struct CreateChatSessionRequest {
-    agent_id: Option<String>,
-}
+struct CreateChatSessionRequest {}
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -456,7 +454,7 @@ async fn create_chat_session_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<CreateChatSessionRequest>,
 ) -> Result<Json<ChatSession>, (StatusCode, String)> {
-    logic::create_chat_session(&claims.sub, req.agent_id.as_deref())
+    logic::create_chat_session(&claims.sub)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))

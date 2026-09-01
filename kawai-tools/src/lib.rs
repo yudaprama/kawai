@@ -220,6 +220,19 @@ impl ToolSet {
         }
     }
 
+    /// Merge every tool from `other` into `self`. First registration wins:
+    /// names already present in `self` are kept, so callers control priority
+    /// by merge order. `other` is left empty.
+    pub fn merge(&mut self, other: &mut ToolSet) {
+        for (name, entry) in other.entries.drain() {
+            if self.entries.contains_key(&name) {
+                continue;
+            }
+            self.definitions.push(entry.definition.clone());
+            self.entries.insert(name, entry);
+        }
+    }
+
     /// Number of registered tools.
     pub fn len(&self) -> usize {
         self.entries.len()
@@ -447,6 +460,24 @@ mod tests {
         set.add_tool(EchoTool); // replace, keep position 0
         assert_eq!(set.len(), 2);
         let names: Vec<&str> = set
+            .get_tool_definitions()
+            .iter()
+            .map(|d| d.name.as_str())
+            .collect();
+        assert_eq!(names, ["echo", "json_out"]);
+    }
+
+    #[test]
+    fn merge_appends_new_names_and_keeps_existing() {
+        let mut base = ToolSet::new();
+        base.add_tool(EchoTool);
+        let mut extra = ToolSet::new();
+        extra.add_tool(JsonTool);
+        extra.add_tool(EchoTool); // duplicate name — must NOT override base
+        base.merge(&mut extra);
+        assert_eq!(base.len(), 2);
+        assert!(extra.is_empty(), "merge drains the source set");
+        let names: Vec<&str> = base
             .get_tool_definitions()
             .iter()
             .map(|d| d.name.as_str())

@@ -2,11 +2,53 @@ import type { UIMessage } from "@/lib/ai-types";
 import type { ChatMessageInfo } from "@/lib/api";
 
 export function historyToMessages(rows: ChatMessageInfo[]): UIMessage[] {
-  return rows.map((row) => ({
-    id: `db-${row.id}`,
-    role: row.role,
-    parts: [{ type: "text", text: row.content, state: "done" }],
-  }));
+  return rows.map((row) => {
+    const plan = parsePersistedPlan(row.content);
+    if (plan) {
+      return {
+        id: `db-${row.id}`,
+        role: row.role,
+        parts: [{ type: "text", text: planToText(plan), state: "done" }],
+      };
+    }
+    return {
+      id: `db-${row.id}`,
+      role: row.role,
+      parts: [{ type: "text", text: row.content, state: "done" }],
+    };
+  });
+}
+
+/** Structured supervisor-plan record persisted by useSupervisorPlan. */
+interface PersistedPlanRecord {
+  type: "supervisor-plan";
+  v: number;
+  goal: string | null;
+  steps: { id: string; tool: string; state: string; output?: string }[];
+  output: string | null;
+}
+
+function parsePersistedPlan(content: string): PersistedPlanRecord | null {
+  if (!content.startsWith("{")) return null;
+  try {
+    const value = JSON.parse(content) as Partial<PersistedPlanRecord>;
+    if (value?.type !== "supervisor-plan" || !Array.isArray(value.steps)) return null;
+    return value as PersistedPlanRecord;
+  } catch {
+    return null;
+  }
+}
+
+/** Render a persisted plan record as readable history text. */
+function planToText(plan: PersistedPlanRecord): string {
+  const lines = plan.steps.map((s) => {
+    const mark =
+      s.state === "completed" ? "✓" : s.state === "failed" ? "✗" : s.state === "skipped" ? "→" : "·";
+    return `${mark} ${s.id} [${s.tool}] — ${s.state}`;
+  });
+  const goal = plan.goal ? `Goal: ${plan.goal}\n` : "";
+  const outline = lines.length > 0 ? `[plan]\n${lines.join("\n")}\n\n` : "";
+  return `${goal}${outline}${plan.output ?? "(plan completed)"}`;
 }
 
 export function toFriendlyError(raw: string): string {

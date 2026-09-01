@@ -7,14 +7,12 @@ import { showErrorToast } from "@/lib/utils";
 import type { SupervisorChatState } from "./use-supervisor-chat";
 
 export function useChatSessions({
-  agentId,
   patch,
   state,
   resetModelContext,
   streamCtrl,
   clearMessages,
 }: {
-  agentId: string;
   patch: (p: Partial<SupervisorChatState>) => void;
   state: SupervisorChatState;
   resetModelContext: () => Promise<void>;
@@ -60,7 +58,6 @@ export function useChatSessions({
       if (sessionIdRef.current != null) return sessionIdRef.current;
       try {
         const s = await call<ChatSessionInfo>("create_chat_session", {
-          agentId,
           title: titleHint.slice(0, 80) || "New chat",
         });
         sessionIdRef.current = s.id;
@@ -73,7 +70,7 @@ export function useChatSessions({
         return null;
       }
     },
-    [agentId, patch, loadSessions],
+    [patch, loadSessions],
   );
 
   const newChat = useCallback(async () => {
@@ -104,11 +101,6 @@ export function useChatSessions({
     },
     [streamCtrl, resetSession, loadMessages],
   );
-
-  const selectAgent = useCallback(async () => {
-    if (streamCtrl.current) return;
-    await resetSession(null);
-  }, [streamCtrl, resetSession]);
 
   const deleteSession = useCallback(
     async (sessionId: number) => {
@@ -242,7 +234,6 @@ export function useChatSessions({
     ensureSessionId,
     newChat,
     selectSession,
-    selectAgent,
     deleteSession,
     renameSession,
     setSessionArchived,

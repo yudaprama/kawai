@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dialog";
 import { useSessionFilter } from "@/hooks/use-session-filter";
 import type { ChatSessionInfo } from "@/lib/api";
-import { agentPresentation } from "@/features/agents/agents-rail";
 
 interface SessionGroup {
   label: string;
@@ -144,12 +143,6 @@ export function SessionHistoryDialog({
                       onArchive={() => onArchiveSession(session.id, true)}
                       onDelete={() => requestDelete(session.id)}
                     />
-                    {/* Agent badge */}
-                    {session.agentId && (
-                      <span className="text-muted-foreground hidden shrink-0 text-[10px] group-hover:inline-block">
-                        {agentPresentation(session.agentId).subtitle.split("·")[0]?.trim()}
-                      </span>
-                    )}
                   </div>
                 ))}
               </div>

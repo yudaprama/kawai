@@ -19,7 +19,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { type Theme, useTheme } from "@/hooks/use-theme";
-import type { AgentInfo } from "@/lib/api";
 import { type AssetViewId, ASSET_NAV } from "@/features/assets/components/asset-nav";
 
 interface AgentPresentation {
@@ -90,24 +89,16 @@ function ThemeControl({ collapsed }: { collapsed: boolean }) {
 }
 
 export function AgentsRail({
-  agents,
-  activeAgentId,
   assetView,
   collapsed,
   userId,
-  busy,
-  onSelectAgent,
   onSelectAsset,
   onToggle,
 }: {
-  agents: AgentInfo[];
-  activeAgentId: string | null;
   /** Open asset workspace (center pane replaces chat); null = chat view. */
   assetView: AssetViewId | null;
   collapsed: boolean;
   userId: string | null;
-  busy?: boolean;
-  onSelectAgent: (id: string) => void;
   onSelectAsset: (id: AssetViewId) => void;
   onToggle: () => void;
 }) {
@@ -133,70 +124,6 @@ export function AgentsRail({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {!collapsed && (
-          <p className="px-3 pt-3 pb-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-            Agents
-          </p>
-        )}
-
-        <nav className={`flex flex-col gap-1 ${collapsed ? "px-1.5" : "px-2"}`}>
-          <button
-            className={`flex w-full items-center rounded-lg text-left transition-colors disabled:opacity-50 ${
-              collapsed ? "justify-center p-2" : "gap-2.5 px-2.5 py-2"
-            } ${assetView == null && activeAgentId === "auto" ? "bg-[var(--tea-color-bg-brand-default)] text-[var(--tea-color-text-on-bg-brand-default)]" : "hover:bg-[var(--tea-color-bg-secondary-default)]"}`}
-            disabled={busy && activeAgentId !== "auto" && assetView == null}
-            onClick={() => onSelectAgent("auto")}
-            type="button"
-            title="Auto · Kawai chooses the best agent for your task"
-          >
-            <span
-              className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${
-                assetView == null && activeAgentId === "auto" ? "bg-background/60" : "bg-muted"
-              }`}
-            >
-              <BotIcon className="size-[15px]" />
-            </span>
-            {!collapsed && (
-              <span className="flex min-w-0 flex-col">
-                <span className="text-sm leading-tight font-medium">Auto</span>
-                <span className="text-muted-foreground truncate text-xs leading-tight">smart agent selection</span>
-              </span>
-            )}
-          </button>
-
-          {agents.map((a) => {
-            const meta = agentPresentation(a.id);
-            const Icon = meta.icon;
-            const active = assetView == null && a.id === activeAgentId;
-            return (
-              <button
-                className={`flex w-full items-center rounded-lg text-left transition-colors disabled:opacity-50 ${
-                  collapsed ? "justify-center p-2" : "gap-2.5 px-2.5 py-2"
-                } ${active ? "bg-[var(--tea-color-bg-brand-default)] text-[var(--tea-color-text-on-bg-brand-default)]" : "hover:bg-[var(--tea-color-bg-secondary-default)]"}`}
-                disabled={busy && !active && assetView == null}
-                key={a.id}
-                onClick={() => onSelectAgent(a.id)}
-                type="button"
-                title={busy && !active && assetView == null ? "Tunggu jawaban selesai" : `${a.name} · ${meta.subtitle}`}
-              >
-                <span
-                  className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${
-                    active ? "bg-background/60" : "bg-muted"
-                  }`}
-                >
-                  <Icon className="size-[15px]" />
-                </span>
-                {!collapsed && (
-                  <span className="flex min-w-0 flex-col">
-                    <span className="text-sm leading-tight font-medium">{a.name}</span>
-                    <span className="text-muted-foreground truncate text-xs leading-tight">{meta.subtitle}</span>
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-
         {!collapsed && (
           <p className="px-3 pt-6 pb-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
             Assets

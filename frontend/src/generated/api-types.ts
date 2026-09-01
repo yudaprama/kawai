@@ -18,7 +18,6 @@ export type ChatMessageInfo = {
 
 export type ChatSessionInfo = {
 	id: number,
-	agentId: string,
 	title: string | null,
 	createdAt: number | null,
 	archived: boolean,

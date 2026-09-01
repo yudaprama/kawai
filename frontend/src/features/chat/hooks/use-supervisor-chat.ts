@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatStatus, UIMessage } from "@/lib/ai-types";
-import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
+import type { ChatSessionInfo } from "@/lib/api";
 import { useAuth } from "@/features/auth/use-auth";
 import { useChatModel } from "./use-chat-model";
 import { useChatSessions } from "./use-chat-sessions";
@@ -32,8 +32,7 @@ export interface SupervisorChatState {
   sessionId: number | null;
 }
 
-export function useSupervisorChat(agent: Pick<AgentInfo, "id">, userId?: string | null) {
-  const { id: agentId } = agent;
+export function useSupervisorChat(userId?: string | null) {
   const [state, setState] = useState<SupervisorChatState>({
     userId: null,
     authError: null,
@@ -74,14 +73,12 @@ export function useSupervisorChat(agent: Pick<AgentInfo, "id">, userId?: string 
     ensureSessionId,
     newChat,
     selectSession,
-    selectAgent,
     deleteSession,
     renameSession,
     setSessionArchived,
     retryHistoryLoad,
     groupedSessions,
   } = useChatSessions({
-    agentId,
     patch,
     state,
     resetModelContext,
@@ -108,7 +105,6 @@ export function useSupervisorChat(agent: Pick<AgentInfo, "id">, userId?: string 
     stop,
     newChat,
     selectSession,
-    selectAgent,
     deleteSession,
     renameSession,
     setSessionArchived,

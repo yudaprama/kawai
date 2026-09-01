@@ -30,7 +30,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useMemories } from "@/features/memory/hooks/use-memories";
 import { useMemoryTiers } from "@/features/memory/hooks/use-memory-tiers";
 import {
-  type AgentInfo,
   MEMORY_KINDS,
   type ChatMessageInfo,
   type ChatSessionInfo,
@@ -58,15 +57,12 @@ const MemoryGraph = lazy(() =>
  */
 export function MemoryAssetPage({
   sessions,
-  agents,
   onBack,
 }: {
   sessions: ChatSessionInfo[];
-  agents: AgentInfo[];
   onBack: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [agentFilter, setAgentFilter] = useState<string>("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [messages, setMessages] = useState<ChatMessageInfo[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -75,20 +71,14 @@ export function MemoryAssetPage({
 
   const memories = useMemories(true);
 
-  const agentName = useMemo(() => {
-    const map = new Map(agents.map((a) => [a.id, a.name]));
-    return (id: string) => map.get(id) ?? id;
-  }, [agents]);
-
   const sorted = useMemo(() => [...sessions].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)), [sessions]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return sorted.filter((s) => {
-      if (agentFilter !== "all" && s.agentId !== agentFilter) return false;
       if (!q) return true;
-      return (s.title ?? "untitled").toLowerCase().includes(q) || agentName(s.agentId).toLowerCase().includes(q);
+      return (s.title ?? "untitled").toLowerCase().includes(q);
     });
-  }, [sorted, query, agentFilter, agentName]);
+  }, [sorted, query]);
 
   const active = filtered.find((s) => s.id === selectedId) ?? sorted.find((s) => s.id === selectedId) ?? null;
   const activeId = active?.id ?? null;
@@ -120,21 +110,6 @@ export function MemoryAssetPage({
   return (
     <AssetShell onBack={onBack} subtitle="chat memory" title="Memory">
       <AssetPageHeader
-        agent={
-          <Select onValueChange={setAgentFilter} value={agentFilter}>
-            <SelectTrigger className="h-8 w-[190px]" size="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All agents</SelectItem>
-              {agents.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
         subtitle={`${filtered.length} memory ${filtered.length === 1 ? "block" : "blocks"} · ${memories.memories.length} L1 ${memories.memories.length === 1 ? "memory" : "memories"}`}
         title="Chat Memory"
       />
@@ -179,7 +154,6 @@ export function MemoryAssetPage({
                   <AssetItemName title={s.title ?? undefined}>{s.title ?? "Untitled"}</AssetItemName>
                 </AssetItemHeader>
                 <AssetItemBadges>
-                  <AssetBadge>{agentName(s.agentId)}</AssetBadge>
                   {s.archived && <AssetBadge>archived</AssetBadge>}
                 </AssetItemBadges>
                 <AssetItemMeta>
