@@ -159,6 +159,7 @@ Unit tests cover pure helpers only (`base64`, `utils`, and colocated
 
 ## Gotchas
 
+- **Markdown-render deps are externalized to esm.sh at build time.** `shiki`, `mermaid`, `katex`, `marked`, `unified`, `remark-parse/rehype`-family, and `rehype-*` are listed in `vite.config.ts` `rollupOptions.external` and served at runtime via the importmap in `frontend/index.html` (keeps them out of the bundle). They exist in the root `package.json` pinned to exact versions **only for typecheck and the dev server**. The importmap pins and the package.json pins MUST stay identical — see the GUARD comment in `frontend/index.html`. Note: `bun run dev` resolves these from `node_modules` while a production build loads them from esm.sh.
 - **`@types/hast` pinned to 3.0.4** via `resolutions` in the root `package.json`. Version 3.0.5 rewrites `Properties.className` to `string[]` and splits the `hast` module identity, breaking the vendored streamdown markdown renderer. Do not bump it.
 - **Vite root is `frontend/`** — all paths in `vite.config.ts` are relative to the repo root, not `frontend/`. The `resolve.alias` uses `path.resolve(__dirname, "frontend/src")`.
 - **`bun install` must run from the repo root** before any `tauri dev`/`tauri build`. The `node_modules` lives at the repo root, not inside `frontend/`.

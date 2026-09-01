@@ -16,6 +16,68 @@ use crate::agent_registry;
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
+/// Plan structure for one step, sent with `planStarted` so the frontend can
+/// render the full plan (tools, tasks, dependencies) before any step runs.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanStepInfo {
+    pub id: String,
+    pub tool: String,
+    pub task: String,
+    pub depends_on: Vec<String>,
+}
+
+/// Artifact emitted by a completed step, carried on `stepCompleted` so the
+/// frontend can render files/structured results instead of a text summary.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactInfo {
+    /// `text` | `file` | `structured` | `handle`
+    pub kind: String,
+    pub handle: Option<String>,
+    pub filename: Option<String>,
+}
+
+fn artifact_infos(output: &str) -> Vec<ArtifactInfo> {
+    tool_output_artifacts(output)
+        .iter()
+        .map(|a| match a {
+            kawai_router::Artifact::File { handle, filename, .. } => ArtifactInfo {
+                kind: "file".into(),
+                handle: Some(handle.clone()),
+                filename: filename.clone(),
+            },
+            kawai_router::Artifact::Structured { .. } => ArtifactInfo {
+                kind: "structured".into(),
+                handle: None,
+                filename: None,
+            },
+            kawai_router::Artifact::Handle { kind, .. } => ArtifactInfo {
+                kind: "handle".into(),
+                handle: kind.clone(),
+                filename: None,
+            },
+            kawai_router::Artifact::Text { .. } => ArtifactInfo {
+                kind: "text".into(),
+                handle: None,
+                filename: None,
+            },
+        })
+        .collect()
+}
+
+fn plan_step_infos(plan: &kawai_router::TaskPlan) -> Vec<PlanStepInfo> {
+    plan.steps
+        .iter()
+        .map(|s| PlanStepInfo {
+            id: s.id.clone(),
+            tool: s.tool.clone().unwrap_or_else(|| s.agent_id.clone()),
+            task: s.task.clone(),
+            depends_on: s.depends_on.clone(),
+        })
+        .collect()
+}
+
 /// Progress events emitted by the supervisor as it executes a plan.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -23,6 +85,7 @@ pub enum SupervisorEvent {
     PlanStarted {
         goal: String,
         step_count: usize,
+        steps: Vec<PlanStepInfo>,
     },
     StepStarted {
         step_id: String,
@@ -37,6 +100,7 @@ pub enum SupervisorEvent {
     StepCompleted {
         step_id: String,
         output: String,
+        artifacts: Vec<ArtifactInfo>,
     },
     StepFailed {
         step_id: String,
@@ -303,6 +367,7 @@ pub fn execute_plan_stream_with_cancel(
         yield SupervisorEvent::PlanStarted {
             goal: plan.goal.clone(),
             step_count,
+            steps: plan_step_infos(&plan),
         };
 
         let confirmation_stream_id = stream_id.clone();
@@ -351,7 +416,7 @@ pub fn execute_plan_stream_with_cancel(
                     yield match event {
                         kawai_router::SchedulerEvent::StepStarted { step_id, tool } => SupervisorEvent::StepStarted { step_id, tool },
                         kawai_router::SchedulerEvent::ConfirmationRequested { step_id, task, description } => SupervisorEvent::ConfirmationRequested { stream_id: event_stream_id.clone(), step_id, task, description },
-                        kawai_router::SchedulerEvent::StepCompleted { step_id, output } => SupervisorEvent::StepCompleted { step_id, output },
+                        kawai_router::SchedulerEvent::StepCompleted { step_id, output } => SupervisorEvent::StepCompleted { step_id: step_id.clone(), output: output.clone(), artifacts: artifact_infos(&output) },
                         kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => SupervisorEvent::StepFailed { step_id, error },
                         kawai_router::SchedulerEvent::StepSkipped { step_id, reason } => SupervisorEvent::StepSkipped { step_id, reason },
                     };
@@ -366,7 +431,7 @@ pub fn execute_plan_stream_with_cancel(
             yield match event {
                 kawai_router::SchedulerEvent::StepStarted { step_id, tool } => SupervisorEvent::StepStarted { step_id, tool },
                 kawai_router::SchedulerEvent::ConfirmationRequested { step_id, task, description } => SupervisorEvent::ConfirmationRequested { stream_id: event_stream_id.clone(), step_id, task, description },
-                kawai_router::SchedulerEvent::StepCompleted { step_id, output } => SupervisorEvent::StepCompleted { step_id, output },
+                kawai_router::SchedulerEvent::StepCompleted { step_id, output } => SupervisorEvent::StepCompleted { step_id: step_id.clone(), output: output.clone(), artifacts: artifact_infos(&output) },
                 kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => SupervisorEvent::StepFailed { step_id, error },
                 kawai_router::SchedulerEvent::StepSkipped { step_id, reason } => SupervisorEvent::StepSkipped { step_id, reason },
             };

@@ -1,9 +1,5 @@
 import {
   BookOpenIcon,
-  CheckCircle2Icon,
-  CircleIcon,
-  CircleXIcon,
-  LoaderCircleIcon,
   BrainIcon,
   type CheckIcon,
   DatabaseIcon,
@@ -25,6 +21,8 @@ import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus, UIMessage } from "@/lib/ai-types";
 import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
 import type { SupervisorConfirmation } from "@/features/chat/hooks/use-supervisor-chat";
+import type { SupervisorStatus, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
+import { PlanProgressPanel } from "@/features/chat/components/plan-progress-panel";
 import { ChatComposer } from "@/features/chat/components/chat-composer";
 
 interface AgentPresentation {
@@ -102,9 +100,9 @@ export function ConversationPanel({
   onSend: (text: string, fileIds?: string[]) => void;
   onRespondConfirmation: (approved: boolean) => Promise<void>;
   confirmation: SupervisorConfirmation | null;
-  supervisorStatus: string;
+  supervisorStatus: SupervisorStatus;
   supervisorGoal: string | null;
-  supervisorSteps: { stepId: string; tool: string; state: string; output?: string; error?: string }[];
+  supervisorSteps: SupervisorStep[];
   supervisorError: string | null;
   supervisorFinalOutput: string | null;
   onStopSupervisor: () => void;
@@ -253,44 +251,14 @@ export function ConversationPanel({
           {chatError}
         </div>
       )}
-      {supervisorStatus !== "idle" && (
-        <div className="mx-4 mt-3 rounded-md border bg-card p-3 text-sm">
-          <div className="flex items-center justify-between">
-            <span className="font-medium">Plan {supervisorStatus}</span>
-            {(supervisorStatus === "running" || supervisorStatus === "awaitingConfirmation") && (
-              <Button onClick={onStopSupervisor} size="sm" variant="outline">
-                Stop plan
-              </Button>
-            )}
-            {supervisorGoal && <span className="text-muted-foreground truncate text-xs">{supervisorGoal}</span>}
-          </div>
-          {supervisorSteps.length > 0 && (
-            <div className="mt-2 space-y-1">
-              {supervisorSteps.map((step) => (
-                <div className="flex items-center gap-2 text-xs" key={step.stepId}>
-                  {step.state === "completed" ? (
-                    <CheckCircle2Icon className="size-3 text-emerald-500" />
-                  ) : step.state === "failed" ? (
-                    <CircleXIcon className="text-destructive size-3" />
-                  ) : step.state === "running" ? (
-                    <LoaderCircleIcon className="size-3 animate-spin" />
-                  ) : (
-                    <CircleIcon className="text-muted-foreground size-3" />
-                  )}
-                  <span className="font-medium">{step.stepId}</span>
-                  <span className="text-muted-foreground">{step.state}</span>
-                  {step.output && <span className="text-muted-foreground truncate">— {step.output}</span>}
-                  {step.error && <span className="text-destructive truncate">— {step.error}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-          {supervisorError && <p className="text-destructive mt-2 text-xs">{supervisorError}</p>}
-          {supervisorFinalOutput && (
-            <div className="bg-muted mt-2 rounded p-2 text-xs whitespace-pre-wrap">{supervisorFinalOutput}</div>
-          )}
-        </div>
-      )}
+      <PlanProgressPanel
+        status={supervisorStatus}
+        goal={supervisorGoal}
+        steps={supervisorSteps}
+        error={supervisorError}
+        finalOutput={supervisorFinalOutput}
+        onStop={onStopSupervisor}
+      />
       {historyError && (
         <div className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
           <span className="min-w-0 flex-1">Failed to load history: {historyError}</span>

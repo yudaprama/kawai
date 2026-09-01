@@ -7,6 +7,7 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
   root: "frontend",
+  envDir: path.resolve(__dirname),
   plugins: [react(), tailwindcss()],
 
   resolve: {
@@ -19,7 +20,20 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist"),
     emptyOutDir: true,
     rollupOptions: {
-      external: [/^shiki(\/.*)?$/, /^mermaid(\/.*)?$/, /^katex(\/.*)?$/, /^rehype-katex(\/.*)?$/],
+      external: [
+        /^shiki(\/.*)?$/,
+        /^mermaid(\/.*)?$/,
+        /^katex(\/.*)?$/,
+        /^rehype-katex(\/.*)?$/,
+        /^marked(\/.*)?$/,
+        /^unified(\/.*)?$/,
+        /^remark-parse(\/.*)?$/,
+        /^remark-rehype(\/.*)?$/,
+        /^remark-gfm(\/.*)?$/,
+        /^remark-math(\/.*)?$/,
+        /^rehype-raw(\/.*)?$/,
+        /^rehype-sanitize(\/.*)?$/,
+      ],
     },
   },
 

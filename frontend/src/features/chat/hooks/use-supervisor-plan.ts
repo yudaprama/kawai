@@ -7,7 +7,12 @@ import type { UIMessage, UIMessagePart } from "@/lib/ai-types";
 
 /** Events streamed by `execute_supervisor_plan` (mirrors the Rust enum). */
 export type SupervisorEvent =
-  | { type: "planStarted"; goal: string; stepCount: number }
+  | {
+      type: "planStarted";
+      goal: string;
+      stepCount: number;
+      steps: { id: string; tool: string; task: string; dependsOn: string[] }[];
+    }
   | { type: "stepStarted"; stepId: string; tool: string }
   | {
       type: "confirmationRequested";
@@ -16,7 +21,12 @@ export type SupervisorEvent =
       task: string;
       description: string;
     }
-  | { type: "stepCompleted"; stepId: string; output: string }
+  | {
+      type: "stepCompleted";
+      stepId: string;
+      output: string;
+      artifacts: { kind: string; handle?: string; filename?: string }[];
+    }
   | { type: "stepFailed"; stepId: string; error: string }
   | { type: "stepSkipped"; stepId: string; reason: string }
   | { type: "planCompleted"; finalOutput?: string }
@@ -24,17 +34,27 @@ export type SupervisorEvent =
 
 export type SupervisorStatus = "idle" | "running" | "awaitingConfirmation" | "completed" | "failed";
 
+export interface SupervisorArtifact {
+  kind: "text" | "file" | "structured" | "handle";
+  handle?: string;
+  filename?: string;
+}
+
 export interface SupervisorStep {
   stepId: string;
   tool: string;
-  state: "running" | "completed" | "failed" | "skipped";
+  task: string;
+  dependsOn: string[];
+  state: "pending" | "running" | "completed" | "failed" | "skipped";
   output?: string;
   error?: string;
+  artifacts: SupervisorArtifact[];
 }
 
 export interface SupervisorPlanState {
   status: SupervisorStatus;
   goal: string | null;
+  /** Full plan structure — seeded at planStarted, before any step runs. */
   steps: SupervisorStep[];
   pendingConfirmation: {
     streamId: string;
@@ -70,6 +90,19 @@ async function persist(sessionId: number, role: "user" | "assistant", content: s
   }
 }
 
+/** Compact plan outline persisted alongside the final output so a reopened
+ *  session can show what the plan did, not just its final answer. */
+function planSummary(state: SupervisorPlanState): string | null {
+  if (state.steps.length === 0) return null;
+  const lines = state.steps.map((s) => {
+    const mark =
+      s.state === "completed" ? "✓" : s.state === "failed" ? "✗" : s.state === "skipped" ? "→" : "·";
+    const deps = s.dependsOn.length > 0 ? ` (after ${s.dependsOn.join(", ")})` : "";
+    return `${mark} ${s.stepId} [${s.tool}]${deps} — ${s.state}`;
+  });
+  return `[plan]\n${lines.join("\n")}`;
+}
+
 export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const [state, setState] = useState<SupervisorPlanState>({
     status: "idle",
@@ -84,20 +117,31 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const streamCtrl = useRef<StreamControl | null>(null);
   const streamIdRef = useRef<string>("");
   const goalRef = useRef<string | null>(null);
+  const stepsRef = useRef<SupervisorStep[]>([]);
 
   const patch = useCallback((partial: Partial<SupervisorPlanState>) => {
     setState((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  const upsertStep = useCallback((stepId: string, tool: string, next: Partial<SupervisorStep>) => {
+  const upsertStep = useCallback((stepId: string, seed: Partial<SupervisorStep>, next: Partial<SupervisorStep>) => {
     setState((prev) => {
       const steps = [...prev.steps];
       const idx = steps.findIndex((s) => s.stepId === stepId);
       if (idx >= 0) {
-        steps[idx] = { ...steps[idx], ...next };
+        steps[idx] = { ...steps[idx], ...seed, ...next };
       } else {
-        steps.push({ stepId, tool, state: "running", ...next });
+        steps.push({
+          stepId,
+          tool: "",
+          task: "",
+          dependsOn: [],
+          state: "running",
+          artifacts: [],
+          ...seed,
+          ...next,
+        });
       }
+      stepsRef.current = steps;
       return { ...prev, steps };
     });
   }, []);
@@ -119,9 +163,11 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         finalOutput: null,
         error: null,
       });
+      stepsRef.current = [];
 
-      // Conversation view: one growing assistant message carries the plan
-      // (text + one tool part per step), like the agent-chat rendering model.
+      // The plan state above is the source of truth; the conversation view is
+      // a projection — one growing assistant message carrying the goal and
+      // final output, plus one tool part per step for the message renderer.
       const assistantId = nanoid();
       let parts: UIMessagePart[] = [];
       const syncAssistant = () => {
@@ -150,12 +196,23 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
             switch (ev.type) {
               case "planStarted":
                 goalRef.current = ev.goal;
-                patch({ goal: ev.goal });
+                stepsRef.current = ev.steps.map((s) => ({
+                  stepId: s.id,
+                  tool: s.tool,
+                  task: s.task,
+                  dependsOn: s.dependsOn,
+                  state: "pending" as const,
+                  artifacts: [],
+                }));
+                patch({
+                  goal: ev.goal,
+                  steps: stepsRef.current,
+                });
                 parts = [{ type: "text", text: `Goal: ${ev.goal}`, state: "streaming" as const }];
                 syncAssistant();
                 break;
               case "stepStarted":
-                upsertStep(ev.stepId, ev.tool, { state: "running" });
+                upsertStep(ev.stepId, { tool: ev.tool }, { state: "running" });
                 parts = [
                   ...parts.filter((p) => !("toolCallId" in p && p.toolCallId === stepToolId(ev.stepId))),
                   {
@@ -168,7 +225,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 syncAssistant();
                 break;
               case "confirmationRequested":
-                upsertStep(ev.stepId, "", { state: "running" });
+                upsertStep(ev.stepId, { task: ev.task }, { state: "running" });
                 patch({
                   status: "awaitingConfirmation",
                   pendingConfirmation: {
@@ -180,10 +237,19 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 });
                 break;
               case "stepCompleted":
-                upsertStep(ev.stepId, "", {
-                  state: "completed",
-                  output: ev.output,
-                });
+                upsertStep(
+                  ev.stepId,
+                  {},
+                  {
+                    state: "completed",
+                    output: ev.output,
+                    artifacts: ev.artifacts.map((a) => ({
+                      kind: a.kind as SupervisorArtifact["kind"],
+                      handle: a.handle,
+                      filename: a.filename,
+                    })),
+                  },
+                );
                 parts = parts.map((p) =>
                   "toolCallId" in p && p.toolCallId === stepToolId(ev.stepId)
                     ? {
@@ -196,10 +262,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 syncAssistant();
                 break;
               case "stepFailed":
-                upsertStep(ev.stepId, "", {
-                  state: "failed",
-                  error: ev.error,
-                });
+                upsertStep(ev.stepId, {}, { state: "failed", error: ev.error });
                 parts = parts.map((p) =>
                   "toolCallId" in p && p.toolCallId === stepToolId(ev.stepId)
                     ? {
@@ -212,17 +275,24 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 syncAssistant();
                 break;
               case "stepSkipped":
-                upsertStep(ev.stepId, "", {
-                  state: "skipped",
-                  error: ev.reason,
-                });
+                upsertStep(ev.stepId, {}, { state: "skipped", error: ev.reason });
                 break;
-              case "planCompleted":
+              case "planCompleted": {
                 patch({
                   status: "completed",
                   pendingConfirmation: null,
                   finalOutput: ev.finalOutput ?? null,
                 });
+                const outline = planSummary({
+                  status: "completed",
+                  goal: goalRef.current,
+                  steps: stepsRef.current,
+                  pendingConfirmation: null,
+                  finalOutput: ev.finalOutput ?? null,
+                  error: null,
+                });
+                const finalText = ev.finalOutput ?? "(plan completed)";
+                void persist(sessionId, "assistant", outline ? `${outline}\n\n${finalText}` : finalText);
                 parts = parts.map((p) =>
                   p.type === "text" && p.state === "streaming" ? { ...p, state: "done" as const } : p,
                 );
@@ -230,9 +300,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                   parts = [...parts, { type: "text", text: ev.finalOutput, state: "done" as const }];
                 }
                 syncAssistant();
-                void persist(sessionId, "assistant", ev.finalOutput ?? "(plan completed)");
                 callbacks?.onPlanCompleted?.(goalRef.current, ev.finalOutput ?? null);
                 break;
+              }
               case "planFailed":
                 patch({
                   status: "failed",

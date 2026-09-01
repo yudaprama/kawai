@@ -35,15 +35,6 @@
     ]
   },
   "plugins": {
-    "notification": {
-      "enabled": true,
-      "permissions": [
-        "notification:default",
-        "notification:allow-show",
-        "notification:allow-request-permission",
-        "notification:allow-is-permission-granted"
-      ]
-    },
     "deep-link": {
       "desktop": {
         "schemes": [
