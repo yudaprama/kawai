@@ -80,13 +80,6 @@ kawai-constants = { path = "../kawai-vault/constants" }
 base64 = { version = "0.22", optional = true }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
-# macOS native notification via UNUserNotificationCenter (reliable permission
-# check + delivery confirmation — the plugin's permission_state is hardcoded).
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-foundation = "0.3"
-objc2-user-notifications = "0.3"
-block2 = "0.6"
 # RAG pipeline for office knowledge files (gated behind "office"):
 #   kawai-embedding — embed (local LiteRT embedder fallback under the litert
 #   feature, desktop only, no API key)
@@ -150,6 +143,14 @@ sqlx = { version = "0.8", optional = true, default-features = false, features = 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# macOS native notification via UNUserNotificationCenter (reliable permission
+# check + delivery confirmation — the plugin's permission_state is hardcoded).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-user-notifications = "0.3"
+block2 = "0.6"
 
 [features]
 default = []
