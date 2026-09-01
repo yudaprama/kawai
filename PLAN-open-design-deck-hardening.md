@@ -347,6 +347,68 @@ The frontend holds **zero deck logic**:
   the only planned frontend additions — both cosmetic layers over a pipeline
   that works without them.
 
+## Sequence diagram — `office_create_deck` end to end
+
+Actor boundaries marked; loops are Rust-controlled (the LLM only responds).
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  USER (chat)                                                                     │
+│  "buat pitch deck pakai design system Apple"                                     │
+└──────────────┬──────────────────────────────────────────────────────────────────┘
+               │
+┌──────────────▼──────────────────────────────────────────────────────────────────┐
+│  REACT (frontend)  — display only, nol logika deck                               │
+│  • ChatComposer mengirim prompt (supervisor stream)                              │
+│  • TemplatePicker → office_list_templates → [Rust: baca bundled + cache saja]    │
+│  • menampilkan stream events / error / hasil                                     │
+└──────────────┬──────────────────────────────────────────────────────────────────┘
+               │ prompt
+┌──────────────▼──────────────────────────────────────────────────────────────────┐
+│  RUST #1 — resolusi template (templates.rs)         ← LLM tidak pernah pegang ini│
+│  1. bundled packs (in-binary) ──┐                                                │
+│  2. cache ~/.kawai/templates ───┤→ ResolvedPack {directive, themeCss/tokens,     │
+│  3. fetch registry.json (1×) ───┘                reference fixture}              │
+│  • bundled: langsung OK                                                          │
+│  • katalog: HANDSHAKE → kembali ke LLM: "directive + fixture, call AGAIN"        │
+└──────────────┬──────────────────────────────────────────────────────────────────┘
+               │ directive + fixture (+ deskripsi tool)
+┌──────────────▼──────────────────────────────────────────────────────────────────┐
+│  LLM (cloud subagent) — CONTENT ONLY                                             │
+│  ✓ memilih templateId        ✗ render      ✗ persist      ✗ network             │
+│  ✓ menulis slides:           ✗ sanitasi    ✗ validasi     ✗ export               │
+│     [{title, bodyHtml}]      ✗ fonts       ✗ theme tokens ✗ file ids            │
+│    (semantic HTML + class vocab + <style> bebas + <img data-file>)               │
+└──────────────┬──────────────────────────────────────────────────────────────────┘
+               │ slides[] (content murni)
+┌──────────────▼──────────────────────────────────────────────────────────────────┐
+│  RUST #2 — pipeline deterministik (deck.rs / store.rs / tools.rs)                │
+│                                                                                  │
+│  1. resolve file refs      : data-file handle → baca store → data: URL           │
+│  2. sanitize_html_fragment : buang script/handler/URL berbahaya; CSS di-scan:    │
+│                              @import dibuang, url() remote → inert               │
+│  3. render_deck_with_theme : skeleton reveal.js FIXED (REVEAL_JS/REVEAL_CSS)     │
+│                              + tema tokens (vendored / design system)            │
+│                              + font OFL embedded (data: @font-face)              │
+│                              + .deck-scope layout CSS (port base.css)            │
+│  4. probe_deck             : ≥1 slide berkonten? script asing? data-file nyangkut?│
+│         │ gagal → error actionable ──────────────► kembali ke LLM (self-correct)│
+│         ▼ lolos                                                                  │
+│  5. import_as + ArtifactManifest → office store (meta.json wajib manifest)       │
+└──────────────┬──────────────────────────────────────────────────────────────────┘
+               │ {file, slides, template}
+┌──────────────▼──────────────────────────────────────────────────────────────────┐
+│  REACT — render: FileViewer/asset page memuat self-contained HTML (webview)      │
+│  (deck jalan offline; font & tema embedded)                                      │
+└──────────────┬──────────────────────────────────────────────────────────────────┘
+               │ (saat user minta .pptx)
+┌──────────────▼──────────────────────────────────────────────────────────────────┐
+│  RUST #3 — export deterministik (office_export_deck) — LLM TIDAK IKUT SAMA SEKALI│
+│  parse_deck → deck_to_markdown (RAG) → export_pptx (PptxWriter, native shapes)   │
+│  + ArtifactManifest (source_tool: "office_export_deck")                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## The contract in one sentence
 
 The LLM writes **what** each slide says (in a sanitized, class-vocabularied
