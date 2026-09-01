@@ -1,0 +1,347 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "id": "swiss-grid-report",
+      "name": "Swiss Grid Report",
+      "version": "1.0.0",
+      "summary": "Strict typographic grid, red accent, engineering-report clarity.",
+      "directive": "STYLE swiss-grid-report: white background, near-black text (#111111), one signal-red accent (#e63329) used only for section numbers and the single key figure per slide. Titles are sentence-case statements set large; body text small and dense but never below reading comfort. Everything aligns to an invisible 12-column grid — flush left, ragged right. Mathematics/formulas and tables are first-class content. Number every slide (small, top-right). No decorative elements whatsoever; hierarchy comes from size and position only.",
+      "license": "style adapted from open-design html-ppt 'swiss-grid' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt",
+      "theme": "swiss-grid"
+    },
+    {
+      "id": "terminal-green-tech",
+      "name": "Terminal Green Tech",
+      "version": "1.0.0",
+      "summary": "Dark terminal aesthetic for engineering and infra audiences.",
+      "directive": "STYLE terminal-green-tech: deep charcoal background (#0a0f0a), phosphor-green text (#33ff66), monospace-feel headings, amber (#ffb000) for warnings/caveats only. Titles read like shell prompts or release-note headlines ('deps: cut cold start by 60%'). Code snippets and command lines are hero content — render them as preformatted-style paragraphs. Data shown as tight tables. One idea per slide, terse phrasing, no marketing adjectives.",
+      "license": "style adapted from open-design html-ppt 'terminal-green' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt",
+      "theme": "terminal-green"
+    },
+    {
+      "id": "warm-quarterly-magazine",
+      "name": "Warm Quarterly Magazine",
+      "summary": "Editorial quarter-in-review: warm paper, pull quotes, narrative flow.",
+      "version": "1.0.0",
+      "directive": "STYLE warm-quarterly-magazine: warm paper (#f7f3ec), ink brown (#2b2320), muted gold accent (#b98a2f). Titles are editorial headlines — narrative, complete thoughts. Alternate rhythm: full-paragraph narrative slides punctuated by single big-number slides. Pull quotes (short, attributed) get their own slides. Sections open with a divider slide carrying only the section name and a one-line summary. Generous margins; nothing touches the edges.",
+      "license": "original kawai style vocabulary",
+      "attribution": "kawai",
+      "theme": "editorial-serif"
+    },
+    {
+      "id": "dracula-night",
+      "name": "Dracula Night",
+      "version": "1.0.0",
+      "summary": "Beloved dark palette: purple/pink/cyan on deep night blue.",
+      "directive": "STYLE dracula-night: background #282a36, text #f8f8f2, accents used sparingly and semantically — purple #bd93f9 for titles' key word, pink #ff79c6 for the hero number, cyan #8be9fd for code/technical terms, green #50fa7b only for positive deltas. Titles short and punchy. Code snippets welcome as first-class content. Playful but disciplined: max two accent colors per slide.",
+      "license": "style adapted from open-design html-ppt 'dracula' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt",
+      "theme": "dracula"
+    },
+    {
+      "id": "tokyo-night",
+      "name": "Tokyo Night",
+      "version": "1.0.0",
+      "summary": "Muted neon on deep indigo — calm, modern, developer-chic.",
+      "directive": "STYLE tokyo-night: background #1a1b26, text #a9b1d6 with bright #c0caf5 for titles, accent #7aa2f7 (blue) as the workhorse, #9ece6a (green) for success metrics, #f7768e (red) sparingly for risks. Low-contrast backgrounds with high-contrast key content — the important element on each slide is the BRIGHTEST thing on it. Calm pacing: one idea, plenty of dark space.",
+      "license": "style adapted from open-design html-ppt 'tokyo-night' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt",
+      "theme": "tokyo-night"
+    },
+    {
+      "id": "nordic-cool",
+      "name": "Nordic Cool",
+      "version": "1.0.0",
+      "summary": "Muted arctic blues and greys — restrained, professional, frosty.",
+      "directive": "STYLE nordic-cool: background #2e3440 or light #eceff4, text #d8dee9 / #2e3440 respectively, accents from the frost scale (#8fbcbb, #88c0d0) with #bf616a reserved for the single most important number. No pure black or white — everything sits in the muted nord range. Titles understated; content speaks. Tables and timelines are preferred structures. The overall feel is calm competence.",
+      "license": "style adapted from open-design html-ppt 'nord' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt",
+      "theme": "nord"
+    },
+    {
+      "id": "gruvbox-warm",
+      "name": "Gruvbox Warm",
+      "version": "1.0.0",
+      "summary": "Retro warm earth tones — orange/yellow accents on aged paper or brown dark.",
+      "directive": "STYLE gruvbox-warm: background #fbf1c7 (light) or #282828 (dark), text #3c3836 / #ebdbb2, accents #d79921 (amber) and #fe8019 (orange) for emphasis, #98971a (olive) for positive metrics. Nostalgic, comfortable, slightly retro. Titles can carry personality ('The part everyone gets wrong'). Aliased, friendly tone; bullets short. Works especially well for postmortems and learnings decks.",
+      "license": "style adapted from open-design html-ppt 'gruvbox-dark' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt",
+      "theme": "gruvbox-dark"
+    },
+    {
+      "id": "solarized-paper",
+      "name": "Solarized Paper",
+      "version": "1.0.0",
+      "summary": "The classic low-fatigue palette on warm paper — long-meeting friendly.",
+      "directive": "STYLE solarized-paper: background #fdf6e3, text #657b83 with headings #073642, accent #268bd2 (blue) for key points, #b58900 (yellow) for numbers, #cb4b16 (orange) sparingly. Designed to be easy on eyes for long sessions. Titles are functional, not clever. Content density can run higher than most templates — this is a working deck, not a show deck. Tables, checklists, and step sequences are the natural slide shapes.",
+      "license": "style adapted from open-design html-ppt 'solarized-light' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt",
+      "theme": "solarized-light"
+    },
+    {
+      "id": "neo-brutalist",
+      "name": "Neo-Brutalist",
+      "version": "1.0.0",
+      "summary": "Loud blocks, thick borders, hard shadows — impossible to ignore.",
+      "directive": "STYLE neo-brutalist: background #fff or bold color fields (#ffd803 yellow, #a6fa86 green, #9dbdf2 blue) used as full-slide washes, thick black borders (#000, 3px) around key boxes, offset hard shadows. Text is heavy-weight and uppercase for titles ('THIS CHANGES EVERYTHING'), normal case for body. One shouting element per slide — a giant number, one word, one claim. Rotate background color per section. Chaos is choreographed: loud, but aligned.",
+      "license": "style adapted from open-design html-ppt 'neo-brutalism' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "bauhaus-blocks",
+      "name": "Bauhaus Blocks",
+      "version": "1.0.0",
+      "summary": "Primary-color geometry: circles, bars, and grids that structure the argument.",
+      "directive": "STYLE bauhaus-blocks: background #f4f1ea, primary red #d02e26, blue #1c4c9c, yellow #f2b705, black for text. Every slide composes from simple geometric vocabulary — a full-width color bar as a section marker, a circle holding the hero number, rectangles as content zones. Titles set bold and low on the slide. Form follows the argument: comparison slides split the canvas in half; sequences use left-to-right blocks. No ornament — geometry IS the decoration.",
+      "license": "style adapted from open-design html-ppt 'bauhaus' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "japanese-minimal",
+      "name": "Japanese Minimal",
+      "version": "1.0.0",
+      "summary": "Ma (negative space), one image or phrase per slide, profound restraint.",
+      "directive": "STYLE japanese-minimal: background #ffffff or #f6f4f0, text #333 with warm grey #888 for secondary, a single vermilion #e34234 seal-like accent appearing on at most a third of slides. Enormous negative space — content occupies at most a third of the slide. Each slide holds ONE phrase, ONE number, or ONE image with a one-line caption. Titles may be a single word. Silence is the design: what you leave off the slide says as much as what's on it.",
+      "license": "style adapted from open-design html-ppt 'japanese-minimal' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "cyberpunk-neon",
+      "name": "Cyberpunk Neon",
+      "version": "1.0.0",
+      "summary": "High-voltage magenta/cyan on black — product launches and bold visions.",
+      "directive": "STYLE cyberpunk-neon: background #050505 with subtle grid or scanline feel implied via content placement, text #e8e8e8, neon magenta #ff2a6d and cyan #05d9e8 as dueling accents, #d1f7ff for glows described in text emphasis. Titles are declarations of the future ('Shipping the impossible'), set bold. Use contrast extremes: tiny dense captions against one enormous glowing claim. For vision/launch decks only — never for financial reporting.",
+      "license": "style adapted from open-design html-ppt 'cyberpunk-neon' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "memphis-pop",
+      "name": "Memphis Pop",
+      "version": "1.0.0",
+      "summary": "Playful 80s post-modern: squiggles, confetti geometry, joyful color clashes.",
+      "directive": "STYLE memphis-pop: background #fff or pastel (#ffeee0, #e0f7fa), text #212121, clashing accents used confidently: #ff5a5f coral, #00c2b8 teal, #ffce00 yellow, #7c4dff violet. Titles are fun, conversational, exclamation-friendly. Decorative vocabulary: scattered small shapes (triangle, circle, zigzag) described as bordered inline elements at slide corners — never overlapping content. Energy high, hierarchy still strict: one message per slide, confetti stays in the margins.",
+      "license": "style adapted from open-design html-ppt 'memphis-pop' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "midcentury-modern",
+      "name": "Midcentury Modern",
+      "version": "1.0.0",
+      "summary": "1950s optimism: mustard, teal, walnut — warm geometry and confident serif feel.",
+      "directive": "STYLE midcentury-modern: background #f2e8d5, text #3f3a30, palette mustard #e3b23c, teal #2a9d8f, terracotta #c96f4a, deep walnut #6b4f3a for weight. Titles confident and succinct with a wry warmth ('The good old days are now'). Content zones feel like furniture: rounded rectangles, balanced asymmetry, one anchor visual per slide. Works for brand, culture, and annual-review decks.",
+      "license": "style adapted from open-design html-ppt 'midcentury' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt",
+      "theme": "midcentury"
+    },
+    {
+      "id": "academic-paper",
+      "name": "Academic Paper",
+      "version": "1.0.0",
+      "summary": "Serious, citation-friendly, conference-ready restraint.",
+      "directive": "STYLE academic-paper: white background, near-black serif-feel text (#1a1a1a), institutional deep blue (#003366) for headings, no other accent colors except a single highlight (#c8102e) for the core finding. Titles state findings precisely ('Sample bias explains 70% of the variance'). Structure follows paper conventions: Motivation, Method, Results, Limitations, Conclusion. Evidence density is high — every claim carries its source inline. No hype words; hedging is a feature.",
+      "license": "style adapted from open-design html-ppt 'academic-paper' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "magazine-bold",
+      "name": "Magazine Bold",
+      "version": "1.0.0",
+      "summary": "Full-bleed color, giant display type, editorial confidence.",
+      "directive": "STYLE magazine-bold: each section opens with a full-wash background in a saturated editorial color (crimson #c0392b, cobalt #22499c, forest #14532d — rotate), text white or cream. Display titles are HUGE — 6 words maximum, set like a magazine cover line. Body copy runs in short confident paragraphs. Pull numbers out at poster scale. The deck should feel like flipping through a bold print feature: rhythm between loud section openers and quieter content spreads.",
+      "license": "style adapted from open-design html-ppt 'magazine-bold' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "xiahongshu-clean",
+      "name": "Soft White Social",
+      "version": "1.0.0",
+      "summary": "Soft, social-feed friendly: airy white, rounded warmth, gen-z gentle.",
+      "directive": "STYLE xiahongshu-clean: airy white background (#ffffff, #fff7f9 tint alternates), soft charcoal text (#3a3a3a), pastel accents — blush pink #ffb7c5, mint #b5e8d5, lavender #d5c6ff — chosen per section. Titles are friendly and colloquial ('okay but the results??'), body text short with emoji allowed sparingly in captions. Rounded feel: content zones read as soft cards. Optimized for decks that will be screenshotted and shared — every slide must stand alone out of context.",
+      "license": "style adapted from open-design html-ppt 'xiaohongshu-white' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "arctic-cool",
+      "name": "Arctic Cool",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'arctic-cool' theme (light mode).",
+      "directive": "STYLE arctic-cool (light mode): background #f2f6fb, primary text #0e1f33, secondary text #3a5778. Accent palette: #1e6fb0, #17b1b1, #6f8aa6 — #1e6fb0 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Titles are declarative action statements that state the takeaway, never labels. One message per slide; lead with the number, then the 'so what'. Tables over prose for comparisons. Close with an explicit ask or conclusion slide.",
+      "license": "style adapted from open-design html-ppt 'arctic-cool' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "aurora",
+      "name": "Aurora",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'aurora' theme (dark mode).",
+      "directive": "STYLE aurora (dark mode): background #06091c, primary text #e8f0ff, secondary text #b4c4e4. Accent palette: #5ef2c6, #7aa2ff, #c984ff — #5ef2c6 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. One shouting element per slide — a giant number, one word, one claim; everything else stays quiet. Backgrounds may rotate as full-slide color washes per section. Loud, but aligned.",
+      "license": "style adapted from open-design html-ppt 'aurora' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "blueprint",
+      "name": "Blueprint",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'blueprint' theme (dark mode).",
+      "directive": "STYLE blueprint (dark mode): background #0b3a6f, primary text #e8f3ff, secondary text #b8d4f0. Accent palette: #ffffff, #aee1ff, #ffd27a — #ffffff is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Titles read like engineering headlines ('deps: cut cold start by 60%'). Code, tables, and step sequences are first-class content. Terse phrasing, one idea per slide, no marketing adjectives.",
+      "license": "style adapted from open-design html-ppt 'blueprint' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "catppuccin-latte",
+      "name": "Catppuccin Latte",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'catppuccin-latte' theme (light mode).",
+      "directive": "STYLE catppuccin-latte (light mode): background #eff1f5, primary text #4c4f69, secondary text #6c6f85. Accent palette: #8839ef, #1e66f5, #ea76cb — #8839ef is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Developer-editorial tone: the important element on each slide is the BRIGHTEST thing on it. Code snippets are hero content. Calm pacing — one idea, generous dark or muted space.",
+      "license": "style adapted from open-design html-ppt 'catppuccin-latte' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "catppuccin-mocha",
+      "name": "Catppuccin Mocha",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'catppuccin-mocha' theme (dark mode).",
+      "directive": "STYLE catppuccin-mocha (dark mode): background #1e1e2e, primary text #cdd6f4, secondary text #a6adc8. Accent palette: #cba6f7, #89b4fa, #f5c2e7 — #cba6f7 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Developer-editorial tone: the important element on each slide is the BRIGHTEST thing on it. Code snippets are hero content. Calm pacing — one idea, generous dark or muted space.",
+      "license": "style adapted from open-design html-ppt 'catppuccin-mocha' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "corporate-clean",
+      "name": "Corporate Clean",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'corporate-clean' theme (light mode).",
+      "directive": "STYLE corporate-clean (light mode): background #ffffff, primary text #0a2540, secondary text #425466. Accent palette: #0a2540, #1d4ed8, #64748b — #0a2540 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Titles are declarative action statements that state the takeaway, never labels. One message per slide; lead with the number, then the 'so what'. Tables over prose for comparisons. Close with an explicit ask or conclusion slide.",
+      "license": "style adapted from open-design html-ppt 'corporate-clean' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "editorial-serif",
+      "name": "Editorial Serif",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'editorial-serif' theme (light mode).",
+      "directive": "STYLE editorial-serif (light mode): background #faf7f2, primary text #1b1410, secondary text #5c4a3e. Accent palette: #8a2a1c, #c97a4a, #1b1410 — #8a2a1c is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Editorial rhythm: alternate full-paragraph narrative slides with single big-number slides. Titles read like magazine standfirsts — complete, evocative thoughts. Restraint: if a slide feels full, split it.",
+      "license": "style adapted from open-design html-ppt 'editorial-serif' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "engineering-whiteprint",
+      "name": "Engineering Whiteprint",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'engineering-whiteprint' theme (light mode).",
+      "directive": "STYLE engineering-whiteprint (light mode): background #ffffff, primary text #0a1e46, secondary text #3a4a6a. Accent palette: #0a1e46, #1e5ac4, #c42a10 — #0a1e46 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Titles read like engineering headlines ('deps: cut cold start by 60%'). Code, tables, and step sequences are first-class content. Terse phrasing, one idea per slide, no marketing adjectives.",
+      "license": "style adapted from open-design html-ppt 'engineering-whiteprint' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "glassmorphism",
+      "name": "Glassmorphism",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'glassmorphism' theme (dark mode).",
+      "directive": "STYLE glassmorphism (dark mode): background #0b1024, primary text #f2f4ff, secondary text #c3c8e6. Accent palette: #7dd3fc, #c084fc, #f0abfc — #7dd3fc is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Editorial rhythm: alternate full-paragraph narrative slides with single big-number slides. Titles read like magazine standfirsts — complete, evocative thoughts. Restraint: if a slide feels full, split it.",
+      "license": "style adapted from open-design html-ppt 'glassmorphism' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "minimal-white",
+      "name": "Minimal White",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'minimal-white' theme (light mode).",
+      "directive": "STYLE minimal-white (light mode): background #ffffff, primary text #0c0d10, secondary text #55596a. Accent palette: #111216, #3b3f4a, #6b6f7a — #111216 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Maximum negative space — content occupies at most a third of the slide. Each slide holds ONE phrase, ONE number, or ONE visual with a one-line caption. What you leave off says as much as what's on it.",
+      "license": "style adapted from open-design html-ppt 'minimal-white' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "news-broadcast",
+      "name": "News Broadcast",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'news-broadcast' theme (light mode).",
+      "directive": "STYLE news-broadcast (light mode): background #ffffff, primary text #0a0a0a, secondary text #3a3a3a. Accent palette: #e11d2d, #0a0a0a, #ffd100 — #e11d2d is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Titles are declarative action statements that state the takeaway, never labels. One message per slide; lead with the number, then the 'so what'. Tables over prose for comparisons. Close with an explicit ask or conclusion slide.",
+      "license": "style adapted from open-design html-ppt 'news-broadcast' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "pitch-deck-vc",
+      "name": "Pitch Deck Vc",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'pitch-deck-vc' theme (light mode).",
+      "directive": "STYLE pitch-deck-vc (light mode): background #ffffff, primary text #0b0d12, secondary text #4a5270. Accent palette: #0070f3, #7928ca, #ff4ecb — #0070f3 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Titles are declarative action statements that state the takeaway, never labels. One message per slide; lead with the number, then the 'so what'. Tables over prose for comparisons. Close with an explicit ask or conclusion slide.",
+      "license": "style adapted from open-design html-ppt 'pitch-deck-vc' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "rainbow-gradient",
+      "name": "Rainbow Gradient",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'rainbow-gradient' theme (light mode).",
+      "directive": "STYLE rainbow-gradient (light mode): background #ffffff, primary text #0c0d10, secondary text #4d5162. Accent palette: #ff4d8b, #7a5cff, #36b6ff — #ff4d8b is the workhorse; the others only for the single hero element per slide. Apply via inline styles. One shouting element per slide — a giant number, one word, one claim; everything else stays quiet. Backgrounds may rotate as full-slide color washes per section. Loud, but aligned.",
+      "license": "style adapted from open-design html-ppt 'rainbow-gradient' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "retro-tv",
+      "name": "Retro Tv",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'retro-tv' theme (light mode).",
+      "directive": "STYLE retro-tv (light mode): background #f5ecd7, primary text #2a1a08, secondary text #6b4a22. Accent palette: #e67e14, #c73a1f, #f2b544 — #e67e14 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. One shouting element per slide — a giant number, one word, one claim; everything else stays quiet. Backgrounds may rotate as full-slide color washes per section. Loud, but aligned.",
+      "license": "style adapted from open-design html-ppt 'retro-tv' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "rose-pine-dusk",
+      "name": "Rose Pine",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'rose-pine' theme (dark mode).",
+      "directive": "STYLE rose-pine-dusk (dark mode): background #191724, primary text #e0def4, secondary text #c4b8d8. Accent palette: #ebbcba, #c4a7e7, #9ccfd8 — #ebbcba is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Developer-editorial tone: the important element on each slide is the BRIGHTEST thing on it. Code snippets are hero content. Calm pacing — one idea, generous dark or muted space.",
+      "license": "style adapted from open-design html-ppt 'rose-pine' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "sharp-mono",
+      "name": "Sharp Mono",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'sharp-mono' theme (light mode).",
+      "directive": "STYLE sharp-mono (light mode): background #ffffff, primary text #000000, secondary text #1a1a1a. Accent palette: #000000, #000000, #ff2200 — #000000 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Titles read like engineering headlines ('deps: cut cold start by 60%'). Code, tables, and step sequences are first-class content. Terse phrasing, one idea per slide, no marketing adjectives.",
+      "license": "style adapted from open-design html-ppt 'sharp-mono' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "soft-pastel",
+      "name": "Soft Pastel",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'soft-pastel' theme (light mode).",
+      "directive": "STYLE soft-pastel (light mode): background #fdf7fb, primary text #3a1f33, secondary text #6b4d62. Accent palette: #f49bb8, #b5d5f0, #f7d08a — #f49bb8 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Friendly, colloquial titles; short body lines; every slide must stand alone out of context (screenshot-friendly). Rounded content zones; accents stay in the pastel family.",
+      "license": "style adapted from open-design html-ppt 'soft-pastel' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "sunset-warm",
+      "name": "Sunset Warm",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'sunset-warm' theme (light mode).",
+      "directive": "STYLE sunset-warm (light mode): background #fff7ef, primary text #2a160a, secondary text #6b4630. Accent palette: #e36a2d, #f2a341, #d94860 — #e36a2d is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Friendly, colloquial titles; short body lines; every slide must stand alone out of context (screenshot-friendly). Rounded content zones; accents stay in the pastel family.",
+      "license": "style adapted from open-design html-ppt 'sunset-warm' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "vaporwave",
+      "name": "Vaporwave",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'vaporwave' theme (dark mode).",
+      "directive": "STYLE vaporwave (dark mode): background #1a0938, primary text #fdf0ff, secondary text #d4a8e8. Accent palette: #ff6ec7, #00f5ff, #ffd166 — #ff6ec7 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. One shouting element per slide — a giant number, one word, one claim; everything else stays quiet. Backgrounds may rotate as full-slide color washes per section. Loud, but aligned.",
+      "license": "style adapted from open-design html-ppt 'vaporwave' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    },
+    {
+      "id": "y2k-chrome",
+      "name": "Y2K Chrome",
+      "version": "1.0.0",
+      "summary": "Auto-ported from the open-design 'y2k-chrome' theme (light mode).",
+      "directive": "STYLE y2k-chrome (light mode): background #dfe4ec, primary text #1a1f2e, secondary text #4a536a. Accent palette: #8a5cff, #3ccfd8, #ff84c4 — #8a5cff is the workhorse; the others only for the single hero element per slide. Apply via inline styles. One shouting element per slide — a giant number, one word, one claim; everything else stays quiet. Backgrounds may rotate as full-slide color washes per section. Loud, but aligned.",
+      "license": "style adapted from open-design html-ppt 'y2k-chrome' theme (MIT, @lewislulu)",
+      "attribution": "open-design design-templates/html-ppt"
+    }
+  ]
+}
