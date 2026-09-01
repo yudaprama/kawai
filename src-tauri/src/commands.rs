@@ -728,6 +728,28 @@ pub fn office_list_templates() -> Vec<logic::office::TemplateListing> {
     logic::office::list_templates()
 }
 
+/// Bind a user's explicit template choice — consumed on the next
+/// `office_create_deck` call (Rust overrides the model's arg).
+#[cfg(feature = "office")]
+#[tauri::command]
+pub fn office_bind_template(
+    template_id: String,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::bind_template(&user_id, &template_id)
+}
+
+/// Peek the current (non-consumed) template binding for the UI's bound-state display.
+#[cfg(feature = "office")]
+#[tauri::command]
+pub fn office_peek_template(
+    session: State<'_, Session>,
+) -> Result<Option<String>, String> {
+    let user_id = session_user_id(&session)?;
+    Ok(logic::office::peek_template_binding(&user_id))
+}
+
 /// Authenticated RPC: read a stored document as markdown (in-process via office_oxide).
 #[cfg(feature = "office")]
 #[tauri::command]

@@ -163,6 +163,10 @@ pub fn run() {
         #[cfg(feature = "office")]
         commands::office_list_templates,
         #[cfg(feature = "office")]
+        commands::office_bind_template,
+        #[cfg(feature = "office")]
+        commands::office_peek_template,
+        #[cfg(feature = "office")]
         commands::office_read_document,
         #[cfg(feature = "office")]
         commands::office_export_file,

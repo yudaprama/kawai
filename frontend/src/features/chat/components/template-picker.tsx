@@ -57,6 +57,11 @@ export function TemplatePicker({
   }, [templates, query]);
 
   const pick = (t: TemplateInfo) => {
+    // Structured binding: Rust overrides the model's templateId on the next
+    // office_create_deck — the text insertion is for transparency only.
+    call<boolean>("office_bind_template", { templateId: t.id }).catch((err) =>
+      logWarn("office_bind_template", err),
+    );
     onPick(`Use the "${t.id}" template (${t.name}) for the deck.`);
     setOpen(false);
     setQuery("");

@@ -953,6 +953,32 @@ async fn office_restore_backup_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
+/// Bind a user's explicit template choice.
+#[cfg(feature = "office")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BindTemplateRequest {
+    template_id: String,
+}
+
+#[cfg(feature = "office")]
+async fn office_bind_template_handler(
+    Extension(claims): Extension<Claims>,
+    Json(req): Json<BindTemplateRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    logic::office::bind_template(&claims.sub, &req.template_id)
+        .map(|_| Json(true))
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+/// Peek current template binding.
+#[cfg(feature = "office")]
+async fn office_peek_template_handler(
+    Extension(claims): Extension<Claims>,
+) -> Json<Option<String>> {
+    Json(logic::office::peek_template_binding(&claims.sub))
+}
+
 #[cfg(feature = "office")]
 async fn office_list_templates_handler() -> Json<Vec<logic::office::TemplateListing>> {
     Json(logic::office::list_templates())
@@ -1450,6 +1476,8 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/office_import_file", post(office_import_file_handler))
         .route("/api/office_list_files", post(office_list_files_handler))
         .route("/api/office_list_templates", post(office_list_templates_handler))
+        .route("/api/office_bind_template", post(office_bind_template_handler))
+        .route("/api/office_peek_template", post(office_peek_template_handler))
         .route(
             "/api/office_read_document",
             post(office_read_document_handler),
