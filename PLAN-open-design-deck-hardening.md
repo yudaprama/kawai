@@ -204,8 +204,12 @@ as **downloaded seed packs**, not bundled assets — the full catalogue is
 
 ### Registry & hosting
 
-- A static `index.json` (open-design repo raw URL or a kawai-hosted mirror —
-  decide at implementation; no live service required):
+- **Hosted in this repo** (`crates/engines/office/registry.json`, committed
+  alongside the code that reads it): a static `index.json`-style document
+  served via the repo's raw URL (`REGISTRY_URL`). Licence curation happens at
+  commit time — only permissive packs (MIT/Apache, attribution preserved)
+  enter the file, so no fetch-time filtering is needed. Update by editing +
+  committing; clients pick it up on their next init.
 
   ```json
   {
@@ -241,8 +245,9 @@ Mirror the PaddleOCR/model auto-download machinery:
   models); per-process `tokio::sync::Mutex` on a template id; per-chunk stall
   timeout.
 - Storage: `<data_root>/templates/<id>/<version>/…`, beside the per-user data
-  layout; `KAWAI_TEMPLATE_DIR` env override mirrors `KAWAI_OCR_MODEL_DIR`
-  (set ⇒ use as-is, skip download).
+  layout; the directory resolves through `kawai_paths::template_packs_dir()`
+  (`~/.kawai/templates`, hardcoded — no env override; internal plumbing, not
+  user configuration).
 - Versioning: packs are immutable per version; a new `index.json` version
   downloads to a new dir and swaps a pointer — old versions garbage-collected
   only when no longer referenced (no auto-delete of user-referenced packs).

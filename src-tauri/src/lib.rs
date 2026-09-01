@@ -56,6 +56,11 @@ pub fn run() {
                     // kawai.db + docs/ (office store defaults into it).
                     logic::db::set_data_root(data);
                 }
+                // Warm the deck-template registry cache in the background
+                // (best-effort; offline silently degrades to bundled packs).
+                tauri::async_runtime::spawn(async {
+                    kawai_office::templates::prefetch_registry().await;
+                });
             }
             // Tier-0 web read engine: hidden webview owned by the shell.
             // kawai-web never registers one (Cloudflare-only there).
