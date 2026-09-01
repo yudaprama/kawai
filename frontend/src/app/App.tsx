@@ -16,21 +16,20 @@ import { CodeAssetPage } from "@/features/codegraph/components/code-page";
 import { MemoryAssetPage } from "@/features/memory/components/memory-page";
 import { SkillsAssetPage } from "@/features/skills/components/skills-page";
 import { WikiAssetPage } from "@/features/assets/pages/wiki-page";
-import { ContextPanel } from "@/features/agents/context-panel";
-import { contextTabsFor } from "@/features/agents/registry";
+import { SqlSourcesAssetPage } from "@/features/assets/pages/sql-sources-page";
+import { CanvasPanel } from "@/features/chat/components/canvas-panel";
 import { ConversationPanel } from "@/features/chat/components/conversation-panel";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
-import { ToolWorkbench } from "@/features/tools/tool-workbench";
 
 export default function App() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentsRail, setAgentsRail] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [canvasOpen, setCanvasOpen] = useState(true);
+  const [canvasOpen, setCanvasOpen] = useState(false);
   const [assetView, setAssetView] = useState<AssetViewId | null>(null);
   const [toolWorkbenchId, setToolWorkbenchId] = useState<string | null>(null);
   const [codeGraphSeed, setCodeGraphSeed] = useState<{ query: string; result: string } | null>(null);
-  const [mobileDrawer, setMobileDrawer] = useState<null | "agents" | "knowledge">(null);
+  const [mobileDrawer, setMobileDrawer] = useState<null | "agents">(null);
 
   useEffect(() => {
     let disposed = false;
@@ -106,22 +105,15 @@ export default function App() {
 
   const ka = useKnowledgeActions(chat);
 
-  // Per-agent right-pane composition + empty-data onboarding policy — both
-  // registry-driven; App only wires shell capabilities (canvas/drawer) in.
-  const contextTabs = contextTabsFor(agent);
-  const hasContextPane = contextTabs.length > 0;
-  const { onboarding, sourcesFocus } = useContextOnboarding({
+  // Empty-data onboarding (analytics only) — the "Connect database" CTA opens
+  // the Databases asset page; import rides the knowledge file dialog.
+  const { onboarding } = useContextOnboarding({
     agent,
     inSession,
     knowledgeLoaded: ka.knowledge.loaded,
     files: ka.knowledge.files,
-    canvasOpen,
-    mobileDrawer,
-    openContextPane: () => {
-      setCanvasOpen(true);
-      setMobileDrawer((d) => d ?? "knowledge");
-    },
     importFiles: () => void ka.addKnowledgeFiles(),
+    openSources: () => setAssetView("sources"),
   });
 
   // Preview bridge: tool cards inside the vendored renderer tree emit an
@@ -219,33 +211,13 @@ export default function App() {
     return <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center" />;
   }
 
-  // Context pane — rendered only when the agent's registry composition has
-  // tabs; reused for the desktop canvas and the mobile drawer.
   // Asset workspace — replaces the chat center pane while an asset view is
-  // open (Wiki = knowledge base, Memory = raw conversations; Skills/Code have
-  // no backend tier yet and state that plainly). Data comes from the same app
-  // state the chat uses, so switching views never re-fetches or resets chat.
-  const assetWorkspace = toolWorkbenchId ? (
-    <ToolWorkbench
-      messages={chat.messages}
-      onBack={() => setToolWorkbenchId(null)}
-      onOpenPreview={(fileId, name) =>
-        ka.setPreviewFile({
-          id: fileId,
-          originalName: name,
-          ext: name.split(".").pop() ?? "",
-          bytes: 0,
-          createdAt: 0,
-          status: "ready",
-          chunks: 0,
-          error: null,
-          inSession: true,
-          raw: null,
-        })
-      }
-      toolCallId={toolWorkbenchId}
-    />
-  ) : assetView === "wiki" ? (
+  // open (Wiki = knowledge base, Databases = SQL sources, Memory = raw
+  // conversations; Skills/Code have no backend tier yet and state that
+  // plainly). Data comes from the same app state the chat uses, so switching
+  // views never re-fetches or resets chat. Tool results do NOT live here —
+  // they render on the canvas (see CanvasPanel).
+  const assetWorkspace = assetView === "wiki" ? (
     <WikiAssetPage
       confirmDeleteId={ka.confirmDeleteId}
       files={ka.knowledge.files}
@@ -261,6 +233,8 @@ export default function App() {
     />
   ) : assetView === "memory" ? (
     <MemoryAssetPage sessions={[...chat.sessions, ...chat.archivedSessions]} onBack={() => setAssetView(null)} />
+  ) : assetView === "sources" ? (
+    <SqlSourcesAssetPage onBack={() => setAssetView(null)} />
   ) : assetView === "skills" ? (
     <SkillsAssetPage onBack={() => setAssetView(null)} />
   ) : assetView === "code" ? (
@@ -274,25 +248,15 @@ export default function App() {
     />
   ) : null;
 
-  const contextPanel = hasContextPane ? (
-    <ContextPanel
-      tabs={contextTabs}
-      knowledge={ka.knowledge}
-      sessionId={chat.sessionId}
-      sessionFiles={ka.sessionFiles}
-      importing={ka.importing}
-      linking={ka.linking}
-      confirmDeleteId={ka.confirmDeleteId}
-      focus={sourcesFocus ? { tab: "sources", n: sourcesFocus } : undefined}
-      onAddFiles={() => void ka.addKnowledgeFiles()}
-      onAddLink={ka.addKnowledgeLink}
-      onAddToSession={ka.addToSession}
-      onRemoveFromSession={ka.removeFromSession}
-      onRetryIndex={ka.retryIndex}
-      onDeleteFile={ka.deleteFile}
-      onPreview={ka.openPreview}
+  // Canvas — output-only pane: tool results and document previews. Knowledge
+  // is input; it lives in the composer's attachment (@) menu + the Wiki page.
+  const canvas = (
+    <CanvasPanel
+      messages={chat.messages}
+      toolCallId={toolWorkbenchId}
+      onCloseTool={() => setToolWorkbenchId(null)}
     />
-  ) : null;
+  );
 
   return (
     <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">
@@ -343,10 +307,12 @@ export default function App() {
           onImageToKnowledge={ka.imageToKnowledge}
           onboarding={onboarding}
           onOpenMobileAgents={() => setMobileDrawer("agents")}
-          onOpenMobileKnowledge={hasContextPane ? () => setMobileDrawer("knowledge") : undefined}
+          onAddFiles={() => void ka.addKnowledgeFiles()}
+          onAddLink={ka.addKnowledgeLink}
           onOpenTool={(id) => {
             setToolWorkbenchId(id);
             setAssetView(null);
+            setCanvasOpen(true);
           }}
           onOpenCodeGraph={(query, result) => {
             setCodeGraphSeed({ query, result });
@@ -355,8 +321,8 @@ export default function App() {
           }}
           headerExtra={<NotificationCenter />}
           canvasOpen={canvasOpen}
-          onToggleCanvas={hasContextPane ? () => setCanvasOpen((v) => !v) : undefined}
-          canvas={canvasOpen ? contextPanel : null}
+          onToggleCanvas={() => setCanvasOpen((v) => !v)}
+          canvas={canvasOpen ? canvas : null}
         />
       )}
 
@@ -383,20 +349,6 @@ export default function App() {
                 onToggle={() => setMobileDrawer(null)}
                 onLogout={() => void chat.logout()}
               />
-            </div>
-          )}
-
-          {mobileDrawer === "knowledge" && contextPanel && (
-            <div className="bg-background relative ml-auto flex h-full w-[360px] max-w-[90vw] flex-col shadow-xl">
-              <button
-                aria-label="Close knowledge"
-                className="bg-background/80 hover:bg-accent absolute top-2 right-2 z-10 rounded-md border px-2 py-1 text-xs shadow-sm"
-                onClick={() => setMobileDrawer(null)}
-                type="button"
-              >
-                Close
-              </button>
-              <div className="min-h-0 flex-1 overflow-hidden pt-0">{contextPanel}</div>
             </div>
           )}
         </div>

@@ -1,7 +1,7 @@
-import { BookIcon, BrainIcon, CodeXmlIcon, WrenchIcon } from "lucide-react";
+import { BookIcon, BrainIcon, CodeXmlIcon, DatabaseIcon, WrenchIcon } from "lucide-react";
 
 /** Asset views openable from the rail's Assets section (center-pane workspace pages). */
-export type AssetViewId = "wiki" | "code" | "skills" | "memory";
+export type AssetViewId = "wiki" | "code" | "skills" | "memory" | "sources";
 
 export interface AssetNavEntry {
   id: AssetViewId;
@@ -16,4 +16,5 @@ export const ASSET_NAV: AssetNavEntry[] = [
   { id: "code", label: "Code", subtitle: "code graph", icon: CodeXmlIcon },
   { id: "skills", label: "Skills", subtitle: "agent skills", icon: WrenchIcon },
   { id: "memory", label: "Memory", subtitle: "chat memory", icon: BrainIcon },
+  { id: "sources", label: "Databases", subtitle: "SQL sources", icon: DatabaseIcon },
 ];

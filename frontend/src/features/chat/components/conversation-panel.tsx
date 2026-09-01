@@ -1,5 +1,4 @@
 import {
-  BookOpenIcon,
   BrainIcon,
   type CheckIcon,
   DatabaseIcon,
@@ -76,7 +75,8 @@ export function ConversationPanel({
   canvas,
   onboarding,
   onOpenMobileAgents,
-  onOpenMobileKnowledge,
+  onAddFiles,
+  onAddLink,
   onOpenTool,
   headerExtra,
 }: {
@@ -108,8 +108,8 @@ export function ConversationPanel({
   onStopSupervisor: () => void;
   canvasOpen: boolean;
   inSession: boolean;
-  /** Absent when the active agent's registry composition has no context pane —
-   *  the toggle and the pane itself stay hidden. */
+  /** Absent when the canvas is unavailable.
+   *  The toggle and the pane itself stay hidden. */
   onToggleCanvas?: () => void;
   onOpenSessions?: () => void;
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
@@ -119,7 +119,9 @@ export function ConversationPanel({
    *  prompt chips. */
   onboarding: { onImport: () => void; onConnect: () => void } | null;
   onOpenMobileAgents?: () => void;
-  onOpenMobileKnowledge?: () => void;
+  /** Knowledge import actions surfaced inside the composer's attachment (@) menu. */
+  onAddFiles?: () => void;
+  onAddLink?: () => void;
   onOpenTool?: (toolCallId: string) => void;
   onOpenCodeGraph?: (query: string, result: string) => void;
   headerExtra?: React.ReactNode;
@@ -183,19 +185,6 @@ export function ConversationPanel({
             </Button>
           )}
 
-          {onOpenMobileKnowledge && (
-            <Button
-              aria-haspopup="dialog"
-              aria-label="Open knowledge"
-              className="lg:hidden"
-              onClick={onOpenMobileKnowledge}
-              size="icon"
-              title="Knowledge"
-              variant={canvasOpen ? "ghost" : "secondary"}
-            >
-              <BookOpenIcon className="size-4" />
-            </Button>
-          )}
           <Button
             aria-label={thinking ? "Turn thinking mode off" : "Turn thinking mode on"}
             aria-pressed={thinking}
@@ -377,6 +366,8 @@ export function ConversationPanel({
               onSubmit={(text, fileIds) => onSend(text, fileIds)}
               lastUserText={lastUserText}
               onImageToKnowledge={onImageToKnowledge}
+              onAddFiles={onAddFiles}
+              onAddLink={onAddLink}
             />
           </div>
         </section>

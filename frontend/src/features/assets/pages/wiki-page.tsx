@@ -109,7 +109,7 @@ export function WikiAssetPage({
         sidebar={
           <AssetListPanel
             count={`${filtered.length}`}
-            emptyText="No sources yet — add documents with “Add source”, or paste a YouTube link from the chat's Knowledge pane."
+            emptyText="No sources yet — add documents with “Add source”, or paste a YouTube link from the chat composer's attachment (@) menu."
             getItemId={(f) => f.id}
             items={filtered}
             loading={!loaded}

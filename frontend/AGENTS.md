@@ -59,7 +59,7 @@ frontend/
 │   │
 │   ├── features/           # feature-organized domain code
 │   │   ├── auth/            # authentication: auth-gate.tsx, use-auth.ts, supabase.ts
-│   │   ├── agents/          # agent catalog rail + context pane composition: agents-rail.tsx, registry.tsx, context-panel.tsx
+│   │   ├── agents/          # agent catalog rail: agents-rail.tsx, registry.tsx (ContextOnboarding type)
 │   │   ├── chat/            # chat + supervisor execution
 │   │   │   ├── components/  # chat-composer, conversation-panel, message-part-view, session-row, sessions-panel
 │   │   │   ├── hooks/       # use-chat-model, use-chat-sessions, use-supervisor-chat, use-supervisor-plan
@@ -137,7 +137,7 @@ User goal → app/App.tsx → use-supervisor-plan.planAndRun()
 - **File @-mentions carry IDs, not content.** The composer's @ button opens a `knowledge_list` popover; picked files render as chips and their IDs ride along on the next submit (`onSubmit(text, fileIds)`). The backend binds them to the session and the supervisor tools read them from session scope. Chips clear after submit.
 - **Auth bootstrap is in use-auth.ts.** On mount: Supabase session → `set_session`; fallback → `whoami` → `restore_session` (OS keychain). Deep-link handler listens for `kawai://auth` callbacks (PKCE code exchange + implicit token). OAuth opens in system browser via `skipBrowserRedirect` + `openUrl`. The dev bypass (`KAWAI_AUTH_DEV_USER_ID`) is env-gated in the Rust backend, never in the frontend.
 - **Theme is applied before React mounts** via an inline script in `index.html:7-20`. The `use-theme.ts` hook writes to the same `localStorage` key (`"kawai-theme"`).
-- **Agent presentation is a frontend map** (`AGENT_META` in `features/agents/agents-rail.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry. The right context pane follows the same pattern — `CONTEXT_TABS` in `features/agents/registry.tsx` decides which tabs each agent gets; agents absent from the map (or tool-less) get no pane and its toggles disappear.
+- **Agent presentation is a frontend map** (`AGENT_META` in `features/agents/agents-rail.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry.
 - **Asset workspace navigation is frontend-owned** (`ASSET_NAV` in `features/assets/components/asset-nav.tsx`; `assetView` state in `app/App.tsx`). Opening an asset swaps the center pane (chat → asset page) without touching the chat state — the stream keeps folding in the background; Esc or an agent click returns. Wiki reuses the app's knowledge state, Memory reads `list_chat_sessions`/`list_chat_messages` directly; Skills/Code pages state plainly that their backend tier doesn't exist yet.
 - **`file-preview.tsx`** (in `components/shared/`) uses `useFilePreview` from `lib/preview-file.ts` which calls `office_read_file` — every mount triggers a backend call. The preview switch mounts only one renderer at a time, so only one fetch happens.
 - **`useKnowledgeFiles`** (in `features/knowledge/hooks/use-knowledge-files.ts`) is feature-gated — if the backend rejects `knowledge_list` (no `office` feature), it settles on an empty list with `unavailable=true`.

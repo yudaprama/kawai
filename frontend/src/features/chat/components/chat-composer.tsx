@@ -1,4 +1,4 @@
-import { AtSignIcon, XIcon } from "lucide-react";
+import { AtSignIcon, PlusIcon, VideoIcon, XIcon } from "lucide-react";
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   PromptInput,
@@ -26,6 +26,10 @@ type ChatComposerProps = {
   onSubmit: (text: string, fileIds?: string[]) => void;
   lastUserText: string | null;
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
+  /** Knowledge import actions — the composer's attachment menu is the only
+   *  in-chat knowledge surface; management lives on the Wiki asset page. */
+  onAddFiles?: () => void;
+  onAddLink?: () => void;
   /** Supervisor plan mode: submits route to the planner instead of the agent. */
 };
 
@@ -36,6 +40,8 @@ export function ChatComposer({
   onSubmit,
   lastUserText,
   onImageToKnowledge,
+  onAddFiles,
+  onAddLink,
 }: ChatComposerProps) {
   return (
     <PromptInputProvider>
@@ -46,6 +52,8 @@ export function ChatComposer({
         onSubmit={onSubmit}
         lastUserText={lastUserText}
         onImageToKnowledge={onImageToKnowledge}
+        onAddFiles={onAddFiles}
+        onAddLink={onAddLink}
       />
     </PromptInputProvider>
   );
@@ -58,6 +66,8 @@ function ChatComposerInner({
   onSubmit,
   lastUserText,
   onImageToKnowledge,
+  onAddFiles,
+  onAddLink,
 }: ChatComposerProps) {
   const controller = usePromptInputController();
   const [mentions, setMentions] = useState<KnowledgeFileInfo[]>([]);
@@ -215,8 +225,8 @@ function ChatComposerInner({
               ) : filtered.length === 0 ? (
                 <div className="text-muted-foreground px-2 py-3 text-xs">
                   {remaining.length === 0
-                    ? "No more files — import one from the Knowledge panel."
-                    : "No files match. Keep typing or import from the Knowledge panel."}
+                    ? "No more files — import one below."
+                    : "No files match. Keep typing or import below."}
                 </div>
               ) : (
                 <div className="max-h-56 overflow-y-auto">
@@ -231,6 +241,34 @@ function ChatComposerInner({
                       <span className="truncate text-xs">{f.originalName}</span>
                     </button>
                   ))}
+                </div>
+              )}
+              {(onAddFiles || onAddLink) && (
+                <div className="mt-1 flex gap-1 border-t px-1 pt-1">
+                  {onAddLink && (
+                    <Button
+                      disabled={mentionFiles === null}
+                      onClick={onAddLink}
+                      size="xs"
+                      title="Ingest a YouTube video transcript into your knowledge base"
+                      variant="ghost"
+                    >
+                      <VideoIcon className="size-3" />
+                      Add link
+                    </Button>
+                  )}
+                  {onAddFiles && (
+                    <Button
+                      disabled={mentionFiles === null}
+                      onClick={onAddFiles}
+                      size="xs"
+                      title="Import documents & images (.docx .xlsx .pptx .pdf .png .jpg …)"
+                      variant="ghost"
+                    >
+                      <PlusIcon className="size-3" />
+                      Add files
+                    </Button>
+                  )}
                 </div>
               )}
             </PopoverContent>
