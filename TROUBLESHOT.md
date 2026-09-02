@@ -206,13 +206,12 @@ on-device generation takes 5–30 s depending on the call-line length.
   result carries guidance, it is NOT an error.
 - **Root cause (engine never "webview" on desktop)**: engine not registered —
   check `webread::set_webview_engine` runs in the `lib.rs` setup hook
-  (webread feature only); `kawai-web` and non-webread builds are
-  Cloudflare-only by design.
+  (always on desktop); `kawai-web` is Cloudflare-only by design.
 - **Root cause (registered BUT every read still serves cloudflare)**: tier-0
   failing silently inside the chain — `read_markdown` never surfaces why.
   Reproduce outside the app shell and read the raw payload:
   ```sh
-  cd src-tauri && cargo run --example web_read_check --features office -- <url>
+  cd src-tauri && cargo run --example web_read_check -- <url>
   ```
   * `[probe] ERROR: eval channel closed` on the very first poll → WKWebView
     dropped the evaluation (provisional-navigation race). `extract()` must
@@ -232,11 +231,11 @@ on-device generation takes 5–30 s depending on the call-line length.
 ```sh
 bun run build                                  # frontend
 cargo check && cargo check --features web \
-  && cargo check --features litert,office      # backend, all variants
+  && cargo check --features litert,full        # backend, all variants
 ABS="$PWD/cognee-litert-lm/native"
 cd src-tauri && env LITERT_LM_LIB_DIR="$ABS" \
   RUSTFLAGS="-C link-arg=-Wl,-rpath,$ABS" LLVM_PROFILE_FILE=/dev/null \
-  cargo test --features litert,office --lib -- --test-threads=1
+  cargo test --features litert --lib -- --test-threads=1
 ```
 
 Then retest e2e from the app (`bun tauri dev`) with the failing prompt, and

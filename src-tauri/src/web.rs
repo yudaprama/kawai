@@ -665,7 +665,6 @@ async fn local_llm_unload_handler(
 
 // ── Office document ops (feature "office") ──────────────────────────────────
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OfficeImportFileRequest {
@@ -674,7 +673,6 @@ struct OfficeImportFileRequest {
     data_base64: Option<String>,
 }
 
-#[cfg(feature = "office")]
 async fn office_import_file_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<OfficeImportFileRequest>,
@@ -690,14 +688,12 @@ async fn office_import_file_handler(
     result.map(Json).map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KnowledgeContextRequest {
     file_ids: Vec<String>,
 }
 
-#[cfg(feature = "office")]
 async fn knowledge_context_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<KnowledgeContextRequest>,
@@ -708,7 +704,6 @@ async fn knowledge_context_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KnowledgeSearchRequest {
@@ -717,7 +712,6 @@ struct KnowledgeSearchRequest {
     mode: Option<logic::rag::SearchMode>,
 }
 
-#[cfg(feature = "office")]
 async fn knowledge_search_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<KnowledgeSearchRequest>,
@@ -728,7 +722,6 @@ async fn knowledge_search_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KnowledgeForgetRequest {
@@ -736,7 +729,6 @@ struct KnowledgeForgetRequest {
     file_ids: Vec<String>,
 }
 
-#[cfg(feature = "office")]
 async fn knowledge_forget_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<KnowledgeForgetRequest>,
@@ -747,14 +739,12 @@ async fn knowledge_forget_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ListSessionFilesRequest {
     session_id: i64,
 }
 
-#[cfg(feature = "office")]
 async fn list_session_files_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<ListSessionFilesRequest>,
@@ -765,7 +755,6 @@ async fn list_session_files_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OfficeIndexFileRequest {
@@ -773,7 +762,6 @@ struct OfficeIndexFileRequest {
     file_id: String,
 }
 
-#[cfg(feature = "office")]
 async fn office_index_file_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<OfficeIndexFileRequest>,
@@ -784,14 +772,12 @@ async fn office_index_file_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KnowledgeListRequest {
     session_id: Option<i64>,
 }
 
-#[cfg(feature = "office")]
 async fn knowledge_list_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<KnowledgeListRequest>,
@@ -802,7 +788,6 @@ async fn knowledge_list_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KnowledgeAddToSessionRequest {
@@ -810,7 +795,6 @@ struct KnowledgeAddToSessionRequest {
     file_ids: Vec<String>,
 }
 
-#[cfg(feature = "office")]
 async fn knowledge_add_to_session_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<KnowledgeAddToSessionRequest>,
@@ -906,7 +890,6 @@ async fn sql_profile_test_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct KnowledgeImportYoutubeRequest {
@@ -914,7 +897,6 @@ struct KnowledgeImportYoutubeRequest {
     session_id: Option<i64>,
 }
 
-#[cfg(feature = "office")]
 async fn knowledge_import_youtube_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<KnowledgeImportYoutubeRequest>,
@@ -925,14 +907,12 @@ async fn knowledge_import_youtube_handler(
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OfficeDeleteFileRequest {
     file_id: String,
 }
 
-#[cfg(feature = "office")]
 async fn office_delete_file_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<OfficeDeleteFileRequest>,
@@ -943,7 +923,6 @@ async fn office_delete_file_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[cfg(feature = "office")]
 async fn office_restore_backup_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<OfficeDeleteFileRequest>,
@@ -954,14 +933,12 @@ async fn office_restore_backup_handler(
 }
 
 /// Bind a user's explicit template choice.
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BindTemplateRequest {
     template_id: String,
 }
 
-#[cfg(feature = "office")]
 async fn office_bind_template_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<BindTemplateRequest>,
@@ -972,19 +949,16 @@ async fn office_bind_template_handler(
 }
 
 /// Peek current template binding.
-#[cfg(feature = "office")]
 async fn office_peek_template_handler(
     Extension(claims): Extension<Claims>,
 ) -> Json<Option<String>> {
     Json(logic::office::peek_template_binding(&claims.sub))
 }
 
-#[cfg(feature = "office")]
 async fn office_list_templates_handler() -> Json<Vec<logic::office::TemplateListing>> {
     Json(logic::office::list_templates())
 }
 
-#[cfg(feature = "office")]
 async fn office_list_files_handler(
     Extension(claims): Extension<Claims>,
 ) -> Result<Json<Vec<logic::office::OfficeFile>>, (StatusCode, String)> {
@@ -993,14 +967,12 @@ async fn office_list_files_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OfficeReadDocumentRequest {
     file_id: String,
 }
 
-#[cfg(feature = "office")]
 async fn office_read_document_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<OfficeReadDocumentRequest>,
@@ -1011,7 +983,6 @@ async fn office_read_document_handler(
     Ok(Json(logic::office::ReadDocumentResult { markdown }))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OfficeExportFileRequest {
@@ -1019,7 +990,6 @@ struct OfficeExportFileRequest {
     dest_path: Option<String>,
 }
 
-#[cfg(feature = "office")]
 async fn office_export_file_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<OfficeExportFileRequest>,
@@ -1034,7 +1004,6 @@ async fn office_export_file_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[cfg(feature = "office")]
 async fn office_capabilities_handler(
     Extension(claims): Extension<Claims>,
 ) -> Json<logic::office::OfficeCapabilities> {
@@ -1042,7 +1011,6 @@ async fn office_capabilities_handler(
     Json(logic::office::capabilities())
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OfficeExportDocumentRequest {
@@ -1050,7 +1018,6 @@ struct OfficeExportDocumentRequest {
     format: String,
 }
 
-#[cfg(feature = "office")]
 async fn office_export_document_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<OfficeExportDocumentRequest>,
@@ -1081,14 +1048,12 @@ async fn office_export_document_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("response build: {e}")))
 }
 
-#[cfg(feature = "office")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OfficeReadFileRequest {
     file_id: String,
 }
 
-#[cfg(feature = "office")]
 async fn office_read_file_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<OfficeReadFileRequest>,
@@ -1098,7 +1063,6 @@ async fn office_read_file_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-#[cfg(feature = "office")]
 async fn tauri_open_file_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<OfficeReadFileRequest>,
@@ -1454,7 +1418,7 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/local_llm_unload", post(local_llm_unload_handler))
         ;
 
-    #[cfg(all(feature = "router", feature = "litert"))]
+    #[cfg(feature = "litert")]
     let protected = protected.route(
         "/api/execute_supervisor_plan",
         post(execute_supervisor_plan_handler),
@@ -1471,7 +1435,6 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         post(generate_session_title_handler),
     );
 
-    #[cfg(feature = "office")]
     let protected = protected
         .route("/api/office_import_file", post(office_import_file_handler))
         .route("/api/office_list_files", post(office_list_files_handler))
@@ -1545,9 +1508,11 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
     let protected = protected
         .route("/api/synthesize_speech", post(synthesize_speech_handler));
 
-    Router::new()
-        .merge(public)
-        .merge(protected)
+    let router = Router::new().merge(public).merge(protected);
+    // Supervisor confirmation mailbox (litert only — see mod supervisor).
+    #[cfg(feature = "litert")]
+    let router = router.layer(Extension(crate::supervisor::PendingConfirmations::default()));
+    router
         .layer(Extension(verifier))
         .fallback_service(ServeDir::new(dist_dir))
 }
@@ -1562,7 +1527,7 @@ pub async fn serve(addr: &str, dist_dir: PathBuf, verifier: Verifier) -> Result<
 }
 
 /// Authenticated RPC: plan a task against the agent's tool catalog.
-#[cfg(all(feature = "router", feature = "litert"))]
+#[cfg(feature = "litert")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PlanTaskRequest {
@@ -1573,7 +1538,7 @@ struct PlanTaskRequest {
 
 /// Authenticated RPC: plan a task against the agent's tool catalog. The
 /// planner call rides the user's persona + goal-relevant memories + skills.
-#[cfg(all(feature = "router", feature = "litert"))]
+#[cfg(feature = "litert")]
 async fn plan_task_handler(
     Extension(claims): Extension<Claims>,
     Json(req): Json<PlanTaskRequest>,
@@ -1608,7 +1573,7 @@ async fn plan_task_handler(
 }
 
 /// Protected streaming: supervisor plan execution via SSE.
-#[cfg(all(feature = "router", feature = "litert"))]
+#[cfg(feature = "litert")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExecuteSupervisorPlanRequest {
@@ -1618,11 +1583,13 @@ struct ExecuteSupervisorPlanRequest {
         stream_id: String,
 }
 
-#[cfg(all(feature = "router", feature = "litert"))]
+#[cfg(feature = "litert")]
+// NOTE: `Json` must stay the LAST extractor — it is the only FromRequest here;
+// an extractor placed after it fails Handler resolution at compile time.
 async fn execute_supervisor_plan_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Extension(claims): Extension<Claims>,
     Json(req): Json<ExecuteSupervisorPlanRequest>,
-    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, StatusCode> {
     if !kawai_db::session_exists(&claims.sub, req.session_id)
         .await
@@ -1655,6 +1622,9 @@ async fn execute_supervisor_plan_handler(
             crate::supervisor::SupervisorEvent::StepCompleted { .. } => "stepCompleted",
             crate::supervisor::SupervisorEvent::StepFailed { .. } => "stepFailed",
             crate::supervisor::SupervisorEvent::StepSkipped { .. } => "stepSkipped",
+            crate::supervisor::SupervisorEvent::ConfirmationRequested { .. } => {
+                "confirmationRequested"
+            }
             crate::supervisor::SupervisorEvent::PlanCompleted { .. } => "planCompleted",
             crate::supervisor::SupervisorEvent::PlanFailed { .. } => "planFailed",
         };
@@ -1664,7 +1634,7 @@ async fn execute_supervisor_plan_handler(
     Ok(Sse::new(s).keep_alive(KeepAlive::default()))
 }
 
-#[cfg(all(feature = "router", feature = "litert"))]
+#[cfg(feature = "litert")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RespondSupervisorConfirmationRequest {
@@ -1673,7 +1643,7 @@ struct RespondSupervisorConfirmationRequest {
     approved: bool,
 }
 
-#[cfg(all(feature = "router", feature = "litert"))]
+#[cfg(feature = "litert")]
 async fn respond_supervisor_confirmation_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Json(req): Json<RespondSupervisorConfirmationRequest>,
@@ -1709,17 +1679,8 @@ async fn synthesize_speech_handler(
     .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e.to_string()))?;
 
     let wav = crate::logic::tts::pcm_to_wav(&samples, sample_rate);
-    // base64 is available when tts or office feature is on; synthesis only
-    // succeeds when tts is on, so this is always reachable when we get here.
-    #[cfg(any(feature = "tts", feature = "office"))]
-    {
-        use base64::Engine;
-        Ok(Json(base64::engine::general_purpose::STANDARD.encode(&wav)))
-    }
-    #[cfg(not(any(feature = "tts", feature = "office")))]
-    {
-        // Dead code: synthesis always fails when tts is off.
-        // But the compiler needs a return path.
-        Err((StatusCode::NOT_IMPLEMENTED, "base64 not available".into()))
-    }
+    // base64 is always available (office deps); synthesis only succeeds when
+    // tts is on, so this is always reachable when we get here.
+    use base64::Engine;
+    Ok(Json(base64::engine::general_purpose::STANDARD.encode(&wav)))
 }

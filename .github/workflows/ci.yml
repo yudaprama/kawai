@@ -89,7 +89,7 @@ jobs:
         run: cargo check --features tts
         working-directory: src-tauri
 
-  # ── Linux desktop gate: litert + office features compile on Linux ────────
+  # ── Linux desktop gate: litert + the full feature battery compile on Linux ─
   linux-check:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
@@ -153,8 +153,14 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libclang-dev
 
-      - name: cargo check (litert + office; desktop feature set)
-        run: cargo check --features litert,office
+      - name: cargo check (litert; desktop feature set)
+        run: cargo check --features litert
+        working-directory: src-tauri
+
+      # One flag that pulls every feature (incl. web) — guards cross-feature
+      # combos like litert+web that per-feature checks never compile together.
+      - name: cargo check (full)
+        run: cargo check --features full
         working-directory: src-tauri
 
       # Binance agent tools: keyless, no C deps — a plain compile gate is enough.
@@ -165,7 +171,7 @@ jobs:
         working-directory: src-tauri
 
       - name: cargo check (binance + webread)
-        run: cargo check --features binance,webread
+        run: cargo check --features binance
         working-directory: src-tauri
 
       # Data analysis agent: polars + office_oxide xlsx bridge — pure Rust,
@@ -245,7 +251,7 @@ jobs:
       # Office-only (no litert) so the native .so is not needed — this stays in
       # the fast linux-check gate. The litert-dependent main is cfg-gated.
       - name: cargo test (agent_eval harness)
-        run: cargo test --quiet --example agent_eval --features office
+        run: cargo test --quiet --example agent_eval
         working-directory: src-tauri
 
       # The tier-0 extractor JS must stay parseable — a syntax error fails
@@ -319,7 +325,7 @@ jobs:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-        run: cargo test --features litert,office --lib
+        run: cargo test --features litert --lib
 
       # ── Unit tests (local-llm: generation gate, FIFO queue, stateless
       #    reset, tool-call parsing, message builder) ──
@@ -375,7 +381,7 @@ jobs:
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
           KAWAI_DATA_DIR: /tmp/kawai-ci
-        run: cargo run --example draft_smoke --features litert,office
+        run: cargo run --example draft_smoke --features litert
 
       # ── Smoke 3b: planner quality. Cloud-only — no on-device model. Runs
       #    the production supervisor planner (build_supervisor_registry +
@@ -436,7 +442,7 @@ jobs:
           KAWAI_LLM_MAX_TOKENS: "8192"
           EVAL_MIN_PASS: "19"
         run: |
-          cargo run --release --example agent_eval --features litert,office -- \
+          cargo run --release --example agent_eval --features litert -- \
             ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
             ${{ github.workspace }}/agent-eval-report.md
           cat ${{ github.workspace }}/agent-eval-report.md >> "$GITHUB_STEP_SUMMARY"
@@ -459,7 +465,7 @@ jobs:
           EVAL_DEBUG: "1"
           EVAL_MIN_PASS: "16"
         run: |
-          cargo run --release --example agent_eval --features litert,office -- \
+          cargo run --release --example agent_eval --features litert -- \
             ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
             ${{ github.workspace }}/agent-eval-report-analytics.md
           cat ${{ github.workspace }}/agent-eval-report-analytics.md >> "$GITHUB_STEP_SUMMARY"
@@ -549,7 +555,7 @@ jobs:
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-        run: cargo test --features litert,office --lib
+        run: cargo test --features litert --lib
 
       # ── Unit tests (local-llm: generation gate, FIFO queue, stateless reset) ──
       - name: cargo test (local-llm; generation gate + queue)
@@ -603,7 +609,7 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
           KAWAI_DATA_DIR: /tmp/kawai-ci
-        run: cargo run --example draft_smoke --features litert,office
+        run: cargo run --example draft_smoke --features litert
 
       # ── Smoke 4 (Linux): keyless Binance market data + TA ──
       - name: binance_smoke (keyless market data + TA)
@@ -645,7 +651,7 @@ jobs:
           KAWAI_LLM_MAX_TOKENS: "8192"
           EVAL_MIN_PASS: "19"
         run: |
-          cargo run --release --example agent_eval --features litert,office -- \
+          cargo run --release --example agent_eval --features litert -- \
             ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
             ${{ github.workspace }}/agent-eval-report-linux.md
           cat ${{ github.workspace }}/agent-eval-report-linux.md >> "$GITHUB_STEP_SUMMARY"
@@ -750,7 +756,7 @@ jobs:
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-        run: cargo test --features litert,office --lib
+        run: cargo test --features litert --lib
 
       - name: cargo test (local-llm; generation gate + queue)
         working-directory: local-llm
@@ -804,7 +810,7 @@ jobs:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
           KAWAI_DATA_DIR: ${{ runner.temp }}/kawai-ci
-        run: cargo run --example draft_smoke --features litert,office
+        run: cargo run --example draft_smoke --features litert
 
       # ── Smoke 4 (Windows): keyless Binance market data + TA ──
       - name: binance_smoke (keyless market data + TA)
@@ -847,7 +853,7 @@ jobs:
           KAWAI_LLM_MAX_TOKENS: "8192"
           EVAL_MIN_PASS: "19"
         run: |
-          cargo run --release --example agent_eval --features litert,office -- \
+          cargo run --release --example agent_eval --features litert -- \
             "$GITHUB_WORKSPACE/eval-model/gemma-4-E4B-it.litertlm" \
             "$GITHUB_WORKSPACE/agent-eval-report-windows.md"
           cat "$GITHUB_WORKSPACE/agent-eval-report-windows.md" >> "$GITHUB_STEP_SUMMARY"

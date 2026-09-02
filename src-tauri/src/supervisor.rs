@@ -152,22 +152,10 @@ async fn build_supervisor_toolset(
     // Domain builders. Do not expose the office superset to analytics/binance
     // plans when a specialist is chosen explicitly.
     let office = || -> Option<kawai_tools::ToolSet> {
-        #[cfg(feature = "office")]
-        { agent_registry::office_tools(&context, remote_configured) }
-        #[cfg(not(feature = "office"))]
-        {
-            let _ = (&context, remote_configured);
-            None
-        }
+        agent_registry::office_tools(&context, remote_configured)
     };
     let presentation = || -> Option<kawai_tools::ToolSet> {
-        #[cfg(feature = "office")]
-        { agent_registry::presentation_tools_for_supervisor(&context, remote_configured) }
-        #[cfg(not(feature = "office"))]
-        {
-            let _ = (&context, remote_configured);
-            None
-        }
+        agent_registry::presentation_tools_for_supervisor(&context, remote_configured)
     };
     let binance = || -> Option<kawai_tools::ToolSet> {
         #[cfg(feature = "litert")]
@@ -381,7 +369,7 @@ pub fn confirmation_key(stream_id: &str, step_id: &str) -> String {
 pub fn execute_plan_stream(
     plan: kawai_router::TaskPlan,
     registry: ToolRegistry,
-) -> impl Stream<Item = SupervisorEvent> {
+) -> impl Stream<Item = SupervisorEvent> + Send {
     execute_plan_stream_with_cancel(
         plan,
         registry,
@@ -397,7 +385,7 @@ pub fn execute_plan_stream_with_cancel(
     cancel: tokio_util::sync::CancellationToken,
     pending: PendingConfirmations,
     stream_id: String,
-) -> impl Stream<Item = SupervisorEvent> {
+) -> impl Stream<Item = SupervisorEvent> + Send {
     async_stream::stream! {
         let step_count = plan.steps.len();
         yield SupervisorEvent::PlanStarted {
@@ -504,7 +492,7 @@ pub fn execute_plan_stream_with_cancel(
     }
 }
 
-#[cfg(all(test, feature = "router"))]
+#[cfg(all(test, feature = "litert"))]
 mod tests {
     use super::*;
     use kawai_router::{StepStatus, TaskStep};

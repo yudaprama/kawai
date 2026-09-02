@@ -38,22 +38,14 @@ pub(crate) fn office_tools(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
-    #[cfg(feature = "office")]
-    {
-        let mut set = (kawai_office::agent::definition().build_tools)(context, remote_configured)?;
-        set.add_tool(kawai_knowledge::tools::KnowledgeSearchTool(
-            context.user_id.to_string(),
-            context.session_id,
-        ));
-        #[cfg(feature = "graph")]
-        kawai_knowledge::graph::extend_toolset(&mut set, context.user_id);
-        return Some(add_runtime_tools(set, context, remote_configured, true));
-    }
-    #[cfg(not(feature = "office"))]
-    {
-        let _ = (context, remote_configured);
-        None
-    }
+    let mut set = (kawai_office::agent::definition().build_tools)(context, remote_configured)?;
+    set.add_tool(kawai_knowledge::tools::KnowledgeSearchTool(
+        context.user_id.to_string(),
+        context.session_id,
+    ));
+    #[cfg(feature = "graph")]
+    kawai_knowledge::graph::extend_toolset(&mut set, context.user_id);
+    Some(add_runtime_tools(set, context, remote_configured, true))
 }
 
 /// Presentation gets deck authoring, source reading, knowledge search, and
@@ -63,23 +55,15 @@ pub(crate) fn presentation_tools_for_supervisor(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
-    #[cfg(feature = "office")]
-    {
-        let mut set = (kawai_office::agent::presentation_definition().build_tools)(
-            context,
-            remote_configured,
-        )?;
-        set.add_tool(kawai_knowledge::tools::KnowledgeSearchTool(
-            context.user_id.to_string(),
-            context.session_id,
-        ));
-        return Some(add_runtime_tools(set, context, remote_configured, false));
-    }
-    #[cfg(not(feature = "office"))]
-    {
-        let _ = (context, remote_configured);
-        None
-    }
+    let mut set = (kawai_office::agent::presentation_definition().build_tools)(
+        context,
+        remote_configured,
+    )?;
+    set.add_tool(kawai_knowledge::tools::KnowledgeSearchTool(
+        context.user_id.to_string(),
+        context.session_id,
+    ));
+    Some(add_runtime_tools(set, context, remote_configured, false))
 }
 
 /// Binance gets web read/search (cross-cutting) and cloud subagent tools.
@@ -91,7 +75,6 @@ pub(crate) fn binance_tools_for_supervisor(
     #[cfg(all(feature = "binance", not(target_os = "android")))]
     {
         let mut set = (::binance::agent::definition().build_tools)(context, remote_configured)?;
-        #[cfg(feature = "webread")]
         if webread::any_engine() {
             set.add_tool(webread::WebReadTool(context.user_id.to_string()));
             set.add_tool(webread::WebSearchTool(context.user_id.to_string()));
@@ -133,8 +116,6 @@ fn add_runtime_tools(
     remote_configured: bool,
     supports_draft_document: bool,
 ) -> kawai_tools::ToolSet {
-    #[cfg(not(feature = "office"))]
-    let _ = supports_draft_document;
     set.add_tool(kawai_memory::tools::MemorySearchTool(
         context.user_id.to_string(),
     ));
@@ -153,7 +134,6 @@ fn add_runtime_tools(
         set.add_tool(kawai_agent::DeepWrite);
         set.add_tool(kawai_agent::PlanTask);
         set.add_tool(kawai_agent::PlanRevise);
-        #[cfg(feature = "office")]
         if supports_draft_document {
             set.add_tool(kawai_agent::DraftDocument);
         }
@@ -196,35 +176,15 @@ fn unavailable_definition(
 #[cfg(feature = "litert")]
 pub fn builtin() -> AgentRegistry {
     let office = {
-        #[cfg(feature = "office")]
-        {
-            let mut d = kawai_office::agent::definition();
-            d.build_tools = office_tools;
-            d
-        }
-        #[cfg(not(feature = "office"))]
-        unavailable_definition(
-            OFFICE_AGENT_ID,
-            "Office",
-            "Your on-device assistant for documents, PDFs, spreadsheets, and chat.",
-            true,
-        )
+        let mut d = kawai_office::agent::definition();
+        d.build_tools = office_tools;
+        d
     };
 
     let presentation = {
-        #[cfg(feature = "office")]
-        {
-            let mut d = kawai_office::agent::presentation_definition();
-            d.build_tools = presentation_tools_for_supervisor;
-            d
-        }
-        #[cfg(not(feature = "office"))]
-        unavailable_definition(
-            PRESENTATION_AGENT_ID,
-            "Presentation",
-            "Create clear presentation decks from your documents, data, and research.",
-            false,
-        )
+        let mut d = kawai_office::agent::presentation_definition();
+        d.build_tools = presentation_tools_for_supervisor;
+        d
     };
 
     let binance = {
@@ -329,9 +289,9 @@ mod tests {
     #[test]
     fn presentation_is_enabled_with_office_tools() {
         let registry = builtin();
-        #[cfg(all(feature = "litert", feature = "office"))]
+        #[cfg(feature = "litert")]
         assert!(registry.resolve(PRESENTATION_AGENT_ID).is_some());
-        #[cfg(any(not(feature = "litert"), not(feature = "office")))]
+        #[cfg(not(feature = "litert"))]
         assert!(registry.resolve(PRESENTATION_AGENT_ID).is_none());
     }
 
@@ -361,7 +321,7 @@ mod tests {
 
     // ── tool-manifest regression tests ───────────────────────────────────────
 
-    #[cfg(all(feature = "litert", feature = "office"))]
+    #[cfg(feature = "litert")]
     #[test]
     fn office_toolset_includes_knowledge_and_runtime_tools() {
         let ctx = AgentContext {
@@ -386,7 +346,7 @@ mod tests {
         );
     }
 
-    #[cfg(all(feature = "litert", feature = "office"))]
+    #[cfg(feature = "litert")]
     #[test]
     fn presentation_toolset_is_focused_on_decks_and_sources() {
         let ctx = AgentContext {
@@ -411,7 +371,7 @@ mod tests {
         assert!(!names.contains(&"draft_document"), "{names:?}");
     }
 
-    #[cfg(all(feature = "litert", feature = "office"))]
+    #[cfg(feature = "litert")]
     #[test]
     fn office_remote_toolset_adds_deep_write_and_draft() {
         let ctx = AgentContext {
@@ -546,7 +506,7 @@ mod tests {
 
     // Binance-only: without the feature the agent has no toolset at all
     // (build_tools returns None), so the assertions below are meaningless.
-    #[cfg(all(feature = "litert", feature = "webread", feature = "binance"))]
+    #[cfg(all(feature = "litert", feature = "binance"))]
     #[test]
     fn binance_webread_tools_present_when_engine_available() {
         let ctx = AgentContext {

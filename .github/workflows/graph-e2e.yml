@@ -64,7 +64,7 @@ jobs:
         working-directory: src-tauri
 
       - name: cargo check (graph + office)
-        run: cargo check --features graph,office
+        run: cargo check --features graph
         working-directory: src-tauri
 
       - name: cargo check (graph + web)
@@ -72,7 +72,7 @@ jobs:
         working-directory: src-tauri
 
       - name: cargo check (graph + office + litert)
-        run: cargo check --features graph,office,litert
+        run: cargo check --features graph,litert
         working-directory: src-tauri
 
       # Pure helpers live in kawai's logic/graph too — reuse the same tests

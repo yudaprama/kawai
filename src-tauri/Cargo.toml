@@ -51,10 +51,10 @@ kawai-db = { path = "../crates/foundation/db" }
 kawai-paths = { path = "../crates/foundation/paths" }
 kawai-skills = { path = "../crates/foundation/skills" }
 kawai-memory = { path = "../crates/foundation/memory" }
-kawai-office = { path = "../crates/engines/office", optional = true }
-kawai-knowledge = { path = "../crates/engines/knowledge", optional = true }
+kawai-office = { path = "../crates/engines/office", features = ["paddle-ocr"] }
+kawai-knowledge = { path = "../crates/engines/knowledge", features = ["office"] }
 kawai-analytics = { path = "../crates/toolsets/analytics-tools", optional = true }
-kawai-agent = { path = "../crates/engines/agent", optional = true }
+kawai-agent = { path = "../crates/engines/agent", features = ["office", "webread"] }
 codegraph = { path = "../crates/toolsets/codegraph", optional = true }
 kawai-agent-contract = { path = "../crates/foundation/agent-contract" }
 # The agent tool seam (tool trait + registry) shared with components.
@@ -75,41 +75,37 @@ dotenvy = "0.15"
 # Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
 # Private repo — CI authenticates via the insteadOf git rewrite (release.yml).
 kawai-constants = { path = "../kawai-vault/constants" }
-# Office tool store imports (drag-drop/web base64 blobs). Gated behind
-# "office" so non-office builds stay dep-free.
-base64 = { version = "0.22", optional = true }
+# Office tool store imports (drag-drop/web base64 blobs) + TTS audio payloads.
+base64 = "0.22"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
-# RAG pipeline for office knowledge files (gated behind "office"):
+# RAG pipeline for knowledge files:
 #   kawai-embedding — embed (local LiteRT embedder fallback under the litert
 #   feature, desktop only, no API key)
-kawai-embedding = { path = "../kawai-embedding", optional = true }
-# Markdown-aware + char-based chunking for RAG indexing (office feature only).
-# Replaces the in-tree chunk_text sliding window with text-splitter's
+kawai-embedding = { path = "../kawai-embedding" }
+# Markdown-aware + char-based chunking for RAG indexing: text-splitter's
 # MarkdownSplitter (heading-aware locators) / TextSplitter.
-text-splitter = { version = "0.27", features = ["markdown"], optional = true }
-# Image understanding — reusable DescriberChain (local stub → JigsawStack VOCR).
-# Single source for RAG indexing (kawai-vision) + ragloader shim. Both ride
-# on the `office` feature so non-office builds stay dep-free.
-kawai-vision = { path = "../crates/foundation/vision", optional = true }
-ragloader = { path = "../crates/integrations/ragloader", optional = true }
-# YouTube transcript fetching for knowledge ingestion (office feature).
+text-splitter = { version = "0.27", features = ["markdown"] }
+# Image understanding — reusable DescriberChain (local PaddleOCR → JigsawStack
+# VOCR). Single source for RAG indexing (kawai-vision) + ragloader shim.
+kawai-vision = { path = "../crates/foundation/vision", features = ["paddle-ocr"] }
+ragloader = { path = "../crates/integrations/ragloader", features = ["paddle-ocr"] }
+# YouTube transcript fetching for knowledge ingestion.
 # Uses reqwest 0.13 — coexists with our direct 0.12 (like the rustls pair).
-youtube_transcript = { path = "../crates/integrations/youtube-transcript", optional = true }
+youtube_transcript = { path = "../crates/integrations/youtube-transcript" }
 # Pure-Rust office create/read/edit (vendored submodule): markdown → IR →
 # docx/xlsx/pptx (in-process), raw-part surgery for in-place edits. PDF
 # operations via pdf_oxide (fetched from GitHub, no local submodule).
-office_oxide = { path = "../office_oxide", optional = true }
-pdf_oxide = { git = "https://github.com/yfedoseev/pdf_oxide", optional = true }
-regex = { version = "1", optional = true }
-# Web read + search tiering (webread/office features): the reusable
-# crates/toolsets/webread tool crate — engine chain + budgets + cache for the
-# `web_read` / `web_search` agent tools. `browser` (tier-1 Cloudflare
-# Browser Rendering) rides inside webread but stays listed so the headless
-# example can drive it directly.
-webread = { path = "../crates/toolsets/webread", optional = true }
-browser = { path = "../crates/generated-tools/browser", optional = true }
-url = { version = "2", optional = true }
+office_oxide = { path = "../office_oxide" }
+pdf_oxide = { git = "https://github.com/yfedoseev/pdf_oxide", features = ["rendering"] }
+regex = "1"
+# Web read + search tiering: the reusable crates/toolsets/webread tool crate —
+# engine chain + budgets + cache for the `web_read` / `web_search` agent
+# tools. `browser` (tier-1 Cloudflare Browser Rendering) rides inside webread
+# but stays listed so the headless example can drive it directly.
+webread = { path = "../crates/toolsets/webread" }
+browser = { path = "../crates/generated-tools/browser" }
+url = "2"
 # TTS via piper-rs (neural ONNX Piper TTS). Gated behind `tts` so non-TTS
 # builds stay dep-free. Adds ~40 MB (static ONNX Runtime) + espeak-ng build
 # requirement (cmake + clang).
@@ -124,8 +120,8 @@ binance = { path = "../crates/toolsets/binance", optional = true }
 
 # Data analysis agent (builtin.analytics): structured queries over stored
 # tabular files (csv/tsv/parquet + xlsx via the office_oxide bridge) through
-# the polars-backed crates/engines/analytics crate. Implies `office` — the
-# data files live in the office store.
+# the polars-backed crates/engines/analytics crate. The data files live in
+# the office store.
 analytics = { path = "../crates/engines/analytics", optional = true }
 # libSQL-native GraphRAG engine — pure crate (crates/engines/graph). Feature-gated
 # so it can be included/excluded as a module (@crates/engines/graph).
@@ -157,38 +153,29 @@ default = []
 web = ["dep:axum", "dep:tower-http"]
 # CodeGraph — sidecar only (AgentTool + LRU cache, zero cost off)
 codegraph = ["dep:codegraph"]
-router = ["dep:kawai-router"]
-litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "dep:kawai-agent", "kawai-agent/litert", "dep:kawai-vision", "kawai-vision/litert", "kawai-knowledge/litert", "remote-llm/litert", "kawai-analytics?/litert", "router"]
+# On-device LLM. Also owns the kawai-router dep (rule-based auto-routing is
+# only used by the litert supervisor stack).
+litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "kawai-agent/litert", "kawai-vision/litert", "kawai-knowledge/litert", "remote-llm/litert", "kawai-analytics?/litert", "dep:kawai-router"]
 # GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
 # Include with --features graph, exclude by omitting it (zero cost when off).
 # Standalone — includes the pure `graph` crate + its DB deps.
-graph = ["dep:graph", "dep:kawai-embedding", "dep:text-splitter", "dep:regex", "dep:kawai-knowledge", "kawai-knowledge/graph", "kawai-agent/graph"]
-# Web read/search tiering as a standalone feature so any agent can reuse the
-# tools without `office`; `office` implies it (behavior-preserving).
-webread = ["dep:webread", "dep:browser", "dep:url", "kawai-agent/webread"]
-# Office document tools (logic::office): pure-Rust create/read/edit/info via
-# office_oxide and PDF via pdf_oxide (both in-process) — plus the RAG pipeline
-# (kawai-embedding, with in-tree chunking) for idle-time
-# knowledge indexing. Enables the `webread` FEATURE (not just `dep:webread`)
-# so its bundled deps ride along.
-office = ["dep:kawai-vision", "kawai-vision/paddle-ocr", "dep:base64", "dep:kawai-embedding", "dep:text-splitter", "dep:ragloader", "ragloader/paddle-ocr", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "pdf_oxide/rendering", "dep:regex", "webread", "dep:kawai-office", "kawai-office/paddle-ocr", "dep:kawai-knowledge", "kawai-knowledge/office", "kawai-agent/office"]
+graph = ["dep:graph", "kawai-knowledge/graph", "kawai-agent/graph"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
-# technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
+# technical-analysis tools. Needs a tool-loop runtime.
 binance = ["dep:binance", "kawai-agent/binance"]
 # Data analysis agent (logic::agent ANALYTICS_AGENT_ID): data_schema +
-# data_query over the office store's tabular files. Implies `office` —
-# the files live in the office store and reuse its import UI.
-analytics = ["dep:analytics", "office", "dep:kawai-analytics", "kawai-agent/analytics"]
+# data_query over the office store's tabular files — the files live in the
+# office store and reuse its import UI.
+analytics = ["dep:analytics", "dep:kawai-analytics", "kawai-agent/analytics"]
 # Remote SQL sources (Postgres/MySQL) for the analytics snapshot tools.
 # Implies `analytics`; SQLite needs no feature (libsql rides along).
 analytics-sql = ["analytics", "kawai-analytics/analytics-sql", "dep:sqlx"]
-# On-device OCR via PaddleOCR (rust-paddle-ocr / MNN). Deterministic text
-# extraction from images — scanned docs, screenshots, receipts. Feature-gated
-# in kawai-vision; adds ~3 MB model dir resolution + C++ MNN build overhead.
-paddle-ocr = ["kawai-vision/paddle-ocr"]
 # TTS via piper-rs (neural Piper ONNX models). Adds ~40 MB (static ONNX Runtime)
 # and requires cmake + clang at build time (espeak-ng phonemizer compiled from source).
-tts = ["dep:piper-rs", "dep:base64"]
+tts = ["dep:piper-rs"]
+# The full product in one flag (CI battery shorthand): on-device LLM,
+# GraphRAG, remote SQL, Binance, TTS, CodeGraph, web server.
+full = ["litert", "graph", "analytics-sql", "binance", "tts", "codegraph", "web"]
 
 [[bin]]
 name = "kawai"
@@ -229,19 +216,17 @@ required-features = ["analytics-sql"]
 
 [[example]]
 name = "web_read_check"
-required-features = ["office"]
 
 [[example]]
 name = "thinking_smoke"
-required-features = ["litert", "office"]
+required-features = ["litert"]
 
 [[example]]
 name = "draft_smoke"
-required-features = ["litert", "office"]
+required-features = ["litert"]
 
 [[example]]
 name = "agent_eval"
-required-features = ["office"]
 
 [[example]]
 name = "turn_log_report"

@@ -4,10 +4,8 @@ use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
-#[cfg(feature = "office")]
 use tauri::Manager;
 use tauri::State;
-#[cfg(feature = "office")]
 use tauri_plugin_opener::OpenerExt;
 use tokio_util::sync::CancellationToken;
 
@@ -657,7 +655,6 @@ pub fn local_llm_get_rig_tools(tool_names: Vec<String>) -> Result<String, String
 
 /// Authenticated RPC: import a file into the office store — either from an
 /// absolute path (desktop picker/drag-drop) or as base64 (webview blob).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub fn office_import_file(
     source_path: Option<String>,
@@ -677,7 +674,7 @@ pub fn office_import_file(
 }
 
 /// Authenticated RPC: create and validate a deterministic supervisor plan.
-#[cfg(all(feature = "router", feature = "litert"))]
+#[cfg(feature = "litert")]
 #[tauri::command]
 pub async fn plan_task(
     goal: String,
@@ -696,7 +693,7 @@ pub async fn plan_task(
 }
 
 /// Authenticated RPC: respond to a pending supervisor confirmation gate.
-#[cfg(all(feature = "router", feature = "litert"))]
+#[cfg(feature = "litert")]
 #[tauri::command]
 pub fn respond_supervisor_confirmation(
     stream_id: String,
@@ -712,7 +709,6 @@ pub fn respond_supervisor_confirmation(
 }
 
 /// Authenticated RPC: list the user's stored office files.
-#[cfg(feature = "office")]
 #[tauri::command]
 pub fn office_list_files(
     session: State<'_, Session>,
@@ -722,7 +718,6 @@ pub fn office_list_files(
 }
 
 /// Authenticated RPC: list deck template packs (bundled + cached catalogue; no network).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub fn office_list_templates() -> Vec<logic::office::TemplateListing> {
     logic::office::list_templates()
@@ -730,7 +725,6 @@ pub fn office_list_templates() -> Vec<logic::office::TemplateListing> {
 
 /// Bind a user's explicit template choice — consumed on the next
 /// `office_create_deck` call (Rust overrides the model's arg).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub fn office_bind_template(
     template_id: String,
@@ -741,7 +735,6 @@ pub fn office_bind_template(
 }
 
 /// Peek the current (non-consumed) template binding for the UI's bound-state display.
-#[cfg(feature = "office")]
 #[tauri::command]
 pub fn office_peek_template(
     session: State<'_, Session>,
@@ -751,7 +744,6 @@ pub fn office_peek_template(
 }
 
 /// Authenticated RPC: read a stored document as markdown (in-process via office_oxide).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub async fn office_read_document(
     file_id: String,
@@ -764,7 +756,6 @@ pub async fn office_read_document(
 
 /// Authenticated RPC: extract stored documents into a prompt-injectable
 /// context block (composer @-mention knowledge).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub async fn knowledge_context(
     file_ids: Vec<String>,
@@ -779,7 +770,6 @@ pub async fn knowledge_context(
 /// Authenticated RPC: index a stored office file into the user's vector store
 /// (upload-time RAG preprocessing) and associate it with the uploading
 /// session. Fire-and-forget from the files panel.
-#[cfg(feature = "office")]
 #[tauri::command]
 pub async fn office_index_file(
     session_id: Option<i64>,
@@ -795,7 +785,6 @@ pub async fn office_index_file(
 /// Authenticated RPC: hybrid vector+BM25 search over the documents a session
 /// uploaded. Kept for the web transport / debugging; the agent reaches the
 /// same logic through its `knowledge_search` tool (session bound server-side).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub async fn knowledge_search(
     session_id: i64,
@@ -811,7 +800,6 @@ pub async fn knowledge_search(
 
 /// Authenticated RPC: remove the session's association with the given files
 /// and purge chunks of files no session references anymore.
-#[cfg(feature = "office")]
 #[tauri::command]
 pub async fn knowledge_forget(
     session_id: Option<i64>,
@@ -826,7 +814,6 @@ pub async fn knowledge_forget(
 
 /// Authenticated RPC: list the files associated with a session (the files
 /// panel's "In this session" section).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub async fn list_session_files(
     session_id: i64,
@@ -840,7 +827,6 @@ pub async fn list_session_files(
 
 /// Authenticated RPC: the knowledge panel's single list — office files with
 /// RAG index status and active-session association.
-#[cfg(feature = "office")]
 #[tauri::command]
 pub async fn knowledge_list(
     session_id: Option<i64>,
@@ -854,7 +840,6 @@ pub async fn knowledge_list(
 
 /// Authenticated RPC: add library documents to the active session so the
 /// agent can search them (indexing any file that has no chunks yet).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub async fn knowledge_add_to_session(
     session_id: i64,
@@ -924,7 +909,6 @@ pub async fn sql_profile_test(
 
 /// Authenticated RPC: ingest a YouTube video into the knowledge base
 /// (transcript → markdown document → indexed; deduped per video).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub async fn knowledge_import_youtube(
     url: String,
@@ -939,7 +923,6 @@ pub async fn knowledge_import_youtube(
 
 /// Authenticated RPC: delete a stored document plus everything indexed from
 /// it (chunks, vectors, session associations).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub async fn office_delete_file(
     file_id: String,
@@ -953,7 +936,6 @@ pub async fn office_delete_file(
 
 /// Authenticated RPC: undo the last edit — swap the stored file with its
 /// pre-edit snapshot (second call swaps back).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub fn office_restore_backup(
     file_id: String,
@@ -964,7 +946,6 @@ pub fn office_restore_backup(
 }
 
 /// Authenticated RPC: export a stored file to the filesystem.
-#[cfg(feature = "office")]
 #[tauri::command]
 pub fn office_export_file(
     file_id: String,
@@ -977,7 +958,6 @@ pub fn office_export_file(
 
 /// Authenticated RPC: render markdown to an office document (docx/xlsx/pptx)
 /// and return the raw file bytes for download (no intermediate store file).
-#[cfg(feature = "office")]
 #[tauri::command]
 pub fn office_export_document(
     markdown: String,
@@ -991,7 +971,6 @@ pub fn office_export_document(
 /// Authenticated RPC: read a stored document's raw bytes (for in-app preview
 /// — image/video/pdf embeds or text/markdown rendering). Returns base64 plus
 /// a best-effort MIME type so the frontend can build a `data:` URL.
-#[cfg(feature = "office")]
 #[tauri::command]
 pub fn office_read_file(
     file_id: String,
@@ -1004,7 +983,6 @@ pub fn office_read_file(
 /// Authenticated RPC: open a stored file in the OS default viewer. The backend
 /// resolves the file id to a path (already scoped to the user's data dir) and
 /// opens it directly — no webview-side path scope needed.
-#[cfg(feature = "office")]
 #[tauri::command]
 pub fn tauri_open_file(
     app: tauri::AppHandle,
@@ -1019,7 +997,6 @@ pub fn tauri_open_file(
 }
 
 /// Authenticated RPC: which office engines are available on this host.
-#[cfg(feature = "office")]
 #[tauri::command]
 pub fn office_capabilities(
     session: State<'_, Session>,
@@ -1189,7 +1166,7 @@ pub async fn codegraph_init(
 
 /// Streaming supervisor execution: build the tool registry for the user's
 /// session, run the plan deterministically, and stream progress events.
-#[cfg(all(feature = "router", feature = "litert"))]
+#[cfg(feature = "litert")]
 #[tauri::command]
 pub async fn execute_supervisor_plan(
     plan: kawai_router::TaskPlan,
@@ -1262,17 +1239,8 @@ pub async fn synthesize_speech(
 
     let wav = logic::tts::pcm_to_wav(&samples, sample_rate);
 
-    // base64 is available when tts or office feature is on; synthesis only
-    // succeeds when tts is on, so this is always reachable when we get here.
-    #[cfg(any(feature = "tts", feature = "office"))]
-    {
-        use base64::Engine;
-        Ok(base64::engine::general_purpose::STANDARD.encode(&wav))
-    }
-    #[cfg(not(any(feature = "tts", feature = "office")))]
-    {
-        // Dead code: synthesis always fails when tts is off.
-        let _ = wav;
-        Err("base64 not available".into())
-    }
+    // base64 is always available (office deps); synthesis only succeeds when
+    // tts is on, so this is always reachable when we get here.
+    use base64::Engine;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&wav))
 }

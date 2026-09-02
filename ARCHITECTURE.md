@@ -185,12 +185,12 @@ Subagents are tools whose implementation calls a cloud LLM. They are **registere
 | Subagent | Agents that get it | When registered | Behavior |
 |----------|-------------------|-----------------|----------|
 | `deep_write` | all three | `remote.is_some()` | Streams completion from cloud (default: zai/glm-5.3); result is the final answer token stream to the user. Materials rendered from `TurnMemory` on demand. |
-| `draft_document` | office only | `remote.is_some()` + `office` feature | Cloud writes structured JSON `blocks` → file created in-process by Rust (`ooxml::create_document_from_blocks`). Local only sees a short receipt; cloud JSON never enters local K/V context. |
+| `draft_document` | office only | `remote.is_some()` | Cloud writes structured JSON `blocks` → file created in-process by Rust (`ooxml::create_document_from_blocks`). Local only sees a short receipt; cloud JSON never enters local K/V context. |
 | `artifact_recall` | all three | always (all agents with tools) | Pages the session's persistent process log (`TurnMemory`, backed by the `session_artifacts` table) for oversized tool results — dispatched by the loop, not the ToolSet. |
 
 **Failure handling:** cloud timeout or error → local degrades to answering from its own knowledge; the turn never dies. `draft_document` JSON parse failure → one automatic correction round with the cloud, then falls back.
 
-## Web read tiering (`web_read`, webread feature)
+## Web read tiering (`web_read`)
 
 One agent tool, one engine chain — the model asks to read a URL, the backend picks the cheapest engine that succeeds (`crates/toolsets/webread/src/scrape.rs`):
 
@@ -198,7 +198,7 @@ One agent tool, one engine chain — the model asks to read a URL, the backend p
 2. **Tier 0: on-device webview** — `webview_engine.rs` renders the page in a hidden `WebviewWindow` (`WebviewUrl::External`, `visible(false)`), polls `readyState`, harvests text via `eval_with_callback` (external pages have no Tauri IPC — the eval callback is the only return channel), always tears the window down. Free, device-native TLS.
 3. **Tier 1: Cloudflare `/markdown`** — the generated `browser` crate tool (vault key pool). Tier-0 misses (anti-bot markers, thin content, timeout, busy slot) fall through. Bounded by `KAWAI_CF_PER_USER_DAILY` (25) + `KAWAI_CF_GLOBAL_DAILY` (300); exhaustion returns a guidance-carrying result, not an error.
 
-Purity: `crates/toolsets/webread/src/scrape.rs` defines the `WebViewFetch` trait; the tauri shell injects the implementation at startup (`lib.rs`). `kawai-web` registers nothing and degrades to Cloudflare-only; no engine anywhere ⇒ the tool is not registered (capability-probe rule). Content is capped at 12k chars per read. The tools are reusable by any agent: office registers them under `any_engine()`; binance behind the standalone `webread` cargo feature (`office` implies `webread`).
+Purity: `crates/toolsets/webread/src/scrape.rs` defines the `WebViewFetch` trait; the tauri shell injects the implementation at startup (`lib.rs`). `kawai-web` registers nothing and degrades to Cloudflare-only; no engine anywhere ⇒ the tool is not registered (capability-probe rule). Content is capped at 12k chars per read. The tools are reusable by any agent: office and binance both register them under `any_engine()`.
 
 ## CodeGraph bridge (`codegraph_explore`, `codegraph` feature)
 
@@ -236,7 +236,7 @@ kawai/
 ├── crates/                     # agent crates (kawai_tools::AgentTool) — auth/remote-llm/db/skills/memory/office/knowledge/analytics-tools/agent/codegraph + analytics/graph/webread/ragloader + per-category tools/*
 ├── local-llm/                  # on-device LLM engine bindings (litert feature; KAWAI_LLM_MAX_TOKENS)
 ├── cognee-litert-lm/           # Rust bindings for the LiteRT-LM C API (+ vendored upstream submodule)
-├── office_oxide/               # submodule: pure-Rust docx/xlsx/pptx create/read/edit (office feature)
+├── office_oxide/               # submodule: pure-Rust docx/xlsx/pptx create/read/edit
 ├── scripts/
 │   ├── dev.sh                  # tauri dev launcher (litert rpath + dev-bypass auth + profraw off)
 │   ├── tauri.sh                # wraps the tauri npm script
@@ -245,7 +245,7 @@ kawai/
 ├── .env                      # KAWAI_AUTH_* + KAWAI_DB_* (gitignored)
 ├── .env.local                # VITE_CLERK_PUBLISHABLE_KEY (gitignored; reference only)
 └── src-tauri/
-    ├── Cargo.toml            # axum/tower-http behind "web"; kawai-* crates behind litert/office/analytics/graph/webread/codegraph
+    ├── Cargo.toml            # axum/tower-http behind "web"; litert/analytics/graph/binance/tts/codegraph optional; office stack always compiled
     ├── tauri.conf.json       # devUrl :1420, frontendDist ../dist, beforeBuildCommand "bun run build"
     ├── build.rs              # tauri_build + embeds @executable_path/../Frameworks rpath
     ├── migrations/           # versioned SQLite schema (now also in crates/foundation/db/migrations/, include_str! via kawai-db)
@@ -258,7 +258,7 @@ kawai/
         ├── auth.rs           # shim → kawai-auth (pure auth; Supabase Auth JWKS verify + Session)
         ├── commands.rs       # #[tauri::command] wrappers
         ├── web.rs            # Axum router + auth_middleware
-        ├── webview_engine.rs # on-device webview fetch engine (office feature)
+        ├── webview_engine.rs # on-device webview fetch engine
         └── bin/
             └── web.rs        # standalone web server entry
 ```

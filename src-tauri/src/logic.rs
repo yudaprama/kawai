@@ -247,9 +247,7 @@ pub use local_llm::local_model_status;
 // unchanged-file reads). In-process only — no SQLite, no schema.
 pub mod evidence_cache;
 pub mod knowledge;
-#[cfg(feature = "office")]
 pub mod office;
-#[cfg(feature = "office")]
 pub mod rag;
 pub mod remote;
 // Data analysis agent tools (builtin.analytics). Implies office — the

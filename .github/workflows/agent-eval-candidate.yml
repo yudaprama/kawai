@@ -163,7 +163,7 @@ jobs:
               m="${entry%%|*}"; p="${entry#*|}"
               REPORT="$REPORTS/agent-eval-${m}-${s}.md"
               echo "## ${m} — ${s} suite" | tee -a "$GITHUB_STEP_SUMMARY"
-              if EVAL_SUITE=$s cargo run --release --example agent_eval --features litert,office -- \
+              if EVAL_SUITE=$s cargo run --release --example agent_eval --features litert -- \
                 "$p" "$REPORT"; then
                 cat "$REPORT" >> "$GITHUB_STEP_SUMMARY" || true
               elif [ -f "$REPORT" ]; then

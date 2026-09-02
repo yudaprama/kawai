@@ -6,20 +6,19 @@ mod keychain;
 pub mod logic;
 pub mod native_notifications;
 
-#[cfg(all(feature = "router", feature = "litert"))]
+#[cfg(feature = "litert")]
 pub mod supervisor;
 
-#[cfg(all(feature = "router", feature = "litert"))]
+#[cfg(feature = "litert")]
 fn supervisor_pending_state() -> crate::supervisor::PendingConfirmations {
     crate::supervisor::PendingConfirmations::default()
 }
 
-#[cfg(not(all(feature = "router", feature = "litert")))]
+#[cfg(not(feature = "litert"))]
 fn supervisor_pending_state() -> () {
     ()
 }
 
-#[cfg(feature = "webread")]
 pub mod webview_engine;
 
 #[cfg(feature = "web")]
@@ -48,7 +47,6 @@ pub fn run() {
             // Inject office engine directories from the Tauri app paths
             // (env overrides still win — see logic::office). Resolution:
             // resource dir first, exe-dir sibling as dev fallback.
-            #[cfg(feature = "office")]
             {
                 use tauri::Manager;
                 if let Ok(data) = app.path().app_data_dir() {
@@ -64,12 +62,9 @@ pub fn run() {
             }
             // Tier-0 web read engine: hidden webview owned by the shell.
             // kawai-web never registers one (Cloudflare-only there).
-            #[cfg(feature = "webread")]
             webread::set_webview_engine(Some(std::sync::Arc::new(
                 webview_engine::TauriWebViewFetch::new(app.handle().clone()),
             )));
-            #[cfg(not(any(feature = "office", feature = "webread")))]
-            let _ = &app;
             Ok(())
         });
 
@@ -150,51 +145,31 @@ pub fn run() {
         commands::plan_task,
 
         // ── litert + office (knowledge context + rig tools) ─────────────
-        #[cfg(all(feature = "litert", feature = "office"))]
+        #[cfg(feature = "litert")]
         commands::local_llm_get_rig_tools,
-        #[cfg(all(feature = "litert", feature = "office"))]
+        #[cfg(feature = "litert")]
         commands::knowledge_context,
 
         // ── office ─────────────────────────────────────────────────────
-        #[cfg(feature = "office")]
         commands::office_import_file,
-        #[cfg(feature = "office")]
         commands::office_list_files,
-        #[cfg(feature = "office")]
         commands::office_list_templates,
-        #[cfg(feature = "office")]
         commands::office_bind_template,
-        #[cfg(feature = "office")]
         commands::office_peek_template,
-        #[cfg(feature = "office")]
         commands::office_read_document,
-        #[cfg(feature = "office")]
         commands::office_export_file,
-        #[cfg(feature = "office")]
         commands::office_capabilities,
-        #[cfg(feature = "office")]
         commands::office_index_file,
-        #[cfg(feature = "office")]
         commands::knowledge_search,
-        #[cfg(feature = "office")]
         commands::knowledge_forget,
-        #[cfg(feature = "office")]
         commands::list_session_files,
-        #[cfg(feature = "office")]
         commands::knowledge_list,
-        #[cfg(feature = "office")]
         commands::knowledge_add_to_session,
-        #[cfg(feature = "office")]
         commands::knowledge_import_youtube,
-        #[cfg(feature = "office")]
         commands::office_delete_file,
-        #[cfg(feature = "office")]
         commands::office_restore_backup,
-        #[cfg(feature = "office")]
         commands::office_read_file,
-        #[cfg(feature = "office")]
         commands::office_export_document,
-        #[cfg(feature = "office")]
         commands::tauri_open_file,
 
         // ── analytics (implies office) ─────────────────────────────────
