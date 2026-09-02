@@ -26,3 +26,7 @@
 [submodule "open-design"]
 	path = open-design
 	url = https://github.com/nexu-io/open-design
+[submodule "contracts"]
+	path = contracts
+	url = https://github.com/kawai-network/contracts.git
+	branch = main
