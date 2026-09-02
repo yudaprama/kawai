@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { call, respondSupervisorConfirmation } from "@/lib/api";
 import { type StreamControl, streamOperation } from "@/lib/stream";
 import type { UIMessage, UIMessagePart } from "@/lib/ai-types";
+import { gateTurn } from "@/features/billing/usage-billing";
 
 /** Events streamed by `execute_supervisor_plan` (mirrors the Rust enum). */
 export type SupervisorEvent =
@@ -345,10 +346,25 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       setMessages((prev) => [...prev, userMessage]);
       void persist(sessionId, "user", goal);
 
+      // ── Interim billing gate (per-turn flat fee, honor system —
+      //    features/billing/usage-billing.ts). Blokir hanya kalau saldo
+      //    terkonfirmasi kurang; error infra = fail-open. ──
+      const bill = await gateTurn();
+      if (bill.insufficient) {
+        patch({
+          status: "failed",
+          error:
+            "Insufficient token credit — contact admin to top up " +
+            "(interim billing: 0.05 USDT/turn).",
+        });
+        void persist(sessionId, "assistant", "Turn blocked: insufficient balance.");
+        return;
+      }
+
       const plan = await createSupervisorPlan(goal, sessionId, agentId);
       runPlan({ plan, sessionId, agentId });
     },
-    [runPlan],
+    [runPlan, patch],
   );
 
   const respond = useCallback(

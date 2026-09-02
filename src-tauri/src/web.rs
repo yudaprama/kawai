@@ -1566,9 +1566,11 @@ async fn plan_task_handler(
         StatusCode::SERVICE_UNAVAILABLE,
         "supervisor toolset unavailable".to_string(),
     ))?;
+    // Usage-based billing hanya di desktop (token ada di keychain). Web:
+    // flat per-turn di frontend (interim, lihat docs §8).
     crate::supervisor::plan_task(&claims.sub, &req.goal, &registry)
         .await
-        .map(Json)
+        .map(|(plan, _usage)| Json(plan))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 

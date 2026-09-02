@@ -149,6 +149,7 @@ pub fn run() {
         commands::respond_supervisor_confirmation,
         #[cfg(feature = "litert")]
         commands::plan_task,
+        commands::bill_turn,
 
         // ── litert + office (knowledge context + rig tools) ─────────────
         #[cfg(feature = "litert")]

@@ -719,6 +719,18 @@ pub fn office_import_file(
     }
 }
 
+/// Interim usage billing (per-turn flat fee, honor system — docs
+/// BALANCE-KV-ARCHITECTURE.md §8). Debit saldo user sendiri via Supabase
+/// RPC; atomic di Postgres. Fail-open: error infra → turn tetap jalan.
+#[tauri::command]
+pub async fn bill_turn() -> Result<kawai_billing::BillOutcome, String> {
+    let Some(token) = crate::keychain::load().map_err(|e| e.to_string())? else {
+        return Ok(kawai_billing::BillOutcome::Skipped); // belum login (dev)
+    };
+    let opts = kawai_billing::BillOpts::from_env()?;
+    Ok(kawai_billing::bill_turn(&opts, &token).await)
+}
+
 /// Authenticated RPC: create and validate a deterministic supervisor plan.
 #[cfg(feature = "litert")]
 #[tauri::command]
@@ -735,7 +747,20 @@ pub async fn plan_task(
     let registry = crate::supervisor::build_supervisor_registry(
         &user_id, session_id, &agent_id,
     ).await.ok_or_else(|| "supervisor toolset unavailable".to_string())?;
-    crate::supervisor::plan_task(&user_id, &goal, &registry).await
+    let (plan, usage) = crate::supervisor::plan_task(&user_id, &goal, &registry).await?;
+
+    // Fair billing: debit berdasarkan usage nyata dari provider (bukan flat).
+    // Fail-open — error billing tidak membatalkan hasil plan.
+    if let Ok(opts) = kawai_billing::BillOpts::from_env() {
+        if let Ok(Some(token)) = crate::keychain::load() {
+            let out = kawai_billing::bill_usage(&opts, &token, usage.input_tokens, usage.output_tokens).await;
+            if out.insufficient() {
+                return Err("insufficient token credit — contact admin to top up".into());
+            }
+        }
+    }
+
+    Ok(plan)
 }
 
 /// Authenticated RPC: respond to a pending supervisor confirmation gate.

@@ -235,7 +235,7 @@ pub async fn plan_task(
     user_id: &str,
     goal: &str,
     registry: &ToolRegistry,
-) -> Result<kawai_router::TaskPlan, String> {
+) -> Result<(kawai_router::TaskPlan, remote_llm::RemoteUsage), String> {
     let remote = remote_llm::RemoteLlm::from_env()
         .ok_or_else(|| "remote LLM is not configured".to_string())?;
 
@@ -258,12 +258,20 @@ pub async fn plan_task(
         "",
     ).await?;
     let mut raw = String::new();
+    let mut usage = remote_llm::RemoteUsage::default();
     while let Some(event) = stream.next().await {
-        if let remote_llm::RemoteEvent::Token { text } = event? {
-            if raw.len() < 32_000 { raw.push_str(&text); }
+        match event? {
+            remote_llm::RemoteEvent::Token { text } => {
+                if raw.len() < 32_000 { raw.push_str(&text); }
+            }
+            // Provider-reported usage — dibawa keluar agar caller dapat
+            // mendebit saldo berdasar pemakaian nyata (fair per-token).
+            remote_llm::RemoteEvent::Done { usage: u, .. } => usage = u,
+            _ => {}
         }
     }
-    parse_supervisor_plan(&raw, registry)
+    let plan = parse_supervisor_plan(&raw, registry)?;
+    Ok((plan, usage))
 }
 
 pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai_router::TaskPlan, String> {

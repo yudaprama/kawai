@@ -166,6 +166,29 @@ terisolasi dari namespace lama `x/store`):
 
 ---
 
+## 4b. Top up (release interim — manual admin)
+
+Model release: saldo = **token credit** (1 token provider = 1 credit, tanpa
+konversi USDT). Konversi ke pembayaran nyata disusun belakangan.
+
+```bash
+# Top up manual (admin): tambah credit via psql
+psql "$DATABASE_URL" -c "
+  select private.ensure_balance_row('<user-uuid>');
+  update private.user_balances set usdt_balance = usdt_balance + 1000000
+   where user_id = '<user-uuid>';"
+# (ledger entry manual opsional — rekonsiliasi menyusul)
+```
+
+Atau via Edge Function path admin (JWT admin): `POST /functions/v1/debit-balance`
+dengan amount negatif tidak didukung — gunakan `credit_my_balance` via psql,
+atau tambahkan RPC `admin_credit` nanti.
+
+Kebijakan default: user baru mulai dengan saldo 0 (blockturn sampai admin
+memberi credit). Beri saldo awal gratis di migration seed kalau mau.
+
+---
+
 ## 5. Deployment runbook
 
 ```bash
@@ -223,7 +246,21 @@ Semua dijalankan nyata terhadap project `mpencmdcjzfoahbuepwu`:
 
 ## 8. Roadmap
 
-- [ ] Worker Rust: billing hook `POST /usage` → EF `debit-balance` (server-side, guarded)
+- [x] **Interim (release 2026-09): billing desktop FAIR per-token** —
+  crate `crates/foundation/billing` (`kawai-billing`): `bill_usage()` —
+  debit dari `RemoteUsage` nyata yang dilaporkan provider (rate:
+  `MICROS_PER_1K_TOKENS`), dipanggil di `commands.rs::plan_task` setelah
+  plan sukses; `supervisor::plan_task` sekarang mengembalikan usage.
+  Frontend (`gateTurn`): desktop = pre-check saldo saja (blokir kalau 0);
+  web fallback = flat 0.05 USDT/turn (honor system).
+  ⚠️ Tetap bukan kontrol keamanan (user bisa patch binary / skip).
+- [ ] Fase 1: key LLM server-issued (runtime fetch via RPC, bukan bundled di
+  `kawai_constants::llm`) — menutup vektor ekstraksi key dari binary.
+- [ ] Fase 2: metering per-token untuk SELURUH turn (saat ini baru planner
+  call yang terukur — step tools lokal tidak ada LLM call per step),
+  reserve quota + daily cap server-side di Postgres.
+- [ ] Fase 3 (opsional, saat revenue justifikasi): proxy LLM server-side
+  untuk penegakan ketat. Worker CF/EF debit yang sudah live tetap dipakai.
 - [ ] Auth untuk endpoint `/kv` dan `/balance` worker
-- [ ] Migrasi job rewards / referral payout / settlement ke Supabase (pola sama: tabel private + RPC + cron EF / `pg_cron`)
+- [ ] Migrasi job rewards / referral payout / settlement ke Supabase
 - [ ] Set `PRIVATE_KEY` (user, manual)
