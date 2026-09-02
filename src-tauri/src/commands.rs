@@ -59,6 +59,52 @@ pub fn list_agents() -> Vec<crate::agent_registry::AgentInfo> {
     crate::agent_registry::builtin().list()
 }
 
+/// Public RPC: native MON balance for an EVM address on Monad (`monad`
+/// feature). Chain data is public — no auth scope. Always registered; the
+/// logic shim serves a guidance error when the feature is off.
+#[tauri::command]
+pub async fn check_monad_balance(
+    wallet_address: String,
+    rpc_url: Option<String>,
+) -> Result<logic::monad::BalanceInfo, String> {
+    logic::monad::check_balance(rpc_url.as_deref(), &wallet_address).await
+}
+
+/// Public RPC: Monad chain status probe (block height + chain id).
+#[tauri::command]
+pub async fn monad_chain_status(rpc_url: Option<String>) -> Result<logic::monad::ChainStatus, String> {
+    logic::monad::chain_status(rpc_url.as_deref()).await
+}
+
+// ── Device-scoped Monad hot wallet (PUBLIC ops — the wallet exists before
+//    any session: it IS what creates the identity via SIWE login). Key lives
+//    in the OS keychain, never crosses to the frontend. ──
+
+/// Load the device wallet's address, if one exists.
+#[tauri::command]
+pub async fn monad_wallet_address() -> Result<Option<logic::monad_wallet::WalletAddress>, String> {
+    logic::monad_wallet::address()
+}
+
+/// Create the device hot wallet (idempotent). Returns ONLY the address —
+/// the private key stays in the OS keychain inside the backend process.
+#[tauri::command]
+pub async fn monad_wallet_create() -> Result<logic::monad_wallet::WalletAddress, String> {
+    logic::monad_wallet::create()
+}
+
+/// EIP-191 personal-sign `message` with the device wallet's stored key.
+#[tauri::command]
+pub async fn monad_wallet_sign_message(message: String) -> Result<String, String> {
+    logic::monad_wallet::sign_message(&message).await
+}
+
+/// Permanently delete the stored key (address + funds unrecoverable locally).
+#[tauri::command]
+pub async fn monad_wallet_delete() -> Result<(), String> {
+    logic::monad_wallet::delete()
+}
+
 /// Streaming command. The `stream_id` lets the client request early
 /// cancellation via `cancel_stream`. Business args arrive as individual
 /// camelCase fields (Tauri default arg mapping); the `Channel` carries events

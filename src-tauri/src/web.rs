@@ -381,6 +381,74 @@ async fn list_agents_handler() -> Json<Vec<crate::agent_registry::AgentInfo>> {
     Json(crate::agent_registry::builtin().list())
 }
 
+/// Public RPC: native MON balance on Monad (same op as the Tauri
+/// `check_monad_balance` command). Request needs `#[serde(rename_all)]` —
+/// Axum `Json<T>` does NOT map camelCase → snake_case like Tauri does.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct MonadBalanceRequest {
+    wallet_address: String,
+    rpc_url: Option<String>,
+}
+
+async fn check_monad_balance_handler(
+    Json(req): Json<MonadBalanceRequest>,
+) -> Result<Json<logic::monad::BalanceInfo>, (StatusCode, String)> {
+    match logic::monad::check_balance(req.rpc_url.as_deref(), &req.wallet_address).await {
+        Ok(info) => Ok(Json(info)),
+        Err(e) => Err((StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+/// Public RPC: Monad chain status probe.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct MonadChainStatusRequest {
+    rpc_url: Option<String>,
+}
+
+async fn monad_chain_status_handler(
+    Json(req): Json<MonadChainStatusRequest>,
+) -> Result<Json<logic::monad::ChainStatus>, (StatusCode, String)> {
+    match logic::monad::chain_status(req.rpc_url.as_deref()).await {
+        Ok(status) => Ok(Json(status)),
+        Err(e) => Err((StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+// ── Device-scoped Monad hot wallet (public; same ops as the Tauri commands) ──
+
+fn wallet_err(e: String) -> (StatusCode, String) {
+    (StatusCode::INTERNAL_SERVER_ERROR, e)
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct MonadSignMessageRequest {
+    message: String,
+}
+
+async fn monad_wallet_address_handler() -> Result<Json<Option<logic::monad_wallet::WalletAddress>>, (StatusCode, String)> {
+    logic::monad_wallet::address().map(Json).map_err(wallet_err)
+}
+
+async fn monad_wallet_create_handler() -> Result<Json<logic::monad_wallet::WalletAddress>, (StatusCode, String)> {
+    logic::monad_wallet::create().map(Json).map_err(wallet_err)
+}
+
+async fn monad_wallet_sign_message_handler(
+    Json(req): Json<MonadSignMessageRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::monad_wallet::sign_message(&req.message)
+        .await
+        .map(Json)
+        .map_err(wallet_err)
+}
+
+async fn monad_wallet_delete_handler() -> Result<Json<()>, (StatusCode, String)> {
+    logic::monad_wallet::delete().map(Json).map_err(wallet_err)
+}
+
 async fn generate_activity_handler(
     Json(input): Json<ActivityInput>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
@@ -1284,7 +1352,15 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/list_agents", post(list_agents_handler))
         .route("/api/generate_activity", post(generate_activity_handler))
         .route("/api/set_session", post(set_session_handler))
-        .route("/api/logout", post(logout_handler));
+        .route("/api/logout", post(logout_handler))
+        .route("/api/check_monad_balance", post(check_monad_balance_handler))
+        .route("/api/monad_chain_status", post(monad_chain_status_handler))
+        // Device-scoped Monad hot wallet — PUBLIC ops: the wallet exists
+        // before any session (it creates the identity via SIWE login).
+        .route("/api/monad_wallet_address", post(monad_wallet_address_handler))
+        .route("/api/monad_wallet_create", post(monad_wallet_create_handler))
+        .route("/api/monad_wallet_sign_message", post(monad_wallet_sign_message_handler))
+        .route("/api/monad_wallet_delete", post(monad_wallet_delete_handler));
 
     let protected = Router::new()
         .route("/api/whoami", post(whoami_handler))

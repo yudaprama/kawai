@@ -274,6 +274,17 @@ pub mod codegraph;
 // TTS via piper-rs (neural Piper ONNX models). Feature-gated internally;
 // always compiled so the command stays registered in generate_handler!.
 pub mod tts;
+// Monad EVM chain client (`monad` feature): read-only public RPC — native
+// balance + chain status. Pure alloy HTTP provider; RPC URL via
+// `KAWAI_MONAD_RPC_URL` (default: Monad testnet). The module is always
+// compiled (stable surface for the always-registered commands); without the
+// feature it serves guidance-error stubs (codegraph/tts pattern).
+pub mod monad;
+// Per-user Monad hot wallet (`monad` feature): key lives ONLY in the OS
+// keychain (`monad-wallet/<user_id>`); create/sign/delete orchestration.
+// Always compiled (stable surface for the always-registered commands); without
+// the feature it serves guidance-error stubs (codegraph/tts pattern).
+pub mod monad_wallet;
 
 pub use db::*;
 

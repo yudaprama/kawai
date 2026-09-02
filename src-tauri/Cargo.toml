@@ -119,6 +119,8 @@ piper-rs = { version = "0.2.0", optional = true }
 # `cargo ndk check --features binance` pass).
 [target.'cfg(not(target_os = "android"))'.dependencies]
 binance = { path = "../crates/toolsets/binance", optional = true }
+# Monad EVM chain client (feature "monad") — read-only public RPC.
+kawai-monad = { path = "../crates/integrations/monad", optional = true }
 
 # libSQL-native GraphRAG engine — pure crate (crates/engines/graph). Feature-gated
 # so it can be included/excluded as a module (@crates/engines/graph).
@@ -158,6 +160,9 @@ litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "k
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Needs a tool-loop runtime.
 binance = ["dep:binance", "kawai-agent/binance"]
+# Monad EVM chain client (read-only RPC: balance + chain status). Pure alloy
+# HTTP provider — no keys, no signing.
+monad = ["dep:kawai-monad"]
 # Remote SQL sources (Postgres/MySQL) for the analytics snapshot tools.
 # Implies analytics (always compiled); SQLite needs no feature (libsql rides along).
 analytics-sql = ["kawai-analytics/analytics-sql", "dep:sqlx"]
@@ -166,7 +171,7 @@ analytics-sql = ["kawai-analytics/analytics-sql", "dep:sqlx"]
 tts = ["dep:piper-rs"]
 # The full product in one flag (CI battery shorthand): on-device LLM,
 # remote SQL, Binance, TTS, CodeGraph, web server.
-full = ["litert", "analytics-sql", "binance", "tts", "codegraph", "web"]
+full = ["litert", "analytics-sql", "binance", "tts", "codegraph", "monad", "web"]
 
 [[bin]]
 name = "kawai"

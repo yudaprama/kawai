@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/features/auth/use-auth";
 import { supabase } from "@/features/auth/supabase";
+import { signInWithMonadWallet } from "@/features/auth/monad-wallet";
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { userId, authError } = useAuth();
@@ -53,6 +54,22 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     }
     // Open in system browser (webview blocks third-party OAuth cookies)
     if (data?.url) await openUrl(data.url);
+  };
+
+  const handleMonadWallet = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Backend creates (or reuses) the device hot wallet, signs the SIWE
+      // message in-process, and Supabase issues the session.
+      await signInWithMonadWallet();
+      // onAuthStateChange in use-auth picks up SIGNED_IN and syncs the
+      // token to the backend (set_session → keychain).
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -105,6 +122,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             GitHub
           </Button>
         </div>
+
+        <Button variant="outline" type="button" className="w-full" onClick={handleMonadWallet} disabled={loading}>
+          EVM Wallet
+        </Button>
 
         {(authError || error) && <p className="text-center text-sm text-destructive">{error ?? authError}</p>}
       </div>
