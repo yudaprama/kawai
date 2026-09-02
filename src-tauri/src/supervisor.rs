@@ -136,17 +136,11 @@ async fn build_supervisor_toolset(
     agent_id: &str,
  ) -> Option<kawai_tools::ToolSet> {
     let remote_configured = remote_llm::RemoteLlm::from_env().is_some();
-    #[cfg(feature = "analytics")]
     let sql_profiles = kawai_analytics::effective_profiles(user_id).await;
     let context = kawai_agent_contract::AgentContext {
         user_id,
         session_id,
-        sql_profiles: {
-            #[cfg(feature = "analytics")]
-            { Some(sql_profiles.as_slice()) }
-            #[cfg(not(feature = "analytics"))]
-            { None }
-        },
+        sql_profiles: Some(sql_profiles.as_slice()),
     };
 
     // Domain builders. Do not expose the office superset to analytics/binance

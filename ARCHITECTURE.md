@@ -176,7 +176,7 @@ Structured queries over tabular data files (csv/parquet/Excel) and SQL sources.
 
 No `draft_document` — analytics produces data answers, not documents.
 
-Persona: the Analytics definition in `crates/toolsets/analytics-tools/src/agent.rs` (analytics feature).
+Persona: the Analytics definition in `crates/toolsets/analytics-tools/src/agent.rs` (always compiled; SQL-source snapshot gated behind `analytics-sql` feature).
 
 ### Subagent wiring
 

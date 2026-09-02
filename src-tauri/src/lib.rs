@@ -173,15 +173,10 @@ pub fn run() {
         commands::tauri_open_file,
 
         // ── analytics (implies office) ─────────────────────────────────
-        #[cfg(feature = "analytics")]
         commands::data_preview,
-        #[cfg(feature = "analytics")]
         commands::sql_profile_list,
-        #[cfg(feature = "analytics")]
         commands::sql_profile_save,
-        #[cfg(feature = "analytics")]
         commands::sql_profile_delete,
-        #[cfg(feature = "analytics")]
         commands::sql_profile_test,
     ]);
 

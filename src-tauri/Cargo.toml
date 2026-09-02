@@ -52,9 +52,11 @@ kawai-paths = { path = "../crates/foundation/paths" }
 kawai-skills = { path = "../crates/foundation/skills" }
 kawai-memory = { path = "../crates/foundation/memory" }
 kawai-office = { path = "../crates/engines/office", features = ["paddle-ocr"] }
-kawai-knowledge = { path = "../crates/engines/knowledge", features = ["office"] }
-kawai-analytics = { path = "../crates/toolsets/analytics-tools", optional = true }
-kawai-agent = { path = "../crates/engines/agent", features = ["office", "webread"] }
+kawai-knowledge = { path = "../crates/engines/knowledge", features = ["office", "graph"] }
+kawai-analytics = { path = "../crates/toolsets/analytics-tools" }
+# Polars-backed data analysis engine; used by the analytics tools + `sql_remote_check` example.
+analytics = { path = "../crates/engines/analytics" }
+kawai-agent = { path = "../crates/engines/agent", features = ["office", "webread", "graph", "analytics"] }
 codegraph = { path = "../crates/toolsets/codegraph", optional = true }
 kawai-agent-contract = { path = "../crates/foundation/agent-contract" }
 # The agent tool seam (tool trait + registry) shared with components.
@@ -118,14 +120,11 @@ piper-rs = { version = "0.2.0", optional = true }
 [target.'cfg(not(target_os = "android"))'.dependencies]
 binance = { path = "../crates/toolsets/binance", optional = true }
 
-# Data analysis agent (builtin.analytics): structured queries over stored
-# tabular files (csv/tsv/parquet + xlsx via the office_oxide bridge) through
-# the polars-backed crates/engines/analytics crate. The data files live in
-# the office store.
-analytics = { path = "../crates/engines/analytics", optional = true }
 # libSQL-native GraphRAG engine — pure crate (crates/engines/graph). Feature-gated
 # so it can be included/excluded as a module (@crates/engines/graph).
-graph = { path = "../crates/engines/graph", optional = true }
+# GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
+# Always compiled in — rides the existing libSQL + kawai-embedding stack.
+graph = { path = "../crates/engines/graph" }
 
 # Remote SQL sources for the analytics snapshot tools (data_tables /
 # data_import over Postgres/MySQL). rustls on purpose — mobile has no
@@ -155,27 +154,19 @@ web = ["dep:axum", "dep:tower-http"]
 codegraph = ["dep:codegraph"]
 # On-device LLM. Also owns the kawai-router dep (rule-based auto-routing is
 # only used by the litert supervisor stack).
-litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "kawai-agent/litert", "kawai-vision/litert", "kawai-knowledge/litert", "remote-llm/litert", "kawai-analytics?/litert", "dep:kawai-router"]
-# GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
-# Include with --features graph, exclude by omitting it (zero cost when off).
-# Standalone — includes the pure `graph` crate + its DB deps.
-graph = ["dep:graph", "kawai-knowledge/graph", "kawai-agent/graph"]
+litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "kawai-agent/litert", "kawai-vision/litert", "kawai-knowledge/litert", "remote-llm/litert", "kawai-analytics/litert", "dep:kawai-router"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Needs a tool-loop runtime.
 binance = ["dep:binance", "kawai-agent/binance"]
-# Data analysis agent (logic::agent ANALYTICS_AGENT_ID): data_schema +
-# data_query over the office store's tabular files — the files live in the
-# office store and reuse its import UI.
-analytics = ["dep:analytics", "dep:kawai-analytics", "kawai-agent/analytics"]
 # Remote SQL sources (Postgres/MySQL) for the analytics snapshot tools.
-# Implies `analytics`; SQLite needs no feature (libsql rides along).
-analytics-sql = ["analytics", "kawai-analytics/analytics-sql", "dep:sqlx"]
+# Implies analytics (always compiled); SQLite needs no feature (libsql rides along).
+analytics-sql = ["kawai-analytics/analytics-sql", "dep:sqlx"]
 # TTS via piper-rs (neural Piper ONNX models). Adds ~40 MB (static ONNX Runtime)
 # and requires cmake + clang at build time (espeak-ng phonemizer compiled from source).
 tts = ["dep:piper-rs"]
 # The full product in one flag (CI battery shorthand): on-device LLM,
-# GraphRAG, remote SQL, Binance, TTS, CodeGraph, web server.
-full = ["litert", "graph", "analytics-sql", "binance", "tts", "codegraph", "web"]
+# remote SQL, Binance, TTS, CodeGraph, web server.
+full = ["litert", "analytics-sql", "binance", "tts", "codegraph", "web"]
 
 [[bin]]
 name = "kawai"

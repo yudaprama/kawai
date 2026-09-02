@@ -856,7 +856,6 @@ pub async fn knowledge_add_to_session(
 
 /// Authenticated RPC: schema preview of a stored tabular file (csv/tsv/
 /// parquet/xlsx) for the Knowledge panel — columns, dtypes, samples.
-#[cfg(feature = "analytics")]
 #[tauri::command]
 pub async fn data_preview(
     file_id: String,
@@ -867,7 +866,6 @@ pub async fn data_preview(
 }
 
 /// Authenticated RPC: list the user's saved SQL data sources.
-#[cfg(feature = "analytics")]
 #[tauri::command]
 pub async fn sql_profile_list(
     session: State<'_, Session>,
@@ -877,7 +875,6 @@ pub async fn sql_profile_list(
 }
 
 /// Authenticated RPC: save (insert or update) a named SQLite source.
-#[cfg(feature = "analytics")]
 #[tauri::command]
 pub async fn sql_profile_save(
     name: String,
@@ -889,7 +886,6 @@ pub async fn sql_profile_save(
 }
 
 /// Authenticated RPC: delete a named SQL data source (idempotent).
-#[cfg(feature = "analytics")]
 #[tauri::command]
 pub async fn sql_profile_delete(name: String, session: State<'_, Session>) -> Result<(), String> {
     let user_id = session_user_id(&session)?;
@@ -897,7 +893,6 @@ pub async fn sql_profile_delete(name: String, session: State<'_, Session>) -> Re
 }
 
 /// Authenticated RPC: probe one saved SQL data source (open + list tables).
-#[cfg(feature = "analytics")]
 #[tauri::command]
 pub async fn sql_profile_test(
     name: String,
@@ -1015,16 +1010,8 @@ pub async fn graph_index_file(
     session: State<'_, Session>,
 ) -> Result<serde_json::Value, String> {
     let user_id = session_user_id(&session)?;
-    #[cfg(feature = "graph")]
-    {
-        let (nodes, edges) = logic::graph::graph_index_file(user_id, file_id).await?;
-        Ok(serde_json::json!({"nodes": nodes, "edges": edges}))
-    }
-    #[cfg(not(feature = "graph"))]
-    {
-        let _ = (user_id, file_id);
-        Err("graph feature not enabled (build with --features graph)".into())
-    }
+    let (nodes, edges) = logic::graph::graph_index_file(user_id, file_id).await?;
+    Ok(serde_json::json!({"nodes": nodes, "edges": edges}))
 }
 
 #[tauri::command]
@@ -1034,16 +1021,8 @@ pub async fn graph_index_text(
     session: State<'_, Session>,
 ) -> Result<serde_json::Value, String> {
     let user_id = session_user_id(&session)?;
-    #[cfg(feature = "graph")]
-    {
-        let (nodes, edges) = logic::graph::graph_index_text(&user_id, &file_id, &text).await?;
-        Ok(serde_json::json!({"nodes": nodes, "edges": edges}))
-    }
-    #[cfg(not(feature = "graph"))]
-    {
-        let _ = (user_id, file_id, text);
-        Err("graph feature not enabled (build with --features graph)".into())
-    }
+    let (nodes, edges) = logic::graph::graph_index_text(&user_id, &file_id, &text).await?;
+    Ok(serde_json::json!({"nodes": nodes, "edges": edges}))
 }
 
 #[tauri::command]
@@ -1054,23 +1033,15 @@ pub async fn graph_search(
     session: State<'_, Session>,
 ) -> Result<serde_json::Value, String> {
     let user_id = session_user_id(&session)?;
-    #[cfg(feature = "graph")]
-    {
-        let m = match mode.as_deref().unwrap_or("hybrid") {
-            "naive" => logic::graph::GraphSearchMode::Naive,
-            "local" => logic::graph::GraphSearchMode::Local,
-            "global" => logic::graph::GraphSearchMode::Global,
-            "mix" => logic::graph::GraphSearchMode::Mix,
-            _ => logic::graph::GraphSearchMode::Hybrid,
-        };
-        let hits = logic::graph::graph_search(user_id, query, Some(m), limit).await?;
-        Ok(serde_json::to_value(hits).unwrap_or(serde_json::Value::Array(vec![])))
-    }
-    #[cfg(not(feature = "graph"))]
-    {
-        let _ = (user_id, query, mode, limit);
-        Err("graph feature not enabled (build with --features graph)".into())
-    }
+    let m = match mode.as_deref().unwrap_or("hybrid") {
+        "naive" => logic::graph::GraphSearchMode::Naive,
+        "local" => logic::graph::GraphSearchMode::Local,
+        "global" => logic::graph::GraphSearchMode::Global,
+        "mix" => logic::graph::GraphSearchMode::Mix,
+        _ => logic::graph::GraphSearchMode::Hybrid,
+    };
+    let hits = logic::graph::graph_search(user_id, query, Some(m), limit).await?;
+    Ok(serde_json::to_value(hits).unwrap_or(serde_json::Value::Array(vec![])))
 }
 
 #[tauri::command]
@@ -1079,16 +1050,8 @@ pub async fn graph_list(
     session: State<'_, Session>,
 ) -> Result<serde_json::Value, String> {
     let user_id = session_user_id(&session)?;
-    #[cfg(feature = "graph")]
-    {
-        let (nodes, edges) = logic::graph::graph_list(&user_id, limit).await?;
-        Ok(serde_json::json!({"nodes": nodes, "edges": edges}))
-    }
-    #[cfg(not(feature = "graph"))]
-    {
-        let _ = (user_id, limit);
-        Err("graph feature not enabled (build with --features graph)".into())
-    }
+    let (nodes, edges) = logic::graph::graph_list(&user_id, limit).await?;
+    Ok(serde_json::json!({"nodes": nodes, "edges": edges}))
 }
 
 #[tauri::command]
@@ -1097,30 +1060,14 @@ pub async fn graph_forget(
     session: State<'_, Session>,
 ) -> Result<usize, String> {
     let user_id = session_user_id(&session)?;
-    #[cfg(feature = "graph")]
-    {
-        logic::graph::graph_forget(&user_id, file_ids).await
-    }
-    #[cfg(not(feature = "graph"))]
-    {
-        let _ = (user_id, file_ids);
-        Err("graph feature not enabled (build with --features graph)".into())
-    }
+    logic::graph::graph_forget(&user_id, file_ids).await
 }
 
 #[tauri::command]
 pub async fn graph_stats(session: State<'_, Session>) -> Result<serde_json::Value, String> {
     let user_id = session_user_id(&session)?;
-    #[cfg(feature = "graph")]
-    {
-        let stats = logic::graph::graph_stats(&user_id).await?;
-        Ok(serde_json::to_value(stats).unwrap_or(serde_json::json!({})))
-    }
-    #[cfg(not(feature = "graph"))]
-    {
-        let _ = user_id;
-        Err("graph feature not enabled (build with --features graph)".into())
-    }
+    let stats = logic::graph::graph_stats(&user_id).await?;
+    Ok(serde_json::to_value(stats).unwrap_or(serde_json::json!({})))
 }
 
 // ── CodeGraph bridge (feature `codegraph` → sidecar, `codegraph-native` → native) ─

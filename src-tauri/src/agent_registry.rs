@@ -43,7 +43,6 @@ pub(crate) fn office_tools(
         context.user_id.to_string(),
         context.session_id,
     ));
-    #[cfg(feature = "graph")]
     kawai_knowledge::graph::extend_toolset(&mut set, context.user_id);
     Some(add_runtime_tools(set, context, remote_configured, true))
 }
@@ -94,7 +93,6 @@ pub(crate) fn analytics_tools_for_supervisor(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
-    #[cfg(feature = "analytics")]
     {
         let set = (kawai_analytics::agent::definition().build_tools)(context, remote_configured)?;
         return Some(add_runtime_tools(set, context, remote_configured, false));
@@ -204,19 +202,9 @@ pub fn builtin() -> AgentRegistry {
     };
 
     let analytics = {
-        #[cfg(feature = "analytics")]
-        {
-            let mut d = kawai_analytics::agent::definition();
-            d.build_tools = analytics_tools_for_supervisor;
-            d
-        }
-        #[cfg(not(feature = "analytics"))]
-        unavailable_definition(
-            ANALYTICS_AGENT_ID,
-            "Analytics",
-            "Structured queries over your data files: filter, aggregate, rank.",
-            false,
-        )
+        let mut d = kawai_analytics::agent::definition();
+        d.build_tools = analytics_tools_for_supervisor;
+        d
     };
 
     AgentRegistry::new(vec![office, presentation, binance, analytics])
@@ -308,9 +296,9 @@ mod tests {
         ))]
         assert!(registry.resolve(BINANCE_AGENT_ID).is_none());
 
-        #[cfg(all(feature = "litert", feature = "analytics"))]
+        #[cfg(feature = "litert")]
         assert!(registry.resolve(ANALYTICS_AGENT_ID).is_some());
-        #[cfg(any(not(feature = "litert"), not(feature = "analytics")))]
+        #[cfg(not(feature = "litert"))]
         assert!(registry.resolve(ANALYTICS_AGENT_ID).is_none());
     }
 
@@ -444,7 +432,7 @@ mod tests {
         );
     }
 
-    #[cfg(all(feature = "litert", feature = "analytics"))]
+    #[cfg(feature = "litert")]
     #[test]
     fn analytics_toolset_respects_sql_profiles_and_remote() {
         use kawai_agent_contract::SqlProfile;

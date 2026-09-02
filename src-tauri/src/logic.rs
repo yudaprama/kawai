@@ -252,7 +252,6 @@ pub mod rag;
 pub mod remote;
 // Data analysis agent tools (builtin.analytics). Implies office — the
 // tabular files live in the office store.
-#[cfg(feature = "analytics")]
 pub mod analytics;
 // Remote SQL sources (Postgres/MySQL) behind the narrower `analytics-sql`
 // feature — sqlx stays out of builds that only serve local SQLite.
@@ -260,7 +259,6 @@ pub mod analytics;
 pub mod sql_remote;
 // GraphRAG (libSQL-native, feature "graph"): Naive/Local/Global/Hybrid/Mix
 // over one DB file. No office/analytics dependency.
-#[cfg(feature = "graph")]
 pub mod graph;
 // When graph + office are both on, logic::graph re-exports from knowledge::graph.
 // When only graph is on (no office), logic::graph compiles the full implementation

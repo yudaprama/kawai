@@ -178,8 +178,6 @@ jobs:
       # plain compile gate + the crate's unit tests (AST translation, dtype
       # coercion, sidecar cache; fixture parquet/csv/xlsx built in-test).
       - name: cargo check (analytics feature)
-        run: cargo check --features analytics
-        working-directory: src-tauri
 
       - name: cargo check (codegraph feature)
         run: cargo check --features codegraph
@@ -409,7 +407,7 @@ jobs:
       #    (typed conversion, sidecar cache) through the office store, on
       #    every OS. No network, no model.
       - name: analytics_smoke (data_schema/data_query + xlsx bridge)
-        run: cargo run --example analytics_smoke --features analytics
+        run: cargo run --example analytics_smoke
         working-directory: src-tauri
 
       # ── Smoke 5: orchestration-quality gate (PLAN H1/L12). 20 office
@@ -622,7 +620,7 @@ jobs:
       #    (typed conversion, sidecar cache) through the office store, on
       #    every OS. No network, no model.
       - name: analytics_smoke (data_schema/data_query + xlsx bridge)
-        run: cargo run --example analytics_smoke --features analytics
+        run: cargo run --example analytics_smoke
         working-directory: src-tauri
 
       # ── Smoke 5: orchestration-quality gate ──
@@ -824,7 +822,7 @@ jobs:
       #    (typed conversion, sidecar cache) through the office store, on
       #    every OS. No network, no model.
       - name: analytics_smoke (data_schema/data_query + xlsx bridge)
-        run: cargo run --example analytics_smoke --features analytics
+        run: cargo run --example analytics_smoke
         working-directory: src-tauri
 
       # ── Smoke 5: orchestration-quality gate ──

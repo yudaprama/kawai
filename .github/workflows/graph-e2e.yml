@@ -60,29 +60,29 @@ jobs:
 
       # ── kawai feature gates ───────────────────────────────────────
       - name: cargo check (graph feature)
-        run: cargo check --features graph
+        run: cargo check
         working-directory: src-tauri
 
       - name: cargo check (graph + office)
-        run: cargo check --features graph
+        run: cargo check
         working-directory: src-tauri
 
       - name: cargo check (graph + web)
-        run: cargo check --features graph,web
+        run: cargo check,web
         working-directory: src-tauri
 
       - name: cargo check (graph + office + litert)
-        run: cargo check --features graph,litert
+        run: cargo check --features litert
         working-directory: src-tauri
 
       # Pure helpers live in kawai's logic/graph too — reuse the same tests
       # (extract_entities / community / rrf). No network.
       - name: cargo test (kawai graph helpers)
-        run: cargo test --features graph --lib logic::graph::tests::extract_entities_basic -- --nocapture
+        run: cargo test --lib logic::graph::tests::extract_entities_basic -- --nocapture
         working-directory: src-tauri
 
       - name: cargo test (kawai graph helpers — community)
-        run: cargo test --features graph --lib logic::graph::tests::community_is_stable -- --nocapture
+        run: cargo test --lib logic::graph::tests::community_is_stable -- --nocapture
         working-directory: src-tauri
 
       # ── Indexed E2E (needs embedder) ──────────────────────────────
@@ -97,7 +97,7 @@ jobs:
           KAWAI_DATA_DIR: /tmp/kawai-graph-ci
         run: |
           set +e
-          cargo test --features graph --lib logic::graph::tests::graph_index_and_search_e2e -- --ignored --nocapture
+          cargo test --lib logic::graph::tests::graph_index_and_search_e2e -- --ignored --nocapture
           code=$?
           if [ $code -eq 0 ]; then
             echo "graph E2E passed"

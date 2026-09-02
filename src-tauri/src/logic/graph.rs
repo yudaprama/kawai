@@ -4,5 +4,4 @@
 //! re-exports every public symbol so existing `logic::graph::*` call sites
 //! remain valid.
 
-#[cfg(feature = "graph")]
 pub use super::knowledge::graph::*;
