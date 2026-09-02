@@ -1,12 +1,17 @@
 # Balance & KV Architecture — Worker ⇄ Supabase
 
-**Tanggal:** 2026-09-02
+**Tanggal:** 2026-09-02 (rev 2 — token credit 1:1, flat per-turn dihapus)
 **Status:** ✅ Live & terverifikasi end-to-end di project test
 **Project Supabase:** `mpencmdcjzfoahbuepwu` (ap-southeast-1)
 **Worker:** `https://kawai-worker.akuntestinguntukseto.workers.dev`
+**Commits:** kawai `866d8b3`, crates `e17e96a`
 
 Dokumen ini menggantikan peran modul balance/billing di `x/store` (Go, Cloudflare
 KV via REST API) dengan arsitektur Supabase-first + Cloudflare Worker (Rust/WASM).
+
+**Model rilis saat ini:** saldo = **token credit** (1:1 dengan token provider,
+tanpa konversi USDT — konversi disusul saat model bisnis jelas). Debit
+usage-based dari `RemoteUsage` nyata; top up manual via CLI admin.
 
 ---
 
@@ -171,21 +176,24 @@ terisolasi dari namespace lama `x/store`):
 Model release: saldo = **token credit** (1 token provider = 1 credit, tanpa
 konversi USDT). Konversi ke pembayaran nyata disusun belakangan.
 
+**CLI (recommended):**
 ```bash
-# Top up manual (admin): tambah credit via psql
+cd kawai
+bun scripts/topup.ts list [query]               # daftar/cari user + saldo
+bun scripts/topup.ts <email|uuid> <amount>      # top up (+/-) token credit
+# contoh: bun scripts/topup.ts user@example.com 1000000
+```
+CLI melakukan: resolve user → ensure row → transaksi (update saldo +
+ledger `reason='manual'`, `ref: {via: 'topup-cli'}`) → tampilkan saldo baru.
+Koneksi via `DATABASE_URL` di `kawai/.env`.
+
+Manual via psql (tanpa ledger, tidak recommended):
+```bash
 psql "$DATABASE_URL" -c "
   select private.ensure_balance_row('<user-uuid>');
   update private.user_balances set usdt_balance = usdt_balance + 1000000
    where user_id = '<user-uuid>';"
-# (ledger entry manual opsional — rekonsiliasi menyusul)
 ```
-
-Atau via Edge Function path admin (JWT admin): `POST /functions/v1/debit-balance`
-dengan amount negatif tidak didukung — gunakan `credit_my_balance` via psql,
-atau tambahkan RPC `admin_credit` nanti.
-
-Kebijakan default: user baru mulai dengan saldo 0 (blockturn sampai admin
-memberi credit). Beri saldo awal gratis di migration seed kalau mau.
 
 ---
 
@@ -246,19 +254,36 @@ Semua dijalankan nyata terhadap project `mpencmdcjzfoahbuepwu`:
 
 ## 8. Roadmap
 
-- [x] **Interim (release 2026-09): billing desktop FAIR per-token** —
-  crate `crates/foundation/billing` (`kawai-billing`): `bill_usage()` —
-  debit dari `RemoteUsage` nyata yang dilaporkan provider (rate:
-  `MICROS_PER_1K_TOKENS`), dipanggil di `commands.rs::plan_task` setelah
-  plan sukses; `supervisor::plan_task` sekarang mengembalikan usage.
-  Frontend (`gateTurn`): desktop = pre-check saldo saja (blokir kalau 0);
-  web fallback = flat 0.05 USDT/turn (honor system).
-  ⚠️ Tetap bukan kontrol keamanan (user bisa patch binary / skip).
+- [x] **Release 2026-09: billing token credit 1:1** (SUDAH DI-COMMIT & PUSH:
+  kawai `866d8b3`, crates `e17e96a`)
+  - crate `crates/foundation/billing` (`kawai-billing`): `bill_usage()` —
+    debit dari `RemoteUsage` nyata yang dilaporkan provider, **1 token = 1
+    credit** (`usage_to_micros` = `input + output`, tanpa konversi USDT).
+  - Desktop: `commands.rs::plan_task` memanggil `bill_usage` post-plan
+    (token dari keychain, bukan frontend). `supervisor::plan_task`
+    sekarang mengembalikan `(TaskPlan, RemoteUsage)`.
+  - Frontend (`gateTurn` di `use-supervisor-plan.ts`): pre-check saldo
+    SAJA (desktop & web) — blokir kalau saldo 0, fail-open kalau Supabase
+    tidak terjangkau. TIDAK ada debit flat per-turn di frontend.
+  - Web: pre-check saja, belum ada debit (menunggu backend web server —
+    user web saat ini bisa pakai tanpa saldo, acceptable untuk rilis).
+  - `scripts/topup.ts`: CLI admin top up token credit (audit ke ledger
+    `reason='manual'`, `ref: {via: 'topup-cli'}`). Lihat §4b.
+  - Error message: "insufficient token credit — contact admin to top up".
+  - ⚠️ Tetap bukan kontrol keamanan (user bisa patch binary / skip).
+- [ ] Konversi token credit ↔ USDT/payment (menunggu keputusan bisnis —
+  bagaimana top up on-chain vs gateway vs voucher).
+- [ ] Rate-card per-model (saat ini 1:1 flat) — pinjam pola `metering/`
+  `pricing.yaml`: input/output terpisah + cache discount + suffix `:free`.
+- [ ] Idempotency key di `balance_ledger` (pinjam pola `metering/`:
+  SHA-256 trace+span → `requestId` unique) — anti double-debit.
 - [ ] Fase 1: key LLM server-issued (runtime fetch via RPC, bukan bundled di
   `kawai_constants::llm`) — menutup vektor ekstraksi key dari binary.
-- [ ] Fase 2: metering per-token untuk SELURUH turn (saat ini baru planner
-  call yang terukur — step tools lokal tidak ada LLM call per step),
-  reserve quota + daily cap server-side di Postgres.
+- [ ] Fase 2: reserve quota + daily cap server-side di Postgres;
+  metering untuk seluruh turn (saat ini baru planner call yang terukur —
+  step tools lokal tidak ada LLM call per step).
+- [ ] Billing web: backend web server memanggil `kawai-billing` di
+  endpointnya (web user saat ini belum didebit).
 - [ ] Fase 3 (opsional, saat revenue justifikasi): proxy LLM server-side
   untuk penegakan ketat. Worker CF/EF debit yang sudah live tetap dipakai.
 - [ ] Auth untuk endpoint `/kv` dan `/balance` worker
