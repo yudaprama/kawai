@@ -274,6 +274,7 @@ pub mod codegraph;
 // TTS via piper-rs (neural Piper ONNX models). Feature-gated internally;
 // always compiled so the command stays registered in generate_handler!.
 pub mod tts;
+pub mod email;
 // Monad EVM chain client (`monad` feature): read-only public RPC — native
 // balance + chain status. Pure alloy HTTP provider; RPC URL via
 // `KAWAI_MONAD_RPC_URL` (default: Monad testnet). The module is always

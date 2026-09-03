@@ -75,6 +75,7 @@ pub fn run() {
         commands::greet,
         commands::list_agents,
         commands::generate_activity,
+        commands::send_verification_email,
         commands::cancel_stream,
         commands::set_session,
         commands::restore_session,

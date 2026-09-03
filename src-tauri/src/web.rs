@@ -367,6 +367,23 @@ async fn skill_delete_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
+/// Public RPC: client-side email verification (same op as the Tauri command).
+/// Returns the generated code so the caller verifies user input locally.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SendVerificationEmailRequest {
+    to: String,
+}
+
+async fn send_verification_email_handler(
+    Json(req): Json<SendVerificationEmailRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::email::send_verification_email(&req.to)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
 #[derive(Serialize)]
 struct ErrorResponse {
     error: String,
@@ -1360,7 +1377,8 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/monad_wallet_address", post(monad_wallet_address_handler))
         .route("/api/monad_wallet_create", post(monad_wallet_create_handler))
         .route("/api/monad_wallet_sign_message", post(monad_wallet_sign_message_handler))
-        .route("/api/monad_wallet_delete", post(monad_wallet_delete_handler));
+        .route("/api/monad_wallet_delete", post(monad_wallet_delete_handler))
+        .route("/api/send_verification_email", post(send_verification_email_handler));
 
     let protected = Router::new()
         .route("/api/whoami", post(whoami_handler))

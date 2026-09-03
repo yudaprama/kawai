@@ -59,6 +59,14 @@ pub fn list_agents() -> Vec<crate::agent_registry::AgentInfo> {
     crate::agent_registry::builtin().list()
 }
 
+/// Public RPC: client-side email verification — generate a 6-digit code and
+/// email it via the Brevo SMTP relay. Returns the code so the frontend can
+/// check the user's input locally (the auth server is never involved).
+#[tauri::command]
+pub async fn send_verification_email(to: String) -> Result<String, String> {
+    logic::email::send_verification_email(&to).await
+}
+
 /// Public RPC: native MON balance for an EVM address on Monad (`monad`
 /// feature). Chain data is public — no auth scope. Always registered; the
 /// logic shim serves a guidance error when the feature is off.
