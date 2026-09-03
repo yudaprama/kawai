@@ -21,7 +21,7 @@ if [ "$CMD" = "dev" ]; then
     LITERT_LM_LIB_DIR="$LITERT_NATIVE" \
     LLVM_PROFILE_FILE=/dev/null \
     KAWAI_AUTH_DEV_USER_ID=demo \
-    "$TAURI" dev -- --features litert,office
+    "$TAURI" dev -- --features litert
 fi
 
 exec "$TAURI" "$@"
