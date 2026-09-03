@@ -1,4 +1,4 @@
-use crate::auth::{Claims, Verifier};
+use crate::auth::Session;
 use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo};
 use axum::{
     extract::{Json, Request},
@@ -138,30 +138,30 @@ struct MemoryExtractRequest {
 }
 
 async fn memory_create_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<MemoryCreateRequest>,
 ) -> Result<Json<logic::memory::MemoryItem>, (StatusCode, String)> {
-    logic::memory::memory_create(&claims.sub, &req.kind, &req.title, &req.content)
+    logic::memory::memory_create(&user_id, &req.kind, &req.title, &req.content)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
 async fn memory_list_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<Json<Vec<logic::memory::MemoryItem>>, (StatusCode, String)> {
-    logic::memory::memory_list(&claims.sub)
+    logic::memory::memory_list(&user_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
 async fn memory_update_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<MemoryUpdateRequest>,
 ) -> Result<Json<Option<logic::memory::MemoryItem>>, (StatusCode, String)> {
     logic::memory::memory_update(
-        &claims.sub,
+        &user_id,
         &req.memory_id,
         req.kind.as_deref(),
         req.title.as_deref(),
@@ -173,20 +173,20 @@ async fn memory_update_handler(
 }
 
 async fn memory_delete_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<MemoryDeleteRequest>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
-    logic::memory::memory_delete(&claims.sub, &req.memory_id)
+    logic::memory::memory_delete(&user_id, &req.memory_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
 async fn memory_extract_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<MemoryExtractRequest>,
 ) -> Result<Json<Vec<logic::memory::MemoryItem>>, (StatusCode, String)> {
-    logic::memory::memory_extract(&claims.sub, req.session_id)
+    logic::memory::memory_extract(&user_id, req.session_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -200,10 +200,10 @@ struct MemorySearchRequest {
 }
 
 async fn memory_search_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<MemorySearchRequest>,
 ) -> Result<Json<Vec<logic::memory::MemoryItem>>, (StatusCode, String)> {
-    logic::memory::memory_search(&claims.sub, &req.query, req.limit)
+    logic::memory::memory_search(&user_id, &req.query, req.limit)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -214,9 +214,9 @@ async fn memory_search_handler(
 struct MemoryConsolidateRequest {}
 
 async fn memory_consolidate_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<Json<logic::memory::ConsolidationReport>, (StatusCode, String)> {
-    logic::memory::memory_consolidate(&claims.sub)
+    logic::memory::memory_consolidate(&user_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -230,10 +230,10 @@ struct MemoryGraphSearchRequest {
 }
 
 async fn memory_graph_search_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<MemoryGraphSearchRequest>,
 ) -> Result<Json<Vec<logic::memory::MemoryGraphHit>>, (StatusCode, String)> {
-    logic::memory::memory_graph_search(&claims.sub, &req.query, req.limit)
+    logic::memory::memory_graph_search(&user_id, &req.query, req.limit)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -246,10 +246,10 @@ struct MemoryGraphExportRequest {
 }
 
 async fn memory_graph_export_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<MemoryGraphExportRequest>,
 ) -> Result<Json<logic::memory::MemoryGraphExport>, (StatusCode, String)> {
-    logic::memory::memory_graph_export(&claims.sub, req.limit)
+    logic::memory::memory_graph_export(&user_id, req.limit)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -260,9 +260,9 @@ async fn memory_graph_export_handler(
 struct MemorySceneExtractRequest {}
 
 async fn memory_scene_extract_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<Json<Vec<logic::memory::SceneHit>>, (StatusCode, String)> {
-    logic::memory::memory_scene_extract(&claims.sub)
+    logic::memory::memory_scene_extract(&user_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -273,9 +273,9 @@ async fn memory_scene_extract_handler(
 struct MemorySceneListRequest {}
 
 async fn memory_scene_list_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<Json<Vec<logic::memory::SceneHit>>, (StatusCode, String)> {
-    logic::memory::memory_scene_list(&claims.sub)
+    logic::memory::memory_scene_list(&user_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -286,9 +286,9 @@ async fn memory_scene_list_handler(
 struct MemoryPersonaGenerateRequest {}
 
 async fn memory_persona_generate_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<Json<String>, (StatusCode, String)> {
-    logic::memory::memory_persona_generate(&claims.sub)
+    logic::memory::memory_persona_generate(&user_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -299,20 +299,20 @@ async fn memory_persona_generate_handler(
 struct MemoryPersonaGetRequest {}
 
 async fn memory_persona_get_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<Json<Option<String>>, (StatusCode, String)> {
-    logic::memory::memory_persona_get(&claims.sub)
+    logic::memory::memory_persona_get(&user_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
 async fn skill_create_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<SkillCreateRequest>,
 ) -> Result<Json<logic::skills::Skill>, (StatusCode, String)> {
     logic::skills::skill_create(
-        &claims.sub,
+        &user_id,
         &req.name,
         req.description.as_deref().unwrap_or(""),
         &req.content,
@@ -323,30 +323,30 @@ async fn skill_create_handler(
 }
 
 async fn skill_list_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<Json<Vec<logic::skills::SkillSummary>>, (StatusCode, String)> {
-    logic::skills::skill_list(&claims.sub)
+    logic::skills::skill_list(&user_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
 async fn skill_get_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<SkillGetRequest>,
 ) -> Result<Json<Option<logic::skills::Skill>>, (StatusCode, String)> {
-    logic::skills::skill_get(&claims.sub, &req.skill_id)
+    logic::skills::skill_get(&user_id, &req.skill_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
 async fn skill_update_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<SkillUpdateRequest>,
 ) -> Result<Json<Option<logic::skills::Skill>>, (StatusCode, String)> {
     logic::skills::skill_update(
-        &claims.sub,
+        &user_id,
         &req.skill_id,
         req.name.as_deref(),
         req.description.as_deref(),
@@ -358,10 +358,10 @@ async fn skill_update_handler(
 }
 
 async fn skill_delete_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<SkillDeleteRequest>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
-    logic::skills::skill_delete(&claims.sub, &req.skill_id)
+    logic::skills::skill_delete(&user_id, &req.skill_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -382,6 +382,46 @@ async fn send_verification_email_handler(
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+// ── Local email+password auth (public; same ops as the Tauri commands) ──────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthCredentialsRequest {
+    email: String,
+    password: String,
+}
+
+fn session_cookie_response(user_id: &str) -> Response {
+    // The cookie carries the local user id directly — no token round-trip.
+    // NOTE: `Secure` is intentionally omitted for plain-HTTP localhost dev.
+    let cookie = format!(
+        "{SESSION_COOKIE}={user_id}; HttpOnly; SameSite=Lax; Path=/; Max-Age={COOKIE_MAX_AGE}"
+    );
+    let mut resp = Json(logic::whoami(user_id)).into_response();
+    if let Ok(val) = HeaderValue::from_str(&cookie) {
+        resp.headers_mut().append(header::SET_COOKIE, val);
+    }
+    resp
+}
+
+async fn auth_sign_up_handler(
+    Json(req): Json<AuthCredentialsRequest>,
+) -> Result<Response, (StatusCode, String)> {
+    let user = logic::local_auth::auth_sign_up(&req.email, &req.password)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    Ok(session_cookie_response(&user.email))
+}
+
+async fn auth_sign_in_handler(
+    Json(req): Json<AuthCredentialsRequest>,
+) -> Result<Response, (StatusCode, String)> {
+    let user = logic::local_auth::auth_sign_in(&req.email, &req.password)
+        .await
+        .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
+    Ok(session_cookie_response(&user.email))
 }
 
 #[derive(Serialize)]
@@ -473,37 +513,6 @@ async fn generate_activity_handler(
     Sse::new(s).keep_alive(KeepAlive::default())
 }
 
-/// Verify the posted JWT and set the session cookie. Not behind the auth
-/// middleware (it IS the login). Returns the resolved user.
-///
-/// Reads `Verifier` from `Extension` (not `State`) so this handler doesn't
-/// force the router to be parameterized by a state type — that lets the
-/// protected sub-router stay `Router<()>` and merge cleanly. The Tauri twin
-/// uses `State<Verifier>` (its native injection); the difference lives here in
-/// the wrapper, not in `logic.rs`.
-async fn set_session_handler(
-    Extension(verifier): Extension<Verifier>,
-    Json(req): Json<SetSessionRequest>,
-) -> Response {
-    match verifier.verify(&req.token).await {
-        Ok(claims) => {
-            let user = logic::whoami(&claims.sub);
-            // NOTE: `Secure` is intentionally omitted so this works on plain
-            // HTTP localhost dev. Behind a real HTTPS origin, add `; Secure`.
-            let cookie = format!(
-                "{SESSION_COOKIE}={}; HttpOnly; SameSite=Lax; Path=/; Max-Age={COOKIE_MAX_AGE}",
-                req.token
-            );
-            let mut resp = Json(user).into_response();
-            if let Ok(val) = HeaderValue::from_str(&cookie) {
-                resp.headers_mut().append(header::SET_COOKIE, val);
-            }
-            resp
-        }
-        Err(e) => error_response(StatusCode::UNAUTHORIZED, &e.to_string()),
-    }
-}
-
 async fn logout_handler() -> Response {
     let cookie = format!("{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
     let mut resp = StatusCode::NO_CONTENT.into_response();
@@ -513,9 +522,9 @@ async fn logout_handler() -> Response {
     resp
 }
 
-/// Protected: identity is injected by `auth_middleware` as `Extension<Claims>`.
-async fn whoami_handler(Extension(claims): Extension<Claims>) -> Json<UserInfo> {
-    Json(logic::whoami(&claims.sub))
+/// Protected: identity is injected by `auth_middleware` as `Extension<String>`.
+async fn whoami_handler(Extension(user_id): Extension<String>) -> Json<UserInfo> {
+    Json(logic::whoami(&user_id))
 }
 
 /// Map DbError to an HTTP status: NotFound → 404, everything else 500.
@@ -530,10 +539,10 @@ fn db_status(e: &logic::DbError) -> StatusCode {
 /// Protected RPC: start a new chat session. Sessions are created lazily on
 /// the first message; no agent identity — supervisor runs in `auto` mode.
 async fn create_chat_session_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<CreateChatSessionRequest>,
 ) -> Result<Json<ChatSession>, (StatusCode, String)> {
-    logic::create_chat_session(&claims.sub)
+    logic::create_chat_session(&user_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -542,10 +551,10 @@ async fn create_chat_session_handler(
 /// Protected RPC: regenerate a session title via Cloudflare Workers AI
 /// (3-6 words from the session's goal + final output).
 async fn generate_session_title_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<GenerateSessionTitleRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    logic::generate_session_title(&claims.sub, req.session_id)
+    logic::generate_session_title(&user_id, req.session_id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -561,11 +570,11 @@ struct GenerateSessionTitleRequest {
 /// active (non-archived) sidebar list; `{ "archived": true }` for the archive.
 /// The body is optional so an empty POST lists the active sessions.
 async fn list_chat_sessions_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     body: Option<Json<ListChatSessionsRequest>>,
 ) -> Result<Json<Vec<ChatSession>>, (StatusCode, String)> {
     let archived = body.and_then(|Json(req)| req.archived).unwrap_or(false);
-    logic::list_chat_sessions(&claims.sub, archived)
+    logic::list_chat_sessions(&user_id, archived)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -573,10 +582,10 @@ async fn list_chat_sessions_handler(
 
 /// Protected RPC: rename a session (sidebar inline rename).
 async fn rename_chat_session_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<RenameChatSessionRequest>,
 ) -> Result<Json<ChatSession>, (StatusCode, String)> {
-    logic::rename_chat_session(&claims.sub, req.session_id, &req.title)
+    logic::rename_chat_session(&user_id, req.session_id, &req.title)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -584,10 +593,10 @@ async fn rename_chat_session_handler(
 
 /// Protected RPC: archive or restore a session.
 async fn set_chat_session_archived_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<SetChatSessionArchivedRequest>,
 ) -> Result<Json<ChatSession>, (StatusCode, String)> {
-    logic::set_chat_session_archived(&claims.sub, req.session_id, req.archived)
+    logic::set_chat_session_archived(&user_id, req.session_id, req.archived)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -595,10 +604,10 @@ async fn set_chat_session_archived_handler(
 
 /// Protected RPC: list a session's messages, oldest first.
 async fn list_chat_messages_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<ListChatMessagesRequest>,
 ) -> Result<Json<Vec<ChatMessage>>, (StatusCode, String)> {
-    logic::list_chat_messages(&claims.sub, req.session_id)
+    logic::list_chat_messages(&user_id, req.session_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -606,20 +615,20 @@ async fn list_chat_messages_handler(
 
 /// Protected RPC: append a message to a session.
 async fn append_chat_message_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<AppendChatMessageRequest>,
 ) -> Result<Json<ChatMessage>, (StatusCode, String)> {
-    logic::append_chat_message(&claims.sub, req.session_id, &req.role, &req.content)
+    logic::append_chat_message(&user_id, req.session_id, &req.role, &req.content)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
 async fn delete_chat_session_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<DeleteChatSessionRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    logic::delete_chat_session(&claims.sub, req.session_id)
+    logic::delete_chat_session(&user_id, req.session_id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -639,7 +648,7 @@ struct LocalLoadModelRequest {
 
 #[cfg(feature = "litert")]
 async fn local_load_model_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<LocalLoadModelRequest>,
 ) -> Result<Json<logic::local_llm::LocalModelInfo>, (StatusCode, String)> {
     let model_path = match req.model_path {
@@ -655,7 +664,7 @@ async fn local_load_model_handler(
         }
     };
     logic::local_llm::load_model(
-        &claims.sub,
+        &user_id,
         &model_path,
         req.gpu.unwrap_or(true),
         req.speculative_decoding.unwrap_or(false),
@@ -670,7 +679,7 @@ async fn local_load_model_handler(
 /// Protected RPC: return the current on-device model status.
 #[cfg(feature = "litert")]
 async fn local_model_status_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<Json<logic::local_llm::LocalModelStatus>, (StatusCode, String)> {
     Ok(Json(logic::local_model_status()))
 }
@@ -686,10 +695,10 @@ struct LocalChatRequest {
 
 #[cfg(feature = "litert")]
 async fn local_chat_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<LocalChatRequest>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
-    let s = logic::local_llm::local_chat(claims.sub, req.prompt, req.image, req.audio, true)
+    let s = logic::local_llm::local_chat(user_id, req.prompt, req.image, req.audio, true)
         .map(|event| Ok::<_, Infallible>(local_event_to_sse(event)));
     Sse::new(s).keep_alive(KeepAlive::default())
 }
@@ -713,9 +722,9 @@ fn local_event_to_sse(event: logic::local_llm::LocalChatEvent) -> SseFrame {
 /// Protected RPC: reset the on-device conversation history (same model).
 #[cfg(feature = "litert")]
 async fn local_llm_reset_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    logic::local_llm::reset_conversation(&claims.sub)
+    logic::local_llm::reset_conversation(&user_id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -730,19 +739,19 @@ struct LocalSetThinkingRequest {
 
 #[cfg(feature = "litert")]
 async fn local_llm_set_thinking_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<LocalSetThinkingRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    logic::local_llm::set_thinking(&claims.sub, req.enabled);
+    logic::local_llm::set_thinking(&user_id, req.enabled);
     Ok(StatusCode::NO_CONTENT)
 }
 
 /// Protected RPC: unload the on-device model and free all resources.
 #[cfg(feature = "litert")]
 async fn local_llm_unload_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    logic::local_llm::unload_model(&claims.sub)
+    logic::local_llm::unload_model(&user_id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -759,15 +768,15 @@ struct OfficeImportFileRequest {
 }
 
 async fn office_import_file_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<OfficeImportFileRequest>,
 ) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
     let result = match (
         req.source_path.as_deref(),
         (req.name.as_deref(), req.data_base64.as_deref()),
     ) {
-        (Some(src), _) => logic::office::import_path(&claims.sub, src),
-        (None, (Some(name), Some(data))) => logic::office::import_base64(&claims.sub, name, data),
+        (Some(src), _) => logic::office::import_path(&user_id, src),
+        (None, (Some(name), Some(data))) => logic::office::import_base64(&user_id, name, data),
         _ => Err("provide sourcePath, or name + dataBase64".into()),
     };
     result.map(Json).map_err(|e| (StatusCode::BAD_REQUEST, e))
@@ -780,10 +789,10 @@ struct KnowledgeContextRequest {
 }
 
 async fn knowledge_context_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<KnowledgeContextRequest>,
 ) -> Result<Json<logic::office::KnowledgeContext>, (StatusCode, String)> {
-    logic::office::knowledge_context(&claims.sub, &req.file_ids)
+    logic::office::knowledge_context(&user_id, &req.file_ids)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -798,10 +807,10 @@ struct KnowledgeSearchRequest {
 }
 
 async fn knowledge_search_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<KnowledgeSearchRequest>,
 ) -> Result<Json<Vec<logic::rag::RagHit>>, (StatusCode, String)> {
-    logic::rag::knowledge_search(claims.sub, req.session_id, req.query, req.mode)
+    logic::rag::knowledge_search(user_id, req.session_id, req.query, req.mode)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -815,10 +824,10 @@ struct KnowledgeForgetRequest {
 }
 
 async fn knowledge_forget_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<KnowledgeForgetRequest>,
 ) -> Result<Json<usize>, (StatusCode, String)> {
-    logic::rag::forget_file(claims.sub, req.session_id, req.file_ids)
+    logic::rag::forget_file(user_id, req.session_id, req.file_ids)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -831,10 +840,10 @@ struct ListSessionFilesRequest {
 }
 
 async fn list_session_files_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<ListSessionFilesRequest>,
 ) -> Result<Json<Vec<logic::office::OfficeFile>>, (StatusCode, String)> {
-    logic::rag::list_session_files(&claims.sub, req.session_id)
+    logic::rag::list_session_files(&user_id, req.session_id)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -848,10 +857,10 @@ struct OfficeIndexFileRequest {
 }
 
 async fn office_index_file_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<OfficeIndexFileRequest>,
 ) -> Result<Json<usize>, (StatusCode, String)> {
-    logic::rag::office_index_file(claims.sub, req.session_id, req.file_id)
+    logic::rag::office_index_file(user_id, req.session_id, req.file_id)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -864,10 +873,10 @@ struct KnowledgeListRequest {
 }
 
 async fn knowledge_list_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<KnowledgeListRequest>,
 ) -> Result<Json<Vec<logic::rag::KnowledgeFileInfo>>, (StatusCode, String)> {
-    logic::rag::knowledge_list(&claims.sub, req.session_id)
+    logic::rag::knowledge_list(&user_id, req.session_id)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -881,10 +890,10 @@ struct KnowledgeAddToSessionRequest {
 }
 
 async fn knowledge_add_to_session_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<KnowledgeAddToSessionRequest>,
 ) -> Result<Json<usize>, (StatusCode, String)> {
-    logic::rag::knowledge_add_to_session(&claims.sub, req.session_id, &req.file_ids)
+    logic::rag::knowledge_add_to_session(&user_id, req.session_id, &req.file_ids)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -899,19 +908,19 @@ struct DataPreviewRequest {
 }
 
 async fn data_preview_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<DataPreviewRequest>,
 ) -> Result<Json<logic::analytics::SchemaInfo>, (StatusCode, String)> {
-    logic::analytics::data_preview(&claims.sub, &req.file_id)
+    logic::analytics::data_preview(&user_id, &req.file_id)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
 async fn sql_profile_list_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<Json<Vec<logic::analytics::SqlProfile>>, (StatusCode, String)> {
-    logic::analytics::sql_profile_list(&claims.sub)
+    logic::analytics::sql_profile_list(&user_id)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -925,10 +934,10 @@ struct SqlProfileSaveRequest {
 }
 
 async fn sql_profile_save_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<SqlProfileSaveRequest>,
 ) -> Result<Json<logic::analytics::SqlProfile>, (StatusCode, String)> {
-    logic::analytics::sql_profile_save(&claims.sub, &req.name, &req.source)
+    logic::analytics::sql_profile_save(&user_id, &req.name, &req.source)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
@@ -941,10 +950,10 @@ struct SqlProfileDeleteRequest {
 }
 
 async fn sql_profile_delete_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<SqlProfileDeleteRequest>,
 ) -> Result<Json<()>, (StatusCode, String)> {
-    logic::analytics::sql_profile_delete(&claims.sub, &req.name)
+    logic::analytics::sql_profile_delete(&user_id, &req.name)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -957,10 +966,10 @@ struct SqlProfileTestRequest {
 }
 
 async fn sql_profile_test_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<SqlProfileTestRequest>,
 ) -> Result<Json<logic::analytics::SqlProfileTest>, (StatusCode, String)> {
-    logic::analytics::sql_profile_test(&claims.sub, &req.name)
+    logic::analytics::sql_profile_test(&user_id, &req.name)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -974,10 +983,10 @@ struct KnowledgeImportYoutubeRequest {
 }
 
 async fn knowledge_import_youtube_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<KnowledgeImportYoutubeRequest>,
 ) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
-    logic::rag::knowledge_import_youtube(&claims.sub, req.session_id, &req.url)
+    logic::rag::knowledge_import_youtube(&user_id, req.session_id, &req.url)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
@@ -990,20 +999,20 @@ struct OfficeDeleteFileRequest {
 }
 
 async fn office_delete_file_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<OfficeDeleteFileRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    logic::rag::office_delete_file(&claims.sub, &req.file_id)
+    logic::rag::office_delete_file(&user_id, &req.file_id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
 async fn office_restore_backup_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<OfficeDeleteFileRequest>,
 ) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
-    logic::office::store::restore_backup(&claims.sub, &req.file_id)
+    logic::office::store::restore_backup(&user_id, &req.file_id)
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
@@ -1016,19 +1025,19 @@ struct BindTemplateRequest {
 }
 
 async fn office_bind_template_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<BindTemplateRequest>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
-    logic::office::bind_template(&claims.sub, &req.template_id)
+    logic::office::bind_template(&user_id, &req.template_id)
         .map(|_| Json(true))
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
 /// Peek current template binding.
 async fn office_peek_template_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Json<Option<String>> {
-    Json(logic::office::peek_template_binding(&claims.sub))
+    Json(logic::office::peek_template_binding(&user_id))
 }
 
 async fn office_list_templates_handler() -> Json<Vec<logic::office::TemplateListing>> {
@@ -1036,9 +1045,9 @@ async fn office_list_templates_handler() -> Json<Vec<logic::office::TemplateList
 }
 
 async fn office_list_files_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<Json<Vec<logic::office::OfficeFile>>, (StatusCode, String)> {
-    logic::office::list_files(&claims.sub)
+    logic::office::list_files(&user_id)
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
@@ -1050,10 +1059,10 @@ struct OfficeReadDocumentRequest {
 }
 
 async fn office_read_document_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<OfficeReadDocumentRequest>,
 ) -> Result<Json<logic::office::ReadDocumentResult>, (StatusCode, String)> {
-    let markdown = logic::office::read_document(&claims.sub, &req.file_id)
+    let markdown = logic::office::read_document(&user_id, &req.file_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(logic::office::ReadDocumentResult { markdown }))
@@ -1067,10 +1076,10 @@ struct OfficeExportFileRequest {
 }
 
 async fn office_export_file_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<OfficeExportFileRequest>,
 ) -> Result<Json<std::collections::HashMap<String, String>>, (StatusCode, String)> {
-    logic::office::export_file(&claims.sub, &req.file_id, req.dest_path.as_deref())
+    logic::office::export_file(&user_id, &req.file_id, req.dest_path.as_deref())
         .map(|path| {
             Json(std::collections::HashMap::from([(
                 "path".to_string(),
@@ -1081,9 +1090,9 @@ async fn office_export_file_handler(
 }
 
 async fn office_capabilities_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Json<logic::office::OfficeCapabilities> {
-    let _ = &claims.sub;
+    let _ = &user_id;
     Json(logic::office::capabilities())
 }
 
@@ -1095,10 +1104,10 @@ struct OfficeExportDocumentRequest {
 }
 
 async fn office_export_document_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<OfficeExportDocumentRequest>,
 ) -> Result<Response, (StatusCode, String)> {
-    let _ = &claims.sub;
+    let _ = &user_id;
     let bytes = logic::office::export_markdown(&req.markdown, &req.format)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     let (content_type, ext) = match req.format.to_ascii_lowercase().as_str() {
@@ -1131,19 +1140,19 @@ struct OfficeReadFileRequest {
 }
 
 async fn office_read_file_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<OfficeReadFileRequest>,
 ) -> Result<Json<logic::office::ReadFileResult>, (StatusCode, String)> {
-    logic::office::read_file_b64(&claims.sub, &req.file_id)
+    logic::office::read_file_b64(&user_id, &req.file_id)
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
 async fn tauri_open_file_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<OfficeReadFileRequest>,
 ) -> Result<Json<String>, (StatusCode, String)> {
-    logic::office::file_path(&claims.sub, &req.file_id)
+    logic::office::file_path(&user_id, &req.file_id)
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
@@ -1158,10 +1167,10 @@ struct CodegraphExploreRequest {
     project_path: Option<String>,
 }
 async fn codegraph_explore_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<CodegraphExploreRequest>,
 ) -> Result<Json<logic::codegraph::CodegraphExploreResult>, (StatusCode, String)> {
-    logic::codegraph::codegraph_explore(&claims.sub, req.query, req.project_path)
+    logic::codegraph::codegraph_explore(&user_id, req.query, req.project_path)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e))
@@ -1172,10 +1181,10 @@ struct CodegraphStatusRequest {
     project_path: Option<String>,
 }
 async fn codegraph_status_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<CodegraphStatusRequest>,
 ) -> Result<Json<logic::codegraph::CodegraphStatusResult>, (StatusCode, String)> {
-    logic::codegraph::codegraph_status(&claims.sub, req.project_path)
+    logic::codegraph::codegraph_status(&user_id, req.project_path)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e))
@@ -1190,10 +1199,10 @@ struct CodegraphInitRequest {
     project_path: Option<String>,
 }
 async fn codegraph_init_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<CodegraphInitRequest>,
 ) -> Result<Json<logic::codegraph::CodegraphStatusResult>, (StatusCode, String)> {
-    logic::codegraph::codegraph_init(&claims.sub, req.project_path)
+    logic::codegraph::codegraph_init(&user_id, req.project_path)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e))
@@ -1208,10 +1217,10 @@ struct GraphIndexFileRequest {
     file_id: String,
 }
 async fn graph_index_file_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<GraphIndexFileRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let (n, e) = logic::graph::graph_index_file(claims.sub, req.file_id)
+    let (n, e) = logic::graph::graph_index_file(user_id, req.file_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(serde_json::json!({"nodes": n, "edges": e})))
@@ -1224,10 +1233,10 @@ struct GraphIndexTextRequest {
     text: String,
 }
 async fn graph_index_text_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<GraphIndexTextRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let (n, e) = logic::graph::graph_index_text(&claims.sub, &req.file_id, &req.text)
+    let (n, e) = logic::graph::graph_index_text(&user_id, &req.file_id, &req.text)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(serde_json::json!({"nodes": n, "edges": e})))
@@ -1241,7 +1250,7 @@ struct GraphSearchRequest {
     limit: Option<usize>,
 }
 async fn graph_search_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<GraphSearchRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let m = match req.mode.as_deref().unwrap_or("hybrid") {
@@ -1251,7 +1260,7 @@ async fn graph_search_handler(
         "mix" => logic::graph::GraphSearchMode::Mix,
         _ => logic::graph::GraphSearchMode::Hybrid,
     };
-    let hits = logic::graph::graph_search(claims.sub, req.query, Some(m), req.limit)
+    let hits = logic::graph::graph_search(user_id, req.query, Some(m), req.limit)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(
@@ -1265,11 +1274,11 @@ struct GraphListRequest {
     limit: Option<usize>,
 }
 async fn graph_list_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     body: Option<Json<GraphListRequest>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let lim = body.and_then(|Json(r)| r.limit);
-    let (nodes, edges) = logic::graph::graph_list(&claims.sub, lim)
+    let (nodes, edges) = logic::graph::graph_list(&user_id, lim)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(serde_json::json!({"nodes": nodes, "edges": edges})))
@@ -1281,19 +1290,19 @@ struct GraphForgetRequest {
     file_ids: Vec<String>,
 }
 async fn graph_forget_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<GraphForgetRequest>,
 ) -> Result<Json<usize>, (StatusCode, String)> {
-    logic::graph::graph_forget(&claims.sub, req.file_ids)
+    logic::graph::graph_forget(&user_id, req.file_ids)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
 async fn graph_stats_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let stats = logic::graph::graph_stats(&claims.sub)
+    let stats = logic::graph::graph_stats(&user_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(
@@ -1307,29 +1316,22 @@ async fn graph_stats_handler(
 
 
 
-/// Reads the `kawai_session` cookie, verifies it, and injects `Claims` as a
-/// request extension. 401 on missing/expired token. Uses `from_fn` (state `()`)
-/// and pulls `Verifier` from `Extension`, so it composes with a `Router<()>`.
-async fn auth_middleware(
-    Extension(verifier): Extension<Verifier>,
-    mut req: Request,
-    next: Next,
-) -> Response {
-    let token = req
+/// Reads the `kawai_session` cookie (the signed-in email) and injects it as a
+/// request extension. 401 on missing/foreign cookie. Uses
+/// `from_fn` (state `()`), so it composes with a `Router<()>`.
+async fn auth_middleware(mut req: Request, next: Next) -> Response {
+    let user_id = req
         .headers()
         .get(header::COOKIE)
         .and_then(|v| v.to_str().ok())
-        .and_then(|s| extract_cookie(s, SESSION_COOKIE));
-    let Some(token) = token else {
+        .and_then(|s| extract_cookie(s, SESSION_COOKIE))
+        .filter(|id| id.starts_with("loc_"))
+        .map(str::to_string);
+    let Some(user_id) = user_id else {
         return error_response(StatusCode::UNAUTHORIZED, "no session");
     };
-    match verifier.verify(token).await {
-        Ok(claims) => {
-            req.extensions_mut().insert(claims);
-            next.run(req).await
-        }
-        Err(e) => error_response(StatusCode::UNAUTHORIZED, &e.to_string()),
-    }
+    req.extensions_mut().insert(user_id.to_string());
+    next.run(req).await
 }
 
 fn error_response(status: StatusCode, msg: &str) -> Response {
@@ -1361,14 +1363,12 @@ fn event_to_sse(event: ActivityEvent) -> SseFrame {
 }
 
 /// Build the router. `public` holds ops that don't need auth (and the login
-/// endpoints); `protected` sits behind `auth_middleware`. The single `Verifier`
-/// is shared via an `Extension` layer so both can read it without a state type.
-pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
+/// endpoints); `protected` sits behind `auth_middleware`.
+pub fn router(dist_dir: PathBuf) -> Router {
     let public = Router::new()
         .route("/api/greet", post(greet_handler))
         .route("/api/list_agents", post(list_agents_handler))
         .route("/api/generate_activity", post(generate_activity_handler))
-        .route("/api/set_session", post(set_session_handler))
         .route("/api/logout", post(logout_handler))
         .route("/api/check_monad_balance", post(check_monad_balance_handler))
         .route("/api/monad_chain_status", post(monad_chain_status_handler))
@@ -1378,7 +1378,9 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
         .route("/api/monad_wallet_create", post(monad_wallet_create_handler))
         .route("/api/monad_wallet_sign_message", post(monad_wallet_sign_message_handler))
         .route("/api/monad_wallet_delete", post(monad_wallet_delete_handler))
-        .route("/api/send_verification_email", post(send_verification_email_handler));
+        .route("/api/send_verification_email", post(send_verification_email_handler))
+        .route("/api/auth_sign_up", post(auth_sign_up_handler))
+        .route("/api/auth_sign_in", post(auth_sign_in_handler));
 
     let protected = Router::new()
         .route("/api/whoami", post(whoami_handler))
@@ -1530,16 +1532,14 @@ pub fn router(dist_dir: PathBuf, verifier: Verifier) -> Router {
     // Supervisor confirmation mailbox (litert only — see mod supervisor).
     #[cfg(feature = "litert")]
     let router = router.layer(Extension(crate::supervisor::PendingConfirmations::default()));
-    router
-        .layer(Extension(verifier))
-        .fallback_service(ServeDir::new(dist_dir))
+    router.fallback_service(ServeDir::new(dist_dir))
 }
 
-pub async fn serve(addr: &str, dist_dir: PathBuf, verifier: Verifier) -> Result<(), String> {
+pub async fn serve(addr: &str, dist_dir: PathBuf) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|e| format!("bind {addr}: {e}"))?;
-    axum::serve(listener, router(dist_dir, verifier))
+    axum::serve(listener, router(dist_dir))
         .await
         .map_err(|e| format!("serve kawai-web: {e}"))
 }
@@ -1558,10 +1558,10 @@ struct PlanTaskRequest {
 /// planner call rides the user's persona + goal-relevant memories + skills.
 #[cfg(feature = "litert")]
 async fn plan_task_handler(
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<PlanTaskRequest>,
 ) -> Result<Json<kawai_router::TaskPlan>, (StatusCode, String)> {
-    if !kawai_db::session_exists(&claims.sub, req.session_id)
+    if !kawai_db::session_exists(&user_id, req.session_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     {
@@ -1575,7 +1575,7 @@ async fn plan_task_handler(
         .as_deref()
         .unwrap_or(crate::agent_registry::OFFICE_AGENT_ID);
     let registry = crate::supervisor::build_supervisor_registry(
-        &claims.sub,
+        &user_id,
         req.session_id,
         agent_id,
     )
@@ -1584,9 +1584,9 @@ async fn plan_task_handler(
         StatusCode::SERVICE_UNAVAILABLE,
         "supervisor toolset unavailable".to_string(),
     ))?;
-    // Usage-based billing hanya di desktop (token ada di keychain). Web:
-    // flat per-turn di frontend (interim, lihat docs §8).
-    crate::supervisor::plan_task(&claims.sub, &req.goal, &registry)
+    // Usage-based billing is dormant under local auth (no session token is
+    // held anywhere) — flat per-turn in the frontend was removed with it.
+    crate::supervisor::plan_task(&user_id, &req.goal, &registry)
         .await
         .map(|(plan, _usage)| Json(plan))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
@@ -1608,10 +1608,10 @@ struct ExecuteSupervisorPlanRequest {
 // an extractor placed after it fails Handler resolution at compile time.
 async fn execute_supervisor_plan_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
-    Extension(claims): Extension<Claims>,
+    Extension(user_id): Extension<String>,
     Json(req): Json<ExecuteSupervisorPlanRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, StatusCode> {
-    if !kawai_db::session_exists(&claims.sub, req.session_id)
+    if !kawai_db::session_exists(&user_id, req.session_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
     {
@@ -1623,7 +1623,7 @@ async fn execute_supervisor_plan_handler(
         .as_deref()
         .unwrap_or(crate::agent_registry::OFFICE_AGENT_ID);
     let tool_registry = crate::supervisor::build_supervisor_registry(
-        &claims.sub,
+        &user_id,
         req.session_id,
         agent_id,
     )

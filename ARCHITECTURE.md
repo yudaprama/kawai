@@ -7,10 +7,10 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 
 - Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from domain crates, composed through `AgentDefinition` tool builders. UI: three-pane — left = agents rail, center = active agent chat + canvas, right = sessions sidebar.
 - End state: **desktop + mobile + web from one core**; app logic is 100% shared, only transport and launcher differ per target.
-- Current phase: **MVP, desktop-first** (macOS, on-device LLM, dev-bypass auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
+- Current phase: **MVP, desktop-first** (macOS, on-device LLM, local email+password auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
 - Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`features/chat/hooks/use-supervisor-plan.ts` + `lib/ai-types.ts`).
 - Backend: Rust, single core logic. Built-in agent composition is owned by the application root (`src-tauri/src/agent_registry.rs`); the reusable orchestration engine consumes an injected `AgentRegistry`.
-- Auth: Supabase Auth (email/password + OAuth via system browser) + deep-link (`kawai://auth` PKCE/implicit) + OS keychain session persistence (`keyring` crate).
+- Auth: local email+password (`kawai-auth`) — email-as-identity user directory (`<data_root>/auth.db`), `kawai-vault`-encoded passwords, in-memory session (web: cookie). Login UI in the React frontend (`auth-gate.tsx`).
 - LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool with health-aware failover); remote providers are optional configuration. The local model delegates heavy synthesis to cloud subagent tools (`deep_write`, `draft_document`) when a remote LLM is configured. Agent toolsets come from domain crates and are composed by the application root. Design record: `PLAN-hybrid-llm-subagents.md`.
 - Persistence: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
@@ -36,7 +36,7 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 ├───────────────────────────────────────────────────────────┤
 │  CORE LOGIC (Rust, pure, platform-agnostic)               │
 │  logic.rs : fn() -> T  |  fn() -> Stream<Event>           │
-│  auth.rs  : Supabase Auth JWKS verify                       │
+│  auth.rs  : session type (email string) + dotenv loader     │
 ├───────────────────────────────────────────────────────────┤
 │  per-user local SQLite (libsql Builder::new_local)         │
 └───────────────────────────────────────────────────────────┘
@@ -255,7 +255,7 @@ kawai/
         ├── lib.rs            # Tauri builder + module decls
         ├── logic.rs          # PURE helpers (greet/whoami/generate_activity, resolve_model_path/ensure_model, generate_session_title → kawai-db)
         ├── logic/            # thin shims → crates/* (pub use kawai_*::*): db/db_migrations/skills/memory/office/knowledge/rag/graph/analytics/sql_remote/agent/evidence_cache
-        ├── auth.rs           # shim → kawai-auth (pure auth; Supabase Auth JWKS verify + Session)
+        ├── auth.rs           # shim → kawai-auth (pure auth; Session + dotenv loader)
         ├── commands.rs       # #[tauri::command] wrappers
         ├── web.rs            # Axum router + auth_middleware
         ├── webview_engine.rs # on-device webview fetch engine
@@ -266,18 +266,18 @@ kawai/
 ## Layers
 
 1. **`logic.rs`** — the only place for business logic. Pure async fns, no Tauri/Axum imports. Returns `T` (RPC) or `impl Stream<Item = Event>` (streaming). Events tagged `#[serde(tag = "type")]`. Home of `libsql` (per-user DB), the remote SSE client (`remote.rs`), and `mint_db_token` (EdDSA token sqld accepts).
-2. **`auth.rs`** — pure auth. `Verifier` validates Supabase Auth session JWTs against the public JWKS (cached by `kid`); `Session` holds the in-process identity for desktop/mobile; `mint` helpers live in `logic.rs`. No transport imports.
-3. **`commands.rs`** — thin wrappers. Each core fn → one `#[tauri::command]`. Streaming commands take a `Channel<E>` plus the business args. Auth-required commands read `State<Session>` and pass `claims.sub` as `user_id`.
-4. **`web.rs`** — thin wrappers. Each core fn → one Axum route. `auth_middleware` reads the `kawai_session` cookie, verifies it, and injects `Extension<Claims>`. No frontend static serving (Tauri desktop handles frontend).
+2. **`auth.rs`** — pure auth. `Session` holds the in-process identity for desktop/mobile (the signed-in email string); web carries it in the `kawai_session` cookie. Login/duplicate-email rules live in `kawai-auth`. No transport imports.
+3. **`commands.rs`** — thin wrappers. Each core fn → one `#[tauri::command]`. Streaming commands take a `Channel<E>` plus the business args. Auth-required commands read `State<Session>` and pass the email as `user_id`.
+4. **`web.rs`** — thin wrappers. Each core fn → one Axum route. `auth_middleware` reads the `kawai_session` cookie (the signed-in email), validates it, and injects `Extension<String>`. Serves the prebuilt frontend from `dist/`.
 5. **Launcher**:
-   - Desktop/Mobile (`main.rs` → `lib.rs::run()`): Tauri builder, registers commands + `.manage(Verifier)` + `.manage(Session)`. **Does NOT run Axum.**
+   - Desktop/Mobile (`main.rs` → `lib.rs::run()`): Tauri builder, registers commands + `.manage(Session)`. **Does NOT run Axum.**
    - Web (`bin/web.rs`): binds `0.0.0.0:PORT`, serves `/api/*` router. Not a Tauri app.
 6. **Frontend** — React SPA (`frontend/`), bundled by Vite into `dist/` and served by Tauri. RPC via `@tauri-apps/api/core.invoke`; streaming via `Channel` + `cancel_stream`. Chat state lives in `features/chat/hooks/use-supervisor-plan.ts`, which folds supervisor stream events (`planStarted`/`stepStarted`/`stepCompleted`/`stepFailed`/`stepSkipped`/terminals) into `UIMessage[]` parts; `lib/ai-types.ts` defines those shapes locally (no `ai` npm package — field names stay AI-SDK-v5-compatible so the vendored `ai-elements` components render them unmodified).
 
 ## Core dependencies (in `logic.rs` / `auth.rs`)
 
-- **`reqwest`** — remote tier transport: the OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool, health-aware failover) and JWKS fetch in `auth.rs`. rustls-only. Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers are optional configuration, not a requirement.
+- **`reqwest`** — remote tier transport: the OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool, health-aware failover). rustls-only. Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers are optional configuration, not a requirement.
 - **`libsql`** — per-user local SQLite via `Builder::new_local`; connections are per-op and migrations run on every open. Post-MVP: sqld embedded replicas.
-- **`jsonwebtoken`** — RS256 (Supabase Auth JWKS verify in `auth.rs`) and EdDSA (sqld token mint in `logic.rs`). Two versions coexist (9.x direct + 10.x transitive) — expected.
+- **`jsonwebtoken`** — EdDSA only (future sqld token mint in `logic.rs`).
 - All compile clean across desktop, android arm64, and ios arm64 (default/web/litert feature combos). One rustls (0.23) across the graph — libsql runs core-only (`Builder::new_local` everywhere; re-add its `remote` feature with sqld sync).
 - **Frontend**: `@types/hast` pinned to 3.0.4 via `resolutions` (3.0.5 breaks the vendored streamdown — see AGENTS.md Landmines).

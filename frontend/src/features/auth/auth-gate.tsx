@@ -3,14 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/features/auth/use-auth";
 import { call } from "@/lib/api";
-import { signInWithMonadWallet } from "@/features/auth/monad-wallet";
-import { supabase } from "@/features/auth/supabase";
-
-async function finishSupabaseAuth(result: { data: { session: { access_token: string } | null }; error: { message: string } | null }) {
-  if (result.error) throw new Error(result.error.message);
-  if (!result.data.session) throw new Error("Check your email to confirm your account, then sign in.");
-  await call("set_session", { token: result.data.session.access_token });
-}
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { userId, authError, refresh } = useAuth();
@@ -27,28 +19,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      if (mode === "signin") {
-        await finishSupabaseAuth(await supabase.auth.signInWithPassword({ email, password }));
-      } else {
-        await finishSupabaseAuth(await supabase.auth.signUp({ email, password }));
-      }
+      // Local email+password auth. Sign-up fails when the email is already
+      // registered (the user directory is email-keyed). Both ops establish
+      // the in-memory session directly — no token round-trip.
+      const op = mode === "signin" ? "auth_sign_in" : "auth_sign_up";
+      await call(op, { email, password });
       await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMonadWallet = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      // Backend creates (or reuses) the device hot wallet, signs the SIWE
-      // message in-process, and Supabase issues the session.
-      await signInWithMonadWallet();
-      // onAuthStateChange in use-auth picks up SIGNED_IN and syncs to the
-      // backend (set_session → keychain).
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -94,10 +70,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               {mode === "signin" ? "Sign Up" : "Sign In"}
             </button>
         </p>
-
-        <Button variant="outline" type="button" className="w-full" onClick={handleMonadWallet} disabled={loading}>
-          EVM Wallet
-        </Button>
 
         {(authError || error) && <p className="text-center text-sm text-destructive">{error ?? authError}</p>}
       </div>

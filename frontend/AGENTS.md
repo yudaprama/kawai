@@ -58,7 +58,7 @@ frontend/
 │   ├── index.css           # Tailwind v4 + shadcn semantics aliased to Tea design tokens (--tea-* in :root/.dark)
 │   │
 │   ├── features/           # feature-organized domain code
-│   │   ├── auth/            # authentication: auth-gate.tsx, use-auth.ts, supabase.ts
+│   │   ├── auth/            # authentication: auth-gate.tsx, use-auth.ts
 │   │   ├── agents/          # agent catalog rail: agents-rail.tsx, registry.tsx (ContextOnboarding type)
 │   │   ├── chat/            # chat + supervisor execution
 │   │   │   ├── components/  # chat-composer, conversation-panel, message-part-view, session-row, sessions-panel
@@ -135,7 +135,7 @@ User goal → app/App.tsx → use-supervisor-plan.planAndRun()
 - **Session management is lazy.** A session is created on the first user message via `ensureSession()`. The title is seeded from the first message (first 80 chars) and generated server-side.
 - **Image paste goes through knowledge, never the model context.** At submit `ChatComposerInner` awaits `onImageToKnowledge` (import + session-bound index; the session is ensured first, so first-message pastes bind correctly) and rides the returned file IDs along like @-mentions (`onSubmit(text, fileIds)`). No image parts are rendered in the user bubble; image data never enters the plan payload.
 - **File @-mentions carry IDs, not content.** The composer's @ button opens a `knowledge_list` popover; picked files render as chips and their IDs ride along on the next submit (`onSubmit(text, fileIds)`). The backend binds them to the session and the supervisor tools read them from session scope. Chips clear after submit.
-- **Auth bootstrap is in use-auth.ts.** On mount: Supabase session → `set_session`; fallback → `whoami` → `restore_session` (OS keychain). Deep-link handler listens for `kawai://auth` callbacks (PKCE code exchange + implicit token). OAuth opens in system browser via `skipBrowserRedirect` + `openUrl`. The dev bypass (`KAWAI_AUTH_DEV_USER_ID`) is env-gated in the Rust backend, never in the frontend.
+- **Auth is local email+password.** `auth-gate.tsx` posts `auth_sign_in`/`auth_sign_up` (duplicate emails are rejected backend-side); both establish the session directly — in-memory only, so a signed-in user signs in again after an app restart. `use-auth.ts` bootstraps via `whoami` on mount; `logout` calls the backend `logout`. There is no token in the frontend and no Supabase.
 - **Theme is applied before React mounts** via an inline script in `index.html:7-20`. The `use-theme.ts` hook writes to the same `localStorage` key (`"kawai-theme"`).
 - **Agent presentation is a frontend map** (`AGENT_META` in `features/agents/agents-rail.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry.
 - **Asset workspace navigation is frontend-owned** (`ASSET_NAV` in `features/assets/components/asset-nav.tsx`; `assetView` state in `app/App.tsx`). Opening an asset swaps the center pane (chat → asset page) without touching the chat state — the stream keeps folding in the background; Esc or an agent click returns. Wiki reuses the app's knowledge state, Memory reads `list_chat_sessions`/`list_chat_messages` directly; Skills/Code pages state plainly that their backend tier doesn't exist yet.

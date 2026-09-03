@@ -1,10 +1,9 @@
-use crate::auth::{Session, Verifier};
+use crate::auth::Session;
 use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
-use tauri::Manager;
 use tauri::State;
 use tauri_plugin_opener::OpenerExt;
 use tokio_util::sync::CancellationToken;
@@ -166,21 +165,39 @@ pub fn frontend_log(level: String, message: String) {
     crate::logging::write(&level, &message);
 }
 
-/// Verify a JWT and store the resulting identity in `State<Session>`.
-/// The frontend never sends `user_id`; identity is resolved here, at the edge.
+/// Public RPC: register a new local account. Fails when the email is already
+/// in the user directory (or its per-user data dir exists). Sends a welcome
+/// email (best-effort). On success the session is established immediately —
+/// in-memory only, so a signed-in user must sign in again after a restart.
 #[tauri::command]
-pub async fn set_session(
-    token: String,
-    verifier: State<'_, Verifier>,
+pub async fn auth_sign_up(
+    email: String,
+    password: String,
     session: State<'_, Session>,
 ) -> Result<UserInfo, String> {
-    let claims = verifier.verify(&token).await.map_err(|e| e.to_string())?;
-    let user_id = claims.sub.clone();
-    crate::keychain::store(&token)?;
+    let user = logic::local_auth::auth_sign_up(&email, &password).await?;
+    establish_local_session(&user.email, session)
+}
+
+/// Public RPC: sign in with email+password (local user directory) and
+/// establish the session directly.
+#[tauri::command]
+pub async fn auth_sign_in(
+    email: String,
+    password: String,
+    session: State<'_, Session>,
+) -> Result<UserInfo, String> {
+    let user = logic::local_auth::auth_sign_in(&email, &password).await?;
+    establish_local_session(&user.email, session)
+}
+
+/// Set the in-memory session to a signed-in email (the identity).
+fn establish_local_session(email: &str, session: State<'_, Session>) -> Result<UserInfo, String> {
     *session
         .write()
-        .map_err(|_| "session state unavailable (lock poisoned)".to_string())? = Some(claims);
-    Ok(logic::whoami(&user_id))
+        .map_err(|_| "session state unavailable (lock poisoned)".to_string())? =
+        Some(email.to_string());
+    Ok(logic::whoami(email))
 }
 
 #[tauri::command]
@@ -188,24 +205,6 @@ pub fn logout(session: State<'_, Session>) {
     if let Ok(mut guard) = session.write() {
         *guard = None;
     }
-    if let Err(e) = crate::keychain::clear() {
-        eprintln!("[auth] {e}");
-    }
-}
-
-/// Restore and re-verify the token persisted in the OS credential store.
-#[tauri::command]
-pub async fn restore_session(
-    verifier: State<'_, Verifier>,
-    session: State<'_, Session>,
-) -> Result<UserInfo, String> {
-    let Some(token) = crate::keychain::load()? else {
-        return Err("not authenticated".into());
-    };
-    let claims = verifier.verify(&token).await.map_err(|e| e.to_string())?;
-    let user_id = claims.sub.clone();
-    *session.write().map_err(|_| "session state unavailable".to_string())? = Some(claims);
-    Ok(logic::whoami(&user_id))
 }
 
 /// Requires an active session. Demonstrates the auth-required pattern: the
@@ -217,19 +216,18 @@ pub fn whoami(session: State<'_, Session>) -> Result<UserInfo, String> {
         .map_err(|_| "session state unavailable (lock poisoned)".to_string())?;
     guard
         .clone()
-        .map(|c| logic::whoami(&c.sub))
+        .map(|uid| logic::whoami(&uid))
         .ok_or_else(|| "not authenticated".to_string())
 }
 
 /// Pull the authenticated user id from the in-process session (desktop/mobile).
-/// The web twin reads identity from the `Extension<Claims>` the middleware injects.
+/// The web twin reads identity from the `Extension<String>` the middleware injects.
 fn session_user_id(session: &Session) -> Result<String, String> {
     let guard = session
         .read()
         .map_err(|_| "session state unavailable (lock poisoned)".to_string())?;
     guard
         .clone()
-        .map(|c| c.sub)
         .ok_or_else(|| "not authenticated".to_string())
 }
 
@@ -728,15 +726,11 @@ pub fn office_import_file(
 }
 
 /// Interim usage billing (per-turn flat fee, honor system — docs
-/// BALANCE-KV-ARCHITECTURE.md §8). Debit saldo user sendiri via Supabase
-/// RPC; atomic di Postgres. Fail-open: error infra → turn tetap jalan.
+/// BALANCE-KV-ARCHITECTURE.md §8). Dormant under local auth: no Supabase
+/// session token is held anymore, so billing always skips (fail-open).
 #[tauri::command]
 pub async fn bill_turn() -> Result<kawai_billing::BillOutcome, String> {
-    let Some(token) = crate::keychain::load().map_err(|e| e.to_string())? else {
-        return Ok(kawai_billing::BillOutcome::Skipped); // belum login (dev)
-    };
-    let opts = kawai_billing::BillOpts::from_env()?;
-    Ok(kawai_billing::bill_turn(&opts, &token).await)
+    Ok(kawai_billing::BillOutcome::Skipped)
 }
 
 /// Authenticated RPC: create and validate a deterministic supervisor plan.
@@ -757,16 +751,9 @@ pub async fn plan_task(
     ).await.ok_or_else(|| "supervisor toolset unavailable".to_string())?;
     let (plan, usage) = crate::supervisor::plan_task(&user_id, &goal, &registry).await?;
 
-    // Fair billing: debit berdasarkan usage nyata dari provider (bukan flat).
-    // Fail-open — error billing tidak membatalkan hasil plan.
-    if let Ok(opts) = kawai_billing::BillOpts::from_env() {
-        if let Ok(Some(token)) = crate::keychain::load() {
-            let out = kawai_billing::bill_usage(&opts, &token, usage.input_tokens, usage.output_tokens).await;
-            if out.insufficient() {
-                return Err("insufficient token credit — contact admin to top up".into());
-            }
-        }
-    }
+    // Fair billing (usage-based debit via Supabase RPC) is dormant under
+    // local auth — no session token is held to present to the RPC.
+    let _ = usage;
 
     Ok(plan)
 }

@@ -28,19 +28,11 @@ pub mod web;
 pub fn run() {
     auth::load_dotenv();
     logging::init();
-    let verifier = auth::Verifier::from_env();
-    if verifier.has_dev_bypass() {
-        eprintln!(
-            "⚠️  KAWAI_AUTH_DEV_USER_ID set — auth bypassed (dev only, DO NOT use in production)"
-        );
-    }
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_deep_link::init())
         .manage(commands::new_registry())
-        .manage(verifier)
         .manage(auth::new_session())
         .manage(supervisor_pending_state())
         .setup(|app| {
@@ -76,9 +68,9 @@ pub fn run() {
         commands::list_agents,
         commands::generate_activity,
         commands::send_verification_email,
+        commands::auth_sign_up,
+        commands::auth_sign_in,
         commands::cancel_stream,
-        commands::set_session,
-        commands::restore_session,
         commands::logout,
         commands::whoami,
         commands::create_chat_session,

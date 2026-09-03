@@ -25,3 +25,19 @@ pub async fn send_verification_email(to: &str) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
     Ok(code)
 }
+
+/// Best-effort confirmation email sent after a successful local sign-up
+/// (no code — the account is already active).
+pub async fn send_welcome_email(to: &str) -> Result<(), String> {
+    let subject = "Welcome to Kawai";
+    let text = format!(
+        "Your Kawai account ({to}) has been created.\n\nIf this wasn't you, you can ignore this email."
+    );
+    let html = format!(
+        "<p>Your <strong>Kawai</strong> account ({to}) has been created.</p>\
+         <p>If this wasn't you, you can ignore this email.</p>"
+    );
+    kawai_email::send_email_html(to, subject, &text, &html)
+        .await
+        .map_err(|e| e.to_string())
+}
