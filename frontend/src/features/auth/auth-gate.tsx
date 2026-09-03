@@ -1,13 +1,19 @@
 import { useState } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/features/auth/use-auth";
-import { supabase } from "@/features/auth/supabase";
+import { call } from "@/lib/api";
 import { signInWithMonadWallet } from "@/features/auth/monad-wallet";
+import { supabase } from "@/features/auth/supabase";
+
+async function finishSupabaseAuth(result: { data: { session: { access_token: string } | null }; error: { message: string } | null }) {
+  if (result.error) throw new Error(result.error.message);
+  if (!result.data.session) throw new Error("Check your email to confirm your account, then sign in.");
+  await call("set_session", { token: result.data.session.access_token });
+}
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { userId, authError } = useAuth();
+  const { userId, authError, refresh } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,40 +26,18 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-
-    const { error: authError } =
-      mode === "signin"
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
-
-    setLoading(false);
-
-    if (authError) {
-      setError(authError.message);
+    try {
+      if (mode === "signin") {
+        await finishSupabaseAuth(await supabase.auth.signInWithPassword({ email, password }));
+      } else {
+        await finishSupabaseAuth(await supabase.auth.signUp({ email, password }));
+      }
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
-    // onAuthStateChange in useAuth will pick up SIGNED_IN and sync to backend
-  };
-
-  const handleOAuth = async (provider: "google" | "github") => {
-    setLoading(true);
-    setError(null);
-    // skipBrowserRedirect: we open the system browser ourselves.
-    // The deep-link handler in use-auth.ts picks up the callback
-    // kawai://auth?code=<pkce> or kawai://auth#access_token=<jwt>.
-    const { data, error: authError } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: "kawai://auth",
-        skipBrowserRedirect: true,
-      },
-    });
-    setLoading(false);
-    if (authError) {
-      setError(authError.message);
-      return;
-    }
-    // Open in system browser (webview blocks third-party OAuth cookies)
-    if (data?.url) await openUrl(data.url);
   };
 
   const handleMonadWallet = async () => {
@@ -63,8 +47,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       // Backend creates (or reuses) the device hot wallet, signs the SIWE
       // message in-process, and Supabase issues the session.
       await signInWithMonadWallet();
-      // onAuthStateChange in use-auth picks up SIGNED_IN and syncs the
-      // token to the backend (set_session → keychain).
+      // onAuthStateChange in use-auth picks up SIGNED_IN and syncs to the
+      // backend (set_session → keychain).
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -78,50 +62,38 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         <h1 className="text-center text-2xl font-semibold text-foreground">Welcome to Kawai</h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <Input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Loading..." : mode === "signin" ? "Sign In" : "Sign Up"}
-          </Button>
-        </form>
+            <Input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Loading..." : mode === "signin" ? "Sign In" : "Sign Up"}
+            </Button>
+          </form>
 
         <p className="text-center text-sm text-muted-foreground">
-          {mode === "signin" ? "Don't have an account?" : "Already have an account?"}{" "}
-          <button
-            type="button"
-            className="text-foreground underline underline-offset-4 hover:text-primary"
-            onClick={() => {
-              setMode(mode === "signin" ? "signup" : "signin");
-              setError(null);
-            }}
-          >
-            {mode === "signin" ? "Sign Up" : "Sign In"}
-          </button>
+            {mode === "signin" ? "Don't have an account?" : "Already have an account?"}{" "}
+            <button
+              type="button"
+              className="text-foreground underline underline-offset-4 hover:text-primary"
+              onClick={() => {
+                setMode(mode === "signin" ? "signup" : "signin");
+                setError(null);
+              }}
+            >
+              {mode === "signin" ? "Sign Up" : "Sign In"}
+            </button>
         </p>
-
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t" />
-          </div>
-          <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-background px-2 text-muted-foreground">or continue with</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Button variant="outline" type="button" onClick={() => handleOAuth("google")} disabled={loading}>
-            Google
-          </Button>
-          <Button variant="outline" type="button" onClick={() => handleOAuth("github")} disabled={loading}>
-            GitHub
-          </Button>
-        </div>
 
         <Button variant="outline" type="button" className="w-full" onClick={handleMonadWallet} disabled={loading}>
           EVM Wallet
