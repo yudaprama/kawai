@@ -30,3 +30,6 @@
 	path = contracts
 	url = https://github.com/kawai-network/contracts.git
 	branch = main
+[submodule "kawai-server"]
+	path = kawai-server
+	url = https://github.com/yudaprama/kawai-server.git
