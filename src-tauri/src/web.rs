@@ -393,17 +393,49 @@ struct AuthCredentialsRequest {
     password: String,
 }
 
-fn session_cookie_response(user_id: &str) -> Response {
-    // The cookie carries the local user id directly — no token round-trip.
+async fn session_cookie_response(token: &str) -> Response {
+    // The cookie carries the Ed25519 bearer token from the auth worker — the
+    // middleware resolves it to the user email (with an in-memory cache).
     // NOTE: `Secure` is intentionally omitted for plain-HTTP localhost dev.
     let cookie = format!(
-        "{SESSION_COOKIE}={user_id}; HttpOnly; SameSite=Lax; Path=/; Max-Age={COOKIE_MAX_AGE}"
+        "{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={COOKIE_MAX_AGE}"
     );
-    let mut resp = Json(logic::whoami(user_id)).into_response();
+    let email = resolve_cookie_email(token).await.unwrap_or_default();
+    let mut resp = Json(logic::whoami(&email)).into_response();
     if let Ok(val) = HeaderValue::from_str(&cookie) {
         resp.headers_mut().append(header::SET_COOKIE, val);
     }
     resp
+}
+
+/// Token → email, with a 5-minute in-memory cache so the middleware does not
+/// hit the auth worker on every request. `None` when the token is invalid.
+async fn resolve_cookie_email(token: &str) -> Option<String> {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+    use std::time::{Duration, Instant};
+    static CACHE: OnceLock<std::sync::RwLock<HashMap<String, (String, Instant)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| std::sync::RwLock::new(HashMap::new()));
+    const TTL: Duration = Duration::from_secs(5 * 60);
+
+    if let Ok(guard) = cache.read() {
+        if let Some((email, at)) = guard.get(token) {
+            if at.elapsed() < TTL {
+                return Some(email.clone());
+            }
+        }
+    }
+    // Cache miss / stale — ask the worker.
+    let email = tokio::time::timeout(Duration::from_secs(5), logic::local_auth::resolve_bearer(token))
+        .await
+        .ok()
+        .flatten();
+    if let Some(email) = &email {
+        if let Ok(mut guard) = cache.write() {
+            guard.insert(token.to_string(), (email.clone(), Instant::now()));
+        }
+    }
+    email
 }
 
 async fn auth_sign_up_handler(
@@ -412,7 +444,9 @@ async fn auth_sign_up_handler(
     let user = logic::local_auth::auth_sign_up(&req.email, &req.password)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    Ok(session_cookie_response(&user.email))
+    let token = logic::local_auth::stored_token(&user.email)
+        .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "missing auth token".to_string()))?;
+    Ok(session_cookie_response(&token).await)
 }
 
 async fn auth_sign_in_handler(
@@ -420,8 +454,14 @@ async fn auth_sign_in_handler(
 ) -> Result<Response, (StatusCode, String)> {
     let user = logic::local_auth::auth_sign_in(&req.email, &req.password)
         .await
-        .map_err(|e| (StatusCode::UNAUTHORIZED, e))?;
-    Ok(session_cookie_response(&user.email))
+        .map_err(|e| match e.as_str() {
+            "no account found for this email" => (StatusCode::NOT_FOUND, e),
+            "incorrect password" => (StatusCode::UNAUTHORIZED, e),
+            _ => (StatusCode::UNAUTHORIZED, e),
+        })?;
+    let token = logic::local_auth::stored_token(&user.email)
+        .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "missing auth token".to_string()))?;
+    Ok(session_cookie_response(&token).await)
 }
 
 #[derive(Serialize)]
@@ -1320,17 +1360,32 @@ async fn graph_stats_handler(
 /// request extension. 401 on missing/foreign cookie. Uses
 /// `from_fn` (state `()`), so it composes with a `Router<()>`.
 async fn auth_middleware(mut req: Request, next: Next) -> Response {
-    let user_id = req
+    let token = req
         .headers()
         .get(header::COOKIE)
         .and_then(|v| v.to_str().ok())
         .and_then(|s| extract_cookie(s, SESSION_COOKIE))
-        .filter(|id| id.starts_with("loc_"))
         .map(str::to_string);
-    let Some(user_id) = user_id else {
+    let Some(token) = token else {
         return error_response(StatusCode::UNAUTHORIZED, "no session");
     };
-    req.extensions_mut().insert(user_id.to_string());
+    // The cookie carries the Ed25519 bearer token; resolve it to the user
+    // email via the auth worker (cached 5 min). Requests block on the first
+    // resolution — acceptable for a server-side web session.
+    let email = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::try_current().ok().and_then(|h| {
+            h.block_on(async {
+                tokio::time::timeout(std::time::Duration::from_secs(5), logic::local_auth::resolve_bearer(&token))
+                    .await
+                    .ok()
+                    .flatten()
+            })
+        })
+    });
+    let Some(email) = email else {
+        return error_response(StatusCode::UNAUTHORIZED, "invalid or expired session");
+    };
+    req.extensions_mut().insert(email);
     next.run(req).await
 }
 

@@ -79,6 +79,8 @@ dotenvy = "0.15"
 # Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
 # Private repo — CI authenticates via the insteadOf git rewrite (release.yml).
 kawai-constants = { path = "../kawai-vault/constants" }
+kawai-vault = { path = "../kawai-vault/kawai-vault" }
+sha2 = "0.10"
 # Office tool store imports (drag-drop/web base64 blobs) + TTS audio payloads.
 base64 = "0.22"
 tauri-plugin-dialog = "2"

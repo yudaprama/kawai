@@ -1,6 +1,6 @@
 # PLAN — Wallet (SIWE) Auth Schema Supabase
 
-Status: **implemented** (see Verification section). Follow-up shipped in the same effort: the **in-app EVM hot-wallet SIWE login** (`monad_wallet_*` ops + "EVM Wallet" button in `auth-gate.tsx`) — see AGENTS.md → Authentication. Still open: asymmetric JWT signing in the Supabase Dashboard (backend JWKS verifier rejects SIWE tokens until enabled).
+Status: **OBSOLETE** — Supabase Auth and the SIWE wallet login were removed. Current auth: local email+password (`kawai-auth`, `crates/foundation/auth`), email-as-identity, no external auth provider. This document is a historical record of schema work performed on the (now-disconnected) Supabase project only.
 Target: Supabase project `mpencmdcjzfoahbuepwu` (kawai auth issuer: `https://mpencmdcjzfoahbuepwu.supabase.co/auth/v1`)
 Metode: **psql dengan DSN dari `kawai/.env`** (bukan SQL Editor): `psql -h db.mpencmdcjzfoahbuepwu.supabase.co -p 5432 -U postgres -d postgres`, password via `PGPASSWORD` dari file env. Fallback bila DNS/IPv6 bermasalah: **Supavisor pooler** `aws-0-ap-southeast-1.pooler.supabase.com:6543`, user `postgres.mpencmdcjzfoahbuepwu`.
 

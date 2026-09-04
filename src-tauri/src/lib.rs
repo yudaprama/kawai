@@ -45,6 +45,13 @@ pub fn run() {
                     // One per-user data root: <app_data>/<user_id>/ holds
                     // kawai.db + docs/ (office store defaults into it).
                     logic::db::set_data_root(data);
+                // Auto-restore the previous session from the persisted worker
+                // token (no password prompt after a restart, until it expires).
+                if let Some(email) = logic::local_auth::restore_session() {
+                    if let Ok(mut guard) = app.state::<crate::auth::Session>().write() {
+                        *guard = Some(email);
+                    }
+                }
                 }
                 // Warm the deck-template registry cache in the background
                 // (best-effort; offline silently degrades to bundled packs).

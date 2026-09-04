@@ -10,7 +10,7 @@ The backend also ships as a standalone web server binary (Axum, feature-gated).
 - Current phase: **MVP, desktop-first** (macOS, on-device LLM, local email+password auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
 - Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`features/chat/hooks/use-supervisor-plan.ts` + `lib/ai-types.ts`).
 - Backend: Rust, single core logic. Built-in agent composition is owned by the application root (`src-tauri/src/agent_registry.rs`); the reusable orchestration engine consumes an injected `AgentRegistry`.
-- Auth: local email+password (`kawai-auth`) — email-as-identity user directory (`<data_root>/auth.db`), `kawai-vault`-encoded passwords, in-memory session (web: cookie). Login UI in the React frontend (`auth-gate.tsx`).
+- Auth: remote email+password against the kawai-server worker (Cloudflare D1 `kawai-auth`) — the client sends only `SHA-256(salt + kawai_vault::encode_string(password))` (the local vault logic stays the derivation core; server never sees the password) and receives an Ed25519 bearer token (7-day) persisted at `<user_data_dir>/auth.token`. Desktop session auto-restores from the token at startup; web sessions are the token in an HttpOnly cookie, verified against the worker with a 5-minute in-memory cache. Login UI in the React frontend (`auth-gate.tsx`).
 - LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool with health-aware failover); remote providers are optional configuration. The local model delegates heavy synthesis to cloud subagent tools (`deep_write`, `draft_document`) when a remote LLM is configured. Agent toolsets come from domain crates and are composed by the application root. Design record: `PLAN-hybrid-llm-subagents.md`.
 - Persistence: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
 
@@ -238,7 +238,7 @@ kawai/
 ├── cognee-litert-lm/           # Rust bindings for the LiteRT-LM C API (+ vendored upstream submodule)
 ├── office_oxide/               # submodule: pure-Rust docx/xlsx/pptx create/read/edit
 ├── scripts/
-│   ├── dev.sh                  # tauri dev launcher (litert rpath + dev-bypass auth + profraw off)
+│   ├── dev.sh                  # tauri dev launcher (litert rpath + profraw off)
 │   ├── tauri.sh                # wraps the tauri npm script
 │   ├── kv_sweep.sh             # K/V budget sweep wrapper
 │   └── bundle-litert-dylibs.sh  # prep LiteRT dylibs into native/ for .app bundling

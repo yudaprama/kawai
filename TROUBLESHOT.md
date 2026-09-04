@@ -1,8 +1,8 @@
 # TROUBLESHOOT — debugging the agent pipeline
 
 Runbook for coding agents diagnosing agent / tool-calling / hybrid-cloud
-failures. Examples assume the dev-bypass user `demo` and the default macOS
-data dir.
+failures. Examples assume the default macOS data dir and a signed-in local
+account (identity = the login email).
 
 **Procedure — follow in order:**
 1. §1: collect evidence (DB + turn_log + app.log). Never reason past missing
@@ -254,3 +254,22 @@ re-read §1 — a healthy turn must match the shape in §2.
 - Subagent materials = a one-line pointer; the backend attaches the full
   content (`[tool results gathered this turn]`, 32k cap) or falls back to
   `[conversation so far]` when the turn ran no tools.
+
+## 6. Auth (remote account) quick reference
+
+Identity is the login email; the account directory lives on the kawai-server
+worker (D1 `kawai-auth`). Client-side artifacts:
+
+- `<user_data_dir>/auth.token` — Ed25519 bearer token (7-day), sent as
+  `Authorization: Bearer` to worker endpoints; `sub`/`exp` are decodable
+  client-side.
+- `<data_root>/last_session` — pointer file used by `restore_session` to
+  re-establish the desktop session at startup without a password prompt.
+
+| Symptom | Cause | Action |
+|---|---|---|
+| sign-in fails with "auth server unreachable" | worker down / no network | `curl -s -o /dev/null -w '%{http_code}' -X POST https://kawai-worker.akuntestinguntukseto.workers.dev/auth/salt -H 'Content-Type: application/json' -d '{"email":"x@y.z"}'` — expect 404/200, not 000 |
+| 409 "an account with this email already exists" but sign-in says "no account found" | leftover row from a different credential scheme (e.g. legacy pbkdf2 table era) | inspect D1: `npx wrangler d1 execute kawai-auth --remote --command "SELECT email, created_at FROM users WHERE email='<email>'"` — row's salt/credential won't match any password; remove or rename per user request |
+| session lost every restart (desktop) | `restore_session` bailed: token expired or `last_session`/`auth.token` missing/mismatched | check both files exist, decode token payload (`sub`, `exp`) — base64url JSON; re-login if `exp` is past |
+| worker returns 500 with a text message | an auth "soft" error predating the status-code cleanup, or a genuine handler bug | check the message body; `npx wrangler tail --format json` on kawai-server/worker for the D1/Rust error line |
+| "missing Authorization header" / 401 on worker calls | client has no `auth.token` (never signed in) or stale token after `ED25519_SEED` rotation | sign in again; rotation invalidates all tokens |

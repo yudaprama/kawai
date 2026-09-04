@@ -8,11 +8,11 @@ phases below. The live status lives in `AGENTS.md` → Roadmap → Open, item #3
 The current DB layer uses `libsql::Builder::new_local(path)` — a single-device
 SQLite file, no sync. For multi-device sync, `libsql::Builder::new_remote_replica`
 connects to a `sqld` server with an auth token. `sqld` only accepts EdDSA
-(Eddsa) tokens; Supabase Auth JWTs are HS256 by default and are rejected.
+(Eddsa) tokens; only tokens minted by the kawai backend are accepted.
 
 The EdDSA signing key **must not** ship with the client binary: a leaked key
 allows any device to read/write any user's data. Instead the server mints
-short-lived tokens after verifying identity via Supabase JWT, and the client
+short-lived tokens after verifying identity (local auth session), and the client
 fetches a token before opening the remote replica.
 
 ---
@@ -35,7 +35,7 @@ fetches a token before opening the remote replica.
 │                        │ HTTPS (TLS)                                   │
 │                        ▼                                               │
 │  ┌──────────────────────────────────────────────────────────────┐      │
-│  │  GET /api/db_token (Authorization: Supabase JWT)            │      │
+│  │  GET /api/db_token (kawai_session auth)                     │      │
 │  └──────────────────────────────────────────────────────────────┘      │
 │                        │                                               │
 └────────────────────────┼───────────────────────────────────────────────┘
@@ -44,7 +44,7 @@ fetches a token before opening the remote replica.
 │  kawai-web server       │                                              │
 │                        │                                               │
 │  /api/db_token handler:│                                               │
-│    1. Verify Supabase JWT (existing Verifier)                          │
+│    1. Verify identity (local auth session / cookie)                    │
 │    2. Extract claims.sub = user_id                                     │
 │    3. TokenSigner::mint(user_id, ttl)                                  │
 │       → EdDSA JWT { sub, iss:"kawai", exp }                          │
@@ -110,7 +110,7 @@ JWT payload:
 
 ```json
 {
-  "sub": "user-uuid-or-supabase-sub",
+  "sub": "<user email>",
   "iss": "kawai",
   "iat": 1735689600,
   "exp": 1735690500,
@@ -128,7 +128,7 @@ Location: `src-tauri/src/web.rs` (behind `#[cfg(feature = "web")]`, protected ro
 
 ```rust
 async fn db_token_handler(
-    Extension(claims): Extension<auth::Claims>,
+    Extension(user_id): Extension<String>,
     Extension(signer): Extension<TokenSigner>,
 ) -> Json<DbTokenResponse> {
     let (token, expires_at) = signer.mint(&claims.sub, 900)?;
@@ -148,7 +148,7 @@ struct DbTokenResponse {
 }
 ```
 
-- Protected by `auth_middleware` (existing Supabase JWT verification).
+- Protected by `auth_middleware` (local session cookie validation).
 - `expires_at` is Unix epoch seconds; client uses this to schedule refresh.
 
 ---
@@ -209,13 +209,13 @@ Location: `src-tauri/src/commands.rs` or `src-tauri/src/logic.rs`
 
 ```rust
 /// Fetch a fresh db_token from the server and inject into thread-local.
-/// Returns Err if: not in web mode, Supabase session missing, or server error.
+/// Returns Err if: not in web mode, no local session, or server error.
 pub async fn refresh_db_token(user_id: &str) -> Result<(), String>;
 ```
 
 Called:
 1. On `set_session` success (first auth).
-2. On `restore_session` success (app relaunch).
+2. On re-login after an app relaunch (sessions are in-memory).
 3. Background: when `expires_at < now + 60`, fetch before next `db_connection`.
 
 ### 3.4 `db_token` Tauri command + Axum route
@@ -321,7 +321,7 @@ batch migration during rollout.
 | Test | What it verifies |
 |---|---|
 | `db_token_endpoint_returns_valid_token` | `/api/db_token` → EdDSA JWT decodable |
-| `db_token_requires_auth` | missing Supabase JWT → 401 |
+| `db_token_requires_auth` | missing/invalid session cookie → 401 |
 | `sqld_namespace_isolation` | user A token cannot read user B namespace |
 | `token_refresh_before_expiry` | background loop mints new token when `expires_at - now < 60` |
 | `offline_fallback` | sqld unreachable → local file used transparently |

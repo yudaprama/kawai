@@ -35,7 +35,7 @@ OpenHuman concept | Kawai equivalent today | Delta
 MemoryGuard 18 capability families | 5 `MEMORY_KINDS` (preference/rule/event/fact/goal), one flat table | Needs **namespaces** column + per-family prompt visibility
 AgentExperience store | TurnMemory (`session_artifacts` table) logs process outputs, survives restarts | Needs a **distilled experience row** (task → lesson → tool sequence) written at plan completion
 FacetCache (class/key/stability/user_state) | — | New table + new prompt block + rebuild path
-Onboarding ContextGatheringStep | `auth-gate.tsx` → `use-auth.ts` (Supabase + deep-link PKCE pattern) | New post-auth **context gathering step** reusing the deep-link OAuth pattern for Google
+Onboarding ContextGatheringStep | `auth-gate.tsx` → `use-auth.ts` (local email+password login) | New post-auth **context gathering step**; Google OAuth ingestion needs the deep-link OAuth flow re-introduced (the `tauri-plugin-deep-link` OAuth callback plumbing was removed with Supabase auth)
 
 Key existing infrastructure we reuse as-is:
 
@@ -43,7 +43,7 @@ Key existing infrastructure we reuse as-is:
   (same vault as `memory_extract`; empty vault ⇒ features degrade gracefully).
 - `ragloader` — parses the LinkedIn export (HTML/CSV/PDF) and any uploaded
   resume/bio document.
-- `keychain.rs` + `kawai://auth` deep-link (PKCE) — reused for Google OAuth
+- Google OAuth for Gmail — the `kawai://auth` deep-link PKCE plumbing (removed with Supabase auth) must be re-introduced first
   (`kawai://gmail` callback).
 - Migration runner (`logic/db_migrations.rs`) — next numbers are
   `0010`/`0011`/`0012`.

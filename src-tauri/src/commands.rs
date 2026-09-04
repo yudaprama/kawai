@@ -200,11 +200,17 @@ fn establish_local_session(email: &str, session: State<'_, Session>) -> Result<U
     Ok(logic::whoami(email))
 }
 
+/// Clear the in-memory session and remove the persisted worker token.
 #[tauri::command]
 pub fn logout(session: State<'_, Session>) {
     if let Ok(mut guard) = session.write() {
-        *guard = None;
+        if let Some(email) = guard.take() {
+            let path = kawai_paths::user_data_dir(&email).join("auth.token");
+            let _ = std::fs::remove_file(path);
+        }
     }
+    // Drop the restore pointer too — the next launch shows the login screen.
+    let _ = std::fs::remove_file(kawai_paths::data_root().join("last_session"));
 }
 
 /// Requires an active session. Demonstrates the auth-required pattern: the

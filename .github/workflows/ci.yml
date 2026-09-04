@@ -187,6 +187,12 @@ jobs:
         run: cargo check --features tts
         working-directory: src-tauri
 
+      # kawai-server auth worker (Rust → WASM): compile gate for the D1 auth
+      # directory + Ed25519 token mint/verify (see kawai-server/worker).
+      - name: cargo check (kawai-server worker, wasm32)
+        run: cargo check --target wasm32-unknown-unknown
+        working-directory: kawai-server/worker
+
       # Remote SQL sources (sqlx, rustls): compile gate + LIVE-server checks
       # against the service containers — data_tables/data_import/dump typing
       # run for real (--deep seeds fixture tables — basic, temporal/NULL,
