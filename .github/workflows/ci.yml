@@ -178,6 +178,8 @@ jobs:
       # plain compile gate + the crate's unit tests (AST translation, dtype
       # coercion, sidecar cache; fixture parquet/csv/xlsx built in-test).
       - name: cargo check (analytics feature)
+        run: cargo check --features analytics
+        working-directory: src-tauri
 
       - name: cargo check (codegraph feature)
         run: cargo check --features codegraph
