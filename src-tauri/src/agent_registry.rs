@@ -34,7 +34,7 @@ pub fn list_agents() -> Vec<AgentInfo> {
 
 /// Office gets knowledge_search, graph tools, and cloud subagent tools.
 #[cfg(feature = "litert")]
-pub(crate) fn office_tools(
+pub fn office_tools(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
@@ -50,7 +50,7 @@ pub(crate) fn office_tools(
 /// Presentation gets deck authoring, source reading, knowledge search, and
 /// cloud synthesis — but not document editing or PDF mutation tools.
 #[cfg(feature = "litert")]
-pub(crate) fn presentation_tools_for_supervisor(
+pub fn presentation_tools_for_supervisor(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
@@ -67,7 +67,7 @@ pub(crate) fn presentation_tools_for_supervisor(
 
 /// Binance gets web read/search (cross-cutting) and cloud subagent tools.
 #[cfg(feature = "litert")]
-pub(crate) fn binance_tools_for_supervisor(
+pub fn binance_tools_for_supervisor(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
@@ -89,7 +89,7 @@ pub(crate) fn binance_tools_for_supervisor(
 
 /// Analytics: delegates entirely to its own tool builder + cloud subagent tools.
 #[cfg(feature = "litert")]
-pub(crate) fn analytics_tools_for_supervisor(
+pub fn analytics_tools_for_supervisor(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {

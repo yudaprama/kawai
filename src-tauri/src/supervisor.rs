@@ -72,7 +72,13 @@ fn plan_step_infos(plan: &kawai_router::TaskPlan) -> Vec<PlanStepInfo> {
         .map(|s| PlanStepInfo {
             id: s.id.clone(),
             tool: s.tool.clone().unwrap_or_else(|| s.agent_id.clone()),
-            task: s.task.clone(),
+            // Plans may omit `task` (token economy) — fall back to the tool
+            // name so the progress panel never shows an empty label.
+            task: if s.task.is_empty() {
+                s.tool.clone().unwrap_or_else(|| s.agent_id.clone())
+            } else {
+                s.task.clone()
+            },
             depends_on: s.depends_on.clone(),
         })
         .collect()
@@ -236,8 +242,19 @@ pub async fn plan_task(
     goal: &str,
     registry: &ToolRegistry,
 ) -> Result<(kawai_router::TaskPlan, remote_llm::RemoteUsage), String> {
-    let remote = remote_llm::RemoteLlm::from_env()
-        .ok_or_else(|| "remote LLM is not configured".to_string())?;
+    // KAWAI_PLANNER_LLM=local → on-device Gemma serves the planner loop
+    // (test/dev seam); otherwise the remote pool serves it, with a tight
+    // per-call output cap: the loop's rounds must stay short (the 2026-02
+    // benchmark showed 14.6k output tokens = the whole 250 s latency).
+    let remote = if std::env::var("KAWAI_PLANNER_LLM").ok().as_deref() == Some("local") {
+        None
+    } else {
+        Some(
+            remote_llm::RemoteLlm::from_env()
+                .map(|r| r.with_output_cap(2_500))
+                .ok_or_else(|| "remote LLM is not configured".to_string())?,
+        )
+    };
 
     // User context rides the planner call: persona + goal-relevant memories
     // + skills. All three are best-effort — planning never fails on them.
@@ -246,32 +263,183 @@ pub async fn plan_task(
     let skills_block = kawai_skills::prompt_block(user_id).await;
     let context = render_planner_context(persona_block, memories_block, skills_block);
 
-    let prompt = kawai_router::plan_prompt_with_tools(registry);
-    let user_message = if context.is_empty() {
-        format!("{prompt}\n\nUser goal:\n{goal}")
-    } else {
-        format!("{context}\n\n{prompt}\n\nUser goal:\n{goal}")
-    };
-    let mut stream = remote.stream(
-        "You produce valid JSON plans and never execute tools.",
-        &user_message,
-        "",
-    ).await?;
-    let mut raw = String::new();
-    let mut usage = remote_llm::RemoteUsage::default();
-    while let Some(event) = stream.next().await {
-        match event? {
-            remote_llm::RemoteEvent::Token { text } => {
-                if raw.len() < 32_000 { raw.push_str(&text); }
+    // The planner sees NO full catalog. It discovers tools through bounded
+    // search rounds against the Turso tool catalog, then emits the plan.
+    // Core cross-cutting tools are always visible (retrieval misses them
+    // disproportionately — measured, see tool_search_probe).
+    let core_tools: Vec<String> = PLAN_CORE_TOOLS
+        .iter()
+        .filter(|name| registry.get(name).is_some())
+        .map(|s| s.to_string())
+        .collect();
+
+    // Turso catalog, best-effort: unavailable means searches report empty —
+    // the planner then plans from the core set or fails validation. There is
+    // deliberately NO full-catalog fallback (mode A).
+    let catalog = match kawai_tool_catalog::RemoteConfig::from_env() {
+        Some(cfg) => match kawai_tool_catalog::Catalog::open_default(&cfg).await {
+            Ok(c) => {
+                let _ = tokio::time::timeout(PLAN_SEARCH_SYNC_TIMEOUT, c.sync()).await;
+                Some(c)
             }
-            // Provider-reported usage — dibawa keluar agar caller dapat
-            // mendebit saldo berdasar pemakaian nyata (fair per-token).
-            remote_llm::RemoteEvent::Done { usage: u, .. } => usage = u,
-            _ => {}
+            Err(_) => None,
+        },
+        None => None,
+    };
+    let embedder = kawai_embedding::build_providers_from_env();
+
+    let system = plan_loop_system_prompt(&core_tools);
+    let mut task = if context.is_empty() {
+        format!("User goal:\n{goal}")
+    } else {
+        format!("{context}\n\nUser goal:\n{goal}")
+    };
+    let mut materials = String::new();
+    let mut seen: std::collections::HashSet<String> = core_tools.iter().cloned().collect();
+    let mut usage = remote_llm::RemoteUsage::default();
+    let mut searches_used = 0usize;
+    let mut repairs_used = 0usize;
+    let mut calls = 0usize;
+
+    loop {
+        calls += 1;
+        if calls > PLAN_MAX_CALLS {
+            return Err(format!(
+                "planner exceeded its call budget ({PLAN_MAX_CALLS} rounds) without producing a valid plan"
+            ));
+        }
+        let must_plan = searches_used >= PLAN_SEARCH_ROUNDS;
+        let mut round_materials = materials.clone();
+        if must_plan {
+            round_materials.push_str(
+                "\n<system-note>Search budget exhausted. Respond ONLY with the final plan JSON now.</system-note>",
+            );
+        }
+
+        let mut raw = String::new();
+        let local_mode = std::env::var("KAWAI_PLANNER_LLM").ok().as_deref() == Some("local");
+        if local_mode {
+            // Ensure the on-device Gemma model is present/resolved (auto-
+            // downloads on first use), then load it if the engine is cold.
+            if !local_llm::is_engine_loaded() {
+                let model_path = crate::logic::ensure_model().await?;
+                local_llm::load_model("planner", &model_path, false, false, 0, None).await?;
+            }
+            // On-device Gemma via LiteRT: one-shot fresh conversation; system
+            // + task + materials compose into a single prompt (this transport
+            // has no separate system turn). Usage stays zero (local).
+            let mut prompt = format!("{system}\n\n{task}");
+            if !round_materials.trim().is_empty() {
+                prompt.push_str(&format!("\n\n{round_materials}"));
+            }
+            let stream = local_llm::local_chat("planner".into(), prompt, None, None, true);
+            tokio::pin!(stream);
+            while let Some(event) = stream.next().await {
+                match event {
+                    local_llm::LocalChatEvent::Token { text } => {
+                        if raw.len() < 32_000 {
+                            raw.push_str(&text);
+                        }
+                    }
+                    local_llm::LocalChatEvent::Error { message } => {
+                        return Err(format!("local planner LLM: {message}"));
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            let mut stream = remote.as_ref().unwrap().stream(&system, &task, &round_materials).await?;
+            while let Some(event) = stream.next().await {
+                match event? {
+                    remote_llm::RemoteEvent::Token { text } => {
+                        if raw.len() < 32_000 {
+                            raw.push_str(&text);
+                        }
+                    }
+                    remote_llm::RemoteEvent::Done { usage: u, provider, .. } => {
+                        // #5 observability: which candidate served the round
+                        // (latency tuning data — see PLAN-planner-search-loop.md).
+                        eprintln!("[plan_task] round {} served by {provider}", calls);
+                        usage.input_tokens += u.input_tokens;
+                        usage.output_tokens += u.output_tokens;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let parsed: Option<serde_json::Value> = kawai_router::extract_json_slice(&raw)
+            .ok()
+            .and_then(|slice| serde_json::from_str(slice).ok());
+
+        // Final plan?
+        if let Some(v) = &parsed {
+            if v.get("steps").is_some() && v.get("goal").is_some() {
+                match parse_supervisor_plan(&raw, registry) {
+                    Ok(plan) => return Ok((plan, usage)),
+                    Err(plan_err) => {
+                        // One corrective round with validator feedback and
+                        // fuzzy name suggestions — then give up.
+                        if repairs_used == 0 {
+                            repairs_used += 1;
+                            let suggestions = suggest_tools(registry, &plan_err);
+                            materials.push_str(&format!(
+                                "\n<plan-rejected>\nYour plan was rejected by the validator: {plan_err}\n{}\
+                                 Respond ONLY with the corrected plan JSON.\n</plan-rejected>\n",
+                                if suggestions.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!("Did you mean one of: {}?\n", suggestions.join(", "))
+                                },
+                            ));
+                            continue;
+                        }
+                        return Err(format!("plan validation failed: {plan_err}"));
+                    }
+                }
+            }
+
+            // Search action?
+            if !must_plan {
+                if let Some(queries) = v
+                    .get("action")
+                    .and_then(|a| a.as_str())
+                    .filter(|a| *a == "search")
+                    .and_then(|_| v.get("queries"))
+                    .and_then(|q| q.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|q| q.as_str().map(|s| s.trim().to_string()))
+                            .filter(|s| !s.is_empty())
+                            .take(3)
+                            .collect::<Vec<String>>()
+                    })
+                    .filter(|q| !q.is_empty())
+                {
+                    searches_used += 1;
+                    materials.push_str(&run_tool_search(
+                        catalog.as_ref(),
+                        &embedder,
+                        &queries,
+                        &mut seen,
+                    )
+                    .await);
+                    continue;
+                }
+            }
+        }
+
+        // Protocol violation (not JSON, wrong shape, or search after budget).
+        materials.push_str(
+            "\n<system-note>Unrecognized response. Respond ONLY with one JSON object: \
+             {\"action\":\"search\",\"queries\":[…]} or the final plan JSON.</system-note>",
+        );
+        if calls + 1 > PLAN_MAX_CALLS {
+            return Err(
+                "planner kept responding off-protocol and ran out of its call budget".to_string(),
+            );
         }
     }
-    let plan = parse_supervisor_plan(&raw, registry)?;
-    Ok((plan, usage))
 }
 
 pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai_router::TaskPlan, String> {
@@ -280,6 +448,193 @@ pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai
         .map_err(|e| format!("invalid plan JSON: {e}"))?;
     registry.validate_plan(&plan).map_err(|e| e.to_string())?;
     Ok(plan)
+}
+
+// ── Planner search-loop (mode A: no full-catalog fallback) ──────────────────
+
+/// Search rounds the planner may spend before it must emit the plan.
+/// 2 rounds × up to 3 queries per round proved sufficient (probe: every
+/// benchmark goal resolved in ≤1 effective round).
+const PLAN_SEARCH_ROUNDS: usize = 2;
+/// Hard cap on total LLM calls (search rounds + corrections + violations).
+const PLAN_MAX_CALLS: usize = 6;
+/// Cross-cutting tools retrieval misses disproportionately — always visible.
+const PLAN_CORE_TOOLS: [&str; 5] = [
+    "web_search",
+    "memory_search",
+    "artifact_recall",
+    "deep_write",
+    "draft_document",
+];
+/// Sync budget — an unreachable Turso must never stall planning.
+const PLAN_SEARCH_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Cap on the accumulated search results package (matches the remote pool's
+/// typical small-candidate materials budget).
+const PLAN_MATERIALS_CAP: usize = 12_000;
+
+fn plan_loop_system_prompt(core_tools: &[String]) -> String {
+    format!(
+        r#"You are a task planner for a deterministic supervisor.
+The full tool catalog is NOT provided. Discover tools by searching.
+
+Respond ONLY with ONE JSON object — either:
+{{"action": "search", "queries": ["<search 1>", "<search 2>", "<search 3>"]}}
+  (request tool search results; up to 3 diverse queries; describe CAPABILITIES, not tool names)
+{{"goal": "<one-line goal>", "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}]}}
+  (the final plan, once you know which tools to use)
+
+Plan rules:
+- Decompose into 1..{} concrete steps; each step names exactly ONE tool.
+- "task" is OPTIONAL: a single line ≤80 chars for the progress UI. Omit it
+  when the tool name is self-explanatory. ALWAYS keep "arguments" complete
+  and precise — the arguments are what the tool executes.
+- Be concise overall: no prose outside the JSON, no repeated context.
+- "dependsOn" lists step ids that must finish first; no cycles.
+- To pass a previous step's artifact: {{"fromStep": "<step id>", "output": "<artifact name>"}} — never paste large content.
+- "produces" names the artifacts a step emits for later steps.
+- Side-effect tools MUST set "requiresConfirmation": true with a short "confirmationDescription".
+- "onError" is one of "fail", "skip", "continue". Default "fail".
+- Keep each task description under {} chars.
+- Core tools below are ALWAYS available — never search for them:
+{}
+- If told the search budget is exhausted, respond ONLY with the final plan JSON.
+"#,
+        kawai_router::types::MAX_PLAN_STEPS,
+        kawai_router::types::MAX_TASK_CHARS,
+        core_tools
+            .iter()
+            .map(|n| format!("- {n}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+}
+
+/// Execute one search round: embed the queries, hit the Turso catalog,
+/// dedupe against everything already shown, and format the results block.
+async fn run_tool_search(
+    catalog: Option<&kawai_tool_catalog::Catalog>,
+    embedder: &kawai_embedding::TenantAwareEmbedder,
+    queries: &[String],
+    seen: &mut std::collections::HashSet<String>,
+) -> String {
+    let Some(catalog) = catalog else {
+        return "\n<tool-search-results>\nTool catalog is unavailable; rely on the core tools listed above.\n</tool-search-results>\n".to_string();
+    };
+    let Ok(vecs) = embedder.embed_strings(queries.to_vec()).await else {
+        return "\n<tool-search-results>\nTool search failed (embedding unavailable); rely on the core tools listed above.\n</tool-search-results>\n".to_string();
+    };
+    let mut block = String::from("\n<tool-search-results>\n");
+    for (query, qvec) in queries.iter().zip(vecs) {
+        block.push_str(&format!("\nquery: {query}\n"));
+        let hits = match catalog.search(query, &qvec, 6).await {
+            Ok(hits) => hits,
+            Err(_) => {
+                block.push_str("- (search failed for this query)\n");
+                continue;
+            }
+        };
+        let mut listed = 0;
+        for hit in hits {
+            if !seen.insert(hit.name.clone()) {
+                continue; // already visible to the planner
+            }
+            listed += 1;
+            let desc: String = hit.description.chars().take(160).collect();
+            let schema: String = hit.input_schema.chars().take(300).collect();
+            block.push_str(&format!("- {} — {desc}\n  args: {schema}\n", hit.name));
+        }
+        if listed == 0 {
+            block.push_str("- (no new tools beyond those already listed)\n");
+        }
+    }
+    block.push_str("</tool-search-results>\n");
+    truncate_chars(&block, PLAN_MATERIALS_CAP)
+}
+
+fn truncate_chars(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        s.chars().take(n).collect::<String>() + "…"
+    }
+}
+
+/// Registry names most similar to the unknown tool name mentioned in a
+/// validation error: shared-underscore-token overlap, top 4. Heuristic on
+/// purpose — it only feeds a corrective hint to the planner.
+fn suggest_tools(registry: &ToolRegistry, plan_err: &str) -> Vec<String> {
+    let err_lower = plan_err.to_lowercase();
+    let mut scored: Vec<(usize, String)> = registry
+        .metas()
+        .filter_map(|meta| {
+            let name_lower = meta.name.to_lowercase();
+            let score = name_lower
+                .split('_')
+                .filter(|tok| tok.len() >= 3 && err_lower.contains(tok))
+                .count();
+            (score > 0).then_some((score, meta.name.clone()))
+        })
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    scored.truncate(4);
+    scored.into_iter().map(|(_, name)| name).collect()
+}
+
+// ── Planner catalog narrowing (Turso tool catalog) ──────────────────────────
+
+/// Below this size the full catalog is always pasted into the planner prompt
+/// (small catalogs plan better unfiltered).
+const NARROW_MIN_TOOLS: usize = 60;
+/// Top-k tools admitted to the prompt when narrowing kicks in.
+const NARROW_TOP_K: usize = 40;
+/// Sync budget — an unreachable Turso must never stall planning.
+const NARROW_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Narrow the planner prompt's tool catalog to the top-k entries the remote
+/// Turso tool catalog ranks as relevant to the goal (vector + BM25 fused via
+/// RRF over an embedded replica — offline-safe via the last synced state).
+///
+/// Purely advisory: the result only shapes the prompt. Plan validation and
+/// dispatch stay against the FULL registry, so a stale catalog (or one that
+/// names tools this install cannot dispatch) degrades gracefully. Every
+/// failure mode — no Turso config, no embedder, sync timeout, dimension
+/// mismatch, empty intersection — falls back to `None` = full catalog.
+pub async fn narrow_registry_for_goal(registry: &ToolRegistry, goal: &str) -> Option<ToolRegistry> {
+    narrow_registry_for_goal_with(registry, goal, NARROW_MIN_TOOLS, NARROW_TOP_K).await
+}
+
+/// Parametrized variant of [`narrow_registry_for_goal`] (inspection/test
+/// seam): `min_tools` is the activation threshold, `top_k` the admitted set.
+pub async fn narrow_registry_for_goal_with(
+    registry: &ToolRegistry,
+    goal: &str,
+    min_tools: usize,
+    top_k: usize,
+) -> Option<ToolRegistry> {
+    if registry.len() <= min_tools {
+        return None;
+    }
+    let cfg = kawai_tool_catalog::RemoteConfig::from_env()?;
+    let model = kawai_embedding::build_providers_from_env();
+    let query_vec = model
+        .embed_strings(vec![goal.to_string()])
+        .await
+        .ok()?
+        .into_iter()
+        .next()?;
+    let catalog = kawai_tool_catalog::Catalog::open_default(&cfg)
+        .await
+        .ok()?;
+    let _ = tokio::time::timeout(NARROW_SYNC_TIMEOUT, catalog.sync()).await;
+    let hits = catalog.search(goal, &query_vec, top_k).await.ok()?;
+    let keep: std::collections::HashSet<String> =
+        hits.into_iter().map(|t| t.name).collect();
+    let narrowed = registry.narrowed(&keep);
+    if narrowed.is_empty() {
+        None
+    } else {
+        Some(narrowed)
+    }
 }
 
 pub async fn build_supervisor_registry(
