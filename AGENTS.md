@@ -313,7 +313,10 @@ KAWAI_CF_GLOBAL_DAILY=300     # default 300 (dev-wallet fuse)
 # replica (hybrid vector+BM25/RRF), then emits the plan validated against the
 # full local registry. No full-catalog fallback (mode A). Cross-cutting core
 # tools (web_search, memory_search, artifact_recall, deep_write,
-# draft_document) are always visible. Client token MUST be read-only.
+# draft_document) are always visible.
+# Credentials resolve: these env vars (dev override) → baked read-only
+# constants from kawai-vault/constants (distribution default; regenerate via
+# kawai-vault/constants/gen). Client token MUST be read-only.
 # KAWAI_TURSO_DB_URL=libsql://<db>.turso.io
 # KAWAI_TURSO_AUTH_TOKEN=
 # KAWAI_PLANNER_LLM=local   # optional: serve the planner loop with on-device

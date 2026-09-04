@@ -5806,6 +5806,7 @@ dependencies = [
 name = "kawai-tool-catalog"
 version = "0.1.0"
 dependencies = [
+ "kawai-constants",
  "kawai-paths",
  "libsql",
  "serde",
