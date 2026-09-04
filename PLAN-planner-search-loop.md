@@ -16,7 +16,11 @@ Round 0..2 LLM replies {"action":"search","queries":[≤3]} → executed against
            the Turso tool catalog (embedded replica; hybrid vector+BM25+RRF),
            results appended to materials (12k char cap, dedup across rounds).
 Final      LLM replies {"goal","steps":[…]} → parse_supervisor_plan validates
-           against the FULL ToolRegistry (advisory gap is intentional).
+           against the FULL ToolRegistry: structure, dispatch keys,
+           confirmation policy, and each step's arguments against the
+           tool's input_schema (lightweight JSON-Schema subset: type,
+           required, properties, items — fails fast before execution,
+           `InvalidArguments`).
 Repairs    1 corrective round on validation failure (validator message +
            fuzzy name suggestions). Hard cap: 6 LLM calls total.
 Core set   web_search, memory_search, artifact_recall, deep_write,

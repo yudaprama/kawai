@@ -207,6 +207,7 @@ fn tool_meta_from_definition(def: &kawai_tools::ToolDefinition) -> ToolMeta {
         description: def.description.clone(),
         input_schema: def.parameters.clone(),
         output_schema: serde_json::json!({}),
+        requires_confirmation: def.requires_confirmation,
     }
 }
 
@@ -896,6 +897,7 @@ mod tests {
             description: "test tool".into(),
             input_schema: serde_json::json!({}),
             output_schema: serde_json::json!({}),
+            requires_confirmation: false,
         });
         registry
     }

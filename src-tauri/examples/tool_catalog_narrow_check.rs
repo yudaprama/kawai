@@ -80,6 +80,7 @@ async fn run() -> Result<(), String> {
             description: def.description.clone(),
             input_schema: def.parameters.clone(),
             output_schema: serde_json::json!({}),
+            requires_confirmation: false,
         });
     }
     let full_len = registry.len();

@@ -28,6 +28,8 @@ pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     pub parameters: Value,
+    /// Whether invoking this tool must be confirmed by the user.
+    pub requires_confirmation: bool,
 }
 
 /// Model-visible output of a tool call, as a single text body.
@@ -75,6 +77,12 @@ pub trait AgentTool: Sized + Send + Sync {
 
     /// JSON Schema for arguments.
     fn parameters(&self) -> Value;
+
+    /// Whether invoking this tool requires explicit user confirmation.
+    /// Tools default to pure/read-only; side-effecting tools override this.
+    fn requires_confirmation(&self) -> bool {
+        false
+    }
 
     /// Execute one owned invocation.
     fn call(
@@ -169,6 +177,7 @@ fn erase<T: AgentTool + 'static>(tool: T) -> ErasedEntry {
         name: T::NAME.to_string(),
         description: tool.description(),
         parameters: tool.parameters(),
+        requires_confirmation: tool.requires_confirmation(),
     };
     let tool = Arc::new(tool);
     let captured = Arc::clone(&tool);
