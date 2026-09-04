@@ -76,6 +76,8 @@ pub fn run() {
         commands::generate_activity,
         commands::send_verification_email,
         commands::auth_sign_up,
+        commands::auth_send_code,
+        commands::auth_verify_code,
         commands::auth_sign_in,
         commands::cancel_stream,
         commands::logout,

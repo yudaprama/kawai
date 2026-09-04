@@ -438,6 +438,31 @@ async fn resolve_cookie_email(token: &str) -> Option<String> {
     email
 }
 
+async fn auth_send_code_handler(
+    Json(req): Json<AuthCredentialsRequest>,
+) -> Result<Response, (StatusCode, String)> {
+    logic::email::send_sign_up_code(&req.email)
+        .await
+        .map(|_| StatusCode::NO_CONTENT.into_response())
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+#[derive(Deserialize)]
+struct AuthCodeRequest {
+    email: String,
+    code: String,
+}
+
+async fn auth_verify_code_handler(
+    Json(req): Json<AuthCodeRequest>,
+) -> Result<Response, (StatusCode, String)> {
+    if logic::email::verify_sign_up_code(&req.email, &req.code) {
+        Ok(StatusCode::NO_CONTENT.into_response())
+    } else {
+        Err((StatusCode::UNAUTHORIZED, "verification code is invalid or expired".into()))
+    }
+}
+
 async fn auth_sign_up_handler(
     Json(req): Json<AuthCredentialsRequest>,
 ) -> Result<Response, (StatusCode, String)> {
@@ -1435,7 +1460,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/monad_wallet_delete", post(monad_wallet_delete_handler))
         .route("/api/send_verification_email", post(send_verification_email_handler))
         .route("/api/auth_sign_up", post(auth_sign_up_handler))
-        .route("/api/auth_sign_in", post(auth_sign_in_handler));
+        .route("/api/auth_sign_in", post(auth_sign_in_handler))
+        .route("/api/auth_send_code", post(auth_send_code_handler))
+        .route("/api/auth_verify_code", post(auth_verify_code_handler));
 
     let protected = Router::new()
         .route("/api/whoami", post(whoami_handler))

@@ -179,6 +179,22 @@ pub async fn auth_sign_up(
     establish_local_session(&user.email, session)
 }
 
+/// Public RPC: email a 6-digit sign-up verification code to `email`.
+#[tauri::command]
+pub async fn auth_send_code(email: String) -> Result<(), String> {
+    logic::email::send_sign_up_code(&email).await
+}
+
+/// Public RPC: check the sign-up code the user received by email.
+#[tauri::command]
+pub fn auth_verify_code(email: String, code: String) -> Result<(), String> {
+    if logic::email::verify_sign_up_code(&email, &code) {
+        Ok(())
+    } else {
+        Err("verification code is invalid or expired".into())
+    }
+}
+
 /// Public RPC: sign in with email+password (local user directory) and
 /// establish the session directly.
 #[tauri::command]

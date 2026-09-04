@@ -100,6 +100,19 @@ export function useSupervisorChat(userId?: string | null) {
     patch({ messages: [] } as Partial<SupervisorChatState>);
   }, [unloadModel, patch]);
 
+  // Sign out: clear the auth session AND the cached chat state (userId stays
+  // in state otherwise, so the gate never shows until a reload).
+  const signOut = useCallback(async () => {
+    await logout();
+    patch({
+      userId: null,
+      sessionId: null,
+      sessions: [],
+      archivedSessions: [],
+      messages: [],
+    } as Partial<SupervisorChatState>);
+  }, [logout, patch]);
+
   return {
     ...state,
     groupedSessions,
@@ -115,6 +128,6 @@ export function useSupervisorChat(userId?: string | null) {
     reloadModel: loadModel,
     ensureSessionId,
     refreshSessions: loadSessions,
-    logout,
+    logout: signOut,
   };
 }

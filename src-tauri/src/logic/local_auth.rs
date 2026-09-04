@@ -81,16 +81,29 @@ fn error_text(status: u16, json: &serde_json::Value) -> String {
 fn persist_token(user_email: &str, token: &str) {
     // Remember the last signed-in email so `restore_session` can find the
     // token after a restart.
-    let _ = std::fs::write(kawai_paths::data_root().join("last_session"), user_email);
+    let pointer = kawai_paths::data_root().join("last_session");
+    // The data root itself may not exist yet (first-ever sign-up on a fresh
+    // machine) — create it before writing the pointer.
+    if let Some(parent) = pointer.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("[auth] failed to create data root {}: {e}", parent.display());
+        }
+    }
+    if let Err(e) = std::fs::write(&pointer, user_email) {
+        eprintln!("[auth] failed to write session pointer {}: {e}", pointer.display());
+    }
     let dir = kawai_paths::user_data_dir(user_email);
     if std::fs::create_dir_all(&dir).is_ok() {
         let path = dir.join("auth.token");
-        if std::fs::write(&path, token).is_ok() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        match std::fs::write(&path, token) {
+            Ok(()) => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+                }
             }
+            Err(e) => eprintln!("[auth] failed to write auth token {}: {e}", path.display()),
         }
     }
 }

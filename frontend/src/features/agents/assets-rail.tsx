@@ -166,13 +166,21 @@ export function AssetsRail({
         </nav>
       </div>
 
-      <div className={`mt-auto flex items-center gap-2.5 border-t p-3 ${collapsed ? "flex-col p-1.5" : ""}`}>
-        <span
-          className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-          title={`Signed in as ${userId ?? "demo"}`}
-        >
-          {(userId ?? "d").charAt(0).toUpperCase()}
-        </span>
+      <div className={`mt-auto border-t p-3 ${collapsed ? "flex flex-col items-center gap-1.5 p-1.5" : "space-y-2"}`}
+      >
+        <div className={`flex items-center gap-2.5 ${collapsed ? "flex-col" : "w-full"}`}>
+          <span
+            className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+            title={`Signed in as ${userId ?? "demo"}`}
+          >
+            {(userId ?? "d").charAt(0).toUpperCase()}
+          </span>
+          {!collapsed && (
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={userId ?? "demo"}>
+              {userId ?? "demo"}
+            </span>
+          )}
+        </div>
         {collapsed ? (
           <>
             <ThemeControl collapsed />
@@ -182,13 +190,16 @@ export function AssetsRail({
           </>
         ) : (
           <div className="flex w-full items-center justify-between gap-2">
-            <span className="truncate font-mono text-xs text-muted-foreground">{userId ?? "demo"}</span>
-            <div className="flex items-center gap-1">
-              <ThemeControl collapsed={false} />
-              <Button aria-label="Sign out" onClick={onLogout} size="icon" title="Sign out" variant="ghost">
-                <LogOutIcon className="size-4" />
-              </Button>
-            </div>
+            <Button
+              className="h-8 flex-1 justify-start gap-2 text-xs"
+              onClick={onLogout}
+              title={`Sign out ${userId ?? ""}`}
+              variant="outline"
+            >
+              <LogOutIcon className="size-3.5" />
+              Sign out
+            </Button>
+            <ThemeControl collapsed={false} />
           </div>
         )}
       </div>
