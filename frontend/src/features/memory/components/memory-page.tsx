@@ -518,7 +518,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
             {displayList.map((m) => (
               <li className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3" key={m.id}>
                 <div className="flex items-start gap-2">
-                  <span className="text-muted-foreground shrink-0 rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 font-mono text-[10px] uppercase">
+                  <span className="text-muted-foreground shrink-0 rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 font-mono text-[11px] uppercase">
                     {m.kind}
                   </span>
                   <div className="min-w-0 flex-1">

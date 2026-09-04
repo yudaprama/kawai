@@ -30,6 +30,10 @@ type ChatComposerProps = {
    *  in-chat knowledge surface; management lives on the Wiki asset page. */
   onAddFiles?: () => void;
   onAddLink?: () => void;
+  /** External draft (e.g. a clicked prompt chip) — dropped into the input
+   *  for editing instead of auto-submitting. */
+  chipDraft?: { text: string; nonce: number } | null;
+  onDraftConsumed?: () => void;
   /** Supervisor plan mode: submits route to the planner instead of the agent. */
 };
 
@@ -42,11 +46,15 @@ export function ChatComposer({
   onImageToKnowledge,
   onAddFiles,
   onAddLink,
+  chipDraft,
+  onDraftConsumed,
 }: ChatComposerProps) {
   return (
     <PromptInputProvider>
       <ChatComposerInner
         agentName={agentName}
+        chipDraft={chipDraft}
+        onDraftConsumed={onDraftConsumed}
         onStop={onStop}
         status={status}
         onSubmit={onSubmit}
@@ -68,6 +76,8 @@ function ChatComposerInner({
   onImageToKnowledge,
   onAddFiles,
   onAddLink,
+  chipDraft,
+  onDraftConsumed,
 }: ChatComposerProps) {
   const controller = usePromptInputController();
   const [mentions, setMentions] = useState<KnowledgeFileInfo[]>([]);
@@ -75,6 +85,17 @@ function ChatComposerInner({
   const [mentionFiles, setMentionFiles] = useState<KnowledgeFileInfo[] | null>(null);
   const [mentionQuery, setMentionQuery] = useState("");
   const mentionRange = useRef<{ start: number; end: number } | null>(null);
+  const consumedNonce = useRef<number | null>(null);
+
+  // Drop an external draft (prompt chip) into the input for editing.
+  useEffect(() => {
+    if (!chipDraft || consumedNonce.current === chipDraft.nonce) return;
+    consumedNonce.current = chipDraft.nonce;
+    controller.textInput.setInput(
+      controller.textInput.value.trim() ? `${controller.textInput.value.trimEnd()} ${chipDraft.text}` : chipDraft.text,
+    );
+    onDraftConsumed?.();
+  }, [chipDraft, controller, onDraftConsumed]);
 
   // Fresh fetch on every popover open — files imported after mount appear
   // without remounting the composer. Typing keeps the popover open and does
@@ -187,7 +208,7 @@ function ChatComposerInner({
               <span className="truncate">{m.originalName}</span>
               <button
                 aria-label={`Remove ${m.originalName}`}
-                className="hover:bg-background/40 shrink-0 rounded-full p-0.5"
+                className="hover:bg-background/40 hit-44 flex size-8 shrink-0 items-center justify-center rounded-full"
                 onClick={() => toggleMention(m)}
                 type="button"
               >
@@ -211,7 +232,7 @@ function ChatComposerInner({
             <PopoverTrigger asChild={true}>
               <Button
                 aria-label="Mention a file"
-                className="size-8 [&_svg]:size-4"
+                className="hit-44 size-8 [&_svg]:size-4"
                 size="icon"
                 title="Mention a file (@)"
                 variant="ghost"
@@ -237,7 +258,7 @@ function ChatComposerInner({
                       onClick={() => pickMention(f)}
                       type="button"
                     >
-                      <span className="text-muted-foreground text-[10px] uppercase">{f.ext}</span>
+                      <span className="text-muted-foreground text-[11px] uppercase">{f.ext}</span>
                       <span className="truncate text-xs">{f.originalName}</span>
                     </button>
                   ))}
@@ -279,7 +300,7 @@ function ChatComposerInner({
               controller.textInput.setInput(cur.trim() ? `${cur.trimEnd()} ${text}` : text);
             }}
           />
-          <SpeechInput className="size-8 [&_svg]:size-4" onTranscriptionChange={handleTranscription} />
+          <SpeechInput className="hit-44 size-8 [&_svg]:size-4" onTranscriptionChange={handleTranscription} />
         </PromptInputTools>
         <PromptInputSubmit onStop={onStop} status={status} />
       </PromptInputFooter>

@@ -88,7 +88,7 @@ function QueryBarChart({ spec }: { spec: ChartSpec }) {
               title={`${labels[i]}: ${fmtNum(v)}`}
             >
               {showValues && (
-                <span className="text-muted-foreground mb-0.5 text-center text-[10px] tabular-nums">
+                <span className="text-muted-foreground mb-0.5 text-center text-[11px] tabular-nums">
                   {compactFmt.format(v)}
                 </span>
               )}
@@ -101,13 +101,13 @@ function QueryBarChart({ spec }: { spec: ChartSpec }) {
         </div>
         <div className="mt-1 flex gap-1">
           {labels.map((l, i) => (
-            <span className="text-muted-foreground w-8 shrink-0 truncate text-center text-[10px]" key={i}>
+            <span className="text-muted-foreground w-8 shrink-0 truncate text-center text-[11px]" key={i}>
               {l}
             </span>
           ))}
         </div>
         {spec.labels.length > CHART_MAX_BARS && (
-          <p className="text-muted-foreground mt-1 text-[10px]">
+          <p className="text-muted-foreground mt-1 text-[11px]">
             showing first {CHART_MAX_BARS} of {spec.labels.length}
           </p>
         )}

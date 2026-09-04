@@ -60,7 +60,7 @@ export function TemplatePicker({ onPick }: { onPick: (text: string) => void }) {
       <PopoverTrigger asChild={true}>
         <Button
           aria-label="Pick a deck template"
-          className="size-8 [&_svg]:size-4"
+          className="hit-44 size-8 [&_svg]:size-4"
           size="icon"
           title="Deck templates"
           variant="ghost"
@@ -72,6 +72,7 @@ export function TemplatePicker({ onPick }: { onPick: (text: string) => void }) {
         <div className="flex items-center gap-2 rounded-sm border px-2 py-1.5">
           <SearchIcon className="text-muted-foreground size-3.5" />
           <input
+            aria-label="Search templates"
             className="placeholder:text-muted-foreground w-full bg-transparent text-xs outline-none"
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search templates…"
@@ -98,11 +99,11 @@ export function TemplatePicker({ onPick }: { onPick: (text: string) => void }) {
                 <span className="flex w-full items-center gap-2">
                   <span className="truncate text-xs font-medium">{t.name}</span>
                   {t.bundled ? (
-                    <span className="text-muted-foreground ml-auto shrink-0 text-[10px] uppercase">built-in</span>
+                    <span className="text-muted-foreground ml-auto shrink-0 text-[11px] uppercase">built-in</span>
                   ) : null}
                 </span>
                 <span className="text-muted-foreground line-clamp-2 text-[11px]">{t.summary}</span>
-                <span className="text-muted-foreground/70 truncate text-[10px]">{t.id}</span>
+                <span className="text-muted-foreground/70 truncate text-[11px]">{t.id}</span>
               </button>
             ))}
           </div>

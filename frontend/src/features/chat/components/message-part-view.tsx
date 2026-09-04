@@ -90,7 +90,7 @@ export function MessagePartView({
           className={`flex items-center gap-1 opacity-60 transition-opacity group-hover:opacity-100 ${isUser ? "justify-end" : ""}`}
         >
           <Button onClick={handleCopy} size="icon" variant="ghost" title="Copy message">
-            {copied ? <CheckIcon className="size-3.5 text-green-500" /> : <CopyIcon className="size-3.5" />}
+            {copied ? <CheckIcon className="size-3.5 text-success" /> : <CopyIcon className="size-3.5" />}
           </Button>
         </div>
       )}

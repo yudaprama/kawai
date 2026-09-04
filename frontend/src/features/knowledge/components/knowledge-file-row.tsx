@@ -75,7 +75,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
   return (
     <div className="bg-card group/file flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
       {inSessionList ? (
-        <CheckIcon className="text-green-500 size-4 shrink-0" />
+        <CheckIcon className="text-success size-4 shrink-0" />
       ) : (
         <FileIcon name={file.originalName} className="size-4 shrink-0" />
       )}

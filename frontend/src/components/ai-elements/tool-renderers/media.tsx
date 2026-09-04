@@ -56,7 +56,7 @@ export function renderMedia(output: unknown): ReactNode {
               className="aspect-video w-full rounded-md object-cover"
             />
             {it.credit && (
-              <span className="absolute inset-x-0 bottom-0 truncate rounded-b-md bg-black/50 px-1.5 py-0.5 text-[10px] text-white">
+              <span className="absolute inset-x-0 bottom-0 truncate rounded-b-md bg-black/50 px-1.5 py-0.5 text-[11px] text-white">
                 {it.credit}
               </span>
             )}

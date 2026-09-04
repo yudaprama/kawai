@@ -1,11 +1,16 @@
 import {
+  BookIcon,
   BrainIcon,
   type CheckIcon,
   DatabaseIcon,
+  FileTextIcon,
+  GlobeIcon,
   HistoryIcon,
   MenuIcon,
   PanelRightIcon,
+  ShieldAlertIcon,
   UploadIcon,
+  XIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -33,6 +38,28 @@ interface AgentPresentation {
 export type { AgentPresentation };
 
 const VIRTUALIZE_THRESHOLD = 50;
+
+/** Icon per confirmation tool family — the card must describe the action
+ *  being approved, not a generic database (critique P1: every confirmation
+ *  used to render as "Import confirmation" with a database icon). */
+function ConfirmationIcon({ tool }: { tool: string }) {
+  const Icon = tool.startsWith("office_")
+    ? FileTextIcon
+    : tool.includes("knowledge") || tool.includes("memory")
+      ? BookIcon
+      : tool.startsWith("analytics") || tool.startsWith("data_")
+        ? DatabaseIcon
+        : tool.includes("web") || tool.includes("search")
+          ? GlobeIcon
+          : tool.includes("binance")
+            ? BrainIcon
+            : ShieldAlertIcon;
+  return (
+    <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
+      <Icon className="size-4" />
+    </span>
+  );
+}
 
 function estimateMessageSize(msg: UIMessage): number {
   const textLen = msg.parts.find((p) => p.type === "text")?.text.length ?? 0;
@@ -78,6 +105,7 @@ export function ConversationPanel({
   onAddFiles,
   onAddLink,
   onOpenTool,
+  sessionsRail,
   headerExtra,
 }: {
   agent: AgentInfo;
@@ -124,10 +152,20 @@ export function ConversationPanel({
   onAddLink?: () => void;
   onOpenTool?: (toolCallId: string) => void;
   onOpenCodeGraph?: (query: string, result: string) => void;
+  /** Persistent sessions rail (xl+) — composed in App with the same
+   *  handlers as SessionHistoryDialog. */
+  sessionsRail?: React.ReactNode;
   headerExtra?: React.ReactNode;
 }) {
   const [forceAll, setForceAll] = useState(false);
+  const [chatErrorDismissed, setChatErrorDismissed] = useState(false);
+  // Prompt chips drop their text into the composer instead of auto-submitting
+  // — power users want to edit before running (critique, Alex red flag).
+  const [chipDraft, setChipDraft] = useState<{ text: string; nonce: number } | null>(null);
   const busy = status === "submitted" || status === "streaming";
+  useEffect(() => {
+    setChatErrorDismissed(false);
+  }, []);
   useEffect(() => {
     if (messages.length <= VIRTUALIZE_THRESHOLD || forceAll) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -214,32 +252,61 @@ export function ConversationPanel({
           {onOpenSessions && (
             <Button
               aria-label="Open session history"
-              className="hidden lg:inline-flex"
+              className="hidden lg:inline-flex xl:hidden"
               onClick={onOpenSessions}
-              size="sm"
+              size="icon"
               title="Session history (⌘K)"
               variant="ghost"
             >
               <HistoryIcon className="size-4" />
-              <span className="hidden xl:inline">Sessions</span>
             </Button>
           )}
         </div>
       </header>
 
       {modelError && (
-        <div className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
+        >
           <span className="min-w-0 flex-1">{modelStatus}</span>
           <Button onClick={onRetryModel} size="sm" variant="outline">
             Retry
           </Button>
         </div>
       )}
-      {chatError && (
-        <div className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 rounded-md border px-3 py-2 text-sm">
-          {chatError}
+      {chatError && !chatErrorDismissed && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
+        >
+          <span className="min-w-0 flex-1">{chatError}</span>
+          <button
+            aria-label="Dismiss error"
+            className="hover:bg-destructive/10 flex size-6 shrink-0 items-center justify-center rounded-sm"
+            onClick={() => setChatErrorDismissed(true)}
+            type="button"
+          >
+            <XIcon className="size-3.5" />
+          </button>
         </div>
       )}
+      {historyError && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
+        >
+          <span className="min-w-0 flex-1">Failed to load history: {historyError}</span>
+          <Button onClick={onRetryHistory} size="sm" variant="outline">
+            Retry
+          </Button>
+        </div>
+      )}
+      {/* Plan sits directly above the conversation it governs — after all
+          system alerts, so alerts never sandwich it. */}
       <PlanProgressPanel
         status={supervisorStatus}
         goal={supervisorGoal}
@@ -248,14 +315,6 @@ export function ConversationPanel({
         finalOutput={supervisorFinalOutput}
         onStop={onStopSupervisor}
       />
-      {historyError && (
-        <div className="text-destructive border-destructive/40 bg-destructive/10 mx-4 mt-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
-          <span className="min-w-0 flex-1">Failed to load history: {historyError}</span>
-          <Button onClick={onRetryHistory} size="sm" variant="outline">
-            Retry
-          </Button>
-        </div>
-      )}
 
       <div className="relative flex min-h-0 flex-1">
         <section
@@ -275,19 +334,20 @@ export function ConversationPanel({
                 <span className="bg-primary/15 text-primary flex size-12 items-center justify-center rounded-xl">
                   <presentation.icon className="size-6" />
                 </span>
-                <h2 className="text-lg font-semibold text-foreground">{agent.name} agent</h2>
-                <p className="-mt-1 text-sm">{agent.description}</p>
+                <p className="max-w-md text-sm">{agent.description}</p>
+                <p className="-mt-1 max-w-md text-xs">
+                  Describe the result you want. Kawai will plan the steps and ask before sensitive actions.
+                </p>
                 {onboarding ? (
                   <div className="mt-3 w-full max-w-sm rounded-lg border border-dashed p-4 text-left">
-                    <p className="text-sm font-medium text-foreground">No data connected yet</p>
-                    <p className="mt-1 text-xs">
-                      Import a CSV / Excel / parquet file or connect a SQLite / Postgres database, then ask things like
-                      &quot;Total sales per category&quot;.
+                    <p className="text-sm font-medium text-foreground">Start with a data source</p>
+                    <p className="mt-1 text-sm">
+                      Import a file or connect a database. Then ask Kawai what you want to learn.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button onClick={onboarding.onImport} size="sm">
                         <UploadIcon className="size-3.5" />
-                        Import data file
+                        Import file
                       </Button>
                       <Button onClick={onboarding.onConnect} size="sm" variant="outline">
                         <DatabaseIcon className="size-3.5" />
@@ -301,7 +361,7 @@ export function ConversationPanel({
                       <button
                         className="border bg-card hover:bg-accent rounded-full px-3 py-1 text-xs"
                         key={prompt}
-                        onClick={() => void onSend(prompt)}
+                        onClick={() => setChipDraft({ text: prompt, nonce: Date.now() })}
                         type="button"
                       >
                         {prompt}
@@ -339,13 +399,18 @@ export function ConversationPanel({
 
           <div className="shrink-0 px-4 pt-2 pb-4">
             {confirmation && (
-              <div className="bg-card mb-2 flex items-center gap-3 rounded-lg border p-3">
-                <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
-                  <DatabaseIcon className="size-4" />
-                </span>
+              <div className="bg-card mb-2 flex items-center gap-3 rounded-xl border p-3 shadow-xs">
+                <ConfirmationIcon tool={confirmation.tool} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">Import confirmation</p>
-                  <p className="text-muted-foreground truncate text-xs" title={confirmation.prompt}>
+                  <p className="text-sm font-medium">
+                    Confirmation required
+                    {confirmation.tool !== "supervisor" && (
+                      <span className="bg-muted ml-2 rounded px-1 py-px font-mono text-[11px] font-normal">
+                        {confirmation.tool}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs" title={confirmation.prompt}>
                     {confirmation.prompt}
                   </p>
                 </div>
@@ -361,6 +426,8 @@ export function ConversationPanel({
             )}
             <ChatComposer
               agentName={agent.name}
+              chipDraft={chipDraft}
+              onDraftConsumed={() => setChipDraft(null)}
               onStop={onStop}
               status={status}
               onSubmit={(text, fileIds) => onSend(text, fileIds)}
@@ -373,12 +440,24 @@ export function ConversationPanel({
         </section>
 
         {/* Canvas: an inline third pane from xl; an overlay drawer over the
-            conversation at md–lg so the chat never loses its reading width. */}
+            conversation at md–lg so the chat never loses its reading width.
+            The lg-only backdrop gives the occluded conversation a tap-out,
+            mirroring the mobile drawer pattern. */}
+        {canvas && canvasOpen && (
+          <button
+            aria-label="Close canvas"
+            className="hidden lg:absolute lg:inset-0 lg:z-10 lg:block xl:hidden"
+            onClick={onToggleCanvas}
+            type="button"
+          />
+        )}
         {canvas && (
-          <div className="bg-background hidden min-h-0 lg:flex lg:absolute lg:inset-y-0 lg:right-0 lg:z-20 lg:w-[min(460px,85%)] lg:shadow-xl xl:static xl:w-auto xl:flex-1 xl:shadow-none">
+          <div className="bg-background hidden min-h-0 lg:flex lg:absolute lg:inset-y-0 lg:right-0 lg:z-20 lg:w-[min(460px,85%)] lg:shadow-xl xl:static xl:w-auto xl:min-w-0 xl:flex-1 xl:shadow-none">
             {canvas}
           </div>
         )}
+
+        {sessionsRail}
       </div>
     </main>
   );

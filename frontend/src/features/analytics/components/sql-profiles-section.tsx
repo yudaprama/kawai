@@ -152,7 +152,7 @@ export function SqlProfilesSection() {
             value={name}
           />
           {name.length > 0 && !NAME_OK.test(name.trim().toLowerCase()) && (
-            <p className="text-xs text-amber-500">
+            <p className="text-xs text-warning">
               Use lowercase letters, numbers, hyphens, or underscores (max 32 characters).
             </p>
           )}
@@ -167,7 +167,7 @@ export function SqlProfilesSection() {
             </Button>
           </div>
           {isRemoteSource(source) && (
-            <p className="text-xs text-amber-500">
+            <p className="text-xs text-warning">
               Remote URLs (Postgres/MySQL) require the analytics-sql build feature; the source will still be saved.
             </p>
           )}
@@ -179,7 +179,7 @@ export function SqlProfilesSection() {
           </div>
         </div>
       )}
-      {error && <p className="px-1 pb-2 text-xs text-red-400">{error}</p>}
+      {error && <p className="px-1 pb-2 text-xs text-destructive">{error}</p>}
       {!loaded ? (
         <div className="text-muted-foreground flex items-center gap-2 px-1 text-xs">
           <Spinner className="size-3" /> Loading…
@@ -230,7 +230,7 @@ export function SqlProfilesSection() {
                 </div>
               </div>
               {test?.name === p.name && (
-                <p className={`mt-1 text-xs ${test.ok ? "text-green-600" : "text-red-400"}`}>{test.message}</p>
+                <p className={`mt-1 text-xs ${test.ok ? "text-success" : "text-destructive"}`}>{test.message}</p>
               )}
             </li>
           ))}

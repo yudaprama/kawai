@@ -3,6 +3,7 @@ import {
   BotIcon,
   BriefcaseIcon,
   CheckIcon,
+  PlusIcon,
   LogOutIcon,
   MonitorIcon,
   MoonIcon,
@@ -53,7 +54,7 @@ const AGENT_META: Record<string, AgentPresentation> = {
   "builtin.analytics": {
     icon: BarChart3Icon,
     subtitle: "csv · parquet · excel",
-    prompts: ["Total sales by category this month", "Rata-rata transaksi di atas $500", "Top 10 produk by pendapatan"],
+    prompts: ["Total sales by category this month", "Average transaction above $500", "Top 10 products by revenue"],
   },
 };
 
@@ -96,6 +97,7 @@ export function AssetsRail({
   onSelectAsset,
   onToggle,
   onLogout,
+  onNewTask,
 }: {
   /** Open asset workspace (center pane replaces chat); null = chat view. */
   assetView: AssetViewId | null;
@@ -104,6 +106,7 @@ export function AssetsRail({
   onSelectAsset: (id: AssetViewId) => void;
   onToggle: () => void;
   onLogout: () => void;
+  onNewTask: () => void;
 }) {
   return (
     <aside
@@ -126,9 +129,23 @@ export function AssetsRail({
         </Button>
       </div>
 
+      <div className={`px-2 ${collapsed ? "pt-2 pb-1.5" : "pt-3 pb-2"}`}>
+        <Button
+          aria-label="New Task"
+          className={collapsed ? "w-full" : "w-full justify-start gap-2.5"}
+          onClick={onNewTask}
+          size={collapsed ? "icon" : "default"}
+          title="New Task"
+          variant="default"
+        >
+          <PlusIcon className="size-4" />
+          {!collapsed && <span>New Task</span>}
+        </Button>
+      </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!collapsed && (
-          <p className="px-3 pt-6 pb-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+          <p className="px-3 pt-4 pb-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
             Assets
           </p>
         )}
@@ -141,7 +158,7 @@ export function AssetsRail({
               <button
                 className={`flex w-full items-center rounded-lg text-left transition-colors ${
                   collapsed ? "justify-center p-2" : "gap-2.5 px-2.5 py-2"
-                } ${active ? "bg-[var(--tea-color-bg-brand-default)] text-[var(--tea-color-text-on-bg-brand-default)]" : "hover:bg-[var(--tea-color-bg-secondary-default)]"}`}
+                } ${active ? "bg-primary text-primary-foreground" : "hover:bg-[var(--tea-color-bg-secondary-default)]"}`}
                 key={asset.id}
                 onClick={() => onSelectAsset(asset.id)}
                 title={`${asset.label} · ${asset.subtitle}`}
@@ -149,7 +166,7 @@ export function AssetsRail({
               >
                 <span
                   className={`flex size-7 shrink-0 items-center justify-center rounded-lg ${
-                    active ? "bg-background/60" : "bg-muted"
+                    active ? "bg-background/20" : "bg-muted"
                   }`}
                 >
                   <Icon className="size-[15px]" />
@@ -166,8 +183,7 @@ export function AssetsRail({
         </nav>
       </div>
 
-      <div className={`mt-auto border-t p-3 ${collapsed ? "flex flex-col items-center gap-1.5 p-1.5" : "space-y-2"}`}
-      >
+      <div className={`mt-auto border-t p-3 ${collapsed ? "flex flex-col items-center gap-1.5 p-1.5" : "space-y-2"}`}>
         <div className={`flex items-center gap-2.5 ${collapsed ? "flex-col" : "w-full"}`}>
           <span
             className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"

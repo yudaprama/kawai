@@ -27,7 +27,7 @@ import {
 import { useTheme } from "@/hooks/use-theme";
 import { Button } from "@/components/ui/button";
 
-import { type GraphEdge, type GraphNode, nodeColor, nodeGlows, nodeRadius, VIEWPORT_H, VIEWPORT_W, ZOOM_MAX, ZOOM_MIN } from "./memoryGraphLayout";
+import { type GraphEdge, type GraphNode, ENTITY_COLOR, MEMORY_COLOR, nodeGlows, nodeRadius, VIEWPORT_H, VIEWPORT_W, ZOOM_MAX, ZOOM_MIN } from "./memoryGraphLayout";
 import { seedSvgLayout } from "./seedSvgLayout";
 import { useSvgForceLayout, WORKER_SUPPORTED } from "./useSvgForceLayout";
 
@@ -157,6 +157,21 @@ export function MemoryGraph({ nodes, edges, emptyHint, fill, showLabels, onReady
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const [hovered, setHovered] = useState<GraphNode | null>(null);
+
+  // Graph palette derives from the CSS token layer so theme changes flow
+  // automatically; the static layout constants are the SSR/worker fallback.
+  const palette = useMemo(() => {
+    const v = (name: string, fallback: string): string =>
+      getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+    return {
+      memory: v("--muted-foreground", MEMORY_COLOR),
+      entity: v("--primary", ENTITY_COLOR),
+      edge: v("--muted-foreground", isDark ? "#cbd5e1" : "#475569"),
+      nodeRest: v("--background", isDark ? "#ffffff" : "#e2e8f0"),
+      nodeHover: v("--foreground", isDark ? "#0f172a" : "#1e293b"),
+      label: v("--foreground", isDark ? "#e2e8f0" : "#334155"),
+    };
+  }, [isDark]);
 
   // Fire `onReady` at most once across this component's lifetime. The latest
   // callback is held in a ref so `fireReady` stays stable (the SVG layout hook
@@ -483,11 +498,11 @@ export function MemoryGraph({ nodes, edges, emptyHint, fill, showLabels, onReady
         </div>
         <div className="flex items-center gap-3">
           <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "#94A3B8" }} />
+            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: palette.memory }} />
             Memory
           </span>
           <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: "#A78BFA" }} />
+            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: palette.entity }} />
             Entity
           </span>
           <Button
@@ -516,7 +531,7 @@ export function MemoryGraph({ nodes, edges, emptyHint, fill, showLabels, onReady
         data-testid="memory-graph-svg">
         {/* Pan / zoom group — drag the background to pan, scroll to zoom. */}
         <g transform={`translate(${view.tx} ${view.ty}) scale(${view.scale})`}>
-          <g stroke={isDark ? "#cbd5e1" : "#475569"} strokeWidth={isDark ? 0.6 : 1.2} opacity={0.7}>
+          <g stroke={palette.edge} strokeWidth={isDark ? 0.6 : 1.2} opacity={0.7}>
             {sim.edges.map(([ai, bi], idx) => {
               // Only draw edges whose endpoints are both mounted yet.
               if (ai >= svgVisible || bi >= svgVisible) return null;
@@ -539,7 +554,7 @@ export function MemoryGraph({ nodes, edges, emptyHint, fill, showLabels, onReady
           <g>
             {sim.sim.slice(0, svgVisible).map((n, i) => {
               const r = nodeRadius(n);
-              const fill = nodeColor(n);
+              const fill = n.kind === "entity" ? palette.entity : palette.memory;
               const isHover = hovered?.id === n.id;
               // Entities glow; memories stay flat so the structure pops.
               const glow = nodeGlows(n) ? `drop-shadow(0 0 ${isHover ? 7 : 4}px ${fill})` : undefined;
@@ -553,7 +568,7 @@ export function MemoryGraph({ nodes, edges, emptyHint, fill, showLabels, onReady
                   cy={n.y}
                   r={isHover ? r + 2 : r}
                   fill={fill}
-                  stroke={isHover ? (isDark ? "#0f172a" : "#1e293b") : isDark ? "#ffffff" : "#e2e8f0"}
+                  stroke={isHover ? palette.nodeHover : palette.nodeRest}
                   strokeWidth={isHover ? 1.4 : 0.8}
                   style={{ cursor: grabbing ? "grabbing" : "pointer", filter: glow }}
                   onPointerDown={(e) => onNodePointerDown(e, n)}
@@ -587,7 +602,7 @@ export function MemoryGraph({ nodes, edges, emptyHint, fill, showLabels, onReady
                     y={n.y + nodeRadius(n) + 12}
                     textAnchor="middle"
                     fontSize={13}
-                    fill={isDark ? "#e2e8f0" : "#334155"}
+                    fill={palette.label}
                     style={{ pointerEvents: "none", userSelect: "none" }}>
                     {text}
                   </text>

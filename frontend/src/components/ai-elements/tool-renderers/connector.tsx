@@ -45,7 +45,7 @@ export function renderConnectorTools(output: unknown): ReactNode {
                 {str(t.name) ?? "unknown"}
               </span>
               {t.app && (
-                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
                   {t.app}
                 </span>
               )}

@@ -20,6 +20,7 @@ import { SqlSourcesAssetPage } from "@/features/assets/pages/sql-sources-page";
 import { CanvasPanel } from "@/features/chat/components/canvas-panel";
 import { ConversationPanel } from "@/features/chat/components/conversation-panel";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
+import { SessionsRail } from "@/features/chat/components/sessions-rail";
 
 export default function App() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -69,12 +70,15 @@ export default function App() {
     },
     onTitleGenerated: () => chat.refreshSessions(),
   });
-  const activeConfirmation = supervisor.pendingConfirmation
+  const pendingConfirmation = supervisor.pendingConfirmation;
+  const activeConfirmation = pendingConfirmation
     ? {
-        streamId: supervisor.pendingConfirmation.streamId,
-        stepId: supervisor.pendingConfirmation.stepId,
-        tool: "supervisor",
-        prompt: supervisor.pendingConfirmation.description || supervisor.pendingConfirmation.task,
+        streamId: pendingConfirmation.streamId,
+        stepId: pendingConfirmation.stepId,
+        // Real tool from the executing step — the confirmation card must
+        // describe the action being approved, not a hardcoded placeholder.
+        tool: supervisor.steps.find((s) => s.stepId === pendingConfirmation.stepId)?.tool || "supervisor",
+        prompt: pendingConfirmation.description || pendingConfirmation.task,
         acceptText: "Approve",
         declineText: "Reject",
       }
@@ -217,45 +221,42 @@ export default function App() {
   // plainly). Data comes from the same app state the chat uses, so switching
   // views never re-fetches or resets chat. Tool results do NOT live here —
   // they render on the canvas (see CanvasPanel).
-  const assetWorkspace = assetView === "wiki" ? (
-    <WikiAssetPage
-      confirmDeleteId={ka.confirmDeleteId}
-      files={ka.knowledge.files}
-      importing={ka.importing}
-      loaded={ka.knowledge.loaded}
-      sessionId={chat.sessionId}
-      onAdd={ka.addToSession}
-      onBack={() => setAssetView(null)}
-      onDelete={ka.deleteFile}
-      onImport={() => void ka.addKnowledgeFiles()}
-      onRemove={ka.removeFromSession}
-      onRetry={ka.retryIndex}
-    />
-  ) : assetView === "memory" ? (
-    <MemoryAssetPage sessions={[...chat.sessions, ...chat.archivedSessions]} onBack={() => setAssetView(null)} />
-  ) : assetView === "sources" ? (
-    <SqlSourcesAssetPage onBack={() => setAssetView(null)} />
-  ) : assetView === "skills" ? (
-    <SkillsAssetPage onBack={() => setAssetView(null)} />
-  ) : assetView === "code" ? (
-    <CodeAssetPage
-      initialQuery={codeGraphSeed?.query}
-      initialResult={codeGraphSeed?.result}
-      onBack={() => {
-        setCodeGraphSeed(null);
-        setAssetView(null);
-      }}
-    />
-  ) : null;
+  const assetWorkspace =
+    assetView === "wiki" ? (
+      <WikiAssetPage
+        confirmDeleteId={ka.confirmDeleteId}
+        files={ka.knowledge.files}
+        importing={ka.importing}
+        loaded={ka.knowledge.loaded}
+        sessionId={chat.sessionId}
+        onAdd={ka.addToSession}
+        onBack={() => setAssetView(null)}
+        onDelete={ka.deleteFile}
+        onImport={() => void ka.addKnowledgeFiles()}
+        onRemove={ka.removeFromSession}
+        onRetry={ka.retryIndex}
+      />
+    ) : assetView === "memory" ? (
+      <MemoryAssetPage sessions={[...chat.sessions, ...chat.archivedSessions]} onBack={() => setAssetView(null)} />
+    ) : assetView === "sources" ? (
+      <SqlSourcesAssetPage onBack={() => setAssetView(null)} />
+    ) : assetView === "skills" ? (
+      <SkillsAssetPage onBack={() => setAssetView(null)} />
+    ) : assetView === "code" ? (
+      <CodeAssetPage
+        initialQuery={codeGraphSeed?.query}
+        initialResult={codeGraphSeed?.result}
+        onBack={() => {
+          setCodeGraphSeed(null);
+          setAssetView(null);
+        }}
+      />
+    ) : null;
 
   // Canvas — output-only pane: tool results and document previews. Knowledge
   // is input; it lives in the composer's attachment (@) menu + the Wiki page.
   const canvas = (
-    <CanvasPanel
-      messages={chat.messages}
-      toolCallId={toolWorkbenchId}
-      onCloseTool={() => setToolWorkbenchId(null)}
-    />
+    <CanvasPanel messages={chat.messages} toolCallId={toolWorkbenchId} onCloseTool={() => setToolWorkbenchId(null)} />
   );
 
   return (
@@ -271,6 +272,11 @@ export default function App() {
           }}
           onToggle={() => setAgentsRail((v) => !v)}
           onLogout={() => void chat.logout()}
+          onNewTask={() => {
+            setAssetView(null);
+            setToolWorkbenchId(null);
+            void chat.newChat();
+          }}
         />
       </div>
 
@@ -320,6 +326,18 @@ export default function App() {
             setAssetView("code");
           }}
           headerExtra={<NotificationCenter />}
+          sessionsRail={
+            <SessionsRail
+              activeSessionId={chat.sessionId}
+              archivedSessions={chat.archivedSessions}
+              busy={busy}
+              groupedSessions={chat.groupedSessions}
+              onDeleteSession={(id) => void chat.deleteSession(id)}
+              onArchiveSession={(id, archived) => chat.setSessionArchived(id, archived)}
+              onRenameSession={(id, title) => void chat.renameSession(id, title)}
+              onSelectSession={(id) => void chat.selectSession(id)}
+            />
+          }
           canvasOpen={canvasOpen}
           onToggleCanvas={() => setCanvasOpen((v) => !v)}
           canvas={canvasOpen ? canvas : null}
@@ -348,6 +366,12 @@ export default function App() {
                 }}
                 onToggle={() => setMobileDrawer(null)}
                 onLogout={() => void chat.logout()}
+                onNewTask={() => {
+                  setAssetView(null);
+                  setToolWorkbenchId(null);
+                  setMobileDrawer(null);
+                  void chat.newChat();
+                }}
               />
             </div>
           )}

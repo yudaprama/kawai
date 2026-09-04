@@ -205,6 +205,8 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -320,5 +322,35 @@ body {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* Status feedback keeps a calm motion state instead of freezing mid-frame:
+     spinners rotate slowly, pulses fade gently — "still working" stays legible. */
+  .animate-spin {
+    animation-duration: 2.5s !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  .animate-pulse {
+    animation-duration: 2.5s !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  .animate-ping {
+    animation: none !important;
+    opacity: 0.4 !important;
+  }
+}
+
+/* Expands a small control's pointer hit area to ~44px without changing its
+   visual footprint — for icon buttons reachable in mobile drawers. */
+@utility hit-44 {
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: inherit;
   }
 }

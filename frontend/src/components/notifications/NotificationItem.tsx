@@ -36,7 +36,7 @@ export function NotificationItemCard({ item, onRead }: { item: NotificationItemT
       <div className="flex items-center gap-2">
         <span
           className={cn(
-            "inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium",
+            "inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium",
             CATEGORY_COLORS[item.category] ?? "bg-muted text-muted-foreground",
           )}
         >

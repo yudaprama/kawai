@@ -111,7 +111,7 @@ export const ParamChips = ({ names, tone }: { names: string[]; tone: "req" | "op
         <span
           key={p}
           className={cn(
-            "rounded px-1.5 py-0.5 font-mono text-[10px]",
+            "rounded px-1.5 py-0.5 font-mono text-[11px]",
             tone === "req"
               ? "bg-primary/10 text-primary"
               : "bg-muted text-muted-foreground"
@@ -139,7 +139,7 @@ export const MetricGrid = ({ items }: { items: Metric[] }) => (
           <div
             className={cn(
               "text-xs tabular-nums",
-              m.up ? "text-green-600" : "text-red-600"
+              m.up ? "text-success" : "text-destructive"
             )}
           >
             {m.delta}
@@ -165,7 +165,7 @@ export const Spark = ({ points, up }: { points: number[]; up: boolean }) => {
     <svg
       viewBox={`0 0 ${w} ${h}`}
       preserveAspectRatio="none"
-      className={cn("h-16 w-full", up ? "text-green-600" : "text-red-600")}
+      className={cn("h-16 w-full", up ? "text-success" : "text-destructive")}
       aria-hidden
     >
       <polyline
@@ -199,7 +199,7 @@ export function ChartCard({ series, label }: { series: Series; label?: string })
         <span
           className={cn(
             "text-xs tabular-nums",
-            up ? "text-green-600" : "text-red-600"
+            up ? "text-success" : "text-destructive"
           )}
         >
           {up ? "+" : ""}
@@ -208,7 +208,7 @@ export function ChartCard({ series, label }: { series: Series; label?: string })
       </div>
       <Spark points={points} up={up} />
       {times && times.length >= 2 && (
-        <div className="flex justify-between text-muted-foreground text-[10px]">
+        <div className="flex justify-between text-muted-foreground text-[11px]">
           <span>{times[0]}</span>
           <span>{times[times.length - 1]}</span>
         </div>

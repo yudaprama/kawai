@@ -1,263 +1,82 @@
-# Kawai — Visual Layout per Agent
+# Kawai — Visual Design
 
-Kerangka layar sama untuk semua agent: **rail agent (kiri) · chat (tengah) · sesi (kanan)**,
-plus **panel konteks (canvas)** di kanan chat — hanya untuk agent yang punya sumber data.
-Yang membedakan antar agent: ikon & subtitle di rail, pil pertanyaan awal, isi canvas,
-dan bentuk kartu hasil alat di dalam chat.
-
-> Diagram sengaja dibuat lebar — buka di layar/editor lebar agar tidak melipat.
-
-Legenda: `▸` agent aktif · `[think]` mode thinking · `[canvas]` toggle panel konteks ·
-`[sess]` toggle panel sesi · `[@]` rujuk file · `[mic]` dikte suara.
-
----
-
-## 1. 💼 Office Agent — docs · pdf · sheets · chat
-
-Canvas aktif, dua tab: **Sesi ini** dan **Perpustakaan**. File yang ditempel ke sesi
-bisa dicari agent sepanjang percakapan itu.
+The app runs in **auto mode**: every request goes through the supervisor planner
+against the merged all-domain tool registry. There is no agent picker. The
+layout is identical for every task:
 
 ```text
-┌────────────────────┬──────────────────────────────────────────────────────┬────────────────────────────────────┬──────────────────────────┐
-│kawai         [<]   │Office agent       [think] [canvas] [sess]            │Knowledge        Link  + Files      │SESSIONS            New   │
-├────────────────────┼──────────────────────────────────────────────────────┼────────────────────────────────────┼──────────────────────────┤
-│                    │                                                      │                                    │[cari sesi...]            │
-│AGENTS              │                                                      │                                    │                          │
-│▸ Office            │                                                      │                                    │HARI INI                  │
-│  Binance           │                                                      │                                    │  ● Analisa PDF           │
-│  Analytics         │                                                      │                                    │  ● Laporan mingguan      │
-│                    │                 ╭──────────────────────────╮         │                                    │KEMARIN                   │
-│                    │                 │ Ringkas PDF laporan ini  │         │                                    │  ○ Riset harga           │
-│                    │                 ╰──────────────────────────╯         │                                    │  ○ Draft invoice         │
-│                    │                                                      │                                    │                          │
-│                    │Baik — ini ringkasan isi laporan:                     │                                    │                          │
-│                    │Pendapatan Q2 naik 12%, didorong                      │[Sesi ini]  Perpustakaan            │                          │
-│                    │segmen ritel. Margin bersih 18%.                      │                                    │                          │
-│                    │                                                      │SESI INI                            │                          │
-│                    │╭──────────────────────────────╮                      │laporan.pdf    ✓ siap   buka ✕      │                          │
-│                    ││ alat: pdf_extract · selesai  │                      │anggaran.xlsx  … mengindeks         │                          │
-│                    │╰──────────────────────────────╯                      │                                    │                          │
-│                    │                                                      │"Agent dapat mencari dokumen"       │                          │
-│                    │• Rekomendasi: ekspansi gudang                        │"ini di sepanjang percakapan."      │                          │
-│                    │  regional ditunda ke Q4.                             │                                    │PERPUSTAKAAN              │
-│                    │                                                      │kontrak.docx   +  buka  ✕           │                          │
-│                    │                 ╭──────────────────────────╮         │data2024.xlsx  +  buka  ✕           │                          │
-│                    │                 │ @laporan.pdf          ×  │         │catatan.txt    +  buka  ✕           │                          │
-│                    │                 │ Tanya apa saja…          │         │                                    │                          │
-│                    │                 │ [@] [mic]        [kirim] │         │                                    │                          │
-│                    │                 ╰──────────────────────────╯         │                                    │                          │
-│D  demo  [tema]     │                                                      │                                    │                          │
-└────────────────────┴──────────────────────────────────────────────────────┴────────────────────────────────────┴──────────────────────────┘
+┌──────────┬──────────────────────────────────────────┬─────────────┬──────────┐
+│ ASSETS   │ header: session title · model status ·   │             │ SESSIONS │
+│ RAIL     │         thinking · canvas · history      │   CHAT      │ (xl+)    │
+│ (left)   ├──────────────────────────────────────────┤   (center)  │ search + │
+│          │  Plan panel (while a plan runs)          │             │ grouped  │
+│ New Task │  Conversation (max-w-2xl)                │   CANVAS    │ list,    │
+│ Wiki     │  Composer (capsule, max-w-2xl)           │   (xl+)     │ rename / │
+│ Code     │                                          │             │ archive  │
+│ Skills   │                                          │             │          │
+│ Memory   │                                          │             │          │
+│ Databases│                                          │             │          │
+├──────────┴──────────────────────────────────────────┴─────────────┴──────────┤
+│ rail footer: avatar · user · sign out · appearance (light/dark/system)        │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Catatan tampilan:
+## Panes
 
-- Layar awal: pil saran `( Summarize this PDF ) ( Create a weekly report ) ( Merge these invoices )`.
-- Tab Perpustakaan = semua dokumen terimpor; tombol `+` menempelkan file ke sesi.
-  Sebelum ada sesi, tab ini berlabel **Documents**.
-- Header canvas punya dua aksi global: **Link** (tempel transkrip YouTube) dan **+ Files**
-  (impor docx/xlsx/pptx/pdf/gambar).
-- Baris file punya status (`✓ siap`, `… mengindeks`) + aksi `+ buka ✕`.
+- **Assets rail (left, 190–210px, collapsible).** New Task plus five asset
+  workspaces (Wiki, Code, Skills, Memory, Databases). An asset view replaces
+  the center pane; Esc or Back returns to chat. Below `lg` the rail becomes an
+  overlay drawer opened from the header menu.
+- **Chat (center).** Header carries the session title, model warm-up status,
+  the Thinking toggle, the Canvas toggle, and session history (below `xl`; at
+  `xl+` the persistent sessions rail replaces that button). The plan panel
+  renders above the conversation while a plan executes: progress rail,
+  per-step status icons, tool badges, artifacts (files are clickable and open
+  the preview), and the final output disclosure. Empty state shows the agent
+  icon, description, and prompt chips that drop their text into the composer
+  for editing. Analytics adds an onboarding card (import file / connect
+  database) when no data sources exist.
+- **Canvas (tool output, optional).** Toggle from the header (⌘2). At `xl+` it
+  is a third inline pane; from `lg` to `xl` it overlays the conversation as a
+  drawer so the chat keeps its reading width. Hosts tool workbenches and
+  document previews.
+- **Sessions.** At `xl+` a persistent 224px rail with search, date grouping,
+  rename, archive, and two-click delete; below `xl` the same list lives in the
+  ⌘K dialog. Both surfaces share the row component and filter logic.
 
----
+## Composer
 
-## 2. 📈 Binance Agent — crypto · market data · TA
+Capsule input (max-w-2xl) with attachment chips on top. Left tools: `@` file
+mention (knowledge search + import entry points), template picker, speech
+input. Right: submit; while streaming it becomes stop. ArrowUp recalls the
+last user message; Esc stops a running plan (except inside dialogs and other
+editable contexts outside the composer).
 
-Tanpa canvas sama sekali: tidak ada toggle `[canvas]`, tidak ada drawer knowledge.
-Chat melebar mengambil semua ruang antara rail dan panel sesi.
+## Confirmations
 
-```text
-┌────────────────────┬──────────────────────────────────────────────────────────────────────────────────┬──────────────────────────┐
-│kawai         [<]   │Binance agent          [think] [sess]                                             │SESSIONS            New   │
-├────────────────────┼──────────────────────────────────────────────────────────────────────────────────┼──────────────────────────┤
-│                    │                                                                                  │[cari sesi...]            │
-│AGENTS              │                                                                                  │                          │
-│  Office            │                                                                                  │HARI INI                  │
-│▸ Binance           │                                                                                  │  ● Analisa BTC daily     │
-│  Analytics         │                            ╭───────────────────────────╮                         │  ● RSI ETH               │
-│                    │                            │ Cek harga BTC sekarang    │                         │                          │
-│                    │                            ╰───────────────────────────╯                         │KEMARIN                   │
-│                    │                                                                                  │  ○ Depth SOLUSDT         │
-│                    │BTCUSDT bergerak di $67.420, naik                                                 │                          │
-│                    │+2,1% dalam 24 jam. Volume tinggi                                                 │                          │
-│                    │pada sesi Asia.                                                                   │ARSIP (2)  ▸              │
-│                    │                                                                                  │                          │
-│                    │╭─ alat: binance_price ─────────────────────────────╮                             │                          │
-│                    ││ last 67,420.5   bid 67,418.0   ask 67,423.0       │                             │                          │
-│                    ││ perubahan 24 jam: +2.1%   volume: 28,451 BTC      │                             │                          │
-│                    │╰───────────────────────────────────────────────────╯                             │                          │
-│                    │                                                                                  │                          │
-│                    │╭─ alat: binance_ta_analyze ────────────────────────╮                             │                          │
-│                    ││ RSI(14) 61.8   MACD +12.4   EMA20 > EMA50         │                             │                          │
-│                    ││ sinyal: momentum bullish moderat                  │                             │                          │
-│                    │╰───────────────────────────────────────────────────╯                             │                          │
-│                    │                                                                                  │                          │
-│                    │╭───────────────────────────────────────────────────╮                             │                          │
-│                    ││ Tanya apa saja…                                   │                             │                          │
-│                    ││ [@] [mic]                               [kirim]   │                             │                          │
-│                    │╰───────────────────────────────────────────────────╯                             │                          │
-│D  demo  [tema]     │                                                                                  │                          │
-└────────────────────┴──────────────────────────────────────────────────────────────────────────────────┴──────────────────────────┘
-```
+Sensitive plan steps pause for an in-composer confirmation card: icon and tool
+badge derived from the executing step's tool, the action prompt (two lines),
+Approve / Reject. Buttons disable while the plan is busy.
 
-Catatan tampilan:
+## Visual language
 
-- Layar awal: pil saran `( Analyze BTCUSDT on the daily ) ( RSI and MACD for ETHUSDT )
-  ( Order book depth for SOLUSDT )`.
-- Hasil pasar dirender sebagai kartu ringkas di alur chat — pasangan label–nilai,
-  tanpa tabel berat.
+- **Tokens:** Tea Design tokens (tea-component default palette) aliased into
+  shadcn semantic variables (`src/index.css`); `.dark` overrides only the raw
+  `--tea-*` values. Step-state and status colors use token classes
+  (`text-success`, `text-primary`, `text-destructive`) — never raw palette
+  hex classes.
+- **Typography:** system sans (`--tea-font-family-default`), monospace only
+  for tool names, handles, and data. Conversation measure is `max-w-2xl`.
+- **Radii/elevation:** `--radius: 0.375rem` base; cards `rounded-xl` with
+  `shadow-xs`; pills only for small controls (status pills, chips).
+- **Motion:** press feedback `scale(0.97)` under `prefers-reduced-motion:
+  no-preference`; progress bar animates width 500ms ease-out; all animation
+  collapses under `prefers-reduced-motion: reduce`.
+- **Iconography:** lucide, 16px stroke icons; icon-only controls always carry
+  `aria-label` + `title`.
 
----
+## Mobile (< lg)
 
-## 3. 📊 Analytics Agent — csv · parquet · excel
-
-Canvas paling lengkap: tiga tab — **Sesi ini**, **Perpustakaan**, **Database**.
-Satu-satunya agent dengan kartu onboarding data.
-
-```text
-┌────────────────────┬──────────────────────────────────────────────────────┬────────────────────────────────────┬──────────────────────────┐
-│kawai         [<]   │Analytics agent     [think] [canvas] [sess]           │Knowledge        Link  + Files      │SESSIONS            New   │
-├────────────────────┼──────────────────────────────────────────────────────┼────────────────────────────────────┼──────────────────────────┤
-│                    │                                                      │                                    │[cari sesi...]            │
-│AGENTS              │                                                      │                                    │                          │
-│  Office            │                                                      │                                    │HARI INI                  │
-│  Binance           │                                                      │                                    │  ● Penjualan agustus     │
-│▸ Analytics         │                        ╭────────────────────────────╮│                                    │                          │
-│                    │                        │ Total penjualan per        ││KEMARIN                             │                          │
-│                    │                        │ kategori bulan ini?        ││  ○ Top pelanggan                   │                          │
-│                    │                        ╰────────────────────────────╯│                                    │                          │
-│                    │                                                      │[Sesi ini] [Perpustakaan] [Database]│                          │
-│                    │Berikut breakdown penjualan:                          │                                    │DATABASE                  │
-│                    │                                                      │                                    │postgres-prod   ✓ tersambu│
-│                    │╭─ data_query ── Chart | Table ── ↓CSV ╮              │sqlite-lokal    ✓ tersambung        │                          │
-│                    ││ Elektronik  ███████████████  12.4k   │              │                                    │                          │
-│                    ││ Fashion     █████████        7.9k    │              │[+ profil baru]                     │                          │
-│                    ││ Olahraga    ██████          5.1k     │              │                                    │                          │
-│                    ││ Mainan      ███             2.8k     │              │                                    │                          │
-│                    ││ 1.204 baris · diagregasi · batas 50  │              │                                    │                          │
-│                    │╰──────────────────────────────────────╯              │                                    │                          │
-│                    │                                                      │                                    │                          │
-│                    │╭──────────────────────────────────────╮              │                                    │                          │
-│                    ││ @penjualan.csv  @target.xlsx    ×   │               │                                    │                          │
-│                    ││ Tanya apa saja…                      │              │                                    │                          │
-│                    ││ [@] [mic]                  [stop ■] │               │                                    │                          │
-│                    │╰──────────────────────────────────────╯              │                                    │                          │
-│D  demo  [tema]     │                                                      │                                    │                          │
-└────────────────────┴──────────────────────────────────────────────────────┴────────────────────────────────────┴──────────────────────────┘
-```
-
-Catatan tampilan:
-
-- Kartu hasil `data_query`: toggle **Chart | Table** kiri atas, unduh **CSV** kanan,
-  grafik batang hijau (bar tertinggi solid, sisanya transparan), kaki catatan
-  `1.204 baris · diagregasi · batas 50`.
-- Saat streaming, tombol kirim composer berubah menjadi **stop ■**.
-- Tab **Database** mengelola profil SQL: tambah/edit/uji/hapus + status `✓ tersambung`.
-
-### Layar awal (belum ada percakapan)
-
-```text
-┌────────────────────────────────────────────────────────────────┐
-│                                                                │
-│                         ╭──────╮                               │
-│                         │ ikon │                               │
-│                         ╰──────╯                               │
-│                                                                │
-│                       Analytics agent                          │
-│      Analisis data tabular lewat pertanyaan bahasa natural.    │
-│                                                                │
-│   ( Total penjualan per kategori bulan ini )                   │
-│   ( Rata-rata transaksi di atas $500 )                         │
-│   ( Top 10 produk by pendapatan )                              │
-│                                                                │
-└────────────────────────────────────────────────────────────────┘
-```
-
-### Kartu onboarding (agent data, belum ada file & database)
-
-Muncul menggantikan pil saran hanya bila: belum ada sesi DAN belum ada file tabular
-(csv/xlsx/parquet) DAN belum ada profil database.
-
-```text
-┌──────────────────────────────────────────────────────────────────────┐
-│                                                                      │
-│   ┌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐                  │
-│   ╎  Belum ada sumber data tersambung               ╎                │
-│   ╎                                                 ╎                │
-│   ╎  Impor file CSV / Excel / parquet, atau         ╎                │
-│   ╎  hubungkan database SQLite / Postgres, lalu     ╎                │
-│   ╎  tanyakan apa saja seperti "Total penjualan     ╎                │
-│   ╎  per kategori".                                 ╎                │
-│   ╎                                                 ╎                │
-│   ╎   [ impor file ]      [ hubungkan database ]    ╎                │
-│   └╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┘                  │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-Tombol **hubungkan database** membuka canvas langsung melompat ke tab Database.
-
-### Anatomi composer (semua agent)
-
-```text
-┌────────────────────────────────────────────────────────────────────────┐
-│  chip file terlampir:  (@ penjualan.csv  ×)  (@ target.xlsx  ×)        │
-├────────────────────────────────────────────────────────────────────────┤
-│  Ketik pesan untuk agent…                                      ↑       │
-│  (panah atas = ulangi pesan terakhir)                                  │
-├────────────────────────────────────────────────────────────────────────┤
-│  [@ rujuk file]  [ mic dikte ]                      [ kirim ➤ ]        │
-│  saat streaming tombol kanan berubah jadi        [ stop ■ ]            │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 4. Mobile (< lebar tablet)
-
-Semua panel samping menjadi drawer overlay; backdrop gelap, ketuk luar atau Esc untuk menutup.
-
-```text
-┌──────────────────────────────┬──────┬──────────────────────────────────┐
-│┌──────────────────────────┐  │      │┌─────────────────────────┐       │
-││ ☰  Nama sesi    T S ▦ ▤ │   │      ││ ☰  Nama sesi        …  │        │
-│├──────────────────────────┤  │      │├─────────────────────────┤       │
-││                          │  │      ││▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓│       │
-││      percakapan chat     │  │      ││▓▓  Knowledge      [×] ▓│        │
-││      memakai lebar penuh │  │      ││▓▓ ┌──────────────────┐ ▓│       │
-││                          │  │      ││▓▓ │ Sesi ini         │ ▓│       │
-││ ╭──────────────────────╮ │  │      ││▓▓ │ Perpustakaan ◄   │ ▓│       │
-││ │ Ketik pesan…     ➤ │ │    │      ││▓▓ │ Database         │ ▓│       │
-││ ╰──────────────────────╯ │  │      ││▓▓ └──────────────────┘ ▓│       │
-│└──────────────────────────┘  │      │└─────────────────────────┘       │
-│ drawer agents (dari kiri)    │      │ drawer sessions/knowledge        │
-│ tampil sebagai overlay di    │      │ latar belakang digelapkan,       │
-│ layar penuh saat <768px      │      │ ketuk luar untuk menutup         │
-└──────────────────────────────┴──────┴──────────────────────────────────┘
-```
-
----
-
-## 5. Ringkasan perbedaan antar agent
-
-| Elemen layout              | 💼 Office           | 📈 Binance           | 📊 Analytics            |
-|----------------------------|---------------------|----------------------|-------------------------|
-| Ikon rail                  | Briefcase           | TrendingUp           | BarChart3               |
-| Subtitle                   | docs · pdf · sheets | crypto · market · TA | csv · parquet · excel   |
-| Pil saran                  | EN — kerja dokumen  | EN — pasar crypto    | ID — pertanyaan data    |
-| Panel konteks (canvas)     | ✔ — 2 tab           | — tidak ada          | ✔ — 3 tab               |
-| Tab Database               | —                   | —                    | ✔                       |
-| Kartu onboarding data      | —                   | —                    | ✔ saat kosong           |
-| Drawer knowledge di mobile | ✔                   | —                    | ✔                       |
-| Kartu hasil khas           | ekstrak/ringkas dok | harga · depth · TA   | chart/tabel + unduh CSV |
-
-Identik di semua agent: header chat satu baris (judul sesi + status model + toggles),
-composer kapsul terpusat maksimal ±672px, panel sesi 240px dengan grup tanggal +
-bagian Arsip lipat, footer rail (avatar inisial + user + tema), serta kartu konfirmasi
-impor yang muncul di atas composer saat diperlukan.
-
-## 6. Agent tak dikenal
-
-Agent dari katalog backend yang belum ada di peta frontend tampil generik:
-ikon bot, subtitle "agent", tanpa pil saran, tanpa canvas — pola layarnya seperti Binance
-(chat penuh).
+Assets rail becomes a left overlay drawer (dark backdrop, Esc/tap-out to
+close). Sessions move to the ⌘K dialog entry point in the header; canvas
+stays hidden below `lg`.

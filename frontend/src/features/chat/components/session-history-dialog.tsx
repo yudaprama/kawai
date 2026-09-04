@@ -111,7 +111,7 @@ export function SessionHistoryDialog({
         <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto px-3 py-3">
           {filteredGroups.map((group) => (
             <div key={group.label}>
-              <p className="text-muted-foreground px-2 pb-1 font-mono text-[10px] tracking-wider uppercase">
+              <p className="text-muted-foreground px-2 pb-1 font-mono text-[11px] tracking-wider uppercase">
                 {group.label}
               </p>
               <div className="flex flex-col gap-0.5">
@@ -157,7 +157,7 @@ export function SessionHistoryDialog({
             <div>
               <button
                 aria-expanded={archiveOpen}
-                className="text-muted-foreground hover:text-foreground flex w-full items-center gap-1.5 px-2 pb-1 text-[10px] font-medium tracking-wider uppercase"
+                className="text-muted-foreground hover:text-foreground flex w-full items-center gap-1.5 px-2 pb-1 text-[11px] font-medium tracking-wider uppercase"
                 onClick={() => setArchiveOpen((v) => !v)}
                 type="button"
               >

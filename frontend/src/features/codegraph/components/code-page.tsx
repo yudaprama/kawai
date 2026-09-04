@@ -19,13 +19,13 @@ function StatusBadge({ status }: { status: CodegraphStatusResult | null }) {
   if (!status) return null;
   if (!status.available) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400">
+      <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-xs text-warning">
         <AlertCircleIcon className="size-3" /> not available
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-600 dark:text-emerald-400">
+    <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-xs text-success">
       <CheckIcon className="size-3" /> {status.backend} {status.version ? `· ${status.version}` : ""}
     </span>
   );
@@ -150,7 +150,7 @@ export function CodeAssetPage({
           />
         </div>
         {isFeatureOff && (
-          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          <div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-xs text-warning">
             CodeGraph not compiled in. Build:{" "}
             <code className="rounded bg-muted px-1">cargo check --features codegraph</code> +{" "}
             <code className="rounded bg-muted px-1">bun tauri dev -- --features codegraph</code>. Or set{" "}
@@ -203,7 +203,7 @@ export function CodeAssetPage({
                     </div>
                     <div className="line-clamp-3 text-xs text-muted-foreground">{s.message}</div>
                     {isAvailable === false && (
-                      <div className="text-xs text-amber-600 dark:text-amber-400">
+                      <div className="text-xs text-warning">
                         Binary not found on PATH — install codegraph CLI or set CODEGRAPH_BIN.
                       </div>
                     )}

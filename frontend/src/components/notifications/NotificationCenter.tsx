@@ -26,7 +26,7 @@ export function NotificationCenter() {
         >
           <BellIcon className="size-4" />
           {unreadCount > 0 && (
-            <span className="bg-primary text-primary-foreground absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full text-[10px] font-medium">
+            <span className="bg-primary text-primary-foreground absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full text-[11px] font-medium">
               {unreadCount > 99 ? "99+" : unreadCount}
             </span>
           )}
