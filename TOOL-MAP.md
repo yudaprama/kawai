@@ -159,7 +159,19 @@ Full inventory: `grep -rhoE 'const NAME: &'"'"'static str = "[a-z_0-9]+"' crates
 - Credentials: `KAWAI_TURSO_DB_URL` / `KAWAI_TURSO_AUTH_TOKEN` (dev) → baked read-only
   constants from `kawai-vault/constants` (distribution default). Token MUST be read-only.
 
-## 9. Adding a tool — checklist
+## 9. Seeder & drift gate
+
+- **Seed** (insert + update, idempotent upsert; `--prune` menghapus baris basi):
+  `src-tauri/examples/seed_tool_catalog.rs` — butuh write token (`KAWAI_TURSO_WRITE_TOKEN`, tidak pernah baked):
+  ```sh
+  KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \
+    cargo run --example seed_tool_catalog --features litert,binance,codegraph -- --prune
+  ```
+- **Drift check** (read-only, tanpa secret — kredensial dari baked constants):
+  `src-tauri/examples/tool_catalog_drift_check.rs` — wajib lulus di CI (gate tool-catalog coverage).
+- Kedua example berbagi satu komposisi toolset: `src-tauri/examples/catalog_composition.rs` (jangan duplikasi logika di sana).
+
+## 10. Adding a tool — checklist
 
 1. Implement `AgentTool` in the owning crate (or a generated-tools category if it's a public
    API wrapper — regenerate via xtask, don't hand-write those).

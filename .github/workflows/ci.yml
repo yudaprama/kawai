@@ -403,6 +403,20 @@ jobs:
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
         run: cargo run --example planner_smoke --features litert,binance
 
+      # Tool-catalog drift gate: the remote Turso catalog must cover the
+      # merged supervisor toolset exactly. Read-only — credentials come from
+      # the baked constants in kawai-vault/constants (env override optional).
+      # After a legit tool change, re-seed: examples/seed_tool_catalog.rs.
+      - name: tool_catalog_drift_check (planner catalog coverage)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_DATA_DIR: /tmp/kawai-ci
+          KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
+        run: cargo run --example tool_catalog_drift_check --features litert,binance,codegraph
+
       # ── Smoke 4 (macOS): keyless Binance market data + TA. Geo-blocked hosts
       #    SKIP (exit 0), not fail — see the example header.
       - name: binance_smoke (keyless market data + TA)

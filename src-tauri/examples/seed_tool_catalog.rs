@@ -8,6 +8,8 @@
 //!
 //! Embeddings use the same `build_providers_from_env()` chain the app uses
 //! at plan time, so writer and reader share one vector space on this machine.
+//! Toolset composition lives in `catalog_composition.rs` (shared with
+//! `tool_catalog_drift_check.rs` — exactly one copy).
 //!
 //! Requires:
 //!   --features litert,binance,codegraph
@@ -15,19 +17,17 @@
 //!                             every feature that the runtime registry can
 //!                             include MUST be on here, or its tools silently
 //!                             drop out of the catalog)
-//!   KAWAI_TURSO_DB_URL       (from .env)
-//!   KAWAI_TURSO_WRITE_TOKEN  (full-access token — NOT the client's
-//!                             read-only one; generate with
+//!   KAWAI_TURSO_DB_URL       (from .env; env overrides the baked read-only
+//!                             constants — only needed if the DB differs)
+//!   KAWAI_TURSO_WRITE_TOKEN  (full-access token — NEVER baked; generate with
 //!                             `turso db tokens create kawai-tool-catalog`)
-//!
-//! A stub SQL profile is always injected so `data_tables`/`data_import`
-//! register in the catalog (the analytics SQL tools only join the toolset
-//! when `sql_profiles` is non-empty; the stub is never called at seed time —
-//! the runtime bakes each user's real profiles per turn).
 //!
 //! Usage:
 //!   KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \
 //!     cargo run --example seed_tool_catalog --features litert,binance,codegraph -- --prune
+
+#[path = "catalog_composition.rs"]
+mod composition;
 
 fn main() {
     kawai_lib::auth::load_dotenv();
@@ -49,97 +49,30 @@ fn main() {
 }
 
 #[cfg(feature = "litert")]
-const RPC_ONLY_TOOLS: &[&str] = &[
-    // GraphRAG tools are RPC-only (commands.rs/web.rs) — never dispatched by
-    // the supervisor, so they must not appear in the planner's catalog.
-    "graph_search",
-    "graph_list",
-];
-
-#[cfg(feature = "litert")]
-const SUBAGENT_TOOLS: &[&str] = &["deep_write", "draft_document", "plan_task", "plan_revise"];
-
-#[cfg(feature = "litert")]
 async fn run() -> Result<(), String> {
+    use kawai_tool_catalog::RemoteConfig;
+
     let prune = std::env::args().any(|a| a == "--prune");
 
     let url = std::env::var("KAWAI_TURSO_DB_URL")
         .ok()
         .filter(|v| !v.trim().is_empty())
-        .ok_or("KAWAI_TURSO_DB_URL not set (is .env loaded?)")?;
+        .or_else(|| {
+            let baked = kawai_constants::turso::get_db_url();
+            (!baked.trim().is_empty()).then_some(baked)
+        })
+        .ok_or("KAWAI_TURSO_DB_URL not set and no baked constant")?;
     let write_token = std::env::var("KAWAI_TURSO_WRITE_TOKEN")
         .ok()
         .filter(|v| !v.trim().is_empty())
         .ok_or("KAWAI_TURSO_WRITE_TOKEN not set — generate a full-access token:\n  turso db tokens create kawai-tool-catalog")?;
 
-    // Same composition root as the planner's `auto` catalog: office first,
-    // then the specialists fill in their exclusive tools (first-wins).
-    let remote_configured = remote_llm::RemoteLlm::from_env().is_some();
-    // Stub profile so the analytics SQL snapshot tools (data_tables,
-    // data_import) register — see module docs. Never invoked at seed time.
-    let mut sql_profiles = kawai_analytics::effective_profiles("seed").await;
-    sql_profiles.push(kawai_agent_contract::SqlProfile {
-        name: "seed-stub".into(),
-        source: "postgres://seed-stub.invalid/db".into(),
-    });
-    let context = kawai_agent_contract::AgentContext {
-        user_id: "seed",
-        session_id: 0,
-        sql_profiles: Some(sql_profiles.as_slice()),
-    };
-
-    let mut merged: Option<kawai_tools::ToolSet> = None;
-    for (label, set) in [
-        (
-            "office",
-            kawai_lib::agent_registry::office_tools(&context, remote_configured),
-        ),
-        (
-            "presentation",
-            kawai_lib::agent_registry::presentation_tools_for_supervisor(&context, remote_configured),
-        ),
-        (
-            "binance",
-            kawai_lib::agent_registry::binance_tools_for_supervisor(&context, remote_configured),
-        ),
-        (
-            "analytics",
-            kawai_lib::agent_registry::analytics_tools_for_supervisor(&context, remote_configured),
-        ),
-    ]
-    .into_iter()
-    {
-        // Fail fast on a missing domain toolset — a silently skipped domain
-        // is exactly how the catalog drifted out of coverage before.
-        let set = set.ok_or_else(|| format!(
-            "domain toolset `{label}` could not be built — check that its cargo feature is enabled \
-             (expected: --features litert,binance,codegraph) and its env is present"
-        ))?;
-        match &mut merged {
-            Some(base) => base.merge(&mut { set }),
-            None => merged = Some(set),
-        }
-    }
-    let toolset = merged.ok_or("no domain toolset could be built (check env/vault)")?;
-    let mut definitions: Vec<kawai_tools::ToolDefinition> =
-        toolset.get_tool_definitions().to_vec();
-
-    // RPC-only tools ride some builders' toolsets but can never be dispatched
-    // by the supervisor — keep them out of the planner's search space.
-    let before = definitions.len();
-    definitions.retain(|d| !RPC_ONLY_TOOLS.contains(&d.name.as_str()));
-    if definitions.len() != before {
-        println!(
-            "[seed] excluded {} RPC-only tool(s): {:?}",
-            before - definitions.len(),
-            RPC_ONLY_TOOLS
-        );
-    }
-
+    let definitions = composition::merged_definitions().await?;
     let names: Vec<String> = definitions.iter().map(|d| d.name.clone()).collect();
     println!(
-        "[seed] merged catalog: {} tools (remote LLM configured: {remote_configured}, prune: {prune})",
-        names.len()
+        "[seed] merged catalog: {} tools (remote LLM configured: {}, prune: {prune})",
+        names.len(),
+        remote_llm::RemoteLlm::from_env().is_some()
     );
 
     // Embed name + description with the app's provider chain so the seeded
@@ -168,24 +101,19 @@ async fn run() -> Result<(), String> {
         .into_iter()
         .zip(embeddings)
         .map(|(def, embedding)| {
-            let kind = if SUBAGENT_TOOLS.contains(&def.name.as_str()) {
-                "subagent"
-            } else {
-                "pure"
-            };
             (
                 kawai_tool_catalog::CatalogTool {
+                    kind: composition::catalog_kind(&def.name).to_string(),
                     name: def.name,
                     description: def.description,
                     input_schema: def.parameters.to_string(),
-                    kind: kind.to_string(),
                 },
                 embedding,
             )
         })
         .collect();
 
-    let cfg = kawai_tool_catalog::RemoteConfig { url, auth_token: write_token };
+    let cfg = RemoteConfig { url, auth_token: write_token };
     let catalog = kawai_tool_catalog::Catalog::open_default(&cfg).await?;
     let synced = catalog.sync().await.unwrap_or(0);
     println!("[seed] replica sync: {synced} frames applied");
