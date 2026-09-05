@@ -15,8 +15,10 @@ export function MessagePartView({
   message: UIMessage;
   onOpenTool?: (toolCallId: string) => void;
 }) {
-  const textPart = message.parts.find((p) => p.type === "text");
-  const { handleCopy, copied } = useCopyButton(textPart?.text ?? "");
+  // A supervisor assistant message carries MULTIPLE text parts (the goal
+  // line, then the final output) — render them all, not just the first.
+  const textParts = message.parts.filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text");
+  const { handleCopy, copied } = useCopyButton(textParts.map((p) => p.text).join("\n\n"));
   const isUser = message.role === "user";
 
   const toolParts = message.parts.filter((p): p is Extract<typeof p, { type: `tool-${string}` }> =>
@@ -80,12 +82,14 @@ export function MessagePartView({
           <ReasoningContent>{reasoningPart.text}</ReasoningContent>
         </Reasoning>
       )}
-      {textPart && textPart.text.length > 0 && (
-        <MessageContent>
-          <MessageResponse>{textPart.text}</MessageResponse>
-        </MessageContent>
+      {textParts.map((part, i) =>
+        part.text.length > 0 ? (
+          <MessageContent key={`text-${i}`}>
+            <MessageResponse>{part.text}</MessageResponse>
+          </MessageContent>
+        ) : null,
       )}
-      {textPart && textPart.text.length > 0 && (
+      {textParts.some((p) => p.text.length > 0) && (
         <div
           className={`flex items-center gap-1 opacity-60 transition-opacity group-hover:opacity-100 ${isUser ? "justify-end" : ""}`}
         >
