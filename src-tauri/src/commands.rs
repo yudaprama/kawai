@@ -325,7 +325,12 @@ pub async fn append_chat_message(
     let user_id = session_user_id(&session)?;
     logic::append_chat_message(&user_id, session_id, &role, &content)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| {
+            // History writes are best-effort on the caller side (fire-and-
+            // forget persist) — without this log a rejection is invisible.
+            eprintln!("[append_chat_message] failed user={user_id} session={session_id} role={role} len={}: {e}", content.len());
+            e.to_string()
+        })
 }
 
 /// Authenticated RPC: delete a chat session and its messages.
