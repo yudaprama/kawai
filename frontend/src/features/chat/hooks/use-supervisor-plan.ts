@@ -85,11 +85,25 @@ export async function createSupervisorPlan(goal: string, sessionId: number, agen
 }
 
 /** Persist one message to the session's SQLite history (best-effort). */
-async function persist(sessionId: number, role: "user" | "assistant", content: string): Promise<void> {
+function sanitizeForIpc(s: string | null): string | null {
+  if (!s) return s;
+  // Tauri IPC serializes invoke args as JSON: control characters and
+  // unpaired surrogates (PDF extraction can emit both) make the Rust side
+  // reject the command, silently losing the write.
+  // eslint-disable-next-line no-control-regex
+  return s
+    .replace(/\p{Cc}/gu, " ")
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
+}
+
+async function persist(sessionId: number, role: "user" | "assistant", rawContent: string): Promise<void> {
+  const content = sanitizeForIpc(rawContent) ?? rawContent;
   try {
     await call("append_chat_message", { sessionId, role, content });
-  } catch {
-    // History write failures must never break an executing plan.
+  } catch (err) {
+    // History write failures must never break an executing plan — but they
+    // must be visible; a silent rejection here loses the whole turn record.
+    console.error("[supervisor] persist failed:", err);
   }
 }
 
@@ -271,7 +285,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                     id: s.stepId,
                     tool: s.tool,
                     state: s.state,
-                    output: s.output,
+                    // Cap embedded outputs — full results live in the plan
+                    // progress panel / artifacts, not in chat history.
+                    output: s.output ? s.output.slice(0, 500) : s.output,
                   })),
                   output: ev.finalOutput ?? null,
                 };
@@ -345,10 +361,21 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       setMessages((prev) => [...prev, userMessage]);
       void persist(sessionId, "user", goal);
 
-      const plan = await createSupervisorPlan(goal, sessionId, agentId);
+      // A plan_task rejection must surface like any other failure — an
+      // unhandled rejection here silently eats the whole turn.
+      let plan: unknown;
+      try {
+        plan = await createSupervisorPlan(goal, sessionId, agentId);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        patch({ status: "failed", error: message });
+        void persist(sessionId, "assistant", `Plan error: ${message}`);
+        callbacks?.onPlanFailed?.(goal, message);
+        return;
+      }
       runPlan({ plan, sessionId, agentId });
     },
-    [runPlan, patch],
+    [runPlan, patch, callbacks],
   );
 
   const respond = useCallback(

@@ -149,6 +149,7 @@ with exact commands, §4 the post-fix verification block.
 
 ## Landmines (things that already bit us)
 
+- **HARD RULE — never tell the user to rebuild, and never blame a stale binary.** The user ALWAYS retests on a freshly rebuilt binary — every reported failure is already post-rebuild. Never ask "pastikan rebuild dulu", never suggest the running binary may be outdated, never use "stale build" as a hypothesis or caveat. If a fix didn't change the behavior, the bug is REAL and still present: find the next actual cause in the code instead.
 - **`@types/hast` must stay pinned to 3.0.4.** `resolutions` in `package.json` forces it across the tree. 3.0.5 rewrites `Properties.className` to `string[]` and bun nests per-package copies (under `mdast-util-to-hast`, `@shikijs/*`, …), which SPLITS the `hast` module identity: `mdast-util-to-hast`'s module augmentation (`RootContentMap.raw`) stops applying to the copy `streamdown/lib/markdown.ts` sees → TS2367/TS2339 across the markdown renderer. If you bump it, `bun install --force` and re-check `find node_modules -path '*node_modules/@types/hast' -maxdepth 5 -type d | wc -l` is 1.
 - **Frontend deps must be installed before `tauri dev`/`tauri build`.** `bun install` in `kawai/` (Vite root is `frontend/`; deps live at the repo package root). CI already does this.
 - **Vite `server.port: 1420` is `strictPort`** (Tauri `devUrl` expects exactly this port) and `watch.ignored` covers `src-tauri/**` — don't let vite watch the Rust side (rebuild loop).

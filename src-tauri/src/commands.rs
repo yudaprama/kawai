@@ -771,7 +771,14 @@ pub async fn plan_task(
     let registry = crate::supervisor::build_supervisor_registry(
         &user_id, session_id, &agent_id,
     ).await.ok_or_else(|| "supervisor toolset unavailable".to_string())?;
-    let (plan, usage) = crate::supervisor::plan_task(&user_id, &goal, &registry).await?;
+    let (plan, usage) = crate::supervisor::plan_task(&user_id, &goal, &registry)
+        .await
+        .map_err(|e| {
+            // Planner failures are otherwise invisible — the loop's only log
+            // line is the per-round `served by` (see supervisor.rs).
+            eprintln!("[plan_task] failed for user={user_id}: {e}");
+            e
+        })?;
 
     // Fair billing (usage-based debit via Supabase RPC) is dormant under
     // local auth — no session token is held to present to the RPC.
@@ -1225,11 +1232,23 @@ pub async fn execute_supervisor_plan(
         return Err(format!("session {session_id} not found"));
     }
 
-    let agent_id = plan
+    // LLM-written plans omit `agentId` (tool-dispatched steps never dispatch
+    // by agent), so an empty/unknown step agent must NOT be passed through —
+    // the specialist-only builders would return None. Rebuild the same merged
+    // `auto` catalog plan_task planned against; dispatch keys off the tool
+    // name, and a real specialist id still narrows as intended.
+    let step_agent = plan
         .steps
         .first()
         .map(|s| s.agent_id.as_str())
-        .unwrap_or(crate::agent_registry::OFFICE_AGENT_ID);
+        .unwrap_or("");
+    let agent_id = match step_agent {
+        crate::agent_registry::OFFICE_AGENT_ID
+        | crate::agent_registry::PRESENTATION_AGENT_ID
+        | crate::agent_registry::BINANCE_AGENT_ID
+        | crate::agent_registry::ANALYTICS_AGENT_ID => step_agent,
+        _ => crate::supervisor::AUTO_AGENT_ID,
+    };
     let tool_registry = crate::supervisor::build_supervisor_registry(
         &user_id,
         session_id,
@@ -1238,7 +1257,11 @@ pub async fn execute_supervisor_plan(
     .await
     .ok_or_else(|| "supervisor toolset unavailable".to_string())?;
 
+    let step_count = plan.steps.len();
     let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone());
+    // Telemetry: this transport previously had zero logging, which made
+    // scheduler anomalies (e.g. zero-step "successes") invisible.
+    eprintln!("[supervisor] executing plan ({step_count} steps) for user={user_id} session={session_id}");
     let mut stream = Box::pin(stream);
     loop {
         tokio::select! {

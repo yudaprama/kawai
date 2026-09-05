@@ -85,8 +85,12 @@ fn plan_step_infos(plan: &kawai_router::TaskPlan) -> Vec<PlanStepInfo> {
 }
 
 /// Progress events emitted by the supervisor as it executes a plan.
+/// `rename_all` renames VARIANTS; `rename_all_fields` (serde 1.0.185+) is
+/// required to also camelCase the struct-variant FIELDS — without it the
+/// wire format was snake_case (step_id, final_output) while the frontend
+/// reads camelCase, silently dropping every multi-word field.
 #[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SupervisorEvent {
     PlanStarted {
         goal: String,
@@ -379,18 +383,40 @@ pub async fn plan_task(
                 match parse_supervisor_plan(&raw, registry) {
                     Ok(plan) => return Ok((plan, usage)),
                     Err(plan_err) => {
-                        // One corrective round with validator feedback and
-                        // fuzzy name suggestions — then give up.
-                        if repairs_used == 0 {
+                        // One corrective round with validator feedback, fuzzy
+                        // name suggestions, and the schemas of every tool the
+                        // rejected plan used — most rejections are missing or
+                        // malformed arguments, and the model cannot fix them
+                        // without the exact required properties in view.
+                        if repairs_used < 2 {
                             repairs_used += 1;
                             let suggestions = suggest_tools(registry, &plan_err);
+                            let used_tools: Vec<String> = v
+                                .get("steps")
+                                .and_then(|s| s.as_array())
+                                .map(|steps| {
+                                    steps
+                                        .iter()
+                                        .filter_map(|st| st.get("tool").and_then(|t| t.as_str()))
+                                        .map(|t| t.to_string())
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            let schemas = registry.catalog_lines_for(&used_tools);
                             materials.push_str(&format!(
                                 "\n<plan-rejected>\nYour plan was rejected by the validator: {plan_err}\n{}\
-                                 Respond ONLY with the corrected plan JSON.\n</plan-rejected>\n",
+                                 {}\
+                                 Respond ONLY with the corrected plan JSON. Keep every required \
+                                 argument from the input schemas below.\n{schemas}</plan-rejected>\n",
                                 if suggestions.is_empty() {
                                     String::new()
                                 } else {
                                     format!("Did you mean one of: {}?\n", suggestions.join(", "))
+                                },
+                                if schemas.is_empty() {
+                                    String::new()
+                                } else {
+                                    format!("Schemas of the tools your plan used:\n")
                                 },
                             ));
                             continue;
@@ -460,12 +486,20 @@ const PLAN_SEARCH_ROUNDS: usize = 2;
 /// Hard cap on total LLM calls (search rounds + corrections + violations).
 const PLAN_MAX_CALLS: usize = 6;
 /// Cross-cutting tools retrieval misses disproportionately — always visible.
-const PLAN_CORE_TOOLS: [&str; 5] = [
-    "web_search",
-    "memory_search",
-    "artifact_recall",
+/// All of them are DIRECTLY dispatchable toolset tools. Internal-dispatch
+/// subagent tools (deep_write, draft_document, plan_task, plan_revise,
+/// artifact_recall) are deliberately absent — the scheduler executes steps
+/// via `ToolSet::execute`, where those tools return an "unavailable here"
+/// error text instead of doing their work.
+const PLAN_CORE_TOOLS: [&str; 2] = ["web_search", "memory_search"];
+/// Subagent/internal-dispatch tools: excluded from the supervisor registry
+/// entirely so the planner can neither see nor plan against them.
+const NON_DISPATCHABLE_TOOLS: [&str; 5] = [
     "deep_write",
     "draft_document",
+    "plan_task",
+    "plan_revise",
+    "artifact_recall",
 ];
 /// Sync budget — an unreachable Turso must never stall planning.
 const PLAN_SEARCH_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
@@ -645,16 +679,32 @@ pub async fn build_supervisor_registry(
  ) -> Option<ToolRegistry> {
     let toolset = build_supervisor_toolset(user_id, session_id, agent_id).await?;
 
-    // Convert definitions → ToolMeta.
-    let definitions = toolset.get_tool_definitions().to_vec();
+    // Convert definitions → ToolMeta, and keep each tool's input schema at
+    // hand for dispatch-time coercion of resolved artifact references.
+    // Internal-dispatch subagent tools are dropped: they are engine
+    // capabilities, not scheduler-executable steps (ToolSet::execute on them
+    // returns an "unavailable here" error text as a fake success).
+    let definitions: Vec<_> = toolset
+        .get_tool_definitions()
+        .iter()
+        .filter(|d| !NON_DISPATCHABLE_TOOLS.contains(&d.name.as_str()))
+        .cloned()
+        .collect();
+    let schemas: std::collections::HashMap<String, serde_json::Value> = definitions
+        .iter()
+        .map(|d| (d.name.clone(), d.parameters.clone()))
+        .collect();
+    let schemas = std::sync::Arc::new(schemas);
 
     // Build the dispatch closure — captures a cloned ToolSet.
     let dispatch_toolset = toolset;
     let dispatch: ToolDispatch = Arc::new(move |call: ToolCall| {
         let toolset = dispatch_toolset.clone();
+        let schemas = Arc::clone(&schemas);
         Box::pin(async move {
             let name = call.step.dispatch_key().to_string();
-            let args = call.args.to_string();
+            let args = coerce_resolved_args(&name, &call.args, schemas.get(&name));
+            let args = args.to_string();
             let result = toolset.execute(&name, args).await;
 
             let output = result.text().unwrap_or("").to_string();
@@ -692,6 +742,78 @@ pub async fn build_supervisor_registry(
 }
 
 /// Convert structured tool envelopes into scheduler artifacts.
+/// Coerce artifact-reference resolutions that don't match the tool's input
+/// schema. The planner wires a producer step's list output (e.g.
+/// `office_list_files`' `files` array) into a scalar consumer argument
+/// (`fileId`) — deterministic plans have no select mechanism, so the intent
+/// is unambiguous: use the file the session provides. Only string-typed
+/// schema properties are coerced, and only from shapes the resolver can
+/// produce (file objects with `id`/`handle`, or a list of them).
+fn coerce_resolved_args(
+    tool: &str,
+    args: &serde_json::Value,
+    schema: Option<&serde_json::Value>,
+) -> serde_json::Value {
+    let Some(schema) = schema else { return args.clone(); };
+    let Some(properties) = schema.get("properties").and_then(|v| v.as_object()) else {
+        return args.clone();
+    };
+    let Some(arg_obj) = args.as_object() else { return args.clone(); };
+    let wants_string = |prop_schema: &serde_json::Value| {
+        match prop_schema.get("type") {
+            Some(serde_json::Value::String(t)) => t == "string",
+            Some(serde_json::Value::Array(types)) => types
+                .iter()
+                .filter_map(|v| v.as_str())
+                .any(|t| t == "string"),
+            _ => false,
+        }
+    };
+    let pick_id = |v: &serde_json::Value| -> Option<serde_json::Value> {
+        // Prefer the PDF entry in a files list when the consumer is a pdf_
+        // tool; otherwise the first entry.
+        let candidate = |e: &serde_json::Value| -> Option<serde_json::Value> {
+            // Only file-like objects are unambiguous; plain strings are left
+            // alone so list→scalar mistakes fail loudly at the tool instead
+            // of silently taking the first element.
+            match e {
+                serde_json::Value::Object(o) => o
+                    .get("id")
+                    .or_else(|| o.get("handle"))
+                    .filter(|v| v.is_string())
+                    .cloned(),
+                _ => None,
+            }
+        };
+        match v {
+            serde_json::Value::Array(items) => {
+                let chosen = if tool.starts_with("pdf_") {
+                    items
+                        .iter()
+                        .find(|e| e.get("ext").and_then(|x| x.as_str()) == Some("pdf"))
+                        .or_else(|| items.first())
+                } else {
+                    items.first()
+                };
+                chosen.and_then(candidate)
+            }
+            serde_json::Value::Object(_) => candidate(v),
+            _ => None,
+        }
+    };
+    let mut out = arg_obj.clone();
+    for (key, value) in arg_obj {
+        let Some(prop_schema) = properties.get(key) else { continue };
+        if !wants_string(prop_schema) || value.is_string() {
+            continue;
+        }
+        if let Some(coerced) = pick_id(value) {
+            out.insert(key.clone(), coerced);
+        }
+    }
+    serde_json::Value::Object(out)
+}
+
 fn tool_output_artifacts(output: &str) -> Vec<kawai_router::Artifact> {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(output) else {
         return vec![kawai_router::Artifact::text(output.to_string())];
@@ -722,6 +844,43 @@ pub type PendingConfirmations = Arc<Mutex<HashMap<String, tokio::sync::oneshot::
 
 pub fn confirmation_key(stream_id: &str, step_id: &str) -> String {
     format!("{stream_id}\u{1f}{step_id}")
+}
+
+/// Convert one scheduler event to its transport form, logging it on the way
+/// through — per-step lifecycle telemetry for this otherwise-silent path.
+fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> SupervisorEvent {
+    let label = match &event {
+        kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
+            format!("stepStarted step={step_id} tool={tool}")
+        }
+        kawai_router::SchedulerEvent::ConfirmationRequested { step_id, .. } => {
+            format!("confirmationRequested step={step_id}")
+        }
+        kawai_router::SchedulerEvent::StepCompleted { step_id, output } => {
+            format!("stepCompleted step={step_id} output_len={}", output.len())
+        }
+        kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => {
+            format!("stepFailed step={step_id} error={:?}", error)
+        }
+        kawai_router::SchedulerEvent::StepSkipped { step_id, reason } => {
+            format!("stepSkipped step={step_id} reason={reason}")
+        }
+    };
+    eprintln!("[supervisor] {label}");
+    match event {
+        kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
+            SupervisorEvent::StepStarted { step_id, tool }
+        }
+        kawai_router::SchedulerEvent::ConfirmationRequested { step_id, task, description } => {
+            SupervisorEvent::ConfirmationRequested { stream_id: stream_id.to_string(), step_id, task, description }
+        }
+        kawai_router::SchedulerEvent::StepCompleted { step_id, output } => {
+            let artifacts = artifact_infos(&output);
+            SupervisorEvent::StepCompleted { step_id, output, artifacts }
+        }
+        kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => SupervisorEvent::StepFailed { step_id, error },
+        kawai_router::SchedulerEvent::StepSkipped { step_id, reason } => SupervisorEvent::StepSkipped { step_id, reason },
+    }
 }
 
 pub fn execute_plan_stream(
@@ -795,13 +954,7 @@ pub fn execute_plan_stream_with_cancel(
         let result = loop {
             tokio::select! {
                 Some(event) = event_rx.recv() => {
-                    yield match event {
-                        kawai_router::SchedulerEvent::StepStarted { step_id, tool } => SupervisorEvent::StepStarted { step_id, tool },
-                        kawai_router::SchedulerEvent::ConfirmationRequested { step_id, task, description } => SupervisorEvent::ConfirmationRequested { stream_id: event_stream_id.clone(), step_id, task, description },
-                        kawai_router::SchedulerEvent::StepCompleted { step_id, output } => SupervisorEvent::StepCompleted { step_id: step_id.clone(), output: output.clone(), artifacts: artifact_infos(&output) },
-                        kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => SupervisorEvent::StepFailed { step_id, error },
-                        kawai_router::SchedulerEvent::StepSkipped { step_id, reason } => SupervisorEvent::StepSkipped { step_id, reason },
-                    };
+                    yield log_scheduler_event(&event_stream_id, event);
                 }
                 result = &mut execution => break result,
             }
@@ -810,19 +963,29 @@ pub fn execute_plan_stream_with_cancel(
         // otherwise late stepCompleted/stepFailed events are lost and the UI
         // shows a terminal row without its per-step lifecycle.
         while let Ok(event) = event_rx.try_recv() {
-            yield match event {
-                kawai_router::SchedulerEvent::StepStarted { step_id, tool } => SupervisorEvent::StepStarted { step_id, tool },
-                kawai_router::SchedulerEvent::ConfirmationRequested { step_id, task, description } => SupervisorEvent::ConfirmationRequested { stream_id: event_stream_id.clone(), step_id, task, description },
-                kawai_router::SchedulerEvent::StepCompleted { step_id, output } => SupervisorEvent::StepCompleted { step_id: step_id.clone(), output: output.clone(), artifacts: artifact_infos(&output) },
-                kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => SupervisorEvent::StepFailed { step_id, error },
-                kawai_router::SchedulerEvent::StepSkipped { step_id, reason } => SupervisorEvent::StepSkipped { step_id, reason },
-            };
+            yield log_scheduler_event(&event_stream_id, event);
         }
         match result {
             Ok(result) => {
+                eprintln!(
+                    "[supervisor] plan terminal: results={} all_completed={} final_output={:?}",
+                    result.results.len(),
+                    result.all_completed(),
+                    result.final_output().map(|o| o.len()),
+                );
                 // Per-step lifecycle events were forwarded live above. Emit
                 // only the terminal plan event here to avoid duplicate UI rows.
-                if result.all_completed() {
+                // An EMPTY result set must not count as success —
+                // `[].all(completed)` is trivially true in Rust.
+                if result.results.is_empty() {
+                    eprintln!(
+                        "[supervisor] plan '{}' produced no step results (steps in plan: {step_count})",
+                        plan.goal
+                    );
+                    yield SupervisorEvent::PlanFailed {
+                        error: "scheduler produced no step results".into(),
+                    };
+                } else if result.all_completed() {
                     yield SupervisorEvent::PlanCompleted {
                         final_output: result.final_output().map(String::from),
                     };
@@ -1076,5 +1239,48 @@ mod tests {
         assert!(kinds.contains(&"stepCompleted"), "{kinds:?}");
         assert!(kinds.contains(&"planCompleted"), "{kinds:?}");
         assert!(!kinds.contains(&"other"), "{kinds:?}");
+    }
+}
+
+#[cfg(test)]
+mod coerce_tests {
+    use super::coerce_resolved_args;
+    use serde_json::json;
+
+    #[test]
+    fn files_list_coerced_to_single_id_for_string_arg() {
+        let schema = json!({
+            "type": "object",
+            "required": ["fileId"],
+            "properties": {"fileId": {"type": "string"}}
+        });
+        let args = json!({"fileId": [{"id": "doc1", "ext": "pdf"}, {"id": "doc2", "ext": "md"}]});
+        let out = coerce_resolved_args("pdf_extract_text", &args, Some(&schema));
+        assert_eq!(out["fileId"], "doc1");
+    }
+
+    #[test]
+    fn pdf_tool_prefers_pdf_entry_in_mixed_list() {
+        let schema = json!({"type": "object", "properties": {"fileId": {"type": "string"}}});
+        let args = json!({"fileId": [{"id": "doc2", "ext": "md"}, {"id": "doc1", "ext": "pdf"}]});
+        let out = coerce_resolved_args("pdf_extract_text", &args, Some(&schema));
+        assert_eq!(out["fileId"], "doc1");
+    }
+
+    #[test]
+    fn non_string_args_and_missing_schema_pass_through() {
+        let schema = json!({"type": "object", "properties": {"query": {"type": "string"}}});
+        let args = json!({"query": ["a", "b"], "limit": 5});
+        let out = coerce_resolved_args("knowledge_search", &args, Some(&schema));
+        assert_eq!(out, args);
+        assert_eq!(coerce_resolved_args("t", &args, None), args);
+    }
+
+    #[test]
+    fn file_object_coerced_to_handle() {
+        let schema = json!({"type": "object", "properties": {"fileId": {"type": "string"}}});
+        let args = json!({"fileId": {"type": "file", "handle": "doc9", "filename": "x.pdf"}});
+        let out = coerce_resolved_args("office_read_document", &args, Some(&schema));
+        assert_eq!(out["fileId"], "doc9");
     }
 }
