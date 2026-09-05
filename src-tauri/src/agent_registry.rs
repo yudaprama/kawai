@@ -169,6 +169,31 @@ fn unavailable_definition(
 
 // ── Registry construction ───────────────────────────────────────────────────
 
+/// Stock/social finance tools: keyed stock providers (TwelveData/AlphaVantage/
+/// Tiingo, each with a keyless StockTwits fallback) plus the StockTwits-only
+/// social tools (sentiment/messages/trending). Crypto is intentionally
+/// excluded — the Binance toolset already covers it. Always available (pure
+/// HTTP, no native deps), so not feature-gated beyond `litert`.
+#[cfg(feature = "litert")]
+pub fn finance_tools_for_supervisor(
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    let _ = (context, remote_configured);
+    Some(finance::toolset_for(&[
+        "get_stock_price",
+        "get_stock_quote",
+        "get_stock_detail",
+        "get_stock_history",
+        "get_stock_fundamentals",
+        "get_stock_financials",
+        "search_stock",
+        "stock_sentiment",
+        "stock_social_feed",
+        "trending_stocks",
+    ]))
+}
+
 /// Build the built-in agent registry by composing domain definitions with
 /// cross-cutting tools and capability overrides.
 #[cfg(feature = "litert")]

@@ -5499,6 +5499,7 @@ dependencies = [
  "browser",
  "codegraph",
  "dotenvy",
+ "finance",
  "futures-core",
  "futures-util",
  "graph",

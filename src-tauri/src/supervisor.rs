@@ -179,13 +179,24 @@ async fn build_supervisor_toolset(
             None
         }
     };
+    let finance = || -> Option<kawai_tools::ToolSet> {
+        #[cfg(feature = "litert")]
+        { agent_registry::finance_tools_for_supervisor(&context, remote_configured) }
+        #[cfg(not(feature = "litert"))]
+        {
+            let _ = (&context, remote_configured);
+            None
+        }
+    };
 
     if agent_id == AUTO_AGENT_ID {
         // Merged catalog: first-wins per tool name. Office first — its
         // knowledge/memory/subagent tools are the broadest base — then the
         // specialists fill in their exclusive domain tools.
         let mut merged: Option<kawai_tools::ToolSet> = None;
-        for set in [office(), presentation(), binance(), analytics()].into_iter().flatten() {
+        for set in [office(), presentation(), binance(), analytics(), finance()]
+            .into_iter()
+            .flatten() {
             match &mut merged {
                 Some(base) => base.merge(&mut { set }),
                 None => merged = Some(set),
@@ -251,11 +262,10 @@ pub async fn plan_task(
     // the loop's rounds must stay short (the 2026-02 benchmark showed 14.6k
     // output tokens = the whole 250 s latency).
     let remote = Some(
-            remote_llm::RemoteLlm::from_env()
-                .map(|r| r.with_output_cap(2_500))
-                .ok_or_else(|| "remote LLM is not configured".to_string())?,
-        )
-    };
+        remote_llm::RemoteLlm::from_env()
+            .map(|r| r.with_output_cap(2_500))
+            .ok_or_else(|| "remote LLM is not configured".to_string())?,
+    );
 
     // User context rides the planner call: persona + goal-relevant memories
     // + skills. All three are best-effort — planning never fails on them.

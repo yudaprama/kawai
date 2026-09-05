@@ -61,9 +61,24 @@ pub fn run() {
             }
             // Tier-0 web read engine: hidden webview owned by the shell.
             // kawai-web never registers one (Cloudflare-only there).
-            webread::set_webview_engine(Some(std::sync::Arc::new(
+            let engine: std::sync::Arc<dyn webread::scrape::WebViewFetch> = std::sync::Arc::new(
                 webview_engine::TauriWebViewFetch::new(app.handle().clone()),
-            )));
+            );
+            webread::set_webview_engine(Some(engine.clone()));
+            // StockTwits sits behind Cloudflare bot management — plain HTTP
+            // gets a JS challenge. Route its fetches through the same hidden
+            // webview (real browser fingerprint), direct reqwest as fallback.
+            finance::stocktwits::set_fetcher(std::sync::Arc::new(move |url| {
+                let engine = engine.clone();
+                Box::pin(async move {
+                    // The extractor returns the page's raw body text — for a
+                    // JSON endpoint Safari renders exactly the JSON payload.
+                    engine
+                        .eval_page(&url, "JSON.stringify(document.body.innerText)")
+                        .await
+                        .map_err(|e| e.0)
+                })
+            }));
             Ok(())
         });
 

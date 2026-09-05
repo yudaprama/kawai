@@ -1,56 +1,77 @@
-# Supervisor Implementation Plan
+# Supervisor
 
 ## Goal
 
-Supervisor adalah program Rust yang mengeksekusi plan secara deterministik. LLM (Gemma 4 atau remote) hanya dipakai di dalam subagent yang membutuhkan reasoning.
+Supervisor adalah program Rust yang mengeksekusi plan secara deterministik. LLM hanya menulis plan (planner) dan bekerja di dalam subagent — supervisor sendiri tidak pernah melakukan inference.
 
 ## Terminologi
 
 | Istilah | Definisi |
 |---|---|
-| **Supervisor** | Program Rust. Membaca plan JSON, mengeksekusi step per step, mengumpulkan artifacts. Tidak ada LLM, tidak ada context, tidak ada inference. |
-| **Subagent** | Tool yang di dalamnya ada loop LLM. Menerima task + artifacts → reasoning → hasil. Contoh: `analyze_data`, `create_deck`, `plan_task`. |
-| **Pure tool** | Tool Rust murni tanpa LLM: `pdf_merge`, `stock_market_api`, `email_send`. |
-| **Planner** | Subagent remote LLM yang menghasilkan ExecutionPlan. |
+| **Supervisor** | Program Rust. Membaca `TaskPlan` tervalidasi, mengeksekusi step dalam gelombang (waves), mengumpulkan artifacts. Tidak ada LLM, tidak ada context. |
+| **Subagent** | Tool yang di dalamnya ada loop LLM (remote pool, atau lokal saat tak ada kandidat cloud). Contoh: `deep_write`, `draft_document`, `plan_task`. |
+| **Pure tool** | Tool Rust murni tanpa LLM: `pdf_merge`, `binance_price`, `data_query`. |
+| **Planner** | LLM (bounded search loop) yang menghasilkan `TaskPlan`, tervalidasi `ToolRegistry` sebelum dieksekusi. |
+| **TurnMemory** | Log proses per session (`session_artifacts`): hasil tiap step selesai di-record dengan handle `memN`; output besar di-paging via `artifact_recall(handle, offset)`. |
 
 ## Prinsip desain
 
 ```
 Supervisor berpikir? Tidak. Supervisor = workflow engine Rust.
 
-Siapa yang berpikir? LLM di dalam subagent.
+Siapa yang berpikir? Planner saat menyusun plan; subagent saat step dieksekusi.
 ```
 
 ```text
-Rust Supervisor membaca plan:
-  step 1 → dispatch analyze_data → subagent LLM bekerja → artifact
-  step 2 → dispatch create_deck → subagent LLM bekerja → artifact
-  step 3 → dispatch email_send → Rust execute → selesai
+Rust Supervisor membaca plan tervalidasi:
+  wave 1 → dispatch step tanpa dependensi (paralel ≤ max_parallel)
+  wave 2 → dispatch step yang dependensinya Completed
+  ...
+  final_output = output step Completed terakhir
 
-Tidak ada Gemma di level supervisor.
-Gemma hanya di dalam subagent yang butuh reasoning.
+Tidak ada LLM di level supervisor. LLM hanya di planner dan subagent.
 ```
 
-## Architecture
+## Architecture (end to end)
 
 ```
-User task
-  ↓
-Planner (subagent, remote LLM)
-  ↓ ExecutionPlan JSON
-  ↓
-Rust Supervisor (deterministik, tanpa LLM)
-  ↓ dispatch per step
-  ↓
-Subagent / pure tools:
-  analyze_data    → LLM remote/lokal + data tools (context fresh, dibuang setelah selesai)
-  create_deck     → LLM remote/lokal + office tools (context fresh, dibuang setelah selesai)
-  stock_market_api → Rust murni
-  email_send      → Rust murni
-  ↓
-Artifacts dikumpulkan → input step berikutnya
-  ↓
-Final answer dari step terakhir
+frontend                          commands.rs                 supervisor.rs                 crates/router
+────────                          ───────────                 ─────────────                 ─────────────
+streamOperation(                  execute_supervisor_plan
+  "execute_supervisor_plan",      │ verify session
+   plan, sessionId, streamId) ───▶│ agent_id dikenal? →
+                                  │   specialist, else auto    ◀─ registry yang SAMA
+                                  │ build_supervisor_ ────────▶   dengan yang dipakai
+                                  │   registry                   plan_task
+                                  │ execute_plan_stream_ ─────▶ execute_plan_stream_
+                                  │   with_cancel(plan,          with_cancel:
+                                  │   registry, token,           │ yield PlanStarted
+                                  │   pending, stream_id)        │ run_plan_with_cancel ──▶ 1. validate_structure
+                                  │                             │ + ConfirmationHandler        2. LOOP waves: ready =
+                                  │                             │   (park oneshot per step)       dependsOn semua Completed;
+                                  │                             │ + SchedulerObserver ──────▶     spawn ≤ max_parallel
+                                  │                             │   (SchedulerEvent → mpsc)       per step: resolve args
+                                  │                             │                                 (fromStep → artifacts)
+                                  │                             │                                 ▶ confirmation? park
+                                  │                             │                                 ▶ timeout × (1+retries)
+                                  │                             │                                   dispatch → ToolSet::
+                                  │                             │                                   execute → AgentTool.call
+                                  │                             │                                 ▶ sukses → StepResult +
+                                  │                             │                                   TurnMemory record (memN)
+                                  │                             │                                 ▶ gagal → onError:
+                                  │                             │                                   fail → halt plan;
+                                  │                             │                                   skip/continue → step
+                                  │                             │                                   Failed + dependen
+                                  │                             │                                   transitif Skipped;
+                                  │                             │                                   cabang independen jalan
+                                  │                             │ 3. ExecutionResult +
+                                  │                             │    final_output()
+                                  │ tokio::select!              │
+                                  │   cancelled() → break       │
+                                  │   stream.next() → send ─────┼── SupervisorEvent → Channel
+                                  ▼
+use-supervisor-plan.ts: switch(ev.type) → step state → PlanProgressPanel
+                        + persist PersistedPlan ke SQLite (append_chat_message)
 ```
 
 ### Siapa yang berpikir kapan
@@ -59,192 +80,109 @@ Final answer dari step terakhir
 |---|---|---|---|
 | Supervisor | **Rust** | **Tidak** — eksekusi mekanis | Tidak ada |
 | Planner | **Remote LLM** | **Ya** — decompose task → plan | Remote pool (selesai → dibuang) |
-| Subagent (analyze_data) | **LLM** | **Ya** — data_schema → data_query → chart | Fresh per call, dibuang setelah selesai |
-| Subagent (create_deck) | **LLM** | **Ya** — susun konten → create deck | Fresh per call, dibuang setelah selesai |
-| Pure tool (pdf_merge) | **Rust** | **Tidak** | Tidak ada |
+| Subagent (deep_write / draft_document) | **LLM** | **Ya** — loop sintesis di dalam tool | Remote pool + TurnMemory materials; context agent di-reset saat takeover |
+| Subagent (data_query_nl) | **LLM** | **Ya** — terjemahan NL → structured query | Fresh per call |
+| Pure tool (pdf_merge, data_query) | **Rust** | **Tidak** | Tidak ada |
 
-### Gemma 4 hanya dipakai di
+### LLM hanya dipakai di
 
 ```text
-1. Planner       → remote LLM (satu call)
-2. Subagent      → remote LLM atau Gemma lokal (per step yang butuh reasoning)
+1. Planner    → cloud pool (failover sehat; KAWAI_PLANNER_LLM=local untuk dev)
+2. Subagent   → deep_write / draft_document / plan_task / plan_revise (remote;
+               on-device engine hanya kandidat terakhir pool)
 ```
 
-**Supervisor tidak pernah memakai Gemma.** Supervisor = Rust.
+**Supervisor tidak pernah memakai LLM.** Supervisor = Rust.
 
 ### Kenapa ini lebih baik dari Supervisor Gemma
 
-| Supervisor Gemma | Supervisor Rust |
+| Supervisor Gemma (hypothetical) | Supervisor Rust |
 |---|---|
 | Prefill supervisor setiap task | Tidak ada prefill — Rust instant |
 | Context supervisor hidup sepanjang task | Tidak ada context |
-| Epoch/reset per subagent + rebuild supervisor | Tidak perlu rebuild — supervisor tidak punya context |
-| Supervisor persona + tools manifest | Tidak ada persona — supervisor cuma pembaca plan |
-| Risk: Gemma lupa ikuti plan | Tidak ada risk — Rust mengikuti plan persis |
+| Risk: LLM lupa ikuti plan | Tidak ada risk — Rust mengikuti plan persis |
 | Multi-prefill per task (supervisor + subagents) | Prefill HANYA per subagent (0 untuk supervisor) |
 
-## ExecutionPlan Schema
+## TaskPlan Schema
 
-```json
+Sumber tipe: `crates/router/src/types.rs`. Plan yang diteruskan ke
+`execute_supervisor_plan` selalu sudah lolos `ToolRegistry::validate_plan`
+(struktur, dispatch key ada di registry, confirmation policy, args vs
+`input_schema` tool — subset JSON-Schema, fail-fast).
+
+```jsonc
 {
-  "userObjective": "Analisa data CSV lalu buat presentasi untuk direksi",
-  "plannerStatus": "success",
-  "execution": {
-    "allowParallel": true,
-    "defaultTimeoutMs": 30000,
-    "defaultOnError": "fail",
-    "maxSteps": 8
-  },
-  "executionPlan": [
+  "goal": "Analisa data CSV lalu buat presentasi untuk direksi",
+  "steps": [
     {
       "id": "analyze",
-      "task": "Baca CSV penjualan, identifikasi tren revenue per bulan dan top 5 produk",
-      "tool": "analyze_data",
-      "arguments": {
-        "input": { "artifact": "user_file_xyz" }
-      },
+      "tool": "data_query",              // dispatch key (agent_id sebagai fallback lama)
+      "task": "Identifikasi tren revenue per bulan dan top 5 produk",
+      "agentId": "",                       // LLM tidak mengisi; eksekusi tetap by tool
       "dependsOn": [],
       "produces": ["analysis_result"],
-      "timeoutMs": 60000,
-      "retries": 1,
-      "onError": "fail"
-    },
-    {
-      "id": "create_deck",
-      "task": "Buat presentasi 8 slide untuk direksi berdasarkan hasil analisis: executive summary, revenue trend, top produk, kesimpulan",
-      "tool": "create_deck",
-      "arguments": {
-        "input": { "fromStep": "analyze", "output": "analysis_result" }
-      },
-      "dependsOn": ["analyze"],
-      "produces": ["presentation_deck"],
-      "timeoutMs": 60000
-    },
-    {
-      "id": "send_email",
-      "task": "Kirim laporan ke boss@company.com",
-      "tool": "email_send",
-      "arguments": {
-        "to": "boss@company.com",
-        "subject": "Laporan Analisis Bulanan",
-        "attachment": { "fromStep": "create_deck", "output": "presentation_deck" }
-      },
-      "dependsOn": ["create_deck"],
-      "requiresConfirmation": true
+      "arguments": { "input": { "artifact": "user_file_xyz" } },
+      "timeoutMs": 60000,                  // opsional; override default per step
+      "retries": 1,                        // opsional
+      "onError": "fail",                   // fail | skip | continue (default fail)
+      "requiresConfirmation": false,       // registry-owned policy TIDAK bisa
+                                           // dinaikkan oleh planner
+      "confirmationDescription": ""
     }
   ]
 }
 ```
 
-## Rust Supervisor (pseudocode)
+Artifact reference di dalam `arguments`: `{ "fromStep": "<id>", "output":
+"<artifact name>" }` — di-resolve rekursif oleh `resolve_args` terhadap hasil
+step selesai sebelum dispatch; resolution error menggagalkan step tanpa retry.
 
-```rust
-async fn execute_plan(
-    plan: ExecutionPlan,
-    tool_registry: &ToolRegistry,
-    user_id: &str,
-    session_id: i64,
-) -> Result<ExecutionResult, Error> {
-    let mut artifacts: HashMap<String, Artifact> = HashMap::new();
-    let mut step_status: HashMap<String, StepStatus> = HashMap::new();
+## Deterministic scheduler (implementasi)
 
-    loop {
-        // Cari step yang ready (all dependencies completed)
-        let ready = plan.steps.iter()
-            .filter(|s| !step_status.contains_key(&s.id))
-            .filter(|s| s.depends_on.iter().all(|dep| step_status.get(dep) == Some(&StepStatus::Completed)));
+Sumber: `crates/router/src/scheduler.rs` (`run_plan_with_cancel`), lengkap
+dengan test. Bukan pseudocode — ini perilaku aktual:
 
-        if ready.is_empty() { break; }
+1. **validate_structure** — dependensi harus ada, tidak boleh cycle.
+2. **Wave loop** — tiap iterasi mengambil semua step yang `dependsOn`-nya
+   sudah `Completed`, spawn paralel sampai `SchedulerLimits::max_parallel`.
+3. **Per step (dispatch task):**
+   - resolve args (`fromStep` references → artifacts predecessor);
+   - `requires_confirmation` → emit `ConfirmationRequested`, park di `oneshot`
+     sampai handler approve/reject (key `(stream_id, step_id)` di
+     `PendingConfirmations`; reject → `ConfirmationRejected`); stream di-drop
+     → `ConfirmationRequired` (gagal);
+   - `tokio::time::timeout(effective_timeout)` × `(1 + effective_retries)`
+     di sekitar `StepDispatch` (`ToolSet::execute` → `AgentTool.call`);
+     `retries_used` tercatat di `StepResult`;
+   - sukses → `StepResult { output, artifacts: Vec<Artifact>, retries_used }`
+     + `TurnMemory.record(tool, args_key, content)` → handle `mem1, mem2, …`
+     (dedup per `(tool, args_key)` yang sama);
+   - gagal → `effective_on_error`:
+     - `fail` (default) → plan berhenti, semua step tersisa `Skipped`;
+     - `skip` / `continue` → step `Failed`, dependen **transitif** di-skip
+       (`propagate_skip_transitive`); cabang independen LANJUT.
+4. **Cancellation** — token dibatalkan → wave berikutnya tidak dimulai,
+   `cancelled_result`; tool yang aktif menyelesaikan diri dulu (follow-up).
+5. **Hasil** — `ExecutionResult { results }` in plan order (step yang tidak
+   jadi jalan = `Skipped`); `final_output()` = output step `Completed`
+   terakhir; `artifacts()` = semua artifact step selesai.
 
-        for step in ready {
-            // Resolve artifact references → actual handles
-            let args = resolve_args(&step.arguments, &artifacts)?;
-
-            // Dispatch ke tool
-            let result = timeout(
-                Duration::from_millis(step.timeout_ms.unwrap_or(default_timeout)),
-                dispatch_tool(&step.tool, &args, user_id, session_id),
-            ).await;
-
-            match result {
-                Ok(Ok(artifact)) => {
-                    artifacts.insert(step.id.clone(), artifact);
-                    step_status.insert(step.id.clone(), StepStatus::Completed);
-                }
-                Ok(Err(e)) | Err(_) => {
-                    match step.on_error {
-                        OnError::Fail => return Err(...),
-                        OnError::Skip => { step_status.insert(step.id, StepStatus::Skipped); }
-                        OnError::Continue => { /* mark failed but continue */ }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(ExecutionResult { artifacts, step_status })
-}
-
-async fn dispatch_tool(
-    tool_name: &str,
-    args: &ResolvedArgs,
-    user_id: &str,
-    session_id: i64,
-) -> Result<Artifact, Error> {
-    match tool_registry.get(tool_name)? {
-        // Pure Rust tool — instant, no LLM
-        Tool::Pure(handler) => handler(args).await,
-
-        // Subagent — loop LLM di dalam
-        Tool::Subagent(handler) => handler.execute(args, user_id, session_id).await,
-    }
-}
-```
-
-## Execution properties
-
-### onError + retries
-
-| onError | Perilaku |
-|---|---|
-| `fail` (default) | Step Failed → plan berhenti, dependents Skipped |
-| `skip` | Step Skipped → plan lanjut, dependents juga Skipped |
-| `continue` | Step Failed → plan lanjut, dependents jalan dengan penanda gagal |
-
-`retries: N` — ulang N kali, backoff linear (1s, 2s, 4s…). Habis retry → onError.
-
-### allowParallel
-
-Root-level. Step independen bisa paralel via JoinSet.
-
-```text
-Subagent remote → paralel aman (cloud calls independen)
-Pure tools      → paralel aman (Rust async)
-Subagent lokal  → sequential (Gemma singleton)
-```
-
-### timeoutMs
-
-Per-step. Default: network 15-30s, subagent 60s, pure local 60s. Timeout → failure → retries/onError.
-
-### requiresConfirmation
-
-Side-effect tools butuh approval user sebelum eksekusi. `ConfirmationRequest` event yang sudah ada.
-
-### fromStep + output
-
-Artifact hand-off. Data tidak masuk context — hanya handles.
+`SchedulerEvent` (`StepStarted` / `ConfirmationRequested` / `StepCompleted` /
+`StepFailed` / `StepSkipped`) dikirim via `SchedulerObserver` (wajib cepat &
+non-blocking — forward ke channel) dan diterjemahkan `supervisor.rs` menjadi
+`SupervisorEvent` untuk transport (Tauri Channel / Axum SSE).
 
 ## Existing infrastructure
 
 | Component | Dipakai untuk |
 |---|---|
 | Scheduler wave-based (crates/router) | Parallel dispatch, failure propagation |
-| plan.rs validation | Validasi ExecutionPlan |
-| deep_write handler | Pola subagent handler baru |
-| ConfirmationRequest | Gate sebelum side-effect |
-| TurnMemory + session_artifacts | Artifact storage |
+| plan.rs validation | Validasi TaskPlan (struktur + args vs input_schema) |
+| deep_write handler | Pola subagent handler |
+| ConfirmationHandler + PendingConfirmations | Gate sebelum side-effect |
+| TurnMemory + session_artifacts | Artifact storage + `artifact_recall` paging |
 | Remote LLM pool | Subagent remote + planner |
+| Tool catalog (Turso, crates/foundation/tool-catalog) | Discovery tool planner (drift-gated di CI) |
 
 ## Implementation Status
 
@@ -258,7 +196,7 @@ Artifact hand-off. Data tidak masuk context — hanya handles.
   - `ToolKind` (`Pure` / `Subagent`) + `ToolMeta` (name, description, I/O schemas) in `types.rs`.
   - `TaskStep::tool: Option<String>` preferred over `agent_id`; `TaskStep::produces: Vec<String>` declares artifact names.
   - `ToolRegistry` (new `registry.rs`): validates plans against the catalog, renders catalog lines for the planner prompt, and provides a `step_dispatch()` adapter that bridges the registry's `ToolDispatch` closure into the scheduler's `StepDispatch` type.
-  - `plan_prompt_with_tools` in `plan.rs` emits the full ExecutionPlan contract: `tool`, `arguments` with artifact references, `produces`, `timeoutMs`, `retries`, `onError`, `requiresConfirmation`, `confirmationDescription`.
+  - `plan_prompt_with_tools` in `plan.rs` emits the full TaskPlan contract: `tool`, `arguments` with artifact references, `produces`, `timeoutMs`, `retries`, `onError`, `requiresConfirmation`, `confirmationDescription`.
   - Scheduler now resolves artifact references via `resolve_args` before invoking the dispatcher (3-arg `StepDispatchFn`); resolution errors fail the step deterministically without retries.
   - Unknown-tool and unknown-artifact-reference failures are surfaced through the existing `onError` / retry paths.
 - **Phase 4 — Composition-root wiring: implemented.** `src-tauri/src/supervisor.rs` now builds a per-session supervisor registry from the existing office toolset, converts tool definitions into `ToolMeta`, and dispatches resolved arguments through `ToolSet::execute`. `SupervisorEvent` provides plan/step lifecycle events, and `execute_plan_stream` wraps the deterministic router scheduler. The operation is exposed as `execute_supervisor_plan` through both Tauri (`commands.rs`) and Axum SSE (`web.rs`), with edge-authenticated user identity and stream cancellation on desktop.

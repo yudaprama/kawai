@@ -112,6 +112,10 @@ regex = "1"
 # but stays listed so the headless example can drive it directly.
 webread = { path = "../crates/toolsets/webread" }
 browser = { path = "../crates/generated-tools/browser" }
+# Finance tools (stock price/quote/detail/fundamentals + StockTwits social
+# sentiment). Keyed providers (TwelveData/AlphaVantage/Tiingo) fall back to
+# the keyless StockTwits provider — see finance::stocktwits.
+finance = { path = "../crates/generated-tools/finance" }
 url = "2"
 # TTS via piper-rs (neural ONNX Piper TTS). Gated behind `tts` so non-TTS
 # builds stay dep-free. Adds ~40 MB (static ONNX Runtime) + espeak-ng build
