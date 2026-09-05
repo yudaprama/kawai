@@ -247,14 +247,10 @@ pub async fn plan_task(
     goal: &str,
     registry: &ToolRegistry,
 ) -> Result<(kawai_router::TaskPlan, remote_llm::RemoteUsage), String> {
-    // KAWAI_PLANNER_LLM=local → on-device Gemma serves the planner loop
-    // (test/dev seam); otherwise the remote pool serves it, with a tight
-    // per-call output cap: the loop's rounds must stay short (the 2026-02
-    // benchmark showed 14.6k output tokens = the whole 250 s latency).
-    let remote = if std::env::var("KAWAI_PLANNER_LLM").ok().as_deref() == Some("local") {
-        None
-    } else {
-        Some(
+    // The remote pool serves the planner with a tight per-call output cap:
+    // the loop's rounds must stay short (the 2026-02 benchmark showed 14.6k
+    // output tokens = the whole 250 s latency).
+    let remote = Some(
             remote_llm::RemoteLlm::from_env()
                 .map(|r| r.with_output_cap(2_500))
                 .ok_or_else(|| "remote LLM is not configured".to_string())?,
@@ -322,37 +318,7 @@ pub async fn plan_task(
         }
 
         let mut raw = String::new();
-        let local_mode = std::env::var("KAWAI_PLANNER_LLM").ok().as_deref() == Some("local");
-        if local_mode {
-            // Ensure the on-device Gemma model is present/resolved (auto-
-            // downloads on first use), then load it if the engine is cold.
-            if !local_llm::is_engine_loaded() {
-                let model_path = crate::logic::ensure_model().await?;
-                local_llm::load_model("planner", &model_path, false, false, 0, None).await?;
-            }
-            // On-device Gemma via LiteRT: one-shot fresh conversation; system
-            // + task + materials compose into a single prompt (this transport
-            // has no separate system turn). Usage stays zero (local).
-            let mut prompt = format!("{system}\n\n{task}");
-            if !round_materials.trim().is_empty() {
-                prompt.push_str(&format!("\n\n{round_materials}"));
-            }
-            let stream = local_llm::local_chat("planner".into(), prompt, None, None, true);
-            tokio::pin!(stream);
-            while let Some(event) = stream.next().await {
-                match event {
-                    local_llm::LocalChatEvent::Token { text } => {
-                        if raw.len() < 32_000 {
-                            raw.push_str(&text);
-                        }
-                    }
-                    local_llm::LocalChatEvent::Error { message } => {
-                        return Err(format!("local planner LLM: {message}"));
-                    }
-                    _ => {}
-                }
-            }
-        } else {
+        {
             let mut stream = remote.as_ref().unwrap().stream(&system, &task, &round_materials).await?;
             while let Some(event) = stream.next().await {
                 match event? {
