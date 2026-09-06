@@ -207,6 +207,9 @@ pub fn finance_tools_for_supervisor(
         "get_macro_indicators",
         "get_prediction_markets",
         "get_verified_market_snapshot",
+        // Reddit and sector tools
+        "get_reddit_posts",
+        "get_sector_performance",
     ]))
 }
 
