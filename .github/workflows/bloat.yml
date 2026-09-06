@@ -1,0 +1,78 @@
+name: bloat
+
+# Heavy binary-size audit — runs only on manual dispatch or weekly schedule,
+# never on every PR (release build is CPU-heavy: polars + aws-lc-sys + etc.).
+# Local `cargo bloat --release` is the same — avoid running it on dev machines
+# unless needed; use `cargo tree --duplicates` for fast local checks.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC
+  push:
+    paths:
+      - "src-tauri/Cargo.toml"
+      - "crates/**/Cargo.toml"
+      - ".github/workflows/bloat.yml"
+
+concurrency:
+  group: bloat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bloat:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Init submodules (manifest only)
+        run: |
+          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr
+          git -C crates submodule update --init vendor/binance-connector-rust
+
+      - name: Install Tauri Linux system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Install cargo-bloat
+        run: cargo install cargo-bloat --locked
+
+      - name: cargo bloat --release --crates (desktop)
+        run: |
+          cargo bloat --release --crates 2>&1 | tee /tmp/bloat-desktop.txt
+          echo "## bloat --release --crates (desktop)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          head -n 100 /tmp/bloat-desktop.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+        working-directory: src-tauri
+
+      - name: cargo bloat --release --crates (web minimal)
+        run: |
+          cargo bloat --release --crates --no-default-features --features web 2>&1 | tee /tmp/bloat-web.txt
+          echo "## bloat --release --crates (web minimal, --no-default-features --features web)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          head -n 80 /tmp/bloat-web.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+        working-directory: src-tauri
+
+      - name: Upload bloat reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bloat-reports
+          path: /tmp/bloat-*.txt
+          if-no-files-found: warn

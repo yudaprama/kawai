@@ -106,8 +106,7 @@ text-splitter = { version = "0.27", features = ["markdown"] }
 # VOCR). Single source for RAG indexing (kawai-vision) + ragloader shim.
 kawai-vision = { path = "../crates/foundation/vision", features = ["paddle-ocr"] }
 ragloader = { path = "../crates/integrations/ragloader", features = ["paddle-ocr"] }
-# YouTube transcript fetching for knowledge ingestion.
-# Uses reqwest 0.13 — coexists with our direct 0.12 (like the rustls pair).
+# YouTube transcript fetching for knowledge ingestion (reqwest 0.13, unified).
 youtube_transcript = { path = "../crates/integrations/youtube-transcript" }
 # Pure-Rust office create/read/edit (vendored submodule): markdown → IR →
 # docx/xlsx/pptx (in-process), raw-part surgery for in-place edits. PDF

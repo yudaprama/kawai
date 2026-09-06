@@ -89,6 +89,20 @@ jobs:
         run: cargo check --features tts
         working-directory: src-tauri
 
+      # Lightweight audit: duplicate crate versions (no release build, no CPU heavy).
+      # Reports `cargo tree --duplicates` — base64/phf/hashbrown multi-versions
+      # are the expected hotspots (see docs). Non-blocking: just logs.
+      - name: Duplicate crates audit (cargo tree --duplicates)
+        run: |
+          echo "## Duplicate crates (cargo tree --duplicates)" >> "$GITHUB_STEP_SUMMARY"
+          cargo tree --duplicates 2>&1 | tee /tmp/dup.txt
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          head -n 80 /tmp/dup.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Top duplicates:"
+          cargo tree --duplicates 2>&1 | grep -E "^[a-z].* v[0-9]" | cut -d' ' -f1 | sort | uniq -c | sort -nr | head -n 20 | tee -a "$GITHUB_STEP_SUMMARY"
+        working-directory: src-tauri
+
   # ── Linux desktop gate: litert + the full feature battery compile on Linux ─
   linux-check:
     runs-on: ubuntu-22.04
