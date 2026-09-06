@@ -87,14 +87,13 @@ pub async fn ensure_model() -> Result<String, String> {
     local_llm::reset_download_state();
 
     // Determine target: ~/.kawai/models/<filename>
-    let home =
-        std::env::var("HOME").map_err(|_| "HOME not set — cannot download model".to_string())?;
-    let model_dir = std::path::PathBuf::from(&home).join(".kawai/models");
+    let model_dir = kawai_paths::user_models_dir()
+        .ok_or_else(|| "HOME not set — cannot download model".to_string())?;
     let target_path = model_dir.join(filename);
     let tmp_path = model_dir.join(format!("{filename}.part"));
 
     std::fs::create_dir_all(&model_dir)
-        .map_err(|e| format!("create model dir ~/.kawai/models: {e}"))?;
+        .map_err(|e| format!("create model dir {}: {e}", model_dir.display()))?;
 
     // Check for a partial download (supports resume).
     let existing_size = std::fs::metadata(&tmp_path)

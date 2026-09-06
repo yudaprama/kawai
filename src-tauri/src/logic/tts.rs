@@ -38,9 +38,8 @@ impl std::error::Error for TtsError {}
 
 /// Return the TTS model directory (`~/.kawai/models/tts/`).
 fn tts_model_dir() -> Result<PathBuf, TtsError> {
-    let home =
-        std::env::var("HOME").map_err(|_| TtsError::ModelNotFound("HOME not set".into()))?;
-    Ok(PathBuf::from(home).join(".kawai/models/tts"))
+    kawai_paths::tts_model_dir()
+        .ok_or_else(|| TtsError::ModelNotFound("HOME not set".into()))
 }
 
 /// Convert f32 PCM samples to WAV bytes.
