@@ -168,6 +168,12 @@ dengan test. Bukan pseudocode — ini perilaku aktual:
 5. **Hasil** — `ExecutionResult { results }` in plan order (step yang tidak
    jadi jalan = `Skipped`); `final_output()` = output step `Completed`
    terakhir; `artifacts()` = semua artifact step selesai.
+6. **Resume & replan** — hasil step selesai dipersist ke `supervisor_step_results`
+   (migrasi 0015, kunci `session_id + plan_key` = hash plan JSON). Eksekusi ulang
+   plan yang sama men- **preseed** `ExecutionMemo` dari tabel itu (step selesai
+   dilewati, `fromStep` tetap ter-resolve); kegagalan non-user-decision
+   memicu replan (`revise_plan`, budget 1) yang menghasilkan plan baru dengan
+   hash baru — tidak pernah memakai baris cache plan lama.
 
 `SchedulerEvent` (`StepStarted` / `ConfirmationRequested` / `StepCompleted` /
 `StepFailed` / `StepSkipped`) dikirim via `SchedulerObserver` (wajib cepat &
@@ -235,8 +241,8 @@ The planner is remote-LLM-backed. The executor is Rust-only and performs no infe
 These are enhancements, not migration blockers:
 
 - **Active cancellation:** cancellation currently stops at wave boundaries; active tools need a cancellation-aware execution contract.
-- **Failure-triggered replan: implemented.** Non-user-decided failures ask the planner for a revised plan (`revise_plan`, budget `MAX_REPLANS = 1`, same validation contract). Open refinements: replan-usage accounting (dormant billing), and richer failure classification than the current string heuristics.
-- **Plan resume:** completed steps survive only in the frontend `PersistedPlan` record; the supervisor does not persist per-step results, so a crashed plan cannot be resumed server-side. Prerequisite: persisting step results (or seeding the scheduler with `initial` results from the client record).
+- **Failure-triggered replan: implemented.** Non-user-decided failures ask the planner for a revised plan (`revise_plan`, budget `MAX_REPLANS = 1`, same validation contract). `StepFailed` events carry a failure `kind` (`timeout`/`confirmation`/`cancelled`/`tool`, classified in `step_error_kind`). Open refinements: replan-usage accounting (dormant billing), and richer failure classification than the current string heuristics.
+- **Plan resume: implemented.** Completed steps persist to `supervisor_step_results` (migration 0015; keyed by session + plan-JSON hash) and seed the `ExecutionMemo` on re-execution — the frontend **Resume plan** action re-runs the same plan verbatim and finished steps are skipped while `fromStep` references resolve from the stored typed artifacts. A revised/edited plan hashes differently and never reuses rows. Open refinement: capless growth of the table (no pruning yet).
 - **Cross-domain plans: implemented for `auto`.** The `auto` registry merges all domain toolsets, so plans may mix tools from any domain. Per-domain narrowing via explicit agent id remains available; a policy for merging *restricted* cross-domain catalogs (e.g. analytics without office write tools) is open if needed.
 - **Artifact contracts:** file detection currently recognizes common output envelopes; explicit per-tool output schemas and store-aware adapters would improve reliability.
 - **Scheduler tuning:** `max_parallel` is currently conservative (`2`) and retry backoff is fixed; make them configurable only when workload evidence requires it.
