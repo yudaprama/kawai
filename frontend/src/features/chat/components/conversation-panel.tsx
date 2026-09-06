@@ -94,6 +94,7 @@ export function ConversationPanel({
   supervisorError,
   supervisorFinalOutput,
   onStopSupervisor,
+  onResumeSupervisor,
   canvasOpen,
   inSession,
   onOpenSessions,
@@ -134,6 +135,7 @@ export function ConversationPanel({
   supervisorError: string | null;
   supervisorFinalOutput: string | null;
   onStopSupervisor: () => void;
+  onResumeSupervisor?: () => void;
   canvasOpen: boolean;
   inSession: boolean;
   /** Absent when the canvas is unavailable.
@@ -314,6 +316,7 @@ export function ConversationPanel({
         error={supervisorError}
         finalOutput={supervisorFinalOutput}
         onStop={onStopSupervisor}
+        onResume={onResumeSupervisor}
       />
 
       <div className="relative flex min-h-0 flex-1">
