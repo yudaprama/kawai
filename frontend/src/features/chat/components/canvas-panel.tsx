@@ -30,11 +30,5 @@ export function CanvasPanel({
       </section>
     );
   }
-  return (
-    <ToolWorkbench
-      messages={messages}
-      onBack={onCloseTool}
-      toolCallId={toolCallId}
-    />
-  );
+  return <ToolWorkbench messages={messages} onBack={onCloseTool} toolCallId={toolCallId} />;
 }

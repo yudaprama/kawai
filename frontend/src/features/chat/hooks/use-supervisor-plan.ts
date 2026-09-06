@@ -625,12 +625,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
 
   /** Review gate: remove one step — transitively dependent steps are pruned
    *  with it (they could never run once their source is gone). */
-  const removeStep = useCallback(
-    (stepId: string) => {
-      setState((prev) => (prev.review ? { ...prev, review: pruneReviewStep(prev.review, stepId) } : prev));
-    },
-    [],
-  );
+  const removeStep = useCallback((stepId: string) => {
+    setState((prev) => (prev.review ? { ...prev, review: pruneReviewStep(prev.review, stepId) } : prev));
+  }, []);
 
   const respond = useCallback(
     async (approved: boolean) => {

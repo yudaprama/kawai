@@ -451,10 +451,8 @@ export function ConversationPanel({
                   </p>
                   {supervisorSteps.length > 0 && (
                     <p className="text-muted-foreground mt-0.5 text-[11px]">
-                      {
-                        supervisorSteps.filter((s) => s.state === "completed").length
-                      }
-                      /{supervisorSteps.length} steps done — nothing else runs until you decide.
+                      {supervisorSteps.filter((s) => s.state === "completed").length}/{supervisorSteps.length} steps
+                      done — nothing else runs until you decide.
                     </p>
                   )}
                 </div>

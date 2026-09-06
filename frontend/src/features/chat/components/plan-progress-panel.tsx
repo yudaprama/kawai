@@ -186,9 +186,7 @@ function StepRow({ step, onStopTicking }: { step: SupervisorStep; onStopTicking?
           </div>
         )}
       </div>
-      {step.state === "running" && step.startedAt != null && !onStopTicking && (
-        <Elapsed startedAt={step.startedAt} />
-      )}
+      {step.state === "running" && step.startedAt != null && !onStopTicking && <Elapsed startedAt={step.startedAt} />}
     </li>
   );
 }
@@ -418,7 +416,10 @@ export function PlanProgressPanel({
                 {/* Real scheduler structure — waves are derived from dependsOn,
                     not invented sequencing. One section per wave keeps the
                     reading order == execution order. */}
-                <p aria-label={`Wave ${wave.index}`} className="text-muted-foreground mb-1 text-[10px] font-medium tracking-wide uppercase">
+                <p
+                  aria-label={`Wave ${wave.index}`}
+                  className="text-muted-foreground mb-1 text-[10px] font-medium tracking-wide uppercase"
+                >
                   {waves.length > 1 ? `Wave ${wave.index}` : "Steps"}
                 </p>
                 <ol className="space-y-1">

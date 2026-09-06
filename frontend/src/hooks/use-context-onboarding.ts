@@ -21,10 +21,7 @@ export function useContextOnboarding(args: {
 }): { onboarding: ContextOnboarding | null } {
   const { agent, inSession, knowledgeLoaded, files, importFiles, openSources } = args;
 
-  const relevant = useMemo(
-    () => Boolean(agent?.tools) && agent?.id === "builtin.analytics",
-    [agent],
-  );
+  const relevant = useMemo(() => Boolean(agent?.tools) && agent?.id === "builtin.analytics", [agent]);
 
   const [profileCount, setProfileCount] = useState<number | null>(null);
 
