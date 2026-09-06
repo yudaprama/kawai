@@ -171,9 +171,11 @@ fn unavailable_definition(
 
 /// Stock/social finance tools: keyed stock providers (TwelveData/AlphaVantage/
 /// Tiingo, each with a keyless StockTwits fallback) plus the StockTwits-only
-/// social tools (sentiment/messages/trending). Crypto is intentionally
-/// excluded — the Binance toolset already covers it. Always available (pure
-/// HTTP, no native deps), so not feature-gated beyond `litert`.
+/// social tools (sentiment/messages/trending). yfinance provides extended
+/// financial statements (balance sheet, cash flow, income statement) and
+/// insider transactions. Crypto is intentionally excluded — the Binance
+/// toolset already covers it. Always available (pure HTTP, no native deps),
+/// so not feature-gated beyond `litert`.
 #[cfg(feature = "litert")]
 pub fn finance_tools_for_supervisor(
     context: &AgentContext<'_>,
@@ -181,6 +183,7 @@ pub fn finance_tools_for_supervisor(
 ) -> Option<kawai_tools::ToolSet> {
     let _ = (context, remote_configured);
     Some(finance::toolset_for(&[
+        // Price/quote tools (TwelveData/AlphaVantage + StockTwits fallback)
         "get_stock_price",
         "get_stock_quote",
         "get_stock_detail",
@@ -188,9 +191,18 @@ pub fn finance_tools_for_supervisor(
         "get_stock_fundamentals",
         "get_stock_financials",
         "search_stock",
+        // Social tools (StockTwits)
         "stock_sentiment",
         "stock_social_feed",
         "trending_stocks",
+        // Extended financial statements (yfinance)
+        "get_balance_sheet",
+        "get_cashflow",
+        "get_income_statement",
+        "get_insider_transactions",
+        // News tools (yfinance)
+        "get_stock_news",
+        "get_global_news",
     ]))
 }
 
