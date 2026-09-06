@@ -135,6 +135,44 @@ export interface PersistedPlan {
   error?: string;
 }
 
+/** Seed the tracked plan structure from planStarted/planRevised wire steps —
+ *  every step starts pending with no artifacts. */
+function seedSteps(steps: { id: string; tool: string; task: string; dependsOn: string[] }[]): SupervisorStep[] {
+  return steps.map((s) => ({
+    stepId: s.id,
+    tool: s.tool,
+    task: s.task,
+    dependsOn: s.dependsOn,
+    state: "pending" as const,
+    artifacts: [],
+  }));
+}
+
+/** Persist the structured plan record (goal + per-step states). Embedded
+ *  outputs are capped — full results live in the plan progress panel /
+ *  artifacts, not in chat history. */
+function persistPlanSnapshot(
+  sessionId: number,
+  goal: string | null,
+  steps: SupervisorStep[],
+  extra: { output: string | null; error?: string },
+): void {
+  const record: PersistedPlan = {
+    type: "supervisor-plan",
+    v: 1,
+    goal,
+    steps: steps.map((s) => ({
+      id: s.stepId,
+      tool: s.tool,
+      state: s.state,
+      output: s.output ? s.output.slice(0, 500) : s.output,
+    })),
+    output: extra.output,
+    error: extra.error,
+  };
+  void persist(sessionId, "assistant", JSON.stringify(record));
+}
+
 export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const [state, setState] = useState<SupervisorPlanState>({
     status: "idle",
@@ -237,14 +275,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
             switch (ev.type) {
               case "planStarted":
                 goalRef.current = ev.goal;
-                stepsRef.current = ev.steps.map((s) => ({
-                  stepId: s.id,
-                  tool: s.tool,
-                  task: s.task,
-                  dependsOn: s.dependsOn,
-                  state: "pending" as const,
-                  artifacts: [],
-                }));
+                stepsRef.current = seedSteps(ev.steps);
                 patch({
                   goal: ev.goal,
                   steps: stepsRef.current,
@@ -297,34 +328,14 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
               case "planRevised":
                 // Snapshot the superseded plan's progress BEFORE re-seeding —
                 // history then shows what v1 accomplished before the revision.
-                void persist(
-                  sessionId,
-                  "assistant",
-                  JSON.stringify({
-                    type: "supervisor-plan",
-                    v: 1,
-                    goal: goalRef.current,
-                    steps: stepsRef.current.map((s) => ({
-                      id: s.stepId,
-                      tool: s.tool,
-                      state: s.state,
-                      output: s.output ? s.output.slice(0, 500) : s.output,
-                    })),
-                    output: null,
-                    error: `superseded by revision #${ev.attempt}`,
-                  } satisfies PersistedPlan),
-                );
+                persistPlanSnapshot(sessionId, goalRef.current, stepsRef.current, {
+                  output: null,
+                  error: `superseded by revision #${ev.attempt}`,
+                });
                 // New plan structure replaces the old one — re-seed all steps
                 // as pending (same shape as planStarted). Conversation keeps
                 // the same goal; only the remaining work is re-planned.
-                stepsRef.current = ev.steps.map((s) => ({
-                  stepId: s.id,
-                  tool: s.tool,
-                  task: s.task,
-                  dependsOn: s.dependsOn,
-                  state: "pending" as const,
-                  artifacts: [],
-                }));
+                stepsRef.current = seedSteps(ev.steps);
                 patch({ status: "running", steps: stepsRef.current, error: null });
                 break;
               case "planCompleted": {
@@ -333,21 +344,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                   pendingConfirmation: null,
                   finalOutput: ev.finalOutput ?? null,
                 });
-                const record: PersistedPlan = {
-                  type: "supervisor-plan",
-                  v: 1,
-                  goal: goalRef.current,
-                  steps: stepsRef.current.map((s) => ({
-                    id: s.stepId,
-                    tool: s.tool,
-                    state: s.state,
-                    // Cap embedded outputs — full results live in the plan
-                    // progress panel / artifacts, not in chat history.
-                    output: s.output ? s.output.slice(0, 500) : s.output,
-                  })),
+                persistPlanSnapshot(sessionId, goalRef.current, stepsRef.current, {
                   output: ev.finalOutput ?? null,
-                };
-                void persist(sessionId, "assistant", JSON.stringify(record));
+                });
                 parts = parts.map((p) =>
                   p.type === "text" && p.state === "streaming" ? { ...p, state: "done" as const } : p,
                 );
@@ -376,23 +375,10 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 // Persist the FULL structured record (per-step states), not
                 // just prose — a failed plan must replay with its step states
                 // intact for diagnosis and future resume.
-                void persist(
-                  sessionId,
-                  "assistant",
-                  JSON.stringify({
-                    type: "supervisor-plan",
-                    v: 1,
-                    goal: goalRef.current,
-                    steps: stepsRef.current.map((s) => ({
-                      id: s.stepId,
-                      tool: s.tool,
-                      state: s.state,
-                      output: s.output ? s.output.slice(0, 500) : s.output,
-                    })),
-                    output: null,
-                    error: ev.error,
-                  } satisfies PersistedPlan),
-                );
+                persistPlanSnapshot(sessionId, goalRef.current, stepsRef.current, {
+                  output: null,
+                  error: ev.error,
+                });
                 callbacks?.onPlanFailed?.(goalRef.current, ev.error);
                 break;
             }

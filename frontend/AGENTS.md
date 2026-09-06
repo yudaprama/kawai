@@ -61,7 +61,7 @@ frontend/
 │   │   ├── auth/            # authentication: auth-gate.tsx, use-auth.ts
 │   │   ├── agents/          # agent catalog rail: agents-rail.tsx, registry.tsx (ContextOnboarding type)
 │   │   ├── chat/            # chat + supervisor execution
-│   │   │   ├── components/  # chat-composer, conversation-panel, message-part-view, session-row, sessions-panel
+│   │   │   ├── components/  # chat-composer, conversation-panel, message-part-view, session-row, session-history-dialog
 │   │   │   ├── hooks/       # use-chat-model, use-chat-sessions, use-supervisor-chat, use-supervisor-plan
 │   │   │   ├── lib/         # chat-helpers (+test)
 │   │   │   └── index.ts    # public barrel export
