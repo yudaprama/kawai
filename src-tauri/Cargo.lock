@@ -5726,7 +5726,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "text-splitter",
  "tokio",
  "youtube_transcript",
 ]
@@ -5767,6 +5766,7 @@ dependencies = [
  "kawai-paths",
  "kawai-tools",
  "kawai-vision",
+ "office-common",
  "office-editops",
  "office_oxide",
  "pdf_oxide",
@@ -7147,6 +7147,14 @@ dependencies = [
  "ndarray 0.16.1",
  "rayon",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "office-common"
+version = "0.1.0"
+dependencies = [
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]

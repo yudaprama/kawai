@@ -88,7 +88,11 @@ export default function App() {
       supervisor.pendingConfirmation ? (approved ? supervisor.approve() : supervisor.reject()) : Promise.resolve(),
     [supervisor],
   );
-  const planActive = supervisor.status === "running" || supervisor.status === "awaitingConfirmation";
+  const planActive =
+    supervisor.status === "running" ||
+    supervisor.status === "reviewing" ||
+    supervisor.status === "stopping" ||
+    supervisor.status === "awaitingConfirmation";
   const { status } = chat;
   const busy = status === "submitted" || status === "streaming";
   const inSession = chat.sessionId != null || chat.messages.length > 0;
@@ -105,6 +109,14 @@ export default function App() {
     },
     [chat, supervisor],
   );
+
+  /** R7: after the replan budget is spent, "Try a new plan" re-submits the
+   *  same goal — a fresh plan_task (and a fresh review gate), not a resume. */
+  const handleNewPlan = useCallback(() => {
+    const goal = supervisor.goal;
+    if (!goal || planActive) return;
+    onSend(goal);
+  }, [supervisor.goal, planActive, onSend]);
 
   const ka = useKnowledgeActions(chat);
 
@@ -306,6 +318,14 @@ export default function App() {
           supervisorSteps={supervisor.steps}
           supervisorError={supervisor.error}
           supervisorFinalOutput={supervisor.finalOutput}
+          supervisorReview={supervisor.review}
+          onApprovePlan={supervisor.approvePlan}
+          onCancelPlan={supervisor.cancelPlan}
+          onRemovePlanStep={supervisor.removeStep}
+          supervisorPlanVersion={supervisor.planVersion}
+          supervisorPriorVersions={supervisor.priorVersions}
+          supervisorReplansExhausted={supervisor.replansExhausted}
+          onNewPlanSupervisor={handleNewPlan}
           onStopSupervisor={supervisor.stop}
           onResumeSupervisor={supervisor.resume}
           inSession={inSession}

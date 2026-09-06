@@ -25,8 +25,8 @@ import { Spinner } from "@/components/ui/spinner";
 import type { ChatStatus, UIMessage } from "@/lib/ai-types";
 import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
 import type { SupervisorConfirmation } from "@/features/chat/hooks/use-supervisor-chat";
-import type { SupervisorStatus, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
-import { PlanProgressPanel } from "@/features/chat/components/plan-progress-panel";
+import type { PlanReview, SupervisorStatus, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
+import { PlanProgressPanel, PlanReviewPanel } from "@/features/chat/components/plan-progress-panel";
 import { ChatComposer } from "@/features/chat/components/chat-composer";
 
 interface AgentPresentation {
@@ -93,8 +93,16 @@ export function ConversationPanel({
   supervisorSteps,
   supervisorError,
   supervisorFinalOutput,
+  supervisorReview,
+  onApprovePlan,
+  onCancelPlan,
+  onRemovePlanStep,
+  supervisorPlanVersion,
+  supervisorPriorVersions,
+  supervisorReplansExhausted,
   onStopSupervisor,
   onResumeSupervisor,
+  onNewPlanSupervisor,
   canvasOpen,
   inSession,
   onOpenSessions,
@@ -133,8 +141,17 @@ export function ConversationPanel({
   supervisorSteps: SupervisorStep[];
   supervisorError: string | null;
   supervisorFinalOutput: string | null;
+  /** Present while status === "reviewing" — the plan runs only after approval. */
+  supervisorReview: PlanReview | null;
+  onApprovePlan: () => void;
+  onCancelPlan: () => void;
+  onRemovePlanStep: (stepId: string) => void;
   onStopSupervisor: () => void;
   onResumeSupervisor?: () => void;
+  onNewPlanSupervisor?: () => void;
+  supervisorPlanVersion: number;
+  supervisorPriorVersions: { version: number; completed: number; total: number; note: string }[];
+  supervisorReplansExhausted: boolean;
   canvasOpen: boolean;
   inSession: boolean;
   /** Absent when the canvas is unavailable.
@@ -304,16 +321,30 @@ export function ConversationPanel({
         </div>
       )}
       {/* Plan sits directly above the conversation it governs — after all
-          system alerts, so alerts never sandwich it. */}
-      <PlanProgressPanel
-        status={supervisorStatus}
-        goal={supervisorGoal}
-        steps={supervisorSteps}
-        error={supervisorError}
-        finalOutput={supervisorFinalOutput}
-        onStop={onStopSupervisor}
-        onResume={onResumeSupervisor}
-      />
+          system alerts, so alerts never sandwich it. During review the plan
+          is shown as a contract to approve, not a progress view. */}
+      {supervisorStatus === "reviewing" && supervisorReview ? (
+        <PlanReviewPanel
+          onApprove={onApprovePlan}
+          onCancel={onCancelPlan}
+          onRemoveStep={onRemovePlanStep}
+          review={supervisorReview}
+        />
+      ) : (
+        <PlanProgressPanel
+          error={supervisorError}
+          finalOutput={supervisorFinalOutput}
+          goal={supervisorGoal}
+          onNewPlan={onNewPlanSupervisor}
+          onResume={onResumeSupervisor}
+          onStop={onStopSupervisor}
+          planVersion={supervisorPlanVersion}
+          priorVersions={supervisorPriorVersions}
+          replansExhausted={supervisorReplansExhausted}
+          status={supervisorStatus}
+          steps={supervisorSteps}
+        />
+      )}
 
       <div className="relative flex min-h-0 flex-1">
         <section
@@ -398,11 +429,17 @@ export function ConversationPanel({
 
           <div className="shrink-0 px-4 pt-2 pb-4">
             {confirmation && (
-              <div className="bg-card mb-2 flex items-center gap-3 rounded-xl border p-3 shadow-xs">
+              <div
+                aria-live="assertive"
+                className="border-primary/30 bg-card mb-2 flex items-center gap-3 rounded-xl border p-3 shadow-xs"
+                role="alert"
+              >
                 <ConfirmationIcon tool={confirmation.tool} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">
-                    Confirmation required
+                    {supervisorStatus === "awaitingConfirmation"
+                      ? "A step needs your approval"
+                      : "Confirmation required"}
                     {confirmation.tool !== "supervisor" && (
                       <span className="bg-muted ml-2 rounded px-1 py-px font-mono text-[11px] font-normal">
                         {confirmation.tool}
@@ -412,13 +449,23 @@ export function ConversationPanel({
                   <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs" title={confirmation.prompt}>
                     {confirmation.prompt}
                   </p>
+                  {supervisorSteps.length > 0 && (
+                    <p className="text-muted-foreground mt-0.5 text-[11px]">
+                      {
+                        supervisorSteps.filter((s) => s.state === "completed").length
+                      }
+                      /{supervisorSteps.length} steps done — nothing else runs until you decide.
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 gap-2">
+                  {/* Contextual labels: approve names the action, reject
+                      names the consequence (skip this step, plan continues). */}
                   <Button disabled={busy} onClick={() => void onRespondConfirmation(true)} size="sm">
-                    Approve
+                    {confirmation.tool !== "supervisor" ? `Run ${confirmation.tool}` : "Approve"}
                   </Button>
                   <Button disabled={busy} onClick={() => void onRespondConfirmation(false)} size="sm" variant="ghost">
-                    Reject
+                    Skip this step
                   </Button>
                 </div>
               </div>

@@ -36,6 +36,10 @@ pub struct ArtifactInfo {
     pub kind: String,
     pub handle: Option<String>,
     pub filename: Option<String>,
+    /// Human-readable one-liner for the progress UI — the frontend never
+    /// renders raw handles or a generic "structured result" (see
+    /// PLAN-supervisor-ui-ux.md R5).
+    pub label: Option<String>,
 }
 
 fn artifact_infos(output: &str) -> Vec<ArtifactInfo> {
@@ -46,24 +50,56 @@ fn artifact_infos(output: &str) -> Vec<ArtifactInfo> {
                 kind: "file".into(),
                 handle: Some(handle.clone()),
                 filename: filename.clone(),
+                label: None,
             },
-            kawai_router::Artifact::Structured { .. } => ArtifactInfo {
+            kawai_router::Artifact::Structured { value } => ArtifactInfo {
                 kind: "structured".into(),
                 handle: None,
                 filename: None,
+                // Describe the payload by its shape — e.g. "table: 4 rows ×
+                // 3 cols" or "keys: files, total" — never a generic
+                // "structured result".
+                label: Some(structured_label(value)),
             },
             kawai_router::Artifact::Handle { kind, .. } => ArtifactInfo {
                 kind: "handle".into(),
                 handle: kind.clone(),
                 filename: None,
+                label: Some("stored result".into()),
             },
             kawai_router::Artifact::Text { .. } => ArtifactInfo {
                 kind: "text".into(),
                 handle: None,
                 filename: None,
+                label: None,
             },
         })
         .collect()
+}
+
+/// One-line description of a structured payload for the progress UI.
+fn structured_label(value: &serde_json::Value) -> String {
+    if let Some(array) = value.as_array() {
+        let (rows, cols) = (array.len(), array.first().and_then(|v| v.as_object()).map(|o| o.len()));
+        return match cols {
+            Some(c) => format!("table: {rows} rows × {c} cols"),
+            None => format!("list: {rows} items"),
+        };
+    }
+    if let Some(obj) = value.as_object() {
+        let keys: Vec<&String> = obj.keys().take(3).collect();
+        if !keys.is_empty() {
+            let more = obj.len().saturating_sub(keys.len());
+            let more = if more > 0 { format!(", +{more} more") } else { String::new() };
+            let joined: Vec<&str> = keys.iter().map(|k| k.as_str()).collect();
+            return format!("data: {}{}", joined.join(", "), more);
+        }
+        return "data object".into();
+    }
+    if value.is_string() {
+        return "text result".into();
+    }
+    "data".into()
 }
 
 fn plan_step_infos(plan: &kawai_router::TaskPlan) -> Vec<PlanStepInfo> {
@@ -111,6 +147,9 @@ pub enum SupervisorEvent {
         step_id: String,
         output: String,
         artifacts: Vec<ArtifactInfo>,
+        /// Retries the scheduler spent on this step (0 = first attempt
+        /// succeeded) — drives the retry indicator in the progress UI.
+        retries_used: usize,
     },
     StepFailed {
         step_id: String,
@@ -962,8 +1001,8 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
         kawai_router::SchedulerEvent::ConfirmationRequested { step_id, .. } => {
             format!("confirmationRequested step={step_id}")
         }
-        kawai_router::SchedulerEvent::StepCompleted { step_id, output } => {
-            format!("stepCompleted step={step_id} output_len={}", output.len())
+        kawai_router::SchedulerEvent::StepCompleted { step_id, output, retries_used } => {
+            format!("stepCompleted step={step_id} output_len={} retries={retries_used}", output.len())
         }
         kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => {
             format!("stepFailed step={step_id} error={:?}", error)
@@ -980,10 +1019,10 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
         kawai_router::SchedulerEvent::ConfirmationRequested { step_id, task, description } => {
             SupervisorEvent::ConfirmationRequested { stream_id: stream_id.to_string(), step_id, task, description }
         }
-        kawai_router::SchedulerEvent::StepCompleted { step_id, output } => {
+        kawai_router::SchedulerEvent::StepCompleted { step_id, output, retries_used } => {
             let artifacts = artifact_infos(&output);
             let output = preview_chars(&output, STEP_EVENT_OUTPUT_MAX_CHARS).to_string();
-            SupervisorEvent::StepCompleted { step_id, output, artifacts }
+            SupervisorEvent::StepCompleted { step_id, output, artifacts, retries_used }
         }
         kawai_router::SchedulerEvent::StepFailed { step_id, error, kind, .. } => SupervisorEvent::StepFailed {
             kind: step_error_kind(&kind),

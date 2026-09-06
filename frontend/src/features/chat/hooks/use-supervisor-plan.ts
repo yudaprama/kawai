@@ -25,7 +25,9 @@ export type SupervisorEvent =
       type: "stepCompleted";
       stepId: string;
       output: string;
-      artifacts: { kind: string; handle?: string; filename?: string }[];
+      artifacts: { kind: string; handle?: string; filename?: string; label?: string }[];
+      /** Retries the scheduler spent before this step completed. */
+      retries_used: number;
     }
   | {
       type: "stepFailed";
@@ -45,12 +47,22 @@ export type SupervisorEvent =
   | { type: "planCompleted"; finalOutput?: string }
   | { type: "planFailed"; error: string };
 
-export type SupervisorStatus = "idle" | "running" | "awaitingConfirmation" | "completed" | "failed";
+export type SupervisorStatus =
+  | "idle"
+  | "reviewing"
+  | "running"
+  | "stopping"
+  | "awaitingConfirmation"
+  | "completed"
+  | "failed";
 
 export interface SupervisorArtifact {
   kind: "text" | "file" | "structured" | "handle";
   handle?: string;
   filename?: string;
+  /** Human-readable one-liner from the backend — the UI never renders raw
+   *  handles or a generic "structured result". */
+  label?: string;
 }
 
 export interface SupervisorStep {
@@ -63,7 +75,38 @@ export interface SupervisorStep {
   error?: string;
   /** Failure class: timeout | confirmation | cancelled | tool */
   errorKind?: string;
+  /** Retries the scheduler spent on this step (0 = first attempt). */
+  retriesUsed?: number;
+  /** Wall-clock start of the current/last run — drives the elapsed timer. */
+  startedAt?: number;
   artifacts: SupervisorArtifact[];
+}
+
+/** One step of a plan awaiting user review (before execution). Wire shape
+ *  mirrors the camelCase TaskStep serialization from `plan_task`. */
+export interface PlanReviewStep {
+  id: string;
+  tool: string;
+  task: string;
+  dependsOn: string[];
+  requiresConfirmation: boolean;
+}
+
+export interface PlanReview {
+  plan: unknown;
+  goal: string;
+  steps: PlanReviewStep[];
+  sessionId: number;
+  agentId: string;
+}
+
+/** A superseded plan version (failure-driven replan) kept for the version
+ *  history in the progress panel. */
+export interface PriorPlanVersion {
+  version: number;
+  completed: number;
+  total: number;
+  note: string;
 }
 
 export interface SupervisorPlanState {
@@ -79,6 +122,14 @@ export interface SupervisorPlanState {
   } | null;
   finalOutput: string | null;
   error: string | null;
+  /** Plan awaiting user review (plan_task done, execution not started). */
+  review: PlanReview | null;
+  /** Current plan version — 1 on first run, incremented per replan. */
+  planVersion: number;
+  /** Superseded plan versions, oldest first. */
+  priorVersions: PriorPlanVersion[];
+  /** True when the replan budget is spent — failure then offers "new plan". */
+  replansExhausted: boolean;
 }
 
 interface RunPlanOptions {
@@ -173,6 +224,68 @@ function persistPlanSnapshot(
   void persist(sessionId, "assistant", JSON.stringify(record));
 }
 
+/** Parse a validated `plan_task` result into the review model. Steps the
+ *  supervisor cannot dispatch are filtered exactly like the composition root
+ *  filters them from the executing registry. */
+const NON_DISPATCHABLE_REVIEW_TOOLS: string[] = [];
+function parseReview(plan: unknown, sessionId: number, agentId: string): PlanReview | null {
+  if (typeof plan !== "object" || plan == null) return null;
+  const p = plan as {
+    goal?: unknown;
+    steps?: {
+      id?: unknown;
+      tool?: unknown;
+      task?: unknown;
+      dependsOn?: unknown;
+      requiresConfirmation?: unknown;
+    }[];
+  };
+  if (typeof p.goal !== "string" || !Array.isArray(p.steps)) return null;
+  const steps: PlanReviewStep[] = [];
+  for (const s of p.steps) {
+    if (typeof s.id !== "string") continue;
+    if (typeof s.tool === "string" && NON_DISPATCHABLE_REVIEW_TOOLS.includes(s.tool)) continue;
+    steps.push({
+      id: s.id,
+      tool: typeof s.tool === "string" ? s.tool : "",
+      task: typeof s.task === "string" ? s.task : "",
+      dependsOn: Array.isArray(s.dependsOn) ? s.dependsOn.filter((d): d is string => typeof d === "string") : [],
+      requiresConfirmation: s.requiresConfirmation === true,
+    });
+  }
+  if (steps.length === 0) return null;
+  return { plan, goal: p.goal, steps, sessionId, agentId };
+}
+
+/** Remove a step from the review model — steps that (transitively) depended
+ *  on it are pruned too: the scheduler would skip them anyway (dependency on
+ *  a non-completed step), so removing keeps the reviewed contract honest. */
+function pruneReviewStep(review: PlanReview, stepId: string): PlanReview {
+  const doomed = new Set<string>([stepId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const s of review.steps) {
+      if (doomed.has(s.id)) continue;
+      if (s.dependsOn.some((d) => doomed.has(d))) {
+        doomed.add(s.id);
+        grew = true;
+      }
+    }
+  }
+  const steps = review.steps.filter((s) => !doomed.has(s.id));
+  const plan =
+    typeof review.plan === "object" && review.plan != null
+      ? {
+          ...review.plan,
+          steps: (review.plan as { steps?: unknown[] }).steps?.filter(
+            (s) => typeof s === "object" && s != null && !doomed.has((s as { id?: unknown }).id as string),
+          ),
+        }
+      : review.plan;
+  return { ...review, steps, plan };
+}
+
 export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const [state, setState] = useState<SupervisorPlanState>({
     status: "idle",
@@ -181,6 +294,10 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     pendingConfirmation: null,
     finalOutput: null,
     error: null,
+    review: null,
+    planVersion: 0,
+    priorVersions: [],
+    replansExhausted: false,
   });
   const [messages, setMessages] = useState<UIMessage[]>([]);
 
@@ -188,6 +305,13 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const streamIdRef = useRef<string>("");
   const goalRef = useRef<string | null>(null);
   const stepsRef = useRef<SupervisorStep[]>([]);
+  /** True between Stop being clicked and the terminal event arriving — the
+   *  backend cancels cooperatively (active steps finish first), so the panel
+   *  must say "stopping", not "failed", until the stream ends. */
+  const stoppingRef = useRef(false);
+  const planVersionRef = useRef(0);
+  const replansUsedRef = useRef(0);
+  const priorVersionsRef = useRef<PriorPlanVersion[]>([]);
   // Resume: re-execute the LAST plan verbatim. Same plan JSON → same plan key
   // → the supervisor serves already-completed steps from its persisted
   // ExecutionMemo seed and only re-runs what failed or never ran.
@@ -243,8 +367,16 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         pendingConfirmation: null,
         finalOutput: null,
         error: null,
+        review: null,
+        planVersion: 1,
+        priorVersions: [],
+        replansExhausted: false,
       });
       stepsRef.current = [];
+      stoppingRef.current = false;
+      planVersionRef.current = 1;
+      replansUsedRef.current = 0;
+      priorVersionsRef.current = [];
 
       // The plan state above is the source of truth and renders through
       // PlanProgressPanel; the conversation carries only the goal and the
@@ -284,7 +416,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 syncAssistant();
                 break;
               case "stepStarted":
-                upsertStep(ev.stepId, { tool: ev.tool }, { state: "running" });
+                upsertStep(ev.stepId, { tool: ev.tool }, { state: "running", startedAt: Date.now() });
                 break;
               case "confirmationRequested":
                 upsertStep(ev.stepId, { task: ev.task }, { state: "running" });
@@ -305,10 +437,12 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                   {
                     state: "completed",
                     output: ev.output,
+                    retriesUsed: ev.retries_used,
                     artifacts: ev.artifacts.map((a) => ({
                       kind: a.kind as SupervisorArtifact["kind"],
                       handle: a.handle,
                       filename: a.filename,
+                      label: a.label,
                     })),
                   },
                 );
@@ -325,10 +459,13 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 // carry their failed state from stepFailed events.
                 patch({ status: "running", pendingConfirmation: null });
                 break;
-              case "planRevised":
+              case "planRevised": {
                 // Snapshot the superseded plan's progress BEFORE re-seeding —
                 // history then shows what v1 accomplished before the revision.
-                persistPlanSnapshot(sessionId, goalRef.current, stepsRef.current, {
+                const prior = stepsRef.current;
+                const priorCompleted = prior.filter((s) => s.state === "completed").length;
+                const priorVersion = planVersionRef.current;
+                persistPlanSnapshot(sessionId, goalRef.current, prior, {
                   output: null,
                   error: `superseded by revision #${ev.attempt}`,
                 });
@@ -336,8 +473,27 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 // as pending (same shape as planStarted). Conversation keeps
                 // the same goal; only the remaining work is re-planned.
                 stepsRef.current = seedSteps(ev.steps);
-                patch({ status: "running", steps: stepsRef.current, error: null });
+                planVersionRef.current = priorVersion + 1;
+                replansUsedRef.current += 1;
+                priorVersionsRef.current = [
+                  ...priorVersionsRef.current,
+                  {
+                    version: priorVersion,
+                    completed: priorCompleted,
+                    total: prior.length,
+                    note: `revised after failure`,
+                  },
+                ];
+                patch({
+                  status: "running",
+                  steps: stepsRef.current,
+                  error: null,
+                  planVersion: planVersionRef.current,
+                  priorVersions: priorVersionsRef.current,
+                  replansExhausted: replansUsedRef.current >= 1,
+                });
                 break;
+              }
               case "planCompleted": {
                 patch({
                   status: "completed",
@@ -385,22 +541,30 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           },
           onDone: () => {
             streamCtrl.current = null;
-            setState((prev) =>
-              prev.status === "running" || prev.status === "awaitingConfirmation"
+            setState((prev) => {
+              if (stoppingRef.current) {
+                // Cancel resolved without a terminal event (e.g. the web
+                // transport aborts the connection) — the stop is final.
+                stoppingRef.current = false;
+                return { ...prev, status: "failed", error: "Plan stopped.", pendingConfirmation: null };
+              }
+              return prev.status === "running" || prev.status === "awaitingConfirmation"
                 ? {
                     ...prev,
                     status: prev.status === "awaitingConfirmation" ? prev.status : "completed",
                     pendingConfirmation: null,
                   }
-                : prev,
-            );
+                : prev;
+            });
           },
           onError: (err) => {
             streamCtrl.current = null;
+            const wasStopping = stoppingRef.current;
+            stoppingRef.current = false;
             patch({
               status: "failed",
               pendingConfirmation: null,
-              error: err.message,
+              error: wasStopping ? "Plan stopped." : err.message,
             });
             void persist(sessionId, "assistant", `Plan error: ${err.message}`);
           },
@@ -413,7 +577,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
 
   const planAndRun = useCallback(
     async (goal: string, sessionId: number, agentId: string) => {
-      // User message first (display + history), then plan and execute.
+      // User message first (display + history), then plan. Execution waits
+      // for the review gate — the user runs, prunes, or cancels the plan.
       const userMessage: UIMessage = {
         id: nanoid(),
         role: "user",
@@ -434,9 +599,37 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         callbacks?.onPlanFailed?.(goal, message);
         return;
       }
-      runPlan({ plan, sessionId, agentId });
+      const review = parseReview(plan, sessionId, agentId);
+      if (review == null) {
+        // Unparseable plan — do not gate; execute as before (the backend
+        // validation is the authority, the review model is a courtesy).
+        runPlan({ plan, sessionId, agentId });
+        return;
+      }
+      patch({ status: "reviewing", review, error: null });
     },
     [runPlan, patch, callbacks],
+  );
+
+  /** Review gate: execute the plan exactly as reviewed. */
+  const approvePlan = useCallback(() => {
+    const review = state.review;
+    if (!review || streamCtrl.current) return;
+    runPlan({ plan: review.plan, sessionId: review.sessionId, agentId: review.agentId });
+  }, [runPlan, state.review]);
+
+  /** Review gate: discard the plan without executing anything. */
+  const cancelPlan = useCallback(() => {
+    patch({ status: "idle", review: null, error: null });
+  }, [patch]);
+
+  /** Review gate: remove one step — transitively dependent steps are pruned
+   *  with it (they could never run once their source is gone). */
+  const removeStep = useCallback(
+    (stepId: string) => {
+      setState((prev) => (prev.review ? { ...prev, review: pruneReviewStep(prev.review, stepId) } : prev));
+    },
+    [],
   );
 
   const respond = useCallback(
@@ -450,9 +643,15 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   );
 
   const stop = useCallback(() => {
-    streamCtrl.current?.cancel();
+    const ctrl = streamCtrl.current;
+    if (!ctrl) return;
+    // Cooperative cancellation: the backend finishes active steps and starts
+    // no new wave. Stay "stopping" until the terminal event arrives — never
+    // claim the plan is dead while steps are still running.
+    stoppingRef.current = true;
+    ctrl.cancel();
     streamCtrl.current = null;
-    patch({ status: "failed", pendingConfirmation: null, error: "cancelled" });
+    patch({ status: "stopping", pendingConfirmation: null });
   }, [patch]);
 
   const clearMessages = useCallback(() => setMessages([]), []);
@@ -470,6 +669,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     runPlan,
     planAndRun,
     resume,
+    approvePlan,
+    cancelPlan,
+    removeStep,
     approve: () => respond(true),
     reject: () => respond(false),
     stop,

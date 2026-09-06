@@ -13,6 +13,22 @@ Mode desain: **Operate** — user menitipkan pekerjaan ke mesin deterministik.
 Yang dibutuhkan: scanability, kontrol, kepastian status. Ekspresi visual
 bukan prioritas permukaan ini.
 
+## Status
+
+- R1–R7 + P2 (elapsed timer, collapsed completed panel): **implemented**.
+  Backend enrichment shipped: `StepCompleted` carries `retries_used`
+  (scheduler-owned counter) and `ArtifactInfo` carries a human `label`
+  (`structured_label`: "table: N rows × M cols" / "data: keys…"; handles →
+  "stored result").
+- Attention nudge: already covered by the existing notification dispatch on
+  plan completion (`App.tsx`) — no extra work.
+- Review gate is frontend-only by design; the backend's `validate_plan`
+  remains the authority — an unparseable plan bypasses the gate and goes
+  straight to execution rather than blocking the user.
+- Reorder in the review panel is deliberately omitted: execution order is
+  derived from `dependsOn`, so any meaningful "reorder" is a dependency edit;
+  the panel offers step removal (with transitive dependent pruning) instead.
+
 ## Prioritas
 
 Urutan eksekusi: R1 + R2 (kejujuran kontrol, risiko rendah) → R3 (nilai
