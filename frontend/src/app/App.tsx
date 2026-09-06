@@ -17,6 +17,7 @@ import { MemoryAssetPage } from "@/features/memory/components/memory-page";
 import { SkillsAssetPage } from "@/features/skills/components/skills-page";
 import { WikiAssetPage } from "@/features/assets/pages/wiki-page";
 import { SqlSourcesAssetPage } from "@/features/assets/pages/sql-sources-page";
+import { WalletPage } from "@/features/wallet/components/wallet-page";
 import { CanvasPanel } from "@/features/chat/components/canvas-panel";
 import { ConversationPanel } from "@/features/chat/components/conversation-panel";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
@@ -262,6 +263,8 @@ export default function App() {
           setAssetView(null);
         }}
       />
+    ) : assetView === "wallet" ? (
+      <WalletPage onBack={() => setAssetView(null)} />
     ) : null;
 
   // Canvas — output-only pane: tool results and document previews. Knowledge
