@@ -1719,6 +1719,8 @@ async fn execute_supervisor_plan_handler(
     let s = stream.map(|event| {
         let name = match &event {
             crate::supervisor::SupervisorEvent::PlanStarted { .. } => "planStarted",
+            crate::supervisor::SupervisorEvent::PlanRevising { .. } => "planRevising",
+            crate::supervisor::SupervisorEvent::PlanRevised { .. } => "planRevised",
             crate::supervisor::SupervisorEvent::StepStarted { .. } => "stepStarted",
             crate::supervisor::SupervisorEvent::StepCompleted { .. } => "stepCompleted",
             crate::supervisor::SupervisorEvent::StepFailed { .. } => "stepFailed",
