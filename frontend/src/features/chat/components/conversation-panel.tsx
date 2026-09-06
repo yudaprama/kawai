@@ -106,7 +106,6 @@ export function ConversationPanel({
   onAddFiles,
   onAddLink,
   onOpenTool,
-  sessionsRail,
   headerExtra,
 }: {
   agent: AgentInfo;
@@ -154,9 +153,6 @@ export function ConversationPanel({
   onAddLink?: () => void;
   onOpenTool?: (toolCallId: string) => void;
   onOpenCodeGraph?: (query: string, result: string) => void;
-  /** Persistent sessions rail (xl+) — composed in App with the same
-   *  handlers as SessionHistoryDialog. */
-  sessionsRail?: React.ReactNode;
   headerExtra?: React.ReactNode;
 }) {
   const [forceAll, setForceAll] = useState(false);
@@ -459,8 +455,6 @@ export function ConversationPanel({
             {canvas}
           </div>
         )}
-
-        {sessionsRail}
       </div>
     </main>
   );

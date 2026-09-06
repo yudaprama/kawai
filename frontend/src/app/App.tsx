@@ -20,7 +20,6 @@ import { SqlSourcesAssetPage } from "@/features/assets/pages/sql-sources-page";
 import { CanvasPanel } from "@/features/chat/components/canvas-panel";
 import { ConversationPanel } from "@/features/chat/components/conversation-panel";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
-import { SessionsRail } from "@/features/chat/components/sessions-rail";
 
 export default function App() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -327,18 +326,6 @@ export default function App() {
             setAssetView("code");
           }}
           headerExtra={<NotificationCenter />}
-          sessionsRail={
-            <SessionsRail
-              activeSessionId={chat.sessionId}
-              archivedSessions={chat.archivedSessions}
-              busy={busy}
-              groupedSessions={chat.groupedSessions}
-              onDeleteSession={(id) => void chat.deleteSession(id)}
-              onArchiveSession={(id, archived) => chat.setSessionArchived(id, archived)}
-              onRenameSession={(id, title) => void chat.renameSession(id, title)}
-              onSelectSession={(id) => void chat.selectSession(id)}
-            />
-          }
           canvasOpen={canvasOpen}
           onToggleCanvas={() => setCanvasOpen((v) => !v)}
           canvas={canvasOpen ? canvas : null}
