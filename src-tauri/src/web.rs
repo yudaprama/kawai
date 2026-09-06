@@ -538,6 +538,57 @@ async fn monad_chain_status_handler(
     }
 }
 
+/// Public RPC: ERC-20 balance (same op as the Tauri `get_token_balance`).
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct TokenBalanceRequest {
+    token_address: String,
+    wallet_address: String,
+    rpc_url: Option<String>,
+}
+
+async fn get_token_balance_handler(
+    Json(req): Json<TokenBalanceRequest>,
+) -> Result<Json<logic::monad::TokenBalance>, (StatusCode, String)> {
+    logic::monad::erc20_balance(req.rpc_url.as_deref(), &req.token_address, &req.wallet_address)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+/// Public RPC: ERC-20 metadata (same op as the Tauri `get_token_info`).
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct TokenInfoRequest {
+    token_address: String,
+    rpc_url: Option<String>,
+}
+
+async fn get_token_info_handler(
+    Json(req): Json<TokenInfoRequest>,
+) -> Result<Json<logic::monad::TokenInfo>, (StatusCode, String)> {
+    logic::monad::erc20_info(req.rpc_url.as_deref(), &req.token_address)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+/// Public RPC: gas price (same op as the Tauri `estimate_gas`).
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct EstimateGasRequest {
+    rpc_url: Option<String>,
+}
+
+async fn estimate_gas_handler(
+    Json(req): Json<EstimateGasRequest>,
+) -> Result<Json<logic::monad::GasEstimate>, (StatusCode, String)> {
+    logic::monad::gas_estimate(req.rpc_url.as_deref())
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
 // ── Device-scoped Monad hot wallet (public; same ops as the Tauri commands) ──
 
 fn wallet_err(e: String) -> (StatusCode, String) {
@@ -569,6 +620,84 @@ async fn monad_wallet_sign_message_handler(
 
 async fn monad_wallet_delete_handler() -> Result<Json<()>, (StatusCode, String)> {
     logic::monad_wallet::delete().map(Json).map_err(wallet_err)
+}
+
+// ── User fund-moving ops (signed on-device by the user's own keychain key) —
+//    mounted on the PROTECTED router: they spend the user's funds, so on web
+//    they require a session. Desktop has no session for wallet ops by design.
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct TransferRequest {
+    to: String,
+    /// Decimal string ("1.5") — parsed in integer math in the Rust layer.
+    amount: String,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct TokenTransferRequest {
+    token_address: String,
+    to: String,
+    amount: String,
+    decimals: u8,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct DepositRequest {
+    amount: String,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ReceiptRequest {
+    tx_hash: String,
+}
+
+async fn transfer_native_handler(
+    Json(req): Json<TransferRequest>,
+) -> Result<Json<logic::monad_wallet::TxResult>, (StatusCode, String)> {
+    logic::monad_wallet::transfer_native(&req.to, &req.amount)
+        .await
+        .map(Json)
+        .map_err(wallet_err)
+}
+
+async fn transfer_token_handler(
+    Json(req): Json<TokenTransferRequest>,
+) -> Result<Json<logic::monad_wallet::TxResult>, (StatusCode, String)> {
+    logic::monad_wallet::transfer_token(&req.token_address, &req.to, &req.amount, req.decimals)
+        .await
+        .map(Json)
+        .map_err(wallet_err)
+}
+
+async fn transfer_usdt_handler(
+    Json(req): Json<TransferRequest>,
+) -> Result<Json<logic::monad_wallet::TxResult>, (StatusCode, String)> {
+    logic::monad_wallet::transfer_usdt(&req.to, &req.amount)
+        .await
+        .map(Json)
+        .map_err(wallet_err)
+}
+
+async fn deposit_to_vault_handler(
+    Json(req): Json<DepositRequest>,
+) -> Result<Json<logic::monad_wallet::TxResult>, (StatusCode, String)> {
+    logic::monad_wallet::deposit_to_vault(&req.amount)
+        .await
+        .map(Json)
+        .map_err(wallet_err)
+}
+
+async fn get_transaction_receipt_handler(
+    Json(req): Json<ReceiptRequest>,
+) -> Result<Json<Option<logic::monad_wallet::ReceiptInfo>>, (StatusCode, String)> {
+    logic::monad_wallet::transaction_receipt(&req.tx_hash)
+        .await
+        .map(Json)
+        .map_err(wallet_err)
 }
 
 async fn generate_activity_handler(
@@ -1452,6 +1581,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/logout", post(logout_handler))
         .route("/api/check_monad_balance", post(check_monad_balance_handler))
         .route("/api/monad_chain_status", post(monad_chain_status_handler))
+        .route("/api/get_token_balance", post(get_token_balance_handler))
+        .route("/api/get_token_info", post(get_token_info_handler))
+        .route("/api/estimate_gas", post(estimate_gas_handler))
         // Device-scoped Monad hot wallet — PUBLIC ops: the wallet exists
         // before any session (it creates the identity via SIWE login).
         .route("/api/monad_wallet_address", post(monad_wallet_address_handler))
@@ -1466,6 +1598,13 @@ pub fn router(dist_dir: PathBuf) -> Router {
 
     let protected = Router::new()
         .route("/api/whoami", post(whoami_handler))
+        // User fund-moving ops (signed by the user's own device key) — auth
+        // required on web per the fund-moving boundary.
+        .route("/api/transfer_native", post(transfer_native_handler))
+        .route("/api/transfer_token", post(transfer_token_handler))
+        .route("/api/transfer_usdt", post(transfer_usdt_handler))
+        .route("/api/deposit_to_vault", post(deposit_to_vault_handler))
+        .route("/api/get_transaction_receipt", post(get_transaction_receipt_handler))
         .route(
             "/api/create_chat_session",
             post(create_chat_session_handler),

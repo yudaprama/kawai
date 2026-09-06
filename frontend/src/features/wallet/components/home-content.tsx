@@ -33,7 +33,7 @@ type Props = {
   balanceVisible: boolean;
   setBalanceVisible: (v: boolean) => void;
   setModalType: (
-    t: "send" | "receive" | "swap" | "deposit" | "addAccount" | "createWallet" | "importWallet" | "addToken" | null,
+    t: "send" | "receive" | "swap" | "deposit" | "addAccount" | "createWallet" | "addToken" | null,
   ) => void;
   transactions: { id: string; txType: string; amount: string; txHash: string; createdAt: string }[];
   currentNetwork: NetworkInfo | null;

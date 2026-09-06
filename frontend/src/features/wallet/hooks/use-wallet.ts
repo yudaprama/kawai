@@ -5,13 +5,19 @@ import type { WalletInfo, WalletStatus } from "../lib/types";
 
 export function useWallet() {
   const [status, setStatus] = useState<WalletStatus | null>(null);
+  const [available, setAvailable] = useState(true);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const s = await tauriWalletAdapter.getStatus();
-      setStatus(s);
+      const ok = await tauriWalletAdapter.isAvailable();
+      setAvailable(ok);
+      if (!ok) {
+        setStatus(null);
+        return;
+      }
+      setStatus(await tauriWalletAdapter.getStatus());
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -23,29 +29,23 @@ export function useWallet() {
     void refresh();
   }, [refresh]);
 
-  const create = useCallback(
-    async (pw: string, mnemonic: string, desc?: string) => {
-      const addr = await tauriWalletAdapter.createWallet(pw, mnemonic, desc);
-      await refresh();
-      return addr;
-    },
-    [refresh],
-  );
+  const create = useCallback(async () => {
+    const addr = await tauriWalletAdapter.createWallet();
+    await refresh();
+    return addr;
+  }, [refresh]);
 
-  const remove = useCallback(
-    async (addr: string) => {
-      await tauriWalletAdapter.deleteWallet(addr);
-      await refresh();
-    },
-    [refresh],
-  );
+  const remove = useCallback(async () => {
+    await tauriWalletAdapter.deleteWallet();
+    await refresh();
+  }, [refresh]);
 
   return {
     status,
+    available,
     wallets: status?.wallets ?? ([] as WalletInfo[]),
     address: status?.address ?? "",
     hasWallet: !!status?.hasWallet,
-    isLocked: !!status?.isLocked,
     loading,
     refresh,
     create,

@@ -342,16 +342,7 @@ pub async fn plan_task(
     // Turso catalog, best-effort: unavailable means searches report empty —
     // the planner then plans from the core set or fails validation. There is
     // deliberately NO full-catalog fallback (mode A).
-    let catalog = match kawai_tool_catalog::RemoteConfig::from_env() {
-        Some(cfg) => match kawai_tool_catalog::Catalog::open_default(&cfg).await {
-            Ok(c) => {
-                let _ = tokio::time::timeout(PLAN_SEARCH_SYNC_TIMEOUT, c.sync()).await;
-                Some(c)
-            }
-            Err(_) => None,
-        },
-        None => None,
-    };
+    let catalog = open_synced_catalog(PLAN_SEARCH_SYNC_TIMEOUT).await;
     let embedder = kawai_embedding::build_providers_from_env();
 
     let system = plan_loop_system_prompt(&core_tools);
@@ -510,6 +501,49 @@ pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai
 
 // ── Planner search-loop (mode A: no full-catalog fallback) ──────────────────
 
+/// Open the Turso tool catalog and sync the local embedded replica, with every
+/// failure surfaced on stderr. An unreachable sync is tolerated (the replica
+/// serves its last synced state), but an EMPTY replica is treated as
+/// unavailable: searching an empty catalog silently returns no hits, which
+/// makes the planner believe no domain tools exist and degrade to the core
+/// set (the session-25 failure class). Returning `None` there makes
+/// `run_tool_search` report the outage honestly to the planner instead.
+async fn open_synced_catalog(
+    sync_timeout: std::time::Duration,
+) -> Option<kawai_tool_catalog::Catalog> {
+    let cfg = kawai_tool_catalog::RemoteConfig::from_env()?;
+    let catalog = match kawai_tool_catalog::Catalog::open_default(&cfg).await {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[tool-catalog] open failed: {e}");
+            return None;
+        }
+    };
+    match tokio::time::timeout(sync_timeout, catalog.sync()).await {
+        Ok(Ok(frames)) if frames > 0 => {
+            eprintln!("[tool-catalog] synced {frames} frames from remote");
+        }
+        Ok(Ok(_)) => {} // already up to date
+        Ok(Err(e)) => eprintln!("[tool-catalog] sync failed: {e}"),
+        Err(_) => eprintln!("[tool-catalog] sync timed out after {sync_timeout:?}"),
+    }
+    match catalog.list_names().await {
+        Ok(names) if !names.is_empty() => Some(catalog),
+        Ok(_) => {
+            eprintln!(
+                "[tool-catalog] local replica is EMPTY (sync failed or remote unseeded) — \
+                 planner restricted to core tools; re-seed via \
+                 `cargo run --example seed_tool_catalog --features litert,binance,codegraph`"
+            );
+            None
+        }
+        Err(e) => {
+            eprintln!("[tool-catalog] replica unreadable: {e}");
+            None
+        }
+    }
+}
+
 /// Search rounds the planner may spend before it must emit the plan.
 /// 2 rounds × up to 3 queries per round proved sufficient (probe: every
 /// benchmark goal resolved in ≤1 effective round).
@@ -532,8 +566,11 @@ const NON_DISPATCHABLE_TOOLS: [&str; 5] = [
     "plan_revise",
     "artifact_recall",
 ];
-/// Sync budget — an unreachable Turso must never stall planning.
-const PLAN_SEARCH_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Sync budget — an unreachable Turso must never stall planning, but it must
+/// be long enough for the FIRST sync of a cold replica (a full frame pull,
+/// not an incremental one); 5 s made the cold path time out and left the
+/// replica permanently empty.
+const PLAN_SEARCH_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 /// Cap on the accumulated search results package (matches the remote pool's
 /// typical small-candidate materials budget).
 const PLAN_MATERIALS_CAP: usize = 12_000;
@@ -654,7 +691,7 @@ const NARROW_MIN_TOOLS: usize = 60;
 /// Top-k tools admitted to the prompt when narrowing kicks in.
 const NARROW_TOP_K: usize = 40;
 /// Sync budget — an unreachable Turso must never stall planning.
-const NARROW_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const NARROW_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Narrow the planner prompt's tool catalog to the top-k entries the remote
 /// Turso tool catalog ranks as relevant to the goal (vector + BM25 fused via
@@ -688,10 +725,7 @@ pub async fn narrow_registry_for_goal_with(
         .ok()?
         .into_iter()
         .next()?;
-    let catalog = kawai_tool_catalog::Catalog::open_default(&cfg)
-        .await
-        .ok()?;
-    let _ = tokio::time::timeout(NARROW_SYNC_TIMEOUT, catalog.sync()).await;
+    let catalog = open_synced_catalog(NARROW_SYNC_TIMEOUT).await?;
     let hits = catalog.search(goal, &query_vec, top_k).await.ok()?;
     let keep: std::collections::HashSet<String> =
         hits.into_iter().map(|t| t.name).collect();

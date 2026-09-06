@@ -83,6 +83,31 @@ pub async fn monad_chain_status(rpc_url: Option<String>) -> Result<logic::monad:
     logic::monad::chain_status(rpc_url.as_deref()).await
 }
 
+/// Public RPC: ERC-20 balance for a (token, wallet) pair on Monad.
+#[tauri::command]
+pub async fn get_token_balance(
+    token_address: String,
+    wallet_address: String,
+    rpc_url: Option<String>,
+) -> Result<logic::monad::TokenBalance, String> {
+    logic::monad::erc20_balance(rpc_url.as_deref(), &token_address, &wallet_address).await
+}
+
+/// Public RPC: ERC-20 metadata (symbol + decimals) for a token on Monad.
+#[tauri::command]
+pub async fn get_token_info(
+    token_address: String,
+    rpc_url: Option<String>,
+) -> Result<logic::monad::TokenInfo, String> {
+    logic::monad::erc20_info(rpc_url.as_deref(), &token_address).await
+}
+
+/// Public RPC: current Monad gas price (display only).
+#[tauri::command]
+pub async fn estimate_gas(rpc_url: Option<String>) -> Result<logic::monad::GasEstimate, String> {
+    logic::monad::gas_estimate(rpc_url.as_deref()).await
+}
+
 // ── Device-scoped Monad hot wallet (PUBLIC ops — the wallet exists before
 //    any session: it IS what creates the identity via SIWE login). Key lives
 //    in the OS keychain, never crosses to the frontend. ──
@@ -110,6 +135,45 @@ pub async fn monad_wallet_sign_message(message: String) -> Result<String, String
 #[tauri::command]
 pub async fn monad_wallet_delete() -> Result<(), String> {
     logic::monad_wallet::delete()
+}
+
+/// Sign + broadcast a native MON transfer from the device hot wallet.
+/// `amount` is a decimal string — parsed in integer math in the Rust layer.
+#[tauri::command]
+pub async fn transfer_native(to: String, amount: String) -> Result<logic::monad_wallet::TxResult, String> {
+    logic::monad_wallet::transfer_native(&to, &amount).await
+}
+
+/// Sign + broadcast an ERC-20 `transfer` from the device hot wallet.
+/// `decimals` should come from `get_token_info`.
+#[tauri::command]
+pub async fn transfer_token(
+    token_address: String,
+    to: String,
+    amount: String,
+    decimals: u8,
+) -> Result<logic::monad_wallet::TxResult, String> {
+    logic::monad_wallet::transfer_token(&token_address, &to, &amount, decimals).await
+}
+
+/// Sign + broadcast a USDT transfer (hardcoded stablecoin, 6 decimals).
+#[tauri::command]
+pub async fn transfer_usdt(to: String, amount: String) -> Result<logic::monad_wallet::TxResult, String> {
+    logic::monad_wallet::transfer_usdt(&to, &amount).await
+}
+
+/// Approve + deposit USDT into the payment vault. Returns the deposit tx.
+#[tauri::command]
+pub async fn deposit_to_vault(amount: String) -> Result<logic::monad_wallet::TxResult, String> {
+    logic::monad_wallet::deposit_to_vault(&amount).await
+}
+
+/// Receipt probe for a previously-broadcast tx (`Ok(None)` = still pending).
+#[tauri::command]
+pub async fn get_transaction_receipt(
+    tx_hash: String,
+) -> Result<Option<logic::monad_wallet::ReceiptInfo>, String> {
+    logic::monad_wallet::transaction_receipt(&tx_hash).await
 }
 
 /// Streaming command. The `stream_id` lets the client request early

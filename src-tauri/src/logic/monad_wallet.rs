@@ -26,6 +26,8 @@ pub use stub::*;
 mod imp {
     use crate::keychain;
 
+    pub use kawai_monad::{ReceiptInfo, TxResult};
+
     /// Device-scoped keychain slot. A hot wallet exists BEFORE any Supabase
     /// identity (it is what creates the identity via SIWE), so it cannot be
     /// keyed by user_id.
@@ -74,6 +76,59 @@ mod imp {
     /// unrecoverable from this device unless the key was exported elsewhere.
     pub fn delete() -> Result<(), String> {
         keychain::clear_for(&WALLET_ACCOUNT)
+    }
+
+    /// Load the stored secret bytes (error if no wallet exists).
+    fn load_secret() -> Result<Vec<u8>, String> {
+        let secret = keychain::load_for(&WALLET_ACCOUNT)?
+            .ok_or_else(|| "no wallet for this user — create one first".to_string())?;
+        decode_secret(&secret)
+    }
+
+    /// Sign + broadcast a native MON transfer from the device hot wallet.
+    /// `amount` is a decimal string (e.g. "1.5") — parsed in integer math
+    /// inside the crate, never as float.
+    pub async fn transfer_native(to: &str, amount: &str) -> Result<kawai_monad::TxResult, String> {
+        let raw = kawai_monad::parse_units(amount, 18)?;
+        let secret = load_secret()?;
+        kawai_monad::transfer(Some(crate::logic::monad_contracts::rpc()), &secret, to, None, raw).await
+    }
+
+    /// Sign + broadcast an ERC-20 `transfer(to, amount)` from the device
+    /// hot wallet. `amount` is a decimal string; `decimals` from the token.
+    pub async fn transfer_token(
+        token: &str,
+        to: &str,
+        amount: &str,
+        decimals: u8,
+    ) -> Result<kawai_monad::TxResult, String> {
+        let raw = kawai_monad::parse_units(amount, decimals)?;
+        let secret = load_secret()?;
+        kawai_monad::transfer(Some(crate::logic::monad_contracts::rpc()), &secret, to, Some(token), raw).await
+    }
+
+    /// Stablecoin transfer (hardcoded address, 6 decimals; on-chain symbol is USDC).
+    pub async fn transfer_usdt(to: &str, amount: &str) -> Result<kawai_monad::TxResult, String> {
+        transfer_token(crate::logic::monad_contracts::stablecoin(), to, amount, 6).await
+    }
+
+    /// Deposit USDT into the payment vault (approve + `deposit(uint256)`).
+    pub async fn deposit_to_vault(amount: &str) -> Result<kawai_monad::TxResult, String> {
+        let raw = kawai_monad::parse_units(amount, 6)?;
+        let secret = load_secret()?;
+        kawai_monad::vault_deposit(
+            Some(crate::logic::monad_contracts::rpc()),
+            &secret,
+            crate::logic::monad_contracts::vault(),
+            crate::logic::monad_contracts::stablecoin(),
+            raw,
+        )
+        .await
+    }
+
+    /// Receipt probe for a previously-broadcast tx (`Ok(None)` = pending).
+    pub async fn transaction_receipt(tx_hash: &str) -> Result<Option<kawai_monad::ReceiptInfo>, String> {
+        kawai_monad::transaction_receipt(Some(crate::logic::monad_contracts::rpc()), tx_hash).await
     }
 
     fn decode_secret(hex: &str) -> Result<Vec<u8>, String> {
@@ -127,6 +182,47 @@ mod stub {
         Err(MSG.into())
     }
     pub fn delete() -> Result<(), String> {
+        Err(MSG.into())
+    }
+
+    /// Response shape mirror (fields identical to the real `TxResult`).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct TxResult {
+        pub tx_hash: String,
+        pub from: String,
+        pub to: String,
+        pub amount: String,
+        pub nonce: u64,
+    }
+
+    /// Response shape mirror (fields identical to the real `ReceiptInfo`).
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ReceiptInfo {
+        pub tx_hash: String,
+        pub success: bool,
+        pub block_number: u64,
+    }
+
+    pub async fn transfer_native(_to: &str, _amount: &str) -> Result<TxResult, String> {
+        Err(MSG.into())
+    }
+    pub async fn transfer_token(
+        _token: &str,
+        _to: &str,
+        _amount: &str,
+        _decimals: u8,
+    ) -> Result<TxResult, String> {
+        Err(MSG.into())
+    }
+    pub async fn transfer_usdt(_to: &str, _amount: &str) -> Result<TxResult, String> {
+        Err(MSG.into())
+    }
+    pub async fn deposit_to_vault(_amount: &str) -> Result<TxResult, String> {
+        Err(MSG.into())
+    }
+    pub async fn transaction_receipt(_tx_hash: &str) -> Result<Option<ReceiptInfo>, String> {
         Err(MSG.into())
     }
 }

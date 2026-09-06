@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { NetworkInfo } from "../lib/types";
 
 type Props = {
-  onSend: (to: string, amount: number, asset: string, customAddr?: string) => void;
+  onSend: (to: string, amount: string, asset: string, customAddr?: string) => void;
   loading: boolean;
   currentNetwork?: NetworkInfo | null;
 };
@@ -18,7 +18,7 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
   const [customAddr, setCustomAddr] = useState("");
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
-  const [confirm, setConfirm] = useState<null | { to: string; amount: number; asset: string; customAddr?: string }>(
+  const [confirm, setConfirm] = useState<null | { to: string; amount: string; asset: string; customAddr?: string }>(
     null,
   );
 
@@ -31,10 +31,11 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
 
   const onReview = () => {
     if (!/^0x[a-fA-F0-9]{40}$/.test(to)) return toast.error("Invalid recipient address");
-    const n = parseFloat(amount);
-    if (!Number.isFinite(n) || n <= 0) return toast.error("Invalid amount");
+    // decimal string validation — the amount stays a string all the way to
+    // Rust, where parse_units does the integer math
+    if (!/^\d*(\.\d+)?$/.test(amount.trim()) || !parseFloat(amount)) return toast.error("Invalid amount");
     if (asset === "custom" && !/^0x[a-fA-F0-9]{40}$/.test(customAddr)) return toast.error("Invalid token address");
-    setConfirm({ to, amount: n, asset, customAddr: asset === "custom" ? customAddr : undefined });
+    setConfirm({ to, amount: amount.trim(), asset, customAddr: asset === "custom" ? customAddr : undefined });
   };
 
   if (confirm) {
@@ -61,7 +62,7 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Network</span>
-            <span>{currentNetwork?.name ?? "Monad Testnet"}</span>
+            <span>{currentNetwork?.name ?? "Monad"}</span>
           </div>
         </div>
         <div className="flex gap-2">

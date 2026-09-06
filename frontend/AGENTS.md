@@ -60,6 +60,7 @@ frontend/
 │   ├── features/           # feature-organized domain code
 │   │   ├── auth/            # authentication: auth-gate.tsx, use-auth.ts
 │   │   ├── agents/          # agent catalog rail: agents-rail.tsx, registry.tsx (ContextOnboarding type)
+│   │   ├── wallet/          # Monad wallet asset page (README.md inside = end-to-end reference: adapters, ops, network/security model)
 │   │   ├── chat/            # chat + supervisor execution
 │   │   │   ├── components/  # chat-composer, conversation-panel, message-part-view, session-row, session-history-dialog
 │   │   │   ├── hooks/       # use-chat-model, use-chat-sessions, use-supervisor-chat, use-supervisor-plan

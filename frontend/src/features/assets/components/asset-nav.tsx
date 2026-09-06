@@ -13,7 +13,7 @@ export interface AssetNavEntry {
 /** The rail's Assets section — presentation only, owned by the frontend. */
 export const ASSET_NAV: AssetNavEntry[] = [
   { id: "wiki", label: "Wiki", subtitle: "knowledge base", icon: BookIcon },
-  { id: "wallet", label: "Wallet", subtitle: "Kawai wallet", icon: WalletIcon },
+  { id: "wallet", label: "KAWAI Wallet", subtitle: "Monad assets", icon: WalletIcon },
   { id: "code", label: "Code", subtitle: "code graph", icon: CodeXmlIcon },
   { id: "skills", label: "Skills", subtitle: "agent skills", icon: WrenchIcon },
   { id: "memory", label: "Memory", subtitle: "chat memory", icon: BrainIcon },

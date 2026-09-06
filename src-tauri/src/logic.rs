@@ -254,14 +254,19 @@ pub mod tts;
 pub mod email;
 // Local email+password auth (user directory, vault-encoded passwords).
 pub mod local_auth;
-// Monad EVM chain client (`monad` feature): read-only public RPC — native
-// balance + chain status. Pure alloy HTTP provider; RPC URL via
-// `KAWAI_MONAD_RPC_URL` (default: Monad testnet). The module is always
-// compiled (stable surface for the always-registered commands); without the
-// feature it serves guidance-error stubs (codegraph/tts pattern).
+// Monad EVM chain client (`monad` feature): public RPC reads — native
+// balance, chain status, ERC-20 balance/info, gas price. Pure alloy HTTP
+// provider; RPC URL via `KAWAI_MONAD_RPC_URL` (default: Monad mainnet). The
+// module is always compiled (stable surface for the always-registered
+// commands); without the feature it serves guidance-error stubs
+// (codegraph/tts pattern).
 pub mod monad;
+// Hardcoded Monad contract addresses (source of truth: NETWORKS.md at the
+// repo root) — wallet feature source of truth.
+pub mod monad_contracts;
 // Per-user Monad hot wallet (`monad` feature): key lives ONLY in the OS
-// keychain (`monad-wallet/<user_id>`); create/sign/delete orchestration.
+// keychain (`monad-wallet/<user_id>`); create/sign/delete orchestration +
+// user-initiated transfers (native/ERC-20/vault deposit, signed on-device).
 // Always compiled (stable surface for the always-registered commands); without
 // the feature it serves guidance-error stubs (codegraph/tts pattern).
 pub mod monad_wallet;

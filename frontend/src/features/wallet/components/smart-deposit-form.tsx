@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { NetworkInfo } from "../lib/types";
 
-type Props = { onDeposit: (amount: number) => void; loading: boolean; currentNetwork: NetworkInfo | null };
+type Props = { onDeposit: (amount: string) => void; loading: boolean; currentNetwork: NetworkInfo | null };
 
 export function SmartDepositForm({ onDeposit, loading, currentNetwork }: Props) {
   const [amount, setAmount] = useState("10");
@@ -40,8 +40,8 @@ export function SmartDepositForm({ onDeposit, loading, currentNetwork }: Props) 
       </div>
       <Button
         className="w-full"
-        disabled={loading || parseFloat(amount) < 1}
-        onClick={() => onDeposit(parseFloat(amount))}
+        disabled={loading || !(parseFloat(amount) > 0)}
+        onClick={() => onDeposit(amount.trim())}
       >
         {loading ? "Processing..." : "Confirm Deposit"}
       </Button>

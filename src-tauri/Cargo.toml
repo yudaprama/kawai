@@ -167,7 +167,7 @@ objc2-user-notifications = "0.3"
 block2 = "0.6"
 
 [features]
-default = ["desktop"]
+default = ["desktop", "monad"]
 desktop = ["dep:tauri", "dep:tauri-plugin-opener", "dep:tauri-plugin-dialog", "dep:tauri-plugin-notification", "dep:keyring"]
 web = ["dep:axum", "dep:tower-http"]
 # CodeGraph — sidecar only (AgentTool + LRU cache, zero cost off)

@@ -18,11 +18,13 @@ LiteRT directly** (`kawai-embedding::LitertProvider` →
 - Runner: standalone C API in the vendored fork
   (`c/tflite_embed.{h,cc}`, exported from `//c:litert-lm`; Rust wrapper
   `src/tflite_embed.rs`) — NOT LiteRT-LM's EmbeddingEngine.
-- Dimension: **768** (was 1024 under the previous ONNX fallback). Vector
-  columns are sized on creation and never migrate — existing indexes must be
-  re-indexed after this swap. `TenantAwareEmbedder` now skips
-  dimension-mismatched providers during fallback so the 768d local space and
-  the 1024d remote spaces can never mix.
+- Dimension: **768** — the pool-wide dimension (`kawai-embedding::DEFAULT_DIM`).
+  All providers share one 768-d space: OpenRouter `text-embedding-3-small`,
+  NVIDIA `llama-3_2-nemoretriever-300m-embed-v1`, and Gemini `embedding-001`
+  request 768 server-side (Matryoshka `dimensions` / `outputDimensionality`,
+  client-side truncate as safety net); the local LiteRT runner is native 768.
+  The `TenantAwareEmbedder` dimension-mismatch guard remains a structural
+  safety net — a provider reporting any other dim is skipped, never mixed in.
 - Why not the EmbeddingEngine C API: it requires a split
   `tf_lite_embedder` (per-token lookup) + `tf_lite_text_encoder`
   (embeddings+mask consumer) `.litertlm` bundle. Google has never published

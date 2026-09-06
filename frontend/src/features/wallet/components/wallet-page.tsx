@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { Repeat2Icon, WalletIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 import { tauriBlockchainAdapter } from "../lib/blockchain-adapter";
-import { tauriWalletAdapter } from "../lib/wallet-adapter";
 import type { NetworkInfo } from "../lib/types";
 import { DEFAULT_CHAIN_ID } from "../lib/types";
 import { useBalances } from "../hooks/use-balances";
@@ -21,19 +20,10 @@ import { SendForm } from "./send-form";
 import { SetupForm } from "./setup-form";
 import { SmartDepositForm } from "./smart-deposit-form";
 
-type ModalType =
-  | "send"
-  | "receive"
-  | "swap"
-  | "deposit"
-  | "addAccount"
-  | "createWallet"
-  | "importWallet"
-  | "addToken"
-  | null;
+type ModalType = "send" | "receive" | "swap" | "deposit" | "addAccount" | "createWallet" | "addToken" | null;
 
 export function WalletPage({ onBack }: { onBack: () => void }) {
-  const { address, hasWallet, status, refresh } = useWallet();
+  const { address, hasWallet, status, available, loading, refresh, create } = useWallet();
   const { currentNetwork, backendConfig } = useNetwork();
   const {
     onChainBalance,
@@ -50,37 +40,28 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
 
   const [active, setActive] = useState("home");
   const [modal, setModal] = useState<ModalType>(null);
-  const [sending, setSending] = useState(false);
-  const [_pendingSwitch] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const [balanceVisible, setBalanceVisible] = useState(true);
   // mock tx history until backend provides real
   const [transactions] = useState<{ id: string; txType: string; amount: string; txHash: string; createdAt: string }[]>(
     [],
   );
 
-  const getKawaiAddr = useCallback(
-    (_nid?: number) => {
-      if (!backendConfig) return "";
-      return backendConfig.contracts.kawai || "";
-    },
-    [backendConfig],
-  );
+  const [sending, setSending] = useState(false);
 
-  const handleDeposit = async (amount: number) => {
+  const handleDeposit = async (amount: string) => {
     setSending(true);
     try {
-      const raw = Math.floor(amount * 1_000_000).toString();
-      const txHash = await tauriBlockchainAdapter.depositToVault(raw);
-      toast.success(`Deposit sent ${txHash.slice(0, 10)}...`);
-      // poll sync
+      // Rust does approve + deposit(uint256); returns the deposit tx hash
+      const tx = await tauriBlockchainAdapter.depositToVault(amount);
+      toast.success(`Deposit sent ${tx.txHash.slice(0, 10)}...`);
+      // poll for the receipt (15 × 2s, veridium parity)
       for (let i = 0; i < 15; i++) {
         await new Promise((r) => setTimeout(r, 2000));
-        const addr = await tauriWalletAdapter.getCurrentAddress();
-        const res = await tauriBlockchainAdapter.syncDeposit(txHash, addr);
-        if (res?.success) {
-          toast.success(
-            `Synced! ${res.newBalance ? (parseFloat(res.newBalance) / 1_000_000).toFixed(2) : ""} ${currentNetwork?.stablecoinSymbol}`,
-          );
+        const res = await tauriBlockchainAdapter.getTransactionReceipt(tx.txHash);
+        if (res) {
+          if (res.success) toast.success("Deposit confirmed on-chain");
+          else toast.error("Deposit transaction failed on-chain");
           break;
         }
       }
@@ -93,32 +74,26 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const handleSend = async (to: string, amount: number, assetType: string, customAddr?: string) => {
+  const handleSend = async (to: string, amount: string, assetType: string, customAddr?: string) => {
     setSending(true);
     try {
-      let tx = "";
-      if (assetType === "native") tx = await tauriBlockchainAdapter.transferNative(to, amount.toString());
-      else if (assetType === "usdt")
-        tx = await tauriBlockchainAdapter.transferUSDT(to, Math.floor(amount * 1_000_000).toString());
-      else if (assetType === "kawai") {
-        const addr = currentNetwork ? getKawaiAddr(currentNetwork.id) : backendConfig?.contracts.kawai || "";
+      let tx: { txHash: string };
+      if (assetType === "native") {
+        tx = await tauriBlockchainAdapter.transferNative(to, amount);
+      } else if (assetType === "usdt") {
+        tx = await tauriBlockchainAdapter.transferStablecoin(to, amount);
+      } else if (assetType === "kawai") {
+        const addr = backendConfig.contracts.kawai;
         if (!addr) throw new Error("KAWAI contract unavailable");
-        const raw = (
-          BigInt(Math.floor(amount)) * BigInt(10 ** 18) +
-          BigInt(Math.round((amount % 1) * 1e18))
-        ).toString();
-        tx = await tauriBlockchainAdapter.transferToken(addr, to, raw);
+        tx = await tauriBlockchainAdapter.transferToken(addr, to, amount, 18);
       } else if (customAddr) {
-        const nid = currentNetwork?.id || DEFAULT_CHAIN_ID;
-        const info = await tauriBlockchainAdapter.getTokenInfo(customAddr, nid);
-        const dec = info?.decimals ?? 18;
-        const raw = (
-          BigInt(Math.floor(amount)) * BigInt(10 ** dec) +
-          BigInt(Math.round((amount % 1) * 10 ** dec))
-        ).toString();
-        tx = await tauriBlockchainAdapter.transferToken(customAddr, to, raw);
+        const info = await tauriBlockchainAdapter.getTokenInfo(customAddr, currentNetwork?.id ?? 143);
+        if (!info) throw new Error("Token not found — check the contract address");
+        tx = await tauriBlockchainAdapter.transferToken(customAddr, to, amount, info.decimals);
+      } else {
+        throw new Error("Unsupported asset");
       }
-      toast.success(`Sent ${tx.slice(0, 10)}...`);
+      toast.success(`Sent — tx ${tx.txHash.slice(0, 10)}...`);
       void reloadBalances();
       setModal(null);
     } catch (e: unknown) {
@@ -128,45 +103,40 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
     }
   };
 
-  // Not connected state — show create/import
+  // Not connected state — create a device wallet
   if (!hasWallet) {
     return (
-      <AssetShell title="Wallet" subtitle={currentNetwork?.name ?? "Monad Testnet"} onBack={onBack}>
+      <AssetShell title="KAWAI Wallet" subtitle={currentNetwork?.name ?? "Monad Testnet"} onBack={onBack}>
         <div className="mx-auto w-full max-w-lg space-y-6 py-8">
           <div className="text-center">
             <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10">
               <WalletIcon className="size-6" />
             </div>
-            <h3 className="mt-3 font-semibold">No wallet found</h3>
+            <h3 className="mt-3 font-semibold">
+              {available ? "No wallet found" : "Wallet unavailable in this build"}
+            </h3>
             <p className="text-sm text-muted-foreground">
-              Create or import a wallet to manage your Monad assets. Same contracts as veridium.
+              {available
+                ? "Create a hot wallet to manage your Monad assets."
+                : "This build was compiled without the Monad feature. Rebuild with `--features monad`."}
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button className="flex-1" onClick={() => setModal("createWallet")}>
-              Create Wallet
+          {available && (
+            <Button
+              className="w-full"
+              disabled={creating || loading}
+              onClick={async () => {
+                setCreating(true);
+                try {
+                  await create();
+                } finally {
+                  setCreating(false);
+                }
+              }}
+            >
+              {loading ? "Checking..." : creating ? "Creating..." : "Create Wallet"}
             </Button>
-            <Button variant="outline" className="flex-1" onClick={() => setModal("importWallet")}>
-              Import
-            </Button>
-          </div>
-          <Dialog
-            open={modal === "createWallet" || modal === "importWallet"}
-            onOpenChange={(o) => !o && setModal(null)}
-          >
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{modal === "createWallet" ? "Create Wallet" : "Import Wallet"}</DialogTitle>
-              </DialogHeader>
-              <SetupForm
-                type={modal === "createWallet" ? "create" : "import"}
-                onSuccess={() => {
-                  setModal(null);
-                  void refresh();
-                }}
-              />
-            </DialogContent>
-          </Dialog>
+          )}
         </div>
       </AssetShell>
     );
@@ -174,7 +144,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
 
   return (
     <AssetShell
-      title="Wallet"
+      title="KAWAI Wallet"
       subtitle={
         address ? `${address.slice(0, 6)}...${address.slice(-4)} · ${currentNetwork?.name ?? ""}` : currentNetwork?.name
       }
@@ -233,9 +203,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
                   </span>
                 </div>
                 {status && (
-                  <div className="text-xs text-muted-foreground">
-                    Wallets: {status.wallets.length} · Locked: {String(status.isLocked)}
-                  </div>
+                  <div className="text-xs text-muted-foreground">Wallet address active on this device.</div>
                 )}
               </CardContent>
             </Card>
@@ -296,42 +264,19 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
           <DialogHeader>
             <DialogTitle>Add Account</DialogTitle>
           </DialogHeader>
-          <div className="flex flex-col gap-2">
-            <Button onClick={() => setModal("createWallet")}>Create New Wallet</Button>
-            <Button variant="outline" onClick={() => setModal("importWallet")}>
-              Import Keystore
-            </Button>
-          </div>
+          <p className="py-4 text-sm text-muted-foreground">
+            kawai uses a single device-scoped hot wallet. Multiple accounts are not supported yet.
+          </p>
         </DialogContent>
       </Dialog>
-      <Dialog open={modal === "createWallet"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create Wallet</DialogTitle>
-          </DialogHeader>
-          <SetupForm
-            type="create"
-            onSuccess={() => {
-              setModal(null);
-              void refresh();
-            }}
-          />
-        </DialogContent>
-      </Dialog>
-      <Dialog open={modal === "importWallet"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Import Wallet</DialogTitle>
-          </DialogHeader>
-          <SetupForm
-            type="import"
-            onSuccess={() => {
-              setModal(null);
-              void refresh();
-            }}
-          />
-        </DialogContent>
-      </Dialog>
+      <SetupForm
+        open={modal === "createWallet"}
+        onOpenChange={(o) => !o && setModal(null)}
+        onSuccess={() => {
+          setModal(null);
+          void refresh();
+        }}
+      />
       <Dialog open={modal === "addToken"} onOpenChange={(o) => !o && setModal(null)}>
         <DialogContent>
           <DialogHeader>

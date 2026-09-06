@@ -38,6 +38,37 @@ mod stub {
         pub chain_id: u64,
     }
 
+    /// Response shape mirror (fields identical to the real `TokenBalance`).
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct TokenBalance {
+        pub token: String,
+        pub wallet: String,
+        pub raw: String,
+        pub formatted: String,
+        pub decimals: u8,
+        pub rpc_url: String,
+    }
+
+    /// Response shape mirror (fields identical to the real `TokenInfo`).
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct TokenInfo {
+        pub address: String,
+        pub symbol: String,
+        pub decimals: u8,
+        pub rpc_url: String,
+    }
+
+    /// Response shape mirror (fields identical to the real `GasEstimate`).
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct GasEstimate {
+        pub gas_price_gwei: String,
+        pub is_dynamic_fee: bool,
+        pub rpc_url: String,
+    }
+
     const MSG: &str = "Monad support is not enabled in this build (missing 'monad' feature).";
 
     pub async fn check_balance(
@@ -48,6 +79,22 @@ mod stub {
     }
 
     pub async fn chain_status(_url: Option<&str>) -> Result<ChainStatus, String> {
+        Err(MSG.into())
+    }
+
+    pub async fn erc20_balance(
+        _url: Option<&str>,
+        _token: &str,
+        _wallet: &str,
+    ) -> Result<TokenBalance, String> {
+        Err(MSG.into())
+    }
+
+    pub async fn erc20_info(_url: Option<&str>, _token: &str) -> Result<TokenInfo, String> {
+        Err(MSG.into())
+    }
+
+    pub async fn gas_estimate(_url: Option<&str>) -> Result<GasEstimate, String> {
         Err(MSG.into())
     }
 }
