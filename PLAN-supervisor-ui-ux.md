@@ -1,6 +1,7 @@
 # Supervisor UI/UX
 
-Rencana permukaan UI untuk mekanisme supervisor. Prinsip pembatas: **plan
+Rencana permukaan UI untuk mekanisme supervisor (arsitektur & current state:
+**PLAN-supervisor.md**). Prinsip pembatas: **plan
 adalah artifact utama, chat adalah narasi** — `use-supervisor-plan.ts` sudah
 memegang kontrak ini (steps tidak diproyeksikan ke chat tool parts;
 percakapan hanya membawa goal + final output). Semua item di sini mengeksploitasi

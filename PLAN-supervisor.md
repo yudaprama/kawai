@@ -256,6 +256,10 @@ The planner is remote-LLM-backed. The executor is Rust-only and performs no infe
 
 ### Known follow-ups
 
+UI/UX work for this surface (plan review gate, confirmation card, wave
+visualization, artifact language, replan versioning, resume affordances):
+see **PLAN-supervisor-ui-ux.md**.
+
 Enhancements and hardening, all open:
 
 - **Active-tool cancellation:** cancellation stops at wave boundaries; active tools need a cancellation-aware execution contract.
