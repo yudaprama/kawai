@@ -8,6 +8,7 @@ use std::path::PathBuf;
 #[tokio::main]
 async fn main() {
     kawai_lib::auth::load_dotenv();
+    kawai_lib::logging::init();
     // dist/ is at the project root, one level above src-tauri/.
     let dist_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../dist");
     if let Err(e) = kawai_lib::web::serve("0.0.0.0:3000", dist_dir).await {

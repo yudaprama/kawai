@@ -775,7 +775,7 @@ pub async fn plan_task(
     }
     let registry = crate::supervisor::build_supervisor_registry(
         &user_id, session_id, &agent_id, "",
-    ).await.ok_or_else(|| "supervisor toolset unavailable".to_string())?;
+    ).await?;
     let (plan, usage) = crate::supervisor::plan_task(&user_id, &goal, &registry)
         .await
         .map_err(|e| {
@@ -1260,8 +1260,7 @@ pub async fn execute_supervisor_plan(
         agent_id,
         &crate::supervisor::plan_key(&plan),
     )
-    .await
-    .ok_or_else(|| "supervisor toolset unavailable".to_string())?;
+    .await?;
 
     let step_count = plan.steps.len();
     let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone());

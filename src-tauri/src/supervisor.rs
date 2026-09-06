@@ -664,16 +664,22 @@ pub async fn narrow_registry_for_goal_with(
     }
 }
 
-/// Stable key for one plan execution: the hash of the plan JSON.
+/// Stable key for one plan execution: SHA-256 hex of the plan JSON.
+///
+/// SHA-256 is used instead of `DefaultHasher` because `std::hash` does not
+/// guarantee cross-Rust-version stability — a toolchain bump could orphan
+/// old memo rows. SHA-256 is deterministic across all platforms and compiler
+/// versions.
+///
 /// Re-executing the SAME plan (resume) reuses the key — identical completed
 /// steps are served from the persisted ExecutionMemo seed; a revised or
 /// edited plan gets a different key and never reuses stale results.
 pub fn plan_key(plan: &kawai_router::TaskPlan) -> String {
-    use std::hash::{Hash, Hasher};
-    let serialized = serde_json::to_string(plan).unwrap_or_default();
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    serialized.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    use sha2::Digest;
+    let serialized = serde_json::to_string(plan)
+        .expect("plan serialization must not fail (all TaskPlan fields are infallible)");
+    let hash = sha2::Sha256::digest(serialized.as_bytes());
+    hex::encode(hash)
 }
 
 pub async fn build_supervisor_registry(
@@ -681,8 +687,14 @@ pub async fn build_supervisor_registry(
     session_id: i64,
     agent_id: &str,
     plan_key: &str,
-) -> Option<ToolRegistry> {
-    let toolset = build_supervisor_toolset(user_id, session_id, agent_id).await?;
+) -> Result<ToolRegistry, String> {
+    let toolset = build_supervisor_toolset(user_id, session_id, agent_id).await.ok_or_else(|| {
+        if agent_id == AUTO_AGENT_ID {
+            "no supervisor toolsets available (all domain builders returned None)".to_string()
+        } else {
+            format!("no toolset available for agent '{agent_id}'")
+        }
+    })?;
 
     // Convert definitions → ToolMeta, and keep each tool's input schema at
     // hand for dispatch-time coercion of resolved artifact references.
@@ -750,6 +762,7 @@ pub async fn build_supervisor_registry(
                     artifacts: hit.artifacts,
                     error: None,
                     retries_used: 0,
+                    error_kind: kawai_router::FailureKind::Other,
                 });
             }
             let args = kawai_router::canonical_json(&args_value);
@@ -794,6 +807,7 @@ pub async fn build_supervisor_registry(
                 artifacts,
                 error,
                 retries_used: 0,
+                    error_kind: kawai_router::FailureKind::Other,
             })
         })
     });
@@ -803,7 +817,7 @@ pub async fn build_supervisor_registry(
         registry.register(tool_meta_from_definition(def));
     }
 
-    Some(registry)
+    Ok(registry)
 }
 
 /// Convert structured tool envelopes into scheduler artifacts.
@@ -913,19 +927,13 @@ pub fn confirmation_key(stream_id: &str, step_id: &str) -> String {
 
 /// Convert one scheduler event to its transport form, logging it on the way
 /// through — per-step lifecycle telemetry for this otherwise-silent path.
-/// Failure class for a step error string — heuristic, UI/telemetry-grade
-/// (scheduler tests pin the underlying messages: "timed out", confirmation
-/// rejection/cancellation wordings).
-fn step_error_kind(error: &str) -> &'static str {
-    let e = error.to_lowercase();
-    if e.contains("timed out") {
-        "timeout"
-    } else if e.contains("confirmation") || e.contains("rejected") {
-        "confirmation"
-    } else if e.contains("cancel") {
-        "cancelled"
-    } else {
-        "tool"
+/// Convert the router's typed failure classification to the transport string.
+fn step_error_kind(kind: &kawai_router::FailureKind) -> &'static str {
+    match kind {
+        kawai_router::FailureKind::Timeout => "timeout",
+        kawai_router::FailureKind::Confirmation => "confirmation",
+        kawai_router::FailureKind::Cancelled => "cancelled",
+        kawai_router::FailureKind::Tool | kawai_router::FailureKind::Other => "tool",
     }
 }
 
@@ -977,8 +985,8 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
             let output = preview_chars(&output, STEP_EVENT_OUTPUT_MAX_CHARS).to_string();
             SupervisorEvent::StepCompleted { step_id, output, artifacts }
         }
-        kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => SupervisorEvent::StepFailed {
-            kind: step_error_kind(&error),
+        kawai_router::SchedulerEvent::StepFailed { step_id, error, kind, .. } => SupervisorEvent::StepFailed {
+            kind: step_error_kind(&kind),
             step_id,
             error,
         },
@@ -1015,11 +1023,13 @@ fn replan_reason(
     if failures.is_empty() {
         return None;
     }
-    let is_user_decision = |error: Option<&String>| {
-        let e = error.unwrap_or(&String::new()).to_lowercase();
-        e.contains("confirmation") || e.contains("rejected") || e.contains("cancelled")
+    let is_user_decision = |failure: &&kawai_router::StepResult| {
+        matches!(
+            failure.error_kind,
+            kawai_router::FailureKind::Confirmation | kawai_router::FailureKind::Cancelled
+        )
     };
-    if failures.iter().all(|f| is_user_decision(f.error.as_ref())) {
+    if failures.iter().all(is_user_decision) {
         return None;
     }
     Some(
@@ -1170,13 +1180,13 @@ pub fn execute_plan_stream_with_cancel(
             let pending = gate_pending.clone();
             let key = confirmation_key(&confirmation_stream_id, &step_id);
             let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
-            pending.lock().expect("pending confirmations poisoned").insert(key.clone(), tx);
+            pending.lock().expect("pending confirmations mutex held across panic").insert(key.clone(), tx);
             Box::pin(async move {
                 match rx.await {
                     Ok(true) => Ok(()),
                     Ok(false) => Err(kawai_router::RouterError::ConfirmationRejected(step_id)),
                     Err(_) => {
-                        pending.lock().expect("pending confirmations poisoned").remove(&key);
+                        pending.lock().expect("pending confirmations mutex held across panic").remove(&key);
                         Err(kawai_router::RouterError::ConfirmationRequired(step_id))
                     }
                 }
@@ -1362,6 +1372,7 @@ mod tests {
                     artifacts: Vec::new(),
                     error: None,
                     retries_used: 0,
+                    error_kind: kawai_router::FailureKind::Other,
                 })
             })
         });

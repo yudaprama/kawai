@@ -117,7 +117,7 @@ Sumber tipe: `crates/router/src/types.rs`. Plan yang diteruskan ke
   "steps": [
     {
       "id": "analyze",
-      "tool": "data_query",              // dispatch key (agent_id sebagai fallback lama)
+      "tool": "data_query",              // dispatch key (agent_id sebagai fallback)
       "task": "Identifikasi tren revenue per bulan dan top 5 produk",
       "agentId": "",                       // LLM tidak mengisi; eksekusi tetap by tool
       "dependsOn": [],
@@ -136,7 +136,18 @@ Sumber tipe: `crates/router/src/types.rs`. Plan yang diteruskan ke
 
 Artifact reference di dalam `arguments`: `{ "fromStep": "<id>", "output":
 "<artifact name>" }` — di-resolve rekursif oleh `resolve_args` terhadap hasil
-step selesai sebelum dispatch; resolution error menggagalkan step tanpa retry.
+step selesai sebelum dispatch. **Hard-fail hanya terjadi jika:** (1) `fromStep`
+merujuk step yang tidak dikenal (`UnknownDependency`), atau (2) predecessor
+belum selesai (`Dispatch("artifact source did not complete")`). Named-output miss
+**tidak** menggagalkan step — `resolve_args` menjalankan fallback berlapis:
+artifact by name → top-level JSON key pada `result.output` → satu-satunya key
+(obj tunggal) → seluruh output string. Alasannya pragmatis: tool-side
+`validate_arguments` dijalankan saat plan validation sebelum dispatch, dan
+`coerce_resolved_args` menambah safety net untuk shape mismatch yang umum;
+menggagalkan di resolver akan membuang run percuma. **Trade-off:** planner
+tidak pernah menerima sinyal bahwa nama artifact-nya fiktif — error sampai
+sebagai generic `tool` failure di failure-driven replan tanpa diagnosa yang
+spesifik. Lihat "Artifact reference fallback" di bawah untuk detail.
 
 ## Deterministic scheduler (implementasi)
 
@@ -192,28 +203,22 @@ non-blocking — forward ke channel) dan diterjemahkan `supervisor.rs` menjadi
 | Remote LLM pool | Subagent remote + planner |
 | Tool catalog (Turso, crates/foundation/tool-catalog) | Discovery tool planner (drift-gated di CI) |
 
-## Implementation Status
+## Current state
 
-- **Phase 1 — Scheduler resilience: implemented.** `kawai-router` now supports per-step/default timeouts, retries with linear backoff, `onError` policies (`fail`/`skip`/`continue`), confirmation handlers, retry accounting, and result helpers. The scheduler remains backward-compatible with plans that omit these optional fields.
-  - Default `OnError::Fail` stops the entire plan on any step failure (all unresolved steps become Skipped).
-  - `OnError::Skip` / `OnError::Continue` propagate to transitive dependents only; independent steps keep running.
-  - A step requiring confirmation blocks dispatch until the handler approves or rejects.
-- **Phase 2 — Typed artifacts: implemented.** `StepResult` carries typed `Artifact` values (`Text`, `File`, `Structured`, `Handle`) alongside the human-readable summary. Artifact hand-off is metadata-first: large payloads are represented by stable handles, never copied through planner context.
-- **Phase 2A — Artifact references: implemented.** `TaskStep.arguments` accepts nested `{ "fromStep": ..., "output": ... }` references. `kawai_router::resolve_args` resolves them recursively against completed step results before dispatch.
-- **Phase 3 — Tool dispatch registry: implemented.** `kawai-router` now provides a transport-agnostic tool registry, richer planner prompt, and resolved-argument dispatch.
-  - `ToolKind` (`Pure` / `Subagent`) + `ToolMeta` (name, description, I/O schemas) in `types.rs`.
-  - `TaskStep::tool: Option<String>` preferred over `agent_id`; `TaskStep::produces: Vec<String>` declares artifact names.
-  - `ToolRegistry` (new `registry.rs`): validates plans against the catalog, renders catalog lines for the planner prompt, and provides a `step_dispatch()` adapter that bridges the registry's `ToolDispatch` closure into the scheduler's `StepDispatch` type.
-  - `plan_prompt_with_tools` in `plan.rs` emits the full TaskPlan contract: `tool`, `arguments` with artifact references, `produces`, `timeoutMs`, `retries`, `onError`, `requiresConfirmation`, `confirmationDescription`.
-  - Scheduler now resolves artifact references via `resolve_args` before invoking the dispatcher (3-arg `StepDispatchFn`); resolution errors fail the step deterministically without retries.
-  - Unknown-tool and unknown-artifact-reference failures are surfaced through the existing `onError` / retry paths.
-- **Phase 4 — Composition-root wiring: implemented.** `src-tauri/src/supervisor.rs` now builds a per-session supervisor registry from the existing office toolset, converts tool definitions into `ToolMeta`, and dispatches resolved arguments through `ToolSet::execute`. `SupervisorEvent` provides plan/step lifecycle events, and `execute_plan_stream` wraps the deterministic router scheduler. The operation is exposed as `execute_supervisor_plan` through both Tauri (`commands.rs`) and Axum SSE (`web.rs`), with edge-authenticated user identity and stream cancellation on desktop.
-  - Current registry uses the office toolset as the broadest available catalog; concrete artifact extraction (`File`/`Handle`/`Structured`) remains the next adapter refinement because `ToolSet::execute` currently exposes only a string body.
-  - The endpoint is feature-gated behind `router + litert`, and office-backed registry construction is unavailable without the `office` feature.
-- **Phase 5A — Session-aware dispatch and typed artifacts: implemented.** Supervisor requests require `sessionId`; both Tauri and Axum validate it against the authenticated user's per-user database before constructing the registry. Tool output is retained as text and promoted to typed `Text`, `Structured`, or file-backed `File` artifacts when the output envelope contains a file id and filename.
-- **Phase 5B — Live progress streaming: implemented.** `SchedulerObserver` and `SchedulerEvent` provide synchronous step lifecycle notifications. `StepStarted` is emitted immediately before dispatch; `ConfirmationRequested` is emitted when a confirmation gate is reached. `PlanStarted` carries the full step structure (`id`/`tool`/`task`/`dependsOn`) so the frontend renders the plan before any step runs; `StepCompleted` carries typed artifact infos (`file` with handle+filename, `structured`, `handle`). Completion, failure, and skip events are forwarded through the supervisor stream without duplicate terminal step events. Tauri Channel and Axum SSE expose the same event sequence, and `PlanProgressPanel` renders it.
-- **Phase 5C — Cooperative cancellation: implemented.** `run_plan_with_cancel` and `execute_plan_stream_with_cancel` accept the transport cancellation token. Cancellation prevents subsequent waves from starting and terminates the plan stream with a terminal failure event. Existing `run_plan` and `execute_plan_stream` remain backward-compatible wrappers. Active tool calls currently finish before cancellation is observed.
-- **Phase 6 — Confirmation UX: implemented end to end.** `ConfirmationRequested` events carry `streamId + stepId`. Pending gates are parked on oneshot channels in `PendingConfirmations` state, keyed by the composite identity. The frontend `useSupervisorPlan` hook runs `execute_supervisor_plan`, tracks per-step progress and pending confirmations, and responds through `respond_supervisor_confirmation` (Tauri command + Axum `POST /api/respond_supervisor_confirmation`). Stale senders are swept when a plan stream terminates. Legacy `run_plan` callers can still pass a blocking `ConfirmationHandler`.
+| Capability | Behavior |
+|---|---|
+| Plan types & validation | `TaskPlan`/`TaskStep` in `crates/router/src/types.rs` (caps, unique ids, acyclic deps); `ToolRegistry::validate_plan` checks structure, dispatch keys against the catalog, confirmation policy, and arguments vs each tool's `input_schema` (JSON-Schema subset) — fail-fast before execution. `tool` is the dispatch key; `agent_id` is the fallback. |
+| Deterministic scheduler | `run_plan_with_cancel` (wave loop, `max_parallel`), per-step/default timeouts, retries with linear backoff, `onError` (`fail`/`skip`/`continue`), transitive skip propagation. `dispatch_with_retry` owns `retries_used` on the final `StepResult` regardless of what the dispatcher reports — pinned by regression tests. `run_plan` is the blocking-cancellation wrapper. |
+| Typed artifacts | `StepResult.artifacts: Vec<Artifact>` (`Text`/`File`/`Structured`/`Handle`). Size policy below. |
+| Artifact references | `arguments` accepts nested `{ "fromStep": ..., "output": ... }`; `resolve_args` resolves recursively before dispatch (fallback behavior below). |
+| Tool registry & planner prompt | `ToolKind` (`Pure`/`Subagent`) + `ToolMeta` (name, description, I/O schemas); `ToolRegistry` validates plans, renders the planner catalog, and adapts `ToolDispatch` → scheduler `StepDispatch`; `plan_prompt_with_tools` emits the full contract. The `auto` registry merges all domain toolsets (first-wins per tool name); explicit agent ids narrow to a domain. |
+| Composition root | `src-tauri/src/supervisor.rs` builds a per-session registry (requires `sessionId`, validated against the authenticated user's per-user DB), converts tool definitions to `ToolMeta`, dispatches via `ToolSet::execute`, and extracts typed artifacts from output envelopes. Exposed as `execute_supervisor_plan` on Tauri (`commands.rs`) + Axum SSE (`web.rs`), feature-gated behind `router + litert`. |
+| Progress streaming | `SchedulerObserver`/`SchedulerEvent` → `SupervisorEvent` (Tauri Channel / Axum SSE): `PlanStarted` (full step structure), `StepStarted`, `ConfirmationRequested`, `StepCompleted` (typed artifact infos, ≤2000-char output preview), `StepFailed` (typed `FailureKind`), `StepSkipped`; rendered by `PlanProgressPanel`. |
+| Confirmation gates | `ConfirmationRequested` carries `streamId + stepId`; gates park on oneshot channels in `PendingConfirmations`; the frontend responds via `respond_supervisor_confirmation` (Tauri + Axum). Stale senders are swept when a plan stream terminates. |
+| Cooperative cancellation | Transport token via `execute_plan_stream_with_cancel`: later waves never start; the plan stream terminates with a terminal failure event; in-flight tools finish first. |
+| Failure-driven replan | `StepFailed` carries a typed `FailureKind` (`timeout`/`confirmation`/`cancelled`/`tool`/`other`) set by the scheduler at each error site — no string heuristics. `replan_reason` checks `error_kind` directly to separate user decisions (confirmation rejected, cancelled) from auto-recoverable failures; non-user-decided failures ask the planner for a revised plan (`MAX_REPLANS = 1`, same validation contract). |
+| Plan resume | Completed steps persist to `supervisor_step_results` (migration 0015; keyed by `session_id + plan_key`, `plan_key` = SHA-256 of the plan JSON) and preseed the `ExecutionMemo` on re-execution — Resume skips finished steps while `fromStep` references resolve from stored typed artifacts. A revised/edited plan hashes differently and never reuses rows. |
+| Tests | Scheduler unit tests (waves, retries, `onError`, `retries_used` contract, cancellation) + executor-level confirmation integration tests; planner smoke coverage in CI. |
 
 ### Artifact contract
 
@@ -224,6 +229,19 @@ non-blocking — forward ke channel) dan diterjemahkan `supervisor.rs` menjadi
 - Reference form in arguments: `{ "fromStep": "<id>", "output": "<artifact name>" }` — `output` matches `File.filename` or `Handle.kind`; omitting `output` yields `{ "stepId", "output" }` summary metadata.
 - Size policy: full tool output lives in the scheduler (`StepResult.output`, dependent-step `inputs`), the resume memo, and `supervisor_step_results`. Transport events are bounded — `stepCompleted` carries a ≤2000-char preview (`STEP_EVENT_OUTPUT_MAX_CHARS` in `supervisor.rs`); the frontend previews 160 chars and persists 500 chars to history. The plan's final output (`planCompleted.final_output`) is the user-visible answer and is not previewed. `Structured`/`Text` artifacts in persisted step results may therefore hold large bodies — that is the recovery cache's job; the wire never carries them.
 
+### Artifact reference fallback
+
+When `resolve_args` (`crates/router/src/artifacts.rs`) resolves a `{"fromStep": "<id>", "output": "<name>"}` reference, only `fromStep` to an unknown or non-completed predecessor hard-fails. A named-output miss triggers a four-layer fallback (each attempted only if the previous fails):
+
+1. **Artifact by name** — search the predecessor's typed `Vec<Artifact>` by `File.filename` or `Handle.kind`. This is the intended path.
+2. **Top-level JSON key** — parse `result.output` as JSON and look up `output` as a key (e.g. `output:"files"` on `{"files":[…]}`). What planners naturally reference for `Structured` outputs.
+3. **Single-key object** — if the parsed JSON object has exactly one top-level key, return its value regardless of the requested name. Planners frequently name references after the consuming argument (e.g. `"fileId"`) instead of the produced key.
+4. **Whole output string** — `serde_json::json!(result.output)`. The entire source output is forwarded as a JSON string to the consumer.
+
+Fallback 4 is a **diagnostic dead-end**: the consumer's `coerce_resolved_args` (`src-tauri/src/supervisor.rs:817`) can rescue shape mismatches (list→scalar ID extraction, file object unwrapping) **only if** the tool has an `input_schema` with string-typed properties — tools without a schema skip coercion entirely and receive the raw blob. A `eprintln!` warning is emitted on fallback 4 so it is visible in app.log.
+
+**Feedback-loop impact**: the planner never learns that the artifact name was wrong. The step proceeds with whatever the fallback resolved; if the consumer rejects the result, `StepFailed` carries a generic `tool` error kind with no indication that the failure traces back to a misnamed reference. Failure-driven replan (`plan_revise`) re-asks the planner with the execution report, but the report contains only the tool's error message, not the fact that the argument was resolved via a last-resort fallback. This is a **known trade-off** — hard-failing on named-output miss would waste valid runs where the intent is unambiguous (single-key object, list→ID coercion); the trade-off is acceptable because plan validation + tool-side `validate_arguments` catch malformed args before dispatch, and `coerce_resolved_args` handles the common list-to-scalar pattern. Monitoring the `eprintln!` warning rate in app.log will indicate whether this trade-off needs revisiting in production.
+
 ### Current execution policy
 
 Supervisor is the sole desktop execution path. Every composer submission follows:
@@ -232,42 +250,22 @@ Supervisor is the sole desktop execution path. Every composer submission follows
 goal → plan_task → validated TaskPlan → execute_supervisor_plan → deterministic scheduler
 ```
 
-`agent_chat`, `AgentChatEvent`, the prompt-based agent loop, and the legacy `useLocalChat` hook have been removed. Session/history shell state lives in `useSupervisorChat`; execution state, plan progress, and confirmations live in `useSupervisorPlan`.
+Session/history shell state lives in `useSupervisorChat`; execution state, plan progress, and confirmations live in `useSupervisorPlan`.
 
 The planner is remote-LLM-backed. The executor is Rust-only and performs no inference. Tool registries default to **`auto`**: a merged catalog of every available domain toolset (office → presentation → binance → analytics, first-wins per tool name), so the planner picks tools across domains and plans execute cross-domain. An explicit agent id (`builtin.office`, `builtin.presentation`, `builtin.binance`, `builtin.analytics`) narrows the catalog to that domain — the frontend rail is an optional hint, not a requirement. Analytics receives per-user SQL profiles through `effective_profiles(user_id)`.
 
 ### Known follow-ups
 
-These are enhancements, not migration blockers:
+Enhancements and hardening, all open:
 
-- **Active cancellation:** cancellation currently stops at wave boundaries; active tools need a cancellation-aware execution contract.
-- **Failure-triggered replan: implemented.** Non-user-decided failures ask the planner for a revised plan (`revise_plan`, budget `MAX_REPLANS = 1`, same validation contract). `StepFailed` events carry a failure `kind` (`timeout`/`confirmation`/`cancelled`/`tool`, classified in `step_error_kind`). Open refinements: replan-usage accounting (dormant billing), and richer failure classification than the current string heuristics.
-- **Plan resume: implemented.** Completed steps persist to `supervisor_step_results` (migration 0015; keyed by session + plan-JSON hash) and seed the `ExecutionMemo` on re-execution — the frontend **Resume plan** action re-runs the same plan verbatim and finished steps are skipped while `fromStep` references resolve from the stored typed artifacts. A revised/edited plan hashes differently and never reuses rows. Open refinement: capless growth of the table (no pruning yet).
-- **Cross-domain plans: implemented for `auto`.** The `auto` registry merges all domain toolsets, so plans may mix tools from any domain. Per-domain narrowing via explicit agent id remains available; a policy for merging *restricted* cross-domain catalogs (e.g. analytics without office write tools) is open if needed.
-- **Artifact contracts:** file detection currently recognizes common output envelopes; explicit per-tool output schemas and store-aware adapters would improve reliability.
-- **Scheduler tuning:** `max_parallel` is currently conservative (`2`) and retry backoff is fixed; make them configurable only when workload evidence requires it.
-- **Transport coverage:** executor-level confirmation tests exist; a Tauri Channel/UI-level integration test would add release confidence.
+- **Active-tool cancellation:** cancellation stops at wave boundaries; active tools need a cancellation-aware execution contract.
+- **Replan-usage accounting:** replan calls are not metered (dormant billing).
+- **Step-result pruning:** `supervisor_step_results` grows without bound (no pruning yet).
+- **Artifact output schemas:** file detection recognizes common output envelopes; explicit per-tool output schemas and store-aware adapters would improve reliability.
+- **Restricted cross-domain catalogs:** a policy for merging restricted catalogs (e.g. analytics without office write tools) is open if needed.
+- **Scheduler tuning:** `max_parallel` is conservative (`2`) and retry backoff is fixed; make them configurable only when workload evidence requires it.
+- **Transport integration test:** a Tauri Channel/UI-level test would add release confidence.
 - **Offline planning:** without a configured remote provider, `plan_task` returns a clear configuration error. A local or rule-based fallback is a product decision.
-
-## Delivered implementation
-
-| Area | Status |
-|---|---|
-| Router schema, validation, artifact references | ✅ Complete |
-| Deterministic scheduler: dependencies, waves, parallelism, retries, timeout, `onError` | ✅ Complete |
-| Tool registry and metadata-driven planner prompt | ✅ Complete |
-| Tauri + Axum Supervisor execution endpoints | ✅ Complete |
-| Office, presentation, analytics, and Binance registry composition | ✅ Complete |
-| Per-user analytics SQL profile binding | ✅ Complete |
-| Typed artifacts and file output mapping | ✅ Complete; schema refinement remains optional |
-| Confirmation gates and composite `streamId + stepId` identity | ✅ Complete |
-| Tauri Channel/SSE progress events | ✅ Complete |
-| Cooperative cancellation | ✅ Complete; active-tool cancellation remains a follow-up |
-| Frontend hard cutover and session persistence | ✅ Complete |
-| Legacy `agent_chat` engine, event, transport, hook, and examples | ✅ Purged |
-| Supervisor confirmation integration tests | ✅ Complete |
-
-The original implementation sequence is complete. Future work is tracked under **Known follow-ups** and should be treated as product hardening or feature expansion, not migration work.
 
 ## Current file map
 
@@ -282,5 +280,3 @@ The original implementation sequence is complete. Future work is tracked under *
 | `frontend/src/features/chat/hooks/use-supervisor-chat.ts` | Session/history shell and auth bootstrap |
 | `frontend/src/features/chat/components/plan-progress-panel.tsx` | Live plan view: step structure (tool, task, dependencies), per-step status, and artifact rendering (file preview / structured / handle) |
 | `.github/workflows/ci.yml` | Supervisor planner smoke coverage |
-
-Legacy agent-chat files and event types are not part of the current architecture.

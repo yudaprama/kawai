@@ -5506,6 +5506,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "graph",
+ "hex",
  "jsonwebtoken",
  "kawai-agent",
  "kawai-agent-contract",

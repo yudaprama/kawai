@@ -1663,10 +1663,7 @@ async fn plan_task_handler(
         "",
     )
     .await
-    .ok_or((
-        StatusCode::SERVICE_UNAVAILABLE,
-        "supervisor toolset unavailable".to_string(),
-    ))?;
+    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e))?;
     // Usage-based billing is dormant under local auth (no session token is
     // held anywhere) — flat per-turn in the frontend was removed with it.
     crate::supervisor::plan_task(&user_id, &req.goal, &registry)
@@ -1712,7 +1709,7 @@ async fn execute_supervisor_plan_handler(
         &crate::supervisor::plan_key(&req.plan),
     )
     .await
-    .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 
     let stream = crate::supervisor::execute_plan_stream_with_cancel(
         req.plan, tool_registry,

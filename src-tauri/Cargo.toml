@@ -82,6 +82,7 @@ dotenvy = "0.15"
 kawai-constants = { path = "../kawai-vault/constants" }
 kawai-vault = { path = "../kawai-vault/kawai-vault" }
 sha2 = "0.10"
+hex = "0.4"
 # Office tool store imports (drag-drop/web base64 blobs) + TTS audio payloads.
 base64 = "0.22"
 tauri-plugin-dialog = "2"
