@@ -56,30 +56,8 @@ pub fn generate_activity(input: ActivityInput) -> impl Stream<Item = ActivityEve
 /// Resolve the on-device model path from standard development and bundled locations.
 ///   3. `~/.kawai/models/gemma-4-E4B-it.litertlm` (user home)
 pub fn resolve_model_path() -> Result<String, String> {
-    let filename = "gemma-4-E4B-it.litertlm";
-    let mut candidates = Vec::new();
-    candidates.push(std::path::PathBuf::from("./models").join(filename));
-    candidates.push(
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../models")
-            .join(filename),
-    );
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            candidates.push(dir.join("models").join(filename));
-            candidates.push(dir.join("resources").join("models").join(filename));
-        }
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        candidates.push(
-            std::path::PathBuf::from(home)
-                .join(".kawai/models")
-                .join(filename),
-        );
-    }
-    candidates
-        .into_iter()
-        .find(|path| path.is_file())
+    let filename = kawai_paths::LLM_MODEL_FILENAME;
+    kawai_paths::find_model(filename)
         .map(|path| path.to_string_lossy().into_owned())
         .ok_or_else(|| format!(
             "model not found: install {filename} in the app resources or ~/.kawai/models/"
