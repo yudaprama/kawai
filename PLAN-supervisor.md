@@ -222,7 +222,7 @@ non-blocking — forward ke channel) dan diterjemahkan `supervisor.rs` menjadi
 - `Structured` — compact JSON data (query results, market data).
 - `Handle` — persisted/paginated results; `kind` names the retrieval channel (e.g. `artifact_recall`).
 - Reference form in arguments: `{ "fromStep": "<id>", "output": "<artifact name>" }` — `output` matches `File.filename` or `Handle.kind`; omitting `output` yields `{ "stepId", "output" }` summary metadata.
-- Large bodies must never ride inside `Structured`/`Text`; use handles.
+- Size policy: full tool output lives in the scheduler (`StepResult.output`, dependent-step `inputs`), the resume memo, and `supervisor_step_results`. Transport events are bounded — `stepCompleted` carries a ≤2000-char preview (`STEP_EVENT_OUTPUT_MAX_CHARS` in `supervisor.rs`); the frontend previews 160 chars and persists 500 chars to history. The plan's final output (`planCompleted.final_output`) is the user-visible answer and is not previewed. `Structured`/`Text` artifacts in persisted step results may therefore hold large bodies — that is the recovery cache's job; the wire never carries them.
 
 ### Current execution policy
 

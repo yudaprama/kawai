@@ -929,6 +929,23 @@ fn step_error_kind(error: &str) -> &'static str {
     }
 }
 
+/// Wire cap for the per-step `output` carried by `stepCompleted` events.
+/// Full step outputs stay in the scheduler (dependent-step `inputs`) and the
+/// resume memo / `supervisor_step_results` — those need the whole body. The
+/// frontend only previews (160 chars) and persists to history (500 chars),
+/// so the transport event carries a bounded preview. The plan's FINAL
+/// output (`planCompleted.final_output`) is the user-visible answer and is
+/// deliberately NOT capped here.
+const STEP_EVENT_OUTPUT_MAX_CHARS: usize = 2000;
+
+/// Char-boundary-safe prefix of `s` (at most `max_chars` characters).
+fn preview_chars(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
+    }
+}
+
 fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> SupervisorEvent {
     let label = match &event {
         kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
@@ -957,6 +974,7 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
         }
         kawai_router::SchedulerEvent::StepCompleted { step_id, output } => {
             let artifacts = artifact_infos(&output);
+            let output = preview_chars(&output, STEP_EVENT_OUTPUT_MAX_CHARS).to_string();
             SupervisorEvent::StepCompleted { step_id, output, artifacts }
         }
         kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => SupervisorEvent::StepFailed {
@@ -1300,6 +1318,17 @@ pub fn execute_plan_stream_with_cancel(
 mod tests {
     use super::*;
     use kawai_router::{StepStatus, TaskStep};
+
+    #[test]
+    fn preview_chars_is_char_boundary_safe_and_capped() {
+        assert_eq!(preview_chars("short", 2000), "short");
+        let long = "x".repeat(5000);
+        assert_eq!(preview_chars(&long, 2000).chars().count(), 2000);
+        // Multi-byte characters never panic on the truncation edge.
+        let wide: String = "🐍".repeat(3000);
+        let cut = preview_chars(&wide, 2500);
+        assert_eq!(cut.chars().count(), 2500);
+    }
 
     #[test]
     fn planner_context_omits_empty_blocks_and_wraps_present_ones() {
