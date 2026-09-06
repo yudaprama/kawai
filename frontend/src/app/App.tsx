@@ -308,6 +308,7 @@ export default function App() {
           supervisorError={supervisor.error}
           supervisorFinalOutput={supervisor.finalOutput}
           onStopSupervisor={supervisor.stop}
+          onResumeSupervisor={supervisor.resume}
           inSession={inSession}
           onOpenSessions={() => setSessionsOpen(true)}
           onImageToKnowledge={ka.imageToKnowledge}

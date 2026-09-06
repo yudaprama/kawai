@@ -235,6 +235,8 @@ The planner is remote-LLM-backed. The executor is Rust-only and performs no infe
 These are enhancements, not migration blockers:
 
 - **Active cancellation:** cancellation currently stops at wave boundaries; active tools need a cancellation-aware execution contract.
+- **Failure-triggered replan: implemented.** Non-user-decided failures ask the planner for a revised plan (`revise_plan`, budget `MAX_REPLANS = 1`, same validation contract). Open refinements: replan-usage accounting (dormant billing), and richer failure classification than the current string heuristics.
+- **Plan resume:** completed steps survive only in the frontend `PersistedPlan` record; the supervisor does not persist per-step results, so a crashed plan cannot be resumed server-side. Prerequisite: persisting step results (or seeding the scheduler with `initial` results from the client record).
 - **Cross-domain plans: implemented for `auto`.** The `auto` registry merges all domain toolsets, so plans may mix tools from any domain. Per-domain narrowing via explicit agent id remains available; a policy for merging *restricted* cross-domain catalogs (e.g. analytics without office write tools) is open if needed.
 - **Artifact contracts:** file detection currently recognizes common output envelopes; explicit per-tool output schemas and store-aware adapters would improve reliability.
 - **Scheduler tuning:** `max_parallel` is currently conservative (`2`) and retry backoff is fixed; make them configurable only when workload evidence requires it.

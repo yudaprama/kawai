@@ -774,7 +774,7 @@ pub async fn plan_task(
         return Err(format!("session {session_id} not found"));
     }
     let registry = crate::supervisor::build_supervisor_registry(
-        &user_id, session_id, &agent_id,
+        &user_id, session_id, &agent_id, "",
     ).await.ok_or_else(|| "supervisor toolset unavailable".to_string())?;
     let (plan, usage) = crate::supervisor::plan_task(&user_id, &goal, &registry)
         .await
@@ -1258,6 +1258,7 @@ pub async fn execute_supervisor_plan(
         &user_id,
         session_id,
         agent_id,
+        &crate::supervisor::plan_key(&plan),
     )
     .await
     .ok_or_else(|| "supervisor toolset unavailable".to_string())?;

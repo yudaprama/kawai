@@ -115,6 +115,9 @@ pub enum SupervisorEvent {
     StepFailed {
         step_id: String,
         error: String,
+        /// Failure class for UI/telemetry: `timeout` | `confirmation` |
+        /// `cancelled` | `tool`.
+        kind: &'static str,
     },
     StepSkipped {
         step_id: String,
@@ -661,11 +664,24 @@ pub async fn narrow_registry_for_goal_with(
     }
 }
 
+/// Stable key for one plan execution: the hash of the plan JSON.
+/// Re-executing the SAME plan (resume) reuses the key — identical completed
+/// steps are served from the persisted ExecutionMemo seed; a revised or
+/// edited plan gets a different key and never reuses stale results.
+pub fn plan_key(plan: &kawai_router::TaskPlan) -> String {
+    use std::hash::{Hash, Hasher};
+    let serialized = serde_json::to_string(plan).unwrap_or_default();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    serialized.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 pub async fn build_supervisor_registry(
     user_id: &str,
     session_id: i64,
     agent_id: &str,
- ) -> Option<ToolRegistry> {
+    plan_key: &str,
+) -> Option<ToolRegistry> {
     let toolset = build_supervisor_toolset(user_id, session_id, agent_id).await?;
 
     // Convert definitions → ToolMeta, and keep each tool's input schema at
@@ -687,14 +703,57 @@ pub async fn build_supervisor_registry(
 
     // Build the dispatch closure — captures a cloned ToolSet.
     let dispatch_toolset = toolset;
+    // Idempotency memo: an identical COMPLETED call earlier in this plan
+    // execution is served from the memo, never re-executed. Failed attempts
+    // are not memoized, so scheduler retry semantics are untouched. Seeded
+    // from supervisor_step_results (same plan key) so RESUMING a plan skips
+    // steps that already completed before a crash/failure.
+    let memo = Arc::new(kawai_router::ExecutionMemo::new());
+    if !plan_key.is_empty() {
+        match kawai_db::list_supervisor_step_results(user_id, session_id, plan_key).await {
+            Ok(rows) => {
+                let resumed = rows.len();
+                for row in rows {
+                    let artifacts = serde_json::from_str::<Vec<kawai_router::Artifact>>(
+                        &row.artifacts_json,
+                    )
+                    .unwrap_or_default();
+                    memo.insert_raw(&row.tool, &row.args_key, row.output, artifacts);
+                }
+                if resumed > 0 {
+                    eprintln!(
+                        "[supervisor] resume seed: {resumed} persisted step result(s) for plan {plan_key}"
+                    );
+                }
+            }
+            Err(e) => eprintln!("[supervisor] resume seed unavailable: {e}"),
+        }
+    }
+    let db_user_id = user_id.to_string();
+    let db_plan_key = plan_key.to_string();
     let dispatch: ToolDispatch = Arc::new(move |call: ToolCall| {
         let toolset = dispatch_toolset.clone();
         let schemas = Arc::clone(&schemas);
+        let memo = Arc::clone(&memo);
+        let db_user_id = db_user_id.clone();
+        let db_plan_key = db_plan_key.clone();
+        let db_session_id = session_id;
         Box::pin(async move {
             let name = call.step.dispatch_key().to_string();
-            let args = coerce_resolved_args(&name, &call.args, schemas.get(&name));
-            let args = args.to_string();
-            let result = toolset.execute(&name, args).await;
+            let args_value = coerce_resolved_args(&name, &call.args, schemas.get(&name));
+            if let Some(hit) = memo.get(&name, &args_value) {
+                return Ok(kawai_router::StepResult {
+                    step_id: call.step.id,
+                    agent_id: call.step.agent_id,
+                    status: kawai_router::StepStatus::Completed,
+                    output: hit.output,
+                    artifacts: hit.artifacts,
+                    error: None,
+                    retries_used: 0,
+                });
+            }
+            let args = kawai_router::canonical_json(&args_value);
+            let result = toolset.execute(&name, args.clone()).await;
 
             let output = result.text().unwrap_or("").to_string();
             let (error, status) = if result.is_success() {
@@ -706,7 +765,24 @@ pub async fn build_supervisor_registry(
                 )
             };
             let artifacts = if status == kawai_router::StepStatus::Completed {
-                tool_output_artifacts(&output)
+                let extracted = tool_output_artifacts(&output);
+                memo.insert(&name, &args_value, output.clone(), extracted.clone());
+                // Persist for plan resume (best-effort — never fail a step on
+                // a cache write).
+                let record = kawai_db::SupervisorStepResult {
+                    tool: name.clone(),
+                    args_key: args,
+                    step_id: call.step.id.clone(),
+                    output: output.clone(),
+                    artifacts_json: serde_json::to_string(&extracted).unwrap_or_default(),
+                };
+                if let Err(e) =
+                    kawai_db::upsert_supervisor_step_result(&db_user_id, db_session_id, &db_plan_key, &record)
+                        .await
+                {
+                    eprintln!("[supervisor] step result persist failed: {e}");
+                }
+                extracted
             } else {
                 Vec::new()
             };
@@ -837,6 +913,22 @@ pub fn confirmation_key(stream_id: &str, step_id: &str) -> String {
 
 /// Convert one scheduler event to its transport form, logging it on the way
 /// through — per-step lifecycle telemetry for this otherwise-silent path.
+/// Failure class for a step error string — heuristic, UI/telemetry-grade
+/// (scheduler tests pin the underlying messages: "timed out", confirmation
+/// rejection/cancellation wordings).
+fn step_error_kind(error: &str) -> &'static str {
+    let e = error.to_lowercase();
+    if e.contains("timed out") {
+        "timeout"
+    } else if e.contains("confirmation") || e.contains("rejected") {
+        "confirmation"
+    } else if e.contains("cancel") {
+        "cancelled"
+    } else {
+        "tool"
+    }
+}
+
 fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> SupervisorEvent {
     let label = match &event {
         kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
@@ -867,7 +959,11 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
             let artifacts = artifact_infos(&output);
             SupervisorEvent::StepCompleted { step_id, output, artifacts }
         }
-        kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => SupervisorEvent::StepFailed { step_id, error },
+        kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => SupervisorEvent::StepFailed {
+            kind: step_error_kind(&error),
+            step_id,
+            error,
+        },
         kawai_router::SchedulerEvent::StepSkipped { step_id, reason } => SupervisorEvent::StepSkipped { step_id, reason },
     }
 }

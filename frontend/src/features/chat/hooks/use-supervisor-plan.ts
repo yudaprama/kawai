@@ -27,7 +27,13 @@ export type SupervisorEvent =
       output: string;
       artifacts: { kind: string; handle?: string; filename?: string }[];
     }
-  | { type: "stepFailed"; stepId: string; error: string }
+  | {
+      type: "stepFailed";
+      stepId: string;
+      error: string;
+      /** Failure class from the scheduler: timeout | confirmation | cancelled | tool */
+      kind: string;
+    }
   | { type: "stepSkipped"; stepId: string; reason: string }
   | { type: "planRevising"; failedStepIds: string[]; attempt: number }
   | {
@@ -55,6 +61,8 @@ export interface SupervisorStep {
   state: "pending" | "running" | "completed" | "failed" | "skipped";
   output?: string;
   error?: string;
+  /** Failure class: timeout | confirmation | cancelled | tool */
+  errorKind?: string;
   artifacts: SupervisorArtifact[];
 }
 
@@ -123,17 +131,8 @@ export interface PersistedPlan {
   goal: string | null;
   steps: { id: string; tool: string; state: SupervisorStep["state"]; output?: string }[];
   output: string | null;
-}
-
-/** Structured plan record persisted as the assistant message content so a
- *  reopened session replays the plan, not just prose. Parsed by
- *  `historyToMessages` (chat-helpers). */
-export interface PersistedPlan {
-  type: "supervisor-plan";
-  v: 1;
-  goal: string | null;
-  steps: { id: string; tool: string; state: SupervisorStep["state"]; output?: string }[];
-  output: string | null;
+  /** Present on failed-plan records — the terminal error. */
+  error?: string;
 }
 
 export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
@@ -151,6 +150,10 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const streamIdRef = useRef<string>("");
   const goalRef = useRef<string | null>(null);
   const stepsRef = useRef<SupervisorStep[]>([]);
+  // Resume: re-execute the LAST plan verbatim. Same plan JSON → same plan key
+  // → the supervisor serves already-completed steps from its persisted
+  // ExecutionMemo seed and only re-runs what failed or never ran.
+  const lastPlanRef = useRef<{ plan: unknown; sessionId: number; agentId: string } | null>(null);
 
   const patch = useCallback((partial: Partial<SupervisorPlanState>) => {
     setState((prev) => ({ ...prev, ...partial }));
@@ -182,6 +185,13 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const runPlan = useCallback(
     (options: RunPlanOptions) => {
       if (streamCtrl.current) return;
+      // Remember the plan for `resume()` — same plan JSON → same plan key →
+      // completed steps are skipped via the persisted step cache.
+      lastPlanRef.current = {
+        plan: options.plan,
+        sessionId: options.sessionId,
+        agentId: options.agentId ?? "",
+      };
       const sessionId = options.sessionId;
 
       const streamId = crypto.randomUUID();
@@ -273,7 +283,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 );
                 break;
               case "stepFailed":
-                upsertStep(ev.stepId, {}, { state: "failed", error: ev.error });
+                upsertStep(ev.stepId, {}, { state: "failed", error: ev.error, errorKind: ev.kind });
                 break;
               case "stepSkipped":
                 upsertStep(ev.stepId, {}, { state: "skipped", error: ev.reason });
@@ -285,6 +295,25 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 patch({ status: "running", pendingConfirmation: null });
                 break;
               case "planRevised":
+                // Snapshot the superseded plan's progress BEFORE re-seeding —
+                // history then shows what v1 accomplished before the revision.
+                void persist(
+                  sessionId,
+                  "assistant",
+                  JSON.stringify({
+                    type: "supervisor-plan",
+                    v: 1,
+                    goal: goalRef.current,
+                    steps: stepsRef.current.map((s) => ({
+                      id: s.stepId,
+                      tool: s.tool,
+                      state: s.state,
+                      output: s.output ? s.output.slice(0, 500) : s.output,
+                    })),
+                    output: null,
+                    error: `superseded by revision #${ev.attempt}`,
+                  } satisfies PersistedPlan),
+                );
                 // New plan structure replaces the old one — re-seed all steps
                 // as pending (same shape as planStarted). Conversation keeps
                 // the same goal; only the remaining work is re-planned.
@@ -344,7 +373,26 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                   p.type === "text" && p.state === "streaming" ? { ...p, state: "done" as const } : p,
                 );
                 syncAssistant();
-                void persist(sessionId, "assistant", `Plan failed: ${ev.error}`);
+                // Persist the FULL structured record (per-step states), not
+                // just prose — a failed plan must replay with its step states
+                // intact for diagnosis and future resume.
+                void persist(
+                  sessionId,
+                  "assistant",
+                  JSON.stringify({
+                    type: "supervisor-plan",
+                    v: 1,
+                    goal: goalRef.current,
+                    steps: stepsRef.current.map((s) => ({
+                      id: s.stepId,
+                      tool: s.tool,
+                      state: s.state,
+                      output: s.output ? s.output.slice(0, 500) : s.output,
+                    })),
+                    output: null,
+                    error: ev.error,
+                  } satisfies PersistedPlan),
+                );
                 callbacks?.onPlanFailed?.(goalRef.current, ev.error);
                 break;
             }
@@ -423,12 +471,19 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
 
   const clearMessages = useCallback(() => setMessages([]), []);
 
+  const resume = useCallback(() => {
+    const last = lastPlanRef.current;
+    if (!last || streamCtrl.current) return;
+    runPlan({ plan: last.plan, sessionId: last.sessionId, agentId: last.agentId });
+  }, [runPlan]);
+
   return {
     ...state,
     messages,
     clearMessages,
     runPlan,
     planAndRun,
+    resume,
     approve: () => respond(true),
     reject: () => respond(false),
     stop,

@@ -54,6 +54,9 @@ export interface PlanProgressPanelProps {
   error: string | null;
   finalOutput: string | null;
   onStop: () => void;
+  /** Re-execute the same plan — completed steps are skipped via the
+   *  supervisor's persisted step cache. */
+  onResume?: () => void;
 }
 
 const STATUS_LABEL: Record<SupervisorStatus, string> = {
@@ -67,7 +70,7 @@ const STATUS_LABEL: Record<SupervisorStatus, string> = {
 /** Live plan view: full step structure (tool, task, dependencies) with
  *  per-step status and artifacts. Steps that can run in parallel are the
  *  ones simultaneously `running` — no artificial sequencing is shown. */
-export function PlanProgressPanel({ status, goal, steps, error, finalOutput, onStop }: PlanProgressPanelProps) {
+export function PlanProgressPanel({ status, goal, steps, error, finalOutput, onStop, onResume }: PlanProgressPanelProps) {
   const [showOutput, setShowOutput] = useState(false);
   if (status === "idle") return null;
 
@@ -98,6 +101,11 @@ export function PlanProgressPanel({ status, goal, steps, error, finalOutput, onS
         {(status === "running" || status === "awaitingConfirmation") && (
           <Button className="ml-auto" onClick={onStop} size="sm" variant="outline">
             Stop plan
+          </Button>
+        )}
+        {status === "failed" && onResume && steps.some((s) => s.state === "completed") && (
+          <Button className="ml-auto" onClick={onResume} size="sm" variant="outline">
+            Resume plan
           </Button>
         )}
       </div>
@@ -149,7 +157,12 @@ export function PlanProgressPanel({ status, goal, steps, error, finalOutput, onS
                     {step.output.length > 160 ? `${step.output.slice(0, 159)}…` : step.output}
                   </p>
                 )}
-                {step.error && <p className="text-destructive mt-0.5 text-[11px]">{step.error}</p>}
+                {step.error && (
+                  <p className="text-destructive mt-0.5 text-[11px]">
+                    {step.errorKind ? `[${step.errorKind}] ` : ""}
+                    {step.error}
+                  </p>
+                )}
                 {step.artifacts.length > 0 && (
                   <div className="mt-1 flex flex-wrap items-center gap-2">
                     {step.artifacts.map((a) => (

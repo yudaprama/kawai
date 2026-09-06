@@ -1660,6 +1660,7 @@ async fn plan_task_handler(
         &user_id,
         req.session_id,
         agent_id,
+        "",
     )
     .await
     .ok_or((
@@ -1708,6 +1709,7 @@ async fn execute_supervisor_plan_handler(
         &user_id,
         req.session_id,
         agent_id,
+        &crate::supervisor::plan_key(&req.plan),
     )
     .await
     .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
