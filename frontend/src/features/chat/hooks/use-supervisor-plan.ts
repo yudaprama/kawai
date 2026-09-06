@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 
-import { call, respondSupervisorConfirmation } from "@/lib/api";
+import { call, callWithEvents, respondSupervisorConfirmation } from "@/lib/api";
 import { type StreamControl, streamOperation } from "@/lib/stream";
 import type { UIMessage, UIMessagePart } from "@/lib/ai-types";
 
@@ -37,6 +37,24 @@ export type SupervisorEvent =
       kind: string;
     }
   | { type: "stepSkipped"; stepId: string; reason: string }
+  | {
+      /** Emitted once when `plan_task` starts — instant acknowledgment. */
+      type: "planningStarted";
+    }
+  | {
+      /** Emitted per planner LLM round while `plan_task` runs — twice per
+       *  round: on open (provider empty) and on completion. */
+      type: "planningRound";
+      round: number;
+      provider: string;
+      searching: boolean;
+    }
+  | {
+      /** Tool names a planning search round surfaced for the first time. */
+      type: "planningToolSearch";
+      queries: string[];
+      tools: string[];
+  }
   | { type: "planRevising"; failedStepIds: string[]; attempt: number }
   | {
       type: "planRevised";
@@ -114,6 +132,8 @@ export interface SupervisorPlanState {
   goal: string | null;
   /** Full plan structure — seeded at planStarted, before any step runs. */
   steps: SupervisorStep[];
+  /** Live planning progress — non-null only while `plan_task` is in flight. */
+  planning: { round: number; provider: string; searching: boolean; tools: string[] } | null;
   pendingConfirmation: {
     streamId: string;
     stepId: string;
@@ -149,6 +169,9 @@ export interface SupervisorPlanCallbacks {
 export async function createSupervisorPlan(goal: string, sessionId: number, agentId: string): Promise<unknown> {
   return call("plan_task", { goal, sessionId, agentId });
 }
+// NOTE: the live path (`planAndRun`) uses `callWithEvents` instead — planning
+// progress rides a Channel alongside the resolved plan. `createSupervisorPlan`
+// stays for callers that only want the plan.
 
 /** Persist one message to the session's SQLite history (best-effort). */
 function sanitizeForIpc(s: string | null): string | null {
@@ -291,6 +314,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     status: "idle",
     goal: null,
     steps: [],
+    planning: null,
     pendingConfirmation: null,
     finalOutput: null,
     error: null,
@@ -364,6 +388,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         status: "running",
         goal: null,
         steps: [],
+        planning: null,
         pendingConfirmation: null,
         finalOutput: null,
         error: null,
@@ -588,13 +613,44 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       void persist(sessionId, "user", goal);
 
       // A plan_task rejection must surface like any other failure — an
-      // unhandled rejection here silently eats the whole turn.
+      // unhandled rejection here silently eats the whole turn. Planning
+      // rounds stream live over a Channel while the plan resolves. The
+      // optimistic seed below shows motion INSTANTLY — before the IPC even
+      // lands, the context build + first LLM round can stay quiet for a while.
+      patch({ planning: { round: 0, provider: "", searching: true, tools: [] } });
       let plan: unknown;
       try {
-        plan = await createSupervisorPlan(goal, sessionId, agentId);
+        plan = await callWithEvents<unknown, SupervisorEvent>(
+          "plan_task",
+          { goal, sessionId, agentId },
+          (ev) => {
+            if (ev.type === "planningStarted" || ev.type === "planningRound") {
+              setState((prev) => ({
+                ...prev,
+                planning: {
+                  round: ev.type === "planningRound" ? ev.round : 1,
+                  provider: ev.type === "planningRound" ? ev.provider : "",
+                  searching:
+                    ev.type === "planningRound" ? ev.searching : (prev.planning?.searching ?? true),
+                  tools: prev.planning?.tools ?? [],
+                },
+              }));
+            } else if (ev.type === "planningToolSearch") {
+              setState((prev) => ({
+                ...prev,
+                planning: {
+                  round: prev.planning?.round ?? 0,
+                  provider: prev.planning?.provider ?? "",
+                  searching: true,
+                  tools: ev.tools,
+                },
+              }));
+            }
+          },
+        );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        patch({ status: "failed", error: message });
+        patch({ status: "failed", error: message, planning: null });
         void persist(sessionId, "assistant", `Plan error: ${message}`);
         callbacks?.onPlanFailed?.(goal, message);
         return;
@@ -606,7 +662,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         runPlan({ plan, sessionId, agentId });
         return;
       }
-      patch({ status: "reviewing", review, error: null });
+      patch({ status: "reviewing", review, error: null, planning: null });
     },
     [runPlan, patch, callbacks],
   );

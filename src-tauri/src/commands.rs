@@ -831,6 +831,7 @@ pub async fn plan_task(
     goal: String,
     session_id: i64,
     agent_id: String,
+    on_event: tauri::ipc::Channel<crate::supervisor::SupervisorEvent>,
         session: State<'_, Session>,
 ) -> Result<kawai_router::TaskPlan, String> {
     let user_id = session_user_id(&session)?;
@@ -840,7 +841,13 @@ pub async fn plan_task(
     let registry = crate::supervisor::build_supervisor_registry(
         &user_id, session_id, &agent_id, "",
     ).await?;
-    let (plan, usage) = crate::supervisor::plan_task(&user_id, &goal, &registry)
+    // Planning-progress events ride the same channel pattern as execution:
+    // the planner loop can take a minute+, and a silent UI during it was the
+    // worst-rated part of the flow. The command still resolves with the plan.
+    let on_event = on_event.clone();
+    let (plan, usage) = crate::supervisor::plan_task(&user_id, &goal, &registry, move |event| {
+        let _ = on_event.send(event);
+    })
         .await
         .map_err(|e| {
             // Planner failures are otherwise invisible — the loop's only log

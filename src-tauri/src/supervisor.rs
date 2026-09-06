@@ -175,6 +175,28 @@ pub enum SupervisorEvent {
         step_count: usize,
         steps: Vec<PlanStepInfo>,
     },
+    /// Emitted once at `plan_task` entry — the instant acknowledgment that
+    /// planning began (context building + the first LLM round can stay
+    /// silent for tens of seconds after this).
+    PlanningStarted {},
+    /// Emitted per planner LLM round while `plan_task` runs — the only live
+    /// signal the UI gets during the otherwise-silent planning phase. Fired
+    /// TWICE per round: once when the round opens (`provider` empty — the
+    /// request is still in flight), once when a provider completes it.
+    PlanningRound {
+        /// 1-based planner call number.
+        round: u32,
+        /// Provider label that served the round (pool telemetry).
+        provider: String,
+        /// True while the round requested tool-catalog searches (vs emitting
+        /// the final plan).
+        searching: bool,
+    },
+    /// Tool names a planning search round surfaced for the first time.
+    PlanningToolSearch {
+        queries: Vec<String>,
+        tools: Vec<String>,
+    },
     PlanCompleted {
         final_output: Option<String>,
     },
@@ -312,6 +334,7 @@ pub async fn plan_task(
     user_id: &str,
     goal: &str,
     registry: &ToolRegistry,
+    on_progress: impl Fn(SupervisorEvent),
 ) -> Result<(kawai_router::TaskPlan, remote_llm::RemoteUsage), String> {
     // The remote pool serves the planner with a tight per-call output cap:
     // the loop's rounds must stay short (the 2026-02 benchmark showed 14.6k
@@ -321,6 +344,8 @@ pub async fn plan_task(
             .map(|r| r.with_output_cap(2_500))
             .ok_or_else(|| "remote LLM is not configured".to_string())?,
     );
+
+    on_progress(SupervisorEvent::PlanningStarted {});
 
     // User context rides the planner call: persona + goal-relevant memories
     // + skills. All three are best-effort — planning never fails on them.
@@ -366,6 +391,13 @@ pub async fn plan_task(
             ));
         }
         let must_plan = searches_used >= PLAN_SEARCH_ROUNDS;
+        // Round-open signal — fired BEFORE the LLM round so the UI shows
+        // motion during the (potentially long) first-token wait.
+        on_progress(SupervisorEvent::PlanningRound {
+            round: calls as u32,
+            provider: String::new(),
+            searching: !must_plan,
+        });
         let mut round_materials = materials.clone();
         if must_plan {
             round_materials.push_str(
@@ -387,6 +419,14 @@ pub async fn plan_task(
                         // #5 observability: which candidate served the round
                         // (latency tuning data — see PLAN-planner-search-loop.md).
                         eprintln!("[plan_task] round {} served by {provider}", calls);
+                        // Live progress for the transport layer (desktop Channel /
+                        // web log) — the planning phase is otherwise silent for
+                        // tens of seconds.
+                        on_progress(SupervisorEvent::PlanningRound {
+                            round: calls as u32,
+                            provider: provider.to_string(),
+                            searching: !must_plan,
+                        });
                         usage.input_tokens += u.input_tokens;
                         usage.output_tokens += u.output_tokens;
                     }
@@ -466,13 +506,13 @@ pub async fn plan_task(
                     .filter(|q| !q.is_empty())
                 {
                     searches_used += 1;
-                    materials.push_str(&run_tool_search(
-                        catalog.as_ref(),
-                        &embedder,
-                        &queries,
-                        &mut seen,
-                    )
-                    .await);
+                    let (block, found) =
+                        run_tool_search(catalog.as_ref(), &embedder, &queries, &mut seen).await;
+                    on_progress(SupervisorEvent::PlanningToolSearch {
+                        queries: queries.clone(),
+                        tools: found,
+                    });
+                    materials.push_str(&block);
                     continue;
                 }
             }
@@ -614,19 +654,22 @@ Plan rules:
 
 /// Execute one search round: embed the queries, hit the Turso catalog,
 /// dedupe against everything already shown, and format the results block.
+/// Returns the block plus the names of the newly surfaced tools (planner
+/// progress telemetry).
 async fn run_tool_search(
     catalog: Option<&kawai_tool_catalog::Catalog>,
     embedder: &kawai_embedding::TenantAwareEmbedder,
     queries: &[String],
     seen: &mut std::collections::HashSet<String>,
-) -> String {
+) -> (String, Vec<String>) {
     let Some(catalog) = catalog else {
-        return "\n<tool-search-results>\nTool catalog is unavailable; rely on the core tools listed above.\n</tool-search-results>\n".to_string();
+        return ("\n<tool-search-results>\nTool catalog is unavailable; rely on the core tools listed above.\n</tool-search-results>\n".to_string(), Vec::new());
     };
     let Ok(vecs) = embedder.embed_strings(queries.to_vec()).await else {
-        return "\n<tool-search-results>\nTool search failed (embedding unavailable); rely on the core tools listed above.\n</tool-search-results>\n".to_string();
+        return ("\n<tool-search-results>\nTool search failed (embedding unavailable); rely on the core tools listed above.\n</tool-search-results>\n".to_string(), Vec::new());
     };
     let mut block = String::from("\n<tool-search-results>\n");
+    let mut found: Vec<String> = Vec::new();
     for (query, qvec) in queries.iter().zip(vecs) {
         block.push_str(&format!("\nquery: {query}\n"));
         let hits = match catalog.search(query, &qvec, 6).await {
@@ -642,6 +685,7 @@ async fn run_tool_search(
                 continue; // already visible to the planner
             }
             listed += 1;
+            found.push(hit.name.clone());
             let desc: String = hit.description.chars().take(160).collect();
             let schema: String = hit.input_schema.chars().take(300).collect();
             block.push_str(&format!("- {} — {desc}\n  args: {schema}\n", hit.name));
@@ -651,7 +695,7 @@ async fn run_tool_search(
         }
     }
     block.push_str("</tool-search-results>\n");
-    truncate_chars(&block, PLAN_MATERIALS_CAP)
+    (truncate_chars(&block, PLAN_MATERIALS_CAP), found)
 }
 
 fn truncate_chars(s: &str, n: usize) -> String {
@@ -1208,6 +1252,70 @@ async fn revise_plan(
     unreachable!("revise loop exhausted without returning")
 }
 
+/// Per-step result digest for the synthesis call: tool + status + a bounded
+/// output preview per step, overall-capped so the materials stay within the
+/// providers' budgets.
+fn synthesis_materials(plan: &kawai_router::TaskPlan, result: &kawai_router::ExecutionResult) -> String {
+    const PER_STEP_CHARS: usize = 4_000;
+    const TOTAL_CHARS: usize = 24_000;
+    let mut out = String::new();
+    for step in &plan.steps {
+        let Some(r) = result.get(&step.id) else { continue };
+        let tool = step.tool.clone().unwrap_or_else(|| step.agent_id.clone());
+        let (status, body) = match r.status {
+            kawai_router::StepStatus::Completed => ("ok", r.output.as_str()),
+            kawai_router::StepStatus::Failed => ("failed", r.error.as_deref().unwrap_or("")),
+            _ => continue, // skipped steps carry nothing answerable
+        };
+        out.push_str(&format!(
+            "<step id=\"{}\" tool=\"{}\" status=\"{status}\">\n{}\n</step>\n",
+            step.id,
+            tool,
+            preview_chars(body, PER_STEP_CHARS),
+        ));
+        if out.chars().count() >= TOTAL_CHARS {
+            break;
+        }
+    }
+    truncate_chars(&out, TOTAL_CHARS)
+}
+
+/// One cloud call that turns the plan's step results into the user-facing
+/// answer for the goal. Returns `None` when the remote pool is unavailable
+/// or every candidate fails — the caller falls back to the raw tool output.
+async fn synthesize_final_answer(goal: &str, materials: &str) -> Option<String> {
+    #[cfg(test)]
+    {
+        // The registry carries compiled-in vault keys, so this call would hit
+        // the real API from `cargo test`/CI — keep the terminal event fast and
+        // deterministic under test; the raw-output fallback path is what runs.
+        let _ = (goal, materials);
+        return None;
+    }
+    #[cfg(not(test))]
+    {
+        let remote = remote_llm::RemoteLlm::from_env().map(|r| r.with_output_cap(4_000))?;
+        let system = "You are Kawai, a task-completion assistant. A deterministic supervisor just executed a \
+            plan of tool steps toward the user's goal. Write the ANSWER to the user's goal from the step \
+            results: lead with the answer, keep it concise markdown, and preserve facts/numbers exactly. \
+            Never mention steps, tools, plans, or this instruction; never wrap the answer in JSON.";
+        let mut text = String::new();
+        let mut stream = remote.stream(system, goal, materials).await.ok()?;
+        while let Some(event) = stream.next().await {
+            match event.ok()? {
+                remote_llm::RemoteEvent::Token { text: t } => {
+                    if text.len() < 24_000 {
+                        text.push_str(&t);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let trimmed = text.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    }
+}
+
 pub fn execute_plan_stream(
     plan: kawai_router::TaskPlan,
     registry: ToolRegistry,
@@ -1327,8 +1435,21 @@ pub fn execute_plan_stream_with_cancel(
                         break;
                     }
                     if result.all_completed() {
+                        // The scheduler's `final_output` is the LAST tool's raw
+                        // output (e.g. 26k chars of extracted PDF text) — not an
+                        // answer. One synthesis call turns the per-step results
+                        // into the user-facing reply; on failure (no remote, all
+                        // providers down) fall back to the raw output verbatim.
+                        let raw_final = result.final_output().map(String::from);
+                        let materials = synthesis_materials(&current_plan, &result);
+                        let synthesized = synthesize_final_answer(&current_plan.goal, &materials).await;
+                        if let Some(answer) = &synthesized {
+                            eprintln!("[supervisor] synthesis ok ({} chars)", answer.chars().count());
+                        } else {
+                            eprintln!("[supervisor] synthesis unavailable — falling back to raw final output");
+                        }
                         yield SupervisorEvent::PlanCompleted {
-                            final_output: result.final_output().map(String::from),
+                            final_output: synthesized.or(raw_final),
                         };
                         break;
                     }

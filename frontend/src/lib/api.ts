@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 /**
  * Request-response RPC to the Tauri backend (in-process IPC). Command names
@@ -6,6 +6,19 @@ import { invoke } from "@tauri-apps/api/core";
  */
 export function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   return invoke<T>(command, args ?? {});
+}
+
+/** RPC that ALSO streams progress events over a Channel while awaiting the
+ *  command's return value (e.g. `plan_task`: live planning rounds + the
+ *  final plan as the resolved value). */
+export function callWithEvents<T, E extends { type: string }>(
+  command: string,
+  args: Record<string, unknown> | undefined,
+  onEvent: (event: E) => void,
+): Promise<T> {
+  const channel = new Channel<E>();
+  channel.onmessage = onEvent;
+  return invoke<T>(command, { ...(args ?? {}), onEvent: channel });
 }
 
 /** Tauri invoke rejects with a bare string, not an Error. */

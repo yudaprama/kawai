@@ -1805,7 +1805,15 @@ async fn plan_task_handler(
     .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e))?;
     // Usage-based billing is dormant under local auth (no session token is
     // held anywhere) — flat per-turn in the frontend was removed with it.
-    crate::supervisor::plan_task(&user_id, &req.goal, &registry)
+    // Web transport has no live planning surface — progress rounds are logged
+    // only (the plan still resolves as JSON).
+    crate::supervisor::plan_task(&user_id, &req.goal, &registry, |event| {
+        if let SupervisorEvent::PlanningRound { round, provider, searching } = event {
+            eprintln!(
+                "[plan_task-web] round {round} served by {provider} searching={searching}"
+            );
+        }
+    })
         .await
         .map(|(plan, _usage)| Json(plan))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))

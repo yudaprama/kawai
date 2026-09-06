@@ -26,7 +26,7 @@ import type { ChatStatus, UIMessage } from "@/lib/ai-types";
 import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
 import type { SupervisorConfirmation } from "@/features/chat/hooks/use-supervisor-chat";
 import type { PlanReview, SupervisorStatus, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
-import { PlanProgressPanel, PlanReviewPanel } from "@/features/chat/components/plan-progress-panel";
+import { PlanProgressPanel, PlanReviewPanel, PlanningCard, type PlanningState } from "@/features/chat/components/plan-progress-panel";
 import { ChatComposer } from "@/features/chat/components/chat-composer";
 
 interface AgentPresentation {
@@ -94,6 +94,7 @@ export function ConversationPanel({
   supervisorError,
   supervisorFinalOutput,
   supervisorReview,
+  supervisorPlanning,
   onApprovePlan,
   onCancelPlan,
   onRemovePlanStep,
@@ -143,6 +144,8 @@ export function ConversationPanel({
   supervisorFinalOutput: string | null;
   /** Present while status === "reviewing" — the plan runs only after approval. */
   supervisorReview: PlanReview | null;
+  /** Live planning progress — non-null only while `plan_task` is in flight. */
+  supervisorPlanning: PlanningState | null;
   onApprovePlan: () => void;
   onCancelPlan: () => void;
   onRemovePlanStep: (stepId: string) => void;
@@ -320,31 +323,10 @@ export function ConversationPanel({
           </Button>
         </div>
       )}
-      {/* Plan sits directly above the conversation it governs — after all
-          system alerts, so alerts never sandwich it. During review the plan
-          is shown as a contract to approve, not a progress view. */}
-      {supervisorStatus === "reviewing" && supervisorReview ? (
-        <PlanReviewPanel
-          onApprove={onApprovePlan}
-          onCancel={onCancelPlan}
-          onRemoveStep={onRemovePlanStep}
-          review={supervisorReview}
-        />
-      ) : (
-        <PlanProgressPanel
-          error={supervisorError}
-          finalOutput={supervisorFinalOutput}
-          goal={supervisorGoal}
-          onNewPlan={onNewPlanSupervisor}
-          onResume={onResumeSupervisor}
-          onStop={onStopSupervisor}
-          planVersion={supervisorPlanVersion}
-          priorVersions={supervisorPriorVersions}
-          replansExhausted={supervisorReplansExhausted}
-          status={supervisorStatus}
-          steps={supervisorSteps}
-        />
-      )}
+      {/* Plan lifecycle lives IN the chat flow now: review gate, live
+          progress, and planning pill render at the bottom of the message
+          column (see the slot below the messages) — no separate panel above
+          the conversation splitting the user's attention. */}
 
       <div className="relative flex min-h-0 flex-1">
         <section
@@ -426,6 +408,39 @@ export function ConversationPanel({
               </Conversation>
             )}
           </div>
+
+          {/* Inline plan slot — part of the chat column, aligned with the
+              messages: planning pill → review gate → live progress card. */}
+          {(supervisorPlanning != null || supervisorStatus !== "idle") && (
+            <div className="w-full px-4 pb-1">
+              <div className="mx-auto max-w-2xl">
+                {supervisorPlanning != null ? (
+                  <PlanningCard planning={supervisorPlanning} />
+                ) : supervisorStatus === "reviewing" && supervisorReview ? (
+                  <PlanReviewPanel
+                    onApprove={onApprovePlan}
+                    onCancel={onCancelPlan}
+                    onRemoveStep={onRemovePlanStep}
+                    review={supervisorReview}
+                  />
+                ) : (
+                  <PlanProgressPanel
+                    error={supervisorError}
+                    finalOutput={supervisorFinalOutput}
+                    goal={supervisorGoal}
+                    onNewPlan={onNewPlanSupervisor}
+                    onResume={onResumeSupervisor}
+                    onStop={onStopSupervisor}
+                    planVersion={supervisorPlanVersion}
+                    priorVersions={supervisorPriorVersions}
+                    replansExhausted={supervisorReplansExhausted}
+                    status={supervisorStatus}
+                    steps={supervisorSteps}
+                  />
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="shrink-0 px-4 pt-2 pb-4">
             {confirmation && (

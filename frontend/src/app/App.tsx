@@ -322,6 +322,7 @@ export default function App() {
           supervisorError={supervisor.error}
           supervisorFinalOutput={supervisor.finalOutput}
           supervisorReview={supervisor.review}
+          supervisorPlanning={supervisor.planning}
           onApprovePlan={supervisor.approvePlan}
           onCancelPlan={supervisor.cancelPlan}
           onRemovePlanStep={supervisor.removeStep}

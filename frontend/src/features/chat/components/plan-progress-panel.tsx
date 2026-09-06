@@ -206,7 +206,7 @@ export interface PlanReviewPanelProps {
 export function PlanReviewPanel({ review, onApprove, onCancel, onRemoveStep }: PlanReviewPanelProps) {
   const confirmCount = review.steps.filter((s) => s.requiresConfirmation).length;
   return (
-    <div className="bg-card mx-4 mt-3 rounded-xl border p-3.5 text-sm shadow-xs">
+    <div className="bg-card w-full rounded-xl border p-3.5 text-sm shadow-xs">
       <div className="flex items-center gap-2.5">
         <span className="text-sm font-semibold">Review plan</span>
         <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium">
@@ -259,6 +259,43 @@ export function PlanReviewPanel({ review, onApprove, onCancel, onRemoveStep }: P
           </li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+// ── Planning card (live `plan_task` progress) ──────────────────────────────
+
+export interface PlanningState {
+  round: number;
+  provider: string;
+  searching: boolean;
+  tools: string[];
+}
+
+export interface PlanningCardProps {
+  planning: PlanningState;
+}
+
+/** Live planning progress, shown while `plan_task` runs (tens of seconds of
+ *  otherwise-silent LLM time). Rendered inline in the chat column, styled
+ *  like the plan card so the two read as one lifecycle. */
+export function PlanningCard({ planning }: PlanningCardProps) {
+  return (
+    <div className="bg-card w-full rounded-xl border p-3.5 text-sm shadow-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="bg-primary/10 text-primary inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium">
+          <LoaderCircleIcon className="size-3 animate-spin" />
+          Planning…
+        </span>
+        <span className="text-muted-foreground text-[11px]">
+          {planning.round === 0 ? "starting…" : `round ${planning.round}`}
+          {planning.provider && ` · ${planning.provider}`}
+          {planning.searching ? " · searching tools" : planning.round > 0 ? " · writing plan" : ""}
+        </span>
+      </div>
+      {planning.tools.length > 0 && (
+        <p className="text-muted-foreground mt-2 text-[11px]">Found: {planning.tools.join(", ")}</p>
+      )}
     </div>
   );
 }
@@ -329,7 +366,7 @@ export function PlanProgressPanel({
   const collapsed = status === "completed" && !showDetails;
 
   return (
-    <div className="bg-card mx-4 mt-3 rounded-xl border p-3.5 text-sm shadow-xs">
+    <div className="bg-card w-full rounded-xl border p-3.5 text-sm shadow-xs">
       <div className="flex items-center gap-2.5">
         <span className="text-sm font-semibold">
           Plan
