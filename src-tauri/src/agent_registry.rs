@@ -210,6 +210,9 @@ pub fn finance_tools_for_supervisor(
         // Reddit and sector tools
         "get_reddit_posts",
         "get_sector_performance",
+        // Earnings and news sentiment (Alpha Vantage)
+        "get_earnings_data",
+        "get_news_sentiment",
     ]))
 }
 
