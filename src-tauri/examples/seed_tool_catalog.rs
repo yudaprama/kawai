@@ -114,7 +114,7 @@ async fn run() -> Result<(), String> {
         .collect();
 
     let cfg = RemoteConfig { url, auth_token: write_token };
-    let catalog = kawai_tool_catalog::Catalog::open_default(&cfg).await?;
+    let catalog = kawai_tool_catalog::Catalog::open_remote(&cfg).await?;
     let synced = catalog.sync().await.unwrap_or(0);
     println!("[seed] replica sync: {synced} frames applied");
 
