@@ -29,6 +29,13 @@ export type SupervisorEvent =
     }
   | { type: "stepFailed"; stepId: string; error: string }
   | { type: "stepSkipped"; stepId: string; reason: string }
+  | { type: "planRevising"; failedStepIds: string[]; attempt: number }
+  | {
+      type: "planRevised";
+      attempt: number;
+      stepCount: number;
+      steps: { id: string; tool: string; task: string; dependsOn: string[] }[];
+    }
   | { type: "planCompleted"; finalOutput?: string }
   | { type: "planFailed"; error: string };
 
@@ -270,6 +277,26 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 break;
               case "stepSkipped":
                 upsertStep(ev.stepId, {}, { state: "skipped", error: ev.reason });
+                break;
+              case "planRevising":
+                // The supervisor is asking the planner for a revised plan —
+                // execution state stays "running"; the failed steps already
+                // carry their failed state from stepFailed events.
+                patch({ status: "running", pendingConfirmation: null });
+                break;
+              case "planRevised":
+                // New plan structure replaces the old one — re-seed all steps
+                // as pending (same shape as planStarted). Conversation keeps
+                // the same goal; only the remaining work is re-planned.
+                stepsRef.current = ev.steps.map((s) => ({
+                  stepId: s.id,
+                  tool: s.tool,
+                  task: s.task,
+                  dependsOn: s.dependsOn,
+                  state: "pending" as const,
+                  artifacts: [],
+                }));
+                patch({ status: "running", steps: stepsRef.current, error: null });
                 break;
               case "planCompleted": {
                 patch({

@@ -120,6 +120,19 @@ pub enum SupervisorEvent {
         step_id: String,
         reason: String,
     },
+    /// A step failed and the supervisor is asking the planner to revise the
+    /// remaining plan (failure-triggered replan; budget-capped).
+    PlanRevising {
+        failed_step_ids: Vec<String>,
+        attempt: u32,
+    },
+    /// The planner produced a revised plan; execution restarts on it. Step
+    /// ids are new — the frontend re-seeds its plan state from `steps`.
+    PlanRevised {
+        attempt: u32,
+        step_count: usize,
+        steps: Vec<PlanStepInfo>,
+    },
     PlanCompleted {
         final_output: Option<String>,
     },
@@ -859,6 +872,145 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
     }
 }
 
+// ── Failure-triggered replanning ───────────────────────────────────────
+
+/// Hard cap on planner revisions per plan execution. Without it, a
+/// systematically misunderstood goal would burn LLM calls in a loop.
+const MAX_REPLANS: u32 = 1;
+
+/// Core tools visible to the revise prompt (same whitelist plan_task uses).
+fn planner_core_tools(registry: &ToolRegistry) -> Vec<String> {
+    PLAN_CORE_TOOLS
+        .iter()
+        .filter(|name| registry.get(name).is_some())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Decide whether a failed execution deserves a planner revision. Returns
+/// `None` for: success, empty results, user cancellation, and user decisions
+/// (confirmation rejected / no handler) — those are not plan bugs.
+fn replan_reason(
+    result: &kawai_router::ExecutionResult,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> Option<String> {
+    if cancel.is_cancelled() {
+        return None;
+    }
+    let failures = result.failures();
+    if failures.is_empty() {
+        return None;
+    }
+    let is_user_decision = |error: Option<&String>| {
+        let e = error.unwrap_or(&String::new()).to_lowercase();
+        e.contains("confirmation") || e.contains("rejected") || e.contains("cancelled")
+    };
+    if failures.iter().all(|f| is_user_decision(f.error.as_ref())) {
+        return None;
+    }
+    Some(
+        failures
+            .iter()
+            .map(|f| format!("step '{}' ({}): {}", f.step_id, f.agent_id, f.error.as_deref().unwrap_or("unknown")))
+            .collect::<Vec<_>>()
+            .join("; "),
+    )
+}
+
+/// Compact per-step outcome report fed to the planner as replan materials.
+/// Completed outputs are truncated — the planner needs shape, not bodies.
+fn execution_report(result: &kawai_router::ExecutionResult) -> String {
+    const OUTPUT_CHARS: usize = 300;
+    let mut out = String::from("<execution-report>\n");
+    for r in &result.results {
+        let output = {
+            let trimmed: String = r.output.chars().take(OUTPUT_CHARS).collect();
+            if r.output.chars().count() > OUTPUT_CHARS {
+                format!("{trimmed}…")
+            } else {
+                trimmed
+            }
+        };
+        out.push_str(&format!(
+            "<step id=\"{}\" status=\"{:?}\" output=\"{}\" error=\"{}\"/>\n",
+            r.step_id,
+            r.status,
+            output.replace('"', "'"),
+            r.error.as_deref().unwrap_or("").replace('"', "'"),
+        ));
+    }
+    out.push_str("</execution-report>");
+    out
+}
+
+/// Ask the planner for a revised plan. One call + one validator corrective
+/// round (the same `validate_plan` contract `plan_task` enforces — revision
+/// grants the planner no extra power).
+async fn revise_plan(
+    goal: &str,
+    reason: &str,
+    result: &kawai_router::ExecutionResult,
+    registry: &ToolRegistry,
+) -> Result<kawai_router::TaskPlan, String> {
+    let remote = remote_llm::RemoteLlm::from_env()
+        .map(|r| r.with_output_cap(2_500))
+        .ok_or_else(|| "remote LLM is not configured".to_string())?;
+    let system = plan_loop_system_prompt(&planner_core_tools(registry));
+    let task = format!(
+        "The execution of the plan for this goal DIVERGED. The remaining plan is no longer trusted.\
+         \n\nOriginal goal:\n{goal}\
+         \n\nFailures:\n{reason}\
+         \n\nExecution report — completed steps already produced their artifacts; do NOT redo \
+          them unless their outputs are the direct cause of the failures:\n{}\
+         \n\nProduce a REVISED plan that completes the original goal from the current state.\
+         \nRespond ONLY with the plan JSON.",
+        execution_report(result)
+    );
+
+    let mut materials = String::new();
+    for round in 0..2 {
+        let mut raw = String::new();
+        {
+            let mut stream = remote.stream(&system, &task, &materials).await?;
+            while let Some(event) = stream.next().await {
+                match event? {
+                    remote_llm::RemoteEvent::Token { text } => {
+                        if raw.len() < 32_000 {
+                            raw.push_str(&text);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        match parse_supervisor_plan(&raw, registry) {
+            Ok(plan) if !plan.steps.is_empty() => return Ok(plan),
+            Ok(_) => {
+                materials.push_str(
+                    "\n<plan-rejected>The revised plan had no steps. Respond ONLY with plan JSON.</plan-rejected>",
+                );
+            }
+            Err(plan_err) => {
+                if round == 0 {
+                    let suggestions = suggest_tools(registry, &plan_err);
+                    materials.push_str(&format!(
+                        "\n<plan-rejected>Your revised plan was rejected by the validator: {plan_err}\n{}\
+                         Respond ONLY with the corrected plan JSON.</plan-rejected>",
+                        if suggestions.is_empty() {
+                            String::new()
+                        } else {
+                            format!("Did you mean one of: {}?\n", suggestions.join(", "))
+                        },
+                    ));
+                } else {
+                    return Err(format!("revised plan validation failed: {plan_err}"));
+                }
+            }
+        }
+    }
+    unreachable!("revise loop exhausted without returning")
+}
+
 pub fn execute_plan_stream(
     plan: kawai_router::TaskPlan,
     registry: ToolRegistry,
@@ -925,58 +1077,117 @@ pub fn execute_plan_stream_with_cancel(
         };
         let dispatch = registry.step_dispatch();
 
-        let execution = kawai_router::run_plan_with_cancel(plan.clone(), dispatch, limits, cancel);
-        tokio::pin!(execution);
-        let result = loop {
-            tokio::select! {
-                Some(event) = event_rx.recv() => {
-                    yield log_scheduler_event(&event_stream_id, event);
+        // Failure-triggered replan loop: a non-user-decided failure with
+        // budget left asks the planner for a revised plan and re-executes it.
+        // Confirmation gates, cancellation, and the ExecutionMemo all carry
+        // over — a revised plan cannot re-run an identical completed call and
+        // cannot dispatch anything the registry doesn't know.
+        let mut current_plan = plan;
+        let mut replan_attempt: u32 = 0;
+        'plans: loop {
+            let execution = kawai_router::run_plan_with_cancel(
+                current_plan.clone(),
+                dispatch.clone(),
+                limits.clone(),
+                cancel.clone(),
+            );
+            tokio::pin!(execution);
+            let result = loop {
+                tokio::select! {
+                    Some(event) = event_rx.recv() => {
+                        yield log_scheduler_event(&event_stream_id, event);
+                    }
+                    result = &mut execution => break result,
                 }
-                result = &mut execution => break result,
+            };
+            // Drain observer events still queued when the scheduler finished —
+            // otherwise late stepCompleted/stepFailed events are lost and the UI
+            // shows a terminal row without its per-step lifecycle.
+            while let Ok(event) = event_rx.try_recv() {
+                yield log_scheduler_event(&event_stream_id, event);
             }
-        };
-        // Drain observer events still queued when the scheduler finished —
-        // otherwise late stepCompleted/stepFailed events are lost and the UI
-        // shows a terminal row without its per-step lifecycle.
-        while let Ok(event) = event_rx.try_recv() {
-            yield log_scheduler_event(&event_stream_id, event);
-        }
-        match result {
-            Ok(result) => {
-                eprintln!(
-                    "[supervisor] plan terminal: results={} all_completed={} final_output={:?}",
-                    result.results.len(),
-                    result.all_completed(),
-                    result.final_output().map(|o| o.len()),
-                );
-                // Per-step lifecycle events were forwarded live above. Emit
-                // only the terminal plan event here to avoid duplicate UI rows.
-                // An EMPTY result set must not count as success —
-                // `[].all(completed)` is trivially true in Rust.
-                if result.results.is_empty() {
+            match result {
+                Ok(result) => {
                     eprintln!(
-                        "[supervisor] plan '{}' produced no step results (steps in plan: {step_count})",
-                        plan.goal
+                        "[supervisor] plan terminal: results={} all_completed={} final_output={:?}",
+                        result.results.len(),
+                        result.all_completed(),
+                        result.final_output().map(|o| o.len()),
                     );
-                    yield SupervisorEvent::PlanFailed {
-                        error: "scheduler produced no step results".into(),
-                    };
-                } else if result.all_completed() {
-                    yield SupervisorEvent::PlanCompleted {
-                        final_output: result.final_output().map(String::from),
-                    };
-                } else {
+                    // Per-step lifecycle events were forwarded live above. Emit
+                    // only the terminal plan event here to avoid duplicate UI rows.
+                    // An EMPTY result set must not count as success —
+                    // `[].all(completed)` is trivially true in Rust.
+                    if result.results.is_empty() {
+                        eprintln!(
+                            "[supervisor] plan '{}' produced no step results (steps in plan: {})",
+                            current_plan.goal,
+                            current_plan.steps.len()
+                        );
+                        yield SupervisorEvent::PlanFailed {
+                            error: "scheduler produced no step results".into(),
+                        };
+                        break;
+                    }
+                    if result.all_completed() {
+                        yield SupervisorEvent::PlanCompleted {
+                            final_output: result.final_output().map(String::from),
+                        };
+                        break;
+                    }
+                    // Failure path — decide between replanning and giving up.
+                    let reason = replan_reason(&result, &cancel);
+                    let failed_ids: Vec<String> = result
+                        .failures()
+                        .iter()
+                        .map(|f| f.step_id.clone())
+                        .collect();
+                    if replan_attempt < MAX_REPLANS {
+                        if let Some(reason) = reason {
+                            replan_attempt += 1;
+                            yield SupervisorEvent::PlanRevising {
+                                failed_step_ids: failed_ids.clone(),
+                                attempt: replan_attempt,
+                            };
+                            eprintln!(
+                                "[supervisor] replanning (attempt {replan_attempt}/{MAX_REPLANS}): {reason}"
+                            );
+                            match revise_plan(&current_plan.goal, &reason, &result, &registry).await {
+                                Ok(revised) => {
+                                    let count = revised.steps.len();
+                                    yield SupervisorEvent::PlanRevised {
+                                        attempt: replan_attempt,
+                                        step_count: count,
+                                        steps: plan_step_infos(&revised),
+                                    };
+                                    current_plan = revised;
+                                    continue 'plans;
+                                }
+                                Err(e) => {
+                                    yield SupervisorEvent::PlanFailed {
+                                        error: format!(
+                                            "{}; replan (attempt {replan_attempt}) failed: {e}",
+                                            reason
+                                        ),
+                                    };
+                                    break;
+                                }
+                            }
+                        }
+                    }
                     yield SupervisorEvent::PlanFailed {
                         error: result.failures().into_iter().map(|f| {
                             format!("step '{}' failed: {}", f.step_id, f.error.as_deref().unwrap_or("unknown"))
                         }).collect::<Vec<_>>().join("; "),
                     };
+                    break;
                 }
-            }
-            Err(e) => {
-                yield SupervisorEvent::PlanFailed {
-                    error: e.to_string(),
-                };
+                Err(e) => {
+                    yield SupervisorEvent::PlanFailed {
+                        error: e.to_string(),
+                    };
+                    break;
+                }
             }
         }
         // Remove any confirmation senders left behind by cancellation or a

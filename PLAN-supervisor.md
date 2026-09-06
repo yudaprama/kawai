@@ -12,7 +12,8 @@ Supervisor adalah program Rust yang mengeksekusi plan secara deterministik. LLM 
 | **Subagent** | Tool yang di dalamnya ada loop LLM (remote pool, atau lokal saat tak ada kandidat cloud). Contoh: `deep_write`, `draft_document`, `plan_task`. |
 | **Pure tool** | Tool Rust murni tanpa LLM: `pdf_merge`, `binance_price`, `data_query`. |
 | **Planner** | LLM (bounded search loop) yang menghasilkan `TaskPlan`, tervalidasi `ToolRegistry` sebelum dieksekusi. |
-| **TurnMemory** | Log proses per session (`session_artifacts`): hasil tiap step selesai di-record dengan handle `memN`; output besar di-paging via `artifact_recall(handle, offset)`. |
+| **ExecutionMemo** | Dedup dispatch dalam satu eksekusi plan: panggilan identik (tool + canonical args) yang sudah `Completed` dilayani dari memo, tidak dieksekusi ulang. Kegagalan tidak pernah di-memo — semantik retry utuh. (`crates/router/src/registry.rs`) |
+| **TurnMemory** | Log proses di dalam loop subagent (`session_artifacts`): hasil tool subagent di-record dengan handle `memN`, di-paging via `artifact_recall(handle, offset)`. Bukan milik scheduler — supervisor tidak menulis log ini. |
 
 ## Prinsip desain
 
@@ -57,7 +58,7 @@ streamOperation(                  execute_supervisor_plan
                                   │                             │                                   dispatch → ToolSet::
                                   │                             │                                   execute → AgentTool.call
                                   │                             │                                 ▶ sukses → StepResult +
-                                  │                             │                                   TurnMemory record (memN)
+                                  │                             │                                   ExecutionMemo dedup (memN)
                                   │                             │                                 ▶ gagal → onError:
                                   │                             │                                   fail → halt plan;
                                   │                             │                                   skip/continue → step
@@ -155,8 +156,9 @@ dengan test. Bukan pseudocode — ini perilaku aktual:
      di sekitar `StepDispatch` (`ToolSet::execute` → `AgentTool.call`);
      `retries_used` tercatat di `StepResult`;
    - sukses → `StepResult { output, artifacts: Vec<Artifact>, retries_used }`
-     + `TurnMemory.record(tool, args_key, content)` → handle `mem1, mem2, …`
-     (dedup per `(tool, args_key)` yang sama);
+     + `ExecutionMemo.insert` — panggilan identik (tool + canonical args)
+     berikutnya dalam plan yang sama dilayani dari memo, tidak dieksekusi
+     ulang (guard efek-ganda untuk step duplikat); kegagalan tidak di-memo;
    - gagal → `effective_on_error`:
      - `fail` (default) → plan berhenti, semua step tersisa `Skipped`;
      - `skip` / `continue` → step `Failed`, dependen **transitif** di-skip
@@ -180,7 +182,7 @@ non-blocking — forward ke channel) dan diterjemahkan `supervisor.rs` menjadi
 | plan.rs validation | Validasi TaskPlan (struktur + args vs input_schema) |
 | deep_write handler | Pola subagent handler |
 | ConfirmationHandler + PendingConfirmations | Gate sebelum side-effect |
-| TurnMemory + session_artifacts | Artifact storage + `artifact_recall` paging |
+| TurnMemory + session_artifacts | Log proses loop subagent; `artifact_recall` paging di dalam subagent (bukan jalur scheduler) |
 | Remote LLM pool | Subagent remote + planner |
 | Tool catalog (Turso, crates/foundation/tool-catalog) | Discovery tool planner (drift-gated di CI) |
 
