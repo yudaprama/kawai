@@ -46,7 +46,7 @@ Single core logic, two thin transport wrappers.
 
 **Invariants (still law):**
 - Every new op gets BOTH wrappers (`commands.rs` + `web.rs`) — keeps web/mobile near-free later.
-- `cargo check --features web` stays green for every change; mobile checks whenever shared code changes (`logic.rs`, `auth.rs`, shared deps).
+- `cargo check` (desktop, default) + `cargo check --manifest-path kawai-web/Cargo.toml` + `cargo check -p kawai --no-default-features --features web` stay green for every change; mobile checks whenever shared code changes (`logic.rs`, `auth.rs`, shared deps).
 - Identity resolved at transport edge (`user_id` as first arg into `logic.rs`) — the frontend never sends it.
 
 **Deferred — do NOT start without the user asking (tracked in Roadmap):**
@@ -62,7 +62,7 @@ Single core logic, two thin transport wrappers.
 3. **One operation = one snake_case string**, used identically for: the Rust fn name, the invoke name, and the URL path (`POST /api/<name>`). Tauri uses the fn name **verbatim** (no kebab/camel conversion). Arguments are camelCase on the JS side, mapping to snake_case Rust params.
 4. **Frontend uses the `@tauri-apps/api` npm package** (`invoke` / `Channel` from `@tauri-apps/api/core`). The React app is bundled by Vite (`frontend/` → `dist/`, `frontendDist: "../dist"`); never reference `window.__TAURI__` in new code.
 5. **No AI SDK.** The chat state is produced by `features/chat/hooks/use-supervisor-plan.ts` from raw Tauri Supervisor stream events; the UIMessage/part shapes in `lib/ai-types.ts` are a LOCAL type contract only (field names stay AI-SDK-v5-compatible so the vendored ai-elements components work unmodified). Never add a runtime dep on `ai` / `@ai-sdk/*`.
-6. **Web deps stay gated.** `axum`/`tower-http` are `optional`, behind the `web` Cargo feature. The `web` module is `#[cfg(feature = "web")]`. The `kawai-web` binary has `required-features = ["web"]`. Never make axum a non-optional dep — it must stay out of desktop/mobile binaries.
+6. **Web/desktop deps stay gated.** `axum`/`tower-http` are `optional` behind the `web` feature (`web` module is `#[cfg(feature = "web")]`, `kawai-web` binary has `required-features = ["web"]`); `tauri`/`tauri-plugin-*`/`keyring` are `optional` behind the `desktop` feature (`default = ["desktop"]`, `kawai` binary has `required-features = ["desktop"]`, `lib.rs::run` + `commands`/`webview_engine` are `#[cfg(feature = "desktop")]`). Never make `axum` or `tauri` non-optional — each must stay out of the other's binary (`cargo tree --manifest-path kawai-web/Cargo.toml | grep tauri` is empty, `cargo tree -p kawai --features desktop | grep tauri` has `tauri/wry/tao`).
 7. **Events.** `#[serde(tag = "type")]` in `crates/foundation/events` (single source via `specta::Type`); frontend reads `event.type` at runtime. Terminal variants are `finished` / `error`. TS is **generated** — never edit `frontend/src/generated/events.ts` by hand. Add variant in `crates/foundation/events/src/lib.rs` then `cargo run -p kawai-bindings --bin export-bindings` (or `bun run generate:events`) and update matchers in `crates/engines/agent/src/lib.rs` + `frontend/src/features/chat/hooks/use-supervisor-plan.ts` (for `SupervisorEvent`, mirrored from `crates/router/src/scheduler.rs`) so new variants are not silently dropped.
 8. **Identity is resolved at the transport edge, not in `logic.rs`.** Wrappers resolve `user_id` (desktop: in-memory `State<Session>`; web: the `kawai_session` cookie) and pass it into `logic.rs` fns as the first param. The frontend NEVER sends it. The signed-in **email** IS the identity: the session string, cookie value, and data-dir key are all the (lowercased) email — folder names are hex-encoded by `sanitize_user_dir`. `auth.rs` is pure (no tauri/axum).
 9. **DB builder selection is `cfg`-gated in `logic.rs`, not branched on a transport type.** `#[cfg(feature = "web")]` → remote client; `#[cfg(not(feature = "web"))]` → local SQLite. Keeps `logic.rs` pure.
@@ -110,8 +110,10 @@ bun run tauri:build:litert-office     # prepare dylibs + build (office ops are i
 #   bash scripts/bundle-litert-dylibs.sh
 #   bun tauri build -- --features litert,tts --config .github/tauri-litert.json
 
-# Web standalone server (Axum serves /api/*; no frontend)
-cargo run --bin kawai-web --features web
+# Web standalone server — independent deploy, no Tauri (Axum serves /api/* + dist/)
+cargo run --manifest-path kawai-web/Cargo.toml          # minimal (web only, no tauri/wry)
+cargo run --bin kawai-web --features web                # via src-tauri bin (same gating, --no-default-features --features web)
+cargo run --manifest-path kawai-web/Cargo.toml --release # or full: add litert/analytics-sql in kawai-web/Cargo.toml features
 
 # Android (requires ANDROID_NDK_HOME + ANDROID_NDK_ROOT exported; uses cargo-ndk)
 cargo ndk -t arm64-v8a -P 24 check      # NOTE: -P (capital), not -p
@@ -128,10 +130,12 @@ Run all that apply. Everything must pass clean:
 
 ```sh
 bun run build                  # frontend: tsc -b + vite build (frontend changes)
-cargo check                    # desktop — office/RAG/PDF stack always compiles; axum must NOT compile here
-cargo check --features web     # web module + kawai-web bin
+cargo check                    # desktop (default) — office/RAG/PDF stack always compiles; axum must NOT compile here
+cargo check --manifest-path kawai-web/Cargo.toml  # web standalone — zero tauri/wry (cargo tree | grep tauri is empty)
+cargo check -p kawai --no-default-features --features web  # web module via src-tauri crate (no desktop)
+cargo check --features web     # web module + kawai-web bin alongside desktop (desktop is default)
 cargo check --features litert  # local LLM (bindgen only; no C lib needed)
-cargo check --features full    # every feature together (incl. web) — guards cross-feature combos
+cargo check --features full    # every feature together (desktop+web+litert+...) — guards cross-feature combos
 cargo check --features codegraph  # CodeGraph sidecar AgentTool + LRU cache (zero cost off)
 # graph + analytics are always compiled (not feature-gated anymore)
 ```
@@ -219,16 +223,19 @@ crates/
 ├── vendor/                        # vendored dependencies (binance-sdk, ta)
 └── xtask/                         # build utilities (crates-gen)
 
-src-tauri/src/webview_engine.rs  # tauri-side webread::WebViewFetch: hidden WebviewWindow + eval_with_callback extractor (registered in lib.rs, never in kawai-web)
+src-tauri/src/webview_engine.rs  # tauri-side webread::WebViewFetch: hidden WebviewWindow + eval_with_callback extractor (#[cfg(feature="desktop")], never in kawai-web)
 src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), binance_smoke (keyless market data + TA; geo-blocked hosts skip), analytics_smoke (data_schema/data_query/data_ta + xlsx bridge; offline), sql_remote_check (LIVE remote SQL — --deep seeds fixture tables), web_read_check (desktop webview chain e2e), turn_log_report (hybrid calibration), agent_eval (H1 gate — office ≥19/20 + analytics ≥16/18)
 src-tauri/src/logging.rs         # stderr tee → platform log dir (macOS ~/Library/Logs/, Linux $XDG_STATE_HOME)
 src-tauri/src/auth.rs            # shim → kawai-auth (pure auth; Session + dotenv loader)
-src-tauri/src/commands.rs        # #[tauri::command] wrappers + Channel + cancel registry
+src-tauri/src/commands.rs        # #[tauri::command] wrappers + Channel + cancel registry (#[cfg(feature="desktop")])
 src-tauri/src/web.rs             # Axum routes (feature-gated "web") + auth_middleware
-src-tauri/src/bin/web.rs         # standalone web server entry
-src-tauri/src/lib.rs             # Tauri builder; .manage(...); generate_handler!
-src-tauri/Cargo.toml             # axum/tower-http behind "web"; litert/analytics/graph/binance/tts/codegraph are optional; the office/RAG/PDF stack is always compiled
-src-tauri/build.rs               # tauri_build + embeds @executable_path/../Frameworks rpath (litert+macOS)
+src-tauri/src/bin/web.rs         # legacy standalone web entry (use kawai-web/ for deploy)
+src-tauri/src/lib.rs             # Tauri builder; .manage(...); generate_handler! (run + commands gated desktop)
+src-tauri/Cargo.toml             # tauri/* behind "desktop" (default); axum/tower-http behind "web"; litert/analytics/graph/binance/tts/codegraph are optional; the office/RAG/PDF stack is always compiled
+src-tauri/build.rs               # tauri_build (desktop only) + embeds @executable_path/../Frameworks rpath (litert+macOS)
+kawai-web/                       # standalone Axum server (independent deploy, no Tauri): Cargo.toml (kawai dep default-features=false,features=[web]) + src/main.rs + Dockerfile + README
+kawai-web/Cargo.toml             # patch office_oxide + profile.release (thin/strip)
+kawai-web/Dockerfile             # multi-stage cargo-chef + bun frontend + distroless runtime
 cognee-litert-lm/                # Rust bindings for the LiteRT-LM C API (+ standalone .tflite text-embedding runner) (path dep)
 cognee-litert-lm/vendor/LiteRT-LM         # submodule = upstream google-ai-edge main + macOS patches
 cognee-litert-lm/native/         # gitignored: prepared LiteRT-LM dylibs (bundle-litert-dylibs.sh fills this)

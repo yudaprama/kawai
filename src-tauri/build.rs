@@ -1,4 +1,9 @@
 fn main() {
+    // Desktop only: tauri_build is required for the Tauri shell. Skip when
+    // building the standalone `kawai-web` ( --no-default-features --features web ).
+    if std::env::var("CARGO_FEATURE_DESKTOP").is_err() {
+        return;
+    }
     // For desktop + on-device LLM builds, embed the rpath the bundled app
     // resolves LiteRT-LM shared libraries from. Rustc link args from a
     // dependency (cognee-litert-lm) do NOT propagate to the final binary,

@@ -1,29 +1,34 @@
 pub mod agent_registry;
 pub mod auth;
+#[cfg(feature = "desktop")]
 mod commands;
 pub mod logging;
+#[cfg(feature = "desktop")]
 mod keychain;
 pub mod logic;
+#[cfg(feature = "desktop")]
 pub mod native_notifications;
 
 #[cfg(feature = "litert")]
 pub mod supervisor;
 
-#[cfg(feature = "litert")]
+#[cfg(all(feature = "litert", feature = "desktop"))]
 fn supervisor_pending_state() -> crate::supervisor::PendingConfirmations {
     crate::supervisor::PendingConfirmations::default()
 }
 
-#[cfg(not(feature = "litert"))]
+#[cfg(all(not(feature = "litert"), feature = "desktop"))]
 fn supervisor_pending_state() -> () {
     ()
 }
 
+#[cfg(feature = "desktop")]
 pub mod webview_engine;
 
 #[cfg(feature = "web")]
 pub mod web;
 
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     auth::load_dotenv();

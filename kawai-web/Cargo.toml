@@ -1,0 +1,23 @@
+[package]
+name = "kawai-web"
+version = "0.1.0"
+edition = "2021"
+description = "Standalone Axum web server for kawai — independent deploy without Tauri"
+publish = false
+
+[[bin]]
+name = "kawai-web"
+path = "src/main.rs"
+
+[dependencies]
+kawai = { path = "../src-tauri", default-features = false, features = ["web"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[patch.crates-io]
+office_oxide = { path = "../office_oxide" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
