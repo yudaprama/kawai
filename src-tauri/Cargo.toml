@@ -27,7 +27,11 @@ tauri-plugin-opener = { version = "2", optional = true }
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process", "io-util", "sync"] }
+# Minimal tokio for the core crate: `process` only via codegraph/office-common
+# and `io-util` only via kawai-vision — they enable those features transitively
+# when the corresponding feature is on. `stream` for reqwest is likewise
+# owned by remote-llm/kawai-embedding.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
 async-stream = "0.3"
 futures-core = "0.3"
 futures-util = "0.3"
@@ -75,8 +79,10 @@ libsql = { version = "0.9.30", default-features = false, features = ["core"] }
 jsonwebtoken = "9"
 # rustls (not default features) keeps the TLS stack aligned with libsql
 # and compiles for android arm64 + ios arm64. Used only for JWKS fetch in auth.rs.
+# `stream` is owned by remote-llm/kawai-embedding (SSE bytes_stream); they
+# enable it transitively so the core crate does not need to.
 # 0.13 matches kawai-embedding/youtube_transcript — one reqwest in the graph.
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 # Loads KAWAI_AUTH_* from the project-root .env in dev (no-op if absent).
 dotenvy = "0.15"
 # Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
