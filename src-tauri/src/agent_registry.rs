@@ -93,15 +93,8 @@ pub fn analytics_tools_for_supervisor(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
-    {
-        let set = (kawai_analytics::agent::definition().build_tools)(context, remote_configured)?;
-        return Some(add_runtime_tools(set, context, remote_configured, false));
-    }
-    #[cfg(not(feature = "analytics"))]
-    {
-        let _ = (context, remote_configured);
-        None
-    }
+    let set = (kawai_analytics::agent::definition().build_tools)(context, remote_configured)?;
+    Some(add_runtime_tools(set, context, remote_configured, false))
 }
 
 /// Append the runtime-owned cross-cutting tools: memory recall (always),

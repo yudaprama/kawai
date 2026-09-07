@@ -224,7 +224,6 @@ required-features = ["litert", "binance"]
 
 [[example]]
 name = "analytics_smoke"
-required-features = ["analytics"]
 
 [[example]]
 name = "sql_remote_check"

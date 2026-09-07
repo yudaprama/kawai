@@ -1,5 +1,5 @@
 // Headless smoke test for the analytics agent tools (builtin.analytics,
-// feature "analytics"): import a small CSV into the office store →
+// always compiled): import a small CSV into the office store →
 // data_schema (columns/dtypes) → data_query (row selection), then the xlsx
 // bridge (typed columns, resolved dates, sheets echo, sidecar cache),
 // aggregate queries, the self-correcting error contract, the tabular-ext
@@ -7,7 +7,7 @@
 // Fully offline: fixtures are generated in-process, no network, no model.
 //
 // Usage:
-//   cargo run --example analytics_smoke --features analytics
+//   cargo run --example analytics_smoke
 use kawai_lib::logic::analytics::{self as data, DataQueryTool, DataTaTool, DataTableSchemaTool};
 use kawai_lib::logic::office::store;
 use kawai_tools::AgentTool;
