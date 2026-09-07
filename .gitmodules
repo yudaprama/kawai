@@ -33,3 +33,6 @@
 [submodule "kawai-server"]
 	path = kawai-server
 	url = https://github.com/yudaprama/kawai-server.git
+[submodule "whatlang-rs"]
+	path = whatlang-rs
+	url = https://github.com/greyblake/whatlang-rs.git
