@@ -2,17 +2,19 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { tauriWalletAdapter } from "../lib/wallet-adapter";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 // Device-wallet setup: the key lives in the OS keychain, scoped to this
 // device. No password / mnemonic — there is nothing to import or export.
-export function SetupForm({ open, onOpenChange, onSuccess }: { open: boolean; onOpenChange: (o: boolean) => void; onSuccess: () => void }) {
+export function SetupForm({
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  onSuccess: () => void;
+}) {
   const [loading, setLoading] = useState(false);
 
   const handle = async () => {

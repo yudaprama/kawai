@@ -21,10 +21,9 @@ export function StablecoinIcon({
     <span
       className="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full"
       style={{ width: size, height: size }}
-      aria-label={label}
       title={label}
     >
-      <svg width={size} height={size} viewBox="0 0 32 32" role="img" aria-hidden="true">
+      <svg width={size} height={size} viewBox="0 0 32 32" role="img" aria-label={label}>
         <circle cx="16" cy="16" r="16" fill={fill} />
         <text
           x="16"

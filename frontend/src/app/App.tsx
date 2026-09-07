@@ -130,7 +130,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [assetView]);
 
-
   if (!agent) {
     return <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center" />;
   }
@@ -174,7 +173,6 @@ export default function App() {
     ) : assetView === "wallet" ? (
       <WalletPage onBack={() => setAssetView(null)} />
     ) : null;
-
 
   return (
     <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">

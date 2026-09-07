@@ -73,7 +73,7 @@ export const tauriBlockchainAdapter: BlockchainAdapter = {
     const g = await tryCall<{ gasPriceGwei: string }>("estimate_gas", { rpcUrl: null });
     if (!g) return null;
     const price = parseFloat(g.gasPriceGwei);
-    return isNaN(price) ? null : { maxGasPriceGwei: price, maxTipGwei: 0, isDynamicFee: true };
+    return Number.isNaN(price) ? null : { maxGasPriceGwei: price, maxTipGwei: 0, isDynamicFee: true };
   },
   async getCurrentBlock(_networkId: number): Promise<number> {
     const s = await tryCall<{ blockNumber: number }>("monad_chain_status", { rpcUrl: null });

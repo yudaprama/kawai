@@ -84,6 +84,7 @@ export function MessagePartView({
       )}
       {textParts.map((part, i) =>
         part.text.length > 0 ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: text parts are append-only within a message and MessageContent/MessageResponse are stateless, so index keys cannot desync
           <MessageContent key={`text-${i}`}>
             <MessageResponse>{part.text}</MessageResponse>
           </MessageContent>

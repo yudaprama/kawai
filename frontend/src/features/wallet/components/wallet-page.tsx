@@ -112,9 +112,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
             <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10">
               <WalletIcon className="size-6" />
             </div>
-            <h3 className="mt-3 font-semibold">
-              {available ? "No wallet found" : "Wallet unavailable in this build"}
-            </h3>
+            <h3 className="mt-3 font-semibold">{available ? "No wallet found" : "Wallet unavailable in this build"}</h3>
             <p className="text-sm text-muted-foreground">
               {available
                 ? "Create a hot wallet to manage your Monad assets."
@@ -202,9 +200,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
                     {currentNetwork?.name} ({currentNetwork?.id})
                   </span>
                 </div>
-                {status && (
-                  <div className="text-xs text-muted-foreground">Wallet address active on this device.</div>
-                )}
+                {status && <div className="text-xs text-muted-foreground">Wallet address active on this device.</div>}
               </CardContent>
             </Card>
           </TabsContent>

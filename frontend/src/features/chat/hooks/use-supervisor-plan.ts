@@ -707,7 +707,12 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const approvePlan = useCallback(() => {
     const review = state.review;
     if (!review || streamCtrl.current) return;
-    runPlan({ plan: review.plan, sessionId: review.sessionId, agentId: review.agentId, userGoal: userGoalRef.current ?? undefined });
+    runPlan({
+      plan: review.plan,
+      sessionId: review.sessionId,
+      agentId: review.agentId,
+      userGoal: userGoalRef.current ?? undefined,
+    });
   }, [runPlan, state.review]);
 
   /** Review gate: discard the plan without executing anything. */

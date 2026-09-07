@@ -26,7 +26,12 @@ import type { ChatStatus, UIMessage } from "@/lib/ai-types";
 import type { AgentInfo, ChatSessionInfo } from "@/lib/api";
 import type { SupervisorConfirmation } from "@/features/chat/hooks/use-supervisor-chat";
 import type { PlanReview, SupervisorStatus, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
-import { PlanProgressPanel, PlanReviewPanel, PlanningCard, type PlanningState } from "@/features/chat/components/plan-progress-panel";
+import {
+  PlanProgressPanel,
+  PlanReviewPanel,
+  PlanningCard,
+  type PlanningState,
+} from "@/features/chat/components/plan-progress-panel";
 import { ChatComposer } from "@/features/chat/components/chat-composer";
 
 interface AgentPresentation {

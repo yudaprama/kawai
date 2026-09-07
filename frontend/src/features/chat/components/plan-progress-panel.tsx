@@ -70,7 +70,6 @@ function TotalElapsed({ startedAt, endedAt }: { startedAt: number; endedAt: numb
   }, [endedAt]);
   return (
     <span
-      aria-label="Plan duration"
       className="text-muted-foreground inline-flex shrink-0 items-center gap-1 font-mono text-[11px] tabular-nums"
       title="Total plan duration"
     >
@@ -176,7 +175,6 @@ function RetryBadge({ retries }: { retries: number }) {
   if (retries <= 0) return null;
   return (
     <span
-      aria-label={`retried ${retries} time${retries > 1 ? "s" : ""}`}
       className="text-muted-foreground inline-flex items-center gap-0.5 text-[10px]"
       title={`Scheduler retried this step ${retries} time${retries > 1 ? "s" : ""} before it succeeded`}
     >
@@ -215,9 +213,7 @@ function StepRow({ step, onStopTicking }: { step: SupervisorStep; onStopTicking?
   // to a chip on the right. Tool-only fallback keeps raw name as the label.
   const label = step.task && step.task !== step.tool ? step.task : step.tool || step.stepId;
   const doneMs =
-    step.finishedAt != null && step.startedAt != null
-      ? fmtDuration(step.finishedAt - step.startedAt)
-      : null;
+    step.finishedAt != null && step.startedAt != null ? fmtDuration(step.finishedAt - step.startedAt) : null;
   return (
     <li
       className={`flex items-start gap-2.5 rounded-md font-mono text-xs ${
@@ -252,12 +248,8 @@ function StepRow({ step, onStopTicking }: { step: SupervisorStep; onStopTicking?
           </div>
         )}
       </div>
-      {doneMs != null && (
-        <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">{doneMs}</span>
-      )}
-      {step.state === "running" && step.startedAt != null && !onStopTicking && (
-        <Elapsed startedAt={step.startedAt} />
-      )}
+      {doneMs != null && <span className="text-muted-foreground shrink-0 text-[10px] tabular-nums">{doneMs}</span>}
+      {step.state === "running" && step.startedAt != null && !onStopTicking && <Elapsed startedAt={step.startedAt} />}
     </li>
   );
 }
@@ -317,8 +309,8 @@ function computeWaves(steps: SupervisorStep[]): Wave[] {
   const depth = (s: SupervisorStep): number => {
     const cached = waveOf.get(s.stepId);
     if (cached != null) return cached;
-    const deps = s.dependsOn.filter((d) => byId.has(d));
-    const w = deps.length === 0 ? 1 : Math.max(...deps.map((d) => depth(byId.get(d)!))) + 1;
+    const depSteps = s.dependsOn.map((d) => byId.get(d)).filter((x): x is SupervisorStep => x != null);
+    const w = depSteps.length === 0 ? 1 : Math.max(...depSteps.map(depth)) + 1;
     waveOf.set(s.stepId, w);
     return w;
   };
@@ -417,9 +409,7 @@ export function PlanReviewPanel({ review, onApprove, onCancel, onRemoveStep }: P
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-sans font-medium">{step.task || step.id}</span>
-                {step.tool && (
-                  <span className="bg-muted rounded px-1 py-px font-mono text-[10px]">{step.tool}</span>
-                )}
+                {step.tool && <span className="bg-muted rounded px-1 py-px font-mono text-[10px]">{step.tool}</span>}
                 {step.requiresConfirmation && (
                   <span className="bg-warning/10 text-warning rounded px-1 py-px text-[10px] font-medium">
                     asks approval
@@ -546,9 +536,7 @@ export function PlanProgressPanel({
           </Button>
         )}
       </ChromeHeader>
-      {revised && (
-        <span className="text-muted-foreground ml-0.5 font-mono text-[10px]">v{planVersion}</span>
-      )}
+      {revised && <span className="text-muted-foreground ml-0.5 font-mono text-[10px]">v{planVersion}</span>}
 
       {/* Progress rail — the at-a-glance signal the text counters alone lacked. */}
       {steps.length > 0 && (

@@ -154,7 +154,8 @@ export function HomeContent({
           { label: "Receive", icon: ArrowDownToLineIcon, action: () => setModalType("receive") },
           { label: "Swap", icon: Repeat2Icon, action: () => toast.info("Coming soon") },
         ].map((a) => (
-          <button type="button"
+          <button
+            type="button"
             key={a.label}
             onClick={a.action}
             className="flex flex-col items-center gap-2 rounded-xl border bg-card p-4 hover:bg-accent transition"

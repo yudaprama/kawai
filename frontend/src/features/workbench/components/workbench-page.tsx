@@ -267,8 +267,7 @@ function DeliverableViewer({
   const inflight = useRef<Set<string>>(new Set());
   useEffect(() => {
     const stepId = step?.stepId;
-    if (!stepId || !previewTruncated || fullOutputs[stepId] != null || inflight.current.has(stepId))
-      return;
+    if (!stepId || !previewTruncated || fullOutputs[stepId] != null || inflight.current.has(stepId)) return;
     inflight.current.add(stepId);
     void workbench.loadFullOutput(stepId).then((full) => {
       inflight.current.delete(stepId);
@@ -349,26 +348,26 @@ function DeliverableViewer({
         {effective === "final" && supervisor.finalOutput != null && supervisor.status === "completed" && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-muted-foreground mr-1 font-mono text-[11px] uppercase">Export</span>
-            <Button
-              disabled={exporting != null}
-              onClick={() => void exportGoal("pdf")}
-              size="sm"
-              variant="outline"
-            >
-              {exporting === "pdf" ? <LoaderCircleIcon className="size-3 animate-spin" /> : <FileTextIcon className="size-3" />}
+            <Button disabled={exporting != null} onClick={() => void exportGoal("pdf")} size="sm" variant="outline">
+              {exporting === "pdf" ? (
+                <LoaderCircleIcon className="size-3 animate-spin" />
+              ) : (
+                <FileTextIcon className="size-3" />
+              )}
               PDF
             </Button>
-            <Button
-              disabled={exporting != null}
-              onClick={() => void exportGoal("docx")}
-              size="sm"
-              variant="outline"
-            >
-              {exporting === "docx" ? <LoaderCircleIcon className="size-3 animate-spin" /> : <FileTextIcon className="size-3" />}
+            <Button disabled={exporting != null} onClick={() => void exportGoal("docx")} size="sm" variant="outline">
+              {exporting === "docx" ? (
+                <LoaderCircleIcon className="size-3 animate-spin" />
+              ) : (
+                <FileTextIcon className="size-3" />
+              )}
               DOCX
             </Button>
             {exportedName && (
-              <span className="text-success font-mono text-[11px]">Tersimpan sebagai {exportedName} — lihat di dokumen</span>
+              <span className="text-success font-mono text-[11px]">
+                Tersimpan sebagai {exportedName} — lihat di dokumen
+              </span>
             )}
           </div>
         )}
