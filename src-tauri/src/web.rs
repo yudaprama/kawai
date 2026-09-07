@@ -1854,7 +1854,7 @@ async fn plan_task_handler(
     // Web transport has no live planning surface — progress rounds are logged
     // only (the plan still resolves as JSON).
     crate::supervisor::plan_task(&user_id, &req.goal, &registry, |event| {
-        if let SupervisorEvent::PlanningRound { round, provider, searching } = event {
+        if let crate::supervisor::SupervisorEvent::PlanningRound { round, provider, searching } = event {
             eprintln!(
                 "[plan_task-web] round {round} served by {provider} searching={searching}"
             );
@@ -1927,6 +1927,11 @@ async fn execute_supervisor_plan_handler(
             }
             crate::supervisor::SupervisorEvent::PlanCompleted { .. } => "planCompleted",
             crate::supervisor::SupervisorEvent::PlanFailed { .. } => "planFailed",
+            crate::supervisor::SupervisorEvent::PlanningStarted { .. } => "planningStarted",
+            crate::supervisor::SupervisorEvent::PlanningRound { .. } => "planningRound",
+            crate::supervisor::SupervisorEvent::PlanningToolSearch { .. } => {
+                "planningToolSearch"
+            }
         };
         let data = serde_json::to_string(&event).unwrap_or_default();
         Ok::<_, Infallible>(SseFrame::default().event(name).data(data))
