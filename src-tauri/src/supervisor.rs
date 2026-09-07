@@ -132,6 +132,9 @@ pub enum SupervisorEvent {
         goal: String,
         step_count: usize,
         steps: Vec<PlanStepInfo>,
+        /// Hash of the executed plan — the read key for persisted step results
+        /// (`supervisor_step_output` op). Changes when the plan is revised.
+        plan_key: String,
     },
     StepStarted {
         step_id: String,
@@ -174,6 +177,9 @@ pub enum SupervisorEvent {
         attempt: u32,
         step_count: usize,
         steps: Vec<PlanStepInfo>,
+        /// Key of the REVISED plan — replaces the planStarted key for all
+        /// subsequent `supervisor_step_output` reads.
+        plan_key: String,
     },
     /// Emitted once at `plan_task` entry — the instant acknowledgment that
     /// planning began (context building + the first LLM round can stay
@@ -640,6 +646,11 @@ Plan rules:
 - Keep each task description under {} chars.
 - Core tools below are ALWAYS available — never search for them:
 {}
+- The supervisor AUTOMATICALLY writes the final user-facing deliverable
+  (answer / summary / report) from the step outputs after they finish — via a
+  built-in "deliverable writer" agent you never see. NEVER plan a
+  summarization / writing / "produce the answer" step yourself; plan only the
+  data-gathering and artifact-producing steps that feed it.
 - If told the search budget is exhausted, respond ONLY with the final plan JSON.
 "#,
         kawai_router::types::MAX_PLAN_STEPS,
@@ -797,6 +808,26 @@ pub fn plan_key(plan: &kawai_router::TaskPlan) -> String {
         .expect("plan serialization must not fail (all TaskPlan fields are infallible)");
     let hash = sha2::Sha256::digest(serialized.as_bytes());
     hex::encode(hash)
+}
+
+/// Full body of one persisted step result — the read path the wire preview
+/// (stepCompleted's 2000-char cap) deliberately does not serve. The latest
+/// row wins: upserts are keyed on (session, plan_key, tool, args_key), so a
+/// step id may map to several rows across re-runs of the same plan.
+pub async fn step_output(
+    user_id: &str,
+    session_id: i64,
+    plan_key: &str,
+    step_id: &str,
+) -> Result<String, String> {
+    let rows = kawai_db::list_supervisor_step_results(user_id, session_id, plan_key)
+        .await
+        .map_err(|e| format!("supervisor_step_output: {e}"))?;
+    rows.into_iter()
+        .rev()
+        .find(|r| r.step_id == step_id)
+        .map(|r| r.output)
+        .ok_or_else(|| format!("no persisted output for step '{step_id}'"))
 }
 
 pub async fn build_supervisor_registry(
@@ -1063,6 +1094,12 @@ fn step_error_kind(kind: &kawai_router::FailureKind) -> &'static str {
 /// deliberately NOT capped here.
 const STEP_EVENT_OUTPUT_MAX_CHARS: usize = 2000;
 
+/// The virtual post-plan step that writes the user-facing deliverable.
+/// Not part of the TaskPlan — emitted as lifecycle events so the UI can show
+/// synthesis as real, trackable work.
+pub const DELIVERABLE_STEP_ID: &str = "__deliverable";
+pub const DELIVERABLE_TOOL: &str = "deliverable_writer";
+
 /// Char-boundary-safe prefix of `s` (at most `max_chars` characters).
 fn preview_chars(s: &str, max_chars: usize) -> &str {
     match s.char_indices().nth(max_chars) {
@@ -1326,6 +1363,7 @@ pub fn execute_plan_stream(
         tokio_util::sync::CancellationToken::new(),
         Arc::new(Mutex::new(HashMap::new())),
         "legacy".into(),
+        None,
     )
 }
 
@@ -1335,6 +1373,10 @@ pub fn execute_plan_stream_with_cancel(
     cancel: tokio_util::sync::CancellationToken,
     pending: PendingConfirmations,
     stream_id: String,
+    // The user's verbatim goal. The planner is free to rewrite `plan.goal`
+    // (it plans, so it reframes) — but the deliverable must answer what the
+    // USER asked, so synthesis prefers this over the rewritten goal.
+    user_goal: Option<String>,
 ) -> impl Stream<Item = SupervisorEvent> + Send {
     async_stream::stream! {
         let step_count = plan.steps.len();
@@ -1342,6 +1384,7 @@ pub fn execute_plan_stream_with_cancel(
             goal: plan.goal.clone(),
             step_count,
             steps: plan_step_infos(&plan),
+            plan_key: plan_key(&plan),
         };
 
         let confirmation_stream_id = stream_id.clone();
@@ -1440,14 +1483,36 @@ pub fn execute_plan_stream_with_cancel(
                         // answer. One synthesis call turns the per-step results
                         // into the user-facing reply; on failure (no remote, all
                         // providers down) fall back to the raw output verbatim.
+                        // The synthesis is a VISIBLE step (stepStarted/completed
+                        // for the virtual `deliverable_writer` agent) — invisible
+                        // work reads as magic and breaks the workbench's trust
+                        // contract.
+                        yield SupervisorEvent::StepStarted {
+                            step_id: DELIVERABLE_STEP_ID.into(),
+                            tool: DELIVERABLE_TOOL.into(),
+                        };
                         let raw_final = result.final_output().map(String::from);
                         let materials = synthesis_materials(&current_plan, &result);
-                        let synthesized = synthesize_final_answer(&current_plan.goal, &materials).await;
+                        let synthesis_goal = user_goal
+                            .clone()
+                            .unwrap_or_else(|| current_plan.goal.clone());
+                        let synthesized =
+                            synthesize_final_answer(&synthesis_goal, &materials).await;
                         if let Some(answer) = &synthesized {
                             eprintln!("[supervisor] synthesis ok ({} chars)", answer.chars().count());
                         } else {
                             eprintln!("[supervisor] synthesis unavailable — falling back to raw final output");
                         }
+                        let written = synthesized.clone().or_else(|| raw_final.clone());
+                        yield SupervisorEvent::StepCompleted {
+                            step_id: DELIVERABLE_STEP_ID.into(),
+                            output: written
+                                .as_deref()
+                                .map(|o| preview_chars(o, STEP_EVENT_OUTPUT_MAX_CHARS).to_string())
+                                .unwrap_or_default(),
+                            artifacts: Vec::new(),
+                            retries_used: 0,
+                        };
                         yield SupervisorEvent::PlanCompleted {
                             final_output: synthesized.or(raw_final),
                         };
@@ -1477,6 +1542,7 @@ pub fn execute_plan_stream_with_cancel(
                                         attempt: replan_attempt,
                                         step_count: count,
                                         steps: plan_step_infos(&revised),
+                                        plan_key: plan_key(&revised),
                                     };
                                     current_plan = revised;
                                     continue 'plans;
@@ -1609,6 +1675,7 @@ mod tests {
             tokio_util::sync::CancellationToken::new(),
             pending.clone(),
             "st-a".into(),
+            None,
         );
         let mut stream = Box::pin(stream);
 
@@ -1648,6 +1715,8 @@ mod tests {
                 .await
                 .expect("stream stalled after approval");
             match ev {
+                Some(SupervisorEvent::StepStarted { step_id, .. }) if step_id == DELIVERABLE_STEP_ID => {}
+                Some(SupervisorEvent::StepCompleted { step_id, .. }) if step_id == DELIVERABLE_STEP_ID => {}
                 Some(SupervisorEvent::StepStarted { step_id, .. }) => assert_eq!(step_id, "s1"),
                 Some(SupervisorEvent::StepCompleted { step_id, .. }) => assert_eq!(step_id, "s1"),
                 Some(SupervisorEvent::PlanCompleted { final_output }) => {
@@ -1678,6 +1747,7 @@ mod tests {
             tokio_util::sync::CancellationToken::new(),
             pending.clone(),
             "st-r".into(),
+            None,
         );
         let mut stream = Box::pin(stream);
 
@@ -1738,6 +1808,7 @@ mod tests {
             tokio_util::sync::CancellationToken::new(),
             pending,
             "st-p".into(),
+            None,
         );
         let events: Vec<SupervisorEvent> = Box::pin(stream)
             .take(8)

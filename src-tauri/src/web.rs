@@ -1669,7 +1669,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
         "/api/respond_supervisor_confirmation",
         post(respond_supervisor_confirmation_handler),
     )
-    .route("/api/plan_task", post(plan_task_handler));
+    .route("/api/plan_task", post(plan_task_handler))
+    .route("/api/supervisor_step_output", post(supervisor_step_output_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
     let protected = protected.route(
@@ -1765,6 +1766,33 @@ pub async fn serve(addr: &str, dist_dir: PathBuf) -> Result<(), String> {
         .map_err(|e| format!("serve kawai-web: {e}"))
 }
 
+/// Authenticated RPC: full body of one persisted supervisor step result.
+#[cfg(feature = "litert")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SupervisorStepOutputRequest {
+    session_id: i64,
+    plan_key: String,
+    step_id: String,
+}
+
+#[cfg(feature = "litert")]
+async fn supervisor_step_output_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<SupervisorStepOutputRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    if !kawai_db::session_exists(&user_id, req.session_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    {
+        return Err((StatusCode::NOT_FOUND, format!("session {} not found", req.session_id)));
+    }
+    crate::supervisor::step_output(&user_id, req.session_id, &req.plan_key, &req.step_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::NOT_FOUND, e))
+}
+
 /// Authenticated RPC: plan a task against the agent's tool catalog.
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
@@ -1827,6 +1855,9 @@ struct ExecuteSupervisorPlanRequest {
     plan: kawai_router::TaskPlan,
     session_id: i64,
     agent_id: Option<String>,
+    /// The user's verbatim goal — synthesis answers THIS, not the planner's
+    /// rewritten `plan.goal`.
+    user_goal: Option<String>,
         stream_id: String,
 }
 
@@ -1862,6 +1893,7 @@ async fn execute_supervisor_plan_handler(
         req.plan, tool_registry,
         tokio_util::sync::CancellationToken::new(), pending,
         req.stream_id,
+        req.user_goal,
     );
     let s = stream.map(|event| {
         let name = match &event {

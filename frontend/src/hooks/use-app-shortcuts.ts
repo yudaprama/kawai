@@ -9,7 +9,7 @@ export function useAppShortcuts({
 }: {
   busy: boolean;
   onToggleAgentsRail: () => void;
-  onToggleCanvas: () => void;
+  onToggleCanvas?: () => void;
   onOpenSessions: () => void;
   onNewChat: () => void;
 }) {
@@ -21,7 +21,7 @@ export function useAppShortcuts({
         onToggleAgentsRail();
       } else if (e.key === "2") {
         e.preventDefault();
-        onToggleCanvas();
+        onToggleCanvas?.();
       } else if (e.key === "k" || e.key === "K") {
         e.preventDefault();
         onOpenSessions();

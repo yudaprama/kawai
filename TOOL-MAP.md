@@ -1,9 +1,9 @@
 # Tool Map — Kawai
 
 > Every agent tool registered in the supervisor era: where it lives, which agent gets it, and
-> how the planner discovers it. Companion to `AGENTS.md` (architecture) and `KNOWLEDGE_MAP.md`
-> (retrieval internals). Present tense only — when a tool ships or moves, update this file in
-> the same commit.
+> how the planner discovers it — plus how a tool's output reaches the frontend (§11). Companion
+> to `AGENTS.md` (architecture) and `KNOWLEDGE_MAP.md` (retrieval internals). Present tense
+> only — when a tool ships or moves, update this file in the same commit.
 
 **TL;DR:** One tool = one `AgentTool` impl (`const NAME`, `Args`, `Output`, `Error`) in a
 per-category crate. Agent definitions (`builtin.office`, `builtin.presentation`,
@@ -181,4 +181,114 @@ Full inventory: `grep -rhoE 'const NAME: &'"'"'static str = "[a-z_0-9]+"' crates
 4. It is automatically discoverable by the planner **only if** it's in the local registry the
    supervisor builds (`build_supervisor_registry`) — verify with
    `src-tauri/examples/tool_catalog_narrow_check.rs`.
-5. Update this file + `AGENTS.md` crate table in the same commit.
+5. Update this file (+ `AGENTS.md` crate table) in the same commit. If the tool's output
+   should get a custom Workbench view, follow §11.5.
+
+## 11. Tool output → frontend: shape, storage, delivery
+
+How a supervisor step's tool output travels from the Rust scheduler to the Workbench viewer,
+and which view renders it. Source of truth for shapes is the Rust code cited per row — update
+this section when a tool's output changes. Render code:
+`frontend/src/features/workbench/components/tool-views/`.
+
+```
+tool call (Rust)                     transport event                    frontend
+──────────────────────────────────────────────────────────────────────────────
+AgentTool::call → Output (String) ─▶ stepCompleted { output ≤2000 chars } ─▶ renderStepReport(tool, output)
+                                    + artifacts: ArtifactInfo[]             (tool-views/)
+                                    full body kept backend-side (see §11.2)
+```
+
+### 11.1 Delivery (the wire)
+
+| Channel | What crosses | Cap |
+|---|---|---|
+| `stepCompleted.output` | preview string (raw tool output, possibly cut mid-JSON) | 2000 chars — `STEP_EVENT_OUTPUT_MAX_CHARS`, `src-tauri/src/supervisor.rs` |
+| `stepCompleted.artifacts` | `ArtifactInfo[]` (file handles produced by the tool) | metadata only |
+| `planCompleted.final_output` | the synthesized deliverable | **uncapped** |
+| `planStarted.planKey` / `planRevised.planKey` | hash of the executing plan — the read key for persisted step results; changes on replan | — |
+| `supervisor_step_output` op | **full body** of one persisted step result (pull, not push) | — |
+
+Full step bodies live in `supervisor_step_results` and never ride the wire.
+The viewer fetches lazily: when the opened report's preview hits the 2000-char
+bound, `useWorkbench.loadFullOutput(stepId)` calls the op once per step
+(cached; invalidated on goal/planVersion change) and re-renders with the full
+text — see `DeliverableViewer` in `workbench-page.tsx`. The JSON-repair in
+`parseMaybeJson` remains as the safety net for fetch failures and for reports
+nobody opened.
+
+### 11.2 Storage
+
+| Data | Where | Notes |
+|---|---|---|
+| Full step output (text) | `supervisor_step_results` SQLite table, keyed by plan-JSON hash | read path: `supervisor_step_output` op (both wrappers, auth at edge); also powers Resume + the ExecutionMemo |
+| Files a tool produces (docx, pdf, svg, decks) | office store (`<data_root>/<user>/docs/`), referenced by handle | `ArtifactInfo { handle, filename }` rides the event; preview via `office_read_file` |
+| Final deliverable | `planCompleted.final_output` on the wire; persisted plan record goes to session history | S2: office-store file |
+| Sessions / messages | `sessions` / `messages` tables | chat history, not tool output |
+
+### 11.3 Render map (tool → view)
+
+Registry: `tool-views/index.tsx`. Every view receives the (possibly repaired)
+parsed JSON, or the raw string. Unlisted tools fall through to the heuristic
+`FallbackView` (markdown-ish text → Streamdown; array of records → cards;
+record → key-value; scalar array → bullets).
+
+Office / PDF (`kawai-office`, `office-tools/pdf`):
+
+| Tool | Output shape | View |
+|---|---|---|
+| `office_list_files` | `{"files":[{id, originalName, ext, bytes, createdAt}]}` | `FileListView` — ext badge, size, date, id |
+| `office_read_document` / `office_create_document` | `{"markdown":"…"}` | `MarkdownView` (Streamdown) |
+| `office_document_info` | metadata record | `KeyValueView` |
+| `pdf_extract_text` | TWO shapes — supervisor dispatch (first-wins) serves the kawai-office wrapper: `{"text":"--- page 1 ---\n…"}`; the office-tools/pdf variant emits `{"pages":{"1":"text",…}}` | `PdfPagesView` — collapsible panel per page (both shapes split into pages) |
+| `pdf_search_text` | `{"pattern":"…","matches":[…]}` | key-value with match count |
+| `pdf_info` / `pdf_metadata_get` | `{"metadata":{…}}` | `KeyValueView` |
+| `pdf_page_info` | page record | `KeyValueView` |
+
+Memory / knowledge (`kawai-memory`, `kawai-knowledge`):
+
+| Tool | Output shape | View |
+|---|---|---|
+| `memory_search` | text lines `- (kind \| mem_id) Title: content` | `MemoryLinesView` — badge = kind |
+| `memory_graph_search` | `## Entity` sections of the same lines | `MemoryGraphView` |
+| `knowledge_search` | JSON array of `{source, locator, content}` hits | reuses vendored `renderKnowledgeSearch` |
+
+Finance (`generated-tools/finance`):
+
+| Tool | Output shape | View |
+|---|---|---|
+| `get_stock_price` / `get_stock_quote` / `get_stock_detail` | `{symbol, name?, price, change, percent_change, previous_close?, open?, day_high?, day_low?, volume?, market_cap?, fifty_two_week_*?, source}` (shape varies by provider fallback: TwelveData → StockTwits → yfinance → AlphaVantage) | `StockQuoteView` — big price + ▲/▼ pill + detail grid |
+| `get_stock_history` | `{"meta":…,"values":[{datetime, close, …}]}` (TwelveData time_series) | `SparklineView` — SVG sparkline + period delta |
+| `trending_stocks` | `{"trending":[{symbol, title, watchers}]}` | `TrendingView` — ranked list, "N pengamat" |
+| `stock_social_feed` | `{"symbol","count","messages":[{user, body, sentiment, created_at, likes}]}` | `SocialFeedView` — sentiment tally + badge per post |
+| `stock_sentiment` | aggregate sentiment record | fallback (key-value) |
+| `get_stock_news` / `get_global_news` / `get_reddit_posts` | `{"articles"\|"posts":[{title, summary, publisher, link, published?}]}` | `NewsListView` — headline cards, id-ID dates |
+| `get_balance_sheet` / `get_income_statement` / `get_cashflow` | `{"ticker","freq","count","statements":[…]}` (yfinance) | `FinancialTableView` — periods × line items |
+
+Generic (any tool):
+
+| Situation | View |
+|---|---|
+| JSON array of records with a title-ish field | cards (`RecordListView`) |
+| JSON record | key-value grid |
+| JSON scalar array | bullet list |
+| text with markdown structure (`#`/`-`/`1.`) | Streamdown |
+| plain text | Streamdown paragraph |
+| JSON cut off mid-string/bracket | repaired prefix, rendered normally (no disclaimer) |
+
+### 11.4 Formatting rules (`tool-views/format.ts`)
+
+- Locale `id-ID` everywhere: `Intl.NumberFormat` (compact for volume/market
+  cap), `Intl.DateTimeFormat` (accepts epoch s/ms and ISO strings).
+- Percent deltas carry an explicit sign: `+2,34%` / `-1,05%`.
+- Copy is human, not field names: "5 dokumen ditemukan", "▲ Naik +2,3%".
+- `parseMaybeJson` = parse → on failure repair (boundary-first backward sweep,
+  dangling-brace/comma cleanup) → raw string as last resort.
+
+### 11.5 Adding a tool view
+
+1. Confirm the exact output shape in the tool's Rust source (`json!({...})`).
+2. Add a view (or reuse a category view) in `tool-views/views.tsx`.
+3. Register it in the `registry` map in `tool-views/index.tsx`.
+4. Prefer null over wrong: a registry fn that returns `null` (shape mismatch)
+   falls back to `FallbackView` instead of rendering lies.

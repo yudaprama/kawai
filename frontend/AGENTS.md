@@ -54,15 +54,18 @@ frontend/
 ├── src/
 │   ├── main.tsx            # React root + TooltipProvider + Toaster (sonner)
 │   ├── app/
-│   │   └── App.tsx         # main app: three-pane UI (agents rail, chat+canvas, sessions sidebar)
+│   │   └── App.tsx         # main app: the Workbench (only surface) + assets rail + asset workspace pages
 │   ├── index.css           # Tailwind v4 + shadcn semantics aliased to Tea design tokens (--tea-* in :root/.dark)
 │   │
 │   ├── features/           # feature-organized domain code
 │   │   ├── auth/            # authentication: auth-gate.tsx, use-auth.ts
 │   │   ├── agents/          # agent catalog rail: agents-rail.tsx, registry.tsx (ContextOnboarding type)
 │   │   ├── wallet/          # Monad wallet asset page (README.md inside = end-to-end reference: adapters, ops, network/security model)
-│   │   ├── chat/            # chat + supervisor execution
-│   │   │   ├── components/  # chat-composer, conversation-panel, message-part-view, session-row, session-history-dialog
+│   │   ├── workbench/       # THE primary surface: goal → plan → deliverable
+│   │   │   ├── components/  # workbench-page (landing hero composer + 3-pane run view) + tool-views/ (per-tool step-report renderers; registry maps tool name → human view, shape map in TOOL-MAP.md §11)
+│   │   │   └── hooks/       # use-workbench (run list, phases/agents/timeline view models) wrapping use-supervisor-plan
+│   │   ├── chat/            # supervisor execution engine + chat library code (no chat surface — the Workbench replaced it)
+│   │   │   ├── components/  # chat-composer (used by the Workbench), conversation-panel & co. (unused library code)
 │   │   │   ├── hooks/       # use-chat-model, use-chat-sessions, use-supervisor-chat, use-supervisor-plan
 │   │   │   ├── lib/         # chat-helpers (+test)
 │   │   │   └── index.ts    # public barrel export
@@ -101,13 +104,14 @@ frontend/
 ### Data flow
 
 ```
-User goal → app/App.tsx → use-supervisor-plan.planAndRun()
-  → call("plan_task", {goal, sessionId}) → validated TaskPlan
-  → streamOperation("execute_supervisor_plan", {plan, sessionId, streamId})
+User goal → WorkbenchPage (landing hero composer) → use-workbench.run()
+  → use-supervisor-plan.planAndRun()
+  → callWithEvents("plan_task", …) → live planningRound/planningToolSearch events + validated TaskPlan
+  → review gate (rail) → streamOperation("execute_supervisor_plan", {plan, sessionId, streamId})
   → Tauri Channel<SupervisorEvent> (via @tauri-apps/api/core)
   → events: "planStarted" | "stepStarted" | "confirmationRequested" | "stepCompleted" | "stepFailed" | "stepSkipped" | "planCompleted" | "planFailed"
-  → use-supervisor-plan folds events into UIMessage[] parts
-  → app/App.tsx renders via Conversation/Message/Tool components + plan progress panel
+  → use-supervisor-plan folds events into plan steps + deliverable
+  → WorkbenchPage renders: progress rail (phases/agents) | deliverable viewer (markdown + report switcher) | goal composer + Messages & Tools timeline
 ```
 
 ### Backend communication primitives
@@ -126,12 +130,12 @@ User goal → app/App.tsx → use-supervisor-plan.planAndRun()
 | Components | Prefer `ai-elements/` → `ui/` first; add new shadcn components via `bunx shadcn@latest add` only when nothing fits |
 | Hooks | Custom hooks in `hooks/`; each hook is a single file |
 | Platform | All platform capabilities go through the `Platform` interface in `platform/types.ts` — never use browser globals directly in components |
-| Chat state | `features/chat/hooks/use-supervisor-plan.ts` owns execution state (plan messages, steps, confirmations); `features/chat/hooks/use-supervisor-chat.ts` owns the session/history shell |
+| Run state | `features/chat/hooks/use-supervisor-plan.ts` owns execution state (steps, confirmations, deliverable); `features/workbench/hooks/use-workbench.ts` wraps it with the desk view models (run list, phases, agent names, timeline); `features/chat/hooks/use-supervisor-chat.ts` owns the session/history shell |
 | Events | `SupervisorEvent` mirrors the Rust enum in `src-tauri/src/supervisor.rs` (scheduler events come from `kawai-router`). `LocalChatEvent` in `frontend/src/generated/events.ts` (raw `local_chat` stream) is generated from `crates/foundation/events` via `cargo run -p kawai-bindings --bin export-bindings` — never edit generated files manually. Add variant in the source then regenerate to avoid silent drops. |
 
 ## Non-obvious patterns
 
-- **Every submission routes through the Supervisor.** `onSend` calls `planAndRun` (session is ensured lazily first). There is exactly one path — the legacy `agent_chat` engine loop, command, handler, and `AgentChatEvent` are fully removed.
+- **Every submission routes through the Supervisor.** The Workbench composer calls `planAndRun` (session is ensured lazily first). There is exactly one path — the legacy `agent_chat` engine loop, command, handler, and `AgentChatEvent` are fully removed, and there is no chat surface: results render only in the Workbench deliverable viewer.
 - **Tool call events strip `\`\`\`tool` fences** from the display text. The backend may emit tool call frames inside code fences; the frontend removes them from the text part and renders them as separate `ToolUIPart` cards.
 - **Session management is lazy.** A session is created on the first user message via `ensureSession()`. The title is seeded from the first message (first 80 chars) and generated server-side.
 - **Image paste goes through knowledge, never the model context.** At submit `ChatComposerInner` awaits `onImageToKnowledge` (import + session-bound index; the session is ensured first, so first-message pastes bind correctly) and rides the returned file IDs along like @-mentions (`onSubmit(text, fileIds)`). No image parts are rendered in the user bubble; image data never enters the plan payload.

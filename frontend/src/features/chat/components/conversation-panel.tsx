@@ -95,6 +95,8 @@ export function ConversationPanel({
   supervisorFinalOutput,
   supervisorReview,
   supervisorPlanning,
+  supervisorPlanStartedAt,
+  supervisorPlanCompletedAt,
   onApprovePlan,
   onCancelPlan,
   onRemovePlanStep,
@@ -146,6 +148,9 @@ export function ConversationPanel({
   supervisorReview: PlanReview | null;
   /** Live planning progress — non-null only while `plan_task` is in flight. */
   supervisorPlanning: PlanningState | null;
+  /** Wall-clock plan start / terminal time — total-duration timer. */
+  supervisorPlanStartedAt: number | null;
+  supervisorPlanCompletedAt: number | null;
   onApprovePlan: () => void;
   onCancelPlan: () => void;
   onRemovePlanStep: (stepId: string) => void;
@@ -436,6 +441,8 @@ export function ConversationPanel({
                     replansExhausted={supervisorReplansExhausted}
                     status={supervisorStatus}
                     steps={supervisorSteps}
+                    planStartedAt={supervisorPlanStartedAt}
+                    planCompletedAt={supervisorPlanCompletedAt}
                   />
                 )}
               </div>

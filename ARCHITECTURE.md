@@ -5,10 +5,10 @@ The backend also ships as a standalone web server (`kawai-web` crate, Axum, inde
 
 ## Goals
 
-- Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from domain crates, composed through `AgentDefinition` tool builders. UI: three-pane — left = agents rail, center = active agent chat + canvas, right = sessions sidebar.
+- Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from domain crates, composed through `AgentDefinition` tool builders. UI: the **Kawai Workbench** — landing goal-composer hero, then a three-pane run view (progress rail with named phases/agents | deliverable viewer | goal composer + Messages & Tools timeline).
 - End state: **desktop + mobile + web from one core**; app logic is 100% shared, only transport and launcher differ per target.
 - Current phase: **MVP, desktop-first** (macOS, on-device LLM, local email+password auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
-- Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). Chat components vendored from the main `web/` SPA. **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`features/chat/hooks/use-supervisor-plan.ts` + `lib/ai-types.ts`).
+- Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). UI components vendored from the main `web/` SPA (markdown renderer, prompt-input, ai-elements). **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`features/chat/hooks/use-supervisor-plan.ts` + `lib/ai-types.ts`).
 - Backend: Rust, single core logic. Built-in agent composition is owned by the application root (`src-tauri/src/agent_registry.rs`); the reusable orchestration engine consumes an injected `AgentRegistry`.
 - Auth: remote email+password against the kawai-server worker (Cloudflare D1 `kawai-auth`) — the client sends only `SHA-256(salt + kawai_vault::encode_string(password))` (the local vault logic stays the derivation core; server never sees the password) and receives an Ed25519 bearer token (7-day) persisted at `<user_data_dir>/auth.token`. Desktop session auto-restores from the token at startup; web sessions are the token in an HttpOnly cookie, verified against the worker with a 5-minute in-memory cache. Login UI in the React frontend (`auth-gate.tsx`).
 - LLM: **on-device Gemma 4 via LiteRT-LM is the orchestrator** (decision 2026-08-16). Cloud subagents stream through the hand-rolled OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool with health-aware failover); remote providers are optional configuration. The local model delegates heavy synthesis to cloud subagent tools (`deep_write`, `draft_document`) when a remote LLM is configured. Agent toolsets come from domain crates and are composed by the application root. Design record: `PLAN-hybrid-llm-subagents.md`.
@@ -80,7 +80,7 @@ sequenceDiagram
     FE->>FE: persist user + assistant messages (append_chat_message)
 ```
 
-1. **Frontend capture & invoke.** `app/App.tsx` routes every composer submission through `features/chat/hooks/use-supervisor-plan.ts`: `plan_task` returns a validated `TaskPlan`, then `streamOperation("execute_supervisor_plan", …)` runs it. Events arrive over a Tauri `Channel` as `SupervisorEvent`s (`planStarted`, `stepStarted`, `confirmationRequested`, `stepCompleted`, `stepFailed`, `stepSkipped`, `planCompleted`, `planFailed`) and are folded into `UIMessage[]` parts. There is exactly one execution path.
+1. **Frontend capture & invoke.** The Workbench's goal composer routes every submission through `features/workbench/hooks/use-workbench.ts` → `features/chat/hooks/use-supervisor-plan.ts`: `plan_task` streams live planning progress and returns a validated `TaskPlan`, then `streamOperation("execute_supervisor_plan", …)` runs it. Events arrive over a Tauri `Channel` as `SupervisorEvent`s (`planStarted`, `stepStarted`, `confirmationRequested`, `stepCompleted`, `stepFailed`, `stepSkipped`, `planCompleted`, `planFailed`) and are folded into `UIMessage[]` parts. There is exactly one execution path.
 
 2. **Planner.** `supervisor::plan_task` renders `plan_prompt_with_tools(registry)` (tool name/kind/description/input-schema per registered tool), streams one completion from the remote pool (`RemoteLlm`), then `parse_supervisor_plan` extracts the JSON and validates it: structural invariants (caps, deps, acyclicity), every step's dispatch key against the `ToolRegistry`, the registry-owned confirmation policy, and each step's `arguments` against the tool's `input_schema` (lightweight JSON-Schema subset — type/required/properties/items — so bad arguments fail at planning time and feed the corrective round instead of surfacing mid-execution). Invalid plans never reach execution.
 
@@ -221,7 +221,7 @@ kawai/
 │   ├── index.html            # entry (dark theme)
 │   └── src/
 │       ├── main.tsx          # React root
-│       ├── App.tsx           # three-pane UI: agents rail, chat + canvas (artifact/knowledge panel), sessions sidebar
+│       ├── App.tsx           # the Kawai Workbench (only surface) + assets rail + asset workspace pages
 │       ├── features/          # feature-organized domain code (auth, agents, chat, knowledge, memory, skills, analytics, codegraph, tools, assets)
 │       ├── lib/
 │       │   ├── ai-types.ts   # LOCAL UIMessage/part type shim — NO ai-sdk runtime
@@ -278,7 +278,7 @@ kawai/
 5. **Launcher**:
    - Desktop/Mobile (`main.rs` → `lib.rs::run()`): Tauri builder, registers commands + `.manage(Session)`. **Does NOT run Axum.** Gated `desktop` feature; `tauri`/`wry`/`tao` not linked in web binaries (`cargo tree --manifest-path kawai-web/Cargo.toml | grep tauri` empty).
    - Web (`kawai-web/src/main.rs` + legacy `bin/web.rs`): binds `KAWAI_WEB_ADDR` (`0.0.0.0:3000`), serves `/api/*` router + `dist/`. Not a Tauri app; `kawai-web` crate depends on `kawai = {default-features=false,features=["web"]}` so `cargo check -p kawai --no-default-features --features web` and `cargo check --manifest-path kawai-web/Cargo.toml` stay green without desktop.
-6. **Frontend** — React SPA (`frontend/`), bundled by Vite into `dist/` and served by Tauri. RPC via `@tauri-apps/api/core.invoke`; streaming via `Channel` + `cancel_stream`. Chat state lives in `features/chat/hooks/use-supervisor-plan.ts`, which folds supervisor stream events (`planStarted`/`stepStarted`/`stepCompleted`/`stepFailed`/`stepSkipped`/terminals) into `UIMessage[]` parts; `lib/ai-types.ts` defines those shapes locally (no `ai` npm package — field names stay AI-SDK-v5-compatible so the vendored `ai-elements` components render them unmodified).
+6. **Frontend** — React SPA (`frontend/`), bundled by Vite into `dist/` and served by Tauri. RPC via `@tauri-apps/api/core.invoke`; streaming via `Channel` + `cancel_stream`. Run state lives in `features/chat/hooks/use-supervisor-plan.ts` (wrapped by `features/workbench/hooks/use-workbench.ts`), which folds supervisor stream events (`planningRound`/`planStarted`/`stepStarted`/`stepCompleted`/`stepFailed`/`stepSkipped`/terminals) into the Workbench's plan steps + deliverable; `lib/ai-types.ts` defines those shapes locally (no `ai` npm package — field names stay AI-SDK-v5-compatible so the vendored `ai-elements` components render them unmodified).
 
 ## Core dependencies (in `logic.rs` / `auth.rs`)
 

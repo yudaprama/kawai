@@ -12,6 +12,8 @@ export type SupervisorEvent =
       goal: string;
       stepCount: number;
       steps: { id: string; tool: string; task: string; dependsOn: string[] }[];
+      /** Hash of the executed plan — read key for supervisor_step_output. */
+      planKey: string;
     }
   | { type: "stepStarted"; stepId: string; tool: string }
   | {
@@ -54,13 +56,15 @@ export type SupervisorEvent =
       type: "planningToolSearch";
       queries: string[];
       tools: string[];
-  }
+    }
   | { type: "planRevising"; failedStepIds: string[]; attempt: number }
   | {
       type: "planRevised";
       attempt: number;
       stepCount: number;
       steps: { id: string; tool: string; task: string; dependsOn: string[] }[];
+      /** Key of the REVISED plan — replaces the planStarted key. */
+      planKey: string;
     }
   | { type: "planCompleted"; finalOutput?: string }
   | { type: "planFailed"; error: string };
@@ -97,6 +101,8 @@ export interface SupervisorStep {
   retriesUsed?: number;
   /** Wall-clock start of the current/last run — drives the elapsed timer. */
   startedAt?: number;
+  /** Wall-clock end — freezes the per-step duration. */
+  finishedAt?: number;
   artifacts: SupervisorArtifact[];
 }
 
@@ -134,6 +140,10 @@ export interface SupervisorPlanState {
   steps: SupervisorStep[];
   /** Live planning progress — non-null only while `plan_task` is in flight. */
   planning: { round: number; provider: string; searching: boolean; tools: string[] } | null;
+  /** Wall-clock plan start (planStarted) and terminal time — drive the
+   *  workbench card's total-duration timer. */
+  planStartedAt: number | null;
+  planCompletedAt: number | null;
   pendingConfirmation: {
     streamId: string;
     stepId: string;
@@ -146,6 +156,9 @@ export interface SupervisorPlanState {
   review: PlanReview | null;
   /** Current plan version — 1 on first run, incremented per replan. */
   planVersion: number;
+  /** Hash of the currently-executing plan — the read key for the
+   *  `supervisor_step_output` op (full report bodies). */
+  planKey: string | null;
   /** Superseded plan versions, oldest first. */
   priorVersions: PriorPlanVersion[];
   /** True when the replan budget is spent — failure then offers "new plan". */
@@ -156,6 +169,9 @@ interface RunPlanOptions {
   plan: unknown;
   sessionId: number;
   agentId?: string;
+  /** The user's verbatim goal — the deliverable writer answers this, not
+   *  the planner's rewritten plan.goal. */
+  userGoal?: string;
 }
 
 export interface SupervisorPlanCallbacks {
@@ -315,11 +331,14 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     goal: null,
     steps: [],
     planning: null,
+    planStartedAt: null,
+    planCompletedAt: null,
     pendingConfirmation: null,
     finalOutput: null,
     error: null,
     review: null,
     planVersion: 0,
+    planKey: null,
     priorVersions: [],
     replansExhausted: false,
   });
@@ -328,6 +347,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const streamCtrl = useRef<StreamControl | null>(null);
   const streamIdRef = useRef<string>("");
   const goalRef = useRef<string | null>(null);
+  /** The user's verbatim goal — captured before the planner can rewrite it;
+   *  rides execute_supervisor_plan as `userGoal` for the deliverable writer. */
+  const userGoalRef = useRef<string | null>(null);
   const stepsRef = useRef<SupervisorStep[]>([]);
   /** True between Stop being clicked and the terminal event arriving — the
    *  backend cancels cooperatively (active steps finish first), so the panel
@@ -383,17 +405,21 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       const streamId = crypto.randomUUID();
       streamIdRef.current = streamId;
       goalRef.current = null;
+      userGoalRef.current = null;
 
       setState({
         status: "running",
         goal: null,
         steps: [],
         planning: null,
+        planStartedAt: null,
+        planCompletedAt: null,
         pendingConfirmation: null,
         finalOutput: null,
         error: null,
         review: null,
         planVersion: 1,
+        planKey: null,
         priorVersions: [],
         replansExhausted: false,
       });
@@ -425,6 +451,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           plan: options.plan,
           sessionId,
           agentId: options.agentId,
+          userGoal: options.userGoal,
           streamId,
         },
         {
@@ -436,6 +463,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 patch({
                   goal: ev.goal,
                   steps: stepsRef.current,
+                  planStartedAt: Date.now(),
+                  planCompletedAt: null,
+                  planKey: ev.planKey,
                 });
                 parts = [{ type: "text", text: `Goal: ${ev.goal}`, state: "streaming" as const }];
                 syncAssistant();
@@ -463,6 +493,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                     state: "completed",
                     output: ev.output,
                     retriesUsed: ev.retries_used,
+                    finishedAt: Date.now(),
                     artifacts: ev.artifacts.map((a) => ({
                       kind: a.kind as SupervisorArtifact["kind"],
                       handle: a.handle,
@@ -473,7 +504,11 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 );
                 break;
               case "stepFailed":
-                upsertStep(ev.stepId, {}, { state: "failed", error: ev.error, errorKind: ev.kind });
+                upsertStep(
+                  ev.stepId,
+                  {},
+                  { state: "failed", error: ev.error, errorKind: ev.kind, finishedAt: Date.now() },
+                );
                 break;
               case "stepSkipped":
                 upsertStep(ev.stepId, {}, { state: "skipped", error: ev.reason });
@@ -514,6 +549,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                   steps: stepsRef.current,
                   error: null,
                   planVersion: planVersionRef.current,
+                  planKey: ev.planKey,
                   priorVersions: priorVersionsRef.current,
                   replansExhausted: replansUsedRef.current >= 1,
                 });
@@ -524,6 +560,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                   status: "completed",
                   pendingConfirmation: null,
                   finalOutput: ev.finalOutput ?? null,
+                  planCompletedAt: Date.now(),
                 });
                 persistPlanSnapshot(sessionId, goalRef.current, stepsRef.current, {
                   output: ev.finalOutput ?? null,
@@ -548,6 +585,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                   status: "failed",
                   pendingConfirmation: null,
                   error: ev.error,
+                  planCompletedAt: Date.now(),
                 });
                 parts = parts.map((p) =>
                   p.type === "text" && p.state === "streaming" ? { ...p, state: "done" as const } : p,
@@ -618,36 +656,32 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       // optimistic seed below shows motion INSTANTLY — before the IPC even
       // lands, the context build + first LLM round can stay quiet for a while.
       patch({ planning: { round: 0, provider: "", searching: true, tools: [] } });
+      userGoalRef.current = goal;
       let plan: unknown;
       try {
-        plan = await callWithEvents<unknown, SupervisorEvent>(
-          "plan_task",
-          { goal, sessionId, agentId },
-          (ev) => {
-            if (ev.type === "planningStarted" || ev.type === "planningRound") {
-              setState((prev) => ({
-                ...prev,
-                planning: {
-                  round: ev.type === "planningRound" ? ev.round : 1,
-                  provider: ev.type === "planningRound" ? ev.provider : "",
-                  searching:
-                    ev.type === "planningRound" ? ev.searching : (prev.planning?.searching ?? true),
-                  tools: prev.planning?.tools ?? [],
-                },
-              }));
-            } else if (ev.type === "planningToolSearch") {
-              setState((prev) => ({
-                ...prev,
-                planning: {
-                  round: prev.planning?.round ?? 0,
-                  provider: prev.planning?.provider ?? "",
-                  searching: true,
-                  tools: ev.tools,
-                },
-              }));
-            }
-          },
-        );
+        plan = await callWithEvents<unknown, SupervisorEvent>("plan_task", { goal, sessionId, agentId }, (ev) => {
+          if (ev.type === "planningStarted" || ev.type === "planningRound") {
+            setState((prev) => ({
+              ...prev,
+              planning: {
+                round: ev.type === "planningRound" ? ev.round : 1,
+                provider: ev.type === "planningRound" ? ev.provider : "",
+                searching: ev.type === "planningRound" ? ev.searching : (prev.planning?.searching ?? true),
+                tools: prev.planning?.tools ?? [],
+              },
+            }));
+          } else if (ev.type === "planningToolSearch") {
+            setState((prev) => ({
+              ...prev,
+              planning: {
+                round: prev.planning?.round ?? 0,
+                provider: prev.planning?.provider ?? "",
+                searching: true,
+                tools: ev.tools,
+              },
+            }));
+          }
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         patch({ status: "failed", error: message, planning: null });
@@ -659,7 +693,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       if (review == null) {
         // Unparseable plan — do not gate; execute as before (the backend
         // validation is the authority, the review model is a courtesy).
-        runPlan({ plan, sessionId, agentId });
+        runPlan({ plan, sessionId, agentId, userGoal: goal });
         return;
       }
       patch({ status: "reviewing", review, error: null, planning: null });
@@ -667,11 +701,13 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [runPlan, patch, callbacks],
   );
 
-  /** Review gate: execute the plan exactly as reviewed. */
+  /** Review gate: execute the plan exactly as reviewed. The goal rides the
+   *  ref — it was captured at planAndRun, before the planner possibly rewrote
+   *  plan.goal, and the deliverable must answer the USER's words. */
   const approvePlan = useCallback(() => {
     const review = state.review;
     if (!review || streamCtrl.current) return;
-    runPlan({ plan: review.plan, sessionId: review.sessionId, agentId: review.agentId });
+    runPlan({ plan: review.plan, sessionId: review.sessionId, agentId: review.agentId, userGoal: userGoalRef.current ?? undefined });
   }, [runPlan, state.review]);
 
   /** Review gate: discard the plan without executing anything. */

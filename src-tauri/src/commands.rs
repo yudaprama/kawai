@@ -863,6 +863,26 @@ pub async fn plan_task(
     Ok(plan)
 }
 
+/// Authenticated RPC: full body of one persisted supervisor step result —
+/// the read path for the 2000-char wire preview (see supervisor::step_output).
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub async fn supervisor_step_output(
+    session: State<'_, Session>,
+    session_id: i64,
+    plan_key: String,
+    step_id: String,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    if !kawai_db::session_exists(&user_id, session_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Err(format!("session {session_id} not found"));
+    }
+    crate::supervisor::step_output(&user_id, session_id, &plan_key, &step_id).await
+}
+
 /// Authenticated RPC: respond to a pending supervisor confirmation gate.
 #[cfg(feature = "litert")]
 #[tauri::command]
@@ -1289,6 +1309,7 @@ pub async fn codegraph_init(
 pub async fn execute_supervisor_plan(
     plan: kawai_router::TaskPlan,
     session_id: i64,
+    user_goal: Option<String>,
         stream_id: String,
     on_event: Channel<crate::supervisor::SupervisorEvent>,
     registry: State<'_, StreamRegistry>,
@@ -1334,7 +1355,7 @@ pub async fn execute_supervisor_plan(
     .await?;
 
     let step_count = plan.steps.len();
-    let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone());
+    let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone(), user_goal);
     // Telemetry: this transport previously had zero logging, which made
     // scheduler anomalies (e.g. zero-step "successes") invisible.
     eprintln!("[supervisor] executing plan ({step_count} steps) for user={user_id} session={session_id}");

@@ -1,16 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { LinkDialog, PreviewDialog } from "@/features/knowledge/components/knowledge-dialogs";
-import { NotificationCenter } from "@/components/notifications/NotificationCenter";
-import { useNotifications } from "@/contexts/NotificationContext";
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
 import { useKnowledgeActions } from "@/features/knowledge/hooks/use-knowledge-actions";
 import { useSupervisorChat } from "@/features/chat/hooks/use-supervisor-chat";
-import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
-import { useContextOnboarding } from "@/hooks/use-context-onboarding";
+import { WorkbenchPage } from "@/features/workbench/components/workbench-page";
 import { type AgentInfo, call } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
 import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
-import { AssetsRail, agentPresentation } from "@/features/agents/assets-rail";
+import { AssetsRail } from "@/features/agents/assets-rail";
 import type { AssetViewId } from "@/features/assets/components/asset-nav";
 import { CodeAssetPage } from "@/features/codegraph/components/code-page";
 import { MemoryAssetPage } from "@/features/memory/components/memory-page";
@@ -18,17 +15,13 @@ import { SkillsAssetPage } from "@/features/skills/components/skills-page";
 import { WikiAssetPage } from "@/features/assets/pages/wiki-page";
 import { SqlSourcesAssetPage } from "@/features/assets/pages/sql-sources-page";
 import { WalletPage } from "@/features/wallet/components/wallet-page";
-import { CanvasPanel } from "@/features/chat/components/canvas-panel";
-import { ConversationPanel } from "@/features/chat/components/conversation-panel";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
 
 export default function App() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentsRail, setAgentsRail] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [canvasOpen, setCanvasOpen] = useState(false);
   const [assetView, setAssetView] = useState<AssetViewId | null>(null);
-  const [toolWorkbenchId, setToolWorkbenchId] = useState<string | null>(null);
   const [codeGraphSeed, setCodeGraphSeed] = useState<{ query: string; result: string } | null>(null);
   const [mobileDrawer, setMobileDrawer] = useState<null | "agents">(null);
 
@@ -48,89 +41,14 @@ export default function App() {
   // registry — the planner picks tools itself). The first catalog agent only
   // drives presentation/context UI.
   const agent = agents[0] ?? null;
-  const presentation = agent ? agentPresentation(agent.id) : agentPresentation("");
   const chat = useSupervisorChat();
-  const notifications = useNotifications();
-  const supervisor = useSupervisorPlan({
-    onPlanCompleted: (goal, output) => {
-      notifications.dispatch({
-        id: `plan-completed:${Date.now()}`,
-        category: "agents",
-        title: "Plan completed",
-        body: output ? (output.length > 160 ? `${output.slice(0, 159)}...` : output) : (goal ?? "Task finished"),
-      });
-    },
-    onPlanFailed: (_goal, error) => {
-      notifications.dispatch({
-        id: `plan-failed:${Date.now()}`,
-        category: "system",
-        title: "Plan failed",
-        body: error.length > 160 ? `${error.slice(0, 159)}...` : error,
-      });
-    },
-    onTitleGenerated: () => chat.refreshSessions(),
-  });
-  const pendingConfirmation = supervisor.pendingConfirmation;
-  const activeConfirmation = pendingConfirmation
-    ? {
-        streamId: pendingConfirmation.streamId,
-        stepId: pendingConfirmation.stepId,
-        // Real tool from the executing step — the confirmation card must
-        // describe the action being approved, not a hardcoded placeholder.
-        tool: supervisor.steps.find((s) => s.stepId === pendingConfirmation.stepId)?.tool || "supervisor",
-        prompt: pendingConfirmation.description || pendingConfirmation.task,
-        acceptText: "Approve",
-        declineText: "Reject",
-      }
-    : null;
-  const displayMessages = supervisor.messages.length > 0 ? supervisor.messages : chat.messages;
-  const respondConfirmation = useCallback(
-    (approved: boolean) =>
-      supervisor.pendingConfirmation ? (approved ? supervisor.approve() : supervisor.reject()) : Promise.resolve(),
-    [supervisor],
-  );
-  const planActive =
-    supervisor.status === "running" ||
-    supervisor.status === "reviewing" ||
-    supervisor.status === "stopping" ||
-    supervisor.status === "awaitingConfirmation";
   const { status } = chat;
   const busy = status === "submitted" || status === "streaming";
-  const inSession = chat.sessionId != null || chat.messages.length > 0;
-
-  const onSend = useCallback(
-    (text: string, _fileIds?: string[]) => {
-      // Supervisor is the only execution path, always in `auto` mode: the
-      // merged all-domain registry — the planner picks tools itself.
-      void (async () => {
-        const sessionId = chat.sessionId ?? (await chat.ensureSessionId(text));
-        if (sessionId == null) return;
-        await supervisor.planAndRun(text, sessionId, "auto");
-      })();
-    },
-    [chat, supervisor],
-  );
-
-  /** R7: after the replan budget is spent, "Try a new plan" re-submits the
-   *  same goal — a fresh plan_task (and a fresh review gate), not a resume. */
-  const handleNewPlan = useCallback(() => {
-    const goal = supervisor.goal;
-    if (!goal || planActive) return;
-    onSend(goal);
-  }, [supervisor.goal, planActive, onSend]);
 
   const ka = useKnowledgeActions(chat);
 
   // Empty-data onboarding (analytics only) — the "Connect database" CTA opens
   // the Databases asset page; import rides the knowledge file dialog.
-  const { onboarding } = useContextOnboarding({
-    agent,
-    inSession,
-    knowledgeLoaded: ka.knowledge.loaded,
-    files: ka.knowledge.files,
-    importFiles: () => void ka.addKnowledgeFiles(),
-    openSources: () => setAssetView("sources"),
-  });
 
   // Preview bridge: tool cards inside the vendored renderer tree emit an
   // event instead of threading app callbacks; resolve to a knowledge row
@@ -162,7 +80,6 @@ export default function App() {
   useAppShortcuts({
     busy,
     onToggleAgentsRail: () => setAgentsRail((v) => !v),
-    onToggleCanvas: () => setCanvasOpen((v) => !v),
     onNewChat: () => void chat.newChat(),
     onOpenSessions: () => setSessionsOpen(true),
   });
@@ -213,15 +130,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [assetView]);
 
-  const lastUserText = (() => {
-    for (let i = chat.messages.length - 1; i >= 0; i--) {
-      const m = chat.messages[i];
-      if (m.role !== "user") continue;
-      const t = m.parts.find((p) => p.type === "text")?.text;
-      if (t) return t;
-    }
-    return null;
-  })();
 
   if (!agent) {
     return <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center" />;
@@ -267,11 +175,6 @@ export default function App() {
       <WalletPage onBack={() => setAssetView(null)} />
     ) : null;
 
-  // Canvas — output-only pane: tool results and document previews. Knowledge
-  // is input; it lives in the composer's attachment (@) menu + the Wiki page.
-  const canvas = (
-    <CanvasPanel messages={chat.messages} toolCallId={toolWorkbenchId} onCloseTool={() => setToolWorkbenchId(null)} />
-  );
 
   return (
     <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">
@@ -281,78 +184,22 @@ export default function App() {
           collapsed={agentsRail}
           userId={chat.userId}
           onSelectAsset={(id) => {
-            setToolWorkbenchId(null);
             setAssetView(id);
           }}
           onToggle={() => setAgentsRail((v) => !v)}
           onLogout={() => void chat.logout()}
           onNewTask={() => {
             setAssetView(null);
-            setToolWorkbenchId(null);
             void chat.newChat();
           }}
         />
       </div>
 
       {assetWorkspace ?? (
-        <ConversationPanel
-          agent={agent}
-          presentation={presentation}
-          messages={displayMessages}
-          status={planActive ? ("streaming" as const) : status}
-          sessionId={chat.sessionId}
-          sessions={chat.sessions}
-          modelLoading={chat.modelLoading}
-          modelError={chat.modelError}
-          modelStatus={chat.modelStatus}
-          thinking={chat.thinking}
-          onToggleThinking={() => void chat.toggleThinking()}
-          onRetryModel={() => void chat.reloadModel()}
-          chatError={chat.error}
-          historyError={chat.historyError}
-          onRetryHistory={() => void chat.retryHistoryLoad()}
-          lastUserText={lastUserText}
-          onStop={chat.stop}
-          onSend={onSend}
-          confirmation={activeConfirmation}
-          onRespondConfirmation={respondConfirmation}
-          supervisorStatus={supervisor.status}
-          supervisorGoal={supervisor.goal}
-          supervisorSteps={supervisor.steps}
-          supervisorError={supervisor.error}
-          supervisorFinalOutput={supervisor.finalOutput}
-          supervisorReview={supervisor.review}
-          supervisorPlanning={supervisor.planning}
-          onApprovePlan={supervisor.approvePlan}
-          onCancelPlan={supervisor.cancelPlan}
-          onRemovePlanStep={supervisor.removeStep}
-          supervisorPlanVersion={supervisor.planVersion}
-          supervisorPriorVersions={supervisor.priorVersions}
-          supervisorReplansExhausted={supervisor.replansExhausted}
-          onNewPlanSupervisor={handleNewPlan}
-          onStopSupervisor={supervisor.stop}
-          onResumeSupervisor={supervisor.resume}
-          inSession={inSession}
-          onOpenSessions={() => setSessionsOpen(true)}
+        <WorkbenchPage
+          onAddFiles={ka.addKnowledgeFiles}
+          onAddLink={ka.submitKnowledgeLink}
           onImageToKnowledge={ka.imageToKnowledge}
-          onboarding={onboarding}
-          onOpenMobileAgents={() => setMobileDrawer("agents")}
-          onAddFiles={() => void ka.addKnowledgeFiles()}
-          onAddLink={ka.addKnowledgeLink}
-          onOpenTool={(id) => {
-            setToolWorkbenchId(id);
-            setAssetView(null);
-            setCanvasOpen(true);
-          }}
-          onOpenCodeGraph={(query, result) => {
-            setCodeGraphSeed({ query, result });
-            setToolWorkbenchId(null);
-            setAssetView("code");
-          }}
-          headerExtra={<NotificationCenter />}
-          canvasOpen={canvasOpen}
-          onToggleCanvas={() => setCanvasOpen((v) => !v)}
-          canvas={canvasOpen ? canvas : null}
         />
       )}
 
@@ -372,7 +219,6 @@ export default function App() {
                 collapsed={false}
                 userId={chat.userId}
                 onSelectAsset={(id) => {
-                  setToolWorkbenchId(null);
                   setAssetView(id);
                   setMobileDrawer(null);
                 }}
@@ -380,7 +226,6 @@ export default function App() {
                 onLogout={() => void chat.logout()}
                 onNewTask={() => {
                   setAssetView(null);
-                  setToolWorkbenchId(null);
                   setMobileDrawer(null);
                   void chat.newChat();
                 }}
