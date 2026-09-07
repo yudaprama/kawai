@@ -47,18 +47,19 @@ async fn main() {
             user,
             session.id,
             agent_id,
+            "",
         )
         .await
         {
-            Some(r) => r,
-            None => {
-                eprintln!("[FAIL] registry unavailable for {agent_id}");
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("[FAIL] registry unavailable for {agent_id}: {e}");
                 failures += 1;
                 continue;
             }
         };
-        match kawai_lib::supervisor::plan_task("demo", goal, &registry).await {
-            Ok(plan) => {
+        match kawai_lib::supervisor::plan_task(user, goal, &registry, |_| {}).await {
+            Ok((plan, _usage)) => {
                 let tools: Vec<&str> =
                     plan.steps.iter().map(|s| s.dispatch_key()).collect();
                 let ok_shape = plan
