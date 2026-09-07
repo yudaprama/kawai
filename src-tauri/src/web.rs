@@ -1248,6 +1248,23 @@ async fn office_list_files_handler(
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ExportDeliverableRequest {
+    markdown: String,
+    filename: String,
+}
+
+async fn export_deliverable_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<ExportDeliverableRequest>,
+) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
+    logic::office::export_deliverable(&user_id, &req.markdown, &req.filename)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct OfficeReadDocumentRequest {
     file_id: String,
 }
@@ -1681,6 +1698,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
     let protected = protected
         .route("/api/office_import_file", post(office_import_file_handler))
         .route("/api/office_list_files", post(office_list_files_handler))
+        .route("/api/export_deliverable", post(export_deliverable_handler))
         .route("/api/office_list_templates", post(office_list_templates_handler))
         .route("/api/office_bind_template", post(office_bind_template_handler))
         .route("/api/office_peek_template", post(office_peek_template_handler))

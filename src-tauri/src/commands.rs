@@ -908,6 +908,18 @@ pub fn office_list_files(
     logic::office::list_files(&user_id)
 }
 
+/// Authenticated RPC: export markdown content (e.g. a workbench deliverable)
+/// as a stored .pdf or .docx document — becomes a first-class store member.
+#[tauri::command]
+pub async fn export_deliverable(
+    session: State<'_, Session>,
+    markdown: String,
+    filename: String,
+) -> Result<logic::office::OfficeFile, String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::export_deliverable(&user_id, &markdown, &filename).await
+}
+
 /// Authenticated RPC: list deck template packs (bundled + cached catalogue; no network).
 #[tauri::command]
 pub fn office_list_templates() -> Vec<logic::office::TemplateListing> {

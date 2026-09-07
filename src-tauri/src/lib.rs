@@ -193,6 +193,7 @@ pub fn run() {
         // ── office ─────────────────────────────────────────────────────
         commands::office_import_file,
         commands::office_list_files,
+        commands::export_deliverable,
         commands::office_list_templates,
         commands::office_bind_template,
         commands::office_peek_template,

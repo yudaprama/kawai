@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ChatComposer } from "@/features/chat/components/chat-composer";
 import { Streamdown } from "@/lib/streamdown";
+import { call, errText } from "@/lib/api";
 import { renderStepReport } from "@/features/workbench/components/tool-views";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import {
@@ -278,6 +279,7 @@ function DeliverableViewer({
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset triggers are the point — clear the cache when the run identity changes
   useEffect(() => {
     setFullOutputs({});
+    setExportedName(null);
   }, [supervisor.goal, supervisor.planVersion]);
 
   const full = step ? fullOutputs[step.stepId] : undefined;
@@ -285,6 +287,33 @@ function DeliverableViewer({
   const loadingFull = previewTruncated && full == null;
 
   const done = supervisor.steps.filter((s) => s.state === "completed").length;
+
+  // Export the deliverable as a stored .pdf/.docx via the office engines.
+  const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
+  const [exportedName, setExportedName] = useState<string | null>(null);
+  const exportGoal = async (format: "pdf" | "docx") => {
+    if (supervisor.finalOutput == null || exporting) return;
+    setExporting(format);
+    setExportedName(null);
+    const slug =
+      (supervisor.goal ?? "deliverable")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 40) || "deliverable";
+    try {
+      const file = await call<{ originalName: string }>("export_deliverable", {
+        markdown: supervisor.finalOutput,
+        filename: `${slug}.${format}`,
+      });
+      setExportedName(file.originalName);
+    } catch (err) {
+      console.error("[workbench] export_deliverable:", errText(err));
+      setExportedName(null);
+    } finally {
+      setExporting(null);
+    }
+  };
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl space-y-6 p-6">
@@ -315,6 +344,32 @@ function DeliverableViewer({
         {effective === "final" && supervisor.finalOutput != null && (
           <div className="border-primary/30 bg-card rounded-lg border p-6">
             <Streamdown>{supervisor.finalOutput}</Streamdown>
+          </div>
+        )}
+        {effective === "final" && supervisor.finalOutput != null && supervisor.status === "completed" && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted-foreground mr-1 font-mono text-[11px] uppercase">Export</span>
+            <Button
+              disabled={exporting != null}
+              onClick={() => void exportGoal("pdf")}
+              size="sm"
+              variant="outline"
+            >
+              {exporting === "pdf" ? <LoaderCircleIcon className="size-3 animate-spin" /> : <FileTextIcon className="size-3" />}
+              PDF
+            </Button>
+            <Button
+              disabled={exporting != null}
+              onClick={() => void exportGoal("docx")}
+              size="sm"
+              variant="outline"
+            >
+              {exporting === "docx" ? <LoaderCircleIcon className="size-3 animate-spin" /> : <FileTextIcon className="size-3" />}
+              DOCX
+            </Button>
+            {exportedName && (
+              <span className="text-success font-mono text-[11px]">Tersimpan sebagai {exportedName} — lihat di dokumen</span>
+            )}
           </div>
         )}
         {effective !== "final" && step != null && output != null && (

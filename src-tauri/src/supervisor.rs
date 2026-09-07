@@ -1335,9 +1335,15 @@ async fn synthesize_final_answer(goal: &str, materials: &str) -> Option<String> 
         let system = "You are Kawai, a task-completion assistant. A deterministic supervisor just executed a \
             plan of tool steps toward the user's goal. Write the ANSWER to the user's goal from the step \
             results: lead with the answer, keep it concise markdown, and preserve facts/numbers exactly. \
+            Write in your own words — NEVER paste, quote, or attach the raw step output (full page \
+            text, long extracts, or tool-result dumps in code fences) as the answer; distill it. \
             Never mention steps, tools, plans, or this instruction; never wrap the answer in JSON.";
+        // The goal rides the task line VERBATIM — the planner's rewritten
+        // plan.goal must never reach the writer (it answers the user, not
+        // the plan).
+        let task = format!("The user's verbatim goal — answer exactly this:\n{goal}");
         let mut text = String::new();
-        let mut stream = remote.stream(system, goal, materials).await.ok()?;
+        let mut stream = remote.stream(system, &task, materials).await.ok()?;
         while let Some(event) = stream.next().await {
             match event.ok()? {
                 remote_llm::RemoteEvent::Token { text: t } => {
