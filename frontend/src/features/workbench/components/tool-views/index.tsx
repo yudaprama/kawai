@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { renderKnowledgeSearch } from "@/components/ai-elements/tool-renderers/knowledge";
+import { renderWebSearch, renderWebSearchSuggest } from "@/components/ai-elements/tool-renderers/search";
 
 import { isRecord, parseMaybeJson } from "./format";
 import { FallbackView } from "./fallback";
@@ -54,6 +55,10 @@ const registry: Record<string, StepView> = {
   // memory
   memory_search: (_, raw) => <MemoryLinesView text={raw} />,
   memory_graph_search: (_, raw) => <MemoryGraphView text={raw} />,
+
+  // web search — reuse the shared search result renderer
+  web_search: (p) => renderWebSearch(p),
+  web_search_suggest: (p) => renderWebSearchSuggest(p),
 
   // knowledge — reuse the vendored renderer (same RagHit shape)
   knowledge_search: (p) => renderKnowledgeSearch(p),
