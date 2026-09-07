@@ -223,7 +223,7 @@ nobody opened.
 |---|---|---|
 | Full step output (text) | `supervisor_step_results` SQLite table, keyed by plan-JSON hash | read path: `supervisor_step_output` op (both wrappers, auth at edge); also powers Resume + the ExecutionMemo |
 | Files a tool produces (docx, pdf, svg, decks) | office store (`<data_root>/<user>/docs/`), referenced by handle | `ArtifactInfo { handle, filename }` rides the event; preview via `office_read_file` |
-| Final deliverable | `planCompleted.final_output` on the wire; persisted plan record goes to session history | S2: office-store file |
+| Final deliverable | `planCompleted.final_output` on the wire; persisted plan record goes to session history | user-exportable to a stored .pdf/.docx via the `export_deliverable` op (auto-persist to the office store is still an open S2 item) |
 | Sessions / messages | `sessions` / `messages` tables | chat history, not tool output |
 
 ### 11.3 Render map (tool → view)

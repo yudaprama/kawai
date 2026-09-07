@@ -744,6 +744,7 @@ name = "browser"
 version = "0.1.0"
 dependencies = [
  "kawai-constants",
+ "kawai-http-common",
  "kawai-tools",
  "reqwest 0.13.4",
  "serde",
@@ -1874,6 +1875,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "kawai-constants",
+ "kawai-http-common",
  "kawai-tools",
  "reqwest 0.13.4",
  "serde",
@@ -3360,6 +3362,16 @@ dependencies = [
  "serde_json",
  "specta",
  "specta-typescript",
+]
+
+[[package]]
+name = "kawai-http-common"
+version = "0.1.0"
+dependencies = [
+ "kawai-constants",
+ "reqwest 0.13.4",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

@@ -236,9 +236,11 @@ Result body (JSON string, mirrors the office tools' envelope style):
   fragments), shared across engines, and stores the **post-detection**
   markdown — a cached CF answer is never re-fetched by the webview and vice
   versa. Cache hits report `engine: "cache"` (free, and auditable).
-- Vault key pool: `httpclient.rs` already resolves comma-separated values by
-  random pick (`resolve_env_vars`) — filling the vault pair with multiple
-  accounts spreads quota with **zero code change**. Documented, not coded.
+- Vault key pool: the shared generated-tools HTTP executor
+  (`crates/generated-tools/http-common`) already resolves comma-separated
+  values by random pick (`resolve_env_vars`) — filling the vault pair with
+  multiple accounts spreads quota with **zero code change**. Documented, not
+  coded.
 
 ### 3.7 Wiring into the agent
 
