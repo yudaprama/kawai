@@ -16,16 +16,16 @@ function statusMessage(st: LocalModelStatus): string {
   switch (st.status) {
     case "downloading": {
       const pct = st.totalBytes > 0 ? Math.round((st.downloadedBytes / st.totalBytes) * 100) : 0;
-      return `Mengunduh model… ${pct}% (${formatBytes(st.downloadedBytes)} / ${formatBytes(st.totalBytes)}). Menggunakan cloud model sementara.`;
+      return `Downloading model… ${pct}% (${formatBytes(st.downloadedBytes)} / ${formatBytes(st.totalBytes)}). Using cloud model temporarily.`;
     }
     case "loading":
-      return "Memuat model… Menggunakan cloud model sementara.";
+      return "Loading model… Using cloud model temporarily.";
     case "ready":
-      return "Model siap.";
+      return "Model ready.";
     case "failed":
-      return "Gagal memuat model lokal. Menggunakan cloud model.";
+      return "Could not load the local model. Using cloud model.";
     default:
-      return "loading model…";
+      return "Loading model…";
   }
 }
 
