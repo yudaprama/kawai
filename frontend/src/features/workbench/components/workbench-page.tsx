@@ -2,6 +2,7 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   CircleXIcon,
+  ShieldAlertIcon,
   FileTextIcon,
   LoaderCircleIcon,
   PlayIcon,
@@ -189,6 +190,31 @@ function ProgressRail({
                 : "preparing…"}
             </div>
           )}
+        </div>
+      )}
+
+      {supervisor.status === "awaitingConfirmation" && supervisor.pendingConfirmation && (
+        <div className="border-primary/30 mt-4 space-y-2 rounded-md border p-3">
+          <div className="text-foreground inline-flex items-center gap-1.5 font-mono text-xs font-bold">
+            <ShieldAlertIcon className="text-primary size-3.5" />
+            Approval required
+          </div>
+          <p className="text-foreground/80 font-mono text-[11px]">
+            {supervisor.pendingConfirmation.description || supervisor.pendingConfirmation.task}
+          </p>
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              onClick={workbench.supervisor.approve}
+              size="sm"
+            >
+              <PlayIcon className="size-3" />
+              Approve
+            </Button>
+            <Button onClick={workbench.supervisor.reject} size="sm" variant="outline">
+              Deny
+            </Button>
+          </div>
         </div>
       )}
 
@@ -509,7 +535,16 @@ function TimelineView({ row }: { row: TimelineRow }) {
 
 // ── History strip (home state) ──────────────────────────────────────────────
 
-function RunHistory({ runs }: { runs: WorkbenchRun[] }) {
+function RunHistory({
+  runs,
+  onReopen,
+  latestRunId,
+}: {
+  runs: WorkbenchRun[];
+  /** Open the run's deliverable in the viewer. Only wired for the latest run (S1: supervisor holds one run's state). */
+  onReopen?: (runId: string) => void;
+  latestRunId?: string;
+}) {
   if (runs.length === 0) return null;
   return (
     <div className="mx-auto w-full max-w-4xl space-y-2 p-6">
@@ -517,30 +552,48 @@ function RunHistory({ runs }: { runs: WorkbenchRun[] }) {
       {runs
         .slice()
         .reverse()
-        .map((r) => (
-          <div className="border-border/60 flex items-center justify-between gap-3 rounded-lg border p-3" key={r.id}>
-            <div className="min-w-0 flex-1">
-              <div className="text-foreground truncate text-sm">{r.goal}</div>
-              <div className="text-muted-foreground font-mono text-[11px]">
-                {new Date(r.startedAt).toLocaleString()}
-                {r.stepsTotal != null && ` · ${r.stepsDone ?? 0}/${r.stepsTotal} steps`}
-                {r.outputPreview && ` · ${r.outputPreview.slice(0, 60)}…`}
+        .map((r) => {
+          const clickable = onReopen != null && latestRunId === r.id && r.status !== "running";
+          const RowInner = (
+            <>
+              <div className="min-w-0 flex-1 text-left">
+                <div className="text-foreground truncate text-sm">{r.goal}</div>
+                <div className="text-muted-foreground font-mono text-[11px]">
+                  {new Date(r.startedAt).toLocaleString()}
+                  {r.stepsTotal != null && ` · ${r.stepsDone ?? 0}/${r.stepsTotal} steps`}
+                  {r.outputPreview && ` · ${r.outputPreview.slice(0, 60)}…`}
+                </div>
               </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {clickable && (
+                  <span className="text-primary font-mono text-[10px] group-hover:underline">View report</span>
+                )}
+                {r.status === "running" ? (
+                  <LoaderCircleIcon className="text-primary size-4 animate-spin" />
+                ) : r.status === "completed" ? (
+                  <CheckCircle2Icon className="text-success size-4" />
+                ) : (
+                  <CircleXIcon className="text-destructive size-4" />
+                )}
+              </div>
+            </>
+          );
+          return clickable ? (
+            <button
+              className="group border-border/60 hover:border-primary/50 flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors"
+              key={r.id}
+              onClick={() => onReopen(r.id)}
+              title={`View report: ${r.goal}`}
+              type="button"
+            >
+              {RowInner}
+            </button>
+          ) : (
+            <div className="border-border/60 flex items-center justify-between gap-3 rounded-lg border p-3" key={r.id}>
+              {RowInner}
             </div>
-            {r.status === "running" ? (
-              <LoaderCircleIcon className="text-primary size-4 shrink-0 animate-spin" />
-            ) : r.status === "completed" ? (
-              <CheckCircle2Icon className="text-success size-4 shrink-0" />
-            ) : (
-              <CircleXIcon className="text-destructive size-4 shrink-0" />
-            )}
-          </div>
-        ))}
-      {runs.length > 0 && runs[runs.length - 1].status !== "running" && (
-        <p className="text-muted-foreground font-mono text-[10px]">
-          Reopen a finished run's reports from the switcher above.
-        </p>
-      )}
+          );
+        })}
     </div>
   );
 }
@@ -622,7 +675,14 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
           </div>
           {workbench.runs.length > 0 && (
             <div className="w-full max-w-2xl text-left">
-              <RunHistory runs={workbench.runs} />
+              <RunHistory
+                latestRunId={workbench.runs.at(-1)?.id}
+                onReopen={() => {
+                  setHome(false);
+                  setSelectedReport("final");
+                }}
+                runs={workbench.runs}
+              />
             </div>
           )}
         </div>
@@ -650,7 +710,11 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
           <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">Kawai Workbench</span>
         </div>
         {supervisor.status === "idle" ? (
-          <RunHistory runs={workbench.runs} />
+          <RunHistory
+            latestRunId={workbench.runs.at(-1)?.id}
+            onReopen={() => setSelectedReport("final")}
+            runs={workbench.runs}
+          />
         ) : (
           <DeliverableViewer selected={selectedReport} onSelect={setSelectedReport} workbench={workbench} />
         )}
