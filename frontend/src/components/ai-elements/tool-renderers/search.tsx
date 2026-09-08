@@ -21,8 +21,13 @@ function hostname(url: string): string | undefined {
 }
 
 function toHits(d: unknown): Hit[] | null {
-  if (!isRecord(d) || !Array.isArray(d.results)) return null;
-  return d.results.flatMap((r): Hit[] => {
+  // kawai webread emits {query, engine, count, hits:[{url,title,snippet,content}]};
+  // the web SPA shape is {results:[{url,title,snippet,site_name,…}]}
+  const arr = isRecord(d)
+    ? (Array.isArray(d.results) ? d.results : Array.isArray(d.hits) ? d.hits : null)
+    : null;
+  if (!arr) return null;
+  return arr.flatMap((r): Hit[] => {
     if (!isRecord(r)) return [];
     const url = str(r.url) ?? str(r.link);
     if (!url) return [];
