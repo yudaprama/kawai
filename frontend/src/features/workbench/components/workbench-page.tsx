@@ -94,7 +94,8 @@ function ProgressRail({
   const togglePhase = (i: number) =>
     setCollapsedPhases((prev) => {
       const next = new Set(prev);
-      if (next.has(i)) next.delete(i); else next.add(i);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
       return next;
     });
   return (
@@ -147,40 +148,42 @@ function ProgressRail({
                   onClick={() => togglePhase(i)}
                   type="button"
                 >
-                  <ChevronDownIcon className={`size-3 transition-transform ${collapsedPhases.has(i) ? "-rotate-90" : ""}`} />
+                  <ChevronDownIcon
+                    className={`size-3 transition-transform ${collapsedPhases.has(i) ? "-rotate-90" : ""}`}
+                  />
                   {phases.length > 1 ? `Phase ${i + 1}` : "Steps"}
                   {allSettled && <span className="text-muted-foreground ml-1 normal-case">· settled</span>}
                 </button>
                 {!collapsedPhases.has(i) && (
-                <div className="ml-2 space-y-1.5">
-                  {phase.map((step) => (
-                    <div key={step.stepId} className="space-y-0.5">
-                      <div className="flex items-center justify-between gap-2 font-mono text-xs">
-                        <span className="text-foreground/90 min-w-0 truncate" title={agentName(step)}>
-                          {agentName(step)}
-                        </span>
-                        <StateIcon state={step.state} />
+                  <div className="ml-2 space-y-1.5">
+                    {phase.map((step) => (
+                      <div key={step.stepId} className="space-y-0.5">
+                        <div className="flex items-center justify-between gap-2 font-mono text-xs">
+                          <span className="text-foreground/90 min-w-0 truncate" title={agentName(step)}>
+                            {agentName(step)}
+                          </span>
+                          <StateIcon state={step.state} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          {step.state === "running" && step.startedAt != null ? (
+                            <Duration from={step.startedAt} />
+                          ) : (
+                            <span className="text-muted-foreground font-mono text-[10px]">{step.tool}</span>
+                          )}
+                          {step.output && step.state === "completed" && (
+                            <button
+                              className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                              onClick={() => onOpenReport(step.stepId)}
+                              type="button"
+                            >
+                              <FileTextIcon className="size-3" />
+                              see report
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between">
-                        {step.state === "running" && step.startedAt != null ? (
-                          <Duration from={step.startedAt} />
-                        ) : (
-                          <span className="text-muted-foreground font-mono text-[10px]">{step.tool}</span>
-                        )}
-                        {step.output && step.state === "completed" && (
-                          <button
-                            className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
-                            onClick={() => onOpenReport(step.stepId)}
-                            type="button"
-                          >
-                            <FileTextIcon className="size-3" />
-                            see report
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
                 )}
               </div>
             );
@@ -233,11 +236,7 @@ function ProgressRail({
             {supervisor.pendingConfirmation.description || supervisor.pendingConfirmation.task}
           </p>
           <div className="flex gap-2">
-            <Button
-              className="flex-1"
-              onClick={workbench.supervisor.approve}
-              size="sm"
-            >
+            <Button className="flex-1" onClick={workbench.supervisor.approve} size="sm">
               <PlayIcon className="size-3" />
               Approve
             </Button>
@@ -426,14 +425,10 @@ function DeliverableViewer({
               DOCX
             </Button>
             {exportedName && (
-              <span className="text-success font-mono text-[11px]">
-                Saved as {exportedName} — view it in Documents
-              </span>
+              <span className="text-success font-mono text-[11px]">Saved as {exportedName} — view it in Documents</span>
             )}
             {exportError && (
-              <span className="text-destructive font-mono text-[11px]">
-                Export failed: {exportError}
-              </span>
+              <span className="text-destructive font-mono text-[11px]">Export failed: {exportError}</span>
             )}
           </div>
         )}
