@@ -59,6 +59,25 @@ function Duration({ from, to }: { from: number; to?: number }) {
 
 // ── Left rail: progress phases ──────────────────────────────────────────────
 
+function statusLabel(status: ReturnType<typeof useWorkbench>["supervisor"]["status"]): string {
+  switch (status) {
+    case "reviewing":
+      return "Awaiting review";
+    case "running":
+      return "Running";
+    case "awaitingConfirmation":
+      return "Awaiting confirmation";
+    case "stopping":
+      return "Stopping";
+    case "completed":
+      return "Complete";
+    case "failed":
+      return "Failed";
+    default:
+      return "Idle";
+  }
+}
+
 function ProgressRail({
   workbench,
   onOpenReport,
@@ -71,6 +90,13 @@ function ProgressRail({
   const { supervisor } = workbench;
   const phases = computePhases(supervisor.steps);
   const deliverableStep = supervisor.steps.find(isDeliverableStep);
+  const [collapsedPhases, setCollapsedPhases] = useState<Set<number>>(new Set());
+  const togglePhase = (i: number) =>
+    setCollapsedPhases((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
   return (
     <div className="flex h-full flex-col">
       <div className="border-primary/30 mb-4 border-b pb-3">
@@ -79,7 +105,7 @@ function ProgressRail({
           Progress
         </h2>
         <div className="text-foreground/80 mt-1 font-mono text-xs font-bold">
-          {supervisor.goal ? `Analyzing · ${supervisor.goal.slice(0, 40)}` : "Idle"}
+          {supervisor.goal ? `${statusLabel(supervisor.status)} · ${supervisor.goal.slice(0, 40)}` : "Idle"}
         </div>
         {supervisor.planStartedAt != null && (
           <div className="text-muted-foreground font-mono text-xs">
@@ -116,13 +142,16 @@ function ProgressRail({
               // biome-ignore lint/suspicious/noArrayIndexKey: phases are derived wave buckets with no stable identity
               <div key={i}>
                 <button
+                  aria-expanded={!collapsedPhases.has(i)}
                   className="text-foreground/80 hover:text-foreground mb-2 flex w-full items-center gap-1 font-mono text-[10px] font-bold tracking-wider uppercase"
+                  onClick={() => togglePhase(i)}
                   type="button"
                 >
-                  <ChevronDownIcon className="size-3" />
+                  <ChevronDownIcon className={`size-3 transition-transform ${collapsedPhases.has(i) ? "-rotate-90" : ""}`} />
                   {phases.length > 1 ? `Phase ${i + 1}` : "Steps"}
                   {allSettled && <span className="text-muted-foreground ml-1 normal-case">· settled</span>}
                 </button>
+                {!collapsedPhases.has(i) && (
                 <div className="ml-2 space-y-1.5">
                   {phase.map((step) => (
                     <div key={step.stepId} className="space-y-0.5">
@@ -152,6 +181,7 @@ function ProgressRail({
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             );
           })}
@@ -305,6 +335,7 @@ function DeliverableViewer({
   useEffect(() => {
     setFullOutputs({});
     setExportedName(null);
+    setExportError(null);
   }, [supervisor.goal, supervisor.planVersion]);
 
   const full = step ? fullOutputs[step.stepId] : undefined;
@@ -316,10 +347,12 @@ function DeliverableViewer({
   // Export the deliverable as a stored .pdf/.docx via the office engines.
   const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
   const [exportedName, setExportedName] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const exportGoal = async (format: "pdf" | "docx") => {
     if (supervisor.finalOutput == null || exporting) return;
     setExporting(format);
     setExportedName(null);
+    setExportError(null);
     const slug =
       (supervisor.goal ?? "deliverable")
         .toLowerCase()
@@ -332,9 +365,11 @@ function DeliverableViewer({
         filename: `${slug}.${format}`,
       });
       setExportedName(file.originalName);
+      setExportError(null);
     } catch (err) {
       console.error("[workbench] export_deliverable:", errText(err));
       setExportedName(null);
+      setExportError(errText(err));
     } finally {
       setExporting(null);
     }
@@ -393,6 +428,11 @@ function DeliverableViewer({
             {exportedName && (
               <span className="text-success font-mono text-[11px]">
                 Saved as {exportedName} — view it in Documents
+              </span>
+            )}
+            {exportError && (
+              <span className="text-destructive font-mono text-[11px]">
+                Export failed: {exportError}
               </span>
             )}
           </div>

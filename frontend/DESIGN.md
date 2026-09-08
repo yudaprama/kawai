@@ -2,61 +2,91 @@
 
 The app runs in **auto mode**: every request goes through the supervisor planner
 against the merged all-domain tool registry. There is no agent picker. The
-layout is identical for every task:
+primary surface is the **Workbench** — a goal-centric three-pane layout:
 
 ```text
-┌──────────┬──────────────────────────────────────────┬─────────────┬──────────┐
-│ ASSETS   │ header: session title · model status ·   │             │ SESSIONS │
-│ RAIL     │         thinking · canvas · history      │   CHAT      │ (xl+)    │
-│ (left)   ├──────────────────────────────────────────┤   (center)  │ search + │
-│          │  Plan panel (while a plan runs)          │             │ grouped  │
-│ New Task │  Conversation (max-w-2xl)                │   CANVAS    │ list,    │
-│ Wiki     │  Composer (capsule, max-w-2xl)           │   (xl+)     │ rename / │
-│ Code     │                                          │             │ archive  │
-│ Skills   │                                          │             │          │
-│ Memory   │                                          │             │          │
-│ Databases│                                          │             │          │
-├──────────┴──────────────────────────────────────────┴─────────────┴──────────┤
-│ rail footer: avatar · user · sign out · appearance (light/dark/system)        │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌──────────┬──────────────────────────────────────────┬─────────────────────┐
+│ ASSETS   │ center: deliverable viewer               │ right: goal composer│
+│ RAIL     │  · status header (step count, duration)  │  + Messages & Tools │
+│ (left)   │  · rendered deliverable (markdown)       │   timeline          │
+│          │  · AGENT REPORTS switcher                │                     │
+│ New Task ├──────────────────────────────────────────┤                     │
+│ Wiki     │ left: ProgressRail (lg+)                 │                     │
+│ Code     │  · status header + phase list            │                     │
+│ Skills   │  · collapsible phases with step states   │                     │
+│ Memory   │  · deliverable writer row                │                     │
+│ Databases│  · stop / resume / new goal buttons      │                     │
+├──────────┴──────────────────────────────────────────┴─────────────────────┤
+│ rail footer: avatar · user · sign out · appearance (light/dark/system)     │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
+
+## Landing (home)
+
+Full-screen hero with a centered capsule composer. The goal is the whole
+screen — no rails, no distractions. Below the composer: a hint about `@`
+file attachments. Below that: run history (clickable rows for the most
+recent completed run). Submitting a goal transitions to the Workbench run
+view.
 
 ## Panes
 
-- **Assets rail (left, 190–210px, collapsible).** New Task plus five asset
-  workspaces (Wiki, Code, Skills, Memory, Databases). An asset view replaces
-  the center pane; Esc or Back returns to chat. Below `lg` the rail becomes an
-  overlay drawer opened from the header menu.
-- **Chat (center).** Header carries the session title, model warm-up status,
-  the Thinking toggle, the Canvas toggle, and session history (below `xl`; at
-  `xl+` the persistent sessions rail replaces that button). The plan panel
-  renders above the conversation while a plan executes: progress rail,
-  per-step status icons, tool badges, artifacts (files are clickable and open
-  the preview), and the final output disclosure. Empty state shows the agent
-  icon, description, and prompt chips that drop their text into the composer
-  for editing. Analytics adds an onboarding card (import file / connect
-  database) when no data sources exist.
-- **Canvas (tool output, optional).** Toggle from the header (⌘2). At `xl+` it
-  is a third inline pane; from `lg` to `xl` it overlays the conversation as a
-  drawer so the chat keeps its reading width. Hosts tool workbenches and
-  document previews.
-- **Sessions.** At `xl+` a persistent 224px rail with search, date grouping,
-  rename, archive, and two-click delete; below `xl` the same list lives in the
-  ⌘K dialog. Both surfaces share the row component and filter logic.
+- **Assets rail (left, 190–210px, collapsible).** New Task plus six asset
+  workspaces (Wiki, Code, Skills, Memory, Databases, Wallet). An asset view
+  replaces the center pane; Esc or Back returns to the Workbench. Below `lg`
+  the rail becomes a full-screen overlay drawer (dark backdrop, Esc/tap-out
+  to close).
+- **ProgressRail (left, 72px wide, lg+).** Visible during a run. Shows the
+  status header (mapped from supervisor state — Planning, Running, Complete,
+  Failed, etc.), duration, and collapsible phases. Each phase header is an
+  `aria-expanded` toggle with a rotating chevron; clicking collapses or
+  expands the step list. Step rows show: agent name (truncated to 48 chars),
+  state icon (pending/running/completed/failed/skipped), tool name or live
+  duration, and a "see report" link for completed steps. Below the phases:
+  the deliverable writer row, then context-sensitive buttons (Stop, Resume,
+  New goal).
+- **DeliverableViewer (center).** The main content area. Shows the rendered
+  deliverable (markdown via Streamdown), individual step reports, or the
+  run history when idle. A header shows the title and step count + duration.
+  Below the deliverable: the AGENT REPORTS switcher (grid of step name
+  buttons — "★ Deliverable" plus one per completed/failed step). Clicking a
+  step name pins the viewer to that report; "auto" mode follows the newest
+  completed work. Export buttons (PDF, DOCX) appear below the deliverable
+  when a run is completed; success shows the saved filename, failure shows
+  an inline error message.
+- **ComposerAndTimeline (right, 80px wide, md+).** Top: the goal composer
+  (ChatComposer capsule, locked during a run with a stop button). Middle:
+  "Messages & Tools" timeline — chronological machine log of planner rounds,
+  step starts, completions, and failures, each with a colored badge (Plan,
+  Tool, Done, Failed) and wall-clock offset from plan start.
 
 ## Composer
 
-Capsule input (max-w-2xl) with attachment chips on top. Left tools: `@` file
-mention (knowledge search + import entry points), template picker, speech
-input. Right: submit; while streaming it becomes stop. ArrowUp recalls the
-last user message; Esc stops a running plan (except inside dialogs and other
-editable contexts outside the composer).
+Capsule input (max-w-2xl) with attachment chips on top. The composer is
+shared between the Workbench landing, the right rail during a run, and any
+asset workspace that needs text input. Left tools: `@` file mention
+(knowledge search + import entry points), template picker, speech input.
+Right: submit; while streaming it becomes stop. ArrowUp recalls the last
+user message; Esc stops a running plan (except inside dialogs and other
+editable contexts outside the composer). Placeholder changes by context:
+"Describe your goal…" on the Workbench, "Message <agent>…" for chat-style
+agents.
 
 ## Confirmations
 
-Sensitive plan steps pause for an in-composer confirmation card: icon and tool
-badge derived from the executing step's tool, the action prompt (two lines),
-Approve / Reject. Buttons disable while the plan is busy.
+Sensitive plan steps pause the run with `status: "awaitingConfirmation"`. The
+confirmation card appears in the center pane: icon and tool badge derived from
+the executing step's tool, the action prompt, and Approve / Reject buttons.
+Buttons disable while the plan is busy.
+
+## Run history
+
+Visible on the landing hero (below the composer) and in the center pane when
+a run is idle. Each run shows: goal, timestamp, step count, output preview
+(first 60 chars). The most recent completed/failed run is a clickable button
+with a "View report" affordance and hover state; clicking opens the
+Workbench run view with that run's deliverable. Older runs are non-interactive
+(S1: only the latest run's supervisor state is held in memory).
 
 ## Visual language
 
@@ -65,18 +95,26 @@ Approve / Reject. Buttons disable while the plan is busy.
   `--tea-*` values. Step-state and status colors use token classes
   (`text-success`, `text-primary`, `text-destructive`) — never raw palette
   hex classes.
-- **Typography:** system sans (`--tea-font-family-default`), monospace only
-  for tool names, handles, and data. Conversation measure is `max-w-2xl`.
-- **Radii/elevation:** `--radius: 0.375rem` base; cards `rounded-xl` with
-  `shadow-xs`; pills only for small controls (status pills, chips).
+- **Typography:** system sans (`--tea-font-family-default`) for body text and
+  labels; monospace (`--tea-font-family-code`) for tool names, handles,
+  durations, phase headers, step rows, and the Messages & Tools timeline.
+  Deliverable body renders as markdown (system sans). Composer placeholder
+  and rail hints use `text-[10px]`–`text-xs` sizes.
+- **Radii/elevation:** `--radius: 0.375rem` base; cards `rounded-lg` with
+  `border`; pills only for small controls (status pills, chips).
 - **Motion:** press feedback `scale(0.97)` under `prefers-reduced-motion:
-  no-preference`; progress bar animates width 500ms ease-out; all animation
-  collapses under `prefers-reduced-motion: reduce`.
+  no-preference`; phase chevron rotates 90° on collapse; spinner animation
+  for running steps and loading states; all animation collapses under
+  `prefers-reduced-motion: reduce` (spinners slow to 2.5s, pings disabled).
 - **Iconography:** lucide, 16px stroke icons; icon-only controls always carry
-  `aria-label` + `title`.
+  `aria-label` + `title`. State icons: CheckCircle2 (completed), CircleX
+  (failed), LoaderCircle (running), ChevronDown (collapsed/skipped), empty
+  circle (pending).
 
 ## Mobile (< lg)
 
-Assets rail becomes a left overlay drawer (dark backdrop, Esc/tap-out to
-close). Sessions move to the ⌘K dialog entry point in the header; canvas
-stays hidden below `lg`.
+Assets rail becomes a full-screen overlay drawer (dark backdrop, Esc/tap-out
+to close). The Workbench run view shows only the center DeliverableViewer
+pane — ProgressRail (lg+) and ComposerAndTimeline (md+) are hidden. Run
+history is visible on the landing hero. Mobile composer access is available
+on landing; during a run, the composer is only accessible on md+ screens.
