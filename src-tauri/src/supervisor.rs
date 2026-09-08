@@ -927,7 +927,7 @@ pub async fn build_supervisor_registry(
                     provider: "supervisor",
                     tool: Some(name.as_str()),
                     input_tokens: None,
-                    output_tokens: Some(result.text().map(|t| t.len() as i64 / 4)),
+                    output_tokens: result.text().map(|t| t.len() as i64 / 4),
                     latency_ms,
                     outcome: if success { "tool" } else { "error" },
                 },
