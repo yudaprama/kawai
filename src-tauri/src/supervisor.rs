@@ -914,7 +914,25 @@ pub async fn build_supervisor_registry(
                 });
             }
             let args = kawai_router::canonical_json(&args_value);
+            let started = std::time::Instant::now();
             let result = toolset.execute(&name, args.clone()).await;
+            let latency_ms = started.elapsed().as_millis() as i64;
+            // Per-step telemetry (turn_log) — best-effort, never fails a step.
+            let success = result.is_success();
+            kawai_db::log_turn(
+                &db_user_id,
+                kawai_db::TurnLogEntry {
+                    session_id: db_session_id,
+                    agent_id: call.step.agent_id.as_str(),
+                    provider: "supervisor",
+                    tool: Some(name.as_str()),
+                    input_tokens: None,
+                    output_tokens: Some(result.text().map(|t| t.len() as i64 / 4)),
+                    latency_ms,
+                    outcome: if success { "tool" } else { "error" },
+                },
+            )
+            .await;
 
             let output = result.text().unwrap_or("").to_string();
             let (error, status) = if result.is_success() {
