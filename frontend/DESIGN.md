@@ -2,23 +2,26 @@
 
 The app runs in **auto mode**: every request goes through the supervisor planner
 against the merged all-domain tool registry. There is no agent picker. The
-primary surface is the **Workbench** — a goal-centric three-pane layout:
+primary surface is the **Workbench** — a goal-centric two-pane layout:
 
 ```text
-┌──────────┬──────────────────────────────────────────┬─────────────────────┐
-│ ASSETS   │ center: deliverable viewer               │ right: goal composer│
-│ RAIL     │  · status header (step count, duration)  │  + Messages & Tools │
-│ (left)   │  · rendered deliverable (markdown)       │   timeline          │
-│          │  · AGENT REPORTS switcher                │                     │
-│ New Task ├──────────────────────────────────────────┤                     │
-│ Wiki     │ left: ProgressRail (lg+)                 │                     │
-│ Code     │  · status header + phase list            │                     │
-│ Skills   │  · collapsible phases with step states   │                     │
-│ Memory   │  · deliverable writer row                │                     │
-│ Databases│  · stop / resume / new goal buttons      │                     │
-├──────────┴──────────────────────────────────────────┴─────────────────────┤
-│ rail footer: avatar · user · sign out · appearance (light/dark/system)     │
-└───────────────────────────────────────────────────────────────────────────┘
+┌──────────┬───────────────────────────────────────────┐
+│ ASSETS   │ deliverable viewer                        │
+│ RAIL     │  · status header (step count, duration)   │
+│ (left)   │  · rendered deliverable (markdown)        │
+│          │  · AGENT REPORTS switcher                 │
+│ New Task ├───────────────────────────────────────────┤
+│ Wiki     │ sidebar: ProgressRail (lg+)               │
+│ Code     │  · status header + phase list             │
+│ Skills   │  · collapsible phases with step states    │
+│ Memory   │  · Messages & Tools timeline (collapsible)│
+│ Databases│  · deliverable writer row                 │
+│          │  · stop / resume / new goal buttons       │
+│          ├───────────────────────────────────────────┤
+│          │ sidebar footer: goal composer (pinned)    │
+├──────────┴───────────────────────────────────────────┤
+│ rail footer: avatar · user · sign out · appearance    │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## Landing (home)
@@ -54,16 +57,17 @@ view.
   completed work. Export buttons (PDF, DOCX) appear below the deliverable
   when a run is completed; success shows the saved filename, failure shows
   an inline error message.
-- **ComposerAndTimeline (right, 80px wide, md+).** Top: the goal composer
-  (ChatComposer capsule, locked during a run with a stop button). Middle:
-  "Messages & Tools" timeline — chronological machine log of planner rounds,
-  step starts, completions, and failures, each with a colored badge (Plan,
-  Tool, Done, Failed) and wall-clock offset from plan start.
+- **Sidebar (left, 384px wide, lg+).** Upper region (scrolls): ProgressRail
+  (status header, collapsible phases, deliverable writer row, stop/resume/new
+  goal buttons) then the collapsible "Messages & Tools" timeline —
+  chronological machine log of planner rounds, step starts, completions, and
+  failures, each with a colored badge (Plan, Tool, Done, Failed) and
+  wall-clock offset from plan start. Footer (pinned): the goal composer.
 
 ## Composer
 
 Capsule input (max-w-2xl) with attachment chips on top. The composer is
-shared between the Workbench landing, the right rail during a run, and any
+shared between the Workbench landing, the sidebar footer during a run, and any
 asset workspace that needs text input. Left tools: `@` file mention
 (knowledge search + import entry points), template picker, speech input.
 Right: submit; while streaming it becomes stop. ArrowUp recalls the last
@@ -114,7 +118,7 @@ Workbench run view with that run's deliverable. Older runs are non-interactive
 ## Mobile (< lg)
 
 Assets rail becomes a full-screen overlay drawer (dark backdrop, Esc/tap-out
-to close). The Workbench run view shows only the center DeliverableViewer
-pane — ProgressRail (lg+) and ComposerAndTimeline (md+) are hidden. Run
-history is visible on the landing hero. Mobile composer access is available
-on landing; during a run, the composer is only accessible on md+ screens.
+to close). The Workbench run view shows only the deliverable viewer pane —
+the sidebar (ProgressRail, timeline, composer) is hidden. Run history is
+visible on the landing hero. Mobile composer access is available on landing;
+during a run, the composer is only accessible on lg+ screens.

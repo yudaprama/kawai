@@ -484,51 +484,22 @@ function DeliverableViewer({
   );
 }
 
-// ── Right rail: composer + machine timeline ─────────────────────────────────
+// ── Machine timeline (collapsible section under the progress phases) ───────
 
-function ComposerAndTimeline({
-  workbench,
-  composerProps,
-}: {
-  workbench: ReturnType<typeof useWorkbench>;
-  composerProps: {
-    agentName: string;
-    status: "ready" | "submitted";
-    onStop: () => void;
-    onSubmit: (text: string, fileIds?: string[]) => void;
-    onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
-    onAddFiles?: () => void;
-    onAddLink?: () => void;
-  };
-}) {
-  const { supervisor } = workbench;
+function ActivityTimeline({ workbench }: { workbench: ReturnType<typeof useWorkbench> }) {
+  const [open, setOpen] = useState(true);
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-primary/20 border-b p-4">
-        <h2 className="text-foreground mb-3 font-mono text-sm font-bold">Goal</h2>
-        {supervisor.status === "reviewing" ? (
-          <p className="text-muted-foreground font-mono text-[11px]">
-            A plan is awaiting your review — approve it in the Progress rail.
-          </p>
-        ) : (
-          <ChatComposer
-            agentName={composerProps.agentName}
-            lastUserText={null}
-            onAddFiles={composerProps.onAddFiles}
-            onAddLink={composerProps.onAddLink}
-            onImageToKnowledge={composerProps.onImageToKnowledge}
-            onSubmit={composerProps.onSubmit}
-            onStop={composerProps.onStop}
-            status={composerProps.status}
-          />
-        )}
-        {workbench.sessionError && (
-          <p className="text-destructive mt-2 font-mono text-[11px]">{workbench.sessionError}</p>
-        )}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <h2 className="text-foreground mb-3 font-mono text-sm font-bold">Messages &amp; Tools</h2>
+    <div className="mt-6">
+      <button
+        aria-expanded={open}
+        className="text-foreground/80 hover:text-foreground mb-2 flex w-full items-center gap-1 font-mono text-[10px] font-bold tracking-wider uppercase"
+        onClick={() => setOpen((v) => !v)}
+        type="button"
+      >
+        <ChevronDownIcon className={`size-3 transition-transform ${open ? "" : "-rotate-90"}`} />
+        Messages &amp; Tools
+      </button>
+      {open && (
         <div className="space-y-3">
           {workbench.timeline.map((row) => (
             <TimelineView key={row.id} row={row} />
@@ -537,7 +508,7 @@ function ComposerAndTimeline({
             <p className="text-muted-foreground font-mono text-[11px]">No activity yet.</p>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -643,8 +614,9 @@ export interface WorkbenchPageProps {
 }
 
 /** The kawai Workbench — the work-centric primary surface (PLAN-workbench.md).
- *  Left: progress phases. Center: the deliverable. Right: goal composer +
- *  machine timeline. Results never enter chat. */
+ *  Left: a single sidebar — progress phases + Messages & Tools timeline, with
+ *  the goal composer pinned at the bottom. Right: the deliverable. Results
+ *  never enter chat. */
 export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: WorkbenchPageProps) {
   const workbench = useWorkbench();
   const { supervisor } = workbench;
@@ -658,6 +630,9 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
 
   const submit = (text: string, fileIds?: string[]) => {
     if (!text.trim()) return;
+    // A plan awaiting review owns the rail — new goals wait until it is run
+    // or discarded.
+    if (supervisor.status === "reviewing") return;
     setHome(false);
     setSelectedReport("auto"); // follow the new run's work, not a stale pin
     void workbench.run(text, fileIds);
@@ -727,19 +702,43 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
 
   return (
     <div className="bg-background flex h-full w-full overflow-hidden">
-      {/* Left: progress rail */}
-      <aside className="border-border/60 hidden w-72 shrink-0 overflow-y-auto border-r p-4 lg:block">
-        <ProgressRail
-          workbench={workbench}
-          onNewGoal={() => {
-            setSelectedReport("auto"); // stale pin would blank the next run
-            setHome(true);
-          }}
-          onOpenReport={openReport}
-        />
+      {/* Left: one sidebar — progress + timeline (scrolls), composer pinned at
+          the bottom. */}
+      <aside className="border-border/60 hidden w-96 shrink-0 flex-col border-r lg:flex">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <ProgressRail
+            workbench={workbench}
+            onNewGoal={() => {
+              setSelectedReport("auto"); // stale pin would blank the next run
+              setHome(true);
+            }}
+            onOpenReport={openReport}
+          />
+          <ActivityTimeline workbench={workbench} />
+        </div>
+        <div className="border-border/60 border-t p-4">
+          {supervisor.status === "reviewing" && (
+            <p className="text-muted-foreground mb-2 font-mono text-[11px]">
+              A plan is awaiting your review above — run or discard it first.
+            </p>
+          )}
+          <ChatComposer
+            agentName="Workbench"
+            lastUserText={null}
+            onAddFiles={onAddFiles}
+            onAddLink={onAddLink}
+            onImageToKnowledge={onImageToKnowledge}
+            onSubmit={submit}
+            onStop={workbench.supervisor.stop}
+            status={composerStatus}
+          />
+          {workbench.sessionError && (
+            <p className="text-destructive mt-2 font-mono text-[11px]">{workbench.sessionError}</p>
+          )}
+        </div>
       </aside>
 
-      {/* Center: deliverable (or history when idle) */}
+      {/* Right: the deliverable (or history when idle) */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="border-border/60 flex items-center justify-between border-b px-4 py-2">
           <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">Kawai Workbench</span>
@@ -754,22 +753,6 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
           <DeliverableViewer selected={selectedReport} onSelect={setSelectedReport} workbench={workbench} />
         )}
       </main>
-
-      {/* Right: composer + timeline */}
-      <aside className="border-border/60 hidden w-80 shrink-0 overflow-hidden border-l md:flex md:flex-col">
-        <ComposerAndTimeline
-          composerProps={{
-            agentName: "Workbench",
-            status: composerStatus,
-            onStop: workbench.supervisor.stop,
-            onSubmit: submit,
-            onImageToKnowledge,
-            onAddFiles,
-            onAddLink,
-          }}
-          workbench={workbench}
-        />
-      </aside>
     </div>
   );
 }

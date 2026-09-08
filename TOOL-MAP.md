@@ -40,6 +40,7 @@ Source: `src-tauri/src/agent_registry.rs` → `add_runtime_tools`.
 |---|---|---|---|
 | `memory_search` | `kawai-memory` (`memory::tools`) | always | hybrid semantic recall over L1 memories |
 | `memory_graph_search` | `kawai-memory` | always | entity lookup over `memory_entities` mentions |
+| `session_step_results` | `kawai-agent` (`session_history.rs`) | always | cross-run memory: read earlier runs' persisted step outputs (incl. each run's `deliverable_writer` answer) in the same session — user+session bound at toolset build |
 | `artifact_recall` | `kawai-agent` | always | page back oversized TurnMemory results (`handle, offset`) |
 | `codegraph_explore` / `codegraph_status` | `kawai-codegraph` (`crates/toolsets/codegraph`) | feature `codegraph` | surgical code context via sidecar (15m LRU, 12/min) |
 | `deep_write` | `kawai-agent` | remote configured | cloud long-form synthesis subagent |
@@ -252,6 +253,7 @@ Memory / knowledge (`kawai-memory`, `kawai-knowledge`):
 | `memory_search` | text lines `- (kind \| mem_id) Title: content` | `MemoryLinesView` — badge = kind |
 | `memory_graph_search` | `## Entity` sections of the same lines | `MemoryGraphView` |
 | `knowledge_search` | JSON array of `{source, locator, content}` hits | reuses vendored `renderKnowledgeSearch` |
+| `session_step_results` | `{"entries":[{run, is_last_run, tool, finished_at, output, truncated}], "note"?}` | `SessionStepResultsView` — card per entry, markdown body, "last run" pill, truncation note |
 
 Finance (`generated-tools/finance`):
 

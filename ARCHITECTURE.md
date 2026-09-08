@@ -5,7 +5,7 @@ The backend also ships as a standalone web server (`kawai-web` crate, Axum, inde
 
 ## Goals
 
-- Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from domain crates, composed through `AgentDefinition` tool builders. UI: the **Kawai Workbench** — landing goal-composer hero, then a three-pane run view (progress rail with named phases/agents | deliverable viewer | goal composer + Messages & Tools timeline).
+- Product: **an AI agents app** — a catalog of specialized agents; each agent = LLM persona + curated toolset from domain crates, composed through `AgentDefinition` tool builders. UI: the **Kawai Workbench** — landing goal-composer hero, then a two-pane run view (left sidebar: progress rail + Messages & Tools timeline with the goal composer pinned below | deliverable viewer).
 - End state: **desktop + mobile + web from one core**; app logic is 100% shared, only transport and launcher differ per target.
 - Current phase: **MVP, desktop-first** (macOS, on-device LLM, local email+password auth). Scope and priorities live in `AGENTS.md` → "Current phase" + "Roadmap"; the phase defers work, never architecture — the invariants in AGENTS.md are what keeps mobile/web cheap later.
 - Frontend: React 19 + TypeScript + Vite + Tailwind v4, in `frontend/` (built to `dist/`, Tauri `frontendDist: "../dist"`). UI components vendored from the main `web/` SPA (markdown renderer, prompt-input, ai-elements). **No AI SDK** — stream events are mapped to UIMessage-part shapes by hand (`features/chat/hooks/use-supervisor-plan.ts` + `lib/ai-types.ts`).

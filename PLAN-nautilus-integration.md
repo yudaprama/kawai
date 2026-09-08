@@ -265,7 +265,7 @@ this plan before it ships.
    `strategy_deploy`, `strategy_list`, `strategy_status`, `strategy_stop`,
    plus agent monitoring tools (`portfolio_positions`, `portfolio_pnl`).
    Streaming ones reuse the `stream_id` + cancel-registry pattern.
-3. Desktop app gains a Strategy panel (three-pane layout keeps): list,
+3. Desktop app gains a Strategy panel (two-pane layout keeps): list,
    backtest results, deploy confirmation with caps displayed, live status.
    Market-price streaming INTO the UI (if built) uses `binance-sdk`'s own
    WebSocket directly — nautilus is not needed for display-grade streams.

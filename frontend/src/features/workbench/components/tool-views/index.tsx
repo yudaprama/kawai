@@ -14,6 +14,7 @@ import {
   MemoryLinesView,
   NewsListView,
   PdfPagesView,
+  SessionStepResultsView,
   SocialFeedView,
   SparklineView,
   StockQuoteView,
@@ -55,6 +56,9 @@ const registry: Record<string, StepView> = {
   // memory
   memory_search: (_, raw) => <MemoryLinesView text={raw} />,
   memory_graph_search: (_, raw) => <MemoryGraphView text={raw} />,
+
+  // session history — earlier runs' step outputs (cross-run read surface)
+  session_step_results: (p) => (isRecord(p) ? <SessionStepResultsView data={p} /> : null),
 
   // web search — reuse the shared search result renderer
   web_search: (p) => renderWebSearch(p),

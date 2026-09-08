@@ -1387,6 +1387,8 @@ pub fn execute_plan_stream(
         tokio_util::sync::CancellationToken::new(),
         Arc::new(Mutex::new(HashMap::new())),
         "legacy".into(),
+        String::new(),
+        0,
         None,
     )
 }
@@ -1397,6 +1399,11 @@ pub fn execute_plan_stream_with_cancel(
     cancel: tokio_util::sync::CancellationToken,
     pending: PendingConfirmations,
     stream_id: String,
+    // Identity for persisting the deliverable into `supervisor_step_results`
+    // (the cross-run read surface for `session_step_results`). Empty user_id
+    // (legacy/test callers) skips persistence.
+    user_id: String,
+    session_id: i64,
     // The user's verbatim goal. The planner is free to rewrite `plan.goal`
     // (it plans, so it reframes) — but the deliverable must answer what the
     // USER asked, so synthesis prefers this over the rewritten goal.
@@ -1527,6 +1534,26 @@ pub fn execute_plan_stream_with_cancel(
                             eprintln!("[supervisor] synthesis unavailable — falling back to raw final output");
                         }
                         let written = synthesized.clone().or_else(|| raw_final.clone());
+                        // Persist the deliverable alongside the tool-step
+                        // results so later runs in this session can read it
+                        // via `session_step_results` (the enhancement chain).
+                        if let Some(written) = &written {
+                            if !user_id.is_empty() {
+                                let _ = kawai_db::upsert_supervisor_step_result(
+                                    &user_id,
+                                    session_id,
+                                    &plan_key(&current_plan),
+                                    &kawai_db::SupervisorStepResult {
+                                        tool: DELIVERABLE_TOOL.into(),
+                                        args_key: "deliverable".into(),
+                                        step_id: DELIVERABLE_STEP_ID.into(),
+                                        output: written.clone(),
+                                        artifacts_json: "[]".into(),
+                                    },
+                                )
+                                .await;
+                            }
+                        }
                         yield SupervisorEvent::StepCompleted {
                             step_id: DELIVERABLE_STEP_ID.into(),
                             output: written
@@ -1698,6 +1725,8 @@ mod tests {
             tokio_util::sync::CancellationToken::new(),
             pending.clone(),
             "st-a".into(),
+            "test-user".into(),
+            1,
             None,
         );
         let mut stream = Box::pin(stream);
@@ -1770,6 +1799,8 @@ mod tests {
             tokio_util::sync::CancellationToken::new(),
             pending.clone(),
             "st-r".into(),
+            "test-user".into(),
+            1,
             None,
         );
         let mut stream = Box::pin(stream);
@@ -1831,6 +1862,8 @@ mod tests {
             tokio_util::sync::CancellationToken::new(),
             pending,
             "st-p".into(),
+            "test-user".into(),
+            1,
             None,
         );
         let events: Vec<SupervisorEvent> = Box::pin(stream)

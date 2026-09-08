@@ -46,6 +46,50 @@ const Pill = ({ children, tone = "neutral" }: { children: ReactNode; tone?: "up"
   </span>
 );
 
+// ── session history ─────────────────────────────────────────────────────────
+
+interface SessionStepEntry {
+  run?: unknown;
+  is_last_run?: unknown;
+  tool?: unknown;
+  finished_at?: unknown;
+  output?: unknown;
+  truncated?: unknown;
+}
+
+/** session_step_results → one card per earlier-run step output, newest
+ *  first. The output is the previous run's own text (often the synthesized
+ *  deliverable) — rendered as markdown; the truncated note points at the
+ *  full body via the report switcher. */
+export function SessionStepResultsView({ data }: { data: Record<string, unknown> }) {
+  const entries = (Array.isArray(data.entries) ? data.entries : []).filter(isRecord) as SessionStepEntry[];
+  if (entries.length === 0) {
+    const note = typeof data.note === "string" ? data.note : null;
+    return note ? <SectionLabel>{note}</SectionLabel> : null;
+  }
+  return (
+    <div className="space-y-3">
+      {entries.map((e, i) => {
+        const tool = typeof e.tool === "string" ? e.tool : "step";
+        const output = typeof e.output === "string" ? e.output : "";
+        const finished = fmtDate(e.finished_at);
+        const truncated = e.truncated === true;
+        return (
+          <div className="bg-background/50 border-border/60 rounded-lg border p-3" key={`${e.run ?? "run"}-${i}`}>
+            <div className="text-muted-foreground mb-1.5 flex flex-wrap items-center gap-2 font-mono text-[11px]">
+              <span className="text-foreground/80 font-semibold">{tool === "deliverable_writer" ? "Deliverable" : tool}</span>
+              {e.is_last_run === true && <Pill>last run</Pill>}
+              {finished && <span>{finished}</span>}
+              {truncated && <span className="text-warning">truncated — full body via the report switcher</span>}
+            </div>
+            {output ? <MarkdownView text={output} /> : <SectionLabel>(no output)</SectionLabel>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── markdown ────────────────────────────────────────────────────────────────
 
 export function MarkdownView({ text }: { text: string }) {

@@ -1,6 +1,6 @@
 # Plan — Kawai Workbench: the work-centric primary surface
 
-Status: **SHIPPED (S1)** — the Workbench is the app's only surface (landing hero composer → three-pane run view, deliverable-writer synthesis, planner progress streaming). S2 backlog: tool-args + per-step LLM-usage timeline events, deliverable persistence to the office store, planner-authored agent names. (Supersedes the
+Status: **SHIPPED (S1)** — the Workbench is the app's only surface (landing hero composer → two-pane run view, deliverable-writer synthesis, planner progress streaming). S2 backlog: tool-args + per-step LLM-usage timeline events, deliverable persistence to the office store, planner-authored agent names. (Supersedes the
 trading-desk framing in `PLAN-analysis-desk.md`; that file's pipeline content
 remains as a future domain pack, not the product.)
 
@@ -22,32 +22,32 @@ Not the trading domain — the **interaction pattern**:
 Applied to **every** supervisor run (PDF, documents, decks, anything) — the
 dynamic `plan_task` planner stays; only the container changes.
 
-## The three-pane workbench
+## The two-pane workbench
 
 ```text
-┌──────────────┬────────────────────────────┬──────────────────┐
-│ PROGRESS     │ DELIVERABLE VIEWER         │ RUN + TIMELINE   │
-│ (w-72,       │ (flex-1, scrollable)       │ (w-80)           │
-│  scrollable) │                            │                  │
-│ ⚡ <goal>     │ <Deliverable title>        │ GOAL COMPOSER    │
-│   ⏱ 01:24    │ (final synthesis, growing  │ (textarea + Run; │
-│              │  live while it is written; │  locked during   │
-│ ▾ PHASE 1    │  before that: the newest   │  a run)          │
-│   ✓ <agent>  │  step report via switcher) │──────────────────│
-│     ↗ report │                            │ MESSAGES & TOOLS │
-│ ▸ PHASE 2    │ [final][s1 report][s2]…    │ 00:04 ⚒ Tool     │
-│   ⟳ <agent>  │  ← report switcher grid    │   pdf_extract_…  │
-│              │                            │   {fileId: …}    │
-│              │                            │ 00:16 ◈ Model    │
-│              │                            │   zai · 1.2k out │
-└──────────────┴────────────────────────────┴──────────────────┘
+┌──────────────────────────────┬────────────────────────────────────┐
+│ SIDEBAR (w-96, lg+)          │ DELIVERABLE VIEWER (flex-1, scroll)│
+│  upper region scrolls:       │                                    │
+│ ⚡ PROGRESS <goal>            │ <Deliverable title>                │
+│   ⏱ 01:24                    │ (final synthesis, growing live     │
+│ ▾ PHASE 1                    │  while it is written; before that: │
+│   ✓ <agent>  ↗ report        │  the newest step report via        │
+│ ▸ PHASE 2                    │  switcher)                         │
+│   ⟳ <agent>                  │                                    │
+│ ▾ MESSAGES & TOOLS           │ [final][s1 report][s2]…            │
+│   00:04 ⚒ pdf_extract_…      │  ← report switcher grid            │
+├──────────────────────────────┤                                    │
+│ GOAL COMPOSER (pinned)       │                                    │
+│ (submit-guarded while a plan │                                    │
+│  is under review)            │                                    │
+└──────────────────────────────┴────────────────────────────────────┘
 ```
 
 ## Flow
 
 **History-first.** The surface opens on the run list (past supervisor runs,
 from the persisted `supervisor-plan` records: goal, date, step tally, status).
-"New run" opens the composer in the right rail. Submitting:
+"New run" opens the composer pinned at the sidebar bottom. Submitting:
 
 1. Composer locks (state 4 — config first, then locked).
 2. `plan_task` runs → the rail fills with **named phases/agents** as the plan

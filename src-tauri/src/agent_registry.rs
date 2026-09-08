@@ -114,6 +114,13 @@ fn add_runtime_tools(
         context.user_id.to_string(),
     ));
     set.add_tool(kawai_agent::ArtifactRecall);
+    // Cross-run memory: lets a run read earlier runs' step outputs (the
+    // deliverable chain — "enhance the previous analysis"). Identity is
+    // bound here; the model can never supply user/session.
+    set.add_tool(kawai_agent::SessionStepResultsTool(
+        context.user_id.to_string(),
+        context.session_id,
+    ));
     #[cfg(feature = "codegraph")]
     {
         // Hot-path agent tools — LRU-cached sidecar (phase0), native (phase1) when available.

@@ -25,7 +25,7 @@ Status: DRAFT v2, not started. This plan deliberately pulls **Roadmap 5 (agent
 tier foundation) forward** as a thin vertical slice, with the office agent as
 its first consumer. Per AGENTS.md the agent tier is "do NOT start without the
 user asking" — this document exists because the user asked. It does NOT pull
-in the full catalog / three-pane UI (that stays Roadmap 5 proper).
+in the full catalog / two-pane UI (that stays Roadmap 5 proper).
 
 v2 change: the document engines are **not** reimplemented in Rust. kawai
 execs the existing CLI binaries — `ooxcli` (gooxml) and `pdfcli` (pdf) —

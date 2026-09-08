@@ -1911,6 +1911,8 @@ async fn execute_supervisor_plan_handler(
         req.plan, tool_registry,
         tokio_util::sync::CancellationToken::new(), pending,
         req.stream_id,
+        user_id,
+        req.session_id,
         req.user_goal,
     );
     let s = stream.map(|event| {

@@ -79,7 +79,7 @@ POST /api/run_analysis_desk   +  #[tauri::command] run_analysis_desk
 ### Frontend — new Desk surface (home), chat demoted
 
 - New route/surface `Analysis Desk` (rail entry, default view): the form lives
-  in the right rail; on run, the **three-pane workbench** (per the contract
+  in the right rail; on run, the **two-pane workbench** (per the contract
   above): left progress rail (scrollable), center report viewer (recommendation
   card + markdown + report switcher grid), right config (locked) + Messages &
   Tools timeline. Theme-token styling of the terminal look: mono type,

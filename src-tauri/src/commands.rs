@@ -1367,7 +1367,7 @@ pub async fn execute_supervisor_plan(
     .await?;
 
     let step_count = plan.steps.len();
-    let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone(), user_goal);
+    let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone(), user_id.clone(), session_id, user_goal);
     // Telemetry: this transport previously had zero logging, which made
     // scheduler anomalies (e.g. zero-step "successes") invisible.
     eprintln!("[supervisor] executing plan ({step_count} steps) for user={user_id} session={session_id}");
