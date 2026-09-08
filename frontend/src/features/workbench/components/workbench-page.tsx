@@ -351,7 +351,7 @@ function DeliverableViewer({
                 ? `${agentName(step)} — report`
                 : supervisor.goal
                   ? supervisor.goal
-                  : "Analysis Desk"}
+                  : "Deliverable"}
           </h3>
           <div className="text-muted-foreground mt-1 font-mono text-sm">
             {done}/{supervisor.steps.length} steps
@@ -392,7 +392,7 @@ function DeliverableViewer({
             </Button>
             {exportedName && (
               <span className="text-success font-mono text-[11px]">
-                Tersimpan sebagai {exportedName} — lihat di dokumen
+                Saved as {exportedName} — view it in Documents
               </span>
             )}
           </div>
@@ -402,7 +402,7 @@ function DeliverableViewer({
             {loadingFull && (
               <p className="text-muted-foreground mb-2 flex items-center gap-2 text-xs">
                 <LoaderCircleIcon className="text-primary size-3.5 animate-spin" />
-                Memuat laporan lengkap…
+                Loading full report…
               </p>
             )}
             {renderStepReport(step.tool, output)}

@@ -221,7 +221,7 @@ function ChatComposerInner({
       <PromptInputBody>
         <PromptInputTextarea
           data-chat-composer=""
-          placeholder={`Message ${agentName}…`}
+          placeholder={agentName === "Workbench" ? "Describe your goal…" : `Message ${agentName}…`}
           onChange={handleComposerChange}
           onKeyDown={handleTextareaKeyDown}
         />
