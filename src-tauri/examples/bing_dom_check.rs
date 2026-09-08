@@ -1,4 +1,4 @@
-//! Diagnostic probe: run the REAL BING_EXTRACTOR (and a raw DOM census)
+//! Diagnostic probe: run the REAL BRAVE_EXTRACTOR (and a raw DOM census)
 //! inside the hidden webview against a Bing SERP, to see exactly what the
 //! web_search tier-0 extractor sees.
 //!
@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use kawai_lib::webview_engine::TauriWebViewFetch;
-use webread::scrape::BING_EXTRACTOR;
+use webread::scrape::BRAVE_EXTRACTOR;
 use webread::WebViewFetch;
 
 fn main() {
@@ -42,7 +42,7 @@ fn main() {
                     Ok(p) => println!("[census] {p}"),
                     Err(e) => println!("[census] ERROR: {}", e.0),
                 }
-                match rt.block_on(engine.eval_page(&url, BING_EXTRACTOR)) {
+                match rt.block_on(engine.eval_page(&url, BRAVE_EXTRACTOR)) {
                     Ok(p) => {
                         let head: String = p.chars().take(600).collect();
                         println!("[extractor] len={} head:\n{head}", p.chars().count());

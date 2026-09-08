@@ -1442,7 +1442,6 @@ pub fn execute_plan_stream_with_cancel(
         });
 
         let limits = kawai_router::SchedulerLimits {
-            ..Default::default() // max_parallel = 4 (router default)
             observer: Some(observer),
             confirmation_handler: Some(gate),
             ..Default::default()
