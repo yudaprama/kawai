@@ -194,22 +194,42 @@ on-device generation takes 5–30 s depending on the call-line length.
   then inspect `fts_match_query` (src-tauri/src/logic/rag.rs) and add a unit
   test for the shape.
 
-### 3.12 web_read returns challenge text / budget exhausted
+### 3.12 web_read / web_search failures
 
-- **Check**: `app.log` line `tool result web_read: ok=true {"engine":"..."}`;
-  the engine field names the tier that served the call.
-- **Root cause (engine none + "bot-protected")**: tier-0 webview missed
-  (marker detection or thin content) AND the Cloudflare render came back
-  walled — hard JS-challenge site.
+Read chain: cache → Cloudflare → plain HTTP → webview (engine field names
+the tier that served: `cache` / `cloudflare` / `http` / `webview`).
+Search chain: DDG (DoH, single-flight + one 3s anomaly retry) → webview
+(Brave) → Wikipedia (`id` then `en`); every fallback logs its reason:
+
+```sh
+grep -a "[webread] web_search tier=" "$LOG"
+```
+
+- **Check (read)**: `app.log` line `tool result web_read: ok=true
+  {"engine":"..."}`; the engine field names the tier that served the call.
+- **Root cause (read, engine none + "bot-protected")**: Cloudflare walled
+  AND the webview tier missed (marker detection or thin content) — hard
+  JS-challenge site.
 - **Root cause ("budget exhausted for today")**: `KAWAI_CF_PER_USER_DAILY`
   (user) or `KAWAI_CF_GLOBAL_DAILY` (dev-wallet fuse) cap hit; the tool
   result carries guidance, it is NOT an error.
 - **Root cause (engine never "webview" on desktop)**: engine not registered —
   check `webread::set_webview_engine` runs in the `lib.rs` setup hook
-  (always on desktop); `kawai-web` is Cloudflare-only by design.
-- **Root cause (registered BUT every read still serves cloudflare)**: tier-0
-  failing silently inside the chain — `read_markdown` never surfaces why.
-  Reproduce outside the app shell and read the raw payload:
+  (always on desktop); `kawai-web` degrades to Cloudflare-only by design.
+- **Check (search)**: the per-tier fallback lines above name the exact
+  reason per tier (`anomaly/challenge page`, `datacenter junk-serve`,
+  `per-hit relevance filter`, `no usable hits`).
+- **Root cause (search, `duckduckgo: anomaly/challenge page persisted after
+  retry`)**: DDG volume-limits rapid POSTs from one IP — the built-in 3s
+  backoff retry already ran; the webview (Brave) tier is the designed
+  takeover. Frequent recurrence with many-search plans → consider a larger
+  stagger between DDG fetches.
+- **Root cause (search, `engine=none`, all tiers)": every tier was filtered
+  by the relevance gates — engines returned genuinely unrelated results for
+  the query. Working as designed (honest unavailability beats junk). Check
+  the query itself for generic-word salads; per-step latency/outcome rows
+  live in `turn_log`.
+- **Probe the read chain outside the app shell and read the raw payload:**
   ```sh
   cd src-tauri && cargo run --example web_read_check -- <url>
   ```
@@ -219,6 +239,12 @@ on-device generation takes 5–30 s depending on the call-line length.
     reintroduces this (fixed once; regression = re-read webview_engine.rs).
   * Payload starts `{"t":"","x":"","e":"..."}` → the EXTRACTOR JS itself threw
     in-page; the `e` field names the error.
+- **Probe the search chain headlessly** (no webview — exercises DDG/
+  Cloudflare/Wikipedia + all relevance gates):
+  ```sh
+  cd src-tauri && cargo run --example web_search_check -- "<query>"
+  cd src-tauri && cargo run --example bing_dom_check -- <serp-url>  # live DOM census + Brave extractor
+  ```
   * Short/empty `x`+`h` on a sparse page → legitimately below
     `MIN_USABLE_CHARS`; Cloudflare serving is correct behavior, not a bug.
 - **Action**: budget → raise the env cap or wait for the UTC-day rollover;

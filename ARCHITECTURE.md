@@ -66,7 +66,7 @@ sequenceDiagram
     PLAN-->>FE: validated TaskPlan
     FE->>EXEC: streamOperation("execute_supervisor_plan", {plan, sessionId, streamId})
     EXEC->>SCHED: run_plan_with_cancel(plan, dispatch, limits, cancel)
-    loop per wave (max_parallel steps)
+    loop per wave (max_parallel steps, default 4)
         SCHED->>TOOLS: dispatch(step, resolved_args, inputs)
         TOOLS-->>SCHED: StepResult (+ typed Artifacts)
         SCHED-->>FE: SchedulerEvent (stepStarted/Completed/Failed/Skipped)
@@ -116,7 +116,7 @@ Document assistant for docx/xlsx/pptx/pdf/HTML decks/YouTube transcripts. It own
 | `pdf_split` | `office::tools` | Split PDF by page range |
 | `pdf_info` | `office::tools` | PDF metadata |
 | `web_read` | `webread` | Read a URL → markdown *(capability-probe: engine must exist)* |
-| `web_search` | `webread` | Bing SERP → markdown *(capability-probe: engine must exist)* |
+| `web_search` | `webread` | DuckDuckGo/Brave/Wikipedia SERP → enriched hits *(capability-probe: engine must exist)* |
 | `artifact_recall` | `agent.rs` | Page through oversized tool results from this turn |
 | `deep_write` | `agent.rs` | **Subagent only.** Cloud long-form synthesis — streamed to user as final answer *(remote only)* |
 | `draft_document` | `agent.rs` | **Subagent only.** Cloud document composition → file created in-process *(remote only)* |
@@ -153,7 +153,7 @@ Crypto market data and technical analysis on Binance spot.
 | `binance_balances` | `crates/toolsets/binance` | Signed read-only spot balances *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
 | `binance_open_orders` | `crates/toolsets/binance` | Signed read-only open orders *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
 | `web_read` | `webread` | Read a URL → markdown *(capability-probe: engine must exist)* |
-| `web_search` | `webread` | Bing SERP → markdown *(capability-probe: engine must exist)* |
+| `web_search` | `webread` | DuckDuckGo/Brave/Wikipedia SERP → enriched hits *(capability-probe: engine must exist)* |
 | `artifact_recall` | `agent.rs` | Page through oversized tool results from this turn |
 | `deep_write` | `agent.rs` | **Subagent only.** Cloud long-form synthesis *(remote only)* |
 
@@ -191,15 +191,18 @@ Subagents are tools whose implementation calls a cloud LLM. They are **registere
 
 **Failure handling:** cloud timeout or error → local degrades to answering from its own knowledge; the turn never dies. `draft_document` JSON parse failure → one automatic correction round with the cloud, then falls back.
 
-## Web read tiering (`web_read`)
+## Web read + search tiering (`web_read`, `web_search`)
 
-One agent tool, one engine chain — the model asks to read a URL, the backend picks the cheapest engine that succeeds (`crates/toolsets/webread/src/scrape.rs`):
+Agent tools backed by an engine chain in `crates/toolsets/webread/src/scrape.rs` — the backend picks the cheapest engine that succeeds:
 
 1. **Cache** — 15-min LRU (64/user) keyed by normalized URL, cross-engine.
-2. **Tier 0: on-device webview** — `webview_engine.rs` renders the page in a hidden `WebviewWindow` (`WebviewUrl::External`, `visible(false)`), polls `readyState`, harvests text via `eval_with_callback` (external pages have no Tauri IPC — the eval callback is the only return channel), always tears the window down. Free, device-native TLS.
-3. **Tier 1: Cloudflare `/markdown`** — the generated `browser` crate tool (vault key pool). Tier-0 misses (anti-bot markers, thin content, timeout, busy slot) fall through. Bounded by `KAWAI_CF_PER_USER_DAILY` (25) + `KAWAI_CF_GLOBAL_DAILY` (300); exhaustion returns a guidance-carrying result, not an error.
+2. **Cloudflare `/markdown`** — the generated `browser` crate tool (vault key pool). Bounded by `KAWAI_CF_PER_USER_DAILY` (25) + `KAWAI_CF_GLOBAL_DAILY` (300); exhaustion/walls fall through. Guidance-carrying results, never errors.
+3. **Plain HTTP + readability** — direct `reqwest` fetch converted with the in-process HTML→markdown converter; no slot, no budget. Thin serves (<500 chars: block pages, bot stubs, JS shells) are rejected by `usable_text`.
+4. **On-device webview (last resort)** — `webview_engine.rs` renders the page in a hidden `WebviewWindow` (`WebviewUrl::External`, `visible(false)`), polls `readyState`, harvests text via `eval_with_callback` (external pages have no Tauri IPC — the eval callback is the only return channel), always tears the window down. Free, device-native TLS; catches heavy bot-walls and JS-only shells.
 
-Purity: `crates/toolsets/webread/src/scrape.rs` defines the `WebViewFetch` trait; the tauri shell injects the implementation at startup (`lib.rs`). `kawai-web` registers nothing and degrades to Cloudflare-only; no engine anywhere ⇒ the tool is not registered (capability-probe rule). Content is capped at 12k chars per read. The tools are reusable by any agent: office and binance both register them under `any_engine()`.
+`web_search` runs its own chain per query: **DuckDuckGo over DoH** (primary — POST form path, single-flight gate, one 3s backoff retry on anomaly pages; DoH resolves via Cloudflare's JSON API with a `1.1.1.1` bootstrap-free fallback, so ISP DNS hijacking — Indonesia's Internet Positif — cannot starve it) → **hidden webview rendering Brave Search** (stable-class DOM extractor, direct result URLs) → **MediaWiki** (`id` then `en` editions, language-detected via the vendored `whatlang`; mis-detections still fall back to the defaults). No Cloudflare tier in search: datacenter SERP renders are junk-served 100% of the time. Every outcome passes per-hit + set-level relevance gates (required token echoes scale with query length), a dictionary-host denylist, and cross-step URL dedup (2-min window per user); the whole chain is bounded by a 25s deadline inside the supervisor's 30s step budget. Top 5 hits auto-enrich full page content through the read chain (http-first variant) so the model never needs a follow-up read. Supervisor steps log per-step telemetry (tool, latency, outcome) to `turn_log`.
+
+Purity: `crates/toolsets/webread/src/scrape.rs` defines the `WebViewFetch` trait; the tauri shell injects the implementation at startup (`lib.rs`). `kawai-web` registers nothing and degrades to Cloudflare-only reads; no engine anywhere ⇒ the tools are not registered (capability-probe rule). Content is capped at 12k chars per read. The tools are reusable by any agent: office and binance both register them under `any_engine()`.
 
 ## CodeGraph bridge (`codegraph_explore`, `codegraph` feature)
 
