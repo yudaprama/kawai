@@ -64,6 +64,15 @@ pub fn run() {
                 tauri::async_runtime::spawn(async {
                     kawai_office::templates::prefetch_registry().await;
                 });
+                // Sync the tool catalog NOW, not lazily at the first
+                // plan_task: a cold sync contending with engine startup timed
+                // out at the 15 s plan-time budget repeatedly, leaving the
+                // planner searching a stale replica frozen at an old catalog
+                // (83 tools vs 144 — the specialist tools it needed were not
+                // in the corpus at all). Shared instance + serialized syncs
+                // live in supervisor (the plan-time path uses the same one).
+                #[cfg(feature = "litert")]
+                crate::supervisor::prefetch_tool_catalog();
             }
             // Tier-0 web read engine: hidden webview owned by the shell.
             // kawai-web never registers one (Cloudflare-only there).

@@ -253,9 +253,7 @@ async fn main() {
         die("source is not a postgres/mysql URL");
     }
     // Isolated per-user data dir so the store/db never touch real app data.
-    if std::env::var("KAWAI_DATA_DIR").is_err() {
-        std::env::set_var("KAWAI_DATA_DIR", "/tmp/kawai-sql-check");
-    }
+    kawai_paths::set_data_root("/tmp/kawai-sql-check");
     std::env::set_var("KAWAI_SQL_PROFILE_CHECK", &url);
 
     if demo {

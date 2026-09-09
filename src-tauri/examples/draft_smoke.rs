@@ -21,7 +21,7 @@ Rules:\n\
 async fn main() {
     kawai_lib::auth::load_dotenv();
     // Office store under /tmp — keeps the smoke test out of real user data.
-    std::env::set_var("KAWAI_DATA_DIR", "/tmp/kawai-smoke");
+    kawai_paths::set_data_root("/tmp/kawai-smoke");
 
     let Some(remote) = RemoteLlm::from_env() else {
         println!("[draft_smoke] remote tier DISABLED — nothing to test, OK");

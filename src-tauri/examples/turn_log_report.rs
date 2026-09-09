@@ -5,9 +5,9 @@
 //
 // Usage:
 //   cargo run --example turn_log_report --features litert [-- user-id] [-- days]
-// Data root resolution is the usual one (KAWAI_DATA_DIR / KAWAI_DB_DIR env →
-// /tmp/kawai fallback). To read the desktop app's real data, point
-// KAWAI_DATA_DIR at the app's per-user data root.
+// Data root resolution: injected root → <temp>/kawai fallback. To read the
+// desktop app's real data, point the injected root at the app's data dir
+// (see sync_probe.rs for the recipe).
 use kawai_lib::logic::db::{self, TurnLogRow};
 
 #[tokio::main(flavor = "current_thread")]

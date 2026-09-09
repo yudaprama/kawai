@@ -6,7 +6,8 @@
 //! delete rows that are no longer part of the merged toolset (renames,
 //! removed tools, RPC-only entries).
 //!
-//! Embeddings use the same `build_providers_from_env()` chain the app uses
+//! Embeddings use the LOCAL LiteRT embedder (`build_litert_embedder()`) —
+//! the same fixed space plan-time queries run in. Never mix providers here.
 //! at plan time, so writer and reader share one vector space on this machine.
 //! Toolset composition lives in `catalog_composition.rs` (shared with
 //! `tool_catalog_drift_check.rs` — exactly one copy).
@@ -75,9 +76,14 @@ async fn run() -> Result<(), String> {
         remote_llm::RemoteLlm::from_env().is_some()
     );
 
-    // Embed name + description with the app's provider chain so the seeded
-    // vector space matches what plan-time narrowing queries against.
-    let model = kawai_embedding::build_providers_from_env();
+    // Upsert into the same replica the app syncs from (see sync_probe.rs).
+    if let Some(dir) = kawai_paths::tauri_app_data_dir(kawai_paths::APP_IDENTIFIER) {
+        kawai_paths::set_data_root(dir);
+    }
+    // Embed name + description with the LOCAL LiteRT embedder so the seeded
+    // vector space matches what plan-time narrowing queries against (the
+    // planner uses `build_litert_embedder()` — same helper, same space).
+    let model = kawai_embedding::build_litert_embedder();
     let texts: Vec<String> = definitions
         .iter()
         .map(|d| format!("{}: {}", d.name, d.description))

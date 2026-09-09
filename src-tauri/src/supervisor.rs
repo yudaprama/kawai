@@ -418,7 +418,12 @@ pub async fn plan_task(
     // the planner then plans from the core set or fails validation. There is
     // deliberately NO full-catalog fallback (mode A).
     let catalog = open_synced_catalog(PLAN_SEARCH_SYNC_TIMEOUT).await;
-    let embedder = kawai_embedding::build_providers_from_env();
+    // LiteRT-ONLY embedder: the catalog is seeded in the on-device model's
+    // space (seed_tool_catalog uses the same helper), so seed and query stay
+    // in one space on every device — no cloud embedding dependency (the
+    // OpenRouter pool 402'd mid-session and killed discovery), no fallback
+    // into a different space.
+    let embedder = kawai_embedding::build_litert_embedder();
 
     let system = plan_loop_system_prompt(&core_tools);
     let mut task = if context.is_empty() {
@@ -557,7 +562,7 @@ pub async fn plan_task(
                 {
                     searches_used += 1;
                     let (block, found) =
-                        run_tool_search(catalog.as_ref(), &embedder, &queries, &mut seen).await;
+                        run_tool_search(catalog.as_deref(), &embedder, &queries, &mut seen).await;
                     on_progress(SupervisorEvent::PlanningToolSearch {
                         queries: queries.clone(),
                         tools: found,
@@ -598,25 +603,144 @@ pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai
 /// makes the planner believe no domain tools exist and degrade to the core
 /// set (the session-25 failure class). Returning `None` there makes
 /// `run_tool_search` report the outage honestly to the planner instead.
-async fn open_synced_catalog(
-    sync_timeout: std::time::Duration,
-) -> Option<kawai_tool_catalog::Catalog> {
-    let cfg = kawai_tool_catalog::RemoteConfig::from_env()?;
-    let catalog = match kawai_tool_catalog::Catalog::open_default(&cfg).await {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("[tool-catalog] open failed: {e}");
-            return None;
-        }
+/// Shared catalog instance: ONE `Catalog` per process. Two instances on the
+/// same replica file sync against each other and crash with
+/// `wal_insert_begin failed` (measured: the startup prefetch loop racing
+/// plan_task's lazy open).
+static SHARED_CATALOG: tokio::sync::OnceCell<
+    Option<std::sync::Arc<kawai_tool_catalog::Catalog>>,
+> = tokio::sync::OnceCell::const_new();
+/// Serializes every sync against the shared replica.
+static CATALOG_SYNC_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+/// Last time a sync attempt COMPLETED (success or logged failure) — a fresh
+/// sync suppresses re-syncing for 10 minutes so prefetch and plan_task
+/// don't stack retries on a flapping connection.
+static LAST_SYNC_AT: std::sync::Mutex<Option<std::time::Instant>> =
+    std::sync::Mutex::new(None);
+const SYNC_SUPPRESS: std::time::Duration = std::time::Duration::from_secs(600);
+
+async fn shared_catalog() -> Option<std::sync::Arc<kawai_tool_catalog::Catalog>> {
+    SHARED_CATALOG
+        .get_or_try_init(|| async {
+            type SharedCatalog = Option<std::sync::Arc<kawai_tool_catalog::Catalog>>;
+            let Some(cfg) = kawai_tool_catalog::RemoteConfig::from_env() else {
+                return Ok::<SharedCatalog, ()>(None);
+            };
+            match kawai_tool_catalog::Catalog::open_default(&cfg).await {
+                Ok(c) => Ok(Some(std::sync::Arc::new(c))),
+                Err(e) => {
+                    eprintln!("[tool-catalog] open failed: {e}");
+                    Ok(None)
+                }
+            }
+        })
+        .await
+        .ok()
+        .cloned()
+        .flatten()
+}
+
+/// One serialized sync + freshness gate on the shared replica. Skipped when
+/// a sync completed recently. Safe to call from anywhere (startup prefetch,
+/// plan_task).
+async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
+    let Some(catalog) = shared_catalog().await else {
+        return;
     };
+    if LAST_SYNC_AT
+        .lock()
+        .map(|t| t.map(|t| t.elapsed() < SYNC_SUPPRESS).unwrap_or(false))
+        .unwrap_or(false)
+    {
+        return;
+    }
+    let _guard = CATALOG_SYNC_LOCK.lock().await;
+    // Double-check after acquiring the lock (another task may have just
+    // finished a sync while we waited).
+    if LAST_SYNC_AT
+        .lock()
+        .map(|t| t.map(|t| t.elapsed() < SYNC_SUPPRESS).unwrap_or(false))
+        .unwrap_or(false)
+    {
+        return;
+    }
     match tokio::time::timeout(sync_timeout, catalog.sync()).await {
         Ok(Ok(frames)) if frames > 0 => {
             eprintln!("[tool-catalog] synced {frames} frames from remote");
         }
         Ok(Ok(_)) => {} // already up to date
         Ok(Err(e)) => eprintln!("[tool-catalog] sync failed: {e}"),
-        Err(_) => eprintln!("[tool-catalog] sync timed out after {sync_timeout:?}"),
+        Err(_) => {
+            // Do NOT leave the sync dead: a dropped sync mid-WAL-apply
+            // poisons the replica file. Hand it to the background to finish.
+            eprintln!(
+                "[tool-catalog] sync exceeded {sync_timeout:?} — continuing in background"
+            );
+            catalog.sync_detached();
+        }
     }
+    *LAST_SYNC_AT.lock().unwrap() = Some(std::time::Instant::now());
+
+    // Freshness gate: a timed-out sync leaves the replica at an old
+    // replication index — the planner would then search a catalog missing
+    // the newest tools entirely (measured: a frozen 83-tool snapshot vs 144
+    // on the remote). Verify and retry once before degrading.
+    let Some(cfg) = kawai_tool_catalog::RemoteConfig::from_env() else {
+        return;
+    };
+    if let Ok((local, remote)) = catalog.row_counts(&cfg).await {
+        if local < remote {
+            eprintln!(
+                "[tool-catalog] replica STALE ({local} vs {remote} on remote) — retrying sync"
+            );
+            let _ = tokio::time::timeout(sync_timeout, catalog.sync()).await;
+            catalog.sync_detached(); // never leave a dropped sync behind
+            *LAST_SYNC_AT.lock().unwrap() = Some(std::time::Instant::now());
+            match catalog.row_counts(&cfg).await {
+                Ok((local, remote)) if local < remote => eprintln!(
+                    "[tool-catalog] CRITICAL: replica still stale after retry \
+                     ({local} vs {remote}) — planner sees an outdated catalog"
+                ),
+                Ok(_) => eprintln!("[tool-catalog] replica fresh after retry"),
+                Err(e) => eprintln!("[tool-catalog] count check failed: {e}"),
+            }
+        }
+    }
+}
+
+/// Startup prefetch: converge the replica in the background so plan_task
+/// never pays (or loses) the first sync. Loop until fresh or attempts out.
+pub fn prefetch_tool_catalog() {
+    tauri::async_runtime::spawn(async {
+        if shared_catalog().await.is_none() {
+            return;
+        }
+        for attempt in 1..=5 {
+            sync_shared_catalog(std::time::Duration::from_secs(60)).await;
+            let Some(catalog) = shared_catalog().await else { return };
+            let Some(cfg) = kawai_tool_catalog::RemoteConfig::from_env() else { return };
+            match catalog.row_counts(&cfg).await {
+                Ok((local, remote)) if local >= remote => break, // converged
+                Ok((local, remote)) => {
+                    eprintln!(
+                        "[tool-catalog] prefetch: replica still stale ({local} vs {remote}), retrying"
+                    );
+                }
+                Err(e) => {
+                    eprintln!("[tool-catalog] prefetch count check failed: {e}");
+                    break;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
+    });
+}
+
+async fn open_synced_catalog(
+    sync_timeout: std::time::Duration,
+) -> Option<std::sync::Arc<kawai_tool_catalog::Catalog>> {
+    let catalog = shared_catalog().await?;
+    sync_shared_catalog(sync_timeout).await;
     match catalog.list_names().await {
         Ok(names) if !names.is_empty() => Some(catalog),
         Ok(_) => {
@@ -690,9 +814,11 @@ Respond ONLY with ONE JSON object — either:
 
 Plan rules:
 - Decompose into 1..{} concrete steps; each step names exactly ONE tool.
-- "task" is OPTIONAL: a single line ≤80 chars for the progress UI. Omit it
-  when the tool name is self-explanatory. ALWAYS keep "arguments" complete
-  and precise — the arguments are what the tool executes.
+- "task" is REQUIRED: a single line ≤80 chars describing the step in the
+  USER'S LANGUAGE (the goal's language), for the progress UI — e.g.
+  "Cek cuaca Tokyo", "Find 3 Bali beach photos". ALWAYS keep "arguments"
+  complete and precise — the arguments are what the tool executes.
+- Be concise overall: no prose outside the JSON, no repeated context.
 - Be concise overall: no prose outside the JSON, no repeated context.
 - "dependsOn" lists step ids that must finish first; no cycles.
 - To pass a previous step's artifact: {{"fromStep": "<step id>", "output": "<artifact name>"}} — never paste large content.
@@ -736,20 +862,34 @@ async fn run_tool_search(
     let Some(catalog) = catalog else {
         return ("\n<tool-search-results>\nTool catalog is unavailable; rely on the core tools listed above.\n</tool-search-results>\n".to_string(), Vec::new());
     };
-    let Ok(vecs) = embedder.embed_strings(queries.to_vec()).await else {
-        return ("\n<tool-search-results>\nTool search failed (embedding unavailable); rely on the core tools listed above.\n</tool-search-results>\n".to_string(), Vec::new());
+    // Primary provider ONLY: the catalog is seeded with provider #1's
+    // embedding space. A silent fallback to another model (the local LiteRT
+    // embedder, same 768-dim) is a different space — cosine becomes noise
+    // and the search returns junk (planner sessions 41–42).
+    let vecs = match embedder.embed_primary(queries.to_vec()).await {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[plan_task] catalog embedding failed (primary provider): {e}");
+            return ("\n<tool-search-results>\nTool search failed (embedding unavailable); rely on the core tools listed above.\n</tool-search-results>\n".to_string(), Vec::new());
+        }
     };
     let mut block = String::from("\n<tool-search-results>\n");
     let mut found: Vec<String> = Vec::new();
     for (query, qvec) in queries.iter().zip(vecs) {
         block.push_str(&format!("\nquery: {query}\n"));
-        let hits = match catalog.search(query, &qvec, 6).await {
+        // k=8 (was 6): the vector side is noisy — generic-description tools
+        // (binance_price, get_sector_performance, …) rank for nearly every
+        // query, crowding the specialist tools out of the fused top-k. More
+        // slots give BM25-side specialist hits room to survive the fusion.
+        let hits = match catalog.search(query, &qvec, 8).await {
             Ok(hits) => hits,
-            Err(_) => {
+            Err(e) => {
+                eprintln!("[plan_task] catalog search failed for {query:?}: {e}");
                 block.push_str("- (search failed for this query)\n");
                 continue;
             }
         };
+        let mut surfaced: Vec<String> = Vec::new();
         let mut listed = 0;
         for hit in hits {
             // Belt-and-suspenders: the catalog should never contain these
@@ -764,6 +904,7 @@ async fn run_tool_search(
             }
             listed += 1;
             found.push(hit.name.clone());
+            surfaced.push(hit.name.clone());
             let desc: String = hit.description.chars().take(160).collect();
             let schema: String = hit.input_schema.chars().take(300).collect();
             block.push_str(&format!("- {} — {desc}\n  args: {schema}\n", hit.name));
@@ -771,6 +912,9 @@ async fn run_tool_search(
         if listed == 0 {
             block.push_str("- (no new tools beyond those already listed)\n");
         }
+        // Planner-search telemetry: which query surfaced which tools (the
+        // search block itself is otherwise invisible outside the LLM call).
+        eprintln!("[plan_task] search {query:?} -> {surfaced:?}");
     }
     block.push_str("</tool-search-results>\n");
     (truncate_chars(&block, PLAN_MATERIALS_CAP), found)

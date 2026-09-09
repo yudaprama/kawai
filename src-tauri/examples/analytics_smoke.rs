@@ -79,7 +79,7 @@ fn rows_of(out: &str) -> Vec<Value> {
 async fn main() {
     kawai_lib::auth::load_dotenv();
     // Office store under /tmp — keeps the smoke test out of real user data.
-    std::env::set_var("KAWAI_DATA_DIR", "/tmp/kawai-smoke");
+    kawai_paths::set_data_root("/tmp/kawai-smoke");
 
     let user = "analytics-smoke";
     let stored = store::import_bytes(user, "smoke-sales.csv", CSV.as_bytes()).expect("import csv");

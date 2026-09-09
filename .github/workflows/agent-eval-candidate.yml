@@ -134,7 +134,6 @@ jobs:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: /tmp/kawai-ci
           KAWAI_LLM_MAX_TOKENS: "8192"
           # Report-only: EVAL_MIN_PASS=0 → the gate can never fail (exit 0).
           # Unset, agent_eval gates on ALL scenarios (usize::MAX clamped to

@@ -94,7 +94,6 @@ jobs:
       - name: graph_index_and_search E2E (ignored, needs vault)
         working-directory: src-tauri
         env:
-          KAWAI_DATA_DIR: /tmp/kawai-graph-ci
         run: |
           set +e
           cargo test --lib logic::graph::tests::graph_index_and_search_e2e -- --ignored --nocapture

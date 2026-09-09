@@ -390,7 +390,6 @@ jobs:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: /tmp/kawai-ci
         run: cargo run --example remote_smoke --features litert
 
       - name: draft_smoke (cloud → docx artifact + receipt)
@@ -399,7 +398,6 @@ jobs:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: /tmp/kawai-ci
         run: cargo run --example draft_smoke --features litert
 
       # ── Smoke 3b: planner quality. Cloud-only — no on-device model. Runs
@@ -412,7 +410,6 @@ jobs:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: /tmp/kawai-ci
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
         run: cargo run --example planner_smoke --features litert,binance
 
@@ -426,7 +423,6 @@ jobs:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: /tmp/kawai-ci
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
         run: cargo run --example tool_catalog_drift_check --features litert,binance,codegraph
 
@@ -471,7 +467,6 @@ jobs:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: /tmp/kawai-ci
           KAWAI_LLM_MAX_TOKENS: "8192"
           EVAL_MIN_PASS: "19"
         run: |
@@ -492,7 +487,6 @@ jobs:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: /tmp/kawai-ci
           KAWAI_LLM_MAX_TOKENS: "8192"
           EVAL_SUITE: analytics
           EVAL_DEBUG: "1"
@@ -631,7 +625,6 @@ jobs:
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: /tmp/kawai-ci
         run: cargo run --example remote_smoke --features litert
 
       - name: draft_smoke (cloud → docx artifact + receipt)
@@ -641,7 +634,6 @@ jobs:
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: /tmp/kawai-ci
         run: cargo run --example draft_smoke --features litert
 
       # ── Smoke 4 (Linux): keyless Binance market data + TA ──
@@ -680,7 +672,6 @@ jobs:
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: /tmp/kawai-ci
           KAWAI_LLM_MAX_TOKENS: "8192"
           EVAL_MIN_PASS: "19"
         run: |
@@ -838,7 +829,6 @@ jobs:
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: ${{ runner.temp }}/kawai-ci
         run: cargo run --example remote_smoke --features litert
 
       - name: draft_smoke (cloud → docx artifact + receipt)
@@ -847,7 +837,6 @@ jobs:
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: ${{ runner.temp }}/kawai-ci
         run: cargo run --example draft_smoke --features litert
 
       # ── Smoke 4 (Windows): keyless Binance market data + TA ──
@@ -887,7 +876,6 @@ jobs:
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
-          KAWAI_DATA_DIR: ${{ runner.temp }}/kawai-ci
           KAWAI_LLM_MAX_TOKENS: "8192"
           EVAL_MIN_PASS: "19"
         run: |

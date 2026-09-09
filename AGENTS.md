@@ -149,7 +149,7 @@ Docs describe the **current state only**. History lives in git log, not in the r
 - **Present tense, no migration story.** Never write "X was deleted", "X replaced Y", "superseded by", "formerly", "leftover from". Rewrite the section to describe what exists NOW.
 - **Same-commit cleanup.** The change that deletes/replaces a component also removes its mentions everywhere: AGENTS.md (incl. the layout tree + Roadmap), `ARCHITECTURE.md`, `PLAN-*.md`, script/workflow comments, config samples. Before committing, `grep -rn "<thing>" AGENTS.md ARCHITECTURE.md PLAN-*.md scripts/ .github/` must come back clean.
 - **Roadmap ✅ entries collapse.** Once an item ships, its entry states the current architecture in one block — drop sub-item history and delete superseded tiers (fold any surviving fact into the successor entry).
-- **"legacy" is allowed only while the code still supports it** (e.g. the `KAWAI_DB_DIR` fallback) — otherwise it is stale content and goes.
+- **"legacy" is allowed only while the code still supports it** — otherwise it is stale content and goes.
 - **Code comments follow the same rule**: describe what the code does, never what it used to do.
 
 ## Troubleshooting
@@ -283,7 +283,7 @@ user → local auth (auth_sign_in) → Rust backend → user_id (= email)
 
 - `logic::db_connection(user_id)` opens a per-op local SQLite connection; the office store defaults into the same per-user dir (`logic::db::user_data_dir`). Every `db_connection` runs `logic::db_migrations::ensure_schema` first (idempotent, transactional, guarded in-memory per data dir) so schema is always current — do NOT re-add scattered `CREATE TABLE IF NOT EXISTS` in callers.
 - Adding schema: new `<NNN>_name.sql` in `src-tauri/migrations/` + a `Migration` entry in `migrations()`; cover it with a test in `db_migrations.rs`'s tests module (runs in the CI lib-test gate). Exception: the FTS5 mirror (`rag_chunks_fts` + triggers) and `rag_chunks`/embeddings tables are rag.rs-owned runtime DDL created on first index (`ensure_vector_schema`/`ensure_fts`) because `CREATE TRIGGER` needs `rag_chunks` to exist first.
-- Data root resolution: `KAWAI_DATA_DIR` env → legacy `KAWAI_DB_DIR` env → injected root (`logic::db::set_data_root`; Tauri injects the app-data dir — on macOS `~/Library/Application Support/pro.kawai.app`, from the `pro.kawai.app` identifier in `src-tauri/tauri.conf.json`) → `/tmp/kawai`. `KAWAI_DOCS_DIR` still overrides the docs root to the legacy `<root>/<user_id>/` layout; unset = unified per-user dir. `[A-Za-z0-9_-]` user ids pass through as dir names, anything else hex-encodes.
+- Data root resolution: injected root (`logic::db::set_data_root`; Tauri injects the app-data dir — on macOS `~/Library/Application Support/pro.kawai.app`, from the `pro.kawai.app` identifier in `src-tauri/tauri.conf.json`; smokes/examples inject their own isolation dir) → `/tmp/kawai` (headless/web default). There is deliberately NO env override — examples/probes that must see app-owned state inject the same dir via `kawai_paths::tauri_app_data_dir(kawai_paths::APP_IDENTIFIER)` (see sync_probe.rs). `KAWAI_DOCS_DIR` still overrides the docs root to the legacy `<root>/<user_id>/` layout; unset = unified per-user dir. `[A-Za-z0-9_-]` user ids pass through as dir names, anything else hex-encodes.
 - **One data directory per user — no `user_id` columns.** Isolation is structural (per-user folder), matching the future sqld-namespace model (end-state roadmap). The `office` RAG tables (`rag_chunks` + FTS5 mirror, `rag_files` index-status, `session_files`) follow the same rule; `session_files(session_id, file_id)` scopes knowledge search to everything a session has referenced.
 - Future: sqld for multi-device sync, EdDSA token minting, embedded replicas.
 
@@ -291,7 +291,6 @@ user → local auth (auth_sign_in) → Rust backend → user_id (= email)
 
 Project-root `.env` (gitignored) — backend reads these via `auth::load_dotenv()` at startup:
 ```
-KAWAI_DATA_DIR=/path/to/dir    # optional per-user data root; default on desktop = Tauri app-data dir (~/Library/Application Support/pro.kawai.app on macOS), else /tmp/kawai
 KAWAI_WORKER_URL=https://kawai-worker.akuntestinguntukseto.workers.dev  # optional override; auth directory + worker endpoints live here (D1 kawai-auth)
 KAWAI_LLM_MAX_TOKENS=16384       # optional context budget (K/V state entries) for the on-device conversation; default 16384, clamped below the model's max (Gemma 4: 32003). Larger = more K/V memory; raise for longer sessions before the prefill-overflow reset.
 # ── On-device OCR (paddle-ocr feature, crates/foundation/vision) ────────────

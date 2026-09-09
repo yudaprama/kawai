@@ -27,6 +27,10 @@ fn main() {
 
 #[cfg(feature = "litert")]
 async fn run() -> Result<(), String> {
+    // Probe the APP's actual replica (see sync_probe.rs for rationale).
+    if let Some(dir) = kawai_paths::tauri_app_data_dir(kawai_paths::APP_IDENTIFIER) {
+        kawai_paths::set_data_root(dir);
+    }
     let cfg = kawai_tool_catalog::RemoteConfig::from_env()
         .ok_or("KAWAI_TURSO_* not configured in .env")?;
     let catalog = kawai_tool_catalog::Catalog::open_default(&cfg).await?;
@@ -35,7 +39,7 @@ async fn run() -> Result<(), String> {
         Err(e) => println!("[probe] sync (best-effort) failed: {e}"),
     }
 
-    let model = kawai_embedding::build_providers_from_env();
+    let model = kawai_embedding::build_litert_embedder();
 
     // Custom queries from argv, or a spread of representative goals.
     let args: Vec<String> = std::env::args().skip(1).collect();

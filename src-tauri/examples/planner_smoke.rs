@@ -4,13 +4,13 @@
 // (`build_supervisor_registry` + `plan_task`) and validates the returned
 // TaskPlan structurally (non-empty steps, tool names, done criteria).
 //
-// Usage (mirrors the other smokes' env recipe):
+// Usage (mirrors the other smokes' recipe):
 //   cd src-tauri && env \
 //     LITERT_LM_LIB_DIR=<ABS>/cognee-litert-lm/native \
 //     LLVM_PROFILE_FILE=/dev/null \
-//     KAWAI_DATA_DIR=/tmp/kawai-planner-smoke \
 //     KAWAI_BINANCE_REST_BASE=https://data-api.binance.vision \
 //     cargo run --example planner_smoke --features litert,binance
+// (the smoke's data root self-isolates to <temp>/kawai)
 
 use kawai_lib::agent_registry::{BINANCE_AGENT_ID, OFFICE_AGENT_ID};
 
