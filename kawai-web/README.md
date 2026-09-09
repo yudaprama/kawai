@@ -24,9 +24,12 @@ cargo build -p kawai --no-default-features --features web --bin kawai-web --rele
 bun run build  # -> dist/
 
 # env
-KAWAI_DATA_DIR=/tmp/kawai KAWAI_WEB_ADDR=0.0.0.0:3000 cargo run -p kawai-web
+KAWAI_WEB_ADDR=0.0.0.0:3000 cargo run -p kawai-web
 # or
 KAWAI_WEB_ADDR=0.0.0.0:3000 ./kawai-web/target/release/kawai-web
+
+# data root defaults to <temp>/kawai (headless); override in code via
+# kawai_paths::set_data_root before any db access.
 ```
 
 ## Deploy (Docker)
