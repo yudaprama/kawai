@@ -12,7 +12,21 @@ use kawai_tools::ToolDefinition;
 /// (drift check).
 pub const RPC_ONLY_TOOLS: &[&str] = &["graph_search", "graph_list"];
 
-/// Tools whose catalog `kind` mirrors `ToolKind::Subagent`.
+/// Subagent/internal-dispatch tools: excluded from the supervisor registry
+/// entirely so the planner can neither see nor plan against them. Must stay in
+/// sync with `supervisor::NON_DISPATCHABLE_TOOLS` — the catalog is the planner's
+/// only discovery path, so a tool banned from the registry must also be absent
+/// from the catalog (otherwise search surfaces it and validation rejects it).
+pub const NON_DISPATCHABLE_TOOLS: &[&str] = &[
+    "deep_write",
+    "draft_document",
+    "plan_task",
+    "plan_revise",
+    "artifact_recall",
+];
+
+/// Tools whose catalog `kind` mirrors `ToolKind::Subagent` (subset of the
+/// non-dispatchable set that would be `subagent` if they were dispatchable).
 pub const SUBAGENT_TOOLS: &[&str] = &["deep_write", "draft_document", "plan_task", "plan_revise"];
 
 /// Catalog `kind` for a tool name (mirrors `kawai_router::ToolKind`).
@@ -67,6 +81,21 @@ pub async fn merged_definitions() -> Result<Vec<ToolDefinition>, String> {
             "finance",
             kawai_lib::agent_registry::finance_tools_for_supervisor(&context, remote_configured),
         ),
+        (
+            "entertainment",
+            kawai_lib::agent_registry::entertainment_tools_for_supervisor(
+                &context,
+                remote_configured,
+            ),
+        ),
+        ("weather-geo", kawai_lib::agent_registry::weather_geo_tools_for_supervisor(&context, remote_configured)),
+        ("news-media", kawai_lib::agent_registry::news_media_tools_for_supervisor(&context, remote_configured)),
+        ("sports", kawai_lib::agent_registry::sports_tools_for_supervisor(&context, remote_configured)),
+        ("food-drink", kawai_lib::agent_registry::food_drink_tools_for_supervisor(&context, remote_configured)),
+        ("geospace", kawai_lib::agent_registry::geospace_tools_for_supervisor(&context, remote_configured)),
+        ("knowledge", kawai_lib::agent_registry::knowledge_tools_for_supervisor(&context, remote_configured)),
+        ("religion", kawai_lib::agent_registry::religion_tools_for_supervisor(&context, remote_configured)),
+        ("utility", kawai_lib::agent_registry::utility_tools_for_supervisor(&context, remote_configured)),
     ]
     .into_iter()
     {
@@ -84,13 +113,103 @@ pub async fn merged_definitions() -> Result<Vec<ToolDefinition>, String> {
     let toolset = merged.ok_or("no domain toolset could be built (check env/vault)")?;
     let mut definitions: Vec<ToolDefinition> = toolset.get_tool_definitions().to_vec();
     let before = definitions.len();
-    definitions.retain(|d| !RPC_ONLY_TOOLS.contains(&d.name.as_str()));
+    definitions.retain(|d| {
+        !RPC_ONLY_TOOLS.contains(&d.name.as_str())
+            && !NON_DISPATCHABLE_TOOLS.contains(&d.name.as_str())
+    });
     if definitions.len() != before {
         eprintln!(
-            "[catalog] excluded {} RPC-only tool(s): {:?}",
+            "[catalog] excluded {} non-catalog tool(s): {} RPC-only + {} internal (non-dispatchable)",
             before - definitions.len(),
-            RPC_ONLY_TOOLS
+            RPC_ONLY_TOOLS.len(),
+            NON_DISPATCHABLE_TOOLS.len()
         );
     }
     Ok(definitions)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_dispatchable_tools_stay_in_sync_with_supervisor() {
+        // Must mirror `supervisor::NON_DISPATCHABLE_TOOLS` exactly — drift there
+        // caused the `draft_document` planner_smoke failure (catalog surfaced it,
+        // registry rejected it).
+        let supervisor = kawai_lib::supervisor::NON_DISPATCHABLE_TOOLS;
+        assert_eq!(
+            NON_DISPATCHABLE_TOOLS.len(),
+            supervisor.len(),
+            "catalog composition vs supervisor length mismatch"
+        );
+        for &name in NON_DISPATCHABLE_TOOLS {
+            assert!(
+                supervisor.contains(&name),
+                "catalog NON_DISPATCHABLE_TOOLS contains {name:?} not in supervisor::NON_DISPATCHABLE_TOOLS"
+            );
+        }
+        for &name in &supervisor {
+            assert!(
+                NON_DISPATCHABLE_TOOLS.contains(&name),
+                "supervisor NON_DISPATCHABLE_TOOLS contains {name:?} not in catalog composition"
+            );
+        }
+    }
+
+    #[test]
+    fn non_dispatchable_and_rpc_only_do_not_overlap() {
+        for &name in NON_DISPATCHABLE_TOOLS {
+            assert!(
+                !RPC_ONLY_TOOLS.contains(&name),
+                "{name:?} must not be in both RPC_ONLY and NON_DISPATCHABLE"
+            );
+        }
+    }
+
+    #[test]
+    fn catalog_kind_classifies_subagent_subset() {
+        for &name in SUBAGENT_TOOLS {
+            assert_eq!(catalog_kind(name), "subagent", "{name} should be subagent");
+            assert!(
+                NON_DISPATCHABLE_TOOLS.contains(&name),
+                "{name} in SUBAGENT_TOOLS must also be in NON_DISPATCHABLE_TOOLS"
+            );
+        }
+        assert_eq!(catalog_kind("office_create_document"), "pure");
+        assert_eq!(catalog_kind("web_search"), "pure");
+    }
+
+    // Full integration: merged_definitions() must never emit a non-dispatchable
+    // or RPC-only tool, even when remote is configured (vault present). This is
+    // the regression guard for the planner_smoke `unknown tool "draft_document"` failure.
+    // Requires the same feature set as the seed binary: litert + binance + codegraph etc.
+    #[tokio::test]
+    async fn merged_definitions_excludes_non_dispatchable_and_rpc_only() {
+        let defs = match merged_definitions().await {
+            Ok(d) => d,
+            Err(e) if e.contains("could not be built") => {
+                // Feature set incomplete in this cargo invocation (e.g. `cargo test -p kawai --features litert`
+                // without `binance`) — skip rather than false-fail. The full
+                // gate runs with `--features litert,binance,codegraph`.
+                eprintln!("[skip] merged_definitions_excludes_* : {e}");
+                return;
+            }
+            Err(e) => panic!("merged_definitions failed: {e}"),
+        };
+        assert!(!defs.is_empty(), "merged definitions must not be empty");
+        for banned in NON_DISPATCHABLE_TOOLS.iter().chain(RPC_ONLY_TOOLS.iter()) {
+            assert!(
+                !defs.iter().any(|d| &d.name == banned),
+                "merged_definitions must not contain {banned:?} — it is not dispatchable by the supervisor"
+            );
+        }
+        // Sanity: expected dispatchable tools must still be present
+        for must in ["office_create_document", "web_search", "memory_search"] {
+            assert!(
+                defs.iter().any(|d| d.name == must),
+                "merged_definitions missing expected dispatchable tool {must:?}"
+            );
+        }
+    }
 }

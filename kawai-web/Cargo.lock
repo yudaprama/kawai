@@ -1649,6 +1649,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "entertainment"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "wikipedia-search",
+]
+
+[[package]]
 name = "env_filter"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1970,6 +1984,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "food_drink"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "form_urlencoded"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2090,6 +2117,19 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
+]
+
+[[package]]
+name = "geospace"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -3176,9 +3216,12 @@ dependencies = [
  "block2",
  "browser",
  "dotenvy",
+ "entertainment",
  "finance",
+ "food_drink",
  "futures-core",
  "futures-util",
+ "geospace",
  "graph",
  "hex",
  "jsonwebtoken",
@@ -3200,8 +3243,10 @@ dependencies = [
  "kawai-tools",
  "kawai-vault",
  "kawai-vision",
+ "knowledge",
  "libc",
  "libsql",
+ "news_media",
  "objc2",
  "objc2-foundation",
  "objc2-user-notifications",
@@ -3210,17 +3255,21 @@ dependencies = [
  "ragloader",
  "rand 0.9.5",
  "regex",
+ "religion",
  "remote-llm",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sports",
  "tauri-build",
  "text-splitter",
  "tokio",
  "tokio-util",
  "tower-http 0.6.11",
  "url",
+ "utility",
+ "weather_geo",
  "webread",
  "youtube_transcript",
 ]
@@ -3513,6 +3562,19 @@ dependencies = [
  "fastrand 1.9.0",
  "nalgebra 0.31.4",
  "num-traits",
+]
+
+[[package]]
+name = "knowledge"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -4028,6 +4090,19 @@ name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
+
+[[package]]
+name = "news_media"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
 
 [[package]]
 name = "no_std_io2"
@@ -6016,6 +6091,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "religion"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "remote-llm"
 version = "0.1.0"
 dependencies = [
@@ -6878,6 +6966,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "639404ee95557f2f8b7e4cb773ffefd45304c7ab8ba21ac83b69051595e083c0"
 dependencies = [
  "specta",
+]
+
+[[package]]
+name = "sports"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -7943,6 +8044,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
+name = "utility"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "uuid"
 version = "1.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8122,6 +8236,18 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "weather_geo"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

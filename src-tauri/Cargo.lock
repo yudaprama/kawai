@@ -3353,6 +3353,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
+name = "entertainment"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "wikipedia-search",
+]
+
+[[package]]
 name = "enum-ordinalize"
 version = "4.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3817,6 +3831,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "food_drink"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "foreign-types"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4115,6 +4142,19 @@ dependencies = [
  "typenum",
  "version_check",
  "zeroize",
+]
+
+[[package]]
+name = "geospace"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -5550,9 +5590,12 @@ dependencies = [
  "browser",
  "codegraph",
  "dotenvy",
+ "entertainment",
  "finance",
+ "food_drink",
  "futures-core",
  "futures-util",
+ "geospace",
  "graph",
  "hex",
  "jsonwebtoken",
@@ -5577,9 +5620,11 @@ dependencies = [
  "kawai-vault",
  "kawai-vision",
  "keyring",
+ "knowledge",
  "libc",
  "libsql",
  "local-llm",
+ "news_media",
  "objc2",
  "objc2-foundation",
  "objc2-user-notifications",
@@ -5589,11 +5634,13 @@ dependencies = [
  "ragloader",
  "rand 0.9.5",
  "regex",
+ "religion",
  "remote-llm",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sports",
  "sqlx",
  "tauri",
  "tauri-build",
@@ -5607,6 +5654,8 @@ dependencies = [
  "tokio-util",
  "tower-http 0.6.11",
  "url",
+ "utility",
+ "weather_geo",
  "webread",
  "youtube_transcript",
 ]
@@ -5968,6 +6017,19 @@ dependencies = [
  "security-framework 3.7.0",
  "windows-sys 0.60.2",
  "zeroize",
+]
+
+[[package]]
+name = "knowledge"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -6709,6 +6771,19 @@ name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
+
+[[package]]
+name = "news_media"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
 
 [[package]]
 name = "no_std_io2"
@@ -9311,6 +9386,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "religion"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "remote-llm"
 version = "0.1.0"
 dependencies = [
@@ -10617,6 +10705,19 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der 0.7.10",
+]
+
+[[package]]
+name = "sports"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -12459,6 +12560,19 @@ name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+
+[[package]]
+name = "utility"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+]
 
 [[package]]
 name = "uuid"

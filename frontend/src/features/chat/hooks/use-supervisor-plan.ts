@@ -265,8 +265,15 @@ function persistPlanSnapshot(
 
 /** Parse a validated `plan_task` result into the review model. Steps the
  *  supervisor cannot dispatch are filtered exactly like the composition root
- *  filters them from the executing registry. */
-const NON_DISPATCHABLE_REVIEW_TOOLS: string[] = [];
+ *  filters them from the executing registry. Must stay in sync with
+ *  `supervisor::NON_DISPATCHABLE_TOOLS`. */
+const NON_DISPATCHABLE_REVIEW_TOOLS: string[] = [
+  "deep_write",
+  "draft_document",
+  "plan_task",
+  "plan_revise",
+  "artifact_recall",
+];
 function parseReview(plan: unknown, sessionId: number, agentId: string): PlanReview | null {
   if (typeof plan !== "object" || plan == null) return null;
   const p = plan as {

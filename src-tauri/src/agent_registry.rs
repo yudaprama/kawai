@@ -24,6 +24,7 @@ pub const OFFICE_AGENT_ID: &str = "builtin.office";
 pub const PRESENTATION_AGENT_ID: &str = "builtin.presentation";
 pub const BINANCE_AGENT_ID: &str = "builtin.binance";
 pub const ANALYTICS_AGENT_ID: &str = "builtin.analytics";
+pub const ENTERTAINMENT_AGENT_ID: &str = "builtin.entertainment";
 
 /// Build the agent catalog list from the built-in registry.
 pub fn list_agents() -> Vec<AgentInfo> {
@@ -169,6 +170,40 @@ fn unavailable_definition(
 
 // ── Registry construction ───────────────────────────────────────────────────
 
+/// Entertainment tools: anime/manga, books, TV, music, poetry, and photos.
+/// Jikan (MyAnimeList) tools carry a Wikipedia fallback for upstream MAL
+/// outages; the rest are plain HTTP tools.
+#[cfg(feature = "litert")]
+pub fn entertainment_tools_for_supervisor(
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    let _ = (context, remote_configured);
+    Some(entertainment::all_tools())
+}
+
+macro_rules! generated_http_tools {
+    ($name:ident, $crate_name:ident) => {
+        #[cfg(feature = "litert")]
+        pub fn $name(
+            context: &AgentContext<'_>,
+            remote_configured: bool,
+        ) -> Option<kawai_tools::ToolSet> {
+            let _ = (context, remote_configured);
+            Some($crate_name::all_tools())
+        }
+    };
+}
+
+generated_http_tools!(weather_geo_tools_for_supervisor, weather_geo);
+generated_http_tools!(news_media_tools_for_supervisor, news_media);
+generated_http_tools!(sports_tools_for_supervisor, sports);
+generated_http_tools!(food_drink_tools_for_supervisor, food_drink);
+generated_http_tools!(geospace_tools_for_supervisor, geospace);
+generated_http_tools!(knowledge_tools_for_supervisor, knowledge);
+generated_http_tools!(religion_tools_for_supervisor, religion);
+generated_http_tools!(utility_tools_for_supervisor, utility);
+
 /// Stock/social finance tools: keyed stock providers (TwelveData/AlphaVantage/
 /// Tiingo, each with a keyless StockTwits fallback) plus the StockTwits-only
 /// social tools (sentiment/messages/trending). yfinance provides extended
@@ -254,7 +289,21 @@ pub fn builtin() -> AgentRegistry {
         d
     };
 
-    AgentRegistry::new(vec![office, presentation, binance, analytics])
+    let entertainment = AgentDefinition {
+        id: ENTERTAINMENT_AGENT_ID,
+        name: "Entertainment",
+        description: "Anime, manga, books, television, music, poetry, and photos.",
+        tools: true,
+        enabled: true,
+        persona: FALLBACK_PERSONA,
+        build_tools: entertainment_tools_for_supervisor,
+        capabilities: AgentCapabilities::default(),
+        capability_for_tool: no_capability,
+        confirmation_for_tool: no_confirmation,
+        summary_directive: None,
+    };
+
+    AgentRegistry::new(vec![office, presentation, binance, analytics, entertainment])
 }
 
 /// Non-litert build: all agents are disabled placeholders.
@@ -285,6 +334,12 @@ pub fn builtin() -> AgentRegistry {
             "Structured queries over your data files: filter, aggregate, rank.",
             false,
         ),
+        unavailable_definition(
+            ENTERTAINMENT_AGENT_ID,
+            "Entertainment",
+            "Anime, manga, books, television, music, poetry, and photos.",
+            false,
+        ),
     ])
 }
 
@@ -308,6 +363,7 @@ mod tests {
                 PRESENTATION_AGENT_ID,
                 BINANCE_AGENT_ID,
                 ANALYTICS_AGENT_ID,
+                ENTERTAINMENT_AGENT_ID,
             ]
         );
     }

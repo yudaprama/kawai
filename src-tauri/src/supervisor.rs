@@ -271,13 +271,56 @@ async fn build_supervisor_toolset(
             None
         }
     };
+    let entertainment = || -> Option<kawai_tools::ToolSet> {
+        #[cfg(feature = "litert")]
+        { agent_registry::entertainment_tools_for_supervisor(&context, remote_configured) }
+        #[cfg(not(feature = "litert"))]
+        {
+            let _ = (&context, remote_configured);
+            None
+        }
+    };
+    let generated = || -> Option<kawai_tools::ToolSet> {
+        #[cfg(feature = "litert")]
+        {
+            let mut set = kawai_tools::ToolSet::default();
+            for tools in [
+                agent_registry::weather_geo_tools_for_supervisor(&context, remote_configured),
+                agent_registry::news_media_tools_for_supervisor(&context, remote_configured),
+                agent_registry::sports_tools_for_supervisor(&context, remote_configured),
+                agent_registry::food_drink_tools_for_supervisor(&context, remote_configured),
+                agent_registry::geospace_tools_for_supervisor(&context, remote_configured),
+                agent_registry::knowledge_tools_for_supervisor(&context, remote_configured),
+                agent_registry::religion_tools_for_supervisor(&context, remote_configured),
+                agent_registry::utility_tools_for_supervisor(&context, remote_configured),
+            ] {
+                if let Some(mut tools) = tools {
+                    set.merge(&mut tools);
+                }
+            }
+            Some(set)
+        }
+        #[cfg(not(feature = "litert"))]
+        {
+            let _ = (&context, remote_configured);
+            None
+        }
+    };
 
     if agent_id == AUTO_AGENT_ID {
         // Merged catalog: first-wins per tool name. Office first — its
         // knowledge/memory/subagent tools are the broadest base — then the
         // specialists fill in their exclusive domain tools.
         let mut merged: Option<kawai_tools::ToolSet> = None;
-        for set in [office(), presentation(), binance(), analytics(), finance()]
+        for set in [
+            office(),
+            presentation(),
+            binance(),
+            analytics(),
+            finance(),
+            entertainment(),
+            generated(),
+        ]
             .into_iter()
             .flatten() {
             match &mut merged {
@@ -293,6 +336,7 @@ async fn build_supervisor_toolset(
         agent_registry::PRESENTATION_AGENT_ID => presentation(),
         agent_registry::BINANCE_AGENT_ID => binance(),
         agent_registry::ANALYTICS_AGENT_ID => analytics(),
+        agent_registry::ENTERTAINMENT_AGENT_ID => entertainment(),
         _ => None,
     }
 }
@@ -597,15 +641,25 @@ const PLAN_SEARCH_ROUNDS: usize = 2;
 /// Hard cap on total LLM calls (search rounds + corrections + violations).
 const PLAN_MAX_CALLS: usize = 6;
 /// Cross-cutting tools retrieval misses disproportionately — always visible.
+/// Only `memory_search` qualifies: user context must be recalled before
+/// acting on nearly every goal. `web_search` is deliberately NOT core — it
+/// lives in the catalog like any other tool, so the planner must surface it
+/// through search instead of lazily defaulting to it (sessions 37–39: with
+/// web_search always visible, the planner planned it for goals covered by
+/// specialist tools like get_weather). Consequence: with the catalog truly
+/// unavailable, almost no goal is plannable — fail fast beats a low-quality
+/// generic answer.
 /// All of them are DIRECTLY dispatchable toolset tools. Internal-dispatch
 /// subagent tools (deep_write, draft_document, plan_task, plan_revise,
 /// artifact_recall) are deliberately absent — the scheduler executes steps
 /// via `ToolSet::execute`, where those tools return an "unavailable here"
 /// error text instead of doing their work.
-const PLAN_CORE_TOOLS: [&str; 2] = ["web_search", "memory_search"];
+const PLAN_CORE_TOOLS: [&str; 1] = ["memory_search"];
 /// Subagent/internal-dispatch tools: excluded from the supervisor registry
-/// entirely so the planner can neither see nor plan against them.
-const NON_DISPATCHABLE_TOOLS: [&str; 5] = [
+/// entirely so the planner can neither see nor plan against them. Must stay
+/// in sync with `examples/catalog_composition::NON_DISPATCHABLE_TOOLS` —
+/// the catalog is the planner's discovery path.
+pub const NON_DISPATCHABLE_TOOLS: [&str; 5] = [
     "deep_write",
     "draft_document",
     "plan_task",
@@ -629,6 +683,8 @@ The full tool catalog is NOT provided. Discover tools by searching.
 Respond ONLY with ONE JSON object — either:
 {{"action": "search", "queries": ["<search 1>", "<search 2>", "<search 3>"]}}
   (request tool search results; up to 3 diverse queries; describe CAPABILITIES, not tool names)
+  — ALWAYS write the queries in ENGLISH: the catalog descriptions are English,
+  so queries in any other language return junk and waste the search budget.
 {{"goal": "<one-line goal>", "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}]}}
   (the final plan, once you know which tools to use)
 
@@ -643,15 +699,19 @@ Plan rules:
 - "produces" names the artifacts a step emits for later steps.
 - Side-effect tools MUST set "requiresConfirmation": true with a short "confirmationDescription".
 - "onError" is one of "fail", "skip", "continue". Default "fail".
-- Keep each task description under {} chars.
-- Core tools below are ALWAYS available — never search for them:
+ - Keep each task description under {} chars.
+ - Core tools below are ALWAYS available — never search for them:
 {}
-- The supervisor AUTOMATICALLY writes the final user-facing deliverable
-  (answer / summary / report) from the step outputs after they finish — via a
-  built-in "deliverable writer" agent you never see. NEVER plan a
-  summarization / writing / "produce the answer" step yourself; plan only the
-  data-gathering and artifact-producing steps that feed it.
-- If told the search budget is exhausted, respond ONLY with the final plan JSON.
+ - PREFERENCE RULE: when a searched-and-surfaced tool matches a sub-task, you
+   MUST use it instead of web_search. web_search is the FALLBACK for sub-tasks
+   with no dedicated tool — never the default when a specialist exists.
+ - FORBIDDEN tools — internal-only, validation will reject them: deep_write, draft_document, plan_task, plan_revise, artifact_recall. Never name them in steps. To create documents use office_create_document / office_create_deck / pdf_create_from_markdown.
+ - The supervisor AUTOMATICALLY writes the final user-facing deliverable
+   (answer / summary / report) from the step outputs after they finish — via a
+   built-in "deliverable writer" agent you never see. NEVER plan a
+   summarization / writing / "produce the answer" step yourself; plan only the
+   data-gathering and artifact-producing steps that feed it.
+ - If told the search budget is exhausted, respond ONLY with the final plan JSON.
 "#,
         kawai_router::types::MAX_PLAN_STEPS,
         kawai_router::types::MAX_TASK_CHARS,
@@ -692,6 +752,13 @@ async fn run_tool_search(
         };
         let mut listed = 0;
         for hit in hits {
+            // Belt-and-suspenders: the catalog should never contain these
+            // (see catalog_composition::NON_DISPATCHABLE_TOOLS), but a stale
+            // replica can still surface them — filter here so validation never
+            // has to reject a plan for a tool it cannot dispatch.
+            if NON_DISPATCHABLE_TOOLS.contains(&hit.name.as_str()) {
+                continue;
+            }
             if !seen.insert(hit.name.clone()) {
                 continue; // already visible to the planner
             }

@@ -684,10 +684,15 @@ jobs:
           KAWAI_LLM_MAX_TOKENS: "8192"
           EVAL_MIN_PASS: "19"
         run: |
+          set +e
           cargo run --release --example agent_eval --features litert -- \
             ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
             ${{ github.workspace }}/agent-eval-report-linux.md
-          cat ${{ github.workspace }}/agent-eval-report-linux.md >> "$GITHUB_STEP_SUMMARY"
+          status=$?
+          if [ -f "${{ github.workspace }}/agent-eval-report-linux.md" ]; then
+            cat "${{ github.workspace }}/agent-eval-report-linux.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
 
       - name: Upload eval report
         if: always()
