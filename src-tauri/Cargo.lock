@@ -6023,6 +6023,7 @@ dependencies = [
 name = "knowledge"
 version = "0.1.0"
 dependencies = [
+ "kawai-constants",
  "kawai-http-common",
  "kawai-tools",
  "reqwest 0.13.4",

@@ -115,14 +115,6 @@ export function computePhases(steps: SupervisorStep[]): SupervisorStep[][] {
   return sortedWaves.map((w) => waves.get(w) ?? []);
 }
 
-function fmtClock(at: number, startedAt: number | null): string {
-  if (startedAt == null) return "";
-  const secs = Math.max(0, Math.round((at - startedAt) / 1000));
-  const mm = Math.floor(secs / 60);
-  const ss = secs % 60;
-  return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
-}
-
 // ── Hook ────────────────────────────────────────────────────────────────────
 
 export function useWorkbench() {
@@ -289,8 +281,6 @@ export function useWorkbench() {
     });
   }, []);
 
-  const timeline = buildTimeline(supervisor);
-
   /** Full body of a step's output, from the persisted supervisor_step_results
    *  (the wire preview is capped at 2000 chars). Null when nothing is running
    *  yet (no session/plan key) or the fetch fails — caller keeps the preview. */
@@ -318,7 +308,6 @@ export function useWorkbench() {
   return {
     supervisor,
     runs,
-    timeline,
     sessionId,
     sessionError,
     composing,
@@ -347,49 +336,3 @@ export function useWorkbench() {
   };
 }
 
-type SupervisorView = ReturnType<typeof useSupervisorPlan>;
-
-/** Chronological machine log derived from the supervisor state — the
- *  Messages & Tools rail. S2 replaces this with true per-event streaming
- *  (args + per-step LLM usage). */
-function buildTimeline(supervisor: SupervisorView): TimelineRow[] {
-  const rows: TimelineRow[] = [];
-  const startedAt = supervisor.planStartedAt;
-  if (supervisor.planning != null || supervisor.status === "reviewing") {
-    rows.push({
-      id: "planner",
-      kind: "planner",
-      at: fmtClock(Date.now(), startedAt),
-      agent: "Planner",
-      detail: supervisor.planning?.provider
-        ? `${supervisor.planning.provider} · round ${supervisor.planning.round}`
-        : "decomposing the goal",
-    });
-  }
-  for (const s of supervisor.steps) {
-    const agent = isDeliverableStep(s) ? "Deliverable Writer" : agentName(s);
-    if (s.state === "pending") continue;
-    if (s.startedAt != null) {
-      rows.push({
-        id: `${s.stepId}:start`,
-        kind: "tool",
-        at: fmtClock(s.startedAt, startedAt),
-        agent,
-        detail: s.tool,
-      });
-    }
-    if (s.finishedAt != null) {
-      rows.push({
-        id: `${s.stepId}:end`,
-        kind: s.state === "failed" ? "failed" : "step",
-        at: fmtClock(s.finishedAt, startedAt),
-        agent,
-        detail:
-          s.state === "failed"
-            ? (s.error ?? "failed")
-            : `completed${s.retriesUsed ? ` (retried ×${s.retriesUsed})` : ""}`,
-      });
-    }
-  }
-  return rows;
-}

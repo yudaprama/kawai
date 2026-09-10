@@ -1,0 +1,19 @@
+{
+  "target": "frontend/src/features/workbench/components/workbench-page.tsx",
+  "date": "2026-09-10",
+  "mode": "operate",
+  "degraded": "single-context (no sub-agent tool in harness; Tauri surface not browser-inspectable)",
+  "detector": "clean (0 findings, workbench + chat-composer)",
+  "heuristicScores": {
+    "visibility": 2, "matchRealWorld": 1, "userControl": 2, "consistency": 2,
+    "errorPrevention": 2, "recognition": 2, "flexibility": 3, "minimalist": 2,
+    "errorRecovery": 1, "help": 1, "total": 17
+  },
+  "priorities": [
+    "P1 review gate is an unexplained double-submit; header shows stale previous goal",
+    "P2 plan failure error text not surfaced in the workbench UI",
+    "P3 dev-register mono copy, English-only for Indonesian users",
+    "P4 viewer auto-follow jumps; report switcher uses long planner task names",
+    "P5 follow-up chips/indicator sidebar-only and cryptic ('include')"
+  ]
+}

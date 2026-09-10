@@ -7,7 +7,6 @@ import {
   LoaderCircleIcon,
   PlayIcon,
   SquareIcon,
-  WrenchIcon,
   XIcon,
   ZapIcon,
   CornerDownRightIcon,
@@ -26,7 +25,6 @@ import {
   FOLLOW_UP_CHIPS,
   isDeliverableStep,
   useWorkbench,
-  type TimelineRow,
   type WorkbenchRun,
 } from "@/features/workbench/hooks/use-workbench";
 
@@ -278,7 +276,7 @@ function ProgressRail({
                           {step.state === "running" && step.startedAt != null ? (
                             <Duration from={step.startedAt} />
                           ) : (
-                            <span className="text-muted-foreground font-mono text-[10px]">{step.tool}</span>
+                            <span className="text-muted-foreground truncate font-mono text-[10px]">{step.tool}</span>
                           )}
                           {step.output && step.state === "completed" && (
                             <button
@@ -301,7 +299,7 @@ function ProgressRail({
           {deliverableStep && (
             <div className="space-y-0.5">
               <div className="flex items-center justify-between gap-2 font-mono text-xs">
-                <span className="text-foreground/90 min-w-0 truncate">Deliverable Writer</span>
+                <span className="text-foreground/90 min-w-0 truncate">Writing your deliverable</span>
                 <StateIcon state={deliverableStep.state} />
               </div>
               <div className="flex items-center justify-between">
@@ -533,11 +531,7 @@ function DeliverableViewer({
             <div className="text-muted-foreground mt-1 flex items-center gap-1.5 font-mono text-[11px]">
               <CornerDownRightIcon className="size-3 shrink-0" />
               <span className="min-w-0 truncate">builds on “{workbench.previousRun.goal}”</span>
-              <button
-                className="text-primary shrink-0 hover:underline"
-                onClick={() => onSelect("prev")}
-                type="button"
-              >
+              <button className="text-primary shrink-0 hover:underline" onClick={() => onSelect("prev")} type="button">
                 view
               </button>
             </div>
@@ -629,61 +623,6 @@ function DeliverableViewer({
             </div>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ── Machine timeline (collapsible section under the progress phases) ───────
-
-function ActivityTimeline({ workbench }: { workbench: ReturnType<typeof useWorkbench> }) {
-  const [open, setOpen] = useState(true);
-  return (
-    <div className="mt-6">
-      <button
-        aria-expanded={open}
-        className="text-foreground/80 hover:text-foreground mb-2 flex w-full items-center gap-1 font-mono text-[10px] font-bold tracking-wider uppercase"
-        onClick={() => setOpen((v) => !v)}
-        type="button"
-      >
-        <ChevronDownIcon className={`size-3 transition-transform ${open ? "" : "-rotate-90"}`} />
-        Messages &amp; Tools
-      </button>
-      {open && (
-        <div className="space-y-3">
-          {workbench.timeline.map((row) => (
-            <TimelineView key={row.id} row={row} />
-          ))}
-          {workbench.timeline.length === 0 && (
-            <p className="text-muted-foreground font-mono text-[11px]">No activity yet.</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TimelineView({ row }: { row: TimelineRow }) {
-  return (
-    <div className="border-border/50 border-b pb-3">
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-muted-foreground font-mono text-xs font-bold">{row.at}</span>
-        <span
-          className={`rounded px-2 py-0.5 font-mono text-[10px] ${
-            row.kind === "failed"
-              ? "bg-destructive/10 text-destructive"
-              : row.kind === "tool"
-                ? "bg-warning/10 text-warning"
-                : "bg-primary/10 text-primary"
-          }`}
-        >
-          {row.kind === "tool" ? "Tool" : row.kind === "failed" ? "Failed" : row.kind === "planner" ? "Plan" : "Done"}
-        </span>
-      </div>
-      <div className="text-foreground/60 font-mono text-xs">{row.agent}</div>
-      <div className="text-foreground font-mono text-xs">
-        {row.kind === "tool" && <WrenchIcon className="mr-1 inline size-3" />}
-        {row.detail}
       </div>
     </div>
   );
@@ -874,7 +813,6 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
             }}
             onOpenReport={openReport}
           />
-          <ActivityTimeline workbench={workbench} />
         </div>
         <div className="border-border/60 border-t p-4">
           {supervisor.status === "reviewing" && (
