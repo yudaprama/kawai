@@ -84,6 +84,8 @@ function ChatComposerInner({
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionFiles, setMentionFiles] = useState<KnowledgeFileInfo[] | null>(null);
   const [mentionQuery, setMentionQuery] = useState("");
+  const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const mentionRange = useRef<{ start: number; end: number } | null>(null);
   const consumedNonce = useRef<number | null>(null);
 
@@ -128,6 +130,7 @@ function ChatComposerInner({
     const m = activeMentionRange(value, caret);
     setMentionQuery(m?.query ?? "");
     mentionRange.current = m ? { start: m.start, end: m.end } : null;
+    setActiveMentionIndex(0);
     setMentionOpen(m !== null);
   }, []);
 
@@ -140,15 +143,27 @@ function ChatComposerInner({
         // an earlier "@" occurrence elsewhere in the text.
         const value = controller.textInput.value;
         if (range.end <= value.length && value[range.start] === "@") {
-          const next = (value.slice(0, range.start) + value.slice(range.end)).replace(/\s{2,}/g, " ");
-          controller.textInput.setInput(next);
+          // Remove only the mention and one adjacent separator. Never normalize
+          // whitespace in the rest of the user's draft (newlines/indentation matter).
+          const after = value.slice(range.end);
+          const separator = after.match(/^\s/) ? after.slice(0, 1) : "";
+          controller.textInput.setInput(value.slice(0, range.start) + after.slice(separator.length));
         }
         mentionRange.current = null;
       }
-      setMentionOpen(false);
+        setMentionOpen(false);
       setMentionQuery("");
+      setActiveMentionIndex(0);
     },
     [controller],
+  );
+
+  const remaining = mentionFiles?.filter((f) => !mentions.some((m) => m.id === f.id)) ?? [];
+  const filtered = remaining.filter(
+    (f) =>
+      mentionQuery === "" ||
+      f.originalName.toLowerCase().includes(mentionQuery.toLowerCase()) ||
+      f.ext.toLowerCase().includes(mentionQuery.toLowerCase()),
   );
 
   const handleTranscription = useCallback(
@@ -160,37 +175,76 @@ function ChatComposerInner({
 
   const handleTextareaKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (mentionOpen && filtered.length > 0) {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          setActiveMentionIndex((i) =>
+            e.key === "ArrowDown" ? (i + 1) % filtered.length : (i - 1 + filtered.length) % filtered.length,
+          );
+          return;
+        }
+        if (e.key === "Enter") {
+          e.preventDefault();
+          pickMention(filtered[activeMentionIndex]);
+          return;
+        }
+      }
+      if (mentionOpen && e.key === "Escape") {
+        e.preventDefault();
+        setMentionOpen(false);
+        return;
+      }
       if (e.key === "ArrowUp" && controller.textInput.value === "" && lastUserText) {
         e.preventDefault();
         controller.textInput.setInput(lastUserText);
       }
     },
-    [controller, lastUserText],
+    [activeMentionIndex, controller, filtered, lastUserText, mentionOpen, pickMention],
   );
 
   const handleSubmit = useCallback(
     async (message: { text: string; files: { url: string; mediaType: string; fileName?: string }[] }) => {
-      const ids = mentions.map((m) => m.id);
-      for (const file of message.files) {
-        if (file.mediaType.startsWith("image/") && file.url.startsWith("data:")) {
-          const imported = await onImageToKnowledge(file.url, file.fileName ?? "pasted-image");
-          ids.push(...imported);
+      if (importProgress) return;
+      const imageFiles = message.files.filter(
+        (file) => file.mediaType.startsWith("image/") && file.url.startsWith("data:"),
+      );
+      setImportProgress(imageFiles.length > 0 ? { done: 0, total: imageFiles.length } : null);
+      try {
+        // Revalidate mentions against the current library so deleted files are not
+        // sent as stale IDs. Imports run concurrently for responsive multi-paste.
+        const currentFiles = await call<KnowledgeFileInfo[]>("knowledge_list").catch(() => []);
+        const ids = mentions.filter((m) => currentFiles.some((f) => f.id === m.id)).map((m) => m.id);
+        let completed = 0;
+        const imports = await Promise.allSettled(
+          imageFiles.map(async (file) => {
+            try {
+              return await onImageToKnowledge(file.url, file.fileName ?? "pasted-image");
+            } finally {
+              completed += 1;
+              setImportProgress({ done: completed, total: imageFiles.length });
+            }
+          }),
+        );
+        let importFailed = false;
+        for (const result of imports) {
+          if (result.status === "fulfilled") ids.push(...result.value);
+          else {
+            importFailed = true;
+            logWarn("image_to_knowledge", result.reason);
+          }
         }
+        // Do not silently submit a message after an attachment import failed;
+        // keeping the draft lets the user retry.
+        if (importFailed) return;
+        if (message.text.trim() || ids.length > 0) {
+          onSubmit(message.text, ids.length > 0 ? ids : undefined);
+        }
+        setMentions([]);
+      } finally {
+        setImportProgress(null);
       }
-      if (message.text.trim() || ids.length > 0) {
-        onSubmit(message.text, ids.length > 0 ? ids : undefined);
-      }
-      setMentions([]);
     },
-    [onImageToKnowledge, onSubmit, mentions],
-  );
-
-  const remaining = mentionFiles?.filter((f) => !mentions.some((m) => m.id === f.id)) ?? [];
-  const filtered = remaining.filter(
-    (f) =>
-      mentionQuery === "" ||
-      f.originalName.toLowerCase().includes(mentionQuery.toLowerCase()) ||
-      f.ext.toLowerCase().includes(mentionQuery.toLowerCase()),
+    [importProgress, mentions, onImageToKnowledge, onSubmit],
   );
 
   return (
@@ -221,7 +275,14 @@ function ChatComposerInner({
       <PromptInputBody>
         <PromptInputTextarea
           data-chat-composer=""
-          placeholder={agentName === "Workbench" ? "Describe your goal…" : `Message ${agentName}…`}
+          disabled={importProgress !== null}
+          placeholder={
+            importProgress
+              ? `Importing images… ${importProgress.done}/${importProgress.total}`
+              : agentName === "Workbench"
+                ? "Describe your goal…"
+                : `Message ${agentName}…`
+          }
           onChange={handleComposerChange}
           onKeyDown={handleTextareaKeyDown}
         />
@@ -253,7 +314,10 @@ function ChatComposerInner({
                 <div className="max-h-56 overflow-y-auto">
                   {filtered.map((f) => (
                     <button
-                      className="hover:bg-accent flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left"
+                      aria-selected={filtered.indexOf(f) === activeMentionIndex}
+                      className={`hover:bg-accent flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left ${
+                        filtered.indexOf(f) === activeMentionIndex ? "bg-accent" : ""
+                      }`}
                       key={f.id}
                       onClick={() => pickMention(f)}
                       type="button"
@@ -302,7 +366,7 @@ function ChatComposerInner({
           />
           <SpeechInput className="hit-44 size-8 [&_svg]:size-4" onTranscriptionChange={handleTranscription} />
         </PromptInputTools>
-        <PromptInputSubmit onStop={onStop} status={status} />
+        <PromptInputSubmit disabled={importProgress !== null} onStop={onStop} status={status} />
       </PromptInputFooter>
     </PromptInput>
   );

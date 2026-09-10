@@ -75,6 +75,7 @@ export function SessionStepResultsView({ data }: { data: Record<string, unknown>
         const finished = fmtDate(e.finished_at);
         const truncated = e.truncated === true;
         return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: session step entries lack stable ids; run may duplicate
           <div className="bg-background/50 border-border/60 rounded-lg border p-3" key={`${e.run ?? "run"}-${i}`}>
             <div className="text-muted-foreground mb-1.5 flex flex-wrap items-center gap-2 font-mono text-[11px]">
               <span className="text-foreground/80 font-semibold">

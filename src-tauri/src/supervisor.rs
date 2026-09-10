@@ -354,19 +354,25 @@ fn tool_meta_from_definition(def: &kawai_tools::ToolDefinition) -> ToolMeta {
 }
 
 /// Render the user-context blocks that ride the planner call: the L3 persona,
-/// goal-relevant memories (relevance-ranked; bumps access counters), and the
-/// user's skills. Each block degrades to empty on failure. Pure string
-/// assembly so tests can pin the shape.
+/// goal-relevant memories (relevance-ranked; bumps access counters), the
+/// user's skills, and the files attached to this run's session. Each block
+/// degrades to empty on failure. Pure string assembly so tests can pin the
+/// shape.
 fn render_planner_context(
     persona_block: String,
     memories_block: String,
     skills_block: String,
+    attached_files_block: String,
 ) -> String {
-    if persona_block.is_empty() && memories_block.is_empty() && skills_block.is_empty() {
+    if persona_block.is_empty()
+        && memories_block.is_empty()
+        && skills_block.is_empty()
+        && attached_files_block.is_empty()
+    {
         return String::new();
     }
-    let mut out = String::from("<user-context>\nBackground about the user. Ground decisions in it when relevant; ignore it when not.\n");
-    for block in [persona_block, memories_block, skills_block] {
+    let mut out = String::from("<user-context>\nBackground about the user and this run's inputs. Ground decisions in it when relevant; ignore it when not.\n");
+    for block in [persona_block, memories_block, skills_block, attached_files_block] {
         if !block.is_empty() {
             out.push_str(&block);
             out.push('\n');
@@ -376,12 +382,46 @@ fn render_planner_context(
     out
 }
 
+/// Cap on how many attached-file names ride the planner prompt (names only —
+/// never ids or contents; scope stays server-side via the session binding).
+const ATTACHED_FILES_MAX: usize = 20;
+
+/// Names of the files attached to this run's session, as a planner-context
+/// block. Without it the planner is blind to attachments: a neutral goal
+/// ("make a summary") would plan no knowledge_search step, and the attached
+/// files would never be read by any step. Names give the planner the semantic
+/// signal to plan retrieval and write good queries; tabular files are flagged
+/// so the planner routes them to the analytics tools instead. Best-effort —
+/// a read failure degrades to an empty block, planning never fails on it.
+async fn attached_files_block(user_id: &str, session_id: i64) -> String {
+    let files = match crate::logic::rag::list_session_files(user_id, session_id).await {
+        Ok(files) if !files.is_empty() => files,
+        _ => return String::new(),
+    };
+    let mut out = String::from(
+        "<attached-files>\nThe user attached these files to this run (their contents are searchable via knowledge_search):\n",
+    );
+    for f in files.iter().take(ATTACHED_FILES_MAX) {
+        if kawai_office::store::is_tabular_ext(&f.ext) {
+            out.push_str(&format!(
+                "- {} (tabular — query structurally via the analytics tools)\n",
+                f.original_name
+            ));
+        } else {
+            out.push_str(&format!("- {}\n", f.original_name));
+        }
+    }
+    out.push_str("</attached-files>");
+    out
+}
+
 /// Build a [`ToolRegistry`] from the supervisor's toolset.
 ///
 /// The registry contains metadata for the planner prompt and a dispatch
 /// closure that delegates to [`kawai_tools::ToolSet::execute`].
 pub async fn plan_task(
     user_id: &str,
+    session_id: i64,
     goal: &str,
     registry: &ToolRegistry,
     on_progress: impl Fn(SupervisorEvent),
@@ -402,7 +442,13 @@ pub async fn plan_task(
     let persona_block = kawai_memory::persona_prompt_block(user_id).await;
     let memories_block = kawai_memory::prompt_block_relevant(user_id, goal).await;
     let skills_block = kawai_skills::prompt_block(user_id).await;
-    let context = render_planner_context(persona_block, memories_block, skills_block);
+    let attached_files_block = attached_files_block(user_id, session_id).await;
+    let context = render_planner_context(
+        persona_block,
+        memories_block,
+        skills_block,
+        attached_files_block,
+    );
 
     // The planner sees NO full catalog. It discovers tools through bounded
     // search rounds against the Turso tool catalog, then emits the plan.
@@ -1863,11 +1909,15 @@ mod tests {
 
     #[test]
     fn planner_context_omits_empty_blocks_and_wraps_present_ones() {
-        assert_eq!(render_planner_context(String::new(), String::new(), String::new()), "");
+        assert_eq!(
+            render_planner_context(String::new(), String::new(), String::new(), String::new()),
+            ""
+        );
         let out = render_planner_context(
             "<persona>likes dark UIs</persona>".into(),
             String::new(),
             "<skills>pdf skill</skills>".into(),
+            String::new(),
         );
         assert!(out.starts_with("<user-context>"));
         assert!(out.contains("<persona>likes dark UIs</persona>"));
@@ -1875,6 +1925,19 @@ mod tests {
         assert!(out.ends_with("</user-context>"));
         // No empty block placeholders.
         assert!(!out.contains("<memories>"));
+    }
+
+    #[test]
+    fn attached_files_only_context_is_rendered() {
+        let out = render_planner_context(
+            String::new(),
+            String::new(),
+            String::new(),
+            "<attached-files>\n- report.docx\n</attached-files>".into(),
+        );
+        assert!(out.starts_with("<user-context>"));
+        assert!(out.contains("<attached-files>\n- report.docx\n</attached-files>"));
+        assert!(out.ends_with("</user-context>"));
     }
 
     /// Registry whose single tool records executions and succeeds.

@@ -97,7 +97,7 @@ export function AssetsRail({
   onSelectAsset,
   onToggle,
   onLogout,
-  onNewTask,
+  onNew,
 }: {
   /** Open asset workspace (center pane replaces chat); null = chat view. */
   assetView: AssetViewId | null;
@@ -106,7 +106,7 @@ export function AssetsRail({
   onSelectAsset: (id: AssetViewId) => void;
   onToggle: () => void;
   onLogout: () => void;
-  onNewTask: () => void;
+  onNew: () => void;
 }) {
   return (
     <aside
@@ -131,15 +131,15 @@ export function AssetsRail({
 
       <div className={`px-2 ${collapsed ? "pt-2 pb-1.5" : "pt-3 pb-2"}`}>
         <Button
-          aria-label="New Task"
+          aria-label="New"
           className={collapsed ? "w-full" : "w-full justify-start gap-2.5"}
-          onClick={onNewTask}
+          onClick={onNew}
           size={collapsed ? "icon" : "default"}
-          title="New Task"
+          title="New"
           variant="default"
         >
           <PlusIcon className="size-4" />
-          {!collapsed && <span>New Task</span>}
+          {!collapsed && <span>New</span>}
         </Button>
       </div>
 

@@ -1853,7 +1853,7 @@ async fn plan_task_handler(
     // held anywhere) — flat per-turn in the frontend was removed with it.
     // Web transport has no live planning surface — progress rounds are logged
     // only (the plan still resolves as JSON).
-    crate::supervisor::plan_task(&user_id, &req.goal, &registry, |event| {
+    crate::supervisor::plan_task(&user_id, req.session_id, &req.goal, &registry, |event| {
         if let crate::supervisor::SupervisorEvent::PlanningRound { round, provider, searching } = event {
             eprintln!(
                 "[plan_task-web] round {round} served by {provider} searching={searching}"

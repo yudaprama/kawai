@@ -845,7 +845,8 @@ pub async fn plan_task(
     // the planner loop can take a minute+, and a silent UI during it was the
     // worst-rated part of the flow. The command still resolves with the plan.
     let on_event = on_event.clone();
-    let (plan, usage) = crate::supervisor::plan_task(&user_id, &goal, &registry, move |event| {
+    let (plan, usage) =
+        crate::supervisor::plan_task(&user_id, session_id, &goal, &registry, move |event| {
         let _ = on_event.send(event);
     })
         .await

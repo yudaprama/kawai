@@ -137,8 +137,17 @@ export function useWorkbench() {
       }
       // Knowledge files attached via the composer's @ menu scope this run's
       // knowledge_search to the desk session (same contract as chat).
+      // Awaited so the session_files rows are committed before the planner
+      // starts — otherwise the first steps' knowledge_search can miss the
+      // files that were just mentioned. Failure blocks the run: a goal that
+      // depends on attached files must not silently run without them.
       if (fileIds?.length) {
-        void call("knowledge_add_to_session", { sessionId: sid, fileIds }).catch(() => {});
+        try {
+          await call("knowledge_add_to_session", { sessionId: sid, fileIds });
+        } catch (err) {
+          setSessionError(`Couldn't attach the mentioned files to the run — ${errText(err)}`);
+          return;
+        }
       }
       setRuns((prev) => [
         ...prev,

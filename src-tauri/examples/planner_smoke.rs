@@ -58,7 +58,7 @@ async fn main() {
                 continue;
             }
         };
-        match kawai_lib::supervisor::plan_task(user, goal, &registry, |_| {}).await {
+        match kawai_lib::supervisor::plan_task(user, -1, goal, &registry, |_| {}).await {
             Ok((plan, _usage)) => {
                 let tools: Vec<&str> =
                     plan.steps.iter().map(|s| s.dispatch_key()).collect();

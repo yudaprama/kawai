@@ -189,8 +189,7 @@ export function useKnowledgeActions(chat: {
           { sessionId: sid },
         );
         if (failed.length || importedIds.length === 0) {
-          showErrorToast(failed[0]?.error ?? "Couldn't save the image");
-          return [];
+          throw new Error(failed[0]?.error ?? "Couldn't save the image");
         }
         toast.success("Image saved to knowledge", {
           description: "Indexing runs in the background.",
@@ -198,7 +197,7 @@ export function useKnowledgeActions(chat: {
         return importedIds;
       } catch (err) {
         showErrorToast(err);
-        return [];
+        throw err;
       }
     },
     [chat.sessionId, chat.ensureSessionId, importKnowledgeFiles],

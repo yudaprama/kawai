@@ -186,7 +186,7 @@ export default function App() {
           }}
           onToggle={() => setAgentsRail((v) => !v)}
           onLogout={() => void chat.logout()}
-          onNewTask={() => {
+          onNew={() => {
             setAssetView(null);
             void chat.newChat();
           }}
@@ -222,7 +222,7 @@ export default function App() {
                 }}
                 onToggle={() => setMobileDrawer(null)}
                 onLogout={() => void chat.logout()}
-                onNewTask={() => {
+                onNew={() => {
                   setAssetView(null);
                   setMobileDrawer(null);
                   void chat.newChat();
