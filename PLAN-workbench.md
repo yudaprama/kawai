@@ -80,15 +80,6 @@ Sweeper") — the reference's personality, done in kawai's planner.
   store (run-keyed) so it opens in the existing preview and survives restarts
   as a first-class file.
 
-## Timeline (Messages & Tools)
-
-- v1 derives from existing events: `stepStarted` (⚒ tool row) / `stepFailed`
-  / `stepCompleted` (◈ model row — provider known from `planningRound`
-  telemetry only for the planner; per-step provider arrives in S2).
-- S2 backend enrichments: `stepStarted` gains `args`; per-step LLM usage
-  (model, tokens in/out) rides `stepCompleted`; optionally a live `sectionDelta`
-  equivalent for the deliverable as it is synthesized.
-
 ## Chat's fate
 
 Removed from the run flow entirely — results never enter chat. The composer

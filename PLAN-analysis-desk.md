@@ -43,7 +43,7 @@ Every primitive the desk needs already exists:
     post-run actions (analyze another / history).
   - **Right rail** — `Analysis Configuration` (date, analyst team, research
     depth shallow/medium/deep, quick+deep LLM; locked during/after the run)
-    above `Messages & Tools`: a chronological event timeline per agent —
+    above a chronological per-agent event timeline —
     `Reasoning` rows (model, tokens in/out) and `Tool` rows (tool name + args).
 - **Deliverables**: per-agent report documents + one final decision card
   (BUY/SELL/HOLD, confidence, rationale). Reports are first-class artifacts
@@ -72,7 +72,7 @@ POST /api/run_analysis_desk   +  #[tauri::command] run_analysis_desk
   `deskStarted {ticker, sections}` · `sectionStarted {section}` ·
   `sectionDelta {section, text}` (live report growth) · `sectionCompleted {section}` ·
   `agentToolCall {section, tool, args}` · `agentLlmUsage {section, model, tokensIn, tokensOut}`
-  (the Messages & Tools timeline) · `deskCompleted {decision}` · `deskFailed {error}`.
+  · `deskCompleted {decision}` · `deskFailed {error}`.
 - Reports persist as artifacts keyed by `desk-<ticker>-<date>` so history can
   replay a run (same pattern as `supervisor_step_results`).
 

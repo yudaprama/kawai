@@ -63,7 +63,7 @@ frontend/
 │   │   ├── wallet/          # Monad wallet asset page (README.md inside = end-to-end reference: adapters, ops, network/security model)
 │   │   ├── workbench/       # THE primary surface: goal → plan → deliverable
 │   │   │   ├── components/  # workbench-page (landing hero composer + 3-pane run view) + tool-views/ (per-tool step-report renderers; registry maps tool name → human view, shape map in TOOL-MAP.md §11)
-│   │   │   └── hooks/       # use-workbench (run list, phases/agents/timeline view models) wrapping use-supervisor-plan
+│   │   │   └── hooks/       # use-workbench (run list, phases/agents view models, follow-up-composer state) wrapping use-supervisor-plan
 │   │   ├── chat/            # supervisor execution engine + chat library code (no chat surface — the Workbench replaced it)
 │   │   │   ├── components/  # chat-composer (used by the Workbench), conversation-panel & co. (unused library code)
 │   │   │   ├── hooks/       # use-chat-model, use-chat-sessions, use-supervisor-chat, use-supervisor-plan
@@ -111,7 +111,7 @@ User goal → WorkbenchPage (landing hero composer) → use-workbench.run()
   → Tauri Channel<SupervisorEvent> (via @tauri-apps/api/core)
   → events: "planStarted" | "stepStarted" | "confirmationRequested" | "stepCompleted" | "stepFailed" | "stepSkipped" | "planCompleted" | "planFailed"
   → use-supervisor-plan folds events into plan steps + deliverable
-  → WorkbenchPage renders: progress rail (phases/agents) | deliverable viewer (markdown + report switcher) | goal composer + Messages & Tools timeline
+  → WorkbenchPage renders: progress rail (phases/agents) | deliverable viewer (markdown + report switcher) | goal composer (post-run: follow-up chips + quote indicator)
 ```
 
 ### Backend communication primitives
@@ -130,7 +130,7 @@ User goal → WorkbenchPage (landing hero composer) → use-workbench.run()
 | Components | Prefer `ai-elements/` → `ui/` first; add new shadcn components via `bunx shadcn@latest add` only when nothing fits |
 | Hooks | Custom hooks in `hooks/`; each hook is a single file |
 | Platform | All platform capabilities go through the `Platform` interface in `platform/types.ts` — never use browser globals directly in components |
-| Run state | `features/chat/hooks/use-supervisor-plan.ts` owns execution state (steps, confirmations, deliverable); `features/workbench/hooks/use-workbench.ts` wraps it with the desk view models (run list, phases, agent names, timeline); `features/chat/hooks/use-supervisor-chat.ts` owns the session/history shell |
+| Run state | `features/chat/hooks/use-supervisor-plan.ts` owns execution state (steps, confirmations, deliverable); `features/workbench/hooks/use-workbench.ts` wraps it with the desk view models (run list, phases, agent names, follow-up chips/quote state); `features/chat/hooks/use-supervisor-chat.ts` owns the session/history shell |
 | Events | `SupervisorEvent` mirrors the Rust enum in `src-tauri/src/supervisor.rs` (scheduler events come from `kawai-router`). `LocalChatEvent` in `frontend/src/generated/events.ts` (raw `local_chat` stream) is generated from `crates/foundation/events` via `cargo run -p kawai-bindings --bin export-bindings` — never edit generated files manually. Add variant in the source then regenerate to avoid silent drops. |
 
 ## Non-obvious patterns
