@@ -1524,16 +1524,29 @@ async fn revise_plan(
     for round in 0..2 {
         let mut raw = String::new();
         {
-            let mut stream = remote.stream(&system, &task, &materials).await?;
-            while let Some(event) = stream.next().await {
-                match event? {
-                    remote_llm::RemoteEvent::Token { text } => {
-                        if raw.len() < 32_000 {
-                            raw.push_str(&text);
+            // Overall watchdog for this revise round. remote-llm streams have
+            // no inherent timeout by design (long generations are legitimate);
+            // every consumer enforces its own — agent.rs uses
+            // REMOTE_TIMEOUT_SECS. Without one here, a provider that accepts
+            // the connection but never streams hangs the whole replan (and
+            // with it the run) forever — observed live 2026 (zai returned no
+            // text, the failover candidate stalled mid-stream).
+            let collect = async {
+                let mut stream = remote.stream(&system, &task, &materials).await?;
+                while let Some(event) = stream.next().await {
+                    match event? {
+                        remote_llm::RemoteEvent::Token { text } => {
+                            if raw.len() < 32_000 {
+                                raw.push_str(&text);
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
+                Ok::<(), String>(())
+            };
+            if let Err(e) = tokio::time::timeout(std::time::Duration::from_secs(300), collect).await {
+                return Err(format!("revised-planner call did not finish in 300s: {e}"));
             }
         }
         match parse_supervisor_plan(&raw, registry) {
