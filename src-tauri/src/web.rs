@@ -322,6 +322,20 @@ async fn skill_create_handler(
     .map_err(|e| (db_status(&e), e.to_string()))
 }
 
+/// Authenticated RPC: suggest follow-up chips for a finished deliverable.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SuggestFollowupsReq {
+    excerpt: String,
+}
+
+async fn suggest_followups_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<SuggestFollowupsReq>,
+) -> Json<Vec<String>> {
+    Json(logic::suggest_followups(&user_id, req.excerpt).await)
+}
+
 async fn skill_list_handler(
     Extension(user_id): Extension<String>,
 ) -> Result<Json<Vec<logic::skills::SkillSummary>>, (StatusCode, String)> {
@@ -1694,6 +1708,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
         "/api/generate_session_title",
         post(generate_session_title_handler),
     );
+
+    // Follow-up composer chips (PLAN-followup-composer.md, Fase 3).
+    let protected = protected.route("/api/suggest_followups", post(suggest_followups_handler));
 
     let protected = protected
         .route("/api/office_import_file", post(office_import_file_handler))

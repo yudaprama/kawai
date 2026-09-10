@@ -122,6 +122,7 @@ pub fn run() {
         commands::generate_session_title,
         commands::skill_create,
         commands::skill_list,
+        commands::suggest_followups,
         commands::skill_get,
         commands::skill_update,
         commands::skill_delete,

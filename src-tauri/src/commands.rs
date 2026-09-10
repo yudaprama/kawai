@@ -441,6 +441,17 @@ pub async fn skill_list(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: suggest short follow-up requests for a just-finished
+/// deliverable. Never fails — logic degrades to an empty vec, the frontend
+/// keeps its static chips (PLAN-followup-composer.md, Fase 3). The `Result`
+/// is a Tauri requirement for async commands holding `State`; it is always
+/// `Ok`.
+#[tauri::command]
+pub async fn suggest_followups(excerpt: String, session: State<'_, Session>) -> Result<Vec<String>, String> {
+    let user_id = session_user_id(&session)?;
+    Ok(logic::suggest_followups(&user_id, excerpt).await)
+}
+
 /// Authenticated RPC: fetch one skill including its body; None → null.
 #[tauri::command]
 pub async fn skill_get(

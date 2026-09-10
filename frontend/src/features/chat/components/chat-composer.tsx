@@ -33,6 +33,8 @@ type ChatComposerProps = {
   /** External draft (e.g. a clicked prompt chip) — dropped into the input
    *  for editing instead of auto-submitting. */
   chipDraft?: { text: string; nonce: number } | null;
+  /** Placeholder override (e.g. the workbench contextual follow-up hint). */
+  placeholder?: string;
   onDraftConsumed?: () => void;
   /** Supervisor plan mode: submits route to the planner instead of the agent. */
 };
@@ -48,6 +50,7 @@ export function ChatComposer({
   onAddLink,
   chipDraft,
   onDraftConsumed,
+  placeholder,
 }: ChatComposerProps) {
   return (
     <PromptInputProvider>
@@ -55,6 +58,7 @@ export function ChatComposer({
         agentName={agentName}
         chipDraft={chipDraft}
         onDraftConsumed={onDraftConsumed}
+        placeholder={placeholder}
         onStop={onStop}
         status={status}
         onSubmit={onSubmit}
@@ -78,6 +82,7 @@ function ChatComposerInner({
   onAddLink,
   chipDraft,
   onDraftConsumed,
+  placeholder,
 }: ChatComposerProps) {
   const controller = usePromptInputController();
   const [mentions, setMentions] = useState<KnowledgeFileInfo[]>([]);
@@ -279,9 +284,8 @@ function ChatComposerInner({
           placeholder={
             importProgress
               ? `Importing images… ${importProgress.done}/${importProgress.total}`
-              : agentName === "Workbench"
-                ? "Describe your goal…"
-                : `Message ${agentName}…`
+              : placeholder ??
+                (agentName === "Workbench" ? "Describe your goal…" : `Message ${agentName}…`)
           }
           onChange={handleComposerChange}
           onKeyDown={handleTextareaKeyDown}

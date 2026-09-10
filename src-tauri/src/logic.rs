@@ -53,6 +53,39 @@ pub fn generate_activity(input: ActivityInput) -> impl Stream<Item = ActivityEve
     }
 }
 
+/// Suggest short follow-up requests for a just-finished deliverable (one
+/// cloud/local one-shot via the remote-llm pool). Never errors: any failure
+/// (pool empty, parse miss) degrades to an empty list and the frontend keeps
+/// its static chips. The excerpt is truncated here so even a caller passing
+/// the full deliverable stays within the local engine's materials budget.
+pub async fn suggest_followups(_user_id: &str, excerpt: String) -> Vec<String> {
+    const MAX_EXCERPT_CHARS: usize = 2000;
+    const MAX_SUGGESTIONS: usize = 4;
+    let excerpt: String = excerpt.chars().take(MAX_EXCERPT_CHARS).collect();
+    if excerpt.trim().is_empty() {
+        return Vec::new();
+    }
+    let system = "You suggest short follow-up requests for a freshly produced deliverable.";
+    let task = format!(
+        "The deliverable below was just produced. Suggest {} short follow-up requests \
+         (<=4 words each, same language as the deliverable) the user is most likely to ask next. \
+         Return a JSON array of strings. Deliverable:\n{excerpt}",
+        MAX_SUGGESTIONS
+    );
+    let response = match remote_llm::reason::reason(system, &task).await {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    let json = remote_llm::reason::extract_json(&response);
+    serde_json::from_str::<Vec<String>>(&json)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .take(MAX_SUGGESTIONS)
+        .collect()
+}
+
 /// Resolve the on-device model path from standard development and bundled locations.
 ///   3. `~/.kawai/models/gemma-4-E4B-it.litertlm` (user home)
 pub fn resolve_model_path() -> Result<String, String> {

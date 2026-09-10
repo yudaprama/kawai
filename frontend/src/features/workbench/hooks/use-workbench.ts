@@ -1,10 +1,52 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { errText, call } from "@/lib/api";
 import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 
 // ── Derived view models ─────────────────────────────────────────────────────
+
+// ── Follow-up composer (PLAN-followup-composer.md) ──────────────────────
+
+/** Static quick-action chips shown above the composer once a run finished
+ *  with a deliverable. Hardcoded by design (deterministic, zero latency,
+ *  zero failure mode) — dynamic chips (Fase 3) swap in over them when the
+ *  suggest_followups op answers. Clicking a chip seeds the composer with
+ *  the prefix; the user completes the sentence. */
+export interface FollowUpChip {
+  icon: string;
+  label: string;
+  prefix: string;
+}
+export const FOLLOW_UP_CHIPS: FollowUpChip[] = [
+  { icon: "✨", label: "Enhance", prefix: "Enhance the previous deliverable: " },
+  { icon: "➕", label: "Expand", prefix: "Expand the previous deliverable with more depth and examples: " },
+  {
+    icon: "🎯",
+    label: "More actionable",
+    prefix: "Rewrite the previous deliverable to be more concrete and actionable: ",
+  },
+  { icon: "✂️", label: "Shorter", prefix: "Condense the previous deliverable, keep the key findings: " },
+  { icon: "✍️", label: "Change tone", prefix: "Rewrite the previous deliverable in a different tone: " },
+  { icon: "🌐", label: "Translate", prefix: "Translate the previous deliverable to: " },
+];
+
+/** The excerpt is LLM-generated content quoted verbatim into the planner's
+ *  goal — a deliverable containing the block's own tags could spoof the
+ *  boundary. Strip them before wrapping (decision #11). */
+export function sanitizeDeliverableExcerpt(excerpt: string): string {
+  return excerpt.split("<previous-deliverable>").join("").split("</previous-deliverable>").join("");
+}
+
+const QUOTE_EXCERPT_MAX_CHARS = 800;
+
+/** Build the goal string sent to `plan_task`: the self-describing quote
+ *  block plus the user's verbatim goal. The clean goal NEVER enters here —
+ *  callers keep it separate for userGoal/title/plan record (decision #10). */
+export function buildQuotedGoal(opts: { goal: string; excerpt: string; planKey: string; sessionId: number }): string {
+  const excerpt = sanitizeDeliverableExcerpt(opts.excerpt).slice(0, QUOTE_EXCERPT_MAX_CHARS);
+  return `<previous-deliverable planKey="${opts.planKey}" session="${opts.sessionId}" chars="${opts.excerpt.length}">\n${excerpt}\n</previous-deliverable>\n\n<user-goal>\n${opts.goal}\n</user-goal>`;
+}
 
 /** One past/current run in the desk's history list (in-memory for S1; S2
  *  persists runs to the office store for cross-restart history). */
@@ -16,6 +58,9 @@ export interface WorkbenchRun {
   finishedAt?: number;
   /** Synthesized deliverable (terminal) — full text lives in the viewer. */
   outputPreview?: string;
+  /** Full deliverable text (in-memory only) — backs the previous-run rail
+   *  (Fase 4); full step reports still live in supervisor_step_results. */
+  outputFull?: string;
   stepsDone?: number;
   stepsTotal?: number;
 }
@@ -84,6 +129,15 @@ export function useWorkbench() {
   const [runs, setRuns] = useState<WorkbenchRun[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  // Follow-up intent (Fase 2): explicit UI state, never regex. True only via
+  // chip click or the "include quote" suggestion; reset after every submit.
+  const [followUp, setFollowUp] = useState(false);
+  // True when the current/last run was submitted with a quote — drives the
+  // previous-run rail (Fase 4). Ephemeral like everything here.
+  const [quotedLastRun, setQuotedLastRun] = useState(false);
+  // Dynamic chips (Fase 3): empty = show the static ones. Best-effort swap
+  // after `finished`; failures keep the static chips silently.
+  const [dynamicChips, setDynamicChips] = useState<string[]>([]);
 
   const supervisor = useSupervisorPlan({
     onPlanCompleted: (goal, output) => {
@@ -95,6 +149,7 @@ export function useWorkbench() {
                 status: "completed",
                 finishedAt: Date.now(),
                 outputPreview: output?.slice(0, 200) ?? r.outputPreview,
+                outputFull: output ?? r.outputFull,
               }
             : r,
         ),
@@ -116,10 +171,51 @@ export function useWorkbench() {
   // during a run) — see PLAN-workbench.md.
   const composing = !["running", "stopping", "awaitingConfirmation", "reviewing"].includes(supervisor.status);
 
+  /** A deliverable is quotable when the last run finished complete with a
+   *  deliverable, its full output, and the planKey lookup key for agents to
+   *  read the full body via session_step_results. */
+  const canFollowUp =
+    supervisor.status === "completed" &&
+    supervisor.finalOutput != null &&
+    supervisor.finalOutput.trim() !== "" &&
+    supervisor.planKey != null &&
+    sessionId != null;
+
+  // Fase 3: statis-first swap. When a deliverable becomes quotable, spawn
+  // the suggest_followups one-shot in the background; on success swap the
+  // chips, on any failure the static chips stay. A new run clears them.
+  useEffect(() => {
+    const output = supervisor.finalOutput;
+    if (
+      supervisor.status !== "completed" ||
+      output == null ||
+      output.trim() === "" ||
+      supervisor.planKey == null ||
+      sessionId == null
+    ) {
+      setDynamicChips([]);
+      return;
+    }
+    let cancelled = false;
+    void call<string[]>("suggest_followups", { excerpt: output.slice(0, 2000) })
+      .then((chips) => {
+        if (cancelled || !Array.isArray(chips)) return;
+        const clean = chips.filter((c) => typeof c === "string" && c.trim() !== "").slice(0, 4);
+        if (clean.length > 0) setDynamicChips(clean);
+      })
+      .catch(() => {}); // static chips remain — no error surface (decision #2)
+    return () => {
+      cancelled = true;
+    };
+  }, [supervisor.status, supervisor.finalOutput, supervisor.planKey, sessionId]);
+
   const run = useCallback(
-    async (goal: string, fileIds?: string[]) => {
+    async (goal: string, fileIds?: string[], opts?: { quote?: boolean }) => {
       const trimmed = goal.trim();
       if (!trimmed) return;
+      setFollowUp(false);
+      const quote = opts?.quote === true;
+      setQuotedLastRun(quote);
       // Sessions are lazy — create on first desk run. Workbench runs live in
       // their own session so chat history stays chat.
       let sid = sessionId;
@@ -158,9 +254,23 @@ export function useWorkbench() {
           startedAt: Date.now(),
         },
       ]);
-      await supervisor.planAndRun(trimmed, sid, "auto");
+      // Quoted vs clean (decision #10): the planner receives the quote block
+      // + goal; userGoal, the runs list, and all persisted records keep the
+      // clean verbatim form. The quote is built only from the live supervisor
+      // state — the full deliverable, uncapped (STEP_EVENT_OUTPUT_MAX_CHARS
+      // only bounds per-step events, not planCompleted.final_output).
+      const quoteable = quote && canFollowUp && supervisor.planKey != null && sid != null;
+      const quotedGoal = quoteable
+        ? buildQuotedGoal({
+            goal: trimmed,
+            excerpt: supervisor.finalOutput ?? "",
+            planKey: supervisor.planKey ?? "",
+            sessionId: sid ?? 0,
+          })
+        : trimmed;
+      await supervisor.planAndRun(quotedGoal, sid, "auto", trimmed);
     },
-    [sessionId, supervisor],
+    [sessionId, supervisor, canFollowUp],
   );
 
   /** The just-started run's goal lands in `runs` via `run()`; keep the latest
@@ -201,6 +311,10 @@ export function useWorkbench() {
     [sessionId, supervisor.planKey],
   );
 
+  /** The completed run BEFORE the current one (Fase 4) — backs the rail's
+   *  "previous run" section when the active run is a follow-up. */
+  const previousRun = runs.length >= 2 ? (runs[runs.length - 2] ?? null) : null;
+
   return {
     supervisor,
     runs,
@@ -211,12 +325,24 @@ export function useWorkbench() {
     run,
     syncLatestRun,
     loadFullOutput,
+    followUp,
+    setFollowUp,
+    quotedLastRun,
+    canFollowUp,
+    dynamicChips,
+    previousRun,
     abandonSession: () => {
       // "New goal": the next run gets a fresh session.
       setSessionId(null);
+      setFollowUp(false);
+      setQuotedLastRun(false);
+      setDynamicChips([]);
     },
     newRun: () => {
       setSessionId(null);
+      setFollowUp(false);
+      setQuotedLastRun(false);
+      setDynamicChips([]);
     },
   };
 }

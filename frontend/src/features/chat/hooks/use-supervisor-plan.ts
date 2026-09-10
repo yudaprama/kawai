@@ -563,6 +563,11 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 break;
               }
               case "planCompleted": {
+                // Terminal event. SupervisorEvent has no `finished` variant,
+                // so streamOperation never fires onDone on the desktop
+                // Channel — without clearing here, streamCtrl stays set and
+                // approvePlan/runPlan silently no-op on every later run.
+                streamCtrl.current = null;
                 patch({
                   status: "completed",
                   pendingConfirmation: null,
@@ -588,6 +593,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 break;
               }
               case "planFailed":
+                // Terminal event — same stream-slot release as planCompleted.
+                streamCtrl.current = null;
                 patch({
                   status: "failed",
                   pendingConfirmation: null,
@@ -646,16 +653,21 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   );
 
   const planAndRun = useCallback(
-    async (goal: string, sessionId: number, agentId: string) => {
+    async (goal: string, sessionId: number, agentId: string, userGoal?: string) => {
+      // `goal` is what the planner sees (it may carry a follow-up quote block,
+      // PLAN-followup-composer.md); `userGoal` (default = goal) is the user's
+      // verbatim words — displayed, persisted, and answered by the deliverable
+      // writer. The quote must never leak into these clean paths.
+      const cleanGoal = userGoal ?? goal;
       // User message first (display + history), then plan. Execution waits
       // for the review gate — the user runs, prunes, or cancels the plan.
       const userMessage: UIMessage = {
         id: nanoid(),
         role: "user",
-        parts: [{ type: "text", text: goal, state: "done" as const }],
+        parts: [{ type: "text", text: cleanGoal, state: "done" as const }],
       };
       setMessages((prev) => [...prev, userMessage]);
-      void persist(sessionId, "user", goal);
+      void persist(sessionId, "user", cleanGoal);
 
       // A plan_task rejection must surface like any other failure — an
       // unhandled rejection here silently eats the whole turn. Planning
@@ -663,7 +675,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       // optimistic seed below shows motion INSTANTLY — before the IPC even
       // lands, the context build + first LLM round can stay quiet for a while.
       patch({ planning: { round: 0, provider: "", searching: true, tools: [] } });
-      userGoalRef.current = goal;
+      userGoalRef.current = cleanGoal;
       let plan: unknown;
       try {
         plan = await callWithEvents<unknown, SupervisorEvent>("plan_task", { goal, sessionId, agentId }, (ev) => {
@@ -693,7 +705,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         const message = err instanceof Error ? err.message : String(err);
         patch({ status: "failed", error: message, planning: null });
         void persist(sessionId, "assistant", `Plan error: ${message}`);
-        callbacks?.onPlanFailed?.(goal, message);
+        callbacks?.onPlanFailed?.(cleanGoal, message);
         return;
       }
       const review = parseReview(plan, sessionId, agentId);

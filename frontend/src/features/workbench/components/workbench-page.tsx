@@ -8,7 +8,9 @@ import {
   PlayIcon,
   SquareIcon,
   WrenchIcon,
+  XIcon,
   ZapIcon,
+  CornerDownRightIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -21,6 +23,7 @@ import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import {
   agentName,
   computePhases,
+  FOLLOW_UP_CHIPS,
   isDeliverableStep,
   useWorkbench,
   type TimelineRow,
@@ -54,6 +57,113 @@ function Duration({ from, to }: { from: number; to?: number }) {
   }, [to]);
   return (
     <span className="text-muted-foreground shrink-0 font-mono text-[10px] tabular-nums">{fmtDuration(from, to)}</span>
+  );
+}
+
+// ── Follow-up composer extras (PLAN-followup-composer.md) ───────────────────
+
+/** Quick-action chips above the composer — static set until the dynamic
+ *  suggest_followups result lands, then swapped (statis-first, Fase 3).
+ *  Only rendered after a finished run with a completed deliverable; chips
+ *  never block free-form input and disappear while a plan is under review. */
+function FollowUpChips({
+  workbench,
+  onChip,
+}: {
+  workbench: ReturnType<typeof useWorkbench>;
+  onChip: (text: string) => void;
+}) {
+  if (!workbench.canFollowUp || !workbench.composing) return null;
+  const chips: { icon?: string; label: string; text: string }[] =
+    workbench.dynamicChips.length > 0
+      ? workbench.dynamicChips.map((t) => ({ label: t, text: t }))
+      : FOLLOW_UP_CHIPS.map((c) => ({ icon: c.icon, label: c.label, text: c.prefix }));
+  return (
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {chips.map((c) => (
+        <button
+          className="border-border/60 hover:border-primary/60 text-foreground/80 hover:text-foreground inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors"
+          key={c.label}
+          onClick={() => onChip(c.text)}
+          title={c.text}
+          type="button"
+        >
+          {c.icon && <span aria-hidden>{c.icon}</span>}
+          {c.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Transparency indicator: what will be attached to the next submitted goal.
+ *  Active quote → removable; free-form submit post-deliverable → opt-in
+ *  suggestion (decision #9: never auto-quote an unrelated goal). */
+function QuoteIndicator({ workbench }: { workbench: ReturnType<typeof useWorkbench> }) {
+  if (!workbench.canFollowUp || !workbench.composing) return null;
+  const title = workbench.supervisor.goal ?? "previous deliverable";
+  if (workbench.followUp) {
+    return (
+      <div className="text-muted-foreground mb-2 flex items-center gap-1.5 font-mono text-[11px]">
+        <CornerDownRightIcon className="size-3 shrink-0" />
+        <span className="min-w-0 truncate">Will include: “{title}” (previous deliverable)</span>
+        <button
+          aria-label="Do not include the previous deliverable"
+          className="hover:text-foreground shrink-0"
+          onClick={() => workbench.setFollowUp(false)}
+          type="button"
+        >
+          <XIcon className="size-3" />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="text-muted-foreground mb-2 flex items-center gap-1.5 font-mono text-[11px]">
+      <CornerDownRightIcon className="size-3 shrink-0" />
+      <span className="min-w-0 truncate">Quote previous deliverable?</span>
+      <button className="text-primary hover:underline" onClick={() => workbench.setFollowUp(true)} type="button">
+        include
+      </button>
+    </div>
+  );
+}
+
+/** Fase 4: the "previous run" connector — collapsed above the active rail
+ *  when the active run was submitted with a quote. Purely visual glue: the
+ *  run itself is independent; the quote block is what connects them. */
+function PreviousRunRail({ run, onOpen }: { run: WorkbenchRun; onOpen: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-border/60 mb-4 border-b pb-2">
+      <div className="flex items-center gap-1">
+        <button
+          aria-expanded={open}
+          className="text-muted-foreground hover:text-foreground flex min-w-0 flex-1 items-center gap-1 font-mono text-[10px] font-bold tracking-wider uppercase"
+          onClick={() => setOpen((v) => !v)}
+          type="button"
+        >
+          <ChevronDownIcon className={`size-3 transition-transform ${open ? "" : "-rotate-90"}`} />
+          <span className="min-w-0 truncate">Previous run — {run.goal}</span>
+        </button>
+        <button
+          className="text-muted-foreground hover:text-primary inline-flex shrink-0 items-center gap-1 font-mono text-[10px] hover:underline"
+          onClick={onOpen}
+          type="button"
+        >
+          <FileTextIcon className="size-3" />
+          report
+        </button>
+      </div>
+      {open && (
+        <div className="text-muted-foreground mt-1 space-y-0.5 pl-4 font-mono text-[11px]">
+          <div>
+            {run.stepsDone ?? 0}/{run.stepsTotal ?? "?"} steps · {run.status === "completed" ? "finished" : run.status}
+          </div>
+          {run.outputPreview && <div className="truncate">{run.outputPreview}…</div>}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -298,6 +408,9 @@ function DeliverableViewer({
   onSelect: (id: string) => void;
 }) {
   const { supervisor } = workbench;
+  // Fase 4: the rail's "report" button pins the viewer to the previous run's
+  // deliverable (in-memory full text captured at its planCompleted).
+  const previous = selected === "prev" ? (workbench.previousRun ?? null) : null;
   const reports = useMemo(
     () =>
       supervisor.steps.filter(
@@ -341,12 +454,36 @@ function DeliverableViewer({
   const output = step ? (typeof full === "string" ? full : step.output) : undefined;
   const loadingFull = previewTruncated && full == null;
 
-  const done = supervisor.steps.filter((s) => s.state === "completed").length;
-
   // Export the deliverable as a stored .pdf/.docx via the office engines.
   const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
   const [exportedName, setExportedName] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+
+  if (previous != null) {
+    const body = previous.outputFull ?? previous.outputPreview ?? "";
+    return (
+      <div className="h-full overflow-y-auto">
+        <div className="mx-auto max-w-4xl space-y-6 p-6">
+          <div>
+            <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
+              <ZapIcon className="text-primary size-5" />
+              Previous run — {previous.goal}
+            </h3>
+            <div className="text-muted-foreground mt-1 font-mono text-sm">
+              {previous.stepsDone ?? 0}/{previous.stepsTotal ?? "?"} steps ·{" "}
+              {new Date(previous.startedAt).toLocaleString()}
+            </div>
+          </div>
+          <div className="border-border/60 bg-card rounded-lg border p-6">
+            <Streamdown>{body}</Streamdown>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const done = supervisor.steps.filter((s) => s.state === "completed").length;
+
   const exportGoal = async (format: "pdf" | "docx") => {
     if (supervisor.finalOutput == null || exporting) return;
     setExporting(format);
@@ -392,6 +529,19 @@ function DeliverableViewer({
             {supervisor.planStartedAt != null &&
               ` · ${fmtDuration(supervisor.planStartedAt, supervisor.planCompletedAt ?? undefined)}`}
           </div>
+          {workbench.previousRun && selected !== "prev" && (
+            <div className="text-muted-foreground mt-1 flex items-center gap-1.5 font-mono text-[11px]">
+              <CornerDownRightIcon className="size-3 shrink-0" />
+              <span className="min-w-0 truncate">builds on “{workbench.previousRun.goal}”</span>
+              <button
+                className="text-primary shrink-0 hover:underline"
+                onClick={() => onSelect("prev")}
+                type="button"
+              >
+                view
+              </button>
+            </div>
+          )}
         </div>
 
         {supervisor.status === "idle" && (
@@ -627,6 +777,12 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
   // "final" pins it). Rail "see report" and the switcher share this state.
   const [selectedReport, setSelectedReport] = useState<string>("auto");
   const openReport = (id: string) => setSelectedReport(id);
+  // Chip click → draft dropped into the input for editing (not auto-submit).
+  const [chipDraft, setChipDraft] = useState<{ text: string; nonce: number } | null>(null);
+  const chipClicked = (text: string) => {
+    workbench.setFollowUp(true);
+    setChipDraft({ text, nonce: Date.now() });
+  };
 
   const submit = (text: string, fileIds?: string[]) => {
     if (!text.trim()) return;
@@ -635,7 +791,8 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
     if (supervisor.status === "reviewing") return;
     setHome(false);
     setSelectedReport("auto"); // follow the new run's work, not a stale pin
-    void workbench.run(text, fileIds);
+    const quote = workbench.followUp;
+    void workbench.run(text, fileIds, { quote });
   };
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)
@@ -670,10 +827,10 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
           <div className="w-full max-w-2xl">
             <ChatComposer
               agentName="Workbench"
+              chipDraft={chipDraft}
               lastUserText={null}
               onAddFiles={onAddFiles}
               onAddLink={onAddLink}
-              onDraftConsumed={undefined}
               onImageToKnowledge={onImageToKnowledge}
               onSubmit={(text, fileIds) => submit(text, fileIds)}
               onStop={workbench.supervisor.stop}
@@ -706,6 +863,9 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
           the bottom. */}
       <aside className="border-border/60 hidden w-96 shrink-0 flex-col border-r lg:flex">
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {workbench.previousRun && (
+            <PreviousRunRail onOpen={() => setSelectedReport("prev")} run={workbench.previousRun} />
+          )}
           <ProgressRail
             workbench={workbench}
             onNewGoal={() => {
@@ -722,8 +882,11 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
               A plan is awaiting your review above — run or discard it first.
             </p>
           )}
+          <FollowUpChips onChip={chipClicked} workbench={workbench} />
+          <QuoteIndicator workbench={workbench} />
           <ChatComposer
             agentName="Workbench"
+            chipDraft={chipDraft}
             lastUserText={null}
             onAddFiles={onAddFiles}
             onAddLink={onAddLink}
@@ -731,6 +894,11 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
             onSubmit={submit}
             onStop={workbench.supervisor.stop}
             status={composerStatus}
+            placeholder={
+              workbench.canFollowUp
+                ? "Follow up on the previous deliverable… (e.g. expand section 2, change tone)"
+                : undefined
+            }
           />
           {workbench.sessionError && (
             <p className="text-destructive mt-2 font-mono text-[11px]">{workbench.sessionError}</p>
