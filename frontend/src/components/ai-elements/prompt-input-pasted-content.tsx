@@ -30,11 +30,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { FileIcon } from "@/components/shared/file-icon";
 import { cn } from "@/lib/utils";
 import {
   CopyIcon,
   DownloadIcon,
-  FileTextIcon,
   XIcon,
 } from "lucide-react";
 import {
@@ -192,7 +192,10 @@ export const PastedContentTrigger = ({
     >
       {children ?? (
         <>
-          <FileTextIcon className="size-3 text-muted-foreground" />
+          <FileIcon
+            className="size-3 shrink-0"
+            name={PASTED_TEXT_FILENAME}
+          />
           <span className="min-w-0 flex-1 truncate text-xs">{label}</span>
         </>
       )}

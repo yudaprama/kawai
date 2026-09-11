@@ -9,7 +9,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { FILE_ICON_CDN } from "@/components/shared/file-icon";
+import { FILE_ICON_CDN, FileIcon } from "@/components/shared/file-icon";
 import { cn } from "@/lib/utils";
 import { PaperclipIcon, XIcon } from "lucide-react";
 import { createContext, useCallback, useContext, useMemo } from "react";
@@ -249,6 +249,20 @@ export const AttachmentPreview = ({
 
     if (mediaCategory === "video" && data.type === "file" && data.url) {
       return <video className="size-full object-cover" muted src={data.url} />;
+    }
+
+    if (mediaCategory === "document") {
+      return (
+        fallbackIcon ??
+        (data.type === "file" && data.filename ? (
+          <FileIcon
+            className={cn(iconSize, "text-muted-foreground")}
+            name={data.filename}
+          />
+        ) : (
+          renderIcon(mediaCategoryIconUrls[mediaCategory])
+        ))
+      );
     }
 
     const iconUrl = mediaCategoryIconUrls[mediaCategory];

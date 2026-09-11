@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { FileIcon } from "@/components/shared/file-icon";
 import { Button } from "@/components/ui/button";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import type {
@@ -262,7 +263,7 @@ function ArtifactRow({ artifact }: { artifact: SupervisorArtifact }) {
         onClick={() => artifact.handle && emitOpenPreview(artifact.handle, artifact.filename ?? artifact.handle)}
         type="button"
       >
-        <FileTextIcon className="size-3" />
+        <FileIcon name={artifact.filename ?? artifact.handle ?? "file"} className="size-3" />
         {artifact.filename ?? artifact.handle}
       </button>
     );

@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ChatComposer } from "@/features/chat/components/chat-composer";
+import { FileIcon } from "@/components/shared/file-icon";
 import { Streamdown } from "@/lib/streamdown";
 import { call, errText } from "@/lib/api";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
@@ -695,7 +696,7 @@ function DeliverableViewer({
               {exporting === "pdf" ? (
                 <LoaderCircleIcon className="size-3 animate-spin" />
               ) : (
-                <FileTextIcon className="size-3" />
+                <FileIcon className="size-3" name="export.pdf" />
               )}
               PDF
             </Button>
@@ -703,7 +704,7 @@ function DeliverableViewer({
               {exporting === "docx" ? (
                 <LoaderCircleIcon className="size-3 animate-spin" />
               ) : (
-                <FileTextIcon className="size-3" />
+                <FileIcon className="size-3" name="export.docx" />
               )}
               DOCX
             </Button>

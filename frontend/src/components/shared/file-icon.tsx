@@ -1,4 +1,4 @@
-import { getIconNameForFileName } from "@/assets/utils";
+import { getIconNameForDirectoryName, getIconNameForFileName } from "@/assets/utils";
 import { fileExtension, IMAGE_EXTENSIONS } from "@/lib/file-types";
 
 // Simple per-module cache for generated SVG URLs to avoid repeated CDN fetches
@@ -19,6 +19,24 @@ export function FileIcon({ name, className = "size-4 shrink-0" }: FileIconProps)
   }
 
   const iconName = getIconNameForFileName(name);
+  let src = ICON_URL_CACHE.get(iconName);
+  if (!src) {
+    src = `${FILE_ICON_CDN}/${iconName}.svg`;
+    ICON_URL_CACHE.set(iconName, src);
+  }
+
+  return <img src={src} alt="" loading="lazy" className={className} />;
+}
+
+export interface FolderIconProps {
+  name: string;
+  open?: boolean;
+  className?: string;
+}
+
+export function FolderIcon({ name, open = false, className = "size-4 shrink-0" }: FolderIconProps) {
+  const mapped = getIconNameForDirectoryName(name);
+  const iconName = mapped === "folder" && open ? "folder-open" : mapped;
   let src = ICON_URL_CACHE.get(iconName);
   if (!src) {
     src = `${FILE_ICON_CDN}/${iconName}.svg`;
