@@ -343,8 +343,8 @@ export function ProgressRail({
                 {supervisor.planning != null
                   ? supervisor.planning.round === 0
                     ? "starting…"
-                    : `planning · round ${supervisor.planning.round}${supervisor.planning.provider ? ` · ${supervisor.planning.provider}` : ""}`
-                  : "preparing…"}
+                    : `${supervisor.planning.searching ? "searching tools" : "writing plan"} · round ${supervisor.planning.round}${supervisor.planning.provider ? ` · ${supervisor.planning.provider}` : ""}`
+                  : "preparing context…"}
               </div>
               {supervisor.planning?.searching && supervisor.planning.tools.length > 0 && (
                 <div className="text-muted-foreground/80 pl-5.5 text-[11px]">
