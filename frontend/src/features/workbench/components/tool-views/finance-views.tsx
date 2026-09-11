@@ -298,3 +298,127 @@ export function CryptoMarketView({ data }: { data: unknown }) {
     </div>
   );
 }
+
+// ── prediction-markets (get_prediction_markets — Polymarket) ────────────────
+
+type PredictionMarket = {
+  question: string;
+  outcome: string;
+  probability: number;
+  volume: number;
+  resolves: string;
+  week_change_pp: number | null;
+};
+
+function parsePredictionMarkets(data: unknown): {
+  topic: string;
+  note: string;
+  markets: PredictionMarket[];
+  message: string;
+} | null {
+  if (!isRecord(data)) return null;
+  const rawMarkets = data.markets;
+  if (!Array.isArray(rawMarkets)) return null;
+  const markets: PredictionMarket[] = [];
+  for (const m of rawMarkets) {
+    if (!isRecord(m)) continue;
+    const probability = toNum(m.probability);
+    const question = m.question;
+    if (probability == null || typeof question !== "string") continue;
+    const volume = toNum(m.volume);
+    markets.push({
+      question,
+      outcome: typeof m.outcome === "string" ? m.outcome : "Yes",
+      probability,
+      volume: volume ?? 0,
+      resolves: typeof m.resolves === "string" ? m.resolves : "",
+      week_change_pp: toNum(m.week_change_pp),
+    });
+  }
+  return {
+    topic: typeof data.topic === "string" ? data.topic : "",
+    note: typeof data.note === "string" ? data.note : "",
+    markets,
+    message: typeof data.message === "string" ? data.message : "",
+  };
+}
+
+/** Crowd-odds bar color: conviction tiers (green ≥70, amber 30–70, red <30). */
+function probTone(p: number): string {
+  if (p >= 0.7) return "bg-success";
+  if (p >= 0.3) return "bg-yellow-500";
+  return "bg-destructive";
+}
+
+/** get_prediction_markets — Polymarket crowd-odds probability cards. */
+export function PredictionMarketsView({ data }: { data: unknown }) {
+  const parsed = parsePredictionMarkets(data);
+  if (!parsed) return null; // legacy markdown / error strings → generic fallback
+
+  if (parsed.markets.length === 0) {
+    return (
+      <div className="space-y-1.5">
+        <SectionLabel>⚖️ Polymarket{parsed.topic ? ` — "${parsed.topic}"` : ""}</SectionLabel>
+        <p className="text-muted-foreground text-sm">
+          {parsed.message || "No open prediction markets matched."}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <SectionLabel>
+          ⚖️ Polymarket{parsed.topic ? ` — "${parsed.topic}"` : ""}
+        </SectionLabel>
+        <span className="text-muted-foreground text-[11px]">crowd odds</span>
+      </div>
+      <ul className="space-y-2">
+        {parsed.markets.map((m, i) => {
+          const pct = Math.round(m.probability * 100);
+          return (
+            <li
+              className="bg-muted/40 space-y-1.5 rounded-lg border p-3"
+              key={`${m.question}-${i}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm leading-snug font-medium">{m.question}</p>
+                <div className="shrink-0 text-right">
+                  <span className="font-mono text-base font-semibold tabular-nums">
+                    {pct}%
+                  </span>
+                  <div className="text-muted-foreground text-[11px]">{m.outcome}</div>
+                </div>
+              </div>
+              <div
+                aria-label={`Probabilitas ${pct}%`}
+                className="bg-background h-1.5 overflow-hidden rounded-full"
+                role="progressbar"
+                aria-valuenow={pct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className={`h-full rounded-full ${probTone(m.probability)}`}
+                  style={{ width: `${Math.min(100, Math.max(2, pct))}%` }}
+                />
+              </div>
+              <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                {m.week_change_pp != null && (
+                  <Pill tone={m.week_change_pp > 0 ? "up" : "down"}>
+                    {m.week_change_pp > 0 ? "▲" : "▼"} {Math.abs(m.week_change_pp).toFixed(1)}pp
+                    1w
+                  </Pill>
+                )}
+                <span>${fmtNumber(m.volume, { notation: "compact" })} volume</span>
+                {m.resolves && <span>· resolves {m.resolves}</span>}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {parsed.note && <p className="text-muted-foreground text-[11px] italic">{parsed.note}</p>}
+    </div>
+  );
+}

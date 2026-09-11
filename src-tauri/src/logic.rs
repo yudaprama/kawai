@@ -72,7 +72,7 @@ pub async fn suggest_followups(_user_id: &str, excerpt: String) -> Vec<String> {
          Return a JSON array of strings. Deliverable:\n{excerpt}",
         MAX_SUGGESTIONS
     );
-    let response = match remote_llm::reason::reason(system, &task).await {
+    let response = match remote_llm::reason::reason_as(system, &task, "followup-suggester").await {
         Ok(r) => r,
         Err(_) => return Vec::new(),
     };

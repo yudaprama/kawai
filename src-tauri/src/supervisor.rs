@@ -880,9 +880,6 @@ Plan rules:
  - Keep each task description under {} chars.
  - Core tools below are ALWAYS available — never search for them:
 {}
- - PREFERENCE RULE: when a searched-and-surfaced tool matches a sub-task, you
-   MUST use it instead of web_search. web_search is the FALLBACK for sub-tasks
-   with no dedicated tool — never the default when a specialist exists.
  - FORBIDDEN tools — internal-only, validation will reject them: deep_write, draft_document, plan_task, plan_revise, artifact_recall. Never name them in steps. To create documents use office_create_document / office_create_deck / pdf_create_from_markdown.
  - The supervisor AUTOMATICALLY writes the final user-facing deliverable
    (answer / summary / report) from the step outputs after they finish — via a
