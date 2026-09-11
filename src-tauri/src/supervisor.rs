@@ -525,7 +525,7 @@ pub async fn plan_task(
                     remote_llm::RemoteEvent::Done { usage: u, provider, .. } => {
                         // #5 observability: which candidate served the round
                         // (latency tuning data — see PLAN-planner-search-loop.md).
-                        eprintln!("[plan_task] round {} served by {provider}", calls);
+                        tracing::info!(component = "supervisor", round = calls, provider = %provider, "planning round served");
                         // Live progress for the transport layer (desktop Channel /
                         // web log) — the planning phase is otherwise silent for
                         // tens of seconds.
@@ -681,7 +681,7 @@ async fn shared_catalog() -> Option<std::sync::Arc<kawai_tool_catalog::Catalog>>
             match kawai_tool_catalog::Catalog::open_default(&cfg).await {
                 Ok(c) => Ok(Some(std::sync::Arc::new(c))),
                 Err(e) => {
-                    eprintln!("[tool-catalog] open failed: {e}");
+                    tracing::warn!(component = "tool-catalog", error = %e, "catalog open failed");
                     Ok(None)
                 }
             }
@@ -718,10 +718,10 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
     }
     match tokio::time::timeout(sync_timeout, catalog.sync()).await {
         Ok(Ok(frames)) if frames > 0 => {
-            eprintln!("[tool-catalog] synced {frames} frames from remote");
+            tracing::info!(component = "tool-catalog", frames, "catalog synced");
         }
         Ok(Ok(_)) => {} // already up to date
-        Ok(Err(e)) => eprintln!("[tool-catalog] sync failed: {e}"),
+        Ok(Err(e)) => tracing::warn!(component = "tool-catalog", error = %e, "catalog sync failed"),
         Err(_) => {
             // Do NOT leave the sync dead: a dropped sync mid-WAL-apply
             // poisons the replica file. Hand it to the background to finish.
@@ -753,8 +753,8 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
                     "[tool-catalog] CRITICAL: replica still stale after retry \
                      ({local} vs {remote}) — planner sees an outdated catalog"
                 ),
-                Ok(_) => eprintln!("[tool-catalog] replica fresh after retry"),
-                Err(e) => eprintln!("[tool-catalog] count check failed: {e}"),
+                Ok(_) => tracing::info!(component = "tool-catalog", "replica fresh after retry"),
+                Err(e) => tracing::warn!(component = "tool-catalog", error = %e, "count check failed"),
             }
         }
     }
@@ -918,7 +918,7 @@ async fn run_tool_search(
     let vecs = match embedder.embed_primary(queries.to_vec()).await {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("[plan_task] catalog embedding failed (primary provider): {e}");
+            tracing::warn!(component = "supervisor", error = %e, "catalog embedding failed");
             return ("\n<tool-search-results>\nTool search failed (embedding unavailable); rely on the core tools listed above.\n</tool-search-results>\n".to_string(), Vec::new());
         }
     };
@@ -933,7 +933,7 @@ async fn run_tool_search(
         let hits = match catalog.search(query, &qvec, 8).await {
             Ok(hits) => hits,
             Err(e) => {
-                eprintln!("[plan_task] catalog search failed for {query:?}: {e}");
+                tracing::warn!(component = "supervisor", query = %query, error = %e, "catalog search failed");
                 block.push_str("- (search failed for this query)\n");
                 continue;
             }
@@ -966,7 +966,7 @@ async fn run_tool_search(
         }
         // Planner-search telemetry: which query surfaced which tools (the
         // search block itself is otherwise invisible outside the LLM call).
-        eprintln!("[plan_task] search {query:?} -> {surfaced:?}");
+        tracing::info!(component = "supervisor", query = %query, surfaced = ?surfaced, "catalog search completed");
     }
     block.push_str("</tool-search-results>\n");
     (truncate_chars(&block, PLAN_MATERIALS_CAP), found)
@@ -1149,7 +1149,7 @@ pub async fn build_supervisor_registry(
                     );
                 }
             }
-            Err(e) => eprintln!("[supervisor] resume seed unavailable: {e}"),
+            Err(e) => tracing::warn!(component = "supervisor", error = %e, "resume seed unavailable"),
         }
     }
     let db_user_id = user_id.to_string();
@@ -1222,7 +1222,7 @@ pub async fn build_supervisor_registry(
                     kawai_db::upsert_supervisor_step_result(&db_user_id, db_session_id, &db_plan_key, &record)
                         .await
                 {
-                    eprintln!("[supervisor] step result persist failed: {e}");
+                    tracing::warn!(component = "supervisor", error = %e, "step result persist failed");
                 }
                 extracted
             } else {
@@ -1815,7 +1815,7 @@ pub fn execute_plan_stream_with_cancel(
                         let synthesized =
                             synthesize_final_answer(&synthesis_goal, &materials, session_id).await;
                         if let Some(answer) = &synthesized {
-                            eprintln!("[supervisor] synthesis ok ({} chars)", answer.chars().count());
+                            tracing::info!(component = "supervisor", chars = answer.chars().count(), "synthesis completed");
                         } else {
                             eprintln!("[supervisor] synthesis unavailable — falling back to raw final output");
                         }

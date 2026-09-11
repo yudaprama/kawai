@@ -392,7 +392,7 @@ pub async fn append_chat_message(
         .map_err(|e| {
             // History writes are best-effort on the caller side (fire-and-
             // forget persist) — without this log a rejection is invisible.
-            eprintln!("[append_chat_message] failed user={user_id} session={session_id} role={role} len={}: {e}", content.len());
+            tracing::warn!(component = "chat", user = %user_id, session = session_id, role = %role, len = content.len(), error = %e, "chat message persistence failed");
             e.to_string()
         })
 }
@@ -711,7 +711,7 @@ pub async fn local_load_model(
     )
     .await;
     if let Err(e) = &result {
-        eprintln!("[local_load_model] {e}");
+        tracing::warn!(component = "local_llm", error = %e, "model load failed");
     }
     result
 }
@@ -864,7 +864,7 @@ pub async fn plan_task(
         .map_err(|e| {
             // Planner failures are otherwise invisible — the loop's only log
             // line is the per-round `served by` (see supervisor.rs).
-            eprintln!("[plan_task] failed for user={user_id}: {e}");
+            tracing::warn!(component = "supervisor", user = %user_id, error = %e, "planning failed");
             e
         })?;
 
@@ -1382,7 +1382,7 @@ pub async fn execute_supervisor_plan(
     let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone(), user_id.clone(), session_id, user_goal);
     // Telemetry: this transport previously had zero logging, which made
     // scheduler anomalies (e.g. zero-step "successes") invisible.
-    eprintln!("[supervisor] executing plan ({step_count} steps) for user={user_id} session={session_id}");
+    tracing::info!(component = "supervisor", steps = step_count, user = %user_id, session = session_id, "executing plan");
     let mut stream = Box::pin(stream);
     loop {
         tokio::select! {

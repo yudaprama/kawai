@@ -1872,9 +1872,7 @@ async fn plan_task_handler(
     // only (the plan still resolves as JSON).
     crate::supervisor::plan_task(&user_id, req.session_id, &req.goal, &registry, |event| {
         if let crate::supervisor::SupervisorEvent::PlanningRound { round, provider, searching } = event {
-            eprintln!(
-                "[plan_task-web] round {round} served by {provider} searching={searching}"
-            );
+            tracing::info!(component = "supervisor", transport = "web", round, provider = %provider, searching, "planning round served");
         }
     })
         .await
