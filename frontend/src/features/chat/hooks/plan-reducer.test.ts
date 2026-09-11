@@ -18,6 +18,18 @@ function step(
   return { id, tool: "web_read", task: `task ${id}`, dependsOn: [], ...overrides };
 }
 
+function makePlan(
+  steps: { id: string; tool: string; task: string; dependsOn: string[] }[],
+  opts: Partial<{ goal: string; planKey: string; t: number }> = {},
+): SupervisorPlanState {
+  const { goal = "g", planKey = "pk", t = NOW } = opts;
+  return supervisorReducer(
+    initialSupervisorState(),
+    { type: "planStarted", goal, stepCount: steps.length, steps, planKey },
+    { now: t },
+  );
+}
+
 describe("initialSupervisorState", () => {
   it("returns idle with empty steps", () => {
     const s = initialSupervisorState();
@@ -45,12 +57,7 @@ describe("supervisorReducer — happy path", () => {
   });
 
   it("full lifecycle: planStarted → stepStarted → stepCompleted → planCompleted", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 1, steps: [step("a")], planKey: "pk" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a")]);
     s = supervisorReducer(s, { type: "stepStarted", stepId: "a", tool: "web_read" }, { now: NOW + 100 });
     expect(s.steps[0].state).toBe("running");
     expect(s.steps[0].startedAt).toBe(NOW + 100);
@@ -72,12 +79,7 @@ describe("supervisorReducer — happy path", () => {
   });
 
   it("planStarted → stepFailed → planFailed", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 1, steps: [step("a")], planKey: "pk" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a")]);
     s = supervisorReducer(
       s,
       { type: "stepFailed", stepId: "a", error: "timeout", kind: "timeout" },
@@ -95,12 +97,7 @@ describe("supervisorReducer — happy path", () => {
 
 describe("supervisorReducer — replan", () => {
   it("snapshots prior version and re-seeds steps on planRevised", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 2, steps: [step("a"), step("b")], planKey: "pk1" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a"), step("b")], { planKey: "pk1" });
     s = supervisorReducer(s, { type: "stepStarted", stepId: "a", tool: "web_read" }, { now: NOW + 100 });
     s = supervisorReducer(
       s,
@@ -131,12 +128,7 @@ describe("supervisorReducer — replan", () => {
   });
 
   it("replansExhausted stays false until 2 replans", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 1, steps: [step("a")], planKey: "pk1" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a")], { planKey: "pk1" });
     s = supervisorReducer(
       s,
       { type: "planRevised", attempt: 1, stepCount: 1, steps: [step("a")], planKey: "pk2" },
@@ -157,12 +149,7 @@ describe("supervisorReducer — replan", () => {
 
 describe("supervisorReducer — confirmation gate", () => {
   it("confirmationRequested sets awaitingConfirmation + pendingConfirmation", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 1, steps: [step("a")], planKey: "pk" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a")]);
     s = supervisorReducer(
       s,
       { type: "confirmationRequested", streamId: "s1", stepId: "a", task: "deploy", description: "confirm deploy" },
@@ -179,12 +166,7 @@ describe("supervisorReducer — confirmation gate", () => {
   });
 
   it("planRevising clears pendingConfirmation", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 1, steps: [step("a")], planKey: "pk" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a")]);
     s = supervisorReducer(
       s,
       { type: "confirmationRequested", streamId: "s1", stepId: "a", task: "t", description: "d" },
@@ -199,12 +181,7 @@ describe("supervisorReducer — confirmation gate", () => {
 
 describe("supervisorReducer — step skipped", () => {
   it("stepSkipped sets state to skipped with reason", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 1, steps: [step("a")], planKey: "pk" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a")]);
     s = supervisorReducer(s, { type: "stepSkipped", stepId: "a", reason: "dependency failed" }, { now: NOW + 100 });
     expect(s.steps[0].state).toBe("skipped");
     expect(s.steps[0].error).toBe("dependency failed");
@@ -251,12 +228,7 @@ describe("supervisorReducer — edge cases", () => {
   });
 
   it("stepStarted for unknown stepId creates a new step entry", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 1, steps: [step("a")], planKey: "pk" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a")]);
     s = supervisorReducer(s, { type: "stepStarted", stepId: "unknown", tool: "web_read" }, { now: NOW + 100 });
     expect(s.steps).toHaveLength(2);
     expect(s.steps[1].stepId).toBe("unknown");
@@ -264,12 +236,7 @@ describe("supervisorReducer — edge cases", () => {
   });
 
   it("planCompleted clears pendingConfirmation", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 1, steps: [step("a")], planKey: "pk" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a")]);
     s = supervisorReducer(
       s,
       { type: "confirmationRequested", streamId: "s1", stepId: "a", task: "t", description: "d" },
@@ -282,19 +249,13 @@ describe("supervisorReducer — edge cases", () => {
   });
 
   it("planCompleted without finalOutput sets null", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(s, { type: "planStarted", goal: "g", stepCount: 0, steps: [], planKey: "pk" }, { now: NOW });
+    let s = makePlan([]);
     s = supervisorReducer(s, { type: "planCompleted" }, { now: NOW + 100 });
     expect(s.finalOutput).toBeNull();
   });
 
   it("planRevised clears plan-level error", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 1, steps: [step("a")], planKey: "pk" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a")]);
     // plan-level error is set by planFailed, not stepFailed
     s = supervisorReducer(s, { type: "planFailed", error: "plan boom" }, { now: NOW + 100 });
     expect(s.error).toBe("plan boom");
@@ -309,12 +270,7 @@ describe("supervisorReducer — edge cases", () => {
 
 describe("supervisorReducer — step with artifacts", () => {
   it("stepCompleted maps artifacts correctly", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 1, steps: [step("a")], planKey: "pk" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a")]);
     s = supervisorReducer(
       s,
       {
@@ -439,12 +395,7 @@ describe("pruneReviewStep", () => {
 
 describe("supervisorReducer — multi-step execution ordering", () => {
   it("parallel steps complete independently", () => {
-    let s: SupervisorPlanState = initialSupervisorState();
-    s = supervisorReducer(
-      s,
-      { type: "planStarted", goal: "g", stepCount: 3, steps: [step("a"), step("b"), step("c")], planKey: "pk" },
-      { now: NOW },
-    );
+    let s = makePlan([step("a"), step("b"), step("c")]);
     s = supervisorReducer(s, { type: "stepStarted", stepId: "a", tool: "web_read" }, { now: NOW + 100 });
     s = supervisorReducer(s, { type: "stepStarted", stepId: "b", tool: "code_write" }, { now: NOW + 110 });
     s = supervisorReducer(s, { type: "stepStarted", stepId: "c", tool: "web_read" }, { now: NOW + 120 });

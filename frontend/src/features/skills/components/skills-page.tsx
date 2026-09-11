@@ -12,6 +12,7 @@ import {
 } from "@/features/assets/components/asset/asset-list-panel";
 import { AssetPageHeader } from "@/features/assets/components/asset/asset-page-header";
 import { AssetSplitLayout } from "@/features/assets/components/asset/asset-split-layout";
+import { FilterBar } from "@/features/assets/components/filter-bar";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import {
@@ -101,18 +102,13 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
         subtitle={`${skills.length} ${skills.length === 1 ? "skill" : "skills"} in the library`}
         title="Skills"
       />
-      <div className="mb-3 mt-3 flex shrink-0 items-center">
-        <Input
-          className="max-w-xs"
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter skills…"
-          type="search"
-          value={query}
-        />
-        <span className="text-muted-foreground ml-3 text-xs">
-          {filtered.length}/{skills.length}
-        </span>
-      </div>
+      <FilterBar
+        filteredCount={filtered.length}
+        onChange={setQuery}
+        placeholder="Filter skills…"
+        totalCount={skills.length}
+        value={query}
+      />
       <AssetSplitLayout
         detail={
           active ? (

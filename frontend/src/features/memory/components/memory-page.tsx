@@ -11,6 +11,7 @@ import {
 } from "@/features/assets/components/asset/asset-list-panel";
 import { AssetPageHeader } from "@/features/assets/components/asset/asset-page-header";
 import { AssetSplitLayout } from "@/features/assets/components/asset/asset-split-layout";
+import { FilterBar } from "@/features/assets/components/filter-bar";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import {
@@ -88,18 +89,13 @@ export function MemoryAssetPage({ sessions, onBack }: { sessions: ChatSessionInf
         subtitle={`${filtered.length} memory ${filtered.length === 1 ? "block" : "blocks"} · ${memories.memories.length} L1 ${memories.memories.length === 1 ? "memory" : "memories"}`}
         title="Chat Memory"
       />
-      <div className="mb-3 mt-3 flex shrink-0 items-center">
-        <Input
-          className="max-w-xs"
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter blocks…"
-          type="search"
-          value={query}
-        />
-        <span className="text-muted-foreground ml-3 text-xs">
-          {filtered.length}/{sessions.length}
-        </span>
-      </div>
+      <FilterBar
+        filteredCount={filtered.length}
+        onChange={setQuery}
+        placeholder="Filter blocks…"
+        totalCount={sessions.length}
+        value={query}
+      />
       <AssetSplitLayout
         detail={
           active ? (

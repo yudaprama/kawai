@@ -35,17 +35,6 @@ export const createCn = (prefix?: string): CnFunction => {
 export const ACTION_BUTTON_CLASSES =
   "cursor-pointer p-1 text-muted-foreground transition-all hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50";
 
-export const save = (filename: string, content: string | Blob, mimeType: string) => {
-  // Prepend UTF-8 BOM for CSV so Excel on Windows correctly detects the encoding.
-  // Without it, Excel falls back to the system ANSI codepage and corrupts non-ASCII text.
-  const bom = typeof content === 'string' && mimeType.startsWith('text/csv') ? '\uFEFF' : '';
-  const blob = typeof content === 'string' ? new Blob([bom + content], { type: mimeType }) : content;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-};
+import { triggerDownload } from '@/lib/download';
+
+export const save = triggerDownload;
