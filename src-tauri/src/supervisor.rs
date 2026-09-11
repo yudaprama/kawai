@@ -628,7 +628,7 @@ pub async fn plan_task(
                 {
                     searches_used += 1;
                     let (block, found) =
-                        run_tool_search(catalog.as_deref(), &embedder, &queries, &mut seen).await;
+                        run_tool_search(catalog.as_deref(), &embedder, &registry, &queries, &mut seen).await;
                     on_progress(SupervisorEvent::PlanningToolSearch {
                         queries: queries.clone(),
                         tools: found,
@@ -919,6 +919,7 @@ Plan rules:
 async fn run_tool_search(
     catalog: Option<&kawai_tool_catalog::Catalog>,
     embedder: &kawai_embedding::TenantAwareEmbedder,
+    registry: &kawai_router::ToolRegistry,
     queries: &[String],
     seen: &mut std::collections::HashSet<String>,
 ) -> (String, Vec<String>) {
@@ -963,6 +964,14 @@ async fn run_tool_search(
             if NON_DISPATCHABLE_TOOLS.contains(&hit.name.as_str())
                 || hit.name.starts_with("browser_")
             {
+                continue;
+            }
+            // The Turso catalog is seeded globally (all domains, all feature
+            // combos) while THIS build's registry only contains the tools it
+            // can dispatch (e.g. binance_* are feature-gated off). Surfacing a
+            // catalog hit the registry cannot dispatch guarantees a validation
+            // rejection — every such pick burns a corrective planner round.
+            if registry.get(&hit.name).is_none() {
                 continue;
             }
             if !seen.insert(hit.name.clone()) {
