@@ -1,11 +1,12 @@
 import { DatabaseIcon, FolderOpenIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { isRemoteSource, maskSource } from "@/features/analytics/lib/analytics";
 import { call, errText, type SqlProfileTest } from "@/lib/api";
+import { useOp } from "@/hooks/use-op";
 
 type SqlProfile = { name: string; source: string };
 
@@ -19,9 +20,9 @@ interface TestState {
 }
 
 export function SqlProfilesSection() {
-  const [profiles, setProfiles] = useState<SqlProfile[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const listOp = useOp<SqlProfile[]>("sql_profile_list", undefined, { onError: "log" });
+  const profiles = listOp.data ?? [];
+
   /** null = closed form (add), a profile = edit mode (name locked). */
   const [editing, setEditing] = useState<SqlProfile | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -30,21 +31,6 @@ export function SqlProfilesSection() {
   const [source, setSource] = useState("");
   const [testing, setTesting] = useState<string | null>(null);
   const [test, setTest] = useState<TestState | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setProfiles(await call<SqlProfile[]>("sql_profile_list"));
-      setError(null);
-    } catch (err) {
-      setError(errText(err));
-    } finally {
-      setLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const pickFile = async () => {
     try {
@@ -60,8 +46,8 @@ export function SqlProfilesSection() {
         ],
       });
       if (typeof picked === "string") setSource(picked);
-    } catch (err) {
-      setError(errText(err));
+    } catch {
+      listOp.execute(); // surface error through the op's error state
     }
   };
 
@@ -84,7 +70,6 @@ export function SqlProfilesSection() {
     const finalName = name.trim().toLowerCase();
     if (!NAME_OK.test(finalName) || !source.trim()) return;
     setSaving(true);
-    setError(null);
     try {
       await call("sql_profile_save", {
         name: finalName,
@@ -94,9 +79,9 @@ export function SqlProfilesSection() {
       setSource("");
       setEditing(null);
       setFormOpen(false);
-      await load();
-    } catch (err) {
-      setError(errText(err));
+      await listOp.execute();
+    } catch {
+      // error surfaces via listOp after re-fetch
     } finally {
       setSaving(false);
     }
@@ -106,9 +91,9 @@ export function SqlProfilesSection() {
     try {
       await call("sql_profile_delete", { name: profileName });
       if (test?.name === profileName) setTest(null);
-      await load();
-    } catch (err) {
-      setError(errText(err));
+      await listOp.execute();
+    } catch {
+      // error surfaces via listOp after re-fetch
     }
   };
 
@@ -130,6 +115,8 @@ export function SqlProfilesSection() {
       setTesting(null);
     }
   };
+
+  const loaded = !listOp.loading;
 
   return (
     <div className="mb-4">
@@ -179,7 +166,7 @@ export function SqlProfilesSection() {
           </div>
         </div>
       )}
-      {error && <p className="px-1 pb-2 text-xs text-destructive">{error}</p>}
+      {listOp.error && <p className="px-1 pb-2 text-xs text-destructive">{listOp.error}</p>}
       {!loaded ? (
         <div className="text-muted-foreground flex items-center gap-2 px-1 text-xs">
           <Spinner className="size-3" /> Loading…

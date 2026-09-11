@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { type MemoryItem, call, errText } from "@/lib/api";
 import { showErrorToast } from "@/lib/utils";
-import { useLoadOnce } from "@/hooks/use-load-once";
+import { useOp } from "@/hooks/use-op";
 
 /**
  * The Memory page's L1 state: the global memory list plus CRUD and the
@@ -9,7 +9,8 @@ import { useLoadOnce } from "@/hooks/use-load-once";
  * vault provider is configured).
  */
 export function useMemories(enabled: boolean) {
-  const { items: memories, setItems: setMemories, loaded, refresh } = useLoadOnce<MemoryItem>("memory_list", enabled);
+  const listOp = useOp<MemoryItem[]>("memory_list", undefined, { enabled });
+  const memories = listOp.data ?? [];
   const [extracting, setExtracting] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
 
@@ -27,7 +28,7 @@ export function useMemories(enabled: boolean) {
     setConsolidating(true);
     try {
       const report = await call<{ mergedGroups: number; removed: number }>("memory_consolidate", {});
-      if (report.removed > 0) await refresh();
+      if (report.removed > 0) await listOp.execute();
       return report.removed;
     } catch (err) {
       showErrorToast(`Consolidation failed — ${errText(err)}`);
@@ -35,20 +36,20 @@ export function useMemories(enabled: boolean) {
     } finally {
       setConsolidating(false);
     }
-  }, [refresh]);
+  }, [listOp.execute]);
 
   const create = useCallback(
     async (kind: MemoryItem["kind"], title: string, content: string): Promise<MemoryItem | null> => {
       try {
         const item = await call<MemoryItem>("memory_create", { kind, title, content });
-        setMemories((prev) => [item, ...prev]);
+        listOp.setData((prev) => [item, ...(prev ?? [])]);
         return item;
       } catch (err) {
         showErrorToast(`Couldn't create the memory — ${errText(err)}`);
         return null;
       }
     },
-    [setMemories],
+    [listOp.setData],
   );
 
   const update = useCallback(
@@ -58,28 +59,28 @@ export function useMemories(enabled: boolean) {
     ): Promise<MemoryItem | null> => {
       try {
         const item = await call<MemoryItem | null>("memory_update", { memoryId, ...patch });
-        if (item) setMemories((prev) => prev.map((m) => (m.id === memoryId ? item : m)));
+        if (item) listOp.setData((prev) => (prev ?? []).map((m) => (m.id === memoryId ? item : m)));
         return item;
       } catch (err) {
         showErrorToast(`Couldn't update the memory — ${errText(err)}`);
         return null;
       }
     },
-    [setMemories],
+    [listOp.setData],
   );
 
   const remove = useCallback(
     async (memoryId: string): Promise<boolean> => {
       try {
         const removed = await call<boolean>("memory_delete", { memoryId });
-        if (removed) setMemories((prev) => prev.filter((m) => m.id !== memoryId));
+        if (removed) listOp.setData((prev) => (prev ?? []).filter((m) => m.id !== memoryId));
         return removed;
       } catch (err) {
         showErrorToast(`Couldn't delete the memory — ${errText(err)}`);
         return false;
       }
     },
-    [setMemories],
+    [listOp.setData],
   );
 
   /** Extract memories from a session transcript via the cloud tier. */
@@ -88,7 +89,7 @@ export function useMemories(enabled: boolean) {
       setExtracting(true);
       try {
         const stored = await call<MemoryItem[]>("memory_extract", { sessionId });
-        if (stored.length) setMemories((prev) => [...stored, ...prev]);
+        if (stored.length) listOp.setData((prev) => [...stored, ...(prev ?? [])]);
         return stored;
       } catch (err) {
         showErrorToast(`Extraction failed — ${errText(err)}`);
@@ -97,8 +98,20 @@ export function useMemories(enabled: boolean) {
         setExtracting(false);
       }
     },
-    [setMemories],
+    [listOp.setData],
   );
 
-  return { memories, loaded, extracting, consolidating, refresh, create, update, remove, extract, search, consolidate };
+  return {
+    memories,
+    loaded: !listOp.loading || memories.length > 0,
+    extracting,
+    consolidating,
+    refresh: listOp.execute,
+    create,
+    update,
+    remove,
+    extract,
+    search,
+    consolidate,
+  };
 }

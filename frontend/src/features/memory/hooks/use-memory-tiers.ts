@@ -1,91 +1,69 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type SceneHit, call, errText } from "@/lib/api";
-import { showErrorToast } from "@/lib/utils";
+import type { SceneHit } from "@/lib/api";
+import { useOp } from "@/hooks/use-op";
 
 /**
  * The Memory page's L2 (scenes) and L3 (persona) state. Both derived tiers
  * need the hybrid vault for generation; reading works offline.
  */
 export function useMemoryTiers(enabled: boolean) {
-  const [scenes, setScenes] = useState<SceneHit[] | null>(null);
-  const [persona, setPersona] = useState<string | null>(null);
+  const scenesOp = useOp<SceneHit[]>("memory_scene_list", {}, { enabled, onError: "toast" });
+  const personaOp = useOp<string | null>("memory_persona_get", {}, { enabled, onError: "toast" });
+  const extractOp = useOp<SceneHit[]>("memory_scene_extract", {}, { enabled: false, onError: "toast" });
+  const generateOp = useOp<string>("memory_persona_generate", {}, { enabled: false, onError: "toast" });
+
   const [extracting, setExtracting] = useState(false);
   const [generating, setGenerating] = useState(false);
 
-  const refreshScenes = useCallback(async (): Promise<SceneHit[]> => {
-    try {
-      const list = await call<SceneHit[]>("memory_scene_list", {});
-      setScenes(list);
-      return list;
-    } catch (err) {
-      showErrorToast(`Couldn't load scenes — ${errText(err)}`);
-      setScenes([]);
-      return [];
-    }
-  }, []);
+  const scenes = scenesOp.data ?? [];
+  const scenesLoaded = !scenesOp.loading || scenes.length > 0;
+  const persona = personaOp.data ?? null;
+  const personaLoaded = !personaOp.loading || persona != null;
 
   /** Regenerate ALL scenes from current memories (cloud LLM naming). */
   const extractScenes = useCallback(async (): Promise<SceneHit[]> => {
     setExtracting(true);
     try {
-      const list = await call<SceneHit[]>("memory_scene_extract", {});
-      setScenes(list);
-      return list;
-    } catch (err) {
-      showErrorToast(`Scene extraction failed — ${errText(err)}`);
-      return [];
+      const list = await extractOp.execute();
+      if (list) scenesOp.setData(list);
+      return list ?? [];
     } finally {
       setExtracting(false);
     }
-  }, []);
-
-  const refreshPersona = useCallback(async (): Promise<string | null> => {
-    try {
-      const text = await call<string | null>("memory_persona_get", {});
-      setPersona(text);
-      return text;
-    } catch (err) {
-      showErrorToast(`Couldn't load persona — ${errText(err)}`);
-      setPersona(null);
-      return null;
-    }
-  }, []);
+  }, [extractOp.execute, scenesOp.setData]);
 
   /** (Re)generate the persona from all memories (cloud LLM). */
   const generatePersona = useCallback(async (): Promise<string | null> => {
     setGenerating(true);
     try {
-      const text = await call<string>("memory_persona_generate", {});
-      setPersona(text);
-      return text;
-    } catch (err) {
-      showErrorToast(`Persona generation failed — ${errText(err)}`);
-      return null;
+      const text = await generateOp.execute();
+      if (text) personaOp.setData(text);
+      return text ?? null;
     } finally {
       setGenerating(false);
     }
-  }, []);
+  }, [generateOp.execute, personaOp.setData]);
 
   // Lazy kick-off on first enable (tab activation) — exactly once.
   const kickedOff = useRef(false);
   useEffect(() => {
     if (enabled && !kickedOff.current) {
       kickedOff.current = true;
-      void refreshScenes();
-      void refreshPersona();
+      void scenesOp.execute();
+      void personaOp.execute();
     }
-  }, [enabled, refreshScenes, refreshPersona]);
+  }, [enabled, scenesOp.execute, personaOp.execute]);
 
   return {
-    scenes: scenes ?? [],
-    scenesLoaded: scenes != null,
+    scenes,
+    scenesLoaded,
     persona,
-    personaLoaded: persona != null,
+    personaLoaded,
     extracting,
     generating,
     extractScenes,
     generatePersona,
-    refreshScenes,
-    refreshPersona,
+    refreshScenes: scenesOp.execute,
+    refreshPersona: personaOp.execute,
   };
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { call, type KnowledgeFileInfo } from "@/lib/api";
-import { logWarn } from "@/lib/logger";
+import type { KnowledgeFileInfo } from "@/lib/api";
+import { useOp } from "@/hooks/use-op";
 
 /**
  * The knowledge panel list: every stored document with its RAG index state
@@ -11,60 +11,61 @@ import { logWarn } from "@/lib/logger";
  * rejects and we settle on an empty list.
  */
 export function useKnowledgeFiles(enabled: boolean) {
-  const [files, setFiles] = useState<KnowledgeFileInfo[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [unavailable, setUnavailable] = useState(false);
-  const sessionIdRef = useRef<number | null>(null);
+  const op = useOp<KnowledgeFileInfo[]>("knowledge_list", undefined, { enabled });
+  const files = op.data ?? [];
+  const unavailable = op.unavailable;
 
-  const refresh = useCallback(async () => {
-    const sessionId = sessionIdRef.current;
-    try {
-      const rows = await call<KnowledgeFileInfo[]>("knowledge_list", sessionId != null ? { sessionId } : undefined);
-      setFiles(rows);
-      setUnavailable(false);
-    } catch (err) {
-      // Feature-gated command missing (no `office` build) or not authed yet.
-      logWarn("knowledge_list", err);
-      setUnavailable(true);
-    } finally {
-      setLoaded(true);
-    }
-  }, []);
+  // `loaded` = first fetch completed (success or error). useOp starts
+  // with `loading=false` then immediately sets it to `true` via auto-execute,
+  // so we track the first transition back to `false`.
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (!op.loading && !loaded) setLoaded(true);
+  }, [op.loading, loaded]);
+
+  const sessionIdRef = useRef<number | null>(null);
 
   /** Track the active session (drives `inSession` + a re-fetch). */
   const setSessionId = useCallback(
     (sessionId: number | null) => {
       if (sessionId === sessionIdRef.current) return;
       sessionIdRef.current = sessionId;
-      void refresh();
+      void op.execute(sessionId != null ? { sessionId } : undefined);
     },
-    [refresh],
+    [op.execute],
   );
 
   /** Optimistically mark files as being (re)indexed (import / add / retry). */
-  const markIndexing = useCallback((fileIds: string[]) => {
-    setFiles((prev) => prev.map((f) => (fileIds.includes(f.id) ? { ...f, status: "indexing", error: null } : f)));
-  }, []);
+  const markIndexing = useCallback(
+    (fileIds: string[]) => {
+      op.setData((prev) =>
+        (prev ?? []).map((f) => (fileIds.includes(f.id) ? { ...f, status: "indexing", error: null } : f)),
+      );
+    },
+    [op.setData],
+  );
 
   /** Optimistically flip session association before the backend confirms. */
-  const markInSession = useCallback((fileIds: string[], inSession: boolean) => {
-    setFiles((prev) => prev.map((f) => (fileIds.includes(f.id) ? { ...f, inSession } : f)));
-  }, []);
+  const markInSession = useCallback(
+    (fileIds: string[], inSession: boolean) => {
+      op.setData((prev) => (prev ?? []).map((f) => (fileIds.includes(f.id) ? { ...f, inSession } : f)));
+    },
+    [op.setData],
+  );
 
   /** Optimistically drop files (delete). */
-  const remove = useCallback((fileIds: string[]) => {
-    setFiles((prev) => prev.filter((f) => !fileIds.includes(f.id)));
-  }, []);
-
-  useEffect(() => {
-    if (enabled && !loaded) void refresh();
-  }, [enabled, loaded, refresh]);
+  const remove = useCallback(
+    (fileIds: string[]) => {
+      op.setData((prev) => (prev ?? []).filter((f) => !fileIds.includes(f.id)));
+    },
+    [op.setData],
+  );
 
   return {
     files,
     loaded,
     unavailable,
-    refresh,
+    refresh: op.execute,
     setSessionId,
     markIndexing,
     markInSession,

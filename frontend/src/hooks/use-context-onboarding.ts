@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import type { ContextOnboarding } from "@/features/agents/registry";
-import { call, type AgentInfo, type KnowledgeFileInfo } from "@/lib/api";
+import type { AgentInfo, KnowledgeFileInfo } from "@/lib/api";
+import { useOp } from "@/hooks/use-op";
 import { isTabularExt } from "@/lib/extensions";
 
 /**
@@ -23,22 +24,12 @@ export function useContextOnboarding(args: {
 
   const relevant = useMemo(() => Boolean(agent?.tools) && agent?.id === "builtin.analytics", [agent]);
 
-  const [profileCount, setProfileCount] = useState<number | null>(null);
+  const profilesOp = useOp<{ name: string }[]>("sql_profile_list", undefined, {
+    enabled: relevant && !inSession,
+    onError: "silent",
+  });
 
-  useEffect(() => {
-    if (!relevant || inSession) return;
-    let disposed = false;
-    call<{ name: string }[]>("sql_profile_list")
-      .then((list) => {
-        if (!disposed) setProfileCount(list.length);
-      })
-      .catch(() => {
-        if (!disposed) setProfileCount(null);
-      });
-    return () => {
-      disposed = true;
-    };
-  }, [relevant, inSession]);
+  const profileCount = profilesOp.data?.length ?? null;
 
   const onImport = useCallback(() => importFiles(), [importFiles]);
   const onConnect = useCallback(() => openSources(), [openSources]);

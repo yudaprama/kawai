@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { call, type KnowledgeFileInfo } from "@/lib/api";
+import { base64ToText } from "@/lib/base64";
+import type { KnowledgeFileInfo } from "@/lib/api";
+import { useOp } from "@/hooks/use-op";
 
 /** A source-agnostic file the preview can render. */
 export interface PreviewFile {
@@ -14,8 +15,6 @@ export function knowledgeFileToPreview(f: KnowledgeFileInfo): PreviewFile {
   return { id: f.id, name: f.originalName, size: f.bytes };
 }
 
-import { base64ToText } from "@/lib/base64";
-
 export interface FilePreviewData {
   mime: string;
   dataBase64: string;
@@ -25,6 +24,17 @@ export interface FilePreviewData {
   text?: string;
 }
 
+function toPreviewData(res: { mime: string; dataBase64: string }): FilePreviewData {
+  const dataUrl = `data:${res.mime};base64,${res.dataBase64}`;
+  const isText = res.mime.startsWith("text/") && !res.mime.includes("html");
+  return {
+    mime: res.mime,
+    dataBase64: res.dataBase64,
+    dataUrl,
+    text: isText ? base64ToText(res.dataBase64) : undefined,
+  };
+}
+
 /**
  * Resolves the raw bytes for a preview file via the office store read command
  * (`office_read_file`). Returns a `data:` URL for media embeds and a decoded
@@ -32,41 +42,9 @@ export interface FilePreviewData {
  * switch mounts a single renderer, so only that renderer calls this hook).
  */
 export function useFilePreview(file: PreviewFile) {
-  const [data, setData] = useState<FilePreviewData | undefined>();
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<unknown>(null);
+  const op = useOp<{ mime: string; dataBase64: string }>("office_read_file", { fileId: file.id }, { onError: "log" });
 
-  useEffect(() => {
-    let cancelled = false;
-    setData(undefined);
-    setError(null);
-    setIsLoading(true);
-    call<{ mime: string; dataBase64: string }>("office_read_file", {
-      fileId: file.id,
-    })
-      .then((res) => {
-        if (cancelled) return;
-        const dataUrl = `data:${res.mime};base64,${res.dataBase64}`;
-        // text/html renders via the iframe preview — decoding it as text
-        // would only be used by nobody.
-        const isText = res.mime.startsWith("text/") && !res.mime.includes("html");
-        setData({
-          mime: res.mime,
-          dataBase64: res.dataBase64,
-          dataUrl,
-          text: isText ? base64ToText(res.dataBase64) : undefined,
-        });
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e);
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [file.id]);
+  const data = op.data != null ? toPreviewData(op.data) : undefined;
 
-  return { data, isLoading, error };
+  return { data, isLoading: op.loading, error: op.error };
 }
