@@ -15,8 +15,9 @@ const DEFAULT_TASK: &str =
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     kawai_lib::auth::load_dotenv();
+    kawai_telemetry::init();
 
-    let Some(remote) = RemoteLlm::from_env() else {
+    let Some(remote) = RemoteLlm::from_env().map(|r| r.with_conversation("kawai-remote-smoke")) else {
         println!("[remote_smoke] remote tier DISABLED (no vault keys) — this is the graceful-degradation path: OK");
         return;
     };
@@ -80,4 +81,8 @@ async fn main() {
         ),
         None => println!("[remote_smoke] stream ended without a terminal record"),
     }
+    // Give the agento11y export worker time to POST the generation before the
+    // process exits (the worker is a detached thread; short-lived processes
+    // would otherwise race the export).
+    std::thread::sleep(std::time::Duration::from_secs(3));
 }

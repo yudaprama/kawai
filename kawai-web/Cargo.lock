@@ -3239,6 +3239,7 @@ dependencies = [
  "kawai-office",
  "kawai-paths",
  "kawai-skills",
+ "kawai-telemetry",
  "kawai-tool-catalog",
  "kawai-tools",
  "kawai-vault",
@@ -3503,10 +3504,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "kawai-telemetry"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "reqwest 0.13.4",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "kawai-tool-catalog"
 version = "0.1.0"
 dependencies = [
  "kawai-constants",
+ "kawai-db",
  "kawai-paths",
  "libsql",
  "serde",
@@ -3550,6 +3562,7 @@ name = "kawai-web"
 version = "0.1.0"
 dependencies = [
  "kawai",
+ "kawai-telemetry",
  "tokio",
 ]
 
@@ -6113,6 +6126,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "kawai-constants",
+ "kawai-telemetry",
  "rand 0.9.5",
  "reqwest 0.13.4",
  "serde",

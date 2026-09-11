@@ -11,6 +11,7 @@ use std::path::PathBuf;
 async fn main() {
     kawai_lib::auth::load_dotenv();
     kawai_lib::logging::init();
+    kawai_telemetry::init();
 
     // dist/ is at the project root. When running via `cargo run -p kawai-web`
     // the manifest dir is kawai-web/, so we go one level up.

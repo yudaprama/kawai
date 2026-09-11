@@ -431,7 +431,11 @@ pub async fn plan_task(
     // output tokens = the whole 250 s latency).
     let remote = Some(
         remote_llm::RemoteLlm::from_env()
-            .map(|r| r.with_output_cap(2_500))
+            .map(|r| {
+                r.with_output_cap(2_500)
+                    .with_agent("planner")
+                    .with_conversation(format!("kawai-session-{session_id}"))
+            })
             .ok_or_else(|| "remote LLM is not configured".to_string())?,
     );
 
@@ -1509,9 +1513,14 @@ async fn revise_plan(
     reason: &str,
     result: &kawai_router::ExecutionResult,
     registry: &ToolRegistry,
+    session_id: i64,
 ) -> Result<kawai_router::TaskPlan, String> {
     let remote = remote_llm::RemoteLlm::from_env()
-        .map(|r| r.with_output_cap(2_500))
+        .map(|r| {
+            r.with_output_cap(2_500)
+                .with_agent("planner")
+                .with_conversation(format!("kawai-session-{session_id}"))
+        })
         .ok_or_else(|| "remote LLM is not configured".to_string())?;
     let system = plan_loop_system_prompt(&planner_core_tools(registry));
     let task = format!(
@@ -1613,7 +1622,7 @@ fn synthesis_materials(plan: &kawai_router::TaskPlan, result: &kawai_router::Exe
 /// One cloud call that turns the plan's step results into the user-facing
 /// answer for the goal. Returns `None` when the remote pool is unavailable
 /// or every candidate fails — the caller falls back to the raw tool output.
-async fn synthesize_final_answer(goal: &str, materials: &str) -> Option<String> {
+async fn synthesize_final_answer(goal: &str, materials: &str, session_id: i64) -> Option<String> {
     #[cfg(test)]
     {
         // The registry carries compiled-in vault keys, so this call would hit
@@ -1624,7 +1633,12 @@ async fn synthesize_final_answer(goal: &str, materials: &str) -> Option<String> 
     }
     #[cfg(not(test))]
     {
-        let remote = remote_llm::RemoteLlm::from_env().map(|r| r.with_output_cap(4_000))?;
+        let remote = remote_llm::RemoteLlm::from_env()
+            .map(|r| {
+                r.with_output_cap(4_000)
+                    .with_agent("deliverable-writer")
+                    .with_conversation(format!("kawai-session-{session_id}"))
+            })?;
         let system = "You are Kawai, a task-completion assistant. A deterministic supervisor just executed a \
             plan of tool steps toward the user's goal. Write the ANSWER to the user's goal from the step \
             results: lead with the answer, keep it concise markdown, and preserve facts/numbers exactly. \
@@ -1802,7 +1816,7 @@ pub fn execute_plan_stream_with_cancel(
                             .clone()
                             .unwrap_or_else(|| current_plan.goal.clone());
                         let synthesized =
-                            synthesize_final_answer(&synthesis_goal, &materials).await;
+                            synthesize_final_answer(&synthesis_goal, &materials, session_id).await;
                         if let Some(answer) = &synthesized {
                             eprintln!("[supervisor] synthesis ok ({} chars)", answer.chars().count());
                         } else {
@@ -1860,7 +1874,7 @@ pub fn execute_plan_stream_with_cancel(
                             eprintln!(
                                 "[supervisor] replanning (attempt {replan_attempt}/{MAX_REPLANS}): {reason}"
                             );
-                            match revise_plan(&current_plan.goal, &reason, &result, &registry).await {
+                            match revise_plan(&current_plan.goal, &reason, &result, &registry, session_id).await {
                                 Ok(revised) => {
                                     let count = revised.steps.len();
                                     yield SupervisorEvent::PlanRevised {

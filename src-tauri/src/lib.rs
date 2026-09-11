@@ -33,6 +33,7 @@ pub mod web;
 pub fn run() {
     auth::load_dotenv();
     logging::init();
+    kawai_telemetry::init();
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())

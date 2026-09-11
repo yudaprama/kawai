@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 kawai = { path = "../src-tauri", default-features = false, features = ["web"] }
+kawai-telemetry = { path = "../crates/foundation/telemetry" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 
 [patch.crates-io]
