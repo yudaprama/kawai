@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { FilePreview } from "@/components/shared/file-preview";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,10 +12,22 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import type { KnowledgeFileInfo } from "@/lib/api";
+import { tauriOpenFile, type KnowledgeFileInfo } from "@/lib/api";
 import { knowledgeFileToPreview } from "@/lib/preview-file";
+import { runningInTauri } from "@/platform";
 
 export function PreviewDialog({ file, onClose }: { file: KnowledgeFileInfo | null; onClose: () => void }) {
+  const ext = file?.ext?.toLowerCase();
+  // On desktop, PDFs open directly in the OS viewer — skip the modal entirely.
+  useEffect(() => {
+    if (file && runningInTauri && ext === "pdf") {
+      tauriOpenFile(file.id).catch(() => {});
+      onClose();
+    }
+  }, [file, ext, onClose]);
+
+  if (file && runningInTauri && ext === "pdf") return null;
+
   return (
     <Dialog open={file != null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex h-[80vh] max-w-3xl flex-col gap-0 overflow-hidden p-0">

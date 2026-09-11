@@ -4,9 +4,10 @@ import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
 import { useKnowledgeActions } from "@/features/knowledge/hooks/use-knowledge-actions";
 import { useSupervisorChat } from "@/features/chat/hooks/use-supervisor-chat";
 import { WorkbenchPage } from "@/features/workbench/components/workbench-page";
-import { type AgentInfo, call } from "@/lib/api";
+import { type AgentInfo, call, tauriOpenFile, errText } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
 import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
+import { runningInTauri } from "@/platform";
 import { AssetsRail } from "@/features/agents/assets-rail";
 import type { AssetViewId } from "@/features/assets/components/asset-nav";
 import { CodeAssetPage } from "@/features/codegraph/components/code-page";
@@ -57,6 +58,11 @@ export default function App() {
   useEffect(() => {
     const onOpen = (e: Event) => {
       const { fileId, name } = (e as CustomEvent<OpenPreviewDetail>).detail;
+      // On desktop: PDFs open directly in the OS viewer — no in-app modal needed.
+      if (runningInTauri && (name.split(".").pop()?.toLowerCase() === "pdf")) {
+        tauriOpenFile(fileId).catch((err) => logWarn("preview-bridge", errText(err)));
+        return;
+      }
       const known = ka.knowledge.files.find((f) => f.id === fileId);
       ka.setPreviewFile(
         known ?? {
