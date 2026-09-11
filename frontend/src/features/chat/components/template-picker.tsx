@@ -1,9 +1,10 @@
 import { LayoutTemplateIcon, SearchIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { call } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
+import { useOp } from "@/hooks/use-op";
 
 export interface TemplateInfo {
   id: string;
@@ -21,17 +22,19 @@ export interface TemplateInfo {
  */
 export function TemplatePicker({ onPick }: { onPick: (text: string) => void }) {
   const [open, setOpen] = useState(false);
-  const [templates, setTemplates] = useState<TemplateInfo[] | null>(null);
   const [query, setQuery] = useState("");
 
-  const load = (open: boolean) => {
-    setOpen(open);
-    if (open && templates === null) {
-      call<TemplateInfo[]>("office_list_templates")
-        .then(setTemplates)
-        .catch((err) => logWarn("office_list_templates", err));
+  const listOp = useOp<TemplateInfo[]>("office_list_templates", undefined, { enabled: false, onError: "log" });
+  const templates = listOp.data ?? null;
+
+  // Fetch on first popover open — subsequent opens reuse the cached list.
+  const fetched = useRef(false);
+  useEffect(() => {
+    if (open && !fetched.current) {
+      fetched.current = true;
+      void listOp.execute();
     }
-  };
+  }, [open, listOp.execute]);
 
   const filtered = useMemo(() => {
     if (!templates) return [];
@@ -56,7 +59,7 @@ export function TemplatePicker({ onPick }: { onPick: (text: string) => void }) {
   };
 
   return (
-    <Popover onOpenChange={load} open={open}>
+    <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild={true}>
         <Button
           aria-label="Pick a deck template"

@@ -1,5 +1,5 @@
 import { LayersIcon, MergeIcon, PencilIcon, PlusIcon, SearchIcon, SparklesIcon, TrashIcon, XIcon } from "lucide-react";
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import {
   AssetBadge,
   AssetItemBadges,
@@ -35,9 +35,8 @@ import {
   type ChatSessionInfo,
   type MemoryGraphExport,
   type MemoryItem,
-  call,
-  errText,
 } from "@/lib/api";
+import { useOp } from "@/hooks/use-op";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 
 type MemoryTab = "l0" | "l1" | "l2" | "l3" | "graph";
@@ -58,9 +57,6 @@ const MemoryGraph = lazy(() =>
 export function MemoryAssetPage({ sessions, onBack }: { sessions: ChatSessionInfo[]; onBack: () => void }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [messages, setMessages] = useState<ChatMessageInfo[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<MemoryTab>("l0");
 
   const memories = useMemories(true);
@@ -77,29 +73,14 @@ export function MemoryAssetPage({ sessions, onBack }: { sessions: ChatSessionInf
   const active = filtered.find((s) => s.id === selectedId) ?? sorted.find((s) => s.id === selectedId) ?? null;
   const activeId = active?.id ?? null;
 
-  // Load the transcript whenever a new session is selected.
-  useEffect(() => {
-    if (activeId == null) {
-      setMessages(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    call<ChatMessageInfo[]>("list_chat_messages", { sessionId: activeId })
-      .then((rows) => {
-        if (!cancelled) setMessages(rows);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeId]);
+  const messagesOp = useOp<ChatMessageInfo[]>(
+    "list_chat_messages",
+    activeId != null ? { sessionId: activeId } : undefined,
+    { enabled: activeId != null, onError: "log" },
+  );
+  const messages = messagesOp.data ?? null;
+  const loading = messagesOp.loading;
+  const error = messagesOp.error;
 
   return (
     <AssetShell onBack={onBack} subtitle="chat memory" title="Memory">
@@ -222,25 +203,10 @@ function BlockDetail({
 
 /** Graph — the whole entity-memory graph, lazily code-split. */
 function GraphPane() {
-  const [data, setData] = useState<MemoryGraphExport | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      setData(await call<MemoryGraphExport>("memory_graph_export", {}));
-    } catch (err) {
-      setError(errText(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const op = useOp<MemoryGraphExport>("memory_graph_export", {}, { onError: "toast" });
+  const data = op.data ?? null;
+  const loading = op.loading && !data;
+  const error = op.error;
 
   if (loading && !data) {
     return (
@@ -253,7 +219,7 @@ function GraphPane() {
     return (
       <div className="flex flex-1 flex-col items-start gap-2 p-4 text-sm">
         <p className="text-muted-foreground">Couldn't build the graph — {error}</p>
-        <Button onClick={() => void refresh()} size="xs" variant="outline">
+        <Button onClick={() => void op.execute()} size="xs" variant="outline">
           Retry
         </Button>
       </div>
@@ -271,8 +237,8 @@ function GraphPane() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-1.5 border-b px-4 py-2">
-        <Button disabled={loading} onClick={() => void refresh()} size="xs" variant="outline">
-          {loading ? <Spinner className="size-3" /> : <SearchIcon className="size-3" />}
+        <Button disabled={op.loading} onClick={() => void op.execute()} size="xs" variant="outline">
+          {op.loading ? <Spinner className="size-3" /> : <SearchIcon className="size-3" />}
           Refresh
         </Button>
         <span className="text-muted-foreground ml-auto text-xs">memories (newest 200) + the entities they mention</span>

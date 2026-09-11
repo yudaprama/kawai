@@ -18,6 +18,7 @@ import { call, type KnowledgeFileInfo } from "@/lib/api";
 import { activeMentionRange } from "@/features/chat/lib/chat-helpers";
 import { logWarn } from "@/lib/logger";
 import { TemplatePicker } from "@/features/chat/components/template-picker";
+import { useOp } from "@/hooks/use-op";
 
 type ChatComposerProps = {
   agentName: string;
@@ -87,7 +88,6 @@ function ChatComposerInner({
   const controller = usePromptInputController();
   const [mentions, setMentions] = useState<KnowledgeFileInfo[]>([]);
   const [mentionOpen, setMentionOpen] = useState(false);
-  const [mentionFiles, setMentionFiles] = useState<KnowledgeFileInfo[] | null>(null);
   const [mentionQuery, setMentionQuery] = useState("");
   const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
@@ -104,24 +104,17 @@ function ChatComposerInner({
     onDraftConsumed?.();
   }, [chipDraft, controller, onDraftConsumed]);
 
-  // Fresh fetch on every popover open — files imported after mount appear
-  // without remounting the composer. Typing keeps the popover open and does
-  // NOT re-fetch (filtering happens client-side over the loaded list).
+  const mentionOp = useOp<KnowledgeFileInfo[]>("knowledge_list", undefined, { enabled: false, onError: "log" });
+  const mentionFiles = mentionOp.data ?? null;
+
+  // Fetch on first popover open — subsequent opens reuse the cached list.
+  const mentionFetched = useRef(false);
   useEffect(() => {
-    if (!mentionOpen) return;
-    let cancelled = false;
-    call<KnowledgeFileInfo[]>("knowledge_list")
-      .then((rows) => {
-        if (!cancelled) setMentionFiles(rows);
-      })
-      .catch((err) => {
-        logWarn("knowledge_list", err);
-        if (!cancelled) setMentionFiles([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [mentionOpen]);
+    if (mentionOpen && !mentionFetched.current) {
+      mentionFetched.current = true;
+      void mentionOp.execute();
+    }
+  }, [mentionOpen, mentionOp.execute]);
 
   const toggleMention = useCallback((file: KnowledgeFileInfo) => {
     setMentions((prev) =>
@@ -156,7 +149,7 @@ function ChatComposerInner({
         }
         mentionRange.current = null;
       }
-        setMentionOpen(false);
+      setMentionOpen(false);
       setMentionQuery("");
       setActiveMentionIndex(0);
     },
@@ -284,8 +277,7 @@ function ChatComposerInner({
           placeholder={
             importProgress
               ? `Importing images… ${importProgress.done}/${importProgress.total}`
-              : placeholder ??
-                (agentName === "Workbench" ? "Describe your goal…" : `Message ${agentName}…`)
+              : (placeholder ?? (agentName === "Workbench" ? "Describe your goal…" : `Message ${agentName}…`))
           }
           onChange={handleComposerChange}
           onKeyDown={handleTextareaKeyDown}
