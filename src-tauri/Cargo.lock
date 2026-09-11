@@ -6777,6 +6777,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 name = "news_media"
 version = "0.1.0"
 dependencies = [
+ "kawai-constants",
  "kawai-http-common",
  "kawai-tools",
  "reqwest 0.13.4",

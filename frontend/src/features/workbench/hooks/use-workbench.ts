@@ -58,11 +58,26 @@ export interface WorkbenchRun {
   finishedAt?: number;
   /** Synthesized deliverable (terminal) — full text lives in the viewer. */
   outputPreview?: string;
-  /** Full deliverable text (in-memory only) — backs the previous-run rail
-   *  (Fase 4); full step reports still live in supervisor_step_results. */
+  /** Full deliverable text (in-memory only) — backs the run journal sections
+   *  (A2); full step reports still live in supervisor_step_results. */
   outputFull?: string;
   stepsDone?: number;
   stepsTotal?: number;
+  /** True when THIS run was submitted with a quote of the previous run's
+   *  deliverable — drives the journal's `↳ builds on` marker. */
+  quoted?: boolean;
+  /** Plan key — lets the journal read this run's full step reports from
+   *  supervisor_step_results even after the supervisor moved on. */
+  planKey?: string | null;
+  /** Lightweight step snapshot captured at terminal state — backs the
+   *  journal's step timeline. Full bodies stay in supervisor_step_results. */
+  steps?: {
+    stepId: string;
+    tool: string;
+    task: string;
+    state: SupervisorStep["state"];
+    dependsOn: string[];
+  }[];
 }
 
 export interface TimelineRow {
@@ -99,7 +114,7 @@ export function computePhases(steps: SupervisorStep[]): SupervisorStep[][] {
   const depth = (s: SupervisorStep): number => {
     const cached = waveOf.get(s.stepId);
     if (cached != null) return cached;
-    const deps = s.dependsOn.map((d) => byId.get(d)).filter((dep): dep is SupervisorStep => dep != null);
+    const deps = (s.dependsOn ?? []).map((d) => byId.get(d)).filter((dep): dep is SupervisorStep => dep != null);
     const w = deps.length === 0 ? 1 : Math.max(...deps.map(depth)) + 1;
     waveOf.set(s.stepId, w);
     return w;
@@ -201,6 +216,34 @@ export function useWorkbench() {
     };
   }, [supervisor.status, supervisor.finalOutput, supervisor.planKey, sessionId]);
 
+  // Journal capture: when the current/last run reaches a terminal state,
+  // snapshot its steps + planKey into the run record — the supervisor state
+  // itself is single-run and gets wiped by the next planAndRun.
+  const terminal = supervisor.status === "completed" || supervisor.status === "failed";
+  useEffect(() => {
+    if (!terminal) return;
+    setRuns((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      if (last.planKey === supervisor.planKey && last.steps != null) return prev;
+      return prev.map((r, i) =>
+        i === prev.length - 1
+          ? {
+              ...r,
+              planKey: supervisor.planKey,
+              steps: supervisor.steps.map((s) => ({
+                stepId: s.stepId,
+                tool: s.tool,
+                task: s.task,
+                state: s.state,
+                dependsOn: s.dependsOn,
+              })),
+            }
+          : r,
+      );
+    });
+  }, [terminal, supervisor.planKey, supervisor.steps]);
+
   const run = useCallback(
     async (goal: string, fileIds?: string[], opts?: { quote?: boolean }) => {
       const trimmed = goal.trim();
@@ -244,6 +287,7 @@ export function useWorkbench() {
           goal: trimmed,
           status: "running",
           startedAt: Date.now(),
+          quoted: quote,
         },
       ]);
       // Quoted vs clean (decision #10): the planner receives the quote block
@@ -282,15 +326,17 @@ export function useWorkbench() {
   }, []);
 
   /** Full body of a step's output, from the persisted supervisor_step_results
-   *  (the wire preview is capped at 2000 chars). Null when nothing is running
-   *  yet (no session/plan key) or the fetch fails — caller keeps the preview. */
+   *  (the wire preview is capped at 2000 chars). Pass `planKey` to read a
+   *  PAST run's step (the journal); omit it for the current run. Null when
+   *  nothing is running yet or the fetch fails — caller keeps the preview. */
   const loadFullOutput = useCallback(
-    async (stepId: string): Promise<string | null> => {
-      if (sessionId == null || supervisor.planKey == null) return null;
+    async (stepId: string, planKey?: string): Promise<string | null> => {
+      const key = planKey ?? supervisor.planKey;
+      if (sessionId == null || key == null) return null;
       try {
         return await call<string>("supervisor_step_output", {
           sessionId,
-          planKey: supervisor.planKey,
+          planKey: key,
           stepId,
         });
       } catch (err) {
@@ -300,10 +346,6 @@ export function useWorkbench() {
     },
     [sessionId, supervisor.planKey],
   );
-
-  /** The completed run BEFORE the current one (Fase 4) — backs the rail's
-   *  "previous run" section when the active run is a follow-up. */
-  const previousRun = runs.length >= 2 ? (runs[runs.length - 2] ?? null) : null;
 
   return {
     supervisor,
@@ -319,20 +361,14 @@ export function useWorkbench() {
     quotedLastRun,
     canFollowUp,
     dynamicChips,
-    previousRun,
-    abandonSession: () => {
-      // "New goal": the next run gets a fresh session.
+    /** "New session": the ONLY reset — the next run gets a fresh session and
+     *  recalls nothing from these runs. Named for what it actually does. */
+    startNewSession: () => {
       setSessionId(null);
-      setFollowUp(false);
-      setQuotedLastRun(false);
-      setDynamicChips([]);
-    },
-    newRun: () => {
-      setSessionId(null);
+      setRuns([]);
       setFollowUp(false);
       setQuotedLastRun(false);
       setDynamicChips([]);
     },
   };
 }
-

@@ -939,10 +939,13 @@ async fn run_tool_search(
         let mut listed = 0;
         for hit in hits {
             // Belt-and-suspenders: the catalog should never contain these
-            // (see catalog_composition::NON_DISPATCHABLE_TOOLS), but a stale
-            // replica can still surface them — filter here so validation never
-            // has to reject a plan for a tool it cannot dispatch.
-            if NON_DISPATCHABLE_TOOLS.contains(&hit.name.as_str()) {
+            // (see catalog_composition::NON_DISPATCHABLE_TOOLS /
+            // BROWSER_INTERNAL_TOOLS), but a stale replica can still surface
+            // them — filter here so validation never has to reject a plan for
+            // a tool it cannot dispatch.
+            if NON_DISPATCHABLE_TOOLS.contains(&hit.name.as_str())
+                || hit.name.starts_with("browser_")
+            {
                 continue;
             }
             if !seen.insert(hit.name.clone()) {

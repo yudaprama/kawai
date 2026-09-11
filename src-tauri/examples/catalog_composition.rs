@@ -12,6 +12,21 @@ use kawai_tools::ToolDefinition;
 /// (drift check).
 pub const RPC_ONLY_TOOLS: &[&str] = &["graph_search", "graph_list"];
 
+/// Low-level Cloudflare Browser Rendering tools — never exposed to the
+/// supervisor. The `web_read`/`web_search` chain in `crates/toolsets/webread`
+/// already consumes them internally (Cloudflare → HTTP → webview tiering);
+/// exposing them directly would duplicate `web_search`/`web_read` and confuse
+/// the planner. They remain usable headless via examples (`cargo run
+/// --example web_read_check`) but must stay out of the catalog even if a
+/// future domain `toolset_for` merges them.
+pub const BROWSER_INTERNAL_TOOLS: &[&str] = &[
+    "browser_markdown_extract",
+    "browser_content_extract",
+    "browser_json_extract",
+    "browser_links_extract",
+    "browser_scrape_elements",
+];
+
 /// Subagent/internal-dispatch tools: excluded from the supervisor registry
 /// entirely so the planner can neither see nor plan against them. Must stay in
 /// sync with `supervisor::NON_DISPATCHABLE_TOOLS` — the catalog is the planner's
@@ -116,13 +131,16 @@ pub async fn merged_definitions() -> Result<Vec<ToolDefinition>, String> {
     definitions.retain(|d| {
         !RPC_ONLY_TOOLS.contains(&d.name.as_str())
             && !NON_DISPATCHABLE_TOOLS.contains(&d.name.as_str())
+            && !BROWSER_INTERNAL_TOOLS.contains(&d.name.as_str())
+            && !d.name.starts_with("browser_")
     });
     if definitions.len() != before {
         eprintln!(
-            "[catalog] excluded {} non-catalog tool(s): {} RPC-only + {} internal (non-dispatchable)",
+            "[catalog] excluded {} non-catalog tool(s): {} RPC-only + {} internal (non-dispatchable) + {} browser-internal",
             before - definitions.len(),
             RPC_ONLY_TOOLS.len(),
-            NON_DISPATCHABLE_TOOLS.len()
+            NON_DISPATCHABLE_TOOLS.len(),
+            BROWSER_INTERNAL_TOOLS.len()
         );
     }
     Ok(definitions)
@@ -168,6 +186,24 @@ mod tests {
     }
 
     #[test]
+    fn browser_internal_tools_are_excluded() {
+        for &name in BROWSER_INTERNAL_TOOLS {
+            assert!(
+                !RPC_ONLY_TOOLS.contains(&name),
+                "{name:?} must not be in BROWSER_INTERNAL_TOOLS and RPC_ONLY at once"
+            );
+            assert!(
+                !NON_DISPATCHABLE_TOOLS.contains(&name),
+                "{name:?} must not be in BROWSER_INTERNAL_TOOLS and NON_DISPATCHABLE at once"
+            );
+            assert!(
+                name.starts_with("browser_"),
+                "{name:?} should be a browser_* tool"
+            );
+        }
+    }
+
+    #[test]
     fn catalog_kind_classifies_subagent_subset() {
         for &name in SUBAGENT_TOOLS {
             assert_eq!(catalog_kind(name), "subagent", "{name} should be subagent");
@@ -198,10 +234,22 @@ mod tests {
             Err(e) => panic!("merged_definitions failed: {e}"),
         };
         assert!(!defs.is_empty(), "merged definitions must not be empty");
-        for banned in NON_DISPATCHABLE_TOOLS.iter().chain(RPC_ONLY_TOOLS.iter()) {
+        for banned in NON_DISPATCHABLE_TOOLS
+            .iter()
+            .chain(RPC_ONLY_TOOLS.iter())
+            .chain(BROWSER_INTERNAL_TOOLS.iter())
+        {
             assert!(
                 !defs.iter().any(|d| &d.name == banned),
                 "merged_definitions must not contain {banned:?} — it is not dispatchable by the supervisor"
+            );
+        }
+        // Defensive: any future browser_* tool must also be excluded
+        for d in &defs {
+            assert!(
+                !d.name.starts_with("browser_"),
+                "merged_definitions must not contain browser_* tool {name:?}",
+                name = d.name
             );
         }
         // Sanity: expected dispatchable tools must still be present
