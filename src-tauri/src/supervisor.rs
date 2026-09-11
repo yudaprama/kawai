@@ -571,7 +571,21 @@ pub async fn plan_task(
                                         .collect()
                                 })
                                 .unwrap_or_default();
-                            let schemas = registry.catalog_lines_for(&used_tools);
+                            eprintln!(
+                                "[plan_task] plan rejected (repair {repairs_used}/2): {plan_err} — tools used: {}",
+                                used_tools.join(", ")
+                            );
+                            // When the rejection was an unknown tool, the
+                            // used-tools schemas are empty (they're not in the
+                            // registry) — repaste the SUGGESTED tools' schemas
+                            // instead so the model can actually fix the plan.
+                            let mut schema_names = used_tools.clone();
+                            for s in &suggestions {
+                                if !schema_names.iter().any(|n| n == s) {
+                                    schema_names.push(s.clone());
+                                }
+                            }
+                            let schemas = registry.catalog_lines_for(&schema_names);
                             materials.push_str(&format!(
                                 "\n<plan-rejected>\nYour plan was rejected by the validator: {plan_err}\n{}\
                                  {}\
