@@ -166,35 +166,36 @@ function RunHistoryRail({
                   <CircleXIcon className="text-destructive size-3.5 shrink-0" />
                 )}
               </button>
-              {open && (() => {
-                const stepTree: SupervisorStep[] = (r.steps ?? []).map((s) => ({
-                  stepId: s.stepId,
-                  tool: s.tool,
-                  task: s.task,
-                  state: s.state,
-                  dependsOn: s.dependsOn,
-                  artifacts: [],
-                }));
-                return (
-                  <div className="border-border/60 border-t px-2 py-1.5">
-                    {stepTree.length > 0 ? (
-                      <StepTree live={false} onOpenReport={(stepId) => onOpenStep(r.id, stepId)} steps={stepTree} />
-                    ) : (
-                      <div className="text-muted-foreground font-mono text-xs">No steps were recorded.</div>
-                    )}
-                    {(r.outputFull != null || r.outputPreview != null) && (
-                      <button
-                        className="text-muted-foreground hover:text-primary mt-1 inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
-                        onClick={() => onOpenDeliverable(r.id)}
-                        type="button"
-                      >
-                        <FileTextIcon className="size-3" />
-                        deliverable
-                      </button>
-                    )}
-                  </div>
-                );
-              })()}
+              {open &&
+                (() => {
+                  const stepTree: SupervisorStep[] = (r.steps ?? []).map((s) => ({
+                    stepId: s.stepId,
+                    tool: s.tool,
+                    task: s.task,
+                    state: s.state,
+                    dependsOn: s.dependsOn,
+                    artifacts: [],
+                  }));
+                  return (
+                    <div className="border-border/60 border-t px-2 py-1.5">
+                      {stepTree.length > 0 ? (
+                        <StepTree live={false} onOpenReport={(stepId) => onOpenStep(r.id, stepId)} steps={stepTree} />
+                      ) : (
+                        <div className="text-muted-foreground font-mono text-xs">No steps were recorded.</div>
+                      )}
+                      {(r.outputFull != null || r.outputPreview != null) && (
+                        <button
+                          className="text-muted-foreground hover:text-primary mt-1 inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                          onClick={() => onOpenDeliverable(r.id)}
+                          type="button"
+                        >
+                          <FileTextIcon className="size-3" />
+                          deliverable
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
             </div>
           );
         })}
@@ -231,7 +232,9 @@ function RunSwitcher({
         return (
           <button
             className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors ${
-              sel ? "border-primary bg-primary/10 text-foreground" : "border-border/60 text-foreground/80 hover:border-primary/60"
+              sel
+                ? "border-primary bg-primary/10 text-foreground"
+                : "border-border/60 text-foreground/80 hover:border-primary/60"
             }`}
             key={r.id}
             onClick={() => onPick(r.id)}
@@ -317,7 +320,6 @@ function PastRunCanvas({
     </div>
   );
 }
-
 
 /** The ONE step-tree renderer — used by BOTH the active Progress rail and
  *  every run-history entry, guaranteeing identical format (phases, step rows,
