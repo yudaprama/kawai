@@ -17,8 +17,8 @@ import { Button } from "@/components/ui/button";
 import { ChatComposer } from "@/features/chat/components/chat-composer";
 import { Streamdown } from "@/lib/streamdown";
 import { call, errText } from "@/lib/api";
-import { renderStepReport } from "@/features/workbench/components/tool-views";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
+import { AgentReportsSwitcher, StepReportBody } from "@/features/workbench/components/shared-canvas";
 import {
   agentName,
   computePhases,
@@ -94,75 +94,341 @@ function FollowUpChips({
   );
 }
 
-/** Transparency indicator: what will be attached to the next submitted goal.
- *  Active quote → removable; free-form submit post-deliverable → opt-in
- *  suggestion (decision #9: never auto-quote an unrelated goal). */
-function QuoteIndicator({ workbench }: { workbench: ReturnType<typeof useWorkbench> }) {
-  if (!workbench.canFollowUp || !workbench.composing) return null;
+/** The single quote indicator (PLAN-workbench-multi-run-ux.md): rendered
+ *  ONLY when a quote is armed — chips are the only way to arm it, ✕ disarms.
+ *  No second opt-in entry point. */
+function ComposerQuoteBadge({ workbench }: { workbench: ReturnType<typeof useWorkbench> }) {
+  if (!workbench.followUp || !workbench.composing) return null;
   const title = workbench.supervisor.goal ?? "previous deliverable";
-  if (workbench.followUp) {
-    return (
-      <div className="text-muted-foreground mb-2 flex items-center gap-1.5 font-mono text-[11px]">
-        <CornerDownRightIcon className="size-3 shrink-0" />
-        <span className="min-w-0 truncate">Will include: “{title}” (previous deliverable)</span>
-        <button
-          aria-label="Do not include the previous deliverable"
-          className="hover:text-foreground shrink-0"
-          onClick={() => workbench.setFollowUp(false)}
-          type="button"
-        >
-          <XIcon className="size-3" />
-        </button>
-      </div>
-    );
-  }
   return (
     <div className="text-muted-foreground mb-2 flex items-center gap-1.5 font-mono text-[11px]">
       <CornerDownRightIcon className="size-3 shrink-0" />
-      <span className="min-w-0 truncate">Quote previous deliverable?</span>
-      <button className="text-primary hover:underline" onClick={() => workbench.setFollowUp(true)} type="button">
-        include
+      <span className="min-w-0 truncate" title={`Will include: “${title}” (previous deliverable)`}>
+        Will include the previous deliverable
+      </span>
+      <button
+        aria-label="Do not include the previous deliverable"
+        className="hover:text-foreground shrink-0"
+        onClick={() => workbench.setFollowUp(false)}
+        type="button"
+      >
+        <XIcon className="size-3" />
       </button>
     </div>
   );
 }
 
-/** Fase 4: the "previous run" connector — collapsed above the active rail
- *  when the active run was submitted with a quote. Purely visual glue: the
- *  run itself is independent; the quote block is what connects them. */
-function PreviousRunRail({ run, onOpen }: { run: WorkbenchRun; onOpen: () => void }) {
-  const [open, setOpen] = useState(false);
+/** Run history rail (sidebar): past runs as expandable entries whose body is
+ *  the run's STEP TIMELINE. Nothing renders the old deliverable here —
+ *  picking `report` or `deliverable` opens it on the CANVAS (right pane).
+ *  Full step bodies load on demand from supervisor_step_results via the
+ *  run's stored planKey. */
+function RunHistoryRail({
+  runs,
+  onOpenDeliverable,
+  onOpenStep,
+}: {
+  runs: WorkbenchRun[];
+  onOpenDeliverable: (runId: string) => void;
+  onOpenStep: (runId: string, stepId: string) => void;
+}) {
+  const past = runs.slice(0, -1);
+  const [openId, setOpenId] = useState<string | null>(null);
+  if (past.length === 0) return null;
   return (
-    <div className="border-border/60 mb-4 border-b pb-2">
-      <div className="flex items-center gap-1">
-        <button
-          aria-expanded={open}
-          className="text-muted-foreground hover:text-foreground flex min-w-0 flex-1 items-center gap-1 font-mono text-[10px] font-bold tracking-wider uppercase"
-          onClick={() => setOpen((v) => !v)}
-          type="button"
-        >
-          <ChevronDownIcon className={`size-3 transition-transform ${open ? "" : "-rotate-90"}`} />
-          <span className="min-w-0 truncate">Previous run — {run.goal}</span>
-        </button>
-        <button
-          className="text-muted-foreground hover:text-primary inline-flex shrink-0 items-center gap-1 font-mono text-[10px] hover:underline"
-          onClick={onOpen}
-          type="button"
-        >
-          <FileTextIcon className="size-3" />
-          report
-        </button>
+    <div className="border-border/60 mb-4 border-b pb-3">
+      <h3 className="text-muted-foreground mb-2 font-mono text-[10px] font-bold tracking-wider uppercase">
+        Run history
+      </h3>
+      <div className="space-y-1">
+        {past.map((r, i) => {
+          const open = openId === r.id;
+          return (
+            <div className="border-border/60 rounded border" key={r.id}>
+              <button
+                aria-expanded={open}
+                className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left"
+                onClick={() => setOpenId((v) => (v === r.id ? null : r.id))}
+                type="button"
+              >
+                <ChevronDownIcon
+                  className={`text-muted-foreground size-3 shrink-0 transition-transform ${open ? "" : "-rotate-90"}`}
+                />
+                <span className="text-muted-foreground shrink-0 font-mono text-[10px]">Run {i + 1}</span>
+                <span className="text-foreground/90 min-w-0 flex-1 truncate text-xs" title={r.goal}>
+                  {r.goal}
+                </span>
+                {r.status === "running" ? (
+                  <LoaderCircleIcon className="text-primary size-3.5 shrink-0 animate-spin" />
+                ) : r.status === "completed" ? (
+                  <CheckCircle2Icon className="text-success size-3.5 shrink-0" />
+                ) : (
+                  <CircleXIcon className="text-destructive size-3.5 shrink-0" />
+                )}
+              </button>
+              {open && (() => {
+                const stepTree: SupervisorStep[] = (r.steps ?? []).map((s) => ({
+                  stepId: s.stepId,
+                  tool: s.tool,
+                  task: s.task,
+                  state: s.state,
+                  dependsOn: s.dependsOn,
+                  artifacts: [],
+                }));
+                return (
+                  <div className="border-border/60 border-t px-2 py-1.5">
+                    {stepTree.length > 0 ? (
+                      <StepTree live={false} onOpenReport={(stepId) => onOpenStep(r.id, stepId)} steps={stepTree} />
+                    ) : (
+                      <div className="text-muted-foreground font-mono text-xs">No steps were recorded.</div>
+                    )}
+                    {(r.outputFull != null || r.outputPreview != null) && (
+                      <button
+                        className="text-muted-foreground hover:text-primary mt-1 inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                        onClick={() => onOpenDeliverable(r.id)}
+                        type="button"
+                      >
+                        <FileTextIcon className="size-3" />
+                        deliverable
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          );
+        })}
       </div>
-      {open && (
-        <div className="text-muted-foreground mt-1 space-y-0.5 pl-4 font-mono text-[11px]">
-          <div>
-            {run.stepsDone ?? 0}/{run.stepsTotal ?? "?"} steps · {run.status === "completed" ? "finished" : run.status}
+    </div>
+  );
+}
+
+/** Canvas view: which run's which document is on the right pane. Null only
+ *  before the first run produces anything. doc = "final" | stepId. */
+interface CanvasView {
+  runId: string;
+  doc: string;
+}
+
+/** Level-1 switcher in the canvas header: pick which RUN is shown. */
+function RunSwitcher({
+  activeRunId,
+  onPick,
+  runs,
+  view,
+}: {
+  activeRunId: string | null;
+  onPick: (runId: string) => void;
+  runs: WorkbenchRun[];
+  view: CanvasView | null;
+}) {
+  if (runs.length === 0) return null;
+  const selectedId = view?.runId ?? activeRunId;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {runs.map((r, i) => {
+        const sel = r.id === selectedId;
+        return (
+          <button
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors ${
+              sel ? "border-primary bg-primary/10 text-foreground" : "border-border/60 text-foreground/80 hover:border-primary/60"
+            }`}
+            key={r.id}
+            onClick={() => onPick(r.id)}
+            type="button"
+          >
+            Run {i + 1}
+            {r.status === "running" ? (
+              <LoaderCircleIcon className="text-primary size-3 shrink-0 animate-spin" />
+            ) : r.status === "completed" ? (
+              <CheckCircle2Icon className="text-success size-3 shrink-0" />
+            ) : (
+              <CircleXIcon className="text-destructive size-3 shrink-0" />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Canvas content for a PAST run: its deliverable or one of its step reports
+ *  (fetched on demand from supervisor_step_results via the run's planKey).
+ *  Same shape as the active-run canvas: header, document, doc switcher. */
+function PastRunCanvas({
+  loadFullOutput,
+  onPickDoc,
+  run,
+  runIndex,
+  doc,
+}: {
+  loadFullOutput: (stepId: string, planKey?: string) => Promise<string | null>;
+  onPickDoc: (doc: string) => void;
+  run: WorkbenchRun;
+  runIndex: number;
+  doc: string;
+}) {
+  const reportableSteps = (run.steps ?? []).filter((s) => s.state === "completed" || s.state === "failed");
+  const isDeliverable = doc === "final";
+  const deliverableBody = run.outputFull ?? (run.outputPreview ? `${run.outputPreview}…` : null);
+  const stepTool = run.steps?.find((s) => s.stepId === doc)?.tool ?? "";
+  return (
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-4xl space-y-6 p-6">
+        <div>
+          <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
+            <ZapIcon className="text-primary size-5" />
+            Run {runIndex + 1} · {isDeliverable ? "Deliverable" : doc}
+          </h3>
+          <div className="text-muted-foreground mt-1 font-mono text-sm">
+            {new Date(run.startedAt).toLocaleString()}
+            {run.stepsTotal != null && ` · ${run.stepsDone ?? 0}/${run.stepsTotal} steps`}
           </div>
-          {run.outputPreview && <div className="truncate">{run.outputPreview}…</div>}
+        </div>
+
+        {isDeliverable ? (
+          deliverableBody ? (
+            <div className="border-primary/30 bg-card rounded-lg border p-6">
+              <Streamdown>{deliverableBody}</Streamdown>
+            </div>
+          ) : (
+            <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center font-mono text-sm">
+              No deliverable was produced.
+            </div>
+          )
+        ) : (
+          <StepReportBody
+            fetcher={loadFullOutput}
+            needsFetch
+            planKey={run.planKey ?? undefined}
+            previewOutput=""
+            stepId={doc}
+            tool={stepTool}
+          />
+        )}
+
+        <AgentReportsSwitcher
+          activeDoc={doc}
+          hasDeliverable={deliverableBody != null}
+          onPickDoc={onPickDoc}
+          reports={reportableSteps.map((s) => ({ stepId: s.stepId, label: s.task || s.tool }))}
+        />
+      </div>
+    </div>
+  );
+}
+
+
+/** The ONE step-tree renderer — used by BOTH the active Progress rail and
+ *  every run-history entry, guaranteeing identical format (phases, step rows,
+ *  state icons, tools, report buttons). `live` enables running spinners and
+ *  per-step durations; settled rows show the tool label instead. */
+function StepTree({
+  live,
+  onOpenReport,
+  steps,
+}: {
+  live: boolean;
+  onOpenReport: (stepId: string) => void;
+  steps: SupervisorStep[];
+}) {
+  const phases = computePhases(steps);
+  const deliverableStep = steps.find(isDeliverableStep);
+  const [collapsedPhases, setCollapsedPhases] = useState<Set<number>>(new Set());
+  const togglePhase = (i: number) =>
+    setCollapsedPhases((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  return (
+    <div className="space-y-4">
+      {phases.map((phase, i) => {
+        const allSettled = phase.every((s) => s.state === "completed" || s.state === "skipped");
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: phases are derived wave buckets with no stable identity
+          <div key={i}>
+            <button
+              aria-expanded={!collapsedPhases.has(i)}
+              className="text-foreground/80 hover:text-foreground mb-2 flex w-full items-center gap-1 font-mono text-[10px] font-bold tracking-wider uppercase"
+              onClick={() => togglePhase(i)}
+              type="button"
+            >
+              <ChevronDownIcon
+                className={`size-3 transition-transform ${collapsedPhases.has(i) ? "-rotate-90" : ""}`}
+              />
+              {phases.length > 1 ? `Phase ${i + 1}` : "Steps"}
+              {allSettled && <span className="text-muted-foreground ml-1 normal-case">· settled</span>}
+            </button>
+            {!collapsedPhases.has(i) && (
+              <div className="ml-2 space-y-1.5">
+                {phase.map((step) => (
+                  <div key={step.stepId} className="space-y-0.5">
+                    <div className="flex items-center justify-between gap-2 font-mono text-xs">
+                      <span className="text-foreground/90 min-w-0 truncate" title={agentName(step)}>
+                        {agentName(step)}
+                      </span>
+                      <StateIcon state={step.state} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      {live && step.state === "running" && step.startedAt != null ? (
+                        <Duration from={step.startedAt} />
+                      ) : (
+                        <span className="text-muted-foreground truncate font-mono text-[10px]">{step.tool}</span>
+                      )}
+                      {reportable(step, live) && (
+                        <button
+                          className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                          onClick={() => onOpenReport(step.stepId)}
+                          type="button"
+                        >
+                          <FileTextIcon className="size-3" />
+                          see report
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {deliverableStep && (
+        <div className="space-y-0.5">
+          <div className="flex items-center justify-between gap-2 font-mono text-xs">
+            <span className="text-foreground/90 min-w-0 truncate">Writing your deliverable</span>
+            <StateIcon state={deliverableStep.state} />
+          </div>
+          <div className="flex items-center justify-between">
+            {live && deliverableStep.state === "running" ? (
+              <Duration from={deliverableStep.startedAt ?? Date.now()} />
+            ) : (
+              <span className="text-muted-foreground font-mono text-[10px]">{deliverableStep.tool}</span>
+            )}
+            {reportable(deliverableStep, live) && (
+              <button
+                className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                onClick={() => onOpenReport("final")}
+                type="button"
+              >
+                <FileTextIcon className="size-3" />
+                see report
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
   );
+}
+
+/** A step carries an inspectable report: live rows gate on the wire preview
+ *  existing (completed), history rows on the state being terminal. */
+function reportable(step: SupervisorStep, live: boolean): boolean {
+  if (live) return step.output != null && step.state === "completed";
+  return step.state === "completed" || step.state === "failed";
 }
 
 // ── Left rail: progress phases ──────────────────────────────────────────────
@@ -196,16 +462,6 @@ function ProgressRail({
   onNewGoal: () => void;
 }) {
   const { supervisor } = workbench;
-  const phases = computePhases(supervisor.steps);
-  const deliverableStep = supervisor.steps.find(isDeliverableStep);
-  const [collapsedPhases, setCollapsedPhases] = useState<Set<number>>(new Set());
-  const togglePhase = (i: number) =>
-    setCollapsedPhases((prev) => {
-      const next = new Set(prev);
-      if (next.has(i)) next.delete(i);
-      else next.add(i);
-      return next;
-    });
   return (
     <div className="flex h-full flex-col">
       <div className="border-primary/30 mb-4 border-b pb-3">
@@ -244,85 +500,10 @@ function ProgressRail({
           </div>
         </div>
       ) : (
-        <div className="flex-1 space-y-4">
-          {phases.map((phase, i) => {
-            const allSettled = phase.every((s) => s.state === "completed" || s.state === "skipped");
-            return (
-              // biome-ignore lint/suspicious/noArrayIndexKey: phases are derived wave buckets with no stable identity
-              <div key={i}>
-                <button
-                  aria-expanded={!collapsedPhases.has(i)}
-                  className="text-foreground/80 hover:text-foreground mb-2 flex w-full items-center gap-1 font-mono text-[10px] font-bold tracking-wider uppercase"
-                  onClick={() => togglePhase(i)}
-                  type="button"
-                >
-                  <ChevronDownIcon
-                    className={`size-3 transition-transform ${collapsedPhases.has(i) ? "-rotate-90" : ""}`}
-                  />
-                  {phases.length > 1 ? `Phase ${i + 1}` : "Steps"}
-                  {allSettled && <span className="text-muted-foreground ml-1 normal-case">· settled</span>}
-                </button>
-                {!collapsedPhases.has(i) && (
-                  <div className="ml-2 space-y-1.5">
-                    {phase.map((step) => (
-                      <div key={step.stepId} className="space-y-0.5">
-                        <div className="flex items-center justify-between gap-2 font-mono text-xs">
-                          <span className="text-foreground/90 min-w-0 truncate" title={agentName(step)}>
-                            {agentName(step)}
-                          </span>
-                          <StateIcon state={step.state} />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          {step.state === "running" && step.startedAt != null ? (
-                            <Duration from={step.startedAt} />
-                          ) : (
-                            <span className="text-muted-foreground truncate font-mono text-[10px]">{step.tool}</span>
-                          )}
-                          {step.output && step.state === "completed" && (
-                            <button
-                              className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
-                              onClick={() => onOpenReport(step.stepId)}
-                              type="button"
-                            >
-                              <FileTextIcon className="size-3" />
-                              see report
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {deliverableStep && (
-            <div className="space-y-0.5">
-              <div className="flex items-center justify-between gap-2 font-mono text-xs">
-                <span className="text-foreground/90 min-w-0 truncate">Writing your deliverable</span>
-                <StateIcon state={deliverableStep.state} />
-              </div>
-              <div className="flex items-center justify-between">
-                {deliverableStep.state === "running" ? (
-                  <Duration from={deliverableStep.startedAt ?? Date.now()} />
-                ) : (
-                  <span className="text-muted-foreground font-mono text-[10px]">{deliverableStep.tool}</span>
-                )}
-                {deliverableStep.output && deliverableStep.state === "completed" && (
-                  <button
-                    className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
-                    onClick={() => onOpenReport("final")}
-                    type="button"
-                  >
-                    <FileTextIcon className="size-3" />
-                    see report
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
+        <div className="flex-1">
+          <StepTree live onOpenReport={onOpenReport} steps={supervisor.steps} />
           {supervisor.steps.length === 0 && supervisor.status !== "idle" && (
-            <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs">
+            <div className="text-muted-foreground mt-2 flex items-center gap-2 font-mono text-xs">
               <LoaderCircleIcon className="text-primary size-3.5 animate-spin" />
               {supervisor.planning != null
                 ? supervisor.planning.round === 0
@@ -379,14 +560,15 @@ function ProgressRail({
           )}
           <Button
             className="w-full"
+            title="Starts a fresh session — the next run will not recall these runs."
             onClick={() => {
-              workbench.newRun();
+              workbench.startNewSession();
               onNewGoal();
             }}
             size="sm"
             variant="outline"
           >
-            New goal
+            New session
           </Button>
         </div>
       )}
@@ -397,18 +579,19 @@ function ProgressRail({
 // ── Center: deliverable viewer ──────────────────────────────────────────────
 
 function DeliverableViewer({
+  doc,
+  onPickDoc,
+  runIndex,
   workbench,
-  selected,
-  onSelect,
 }: {
+  /** Pinned document: "final" | stepId. The page owns navigation policy —
+   *  this component NEVER auto-jumps on its own. */
+  doc: string;
+  onPickDoc: (doc: string) => void;
+  runIndex: number;
   workbench: ReturnType<typeof useWorkbench>;
-  selected: string;
-  onSelect: (id: string) => void;
 }) {
   const { supervisor } = workbench;
-  // Fase 4: the rail's "report" button pins the viewer to the previous run's
-  // deliverable (in-memory full text captured at its planCompleted).
-  const previous = selected === "prev" ? (workbench.previousRun ?? null) : null;
   const reports = useMemo(
     () =>
       supervisor.steps.filter(
@@ -416,11 +599,7 @@ function DeliverableViewer({
       ),
     [supervisor.steps],
   );
-  // Follow the work: newest completed report while running, the deliverable
-  // once it exists — unless the user pinned a report (rail or switcher).
-  const newest = reports.length > 0 ? reports[reports.length - 1] : null;
-  const effective =
-    selected === "auto" ? (supervisor.finalOutput != null ? "final" : (newest?.stepId ?? "final")) : selected;
+  const effective = doc;
   const step = reports.find((r) => r.stepId === effective);
 
   // The wire preview is capped at 2000 chars — when the shown report hits
@@ -429,56 +608,12 @@ function DeliverableViewer({
   // preview; no retry spinner). In-flight tracking lives in a ref — a state
   // flag here would re-trigger this very effect and deadlock the fetch.
   const previewTruncated = (step?.output?.length ?? 0) >= 2000;
-  const [fullOutputs, setFullOutputs] = useState<Record<string, string | "failed">>({});
-  const inflight = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    const stepId = step?.stepId;
-    if (!stepId || !previewTruncated || fullOutputs[stepId] != null || inflight.current.has(stepId)) return;
-    inflight.current.add(stepId);
-    void workbench.loadFullOutput(stepId).then((full) => {
-      inflight.current.delete(stepId);
-      setFullOutputs((prev) => ({ ...prev, [stepId]: full ?? "failed" }));
-    });
-  }, [step, previewTruncated, fullOutputs, workbench.loadFullOutput]);
-  // A new run invalidates everything fetched for the previous one.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset triggers are the point — clear the cache when the run identity changes
-  useEffect(() => {
-    setFullOutputs({});
-    setExportedName(null);
-    setExportError(null);
-  }, [supervisor.goal, supervisor.planVersion]);
-
-  const full = step ? fullOutputs[step.stepId] : undefined;
-  const output = step ? (typeof full === "string" ? full : step.output) : undefined;
-  const loadingFull = previewTruncated && full == null;
+  const output = step?.output;
 
   // Export the deliverable as a stored .pdf/.docx via the office engines.
   const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
   const [exportedName, setExportedName] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
-
-  if (previous != null) {
-    const body = previous.outputFull ?? previous.outputPreview ?? "";
-    return (
-      <div className="h-full overflow-y-auto">
-        <div className="mx-auto max-w-4xl space-y-6 p-6">
-          <div>
-            <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
-              <ZapIcon className="text-primary size-5" />
-              Previous run — {previous.goal}
-            </h3>
-            <div className="text-muted-foreground mt-1 font-mono text-sm">
-              {previous.stepsDone ?? 0}/{previous.stepsTotal ?? "?"} steps ·{" "}
-              {new Date(previous.startedAt).toLocaleString()}
-            </div>
-          </div>
-          <div className="border-border/60 bg-card rounded-lg border p-6">
-            <Streamdown>{body}</Streamdown>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   const done = supervisor.steps.filter((s) => s.state === "completed").length;
 
@@ -514,6 +649,7 @@ function DeliverableViewer({
         <div>
           <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
             <ZapIcon className="text-primary size-5" />
+            {`Run ${runIndex + 1} · `}
             {supervisor.finalOutput != null
               ? "Deliverable"
               : step != null
@@ -527,18 +663,9 @@ function DeliverableViewer({
             {supervisor.planStartedAt != null &&
               ` · ${fmtDuration(supervisor.planStartedAt, supervisor.planCompletedAt ?? undefined)}`}
           </div>
-          {workbench.previousRun && selected !== "prev" && (
-            <div className="text-muted-foreground mt-1 flex items-center gap-1.5 font-mono text-[11px]">
-              <CornerDownRightIcon className="size-3 shrink-0" />
-              <span className="min-w-0 truncate">builds on “{workbench.previousRun.goal}”</span>
-              <button className="text-primary shrink-0 hover:underline" onClick={() => onSelect("prev")} type="button">
-                view
-              </button>
-            </div>
-          )}
         </div>
 
-        {supervisor.status === "idle" && (
+        {supervisor.status === "idle" && supervisor.planning == null && (
           <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center font-mono text-sm">
             State a goal in the composer to start a run.
           </div>
@@ -577,15 +704,14 @@ function DeliverableViewer({
           </div>
         )}
         {effective !== "final" && step != null && output != null && (
-          <div className="bg-card rounded-lg border p-4">
-            {loadingFull && (
-              <p className="text-muted-foreground mb-2 flex items-center gap-2 text-xs">
-                <LoaderCircleIcon className="text-primary size-3.5 animate-spin" />
-                Loading full report…
-              </p>
-            )}
-            {renderStepReport(step.tool, output)}
-          </div>
+          <StepReportBody
+            fetcher={workbench.loadFullOutput}
+            needsFetch={previewTruncated}
+            cacheKey={`${supervisor.goal ?? ""}::${supervisor.planVersion ?? ""}`}
+            previewOutput={output}
+            stepId={step.stepId}
+            tool={step.tool}
+          />
         )}
         {effective === "final" && supervisor.finalOutput == null && supervisor.status !== "idle" && (
           <div className="text-muted-foreground flex items-center gap-2 rounded-lg border border-dashed p-8 font-mono text-sm">
@@ -594,35 +720,12 @@ function DeliverableViewer({
           </div>
         )}
 
-        {reports.length > 0 && (
-          <div className="rounded-lg border p-4">
-            <h4 className="text-muted-foreground mb-3 text-center font-mono text-sm tracking-[0.2em]">AGENT REPORTS</h4>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <button
-                className={`text-foreground rounded-lg border px-3 py-2 font-mono text-xs transition-colors ${
-                  effective === "final" ? "border-primary bg-primary/10" : "hover:border-primary/60"
-                }`}
-                onClick={() => onSelect("final")}
-                type="button"
-              >
-                ★ Deliverable
-              </button>
-              {reports.map((r) => (
-                <button
-                  className={`text-foreground truncate rounded-lg border px-3 py-2 font-mono text-xs transition-colors ${
-                    effective === r.stepId ? "border-primary bg-primary/10" : "hover:border-primary/60"
-                  }`}
-                  key={r.stepId}
-                  onClick={() => onSelect(r.stepId)}
-                  title={agentName(r)}
-                  type="button"
-                >
-                  {agentName(r)}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+        <AgentReportsSwitcher
+          activeDoc={effective}
+          hasDeliverable={supervisor.finalOutput != null}
+          onPickDoc={onPickDoc}
+          reports={reports.map((r) => ({ stepId: r.stepId, label: agentName(r) }))}
+        />
       </div>
     </div>
   );
@@ -712,24 +815,67 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
   // Home = the landing composer. Submitting a goal moves to the workbench;
   // "New goal" returns here.
   const [home, setHome] = useState(true);
-  // Which report the viewer shows ("auto" follows the work; a step id or
-  // "final" pins it). Rail "see report" and the switcher share this state.
-  const [selectedReport, setSelectedReport] = useState<string>("auto");
-  const openReport = (id: string) => setSelectedReport(id);
+  // Canvas navigation (PLAN-workbench-multi-run-ux.md, canvas policy):
+  // view = which run + which document is on the right pane. null = the first
+  // run hasn't produced anything yet. The canvas NEVER moves on its own
+  // except twice per run: (1) when the new run's FIRST content lands, it
+  // switches to that run once; (2) when the deliverable lands, it switches
+  // to "final" once — and only if the user hasn't manually navigated.
+  const [view, setView] = useState<CanvasView | null>(null);
+  const [stealAllowed, setStealAllowed] = useState(true);
+  const autoSwitchedRun = useRef<string | null>(null);
+  const activeRunId = workbench.runs.at(-1)?.id ?? null;
+
+  /** User-initiated navigation — cancels the deliverable steal. */
+  const userPick = (runId: string, doc: string) => {
+    setStealAllowed(false);
+    setView({ runId, doc });
+  };
+
+  // Auto-switch ONCE per run: when the active run's first content lands and
+  // the canvas isn't on it yet, move to it (report if a step finished first,
+  // deliverable if synthesis beat the reports).
+  useEffect(() => {
+    if (activeRunId == null || autoSwitchedRun.current === activeRunId) return;
+    const hasContent = supervisor.finalOutput != null || supervisor.steps.some((s) => s.output != null);
+    if (!hasContent) return;
+    autoSwitchedRun.current = activeRunId;
+    const firstReport = supervisor.steps.find(
+      (s) => !isDeliverableStep(s) && s.output != null && (s.state === "completed" || s.state === "failed"),
+    );
+    setView({ runId: activeRunId, doc: supervisor.finalOutput != null ? "final" : (firstReport?.stepId ?? "final") });
+  }, [activeRunId, supervisor.finalOutput, supervisor.steps]);
+
+  // Steal ONCE: when the deliverable lands and the user hasn't navigated
+  // manually since submit, show it.
+  const prevFinal = useRef<string | null>(null);
+  useEffect(() => {
+    const arrived = supervisor.finalOutput != null && prevFinal.current == null;
+    prevFinal.current = supervisor.finalOutput;
+    if (!arrived || !stealAllowed || activeRunId == null) return;
+    setView({ runId: activeRunId, doc: "final" });
+    setStealAllowed(false);
+  }, [stealAllowed, supervisor.finalOutput, activeRunId]);
+
+  /** Rail "see report" — a user pick on the active run. */
+  const openReport = (id: string) => {
+    if (activeRunId != null) userPick(activeRunId, id);
+  };
   // Chip click → draft dropped into the input for editing (not auto-submit).
   const [chipDraft, setChipDraft] = useState<{ text: string; nonce: number } | null>(null);
   const chipClicked = (text: string) => {
     workbench.setFollowUp(true);
     setChipDraft({ text, nonce: Date.now() });
   };
-
   const submit = (text: string, fileIds?: string[]) => {
     if (!text.trim()) return;
     // A plan awaiting review owns the rail — new goals wait until it is run
     // or discarded.
     if (supervisor.status === "reviewing") return;
     setHome(false);
-    setSelectedReport("auto"); // follow the new run's work, not a stale pin
+    // Canvas policy: keep showing whatever is on screen (run 1) until the
+    // new run's first content lands; then the once-per-run auto-switch fires.
+    setStealAllowed(true);
     const quote = workbench.followUp;
     void workbench.run(text, fileIds, { quote });
   };
@@ -783,9 +929,12 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
             <div className="w-full max-w-2xl text-left">
               <RunHistory
                 latestRunId={workbench.runs.at(-1)?.id}
-                onReopen={() => {
-                  setHome(false);
-                  setSelectedReport("final");
+                onReopen={(runId) => {
+                  // S1: only the latest run's report is inspectable.
+                  if (runId === workbench.runs.at(-1)?.id) {
+                    setHome(false);
+                    userPick(runId, "final");
+                  }
                 }}
                 runs={workbench.runs}
               />
@@ -802,26 +951,34 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
           the bottom. */}
       <aside className="border-border/60 hidden w-96 shrink-0 flex-col border-r lg:flex">
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {workbench.previousRun && (
-            <PreviousRunRail onOpen={() => setSelectedReport("prev")} run={workbench.previousRun} />
-          )}
+          <RunHistoryRail
+            onOpenDeliverable={(runId) => userPick(runId, "final")}
+            onOpenStep={(runId, stepId) => userPick(runId, stepId)}
+            runs={workbench.runs}
+          />
           <ProgressRail
             workbench={workbench}
             onNewGoal={() => {
-              setSelectedReport("auto"); // stale pin would blank the next run
+              setView(null);
+              autoSwitchedRun.current = null;
               setHome(true);
             }}
             onOpenReport={openReport}
           />
         </div>
         <div className="border-border/60 border-t p-4">
+          {workbench.runs.length > 0 && (
+            <div className="text-muted-foreground mb-2 font-mono text-[10px] tracking-wider uppercase">
+              Session · {workbench.runs.length} run{workbench.runs.length === 1 ? "" : "s"}
+            </div>
+          )}
           {supervisor.status === "reviewing" && (
             <p className="text-muted-foreground mb-2 font-mono text-[11px]">
               A plan is awaiting your review above — run or discard it first.
             </p>
           )}
           <FollowUpChips onChip={chipClicked} workbench={workbench} />
-          <QuoteIndicator workbench={workbench} />
+          <ComposerQuoteBadge workbench={workbench} />
           <ChatComposer
             agentName="Workbench"
             chipDraft={chipDraft}
@@ -844,19 +1001,55 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
         </div>
       </aside>
 
-      {/* Right: the deliverable (or history when idle) */}
+      {/* Right: the CANVAS — run switcher + exactly one full document. The
+          canvas never moves on its own except the two approved steals. */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <div className="border-border/60 flex items-center justify-between border-b px-4 py-2">
           <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">Kawai Workbench</span>
         </div>
-        {supervisor.status === "idle" ? (
-          <RunHistory
-            latestRunId={workbench.runs.at(-1)?.id}
-            onReopen={() => setSelectedReport("final")}
-            runs={workbench.runs}
-          />
+        {workbench.runs.length === 0 ? (
+          <div className="text-muted-foreground flex flex-1 items-center justify-center p-8 text-center font-mono text-sm">
+            State a goal in the composer to start a run.
+          </div>
         ) : (
-          <DeliverableViewer selected={selectedReport} onSelect={setSelectedReport} workbench={workbench} />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="border-border/60 border-b px-4 py-2">
+              <RunSwitcher
+                activeRunId={activeRunId}
+                onPick={(runId) => userPick(runId, "final")}
+                runs={workbench.runs}
+                view={view}
+              />
+            </div>
+            <div className="min-h-0 flex-1">
+              {(() => {
+                const shown = view != null ? workbench.runs.find((r) => r.id === view.runId) : undefined;
+                const runIndex = shown != null ? workbench.runs.indexOf(shown) : -1;
+                if (shown != null && runIndex < workbench.runs.length - 1) {
+                  return (
+                    <PastRunCanvas
+                      doc={view?.doc ?? "final"}
+                      loadFullOutput={workbench.loadFullOutput}
+                      onPickDoc={(d) => userPick(shown.id, d)}
+                      run={shown}
+                      runIndex={runIndex}
+                    />
+                  );
+                }
+                // Active (latest) run — live. doc stays pinned; before the
+                // first content arrives it's "final" (shows the goal/planning
+                // placeholder), which is the approved first-run behavior.
+                return (
+                  <DeliverableViewer
+                    doc={view != null && view.runId === activeRunId ? view.doc : "final"}
+                    onPickDoc={(d) => activeRunId != null && userPick(activeRunId, d)}
+                    runIndex={workbench.runs.length - 1}
+                    workbench={workbench}
+                  />
+                );
+              })()}
+            </div>
+          </div>
         )}
       </main>
     </div>
