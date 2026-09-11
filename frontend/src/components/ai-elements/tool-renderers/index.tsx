@@ -50,6 +50,7 @@ const registry: Record<string, ToolRenderer> = {
   knowledge_search: renderKnowledgeSearch,
   office_create_document: renderOfficeDocument,
   office_edit_document: renderOfficeDocument,
+  pdf_create_from_markdown: renderOfficeDocument,
   connector_list_tools: renderConnectorTools,
   connector_find_tools: renderConnectorTools,
   get_bible_verse: renderBibleVerse,

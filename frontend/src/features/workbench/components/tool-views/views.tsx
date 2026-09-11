@@ -196,6 +196,39 @@ export function FileListView({ data }: { data: Record<string, unknown> }) {
   );
 }
 
+// ── file-created (pdf_create_from_markdown and friends) ────────────────────
+
+/** A tool result that created one stored file → single file card with
+ *  human metadata (name / size / created) instead of raw JSON. */
+export function FileCreatedView({ data }: { data: Record<string, unknown> }) {
+  const file = isRecord(data.file) ? data.file : data;
+  const id = pick<string>(file, "id", "fileId");
+  const name = pick<string>(file, "originalName", "original_name", "filename", "name");
+  if (!id && !name) return null;
+  const ext = (pick<string>(file, "ext", "extension") ?? "").toLowerCase();
+  const bytes = toNum(pick(file, "bytes", "size"));
+  const created = fmtDate(pick(file, "createdAt", "created_at"));
+  return (
+    <div className="bg-card flex items-center gap-3 rounded-lg border px-3 py-2">
+      <span
+        className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase ${EXT_TONE[ext] ?? "bg-muted text-muted-foreground"}`}
+      >
+        {ext || "file"}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-foreground truncate text-sm" title={name ?? id}>
+          {name ?? id}
+        </div>
+        <div className="text-muted-foreground text-xs">Dokumen berhasil dibuat</div>
+      </div>
+      <div className="text-muted-foreground shrink-0 text-right font-mono text-[11px]">
+        {bytes != null && <div>{fmtBytes(bytes)}</div>}
+        {created && <div>{created}</div>}
+      </div>
+    </div>
+  );
+}
+
 // ── record-list (memories, generic titled entities) ─────────────────────────
 
 export interface RecordItem {

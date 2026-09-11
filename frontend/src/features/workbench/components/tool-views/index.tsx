@@ -64,6 +64,7 @@ import {
   FileListView,
   FinancialTableView,
   GenericHumanView,
+  FileCreatedView,
   GithubRepoView,
   KeyValueView,
   MarkdownView,
@@ -94,7 +95,7 @@ const registry: Record<string, StepView> = {
     isRecord(p) && typeof p.markdown === "string" ? <MarkdownView text={p.markdown} /> : null,
   office_create_document: (p) =>
     isRecord(p) && typeof p.markdown === "string" ? <MarkdownView text={p.markdown} /> : null,
-  pdf_create_from_markdown: (p) => (isRecord(p) ? genericKv(p) : null),
+  pdf_create_from_markdown: (p) => (isRecord(p) ? <FileCreatedView data={p} /> : null),
 
   // pdf
   pdf_extract_text: (p) => (isRecord(p) ? <PdfPagesView data={p} /> : null),
@@ -251,9 +252,9 @@ const registry: Record<string, StepView> = {
 
   // office / pdf remaining
   office_create: (p, raw) => <GenericHumanView data={p} raw={raw} />,
-  office_create_deck: (p, raw) => <GenericHumanView data={p} raw={raw} />,
+  office_create_deck: (p) => (isRecord(p) ? <FileCreatedView data={p.data && isRecord(p.data) ? p.data : p} /> : null),
   office_edit: (p, raw) => <GenericHumanView data={p} raw={raw} />,
-  office_export_deck: (p, raw) => <GenericHumanView data={p} raw={raw} />,
+  office_export_deck: (p) => (isRecord(p) ? <FileCreatedView data={p.data && isRecord(p.data) ? p.data : p} /> : null),
   office_markdown_read: (p) =>
     isRecord(p) && typeof p.markdown === "string" ? <MarkdownView text={p.markdown} /> : null,
   office_restore_backup: (p, raw) => <GenericHumanView data={p} raw={raw} />,
@@ -261,8 +262,8 @@ const registry: Record<string, StepView> = {
   new_deck: (p, raw) => <GenericHumanView data={p} raw={raw} />,
   extract_text: (p, raw) => <GenericHumanView data={p} raw={raw} />,
   pdf_extract_images: (p, raw) => <GenericHumanView data={p} raw={raw} />,
-  pdf_merge: (p, raw) => <GenericHumanView data={p} raw={raw} />,
-  pdf_split: (p, raw) => <GenericHumanView data={p} raw={raw} />,
+  pdf_merge: (p) => (isRecord(p) ? <FileCreatedView data={p.data && isRecord(p.data) ? p.data : p} /> : null),
+  pdf_split: (p) => (isRecord(p) && isRecord(p.data) ? <FileListView data={p.data} /> : null),
   pdf_metadata_set: (p, raw) => <GenericHumanView data={p} raw={raw} />,
   pdf_replace_text: (p, raw) => <GenericHumanView data={p} raw={raw} />,
   pdf_search_replace: (p, raw) => <GenericHumanView data={p} raw={raw} />,

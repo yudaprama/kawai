@@ -4,6 +4,7 @@ import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-e
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
 import { renderToolOutput } from "@/components/ai-elements/tool-renderers";
+import { parse as parseToolOutput } from "@/components/ai-elements/tool-renderers/shared";
 import { Button } from "@/components/ui/button";
 import { useCopyButton } from "@/hooks/use-copy-button";
 import type { UIMessage } from "@/lib/ai-types";
@@ -39,13 +40,16 @@ export function MessagePartView({
   return (
     <Message from={message.role} className={message.role === "assistant" ? "items-start" : undefined}>
       {toolParts.map((part) => {
-        const output = part.output as { ok?: boolean; summary?: string; data?: unknown } | undefined;
-        const displayOutput = output?.summary ?? part.output;
-        // Rich renderer first (needs the structured `data` payload); null →
-        // generic JSON fallback below.
+        const parsedOutput = parseToolOutput(part.output);
+        const output = parsedOutput as { ok?: boolean; summary?: string; data?: unknown } | undefined;
+        const displayOutput = output?.summary ?? parsedOutput;
+        // Render structured tool results from either the current envelope or
+        // legacy tool JSON. This keeps user-facing output out of raw JSON.
         const toolName = part.type.replace(/^tool-/, "");
         const rich =
-          part.state === "output-available" && output?.data != null ? renderToolOutput(toolName, output.data) : null;
+          part.state === "output-available"
+            ? renderToolOutput(toolName, output?.data ?? parsedOutput)
+            : null;
         return (
           <Tool key={part.toolCallId}>
             <ToolHeader state={part.state} type={part.type} input={part.input} />

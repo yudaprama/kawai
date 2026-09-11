@@ -42,10 +42,20 @@ export function ToolWorkbench({
     if (part) selected = part;
   }
   const name = selected?.type.replace(/^tool-/, "") ?? "tool result";
-  const output = selected?.output as { summary?: string; data?: unknown } | undefined;
-  const rich = output?.data != null ? renderToolOutput(name, output.data) : null;
+  const parsedOutput =
+    typeof selected?.output === "string"
+      ? (() => {
+          try {
+            return JSON.parse(selected.output);
+          } catch {
+            return selected.output;
+          }
+        })()
+      : selected?.output;
+  const output = parsedOutput as { summary?: string; data?: unknown } | undefined;
+  const rich = renderToolOutput(name, output?.data ?? parsedOutput);
   const isOfficeDocument = name === "office_create_document" || name === "office_edit_document";
-  const officeFile = isOfficeDocument ? extractOfficeFile(output?.data ?? output?.summary) : null;
+  const officeFile = isOfficeDocument ? extractOfficeFile(output?.data ?? parsedOutput) : null;
   const codegraphResult = name === "codegraph_explore" ? (output?.data ?? output?.summary) : null;
   const codegraphQuery =
     selected?.input &&
