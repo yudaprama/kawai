@@ -477,7 +477,7 @@ pub async fn plan_task(
     // into a different space.
     let embedder = kawai_embedding::build_litert_embedder();
 
-    let system = plan_loop_system_prompt(&core_tools);
+    let system = plan_loop_system_prompt(&registry.catalog_lines_for(&core_tools));
     let mut task = if context.is_empty() {
         format!("User goal:\n{goal}")
     } else {
@@ -865,7 +865,7 @@ const PLAN_SEARCH_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_
 /// typical small-candidate materials budget).
 const PLAN_MATERIALS_CAP: usize = 12_000;
 
-fn plan_loop_system_prompt(core_tools: &[String]) -> String {
+fn plan_loop_system_prompt(core_tools: &str) -> String {
     format!(
         r#"You are a task planner for a deterministic supervisor.
 The full tool catalog is NOT provided. Discover tools by searching.
@@ -885,14 +885,14 @@ Plan rules:
   "Cek cuaca Tokyo", "Find 3 Bali beach photos". ALWAYS keep "arguments"
   complete and precise — the arguments are what the tool executes.
 - Be concise overall: no prose outside the JSON, no repeated context.
-- Be concise overall: no prose outside the JSON, no repeated context.
 - "dependsOn" lists step ids that must finish first; no cycles.
 - To pass a previous step's artifact: {{"fromStep": "<step id>", "output": "<artifact name>"}} — never paste large content.
 - "produces" names the artifacts a step emits for later steps.
 - Side-effect tools MUST set "requiresConfirmation": true with a short "confirmationDescription".
 - "onError" is one of "fail", "skip", "continue". Default "fail".
  - Keep each task description under {} chars.
- - Core tools below are ALWAYS available — never search for them:
+ - Core tools below are ALWAYS available — never search for them. Their
+   FULL argument schemas follow; copy required properties exactly:
 {}
  - FORBIDDEN tools — internal-only, validation will reject them: deep_write, draft_document, plan_task, plan_revise, artifact_recall. Never name them in steps. To create documents use office_create_document / office_create_deck / pdf_create_from_markdown.
  - The supervisor AUTOMATICALLY writes the final user-facing deliverable
@@ -904,11 +904,7 @@ Plan rules:
 "#,
         kawai_router::types::MAX_PLAN_STEPS,
         kawai_router::types::MAX_TASK_CHARS,
-        core_tools
-            .iter()
-            .map(|n| format!("- {n}"))
-            .collect::<Vec<_>>()
-            .join("\n"),
+        core_tools,
     )
 }
 
@@ -1542,7 +1538,8 @@ async fn revise_plan(
                 .with_conversation(format!("kawai-session-{session_id}"))
         })
         .ok_or_else(|| "remote LLM is not configured".to_string())?;
-    let system = plan_loop_system_prompt(&planner_core_tools(registry));
+    let core_tools = planner_core_tools(registry);
+    let system = plan_loop_system_prompt(&registry.catalog_lines_for(&core_tools));
     let task = format!(
         "The execution of the plan for this goal DIVERGED. The remaining plan is no longer trusted.\
          \n\nOriginal goal:\n{goal}\
