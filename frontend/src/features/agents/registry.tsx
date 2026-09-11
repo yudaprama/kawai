@@ -41,7 +41,7 @@ export function contextTabsFor(agent: Pick<AgentInfo, "id" | "tools"> | null): C
 }
 
 /** Empty-state onboarding card for agents whose data lives in files/SQL
- *  sources (shown by ConversationPanel instead of the suggested prompts). */
+ *  sources (surfaced in the Workbench composer instead of suggested prompts). */
 export interface ContextOnboarding {
   onImport: () => void;
   onConnect: () => void;

@@ -53,35 +53,32 @@ import {
   renderDataTa,
   renderDataTables,
 } from "@/components/ai-elements/tool-renderers/data";
+
+// ── family views — one file per tool family ─────────────────────────────────
+import { KeyValueView } from "./atoms";
+import { FileCreatedView, FileListView } from "./file-views";
+import { BrowserView, CalculationView, CodeGraphView, GenericHumanView } from "./generic-views";
+import { MarkdownView, PdfPagesView } from "./markdown-views";
+import { MemoryGraphView, MemoryLinesView, SessionStepResultsView } from "./memory-views";
+import { NewsListView } from "./news-views";
 import {
-  BrowserView,
-  CalculationView,
-  CodeGraphView,
   CountryView,
-  CryptoMarketView,
-  CryptoSearchView,
   DrawCardsView,
-  FileListView,
-  FileCreatedView,
-  FinancialTableView,
-  GenericHumanView,
   GithubRepoView,
-  KeyValueView,
-  MarkdownView,
-  MemoryGraphView,
-  MemoryLinesView,
-  NewsListView,
-  PdfPagesView,
   PokemonView,
-  SessionStepResultsView,
-  SocialFeedView,
   StockFinancialsView,
-  StockQuoteView,
   SunTimesView,
   TimeZoneView,
   TopHeadlinesView,
+} from "./bespoke-views";
+import {
+  CryptoMarketView,
+  CryptoSearchView,
+  FinancialTableView,
+  SocialFeedView,
+  StockQuoteView,
   TrendingView,
-} from "./views";
+} from "./finance-views";
 
 // ── registry ────────────────────────────────────────────────────────────────
 

@@ -4,166 +4,20 @@ import { nanoid } from "nanoid";
 import { call, callWithEvents, respondSupervisorConfirmation } from "@/lib/api";
 import { type StreamControl, streamOperation } from "@/lib/stream";
 import type { UIMessage, UIMessagePart } from "@/lib/ai-types";
+import { initialSupervisorState, parseReview, pruneReviewStep, supervisorReducer } from "./plan-reducer";
+import type { SupervisorEvent, SupervisorPlanState, SupervisorStep } from "./supervisor-types";
 
-/** Events streamed by `execute_supervisor_plan` (mirrors the Rust enum). */
-export type SupervisorEvent =
-  | {
-      type: "planStarted";
-      goal: string;
-      stepCount: number;
-      steps: { id: string; tool: string; task: string; dependsOn: string[] }[];
-      /** Hash of the executed plan — read key for supervisor_step_output. */
-      planKey: string;
-    }
-  | { type: "stepStarted"; stepId: string; tool: string }
-  | {
-      type: "confirmationRequested";
-      streamId: string;
-      stepId: string;
-      task: string;
-      description: string;
-    }
-  | {
-      type: "stepCompleted";
-      stepId: string;
-      output: string;
-      artifacts: { kind: string; handle?: string; filename?: string; label?: string }[];
-      /** Retries the scheduler spent before this step completed. */
-      retries_used: number;
-    }
-  | {
-      type: "stepFailed";
-      stepId: string;
-      error: string;
-      /** Failure class from the scheduler: timeout | confirmation | cancelled | tool */
-      kind: string;
-    }
-  | { type: "stepSkipped"; stepId: string; reason: string }
-  | {
-      /** Emitted once when `plan_task` starts — instant acknowledgment. */
-      type: "planningStarted";
-    }
-  | {
-      /** Emitted per planner LLM round while `plan_task` runs — twice per
-       *  round: on open (provider empty) and on completion. */
-      type: "planningRound";
-      round: number;
-      provider: string;
-      searching: boolean;
-    }
-  | {
-      /** Tool names a planning search round surfaced for the first time. */
-      type: "planningToolSearch";
-      queries: string[];
-      tools: string[];
-    }
-  | { type: "planRevising"; failedStepIds: string[]; attempt: number }
-  | {
-      type: "planRevised";
-      attempt: number;
-      stepCount: number;
-      steps: { id: string; tool: string; task: string; dependsOn: string[] }[];
-      /** Key of the REVISED plan — replaces the planStarted key. */
-      planKey: string;
-    }
-  | { type: "planCompleted"; finalOutput?: string }
-  | { type: "planFailed"; error: string };
-
-export type SupervisorStatus =
-  | "idle"
-  | "reviewing"
-  | "running"
-  | "stopping"
-  | "awaitingConfirmation"
-  | "completed"
-  | "failed";
-
-export interface SupervisorArtifact {
-  kind: "text" | "file" | "structured" | "handle";
-  handle?: string;
-  filename?: string;
-  /** Human-readable one-liner from the backend — the UI never renders raw
-   *  handles or a generic "structured result". */
-  label?: string;
-}
-
-export interface SupervisorStep {
-  stepId: string;
-  tool: string;
-  task: string;
-  dependsOn: string[];
-  state: "pending" | "running" | "completed" | "failed" | "skipped";
-  output?: string;
-  error?: string;
-  /** Failure class: timeout | confirmation | cancelled | tool */
-  errorKind?: string;
-  /** Retries the scheduler spent on this step (0 = first attempt). */
-  retriesUsed?: number;
-  /** Wall-clock start of the current/last run — drives the elapsed timer. */
-  startedAt?: number;
-  /** Wall-clock end — freezes the per-step duration. */
-  finishedAt?: number;
-  artifacts: SupervisorArtifact[];
-}
-
-/** One step of a plan awaiting user review (before execution). Wire shape
- *  mirrors the camelCase TaskStep serialization from `plan_task`. */
-export interface PlanReviewStep {
-  id: string;
-  tool: string;
-  task: string;
-  dependsOn: string[];
-  requiresConfirmation: boolean;
-}
-
-export interface PlanReview {
-  plan: unknown;
-  goal: string;
-  steps: PlanReviewStep[];
-  sessionId: number;
-  agentId: string;
-}
-
-/** A superseded plan version (failure-driven replan) kept for the version
- *  history in the progress panel. */
-export interface PriorPlanVersion {
-  version: number;
-  completed: number;
-  total: number;
-  note: string;
-}
-
-export interface SupervisorPlanState {
-  status: SupervisorStatus;
-  goal: string | null;
-  /** Full plan structure — seeded at planStarted, before any step runs. */
-  steps: SupervisorStep[];
-  /** Live planning progress — non-null only while `plan_task` is in flight. */
-  planning: { round: number; provider: string; searching: boolean; tools: string[] } | null;
-  /** Wall-clock plan start (planStarted) and terminal time — drive the
-   *  workbench card's total-duration timer. */
-  planStartedAt: number | null;
-  planCompletedAt: number | null;
-  pendingConfirmation: {
-    streamId: string;
-    stepId: string;
-    task: string;
-    description: string;
-  } | null;
-  finalOutput: string | null;
-  error: string | null;
-  /** Plan awaiting user review (plan_task done, execution not started). */
-  review: PlanReview | null;
-  /** Current plan version — 1 on first run, incremented per replan. */
-  planVersion: number;
-  /** Hash of the currently-executing plan — the read key for the
-   *  `supervisor_step_output` op (full report bodies). */
-  planKey: string | null;
-  /** Superseded plan versions, oldest first. */
-  priorVersions: PriorPlanVersion[];
-  /** True when the replan budget is spent — failure then offers "new plan". */
-  replansExhausted: boolean;
-}
+// Re-export types so existing import paths (`@/features/chat/hooks/use-supervisor-plan`) keep working.
+export type {
+  SupervisorEvent,
+  SupervisorStatus,
+  SupervisorArtifact,
+  SupervisorStep,
+  PlanReview,
+  PlanReviewStep,
+  PriorPlanVersion,
+  SupervisorPlanState,
+} from "./supervisor-types";
 
 interface RunPlanOptions {
   plan: unknown;
@@ -192,9 +46,6 @@ export async function createSupervisorPlan(goal: string, sessionId: number, agen
 /** Persist one message to the session's SQLite history (best-effort). */
 function sanitizeForIpc(s: string | null): string | null {
   if (!s) return s;
-  // Tauri IPC serializes invoke args as JSON: control characters and
-  // unpaired surrogates (PDF extraction can emit both) make the Rust side
-  // reject the command, silently losing the write.
   // eslint-disable-next-line no-control-regex
   return s
     .replace(/\p{Cc}/gu, " ")
@@ -206,8 +57,6 @@ async function persist(sessionId: number, role: "user" | "assistant", rawContent
   try {
     await call("append_chat_message", { sessionId, role, content });
   } catch (err) {
-    // History write failures must never break an executing plan — but they
-    // must be visible; a silent rejection here loses the whole turn record.
     console.error("[supervisor] persist failed:", err);
   }
 }
@@ -223,19 +72,6 @@ export interface PersistedPlan {
   output: string | null;
   /** Present on failed-plan records — the terminal error. */
   error?: string;
-}
-
-/** Seed the tracked plan structure from planStarted/planRevised wire steps —
- *  every step starts pending with no artifacts. */
-function seedSteps(steps: { id: string; tool: string; task: string; dependsOn: string[] }[]): SupervisorStep[] {
-  return steps.map((s) => ({
-    stepId: s.id,
-    tool: s.tool,
-    task: s.task,
-    dependsOn: s.dependsOn,
-    state: "pending" as const,
-    artifacts: [],
-  }));
 }
 
 /** Persist the structured plan record (goal + per-step states). Embedded
@@ -263,92 +99,8 @@ function persistPlanSnapshot(
   void persist(sessionId, "assistant", JSON.stringify(record));
 }
 
-/** Parse a validated `plan_task` result into the review model. Steps the
- *  supervisor cannot dispatch are filtered exactly like the composition root
- *  filters them from the executing registry. Must stay in sync with
- *  `supervisor::NON_DISPATCHABLE_TOOLS`. */
-const NON_DISPATCHABLE_REVIEW_TOOLS: string[] = [
-  "deep_write",
-  "draft_document",
-  "plan_task",
-  "plan_revise",
-  "artifact_recall",
-];
-function parseReview(plan: unknown, sessionId: number, agentId: string): PlanReview | null {
-  if (typeof plan !== "object" || plan == null) return null;
-  const p = plan as {
-    goal?: unknown;
-    steps?: {
-      id?: unknown;
-      tool?: unknown;
-      task?: unknown;
-      dependsOn?: unknown;
-      requiresConfirmation?: unknown;
-    }[];
-  };
-  if (typeof p.goal !== "string" || !Array.isArray(p.steps)) return null;
-  const steps: PlanReviewStep[] = [];
-  for (const s of p.steps) {
-    if (typeof s.id !== "string") continue;
-    if (typeof s.tool === "string" && NON_DISPATCHABLE_REVIEW_TOOLS.includes(s.tool)) continue;
-    steps.push({
-      id: s.id,
-      tool: typeof s.tool === "string" ? s.tool : "",
-      task: typeof s.task === "string" ? s.task : "",
-      dependsOn: Array.isArray(s.dependsOn) ? s.dependsOn.filter((d): d is string => typeof d === "string") : [],
-      requiresConfirmation: s.requiresConfirmation === true,
-    });
-  }
-  if (steps.length === 0) return null;
-  return { plan, goal: p.goal, steps, sessionId, agentId };
-}
-
-/** Remove a step from the review model — steps that (transitively) depended
- *  on it are pruned too: the scheduler would skip them anyway (dependency on
- *  a non-completed step), so removing keeps the reviewed contract honest. */
-function pruneReviewStep(review: PlanReview, stepId: string): PlanReview {
-  const doomed = new Set<string>([stepId]);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const s of review.steps) {
-      if (doomed.has(s.id)) continue;
-      if (s.dependsOn.some((d) => doomed.has(d))) {
-        doomed.add(s.id);
-        grew = true;
-      }
-    }
-  }
-  const steps = review.steps.filter((s) => !doomed.has(s.id));
-  const plan =
-    typeof review.plan === "object" && review.plan != null
-      ? {
-          ...review.plan,
-          steps: (review.plan as { steps?: unknown[] }).steps?.filter(
-            (s) => typeof s === "object" && s != null && !doomed.has((s as { id?: unknown }).id as string),
-          ),
-        }
-      : review.plan;
-  return { ...review, steps, plan };
-}
-
 export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
-  const [state, setState] = useState<SupervisorPlanState>({
-    status: "idle",
-    goal: null,
-    steps: [],
-    planning: null,
-    planStartedAt: null,
-    planCompletedAt: null,
-    pendingConfirmation: null,
-    finalOutput: null,
-    error: null,
-    review: null,
-    planVersion: 0,
-    planKey: null,
-    priorVersions: [],
-    replansExhausted: false,
-  });
+  const [state, setState] = useState<SupervisorPlanState>(() => initialSupervisorState());
   const [messages, setMessages] = useState<UIMessage[]>([]);
 
   const streamCtrl = useRef<StreamControl | null>(null);
@@ -362,46 +114,32 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
    *  backend cancels cooperatively (active steps finish first), so the panel
    *  must say "stopping", not "failed", until the stream ends. */
   const stoppingRef = useRef(false);
-  const planVersionRef = useRef(0);
-  const replansUsedRef = useRef(0);
-  const priorVersionsRef = useRef<PriorPlanVersion[]>([]);
   // Resume: re-execute the LAST plan verbatim. Same plan JSON → same plan key
   // → the supervisor serves already-completed steps from its persisted
   // ExecutionMemo seed and only re-runs what failed or never ran.
   const lastPlanRef = useRef<{ plan: unknown; sessionId: number; agentId: string } | null>(null);
 
-  const patch = useCallback((partial: Partial<SupervisorPlanState>) => {
-    setState((prev) => ({ ...prev, ...partial }));
+  // Keep stepsRef in sync with state.steps for persist snapshots.
+  const dispatch = useCallback((event: SupervisorEvent) => {
+    setState((prev) => {
+      const next = supervisorReducer(prev, event);
+      stepsRef.current = next.steps;
+      if (event.type === "planStarted") goalRef.current = event.goal;
+      return next;
+    });
   }, []);
 
-  const upsertStep = useCallback((stepId: string, seed: Partial<SupervisorStep>, next: Partial<SupervisorStep>) => {
+  const patch = useCallback((partial: Partial<SupervisorPlanState>) => {
     setState((prev) => {
-      const steps = [...prev.steps];
-      const idx = steps.findIndex((s) => s.stepId === stepId);
-      if (idx >= 0) {
-        steps[idx] = { ...steps[idx], ...seed, ...next };
-      } else {
-        steps.push({
-          stepId,
-          tool: "",
-          task: "",
-          dependsOn: [],
-          state: "running",
-          artifacts: [],
-          ...seed,
-          ...next,
-        });
-      }
-      stepsRef.current = steps;
-      return { ...prev, steps };
+      const next = { ...prev, ...partial };
+      stepsRef.current = next.steps;
+      return next;
     });
   }, []);
 
   const runPlan = useCallback(
     (options: RunPlanOptions) => {
       if (streamCtrl.current) return;
-      // Remember the plan for `resume()` — same plan JSON → same plan key →
-      // completed steps are skipped via the persisted step cache.
       lastPlanRef.current = {
         plan: options.plan,
         sessionId: options.sessionId,
@@ -415,30 +153,13 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       userGoalRef.current = null;
 
       setState({
+        ...initialSupervisorState(),
         status: "running",
-        goal: null,
-        steps: [],
-        planning: null,
-        planStartedAt: null,
-        planCompletedAt: null,
-        pendingConfirmation: null,
-        finalOutput: null,
-        error: null,
-        review: null,
         planVersion: 1,
-        planKey: null,
-        priorVersions: [],
-        replansExhausted: false,
       });
       stepsRef.current = [];
       stoppingRef.current = false;
-      planVersionRef.current = 1;
-      replansUsedRef.current = 0;
-      priorVersionsRef.current = [];
 
-      // The plan state above is the source of truth and renders through
-      // PlanProgressPanel; the conversation carries only the goal and the
-      // final output — steps are NOT projected into chat tool parts.
       const assistantId = nanoid();
       let parts: UIMessagePart[] = [];
       const syncAssistant = () => {
@@ -463,117 +184,27 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         },
         {
           onEvent: (ev) => {
+            // Terminal events need side-effect handling plus reducer.
             switch (ev.type) {
-              case "planStarted":
-                goalRef.current = ev.goal;
-                stepsRef.current = seedSteps(ev.steps);
-                patch({
-                  goal: ev.goal,
-                  steps: stepsRef.current,
-                  planStartedAt: Date.now(),
-                  planCompletedAt: null,
-                  planKey: ev.planKey,
-                });
-                parts = [{ type: "text", text: `Goal: ${ev.goal}`, state: "streaming" as const }];
-                syncAssistant();
-                break;
-              case "stepStarted":
-                upsertStep(ev.stepId, { tool: ev.tool }, { state: "running", startedAt: Date.now() });
-                break;
-              case "confirmationRequested":
-                upsertStep(ev.stepId, { task: ev.task }, { state: "running" });
-                patch({
-                  status: "awaitingConfirmation",
-                  pendingConfirmation: {
-                    streamId: ev.streamId,
-                    stepId: ev.stepId,
-                    task: ev.task,
-                    description: ev.description,
-                  },
-                });
-                break;
-              case "stepCompleted":
-                upsertStep(
-                  ev.stepId,
-                  {},
-                  {
-                    state: "completed",
-                    output: ev.output,
-                    retriesUsed: ev.retries_used,
-                    finishedAt: Date.now(),
-                    artifacts: ev.artifacts.map((a) => ({
-                      kind: a.kind as SupervisorArtifact["kind"],
-                      handle: a.handle,
-                      filename: a.filename,
-                      label: a.label,
-                    })),
-                  },
-                );
-                break;
-              case "stepFailed":
-                upsertStep(
-                  ev.stepId,
-                  {},
-                  { state: "failed", error: ev.error, errorKind: ev.kind, finishedAt: Date.now() },
-                );
-                break;
-              case "stepSkipped":
-                upsertStep(ev.stepId, {}, { state: "skipped", error: ev.reason });
-                break;
-              case "planRevising":
-                // The supervisor is asking the planner for a revised plan —
-                // execution state stays "running"; the failed steps already
-                // carry their failed state from stepFailed events.
-                patch({ status: "running", pendingConfirmation: null });
-                break;
               case "planRevised": {
                 // Snapshot the superseded plan's progress BEFORE re-seeding —
                 // history then shows what v1 accomplished before the revision.
                 const prior = stepsRef.current;
-                const priorCompleted = prior.filter((s) => s.state === "completed").length;
-                const priorVersion = planVersionRef.current;
                 persistPlanSnapshot(sessionId, goalRef.current, prior, {
                   output: null,
                   error: `superseded by revision #${ev.attempt}`,
                 });
-                // New plan structure replaces the old one — re-seed all steps
-                // as pending (same shape as planStarted). Conversation keeps
-                // the same goal; only the remaining work is re-planned.
-                stepsRef.current = seedSteps(ev.steps);
-                planVersionRef.current = priorVersion + 1;
-                replansUsedRef.current += 1;
-                priorVersionsRef.current = [
-                  ...priorVersionsRef.current,
-                  {
-                    version: priorVersion,
-                    completed: priorCompleted,
-                    total: prior.length,
-                    note: `revised after failure`,
-                  },
-                ];
-                patch({
-                  status: "running",
-                  steps: stepsRef.current,
-                  error: null,
-                  planVersion: planVersionRef.current,
-                  planKey: ev.planKey,
-                  priorVersions: priorVersionsRef.current,
-                  replansExhausted: replansUsedRef.current >= 1,
-                });
+                dispatch(ev);
                 break;
               }
               case "planCompleted": {
-                // Terminal event. SupervisorEvent has no `finished` variant,
-                // so streamOperation never fires onDone on the desktop
-                // Channel — without clearing here, streamCtrl stays set and
-                // approvePlan/runPlan silently no-op on every later run.
                 streamCtrl.current = null;
-                patch({
-                  status: "completed",
-                  pendingConfirmation: null,
-                  finalOutput: ev.finalOutput ?? null,
-                  planCompletedAt: Date.now(),
-                });
+                dispatch(ev);
+                // Persist after reducer applied — read from next snapshot via ref.
+                // Use timeout to read updated ref (synchronous dispatch already updated it).
+                // Instead, persist using the current stepsRef which will be the OLD steps
+                // before reducer's seed? For planCompleted we want current steps.
+                // The reducer doesn't change steps on planCompleted, so stepsRef is still accurate.
                 persistPlanSnapshot(sessionId, goalRef.current, stepsRef.current, {
                   output: ev.finalOutput ?? null,
                 });
@@ -585,43 +216,39 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 }
                 syncAssistant();
                 callbacks?.onPlanCompleted?.(goalRef.current, ev.finalOutput ?? null);
-                // Fire-and-forget: generate a concise title via Cloudflare Workers AI
-                // while the UI is already showing the completed result.
                 void call("generate_session_title", { sessionId })
                   .catch(() => {})
                   .finally(() => callbacks?.onTitleGenerated?.());
                 break;
               }
-              case "planFailed":
-                // Terminal event — same stream-slot release as planCompleted.
+              case "planFailed": {
                 streamCtrl.current = null;
-                patch({
-                  status: "failed",
-                  pendingConfirmation: null,
-                  error: ev.error,
-                  planCompletedAt: Date.now(),
-                });
+                dispatch(ev);
                 parts = parts.map((p) =>
                   p.type === "text" && p.state === "streaming" ? { ...p, state: "done" as const } : p,
                 );
                 syncAssistant();
-                // Persist the FULL structured record (per-step states), not
-                // just prose — a failed plan must replay with its step states
-                // intact for diagnosis and future resume.
                 persistPlanSnapshot(sessionId, goalRef.current, stepsRef.current, {
                   output: null,
                   error: ev.error,
                 });
                 callbacks?.onPlanFailed?.(goalRef.current, ev.error);
                 break;
+              }
+              default: {
+                if (ev.type === "planStarted") {
+                  parts = [{ type: "text", text: `Goal: ${ev.goal}`, state: "streaming" as const }];
+                  syncAssistant();
+                }
+                dispatch(ev);
+                break;
+              }
             }
           },
           onDone: () => {
             streamCtrl.current = null;
             setState((prev) => {
               if (stoppingRef.current) {
-                // Cancel resolved without a terminal event (e.g. the web
-                // transport aborts the connection) — the stop is final.
                 stoppingRef.current = false;
                 return { ...prev, status: "failed", error: "Plan stopped.", pendingConfirmation: null };
               }
@@ -649,18 +276,12 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         streamId,
       );
     },
-    [patch, upsertStep, callbacks],
+    [dispatch, patch, callbacks],
   );
 
   const planAndRun = useCallback(
     async (goal: string, sessionId: number, agentId: string, userGoal?: string) => {
-      // `goal` is what the planner sees (it may carry a follow-up quote block,
-      // PLAN-followup-composer.md); `userGoal` (default = goal) is the user's
-      // verbatim words — displayed, persisted, and answered by the deliverable
-      // writer. The quote must never leak into these clean paths.
       const cleanGoal = userGoal ?? goal;
-      // User message first (display + history), then plan. Execution waits
-      // for the review gate — the user runs, prunes, or cancels the plan.
       const userMessage: UIMessage = {
         id: nanoid(),
         role: "user",
@@ -669,37 +290,12 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       setMessages((prev) => [...prev, userMessage]);
       void persist(sessionId, "user", cleanGoal);
 
-      // A plan_task rejection must surface like any other failure — an
-      // unhandled rejection here silently eats the whole turn. Planning
-      // rounds stream live over a Channel while the plan resolves. The
-      // optimistic seed below shows motion INSTANTLY — before the IPC even
-      // lands, the context build + first LLM round can stay quiet for a while.
       patch({ planning: { round: 0, provider: "", searching: true, tools: [] } });
       userGoalRef.current = cleanGoal;
       let plan: unknown;
       try {
         plan = await callWithEvents<unknown, SupervisorEvent>("plan_task", { goal, sessionId, agentId }, (ev) => {
-          if (ev.type === "planningStarted" || ev.type === "planningRound") {
-            setState((prev) => ({
-              ...prev,
-              planning: {
-                round: ev.type === "planningRound" ? ev.round : 1,
-                provider: ev.type === "planningRound" ? ev.provider : "",
-                searching: ev.type === "planningRound" ? ev.searching : (prev.planning?.searching ?? true),
-                tools: prev.planning?.tools ?? [],
-              },
-            }));
-          } else if (ev.type === "planningToolSearch") {
-            setState((prev) => ({
-              ...prev,
-              planning: {
-                round: prev.planning?.round ?? 0,
-                provider: prev.planning?.provider ?? "",
-                searching: true,
-                tools: ev.tools,
-              },
-            }));
-          }
+          dispatch(ev);
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -710,14 +306,12 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       }
       const review = parseReview(plan, sessionId, agentId);
       if (review == null) {
-        // Unparseable plan — do not gate; execute as before (the backend
-        // validation is the authority, the review model is a courtesy).
         runPlan({ plan, sessionId, agentId, userGoal: goal });
         return;
       }
       patch({ status: "reviewing", review, error: null, planning: null });
     },
-    [runPlan, patch, callbacks],
+    [runPlan, patch, dispatch, callbacks],
   );
 
   /** Review gate: execute the plan exactly as reviewed. The goal rides the
@@ -758,9 +352,6 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const stop = useCallback(() => {
     const ctrl = streamCtrl.current;
     if (!ctrl) return;
-    // Cooperative cancellation: the backend finishes active steps and starts
-    // no new wave. Stay "stopping" until the terminal event arrives — never
-    // claim the plan is dead while steps are still running.
     stoppingRef.current = true;
     ctrl.cancel();
     streamCtrl.current = null;

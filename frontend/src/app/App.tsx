@@ -59,7 +59,7 @@ export default function App() {
     const onOpen = (e: Event) => {
       const { fileId, name } = (e as CustomEvent<OpenPreviewDetail>).detail;
       // On desktop: PDFs open directly in the OS viewer — no in-app modal needed.
-      if (runningInTauri && (name.split(".").pop()?.toLowerCase() === "pdf")) {
+      if (runningInTauri && name.split(".").pop()?.toLowerCase() === "pdf") {
         tauriOpenFile(fileId).catch((err) => logWarn("preview-bridge", errText(err)));
         return;
       }

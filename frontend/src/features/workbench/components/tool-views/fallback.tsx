@@ -1,5 +1,6 @@
 import { isRecord, parseMaybeJson } from "./format";
-import { KeyValueView, MarkdownView, RecordListView, type RecordItem } from "./views";
+import { KeyValueView, RecordListView, type RecordItem } from "./atoms";
+import { MarkdownView } from "./markdown-views";
 
 /** Field names that read as human titles in generic record arrays. */
 const TITLE_KEYS = ["title", "name", "originalName", "original_name", "symbol", "id", "entity", "locator"];
