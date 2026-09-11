@@ -85,4 +85,5 @@ async fn main() {
     // process exits (the worker is a detached thread; short-lived processes
     // would otherwise race the export).
     std::thread::sleep(std::time::Duration::from_secs(3));
+    kawai_telemetry::shutdown();
 }

@@ -299,3 +299,63 @@ worker (D1 `kawai-auth`). Client-side artifacts:
 | session lost every restart (desktop) | `restore_session` bailed: token expired or `last_session`/`auth.token` missing/mismatched | check both files exist, decode token payload (`sub`, `exp`) — base64url JSON; re-login if `exp` is past |
 | worker returns 500 with a text message | an auth "soft" error predating the status-code cleanup, or a genuine handler bug | check the message body; `npx wrangler tail --format json` on kawai-server/worker for the D1/Rust error line |
 | "missing Authorization header" / 401 on worker calls | client has no `auth.token` (never signed in) or stale token after `ED25519_SEED` rotation | sign in again; rotation invalidates all tokens |
+
+## 7. Agent Observability — Grafana Cloud tracing (generations + OTel)
+
+Every cloud LLM call is exported to Grafana Agent Observability
+(`crates/foundation/telemetry`, hand-rolled — agento11y has no Rust SDK).
+Fully env-gated: without the `AGENTO11Y_*`/`OTEL_*` vars nothing is sent and
+no thread exists.
+
+### Where data goes (two SEPARATE channels — verify both independently)
+
+| Channel | Carries | Endpoint | Lands in |
+|---|---|---|---|
+| A: generation ingest | prompt, response, tokens, model, stop reason, errors | `POST $AGENTO11Y_ENDPOINT/api/v1/generations:export` (protojson, `X-Scope-OrgID` + Basic auth) | Agents/Conversations tabs |
+| B: OTel traces/metrics | spans + `gen_ai.client.operation.duration` / `gen_ai.client.token.usage` | `POST $OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces` + `/v1/metrics` | Tempo / Prometheus (Performance view) |
+
+Env lives in the repo-root `.env` (gitignored): `AGENTO11Y_ENDPOINT`,
+`AGENTO11Y_PROTOCOL=http`, `AGENTO11Y_AUTH_MODE=basic`,
+`AGENTO11Y_AUTH_TENANT_ID`, `AGENTO11Y_AUTH_TOKEN`,
+`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`
+(`Authorization=Basic base64("<tenant>:<glc_ token>")` — `tr -d '\n'` the
+base64). One `glc_` token covers both channels (scopes: `sigil:write`,
+`metrics:write`, `traces:write`, `logs:write`).
+
+### Agent roles (the UI grouping key)
+
+Each LLM call is tagged with a logical role via
+`RemoteLlm::with_agent(...)` / `reason::reason_as(..., role)`:
+
+- `planner` — plan_task rounds + failure-driven replans
+- `deliverable-writer` — post-plan synthesis
+- `followup-suggester` — suggest_followups one-shot
+- `analytics-nl2query` — analytics natural-language → query translation
+- `kawai-agent` — everything else via `reason()` (memory extract, deep_write, …)
+
+Rule: a NEW system prompt = a NEW role. Adding a cloud call without a role
+collapses it into `kawai-agent` and ruins the Agents-tab grouping.
+`conversation_id` = `kawai-session-<id>` (planner + deliverable-writer) —
+that is what stitches a run into one Conversations thread.
+
+### Evidence queries (channel A — what gcx can see)
+
+```sh
+gcx agento11y agents list                                   # roles + generation counts
+gcx agento11y conversations list --limit 5                  # recent runs (kawai-session-<id>)
+gcx agento11y conversations get kawai-session-74            # per-generation payload (tokens, model, error)
+gcx agento11y generations get <generation-id>               # single generation detail
+```
+
+Channel B is invisible to gcx — confirm by Tempo (filter `service.name="kawai"`)
+or the Performance view. Local wiring proof: point
+`OTEL_EXPORTER_OTLP_ENDPOINT` at a local HTTP catcher and expect TWO POSTs
+(`/v1/traces`, `/v1/metrics`).
+
+| Symptom | Cause | Action |
+|---|---|---|
+| Agents tab empty but app runs | env missing from the shell that launched the app, or 401 | `grep AGENTO11Y .env`; export failure logs `[agento11y] generation export failed` to app.log |
+| Performance view empty while Conversations populate | OTel channel broken (checklist #1/#2): providers not built, or `OTEL_EXPORTER_OTLP_HEADERS` has a trailing newline (base64 without `tr -d '\n'`) | check app.log for `[agento11y] OTel … failed`; re-build the header value |
+| short-lived process (smoke/example) drops telemetry | exporters flush on `kawai_telemetry::shutdown()` — short-lived processes MUST call it before exit | call `kawai_telemetry::shutdown()` at the end of the example |
+| one agent row, unfilterable | missing `with_agent`/`reason_as` role on a new call site | add the role at the call site (see above) |
+| spans in Tempo but no "T" icon in the conversation | `operation_name` must be a recognized value — kawai emits `streamText`; don't invent others | keep `operation_name: "streamText"` in `telemetry::record_generation` |
