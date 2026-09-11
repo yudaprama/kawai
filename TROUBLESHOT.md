@@ -312,7 +312,7 @@ no thread exists.
 | Channel | Carries | Endpoint | Lands in |
 |---|---|---|---|
 | A: generation ingest | prompt, response, tokens, model, stop reason, errors | `POST $AGENTO11Y_ENDPOINT/api/v1/generations:export` (protojson, `X-Scope-OrgID` + Basic auth) | Agents/Conversations tabs |
-| B: OTel traces/metrics | spans + `gen_ai.client.operation.duration` / `gen_ai.client.token.usage` | `POST $OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces` + `/v1/metrics` | Tempo / Prometheus (Performance view) |
+| B: OTel traces/metrics | spans + `gen_ai.client.operation.duration` / `gen_ai.client.token.usage` | `POST <endpoint>/v1/traces` + `/v1/metrics` | Tempo / Prometheus (Performance view) |
 
 Env lives in the repo-root `.env` (gitignored): `AGENTO11Y_ENDPOINT`,
 `AGENTO11Y_PROTOCOL=http`, `AGENTO11Y_AUTH_MODE=basic`,
@@ -341,6 +341,51 @@ Rule: a NEW system prompt = a NEW role. Adding a cloud call without a role
 collapses it into `kawai-agent` and ruins the Agents-tab grouping.
 `conversation_id` = `kawai-session-<id>` (planner + deliverable-writer) —
 that is what stitches a run into one Conversations thread.
+
+### How to trace one run end-to-end (the 3-step workflow)
+
+1. **Generations (what the LLM said)**: `gcx agento11y conversations get kawai-session-<id>`
+   — every planner round / synthesis call with its prompt, response, tokens.
+2. **Traces (where the time went)**: Tempo search `{service.name="kawai"}` —
+   each pool call is one trace: root `remote_llm.stream` → child
+   `remote_llm.attempt` per provider candidate (outcome attr: ok /
+   reasoning_overflow / transport_error / …) → `streamText <model>` gen_ai span.
+   Long `attempt` spans = slow provider; several attempts under one root = failover.
+3. **Metrics (trends)**: Prometheus — `gen_ai_client_operation_duration`,
+   `gen_ai_client_token_usage`, `kawai_remote_failover`, `kawai_remote_reasoning_overflow`.
+
+### Querying Tempo from the CLI (stack proxy, no extra scopes needed)
+
+The `glc_` ingest token usually lacks `traces:read`, so query Tempo THROUGH the
+stack API with a service account token (`glsa_…`, Admin role; note: a role
+change only applies to tokens created after it):
+
+```sh
+SA=glsa_...   # or read GRAFANA_SERVICE_ACCOUNT_TOKEN from .env
+curl -s "https://<slug>.grafana.net/api/datasources/proxy/uid/grafanacloud-traces/api/search?tags=service.name%3Dkawai&limit=10" \
+  -H "Authorization: Bearer $SA"
+# single waterfall:
+curl -s ".../api/datasources/proxy/uid/grafanacloud-traces/api/traces/<traceID>" -H "Authorization: Bearer $SA"
+```
+
+Managed stack details (Tempo host, ds uid `grafanacloud-traces`,
+`grafanacloud-prom`) are discoverable with `gcx cloud stacks get <slug>`
+(needs `gcx cloud login` when its OAuth expires).
+
+### Plumbing notes (why it silently failed before — do not regress)
+
+- opentelemetry-otlp **0.32** posts to `with_endpoint` **verbatim** (0.30
+  appended `/v1/traces`). `init_otel` appends the signal path itself; posting
+  to `.../otlp` alone 404s silently at the Grafana gateway.
+- The export worker thread is spawned with a **16 MB stack** — provider
+  construction overflows the 2 MB default and the thread dies silently (all
+  exports gone, no error anywhere).
+- The endpoint is `OTEL_EXPORTER_OTLP_ENDPOINT` env (dev override) falling back
+  to the baked constant; headers are the reverse (baked vault value first, env
+  fallback). The regression test
+  `cargo test -p kawai-telemetry span_export` asserts a POST actually arrives.
+- Console noise: the tracing subscriber defaults to `INFO`; set `RUST_LOG`
+  to go deeper.
 
 ### Evidence queries (channel A — what gcx can see)
 
