@@ -12,8 +12,18 @@ const SYSTEM: &str = "You are a terse technical writer. Answer in clean markdown
 const DEFAULT_TASK: &str =
     "In exactly two sentences, explain why an on-device LLM might delegate long-form writing to a cloud model.";
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+fn main() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    rt.block_on(run());
+    // Flush OTel OUTSIDE the runtime: the blocking OTLP exporter must never
+    // run inside a tokio context (it panics / silently refuses to send).
+    kawai_telemetry::shutdown();
+}
+
+async fn run() {
     kawai_lib::auth::load_dotenv();
     kawai_telemetry::init();
 
@@ -85,5 +95,4 @@ async fn main() {
     // process exits (the worker is a detached thread; short-lived processes
     // would otherwise race the export).
     std::thread::sleep(std::time::Duration::from_secs(3));
-    kawai_telemetry::shutdown();
 }
