@@ -189,6 +189,8 @@ codegraph = ["dep:codegraph"]
 # On-device LLM. Also owns the kawai-router dep (rule-based auto-routing is
 # only used by the litert supervisor stack).
 litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "kawai-agent/litert", "kawai-vision/litert", "kawai-knowledge/litert", "remote-llm/litert", "kawai-analytics/litert", "dep:kawai-router"]
+# Export tracing logs to Grafana Cloud Loki through the OTLP gateway.
+otel-logs = ["kawai-telemetry/otel-logs"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Needs a tool-loop runtime.
 binance = ["dep:binance", "kawai-agent/binance"]

@@ -15,6 +15,7 @@
     "generate:events": "cargo run -p kawai-bindings --manifest-path crates/Cargo.toml --bin export-bindings",
     "tauri": "bash scripts/tauri.sh",
     "tauri:dev:litert": "bash scripts/tauri.sh dev",
+    "tauri:dev:loki": "bash scripts/tauri.sh dev",
     "bundle:litert": "bash scripts/bundle-litert-dylibs.sh",
     "tauri:build:litert": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features litert --config .github/tauri-litert.json",
     "tauri:build:litert-office": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features litert,office --config .github/tauri-litert.json",

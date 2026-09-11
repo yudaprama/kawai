@@ -3509,8 +3509,10 @@ name = "kawai-telemetry"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "env_logger 0.11.11",
  "futures-executor",
  "kawai-constants",
+ "log",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
