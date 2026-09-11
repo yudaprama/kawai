@@ -218,10 +218,9 @@ crates/
 ├── monad/ (kawai-monad)       # Monad EVM chain client — read-only public RPC (native balance + chain status) + in-app hot-wallet signer (keygen, EIP-191 personal_sign); alloy HTTP provider, RPC URL via KAWAI_MONAD_RPC_URL; surfaced via the `monad` feature ops check_monad_balance/monad_chain_status/monad_wallet_* (both wrappers; wallet key lives ONLY in the OS keychain, device-scoped `monad-wallet/device`)
 │   ├── ragloader/                 # document parsing + chunking for RAG ingestion (docx/xlsx/pptx via office_oxide, PDF via pdf_oxide)
 │   └── youtube-transcript/        # YouTube InnerTube transcript extraction
-├── generated-tools/               # auto-generated per-category AgentTool crates (crates-gen)
+├── generated-tools/               # per-category public-API AgentTool crates (hand-maintained)
 ├── office-tools/                  # handwritten office/PDF AgentTool crates
-├── vendor/                        # vendored dependencies (binance-sdk, ta)
-└── xtask/                         # build utilities (crates-gen)
+└── vendor/                        # vendored dependencies (binance-sdk, ta)
 
 src-tauri/src/webview_engine.rs  # tauri-side webread::WebViewFetch: hidden WebviewWindow + eval_with_callback extractor (#[cfg(feature="desktop")], never in kawai-web)
 src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), binance_smoke (keyless market data + TA; geo-blocked hosts skip), analytics_smoke (data_schema/data_query/data_ta + xlsx bridge; offline), sql_remote_check (LIVE remote SQL — --deep seeds fixture tables), web_read_check (desktop read-chain e2e), web_search_check (search chain headless), bing_dom_check (live SERP extractor probe), turn_log_report (hybrid calibration), agent_eval (H1 gate — office ≥19/20 + analytics ≥16/18)

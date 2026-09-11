@@ -125,8 +125,9 @@ degrades to CF-only). Added to office (via `office_toolset`), presentation, and 
 
 ## 7. Generated tools — `crates/generated-tools/*`
 
-Auto-generated per-category `AgentTool` crates (`crates-gen` / xtask). One category = one
-crate; each tool is a thin typed wrapper over a public API. Currently **not** wired into the
+Per-category `AgentTool` crates for public-API wrappers. One category = one
+crate; each tool is a thin typed wrapper over a public API. Hand-maintained —
+edit the tool files directly. Currently **not** wired into the
 supervisor's `auto` registry by default — they join when a definition's `build_tools` includes
 them (catalog via tool-catalog search). Categories:
 
@@ -175,7 +176,7 @@ Full inventory: `grep -rhoE 'const NAME: &'"'"'static str = "[a-z_0-9]+"' crates
 ## 10. Adding a tool — checklist
 
 1. Implement `AgentTool` in the owning crate (or a generated-tools category if it's a public
-   API wrapper — regenerate via xtask, don't hand-write those).
+   API wrapper).
 2. Register it in the right agent's `build_tools` (or `add_runtime_tools` if cross-cutting).
    First-wins in the merged registry — don't reuse an existing NAME with different semantics.
 3. Override `requires_confirmation()` if side-effecting.

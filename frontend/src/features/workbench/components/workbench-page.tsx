@@ -273,6 +273,16 @@ function PastRunCanvas({
 }) {
   const reportableSteps = (run.steps ?? []).filter((s) => s.state === "completed" || s.state === "failed");
   const isDeliverable = doc === "final";
+  /** Header label: the step's task (agentName), or the tool — never the raw
+   *  step id. Same derivation the active canvas uses. */
+  const docStep = (run.steps ?? []).find((s) => s.stepId === doc);
+  const docLabel = isDeliverable
+    ? "Deliverable"
+    : docStep != null
+      ? (docStep.task || docStep.tool).trim().length > 48
+        ? `${(docStep.task || docStep.tool).trim().slice(0, 47).trimEnd()}…`
+        : (docStep.task || docStep.tool).trim()
+      : doc;
   const deliverableBody = run.outputFull ?? (run.outputPreview ? `${run.outputPreview}…` : null);
   const stepTool = run.steps?.find((s) => s.stepId === doc)?.tool ?? "";
   return (
@@ -281,7 +291,7 @@ function PastRunCanvas({
         <div>
           <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
             <ZapIcon className="text-primary size-5" />
-            Run {runIndex + 1} · {isDeliverable ? "Deliverable" : doc}
+            Run {runIndex + 1} · {docLabel}
           </h3>
           <div className="text-muted-foreground mt-1 font-mono text-sm">
             {new Date(run.startedAt).toLocaleString()}
@@ -652,7 +662,7 @@ function DeliverableViewer({
           <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
             <ZapIcon className="text-primary size-5" />
             {`Run ${runIndex + 1} · `}
-            {supervisor.finalOutput != null
+            {effective === "final"
               ? "Deliverable"
               : step != null
                 ? `${agentName(step)} — report`
@@ -827,6 +837,13 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
   const [stealAllowed, setStealAllowed] = useState(true);
   const autoSwitchedRun = useRef<string | null>(null);
   const activeRunId = workbench.runs.at(-1)?.id ?? null;
+  // supervisor.planStartedAt captured at submit. While planStartedAt still
+  // equals this baseline, the supervisor state BELONGS to the previous run
+  // (planning reuses it until planStarted fires) — the canvas must treat the
+  // active run as "not seeded yet" and never read steps/finalOutput as its.
+  const planStartedBaseline = useRef<number | null>(null);
+  const seededForActiveRun =
+    supervisor.planStartedAt != null && supervisor.planStartedAt !== planStartedBaseline.current;
 
   /** User-initiated navigation — cancels the deliverable steal. */
   const userPick = (runId: string, doc: string) => {
@@ -834,34 +851,47 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
     setView({ runId, doc });
   };
 
-  // Auto-switch ONCE per run: when the active run's first content lands and
-  // the canvas isn't on it yet, move to it (report if a step finished first,
-  // deliverable if synthesis beat the reports).
+  // Auto-switch ONCE per run: only AFTER the supervisor has seeded the new
+  // run (planStarted) and its first content lands. During planning the
+  // supervisor still carries the PREVIOUS run's steps/output — those must
+  // never count as the new run's content.
   useEffect(() => {
     if (activeRunId == null || autoSwitchedRun.current === activeRunId) return;
+    if (!seededForActiveRun) return;
     const hasContent = supervisor.finalOutput != null || supervisor.steps.some((s) => s.output != null);
     if (!hasContent) return;
     autoSwitchedRun.current = activeRunId;
     const firstReport = supervisor.steps.find(
       (s) => !isDeliverableStep(s) && s.output != null && (s.state === "completed" || s.state === "failed"),
     );
+    console.log("[workbench] AUTO-SWITCH to new run", activeRunId);
+    console.log("[workbench] AUTO-SWITCH to new run", activeRunId);
     setView({ runId: activeRunId, doc: supervisor.finalOutput != null ? "final" : (firstReport?.stepId ?? "final") });
-  }, [activeRunId, supervisor.finalOutput, supervisor.steps]);
+  }, [activeRunId, seededForActiveRun, supervisor.finalOutput, supervisor.steps]);
 
-  // Steal ONCE: when the deliverable lands and the user hasn't navigated
-  // manually since submit, show it.
+  // Steal ONCE: when the NEW run's deliverable lands (finalOutput null →
+  // value AFTER seeding) and the user hasn't navigated manually since
+  // submit, show it. While unseeded, keep syncing the baseline so run 1's
+  // stale finalOutput is never mistaken for run 2's.
   const prevFinal = useRef<string | null>(null);
   useEffect(() => {
+    if (!seededForActiveRun) {
+      prevFinal.current = supervisor.finalOutput;
+      return;
+    }
     const arrived = supervisor.finalOutput != null && prevFinal.current == null;
     prevFinal.current = supervisor.finalOutput;
-    if (!arrived || !stealAllowed || activeRunId == null) return;
+    if (!arrived || !stealAllowed) return;
+    if (activeRunId == null) return;
     setView({ runId: activeRunId, doc: "final" });
     setStealAllowed(false);
-  }, [stealAllowed, supervisor.finalOutput, activeRunId]);
+  }, [stealAllowed, seededForActiveRun, supervisor.finalOutput, activeRunId]);
 
-  /** Rail "see report" — a user pick on the active run. */
+  /** Rail "see report" — a user pick. The steps shown in the rail belong to
+   *  the active run once seeded, otherwise (planning) to the previous run. */
   const openReport = (id: string) => {
-    if (activeRunId != null) userPick(activeRunId, id);
+    const owner = seededForActiveRun ? activeRunId : (workbench.runs.at(-2)?.id ?? activeRunId);
+    if (owner != null) userPick(owner, id);
   };
   // Chip click → draft dropped into the input for editing (not auto-submit).
   const [chipDraft, setChipDraft] = useState<{ text: string; nonce: number } | null>(null);
@@ -878,6 +908,7 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
     // Canvas policy: keep showing whatever is on screen (run 1) until the
     // new run's first content lands; then the once-per-run auto-switch fires.
     setStealAllowed(true);
+    planStartedBaseline.current = supervisor.planStartedAt;
     const quote = workbench.followUp;
     void workbench.run(text, fileIds, { quote });
   };
