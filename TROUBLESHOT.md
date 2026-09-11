@@ -355,7 +355,8 @@ or the Performance view. Local wiring proof: point
 | Symptom | Cause | Action |
 |---|---|---|
 | Agents tab empty but app runs | env missing from the shell that launched the app, or 401 | `grep AGENTO11Y .env`; export failure logs `[agento11y] generation export failed` to app.log |
-| Performance view empty while Conversations populate | OTel channel broken (checklist #1/#2): providers not built, or `OTEL_EXPORTER_OTLP_HEADERS` has a trailing newline (base64 without `tr -d '\n'`) | check app.log for `[agento11y] OTel … failed`; re-build the header value |
+| Performance view empty while Conversations populate | OTel channel broken (checklist #1/#2): providers not built, or `OTEL_EXPORTER_OTLP_HEADERS` malformed (trailing newline from base64 without `tr -d '\n'`, a wrapped/pasted token with spaces — the gateway then answers 401 silently) | test the header verbatim: `curl -s -X POST "$OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces" -H "$OTEL_EXPORTER_OTLP_HEADERS" -H "X-Scope-OrgID: $TENANT" -w '%{http_code}' -o /dev/null --data-binary ""` — expect 200; rebuild it with `printf '%s' '<tenant>:<glc_ token>' | base64 | tr -d '\n'` |
+| spans/metrics never sent, no error anywhere | the export worker thread overflowed its default 2 MB stack building the OTel providers (silent thread death) | FIXED: `kawai-telemetry::init` spawns the worker with a 16 MB stack — don't shrink it |
 | short-lived process (smoke/example) drops telemetry | exporters flush on `kawai_telemetry::shutdown()` — short-lived processes MUST call it before exit | call `kawai_telemetry::shutdown()` at the end of the example |
 | one agent row, unfilterable | missing `with_agent`/`reason_as` role on a new call site | add the role at the call site (see above) |
 | spans in Tempo but no "T" icon in the conversation | `operation_name` must be a recognized value — kawai emits `streamText`; don't invent others | keep `operation_name: "streamText"` in `telemetry::record_generation` |
