@@ -62,9 +62,9 @@ import {
   CryptoSearchView,
   DrawCardsView,
   FileListView,
+  FileCreatedView,
   FinancialTableView,
   GenericHumanView,
-  FileCreatedView,
   GithubRepoView,
   KeyValueView,
   MarkdownView,
@@ -91,11 +91,18 @@ type StepView = (parsed: unknown, raw: string) => ReactNode;
  *  unregistered falls through to the heuristic FallbackView. */
 const registry: Record<string, StepView> = {
   // markdown documents
-  office_read_document: (p) =>
-    isRecord(p) && typeof p.markdown === "string" ? <MarkdownView text={p.markdown} /> : null,
-  office_create_document: (p) =>
-    isRecord(p) && typeof p.markdown === "string" ? <MarkdownView text={p.markdown} /> : null,
-  pdf_create_from_markdown: (p) => (isRecord(p) ? <FileCreatedView data={p} /> : null),
+  office_read_document: (p) => {
+    const md = unwrapMarkdown(p);
+    return md ? <MarkdownView text={md} /> : null;
+  },
+  office_create_document: (p) => {
+    const md = unwrapMarkdown(p);
+    return md ? <MarkdownView text={md} /> : null;
+  },
+  pdf_create_from_markdown: (p) => {
+    const v = unwrapEnvelope(p);
+    return v ? <FileCreatedView data={v} /> : null;
+  },
 
   // pdf
   pdf_extract_text: (p) => (isRecord(p) ? <PdfPagesView data={p} /> : null),
@@ -252,9 +259,15 @@ const registry: Record<string, StepView> = {
 
   // office / pdf remaining
   office_create: (p, raw) => <GenericHumanView data={p} raw={raw} />,
-  office_create_deck: (p) => (isRecord(p) ? <FileCreatedView data={p.data && isRecord(p.data) ? p.data : p} /> : null),
+  office_create_deck: (p) => {
+    const v = unwrapEnvelope(p);
+    return v ? <FileCreatedView data={v} /> : null;
+  },
   office_edit: (p, raw) => <GenericHumanView data={p} raw={raw} />,
-  office_export_deck: (p) => (isRecord(p) ? <FileCreatedView data={p.data && isRecord(p.data) ? p.data : p} /> : null),
+  office_export_deck: (p) => {
+    const v = unwrapEnvelope(p);
+    return v ? <FileCreatedView data={v} /> : null;
+  },
   office_markdown_read: (p) =>
     isRecord(p) && typeof p.markdown === "string" ? <MarkdownView text={p.markdown} /> : null,
   office_restore_backup: (p, raw) => <GenericHumanView data={p} raw={raw} />,
@@ -262,7 +275,10 @@ const registry: Record<string, StepView> = {
   new_deck: (p, raw) => <GenericHumanView data={p} raw={raw} />,
   extract_text: (p, raw) => <GenericHumanView data={p} raw={raw} />,
   pdf_extract_images: (p, raw) => <GenericHumanView data={p} raw={raw} />,
-  pdf_merge: (p) => (isRecord(p) ? <FileCreatedView data={p.data && isRecord(p.data) ? p.data : p} /> : null),
+  pdf_merge: (p) => {
+    const v = unwrapEnvelope(p);
+    return v ? <FileCreatedView data={v} /> : null;
+  },
   pdf_split: (p) => (isRecord(p) && isRecord(p.data) ? <FileListView data={p.data} /> : null),
   pdf_metadata_set: (p, raw) => <GenericHumanView data={p} raw={raw} />,
   pdf_replace_text: (p, raw) => <GenericHumanView data={p} raw={raw} />,
@@ -376,6 +392,21 @@ function genericKv(o: Record<string, unknown>): ReactNode {
 
 /** Render a supervisor step's ≤2000-char output preview for humans. Always
  *  returns something readable — dedicated view → heuristic fallback. */
+function unwrapEnvelope(p: unknown): Record<string, unknown> | null {
+  if (!isRecord(p)) return null;
+  if (isRecord(p.data) && isRecord(p.data.file)) {
+    return p.data as Record<string, unknown>;
+  }
+  return p;
+}
+
+function unwrapMarkdown(p: unknown): string | null {
+  if (!isRecord(p)) return null;
+  if (typeof p.markdown === "string") return p.markdown;
+  if (isRecord(p.data) && typeof p.data.markdown === "string") return p.data.markdown;
+  return null;
+}
+
 export function renderStepReport(tool: string, output: string): ReactNode {
   const parsed = parseMaybeJson(output);
   const fn = registry[tool];

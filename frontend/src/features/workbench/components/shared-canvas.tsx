@@ -71,7 +71,9 @@ export function useStepReport({
       });
   }, [body, stepId, needsFetch, fetcher, planKey]);
 
-  const loading = body === "loading" || body == null;
+  // `failed` is terminal: keep the preview visible and stop showing an
+  // infinite spinner when the persisted full-report lookup is unavailable.
+  const loading = body === "loading" || (body == null && needsFetch);
   const output = body != null && body !== "loading" && body !== "failed" ? body : null;
   return { output, loading };
 }
