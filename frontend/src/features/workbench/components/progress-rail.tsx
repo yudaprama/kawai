@@ -282,6 +282,20 @@ export function ProgressRail({
   onNewGoal: () => void;
 }) {
   const { supervisor } = workbench;
+  // During planning `supervisor.goal` is still the PREVIOUS run's (or null on
+  // the first) until planStarted seeds it — the run record already knows the
+  // submitted goal, so show it immediately (system-status visibility).
+  const currentRun = workbench.runs[workbench.runs.length - 1];
+  const headerGoal = supervisor.goal ?? currentRun?.goal ?? null;
+  const startedAt = supervisor.planStartedAt ?? currentRun?.startedAt ?? null;
+  // Live-tick while a run is in flight so the elapsed timers move every
+  // second even when no events arrive (long silent planner rounds).
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (supervisor.status !== "running") return;
+    const t = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [supervisor.status]);
   return (
     <div className="flex h-full flex-col">
       <div className="border-primary/30 mb-4 border-b pb-3">
@@ -290,11 +304,11 @@ export function ProgressRail({
           Progress
         </h2>
         <div className="text-foreground/80 mt-1 font-mono text-xs font-bold">
-          {supervisor.goal ? `${statusLabel(supervisor.status)} · ${supervisor.goal.slice(0, 40)}` : "Idle"}
+          {headerGoal ? `${statusLabel(supervisor.status)} · ${headerGoal.slice(0, 40)}` : "Idle"}
         </div>
-        {supervisor.planStartedAt != null && (
+        {startedAt != null && (
           <div className="text-muted-foreground font-mono text-xs">
-            Duration: {fmtDuration(supervisor.planStartedAt, supervisor.planCompletedAt ?? undefined)}
+            Duration: {fmtDuration(startedAt, supervisor.planCompletedAt ?? undefined)}
           </div>
         )}
       </div>
@@ -323,13 +337,26 @@ export function ProgressRail({
         <div className="flex-1">
           <StepTree live onOpenReport={onOpenReport} steps={supervisor.steps} />
           {supervisor.steps.length === 0 && supervisor.status !== "idle" && (
-            <div className="text-muted-foreground mt-2 flex items-center gap-2 font-mono text-xs">
-              <LoaderCircleIcon className="text-primary size-3.5 animate-spin" />
-              {supervisor.planning != null
-                ? supervisor.planning.round === 0
-                  ? "starting…"
-                  : `planning · round ${supervisor.planning.round}${supervisor.planning.provider ? ` · ${supervisor.planning.provider}` : ""}`
-                : "preparing…"}
+            <div className="text-muted-foreground mt-2 space-y-1 font-mono text-xs">
+              <div className="flex items-center gap-2">
+                <LoaderCircleIcon className="text-primary size-3.5 animate-spin" />
+                {supervisor.planning != null
+                  ? supervisor.planning.round === 0
+                    ? "starting…"
+                    : `planning · round ${supervisor.planning.round}${supervisor.planning.provider ? ` · ${supervisor.planning.provider}` : ""}`
+                  : "preparing…"}
+              </div>
+              {supervisor.planning?.searching && supervisor.planning.tools.length > 0 && (
+                <div className="text-muted-foreground/80 pl-5.5 text-[11px]">
+                  found tools: {supervisor.planning.tools.slice(0, 3).join(", ")}
+                  {supervisor.planning.tools.length > 3 ? "…" : ""}
+                </div>
+              )}
+              {supervisor.planning != null && currentRun != null && (
+                <div className="text-muted-foreground/60 pl-5.5 text-[11px] tabular-nums">
+                  {fmtDuration(currentRun.startedAt)} elapsed
+                </div>
+              )}
             </div>
           )}
         </div>

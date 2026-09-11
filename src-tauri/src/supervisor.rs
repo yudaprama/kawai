@@ -439,10 +439,16 @@ pub async fn plan_task(
 
     // User context rides the planner call: persona + goal-relevant memories
     // + skills. All three are best-effort — planning never fails on them.
-    let persona_block = kawai_memory::persona_prompt_block(user_id).await;
-    let memories_block = kawai_memory::prompt_block_relevant(user_id, goal).await;
-    let skills_block = kawai_skills::prompt_block(user_id).await;
-    let attached_files_block = attached_files_block(user_id, session_id).await;
+    // All independent, so they run concurrently — sequential awaits here were
+    // the bulk of the dead time between submit and the first planner round.
+    // The Turso catalog sync joins the same fan-out (best-effort).
+    let (persona_block, memories_block, skills_block, attached_files_block, catalog) = tokio::join! {
+        kawai_memory::persona_prompt_block(user_id),
+        kawai_memory::prompt_block_relevant(user_id, goal),
+        kawai_skills::prompt_block(user_id),
+        attached_files_block(user_id, session_id),
+        open_synced_catalog(PLAN_SEARCH_SYNC_TIMEOUT),
+    };
     let context = render_planner_context(
         persona_block,
         memories_block,
@@ -460,10 +466,6 @@ pub async fn plan_task(
         .map(|s| s.to_string())
         .collect();
 
-    // Turso catalog, best-effort: unavailable means searches report empty —
-    // the planner then plans from the core set or fails validation. There is
-    // deliberately NO full-catalog fallback (mode A).
-    let catalog = open_synced_catalog(PLAN_SEARCH_SYNC_TIMEOUT).await;
     // LiteRT-ONLY embedder: the catalog is seeded in the on-device model's
     // space (seed_tool_catalog uses the same helper), so seed and query stay
     // in one space on every device — no cloud embedding dependency (the
