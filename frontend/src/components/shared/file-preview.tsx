@@ -51,17 +51,24 @@ export function FilePreview({ file }: { file: PreviewFile }) {
   }
 }
 
-function ImagePreview({ file }: { file: PreviewFile }) {
+function useMediaPreview(file: PreviewFile, fallbackKind: FileKind) {
   const [errored, setErrored] = useState(false);
   const { data, isLoading, error } = useFilePreview(file);
-  if (errored || error) return <FallbackPreview file={file} kind="image" />;
-  if (isLoading || !data?.dataUrl) return <PreviewLoading />;
+  if (errored || error) return { status: "fallback" as const, fallbackKind, onError: setErrored };
+  if (isLoading || !data?.dataUrl) return { status: "loading" as const, fallbackKind, onError: setErrored };
+  return { status: "ready" as const, dataUrl: data.dataUrl, fallbackKind, onError: setErrored };
+}
+
+function ImagePreview({ file }: { file: PreviewFile }) {
+  const preview = useMediaPreview(file, "image");
+  if (preview.status === "fallback") return <FallbackPreview file={file} kind={preview.fallbackKind} />;
+  if (preview.status === "loading") return <PreviewLoading />;
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-4">
       <img
-        src={data.dataUrl}
+        src={preview.dataUrl}
         alt={file.name}
-        onError={() => setErrored(true)}
+        onError={() => preview.onError(true)}
         className="max-h-full max-w-full rounded-lg object-contain"
       />
     </div>
@@ -69,17 +76,16 @@ function ImagePreview({ file }: { file: PreviewFile }) {
 }
 
 function VideoPreview({ file }: { file: PreviewFile }) {
-  const [errored, setErrored] = useState(false);
-  const { data, isLoading, error } = useFilePreview(file);
-  if (errored || error) return <FallbackPreview file={file} kind="video-native" />;
-  if (isLoading || !data?.dataUrl) return <PreviewLoading />;
+  const preview = useMediaPreview(file, "video-native");
+  if (preview.status === "fallback") return <FallbackPreview file={file} kind={preview.fallbackKind} />;
+  if (preview.status === "loading") return <PreviewLoading />;
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-4">
       <video
-        src={data.dataUrl}
+        src={preview.dataUrl}
         controls
         aria-label={file.name}
-        onError={() => setErrored(true)}
+        onError={() => preview.onError(true)}
         className="max-h-full max-w-full rounded-lg"
       >
         <track kind="captions" />
