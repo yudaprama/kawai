@@ -139,7 +139,7 @@ them (catalog via tool-catalog search). Categories:
 | `gaming` | `get_pokemon`, `get_pokemon_species`, `draw_cards` |
 | `geospace` | `geocode`, `get_ip_location`, `get_earthquakes_by_region`, `get_sun_times`, `get_iss_position`, `get_flights_in_area` |
 | `knowledge` | `search_papers`, `search_github_repos`, `get_github_repo`, `get_github_user`, `calculate`, `diagram_generate`, `diagram_render`, `validate_email`, `define_word` |
-| `news-media` | `get_top_headlines`, `search_news`, `get_news_sources`, `get_on_this_day` |
+| `news-media` | `get_news_sources`, `get_on_this_day` |
 | `religion` | `get_quran_surah`, `get_bible_verse`, `get_trivia_questions` |
 | `sports` | `get_competitions`, `get_competition_standings`, `get_team_info`, `get_match_detail`, `get_tv_schedule` |
 | `utility` | `composio_list_toolkits`, `composio_list_tools`, `composio_execute`, `composio_authorize`, `composio_list_connections` |
