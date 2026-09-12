@@ -81,6 +81,7 @@ bun run typecheck      # tsc -b --force
 # Desktop (Tauri) — the `tauri` npm script is wrapped by scripts/tauri.sh.
 # `dev` = on-device LLM stack: litert feature + native/ rpath
 # + profraw off (needs the Bazel-built dylibs; run bundle:litert once).
+# The binance agent tools (crypto_*) ride the dev feature set too.
 # `build` and everything else pass through unchanged.
 bun tauri dev
 bun tauri build
@@ -316,7 +317,7 @@ KAWAI_REMOTE_LLM_MATERIALS_CHARS=        # optional absolute ceiling on every pr
 # (stock_sentiment / stock_social_feed / trending_stocks) are StockTwits-only.
 # KAWAI_STOCKTWITS_API_BASE=https://api.stocktwits.com/api/2  # optional API base override
 # ── Binance agent tools (crates/toolsets/binance) ──
-KAWAI_BINANCE_REST_BASE=https://data-api.binance.vision  # optional REST base override; default = api.binance.com (451 geo-blocks some hosting regions — the mirror is the market-data-only endpoint). CI smoke sets it. Also where a testnet base (https://testnet.binance.vision) would go.
+# KAWAI_BINANCE_REST_BASE=https://data-api.binance.vision  # optional REST base override. Default: the market-data-only mirror (keyless market tools) — api.binance.com 403/451 geo-blocks some regions. Signed account tools (BINANCE_API_KEY set) stay on api.binance.com. Also where a testnet base (https://testnet.binance.vision) would go.
 BINANCE_API_KEY=  # optional READ-ONLY spot keys; set BOTH to register the binance_balances/binance_open_orders account tools (never compiled in, no trade permission)
 BINANCE_API_SECRET=
 # ── Monad EVM chain client (crates/integrations/monad, `monad` feature) ──

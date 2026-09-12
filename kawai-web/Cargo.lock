@@ -120,6 +120,7 @@ version = "0.1.0"
 dependencies = [
  "charton",
  "chrono",
+ "kawai-tools",
  "office_oxide 0.1.8",
  "polars",
  "serde",
@@ -2193,7 +2194,6 @@ version = "0.1.0"
 dependencies = [
  "futures-util",
  "kawai-tools",
- "regex",
  "serde",
  "serde_json",
  "text-splitter",
@@ -3458,7 +3458,6 @@ dependencies = [
  "libsql",
  "log",
  "rand 0.9.5",
- "regex",
  "remote-llm",
  "serde",
  "serde_json",
@@ -3540,6 +3539,7 @@ dependencies = [
 name = "kawai-tools"
 version = "0.1.0"
 dependencies = [
+ "regex",
  "serde",
  "serde_json",
 ]

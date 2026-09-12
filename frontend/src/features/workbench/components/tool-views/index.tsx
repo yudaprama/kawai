@@ -141,7 +141,6 @@ const registry: Record<string, StepView> = {
   trending_stocks: (p) => (isRecord(p) ? <TrendingView data={p} /> : null),
   stock_social_feed: (p) => <SocialFeedView data={p} />,
   get_stock_news: (p) => <NewsListView data={p} />,
-  get_global_news: (p) => <NewsListView data={p} />,
   get_reddit_posts: (p) => <NewsListView data={p} />,
 
   // finance — statements

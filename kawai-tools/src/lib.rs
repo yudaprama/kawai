@@ -14,12 +14,65 @@
 //! the available names).
 
 use std::collections::HashMap;
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use regex::Regex;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+
+/// Error type for agent tools. One string — the agent loop feeds it back to
+/// the model verbatim as the tool result (error-as-content convention).
+#[derive(Debug)]
+pub struct ToolError(pub String);
+
+impl fmt::Display for ToolError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for ToolError {}
+
+/// Convenience constructor: convert any displayable error into a `ToolError`.
+pub fn terr(msg: impl Into<String>) -> ToolError {
+    ToolError(msg.into())
+}
+
+/// Stop-words skipped during entity extraction.
+const ENTITY_STOP_WORDS: &[&str] = &[
+    "The", "This", "That", "There", "These", "Those", "When", "Where", "Which", "While", "With",
+    "From", "Untuk", "Yang", "Dan", "Atau", "Adalah", "Dalam",
+];
+
+/// Extract name-shaped entities from text: 1–3 capitalized words, skipping
+/// stop-words, deduplicated, capped at `max` results. Used by both the
+/// GraphRAG engine (max=24) and the memory entity graph (max=8).
+pub fn extract_entities(text: &str, max: usize) -> Vec<String> {
+    let re =
+        Regex::new(r"\b[A-Z][a-z]+(?:\s[A-Z][a-z]+){0,2}\b").expect("static entity regex");
+    let stop: std::collections::HashSet<&str> = ENTITY_STOP_WORDS.iter().copied().collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for m in re.find_iter(text) {
+        let s = m.as_str().trim();
+        if s.len() < 3 || s.len() > 40 {
+            continue;
+        }
+        if stop.contains(s) {
+            continue;
+        }
+        if seen.insert(s.to_string()) {
+            out.push(s.to_string());
+        }
+        if out.len() >= max {
+            break;
+        }
+    }
+    out
+}
 
 /// Provider-facing tool metadata: registration name, model-facing
 /// description, and the JSON Schema for the arguments object.

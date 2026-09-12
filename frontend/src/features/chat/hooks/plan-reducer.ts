@@ -304,6 +304,7 @@ export function supervisorReducer(
           provider: event.provider,
           searching: event.searching,
           tools: state.planning?.tools ?? [],
+          activity: state.planning?.activity,
         },
       };
     }
@@ -315,7 +316,15 @@ export function supervisorReducer(
           provider: state.planning?.provider ?? "",
           searching: true,
           tools: event.tools,
+          activity: state.planning?.activity,
         },
+      };
+    }
+    case "planningActivity": {
+      if (!state.planning) return state;
+      return {
+        ...state,
+        planning: { ...state.planning, activity: event.text },
       };
     }
     // planRevising already handled; fallback identity

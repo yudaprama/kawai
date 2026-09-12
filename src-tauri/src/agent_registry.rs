@@ -237,7 +237,6 @@ pub fn finance_tools_for_supervisor(
         "get_insider_transactions",
         // News tools (yfinance)
         "get_stock_news",
-        "get_global_news",
         // Market intelligence tools
         "get_macro_indicators",
         "get_prediction_markets",

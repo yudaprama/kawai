@@ -203,6 +203,12 @@ pub enum SupervisorEvent {
         queries: Vec<String>,
         tools: Vec<String>,
     },
+    /// Throttled trailing slice of the planner LLM's reasoning stream — live
+    /// motion inside a round (one round can stream for minutes with no other
+    /// event, which read as a frozen UI).
+    PlanningActivity {
+        text: String,
+    },
     PlanCompleted {
         final_output: Option<String>,
     },
@@ -490,6 +496,10 @@ pub async fn plan_task(
     let mut searches_used = 0usize;
     let mut repairs_used = 0usize;
     let mut calls = 0usize;
+    // Rolling reasoning buffer + throttle for PlanningActivity — the UI gets
+    // a trailing preview of the planner's thinking at most every 800 ms.
+    let mut reasoning_tail = String::new();
+    let mut last_activity = std::time::Instant::now();
 
     loop {
         calls += 1;
@@ -506,6 +516,8 @@ pub async fn plan_task(
             provider: String::new(),
             searching: !must_plan,
         });
+        reasoning_tail.clear();
+        last_activity = std::time::Instant::now();
         let mut round_materials = materials.clone();
         if must_plan {
             round_materials.push_str(
@@ -522,11 +534,23 @@ pub async fn plan_task(
                         if raw.len() < 32_000 {
                             raw.push_str(&text);
                         }
+                        // Content phase started — a reasoning preview, if any,
+                        // is stale now; show plan-writing progress instead.
+                        // Providers WITHOUT a reasoning channel (everything
+                        // but zai) get their ONLY intra-round motion here.
+                        reasoning_tail.clear();
+                        if last_activity.elapsed() >= std::time::Duration::from_millis(800) {
+                            last_activity = std::time::Instant::now();
+                            let label = if must_plan { "writing plan" } else { "drafting round" };
+                            on_progress(SupervisorEvent::PlanningActivity {
+                                text: format!("{label} · {} chars", raw.len()),
+                            });
+                        }
                     }
                     remote_llm::RemoteEvent::Done { usage: u, provider, .. } => {
                         // #5 observability: which candidate served the round
                         // (latency tuning data — see PLAN-planner-search-loop.md).
-                        tracing::info!(component = "supervisor", round = calls, provider = %provider, "planning round served");
+                        tracing::info!(component = "supervisor", user_id = %user_id, round = calls, provider = %provider, "planning round served");
                         // Live progress for the transport layer (desktop Channel /
                         // web log) — the planning phase is otherwise silent for
                         // tens of seconds.
@@ -537,6 +561,36 @@ pub async fn plan_task(
                         });
                         usage.input_tokens += u.input_tokens;
                         usage.output_tokens += u.output_tokens;
+                    }
+                    remote_llm::RemoteEvent::Reasoning { text, reset, .. } => {
+                        if reset || text.is_empty() {
+                            // Candidate reset (failover) — drop the stale tail
+                            // so the preview tracks whoever actually serves.
+                            reasoning_tail.clear();
+                        } else {
+                            reasoning_tail.push_str(&text);
+                            // Cap the buffer (char-boundary safe), then emit a
+                            // trailing slice at most every 800 ms.
+                            if reasoning_tail.len() > 4_000 {
+                                let cut = reasoning_tail.len() - 2_000;
+                                let boundary = (cut..reasoning_tail.len())
+                                    .find(|&i| reasoning_tail.is_char_boundary(i))
+                                    .unwrap_or(reasoning_tail.len());
+                                reasoning_tail.drain(..boundary);
+                            }
+                            if last_activity.elapsed() >= std::time::Duration::from_millis(800) {
+                                last_activity = std::time::Instant::now();
+                                let tail: String = reasoning_tail
+                                    .chars()
+                                    .rev()
+                                    .take(220)
+                                    .collect::<Vec<_>>()
+                                    .into_iter()
+                                    .rev()
+                                    .collect();
+                                on_progress(SupervisorEvent::PlanningActivity { text: tail });
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -1796,17 +1850,24 @@ pub fn execute_plan_stream_with_cancel(
         // deliverable) and every scheduler step nests under it, so a run is
         // one trace from first step to deliverable (no silent gaps in Tempo).
         let telemetry_conversation = format!("kawai-session-{session_id}");
+        // user.id rides every span/metric/log emitted from this run (empty
+        // for legacy/test callers — telemetry drops the attr then).
+        let telemetry_user = (!user_id.is_empty()).then(|| user_id.clone());
+        let mut run_attrs = vec![
+            (
+                "kawai.goal".into(),
+                preview_chars(&plan.goal, 200).to_string(),
+            ),
+            ("kawai.plan_key".into(), plan_key(&plan)),
+            ("kawai.step_count".into(), step_count.to_string()),
+            ("kawai.session_id".into(), session_id.to_string()),
+        ];
+        if let Some(u) = &telemetry_user {
+            run_attrs.push(("user.id".into(), u.clone()));
+        }
         let run_span = Arc::new(Mutex::new(kawai_telemetry::TelemetrySpan::start(
             "supervisor.run",
-            vec![
-                (
-                    "kawai.goal".into(),
-                    preview_chars(&plan.goal, 200).to_string(),
-                ),
-                ("kawai.plan_key".into(), plan_key(&plan)),
-                ("kawai.step_count".into(), step_count.to_string()),
-                ("kawai.session_id".into(), session_id.to_string()),
-            ],
+            run_attrs,
         )));
         // DAG edges between nodes, from the ORIGINAL plan (revised plans
         // dispatch with empty parents — acceptable, noted limitation).
@@ -1825,18 +1886,23 @@ pub fn execute_plan_stream_with_cancel(
             let step_spans = step_spans.clone();
             let parent_steps = parent_steps.clone();
             let conversation = telemetry_conversation.clone();
+            let obs_user = telemetry_user.clone();
             Arc::new(move |event| {
                 match &event {
                     kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
+                        let mut span_attrs = vec![
+                            ("kawai.step_id".into(), step_id.clone()),
+                            ("kawai.tool".into(), tool.clone()),
+                        ];
+                        if let Some(u) = &obs_user {
+                            span_attrs.push(("user.id".into(), u.clone()));
+                        }
                         let span = run_span
                             .lock()
                             .expect("supervisor run span mutex")
                             .start_child(
                                 format!("supervisor.step {tool}"),
-                                vec![
-                                    ("kawai.step_id".into(), step_id.clone()),
-                                    ("kawai.tool".into(), tool.clone()),
-                                ],
+                                span_attrs,
                             );
                         step_spans
                             .lock()
@@ -2002,12 +2068,16 @@ pub fn execute_plan_stream_with_cancel(
                         let synthesis_goal = user_goal
                             .clone()
                             .unwrap_or_else(|| current_plan.goal.clone());
+                        let mut dl_attrs = vec![("kawai.step_id".into(), DELIVERABLE_STEP_ID.into())];
+                        if let Some(u) = &telemetry_user {
+                            dl_attrs.push(("user.id".into(), u.clone()));
+                        }
                         let mut dl_span = run_span
                             .lock()
                             .expect("supervisor run span mutex")
                             .start_child(
                                 "supervisor.deliverable_writer",
-                                vec![("kawai.step_id".into(), DELIVERABLE_STEP_ID.into())],
+                                dl_attrs,
                             );
                         let dl_started = std::time::SystemTime::now();
                         let synthesized =
@@ -2059,7 +2129,7 @@ pub fn execute_plan_stream_with_cancel(
                             });
                         }
                         if let Some(answer) = &synthesized {
-                            tracing::info!(component = "supervisor", chars = answer.chars().count(), "synthesis completed");
+                            tracing::info!(component = "supervisor", user_id = %user_id, chars = answer.chars().count(), "synthesis completed");
                         } else {
                             eprintln!("[supervisor] synthesis unavailable — falling back to raw final output");
                         }

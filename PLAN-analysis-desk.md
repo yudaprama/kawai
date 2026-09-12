@@ -15,7 +15,7 @@ Every primitive the desk needs already exists:
 | TradingAgents need | kawai primitive |
 |---|---|
 | Market data per analyst | `get_stock_price/history/detail/fundamentals/financials/news/sector/macro/insider` (generated finance tools) |
-| Social/news sentiment | `stock_sentiment`, `stock_social_feed`, `get_reddit_posts`, `get_global_news`, `trending_stocks` |
+| Social/news sentiment | `stock_sentiment`, `stock_social_feed`, `get_reddit_posts`, `trending_stocks` |
 | Technicals | `binance_ta_analyze`, `data_ta` |
 | Agent roles (LLM per role) | `remote_llm` pool (quick roles = small-cap call, deep roles = synthesis-cap call) |
 | Pipeline execution + retries + waves | `kawai-router` scheduler on a **fixed** TaskPlan — no planner, no silent gap |

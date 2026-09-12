@@ -255,12 +255,6 @@ pub struct GetStockNewsTool {
     const NAME: &'static str = "get_stock_news";
     // ... implementation
 }
-
-// Global News Tool
-pub struct GetGlobalNewsTool {
-    const NAME: &'static str = "get_global_news";
-    // ... implementation
-}
 ```
 
 ### 3.2 Registry Update
@@ -274,7 +268,6 @@ Tambahkan ke `native_names()`:
 "get_income_statement",
 "get_insider_transactions",
 "get_stock_news",
-"get_global_news",
 ```
 
 Tambahkan ke `toolset_for()`:
@@ -317,7 +310,6 @@ pub fn finance_tools_for_supervisor(
         "get_income_statement",
         "get_insider_transactions",
         "get_stock_news",
-        "get_global_news",
     ]))
 }
 ```

@@ -52,6 +52,12 @@ export type SupervisorEvent =
       queries: string[];
       tools: string[];
     }
+  | {
+      /** Throttled trailing slice of the planner LLM's reasoning — live
+       *  motion inside a round (one round can stream for minutes). */
+      type: "planningActivity";
+      text: string;
+    }
   | { type: "planRevising"; failedStepIds: string[]; attempt: number }
   | {
       type: "planRevised";
@@ -134,7 +140,14 @@ export interface SupervisorPlanState {
   /** Full plan structure — seeded at planStarted, before any step runs. */
   steps: SupervisorStep[];
   /** Live planning progress — non-null only while `plan_task` is in flight. */
-  planning: { round: number; provider: string; searching: boolean; tools: string[] } | null;
+  planning: {
+    round: number;
+    provider: string;
+    searching: boolean;
+    tools: string[];
+    /** Trailing slice of the planner's reasoning (planningActivity). */
+    activity?: string;
+  } | null;
   /** Wall-clock plan start (planStarted) and terminal time — drive the
    *  workbench card's total-duration timer. */
   planStartedAt: number | null;

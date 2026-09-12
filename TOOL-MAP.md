@@ -135,7 +135,7 @@ them (catalog via tool-catalog search). Categories:
 |---|---|
 | `browser` | `browser_markdown_extract`, `browser_content_extract`, `browser_json_extract`, `browser_links_extract`, `browser_scrape_elements` |
 | `entertainment` | `search_anime`, `get_top_anime`, `search_manga`, `search_artist`, `search_album`, `search_books`, `get_book_by_isbn`, `search_photos`, `search_videos`, `search_poems_by_title`, `get_tv_show_detail`, `search_star_wars_people` |
-| `finance` | `get_stock_quote`, `get_stock_history`, `search_crypto`, `get_crypto_price`, `get_crypto_klines`, `get_forex_history`, `currency_exchange`, `get_balance_sheet`, `get_cashflow`, `get_income_statement`, `get_insider_transactions`, `get_stock_news`, `get_global_news` |
+| `finance` | `get_stock_quote`, `get_stock_history`, `search_crypto`, `get_crypto_price`, `get_crypto_klines`, `get_forex_history`, `currency_exchange`, `get_balance_sheet`, `get_cashflow`, `get_income_statement`, `get_insider_transactions`, `get_stock_news` |
 | `food-drink` | `search_recipe`, `get_random_recipe`, `search_cocktail`, `get_food_by_barcode`, `get_all_fruits` |
 | `gaming` | `get_pokemon`, `get_pokemon_species`, `draw_cards` |
 | `geospace` | `geocode`, `get_ip_location`, `get_earthquakes_by_region`, `get_sun_times`, `get_iss_position`, `get_flights_in_area` |
@@ -265,7 +265,7 @@ Finance (`generated-tools/finance`):
 | `trending_stocks` | `{"trending":[{symbol, title, watchers}]}` | `TrendingView` — ranked list, "N pengamat" |
 | `stock_social_feed` | `{"symbol","count","messages":[{user, body, sentiment, created_at, likes}]}` | `SocialFeedView` — sentiment tally + badge per post |
 | `stock_sentiment` | aggregate sentiment record | fallback (key-value) |
-| `get_stock_news` / `get_global_news` / `get_reddit_posts` | `{"articles"\|"posts":[{title, summary, publisher, link, published?}]}` | `NewsListView` — headline cards, id-ID dates |
+| `get_stock_news` / `get_reddit_posts` | `{"articles"\|"posts":[{title, summary, publisher, link, published?}]}` | `NewsListView` — headline cards, id-ID dates |
 | `get_balance_sheet` / `get_income_statement` / `get_cashflow` | `{"ticker","freq","count","statements":[…]}` (yfinance) | `FinancialTableView` — periods × line items |
 
 Generic (any tool):

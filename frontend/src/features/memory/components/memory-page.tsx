@@ -1,5 +1,5 @@
 import { LayersIcon, MergeIcon, PencilIcon, PlusIcon, SearchIcon, SparklesIcon, TrashIcon, XIcon } from "lucide-react";
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AssetBadge,
   AssetItemBadges,
@@ -12,6 +12,7 @@ import {
 import { AssetPageHeader } from "@/features/assets/components/asset/asset-page-header";
 import { AssetSplitLayout } from "@/features/assets/components/asset/asset-split-layout";
 import { FilterBar } from "@/features/assets/components/filter-bar";
+import { useAssetPage } from "@/features/assets/hooks/use-asset-page";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,23 +57,20 @@ const MemoryGraph = lazy(() =>
  * pipeline tier yet and say so.
  */
 export function MemoryAssetPage({ sessions, onBack }: { sessions: ChatSessionInfo[]; onBack: () => void }) {
-  const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [tab, setTab] = useState<MemoryTab>("l0");
 
   const memories = useMemories(true);
 
   const sorted = useMemo(() => [...sessions].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)), [sessions]);
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return sorted.filter((s) => {
-      if (!q) return true;
-      return (s.title ?? "untitled").toLowerCase().includes(q);
-    });
-  }, [sorted, query]);
 
-  const active = filtered.find((s) => s.id === selectedId) ?? sorted.find((s) => s.id === selectedId) ?? null;
-  const activeId = active?.id ?? null;
+  const filterFn = useCallback(
+    (s: ChatSessionInfo, q: string) => (s.title ?? "untitled").toLowerCase().includes(q),
+    [],
+  );
+  const { query, setQuery, setSelectedId, filtered, active, activeId } = useAssetPage<ChatSessionInfo, number>({
+    items: sorted,
+    filterFn,
+  });
 
   const messagesOp = useOp<ChatMessageInfo[]>(
     "list_chat_messages",

@@ -1,5 +1,5 @@
 import { PencilIcon, PlusIcon, TrashIcon, WrenchIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AssetBadge,
   AssetItemBadges,
@@ -13,6 +13,7 @@ import {
 import { AssetPageHeader } from "@/features/assets/components/asset/asset-page-header";
 import { AssetSplitLayout } from "@/features/assets/components/asset/asset-split-layout";
 import { FilterBar } from "@/features/assets/components/filter-bar";
+import { useAssetPage } from "@/features/assets/hooks/use-asset-page";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,7 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { useSkills } from "@/features/skills/hooks/use-skills";
-import type { SkillInfo } from "@/generated/api-types";
+import type { SkillInfo, SkillSummary } from "@/generated/api-types";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 
 /**
@@ -40,22 +41,20 @@ import { AssetShell } from "@/features/assets/components/asset-shell";
 export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
   const store = useSkills(true);
   const { skills, loaded } = store;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
   const [detail, setDetail] = useState<SkillInfo | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<SkillInfo | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return skills;
-    return skills.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
-  }, [skills, query]);
-
-  const active = filtered.find((s) => s.id === selectedId) ?? skills.find((s) => s.id === selectedId) ?? null;
-  const activeId = active?.id ?? null;
+  const filterFn = useCallback(
+    (s: SkillSummary, q: string) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
+    [],
+  );
+  const { query, setQuery, setSelectedId, filtered, active, activeId } = useAssetPage<SkillSummary, string>({
+    items: skills,
+    filterFn,
+  });
   const { get } = store;
 
   // Load the selected skill's body.

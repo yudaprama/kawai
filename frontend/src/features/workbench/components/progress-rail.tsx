@@ -352,6 +352,11 @@ export function ProgressRail({
                   {supervisor.planning.tools.length > 3 ? "…" : ""}
                 </div>
               )}
+              {supervisor.planning?.activity && (
+                <div className="text-muted-foreground/60 pl-5.5 line-clamp-2 max-h-8 overflow-hidden text-[11px] italic">
+                  ⌁ {supervisor.planning.activity}
+                </div>
+              )}
               {supervisor.planning != null && currentRun != null && (
                 <div className="text-muted-foreground/60 pl-5.5 text-[11px] tabular-nums">
                   {fmtDuration(currentRun.startedAt)} elapsed

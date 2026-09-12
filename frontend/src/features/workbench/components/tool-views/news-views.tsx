@@ -37,7 +37,7 @@ function newsItems(data: unknown): NewsItem[] {
   return out;
 }
 
-/** get_stock_news / get_global_news / get_reddit_posts — headline cards. */
+/** get_stock_news / get_reddit_posts — headline cards. */
 export function NewsListView({ data }: { data: unknown }) {
   const items = newsItems(data);
   if (items.length === 0) return null;
