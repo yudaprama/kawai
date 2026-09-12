@@ -1953,6 +1953,9 @@ async fn execute_supervisor_plan_handler(
             crate::supervisor::SupervisorEvent::PlanningActivity { .. } => {
                 "planningActivity"
             }
+            crate::supervisor::SupervisorEvent::PlanningContext { .. } => {
+                "planningContext"
+            }
         };
         let data = serde_json::to_string(&event).unwrap_or_default();
         Ok::<_, Infallible>(SseFrame::default().event(name).data(data))

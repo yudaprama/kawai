@@ -290,7 +290,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       setMessages((prev) => [...prev, userMessage]);
       void persist(sessionId, "user", cleanGoal);
 
-      patch({ planning: { round: 0, provider: "", searching: true, tools: [] } });
+      patch({ planning: { round: 0, provider: "", searching: true, tools: [], queries: [] } });
       userGoalRef.current = cleanGoal;
       let plan: unknown;
       try {

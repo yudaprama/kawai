@@ -6,6 +6,7 @@ import { FileIcon } from "@/components/shared/file-icon";
 import { Streamdown } from "@/lib/streamdown";
 import { call, errText } from "@/lib/api";
 import { AgentReportsSwitcher, StepReportBody } from "@/features/workbench/components/shared-canvas";
+import { PlanningCanvas } from "@/features/workbench/components/planning-canvas";
 import { agentName, isDeliverableStep, type useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import { fmtDuration } from "./progress-rail";
@@ -233,6 +234,8 @@ export function DeliverableViewer({
             State a goal in the composer to start a run.
           </div>
         )}
+
+        {supervisor.planning != null && <PlanningCanvas planning={supervisor.planning} />}
 
         {effective === "final" && supervisor.finalOutput != null && (
           <div className="border-primary/30 bg-card rounded-lg border p-6">

@@ -3071,6 +3071,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "kawai-constants",
+ "kawai-http-client",
  "log",
  "rand 0.9.5",
  "reqwest 0.13.4",
@@ -3413,6 +3414,15 @@ dependencies = [
  "serde_json",
  "specta",
  "specta-typescript",
+]
+
+[[package]]
+name = "kawai-http-client"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

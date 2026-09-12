@@ -352,6 +352,11 @@ export function ProgressRail({
                   {supervisor.planning.tools.length > 3 ? "…" : ""}
                 </div>
               )}
+              {supervisor.planning?.searching && (supervisor.planning.queries?.length ?? 0) > 0 && (
+                <div className="text-muted-foreground/60 pl-5.5 truncate text-[11px] italic">
+                  searching: “{supervisor.planning.queries[supervisor.planning.queries.length - 1]}”
+                </div>
+              )}
               {supervisor.planning?.activity && (
                 <div className="text-muted-foreground/60 pl-5.5 line-clamp-2 max-h-8 overflow-hidden text-[11px] italic">
                   ⌁ {supervisor.planning.activity}

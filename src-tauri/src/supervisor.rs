@@ -209,6 +209,15 @@ pub enum SupervisorEvent {
     PlanningActivity {
         text: String,
     },
+    /// Personal context loaded into the planner call — surfaced so the UI can
+    /// show what personalizes this run instead of a bare spinner. Emitted
+    /// right after the context fan-out completes.
+    PlanningContext {
+        persona: bool,
+        memories: u32,
+        skills: u32,
+        files: u32,
+    },
     PlanCompleted {
         final_output: Option<String>,
     },
@@ -460,6 +469,21 @@ pub async fn plan_task(
         attached_files_block(user_id, session_id),
         open_synced_catalog(PLAN_SEARCH_SYNC_TIMEOUT),
     };
+    // Surface what got loaded into the planner call (coarse counts — the
+    // blocks render as "- item" lines) so the UI can show personalization
+    // context instead of a bare spinner during the silent planning phase.
+    let count_items = |block: &str| {
+        block
+            .lines()
+            .filter(|l| l.trim_start().starts_with("- "))
+            .count() as u32
+    };
+    on_progress(SupervisorEvent::PlanningContext {
+        persona: !persona_block.is_empty(),
+        memories: count_items(&memories_block),
+        skills: count_items(&skills_block),
+        files: count_items(&attached_files_block),
+    });
     let context = render_planner_context(
         persona_block,
         memories_block,
@@ -886,20 +910,21 @@ const PLAN_SEARCH_ROUNDS: usize = 2;
 /// Hard cap on total LLM calls (search rounds + corrections + violations).
 const PLAN_MAX_CALLS: usize = 6;
 /// Cross-cutting tools retrieval misses disproportionately — always visible.
-/// Only `memory_search` qualifies: user context must be recalled before
-/// acting on nearly every goal. `web_search` is deliberately NOT core — it
-/// lives in the catalog like any other tool, so the planner must surface it
-/// through search instead of lazily defaulting to it (sessions 37–39: with
-/// web_search always visible, the planner planned it for goals covered by
-/// specialist tools like get_weather). Consequence: with the catalog truly
-/// unavailable, almost no goal is plannable — fail fast beats a low-quality
-/// generic answer.
+/// `memory_search`: user context must be recalled before acting on nearly
+/// every goal. `web_search`: goals about current events, markets, and news
+/// must always be able to plan an up-to-date-information step even when
+/// catalog retrieval ranks only domain specialists (measured: the cosine
+/// gate crowds the generic web_search description out of crypto/market
+/// queries). The planner prompt carries the counterweight guidance — prefer
+/// a specialist when one covers the goal — so web_search is planned when the
+/// goal genuinely needs fresh web data, not as a lazy default for every
+/// goal.
 /// All of them are DIRECTLY dispatchable toolset tools. Internal-dispatch
 /// subagent tools (deep_write, draft_document, plan_task, plan_revise,
 /// artifact_recall) are deliberately absent — the scheduler executes steps
 /// via `ToolSet::execute`, where those tools return an "unavailable here"
 /// error text instead of doing their work.
-const PLAN_CORE_TOOLS: [&str; 1] = ["memory_search"];
+const PLAN_CORE_TOOLS: [&str; 2] = ["memory_search", "web_search"];
 /// Subagent/internal-dispatch tools: excluded from the supervisor registry
 /// entirely so the planner can neither see nor plan against them. Must stay
 /// in sync with `examples/catalog_composition::NON_DISPATCHABLE_TOOLS` —

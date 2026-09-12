@@ -58,6 +58,15 @@ export type SupervisorEvent =
       type: "planningActivity";
       text: string;
     }
+  | {
+      /** Personal context loaded into the planner call — surfaced so the UI
+       *  can show what personalizes this run. */
+      type: "planningContext";
+      persona: boolean;
+      memories: number;
+      skills: number;
+      files: number;
+    }
   | { type: "planRevising"; failedStepIds: string[]; attempt: number }
   | {
       type: "planRevised";
@@ -145,8 +154,12 @@ export interface SupervisorPlanState {
     provider: string;
     searching: boolean;
     tools: string[];
+    /** Tool-catalog search queries the planner issued (planningToolSearch). */
+    queries: string[];
     /** Trailing slice of the planner's reasoning (planningActivity). */
     activity?: string;
+    /** Personal context loaded into the planner call (planningContext). */
+    context?: { persona: boolean; memories: number; skills: number; files: number };
   } | null;
   /** Wall-clock plan start (planStarted) and terminal time — drive the
    *  workbench card's total-duration timer. */

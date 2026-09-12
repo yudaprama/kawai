@@ -293,7 +293,13 @@ export function supervisorReducer(
     case "planningStarted": {
       return {
         ...state,
-        planning: { round: 1, provider: "", searching: true, tools: state.planning?.tools ?? [] },
+        planning: {
+          round: 1,
+          provider: "",
+          searching: true,
+          tools: [],
+          queries: [],
+        },
       };
     }
     case "planningRound": {
@@ -304,7 +310,9 @@ export function supervisorReducer(
           provider: event.provider,
           searching: event.searching,
           tools: state.planning?.tools ?? [],
+          queries: state.planning?.queries ?? [],
           activity: state.planning?.activity,
+          context: state.planning?.context,
         },
       };
     }
@@ -316,7 +324,9 @@ export function supervisorReducer(
           provider: state.planning?.provider ?? "",
           searching: true,
           tools: event.tools,
+          queries: event.queries.length > 0 ? event.queries : (state.planning?.queries ?? []),
           activity: state.planning?.activity,
+          context: state.planning?.context,
         },
       };
     }
@@ -325,6 +335,21 @@ export function supervisorReducer(
       return {
         ...state,
         planning: { ...state.planning, activity: event.text },
+      };
+    }
+    case "planningContext": {
+      if (!state.planning) return state;
+      return {
+        ...state,
+        planning: {
+          ...state.planning,
+          context: {
+            persona: event.persona,
+            memories: event.memories,
+            skills: event.skills,
+            files: event.files,
+          },
+        },
       };
     }
     // planRevising already handled; fallback identity
