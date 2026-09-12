@@ -37,21 +37,37 @@ export function FollowUpChips({
 }
 
 /** The single quote indicator (PLAN-workbench-multi-run-ux.md): rendered
- *  ONLY when a quote is armed — chips are the only way to arm it, ✕ disarms.
- *  No second opt-in entry point. */
+ *  when a quote is armed — chips arm the default (previous deliverable),
+ *  an explicit "build on this" pick arms a specific past run. ✕ disarms
+ *  whichever is active. */
 export function ComposerQuoteBadge({ workbench }: { workbench: ReturnType<typeof useWorkbench> }) {
-  if (!workbench.followUp || !workbench.composing) return null;
-  const title = workbench.supervisor.goal ?? "previous deliverable";
+  if (!workbench.composing) return null;
+  const target = workbench.quoteTarget;
+  if (!workbench.followUp && target == null) return null;
+  const title = target?.goal ?? (workbench.supervisor.goal ?? "previous deliverable");
+  const runNum = target != null ? workbench.runs.findIndex((r) => r.id === target.id) + 1 : 0;
+  const label =
+    target != null && runNum > 0 ? `Will include: Run ${runNum} — “${title}”` : "Will include the previous deliverable";
   return (
     <div className="text-muted-foreground mb-2 flex items-center gap-1.5 font-mono text-[11px]">
       <CornerDownRightIcon className="size-3 shrink-0" />
-      <span className="min-w-0 truncate" title={`Will include: “${title}” (previous deliverable)`}>
-        Will include the previous deliverable
+      <span
+        className="min-w-0 truncate"
+        title={
+          target != null && runNum > 0
+            ? `Will include the deliverable of Run ${runNum}: “${title}”`
+            : `Will include: “${title}” (previous deliverable)`
+        }
+      >
+        {label}
       </span>
       <button
-        aria-label="Do not include the previous deliverable"
+        aria-label="Do not include the deliverable"
         className="hover:text-foreground shrink-0"
-        onClick={() => workbench.setFollowUp(false)}
+        onClick={() => {
+          workbench.setFollowUp(false);
+          workbench.setQuoteTarget(null);
+        }}
         type="button"
       >
         <XIcon className="size-3" />

@@ -30,12 +30,14 @@ export function GoalComposer({
   )
     ? "submitted"
     : "ready";
+  const isGenerating = composerStatus === "submitted";
 
   return (
     <>
       <ChatComposer
         agentName="Workbench"
         chipDraft={chipDraft}
+        disabled={isGenerating}
         lastUserText={null}
         onAddFiles={onAddFiles}
         onAddLink={onAddLink}

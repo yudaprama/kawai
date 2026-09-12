@@ -447,7 +447,7 @@ pub async fn plan_task(
     let remote = Some(
         remote_llm::RemoteLlm::from_env()
             .map(|r| {
-                r.with_output_cap(2_500)
+                r.with_output_cap(4_000)
                     .with_agent("planner")
                     .with_conversation(format!("kawai-session-{session_id}"))
                     .with_user(user_id)
@@ -514,6 +514,25 @@ pub async fn plan_task(
     } else {
         format!("{context}\n\nUser goal:\n{goal}")
     };
+    // Follow-up runs (the workbench's "build on this") quote an EXCERPT of a
+    // previous deliverable into the goal. The excerpt alone caused fabricated
+    // numbers (session 102: the planner invented equity/risk/SL and a
+    // hardcoded `calculate` expression) because the earlier run's real
+    // parameters lived in its full deliverable and step reports — readable
+    // via `session_step_results`, which the planner neither knew about nor
+    // discovered through search. Tell it explicitly, keyed off the same tag
+    // the frontend's buildQuotedGoal emits.
+    if goal.contains("<previous-deliverable") {
+        task.push_str(
+            "\n\n<system-note>The <previous-deliverable> block above is an EXCERPT of an earlier run's final answer. \
+Its FULL body (tool 'deliverable_writer') and every step report of that and other runs in this session are readable \
+via the always-available `session_step_results` tool. If the goal depends on details NOT visible in the excerpt \
+(numbers, entry/stop levels, risk parameters, names, dates), plan a FIRST step that reads them via \
+`session_step_results` and pass them onward with `fromStep` — never guess or invent user-specific values \
+(equity, risk %, stop-loss distance); source them from that read, from another step's artifact, or from \
+`memory_search`.</system-note>",
+        );
+    }
     let mut materials = String::new();
     let mut seen: std::collections::HashSet<String> = core_tools.iter().cloned().collect();
     let mut usage = remote_llm::RemoteUsage::default();
@@ -924,7 +943,7 @@ const PLAN_MAX_CALLS: usize = 6;
 /// artifact_recall) are deliberately absent — the scheduler executes steps
 /// via `ToolSet::execute`, where those tools return an "unavailable here"
 /// error text instead of doing their work.
-const PLAN_CORE_TOOLS: [&str; 2] = ["memory_search", "web_search"];
+const PLAN_CORE_TOOLS: [&str; 3] = ["memory_search", "web_search", "session_step_results"];
 /// Subagent/internal-dispatch tools: excluded from the supervisor registry
 /// entirely so the planner can neither see nor plan against them. Must stay
 /// in sync with `examples/catalog_composition::NON_DISPATCHABLE_TOOLS` —
@@ -967,6 +986,9 @@ Plan rules:
 - Be concise overall: no prose outside the JSON, no repeated context.
 - "dependsOn" lists step ids that must finish first; no cycles.
 - To pass a previous step's artifact: {{"fromStep": "<step id>", "output": "<artifact name>"}} — never paste large content.
+- NEVER hardcode user-specific numbers (equity, risk %, prices, levels, dates)
+  into step arguments — source them from a step artifact ("fromStep"), the
+  quoted earlier run via "session_step_results", or "memory_search".
 - "produces" names the artifacts a step emits for later steps.
 - Side-effect tools MUST set "requiresConfirmation": true with a short "confirmationDescription".
 - "onError" is one of "fail", "skip", "continue". Default "fail".
@@ -1653,7 +1675,7 @@ async fn revise_plan(
     let remote = remote_llm::RemoteLlm::from_env()
         .map(|r| {
             let mut r = r
-                .with_output_cap(2_500)
+                .with_output_cap(4_000)
                 .with_agent("planner")
                 .with_conversation(format!("kawai-session-{session_id}"))
                 .with_user(user_id);

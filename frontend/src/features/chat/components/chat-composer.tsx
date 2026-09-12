@@ -37,6 +37,8 @@ type ChatComposerProps = {
   /** Placeholder override (e.g. the workbench contextual follow-up hint). */
   placeholder?: string;
   onDraftConsumed?: () => void;
+  /** Disabled state — true when generation is in progress. */
+  disabled?: boolean;
   /** Supervisor plan mode: submits route to the planner instead of the agent. */
 };
 
@@ -52,12 +54,14 @@ export function ChatComposer({
   chipDraft,
   onDraftConsumed,
   placeholder,
+  disabled,
 }: ChatComposerProps) {
   return (
     <PromptInputProvider>
       <ChatComposerInner
         agentName={agentName}
         chipDraft={chipDraft}
+        disabled={disabled}
         onDraftConsumed={onDraftConsumed}
         placeholder={placeholder}
         onStop={onStop}
@@ -84,6 +88,7 @@ function ChatComposerInner({
   chipDraft,
   onDraftConsumed,
   placeholder,
+  disabled,
 }: ChatComposerProps) {
   const controller = usePromptInputController();
   const [mentions, setMentions] = useState<KnowledgeFileInfo[]>([]);
@@ -273,7 +278,7 @@ function ChatComposerInner({
       <PromptInputBody>
         <PromptInputTextarea
           data-chat-composer=""
-          disabled={importProgress !== null}
+          disabled={disabled || importProgress !== null}
           placeholder={
             importProgress
               ? `Importing images… ${importProgress.done}/${importProgress.total}`

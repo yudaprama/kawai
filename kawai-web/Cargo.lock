@@ -1890,6 +1890,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "kawai-constants",
+ "kawai-http-client",
  "kawai-http-common",
  "kawai-tools",
  "reqwest 0.13.4",

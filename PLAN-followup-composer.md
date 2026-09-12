@@ -125,8 +125,10 @@ sudah dari pesan pertama. Maka frontend menyimpan DUA string saat `followUp` akt
   `execute_supervisor_plan`, judul run di UI, plan record yang dipersist, dan jalur
   title-seeding. Quote TIDAK BOLEH sampai ke sini.
 
-Excerpt di-quote setelah di-sanitize (keputusan #11): strip semua kemunculan
-`<previous-deliverable>` / `</previous-deliverable>` dari excerpt sebelum dibungkus.
+Excerpt di-quote setelah di-sanitize (keputusan #11): strip semua varian tag
+`<previous-deliverable>`/`</previous-deliverable>` — toleran whitespace/case,
+atribut pada tag pembuka, dan tag setengah-terbuka di akhir source — lalu setelah
+cap 800 chars di-strip ulang, agar hasil slice tidak pernah membawa tag lolos.
 
 Sumber excerpt & `fullLen`: `planCompleted.final_output` TIDAK di-cap di wire
 (`supervisor.rs` — cap 2000 chars hanya untuk `stepCompleted` per-step), jadi frontend

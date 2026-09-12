@@ -2,6 +2,7 @@ import {
   CheckCircle2Icon,
   ChevronDownIcon,
   CircleXIcon,
+  CornerDownRightIcon,
   FileTextIcon,
   LoaderCircleIcon,
   PlayIcon,
@@ -172,10 +173,14 @@ function reportable(step: SupervisorStep, live: boolean): boolean {
  *  run's stored planKey. */
 export function RunHistoryRail({
   runs,
+  onBuildOn,
   onOpenDeliverable,
   onOpenStep,
 }: {
   runs: WorkbenchRun[];
+  /** "Build on this": arm this run's deliverable as the follow-up quote
+   *  target. Only offered for completed runs with a quotable deliverable. */
+  onBuildOn?: (run: WorkbenchRun) => void;
   onOpenDeliverable: (runId: string) => void;
   onOpenStep: (runId: string, stepId: string) => void;
 }) {
@@ -231,14 +236,27 @@ export function RunHistoryRail({
                         <div className="text-muted-foreground font-mono text-xs">No steps were recorded.</div>
                       )}
                       {(r.outputFull != null || r.outputPreview != null) && (
-                        <button
-                          className="text-muted-foreground hover:text-primary mt-1 inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
-                          onClick={() => onOpenDeliverable(r.id)}
-                          type="button"
-                        >
-                          <FileTextIcon className="size-3" />
-                          deliverable
-                        </button>
+                        <div className="mt-1 flex items-center gap-3">
+                          <button
+                            className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                            onClick={() => onOpenDeliverable(r.id)}
+                            type="button"
+                          >
+                            <FileTextIcon className="size-3" />
+                            deliverable
+                          </button>
+                          {onBuildOn != null && r.status === "completed" && r.outputFull != null && r.planKey != null && (
+                            <button
+                              className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                              onClick={() => onBuildOn(r)}
+                              title={`Arm “${r.goal}” as the follow-up context`}
+                              type="button"
+                            >
+                              <CornerDownRightIcon className="size-3" />
+                              build on this
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   );

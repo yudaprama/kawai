@@ -5,7 +5,7 @@
  * per-step fetch/cache/render and AGENT REPORTS grid logic — the root cause
  * of the StrictMode deadlock and renderer-mismatch bugs.
  */
-import { FileTextIcon, LoaderCircleIcon } from "lucide-react";
+import { CornerDownRightIcon, FileTextIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { renderStepReport } from "@/features/workbench/components/tool-views";
@@ -136,16 +136,34 @@ export function AgentReportsSwitcher({
   reports,
   hasDeliverable,
   onPickDoc,
+  onBuildOn,
 }: {
   activeDoc: string;
   reports: { stepId: string; label: string }[];
   hasDeliverable: boolean;
   onPickDoc: (doc: string) => void;
+  /** When set (past-run canvas), the deliverable row becomes the
+   *  "build on this" action — arm the run's deliverable as the follow-up
+   *  quote target. Returning to the "final" doc stays possible via the
+   *  run switcher (picking a run resets doc to "final"). */
+  onBuildOn?: () => void;
 }) {
   if (reports.length === 0) return null;
   return (
     <div className="space-y-4">
-      {hasDeliverable && (
+      {hasDeliverable &&
+        (onBuildOn != null ? (
+          <button
+            className="text-foreground hover:border-primary/60 hover:bg-primary/5 flex w-full items-center gap-2 rounded-lg border px-3 py-2.5 font-mono text-xs transition-colors"
+            onClick={onBuildOn}
+            title="Arm this deliverable as the follow-up context"
+            type="button"
+          >
+            <CornerDownRightIcon className="text-primary size-3.5 shrink-0" />
+            <span className="font-bold">Build on this</span>
+            <span className="text-muted-foreground ml-auto truncate font-normal">follow up from this run</span>
+          </button>
+        ) : (
         <button
           aria-pressed={activeDoc === "final"}
           className={`text-foreground flex w-full items-center gap-2 rounded-lg border px-3 py-2.5 font-mono text-xs transition-colors ${
@@ -158,7 +176,7 @@ export function AgentReportsSwitcher({
           <span className="font-bold">Deliverable</span>
           <span className="text-muted-foreground ml-auto truncate font-normal">final output</span>
         </button>
-      )}
+        ))}
       <div className="rounded-lg border p-4">
         <h4 className="text-muted-foreground mb-3 text-center font-mono text-sm tracking-[0.2em]">AGENT REPORTS</h4>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

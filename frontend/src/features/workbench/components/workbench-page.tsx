@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { ChatComposer } from "@/features/chat/components/chat-composer";
 import { isDeliverableStep, useWorkbench } from "@/features/workbench/hooks/use-workbench";
+import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 
 import { DeliverableViewer, PastRunCanvas, RunHistory, RunSwitcher } from "./deliverable-viewer";
 import type { CanvasView } from "./deliverable-viewer";
@@ -108,6 +109,12 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
     workbench.setFollowUp(true);
     setChipDraft({ text, nonce: Date.now() });
   };
+  // "Build on this": arm the run as the follow-up quote target. The badge
+  // above the composer shows the pick; ✕ on the badge disarms it.
+  const buildOn = (run: WorkbenchRun) => {
+    workbench.setFollowUp(false);
+    workbench.setQuoteTarget(run);
+  };
   const submit = (text: string, fileIds?: string[]) => {
     if (!text.trim()) return;
     // A plan awaiting review owns the rail — new goals wait until it is run
@@ -197,6 +204,7 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
       <aside className="border-border/60 hidden w-96 shrink-0 flex-col border-r lg:flex">
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <RunHistoryRail
+            onBuildOn={buildOn}
             onOpenDeliverable={(runId) => userPick(runId, "final")}
             onOpenStep={(runId, stepId) => userPick(runId, stepId)}
             runs={workbench.runs}
@@ -267,6 +275,7 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
                     <PastRunCanvas
                       doc={view?.doc ?? "final"}
                       loadFullOutput={workbench.loadFullOutput}
+                      onBuildOn={buildOn}
                       onPickDoc={(d) => userPick(shown.id, d)}
                       run={shown}
                     />

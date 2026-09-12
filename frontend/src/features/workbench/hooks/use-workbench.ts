@@ -33,19 +33,38 @@ export const FOLLOW_UP_CHIPS: FollowUpChip[] = [
 
 /** The excerpt is LLM-generated content quoted verbatim into the planner's
  *  goal — a deliverable containing the block's own tags could spoof the
- *  boundary. Strip them before wrapping (decision #11). */
-export function sanitizeDeliverableExcerpt(excerpt: string): string {
-  return excerpt.split("<previous-deliverable>").join("").split("</previous-deliverable>").join("");
+ *  boundary. Strip them before wrapping (decision #11). Matches every spoof
+ *  shape, not just the exact tags: whitespace/case variants
+ *  (`< previous-deliverable>`, `</PREVIOUS-DELIVERABLE >`), attribute-carrying
+ *  openers, and a half-open tag the source itself ends with (the `$` arm).
+ *  When `maxChars` is given the strip runs before AND after the cap — a slice
+ *  must never ship unstripped output. */
+const DELIVERABLE_TAG_RE = /<\s*\/?\s*previous-deliverable\b[^>]*(>|$)/gi;
+
+export function sanitizeDeliverableExcerpt(excerpt: string, maxChars?: number): string {
+  const stripped = excerpt.replace(DELIVERABLE_TAG_RE, "");
+  const capped = maxChars == null ? stripped : stripped.slice(0, maxChars);
+  return capped.replace(DELIVERABLE_TAG_RE, "");
 }
 
 const QUOTE_EXCERPT_MAX_CHARS = 800;
 
 /** Build the goal string sent to `plan_task`: the self-describing quote
  *  block plus the user's verbatim goal. The clean goal NEVER enters here —
- *  callers keep it separate for userGoal/title/plan record (decision #10). */
-export function buildQuotedGoal(opts: { goal: string; excerpt: string; planKey: string; sessionId: number }): string {
-  const excerpt = sanitizeDeliverableExcerpt(opts.excerpt).slice(0, QUOTE_EXCERPT_MAX_CHARS);
-  return `<previous-deliverable planKey="${opts.planKey}" session="${opts.sessionId}" chars="${opts.excerpt.length}">\n${excerpt}\n</previous-deliverable>\n\n<user-goal>\n${opts.goal}\n</user-goal>`;
+ *  callers keep it separate for userGoal/title/plan record (decision #10).
+ *  `indirect` marks a quote whose target is NOT the immediately preceding
+ *  run (explicit "build on this" pick) so the planner never mistakes it for
+ *  the latest deliverable. */
+export function buildQuotedGoal(opts: {
+  goal: string;
+  excerpt: string;
+  planKey: string;
+  sessionId: number;
+  indirect?: boolean;
+}): string {
+  const excerpt = sanitizeDeliverableExcerpt(opts.excerpt, QUOTE_EXCERPT_MAX_CHARS);
+  const chain = opts.indirect ? ' chain="indirect"' : "";
+  return `<previous-deliverable planKey="${opts.planKey}" session="${opts.sessionId}" chars="${opts.excerpt.length}"${chain}>\n${excerpt}\n</previous-deliverable>\n\n<user-goal>\n${opts.goal}\n</user-goal>`;
 }
 
 /** One past/current run in the desk's history list (in-memory for S1; S2
@@ -139,6 +158,11 @@ export function useWorkbench() {
   // Follow-up intent (Fase 2): explicit UI state, never regex. True only via
   // chip click or the "include quote" suggestion; reset after every submit.
   const [followUp, setFollowUp] = useState(false);
+  // Explicit quote target ("build on this"): when set, the follow-up quote
+  // is sourced from THIS run instead of the live supervisor state — the
+  // follow-up may reference any past run, not just the latest. Cleared at
+  // submit (pinned before the planner starts) and on terminal/session reset.
+  const [quoteTarget, setQuoteTarget] = useState<WorkbenchRun | null>(null);
   // True when the current/last run was submitted with a quote — drives the
   // previous-run rail (Fase 4). Ephemeral like everything here.
   const [quotedLastRun, setQuotedLastRun] = useState(false);
@@ -252,7 +276,13 @@ export function useWorkbench() {
       const trimmed = goal.trim();
       if (!trimmed) return;
       setFollowUp(false);
-      const quote = opts?.quote === true;
+      // Pin the explicit target BEFORE any await — the planner must quote
+      // exactly what the user armed, not whatever completes later.
+      const target = quoteTarget;
+      const targetUsable =
+        target != null && target.status === "completed" && target.outputFull != null && target.planKey != null;
+      setQuoteTarget(null);
+      const quote = opts?.quote === true || targetUsable;
       setQuotedLastRun(quote);
       // Sessions are lazy — create on first desk run. Workbench runs live in
       // their own session so chat history stays chat.
@@ -295,21 +325,33 @@ export function useWorkbench() {
       ]);
       // Quoted vs clean (decision #10): the planner receives the quote block
       // + goal; userGoal, the runs list, and all persisted records keep the
-      // clean verbatim form. The quote is built only from the live supervisor
-      // state — the full deliverable, uncapped (STEP_EVENT_OUTPUT_MAX_CHARS
-      // only bounds per-step events, not planCompleted.final_output).
-      const quoteable = quote && canFollowUp && supervisor.planKey != null && sid != null;
-      const quotedGoal = quoteable
-        ? buildQuotedGoal({
-            goal: trimmed,
-            excerpt: supervisor.finalOutput ?? "",
-            planKey: supervisor.planKey ?? "",
-            sessionId: sid ?? 0,
-          })
-        : trimmed;
+      // clean verbatim form. Quote source: the pinned quoteTarget when armed
+      // (explicit "build on this" — any past run with a deliverable), else
+      // the live supervisor state (immediate predecessor) — the full
+      // deliverable, uncapped (STEP_EVENT_OUTPUT_MAX_CHARS only bounds
+      // per-step events, not planCompleted.final_output).
+      const quoteable = quote && sid != null && (targetUsable || (canFollowUp && supervisor.planKey != null));
+      const lastCompletedId = [...runs].reverse().find((r) => r.status === "completed")?.id;
+      const indirect = targetUsable && target.id !== lastCompletedId;
+      const quotedGoal = !quoteable
+        ? trimmed
+        : targetUsable
+          ? buildQuotedGoal({
+              goal: trimmed,
+              excerpt: target.outputFull ?? "",
+              planKey: target.planKey ?? "",
+              sessionId: sid ?? 0,
+              indirect,
+            })
+          : buildQuotedGoal({
+              goal: trimmed,
+              excerpt: supervisor.finalOutput ?? "",
+              planKey: supervisor.planKey ?? "",
+              sessionId: sid ?? 0,
+            });
       await supervisor.planAndRun(quotedGoal, sid, "auto", trimmed);
     },
-    [sessionId, supervisor, canFollowUp],
+    [sessionId, supervisor, canFollowUp, quoteTarget, runs],
   );
 
   /** The just-started run's goal lands in `runs` via `run()`; keep the latest
@@ -364,6 +406,8 @@ export function useWorkbench() {
     quotedLastRun,
     canFollowUp,
     dynamicChips,
+    quoteTarget,
+    setQuoteTarget,
     /** "New session": the ONLY reset — the next run gets a fresh session and
      *  recalls nothing from these runs. Named for what it actually does. */
     startNewSession: () => {
@@ -371,6 +415,7 @@ export function useWorkbench() {
       setRuns([]);
       setFollowUp(false);
       setQuotedLastRun(false);
+      setQuoteTarget(null);
       setDynamicChips([]);
     },
   };

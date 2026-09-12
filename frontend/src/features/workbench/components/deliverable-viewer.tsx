@@ -1,4 +1,4 @@
-import { CheckCircle2Icon, CircleXIcon, LoaderCircleIcon, ZapIcon } from "lucide-react";
+import { CheckCircle2Icon, CircleXIcon, CornerDownRightIcon, LoaderCircleIcon, ZapIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -71,11 +71,15 @@ export function PastRunCanvas({
   onPickDoc,
   run,
   doc,
+  onBuildOn,
 }: {
   loadFullOutput: (stepId: string, planKey?: string) => Promise<string | null>;
   onPickDoc: (doc: string) => void;
   run: WorkbenchRun;
   doc: string;
+  /** "Build on this": arm this run's deliverable as the follow-up quote
+   *  target. Only offered when the run has a quotable deliverable. */
+  onBuildOn?: (run: WorkbenchRun) => void;
 }) {
   const reportableSteps = (run.steps ?? []).filter((s) => s.state === "completed" || s.state === "failed");
   const isDeliverable = doc === "final";
@@ -103,9 +107,22 @@ export function PastRunCanvas({
               <span className="text-muted-foreground text-sm font-normal">— {docStepLabel} report</span>
             )}
           </h3>
-          <div className="text-muted-foreground mt-1 font-mono text-sm">
-            {new Date(run.startedAt).toLocaleString()}
-            {run.stepsTotal != null && ` · ${run.stepsDone ?? 0}/${run.stepsTotal} steps`}
+          <div className="text-muted-foreground mt-1 flex items-center gap-3 font-mono text-sm">
+            <span>
+              {new Date(run.startedAt).toLocaleString()}
+              {run.stepsTotal != null && ` · ${run.stepsDone ?? 0}/${run.stepsTotal} steps`}
+            </span>
+            {onBuildOn != null && run.status === "completed" && run.outputFull != null && run.planKey != null && (
+              <button
+                className="hover:text-primary inline-flex items-center gap-1 font-mono text-[11px] hover:underline"
+                onClick={() => onBuildOn(run)}
+                title={`Arm “${goalLabel}” as the follow-up context`}
+                type="button"
+              >
+                <CornerDownRightIcon className="size-3" />
+                build on this
+              </button>
+            )}
           </div>
         </div>
 
@@ -133,6 +150,11 @@ export function PastRunCanvas({
         <AgentReportsSwitcher
           activeDoc={doc}
           hasDeliverable={deliverableBody != null}
+          onBuildOn={
+            onBuildOn != null && run.status === "completed" && run.outputFull != null && run.planKey != null
+              ? () => onBuildOn(run)
+              : undefined
+          }
           onPickDoc={onPickDoc}
           reports={reportableSteps.map((s) => ({ stepId: s.stepId, label: s.task || s.tool }))}
         />
