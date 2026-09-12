@@ -369,8 +369,12 @@ curl -s ".../api/datasources/proxy/uid/grafanacloud-traces/api/traces/<traceID>"
 ```
 
 Managed stack details (Tempo host, ds uid `grafanacloud-traces`,
-`grafanacloud-prom`) are discoverable with `gcx cloud stacks get <slug>`
-(needs `gcx cloud login` when its OAuth expires).
+`grafanacloud-prom`, Loki `grafanacloud-logs`) are discoverable with
+`gcx cloud stacks get <slug>` (needs `gcx cloud login` when its OAuth
+expires — tokens expire after a few hours). Grafana's own OAuth also
+expires; `gcx cloud login` again fixes both. The glsa service-account
+token in `.env` (`GRAFANA_SERVICE_ACCOUNT_TOKEN`, Admin role) is used by
+the stack-proxy queries above and needs no refresh.
 
 ### Plumbing notes (why it silently failed before — do not regress)
 
@@ -386,6 +390,25 @@ Managed stack details (Tempo host, ds uid `grafanacloud-traces`,
   `cargo test -p kawai-telemetry span_export` asserts a POST actually arrives.
 - Console noise: the tracing subscriber defaults to `INFO`; set `RUST_LOG`
   to go deeper.
+
+### Metrics catalog (already exported — dashboard-ready)
+
+| Metric | Type | Labels |
+|---|---|---|
+| `gen_ai_client_operation_duration` | histogram (s) | `gen_ai_agent_name`, `gen_ai_provider_name`, `gen_ai_request_model`, `gen_ai_operation_name` |
+| `gen_ai_client_token_usage` | counter | same + `gen_ai_token_type` (input/output) |
+| `kawai_remote_failover` | counter | `from_provider`, `reason` (transport / rate_limited / server_error / empty / client_error / stream_error) |
+| `kawai_remote_reasoning_overflow` | counter | `provider` |
+
+Example PromQL (latency p50/p95 per role, 5m window):
+
+    histogram_quantile(0.50, sum by (le, gen_ai_agent_name) (rate(gen_ai_client_operation_duration_bucket[5m])))
+    histogram_quantile(0.95, sum by (le, gen_ai_agent_name) (rate(gen_ai_client_operation_duration_bucket[5m])))
+    sum by (reason) (increase(kawai_remote_failover[1h]))
+
+A latency dashboard (p50/p95 per role, failover/overflow counters, token
+usage) can be imported as a Grafana dashboard JSON built on exactly these
+queries — no new instrumentation required.
 
 ### Evidence queries (channel A — what gcx can see)
 
