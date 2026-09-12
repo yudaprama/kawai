@@ -209,6 +209,7 @@ pub fn run() {
         commands::office_bind_template,
         commands::office_peek_template,
         commands::office_read_document,
+        commands::office_read_deck,
         commands::office_export_file,
         commands::office_capabilities,
         commands::office_index_file,

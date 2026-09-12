@@ -15,6 +15,7 @@ import { MemoryAssetPage } from "@/features/memory/components/memory-page";
 import { SkillsAssetPage } from "@/features/skills/components/skills-page";
 import { WikiAssetPage } from "@/features/assets/pages/wiki-page";
 import { SqlSourcesAssetPage } from "@/features/assets/pages/sql-sources-page";
+import { DeckDemoPage } from "@/features/deck-preview/pages/deck-demo-page";
 import { WalletPage } from "@/features/wallet/components/wallet-page";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
 
@@ -178,6 +179,8 @@ export default function App() {
       />
     ) : assetView === "wallet" ? (
       <WalletPage onBack={() => setAssetView(null)} />
+    ) : assetView === "deck-preview" ? (
+      <DeckDemoPage onBack={() => setAssetView(null)} />
     ) : null;
 
   return (

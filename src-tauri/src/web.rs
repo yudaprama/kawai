@@ -1296,6 +1296,21 @@ async fn office_read_document_handler(
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct OfficeReadDeckRequest {
+    file_id: String,
+}
+
+async fn office_read_deck_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<OfficeReadDeckRequest>,
+) -> Result<Json<logic::office::ReadDeckResult>, (StatusCode, String)> {
+    let deck = logic::office::read_deck(&user_id, &req.file_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(deck))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct OfficeExportFileRequest {
     file_id: String,
     dest_path: Option<String>,
@@ -1724,6 +1739,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
             "/api/office_read_document",
             post(office_read_document_handler),
         )
+        .route("/api/office_read_deck", post(office_read_deck_handler))
         .route("/api/knowledge_context", post(knowledge_context_handler))
         .route("/api/office_index_file", post(office_index_file_handler))
         .route("/api/knowledge_search", post(knowledge_search_handler))

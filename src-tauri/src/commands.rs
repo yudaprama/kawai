@@ -973,6 +973,17 @@ pub async fn office_read_document(
     Ok(logic::office::ReadDocumentResult { markdown })
 }
 
+/// Authenticated RPC: read a stored deck split into lightweight preview
+/// fragments (theme CSS + sanitized section HTML — no reveal runtime).
+#[tauri::command]
+pub async fn office_read_deck(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::office::ReadDeckResult, String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::read_deck(&user_id, &file_id).map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: extract stored documents into a prompt-injectable
 /// context block (composer @-mention knowledge).
 #[tauri::command]

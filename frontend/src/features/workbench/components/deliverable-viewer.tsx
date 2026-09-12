@@ -3,8 +3,8 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FileIcon } from "@/components/shared/file-icon";
-import { FilePreview } from "@/components/shared/file-preview";
 import { Streamdown } from "@/lib/streamdown";
+import { DeckPreview } from "@/features/workbench/components/deck-preview";
 import { call, errText } from "@/lib/api";
 import { AgentReportsSwitcher, StepReportBody } from "@/features/workbench/components/shared-canvas";
 import { agentName, isDeliverableStep, type useWorkbench } from "@/features/workbench/hooks/use-workbench";
@@ -295,11 +295,10 @@ export function DeliverableViewer({
             <div className="text-muted-foreground flex items-center gap-2 font-mono text-[11px] uppercase">
               <ZapIcon className="size-3" /> Deck · {deckArtifact(workbench)!.label ?? "presentation"}
             </div>
-            <div className="h-[560px] overflow-hidden rounded-lg border">
-              <FilePreview
-                file={{ id: deckArtifact(workbench)!.handle!, name: deckArtifact(workbench)!.filename ?? "deck.html" }}
-              />
-            </div>
+            {/* Native slide preview — plain DOM fragments + theme CSS (a few
+                KB per slide). The full reveal.js deck opens in the browser via
+                "Open full deck" inside the preview; no iframe in the app. */}
+            <DeckPreview fileId={deckArtifact(workbench)!.handle!} />
           </div>
         )}
         {effective === "final" && !unseeded && supervisor.finalOutput != null && (
