@@ -146,12 +146,12 @@ Crypto market data and technical analysis on Binance spot.
 
 | Tool | Source | Notes |
 |------|--------|-------|
-| `binance_price` | `crates/toolsets/binance` | 24h price stats |
-| `binance_depth` | `crates/toolsets/binance` | Order book + derived spread/mid |
-| `binance_klines` | `crates/toolsets/binance` | Raw OHLCV candle data |
-| `binance_ta_analyze` | `crates/toolsets/binance` | Fetches klines + runs indicator suites in-process (ema/sma/rsi/macd/bb/atr + 12 more) |
-| `binance_balances` | `crates/toolsets/binance` | Signed read-only spot balances *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
-| `binance_open_orders` | `crates/toolsets/binance` | Signed read-only open orders *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
+| `crypto_price` | `crates/toolsets/binance` | 24h price stats |
+| `crypto_depth` | `crates/toolsets/binance` | Order book + derived spread/mid |
+| `crypto_klines` | `crates/toolsets/binance` | Raw OHLCV candle data |
+| `crypto_ta_analyze` | `crates/toolsets/binance` | Fetches klines + runs indicator suites in-process (ema/sma/rsi/macd/bb/atr + 12 more) |
+| `crypto_balances` | `crates/toolsets/binance` | Signed read-only spot balances *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
+| `crypto_open_orders` | `crates/toolsets/binance` | Signed read-only open orders *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
 | `web_read` | `webread` | Read a URL → markdown *(capability-probe: engine must exist)* |
 | `web_search` | `webread` | DuckDuckGo/Brave/Wikipedia SERP → enriched hits *(capability-probe: engine must exist)* |
 | `artifact_recall` | `agent.rs` | Page through oversized tool results from this turn |

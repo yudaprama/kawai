@@ -107,11 +107,11 @@ Keyless public spot market data + in-process TA. Also gets webread + runtime too
 
 | Tool | Purpose |
 |---|---|
-| `binance_price` | current price / 24hr ticker |
-| `binance_klines` | OHLCV candles |
-| `binance_depth` | order book |
-| `binance_ta_analyze` | indicator suite over klines |
-| `binance_balances` / `binance_open_orders` | read-only account tools — compiled **only** when `BINANCE_API_KEY` + `BINANCE_API_SECRET` are both set (never trade permission) |
+| `crypto_price` | current price / 24hr ticker |
+| `crypto_klines` | OHLCV candles |
+| `crypto_depth` | order book |
+| `crypto_ta_analyze` | indicator suite over klines |
+| `crypto_balances` / `crypto_open_orders` | read-only account tools — compiled **only** when `BINANCE_API_KEY` + `BINANCE_API_SECRET` are both set (never trade permission) |
 
 ## 6. Cross-cutting: web read/search — `crates/toolsets/webread`
 

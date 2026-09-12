@@ -238,13 +238,13 @@ const registry: Record<string, StepView> = {
   // calculation
   calculate: (p) => (isRecord(p) ? <CalculationView data={p} /> : null),
 
-  // binance (keyless market + TA)
-  binance_price: (p) => renderTicker24(p),
-  binance_klines: (p) => chart(binanceKlineSeries(p)),
-  binance_depth: (p) => renderBinanceDepth(p),
-  binance_ta_analyze: (p) => renderBinanceTa(p),
-  binance_balances: (p) => renderBinanceBalances(p),
-  binance_open_orders: (p) => renderBinanceOpenOrders(p),
+  // crypto (keyless market + TA)
+  crypto_price: (p) => renderTicker24(p),
+  crypto_klines: (p) => chart(binanceKlineSeries(p)),
+  crypto_depth: (p) => renderBinanceDepth(p),
+  crypto_ta_analyze: (p) => renderBinanceTa(p),
+  crypto_balances: (p) => renderBinanceBalances(p),
+  crypto_open_orders: (p) => renderBinanceOpenOrders(p),
 
   // analytics — data_* (polars over office store / sql)
   data_schema: (p) => renderDataSchema(p),

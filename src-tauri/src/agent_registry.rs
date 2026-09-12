@@ -500,7 +500,7 @@ mod tests {
             .iter()
             .map(|d| d.name.as_str())
             .collect();
-        assert!(names.contains(&"binance_price"), "{names:?}");
+        assert!(names.contains(&"crypto_price"), "{names:?}");
         assert!(names.contains(&"artifact_recall"), "{names:?}");
         assert!(
             !names.contains(&"deep_write"),

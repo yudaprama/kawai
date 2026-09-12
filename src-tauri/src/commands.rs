@@ -447,9 +447,13 @@ pub async fn skill_list(
 /// is a Tauri requirement for async commands holding `State`; it is always
 /// `Ok`.
 #[tauri::command]
-pub async fn suggest_followups(excerpt: String, session: State<'_, Session>) -> Result<Vec<String>, String> {
+pub async fn suggest_followups(
+    excerpt: String,
+    session_id: Option<i64>,
+    session: State<'_, Session>,
+) -> Result<Vec<String>, String> {
     let user_id = session_user_id(&session)?;
-    Ok(logic::suggest_followups(&user_id, excerpt).await)
+    Ok(logic::suggest_followups(&user_id, session_id, excerpt).await)
 }
 
 /// Authenticated RPC: fetch one skill including its body; None → null.

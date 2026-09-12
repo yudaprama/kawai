@@ -58,7 +58,7 @@ pub fn generate_activity(input: ActivityInput) -> impl Stream<Item = ActivityEve
 /// (pool empty, parse miss) degrades to an empty list and the frontend keeps
 /// its static chips. The excerpt is truncated here so even a caller passing
 /// the full deliverable stays within the local engine's materials budget.
-pub async fn suggest_followups(_user_id: &str, excerpt: String) -> Vec<String> {
+pub async fn suggest_followups(_user_id: &str, session_id: Option<i64>, excerpt: String) -> Vec<String> {
     const MAX_EXCERPT_CHARS: usize = 2000;
     const MAX_SUGGESTIONS: usize = 4;
     let excerpt: String = excerpt.chars().take(MAX_EXCERPT_CHARS).collect();
@@ -72,7 +72,15 @@ pub async fn suggest_followups(_user_id: &str, excerpt: String) -> Vec<String> {
          Return a JSON array of strings. Deliverable:\n{excerpt}",
         MAX_SUGGESTIONS
     );
-    let response = match remote_llm::reason::reason_as(system, &task, "followup-suggester").await {
+    let response = match remote_llm::reason::reason_in(
+        system,
+        &task,
+        "followup-suggester",
+        session_id.map(|id| format!("kawai-session-{id}")),
+        Some(_user_id.to_string()),
+    )
+    .await
+    {
         Ok(r) => r,
         Err(_) => return Vec::new(),
     };

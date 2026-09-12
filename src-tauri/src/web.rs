@@ -327,13 +327,14 @@ async fn skill_create_handler(
 #[serde(rename_all = "camelCase")]
 struct SuggestFollowupsReq {
     excerpt: String,
+    session_id: Option<i64>,
 }
 
 async fn suggest_followups_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<SuggestFollowupsReq>,
 ) -> Json<Vec<String>> {
-    Json(logic::suggest_followups(&user_id, req.excerpt).await)
+    Json(logic::suggest_followups(&user_id, req.session_id, req.excerpt).await)
 }
 
 async fn skill_list_handler(

@@ -435,6 +435,7 @@ pub async fn plan_task(
                 r.with_output_cap(2_500)
                     .with_agent("planner")
                     .with_conversation(format!("kawai-session-{session_id}"))
+                    .with_user(user_id)
             })
             .ok_or_else(|| "remote LLM is not configured".to_string())?,
     );
@@ -938,7 +939,7 @@ async fn run_tool_search(
     for (query, qvec) in queries.iter().zip(vecs) {
         block.push_str(&format!("\nquery: {query}\n"));
         // k=8 (was 6): the vector side is noisy — generic-description tools
-        // (binance_price, get_sector_performance, …) rank for nearly every
+        // (crypto_price, get_sector_performance, …) rank for nearly every
         // query, crowding the specialist tools out of the fused top-k. More
         // slots give BM25-side specialist hits room to survive the fusion.
         let hits = match catalog.search(query, &qvec, 8).await {
@@ -1408,6 +1409,43 @@ fn preview_chars(s: &str, max_chars: usize) -> &str {
     }
 }
 
+/// Emit the workflow-step record for a finished scheduler node and end its
+/// span (best-effort telemetry — never affects execution).
+fn finish_step_telemetry(
+    conversation: &str,
+    step_id: &str,
+    tool: &str,
+    parent_step_ids: Vec<String>,
+    started_at: std::time::SystemTime,
+    span: &mut kawai_telemetry::TelemetrySpan,
+    output: &str,
+    error: Option<String>,
+) {
+    let (trace_id, span_id) = span.context_ids();
+    span.end();
+    kawai_telemetry::record_workflow_step(kawai_telemetry::WorkflowStepRecord {
+        conversation_id: conversation.to_string(),
+        step_name: format!("{tool}:{step_id}"),
+        framework: "kawai-supervisor".into(),
+        started_at,
+        completed_at: std::time::SystemTime::now(),
+        input_state: serde_json::json!({ "step_id": step_id, "tool": tool }),
+        output_state: serde_json::json!({
+            "chars": output.chars().count(),
+            "preview": preview_chars(output, 1_000),
+        }),
+        error,
+        tags: vec![("tool".into(), tool.into())],
+        linked_generation_ids: kawai_telemetry::last_generation_id(conversation, tool)
+            .into_iter()
+            .collect(),
+        parent_step_ids,
+        agent_name: "kawai-supervisor".into(),
+        agent_version: env!("CARGO_PKG_VERSION").into(),
+        trace_span: Some((trace_id, span_id)),
+    });
+}
+
 fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> SupervisorEvent {
     let label = match &event {
         kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
@@ -1530,12 +1568,22 @@ async fn revise_plan(
     result: &kawai_router::ExecutionResult,
     registry: &ToolRegistry,
     session_id: i64,
+    user_id: &str,
+    run_span: Option<&Arc<Mutex<kawai_telemetry::TelemetrySpan>>>,
 ) -> Result<kawai_router::TaskPlan, String> {
     let remote = remote_llm::RemoteLlm::from_env()
         .map(|r| {
-            r.with_output_cap(2_500)
+            let mut r = r
+                .with_output_cap(2_500)
                 .with_agent("planner")
                 .with_conversation(format!("kawai-session-{session_id}"))
+                .with_user(user_id);
+            if let Some(rs) = run_span {
+                if let Ok(guard) = rs.lock() {
+                    r.with_span_parent(&guard);
+                }
+            }
+            r
         })
         .ok_or_else(|| "remote LLM is not configured".to_string())?;
     let core_tools = planner_core_tools(registry);
@@ -1639,7 +1687,13 @@ fn synthesis_materials(plan: &kawai_router::TaskPlan, result: &kawai_router::Exe
 /// One cloud call that turns the plan's step results into the user-facing
 /// answer for the goal. Returns `None` when the remote pool is unavailable
 /// or every candidate fails — the caller falls back to the raw tool output.
-async fn synthesize_final_answer(goal: &str, materials: &str, session_id: i64) -> Option<String> {
+async fn synthesize_final_answer(
+    goal: &str,
+    materials: &str,
+    session_id: i64,
+    user_id: &str,
+    run_span: Option<&Arc<Mutex<kawai_telemetry::TelemetrySpan>>>,
+) -> Option<String> {
     #[cfg(test)]
     {
         // The registry carries compiled-in vault keys, so this call would hit
@@ -1650,12 +1704,25 @@ async fn synthesize_final_answer(goal: &str, materials: &str, session_id: i64) -
     }
     #[cfg(not(test))]
     {
-        let remote = remote_llm::RemoteLlm::from_env()
+        let mut remote = remote_llm::RemoteLlm::from_env()
             .map(|r| {
                 r.with_output_cap(4_000)
                     .with_agent("deliverable-writer")
                     .with_conversation(format!("kawai-session-{session_id}"))
-            })?;
+                    .with_user(user_id)
+                    // DAG: the deliverable consumes the planner's plan —
+                    // link it to the planner's latest generation.
+                    .with_parent_agent("planner")
+            });
+        let remote = match (run_span, &mut remote) {
+            (Some(rs), Some(r)) => {
+                if let Ok(guard) = rs.lock() {
+                    r.with_span_parent(&guard);
+                }
+                remote
+            }
+            _ => remote,
+        }?;
         let system = "You are Kawai, a task-completion assistant. A deterministic supervisor just executed a \
             plan of tool steps toward the user's goal. Write the ANSWER to the user's goal from the step \
             results: lead with the answer, keep it concise markdown, and preserve facts/numbers exactly. \
@@ -1724,11 +1791,114 @@ pub fn execute_plan_stream_with_cancel(
             plan_key: plan_key(&plan),
         };
 
+        // ── Telemetry: one Tempo trace per run + one workflow step per node ──
+        // The run span roots the trace; every pool call inside (replan,
+        // deliverable) and every scheduler step nests under it, so a run is
+        // one trace from first step to deliverable (no silent gaps in Tempo).
+        let telemetry_conversation = format!("kawai-session-{session_id}");
+        let run_span = Arc::new(Mutex::new(kawai_telemetry::TelemetrySpan::start(
+            "supervisor.run",
+            vec![
+                (
+                    "kawai.goal".into(),
+                    preview_chars(&plan.goal, 200).to_string(),
+                ),
+                ("kawai.plan_key".into(), plan_key(&plan)),
+                ("kawai.step_count".into(), step_count.to_string()),
+                ("kawai.session_id".into(), session_id.to_string()),
+            ],
+        )));
+        // DAG edges between nodes, from the ORIGINAL plan (revised plans
+        // dispatch with empty parents — acceptable, noted limitation).
+        let parent_steps: HashMap<String, Vec<String>> = plan
+            .steps
+            .iter()
+            .map(|s| (s.id.clone(), s.depends_on.clone()))
+            .collect();
+        let step_spans: Arc<Mutex<HashMap<String, (kawai_telemetry::TelemetrySpan, std::time::SystemTime, String)>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
         let confirmation_stream_id = stream_id.clone();
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
-        let observer: kawai_router::SchedulerObserver = Arc::new(move |event| {
-            let _ = event_tx.send(event);
-        });
+        let observer: kawai_router::SchedulerObserver = {
+            let run_span = run_span.clone();
+            let step_spans = step_spans.clone();
+            let parent_steps = parent_steps.clone();
+            let conversation = telemetry_conversation.clone();
+            Arc::new(move |event| {
+                match &event {
+                    kawai_router::SchedulerEvent::StepStarted { step_id, tool } => {
+                        let span = run_span
+                            .lock()
+                            .expect("supervisor run span mutex")
+                            .start_child(
+                                format!("supervisor.step {tool}"),
+                                vec![
+                                    ("kawai.step_id".into(), step_id.clone()),
+                                    ("kawai.tool".into(), tool.clone()),
+                                ],
+                            );
+                        step_spans
+                            .lock()
+                            .expect("supervisor step spans mutex")
+                            .insert(step_id.clone(), (span, std::time::SystemTime::now(), tool.clone()));
+                    }
+                    kawai_router::SchedulerEvent::StepCompleted { step_id, output, .. } => {
+                        if let Some((mut span, started, tool)) =
+                            step_spans.lock().expect("supervisor step spans mutex").remove(step_id)
+                        {
+                            span.set_attr("kawai.outcome", "ok");
+                            finish_step_telemetry(
+                                &conversation,
+                                step_id,
+                                &tool,
+                                parent_steps.get(step_id).cloned().unwrap_or_default(),
+                                started,
+                                &mut span,
+                                output,
+                                None,
+                            );
+                        }
+                    }
+                    kawai_router::SchedulerEvent::StepFailed { step_id, error, .. } => {
+                        if let Some((mut span, started, tool)) =
+                            step_spans.lock().expect("supervisor step spans mutex").remove(step_id)
+                        {
+                            span.set_attr("kawai.outcome", "failed");
+                            finish_step_telemetry(
+                                &conversation,
+                                step_id,
+                                &tool,
+                                parent_steps.get(step_id).cloned().unwrap_or_default(),
+                                started,
+                                &mut span,
+                                "",
+                                Some(error.clone()),
+                            );
+                        }
+                    }
+                    kawai_router::SchedulerEvent::StepSkipped { step_id, reason } => {
+                        if let Some((mut span, started, tool)) =
+                            step_spans.lock().expect("supervisor step spans mutex").remove(step_id)
+                        {
+                            span.set_attr("kawai.outcome", "skipped");
+                            finish_step_telemetry(
+                                &conversation,
+                                step_id,
+                                &tool,
+                                parent_steps.get(step_id).cloned().unwrap_or_default(),
+                                started,
+                                &mut span,
+                                "",
+                                Some(reason.clone()),
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+                let _ = event_tx.send(event);
+            })
+        };
 
         // Confirmation gate: park until the frontend responds (or the plan
         // stream is dropped, which drops the receiver and fails the step).
@@ -1832,8 +2002,62 @@ pub fn execute_plan_stream_with_cancel(
                         let synthesis_goal = user_goal
                             .clone()
                             .unwrap_or_else(|| current_plan.goal.clone());
+                        let mut dl_span = run_span
+                            .lock()
+                            .expect("supervisor run span mutex")
+                            .start_child(
+                                "supervisor.deliverable_writer",
+                                vec![("kawai.step_id".into(), DELIVERABLE_STEP_ID.into())],
+                            );
+                        let dl_started = std::time::SystemTime::now();
                         let synthesized =
-                            synthesize_final_answer(&synthesis_goal, &materials, session_id).await;
+                            synthesize_final_answer(
+                                &synthesis_goal,
+                                &materials,
+                                session_id,
+                                &user_id,
+                                Some(&run_span),
+                            )
+                            .await;
+                        {
+                            let (trace_id, span_id) = dl_span.context_ids();
+                            dl_span.set_attr(
+                                "kawai.outcome",
+                                if synthesized.is_some() { "ok" } else { "fallback" },
+                            );
+                            dl_span.end();
+                            kawai_telemetry::record_workflow_step(kawai_telemetry::WorkflowStepRecord {
+                                conversation_id: telemetry_conversation.clone(),
+                                step_name: format!("{}:{}", DELIVERABLE_TOOL, DELIVERABLE_STEP_ID),
+                                framework: "kawai-supervisor".into(),
+                                started_at: dl_started,
+                                completed_at: std::time::SystemTime::now(),
+                                input_state: serde_json::json!({
+                                    "goal": preview_chars(&synthesis_goal, 500),
+                                    "steps": current_plan.steps.len(),
+                                }),
+                                output_state: serde_json::json!({
+                                    "chars": synthesized.as_deref().map(|w| w.chars().count())
+                                        .or_else(|| raw_final.as_deref().map(|w| w.chars().count()))
+                                        .unwrap_or(0),
+                                }),
+                                error: synthesized.is_none().then(|| "synthesis unavailable — raw output fallback".into()),
+                                tags: vec![("tool".into(), DELIVERABLE_TOOL.into())],
+                                linked_generation_ids: kawai_telemetry::last_generation_id(
+                                    &telemetry_conversation,
+                                    "deliverable-writer",
+                                )
+                                .into_iter()
+                                .collect(),
+                                parent_step_ids: parent_steps
+                                    .keys()
+                                    .cloned()
+                                    .collect::<Vec<_>>(),
+                                agent_name: "kawai-supervisor".into(),
+                                agent_version: env!("CARGO_PKG_VERSION").into(),
+                                trace_span: Some((trace_id, span_id)),
+                            });
+                        }
                         if let Some(answer) = &synthesized {
                             tracing::info!(component = "supervisor", chars = answer.chars().count(), "synthesis completed");
                         } else {
@@ -1891,7 +2115,17 @@ pub fn execute_plan_stream_with_cancel(
                             eprintln!(
                                 "[supervisor] replanning (attempt {replan_attempt}/{MAX_REPLANS}): {reason}"
                             );
-                            match revise_plan(&current_plan.goal, &reason, &result, &registry, session_id).await {
+                            match revise_plan(
+                                &current_plan.goal,
+                                &reason,
+                                &result,
+                                &registry,
+                                session_id,
+                                &user_id,
+                                Some(&run_span),
+                            )
+                            .await
+                            {
                                 Ok(revised) => {
                                     let count = revised.steps.len();
                                     yield SupervisorEvent::PlanRevised {
@@ -1930,6 +2164,17 @@ pub fn execute_plan_stream_with_cancel(
                 }
             }
         }
+        // Close the run trace — every step span and pool call nested under it.
+        if cancel.is_cancelled() {
+            run_span
+                .lock()
+                .expect("supervisor run span mutex")
+                .set_attr("kawai.outcome", "cancelled");
+        }
+        run_span
+            .lock()
+            .expect("supervisor run span mutex")
+            .end();
         // Remove any confirmation senders left behind by cancellation or a
         // disconnected client. This also prevents stale responses matching a
         // later plan that happens to reuse a step id.

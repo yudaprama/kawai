@@ -204,7 +204,10 @@ export function useWorkbench() {
       return;
     }
     let cancelled = false;
-    void call<string[]>("suggest_followups", { excerpt: output.slice(0, 2000) })
+    void call<string[]>("suggest_followups", {
+      excerpt: output.slice(0, 2000),
+      sessionId,
+    })
       .then((chips) => {
         if (cancelled || !Array.isArray(chips)) return;
         const clean = chips.filter((c) => typeof c === "string" && c.trim() !== "").slice(0, 4);
