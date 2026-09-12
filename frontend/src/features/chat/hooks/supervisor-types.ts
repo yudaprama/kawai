@@ -76,7 +76,12 @@ export type SupervisorEvent =
       /** Key of the REVISED plan — replaces the planStarted key. */
       planKey: string;
     }
-  | { type: "planCompleted"; finalOutput?: string }
+  | {
+      type: "planCompleted";
+      finalOutput?: string;
+      /** Deliverable artifacts (deck hero, stored files) produced by the run. */
+      artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
+    }
   | { type: "planFailed"; error: string };
 
 export type SupervisorStatus =
@@ -172,6 +177,9 @@ export interface SupervisorPlanState {
     description: string;
   } | null;
   finalOutput: string | null;
+  /** Deliverable artifacts of the finished run — a deck artifact renders as
+   *  the deliverable hero in the viewer. */
+  artifacts: SupervisorArtifact[];
   error: string | null;
   /** Plan awaiting user review (plan_task done, execution not started). */
   review: PlanReview | null;

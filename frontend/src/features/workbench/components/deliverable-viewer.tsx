@@ -3,12 +3,24 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FileIcon } from "@/components/shared/file-icon";
+import { FilePreview } from "@/components/shared/file-preview";
 import { Streamdown } from "@/lib/streamdown";
 import { call, errText } from "@/lib/api";
 import { AgentReportsSwitcher, StepReportBody } from "@/features/workbench/components/shared-canvas";
 import { agentName, isDeliverableStep, type useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import { fmtDuration } from "./progress-rail";
+
+/** The run's deck artifact, if any — the deliverable hero. A run carries at
+ *  most one deck; step file artifacts ride along but only an .html deck gets
+ *  the hero treatment (stored decks are always .html). */
+function deckArtifact(workbench: ReturnType<typeof useWorkbench>) {
+  return (
+    workbench.supervisor.artifacts.find(
+      (a) => a.kind === "file" && a.handle != null && (a.filename ?? "").toLowerCase().endsWith(".html"),
+    ) ?? null
+  );
+}
 
 // ── Canvas view ───────────────────────────────────────────────────────────────
 
@@ -278,6 +290,18 @@ export function DeliverableViewer({
             ProgressRail). The canvas keeps showing the previous run's content
             until the new run's first content lands (canvas policy). */}
 
+        {effective === "final" && !unseeded && deckArtifact(workbench) != null && (
+          <div className="space-y-1">
+            <div className="text-muted-foreground flex items-center gap-2 font-mono text-[11px] uppercase">
+              <ZapIcon className="size-3" /> Deck · {deckArtifact(workbench)!.label ?? "presentation"}
+            </div>
+            <div className="h-[560px] overflow-hidden rounded-lg border">
+              <FilePreview
+                file={{ id: deckArtifact(workbench)!.handle!, name: deckArtifact(workbench)!.filename ?? "deck.html" }}
+              />
+            </div>
+          </div>
+        )}
         {effective === "final" && !unseeded && supervisor.finalOutput != null && (
           <div className="border-primary/30 bg-card rounded-lg border p-6">
             <Streamdown>{supervisor.finalOutput}</Streamdown>

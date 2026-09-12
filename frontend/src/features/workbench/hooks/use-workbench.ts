@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { errText, call } from "@/lib/api";
 import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
+import type { PersistedPlan } from "@/features/chat/hooks/use-supervisor-plan";
 
 // ── Derived view models ─────────────────────────────────────────────────────
 
@@ -170,6 +171,7 @@ export function useWorkbench() {
   // after `finished`; failures keep the static chips silently.
   const [dynamicChips, setDynamicChips] = useState<string[]>([]);
 
+
   const supervisor = useSupervisorPlan({
     onPlanCompleted: (goal, output) => {
       setRuns((prev) =>
@@ -198,6 +200,70 @@ export function useWorkbench() {
       void goal;
     },
   });
+  // Session reopen: rehydrate the LAST persisted plan record (goal, steps,
+  // deliverable, deck artifacts) so the deliverable viewer — including the
+  // deck hero — works without re-running. In-memory runs stay empty; the
+  // record lives in chat history (persistPlanSnapshot), one assistant row.
+  const restoredSessionRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (sessionId == null || restoredSessionRef.current === sessionId) return;
+    restoredSessionRef.current = sessionId;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await call<
+          { id: number; role: string; content: string }[]
+        >("list_chat_messages", { sessionId, archived: false });
+        if (cancelled) return;
+        for (let i = rows.length - 1; i >= 0; i--) {
+          const row = rows[i];
+          if (row.role !== "assistant" || !row.content.startsWith("{")) continue;
+          try {
+            const record = JSON.parse(row.content) as {
+              type?: string;
+              goal?: string | null;
+              steps?: { id: string; tool: string; state: string; output?: string }[];
+              output?: string | null;
+              artifacts?: PersistedPlan["artifacts"];
+              error?: string;
+            };
+            if (record.type !== "supervisor-plan" || !Array.isArray(record.steps)) continue;
+            const steps = record.steps;
+            supervisor.restorePersisted(record);
+            // The canvas only mounts the deliverable viewer when runs is
+            // non-empty — seed one completed run from the record so a
+            // reopened session shows the deliverable (incl. the deck hero).
+            setRuns((prev) =>
+              prev.length > 0
+                ? prev // a live run owns the canvas — never clobber it
+                : [
+                    {
+                      id: `restored-${row.id}`,
+                      goal: record.goal ?? "(restored run)",
+                      status: record.error ? ("failed" as const) : ("completed" as const),
+                      startedAt: Date.now(),
+                      finishedAt: Date.now(),
+                      outputPreview: (record.output ?? "").slice(0, 500),
+                      outputFull: record.output ?? undefined,
+                      stepsDone: steps.filter((s) => s.state === "completed").length,
+                      stepsTotal: steps.length,
+                    },
+                  ],
+            );
+            return;
+          } catch {
+            continue; // not a plan record — keep scanning backwards
+          }
+        }
+      } catch (err) {
+        console.error("[workbench] plan restore:", errText(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, supervisor.restorePersisted]);
+
   // Composer is unlocked only when no run is active (config-first, locked
   // during a run) — see PLAN-workbench.md.
   const composing = !["running", "stopping", "awaitingConfirmation", "reviewing"].includes(supervisor.status);

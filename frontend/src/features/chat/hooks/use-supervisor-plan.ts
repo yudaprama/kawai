@@ -70,6 +70,8 @@ export interface PersistedPlan {
   goal: string | null;
   steps: { id: string; tool: string; state: SupervisorStep["state"]; output?: string }[];
   output: string | null;
+  /** Deliverable artifacts (deck hero, stored files) — restored on reopen. */
+  artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
   /** Present on failed-plan records — the terminal error. */
   error?: string;
 }
@@ -81,7 +83,7 @@ function persistPlanSnapshot(
   sessionId: number,
   goal: string | null,
   steps: SupervisorStep[],
-  extra: { output: string | null; error?: string },
+  extra: { output: string | null; artifacts?: PersistedPlan["artifacts"]; error?: string },
 ): void {
   const record: PersistedPlan = {
     type: "supervisor-plan",
@@ -94,6 +96,7 @@ function persistPlanSnapshot(
       output: s.output ? s.output.slice(0, 500) : s.output,
     })),
     output: extra.output,
+    artifacts: extra.artifacts,
     error: extra.error,
   };
   void persist(sessionId, "assistant", JSON.stringify(record));
@@ -207,6 +210,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 // The reducer doesn't change steps on planCompleted, so stepsRef is still accurate.
                 persistPlanSnapshot(sessionId, goalRef.current, stepsRef.current, {
                   output: ev.finalOutput ?? null,
+                  artifacts: ev.artifacts,
                 });
                 parts = parts.map((p) =>
                   p.type === "text" && p.state === "streaming" ? { ...p, state: "done" as const } : p,
@@ -366,6 +370,48 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     runPlan({ plan: last.plan, sessionId: last.sessionId, agentId: last.agentId });
   }, [runPlan]);
 
+  /** Rehydrate terminal state from a persisted supervisor-plan record
+   *  (session reopen). Artifacts ride along so the deliverable viewer can
+   *  render the deck hero; planKey stays null — persisted full outputs are
+   *  not re-readable without the original key. No-op mid-run. */
+  const restorePersisted = useCallback(
+    (record: {
+      goal?: string | null;
+      steps?: { id: string; tool: string; state: string; output?: string }[];
+      output?: string | null;
+      artifacts?: PersistedPlan["artifacts"];
+      error?: string;
+    }) => {
+      if (streamCtrl.current) return;
+      const steps: SupervisorStep[] = (record.steps ?? []).map((s) => ({
+        stepId: s.id,
+        tool: s.tool,
+        task: s.tool,
+        dependsOn: [],
+        state: (s.state === "completed" || s.state === "failed" || s.state === "skipped"
+          ? s.state
+          : "skipped") as SupervisorStep["state"],
+        output: s.output,
+        artifacts: [],
+      }));
+      patch({
+        status: record.error ? "failed" : "completed",
+        goal: record.goal ?? null,
+        steps,
+        finalOutput: record.output ?? null,
+        artifacts: (record.artifacts ?? []).map((a) => ({
+          kind: a.kind as import("./supervisor-types").SupervisorArtifact["kind"],
+          handle: a.handle,
+          filename: a.filename,
+          label: a.label,
+        })),
+        error: record.error ?? null,
+        planCompletedAt: Date.now(),
+      });
+    },
+    [patch],
+  );
+
   return {
     ...state,
     messages,
@@ -376,6 +422,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     approvePlan,
     cancelPlan,
     removeStep,
+    restorePersisted,
     approve: () => respond(true),
     reject: () => respond(false),
     stop,

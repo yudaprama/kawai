@@ -125,6 +125,7 @@ export function initialSupervisorState(): SupervisorPlanState {
     planCompletedAt: null,
     pendingConfirmation: null,
     finalOutput: null,
+    artifacts: [],
     error: null,
     review: null,
     planVersion: 0,
@@ -277,6 +278,12 @@ export function supervisorReducer(
         status: "completed",
         pendingConfirmation: null,
         finalOutput: event.finalOutput ?? null,
+        artifacts: (event.artifacts ?? []).map((a) => ({
+          kind: a.kind as SupervisorArtifact["kind"],
+          handle: a.handle,
+          filename: a.filename,
+          label: a.label,
+        })),
         planCompletedAt: now,
       };
     }

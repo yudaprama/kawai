@@ -1592,7 +1592,7 @@ dependencies = [
 
 [[package]]
 name = "binance-sdk"
-version = "68.1.1"
+version = "69.2.3"
 dependencies = [
  "anyhow",
  "async-trait",

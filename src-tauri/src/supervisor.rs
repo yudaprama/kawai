@@ -220,6 +220,11 @@ pub enum SupervisorEvent {
     },
     PlanCompleted {
         final_output: Option<String>,
+        /// Deliverable artifacts produced by the run — most importantly the
+        /// deck when `finalWriter: "deck_writer"` (the viewer renders the
+        /// deck file as the deliverable hero). File artifacts from the steps
+        /// ride along so the UI can surface them without re-parsing outputs.
+        artifacts: Vec<ArtifactInfo>,
     },
     PlanFailed {
         error: String,
@@ -754,6 +759,13 @@ pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai
     let slice = kawai_router::extract_json_slice(raw).map_err(|e| e.to_string())?;
     let plan: kawai_router::TaskPlan = serde_json::from_str(slice)
         .map_err(|e| format!("invalid plan JSON: {e}"))?;
+    if let Some(w) = &plan.final_writer {
+        if w != WRITER_DELIVERABLE && w != WRITER_DECK {
+            return Err(format!(
+                "unknown finalWriter \"{w}\" — valid writers: {WRITER_DELIVERABLE}, {WRITER_DECK}"
+            ));
+        }
+    }
     registry.validate_plan(&plan).map_err(|e| e.to_string())?;
     Ok(plan)
 }
@@ -974,7 +986,7 @@ Respond ONLY with ONE JSON object — either:
   (request tool search results; up to 3 diverse queries; describe CAPABILITIES, not tool names)
   — ALWAYS write the queries in ENGLISH: the catalog descriptions are English,
   so queries in any other language return junk and waste the search budget.
-{{"goal": "<one-line goal>", "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}]}}
+{{"goal": "<one-line goal>", "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
   (the final plan, once you know which tools to use)
 
 Plan rules:
@@ -999,9 +1011,15 @@ Plan rules:
  - FORBIDDEN tools — internal-only, validation will reject them: deep_write, draft_document, plan_task, plan_revise, artifact_recall. Never name them in steps. To create documents use office_create_document / office_create_deck / pdf_create_from_markdown.
  - The supervisor AUTOMATICALLY writes the final user-facing deliverable
    (answer / summary / report) from the step outputs after they finish — via a
-   built-in "deliverable writer" agent you never see. NEVER plan a
+   built-in writer agent you never see. NEVER plan a
    summarization / writing / "produce the answer" step yourself; plan only the
    data-gathering and artifact-producing steps that feed it.
+ - "finalWriter" (optional): which writer synthesizes the deliverable. Omit it
+   for the default markdown answer. Set "finalWriter":"deck_writer" when the
+   goal asks for a SLIDE DECK / PRESENTATION as the final result — the deck
+   writer then generates the slides itself from the step outputs. When you set
+   it, do NOT plan an office_create_deck step: plan only the research / data
+   steps whose outputs the deck should be built from.
  - If told the search budget is exhausted, respond ONLY with the final plan JSON.
 "#,
         kawai_router::types::MAX_PLAN_STEPS,
@@ -1502,6 +1520,11 @@ const STEP_EVENT_OUTPUT_MAX_CHARS: usize = 2000;
 pub const DELIVERABLE_STEP_ID: &str = "__deliverable";
 pub const DELIVERABLE_TOOL: &str = "deliverable_writer";
 
+/// The final-writer whitelist — the only `finalWriter` values a plan may
+/// carry. Planner picks the synthesis agent; the supervisor executes it.
+pub const WRITER_DELIVERABLE: &str = DELIVERABLE_TOOL; // "deliverable_writer"
+pub const WRITER_DECK: &str = "deck_writer";
+
 /// Char-boundary-safe prefix of `s` (at most `max_chars` characters).
 fn preview_chars(s: &str, max_chars: usize) -> &str {
     match s.char_indices().nth(max_chars) {
@@ -1851,6 +1874,222 @@ async fn synthesize_final_answer(
     }
 }
 
+/// What the deck writer produced: the short markdown pointer for the
+/// deliverable text plus the deck artifact (viewer renders the file).
+struct DeckSynthesis {
+    note: String,
+    artifact: ArtifactInfo,
+}
+
+/// The deck writer: one LLM pass turns the step outputs into slides, the
+/// create-deck tool stores them, and ≤2 corrective rounds feed probe/template
+/// failures back to the model. Returns `None` when synthesis is impossible
+/// (no remote pool, empty materials) or the correction budget ran out — the
+/// caller falls back to the default markdown deliverable.
+async fn synthesize_deck(
+    goal: &str,
+    materials: &str,
+    plan: &kawai_router::TaskPlan,
+    registry: &ToolRegistry,
+    session_id: i64,
+    user_id: &str,
+    run_span: Option<&Arc<Mutex<kawai_telemetry::TelemetrySpan>>>,
+) -> Option<DeckSynthesis> {
+    #[cfg(test)]
+    {
+        // Registry keys are compiled in — keep tests off the network and
+        // deterministic; the markdown fallback path is what runs.
+        let _ = (goal, materials, plan, registry);
+        return None;
+    }
+    #[cfg(not(test))]
+    {
+        if materials.trim().is_empty() {
+            return None;
+        }
+        let mut remote = remote_llm::RemoteLlm::from_env()
+            .map(|r| {
+                r.with_output_cap(16_000)
+                    .with_agent("deck-writer")
+                    .with_conversation(format!("kawai-session-{session_id}"))
+                    .with_user(user_id)
+                    .with_parent_agent("planner")
+            });
+        let remote = match (run_span, &mut remote) {
+            (Some(rs), Some(r)) => {
+                if let Ok(guard) = rs.lock() {
+                    r.with_span_parent(&guard);
+                }
+                remote
+            }
+            _ => remote,
+        }?;
+
+        // Optional planner guidance: an office_create_deck step in the plan
+        // may carry {filename, templateId, title} (outline intent) without
+        // slides — pass it through so the writer honors the planned shape.
+        let guidance: String = plan
+            .steps
+            .iter()
+            .find(|s| {
+                s.tool
+                    .as_deref()
+                    .is_some_and(|t| t.contains("create_deck"))
+            })
+            .and_then(|s| s.arguments.as_object())
+            .map(|args| {
+                let hints: [(&str, &str); 3] = [
+                    ("filename", "Output filename"),
+                    ("templateId", "Template pack id"),
+                    ("title", "Deck title"),
+                ];
+                let mut g = String::from("\n<deck-guidance>Planned deck shape:\n");
+                for (key, label) in hints {
+                    if let Some(v) = args.get(key).and_then(|v| v.as_str()) {
+                        g.push_str(&format!("- {label}: {v}\n"));
+                    }
+                }
+                g.push_str("</deck-guidance>\n");
+                g
+            })
+            .unwrap_or_default();
+
+        let system = format!(
+            "You are Kawai's deck writer. A deterministic supervisor executed research/data steps \
+             toward the user's goal; the SLIDE DECK is the answer. Turn the step outputs into a \
+             reveal.js deck by producing ONE JSON object (no prose):\n\
+             {{\"filename\": \"deck-name.html\", \"templateId\": \"<id from the TEMPLATE list>\", \
+             \"title\": \"<deck title>\", \"slides\": [{{\"title\": \"Slide title\", \
+             \"bodyHtml\": \"<p>…</p>\"}}]}}\n\
+             Slide rules: ONE idea per slide; bodyHtml is simple semantic HTML only — h3 subheads, \
+             short p (≤15 words), ul (≤5 items), tables for data; quote every number from the \
+             step outputs EXACTLY — never invent or round figures; title slides state the takeaway, \
+             not a label.\n{}",
+            kawai_office::templates::template_catalog_block(),
+        );
+        let mut task = format!(
+            "The user's verbatim goal — the deck answers exactly this:\n{goal}\n\
+             Step outputs to build the deck from:\n{materials}{guidance}"
+        );
+
+        let dispatch = registry.step_dispatch();
+        let mut round = 0usize;
+        loop {
+            if round > 2 {
+                return None;
+            }
+            round += 1;
+            let raw = {
+                let collect = async {
+                    let mut stream = remote.stream(&system, &task, "").await.ok()?;
+                    let mut text = String::new();
+                    while let Some(event) = stream.next().await {
+                        match event.ok()? {
+                            remote_llm::RemoteEvent::Token { text: t } => {
+                                if text.len() < 64_000 {
+                                    text.push_str(&t);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    Some(text)
+                };
+                tokio::time::timeout(std::time::Duration::from_secs(300), collect)
+                    .await
+                    .ok()? // timeout → give up, markdown fallback
+                    .filter(|t| !t.trim().is_empty())?
+            };
+            let Ok(mut args) =
+                serde_json::from_str::<serde_json::Value>(&remote_llm::reason::extract_json(&raw))
+            else {
+                continue; // unparseable — next round the raw stays as-is; budget bounds this
+            };
+            // The writer must not try to invoke tools itself; only the deck args pass.
+            if let Some(obj) = args.as_object_mut() {
+                obj.retain(|k, _| {
+                    matches!(k.as_str(), "filename" | "templateId" | "title" | "slides")
+                });
+            }
+            let step = kawai_router::TaskStep {
+                id: "__deck-synthesis".into(),
+                tool: Some("office_create_deck".into()),
+                task: "deck writer synthesis".into(),
+                ..Default::default()
+            };
+            let step_result = dispatch(
+                step,
+                args,
+                Vec::new(),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .ok()?;
+            if step_result.status != kawai_router::StepStatus::Completed {
+                let error = if step_result.output.is_empty() {
+                    step_result
+                        .error
+                        .clone()
+                        .unwrap_or_else(|| "tool failed".into())
+                } else {
+                    step_result.output.clone()
+                };
+                eprintln!(
+                    "[supervisor] deck writer round {round}: tool error — {error}"
+                );
+                task.push_str(&format!(
+                    "\n<deck-rejected>Your previous JSON was rejected by the deck tool:\n{error}\n\
+                     Respond ONLY with the corrected deck JSON.</deck-rejected>"
+                ));
+                continue;
+            }
+            let output = step_result.output.clone();
+            let parsed: serde_json::Value = serde_json::from_str(&output).unwrap_or_default();
+            if parsed.get("needsRetry").is_some() {
+                let instruction = parsed
+                    .get("instruction")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("re-emit the deck JSON applying the provided style");
+                task.push_str(&format!(
+                    "\n<deck-style-handshake>{instruction}\n\
+                     Respond ONLY with the full deck JSON again, now styled.</deck-style-handshake>"
+                ));
+                continue;
+            }
+            let file = parsed.pointer("/data/file");
+            let (Some(file_id), filename) = (
+                file.and_then(|f| f.get("id")).and_then(|v| v.as_str()),
+                file.and_then(|f| f.get("originalName"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("deck.html"),
+            ) else {
+                return None;
+            };
+            let slides = parsed
+                .pointer("/data/slides")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let template = parsed
+                .pointer("/data/template")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let note = format!(
+                "Slide deck ready: **{filename}** — {slides} slides, template `{template}`. \
+                 The deck is rendered above; the step outputs it was built from are in the reports."
+            );
+            return Some(DeckSynthesis {
+                note,
+                artifact: ArtifactInfo {
+                    kind: "file".into(),
+                    handle: Some(file_id.to_string()),
+                    filename: Some(filename.to_string()),
+                    label: Some(format!("presentation deck · {slides} slides · {template}")),
+                },
+            });
+        }
+    }
+}
+
 pub fn execute_plan_stream(
     plan: kawai_router::TaskPlan,
     registry: ToolRegistry,
@@ -2097,24 +2336,83 @@ pub fn execute_plan_stream_with_cancel(
                         break;
                     }
                     if result.all_completed() {
+                        // Writer selection: the planner may route the final
+                        // synthesis to the deck writer (finalWriter:
+                        // "deck_writer"); everything else falls to the default
+                        // markdown deliverable writer.
+                        let chosen_writer = current_plan
+                            .final_writer
+                            .clone()
+                            .unwrap_or_else(|| DELIVERABLE_TOOL.to_string());
+
+                        // Collect the run's file artifacts (deck hero, stored
+                        // files) — from the deck writer or from step outputs.
+                        let mut run_artifacts: Vec<ArtifactInfo> = result
+                            .results
+                            .iter()
+                            .flat_map(|r| artifact_infos(&r.output))
+                            .filter(|a| a.kind == "file")
+                            .collect();
+
+                        let (synthesized, deck_artifact) = if chosen_writer == WRITER_DECK {
+                            yield SupervisorEvent::StepStarted {
+                                step_id: DELIVERABLE_STEP_ID.into(),
+                                tool: WRITER_DECK.into(),
+                            };
+                            let materials = synthesis_materials(&current_plan, &result);
+                            let synthesis_goal = user_goal
+                                .clone()
+                                .unwrap_or_else(|| current_plan.goal.clone());
+                            let deck = synthesize_deck(
+                                &synthesis_goal,
+                                &materials,
+                                &current_plan,
+                                &registry,
+                                session_id,
+                                &user_id,
+                                Some(&run_span),
+                            )
+                            .await;
+                            match deck {
+                                Some(s) => (Some(s.note), Some(s.artifact)),
+                                None => {
+                                    eprintln!(
+                                        "[supervisor] deck writer unavailable — falling back to markdown deliverable"
+                                    );
+                                    (None, None)
+                                }
+                            }
+                        } else {
+                            (None, None)
+                        };
+
                         // The scheduler's `final_output` is the LAST tool's raw
                         // output (e.g. 26k chars of extracted PDF text) — not an
                         // answer. One synthesis call turns the per-step results
                         // into the user-facing reply; on failure (no remote, all
                         // providers down) fall back to the raw output verbatim.
                         // The synthesis is a VISIBLE step (stepStarted/completed
-                        // for the virtual `deliverable_writer` agent) — invisible
+                        // for the virtual writer agent) — invisible
                         // work reads as magic and breaks the workbench's trust
                         // contract.
-                        yield SupervisorEvent::StepStarted {
-                            step_id: DELIVERABLE_STEP_ID.into(),
-                            tool: DELIVERABLE_TOOL.into(),
-                        };
+                        if chosen_writer != WRITER_DECK {
+                            yield SupervisorEvent::StepStarted {
+                                step_id: DELIVERABLE_STEP_ID.into(),
+                                tool: DELIVERABLE_TOOL.into(),
+                            };
+                        }
                         let raw_final = result.final_output().map(String::from);
                         let materials = synthesis_materials(&current_plan, &result);
                         let synthesis_goal = user_goal
                             .clone()
                             .unwrap_or_else(|| current_plan.goal.clone());
+                        // Deck path already produced the answer text — skip the
+                        // markdown writer entirely (one synthesis, not two).
+                        let writer_tool: &str = if deck_artifact.is_some() {
+                            WRITER_DECK
+                        } else {
+                            DELIVERABLE_TOOL
+                        };
                         let mut dl_attrs = vec![("kawai.step_id".into(), DELIVERABLE_STEP_ID.into())];
                         if let Some(u) = &telemetry_user {
                             dl_attrs.push(("user.id".into(), u.clone()));
@@ -2123,11 +2421,13 @@ pub fn execute_plan_stream_with_cancel(
                             .lock()
                             .expect("supervisor run span mutex")
                             .start_child(
-                                "supervisor.deliverable_writer",
+                                &format!("supervisor.{writer_tool}"),
                                 dl_attrs,
                             );
                         let dl_started = std::time::SystemTime::now();
-                        let synthesized =
+                        let synthesized = if deck_artifact.is_some() {
+                            synthesized // the deck writer's note
+                        } else {
                             synthesize_final_answer(
                                 &synthesis_goal,
                                 &materials,
@@ -2135,7 +2435,8 @@ pub fn execute_plan_stream_with_cancel(
                                 &user_id,
                                 Some(&run_span),
                             )
-                            .await;
+                            .await
+                        };
                         {
                             let (trace_id, span_id) = dl_span.context_ids();
                             dl_span.set_attr(
@@ -2145,7 +2446,7 @@ pub fn execute_plan_stream_with_cancel(
                             dl_span.end();
                             kawai_telemetry::record_workflow_step(kawai_telemetry::WorkflowStepRecord {
                                 conversation_id: telemetry_conversation.clone(),
-                                step_name: format!("{}:{}", DELIVERABLE_TOOL, DELIVERABLE_STEP_ID),
+                                step_name: format!("{writer_tool}:{DELIVERABLE_STEP_ID}"),
                                 framework: "kawai-supervisor".into(),
                                 started_at: dl_started,
                                 completed_at: std::time::SystemTime::now(),
@@ -2159,10 +2460,10 @@ pub fn execute_plan_stream_with_cancel(
                                         .unwrap_or(0),
                                 }),
                                 error: synthesized.is_none().then(|| "synthesis unavailable — raw output fallback".into()),
-                                tags: vec![("tool".into(), DELIVERABLE_TOOL.into())],
+                                tags: vec![("tool".into(), writer_tool.into())],
                                 linked_generation_ids: kawai_telemetry::last_generation_id(
                                     &telemetry_conversation,
-                                    "deliverable-writer",
+                                    writer_tool,
                                 )
                                 .into_iter()
                                 .collect(),
@@ -2191,7 +2492,7 @@ pub fn execute_plan_stream_with_cancel(
                                     session_id,
                                     &plan_key(&current_plan),
                                     &kawai_db::SupervisorStepResult {
-                                        tool: DELIVERABLE_TOOL.into(),
+                                        tool: writer_tool.into(),
                                         args_key: "deliverable".into(),
                                         step_id: DELIVERABLE_STEP_ID.into(),
                                         output: written.clone(),
@@ -2201,17 +2502,21 @@ pub fn execute_plan_stream_with_cancel(
                                 .await;
                             }
                         }
+                        if let Some(artifact) = &deck_artifact {
+                            run_artifacts.push(artifact.clone());
+                        }
                         yield SupervisorEvent::StepCompleted {
                             step_id: DELIVERABLE_STEP_ID.into(),
                             output: written
                                 .as_deref()
                                 .map(|o| preview_chars(o, STEP_EVENT_OUTPUT_MAX_CHARS).to_string())
                                 .unwrap_or_default(),
-                            artifacts: Vec::new(),
+                            artifacts: deck_artifact.clone().into_iter().collect(),
                             retries_used: 0,
                         };
                         yield SupervisorEvent::PlanCompleted {
                             final_output: synthesized.or(raw_final),
+                            artifacts: run_artifacts,
                         };
                         break;
                     }
@@ -2245,6 +2550,12 @@ pub fn execute_plan_stream_with_cancel(
                             {
                                 Ok(revised) => {
                                     let count = revised.steps.len();
+                                    // A revision without an explicit finalWriter
+                                    // keeps the original plan's writer choice.
+                                    let mut revised = revised;
+                                    if revised.final_writer.is_none() {
+                                        revised.final_writer = current_plan.final_writer.clone();
+                                    }
                                     yield SupervisorEvent::PlanRevised {
                                         attempt: replan_attempt,
                                         step_count: count,
@@ -2403,6 +2714,7 @@ mod tests {
         let plan = kawai_router::TaskPlan {
             goal: "g".into(),
             steps: vec![confirm_step("s1")],
+            final_writer: None,
         };
         let stream = execute_plan_stream_with_cancel(
             plan,
@@ -2456,7 +2768,7 @@ mod tests {
                 Some(SupervisorEvent::StepCompleted { step_id, .. }) if step_id == DELIVERABLE_STEP_ID => {}
                 Some(SupervisorEvent::StepStarted { step_id, .. }) => assert_eq!(step_id, "s1"),
                 Some(SupervisorEvent::StepCompleted { step_id, .. }) => assert_eq!(step_id, "s1"),
-                Some(SupervisorEvent::PlanCompleted { final_output }) => {
+                Some(SupervisorEvent::PlanCompleted { final_output, .. }) => {
                     assert_eq!(final_output.as_deref(), Some("done"));
                     finished = true;
                     break;
@@ -2477,6 +2789,7 @@ mod tests {
         let plan = kawai_router::TaskPlan {
             goal: "g".into(),
             steps: vec![confirm_step("s1")],
+            final_writer: None,
         };
         let stream = execute_plan_stream_with_cancel(
             plan,
@@ -2540,6 +2853,7 @@ mod tests {
                 task: "plain".into(),
                 ..Default::default()
             }],
+            final_writer: None,
         };
         let stream = execute_plan_stream_with_cancel(
             plan,
