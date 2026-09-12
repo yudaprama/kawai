@@ -6,7 +6,6 @@ import { FileIcon } from "@/components/shared/file-icon";
 import { Streamdown } from "@/lib/streamdown";
 import { call, errText } from "@/lib/api";
 import { AgentReportsSwitcher, StepReportBody } from "@/features/workbench/components/shared-canvas";
-import { PlanningCanvas } from "@/features/workbench/components/planning-canvas";
 import { agentName, isDeliverableStep, type useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import { fmtDuration } from "./progress-rail";
@@ -71,13 +70,11 @@ export function PastRunCanvas({
   loadFullOutput,
   onPickDoc,
   run,
-  runIndex,
   doc,
 }: {
   loadFullOutput: (stepId: string, planKey?: string) => Promise<string | null>;
   onPickDoc: (doc: string) => void;
   run: WorkbenchRun;
-  runIndex: number;
   doc: string;
 }) {
   const reportableSteps = (run.steps ?? []).filter((s) => s.state === "completed" || s.state === "failed");
@@ -85,13 +82,14 @@ export function PastRunCanvas({
   /** Header label: the step's task (agentName), or the tool — never the raw
    *  step id. Same derivation the active canvas uses. */
   const docStep = (run.steps ?? []).find((s) => s.stepId === doc);
-  const docLabel = isDeliverable
-    ? "Deliverable"
-    : docStep != null
+  const docStepLabel =
+    docStep != null
       ? (docStep.task || docStep.tool).trim().length > 48
         ? `${(docStep.task || docStep.tool).trim().slice(0, 47).trimEnd()}…`
         : (docStep.task || docStep.tool).trim()
       : doc;
+  const goalLabel =
+    run.goal.length > 48 ? `${run.goal.slice(0, 47).trimEnd()}…` : run.goal;
   const deliverableBody = run.outputFull ?? (run.outputPreview ? `${run.outputPreview}…` : null);
   const stepTool = run.steps?.find((s) => s.stepId === doc)?.tool ?? "";
   return (
@@ -100,7 +98,10 @@ export function PastRunCanvas({
         <div>
           <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
             <ZapIcon className="text-primary size-5" />
-            Run {runIndex + 1} · {docLabel}
+            {goalLabel || "Working…"}
+            {!isDeliverable && docStep != null && (
+              <span className="text-muted-foreground text-sm font-normal">— {docStepLabel} report</span>
+            )}
           </h3>
           <div className="text-muted-foreground mt-1 font-mono text-sm">
             {new Date(run.startedAt).toLocaleString()}
@@ -146,6 +147,7 @@ export function DeliverableViewer({
   doc,
   onPickDoc,
   runIndex,
+  unseeded,
   workbench,
 }: {
   /** Pinned document: "final" | stepId. The page owns navigation policy —
@@ -153,15 +155,30 @@ export function DeliverableViewer({
   doc: string;
   onPickDoc: (doc: string) => void;
   runIndex: number;
+  /** True while the supervisor state still BELONGS to the previous run
+   *  (new run submitted but planStarted hasn't seeded it yet) — the goal,
+   *  steps, and finalOutput read from the supervisor are stale and must not
+   *  render; the run record's own goal stands in for the header instead. */
+  unseeded?: boolean;
   workbench: ReturnType<typeof useWorkbench>;
 }) {
   const { supervisor } = workbench;
+  // Header goal: the run record knows the submitted goal from the moment of
+  // submit; supervisor.goal only arrives at planStarted (and is the previous
+  // run's until then). No generic "Deliverable" placeholder — that read as
+  // an unexplained label.
+  const runGoal = (unseeded ? null : supervisor.goal) ?? workbench.runs[runIndex]?.goal ?? null;
+  // Full goal in the viewer header — it has room (max-w-4xl); the 48-char cut
+  // stays only in the compact report switcher.
+  const headerGoal = runGoal;
   const reports = useMemo(
     () =>
-      supervisor.steps.filter(
-        (s) => !isDeliverableStep(s) && s.output && (s.state === "completed" || s.state === "failed"),
-      ),
-    [supervisor.steps],
+      unseeded
+        ? []
+        : supervisor.steps.filter(
+            (s) => !isDeliverableStep(s) && s.output && (s.state === "completed" || s.state === "failed"),
+          ),
+    [unseeded, supervisor.steps],
   );
   const effective = doc;
   const step = reports.find((r) => r.stepId === effective);
@@ -179,10 +196,10 @@ export function DeliverableViewer({
   const [exportedName, setExportedName] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
-  const done = supervisor.steps.filter((s) => s.state === "completed").length;
+  const done = unseeded ? 0 : supervisor.steps.filter((s) => s.state === "completed").length;
 
   const exportGoal = async (format: "pdf" | "docx") => {
-    if (supervisor.finalOutput == null || exporting) return;
+    if (unseeded || supervisor.finalOutput == null || exporting) return;
     setExporting(format);
     setExportedName(null);
     setExportError(null);
@@ -211,19 +228,19 @@ export function DeliverableViewer({
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl space-y-6 p-6">
         <div>
-          <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
-            <ZapIcon className="text-primary size-5" />
-            {`Run ${runIndex + 1} · `}
-            {effective === "final"
-              ? "Deliverable"
-              : step != null
-                ? `${agentName(step)} — report`
-                : supervisor.goal
-                  ? supervisor.goal
-                  : "Deliverable"}
+          <h3
+            className="text-foreground flex items-start gap-2 text-xl font-semibold"
+            title={headerGoal ?? undefined}
+          >
+            <span>{headerGoal ?? "Working…"}</span>
           </h3>
+          {effective !== "final" && step != null && (
+            <div className="text-muted-foreground mt-1 font-mono text-xs">
+              Agent report · {agentName(step)}
+            </div>
+          )}
           <div className="text-muted-foreground mt-1 font-mono text-sm">
-            {done}/{supervisor.steps.length} steps
+            {done}/{unseeded ? 0 : supervisor.steps.length} steps
             {supervisor.planStartedAt != null &&
               ` · ${fmtDuration(supervisor.planStartedAt, supervisor.planCompletedAt ?? undefined)}`}
           </div>
@@ -235,14 +252,16 @@ export function DeliverableViewer({
           </div>
         )}
 
-        {supervisor.planning != null && <PlanningCanvas planning={supervisor.planning} />}
+        {/* Planning progress lives in the sidebar rail (PlanningStatus inside
+            ProgressRail). The canvas keeps showing the previous run's content
+            until the new run's first content lands (canvas policy). */}
 
-        {effective === "final" && supervisor.finalOutput != null && (
+        {effective === "final" && !unseeded && supervisor.finalOutput != null && (
           <div className="border-primary/30 bg-card rounded-lg border p-6">
             <Streamdown>{supervisor.finalOutput}</Streamdown>
           </div>
         )}
-        {effective === "final" && supervisor.finalOutput != null && supervisor.status === "completed" && (
+        {effective === "final" && !unseeded && supervisor.finalOutput != null && supervisor.status === "completed" && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-muted-foreground mr-1 font-mono text-[11px] uppercase">Export</span>
             <Button disabled={exporting != null} onClick={() => void exportGoal("pdf")} size="sm" variant="outline">
@@ -279,16 +298,9 @@ export function DeliverableViewer({
             tool={step.tool}
           />
         )}
-        {effective === "final" && supervisor.finalOutput == null && supervisor.status !== "idle" && (
-          <div className="text-muted-foreground flex items-center gap-2 rounded-lg border border-dashed p-8 font-mono text-sm">
-            <LoaderCircleIcon className="text-primary size-4 animate-spin" />
-            The deliverable is being written…
-          </div>
-        )}
-
         <AgentReportsSwitcher
           activeDoc={effective}
-          hasDeliverable={supervisor.finalOutput != null}
+          hasDeliverable={!unseeded && supervisor.finalOutput != null}
           onPickDoc={onPickDoc}
           reports={reports.map((r) => ({ stepId: r.stepId, label: agentName(r) }))}
         />

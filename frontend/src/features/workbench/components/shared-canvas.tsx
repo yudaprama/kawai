@@ -5,7 +5,7 @@
  * per-step fetch/cache/render and AGENT REPORTS grid logic — the root cause
  * of the StrictMode deadlock and renderer-mismatch bugs.
  */
-import { LoaderCircleIcon } from "lucide-react";
+import { FileTextIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { renderStepReport } from "@/features/workbench/components/tool-views";
@@ -126,7 +126,11 @@ export function StepReportBody({
 // ── AgentReportsSwitcher ────────────────────────────────────────────────────
 
 /** The AGENT REPORTS grid — a document picker that switches the canvas
- *  between the final deliverable and individual step reports. */
+ *  between step reports (and, when one exists, the final deliverable).
+ *  The deliverable sits on its own row above the grid — it is the run's
+ *  primary output, not a peer of the reports. With no reports to switch
+ *  to, the whole switcher stays hidden: the deliverable needs no button
+ *  to show itself. */
 export function AgentReportsSwitcher({
   activeDoc,
   reports,
@@ -138,35 +142,41 @@ export function AgentReportsSwitcher({
   hasDeliverable: boolean;
   onPickDoc: (doc: string) => void;
 }) {
-  if (reports.length === 0 && !hasDeliverable) return null;
+  if (reports.length === 0) return null;
   return (
-    <div className="rounded-lg border p-4">
-      <h4 className="text-muted-foreground mb-3 text-center font-mono text-sm tracking-[0.2em]">AGENT REPORTS</h4>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {hasDeliverable && (
-          <button
-            className={`text-foreground truncate rounded-lg border px-3 py-2 font-mono text-xs transition-colors ${
-              activeDoc === "final" ? "border-primary bg-primary/10" : "hover:border-primary/60"
-            }`}
-            onClick={() => onPickDoc("final")}
-            type="button"
-          >
-            ★ Deliverable
-          </button>
-        )}
-        {reports.map((r) => (
-          <button
-            className={`text-foreground truncate rounded-lg border px-3 py-2 font-mono text-xs transition-colors ${
-              activeDoc === r.stepId ? "border-primary bg-primary/10" : "hover:border-primary/60"
-            }`}
-            key={r.stepId}
-            onClick={() => onPickDoc(r.stepId)}
-            title={r.label}
-            type="button"
-          >
-            {r.label}
-          </button>
-        ))}
+    <div className="space-y-4">
+      {hasDeliverable && (
+        <button
+          aria-pressed={activeDoc === "final"}
+          className={`text-foreground flex w-full items-center gap-2 rounded-lg border px-3 py-2.5 font-mono text-xs transition-colors ${
+            activeDoc === "final" ? "border-primary bg-primary/10" : "hover:border-primary/60"
+          }`}
+          onClick={() => onPickDoc("final")}
+          type="button"
+        >
+          <FileTextIcon className="text-primary size-3.5 shrink-0" />
+          <span className="font-bold">Deliverable</span>
+          <span className="text-muted-foreground ml-auto truncate font-normal">final output</span>
+        </button>
+      )}
+      <div className="rounded-lg border p-4">
+        <h4 className="text-muted-foreground mb-3 text-center font-mono text-sm tracking-[0.2em]">AGENT REPORTS</h4>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {reports.map((r) => (
+            <button
+              aria-pressed={activeDoc === r.stepId}
+              className={`text-foreground truncate rounded-lg border px-3 py-2 font-mono text-xs transition-colors ${
+                activeDoc === r.stepId ? "border-primary bg-primary/10" : "hover:border-primary/60"
+              }`}
+              key={r.stepId}
+              onClick={() => onPickDoc(r.stepId)}
+              title={r.label}
+              type="button"
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

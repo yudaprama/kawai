@@ -276,18 +276,25 @@ export function ProgressRail({
   workbench,
   onOpenReport,
   onNewGoal,
+  unseeded,
 }: {
   workbench: ReturnType<typeof useWorkbench>;
   onOpenReport: (id: string) => void;
   onNewGoal: () => void;
+  /** True while a run is in flight but planStarted hasn't seeded the
+   *  supervisor yet — the steps/goal/planStartedAt still BELONG to the
+   *  previous run and must never render as the new run's progress. */
+  unseeded: boolean;
 }) {
   const { supervisor } = workbench;
   // During planning `supervisor.goal` is still the PREVIOUS run's (or null on
   // the first) until planStarted seeds it — the run record already knows the
   // submitted goal, so show it immediately (system-status visibility).
   const currentRun = workbench.runs[workbench.runs.length - 1];
-  const headerGoal = supervisor.goal ?? currentRun?.goal ?? null;
-  const startedAt = supervisor.planStartedAt ?? currentRun?.startedAt ?? null;
+  const headerGoal = (unseeded ? currentRun?.goal : (supervisor.goal ?? currentRun?.goal)) ?? null;
+  const startedAt = unseeded
+    ? (currentRun?.startedAt ?? null)
+    : (supervisor.planStartedAt ?? currentRun?.startedAt ?? null);
   // Live-tick while a run is in flight so the elapsed timers move every
   // second even when no events arrive (long silent planner rounds).
   const [, tick] = useState(0);
@@ -303,8 +310,13 @@ export function ProgressRail({
           <ZapIcon className="text-primary size-4" />
           Progress
         </h2>
-        <div className="text-foreground/80 mt-1 font-mono text-xs font-bold">
-          {headerGoal ? `${statusLabel(supervisor.status)} · ${headerGoal.slice(0, 40)}` : "Idle"}
+        <div
+          className="text-foreground/80 mt-1 truncate font-mono text-xs font-bold"
+          title={headerGoal ?? undefined}
+        >
+          {headerGoal
+            ? `${unseeded && supervisor.planning != null ? "Planning" : statusLabel(supervisor.status)} · ${headerGoal}`
+            : "Idle"}
         </div>
         {startedAt != null && (
           <div className="text-muted-foreground font-mono text-xs">
@@ -335,8 +347,11 @@ export function ProgressRail({
         </div>
       ) : (
         <div className="flex-1">
-          <StepTree live onOpenReport={onOpenReport} steps={supervisor.steps} />
-          {supervisor.steps.length === 0 && supervisor.status !== "idle" && (
+          {/* Unseeded planning window: the stale tree is the PREVIOUS run's —
+              show only the planning spinner until planStarted seeds the new
+              steps (same policy as the canvas). */}
+          {!unseeded && <StepTree live onOpenReport={onOpenReport} steps={supervisor.steps} />}
+          {(unseeded || (supervisor.steps.length === 0 && supervisor.status !== "idle")) && (
             <div className="text-muted-foreground mt-2 space-y-1 font-mono text-xs">
               <div className="flex items-center gap-2">
                 <LoaderCircleIcon className="text-primary size-3.5 animate-spin" />
@@ -362,6 +377,28 @@ export function ProgressRail({
                   ⌁ {supervisor.planning.activity}
                 </div>
               )}
+              {supervisor.planning?.context &&
+                (supervisor.planning.context.persona ||
+                  supervisor.planning.context.memories > 0 ||
+                  supervisor.planning.context.skills > 0 ||
+                  supervisor.planning.context.files > 0) && (
+                  <div className="text-muted-foreground/60 pl-5.5 text-[11px]">
+                    context: {[
+                      supervisor.planning.context.persona ? "persona" : null,
+                      supervisor.planning.context.memories > 0
+                        ? `${supervisor.planning.context.memories} memories`
+                        : null,
+                      supervisor.planning.context.skills > 0
+                        ? `${supervisor.planning.context.skills} skills`
+                        : null,
+                      supervisor.planning.context.files > 0
+                        ? `${supervisor.planning.context.files} files`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                )}
               {supervisor.planning != null && currentRun != null && (
                 <div className="text-muted-foreground/60 pl-5.5 text-[11px] tabular-nums">
                   {fmtDuration(currentRun.startedAt)} elapsed

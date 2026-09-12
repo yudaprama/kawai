@@ -46,6 +46,14 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
   const planStartedBaseline = useRef<number | null>(null);
   const seededForActiveRun =
     supervisor.planStartedAt != null && supervisor.planStartedAt !== planStartedBaseline.current;
+  // A run is in flight or planning, but the supervisor hasn't been seeded by
+  // planStarted yet — rail AND canvas must treat the supervisor state as the
+  // previous run's, never as the new run's progress. NOTE: during planning
+  // `supervisor.status` still reads "completed" (the previous run's terminal
+  // state) — the reliable in-planning signal is `supervisor.planning != null`.
+  const runInFlight = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status);
+  const planningUnseeded =
+    !seededForActiveRun && (supervisor.planning != null || runInFlight || supervisor.status === "reviewing");
 
   /** User-initiated navigation — cancels the deliverable steal. */
   const userPick = (runId: string, doc: string) => {
@@ -66,7 +74,6 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
     const firstReport = supervisor.steps.find(
       (s) => !isDeliverableStep(s) && s.output != null && (s.state === "completed" || s.state === "failed"),
     );
-    console.log("[workbench] AUTO-SWITCH to new run", activeRunId);
     console.log("[workbench] AUTO-SWITCH to new run", activeRunId);
     setView({ runId: activeRunId, doc: supervisor.finalOutput != null ? "final" : (firstReport?.stepId ?? "final") });
   }, [activeRunId, seededForActiveRun, supervisor.finalOutput, supervisor.steps]);
@@ -107,8 +114,11 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
     // or discarded.
     if (supervisor.status === "reviewing") return;
     setHome(false);
-    // Canvas policy: keep showing whatever is on screen (run 1) until the
-    // new run's first content lands; then the once-per-run auto-switch fires.
+    // Canvas policy (same as Run 1): drop the pinned view so the canvas
+    // defaults to the newest run with doc "final" — the new run's prompt
+    // shows in the header immediately, and the once-per-run auto-switch
+    // takes over when its first content lands.
+    setView(null);
     setStealAllowed(true);
     planStartedBaseline.current = supervisor.planStartedAt;
     const quote = workbench.followUp;
@@ -192,6 +202,7 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
             runs={workbench.runs}
           />
           <ProgressRail
+            unseeded={planningUnseeded}
             workbench={workbench}
             onNewGoal={() => {
               setView(null);
@@ -233,9 +244,6 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
       {/* Right: the CANVAS — run switcher + exactly one full document. The
            canvas never moves on its own except the two approved steals. */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="border-border/60 flex items-center justify-between border-b px-4 py-2">
-          <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">Kawai Workbench</span>
-        </div>
         {workbench.runs.length === 0 ? (
           <div className="text-muted-foreground flex flex-1 items-center justify-center p-8 text-center font-mono text-sm">
             State a goal in the composer to start a run.
@@ -261,7 +269,6 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
                       loadFullOutput={workbench.loadFullOutput}
                       onPickDoc={(d) => userPick(shown.id, d)}
                       run={shown}
-                      runIndex={runIndex}
                     />
                   );
                 }
@@ -273,6 +280,7 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
                     doc={view != null && view.runId === activeRunId ? view.doc : "final"}
                     onPickDoc={(d) => activeRunId != null && userPick(activeRunId, d)}
                     runIndex={workbench.runs.length - 1}
+                    unseeded={planningUnseeded}
                     workbench={workbench}
                   />
                 );
