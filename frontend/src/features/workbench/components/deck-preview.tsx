@@ -231,7 +231,11 @@ function parseDeckMarkdown(md: string): V2Slide[] {
 /** Mount the slide runtime into `host`: markdown → parsed slides → one
  *  visible slide + nav, with PowerPoint-style shrink-to-fit (content taller
  *  than the frame scales down instead of scrolling). Returns the cleanup fn. */
-function mountDeckRuntime(host: HTMLDivElement, markdown: string, opts: { fullscreen?: boolean } = {}): () => void {
+function mountDeckRuntime(
+  host: HTMLDivElement,
+  markdown: string,
+  opts: { fullscreen?: boolean; themeCss?: string } = {},
+): () => void {
   const slides = parseDeckMarkdown(markdown);
   if (slides.length === 0) return () => {};
   const rendered = slides.map((sl) => sl.html);
@@ -245,6 +249,17 @@ function mountDeckRuntime(host: HTMLDivElement, markdown: string, opts: { fullsc
     else if (opts.fullscreen === true && e.key === "Escape") host.dataset.exited = "1";
   };
   window.addEventListener("keydown", onKey);
+
+  // Deck theme stylesheet (tokens + layout rules + fonts), extracted from
+  // the stored deck. :root token blocks are retargeted to the preview's
+  // .deck-scope wrapper so the app's own CSS is never touched; the runtime
+  // CSS above acts only as the no-theme fallback (injected first, loses ties).
+  if (opts.themeCss != null && opts.themeCss.trim().length > 0) {
+    const styleEl = document.createElement("style");
+    styleEl.setAttribute("data-deck-theme", "");
+    styleEl.textContent = opts.themeCss.replace(/:root\s*{/g, ".deckmd-runtime .deck-scope{");
+    host.appendChild(styleEl);
+  }
 
   const app = createApp({
     setup(_, { expose }) {
@@ -292,6 +307,9 @@ function mountDeckRuntime(host: HTMLDivElement, markdown: string, opts: { fullsc
   return () => {
     window.removeEventListener("keydown", onKey);
     app.unmount();
+    host.querySelectorAll("style[data-deck-theme]").forEach((el) => {
+      el.remove();
+    });
   };
 }
 
@@ -323,14 +341,17 @@ export function DeckPreview({ fileId }: { fileId: string }) {
   useEffect(() => {
     const host = hostRef.current;
     if (host == null || data?.markdown == null) return;
-    return mountDeckRuntime(host, data.markdown);
+    return mountDeckRuntime(host, data.markdown, { themeCss: data.themeCss });
   }, [data]);
 
   // ── Present overlay: same runtime at full viewport ──
   useEffect(() => {
     const host = presentRef.current;
     if (!presenting || host == null || data?.markdown == null) return;
-    const cleanup = mountDeckRuntime(host, data.markdown, { fullscreen: true });
+    const cleanup = mountDeckRuntime(host, data.markdown, {
+      fullscreen: true,
+      themeCss: data.themeCss,
+    });
     return cleanup;
   }, [presenting, data]);
 
