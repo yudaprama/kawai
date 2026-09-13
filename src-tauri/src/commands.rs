@@ -973,6 +973,29 @@ pub async fn office_read_document(
     Ok(logic::office::ReadDocumentResult { markdown })
 }
 
+/// Authenticated RPC: render a deck's markdown into a shareable reveal.js
+/// HTML artifact stored in Documents.
+#[tauri::command]
+pub async fn office_export_deck_html(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::office::OfficeFile, String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::render_deck_html(&user_id, &file_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: convert a stored deck (.html) into a real .pptx file.
+#[tauri::command]
+pub async fn office_export_deck(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::office::OfficeFile, String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::export_deck_pptx(&user_id, &file_id).map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: read a stored deck split into lightweight preview
 /// fragments (theme CSS + sanitized section HTML — no reveal runtime).
 #[tauri::command]

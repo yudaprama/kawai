@@ -184,7 +184,11 @@ export function useWorkbench() {
     const first = artifacts?.find(
       (a) => a.kind === "file" && a.handle != null && (a.filename ?? "").toLowerCase().endsWith(".html"),
     );
-    setDeck(first ? { handle: first.handle!, filename: first.filename, label: first.label } : null);
+    if (first == null || first.handle == null) {
+      setDeck(null);
+      return;
+    }
+    setDeck({ handle: first.handle, filename: first.filename, label: first.label });
   }, []);
 
   const supervisor = useSupervisorPlan({
@@ -270,7 +274,7 @@ export function useWorkbench() {
             );
             return;
           } catch {
-            continue; // not a plan record — keep scanning backwards
+            // not a plan record — keep scanning backwards
           }
         }
       } catch (err) {
@@ -280,7 +284,7 @@ export function useWorkbench() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, supervisor.restorePersisted]);
+  }, [sessionId, supervisor.restorePersisted, pickDeck]);
 
   // Composer is unlocked only when no run is active (config-first, locked
   // during a run) — see PLAN-workbench.md.

@@ -4,7 +4,7 @@ import { createApp, reactive } from "vue/dist/vue.esm-bundler.js";
 import MarkdownIt from "markdown-it";
 
 import { Button } from "@/components/ui/button";
-import { call, errText, tauriOpenFile } from "@/lib/api";
+import { call, errText } from "@/lib/api";
 
 /**
  * Deck preview — markdown slide runtime (Slidev model) as a Vue island
@@ -17,8 +17,9 @@ import { call, errText, tauriOpenFile } from "@/lib/api";
  * the frame is by-construction exactly the container and content never
  * escapes it.
  *
- * Full-fidelity presentation (animations, keyboard nav) stays available via
- * "Open full deck" — the reveal.js file opens in the system browser.
+ * Present (fullscreen in-app) uses the same runtime at full viewport size;
+ * the reveal.js file remains available via "Export HTML" for sharing, and
+ * opens in the system browser.
  */
 
 interface ReadDeckResult {
@@ -69,6 +70,8 @@ function deckToSlides(markdown: string): string[] {
 export function DeckPreview({ fileId }: { fileId: string }) {
   const [data, setData] = useState<ReadDeckResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Present: fullscreen in-app (the runtime fills the viewport; Esc exits).
+  const [presenting, setPresenting] = useState(false);
   const hostRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -86,6 +89,44 @@ export function DeckPreview({ fileId }: { fileId: string }) {
       cancelled = true;
     };
   }, [fileId]);
+
+  // Present overlay host: the runtime is (re)mounted here when presenting.
+  const presentRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const host = presentRef.current;
+    if (!presenting || host == null || data?.markdown == null) return;
+    const slides = deckToSlides(data.markdown);
+    if (slides.length === 0) return;
+    const rendered = slides.map((sl) => mdit.render(sl));
+    const state = reactive({ index: 0, total: slides.length });
+    const go = (d: number) => {
+      state.index = Math.min(slides.length - 1, Math.max(0, state.index + d));
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight" || e.key === "PageDown") go(1);
+      else if (e.key === "ArrowLeft" || e.key === "PageUp") go(-1);
+      else if (e.key === "Escape") setPresenting(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const app = createApp({
+      setup() {
+        return { state, rendered, go };
+      },
+      template: `
+        <div class="deckmd-runtime" style="padding:60px 80px">
+          <!-- biome-ignore lint/security/noDangerouslySetInnerHtml: markdown-it with html:false over server-sanitized content -->
+          <div v-html="rendered[state.index]"></div>
+          <div class="deck-nav" style="position:static">
+            <button style="cursor:pointer;color:inherit;background:none;border:none;font-size:16px" :disabled="state.index===0" @click="go(-1)">←</button>
+            <span>{{ state.index + 1 }} / {{ state.total }}</span>
+            <button style="cursor:pointer;color:inherit;background:none;border:none;font-size:16px" :disabled="state.index===state.total-1" @click="go(1)">→</button>
+            <span style="margin-left:auto;opacity:.6">Esc to exit</span>
+          </div>
+        </div>`,
+    });
+    app.mount(host);
+    return () => app.unmount();
+  }, [presenting, data]);
 
   // ── Vue island: markdown runtime + slide state + nav ──
   useEffect(() => {
@@ -125,8 +166,31 @@ export function DeckPreview({ fileId }: { fileId: string }) {
     };
   }, [data]);
 
-  const openFull = useCallback(() => {
-    void tauriOpenFile(fileId).catch(() => {});
+  // Present: fullscreen in-app (the runtime fills the viewport; Esc exits).
+  useEffect(() => {
+    if (!presenting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPresenting(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [presenting]);
+
+  // Export HTML: render the deck's markdown into a shareable reveal.js
+  // artifact stored in Documents.
+  const [htmlExporting, setHtmlExporting] = useState(false);
+  const [htmlExported, setHtmlExported] = useState<string | null>(null);
+  const exportHtml = useCallback(async () => {
+    setHtmlExporting(true);
+    setHtmlExported(null);
+    try {
+      const f = await call<{ originalName: string }>("office_export_deck_html", { fileId });
+      setHtmlExported(f.originalName);
+    } catch (e) {
+      setHtmlExported(`ERROR: ${errText(e)}`);
+    } finally {
+      setHtmlExporting(false);
+    }
   }, [fileId]);
 
   // One-click export: stored deck (.html) → real .pptx in Documents.
@@ -172,6 +236,17 @@ export function DeckPreview({ fileId }: { fileId: string }) {
       </div>
       <div className="flex flex-col items-center gap-1">
         <div className="flex items-center justify-center gap-2">
+          <Button onClick={() => setPresenting(true)} size="sm" variant="outline">
+            <Icon name="maximize" className="size-3.5" /> Present
+          </Button>
+          <Button disabled={htmlExporting} onClick={() => void exportHtml()} size="sm" variant="outline">
+            {htmlExporting ? (
+              <Icon name="loader-circle" className="size-3.5 animate-spin" />
+            ) : (
+              <Icon name="external-link" className="size-3.5" />
+            )}
+            Export HTML
+          </Button>
           <Button onClick={exportPptx} disabled={exporting} size="sm" variant="outline">
             {exporting ? (
               <Icon name="loader-circle" className="size-3.5 animate-spin" />
@@ -180,10 +255,15 @@ export function DeckPreview({ fileId }: { fileId: string }) {
             )}
             Export PPTX
           </Button>
-          <Button onClick={openFull} size="sm" variant="outline">
-            <Icon name="external-link" className="size-3.5" /> Open full deck
-          </Button>
         </div>
+        {htmlExported != null && !htmlExported.startsWith("ERROR") && (
+          <span className="text-success font-mono text-[11px]">
+            HTML saved as {htmlExported} — view it in Documents
+          </span>
+        )}
+        {htmlExported?.startsWith("ERROR") && (
+          <span className="text-destructive font-mono text-[11px]">HTML export failed: {htmlExported.slice(7)}</span>
+        )}
         {exported != null && (
           <span className="text-success font-mono text-[11px]">Saved as {exported} — view it in Documents</span>
         )}

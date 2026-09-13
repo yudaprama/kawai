@@ -1296,6 +1296,37 @@ async fn office_read_document_handler(
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct OfficeExportDeckRequest {
+    file_id: String,
+}
+
+async fn office_export_deck_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<OfficeExportDeckRequest>,
+) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
+    let deck = logic::office::export_deck_pptx(&user_id, &req.file_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(deck))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficeExportDeckHtmlRequest {
+    file_id: String,
+}
+
+async fn office_export_deck_html_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<OfficeExportDeckHtmlRequest>,
+) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
+    let file = logic::office::render_deck_html(&user_id, &req.file_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(file))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct OfficeReadDeckRequest {
     file_id: String,
 }
@@ -1740,6 +1771,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
             post(office_read_document_handler),
         )
         .route("/api/office_read_deck", post(office_read_deck_handler))
+        .route("/api/office_export_deck_html", post(office_export_deck_html_handler))
+        .route("/api/office_export_deck", post(office_export_deck_handler))
         .route("/api/knowledge_context", post(knowledge_context_handler))
         .route("/api/office_index_file", post(office_index_file_handler))
         .route("/api/knowledge_search", post(knowledge_search_handler))
