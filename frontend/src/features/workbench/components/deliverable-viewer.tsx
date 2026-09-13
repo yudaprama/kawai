@@ -91,12 +91,7 @@ export function PastRunCanvas({
   /** Header label: the step's task (agentName), or the tool — never the raw
    *  step id. Same derivation the active canvas uses. */
   const docStep = (run.steps ?? []).find((s) => s.stepId === doc);
-  const docStepLabel =
-    docStep != null
-      ? (docStep.task || docStep.tool).trim().length > 48
-        ? `${(docStep.task || docStep.tool).trim().slice(0, 47).trimEnd()}…`
-        : (docStep.task || docStep.tool).trim()
-      : doc;
+  const docStepLabel = (docStep?.task || docStep?.tool || doc).trim();
   const goalLabel = run.goal.length > 48 ? `${run.goal.slice(0, 47).trimEnd()}…` : run.goal;
   const deliverableBody = run.outputFull ?? (run.outputPreview ? `${run.outputPreview}…` : null);
   const stepTool = run.steps?.find((s) => s.stepId === doc)?.tool ?? "";
@@ -283,12 +278,12 @@ export function DeliverableViewer({
         {!unseeded && workbench.deck != null && (effective === "final" || effective === "__deliverable") && (
           <div className="space-y-1">
             <div className="text-muted-foreground flex items-center gap-2 font-mono text-[11px] uppercase">
-              <Icon name="zap" className="size-3" /> Deck · {workbench.deck!.label ?? "presentation"}
+              <Icon name="zap" className="size-3" /> Deck · {workbench.deck.label ?? "presentation"}
             </div>
             {/* Native slide preview — plain DOM fragments + theme CSS (a few
                   KB per slide). The full reveal.js deck opens in the browser via
                   "Open full deck" inside the preview; no iframe in the app. */}
-            <DeckPreview fileId={workbench.deck!.handle!} />
+            <DeckPreview fileId={workbench.deck.handle} />
           </div>
         )}
         {effective === "final" && !unseeded && supervisor.finalOutput != null && (

@@ -112,8 +112,7 @@ export interface TimelineRow {
 /** Agent display name: the planner's human task, de-gritted. Falls back to
  *  the tool name; never shows raw step ids like "s2" as the primary label. */
 export function agentName(step: SupervisorStep): string {
-  const t = (step.task || step.tool || step.stepId).trim();
-  return t.length > 48 ? `${t.slice(0, 47).trimEnd()}…` : t;
+  return (step.task || step.tool || step.stepId).trim();
 }
 
 /** The virtual post-plan synthesis step is rendered as a dedicated rail row,
