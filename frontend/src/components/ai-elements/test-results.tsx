@@ -9,13 +9,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import {
-  CheckCircle2Icon,
-  ChevronRightIcon,
-  CircleDotIcon,
-  CircleIcon,
-  XCircleIcon,
-} from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { createContext, useContext, useMemo } from "react";
 
 type TestStatus = "passed" | "failed" | "skipped" | "running";
@@ -100,7 +94,7 @@ export const TestResultsSummary = ({
             className="gap-1 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
             variant="secondary"
           >
-            <CheckCircle2Icon className="size-3" />
+            <Icon name="check-circle-2" className="size-3" />
             {summary.passed} passed
           </Badge>
           {summary.failed > 0 && (
@@ -108,7 +102,7 @@ export const TestResultsSummary = ({
               className="gap-1 bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
               variant="secondary"
             >
-              <XCircleIcon className="size-3" />
+              <Icon name="x-circle" className="size-3" />
               {summary.failed} failed
             </Badge>
           )}
@@ -117,7 +111,7 @@ export const TestResultsSummary = ({
               className="gap-1 bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
               variant="secondary"
             >
-              <CircleIcon className="size-3" />
+              <Icon name="circle" className="size-3" />
               {summary.skipped} skipped
             </Badge>
           )}
@@ -229,10 +223,10 @@ const statusStyles: Record<TestStatus, string> = {
 };
 
 const statusIcons: Record<TestStatus, React.ReactNode> = {
-  failed: <XCircleIcon className="size-4" />,
-  passed: <CheckCircle2Icon className="size-4" />,
-  running: <CircleDotIcon className="size-4 animate-pulse" />,
-  skipped: <CircleIcon className="size-4" />,
+  failed: <Icon name="x-circle" className="size-4" />,
+  passed: <Icon name="check-circle-2" className="size-4" />,
+  running: <Icon name="circle-dot" className="size-4 animate-pulse" />,
+  skipped: <Icon name="circle" className="size-4" />,
 };
 
 const TestStatusIcon = ({ status }: { status: TestStatus }) => (
@@ -281,7 +275,7 @@ export const TestSuiteName = ({
       )}
       {...props}
     >
-      <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+      <Icon name="chevron-right" className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
       <TestStatusIcon status={status} />
       <span className="font-medium text-sm">{children ?? name}</span>
     </CollapsibleTrigger>

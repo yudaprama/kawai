@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { parse, isRecord, str, ParamChips } from "./shared";
 import { Footnote } from "./shared";
-import { WrenchIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 
 type ConnTool = {
   name: string;
@@ -29,7 +29,7 @@ export function renderConnectorTools(output: unknown): ReactNode {
   return (
     <div className="not-prose space-y-2">
       <div className="flex items-center gap-2 text-muted-foreground text-[11px] uppercase tracking-wide">
-        <WrenchIcon className="size-3" />
+        <Icon name="wrench" className="size-3" />
         {tools.length} tool{tools.length === 1 ? "" : "s"}
       </div>
       {tools.slice(0, 12).map((t, i) => {

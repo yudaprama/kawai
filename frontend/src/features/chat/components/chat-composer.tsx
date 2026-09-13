@@ -1,4 +1,4 @@
-import { AtSignIcon, PlusIcon, VideoIcon, XIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   PromptInput,
@@ -269,7 +269,7 @@ function ChatComposerInner({
                 onClick={() => toggleMention(m)}
                 type="button"
               >
-                <XIcon className="size-3" />
+                <Icon name="x" className="size-3" />
               </button>
             </span>
           ))}
@@ -299,7 +299,7 @@ function ChatComposerInner({
                 title="Mention a file (@)"
                 variant="ghost"
               >
-                <AtSignIcon />
+                <Icon name="at-sign" />
               </Button>
             </PopoverTrigger>
             <PopoverContent align="start" className="w-72 p-1">
@@ -339,7 +339,7 @@ function ChatComposerInner({
                       title="Ingest a YouTube video transcript into your knowledge base"
                       variant="ghost"
                     >
-                      <VideoIcon className="size-3" />
+                      <Icon name="video" className="size-3" />
                       Add link
                     </Button>
                   )}
@@ -351,7 +351,7 @@ function ChatComposerInner({
                       title="Import documents & images (.docx .xlsx .pptx .pdf .png .jpg …)"
                       variant="ghost"
                     >
-                      <PlusIcon className="size-3" />
+                      <Icon name="plus" className="size-3" />
                       Add files
                     </Button>
                   )}

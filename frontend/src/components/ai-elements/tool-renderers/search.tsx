@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { parse, isRecord, str, Footnote } from "./shared";
-import { GlobeIcon, SparklesIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 
 type Hit = {
   title?: string;
@@ -56,7 +56,7 @@ function Favicon({ src }: { src?: string }) {
       />
     );
   }
-  return <GlobeIcon className="size-4 shrink-0 text-muted-foreground" />;
+  return <Icon name="globe" className="size-4 shrink-0 text-muted-foreground" />;
 }
 
 export function renderWebSearch(output: unknown): ReactNode {
@@ -70,7 +70,7 @@ export function renderWebSearch(output: unknown): ReactNode {
       {overview && (
         <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
           <div className="flex items-center gap-1.5 text-primary text-[11px] font-medium uppercase tracking-wide">
-            <SparklesIcon className="size-3" />
+            <Icon name="sparkles" className="size-3" />
             AI Overview
           </div>
           <p className="text-[13px] leading-relaxed text-foreground">

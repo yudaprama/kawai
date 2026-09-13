@@ -10,14 +10,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import {
-  CheckCircleIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CircleIcon,
-  ClockIcon,
-  XCircleIcon,
-} from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { isValidElement, useState } from "react";
 
 import { CodeBlock } from "./code-block";
@@ -68,13 +61,13 @@ const statusLabels: Record<ToolPart["state"], string> = {
 };
 
 const statusIcons: Record<ToolPart["state"], ReactNode> = {
-  "approval-requested": <ClockIcon className="size-4 text-warning" />,
-  "approval-responded": <CheckCircleIcon className="size-4 text-primary" />,
-  "input-available": <ClockIcon className="size-4 animate-pulse" />,
-  "input-streaming": <CircleIcon className="size-4" />,
-  "output-available": <CheckCircleIcon className="size-4 text-success" />,
-  "output-denied": <XCircleIcon className="size-4 text-warning" />,
-  "output-error": <XCircleIcon className="size-4 text-destructive" />,
+  "approval-requested": <Icon name="clock" className="size-4 text-warning" />,
+  "approval-responded": <Icon name="check-circle" className="size-4 text-primary" />,
+  "input-available": <Icon name="clock" className="size-4 animate-pulse" />,
+  "input-streaming": <Icon name="circle" className="size-4" />,
+  "output-available": <Icon name="check-circle" className="size-4 text-success" />,
+  "output-denied": <Icon name="x-circle" className="size-4 text-warning" />,
+  "output-error": <Icon name="x-circle" className="size-4 text-destructive" />,
 };
 
 export const getStatusBadge = (status: ToolPart["state"]) => (
@@ -182,7 +175,7 @@ export const ToolHeader = ({
         <span className="font-medium text-sm">{title ?? displayName}</span>
         {getStatusBadge(state)}
       </div>
-      <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+      <Icon name="chevron-down" className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
     </CollapsibleTrigger>
   );
 };
@@ -299,7 +292,8 @@ export const ToolInput = ({ className, input, ...props }: ToolInputProps) => {
                       className="flex items-center shrink-0 text-muted-foreground hover:text-foreground"
                       aria-label={isExpanded ? "Collapse" : "Expand"}
                     >
-                      <ChevronRightIcon
+                      <Icon
+                        name="chevron-right"
                         className={cn(
                           "size-3.5 transition-transform",
                           isExpanded && "rotate-90"

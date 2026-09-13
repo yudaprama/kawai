@@ -1,4 +1,4 @@
-import { PlusIcon, VideoIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useEffect, useRef, useState } from "react";
 import { FileIcon } from "@/components/shared/file-icon";
 import { KnowledgeFileRow, KnowledgeSectionLabel } from "@/features/knowledge/components/knowledge-file-row";
@@ -88,7 +88,7 @@ export function ContextPanel({
             title="Ingest a YouTube video transcript into your knowledge base"
             variant="ghost"
           >
-            {linking ? <Spinner className="size-3" /> : <VideoIcon className="size-3" />}
+            {linking ? <Spinner className="size-3" /> : <Icon name="video" className="size-3" />}
             Add link
           </Button>
           <Button
@@ -98,7 +98,7 @@ export function ContextPanel({
             title="Import documents & images (.docx .xlsx .pptx .pdf .png .jpg …)"
             variant="ghost"
           >
-            {importing ? <Spinner className="size-3" /> : <PlusIcon className="size-3" />}
+            {importing ? <Spinner className="size-3" /> : <Icon name="plus" className="size-3" />}
             Add files
           </Button>
         </div>

@@ -1,95 +1,85 @@
-import {
-  Brain,
-  Camera,
-  Code2,
-  Eye,
-  FileDown,
-  FilePenLine,
-  FilePlus,
-  FileText,
-  Monitor,
-  Presentation,
-  Save,
-  Search,
-  Table2,
-  Terminal,
-  Users,
-  Wrench,
-} from "lucide-react";
+import { createElement } from "react";
+import { Icon } from "@/components/shared/icon";
 import type { ComponentType } from "react";
 
 export type ToolIconProps = {
   className?: string;
 };
 
+const iconWrap = (name: string): ComponentType<ToolIconProps> => {
+  const Wrapped = ({ className }: ToolIconProps) => createElement(Icon, { name, className });
+  Wrapped.displayName = `Icon(${name})`;
+  return Wrapped;
+};
+
 /**
- * Maps tool names (after `tool-` prefix or `__` extension delimiter) to icons.
+ * Maps tool names (after `tool-` prefix or `__` extension delimiter) to icon names.
  * Ported from `desktop/src/utils/toolIconMapping.tsx:28`.
  */
 export const getToolIcon = (toolName: string): ComponentType<ToolIconProps> => {
   switch (toolName) {
     case "text_editor":
-      return FilePenLine;
+      return iconWrap("file-pen-line");
     case "shell":
-      return Terminal;
+      return iconWrap("terminal");
     case "remember_memory":
-      return Save;
+      return iconWrap("save");
     case "retrieve_memories":
-      return Brain;
+      return iconWrap("brain");
     case "computer_control":
-      return Monitor;
+      return iconWrap("monitor");
     case "screen_capture":
-      return Camera;
+      return iconWrap("camera");
     case "pdf_tool":
-      return FileText;
+      return iconWrap("file-text");
     case "docx_tool":
-      return FileText;
+      return iconWrap("file-text");
     case "xlsx_tool":
-      return Table2;
+      return iconWrap("table-2");
     case "search":
-      return Search;
+      return iconWrap("search");
     case "read":
-      return Eye;
+      return iconWrap("eye");
     case "create_file":
-      return FilePlus;
+      return iconWrap("file-plus");
     case "update_file":
-      return FilePenLine;
+      return iconWrap("file-pen-line");
     case "sheets_tool":
-      return Table2;
+      return iconWrap("table-2");
     case "docs_tool":
-      return FileText;
+      return iconWrap("file-text");
     case "delegate":
-      return Users;
+      return iconWrap("users");
     case "load":
-      return Eye;
+      return iconWrap("eye");
     case "final_output":
-      return Wrench;
+      return iconWrap("wrench");
     // kawai / knowledge tools
     case "knowledge_search":
-      return Search;
+      return iconWrap("search");
     case "knowledge_add_to_session":
     case "office_index_file":
     case "office_import_file":
-      return FileText;
+      return iconWrap("file-text");
     case "office_create_deck":
-      return Presentation;
+      return iconWrap("presentation");
     case "office_export_deck":
-      return FileDown;
+      return iconWrap("file-down");
     default:
-      return Wrench;
+      return iconWrap("wrench");
   }
 };
 
 export const getExtensionIcon = (extensionName: string): ComponentType<ToolIconProps> => {
   switch (extensionName) {
     case "developer":
-      return Code2;
+      return iconWrap("code-2");
     case "memory":
-      return Brain;
+      return iconWrap("brain");
     case "computercontroller":
-      return Monitor;
+      return iconWrap("monitor");
     default:
-      return Wrench;
+      return iconWrap("wrench");
   }
 };
 

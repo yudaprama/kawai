@@ -1,4 +1,3 @@
-import { CheckIcon, PlusIcon, RotateCcwIcon, TrashIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import {
   AssetBadge,
@@ -12,6 +11,7 @@ import {
 } from "@/features/assets/components/asset/asset-list-panel";
 import { AssetSplitLayout } from "@/features/assets/components/asset/asset-split-layout";
 import { FilePreview } from "@/components/shared/file-preview";
+import { Icon } from "@/components/shared/icon";
 import { KnowledgeStatusBadge } from "@/features/knowledge/components/knowledge-file-row";
 import { KnowledgeFileSummary } from "@/features/knowledge/components/knowledge-file-summary";
 import { Button } from "@/components/ui/button";
@@ -81,9 +81,10 @@ export function KnowledgeLibrary({
               <AssetItemHeader>
                 <AssetItemName title={file.originalName}>{file.originalName}</AssetItemName>
                 {inSession(file) && (
-                  <CheckIcon
+                  <Icon
                     aria-label="In this session"
                     className="size-3.5 shrink-0 text-[var(--tea-color-text-success-default)]"
+                    name="check"
                   />
                 )}
               </AssetItemHeader>
@@ -154,7 +155,7 @@ function LibraryDetail({
                 }
                 variant="outline"
               >
-                <XIcon className="size-3" />
+                <Icon name="x" className="size-3" />
                 Remove from session
               </Button>
             ) : (
@@ -168,7 +169,7 @@ function LibraryDetail({
                 }
                 variant="outline"
               >
-                <PlusIcon className="size-3" />
+                <Icon name="plus" className="size-3" />
                 Add to session
               </Button>
             ))}
@@ -179,7 +180,7 @@ function LibraryDetail({
               title={file.error ? `Retry indexing — last error: ${file.error}` : "Retry indexing"}
               variant="outline"
             >
-              <RotateCcwIcon className="size-3" />
+              <Icon name="rotate-ccw" className="size-3" />
               Retry indexing
             </Button>
           )}
@@ -190,7 +191,7 @@ function LibraryDetail({
             title={confirmDelete ? "Click again to confirm — deletes the document everywhere" : "Delete document"}
             variant="outline"
           >
-            <TrashIcon className="size-3" />
+            <Icon name="trash" className="size-3" />
             {confirmDelete ? "Confirm delete" : "Delete"}
           </Button>
         </div>

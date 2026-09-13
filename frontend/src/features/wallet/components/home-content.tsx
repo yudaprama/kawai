@@ -1,16 +1,5 @@
 import { useState } from "react";
-import {
-  ArrowDownToLineIcon,
-  CoinsIcon,
-  EyeIcon,
-  EyeOffIcon,
-  FuelIcon,
-  GiftIcon,
-  HistoryIcon,
-  PlusIcon,
-  Repeat2Icon,
-  SendIcon,
-} from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -78,7 +67,7 @@ export function HomeContent({
                 onClick={() => setBalanceVisible(!balanceVisible)}
                 aria-label={balanceVisible ? "Hide" : "Show"}
               >
-                {balanceVisible ? <EyeIcon className="size-4" /> : <EyeOffIcon className="size-4" />}
+                {balanceVisible ? <Icon name="eye" className="size-4" /> : <Icon name="eye-off" className="size-4" />}
               </Button>
             </TooltipTrigger>
             <TooltipContent>{balanceVisible ? "Hide balance" : "Show balance"}</TooltipContent>
@@ -101,7 +90,7 @@ export function HomeContent({
               {currentNetwork && (
                 <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                   <div className="flex items-center gap-2">
-                    <CoinsIcon className="size-3.5" /> Wallet Balance:{" "}
+                    <Icon name="coins" className="size-3.5" /> Wallet Balance:{" "}
                     <span className="text-foreground font-medium">
                       {balanceVisible ? onChainBalance : "••••"} {currentNetwork.stablecoinSymbol}
                     </span>
@@ -118,7 +107,7 @@ export function HomeContent({
                     </div>
                   )}
                   <div className="flex items-center gap-2">
-                    <GiftIcon className="size-3.5" /> KAWAI Rewards:{" "}
+                    <Icon name="gift" className="size-3.5" /> KAWAI Rewards:{" "}
                     <span className="text-foreground font-medium">{balanceVisible ? kawaiBalance : "•••"} KAWAI</span>
                     {trackedBalance?.has_referrer && (
                       <Badge variant="secondary" className="bg-purple-600 text-white">
@@ -135,7 +124,7 @@ export function HomeContent({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="inline-flex items-center gap-1 rounded-md border bg-muted px-2 py-1">
-                      <FuelIcon className="size-3" /> {gasEstimate.maxGasPriceGwei.toFixed(1)} Gwei
+                      <Icon name="fuel" className="size-3" /> {gasEstimate.maxGasPriceGwei.toFixed(1)} Gwei
                     </div>
                   </TooltipTrigger>
                   <TooltipContent>Max Tip {gasEstimate.maxTipGwei.toFixed(2)} Gwei</TooltipContent>
@@ -149,10 +138,10 @@ export function HomeContent({
 
       <div className="flex flex-wrap justify-center gap-3">
         {[
-          { label: "Deposit", icon: PlusIcon, action: () => setModalType("deposit") },
-          { label: "Send", icon: SendIcon, action: () => setModalType("send") },
-          { label: "Receive", icon: ArrowDownToLineIcon, action: () => setModalType("receive") },
-          { label: "Swap", icon: Repeat2Icon, action: () => toast.info("Coming soon") },
+          { label: "Deposit", icon: "plus", action: () => setModalType("deposit") },
+          { label: "Send", icon: "send", action: () => setModalType("send") },
+          { label: "Receive", icon: "arrow-down-to-line", action: () => setModalType("receive") },
+          { label: "Swap", icon: "repeat-2", action: () => toast.info("Coming soon") },
         ].map((a) => (
           <button
             type="button"
@@ -161,7 +150,7 @@ export function HomeContent({
             className="flex flex-col items-center gap-2 rounded-xl border bg-card p-4 hover:bg-accent transition"
           >
             <span className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <a.icon className="size-6" />
+              <Icon name={a.icon} className="size-6" />
             </span>
             <span className="text-xs font-semibold">{a.label}</span>
           </button>
@@ -171,10 +160,10 @@ export function HomeContent({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-sm">
-            <CoinsIcon className="size-4" /> Tokens
+            <Icon name="coins" className="size-4" /> Tokens
           </CardTitle>
           <Button variant="ghost" size="sm" onClick={() => setModalType("addToken")}>
-            <PlusIcon className="size-4" /> Add Token
+            <Icon name="plus" className="size-4" /> Add Token
           </Button>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -213,7 +202,7 @@ export function HomeContent({
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div className="flex items-center gap-3">
               <span className="flex size-8 items-center justify-center rounded-full bg-gradient-to-br from-pink-300 to-rose-400 text-white">
-                <GiftIcon className="size-4" />
+                <Icon name="gift" className="size-4" />
               </span>
               <div>
                 <div className="font-semibold text-sm">KAWAI</div>
@@ -233,7 +222,7 @@ export function HomeContent({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-sm">
-            <HistoryIcon className="size-4" /> Recent Activity
+            <Icon name="history" className="size-4" /> Recent Activity
           </CardTitle>
           {transactions.length > 5 && (
             <Button variant="link" size="sm" onClick={() => setShowAll(true)}>
@@ -271,7 +260,7 @@ export function HomeContent({
         <DialogContent className="max-w-[700px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <HistoryIcon className="size-4" /> Transaction History
+              <Icon name="history" className="size-4" /> Transaction History
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-2 max-h-[60vh] overflow-auto">

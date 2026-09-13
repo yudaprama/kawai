@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SearchIcon, XIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { SessionRow } from "@/features/chat/components/session-row";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -87,7 +87,10 @@ export function SessionHistoryDialog({
 
         {/* Search */}
         <div className="relative border-b px-4 py-2">
-          <SearchIcon className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-7 size-3.5 -translate-y-1/2" />
+          <Icon
+            name="search"
+            className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-7 size-3.5 -translate-y-1/2"
+          />
           <Input
             className="h-8 pl-8 text-xs"
             onChange={(e) => setQuery(e.target.value)}
@@ -102,7 +105,7 @@ export function SessionHistoryDialog({
               onClick={() => setQuery("")}
               type="button"
             >
-              <XIcon className="size-3.5" />
+              <Icon name="x" className="size-3.5" />
             </button>
           )}
         </div>

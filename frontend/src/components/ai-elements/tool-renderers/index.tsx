@@ -1,23 +1,6 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import {
-  BarChart3Icon,
-  BookMarkedIcon,
-  BookOpenIcon,
-  ClapperboardIcon,
-  CloudSunIcon,
-  DollarSignIcon,
-  Gamepad2Icon,
-  GlobeIcon,
-  NewspaperIcon,
-  SatelliteIcon,
-  SearchIcon,
-  SparklesIcon,
-  TrophyIcon,
-  UtensilsCrossedIcon,
-  WandSparklesIcon,
-  WrenchIcon,
-} from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 
 import { cards } from "./shared";
 import { renderBibleVerse, renderQuran, renderPoem, renderDefinition } from "./typographic";
@@ -129,44 +112,44 @@ export function renderToolOutput(toolName: string, output: unknown): ReactNode {
 // category icons
 // ---------------------------------------------------------------------------
 
-type IconComponent = ComponentType<{ className?: string }>;
+type IconName = string;
 
 /** Ordered [predicate, icon] — first match wins. Keeps new tools covered. */
-const iconRules: Array<[(name: string) => boolean, IconComponent]> = [
-  [(n) => /^data_/.test(n), BarChart3Icon],
-  [(n) => /web_search|^search$/.test(n), SearchIcon],
-  [(n) => n.startsWith("browser_"), GlobeIcon],
+const iconRules: Array<[(name: string) => boolean, IconName]> = [
+  [(n) => /^data_/.test(n), "bar-chart-3"],
+  [(n) => /web_search|^search$/.test(n), "search"],
+  [(n) => n.startsWith("browser_"), "globe"],
   [
     (n) =>
       /crypto|stock|forex|currency|binance|_rsi|_macd|_sma|_ema|bbands|financials|fundamentals/.test(
         n
       ),
-    DollarSignIcon,
+    "dollar-sign",
   ],
-  [(n) => /weather|geocode|sun_times|ip_location|iss_|time_in/.test(n), CloudSunIcon],
-  [(n) => /news|headlines/.test(n), NewspaperIcon],
-  [(n) => /competition|team|match|scorers|person_info/.test(n), TrophyIcon],
+  [(n) => /weather|geocode|sun_times|ip_location|iss_|time_in/.test(n), "cloud-sun"],
+  [(n) => /news|headlines/.test(n), "newspaper"],
+  [(n) => /competition|team|match|scorers|person_info/.test(n), "trophy"],
   [
     (n) =>
       /anime|manga|artist|album|photos|videos|tv_show|tv_schedule|book|poem|recommendations/.test(
         n
       ),
-    ClapperboardIcon,
+    "clapperboard",
   ],
-  [(n) => /food|recipe|cocktail/.test(n), UtensilsCrossedIcon],
-  [(n) => /pokemon/.test(n), Gamepad2Icon],
-  [(n) => /earthquake|flights|spacex/.test(n), SatelliteIcon],
-  [(n) => /bible|quran|on_this_day/.test(n), BookMarkedIcon],
+  [(n) => /food|recipe|cocktail/.test(n), "utensils-crossed"],
+  [(n) => /pokemon/.test(n), "gamepad-2"],
+  [(n) => /earthquake|flights|spacex/.test(n), "satellite"],
+  [(n) => /bible|quran|on_this_day/.test(n), "book-marked"],
   [
     (n) =>
       /wikipedia|country|define_word|papers|holidays|fruit|github|calculate/.test(n),
-    BookOpenIcon,
+    "book-open",
   ],
   [
     (n) => /joke|email|trivia|star_wars|deck|cards|chuck/.test(n),
-    SparklesIcon,
+    "sparkles",
   ],
-  [(n) => /ocr|translate|summariz|sentiment|speech|sql|detect|generate_image/.test(n), WandSparklesIcon],
+  [(n) => /ocr|translate|summariz|sentiment|speech|sql|detect|generate_image/.test(n), "wand-sparkles"],
 ];
 
 /**
@@ -180,6 +163,6 @@ export function toolIcon({
   toolName: string;
   className?: string;
 }): ReactNode {
-  const Icon = iconRules.find(([test]) => test(toolName))?.[1] ?? WrenchIcon;
-  return <Icon className={className} />;
+  const name = iconRules.find(([test]) => test(toolName))?.[1] ?? "wrench";
+  return <Icon name={name} className={className} />;
 }

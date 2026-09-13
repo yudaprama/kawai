@@ -9,7 +9,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { ChevronRightIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { createContext, useContext, useMemo } from "react";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -207,7 +207,7 @@ export const SchemaDisplayParameters = ({
   return (
     <Collapsible className={cn(className)} defaultOpen {...props}>
       <CollapsibleTrigger className="group flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/50">
-        <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+        <Icon name="chevron-right" className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
         <span className="font-medium text-sm">Parameters</span>
         <Badge className="ml-auto text-xs" variant="secondary">
           {parameters?.length}
@@ -254,7 +254,7 @@ export const SchemaDisplayProperty = ({
           )}
           style={{ paddingLeft }}
         >
-          <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+          <Icon name="chevron-right" className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
           <span className="font-mono text-sm">{name}</span>
           <Badge className="text-xs" variant="outline">
             {type}
@@ -341,7 +341,7 @@ const SchemaDisplaySection = ({
 }) => (
   <Collapsible className={cn(className)} defaultOpen {...props}>
     <CollapsibleTrigger className="group flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/50">
-      <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+      <Icon name="chevron-right" className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
       <span className="font-medium text-sm">{label}</span>
     </CollapsibleTrigger>
     <CollapsibleContent>

@@ -1,4 +1,4 @@
-import { GitBranchIcon, PlusIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useMemo, useState } from "react";
 import {
   AssetBadge,
@@ -71,7 +71,7 @@ export function WikiAssetPage({
       <AssetPageHeader
         actions={
           <Button disabled={importing} onClick={onImport} size="sm">
-            {importing ? <Spinner className="size-3" /> : <PlusIcon className="size-3.5" />}
+            {importing ? <Spinner className="size-3" /> : <Icon name="plus" className="size-3.5" />}
             Add source
           </Button>
         }
@@ -203,7 +203,7 @@ function SourceDetail({
           <TabsList className="h-9">
             <TabsTrigger value="pages">Pages</TabsTrigger>
             <TabsTrigger value="graph">
-              <GitBranchIcon className="size-3.5" />
+              <Icon name="git-branch" className="size-3.5" />
               Graph
             </TabsTrigger>
           </TabsList>
@@ -216,7 +216,7 @@ function SourceDetail({
         <TabsContent value="graph">
           <EmptyPane
             description="The page graph links wiki pages by their references and expands search results across hops. A page-graph indexing tier isn't part of this build yet — sources are searched by chunk embeddings and BM25."
-            icon={<GitBranchIcon className="size-5" />}
+            icon={<Icon name="git-branch" className="size-5" />}
             label="No page graph for this source"
           />
         </TabsContent>

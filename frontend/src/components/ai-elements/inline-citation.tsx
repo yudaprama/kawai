@@ -15,7 +15,7 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { cn } from "@/lib/utils";
-import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import {
   createContext,
   useCallback,
@@ -216,7 +216,7 @@ export const InlineCitationCarouselPrev = ({
       type="button"
       {...props}
     >
-      <ArrowLeftIcon className="size-4 text-muted-foreground" />
+      <Icon name="arrow-left" className="size-4 text-muted-foreground" />
     </button>
   );
 };
@@ -243,7 +243,7 @@ export const InlineCitationCarouselNext = ({
       type="button"
       {...props}
     >
-      <ArrowRightIcon className="size-4 text-muted-foreground" />
+      <Icon name="arrow-right" className="size-4 text-muted-foreground" />
     </button>
   );
 };

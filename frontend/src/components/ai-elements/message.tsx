@@ -11,7 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 import { WithTooltip } from "@/components/ai-elements/with-tooltip";
 import { useStreamdownConfig } from "@/hooks/use-streamdown";
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { wrapHTMLInCodeBlock } from "@/lib/html-security";
 import { customUrlTransform } from "@/lib/url-security";
 import {
@@ -252,7 +252,7 @@ export const MessageBranchPrevious = ({
       variant="ghost"
       {...props}
     >
-      {children ?? <ChevronLeftIcon size={14} />}
+      {children ?? <Icon name="chevron-left" className="size-4" />}
     </Button>
   );
 };
@@ -275,7 +275,7 @@ export const MessageBranchNext = ({
       variant="ghost"
       {...props}
     >
-      {children ?? <ChevronRightIcon size={14} />}
+      {children ?? <Icon name="chevron-right" className="size-4" />}
     </Button>
   );
 };

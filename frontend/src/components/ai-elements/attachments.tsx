@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/hover-card";
 import { FILE_ICON_CDN, FileIcon } from "@/components/shared/file-icon";
 import { cn } from "@/lib/utils";
-import { PaperclipIcon, XIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { createContext, useCallback, useContext, useMemo } from "react";
 
 // ============================================================================
@@ -239,7 +239,7 @@ export const AttachmentPreview = ({
   const renderIcon = (url: string) => url ? (
     <img src={url} alt="" className={cn(iconSize, "text-muted-foreground")} />
   ) : (
-    <PaperclipIcon className={cn(iconSize, "text-muted-foreground")} />
+    <Icon name="paperclip" className={cn(iconSize, "text-muted-foreground")} />
   );
 
   const renderContent = () => {
@@ -369,7 +369,7 @@ export const AttachmentRemove = ({
       variant="ghost"
       {...props}
     >
-      {children ?? <XIcon />}
+      {children ?? <Icon name="x" />}
       <span className="sr-only">{label}</span>
     </Button>
   );

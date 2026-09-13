@@ -1,5 +1,5 @@
-import { CheckIcon, EyeIcon, PlusIcon, RotateCcwIcon, TrashIcon, XIcon } from "lucide-react";
 import { FileIcon } from "@/components/shared/file-icon";
+import { Icon } from "@/components/shared/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { isTabularExt } from "@/lib/extensions";
 import type { KnowledgeFileInfo } from "@/lib/api";
@@ -75,7 +75,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
   return (
     <div className="bg-card group/file flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
       {inSessionList ? (
-        <CheckIcon className="text-success size-4 shrink-0" />
+        <Icon name="check" className="text-success size-4 shrink-0" />
       ) : (
         <FileIcon name={file.originalName} className="size-4 shrink-0" />
       )}
@@ -112,7 +112,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
           title="Preview file"
           type="button"
         >
-          <EyeIcon className="size-3.5" />
+          <Icon name="eye" className="size-3.5" />
         </button>
         {file.status === "failed" && (
           <button
@@ -122,7 +122,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
             title={file.error ? `Retry indexing — last error: ${file.error}` : "Retry indexing"}
             type="button"
           >
-            <RotateCcwIcon className="size-3.5" />
+            <Icon name="rotate-ccw" className="size-3.5" />
           </button>
         )}
         {inSessionList ? (
@@ -137,7 +137,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
             }
             type="button"
           >
-            <XIcon className="size-3.5" />
+            <Icon name="x" className="size-3.5" />
           </button>
         ) : (
           <button
@@ -151,7 +151,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
             }
             type="button"
           >
-            <PlusIcon className="size-3.5" />
+            <Icon name="plus" className="size-3.5" />
           </button>
         )}
         <button
@@ -165,7 +165,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
           title={confirmDelete ? "Click again to confirm — deletes the document everywhere" : "Delete document"}
           type="button"
         >
-          <TrashIcon className="size-3.5" />
+          <Icon name="trash" className="size-3.5" />
         </button>
       </div>
     </div>

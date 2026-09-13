@@ -1,4 +1,4 @@
-import { PencilIcon, PlusIcon, TrashIcon, WrenchIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useCallback, useEffect, useState } from "react";
 import {
   AssetBadge,
@@ -94,7 +94,7 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
             }}
             size="sm"
           >
-            <PlusIcon className="size-3.5" />
+            <Icon name="plus" className="size-3.5" />
             New skill
           </Button>
         }
@@ -213,7 +213,7 @@ function SkillDetail({
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Button disabled={detail == null} onClick={onEdit} size="xs" variant="outline">
-            <PencilIcon className="size-3" />
+            <Icon name="pencil" className="size-3" />
             Edit
           </Button>
           <Button
@@ -227,7 +227,7 @@ function SkillDetail({
               "Confirm"
             ) : (
               <>
-                <TrashIcon className="size-3" />
+                <Icon name="trash" className="size-3" />
                 Delete
               </>
             )}
@@ -244,7 +244,7 @@ function SkillDetail({
         ) : (
           <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
             <div className="bg-muted flex size-12 items-center justify-center rounded-lg">
-              <WrenchIcon className="size-5" />
+              <Icon name="wrench" className="size-5" />
             </div>
             <p className="text-foreground text-sm font-medium">Couldn&apos;t load this skill</p>
           </div>

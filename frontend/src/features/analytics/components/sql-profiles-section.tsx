@@ -1,4 +1,4 @@
-import { DatabaseIcon, FolderOpenIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -122,11 +122,11 @@ export function SqlProfilesSection() {
     <div className="mb-4">
       <div className="flex items-center justify-between px-1 pb-2">
         <span className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium uppercase">
-          <DatabaseIcon className="size-3" />
+          <Icon name="database" className="size-3" />
           Connected databases
         </span>
         <Button onClick={openAdd} size="xs" variant="ghost">
-          <PlusIcon className="size-3" />
+          <Icon name="plus" className="size-3" />
           Add database
         </Button>
       </div>
@@ -150,7 +150,7 @@ export function SqlProfilesSection() {
               value={source}
             />
             <Button onClick={pickFile} size="sm" variant="outline">
-              <FolderOpenIcon className="size-3" />
+              <Icon name="folder-open" className="size-3" />
             </Button>
           </div>
           {isRemoteSource(source) && (
@@ -195,7 +195,11 @@ export function SqlProfilesSection() {
                     title="Test connection"
                     variant="ghost"
                   >
-                    {testing === p.name ? <Spinner className="size-3.5" /> : <DatabaseIcon className="size-3.5" />}
+                    {testing === p.name ? (
+                      <Spinner className="size-3.5" />
+                    ) : (
+                      <Icon name="database" className="size-3.5" />
+                    )}
                   </Button>
                   <Button
                     aria-label={`Edit profile ${p.name}`}
@@ -204,7 +208,7 @@ export function SqlProfilesSection() {
                     title="Edit source"
                     variant="ghost"
                   >
-                    <PencilIcon className="size-3.5" />
+                    <Icon name="pencil" className="size-3.5" />
                   </Button>
                   <Button
                     aria-label={`Delete profile ${p.name}`}
@@ -212,7 +216,7 @@ export function SqlProfilesSection() {
                     size="icon-sm"
                     variant="ghost"
                   >
-                    <Trash2Icon className="size-3.5" />
+                    <Icon name="trash-2" className="size-3.5" />
                   </Button>
                 </div>
               </div>

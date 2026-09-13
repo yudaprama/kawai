@@ -1,5 +1,5 @@
-import { CheckIcon, CopyIcon } from "lucide-react";
-import { useCallback } from "react";
+import { Icon as CdnIcon } from "@/components/shared/icon";
+import { createElement, useCallback } from "react";
 import { useCopyToClipboard } from "./use-copy-to-clipboard";
 
 interface UseCopyButtonOptions {
@@ -23,5 +23,12 @@ export function useCopyButton(value: string, { timeout = 2000, onCopy, onError }
     else onError?.(new Error("Clipboard API not available"));
   }, [value, copy, copied, onCopy, onError]);
 
-  return { copied, handleCopy, Icon: copied ? CheckIcon : CopyIcon };
+  const iconName = copied ? "check" : "copy";
+
+  return {
+    copied,
+    handleCopy,
+    Icon: (props: { className?: string; size?: number }) =>
+      createElement(CdnIcon, { name: iconName, className: props.className }),
+  };
 }

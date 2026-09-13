@@ -1,4 +1,4 @@
-import { ExternalLinkIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createApp, reactive } from "vue/dist/vue.esm-bundler.js";
 import MarkdownIt from "markdown-it";
@@ -129,6 +129,24 @@ export function DeckPreview({ fileId }: { fileId: string }) {
     void tauriOpenFile(fileId).catch(() => {});
   }, [fileId]);
 
+  // One-click export: stored deck (.html) → real .pptx in Documents.
+  const [exporting, setExporting] = useState(false);
+  const [exported, setExported] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const exportPptx = useCallback(async () => {
+    setExporting(true);
+    setExported(null);
+    setExportError(null);
+    try {
+      const f = await call<{ originalName: string }>("office_export_deck", { fileId });
+      setExported(f.originalName);
+    } catch (e) {
+      setExportError(errText(e));
+    } finally {
+      setExporting(false);
+    }
+  }, [fileId]);
+
   if (error != null) {
     return (
       <div className="text-muted-foreground flex items-center justify-center p-8 font-mono text-xs">
@@ -144,6 +162,7 @@ export function DeckPreview({ fileId }: { fileId: string }) {
 
   return (
     <div className="space-y-2">
+      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static runtime stylesheet */}
       <style dangerouslySetInnerHTML={{ __html: RUNTIME_CSS }} />
       {/* Markdown compiled by the embedded Vue runtime — deck content is
           sanitized server-side before storage; html:false in markdown-it
@@ -151,10 +170,26 @@ export function DeckPreview({ fileId }: { fileId: string }) {
       <div className="relative aspect-video w-full overflow-hidden rounded-lg border bg-white">
         <div ref={hostRef} className="h-full w-full" />
       </div>
-      <div className="flex items-center justify-center gap-2">
-        <Button onClick={openFull} size="sm" variant="outline">
-          <ExternalLinkIcon className="size-3.5" /> Open full deck
-        </Button>
+      <div className="flex flex-col items-center gap-1">
+        <div className="flex items-center justify-center gap-2">
+          <Button onClick={exportPptx} disabled={exporting} size="sm" variant="outline">
+            {exporting ? (
+              <Icon name="loader-circle" className="size-3.5 animate-spin" />
+            ) : (
+              <Icon name="presentation" className="size-3.5" />
+            )}
+            Export PPTX
+          </Button>
+          <Button onClick={openFull} size="sm" variant="outline">
+            <Icon name="external-link" className="size-3.5" /> Open full deck
+          </Button>
+        </div>
+        {exported != null && (
+          <span className="text-success font-mono text-[11px]">Saved as {exported} — view it in Documents</span>
+        )}
+        {exportError != null && (
+          <span className="text-destructive font-mono text-[11px]">Export failed: {exportError}</span>
+        )}
       </div>
     </div>
   );

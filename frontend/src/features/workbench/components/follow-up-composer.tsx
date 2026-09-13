@@ -1,4 +1,4 @@
-import { CornerDownRightIcon, XIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 
 import { FOLLOW_UP_CHIPS, type useWorkbench } from "@/features/workbench/hooks/use-workbench";
 
@@ -44,13 +44,13 @@ export function ComposerQuoteBadge({ workbench }: { workbench: ReturnType<typeof
   if (!workbench.composing) return null;
   const target = workbench.quoteTarget;
   if (!workbench.followUp && target == null) return null;
-  const title = target?.goal ?? (workbench.supervisor.goal ?? "previous deliverable");
+  const title = target?.goal ?? workbench.supervisor.goal ?? "previous deliverable";
   const runNum = target != null ? workbench.runs.findIndex((r) => r.id === target.id) + 1 : 0;
   const label =
     target != null && runNum > 0 ? `Will include: Run ${runNum} — “${title}”` : "Will include the previous deliverable";
   return (
     <div className="text-muted-foreground mb-2 flex items-center gap-1.5 font-mono text-[11px]">
-      <CornerDownRightIcon className="size-3 shrink-0" />
+      <Icon name="corner-down-right" className="size-3 shrink-0" />
       <span
         className="min-w-0 truncate"
         title={
@@ -70,7 +70,7 @@ export function ComposerQuoteBadge({ workbench }: { workbench: ReturnType<typeof
         }}
         type="button"
       >
-        <XIcon className="size-3" />
+        <Icon name="x" className="size-3" />
       </button>
     </div>
   );

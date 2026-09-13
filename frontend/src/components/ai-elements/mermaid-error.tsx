@@ -1,4 +1,4 @@
-import { AlertCircle, RefreshCw } from 'lucide-react'
+import { Icon } from '@/components/shared/icon'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { MermaidErrorComponentProps } from '@/lib/streamdown'
@@ -11,7 +11,7 @@ export function MermaidError({ error, retry, chart }: MermaidErrorComponentProps
       )}
     >
       <div className="flex items-center gap-2 text-destructive">
-        <AlertCircle className="size-4 shrink-0" />
+        <Icon name="alert-circle" className="size-4 shrink-0" />
         <span className="font-mono text-sm break-words">{error}</span>
       </div>
       <details className="mt-2">
@@ -29,7 +29,7 @@ export function MermaidError({ error, retry, chart }: MermaidErrorComponentProps
         className="mt-3"
         onClick={retry}
       >
-        <RefreshCw className="size-3.5" />
+        <Icon name="refresh-cw" className="size-3.5" />
         {'Retry'}
       </Button>
     </div>

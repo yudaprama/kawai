@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export { isRecord } from "@/lib/utils";
-import { MapPinIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 
 export function parse(output: unknown): unknown {
   if (typeof output !== "string") return output;
@@ -232,7 +232,7 @@ export function LocationCard({
 }) {
   return (
     <div className="not-prose flex items-start gap-3">
-      <MapPinIcon className="mt-0.5 size-5 shrink-0 text-primary" />
+      <Icon name="map-pin" className="mt-0.5 size-5 shrink-0 text-primary" />
       <div className="min-w-0 space-y-0.5">
         <div className="font-medium text-sm text-foreground">{title}</div>
         {subtitle && (

@@ -171,7 +171,6 @@ export function useWorkbench() {
   // after `finished`; failures keep the static chips silently.
   const [dynamicChips, setDynamicChips] = useState<string[]>([]);
 
-
   // Deck artifact of the current/last run — set DIRECTLY from the
   // planCompleted callback (the same handler whose output text provably
   // renders) and from the restored persisted record, NOT through the
@@ -181,15 +180,12 @@ export function useWorkbench() {
     filename?: string;
     label?: string;
   } | null>(null);
-  const pickDeck = useCallback(
-    (artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[]) => {
-      const first = artifacts?.find(
-        (a) => a.kind === "file" && a.handle != null && (a.filename ?? "").toLowerCase().endsWith(".html"),
-      );
-      setDeck(first ? { handle: first.handle!, filename: first.filename, label: first.label } : null);
-    },
-    [],
-  );
+  const pickDeck = useCallback((artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[]) => {
+    const first = artifacts?.find(
+      (a) => a.kind === "file" && a.handle != null && (a.filename ?? "").toLowerCase().endsWith(".html"),
+    );
+    setDeck(first ? { handle: first.handle!, filename: first.filename, label: first.label } : null);
+  }, []);
 
   const supervisor = useSupervisorPlan({
     onPlanCompleted: (goal, output, artifacts) => {
@@ -231,9 +227,10 @@ export function useWorkbench() {
     let cancelled = false;
     void (async () => {
       try {
-        const rows = await call<
-          { id: number; role: string; content: string }[]
-        >("list_chat_messages", { sessionId, archived: false });
+        const rows = await call<{ id: number; role: string; content: string }[]>("list_chat_messages", {
+          sessionId,
+          archived: false,
+        });
         if (cancelled) return;
         for (let i = rows.length - 1; i >= 0; i--) {
           const row = rows[i];

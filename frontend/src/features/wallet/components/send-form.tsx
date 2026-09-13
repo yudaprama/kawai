@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { SendIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,7 +43,7 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
       <div className="space-y-4">
         <div className="text-center">
           <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <SendIcon className="size-6" />
+            <Icon name="send" className="size-6" />
           </div>
           <p className="mt-2 font-semibold">Confirm Transaction</p>
         </div>

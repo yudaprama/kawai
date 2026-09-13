@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApp, reactive } from "vue/dist/vue.esm-bundler.js";
 import MarkdownIt from "markdown-it";
@@ -145,6 +145,7 @@ export function DeckDemoPage({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="bg-background text-foreground flex h-dvh flex-col overflow-hidden">
+      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static runtime stylesheet authored in this file */}
       <style dangerouslySetInnerHTML={{ __html: RUNTIME_CSS }} />
       <div className="border-border/60 flex items-center gap-3 border-b px-4 py-2">
         <Button onClick={onBack} size="sm" variant="ghost">
@@ -161,7 +162,7 @@ export function DeckDemoPage({ onBack }: { onBack: () => void }) {
 
       <div className="border-border/60 flex items-center justify-center gap-4 border-t px-4 py-2">
         <Button disabled={index === 0} onClick={() => go(-1)} size="icon" variant="ghost">
-          <ArrowLeftIcon className="size-4" />
+          <Icon name="arrow-left" className="size-4" />
         </Button>
         <div className="flex items-center gap-1.5">
           {slides.map((_, i) => (
@@ -183,7 +184,7 @@ export function DeckDemoPage({ onBack }: { onBack: () => void }) {
           {index + 1} / {slides.length}
         </span>
         <Button disabled={index === slides.length - 1} onClick={() => go(1)} size="icon" variant="ghost">
-          <ArrowRightIcon className="size-4" />
+          <Icon name="arrow-right" className="size-4" />
         </Button>
       </div>
     </div>

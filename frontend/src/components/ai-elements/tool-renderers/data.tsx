@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { DownloadIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useState } from "react";
 import { type ChartSpec, detectQueryChart, rowsToCsv } from "@/features/analytics/lib/analytics";
 import { triggerDownload } from "@/lib/download";
@@ -159,7 +159,7 @@ function DataQueryCard({ rows, meta }: { rows: Record<string, unknown>[]; meta: 
           onClick={download}
           type="button"
         >
-          <DownloadIcon className="size-3" />
+          <Icon name="download" className="size-3" />
           CSV
         </button>
       </div>

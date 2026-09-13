@@ -1,4 +1,4 @@
-import { ZapIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useEffect, useRef, useState } from "react";
 
 import { ChatComposer } from "@/features/chat/components/chat-composer";
@@ -146,14 +146,14 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
       <div className="bg-background flex h-full w-full flex-col">
         <div className="flex items-center justify-between px-4 py-2">
           <span className="text-foreground inline-flex items-center gap-1.5 font-mono text-xs font-bold tracking-wider uppercase">
-            <ZapIcon className="text-primary size-4" />
+            <Icon name="zap" className="text-primary size-4" />
             Kawai Workbench
           </span>
         </div>
         <div className="flex flex-1 flex-col items-center justify-center gap-5 p-6 text-center">
           <div className="space-y-2">
             <p className="text-foreground inline-flex items-center gap-2 text-lg font-semibold">
-              <ZapIcon className="text-primary size-6" />
+              <Icon name="zap" className="text-primary size-6" />
               State a goal. Watch the work.
             </p>
             <p className="text-muted-foreground max-w-md text-xs">

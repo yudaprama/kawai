@@ -16,7 +16,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { ChevronDownIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import {
   createContext,
   useCallback,
@@ -239,7 +239,8 @@ export const WebPreviewConsole = ({
           variant="ghost"
         >
           Console
-          <ChevronDownIcon
+          <Icon
+            name="chevron-down"
             className={cn(
               "h-4 w-4 transition-transform duration-200",
               consoleOpen && "rotate-180"

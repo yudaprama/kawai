@@ -1,4 +1,4 @@
-import { CoinsIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 
 type Props = { name: string; size?: number };
 
@@ -33,7 +33,7 @@ export function NetworkIconFallback({ size = 24 }: { size?: number }) {
       className="inline-flex items-center justify-center rounded-full bg-muted text-muted-foreground"
       style={{ width: size, height: size }}
     >
-      <CoinsIcon className="size-3" />
+      <Icon name="coins" className="size-3" />
     </span>
   );
 }

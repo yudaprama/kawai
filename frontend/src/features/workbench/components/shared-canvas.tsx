@@ -5,7 +5,7 @@
  * per-step fetch/cache/render and AGENT REPORTS grid logic — the root cause
  * of the StrictMode deadlock and renderer-mismatch bugs.
  */
-import { CornerDownRightIcon, FileTextIcon, LoaderCircleIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useEffect, useRef, useState } from "react";
 
 import { renderStepReport } from "@/features/workbench/components/tool-views";
@@ -114,7 +114,7 @@ export function StepReportBody({
     <div className="bg-card rounded-lg border p-4">
       {loading && (
         <p className="text-muted-foreground mb-2 flex items-center gap-2 text-xs">
-          <LoaderCircleIcon className="text-primary size-3.5 animate-spin" />
+          <Icon name="loader-circle" className="text-primary size-3.5 animate-spin" />
           Loading full report…
         </p>
       )}
@@ -159,23 +159,23 @@ export function AgentReportsSwitcher({
             title="Arm this deliverable as the follow-up context"
             type="button"
           >
-            <CornerDownRightIcon className="text-primary size-3.5 shrink-0" />
+            <Icon name="corner-down-right" className="text-primary size-3.5 shrink-0" />
             <span className="font-bold">Build on this</span>
             <span className="text-muted-foreground ml-auto truncate font-normal">follow up from this run</span>
           </button>
         ) : (
-        <button
-          aria-pressed={activeDoc === "final"}
-          className={`text-foreground flex w-full items-center gap-2 rounded-lg border px-3 py-2.5 font-mono text-xs transition-colors ${
-            activeDoc === "final" ? "border-primary bg-primary/10" : "hover:border-primary/60"
-          }`}
-          onClick={() => onPickDoc("final")}
-          type="button"
-        >
-          <FileTextIcon className="text-primary size-3.5 shrink-0" />
-          <span className="font-bold">Deliverable</span>
-          <span className="text-muted-foreground ml-auto truncate font-normal">final output</span>
-        </button>
+          <button
+            aria-pressed={activeDoc === "final"}
+            className={`text-foreground flex w-full items-center gap-2 rounded-lg border px-3 py-2.5 font-mono text-xs transition-colors ${
+              activeDoc === "final" ? "border-primary bg-primary/10" : "hover:border-primary/60"
+            }`}
+            onClick={() => onPickDoc("final")}
+            type="button"
+          >
+            <Icon name="file-text" className="text-primary size-3.5 shrink-0" />
+            <span className="font-bold">Deliverable</span>
+            <span className="text-muted-foreground ml-auto truncate font-normal">final output</span>
+          </button>
         ))}
       <div className="rounded-lg border p-4">
         <h4 className="text-muted-foreground mb-3 text-center font-mono text-sm tracking-[0.2em]">AGENT REPORTS</h4>

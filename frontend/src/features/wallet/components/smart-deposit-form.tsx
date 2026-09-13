@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ExternalLinkIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,7 +28,7 @@ export function SmartDepositForm({ onDeposit, loading, currentNetwork }: Props) 
           className="h-auto p-0 mt-1"
           onClick={() => window.open("https://getkawai.com/docs/user-guide/deposit-from-exchange", "_blank")}
         >
-          Learn how to bridge <ExternalLinkIcon className="ml-1 size-3" />
+          Learn how to bridge <Icon name="external-link" className="ml-1 size-3" />
         </Button>
       </div>
       <div className="space-y-2">

@@ -1,4 +1,4 @@
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ export function CopyButton({ text }: { text: string }) {
   };
   return (
     <Button aria-label="Copy" size="icon" variant="ghost" className="size-7" onClick={onCopy}>
-      {copied ? <CheckIcon className="size-3.5 text-green-600" /> : <CopyIcon className="size-3.5" />}
+      {copied ? <Icon name="check" className="size-3.5 text-green-600" /> : <Icon name="copy" className="size-3.5" />}
     </Button>
   );
 }

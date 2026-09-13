@@ -17,7 +17,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { ChevronsUpDownIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import {
   createContext,
   useCallback,
@@ -238,9 +238,9 @@ export const MicSelectorTrigger = ({
     <PopoverTrigger asChild>
       <Button variant="outline" {...props} ref={ref}>
         {children}
-        <ChevronsUpDownIcon
-          className="shrink-0 text-muted-foreground"
-          size={16}
+        <Icon
+          name="chevrons-up-down"
+          className="size-4 shrink-0 text-muted-foreground"
         />
       </Button>
     </PopoverTrigger>

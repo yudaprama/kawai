@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SearchIcon, GitBranchIcon, CheckIcon, AlertCircleIcon, PlusIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { AssetListPanel } from "@/features/assets/components/asset/asset-list-panel";
 import { AssetPageHeader } from "@/features/assets/components/asset/asset-page-header";
 import { AssetSplitLayout } from "@/features/assets/components/asset/asset-split-layout";
@@ -20,13 +20,13 @@ function StatusBadge({ status }: { status: CodegraphStatusResult | null }) {
   if (!status.available) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-xs text-warning">
-        <AlertCircleIcon className="size-3" /> not available
+        <Icon name="alert-circle" className="size-3" /> not available
       </span>
     );
   }
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-xs text-success">
-      <CheckIcon className="size-3" /> {status.backend} {status.version ? `· ${status.version}` : ""}
+      <Icon name="check" className="size-3" /> {status.backend} {status.version ? `· ${status.version}` : ""}
     </span>
   );
 }
@@ -124,11 +124,11 @@ export function CodeAssetPage({
         actions={
           <div className="flex gap-2">
             <Button disabled={initLoading} onClick={handleInit} size="sm" variant="outline">
-              <PlusIcon className="size-3.5" />
+              <Icon name="plus" className="size-3.5" />
               {initLoading ? "Indexing…" : "Register repo"}
             </Button>
             <Button disabled={exploreLoading || !query.trim()} onClick={handleExplore} size="sm">
-              <SearchIcon className="size-3.5" />
+              <Icon name="search" className="size-3.5" />
               Explore
             </Button>
           </div>
@@ -174,7 +174,7 @@ export function CodeAssetPage({
                 </pre>
               ) : (
                 <div className="flex flex-col items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-                  <GitBranchIcon className="size-5 opacity-50" />
+                  <Icon name="git-branch" className="size-5 opacity-50" />
                   <span>No explore yet — type a symbol or question above.</span>
                   <span className="text-xs">
                     Tip: agent calls this 1-5× per turn; results are LRU-cached 15 min and single-flight deduped.
@@ -198,7 +198,7 @@ export function CodeAssetPage({
                 renderItem={(s: CodegraphStatusResult) => (
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 text-xs font-medium">
-                      <GitBranchIcon className="size-3.5" /> CodeGraph
+                      <Icon name="git-branch" className="size-3.5" /> CodeGraph
                       <StatusBadge status={s} />
                     </div>
                     <div className="line-clamp-3 text-xs text-muted-foreground">{s.message}</div>

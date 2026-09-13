@@ -1,15 +1,4 @@
-import {
-  CheckCircle2Icon,
-  ChevronDownIcon,
-  CircleXIcon,
-  CornerDownRightIcon,
-  FileTextIcon,
-  LoaderCircleIcon,
-  PlayIcon,
-  ShieldAlertIcon,
-  SquareIcon,
-  ZapIcon,
-} from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -32,10 +21,10 @@ export function fmtDuration(from: number, to?: number): string {
 }
 
 function StateIcon({ state }: { state: SupervisorStep["state"] }) {
-  if (state === "completed") return <CheckCircle2Icon className="text-success size-3.5 shrink-0" />;
-  if (state === "failed") return <CircleXIcon className="text-destructive size-3.5 shrink-0" />;
-  if (state === "running") return <LoaderCircleIcon className="text-primary size-3.5 shrink-0 animate-spin" />;
-  if (state === "skipped") return <ChevronDownIcon className="text-muted-foreground size-3.5 shrink-0" />;
+  if (state === "completed") return <Icon name="check-circle-2" className="text-success size-3.5 shrink-0" />;
+  if (state === "failed") return <Icon name="circle-x" className="text-destructive size-3.5 shrink-0" />;
+  if (state === "running") return <Icon name="loader-circle" className="text-primary size-3.5 shrink-0 animate-spin" />;
+  if (state === "skipped") return <Icon name="chevron-down" className="text-muted-foreground size-3.5 shrink-0" />;
   return <span className="text-muted-foreground/50 block size-3.5 shrink-0 rounded-full border" />;
 }
 
@@ -88,7 +77,8 @@ export function StepTree({
               onClick={() => togglePhase(i)}
               type="button"
             >
-              <ChevronDownIcon
+              <Icon
+                name="chevron-down"
                 className={`size-3 transition-transform ${collapsedPhases.has(i) ? "-rotate-90" : ""}`}
               />
               {phases.length > 1 ? `Phase ${i + 1}` : "Steps"}
@@ -116,7 +106,7 @@ export function StepTree({
                           onClick={() => onOpenReport(step.stepId)}
                           type="button"
                         >
-                          <FileTextIcon className="size-3" />
+                          <Icon name="file-text" className="size-3" />
                           see report
                         </button>
                       )}
@@ -146,7 +136,7 @@ export function StepTree({
                 onClick={() => onOpenReport("final")}
                 type="button"
               >
-                <FileTextIcon className="size-3" />
+                <Icon name="file-text" className="size-3" />
                 see report
               </button>
             )}
@@ -203,7 +193,8 @@ export function RunHistoryRail({
                 onClick={() => setOpenId((v) => (v === r.id ? null : r.id))}
                 type="button"
               >
-                <ChevronDownIcon
+                <Icon
+                  name="chevron-down"
                   className={`text-muted-foreground size-3 shrink-0 transition-transform ${open ? "" : "-rotate-90"}`}
                 />
                 <span className="text-muted-foreground shrink-0 font-mono text-[10px]">Run {i + 1}</span>
@@ -211,11 +202,11 @@ export function RunHistoryRail({
                   {r.goal}
                 </span>
                 {r.status === "running" ? (
-                  <LoaderCircleIcon className="text-primary size-3.5 shrink-0 animate-spin" />
+                  <Icon name="loader-circle" className="text-primary size-3.5 shrink-0 animate-spin" />
                 ) : r.status === "completed" ? (
-                  <CheckCircle2Icon className="text-success size-3.5 shrink-0" />
+                  <Icon name="check-circle-2" className="text-success size-3.5 shrink-0" />
                 ) : (
-                  <CircleXIcon className="text-destructive size-3.5 shrink-0" />
+                  <Icon name="circle-x" className="text-destructive size-3.5 shrink-0" />
                 )}
               </button>
               {open &&
@@ -242,20 +233,23 @@ export function RunHistoryRail({
                             onClick={() => onOpenDeliverable(r.id)}
                             type="button"
                           >
-                            <FileTextIcon className="size-3" />
+                            <Icon name="file-text" className="size-3" />
                             deliverable
                           </button>
-                          {onBuildOn != null && r.status === "completed" && r.outputFull != null && r.planKey != null && (
-                            <button
-                              className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
-                              onClick={() => onBuildOn(r)}
-                              title={`Arm “${r.goal}” as the follow-up context`}
-                              type="button"
-                            >
-                              <CornerDownRightIcon className="size-3" />
-                              build on this
-                            </button>
-                          )}
+                          {onBuildOn != null &&
+                            r.status === "completed" &&
+                            r.outputFull != null &&
+                            r.planKey != null && (
+                              <button
+                                className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                                onClick={() => onBuildOn(r)}
+                                title={`Arm “${r.goal}” as the follow-up context`}
+                                type="button"
+                              >
+                                <Icon name="corner-down-right" className="size-3" />
+                                build on this
+                              </button>
+                            )}
                         </div>
                       )}
                     </div>
@@ -325,13 +319,10 @@ export function ProgressRail({
     <div className="flex h-full flex-col">
       <div className="border-primary/30 mb-4 border-b pb-3">
         <h2 className="text-foreground inline-flex items-center gap-1.5 font-mono text-sm font-bold">
-          <ZapIcon className="text-primary size-4" />
+          <Icon name="zap" className="text-primary size-4" />
           Progress
         </h2>
-        <div
-          className="text-foreground/80 mt-1 truncate font-mono text-xs font-bold"
-          title={headerGoal ?? undefined}
-        >
+        <div className="text-foreground/80 mt-1 truncate font-mono text-xs font-bold" title={headerGoal ?? undefined}>
           {headerGoal
             ? `${unseeded && supervisor.planning != null ? "Planning" : statusLabel(supervisor.status)} · ${headerGoal}`
             : "Idle"}
@@ -355,7 +346,7 @@ export function ProgressRail({
           ))}
           <div className="flex gap-2 pt-2">
             <Button className="flex-1" onClick={workbench.supervisor.approvePlan} size="sm">
-              <PlayIcon className="size-3" />
+              <Icon name="play" className="size-3" />
               Run
             </Button>
             <Button onClick={workbench.supervisor.cancelPlan} size="sm" variant="outline">
@@ -372,7 +363,7 @@ export function ProgressRail({
           {(unseeded || (supervisor.steps.length === 0 && supervisor.status !== "idle")) && (
             <div className="text-muted-foreground mt-2 space-y-1 font-mono text-xs">
               <div className="flex items-center gap-2">
-                <LoaderCircleIcon className="text-primary size-3.5 animate-spin" />
+                <Icon name="loader-circle" className="text-primary size-3.5 animate-spin" />
                 {supervisor.planning != null
                   ? supervisor.planning.round === 0
                     ? "starting…"
@@ -401,17 +392,14 @@ export function ProgressRail({
                   supervisor.planning.context.skills > 0 ||
                   supervisor.planning.context.files > 0) && (
                   <div className="text-muted-foreground/60 pl-5.5 text-[11px]">
-                    context: {[
+                    context:{" "}
+                    {[
                       supervisor.planning.context.persona ? "persona" : null,
                       supervisor.planning.context.memories > 0
                         ? `${supervisor.planning.context.memories} memories`
                         : null,
-                      supervisor.planning.context.skills > 0
-                        ? `${supervisor.planning.context.skills} skills`
-                        : null,
-                      supervisor.planning.context.files > 0
-                        ? `${supervisor.planning.context.files} files`
-                        : null,
+                      supervisor.planning.context.skills > 0 ? `${supervisor.planning.context.skills} skills` : null,
+                      supervisor.planning.context.files > 0 ? `${supervisor.planning.context.files} files` : null,
                     ]
                       .filter(Boolean)
                       .join(" · ")}
@@ -430,7 +418,7 @@ export function ProgressRail({
       {supervisor.status === "awaitingConfirmation" && supervisor.pendingConfirmation && (
         <div className="border-primary/30 mt-4 space-y-2 rounded-md border p-3">
           <div className="text-foreground inline-flex items-center gap-1.5 font-mono text-xs font-bold">
-            <ShieldAlertIcon className="text-primary size-3.5" />
+            <Icon name="shield-alert" className="text-primary size-3.5" />
             Approval required
           </div>
           <p className="text-foreground/80 font-mono text-[11px]">
@@ -438,7 +426,7 @@ export function ProgressRail({
           </p>
           <div className="flex gap-2">
             <Button className="flex-1" onClick={workbench.supervisor.approve} size="sm">
-              <PlayIcon className="size-3" />
+              <Icon name="play" className="size-3" />
               Approve
             </Button>
             <Button onClick={workbench.supervisor.reject} size="sm" variant="outline">
@@ -458,7 +446,7 @@ export function ProgressRail({
           size="sm"
           variant="outline"
         >
-          <SquareIcon className="size-3" />
+          <Icon name="square" className="size-3" />
           {supervisor.status === "stopping" ? "Stopping…" : "Stop run"}
         </Button>
       )}
@@ -466,7 +454,7 @@ export function ProgressRail({
         <div className="mt-4 space-y-2">
           {supervisor.steps.some((s) => s.state === "completed") && (
             <Button className="w-full" onClick={workbench.supervisor.resume} size="sm" variant="outline">
-              <PlayIcon className="size-3" />
+              <Icon name="play" className="size-3" />
               Resume
             </Button>
           )}

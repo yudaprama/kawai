@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
-import { CheckIcon, CopyIcon, EyeIcon, EyeOffIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import {
   createContext,
   useCallback,
@@ -115,7 +115,7 @@ export const EnvironmentVariablesToggle = ({
   return (
     <div className={cn("flex items-center gap-2", className)}>
       <span className="text-muted-foreground text-xs">
-        {showValues ? <EyeIcon size={14} /> : <EyeOffIcon size={14} />}
+        {showValues ? <Icon name="eye" className="size-3.5" /> : <Icon name="eye-off" className="size-3.5" />}
       </span>
       <Switch
         aria-label="Toggle value visibility"
@@ -278,7 +278,7 @@ export const EnvironmentVariableCopyButton = ({
     else onError?.(new Error("Clipboard API not available"));
   }, [getTextToCopy, copy, onCopy, onError]);
 
-  const Icon = copied ? CheckIcon : CopyIcon;
+  const iconName = copied ? "check" : "copy";
 
   return (
     <Button
@@ -288,7 +288,7 @@ export const EnvironmentVariableCopyButton = ({
       variant="ghost"
       {...props}
     >
-      {children ?? <Icon size={12} />}
+      {children ?? <Icon name={iconName} className="size-3" />}
     </Button>
   );
 };

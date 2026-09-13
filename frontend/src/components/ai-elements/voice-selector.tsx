@@ -23,17 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import {
-  CircleSmallIcon,
-  MarsIcon,
-  MarsStrokeIcon,
-  NonBinaryIcon,
-  PauseIcon,
-  PlayIcon,
-  TransgenderIcon,
-  VenusAndMarsIcon,
-  VenusIcon,
-} from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { createContext, useCallback, useContext, useMemo } from "react";
 
 interface VoiceSelectorContextValue {
@@ -203,31 +193,31 @@ export const VoiceSelectorGender = ({
 
   switch (value) {
     case "male": {
-      icon = <MarsIcon className="size-4" />;
+      icon = <Icon name="mars" className="size-4" />;
       break;
     }
     case "female": {
-      icon = <VenusIcon className="size-4" />;
+      icon = <Icon name="venus" className="size-4" />;
       break;
     }
     case "transgender": {
-      icon = <TransgenderIcon className="size-4" />;
+      icon = <Icon name="transgender" className="size-4" />;
       break;
     }
     case "androgyne": {
-      icon = <MarsStrokeIcon className="size-4" />;
+      icon = <Icon name="mars-stroke" className="size-4" />;
       break;
     }
     case "non-binary": {
-      icon = <NonBinaryIcon className="size-4" />;
+      icon = <Icon name="non-binary" className="size-4" />;
       break;
     }
     case "intersex": {
-      icon = <VenusAndMarsIcon className="size-4" />;
+      icon = <Icon name="venus-and-mars" className="size-4" />;
       break;
     }
     default: {
-      icon = <CircleSmallIcon className="size-4" />;
+      icon = <Icon name="circle-small" className="size-4" />;
     }
   }
 
@@ -500,12 +490,12 @@ export const VoiceSelectorPreview = ({
     [onClick, onPlay]
   );
 
-  let icon = <PlayIcon className="size-3" />;
+  let icon = <Icon name="play" className="size-3" />;
 
   if (loading) {
     icon = <Spinner className="size-3" />;
   } else if (playing) {
-    icon = <PauseIcon className="size-3" />;
+    icon = <Icon name="pause" className="size-3" />;
   }
 
   return (

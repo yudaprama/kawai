@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useCopyButton } from "@/hooks/use-copy-button";
 import Ansi from "ansi-to-react";
-import { TerminalIcon, Trash2Icon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import {
   createContext,
   useContext,
@@ -57,7 +57,7 @@ export const TerminalTitle = ({
     className={cn("flex items-center gap-2 text-sm text-zinc-400", className)}
     {...props}
   >
-    <TerminalIcon className="size-4" />
+    <Icon name="terminal" className="size-4" />
     {children ?? "Terminal"}
   </div>
 );
@@ -112,7 +112,7 @@ export const TerminalCopyButton = ({
   ...props
 }: TerminalCopyButtonProps) => {
   const { output } = useContext(TerminalContext);
-  const { handleCopy, Icon } = useCopyButton(output, { timeout, onCopy, onError });
+  const { handleCopy, Icon: CopyIcon } = useCopyButton(output, { timeout, onCopy, onError });
 
   return (
     <Button
@@ -125,7 +125,7 @@ export const TerminalCopyButton = ({
       variant="ghost"
       {...props}
     >
-      {children ?? <Icon size={14} />}
+      {children ?? <CopyIcon size={14} />}
     </Button>
   );
 };
@@ -154,7 +154,7 @@ export const TerminalClearButton = ({
       variant="ghost"
       {...props}
     >
-      {children ?? <Trash2Icon size={14} />}
+      {children ?? <Icon name="trash-2" className="size-3.5" />}
     </Button>
   );
 };

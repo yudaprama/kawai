@@ -359,9 +359,7 @@ export function PredictionMarketsView({ data }: { data: unknown }) {
     return (
       <div className="space-y-1.5">
         <SectionLabel>⚖️ Polymarket{parsed.topic ? ` — "${parsed.topic}"` : ""}</SectionLabel>
-        <p className="text-muted-foreground text-sm">
-          {parsed.message || "No open prediction markets matched."}
-        </p>
+        <p className="text-muted-foreground text-sm">{parsed.message || "No open prediction markets matched."}</p>
       </div>
     );
   }
@@ -369,25 +367,18 @@ export function PredictionMarketsView({ data }: { data: unknown }) {
   return (
     <div className="space-y-2.5">
       <div className="flex items-baseline justify-between gap-2">
-        <SectionLabel>
-          ⚖️ Polymarket{parsed.topic ? ` — "${parsed.topic}"` : ""}
-        </SectionLabel>
+        <SectionLabel>⚖️ Polymarket{parsed.topic ? ` — "${parsed.topic}"` : ""}</SectionLabel>
         <span className="text-muted-foreground text-[11px]">crowd odds</span>
       </div>
       <ul className="space-y-2">
         {parsed.markets.map((m, i) => {
           const pct = Math.round(m.probability * 100);
           return (
-            <li
-              className="bg-muted/40 space-y-1.5 rounded-lg border p-3"
-              key={`${m.question}-${i}`}
-            >
+            <li className="bg-muted/40 space-y-1.5 rounded-lg border p-3" key={`${m.question}-${i}`}>
               <div className="flex items-start justify-between gap-3">
                 <p className="text-sm leading-snug font-medium">{m.question}</p>
                 <div className="shrink-0 text-right">
-                  <span className="font-mono text-base font-semibold tabular-nums">
-                    {pct}%
-                  </span>
+                  <span className="font-mono text-base font-semibold tabular-nums">{pct}%</span>
                   <div className="text-muted-foreground text-[11px]">{m.outcome}</div>
                 </div>
               </div>
@@ -407,8 +398,7 @@ export function PredictionMarketsView({ data }: { data: unknown }) {
               <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
                 {m.week_change_pp != null && (
                   <Pill tone={m.week_change_pp > 0 ? "up" : "down"}>
-                    {m.week_change_pp > 0 ? "▲" : "▼"} {Math.abs(m.week_change_pp).toFixed(1)}pp
-                    1w
+                    {m.week_change_pp > 0 ? "▲" : "▼"} {Math.abs(m.week_change_pp).toFixed(1)}pp 1w
                   </Pill>
                 )}
                 <span>${fmtNumber(m.volume, { notation: "compact" })} volume</span>

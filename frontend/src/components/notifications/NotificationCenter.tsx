@@ -1,4 +1,4 @@
-import { BellIcon, CheckCheckIcon, Trash2Icon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -24,7 +24,7 @@ export function NotificationCenter() {
           variant="ghost"
           className="relative"
         >
-          <BellIcon className="size-4" />
+          <Icon name="bell" className="size-4" />
           {unreadCount > 0 && (
             <span className="bg-primary text-primary-foreground absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full text-[11px] font-medium">
               {unreadCount > 99 ? "99+" : unreadCount}
@@ -38,12 +38,12 @@ export function NotificationCenter() {
           <div className="flex items-center gap-1">
             {unreadCount > 0 && (
               <Button aria-label="Mark all read" onClick={markAllRead} size="icon" variant="ghost" className="size-7">
-                <CheckCheckIcon className="size-3.5" />
+                <Icon name="check-check" className="size-3.5" />
               </Button>
             )}
             {items.length > 0 && (
               <Button aria-label="Clear all" onClick={clearAll} size="icon" variant="ghost" className="size-7">
-                <Trash2Icon className="size-3.5" />
+                <Icon name="trash-2" className="size-3.5" />
               </Button>
             )}
           </div>

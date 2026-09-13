@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FileWarning } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useCallback, useEffect, useState } from "react";
 import type { BundledLanguage } from "shiki";
 import { CodeBlock } from "@/components/ai-elements/code-block";
@@ -157,7 +157,7 @@ function DesktopFileOpen({ file }: { file: PreviewFile }) {
   return (
     <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
       <div className="bg-muted flex size-12 items-center justify-center rounded-lg">
-        <ExternalLink className="size-5" />
+        <Icon name="external-link" className="size-5" />
       </div>
       <div className="space-y-1">
         <p className="text-foreground text-sm font-medium">
@@ -167,12 +167,12 @@ function DesktopFileOpen({ file }: { file: PreviewFile }) {
       </div>
       <div className="flex gap-2">
         <Button variant="secondary" size="sm" onClick={open}>
-          <ExternalLink className="size-4" /> Open again
+          <Icon name="external-link" className="size-4" /> Open again
         </Button>
         {data?.dataUrl && (
           <Button asChild variant="secondary" size="sm">
             <a href={data.dataUrl} target="_blank" rel="noreferrer" download={file.name}>
-              <Download className="size-4" /> Download
+              <Icon name="download" className="size-4" /> Download
             </a>
           </Button>
         )}
@@ -269,7 +269,7 @@ function FallbackPreview({ file, kind }: { file: PreviewFile; kind: FileKind }) 
   return (
     <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
       <div className="bg-muted flex size-12 items-center justify-center rounded-lg">
-        <FileWarning className="size-5" />
+        <Icon name="file-warning" className="size-5" />
       </div>
       <div className="space-y-1">
         <p className="text-foreground text-sm font-medium">Can't preview this file</p>
@@ -277,7 +277,7 @@ function FallbackPreview({ file, kind }: { file: PreviewFile; kind: FileKind }) 
       </div>
       <Button asChild variant="secondary" size="sm">
         <a href={href} target="_blank" rel="noreferrer" download={file.name}>
-          <Download className="size-4" /> Download
+          <Icon name="download" className="size-4" /> Download
         </a>
       </Button>
     </div>

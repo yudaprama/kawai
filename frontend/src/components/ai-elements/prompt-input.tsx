@@ -106,12 +106,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import {
-  CornerDownLeftIcon,
-  PlusIcon,
-  SquareIcon,
-  XIcon,
-} from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { nanoid } from "nanoid";
 import {
   Children,
@@ -711,7 +706,7 @@ export const PromptInputActionMenuTrigger = ({
 }: PromptInputActionMenuTriggerProps) => (
   <DropdownMenuTrigger asChild>
     <PromptInputButton className={className} {...props}>
-      {children ?? <PlusIcon className="size-4" />}
+      {children ?? <Icon name="plus" className="size-4" />}
     </PromptInputButton>
   </DropdownMenuTrigger>
 );
@@ -757,14 +752,14 @@ export const PromptInputSubmit = ({
 }: PromptInputSubmitProps) => {
   const isGenerating = status === "submitted" || status === "streaming";
 
-  let Icon = <CornerDownLeftIcon className="size-4" />;
+  let icon = <Icon name="corner-down-left" className="size-4" />;
 
   if (status === "submitted") {
-    Icon = <Spinner />;
+    icon = <Spinner />;
   } else if (status === "streaming") {
-    Icon = <SquareIcon className="size-4" />;
+    icon = <Icon name="square" className="size-4" />;
   } else if (status === "error") {
-    Icon = <XIcon className="size-4" />;
+    icon = <Icon name="x" className="size-4" />;
   }
 
   const handleClick = useCallback(
@@ -789,7 +784,7 @@ export const PromptInputSubmit = ({
       variant={variant}
       {...props}
     >
-      {children ?? Icon}
+      {children ?? icon}
     </InputGroupButton>
   );
 };

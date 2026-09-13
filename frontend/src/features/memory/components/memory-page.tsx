@@ -1,4 +1,3 @@
-import { LayersIcon, MergeIcon, PencilIcon, PlusIcon, SearchIcon, SparklesIcon, TrashIcon, XIcon } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AssetBadge,
@@ -12,6 +11,7 @@ import {
 import { AssetPageHeader } from "@/features/assets/components/asset/asset-page-header";
 import { AssetSplitLayout } from "@/features/assets/components/asset/asset-split-layout";
 import { FilterBar } from "@/features/assets/components/filter-bar";
+import { Icon } from "@/components/shared/icon";
 import { useAssetPage } from "@/features/assets/hooks/use-asset-page";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
@@ -232,7 +232,7 @@ function GraphPane() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-1.5 border-b px-4 py-2">
         <Button disabled={op.loading} onClick={() => void op.execute()} size="xs" variant="outline">
-          {op.loading ? <Spinner className="size-3" /> : <SearchIcon className="size-3" />}
+          {op.loading ? <Spinner className="size-3" /> : <Icon name="search" className="size-3" />}
           Refresh
         </Button>
         <span className="text-muted-foreground ml-auto text-xs">memories (newest 200) + the entities they mention</span>
@@ -272,7 +272,7 @@ function ScenePane() {
           title="Cluster related memories and name each scene via the cloud tier (needs a configured vault). Replaces all existing scenes."
           variant="outline"
         >
-          {tiers.extracting ? <Spinner className="size-3" /> : <LayersIcon className="size-3" />}
+          {tiers.extracting ? <Spinner className="size-3" /> : <Icon name="layers" className="size-3" />}
           {tiers.extracting ? "Extracting scenes…" : "Extract scenes"}
         </Button>
         <span className="text-muted-foreground ml-auto text-xs">
@@ -328,7 +328,7 @@ function PersonaPane() {
           title="Synthesize the persona from all memories via the cloud tier (needs a configured vault). Replaces the stored persona."
           variant="outline"
         >
-          {tiers.generating ? <Spinner className="size-3" /> : <SparklesIcon className="size-3" />}
+          {tiers.generating ? <Spinner className="size-3" /> : <Icon name="sparkles" className="size-3" />}
           {tiers.generating ? "Generating…" : "Generate persona"}
         </Button>
         {tiers.persona && (
@@ -381,7 +381,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
           title="Distill durable facts from this block's transcript via the cloud tier (needs a configured vault)"
           variant="outline"
         >
-          {memories.extracting ? <Spinner className="size-3" /> : <SparklesIcon className="size-3" />}
+          {memories.extracting ? <Spinner className="size-3" /> : <Icon name="sparkles" className="size-3" />}
           {memories.extracting ? "Extracting…" : "Extract from this block"}
         </Button>
         <Button
@@ -392,7 +392,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
           size="xs"
           variant="outline"
         >
-          <PlusIcon className="size-3" />
+          <Icon name="plus" className="size-3" />
           Add memory
         </Button>
         <Button
@@ -402,7 +402,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
           title="Merge redundant memories into single items (embedding clustering + cloud LLM; needs a configured vault)"
           variant="outline"
         >
-          {memories.consolidating ? <Spinner className="size-3" /> : <MergeIcon className="size-3" />}
+          {memories.consolidating ? <Spinner className="size-3" /> : <Icon name="merge" className="size-3" />}
           {memories.consolidating ? "Consolidating…" : "Consolidate"}
         </Button>
         <div className="flex items-center gap-1">
@@ -435,7 +435,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
               title="Clear search"
               variant="ghost"
             >
-              <XIcon className="size-3" />
+              <Icon name="x" className="size-3" />
             </Button>
           ) : (
             <Button
@@ -452,7 +452,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
               title="Search by semantic similarity"
               variant="ghost"
             >
-              {searching ? <Spinner className="size-3" /> : <SearchIcon className="size-3" />}
+              {searching ? <Spinner className="size-3" /> : <Icon name="search" className="size-3" />}
             </Button>
           )}
         </div>
@@ -506,7 +506,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
                       title="Edit memory"
                       type="button"
                     >
-                      <PencilIcon className="size-3.5" />
+                      <Icon name="pencil" className="size-3.5" />
                     </button>
                     <button
                       aria-label={`Delete ${m.title}`}
@@ -522,7 +522,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
                       title={confirmDeleteId === m.id ? "Click again to confirm" : "Delete memory"}
                       type="button"
                     >
-                      <TrashIcon className="size-3.5" />
+                      <Icon name="trash" className="size-3.5" />
                     </button>
                   </div>
                 </div>

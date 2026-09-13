@@ -1,18 +1,4 @@
-import {
-  BarChart3Icon,
-  BotIcon,
-  BriefcaseIcon,
-  CheckIcon,
-  PlusIcon,
-  LogOutIcon,
-  MonitorIcon,
-  MoonIcon,
-  PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
-  Presentation,
-  SunIcon,
-  TrendingUpIcon,
-} from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -24,35 +10,35 @@ import { type Theme, useTheme } from "@/hooks/use-theme";
 import { type AssetViewId, ASSET_NAV } from "@/features/assets/components/asset-nav";
 
 interface AgentPresentation {
-  icon: typeof BriefcaseIcon;
+  icon: string;
   subtitle: string;
   prompts: string[];
 }
 
 const GENERIC_AGENT: AgentPresentation = {
-  icon: BotIcon,
+  icon: "bot",
   subtitle: "agent",
   prompts: [],
 };
 
 const AGENT_META: Record<string, AgentPresentation> = {
   "builtin.office": {
-    icon: BriefcaseIcon,
+    icon: "briefcase",
     subtitle: "docs · pdf · sheets · chat",
     prompts: ["Summarize this PDF", "Create a weekly report", "Merge these invoices"],
   },
   "builtin.presentation": {
-    icon: Presentation,
+    icon: "presentation",
     subtitle: "slides · decks · storytelling",
     prompts: ["Create a pitch deck", "Turn this report into slides", "Make an executive presentation"],
   },
   "builtin.binance": {
-    icon: TrendingUpIcon,
+    icon: "trending-up",
     subtitle: "crypto · market data · TA",
     prompts: ["Analyze BTCUSDT on the daily", "RSI and MACD for ETHUSDT", "Order book depth for SOLUSDT"],
   },
   "builtin.analytics": {
-    icon: BarChart3Icon,
+    icon: "bar-chart-3",
     subtitle: "csv · parquet · excel",
     prompts: ["Total sales by category this month", "Average transaction above $500", "Top 10 products by revenue"],
   },
@@ -62,26 +48,26 @@ export const agentPresentation = (id: string): AgentPresentation => AGENT_META[i
 
 function ThemeControl({ collapsed }: { collapsed: boolean }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
-  const TriggerIcon = resolvedTheme === "dark" ? MoonIcon : SunIcon;
-  const options: { value: Theme; label: string; icon: typeof SunIcon }[] = [
-    { value: "light", label: "Light", icon: SunIcon },
-    { value: "dark", label: "Dark", icon: MoonIcon },
-    { value: "system", label: "System", icon: MonitorIcon },
+  const TriggerIcon = resolvedTheme === "dark" ? "moon" : "sun";
+  const options: { value: Theme; label: string; icon: string }[] = [
+    { value: "light", label: "Light", icon: "sun" },
+    { value: "dark", label: "Dark", icon: "moon" },
+    { value: "system", label: "System", icon: "monitor" },
   ];
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button aria-label="Change theme" size="icon" title="Appearance" variant="ghost">
-          <TriggerIcon className="size-4" />
+          <Icon name={TriggerIcon} className="size-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="top" className="w-36">
         {options.map((opt) => (
           <DropdownMenuItem key={opt.value} onClick={() => setTheme(opt.value)} className="gap-2">
-            <opt.icon className="size-4 text-muted-foreground" />
+            <Icon name={opt.icon} className="size-4 text-muted-foreground" />
             <span className="flex-1">{opt.label}</span>
-            {theme === opt.value && <CheckIcon className="size-4" />}
+            {theme === opt.value && <Icon name="check" className="size-4" />}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -125,7 +111,11 @@ export function AssetsRail({
           title="Toggle agents rail (⌘1)"
           variant="ghost"
         >
-          {collapsed ? <PanelLeftOpenIcon className="size-4" /> : <PanelLeftCloseIcon className="size-4" />}
+          {collapsed ? (
+            <Icon name="panel-left-open" className="size-4" />
+          ) : (
+            <Icon name="panel-left-close" className="size-4" />
+          )}
         </Button>
       </div>
 
@@ -138,7 +128,7 @@ export function AssetsRail({
           title="New"
           variant="default"
         >
-          <PlusIcon className="size-4" />
+          <Icon name="plus" className="size-4" />
           {!collapsed && <span>New</span>}
         </Button>
       </div>
@@ -152,7 +142,6 @@ export function AssetsRail({
 
         <nav className={`flex flex-col gap-1 pb-2 ${collapsed ? "px-1.5" : "px-2"}`}>
           {ASSET_NAV.map((asset) => {
-            const Icon = asset.icon;
             const active = assetView === asset.id;
             return (
               <button
@@ -169,7 +158,7 @@ export function AssetsRail({
                     active ? "bg-background/20" : "bg-muted"
                   }`}
                 >
-                  <Icon className="size-[15px]" />
+                  <Icon name={asset.icon} className="size-[15px]" />
                 </span>
                 {!collapsed && (
                   <span className="flex min-w-0 flex-col">
@@ -201,7 +190,7 @@ export function AssetsRail({
           <>
             <ThemeControl collapsed />
             <Button aria-label="Sign out" onClick={onLogout} size="icon" title="Sign out" variant="ghost">
-              <LogOutIcon className="size-4" />
+              <Icon name="log-out" className="size-4" />
             </Button>
           </>
         ) : (
@@ -212,7 +201,7 @@ export function AssetsRail({
               title={`Sign out ${userId ?? ""}`}
               variant="outline"
             >
-              <LogOutIcon className="size-3.5" />
+              <Icon name="log-out" className="size-3.5" />
               Sign out
             </Button>
             <ThemeControl collapsed={false} />

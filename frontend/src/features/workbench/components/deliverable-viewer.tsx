@@ -1,4 +1,4 @@
-import { CheckCircle2Icon, CircleXIcon, CornerDownRightIcon, LoaderCircleIcon, ZapIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -55,11 +55,11 @@ export function RunSwitcher({
           >
             Run {i + 1}
             {r.status === "running" ? (
-              <LoaderCircleIcon className="text-primary size-3 shrink-0 animate-spin" />
+              <Icon name="loader-circle" className="text-primary size-3 shrink-0 animate-spin" />
             ) : r.status === "completed" ? (
-              <CheckCircle2Icon className="text-success size-3 shrink-0" />
+              <Icon name="check-circle-2" className="text-success size-3 shrink-0" />
             ) : (
-              <CircleXIcon className="text-destructive size-3 shrink-0" />
+              <Icon name="circle-x" className="text-destructive size-3 shrink-0" />
             )}
           </button>
         );
@@ -97,8 +97,7 @@ export function PastRunCanvas({
         ? `${(docStep.task || docStep.tool).trim().slice(0, 47).trimEnd()}…`
         : (docStep.task || docStep.tool).trim()
       : doc;
-  const goalLabel =
-    run.goal.length > 48 ? `${run.goal.slice(0, 47).trimEnd()}…` : run.goal;
+  const goalLabel = run.goal.length > 48 ? `${run.goal.slice(0, 47).trimEnd()}…` : run.goal;
   const deliverableBody = run.outputFull ?? (run.outputPreview ? `${run.outputPreview}…` : null);
   const stepTool = run.steps?.find((s) => s.stepId === doc)?.tool ?? "";
   return (
@@ -106,7 +105,7 @@ export function PastRunCanvas({
       <div className="mx-auto max-w-4xl space-y-6 p-6">
         <div>
           <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
-            <ZapIcon className="text-primary size-5" />
+            <Icon name="zap" className="text-primary size-5" />
             {goalLabel || "Working…"}
             {!isDeliverable && docStep != null && (
               <span className="text-muted-foreground text-sm font-normal">— {docStepLabel} report</span>
@@ -124,7 +123,7 @@ export function PastRunCanvas({
                 title={`Arm “${goalLabel}” as the follow-up context`}
                 type="button"
               >
-                <CornerDownRightIcon className="size-3" />
+                <Icon name="corner-down-right" className="size-3" />
                 build on this
               </button>
             )}
@@ -255,16 +254,11 @@ export function DeliverableViewer({
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl space-y-6 p-6">
         <div>
-          <h3
-            className="text-foreground flex items-start gap-2 text-xl font-semibold"
-            title={headerGoal ?? undefined}
-          >
+          <h3 className="text-foreground flex items-start gap-2 text-xl font-semibold" title={headerGoal ?? undefined}>
             <span>{headerGoal ?? "Working…"}</span>
           </h3>
           {effective !== "final" && step != null && (
-            <div className="text-muted-foreground mt-1 font-mono text-xs">
-              Agent report · {agentName(step)}
-            </div>
+            <div className="text-muted-foreground mt-1 font-mono text-xs">Agent report · {agentName(step)}</div>
           )}
           <div className="text-muted-foreground mt-1 font-mono text-sm">
             {done}/{unseeded ? 0 : supervisor.steps.length} steps
@@ -286,19 +280,17 @@ export function DeliverableViewer({
         {/* Deck hero: on the final view AND on the deck_writer step report
             (the report the user lands on via "see report") — both otherwise
             show only the note text without the slides. */}
-        {!unseeded &&
-          workbench.deck != null &&
-          (effective === "final" || effective === "__deliverable") && (
-            <div className="space-y-1">
-              <div className="text-muted-foreground flex items-center gap-2 font-mono text-[11px] uppercase">
-                <ZapIcon className="size-3" /> Deck · {workbench.deck!.label ?? "presentation"}
-              </div>
-              {/* Native slide preview — plain DOM fragments + theme CSS (a few
+        {!unseeded && workbench.deck != null && (effective === "final" || effective === "__deliverable") && (
+          <div className="space-y-1">
+            <div className="text-muted-foreground flex items-center gap-2 font-mono text-[11px] uppercase">
+              <Icon name="zap" className="size-3" /> Deck · {workbench.deck!.label ?? "presentation"}
+            </div>
+            {/* Native slide preview — plain DOM fragments + theme CSS (a few
                   KB per slide). The full reveal.js deck opens in the browser via
                   "Open full deck" inside the preview; no iframe in the app. */}
-              <DeckPreview fileId={workbench.deck!.handle!} />
-            </div>
-          )}
+            <DeckPreview fileId={workbench.deck!.handle!} />
+          </div>
+        )}
         {effective === "final" && !unseeded && supervisor.finalOutput != null && (
           <div className="border-primary/30 bg-card rounded-lg border p-6">
             <Streamdown>{supervisor.finalOutput}</Streamdown>
@@ -309,7 +301,7 @@ export function DeliverableViewer({
             <span className="text-muted-foreground mr-1 font-mono text-[11px] uppercase">Export</span>
             <Button disabled={exporting != null} onClick={() => void exportGoal("pdf")} size="sm" variant="outline">
               {exporting === "pdf" ? (
-                <LoaderCircleIcon className="size-3 animate-spin" />
+                <Icon name="loader-circle" className="size-3 animate-spin" />
               ) : (
                 <FileIcon className="size-3" name="export.pdf" />
               )}
@@ -317,7 +309,7 @@ export function DeliverableViewer({
             </Button>
             <Button disabled={exporting != null} onClick={() => void exportGoal("docx")} size="sm" variant="outline">
               {exporting === "docx" ? (
-                <LoaderCircleIcon className="size-3 animate-spin" />
+                <Icon name="loader-circle" className="size-3 animate-spin" />
               ) : (
                 <FileIcon className="size-3" name="export.docx" />
               )}
@@ -388,11 +380,11 @@ export function RunHistory({
                   <span className="text-primary font-mono text-[10px] group-hover:underline">View report</span>
                 )}
                 {r.status === "running" ? (
-                  <LoaderCircleIcon className="text-primary size-4 animate-spin" />
+                  <Icon name="loader-circle" className="text-primary size-4 animate-spin" />
                 ) : r.status === "completed" ? (
-                  <CheckCircle2Icon className="text-success size-4" />
+                  <Icon name="check-circle-2" className="text-success size-4" />
                 ) : (
-                  <CircleXIcon className="text-destructive size-4" />
+                  <Icon name="circle-x" className="text-destructive size-4" />
                 )}
               </div>
             </>

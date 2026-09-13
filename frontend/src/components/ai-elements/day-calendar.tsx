@@ -3,7 +3,7 @@
 import type { HTMLAttributes } from "react";
 
 import { cn } from "@/lib/utils";
-import { CalendarIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { createContext, useContext, useMemo } from "react";
 
 export interface CalendarEvent {
@@ -127,7 +127,7 @@ export const DayCalendarHeader = ({
       data-slot="day-calendar-header"
       {...props}
     >
-      <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />
+      <Icon name="calendar" className="size-4 shrink-0 text-muted-foreground" />
       {children ?? <span>{formatted}</span>}
     </div>
   );

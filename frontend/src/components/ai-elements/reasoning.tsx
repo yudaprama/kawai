@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { useStreamdownConfig } from "@/hooks/use-streamdown";
-import { BrainIcon, ChevronDownIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import {
   createContext,
   memo,
@@ -181,9 +181,10 @@ export const ReasoningTrigger = memo(
       >
         {children ?? (
           <>
-            <BrainIcon className="size-4" />
+            <Icon name="brain" className="size-4" />
             {getThinkingMessage(isStreaming, duration)}
-            <ChevronDownIcon
+            <Icon
+              name="chevron-down"
               className={cn(
                 "size-4 transition-transform",
                 isOpen ? "rotate-180" : "rotate-0"

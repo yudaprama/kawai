@@ -15,7 +15,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { ChevronDownIcon, Code } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 
 import { getStatusBadge } from "./tool";
 
@@ -52,11 +52,11 @@ export const SandboxHeader = ({
     {...props}
   >
     <div className="flex items-center gap-2">
-      <Code className="size-4 text-muted-foreground" />
+      <Icon name="code" className="size-4 text-muted-foreground" />
       <span className="font-medium text-sm">{title}</span>
       {getStatusBadge(state)}
     </div>
-    <ChevronDownIcon className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+    <Icon name="chevron-down" className="size-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
   </CollapsibleTrigger>
 );
 

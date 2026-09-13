@@ -10,12 +10,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import {
-  AlertTriangleIcon,
-  CheckIcon,
-  ChevronDownIcon,
-  CopyIcon,
-} from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import {
   createContext,
   memo,
@@ -243,7 +238,7 @@ export const StackTraceError = memo(
       )}
       {...props}
     >
-      <AlertTriangleIcon className="size-4 shrink-0 text-destructive" />
+      <Icon name="alert-triangle" className="size-4 shrink-0 text-destructive" />
       {children}
     </div>
   )
@@ -348,7 +343,7 @@ export const StackTraceCopyButton = memo(
       []
     );
 
-    const Icon = isCopied ? CheckIcon : CopyIcon;
+    const iconName = isCopied ? "check" : "copy";
 
     return (
       <Button
@@ -358,7 +353,7 @@ export const StackTraceCopyButton = memo(
         variant="ghost"
         {...props}
       >
-        {children ?? <Icon size={14} />}
+        {children ?? <Icon name={iconName} className="size-3.5" />}
       </Button>
     );
   }
@@ -375,7 +370,8 @@ export const StackTraceExpandButton = memo(
         className={cn("flex size-7 items-center justify-center", className)}
         {...props}
       >
-        <ChevronDownIcon
+        <Icon
+          name="chevron-down"
           className={cn(
             "size-4 text-muted-foreground transition-transform",
             isOpen ? "rotate-180" : "rotate-0"

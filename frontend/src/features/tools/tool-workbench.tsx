@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ExternalLinkIcon, WrenchIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { renderToolOutput, toolIcon } from "@/components/ai-elements/tool-renderers";
 import { FilePreview } from "@/components/shared/file-preview";
@@ -69,7 +69,7 @@ export function ToolWorkbench({
     <main className="bg-background flex min-w-0 flex-1 flex-col overflow-hidden">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
         <Button aria-label="Back to chat" onClick={onBack} size="icon" variant="ghost">
-          <ArrowLeftIcon className="size-4" />
+          <Icon name="arrow-left" className="size-4" />
         </Button>
         {toolIcon({ toolName: name, className: "size-4" })}
         <h2 className="truncate text-sm font-semibold">{name.replaceAll("_", " ")}</h2>
@@ -77,7 +77,7 @@ export function ToolWorkbench({
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         {!selected ? (
           <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 text-sm">
-            <WrenchIcon className="size-8" />
+            <Icon name="wrench" className="size-8" />
             Tool result is no longer available.
           </div>
         ) : (
@@ -116,7 +116,7 @@ export function ToolWorkbench({
                     onClick={() => onOpenPreview(officeFile.id, officeFile.name)}
                     type="button"
                   >
-                    <ExternalLinkIcon className="size-3" /> Open in preview
+                    <Icon name="external-link" className="size-3" /> Open in preview
                   </button>
                 )}
               </div>

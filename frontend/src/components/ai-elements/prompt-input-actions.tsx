@@ -6,7 +6,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FILE_ICON_CDN } from "@/components/shared/file-icon";
 import { platform } from "@/platform";
 import { usePromptInputAttachments } from "./prompt-input-context";
-import { Camera, Clipboard, Monitor } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 
 /**
  * Common hook for platform actions that capture content and add it as
@@ -80,7 +80,7 @@ export const PromptInputActionCapturePhoto = ({
 
   return (
     <DropdownMenuItem {...props} onSelect={handleSelect}>
-      <Camera className="mr-2 size-4" />
+      <Icon name="camera" className="mr-2 size-4" />
       {label}
     </DropdownMenuItem>
   );
@@ -106,7 +106,7 @@ export const PromptInputActionAddScreenshot = ({
 
   return (
     <DropdownMenuItem {...props} onSelect={handleSelect}>
-      <Monitor className="mr-2 size-4" />
+      <Icon name="monitor" className="mr-2 size-4" />
       {label}
     </DropdownMenuItem>
   );
@@ -130,7 +130,7 @@ export const PromptInputActionPasteFromClipboard = ({
 
   return (
     <DropdownMenuItem {...props} onSelect={handleSelect}>
-      <Clipboard className="mr-2 size-4" />
+      <Icon name="clipboard" className="mr-2 size-4" />
       {label}
     </DropdownMenuItem>
   );

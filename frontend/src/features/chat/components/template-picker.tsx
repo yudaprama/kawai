@@ -1,4 +1,4 @@
-import { LayoutTemplateIcon, SearchIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -68,12 +68,12 @@ export function TemplatePicker({ onPick }: { onPick: (text: string) => void }) {
           title="Deck templates"
           variant="ghost"
         >
-          <LayoutTemplateIcon />
+          <Icon name="layout-template" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-2">
         <div className="flex items-center gap-2 rounded-sm border px-2 py-1.5">
-          <SearchIcon className="text-muted-foreground size-3.5" />
+          <Icon name="search" className="text-muted-foreground size-3.5" />
           <input
             aria-label="Search templates"
             className="placeholder:text-muted-foreground w-full bg-transparent text-xs outline-none"

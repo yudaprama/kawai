@@ -32,11 +32,7 @@ import {
 } from "@/components/ui/dialog";
 import { FileIcon } from "@/components/shared/file-icon";
 import { cn } from "@/lib/utils";
-import {
-  CopyIcon,
-  DownloadIcon,
-  XIcon,
-} from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import {
   isPastedTextAttachment,
   PASTED_TEXT_FILENAME,
@@ -228,7 +224,7 @@ export const PastedContentRemove = ({
       variant="ghost"
       {...props}
     >
-      <XIcon className="size-3" />
+      <Icon name="x" className="size-3" />
     </Button>
   );
 };
@@ -350,7 +346,7 @@ export const PastedContentModalFooter = ({
             type="button"
             variant="outline"
           >
-            <CopyIcon className="size-4" />
+            <Icon name="copy" className="size-4" />
           </Button>
           <Button
             disabled={disabled}
@@ -358,7 +354,7 @@ export const PastedContentModalFooter = ({
             type="button"
             variant="outline"
           >
-            <DownloadIcon className="size-4" />
+            <Icon name="download" className="size-4" />
           </Button>
         </>
       )}

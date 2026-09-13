@@ -1,4 +1,4 @@
-import { CheckIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
 import type { NotificationItem as NotificationItemType } from "@/contexts/NotificationContext";
 
@@ -54,7 +54,7 @@ export function NotificationItemCard({ item, onRead }: { item: NotificationItemT
 export function NotificationEmptyState() {
   return (
     <div className="text-muted-foreground flex flex-col items-center gap-2 py-8 text-center text-sm">
-      <CheckIcon className="size-5 opacity-40" />
+      <Icon name="check" className="size-5 opacity-40" />
       <span>All caught up</span>
     </div>
   );

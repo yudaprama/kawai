@@ -11,11 +11,7 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { useCopyButton } from "@/hooks/use-copy-button";
-import {
-  GitCommitIcon,
-  MinusIcon,
-  PlusIcon,
-} from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { useCallback, useEffect, useState } from "react";
 
 export type CommitProps = ComponentProps<typeof Collapsible>;
@@ -56,7 +52,7 @@ export const CommitHash = ({
   ...props
 }: CommitHashProps) => (
   <span className={cn("font-mono text-xs", className)} {...props}>
-    <GitCommitIcon className="mr-1 inline-block size-3" />
+    <Icon name="git-commit" className="mr-1 inline-block size-3" />
     {children}
   </span>
 );
@@ -376,7 +372,7 @@ export const CommitFileAdditions = ({
     >
       {children ?? (
         <>
-          <PlusIcon className="inline-block size-3" />
+          <Icon name="plus" className="inline-block size-3" />
           {count}
         </>
       )}
@@ -405,7 +401,7 @@ export const CommitFileDeletions = ({
     >
       {children ?? (
         <>
-          <MinusIcon className="inline-block size-3" />
+          <Icon name="minus" className="inline-block size-3" />
           {count}
         </>
       )}

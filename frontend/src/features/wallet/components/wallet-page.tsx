@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Repeat2Icon, WalletIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -110,7 +110,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
         <div className="mx-auto w-full max-w-lg space-y-6 py-8">
           <div className="text-center">
             <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10">
-              <WalletIcon className="size-6" />
+              <Icon name="wallet" className="size-6" />
             </div>
             <h3 className="mt-3 font-semibold">{available ? "No wallet found" : "Wallet unavailable in this build"}</h3>
             <p className="text-sm text-muted-foreground">
@@ -249,7 +249,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
       <Dialog open={modal === "swap"} onOpenChange={(o) => !o && setModal(null)}>
         <DialogContent>
           <div className="flex flex-col items-center gap-3 py-8">
-            <Repeat2Icon className="size-10 text-muted-foreground" />
+            <Icon name="repeat-2" className="size-10 text-muted-foreground" />
             <p className="font-semibold">Coming Soon</p>
             <p className="text-sm text-muted-foreground">Token swapping next update.</p>
           </div>

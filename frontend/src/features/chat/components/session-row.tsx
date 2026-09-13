@@ -1,4 +1,4 @@
-import { ArchiveIcon, ArchiveRestoreIcon, PencilIcon, TrashIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import { RenameInput } from "@/components/shared/rename-input";
 import type { ChatSessionInfo } from "@/lib/api";
 
@@ -77,7 +77,7 @@ export function SessionRow({
             onClick={onStartRename}
             type="button"
           >
-            <PencilIcon className="size-3.5" />
+            <Icon name="pencil" className="size-3.5" />
           </button>
         )}
         <button
@@ -87,7 +87,11 @@ export function SessionRow({
           onClick={onArchive}
           type="button"
         >
-          {archivedStyle ? <ArchiveRestoreIcon className="size-3.5" /> : <ArchiveIcon className="size-3.5" />}
+          {archivedStyle ? (
+            <Icon name="archive-restore" className="size-3.5" />
+          ) : (
+            <Icon name="archive" className="size-3.5" />
+          )}
         </button>
         <button
           aria-label={`Delete ${session.title || `session ${session.id}`}`}
@@ -101,7 +105,7 @@ export function SessionRow({
           title={confirmDelete ? "Click again to confirm — deletes the session and its messages" : "Delete session"}
           type="button"
         >
-          <TrashIcon className="size-3.5" />
+          <Icon name="trash" className="size-3.5" />
           {confirmDelete && <span className="sr-only">Click again to confirm deletion</span>}
         </button>
       </div>

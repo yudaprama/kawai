@@ -1,4 +1,4 @@
-import { ArrowLeftIcon } from "lucide-react";
+import { Icon } from "@/components/shared/icon";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -22,7 +22,7 @@ export function AssetShell({
     <main className="bg-background flex min-w-0 flex-1 flex-col overflow-hidden">
       <div className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
         <Button aria-label="Back to chat" onClick={onBack} size="icon" variant="ghost">
-          <ArrowLeftIcon className="size-4" />
+          <Icon name="arrow-left" className="size-4" />
         </Button>
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold">{title}</h2>
