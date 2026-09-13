@@ -109,6 +109,7 @@ export function DeckPreview({ fileId }: { fileId: string }) {
       },
       template: `
         <div class="deckmd-runtime">
+          <!-- biome-ignore lint/security/noDangerouslySetInnerHtml: markdown-it with html:false over server-sanitized deck content -->
           <div v-html="rendered[state.index]"></div>
           <div class="deck-nav">
             <button :disabled="state.index===0" @click="go(-1)">←</button>
@@ -137,9 +138,7 @@ export function DeckPreview({ fileId }: { fileId: string }) {
   }
   if (data == null) {
     return (
-      <div className="text-muted-foreground flex items-center justify-center p-8 font-mono text-xs">
-        Loading deck…
-      </div>
+      <div className="text-muted-foreground flex items-center justify-center p-8 font-mono text-xs">Loading deck…</div>
     );
   }
 
