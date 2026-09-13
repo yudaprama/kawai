@@ -21,5 +21,12 @@ export interface IconProps {
 }
 
 export function Icon({ name, className = "size-4 shrink-0" }: IconProps) {
-  return <img src={iconSrc(name)} alt="" loading="lazy" className={className} />;
+  return (
+    <img
+      src={iconSrc(name)}
+      alt=""
+      loading="lazy"
+      className={`pointer-events-none object-contain dark:invert ${className}`}
+    />
+  );
 }
