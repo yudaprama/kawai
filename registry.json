@@ -197,7 +197,8 @@
       "summary": "Auto-ported from the open-design 'catppuccin-latte' theme (light mode).",
       "directive": "STYLE catppuccin-latte (light mode): background #eff1f5, primary text #4c4f69, secondary text #6c6f85. Accent palette: #8839ef, #1e66f5, #ea76cb — #8839ef is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Developer-editorial tone: the important element on each slide is the BRIGHTEST thing on it. Code snippets are hero content. Calm pacing — one idea, generous dark or muted space.",
       "license": "style adapted from open-design html-ppt 'catppuccin-latte' theme (MIT, @lewislulu)",
-      "attribution": "open-design design-templates/html-ppt"
+      "attribution": "open-design design-templates/html-ppt",
+      "themeCss": "--bg:#eff1f5;--surface:#e6e9ef;--surface-2:#ccd0da;--border:rgba(76,79,105,.12);--border-strong:rgba(76,79,105,.28);--text-1:#4c4f69;--text-2:#5c5f77;--text-3:#9ca0b0;--accent:#1e66f5;--accent-strong:#8839ef;--radius:12px;--font-sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;--font-display:ui-sans-serif,sans-serif;--font-mono:'JetBrains Mono',SFMono-Regular,Menlo,monospace;--letter-tight:-.02em;--font-serif:Georgia,serif;"
     },
     {
       "id": "catppuccin-mocha",
@@ -206,7 +207,8 @@
       "summary": "Auto-ported from the open-design 'catppuccin-mocha' theme (dark mode).",
       "directive": "STYLE catppuccin-mocha (dark mode): background #1e1e2e, primary text #cdd6f4, secondary text #a6adc8. Accent palette: #cba6f7, #89b4fa, #f5c2e7 — #cba6f7 is the workhorse; the others only for the single hero element per slide. Apply via inline styles. Developer-editorial tone: the important element on each slide is the BRIGHTEST thing on it. Code snippets are hero content. Calm pacing — one idea, generous dark or muted space.",
       "license": "style adapted from open-design html-ppt 'catppuccin-mocha' theme (MIT, @lewislulu)",
-      "attribution": "open-design design-templates/html-ppt"
+      "attribution": "open-design design-templates/html-ppt",
+      "themeCss": "--bg:#1e1e2e;--surface:#313244;--surface-2:#45475a;--border:rgba(205,214,244,.12);--border-strong:rgba(205,214,244,.3);--text-1:#cdd6f4;--text-2:#a6adc8;--text-3:#6c7086;--accent:#89b4fa;--accent-strong:#cba6f7;--radius:12px;--font-sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;--font-display:ui-sans-serif,sans-serif;--font-mono:'JetBrains Mono',SFMono-Regular,Menlo,monospace;--letter-tight:-.02em;--font-serif:Georgia,serif;"
     },
     {
       "id": "corporate-clean",

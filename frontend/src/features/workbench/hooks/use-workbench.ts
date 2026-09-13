@@ -172,8 +172,28 @@ export function useWorkbench() {
   const [dynamicChips, setDynamicChips] = useState<string[]>([]);
 
 
+  // Deck artifact of the current/last run — set DIRECTLY from the
+  // planCompleted callback (the same handler whose output text provably
+  // renders) and from the restored persisted record, NOT through the
+  // reducer — the deck hero must not depend on any other state chain.
+  const [deck, setDeck] = useState<{
+    handle: string;
+    filename?: string;
+    label?: string;
+  } | null>(null);
+  const pickDeck = useCallback(
+    (artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[]) => {
+      const first = artifacts?.find(
+        (a) => a.kind === "file" && a.handle != null && (a.filename ?? "").toLowerCase().endsWith(".html"),
+      );
+      setDeck(first ? { handle: first.handle!, filename: first.filename, label: first.label } : null);
+    },
+    [],
+  );
+
   const supervisor = useSupervisorPlan({
-    onPlanCompleted: (goal, output) => {
+    onPlanCompleted: (goal, output, artifacts) => {
+      pickDeck(artifacts);
       setRuns((prev) =>
         prev.map((r, i) =>
           i === prev.length - 1 && r.status === "running"
@@ -230,6 +250,7 @@ export function useWorkbench() {
             if (record.type !== "supervisor-plan" || !Array.isArray(record.steps)) continue;
             const steps = record.steps;
             supervisor.restorePersisted(record);
+            pickDeck(record.artifacts);
             // The canvas only mounts the deliverable viewer when runs is
             // non-empty — seed one completed run from the record so a
             // reopened session shows the deliverable (incl. the deck hero).
@@ -379,6 +400,7 @@ export function useWorkbench() {
           return;
         }
       }
+      setDeck(null); // a new run — its own deck (if any) replaces the hero
       setRuns((prev) => [
         ...prev,
         {
@@ -461,6 +483,7 @@ export function useWorkbench() {
   return {
     supervisor,
     runs,
+    deck,
     sessionId,
     sessionError,
     composing,
@@ -479,6 +502,7 @@ export function useWorkbench() {
     startNewSession: () => {
       setSessionId(null);
       setRuns([]);
+      setDeck(null);
       setFollowUp(false);
       setQuotedLastRun(false);
       setQuoteTarget(null);

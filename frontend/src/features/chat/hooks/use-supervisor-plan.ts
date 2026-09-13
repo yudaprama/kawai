@@ -29,7 +29,12 @@ interface RunPlanOptions {
 }
 
 export interface SupervisorPlanCallbacks {
-  onPlanCompleted?: (goal: string | null, output: string | null) => void;
+  onPlanCompleted?: (
+    goal: string | null,
+    output: string | null,
+    /** Deliverable artifacts from planCompleted — deck hero source. */
+    artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[],
+  ) => void;
   onPlanFailed?: (goal: string | null, error: string) => void;
   /** Called after a title has been generated (fire-and-forget) so the UI can
    *  reload the session list. */
@@ -219,7 +224,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                   parts = [...parts, { type: "text", text: ev.finalOutput, state: "done" as const }];
                 }
                 syncAssistant();
-                callbacks?.onPlanCompleted?.(goalRef.current, ev.finalOutput ?? null);
+                callbacks?.onPlanCompleted?.(goalRef.current, ev.finalOutput ?? null, ev.artifacts);
                 void call("generate_session_title", { sessionId })
                   .catch(() => {})
                   .finally(() => callbacks?.onTitleGenerated?.());

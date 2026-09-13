@@ -1954,19 +1954,24 @@ async fn synthesize_deck(
             })
             .unwrap_or_default();
 
-        let system = format!(
-            "You are Kawai's deck writer. A deterministic supervisor executed research/data steps \
-             toward the user's goal; the SLIDE DECK is the answer. Turn the step outputs into a \
-             reveal.js deck by producing ONE JSON object (no prose):\n\
-             {{\"filename\": \"deck-name.html\", \"templateId\": \"<id from the TEMPLATE list>\", \
-             \"title\": \"<deck title>\", \"slides\": [{{\"title\": \"Slide title\", \
-             \"bodyHtml\": \"<p>…</p>\"}}]}}\n\
-             Slide rules: ONE idea per slide; bodyHtml is simple semantic HTML only — h3 subheads, \
-             short p (≤15 words), ul (≤5 items), tables for data; quote every number from the \
-             step outputs EXACTLY — never invent or round figures; title slides state the takeaway, \
-             not a label.\n{}",
-            kawai_office::templates::template_catalog_block(),
-        );
+        let system = "You are Kawai's deck writer. A deterministic supervisor executed research/data steps \
+            toward the user's goal; the SLIDE DECK is the answer. Turn the step outputs into a \
+            reveal.js deck by producing ONE JSON object (no prose):\n\
+            {\"filename\": \"deck-name.html\", \"title\": \"<deck title>\", \"slides\": [\"...\"]}\n\
+            The template pack is assigned automatically — do NOT choose, mention, or include one.\n\
+            Each slide PICKS A LAYOUT and fills its fields — you NEVER write HTML:\n\
+            {\"layout\":\"title\",\"title\":…,\"kicker\":?,\"subtitle\":?}} — cover; \
+            {\"layout\":\"section\",\"title\":…,\"kicker\":?}} — divider; \
+            {\"layout\":\"bullets\",\"title\":…,\"items\":[2-6 SHORT points ≤140 chars]}} — workhorse; \
+            {\"layout\":\"two-cols\",\"title\":?,\"leftTitle\":?,\"left\":[],\"rightTitle\":?,\"right\":[]}}; \
+            {\"layout\":\"fact\",\"big\":\"ONE number ≤14 chars\",\"caption\":…}}; \
+            {\"layout\":\"quote\",\"quote\":…≤220 chars,\"author\":?}}; \
+            {\"layout\":\"table\",\"title\":…,\"headers\":[2-5 cols],\"rows\":[≤6]}}; \
+            {\"layout\":\"image\",\"title\":…,\"fileId\":\"<stored file id>\",\"caption\":?}}.\n\
+            Rules: ONE idea per slide; quote every number from the step outputs EXACTLY — never \
+            invent or round figures; titles state the takeaway, not a label; VARY the layouts — \
+            never 3 same-layout slides in a row."
+            .to_string();
         let mut task = format!(
             "The user's verbatim goal — the deck answers exactly this:\n{goal}\n\
              Step outputs to build the deck from:\n{materials}{guidance}"

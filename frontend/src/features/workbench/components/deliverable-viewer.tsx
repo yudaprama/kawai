@@ -11,16 +11,9 @@ import { agentName, isDeliverableStep, type useWorkbench } from "@/features/work
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import { fmtDuration } from "./progress-rail";
 
-/** The run's deck artifact, if any — the deliverable hero. A run carries at
- *  most one deck; step file artifacts ride along but only an .html deck gets
- *  the hero treatment (stored decks are always .html). */
-function deckArtifact(workbench: ReturnType<typeof useWorkbench>) {
-  return (
-    workbench.supervisor.artifacts.find(
-      (a) => a.kind === "file" && a.handle != null && (a.filename ?? "").toLowerCase().endsWith(".html"),
-    ) ?? null
-  );
-}
+/** The run's deck artifact, if any — the deliverable hero. Set DIRECTLY from
+ *  the planCompleted callback / restored record (workbench.deck) — not via
+ *  the reducer — so the hero cannot be lost to a state-chain regression. */
 
 // ── Canvas view ───────────────────────────────────────────────────────────────
 
@@ -290,17 +283,22 @@ export function DeliverableViewer({
             ProgressRail). The canvas keeps showing the previous run's content
             until the new run's first content lands (canvas policy). */}
 
-        {effective === "final" && !unseeded && deckArtifact(workbench) != null && (
-          <div className="space-y-1">
-            <div className="text-muted-foreground flex items-center gap-2 font-mono text-[11px] uppercase">
-              <ZapIcon className="size-3" /> Deck · {deckArtifact(workbench)!.label ?? "presentation"}
+        {/* Deck hero: on the final view AND on the deck_writer step report
+            (the report the user lands on via "see report") — both otherwise
+            show only the note text without the slides. */}
+        {!unseeded &&
+          workbench.deck != null &&
+          (effective === "final" || effective === "__deliverable") && (
+            <div className="space-y-1">
+              <div className="text-muted-foreground flex items-center gap-2 font-mono text-[11px] uppercase">
+                <ZapIcon className="size-3" /> Deck · {workbench.deck!.label ?? "presentation"}
+              </div>
+              {/* Native slide preview — plain DOM fragments + theme CSS (a few
+                  KB per slide). The full reveal.js deck opens in the browser via
+                  "Open full deck" inside the preview; no iframe in the app. */}
+              <DeckPreview fileId={workbench.deck!.handle!} />
             </div>
-            {/* Native slide preview — plain DOM fragments + theme CSS (a few
-                KB per slide). The full reveal.js deck opens in the browser via
-                "Open full deck" inside the preview; no iframe in the app. */}
-            <DeckPreview fileId={deckArtifact(workbench)!.handle!} />
-          </div>
-        )}
+          )}
         {effective === "final" && !unseeded && supervisor.finalOutput != null && (
           <div className="border-primary/30 bg-card rounded-lg border p-6">
             <Streamdown>{supervisor.finalOutput}</Streamdown>
@@ -333,7 +331,7 @@ export function DeliverableViewer({
             )}
           </div>
         )}
-        {effective !== "final" && step != null && output != null && (
+        {effective !== "final" && step != null && output != null && step.tool !== "deck_writer" && (
           <StepReportBody
             fetcher={workbench.loadFullOutput}
             needsFetch={previewTruncated}
