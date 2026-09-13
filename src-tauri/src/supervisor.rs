@@ -1938,9 +1938,8 @@ async fn synthesize_deck(
             })
             .and_then(|s| s.arguments.as_object())
             .map(|args| {
-                let hints: [(&str, &str); 3] = [
+                let hints: [(&str, &str); 2] = [
                     ("filename", "Output filename"),
-                    ("templateId", "Template pack id"),
                     ("title", "Deck title"),
                 ];
                 let mut g = String::from("\n<deck-guidance>Planned deck shape:\n");

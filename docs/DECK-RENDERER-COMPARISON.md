@@ -115,16 +115,18 @@ self-correcting (probe + validation errors fed back to the model).
    changing text metrics — any measurement must re-run on `document.fonts.ready`
    / ResizeObserver.
 
-## Current architecture (post-v2)
+## Current architecture
+
+See `DECK-SLIDE-RUNTIME.md` for the full runtime description, build notes,
+and pitfalls. In short:
 
 ```
-LLM (deck writer) — picks layout, fills bounded fields
+LLM (deck writer) — picks layout, fills bounded fields (no HTML)
   → validation (bounds enforced; over-fill = actionable rejection, self-correct)
-  → fixed per-layout templates (Rust) → bodyHtml
-  → file-ref substitution → sanitize → probe → store (reveal.js HTML + manifest)
-  → office_read_deck → fragments + theme CSS
-  → DeckPreview (native DOM, 980×551 canvas scaled via CSS transform,
-     shrink-to-fit on overflow) + "Open full deck" in system browser
+  → fixed per-layout templates (Rust) → reveal.js HTML
+  → office_read_deck → markdown + theme CSS
+  → DeckPreview (Vue island: markdown-it → DOM, 16:9 aspect-video frame,
+     by-construction fit) + "Open full deck" in system browser
   → office_export_deck → PPTX (deterministic)
 ```
 
@@ -136,9 +138,13 @@ LLM (deck writer) — picks layout, fills bounded fields
 2. **Golden exemplar per theme** — one worked slide-set injected into the
    deck writer prompt (same mechanism the catalogue packs already use for
    their reference fixtures). Models copy patterns far better than they
-   follow prose directives.
+   follow prose directives. (Prompt-level "vary the layouts" alone was
+   proven insufficient: four consecutive decks anchored on one template
+   until template selection became system-owned.)
 3. **Layout-variety validation** — promote "never 3 same-layout slides in a
    row" from prompt to Rust validation (mechanical, self-correcting).
+   Template selection itself is already system-owned rotation
+   (`next_system_template_id`).
 4. **Optional external render path** (later) — `quarto render` as an opt-in
    alternative exporter for users who have Quarto installed, inspired by
    Showmaker's model.

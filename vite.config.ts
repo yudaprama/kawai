@@ -8,6 +8,13 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig({
   root: "frontend",
   envDir: path.resolve(__dirname),
+  // Vue esm-bundler feature flags — required by the deck preview's Vue island
+  // (deck-preview runtime). No-op for the React app otherwise.
+  define: {
+    __VUE_OPTIONS_API__: true,
+    __VUE_PROD_DEVTOOLS__: false,
+    __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false,
+  },
   plugins: [react(), tailwindcss()],
 
   resolve: {
