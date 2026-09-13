@@ -11,6 +11,24 @@ import { ComposerQuoteBadge, FollowUpChips } from "./follow-up-composer";
 import { GoalComposer } from "./goal-composer";
 import { ProgressRail, RunHistoryRail } from "./progress-rail";
 
+// ── Sessions button ─────────────────────────────────────────────────────────
+
+/** Opens the shared SessionHistoryDialog (App owns the dialog state). */
+function SessionsButton({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title="Browse past sessions (Cmd/Ctrl+K)"
+      aria-label="Open session history"
+      className="text-muted-foreground hover:bg-[var(--tea-color-bg-secondary-default)] hover:text-foreground inline-flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] tracking-wider uppercase transition-colors"
+    >
+      <Icon name="history" className="size-3.5" />
+      Sessions
+    </button>
+  );
+}
+
 // ── Page ────────────────────────────────────────────────────────────────────
 
 export interface WorkbenchPageProps {
@@ -18,15 +36,36 @@ export interface WorkbenchPageProps {
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
   onAddFiles?: () => void;
   onAddLink?: () => void;
+  /** Open the session-history dialog (same modal as Cmd/Ctrl+K). */
+  onOpenSessions?: () => void;
+  /** App-owned ref: on mount the page publishes its `selectSession` here so
+   *  the App-level session dialog can target the WORKBENCH's session state
+   *  (the workbench keeps its own sessions, separate from the chat hook). */
+  sessionSelectorRef?: React.MutableRefObject<((id: number) => void) | null>;
 }
 
 /** The kawai Workbench — the work-centric primary surface (PLAN-workbench.md).
  *  Left: a single sidebar — progress phases + Messages & Tools timeline, with
  *  the goal composer pinned at the bottom. Right: the deliverable. Results
  *  never enter chat. */
-export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: WorkbenchPageProps) {
+export function WorkbenchPage({
+  onImageToKnowledge,
+  onAddFiles,
+  onAddLink,
+  onOpenSessions,
+  sessionSelectorRef,
+}: WorkbenchPageProps) {
   const workbench = useWorkbench();
   const { supervisor } = workbench;
+
+  // Publish selectSession upward while mounted (App owns the dialog).
+  useEffect(() => {
+    if (sessionSelectorRef == null) return;
+    sessionSelectorRef.current = workbench.selectSession;
+    return () => {
+      sessionSelectorRef.current = null;
+    };
+  }, [sessionSelectorRef, workbench.selectSession]);
   // Home = the landing composer. Submitting a goal moves to the workbench;
   // "New goal" returns here.
   const [home, setHome] = useState(true);
@@ -149,6 +188,7 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
             <Icon name="zap" className="text-primary size-4" />
             Kawai Workbench
           </span>
+          {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
         </div>
         <div className="flex flex-1 flex-col items-center justify-center gap-5 p-6 text-center">
           <div className="space-y-2">
@@ -221,11 +261,16 @@ export function WorkbenchPage({ onImageToKnowledge, onAddFiles, onAddLink }: Wor
           />
         </div>
         <div className="border-border/60 border-t p-4">
-          {workbench.runs.length > 0 && (
-            <div className="text-muted-foreground mb-2 font-mono text-[10px] tracking-wider uppercase">
-              Session · {workbench.runs.length} run{workbench.runs.length === 1 ? "" : "s"}
-            </div>
-          )}
+          <div className="mb-2 flex items-center justify-between">
+            {workbench.runs.length > 0 ? (
+              <div className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
+                Session · {workbench.runs.length} run{workbench.runs.length === 1 ? "" : "s"}
+              </div>
+            ) : (
+              <span />
+            )}
+            {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
+          </div>
           {supervisor.status === "reviewing" && (
             <p className="text-muted-foreground mb-2 font-mono text-[11px]">
               A plan is awaiting your review above — run or discard it first.

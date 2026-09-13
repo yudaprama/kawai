@@ -11,6 +11,7 @@ import {
   PromptInputTools,
   usePromptInputController,
 } from "@/components/ai-elements/prompt-input";
+import { PromptInputAttachmentsDisplay } from "@/components/ai-elements/prompt-input-pasted-content";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -277,6 +278,7 @@ function ChatComposerInner({
         </div>
       )}
       <PromptInputBody>
+        <PromptInputAttachmentsDisplay className="px-2 pt-1" />
         <PromptInputTextarea
           data-chat-composer=""
           disabled={disabled || importProgress !== null}

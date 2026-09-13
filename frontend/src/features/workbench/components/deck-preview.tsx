@@ -38,7 +38,7 @@ const RUNTIME_CSS = `.deckmd-runtime{--slidev-primary:#3ab9d5;
 .deckmd-runtime h2{font-size:1.7em;line-height:1.25;font-weight:600;margin:0 0 18px;letter-spacing:-.02em;color:#4a5568}
 .deckmd-runtime h3{font-size:1.15em;font-weight:600;margin:16px 0 8px}
 .deckmd-runtime p{font-size:1.05em;line-height:1.7;margin:0 0 12px;color:#4a5568}
-.deckmd-runtime ul{padding-left:1.2em;margin:8px 0}
+.deckmd-runtime ul{padding-left:1.2em;margin:8px 0;list-style-type:disc}
 .deckmd-runtime li{font-size:1.08em;line-height:1.95;color:#2d3748}
 .deckmd-runtime li::marker{color:var(--slidev-primary)}
 .deckmd-runtime strong{color:var(--slidev-primary);font-weight:600}
@@ -70,7 +70,7 @@ function esc(s: string): string {
 }
 
 function inline(s: string): string {
-  return mdInline.renderInline(esc(s));
+  return mdInline.renderInline(s);
 }
 
 interface V2Slide {
@@ -153,6 +153,10 @@ function renderSlide(chunk: string, isFirst: boolean): V2Slide {
       .map((it) => `<li>${inline(it)}</li>`)
       .join("")}</ul></div>`;
 
+  // Layouts that render their own display title (title/section) skip the h2 —
+  // every other layout shows the slide title above its content.
+  const titleHtml = fm.title != null && fm.title.trim().length > 0 ? `<h2>${inline(fm.title)}</h2>` : "";
+
   let html: string;
   switch (layout) {
     case "title":
@@ -169,24 +173,32 @@ function renderSlide(chunk: string, isFirst: boolean): V2Slide {
         <div class="divider-accent"></div></div>`;
       break;
     case "bullets":
-      html = `<ul style="font-size:22px;line-height:1.85">${pieces.items
-        .map((it) => `<li>${inline(it)}</li>`)
-        .join("")}</ul>`;
+      html =
+        titleHtml +
+        `<ul style="font-size:22px;line-height:1.85">${pieces.items
+          .map((it) => `<li>${inline(it)}</li>`)
+          .join("")}</ul>`;
       break;
     case "two-cols":
-      html = `<div class="grid g2">${card(fm.leftTitle ?? null, pieces.left)}${card(
-        fm.rightTitle ?? null,
-        pieces.right,
-      )}</div>`;
+      html =
+        titleHtml +
+        `<div class="grid g2">${card(fm.leftTitle ?? null, pieces.left)}${card(
+          fm.rightTitle ?? null,
+          pieces.right,
+        )}</div>`;
       break;
     case "fact":
-      html = `<div style="height:100%;display:flex;flex-direction:column;justify-content:center;text-align:center">
+      html =
+        titleHtml +
+        `<div style="height:100%;display:flex;flex-direction:column;justify-content:center;text-align:center">
         <span class="big-number">${inline(fm.big ?? "")}</span><p class="lede">${inline(fm.caption ?? "")}</p></div>`;
       break;
     case "quote":
-      html = `<blockquote style="font-size:30px;line-height:1.5">${inline(fm.quote ?? pieces.quote.join(" "))}</blockquote>${
-        fm.author != null ? `<p class="kicker">— ${esc(fm.author)}</p>` : ""
-      }`;
+      html =
+        titleHtml +
+        `<blockquote style="font-size:30px;line-height:1.5">${inline(fm.quote ?? pieces.quote.join(" "))}</blockquote>${
+          fm.author != null ? `<p class="kicker">— ${esc(fm.author)}</p>` : ""
+        }`;
       break;
     case "table": {
       const th = (fm.headers ?? pieces.headers?.join(",") ?? "")
@@ -194,13 +206,17 @@ function renderSlide(chunk: string, isFirst: boolean): V2Slide {
         .map((h) => h.trim())
         .filter(Boolean);
       const rows = pieces.rows.length > 0 ? pieces.rows : [];
-      html = `<table><tr>${th.map((h) => `<th>${inline(h)}</th>`).join("")}</tr>${rows
-        .map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`)
-        .join("")}</table>`;
+      html =
+        titleHtml +
+        `<table><tr>${th.map((h) => `<th>${inline(h)}</th>`).join("")}</tr>${rows
+          .map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`)
+          .join("")}</table>`;
       break;
     }
     case "image":
-      html = `<div style="height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px">
+      html =
+        titleHtml +
+        `<div style="height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px">
         <div style="border:1px dashed #cbd5e1;border-radius:12px;padding:40px 60px;color:#94a3b8">🖼 ${esc(fm.fileId ?? "")}</div>
         ${fm.caption != null ? `<p class="kicker">${esc(fm.caption)}</p>` : ""}</div>`;
       break;

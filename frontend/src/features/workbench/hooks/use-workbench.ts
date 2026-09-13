@@ -442,6 +442,25 @@ export function useWorkbench() {
     [sessionId, supervisor, canFollowUp, quoteTarget, runs],
   );
 
+  /** Open a past session in the workbench: clears the in-memory runs and
+   *  points sessionId at the picked session — the restore effect below then
+   *  rehydrates the latest persisted plan record (runs + deliverable + deck).
+   *  No-op while a run is in flight (same guard as the chat session pick). */
+  const selectSession = useCallback(
+    (id: number) => {
+      if (supervisor.status === "running" || supervisor.status === "stopping") return;
+      if (sessionId === id) return;
+      setRuns([]);
+      setDeck(null);
+      setFollowUp(false);
+      setQuotedLastRun(false);
+      setQuoteTarget(null);
+      setDynamicChips([]);
+      setSessionId(id);
+    },
+    [supervisor.status, sessionId],
+  );
+
   /** The just-started run's goal lands in `runs` via `run()`; keep the latest
    *  running entry's step tally fresh for the history list. */
   const syncLatestRun = useCallback((steps: SupervisorStep[]) => {
@@ -488,6 +507,7 @@ export function useWorkbench() {
     sessionError,
     composing,
     run,
+    selectSession,
     syncLatestRun,
     loadFullOutput,
     followUp,

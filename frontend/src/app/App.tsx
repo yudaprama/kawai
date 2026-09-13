@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LinkDialog, PreviewDialog } from "@/features/knowledge/components/knowledge-dialogs";
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
 import { useKnowledgeActions } from "@/features/knowledge/hooks/use-knowledge-actions";
@@ -26,6 +26,9 @@ export default function App() {
   const [assetView, setAssetView] = useState<AssetViewId | null>(null);
   const [codeGraphSeed, setCodeGraphSeed] = useState<{ query: string; result: string } | null>(null);
   const [mobileDrawer, setMobileDrawer] = useState<null | "agents">(null);
+  // Workbench publishes its selectSession here (App owns the dialog; the
+  // workbench keeps its own session state separate from the chat hook).
+  const workbenchSelectRef = useRef<((id: number) => void) | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -207,6 +210,8 @@ export default function App() {
           onAddFiles={ka.addKnowledgeFiles}
           onAddLink={ka.submitKnowledgeLink}
           onImageToKnowledge={ka.imageToKnowledge}
+          onOpenSessions={() => setSessionsOpen(true)}
+          sessionSelectorRef={workbenchSelectRef}
         />
       )}
 
@@ -249,7 +254,13 @@ export default function App() {
         archivedSessions={chat.archivedSessions}
         activeSessionId={chat.sessionId}
         busy={busy}
-        onSelectSession={(id) => void chat.selectSession(id)}
+        onSelectSession={(id) => {
+          // Prefer the workbench session (its restore effect rehydrates runs
+          // + deliverable); fall back to the chat hook when the workbench
+          // isn't mounted (an asset page owns the screen).
+          if (workbenchSelectRef.current) workbenchSelectRef.current(id);
+          else void chat.selectSession(id);
+        }}
         onDeleteSession={(id) => void chat.deleteSession(id)}
         onRenameSession={(id, title) => void chat.renameSession(id, title)}
         onArchiveSession={(id, archived) => chat.setSessionArchived(id, archived)}
