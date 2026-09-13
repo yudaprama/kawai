@@ -1,4 +1,5 @@
 import { Icon } from "@/components/shared/icon";
+import { FileIcon } from "@/components/shared/file-icon";
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   PromptInput,
@@ -323,7 +324,7 @@ function ChatComposerInner({
                       onClick={() => pickMention(f)}
                       type="button"
                     >
-                      <span className="text-muted-foreground text-[11px] uppercase">{f.ext}</span>
+                      <FileIcon name={f.originalName} />
                       <span className="truncate text-xs">{f.originalName}</span>
                     </button>
                   ))}
