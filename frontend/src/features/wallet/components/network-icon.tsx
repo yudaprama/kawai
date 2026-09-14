@@ -1,6 +1,11 @@
 import { Icon } from "@/components/shared/icon";
+import monadLogo from "@/assets/monad.svg";
 
 type Props = { name: string; size?: number };
+
+const SVG_LOGOS: Record<string, string> = {
+  monad: monadLogo as unknown as string,
+};
 
 const COLOR_MAP: Record<string, string> = {
   ethereum: "bg-[#627EEA]",
@@ -13,6 +18,19 @@ const COLOR_MAP: Record<string, string> = {
 };
 
 export function NetworkIcon({ name, size = 24 }: Props) {
+  const svgSrc = SVG_LOGOS[name];
+  if (svgSrc) {
+    return (
+      <span
+        aria-hidden
+        className="inline-flex items-center justify-center overflow-hidden rounded-full"
+        style={{ width: size, height: size }}
+      >
+        <img src={svgSrc} width={size} height={size} alt="" className="block" />
+      </span>
+    );
+  }
+
   const bg = COLOR_MAP[name] ?? "bg-muted-foreground";
   const label = name.slice(0, 3).toUpperCase();
   return (
