@@ -179,14 +179,24 @@ function renderSlide(chunk: string, isFirst: boolean): V2Slide {
           .map((it) => `<li>${inline(it)}</li>`)
           .join("")}</ul>`;
       break;
-    case "two-cols":
+    case "two-cols": {
+      // LLM convention: a first item that is ENTIRELY **bold** is that
+      // column's title — render it as the card heading, not a bullet.
+      const popBoldTitle = (items: string[]): { title: string | null; rest: string[] } => {
+        const m = items[0]?.match(/^\*\*([^*]+)\*\*$/);
+        if (m == null) return { title: null, rest: items };
+        return { title: m[1].trim(), rest: items.slice(1) };
+      };
+      const lt = popBoldTitle(pieces.left);
+      const rt = popBoldTitle(pieces.right);
       html =
         titleHtml +
-        `<div class="grid g2">${card(fm.leftTitle ?? null, pieces.left)}${card(
-          fm.rightTitle ?? null,
-          pieces.right,
+        `<div class="grid g2">${card(fm.lefttitle ?? lt.title, lt.rest)}${card(
+          fm.righttitle ?? rt.title,
+          rt.rest,
         )}</div>`;
       break;
+    }
     case "fact":
       html =
         titleHtml +
@@ -217,7 +227,7 @@ function renderSlide(chunk: string, isFirst: boolean): V2Slide {
       html =
         titleHtml +
         `<div style="height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:14px">
-        <div style="border:1px dashed #cbd5e1;border-radius:12px;padding:40px 60px;color:#94a3b8">🖼 ${esc(fm.fileId ?? "")}</div>
+        <div style="border:1px dashed #cbd5e1;border-radius:12px;padding:40px 60px;color:#94a3b8">🖼 ${esc(fm.fileid ?? "")}</div>
         ${fm.caption != null ? `<p class="kicker">${esc(fm.caption)}</p>` : ""}</div>`;
       break;
     default:
