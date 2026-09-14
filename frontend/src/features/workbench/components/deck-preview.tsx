@@ -29,18 +29,24 @@ interface ReadDeckResult {
   markdown?: string;
 }
 
+// Fixed 960×540 (16:9) slide canvas, scaled to fit the host — every slide
+// has identical dimensions (PowerPoint model), content centers vertically.
 const RUNTIME_CSS = `.deckmd-runtime{--slidev-primary:#3ab9d5;
   background:#fff;color:#1a202c;
   font-family:Poppins,ui-sans-serif,-apple-system,'Segoe UI',sans-serif;
-  padding:40px 52px;overflow:hidden;height:100%;box-sizing:border-box;
+  padding:40px 52px 56px;overflow:hidden;box-sizing:border-box;
+  width:960px;height:540px;flex:none;font-size:24px;
+  position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%) scale(var(--deckmd-scale,1));
+  position:relative;
   display:flex;flex-direction:column;justify-content:center}
 .deckmd-runtime .deck-fit{margin:0;width:100%}
-.deckmd-runtime h1{font-size:2.2em;line-height:1.2;font-weight:600;margin:0 0 20px;letter-spacing:-.02em}
-.deckmd-runtime h2{font-size:1.7em;line-height:1.25;font-weight:600;margin:0 0 18px;letter-spacing:-.02em;color:#4a5568}
+.deckmd-runtime h1{font-size:1.8em;line-height:1.2;font-weight:600;margin:0 0 20px;letter-spacing:-.02em}
+.deckmd-runtime h2{font-size:1.5em;line-height:1.25;font-weight:600;margin:0 0 18px;letter-spacing:-.02em;color:#4a5568}
 .deckmd-runtime h3{font-size:1.15em;font-weight:600;margin:16px 0 8px}
-.deckmd-runtime p{font-size:1.05em;line-height:1.7;margin:0 0 12px;color:#4a5568}
+.deckmd-runtime p{font-size:1em;line-height:1.6;margin:0 0 12px;color:#4a5568}
 .deckmd-runtime ul{padding-left:1.2em;margin:8px 0;list-style-type:disc}
-.deckmd-runtime li{font-size:1.08em;line-height:1.95;color:#2d3748}
+.deckmd-runtime li{font-size:1em;line-height:1.75;color:#2d3748}
 .deckmd-runtime li::marker{color:var(--slidev-primary)}
 .deckmd-runtime strong{color:var(--slidev-primary);font-weight:600}
 .deckmd-runtime blockquote{border-left:4px solid var(--slidev-primary);margin:16px 0;padding:4px 18px;font-style:italic;color:#2d3748}
@@ -57,8 +63,9 @@ const RUNTIME_CSS = `.deckmd-runtime{--slidev-primary:#3ab9d5;
 .deckmd-runtime .card{background:#f8fafb;border:1px solid #e2e8f0;border-radius:10px;padding:18px 20px}
 .deckmd-runtime .card h3{margin-top:0}
 .deckmd-runtime .card p{font-size:.95em;margin:6px 0 0}
-.deckmd-runtime .deck-nav{display:flex;align-items:center;justify-content:center;gap:16px;
-  font:12px monospace;color:#a0aec0;margin-top:auto;padding-top:12px}
+.deckmd-runtime .deck-nav{position:absolute;left:0;right:0;bottom:12px;
+  display:flex;align-items:center;justify-content:center;gap:16px;
+  font:12px monospace;color:#a0aec0}
 .deckmd-runtime .deck-nav button{cursor:pointer;background:none;border:none;font-size:16px;color:inherit}
 .deckmd-runtime .deck-nav button:disabled{opacity:.4;cursor:default}`;
 
@@ -161,20 +168,20 @@ function renderSlide(chunk: string, isFirst: boolean): V2Slide {
     case "title":
       html = `<div style="height:100%;display:flex;flex-direction:column;justify-content:center">
         ${fm.kicker != null ? `<span class="kicker">${esc(fm.kicker)}</span>` : ""}
-        <p style="font-size:56px;font-weight:800;line-height:1.12;margin:0 0 16px">${inline(title)}</p>
+        <p style="font-size:76px;font-weight:800;line-height:1.12;margin:0 0 16px">${inline(title)}</p>
         ${fm.subtitle != null ? `<p class="lede">${inline(fm.subtitle)}</p>` : ""}
         <div class="divider-accent"></div></div>`;
       break;
     case "section":
       html = `<div style="height:100%;display:flex;flex-direction:column;justify-content:center">
         ${fm.kicker != null ? `<span class="kicker">${esc(fm.kicker)}</span>` : ""}
-        <p style="font-size:44px;font-weight:800;line-height:1.15;margin:0">${inline(title)}</p>
+        <p style="font-size:60px;font-weight:800;line-height:1.15;margin:0">${inline(title)}</p>
         <div class="divider-accent"></div></div>`;
       break;
     case "bullets":
       html =
         titleHtml +
-        `<ul style="font-size:22px;line-height:1.85">${pieces.items
+        `<ul style="font-size:28px;line-height:1.8">${pieces.items
           .map((it) => `<li>${inline(it)}</li>`)
           .join("")}</ul>`;
       break;
@@ -205,7 +212,7 @@ function renderSlide(chunk: string, isFirst: boolean): V2Slide {
     case "quote":
       html =
         titleHtml +
-        `<blockquote style="font-size:30px;line-height:1.5">${inline(fm.quote ?? pieces.quote.join(" "))}</blockquote>${
+        `<blockquote style="font-size:38px;line-height:1.5">${inline(fm.quote ?? pieces.quote.join(" "))}</blockquote>${
           fm.author != null ? `<p class="kicker">— ${esc(fm.author)}</p>` : ""
         }`;
       break;
@@ -259,7 +266,7 @@ function parseDeckMarkdown(md: string): V2Slide[] {
 function mountDeckRuntime(
   host: HTMLDivElement,
   markdown: string,
-  opts: { fullscreen?: boolean; themeCss?: string } = {},
+  opts: { fullscreen?: boolean; themeCss?: string; onExit?: () => void } = {},
 ): () => void {
   const slides = parseDeckMarkdown(markdown);
   if (slides.length === 0) return () => {};
@@ -271,7 +278,7 @@ function mountDeckRuntime(
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "ArrowRight" || e.key === "PageDown") go(1);
     else if (e.key === "ArrowLeft" || e.key === "PageUp") go(-1);
-    else if (opts.fullscreen === true && e.key === "Escape") host.dataset.exited = "1";
+    else if (opts.fullscreen === true && e.key === "Escape") opts.onExit?.();
   };
   window.addEventListener("keydown", onKey);
 
@@ -288,16 +295,26 @@ function mountDeckRuntime(
 
   const app = createApp({
     setup(_, { expose }) {
+      const rootRef = ref<HTMLDivElement | null>(null);
       const fitRef = ref<HTMLDivElement | null>(null);
       const fit = () => {
-        const el = fitRef.value;
+        const el = rootRef.value;
         if (el == null) return;
-        el.style.transform = "scale(1)";
-        el.style.transformOrigin = "center center";
-        const avail = host.clientHeight - 80; // runtime padding
-        const natural = el.offsetHeight;
-        if (avail > 0 && natural > 0) {
-          el.style.transform = `scale(${Math.min(1, avail / natural)})`;
+        const w = host.clientWidth;
+        const h = host.clientHeight;
+        if (w > 0 && h > 0) {
+          el.style.setProperty("--deckmd-scale", String(Math.min(w / 960, h / 540)));
+        }
+        // Inner shrink-to-fit: dense content scales down instead of clipping.
+        const inner = fitRef.value;
+        if (inner != null) {
+          inner.style.transform = "scale(1)";
+          const avail = 540 - 96; // slide height minus runtime padding
+          const natural = inner.offsetHeight;
+          if (natural > avail) {
+            inner.style.transform = `scale(${avail / natural})`;
+            inner.style.transformOrigin = "center center";
+          }
         }
       };
       watch(
@@ -306,17 +323,15 @@ function mountDeckRuntime(
       );
       onMounted(() => {
         nextTick(fit);
-        if (fitRef.value != null) {
-          const ro = new ResizeObserver(fit);
-          ro.observe(fitRef.value);
-        }
+        const ro = new ResizeObserver(fit);
+        ro.observe(host);
         document.fonts?.ready.then(fit).catch(() => {});
       });
       expose({ refit: fit });
-      return { state, rendered, go, fitRef };
+      return { state, rendered, go, rootRef, fitRef };
     },
     template: `
-      <div class="deckmd-runtime">
+      <div class="deckmd-runtime" ref="rootRef">
         <div class="deck-fit" ref="fitRef">
           <!-- biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized (html disabled) markdown over server-sanitized deck content -->
           <div v-html="rendered[state.index]"></div>
@@ -376,6 +391,7 @@ export function DeckPreview({ fileId }: { fileId: string }) {
     const cleanup = mountDeckRuntime(host, data.markdown, {
       fullscreen: true,
       themeCss: data.themeCss,
+      onExit: () => setPresenting(false),
     });
     return cleanup;
   }, [presenting, data]);
@@ -417,7 +433,7 @@ export function DeckPreview({ fileId }: { fileId: string }) {
           markdown pipeline
           keeps the rendering inert. */}
       <div className="relative aspect-video w-full overflow-hidden rounded-lg border bg-white">
-        <div ref={hostRef} className="h-full w-full" />
+        <div ref={hostRef} className="relative h-full w-full overflow-hidden" />
       </div>
       <div className="flex items-center justify-center gap-2">
         <Button onClick={() => setPresenting(true)} size="sm" variant="outline">
@@ -440,7 +456,19 @@ export function DeckPreview({ fileId }: { fileId: string }) {
           </span>
         )}
       </div>
-      {presenting && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black" ref={presentRef} />}
+      {presenting && (
+        <div className="fixed inset-0 z-50 overflow-hidden bg-black">
+          <div ref={presentRef} className="relative h-full w-full overflow-hidden" />
+          <button
+            aria-label="Close presentation"
+            className="absolute right-4 top-4 z-10 rounded-md bg-white/15 px-3 py-2 text-sm text-white hover:bg-white/25"
+            onClick={() => setPresenting(false)}
+            type="button"
+          >
+            Close
+          </button>
+        </div>
+      )}
     </div>
   );
 }

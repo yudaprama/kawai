@@ -188,6 +188,26 @@ pub async fn worker_post(
     Ok((status, json))
 }
 
+/// POST to an auth endpoint, check status, persist the token, and return the
+/// user record. Shared by sign-up and sign-in.
+async fn post_auth_and_persist(
+    path: &str,
+    body: serde_json::Value,
+    email: &str,
+) -> std::result::Result<UserRecord, String> {
+    let (status, json) = post_json(path, body).await?;
+    if status != 200 {
+        return Err(error_text(status, &json));
+    }
+    let token = json["token"].as_str().unwrap_or_default().to_string();
+    if !token.is_empty() {
+        persist_token(email, &token);
+    }
+    Ok(UserRecord {
+        email: email.to_string(),
+    })
+}
+
 /// Register a new account on the centralized directory: fail when the email
 /// already exists, then send a welcome email (best-effort).
 pub async fn auth_sign_up(email_addr: &str, password: &str) -> std::result::Result<UserRecord, String> {
@@ -202,24 +222,18 @@ pub async fn auth_sign_up(email_addr: &str, password: &str) -> std::result::Resu
     let salt = random_salt()?;
     let credential = derive_credential(&salt, password);
 
-    let (status, json) = post_json(
+    let user = post_auth_and_persist(
         "/auth/sign_up",
         serde_json::json!({ "email": email, "salt": salt, "credential": credential }),
+        &email,
     )
     .await?;
-    if status != 200 {
-        return Err(error_text(status, &json));
-    }
-    let token = json["token"].as_str().unwrap_or_default().to_string();
-    if !token.is_empty() {
-        persist_token(&email, &token);
-    }
 
     // Fire-and-forget welcome email — never blocks or fails signup.
     if let Err(e) = email::send_welcome_email(&email).await {
         eprintln!("[auth] welcome email to {} failed: {e}", email);
     }
-    Ok(UserRecord { email })
+    Ok(user)
 }
 
 /// Verify email+password against the centralized directory.
@@ -235,17 +249,10 @@ pub async fn auth_sign_in(email_addr: &str, password: &str) -> std::result::Resu
 
     // 2. Derive credential dan verifikasi.
     let credential = derive_credential(&salt, password);
-    let (status, json) = post_json(
+    post_auth_and_persist(
         "/auth/sign_in",
         serde_json::json!({ "email": email, "salt": salt, "credential": credential }),
+        &email,
     )
-    .await?;
-    if status != 200 {
-        return Err(error_text(status, &json));
-    }
-    let token = json["token"].as_str().unwrap_or_default().to_string();
-    if !token.is_empty() {
-        persist_token(&email, &token);
-    }
-    Ok(UserRecord { email })
+    .await
 }

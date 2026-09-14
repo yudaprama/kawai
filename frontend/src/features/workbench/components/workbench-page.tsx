@@ -205,6 +205,7 @@ export function WorkbenchPage({
             <ChatComposer
               agentName="Workbench"
               chipDraft={chipDraft}
+              disabled={composerStatus === "submitted"}
               lastUserText={null}
               onAddFiles={onAddFiles}
               onAddLink={onAddLink}

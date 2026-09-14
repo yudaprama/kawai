@@ -30,6 +30,16 @@ function makePlan(
   );
 }
 
+/** Dispatch confirmationRequested — shared setup for tests that verify
+ *  confirmation-clearing behavior (planRevising, planCompleted). */
+function requestConfirmation(
+  s: SupervisorPlanState,
+  overrides: Partial<{ stepId: string; task: string; description: string; t: number }> = {},
+): SupervisorPlanState {
+  const { stepId = "a", task = "t", description = "d", t = NOW + 100 } = overrides;
+  return supervisorReducer(s, { type: "confirmationRequested", streamId: "s1", stepId, task, description }, { now: t });
+}
+
 describe("initialSupervisorState", () => {
   it("returns idle with empty steps", () => {
     const s = initialSupervisorState();
@@ -167,11 +177,7 @@ describe("supervisorReducer — confirmation gate", () => {
 
   it("planRevising clears pendingConfirmation", () => {
     let s = makePlan([step("a")]);
-    s = supervisorReducer(
-      s,
-      { type: "confirmationRequested", streamId: "s1", stepId: "a", task: "t", description: "d" },
-      { now: NOW + 100 },
-    );
+    s = requestConfirmation(s);
     expect(s.pendingConfirmation).not.toBeNull();
     s = supervisorReducer(s, { type: "planRevising", failedStepIds: [], attempt: 1 }, { now: NOW + 200 });
     expect(s.pendingConfirmation).toBeNull();
@@ -237,11 +243,7 @@ describe("supervisorReducer — edge cases", () => {
 
   it("planCompleted clears pendingConfirmation", () => {
     let s = makePlan([step("a")]);
-    s = supervisorReducer(
-      s,
-      { type: "confirmationRequested", streamId: "s1", stepId: "a", task: "t", description: "d" },
-      { now: NOW + 100 },
-    );
+    s = requestConfirmation(s);
     expect(s.pendingConfirmation).not.toBeNull();
     s = supervisorReducer(s, { type: "planCompleted" }, { now: NOW + 200 });
     expect(s.pendingConfirmation).toBeNull();

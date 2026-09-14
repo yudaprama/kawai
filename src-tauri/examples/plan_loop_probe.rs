@@ -9,71 +9,20 @@
 //! Usage:
 //!   cargo run --example plan_loop_probe --features litert -- "goal optional"
 
+#[path = "common/mod.rs"]
+mod common;
+
 fn main() {
-    kawai_lib::auth::load_dotenv();
-
-    #[cfg(feature = "litert")]
-    {
-        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
-        if let Err(e) = rt.block_on(run()) {
-            eprintln!("[plan_loop_probe] FAIL: {e}");
-            std::process::exit(1);
-        }
-    }
-
-    #[cfg(not(feature = "litert"))]
-    {
-        eprintln!("[plan_loop_probe] FAIL: rebuild with --features litert");
-        std::process::exit(1);
-    }
+    common::run_async("plan_loop_probe", run());
 }
 
 #[cfg(feature = "litert")]
 async fn run() -> Result<(), String> {
-    use kawai_router::{ToolCall, ToolDispatch, ToolKind, ToolMeta, ToolRegistry};
-
     let goal = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "buatkan deck presentasi penjualan dari data analytics".to_string());
 
-    // Same merged `auto` registry the real planner validates against.
-    let remote_configured = remote_llm::RemoteLlm::from_env().is_some();
-    let sql_profiles = kawai_analytics::effective_profiles("seed").await;
-    let context = kawai_agent_contract::AgentContext {
-        user_id: "seed",
-        session_id: 0,
-        sql_profiles: Some(sql_profiles.as_slice()),
-    };
-    let mut merged: Option<kawai_tools::ToolSet> = None;
-    for set in [
-        kawai_lib::agent_registry::office_tools(&context, remote_configured),
-        kawai_lib::agent_registry::presentation_tools_for_supervisor(&context, remote_configured),
-        kawai_lib::agent_registry::binance_tools_for_supervisor(&context, remote_configured),
-        kawai_lib::agent_registry::analytics_tools_for_supervisor(&context, remote_configured),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        match &mut merged {
-            Some(base) => base.merge(&mut { set }),
-            None => merged = Some(set),
-        }
-    }
-    let toolset = merged.ok_or("no domain toolset could be built")?;
-    let dispatch: ToolDispatch = std::sync::Arc::new(|_call: ToolCall| {
-        Box::pin(async move { Err(kawai_router::RouterError::UnknownTool(String::new(), String::new())) })
-    });
-    let mut registry = ToolRegistry::new(dispatch);
-    for def in toolset.get_tool_definitions() {
-        registry.register(ToolMeta {
-            name: def.name.clone(),
-            kind: ToolKind::Pure,
-            description: def.description.clone(),
-            input_schema: def.parameters.clone(),
-            output_schema: serde_json::json!({}),
-            requires_confirmation: false,
-        });
-    }
+    let registry = common::build_stub_registry().await?;
     println!("[probe] registry: {} tools (invisible to the planner)", registry.len());
 
     let started = std::time::Instant::now();
@@ -88,6 +37,7 @@ async fn run() -> Result<(), String> {
         usage.input_tokens,
         usage.output_tokens
     );
+
     for step in &plan.steps {
         println!(
             "  [{}] tool={} depends_on={:?} task={}",

@@ -3,9 +3,41 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { errText, call } from "@/lib/api";
 import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
-import type { PersistedPlan } from "@/features/chat/hooks/use-supervisor-plan";
 
 // ── Derived view models ─────────────────────────────────────────────────────
+
+/** Wire shape of one persisted plan step (from the JSON blob in chat history). */
+export interface PersistedPlanStep {
+  id: string;
+  tool: string;
+  state: string;
+  output?: string;
+  task?: string;
+  dependsOn?: string[];
+}
+
+/** Wire shape of a persisted plan record (assistant message JSON blob). */
+export interface PersistedPlanRecord {
+  type?: string;
+  goal?: string | null;
+  planKey?: string | null;
+  steps?: PersistedPlanStep[];
+  output?: string | null;
+  artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
+  error?: string;
+}
+
+/** Normalize a persisted plan step into the live SupervisorStep shape. */
+export function hydrateStep(s: PersistedPlanStep) {
+  return {
+    stepId: s.id,
+    tool: s.tool,
+    task: s.task ?? s.tool,
+    state: s.state as SupervisorStep["state"],
+    dependsOn: s.dependsOn ?? [],
+    output: s.output,
+  };
+}
 
 // ── Follow-up composer (PLAN-followup-composer.md) ──────────────────────
 
@@ -241,43 +273,11 @@ export function useWorkbench() {
           archived: false,
         });
         if (cancelled) return;
-        const found: {
-          rowId: number;
-          record: {
-            goal?: string | null;
-            planKey?: string | null;
-            steps?: {
-              id: string;
-              tool: string;
-              state: string;
-              output?: string;
-              task?: string;
-              dependsOn?: string[];
-            }[];
-            output?: string | null;
-            artifacts?: PersistedPlan["artifacts"];
-            error?: string;
-          };
-        }[] = [];
+        const found: { rowId: number; record: PersistedPlanRecord }[] = [];
         for (const row of rows) {
           if (row.role !== "assistant" || !row.content.startsWith("{")) continue;
           try {
-            const record = JSON.parse(row.content) as {
-              type?: string;
-              goal?: string | null;
-              planKey?: string | null;
-              steps?: {
-                id: string;
-                tool: string;
-                state: string;
-                output?: string;
-                task?: string;
-                dependsOn?: string[];
-              }[];
-              output?: string | null;
-              artifacts?: PersistedPlan["artifacts"];
-              error?: string;
-            };
+            const record = JSON.parse(row.content) as PersistedPlanRecord;
             if (record.type !== "supervisor-plan" || !Array.isArray(record.steps)) continue;
             if (typeof record.error === "string" && record.error.startsWith("superseded by revision")) continue;
             found.push({ rowId: row.id, record });
@@ -298,14 +298,7 @@ export function useWorkbench() {
         // tool/[]/null respectively. A restored planKey lets "see report"
         // fetch the FULL step body from supervisor_step_results.
         const runSteps = (f: (typeof found)[number]) =>
-          f.record.steps!.map((s) => ({
-            stepId: s.id,
-            tool: s.tool,
-            task: s.task ?? s.tool,
-            state: s.state as SupervisorStep["state"],
-            dependsOn: s.dependsOn ?? [],
-            output: s.output,
-          }));
+          f.record.steps!.map(hydrateStep);
         setRuns((prev) =>
           prev.length > 0
             ? prev // a live run owns the canvas — never clobber it
