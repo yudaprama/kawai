@@ -1,13 +1,14 @@
 import { Icon } from "@/components/shared/icon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApp, reactive } from "vue/dist/vue.esm-bundler.js";
-import MarkdownIt from "markdown-it";
 
 import { Button } from "@/components/ui/button";
+import { renderDeckBlock } from "@/lib/deck-markdown";
 
 /**
  * PoC page — Slidev-style markdown slide runtime running natively in the
- * app's webview (Vue + markdown-it, no iframe, no reveal.js, no backend).
+ * app's webview (Vue + the unified markdown pipeline, no iframe, no reveal.js,
+ * no backend).
  *
  * Markdown in → slides out: the deck source is a plain markdown string
  * (the exact shape the LLM emits and `office_read_deck` serves), compiled
@@ -67,8 +68,6 @@ Riset lintas sumber: teknologi, pasar, perilaku konsumen
 
 # Siap mencoba?`;
 
-const mdit = MarkdownIt({ html: false, linkify: false });
-
 /** Split deck markdown into per-slide chunks ("#"/"##" start new slides). */
 function deckToSlides(markdown: string): string[] {
   const out: string[] = [];
@@ -113,7 +112,7 @@ export function DeckDemoPage({ onBack }: { onBack: () => void }) {
   }, []);
 
   // ── Vue island: markdown runtime, re-renders when the index changes ──
-  const rendered = useMemo(() => slides.map((s) => mdit.render(s)), [slides]);
+  const rendered = useMemo(() => slides.map((s) => renderDeckBlock(s)), [slides]);
   const vstate = useMemo(() => reactive({ html: "", index: 0, total: slides.length }), [slides]);
 
   useEffect(() => {

@@ -1,10 +1,10 @@
 import { Icon } from "@/components/shared/icon";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createApp, nextTick, onMounted, reactive, ref, watch } from "vue/dist/vue.esm-bundler.js";
-import MarkdownIt from "markdown-it";
 
 import { Button } from "@/components/ui/button";
 import { call, errText, tauriOpenFile } from "@/lib/api";
+import { renderDeckInline } from "@/lib/deck-markdown";
 import { runningInTauri } from "@/platform";
 
 /**
@@ -13,7 +13,8 @@ import { runningInTauri } from "@/platform";
  *
  * `office_read_deck` returns the deck body as Slidev-style markdown
  * (`layout:` frontmatter + fields, `##`/`#` headings, bullets, tables,
- * `::right::`/column comments) — the runtime compiles it with markdown-it
+ * `::right::`/column comments) — the runtime compiles it with the unified
+ * pipeline (`@/lib/deck-markdown`)
  * and renders ONE slide at a time inside a 16:9 frame that tracks the
  * column width, with PowerPoint-style shrink-to-fit when a slide is dense.
  * No iframe, no scrolling, no measurement-based frame fitting.
@@ -61,16 +62,14 @@ const RUNTIME_CSS = `.deckmd-runtime{--slidev-primary:#3ab9d5;
 .deckmd-runtime .deck-nav button{cursor:pointer;background:none;border:none;font-size:16px;color:inherit}
 .deckmd-runtime .deck-nav button:disabled{opacity:.4;cursor:default}`;
 
-/** Inline markdown → HTML: escape first, then convert bold / italic / code
- *  markers via a zero-preset markdown-it — no raw markup passes through. */
-const mdInline = new MarkdownIt("zero", { linkify: false }).enable(["emphasis", "backticks"]);
-
 function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+/** Inline markdown → HTML: bold / italic / code markers only — no raw markup
+ *  passes through (unified pipeline, see lib/deck-markdown). */
 function inline(s: string): string {
-  return mdInline.renderInline(s);
+  return renderDeckInline(s);
 }
 
 interface V2Slide {
@@ -319,7 +318,7 @@ function mountDeckRuntime(
     template: `
       <div class="deckmd-runtime">
         <div class="deck-fit" ref="fitRef">
-          <!-- biome-ignore lint/security/noDangerouslySetInnerHtml: markdown-it with html:false over server-sanitized deck content -->
+          <!-- biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized (html disabled) markdown over server-sanitized deck content -->
           <div v-html="rendered[state.index]"></div>
         </div>
         <div class="deck-nav">
@@ -414,7 +413,8 @@ export function DeckPreview({ fileId }: { fileId: string }) {
       {/* biome-ignore lint/security/noDangerouslySetInnerHtml: static runtime stylesheet */}
       <style dangerouslySetInnerHTML={{ __html: RUNTIME_CSS }} />
       {/* Markdown compiled by the embedded Vue runtime — deck content is
-          sanitized server-side before storage; html:false in markdown-it
+          sanitized server-side before storage; raw HTML disabled in the deck
+          markdown pipeline
           keeps the rendering inert. */}
       <div className="relative aspect-video w-full overflow-hidden rounded-lg border bg-white">
         <div ref={hostRef} className="h-full w-full" />
