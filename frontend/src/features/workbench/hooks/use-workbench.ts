@@ -90,13 +90,16 @@ export interface WorkbenchRun {
    *  supervisor_step_results even after the supervisor moved on. */
   planKey?: string | null;
   /** Lightweight step snapshot captured at terminal state — backs the
-   *  journal's step timeline. Full bodies stay in supervisor_step_results. */
+   *  journal's step timeline. Full bodies stay in supervisor_step_results.
+   *  `output` is set only on restored runs (from the persisted plan record's
+   *  ≤500-char embeds) — live runs fetch full bodies via planKey instead. */
   steps?: {
     stepId: string;
     tool: string;
     task: string;
     state: SupervisorStep["state"];
     dependsOn: string[];
+    output?: string;
   }[];
 }
 
@@ -219,10 +222,13 @@ export function useWorkbench() {
       void goal;
     },
   });
-  // Session reopen: rehydrate the LAST persisted plan record (goal, steps,
+  // Session reopen: rehydrate EVERY persisted plan record (goal, steps,
   // deliverable, deck artifacts) so the deliverable viewer — including the
-  // deck hero — works without re-running. In-memory runs stay empty; the
-  // record lives in chat history (persistPlanSnapshot), one assistant row.
+  // deck hero — works without re-running, and a multi-run session shows ALL
+  // its runs in the journal (oldest → newest). The supervisor state + deck
+  // come from the NEWEST record. In-memory runs stay untouched when a live
+  // run owns the canvas. Revision snapshots ("superseded by revision #n")
+  // are excluded — they belong to a run that also has its own final record.
   const restoredSessionRef = useRef<number | null>(null);
   useEffect(() => {
     if (sessionId == null || restoredSessionRef.current === sessionId) return;
@@ -235,8 +241,17 @@ export function useWorkbench() {
           archived: false,
         });
         if (cancelled) return;
-        for (let i = rows.length - 1; i >= 0; i--) {
-          const row = rows[i];
+        const found: {
+          rowId: number;
+          record: {
+            goal?: string | null;
+            steps?: { id: string; tool: string; state: string; output?: string }[];
+            output?: string | null;
+            artifacts?: PersistedPlan["artifacts"];
+            error?: string;
+          };
+        }[] = [];
+        for (const row of rows) {
           if (row.role !== "assistant" || !row.content.startsWith("{")) continue;
           try {
             const record = JSON.parse(row.content) as {
@@ -248,34 +263,47 @@ export function useWorkbench() {
               error?: string;
             };
             if (record.type !== "supervisor-plan" || !Array.isArray(record.steps)) continue;
-            const steps = record.steps;
-            supervisor.restorePersisted(record);
-            pickDeck(record.artifacts);
-            // The canvas only mounts the deliverable viewer when runs is
-            // non-empty — seed one completed run from the record so a
-            // reopened session shows the deliverable (incl. the deck hero).
-            setRuns((prev) =>
-              prev.length > 0
-                ? prev // a live run owns the canvas — never clobber it
-                : [
-                    {
-                      id: `restored-${row.id}`,
-                      goal: record.goal ?? "(restored run)",
-                      status: record.error ? ("failed" as const) : ("completed" as const),
-                      startedAt: Date.now(),
-                      finishedAt: Date.now(),
-                      outputPreview: (record.output ?? "").slice(0, 500),
-                      outputFull: record.output ?? undefined,
-                      stepsDone: steps.filter((s) => s.state === "completed").length,
-                      stepsTotal: steps.length,
-                    },
-                  ],
-            );
-            return;
+            if (typeof record.error === "string" && record.error.startsWith("superseded by revision")) continue;
+            found.push({ rowId: row.id, record });
           } catch {
-            // not a plan record — keep scanning backwards
+            // not a plan record — skip
           }
         }
+        if (found.length === 0) return;
+        const newest = found[found.length - 1];
+        supervisor.restorePersisted(newest.record);
+        pickDeck(newest.record.artifacts);
+        // The canvas only mounts the deliverable viewer when runs is
+        // non-empty — seed one completed run per record so a reopened
+        // session shows its full journal (incl. the deck hero of the last).
+        // Steps come straight from the record (id/tool/state + ≤500-char
+        // output embeds); dependsOn/task were never persisted, so they fall
+        // back to []/tool (agentName falls back to tool too).
+        const runSteps = (f: (typeof found)[number]) =>
+          f.record.steps!.map((s) => ({
+            stepId: s.id,
+            tool: s.tool,
+            task: s.tool,
+            state: s.state as SupervisorStep["state"],
+            dependsOn: [],
+            output: s.output,
+          }));
+        setRuns((prev) =>
+          prev.length > 0
+            ? prev // a live run owns the canvas — never clobber it
+            : found.map((f) => ({
+                id: `restored-${f.rowId}`,
+                goal: f.record.goal ?? "(restored run)",
+                status: f.record.error ? ("failed" as const) : ("completed" as const),
+                startedAt: Date.now(),
+                finishedAt: Date.now(),
+                outputPreview: (f.record.output ?? "").slice(0, 500),
+                outputFull: f.record.output ?? undefined,
+                steps: runSteps(f),
+                stepsDone: f.record.steps!.filter((s) => s.state === "completed").length,
+                stepsTotal: f.record.steps!.length,
+              })),
+        );
       } catch (err) {
         console.error("[workbench] plan restore:", errText(err));
       }
