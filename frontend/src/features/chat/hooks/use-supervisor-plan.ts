@@ -73,17 +73,36 @@ export interface PersistedPlan {
   type: "supervisor-plan";
   v: 1;
   goal: string | null;
-  steps: { id: string; tool: string; state: SupervisorStep["state"]; output?: string }[];
+  steps: {
+    id: string;
+    tool: string;
+    state: SupervisorStep["state"];
+    output?: string;
+    /** Planner's human task label (restored journals show it, not the tool). */
+    task?: string;
+    /** Dispatch order — lets a restored journal re-derive phases. */
+    dependsOn?: string[];
+  }[];
   output: string | null;
+  /** Execution-memo key — lets a restored journal fetch FULL step bodies
+   *  from supervisor_step_results (not just the ≤500-char embeds). Absent on
+   *  records written before this field existed. */
+  planKey?: string | null;
   /** Deliverable artifacts (deck hero, stored files) — restored on reopen. */
   artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
   /** Present on failed-plan records — the terminal error. */
   error?: string;
 }
 
+/** The current run's execution-memo key, kept in sync from planStarted /
+ *  planRevised events — module-level because persistPlanSnapshot (also
+ *  module-level) embeds it in every record. One supervisor runs at a time. */
+const planKeyRef: { current: string | null } = { current: null };
+
 /** Persist the structured plan record (goal + per-step states). Embedded
- *  outputs are capped — full results live in the plan progress panel /
- *  artifacts, not in chat history. */
+ *  outputs are capped — full results live in plan progress panel /
+ *  supervisor_step_results (reachable via the record's planKey) / artifacts,
+ *  not in chat history. */
 function persistPlanSnapshot(
   sessionId: number,
   goal: string | null,
@@ -94,11 +113,14 @@ function persistPlanSnapshot(
     type: "supervisor-plan",
     v: 1,
     goal,
+    planKey: planKeyRef.current,
     steps: steps.map((s) => ({
       id: s.stepId,
       tool: s.tool,
       state: s.state,
       output: s.output ? s.output.slice(0, 500) : s.output,
+      task: s.task,
+      dependsOn: s.dependsOn,
     })),
     output: extra.output,
     artifacts: extra.artifacts,
@@ -133,6 +155,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       const next = supervisorReducer(prev, event);
       stepsRef.current = next.steps;
       if (event.type === "planStarted") goalRef.current = event.goal;
+      if (event.type === "planStarted" || event.type === "planRevised") planKeyRef.current = event.planKey;
       return next;
     });
   }, []);
@@ -159,6 +182,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       streamIdRef.current = streamId;
       goalRef.current = null;
       userGoalRef.current = null;
+      planKeyRef.current = null;
 
       setState({
         ...initialSupervisorState(),

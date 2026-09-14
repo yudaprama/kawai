@@ -245,7 +245,15 @@ export function useWorkbench() {
           rowId: number;
           record: {
             goal?: string | null;
-            steps?: { id: string; tool: string; state: string; output?: string }[];
+            planKey?: string | null;
+            steps?: {
+              id: string;
+              tool: string;
+              state: string;
+              output?: string;
+              task?: string;
+              dependsOn?: string[];
+            }[];
             output?: string | null;
             artifacts?: PersistedPlan["artifacts"];
             error?: string;
@@ -257,7 +265,15 @@ export function useWorkbench() {
             const record = JSON.parse(row.content) as {
               type?: string;
               goal?: string | null;
-              steps?: { id: string; tool: string; state: string; output?: string }[];
+              planKey?: string | null;
+              steps?: {
+                id: string;
+                tool: string;
+                state: string;
+                output?: string;
+                task?: string;
+                dependsOn?: string[];
+              }[];
               output?: string | null;
               artifacts?: PersistedPlan["artifacts"];
               error?: string;
@@ -276,16 +292,18 @@ export function useWorkbench() {
         // The canvas only mounts the deliverable viewer when runs is
         // non-empty — seed one completed run per record so a reopened
         // session shows its full journal (incl. the deck hero of the last).
-        // Steps come straight from the record (id/tool/state + ≤500-char
-        // output embeds); dependsOn/task were never persisted, so they fall
-        // back to []/tool (agentName falls back to tool too).
+        // Steps come straight from the record (id/tool/task/state/dependsOn
+        // + ≤500-char output embeds); task/dependsOn/planKey are absent on
+        // records written before those fields existed — they fall back to
+        // tool/[]/null respectively. A restored planKey lets "see report"
+        // fetch the FULL step body from supervisor_step_results.
         const runSteps = (f: (typeof found)[number]) =>
           f.record.steps!.map((s) => ({
             stepId: s.id,
             tool: s.tool,
-            task: s.tool,
+            task: s.task ?? s.tool,
             state: s.state as SupervisorStep["state"],
-            dependsOn: [],
+            dependsOn: s.dependsOn ?? [],
             output: s.output,
           }));
         setRuns((prev) =>
@@ -299,6 +317,7 @@ export function useWorkbench() {
                 finishedAt: Date.now(),
                 outputPreview: (f.record.output ?? "").slice(0, 500),
                 outputFull: f.record.output ?? undefined,
+                planKey: f.record.planKey ?? null,
                 steps: runSteps(f),
                 stepsDone: f.record.steps!.filter((s) => s.state === "completed").length,
                 stepsTotal: f.record.steps!.length,

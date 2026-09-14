@@ -138,11 +138,12 @@ export function PastRunCanvas({
         ) : (
           <StepReportBody
             fetcher={loadFullOutput}
-            // Restored runs carry the record's ≤500-char output embed and
-            // have no planKey — serve that instead of fetching, which would
-            // hit the supervisor's CURRENT planKey (the newest run, wrong
-            // run for past-run journals).
-            needsFetch={docStep?.output == null}
+            // Fetch the full body only when the run's own planKey is known
+            // (records persist it now; restored runs would otherwise hit the
+            // supervisor's CURRENT planKey — the newest run, wrong run for
+            // past-run journals). Without a planKey, serve the record's
+            // ≤500-char output embed as-is.
+            needsFetch={run.planKey != null || docStep?.output == null}
             planKey={run.planKey ?? undefined}
             previewOutput={docStep?.output ?? ""}
             stepId={doc}
