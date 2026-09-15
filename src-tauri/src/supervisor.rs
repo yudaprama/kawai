@@ -1761,6 +1761,7 @@ async fn revise_plan(
     user_id: &str,
     run_span: Option<&Arc<Mutex<kawai_telemetry::TelemetrySpan>>>,
 ) -> Result<kawai_router::TaskPlan, String> {
+    eprintln!("[supervisor] revise_plan: entered (reason={} chars)", reason.len());
     let remote = remote_llm::RemoteLlm::from_env()
         .map(|r| {
             let mut r = r
@@ -1792,6 +1793,10 @@ async fn revise_plan(
     let mut materials = String::new();
     for round in 0..2 {
         let mut raw = String::new();
+        eprintln!(
+            "[supervisor] revise round {round}: calling planner (materials={} chars)",
+            materials.len()
+        );
         {
             // Overall watchdog for this revise round. remote-llm streams have
             // no inherent timeout by design (long generations are legitimate);
@@ -1815,8 +1820,13 @@ async fn revise_plan(
                 Ok::<(), String>(())
             };
             if let Err(e) = tokio::time::timeout(std::time::Duration::from_secs(300), collect).await {
+                eprintln!("[supervisor] revise round {round}: watchdog fired (300s), raw so far: {} chars", raw.len());
                 return Err(format!("revised-planner call did not finish in 300s: {e}"));
             }
+            eprintln!(
+                "[supervisor] revise round {round}: planner returned {} chars, parsing",
+                raw.len()
+            );
         }
         match parse_supervisor_plan(&raw, registry) {
             Ok(plan) if !plan.steps.is_empty() => return Ok(plan),

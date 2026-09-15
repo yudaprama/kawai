@@ -24,7 +24,8 @@ export function FileIcon({ name, className = "size-4 shrink-0" }: FileIconProps)
   const ext = fileExtension(name);
 
   if (IMAGE_EXTENSIONS.has(ext)) {
-    return <div className={`bg-muted shrink-0 rounded-md ${className ?? ""}`} />;
+    const iconName = getIconNameForFileName(name);
+    return <img src={getIconSrc(iconName)} alt="" loading="lazy" className={className} />;
   }
 
   const iconName = getIconNameForFileName(name);
