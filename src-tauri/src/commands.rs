@@ -1,6 +1,6 @@
 use crate::auth::Session;
 use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo};
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
@@ -29,6 +29,32 @@ impl Drop for StreamGuard {
             map.remove(&self.stream_id);
         }
     }
+}
+
+/// Drive a stream to completion, racing each event against cancellation.
+/// Encapsulates token registration, the select! loop, and RAII cleanup.
+/// When `token` is `Some`, the caller provides the cancellation token (used
+/// when the stream itself needs the same token for internal cancellation).
+async fn run_streaming<E: serde::Serialize>(
+    stream_id: String,
+    on_event: Channel<E>,
+    registry: &StreamRegistry,
+    stream: impl Stream<Item = E> + 'static,
+    token: Option<CancellationToken>,
+) -> Result<(), String> {
+    let token = token.unwrap_or_else(CancellationToken::new);
+    let _guard = register_stream(registry, &stream_id, token.clone());
+    let mut stream = Box::pin(stream);
+    loop {
+        tokio::select! {
+            _ = token.cancelled() => break,
+            Some(event) = stream.next() => {
+                on_event.send(event).map_err(|e| e.to_string())?;
+            }
+            else => break,
+        }
+    }
+    Ok(())
 }
 
 fn register_stream(
@@ -188,29 +214,12 @@ pub async fn generate_activity(
     on_event: Channel<ActivityEvent>,
     registry: State<'_, StreamRegistry>,
 ) -> Result<(), String> {
-    // Take an owned clone so the `State` borrow ends before any await.
     let registry = Arc::clone(&registry);
-
-    let token = CancellationToken::new();
-    let _guard = register_stream(&registry, &stream_id, token.clone());
-
     let input = ActivityInput {
         events,
         interval_ms,
     };
-    // Box::pin so the (non-Unpin) async_stream supports `.next()`.
-    let mut stream = Box::pin(logic::generate_activity(input));
-    loop {
-        tokio::select! {
-            _ = token.cancelled() => break,           // client cancelled
-            Some(event) = stream.next() => {
-                on_event.send(event).map_err(|e| e.to_string())?;
-            }
-            else => break,                            // stream ended naturally
-        }
-    }
-
-    Ok(())
+    run_streaming(stream_id, on_event, &registry, logic::generate_activity(input), None).await
 }
 
 #[tauri::command]
@@ -746,22 +755,8 @@ pub async fn local_chat(
 ) -> Result<(), String> {
     let user_id = session_user_id(&session)?;
     let registry = Arc::clone(&registry);
-
-    let token = CancellationToken::new();
-    let _guard = register_stream(&registry, &stream_id, token.clone());
-
-    let mut stream = Box::pin(logic::local_llm::local_chat(user_id, prompt, image, audio, true));
-    loop {
-        tokio::select! {
-            _ = token.cancelled() => break,
-            Some(event) = stream.next() => {
-                on_event.send(event).map_err(|e| e.to_string())?;
-            }
-            else => break,
-        }
-    }
-
-    Ok(())
+    let stream = logic::local_llm::local_chat(user_id, prompt, image, audio, true);
+    run_streaming(stream_id, on_event, &registry, stream, None).await
 }
 
 /// Authenticated RPC: reset the conversation history (fresh chat, same model).
@@ -1379,10 +1374,7 @@ pub async fn execute_supervisor_plan(
     pending: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
     let user_id = session_user_id(&session)?;
-    let registry_state = Arc::clone(&registry);
-
-    let token = CancellationToken::new();
-    let _guard = register_stream(&registry_state, &stream_id, token.clone());
+    let registry = Arc::clone(&registry);
 
     if !kawai_db::session_exists(&user_id, session_id)
         .await
@@ -1391,11 +1383,6 @@ pub async fn execute_supervisor_plan(
         return Err(format!("session {session_id} not found"));
     }
 
-    // LLM-written plans omit `agentId` (tool-dispatched steps never dispatch
-    // by agent), so an empty/unknown step agent must NOT be passed through —
-    // the specialist-only builders would return None. Rebuild the same merged
-    // `auto` catalog plan_task planned against; dispatch keys off the tool
-    // name, and a real specialist id still narrows as intended.
     let step_agent = plan
         .steps
         .first()
@@ -1417,22 +1404,10 @@ pub async fn execute_supervisor_plan(
     .await?;
 
     let step_count = plan.steps.len();
+    let token = CancellationToken::new();
     let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone(), user_id.clone(), session_id, user_goal);
-    // Telemetry: this transport previously had zero logging, which made
-    // scheduler anomalies (e.g. zero-step "successes") invisible.
     tracing::info!(component = "supervisor", steps = step_count, user = %user_id, session = session_id, "executing plan");
-    let mut stream = Box::pin(stream);
-    loop {
-        tokio::select! {
-            _ = token.cancelled() => break,
-            Some(event) = stream.next() => {
-                on_event.send(event).map_err(|e| e.to_string())?;
-            }
-            else => break,
-        }
-    }
-
-    Ok(())
+    run_streaming(stream_id, on_event, &registry, stream, Some(token)).await
 }
 
 // ── TTS (piper-rs, feature "tts") ──────────────────────────────────────────

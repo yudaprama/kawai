@@ -253,7 +253,7 @@ app.log                          # symlink → platform log dir (macOS ~/Library
 1. Write the pure fn (+ any event enum) in `logic.rs`. Events: `#[serde(tag = "type")]`.
 2. Add the `#[tauri::command]` in `commands.rs`:
    - RPC: return `Result<T, String>`.
-   - Streaming: take `stream_id: String` + `on_event: Channel<E>` + `State<StreamRegistry>`; loop with `tokio::select!` racing `token.cancelled()` vs `stream.next()`; register/remove token by `stream_id`.
+   - Streaming: take `stream_id: String` + `on_event: Channel<E>` + `State<StreamRegistry>`; build the stream, then call `run_streaming(stream_id, on_event, &registry, stream, None).await` (pass `Some(token)` if the stream itself needs the same `CancellationToken` for internal cancellation).
    - If it requires auth: take `State<Session>`, read the user id (helper `session_user_id`), pass it to the `logic.rs` fn as `user_id`. The frontend never passes `user_id`.
 3. Add the Axum route in `web.rs`: RPC → `Json<T>`; streaming → `Sse<impl Stream<Item = Result<Event, _>>>`. Register it in `router()`.
    - If it requires auth: mount it on the `protected` router (behind `auth_middleware`) and take `Extension<String>` (the user id); pass it to the same `logic.rs` fn. Public ops stay on `public`.
