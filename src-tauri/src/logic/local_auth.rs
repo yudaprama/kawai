@@ -58,7 +58,9 @@ async fn post_json(path: &str, body: serde_json::Value) -> std::result::Result<(
         .await
         .map_err(|e| format!("auth server unreachable: {e}"))?;
     let status = resp.status().as_u16();
-    let json: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
+    let text = resp.text().await.unwrap_or_default();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
+    eprintln!("[auth] {path} → {status}: {text}");
     Ok((status, json))
 }
 
@@ -66,6 +68,8 @@ fn error_text(status: u16, json: &serde_json::Value) -> String {
     json.as_str()
         .map(|s| s.to_string())
         .or_else(|| json["error"].as_str().map(|s| s.to_string()))
+        .or_else(|| json["message"].as_str().map(|s| s.to_string()))
+        .or_else(|| json["detail"].as_str().map(|s| s.to_string()))
         .unwrap_or_else(|| match status {
             400 => "invalid request".into(),
             401 => "incorrect password".into(),
