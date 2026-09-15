@@ -20,6 +20,7 @@ import { call, type KnowledgeFileInfo } from "@/lib/api";
 import { activeMentionRange } from "@/features/chat/lib/chat-helpers";
 import { logWarn } from "@/lib/logger";
 import { TemplatePicker } from "@/features/chat/components/template-picker";
+import { AttachedFilesChips } from "@/features/knowledge/components/attached-files-chips";
 import { useOp } from "@/hooks/use-op";
 
 type ChatComposerProps = {
@@ -42,6 +43,8 @@ type ChatComposerProps = {
   /** Disabled state — true when generation is in progress. */
   disabled?: boolean;
   /** Supervisor plan mode: submits route to the planner instead of the agent. */
+  attachedFiles?: KnowledgeFileInfo[];
+  onRemoveAttachedFile?: (file: KnowledgeFileInfo) => void;
 };
 
 export function ChatComposer({
@@ -54,6 +57,8 @@ export function ChatComposer({
   onAddFiles,
   onAddLink,
   chipDraft,
+  attachedFiles,
+  onRemoveAttachedFile,
   onDraftConsumed,
   placeholder,
   disabled,
@@ -73,6 +78,8 @@ export function ChatComposer({
         onImageToKnowledge={onImageToKnowledge}
         onAddFiles={onAddFiles}
         onAddLink={onAddLink}
+        attachedFiles={attachedFiles}
+        onRemoveAttachedFile={onRemoveAttachedFile}
       />
     </PromptInputProvider>
   );
@@ -88,6 +95,8 @@ function ChatComposerInner({
   onAddFiles,
   onAddLink,
   chipDraft,
+  attachedFiles,
+  onRemoveAttachedFile,
   onDraftConsumed,
   placeholder,
   disabled,
@@ -257,6 +266,7 @@ function ChatComposerInner({
       className="mx-auto max-w-2xl [&_[data-slot=input-group]]:flex-col [&_[data-slot=input-group]]:items-stretch [&_[data-slot=input-group]]:gap-1 [&_[data-slot=input-group]]:overflow-visible [&_[data-slot=input-group]]:rounded-3xl [&_[data-slot=input-group]]:px-2 [&_[data-slot=input-group]]:py-1.5"
       onSubmit={handleSubmit}
     >
+      {attachedFiles && <AttachedFilesChips files={attachedFiles} onRemove={onRemoveAttachedFile} />}
       {mentions.length > 0 && (
         <div className="flex flex-wrap gap-1.5 px-2 pt-1">
           {mentions.map((m) => (

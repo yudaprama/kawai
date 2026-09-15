@@ -13,8 +13,10 @@ export interface GoalComposerProps {
 
 /** Goal composer — the single composer region (bottom of the progress rail
  *  + hero on the landing page). Wraps the shared ChatComposer with the
- *  workbench's submit/stop plumbing. The follow-up chips + quote badge live
- *  in follow-up-composer.tsx and are composed above this by the page. */
+ *  workbench's submit/stop plumbing. Attached knowledge files (chips with
+ *  background RAG indexing) live in useWorkbench — GoalComposer reads them
+ *  from there. The follow-up chips + quote badge live in
+ *  follow-up-composer.tsx and are composed above this by the page. */
 export function GoalComposer({
   workbench,
   chipDraft,
@@ -24,7 +26,7 @@ export function GoalComposer({
   onSubmit,
   placeholder,
 }: GoalComposerProps) {
-  const { supervisor } = workbench;
+  const { supervisor, attachedFiles, removeAttachedFile } = workbench;
   const composerStatus: "submitted" | "ready" = ["running", "stopping", "awaitingConfirmation"].includes(
     supervisor.status,
   )
@@ -46,6 +48,8 @@ export function GoalComposer({
         onStop={supervisor.stop}
         status={composerStatus}
         placeholder={placeholder}
+        attachedFiles={attachedFiles}
+        onRemoveAttachedFile={removeAttachedFile}
       />
       {workbench.sessionError && (
         <p className="text-destructive mt-2 font-mono text-[11px]">{workbench.sessionError}</p>

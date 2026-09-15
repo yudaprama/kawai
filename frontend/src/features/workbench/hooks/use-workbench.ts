@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { errText, call } from "@/lib/api";
+import { errText, call, type KnowledgeFileInfo } from "@/lib/api";
+import { isTabularExt } from "@/lib/extensions";
 import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 
@@ -204,6 +205,112 @@ export function useWorkbench() {
   // Dynamic chips (Fase 3): empty = show the static ones. Best-effort swap
   // after `finished`; failures keep the static chips silently.
   const [dynamicChips, setDynamicChips] = useState<string[]>([]);
+
+  // ── Attached knowledge files (composer chips) ────────────────────────────
+  // Files the user imported through the composer's attachment menu ride the
+  // run as session_files: they show as chips above the composer with a
+  // spinner while background RAG indexing runs, and `run()` associates their
+  // ids with the (lazy) session before the planner starts. State is local +
+  // hydrated from knowledge_list so reopening a session restores its files.
+  const [attachedFiles, setAttachedFiles] = useState<KnowledgeFileInfo[]>([]);
+  const attachedRef = useRef<KnowledgeFileInfo[]>([]);
+  useEffect(() => {
+    attachedRef.current = attachedFiles;
+  }, [attachedFiles]);
+
+  /** Re-read index status for the attached ids from the library (RAG
+   *  indexing moves indexing → ready/failed in the background). */
+  const refreshAttachedStatuses = useCallback(async () => {
+    if (attachedRef.current.length === 0) return;
+    try {
+      const all = await call<KnowledgeFileInfo[]>("knowledge_list");
+      setAttachedFiles((prev) =>
+        prev.map((f) => {
+          const fresh = all.find((x) => x.id === f.id);
+          return fresh ?? f;
+        }),
+      );
+    } catch {
+      // keep local state — the poll retries while anything is indexing
+    }
+  }, []);
+
+  /** Attach imported files (office_import_file results) to the upcoming run.
+   *  Non-tabular files were just handed to background RAG indexing by the
+   *  import flow — seeded as `indexing` (unless the caller supplied a real
+   *  status) until the first status refresh. */
+  const attachFiles = useCallback(
+    (files: (Pick<KnowledgeFileInfo, "id" | "originalName" | "ext"> & Partial<KnowledgeFileInfo>)[]) => {
+      if (files.length === 0) return;
+      setAttachedFiles((prev) => {
+        const byId = new Map(prev.map((f) => [f.id, f]));
+        for (const nf of files) {
+          if (byId.has(nf.id)) continue;
+          byId.set(nf.id, {
+            id: nf.id,
+            originalName: nf.originalName,
+            ext: nf.ext,
+            bytes: nf.bytes ?? 0,
+            createdAt: nf.createdAt ?? Math.floor(Date.now() / 1000),
+            status: nf.status ?? (isTabularExt(nf.ext) ? "ready" : "indexing"),
+            chunks: nf.chunks ?? 0,
+            error: nf.error ?? null,
+            inSession: nf.inSession ?? false,
+            raw: nf.raw ?? null,
+          });
+        }
+        return [...byId.values()];
+      });
+      void refreshAttachedStatuses();
+    },
+    [refreshAttachedStatuses],
+  );
+
+  // Track session id for removeAttachedFile best-effort cleanup (see below).
+  const sessionIdRef = useRef<number | null>(null);
+
+  /** Detach: drop the chip locally and (when a session exists) remove the
+   *  server-side association. Best-effort — the chip never blocks on it. */
+  const removeAttachedFile = useCallback(
+    (file: KnowledgeFileInfo) => {
+      setAttachedFiles((prev) => prev.filter((f) => f.id !== file.id));
+      const sid = sessionIdRef.current;
+      if (sid != null) {
+        void call("knowledge_forget", { sessionId: sid, fileIds: [file.id] }).catch(() => {});
+      }
+    },
+    [],
+  );
+
+  // Hydrate on session change: chips for a reopened session come from the
+  // server's session_files. MERGE (never replace) — imports made before the
+  // lazy session existed are pending attach and must survive this effect.
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+    if (sessionId == null) return;
+    let cancelled = false;
+    void call<KnowledgeFileInfo[]>("knowledge_list", { sessionId })
+      .then((files) => {
+        if (cancelled) return;
+        setAttachedFiles((prev) => {
+          const byId = new Map(prev.map((f) => [f.id, f]));
+          for (const f of files) if (f.inSession && !byId.has(f.id)) byId.set(f.id, f);
+          return [...byId.values()];
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  // Poll while anything is indexing — chips flip to their final state.
+  const anyIndexing = attachedFiles.some((f) => f.status === "indexing");
+  useEffect(() => {
+    if (!anyIndexing) return;
+    const t = setInterval(() => void refreshAttachedStatuses(), 2500);
+    return () => clearInterval(t);
+  }, [anyIndexing, refreshAttachedStatuses]);
 
   // Deck artifact of the current/last run — set DIRECTLY from the
   // planCompleted callback (the same handler whose output text provably
@@ -426,15 +533,17 @@ export function useWorkbench() {
           return;
         }
       }
-      // Knowledge files attached via the composer's @ menu scope this run's
+      // Knowledge files attached via the composer's @ menu AND files
+      // imported through the composer (auto-attach chips) scope this run's
       // knowledge_search to the desk session (same contract as chat).
       // Awaited so the session_files rows are committed before the planner
       // starts — otherwise the first steps' knowledge_search can miss the
       // files that were just mentioned. Failure blocks the run: a goal that
       // depends on attached files must not silently run without them.
-      if (fileIds?.length) {
+      const attachIds = [...new Set([...attachedFiles.map((f) => f.id), ...(fileIds ?? [])])];
+      if (attachIds.length) {
         try {
-          await call("knowledge_add_to_session", { sessionId: sid, fileIds });
+          await call("knowledge_add_to_session", { sessionId: sid, fileIds: attachIds });
         } catch (err) {
           setSessionError(`Couldn't attach the mentioned files to the run — ${errText(err)}`);
           return;
@@ -479,7 +588,7 @@ export function useWorkbench() {
             });
       await supervisor.planAndRun(quotedGoal, sid, "auto", trimmed);
     },
-    [sessionId, supervisor, canFollowUp, quoteTarget, runs],
+    [attachedFiles, sessionId, supervisor, canFollowUp, quoteTarget, runs],
   );
 
   /** Open a past session in the workbench: clears the in-memory runs and
@@ -567,6 +676,18 @@ export function useWorkbench() {
       setQuotedLastRun(false);
       setQuoteTarget(null);
       setDynamicChips([]);
+      setAttachedFiles([]);
     },
+    // ── Attached knowledge files (composer chips) ─────────────────────────
+    /** Session-attached knowledge files — rendered as chips above the
+     *  composer. Status is hydrated from the library list and polled while
+     *  any file is indexing. */
+    attachedFiles,
+    /** Attach imported files to the upcoming run (optimistic — immediately
+     *  shows chips, `run()` commits them to the session). */
+    attachFiles,
+    /** Detach: removes the chip locally and (when a session exists) drops
+     *  the server-side association. */
+    removeAttachedFile,
   };
 }

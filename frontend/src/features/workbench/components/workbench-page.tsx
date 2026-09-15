@@ -1,5 +1,5 @@
 import { Icon } from "@/components/shared/icon";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ChatComposer } from "@/features/chat/components/chat-composer";
 import { isDeliverableStep, useWorkbench } from "@/features/workbench/hooks/use-workbench";
@@ -34,7 +34,8 @@ function SessionsButton({ onOpen }: { onOpen: () => void }) {
 export interface WorkbenchPageProps {
   /** Knowledge integration for the composer's @ menu + image drop. */
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
-  onAddFiles?: () => void;
+  /** Import file handler — returns the imported office files (for auto-attach). */
+  onAddFiles?: () => Promise<{ id: string; originalName: string; ext: string }[] | undefined> | undefined;
   onAddLink?: () => void;
   /** Open the session-history dialog (same modal as Cmd/Ctrl+K). */
   onOpenSessions?: () => void;
@@ -144,6 +145,14 @@ export function WorkbenchPage({
   };
   // Chip click → draft dropped into the input for editing (not auto-submit).
   const [chipDraft, setChipDraft] = useState<{ text: string; nonce: number } | null>(null);
+
+  /** Wrap the App-level import handler: when the import returns the office
+   *  files, auto-attach them as workbench chips (optimistic status = indexing
+   *  for non-tabular; `run()` commits them to the lazy session). */
+  const handleAddFiles = useCallback(async () => {
+    const imported = await onAddFiles?.();
+    if (Array.isArray(imported) && imported.length > 0) workbench.attachFiles(imported);
+  }, [onAddFiles, workbench.attachFiles]);
   const chipClicked = (text: string) => {
     workbench.setFollowUp(true);
     setChipDraft({ text, nonce: Date.now() });
@@ -207,12 +216,14 @@ export function WorkbenchPage({
               chipDraft={chipDraft}
               disabled={composerStatus === "submitted"}
               lastUserText={null}
-              onAddFiles={onAddFiles}
+              onAddFiles={handleAddFiles}
               onAddLink={onAddLink}
               onImageToKnowledge={onImageToKnowledge}
               onSubmit={(text, fileIds) => submit(text, fileIds)}
               onStop={workbench.supervisor.stop}
               status={composerStatus}
+              attachedFiles={workbench.attachedFiles}
+              onRemoveAttachedFile={workbench.removeAttachedFile}
             />
             <p className="text-muted-foreground mt-3 text-left font-mono text-[10px]">
               Attach knowledge files with @ — the run's agents can search them.
@@ -282,7 +293,7 @@ export function WorkbenchPage({
           <GoalComposer
             chipDraft={chipDraft}
             workbench={workbench}
-            onAddFiles={onAddFiles}
+            onAddFiles={handleAddFiles}
             onAddLink={onAddLink}
             onImageToKnowledge={onImageToKnowledge}
             onSubmit={submit}

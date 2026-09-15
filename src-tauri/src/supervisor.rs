@@ -1416,49 +1416,88 @@ fn coerce_resolved_args(
             _ => false,
         }
     };
-    let pick_id = |v: &serde_json::Value| -> Option<serde_json::Value> {
-        // Prefer the PDF entry in a files list when the consumer is a pdf_
-        // tool; otherwise the first entry.
-        let candidate = |e: &serde_json::Value| -> Option<serde_json::Value> {
-            // Only file-like objects are unambiguous; plain strings are left
-            // alone so list→scalar mistakes fail loudly at the tool instead
-            // of silently taking the first element.
-            match e {
-                serde_json::Value::Object(o) => o
-                    .get("id")
-                    .or_else(|| o.get("handle"))
-                    .filter(|v| v.is_string())
-                    .cloned(),
-                _ => None,
-            }
-        };
-        match v {
-            serde_json::Value::Array(items) => {
-                let chosen = if tool.starts_with("pdf_") {
-                    items
-                        .iter()
-                        .find(|e| e.get("ext").and_then(|x| x.as_str()) == Some("pdf"))
-                        .or_else(|| items.first())
-                } else {
-                    items.first()
-                };
-                chosen.and_then(candidate)
-            }
-            serde_json::Value::Object(_) => candidate(v),
-            _ => None,
-        }
-    };
     let mut out = arg_obj.clone();
     for (key, value) in arg_obj {
         let Some(prop_schema) = properties.get(key) else { continue };
-        if !wants_string(prop_schema) || value.is_string() {
+        if !wants_string(prop_schema) {
             continue;
         }
-        if let Some(coerced) = pick_id(value) {
+        // Plain strings are the happy path — except stringified JSON, which
+        // the whole-output fallback produces and pick_file_id unwraps.
+        let stringified =
+            matches!(value, serde_json::Value::String(s) if s.starts_with('{') || s.starts_with('['));
+        if value.is_string() && !stringified {
+            continue;
+        }
+        if let Some(coerced) = pick_file_id(tool, value, 2) {
             out.insert(key.clone(), coerced);
         }
     }
     serde_json::Value::Object(out)
+}
+
+/// Pick a single file id out of a resolver-produced value. Prefer the PDF
+/// entry in a files list when the consumer is a pdf_ tool; otherwise the
+/// first entry.
+fn pick_file_id(
+    tool: &str,
+    v: &serde_json::Value,
+    depth: usize,
+) -> Option<serde_json::Value> {
+    let candidate = |e: &serde_json::Value| -> Option<serde_json::Value> {
+        // Only file-like objects are unambiguous; plain strings are left
+        // alone so list→scalar mistakes fail loudly at the tool instead
+        // of silently taking the first element.
+        match e {
+            serde_json::Value::Object(o) => o
+                .get("id")
+                .or_else(|| o.get("handle"))
+                .filter(|v| v.is_string())
+                .cloned()
+                // Artifact-value shape from the named-output path:
+                // {"type":"handle","value":…,"kind":…}.
+                .or_else(|| {
+                    if o.get("type").and_then(|v| v.as_str()) == Some("handle") {
+                        o.get("value").filter(|v| v.is_string()).cloned()
+                    } else {
+                        None
+                    }
+                }),
+            _ => None,
+        }
+    };
+    match v {
+        serde_json::Value::Array(items) => {
+            let chosen = if tool.starts_with("pdf_") {
+                items
+                    .iter()
+                    .find(|e| e.get("ext").and_then(|x| x.as_str()) == Some("pdf"))
+                    .or_else(|| items.first())
+            } else {
+                items.first()
+            };
+            chosen.and_then(candidate)
+        }
+        serde_json::Value::Object(_) => {
+            candidate(v).or_else(|| {
+                // Nested envelopes (e.g. {"data":{"files":[…]}}): search the
+                // object's values one level down.
+                (depth > 1).then_some(()).and_then(|_| {
+                    v.as_object()?.values().find_map(|child| pick_file_id(tool, child, depth - 1))
+                })
+            })
+        }
+        // Stringified JSON: the resolver's last-resort whole-output
+        // fallback hands the consumer the producer's serialized output
+        // (e.g. office_list_files' {"data":{"files":[…]}} blob). Parse
+        // it and pick the id from the embedded file entries.
+        serde_json::Value::String(s) if s.starts_with('{') || s.starts_with('[') => {
+            serde_json::from_str::<serde_json::Value>(s)
+                .ok()
+                .and_then(|parsed| pick_file_id(tool, &parsed, 4))
+        }
+        _ => None,
+    }
 }
 
 fn tool_output_artifacts(output: &str) -> Vec<kawai_router::Artifact> {
@@ -1473,6 +1512,33 @@ fn tool_output_artifacts(output: &str) -> Vec<kawai_router::Artifact> {
             return vec![kawai_router::Artifact::File {
                 handle: id.to_string(), mime: None, filename: Some(name.to_string()),
             }];
+        }
+    }
+    // Files-list envelopes (office_list_files: {"data":{"files":[…]},"ok":…
+    // ,"summary":…}) carry a named `files` artifact so planner references like
+    // `${s1.files}` resolve to a single file id directly, instead of the whole
+    // envelope. Deterministic plans have no select mechanism: prefer the
+    // spreadsheet entry, then pdf, else the first.
+    let files = value
+        .get("files")
+        .or_else(|| value.get("data").and_then(|d| d.get("files")))
+        .and_then(|v| v.as_array());
+    if let Some(items) = files {
+        if items.iter().all(|e| {
+            e.get("id").and_then(|v| v.as_str()).is_some()
+        }) {
+            let chosen = items
+                .iter()
+                .find(|e| matches!(e.get("ext").and_then(|x| x.as_str()), Some("xlsx") | Some("xls") | Some("csv")))
+                .or_else(|| items.iter().find(|e| e.get("ext").and_then(|x| x.as_str()) == Some("pdf")))
+                .or_else(|| items.first())
+                .and_then(|e| e.get("id").and_then(|v| v.as_str()));
+            if let Some(id) = chosen {
+                return vec![kawai_router::Artifact::Handle {
+                    value: id.to_string(),
+                    kind: Some("files".to_string()),
+                }];
+            }
         }
     }
     vec![kawai_router::Artifact::Structured { value }]
@@ -2929,5 +2995,35 @@ mod coerce_tests {
         let args = json!({"fileId": {"type": "file", "handle": "doc9", "filename": "x.pdf"}});
         let out = coerce_resolved_args("office_read_document", &args, Some(&schema));
         assert_eq!(out["fileId"], "doc9");
+    }
+
+    #[test]
+    fn stringified_whole_output_blob_coerced_to_file_id() {
+        // The resolver's last-resort whole-output fallback can hand the
+        // consumer the producer's SERIALIZED envelope (session 4 regression:
+        // data_schema received the entire office_list_files JSON as fileId).
+        let schema = json!({"type": "object", "properties": {"fileId": {"type": "string"}}});
+        let blob = serde_json::to_string(&json!({
+            "data": {"files": [
+                {"id": "f89462861576850000-0001", "ext": "xlsx", "originalName": "Dukcapil Backtest.xlsx"},
+                {"id": "f89462144956843000-0000", "ext": "png", "originalName": "pasted-image.png"}
+            ]},
+            "ok": true,
+            "summary": "2 files listed"
+        }))
+        .unwrap();
+        let args = json!({"fileId": blob});
+        let out = coerce_resolved_args("data_schema", &args, Some(&schema));
+        assert_eq!(out["fileId"], "f89462861576850000-0001");
+    }
+
+    #[test]
+    fn handle_artifact_value_unwrapped_to_id() {
+        // Named-output path: ${s1.files} hits the files Handle artifact →
+        // resolve_args returns {"type":"handle","value":…,"kind":"files"}.
+        let schema = json!({"type": "object", "properties": {"fileId": {"type": "string"}}});
+        let args = json!({"fileId": {"type": "handle", "value": "f1", "kind": "files"}});
+        let out = coerce_resolved_args("data_schema", &args, Some(&schema));
+        assert_eq!(out["fileId"], "f1");
     }
 }

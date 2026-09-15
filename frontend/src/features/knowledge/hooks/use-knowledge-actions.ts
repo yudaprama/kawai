@@ -120,7 +120,7 @@ export function useKnowledgeActions(chat: {
     [chat.sessionId, refreshKnowledge, markIndexing],
   );
 
-  const addKnowledgeFiles = useCallback(async () => {
+  const addKnowledgeFiles = useCallback(async (): Promise<KnowledgeFileInfo[] | undefined> => {
     setImporting(true);
     const toImport: { sourcePath?: string; file?: File; name: string }[] = [];
     let picked: KnowledgeSource[];
@@ -162,6 +162,10 @@ export function useKnowledgeActions(chat: {
           `Couldn't import ${failed.length} file${failed.length > 1 ? "s" : ""}: ${failed.map((f) => f.name).join(", ")}`,
         );
       }
+      // Return imported office files so callers (e.g. the workbench auto-attach
+      // chips) can display them immediately.
+      const all = await call<KnowledgeFileInfo[]>("knowledge_list").catch(() => []);
+      return all.filter((f) => importedIds.includes(f.id));
     } catch (err) {
       logWarn("office_import_file", err);
       showErrorToast(err);
