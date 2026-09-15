@@ -10,6 +10,7 @@ import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge
 import { runningInTauri } from "@/platform";
 import { AssetsRail } from "@/features/agents/assets-rail";
 import type { AssetViewId } from "@/features/assets/components/asset-nav";
+import { tauriWalletAdapter } from "@/features/wallet/lib/wallet-adapter";
 import { CodeAssetPage } from "@/features/codegraph/components/code-page";
 import { MemoryAssetPage } from "@/features/memory/components/memory-page";
 import { SkillsAssetPage } from "@/features/skills/components/skills-page";
@@ -24,6 +25,12 @@ export default function App() {
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [assetView, setAssetView] = useState<AssetViewId | null>(null);
   const [codeGraphSeed, setCodeGraphSeed] = useState<{ query: string; result: string } | null>(null);
+  // The backend compiles Monad support behind the opt-in `monad` feature; probe
+  // once so the wallet nav entry only appears in builds that have it.
+  const [walletAvailable, setWalletAvailable] = useState(false);
+  useEffect(() => {
+    void tauriWalletAdapter.isAvailable().then(setWalletAvailable);
+  }, []);
   const [mobileDrawer, setMobileDrawer] = useState<null | "agents">(null);
   // Workbench publishes its selectSession here (App owns the dialog; the
   // workbench keeps its own session state separate from the chat hook).
@@ -190,6 +197,7 @@ export default function App() {
           assetView={assetView}
           collapsed={agentsRail}
           userId={chat.userId}
+          walletAvailable={walletAvailable}
           onSelectAsset={(id) => {
             setAssetView(id);
           }}
@@ -227,6 +235,7 @@ export default function App() {
                 assetView={assetView}
                 collapsed={false}
                 userId={chat.userId}
+                walletAvailable={walletAvailable}
                 onSelectAsset={(id) => {
                   setAssetView(id);
                   setMobileDrawer(null);

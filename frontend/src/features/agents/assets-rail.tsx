@@ -80,6 +80,7 @@ export function AssetsRail({
   assetView,
   collapsed,
   userId,
+  walletAvailable = true,
   onSelectAsset,
   onToggle,
   onLogout,
@@ -89,6 +90,8 @@ export function AssetsRail({
   assetView: AssetViewId | null;
   collapsed: boolean;
   userId: string | null;
+  /** Backend has Monad compiled in (opt-in `monad` feature) — hide the wallet entry when off. */
+  walletAvailable?: boolean;
   onSelectAsset: (id: AssetViewId) => void;
   onToggle: () => void;
   onLogout: () => void;
@@ -141,7 +144,7 @@ export function AssetsRail({
         )}
 
         <nav className={`flex flex-col gap-1 pb-2 ${collapsed ? "px-1.5" : "px-2"}`}>
-          {ASSET_NAV.map((asset) => {
+          {ASSET_NAV.filter((asset) => asset.id !== "wallet" || walletAvailable).map((asset) => {
             const active = assetView === asset.id;
             return (
               <button

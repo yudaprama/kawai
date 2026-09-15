@@ -231,7 +231,7 @@ src-tauri/src/commands.rs        # #[tauri::command] wrappers + Channel + cancel
 src-tauri/src/web.rs             # Axum routes (feature-gated "web") + auth_middleware
 src-tauri/src/bin/web.rs         # legacy standalone web entry (use kawai-web/ for deploy)
 src-tauri/src/lib.rs             # Tauri builder; .manage(...); generate_handler! (run + commands gated desktop)
-src-tauri/Cargo.toml             # tauri/* behind "desktop" (default); axum/tower-http behind "web"; monad rides default (desktop); litert/analytics/graph/binance/tts/codegraph are optional; the office/RAG/PDF stack is always compiled
+src-tauri/Cargo.toml             # tauri/* behind "desktop" (default); axum/tower-http behind "web"; litert/analytics/graph/binance/tts/codegraph/monad are optional; the office/RAG/PDF stack is always compiled
 src-tauri/build.rs               # tauri_build (desktop only) + embeds @executable_path/../Frameworks rpath (litert+macOS)
 kawai-web/                       # standalone Axum server (independent deploy, no Tauri): Cargo.toml (kawai dep default-features=false,features=[web]) + src/main.rs + Dockerfile + README
 kawai-web/Cargo.toml             # patch office_oxide + profile.release (thin/strip)
