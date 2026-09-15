@@ -59,38 +59,55 @@ function useMediaPreview(file: PreviewFile, fallbackKind: FileKind) {
   return { status: "ready" as const, dataUrl: data.dataUrl, fallbackKind, onError: setErrored };
 }
 
-function ImagePreview({ file }: { file: PreviewFile }) {
-  const preview = useMediaPreview(file, "image");
+/**
+ * Shared shell for direct-embed media previews (image/video): resolves the
+ * `data:` URL, shows the fallback/loading states, and centers the rendered
+ * media element. The media element itself is media-specific and passed via
+ * the render callback.
+ */
+function MediaPreview({
+  file,
+  fallbackKind,
+  children,
+}: {
+  file: PreviewFile;
+  fallbackKind: FileKind;
+  children: (preview: { dataUrl: string; onError: () => void }) => React.ReactNode;
+}) {
+  const preview = useMediaPreview(file, fallbackKind);
   if (preview.status === "fallback") return <FallbackPreview file={file} kind={preview.fallbackKind} />;
   if (preview.status === "loading") return <PreviewLoading />;
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-      <img
-        src={preview.dataUrl}
-        alt={file.name}
-        onError={() => preview.onError(true)}
-        className="max-h-full max-w-full rounded-lg object-contain"
-      />
+      {children({ dataUrl: preview.dataUrl, onError: () => preview.onError(true) })}
     </div>
   );
 }
 
-function VideoPreview({ file }: { file: PreviewFile }) {
-  const preview = useMediaPreview(file, "video-native");
-  if (preview.status === "fallback") return <FallbackPreview file={file} kind={preview.fallbackKind} />;
-  if (preview.status === "loading") return <PreviewLoading />;
+function ImagePreview({ file }: { file: PreviewFile }) {
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-      <video
-        src={preview.dataUrl}
-        controls
-        aria-label={file.name}
-        onError={() => preview.onError(true)}
-        className="max-h-full max-w-full rounded-lg"
-      >
-        <track kind="captions" />
-      </video>
-    </div>
+    <MediaPreview file={file} fallbackKind="image">
+      {({ dataUrl, onError }) => (
+        <img
+          src={dataUrl}
+          alt={file.name}
+          onError={onError}
+          className="max-h-full max-w-full rounded-lg object-contain"
+        />
+      )}
+    </MediaPreview>
+  );
+}
+
+function VideoPreview({ file }: { file: PreviewFile }) {
+  return (
+    <MediaPreview file={file} fallbackKind="video-native">
+      {({ dataUrl, onError }) => (
+        <video src={dataUrl} controls aria-label={file.name} onError={onError} className="max-h-full max-w-full rounded-lg">
+          <track kind="captions" />
+        </video>
+      )}
+    </MediaPreview>
   );
 }
 
