@@ -333,6 +333,55 @@ impl ToolSet {
     }
 }
 
+/// Generates the four standard registry functions for a generated-tool crate.
+///
+/// Usage (module level, with `use crate::generated::*;` in scope):
+///
+/// ```ignore
+/// use crate::generated::*;
+///
+/// kawai_tool_registry! {
+///     "tool_name" => ToolType;
+///     "tool_name2" => ToolType2;
+///     "tool_name3" => other_mod::ToolType3;
+/// }
+/// ```
+///
+/// Each `"name" => Type;` entry maps a tool name to its type (from the
+/// `generated` module or any other module). The macro calls `Type::default()`.
+#[macro_export]
+macro_rules! tool_registry {
+    ($(
+        $name:literal => $t:ty
+    );+ $(;)?) => {
+        pub fn is_native(name: &str) -> bool {
+            matches!(name, $($name)|+)
+        }
+
+        pub fn native_names() -> Vec<&'static str> {
+            vec![$($name),+]
+        }
+
+        pub fn all_tools() -> $crate::ToolSet {
+            toolset_for(&native_names())
+        }
+
+        pub fn toolset_for(names: &[&str]) -> $crate::ToolSet {
+            use $crate::AgentTool;
+            let mut set = $crate::ToolSet::default();
+            for name in names {
+                match *name {
+                    $($name => {
+                        set.add_tool(<$t>::default());
+                    },)+
+                    other => panic!("unknown native tool {other:?}"),
+                }
+            }
+            set
+        }
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
