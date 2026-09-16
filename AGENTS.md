@@ -303,7 +303,9 @@ KAWAI_OCR_MODEL_TIER=small       # model tier override: tiny (~3MB, English+Chin
 # `litert` feature the on-device engine joins as the LAST candidate (stateless
 # one-shot, fresh KV cache, materials capped at 12k chars) — it only serves
 # when every cloud candidate failed. A retryable failure (429/5xx/401/404/transport)
-# moves that provider to cooldown and the next candidate serves the call.
+# moves that provider to cooldown and the next candidate serves the call; a
+# stream that sends no bytes for 30s is treated the same (stall → failover
+# pre-text, error mid-stream).
 # No vault keys ⇒ pool empty ⇒ agents behave pure-local. No kill-switch env —
 # an empty vault is the off state. Tool-internal one-shot LLM calls go through
 # `remote_llm::reason` (pool → local engine when no keys) and share

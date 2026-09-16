@@ -102,7 +102,7 @@ turn must match §3.
 - **Agent Observability** (`crates/foundation/telemetry`): every cloud call
   exports to Grafana — generations via `gcx agento11y conversations get
   kawai-session-<id>`, traces via Tempo (`service.name="kawai"`), metrics
-  `gen_ai_client_*` + `kawai_remote_failover`. Env-gated by `AGENTO11Y_*`/
+  `gen_ai_client_*` + `kawai.remote.failover`. Env-gated by `AGENTO11Y_*`/
   `OTEL_*`; one `glc_` token covers both channels. Agent roles: a NEW system
   prompt = a NEW role (`with_agent`/`reason_as`), or it collapses into
   `kawai-agent`. Short-lived processes must call
@@ -122,7 +122,7 @@ turn must match §3.
   curl -s "$BASE/grafanacloud-prom/api/v1/query" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
     --data-urlencode 'query=sum by (gen_ai_agent_name, gen_ai_provider_name) (increase(gen_ai_client_token_usage_total[24h]))'
   # handy: histogram_quantile(0.50|0.95, sum by (le, gen_ai_agent_name) (rate(gen_ai_client_operation_duration_bucket[5m])))
-  #        sum by (reason) (increase(kawai_remote_failover[1h]))
+  #        sum by (reason) (increase("kawai.remote.failover"[1h]))
   # logs (Loki — note the /loki/api/v1 path segment):
   curl -s -G "$BASE/grafanacloud-logs/loki/api/v1/query_range" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
     --data-urlencode 'query={service_name="kawai"}' --data-urlencode 'since=24h' --data-urlencode 'limit=20'
