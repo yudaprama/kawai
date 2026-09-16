@@ -405,6 +405,9 @@ fn render_planner_context(
 /// Cap on how many attached-file names ride the planner prompt (names only —
 /// never ids or contents; scope stays server-side via the session binding).
 const ATTACHED_FILES_MAX: usize = 20;
+/// Total schema-summary chars embedded in the planner's attached-files block
+/// (roughly two spreadsheets; anything beyond falls back to a data_schema hint).
+const FILE_SCHEMA_CHARS_TOTAL: usize = 4_000;
 
 /// Names of the files attached to this run's session, as a planner-context
 /// block. Without it the planner is blind to attachments: a neutral goal
@@ -413,6 +416,10 @@ const ATTACHED_FILES_MAX: usize = 20;
 /// signal to plan retrieval and write good queries; tabular files are flagged
 /// so the planner routes them to the analytics tools instead. Best-effort —
 /// a read failure degrades to an empty block, planning never fails on it.
+/// Builds the `<attached-files>` planner-context block. For tabular files
+/// the schema (fileId, columns, sample row) is embedded so the planner can
+/// phrase concrete `data_query_nl` queries — data execution is reserved for
+/// `data_query_nl` at plan time (`data_query` is a revision-only tool).
 async fn attached_files_block(user_id: &str, session_id: i64) -> String {
     let files = match crate::logic::rag::list_session_files(user_id, session_id).await {
         Ok(files) if !files.is_empty() => files,
@@ -421,17 +428,40 @@ async fn attached_files_block(user_id: &str, session_id: i64) -> String {
     let mut out = String::from(
         "<attached-files>\nThe user attached these files to this run (their contents are searchable via knowledge_search):\n",
     );
+    let mut schema_chars = 0usize;
     for f in files.iter().take(ATTACHED_FILES_MAX) {
         if kawai_office::store::is_tabular_ext(&f.ext) {
-            out.push_str(&format!(
-                "- {} (tabular — query structurally via the analytics tools)\n",
-                f.original_name
-            ));
+            if schema_chars < FILE_SCHEMA_CHARS_TOTAL {
+                let Ok((path, _)) = kawai_office::store::resolve(user_id, &f.id) else {
+                    continue;
+                };
+                let md = kawai_office::tabular_schema_markdown(&path, &f.ext, &f.original_name);
+                if md.is_empty() {
+                    out.push_str(&format!(
+                        "- {} ({} — tabular; query via data_query_nl)\n",
+                        f.original_name, f.id
+                    ));
+                    continue;
+                }
+                schema_chars += md.chars().count();
+                out.push_str(&format!(
+                    "\n--- Tabular file schema — fileId: {} ---\n{}\n",
+                    f.id, md
+                ));
+            } else {
+                out.push_str(&format!(
+                    "- {} ({} — tabular; query via data_query_nl)\n",
+                    f.original_name, f.id
+                ));
+            }
         } else {
             out.push_str(&format!("- {}\n", f.original_name));
         }
     }
-    out.push_str("</attached-files>");
+    out.push_str(
+        "\n</attached-files>\n\nAnswer data questions about tabular files above with `data_query_nl` — \
+         the fileId and columns are exact.\n",
+    );
     out
 }
 
@@ -652,7 +682,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
         // Final plan?
         if let Some(v) = &parsed {
             if v.get("steps").is_some() && v.get("goal").is_some() {
-                match parse_supervisor_plan(&raw, registry) {
+                match parse_supervisor_plan_scoped(&raw, registry, PLANNER_FORBIDDEN_TOOLS) {
                     Ok(plan) => return Ok((plan, usage)),
                     Err(plan_err) => {
                         // One corrective round with validator feedback, fuzzy
@@ -755,14 +785,72 @@ via the always-available `session_step_results` tool. If the goal depends on det
     }
 }
 
+/// Tools the INITIAL planner must never plan: internal-only machinery, plus
+/// `data_query` — the planner is blind to file columns at plan time, so any
+/// data_query step it writes is a guess (observed live 2026: `"*"` columns,
+/// numeric filter literals, wrong ids) that burns a replan cycle. At plan
+/// time the agent uses data_query_nl (which self-serves the schema); the
+/// schema-AWARE reviser may emit data_query freely.
+pub(crate) const PLANNER_FORBIDDEN_TOOLS: &[&str] = &[
+    "deep_write",
+    "draft_document",
+    "plan_task",
+    "plan_revise",
+    "artifact_recall",
+    // The plan-time planner is blind to file contents — any data_query it
+    // writes is a guess that burns repair rounds (observed repeatedly). The
+    // schema-aware plan REVISION may still emit data_query.
+    "data_query",
+];
+/// The schema-aware reviser may plan data_query (it sees the execution
+/// report with real columns) — only the internal machinery stays forbidden.
+pub(crate) const REVISE_FORBIDDEN_TOOLS: &[&str] = &[
+    "deep_write",
+    "draft_document",
+    "plan_task",
+    "plan_revise",
+    "artifact_recall",
+];
+
 pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai_router::TaskPlan, String> {
+    parse_supervisor_plan_scoped(raw, registry, &[])
+}
+
+/// Parse + validate a plan, additionally rejecting steps whose tool is in
+/// `forbidden` (scoped enforcement: the initial planner and the reviser have
+/// different tool vocabularies).
+pub fn parse_supervisor_plan_scoped(
+    raw: &str,
+    registry: &ToolRegistry,
+    forbidden: &[&str],
+) -> Result<kawai_router::TaskPlan, String> {
     let slice = kawai_router::extract_json_slice(raw).map_err(|e| e.to_string())?;
-    let plan: kawai_router::TaskPlan = serde_json::from_str(slice)
+    let mut plan: kawai_router::TaskPlan = serde_json::from_str(slice)
         .map_err(|e| format!("invalid plan JSON: {e}"))?;
-    if let Some(w) = &plan.final_writer {
-        if w != WRITER_DELIVERABLE && w != WRITER_DECK {
+    // Models emit `""`, `"default"`, or other loose writer names meaning the
+    // markdown deliverable — map them instead of burning a repair round.
+    match plan.final_writer.as_deref().map(str::trim) {
+        Some("") | Some("default") | Some("markdown") | None => {
+            plan.final_writer = None;
+        },
+        Some(WRITER_DECK) => {},
+        Some(other) => {
+            eprintln!(
+                "[supervisor] unknown finalWriter \"{other}\" — using the default markdown writer"
+            );
+            plan.final_writer = None;
+        },
+    }
+    for step in &plan.steps {
+        let tool = step
+            .tool
+            .as_deref()
+            .unwrap_or(step.agent_id.as_str())
+            .to_ascii_lowercase();
+        if forbidden.iter().any(|f| tool == *f) {
             return Err(format!(
-                "unknown finalWriter \"{w}\" — valid writers: {WRITER_DELIVERABLE}, {WRITER_DECK}"
+                "step \"{}\" uses forbidden tool \"{tool}\" in this planning phase",
+                step.id
             ));
         }
     }
@@ -998,6 +1086,10 @@ Plan rules:
 - Be concise overall: no prose outside the JSON, no repeated context.
 - "dependsOn" lists step ids that must finish first; no cycles.
 - To pass a previous step's artifact: {{"fromStep": "<step id>", "output": "<artifact name>"}} — never paste large content.
+  Use fromStep ONLY for scalar string values (a fileId, a count). NEVER fill
+  array-typed arguments (columns, groupBy, aggregations, filters, items) with
+  fromStep — write the literal array yourself using the columns from
+  data_schema.
 - NEVER hardcode user-specific numbers (equity, risk %, prices, levels, dates)
   into step arguments — source them from a step artifact ("fromStep"), the
   quoted earlier run via "session_step_results", or "memory_search".
@@ -1008,23 +1100,77 @@ Plan rules:
  - Core tools below are ALWAYS available — never search for them. Their
    FULL argument schemas follow; copy required properties exactly:
 {}
- - FORBIDDEN tools — internal-only, validation will reject them: deep_write, draft_document, plan_task, plan_revise, artifact_recall. Never name them in steps. To create documents use office_create_document / office_create_deck / pdf_create_from_markdown.
+ - FORBIDDEN tools — validation will reject them: deep_write, draft_document, plan_task, plan_revise, artifact_recall, data_query. Never name them in steps. For data questions use data_query_nl. To create documents use office_create_document / office_create_deck / pdf_create_from_markdown.
+ - For data questions use data_query_nl — "data_query" is NOT available at
+   planning time (validation rejects it): the plan-REVISION phase writes the
+   structured query after data_schema has run.
  - The supervisor AUTOMATICALLY writes the final user-facing deliverable
    (answer / summary / report) from the step outputs after they finish — via a
    built-in writer agent you never see. NEVER plan a
    summarization / writing / "produce the answer" step yourself; plan only the
    data-gathering and artifact-producing steps that feed it.
  - "finalWriter" (optional): which writer synthesizes the deliverable. Omit it
-   for the default markdown answer. Set "finalWriter":"deck_writer" when the
-   goal asks for a SLIDE DECK / PRESENTATION as the final result — the deck
-   writer then generates the slides itself from the step outputs. When you set
-   it, do NOT plan an office_create_deck step: plan only the research / data
-   steps whose outputs the deck should be built from.
+   for the default markdown answer. Set "finalWriter":"deck_writer" ONLY when
+   the user EXPLICITLY asks for a slide deck / presentation / .pptx as the
+   final result — NEVER for data extraction, data analysis, documents, or
+   images: those get the default markdown deliverable. When you set it, do
+   NOT plan an office_create_deck step: plan only the research / data steps
+   whose outputs the deck should be built from.
+ - DEFAULT to data_query_nl for data questions: its arguments are trivial
+   (fileId + query) and the tool self-corrects internally. NEVER use "*" as
+   a column name anywhere.
+ - data_query_nl translates via an LLM and can take 1–2 minutes end to end:
+   set "timeoutMs": 120000 on data_query_nl steps (30000/60000 time them out).
  - If told the search budget is exhausted, respond ONLY with the final plan JSON.
 "#,
         kawai_router::types::MAX_PLAN_STEPS,
         kawai_router::types::MAX_TASK_CHARS,
         core_tools,
+    )
+}
+
+/// System prompt for the failure-driven PLAN REVISION call. Deliberately
+/// NOT `plan_loop_system_prompt`: the reviser sees the FULL tool catalog
+/// (no search rounds remain) and must never respond with the planner's
+/// `{"action":"search"}` protocol — observed live 2026: both corrective
+/// rounds were burned on search-protocol replies that fail plan validation.
+fn revise_system_prompt(catalog: &str) -> String {
+    format!(
+        r#"You are a task-plan REVISER for a deterministic supervisor.
+A previous plan failed mid-execution. Your job: produce a CORRECTED plan that
+completes the original goal from the current state.
+
+The FULL tool catalog is provided below — do NOT ask for more tools, do NOT
+search. Respond ONLY with ONE JSON object, exactly this shape:
+{{"goal": "<one-line goal>", "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
+
+Rules:
+- Reuse the outputs of already-completed steps via {{"fromStep": "<step id>", "output": "<artifact name>"}} — never redo work that succeeded.
+- Fix ONLY what failed: the failure reason is in the execution report.
+- "task" is REQUIRED: one line ≤80 chars in the USER'S LANGUAGE.
+- Keep "arguments" complete and precise — they are what the tool executes.
+- Side-effect tools MUST set "requiresConfirmation": true with a short "confirmationDescription".
+- Never name FORBIDDEN internal tools: deep_write, draft_document, plan_task, plan_revise, artifact_recall.
+- data_query IS available to you (the execution report contains data_schema's
+  real columns) — prefer it for data questions.
+- NEVER use "*" as a column name — to count all rows, aggregate any real column.
+- "fileId" arguments must come from office_list_files' output (or a literal
+  id) — never from data_schema output, which contains no file id.
+- The supervisor writes the final user-facing deliverable itself — never plan a summarization step.
+- "finalWriter" (optional): OMIT it for the default markdown answer. Set
+  "finalWriter":"deck_writer" ONLY when the user EXPLICITLY asks for a slide
+  deck / presentation / .pptx — NEVER for data analysis or when the user asks
+  for a short/ringkas numeric answer.
+- PREFER data_query for data questions — the execution report already
+  contains the real columns. data_query_nl only for genuinely open-ended
+  requests.
+- Set "timeoutMs": 120000 on data_query_nl steps — translation can take
+  1–2 minutes end to end.
+- No prose outside the JSON.
+
+FULL tool catalog (schemas included — copy required properties exactly):
+{}"#,
+        catalog
     )
 }
 
@@ -1752,6 +1898,88 @@ fn execution_report(result: &kawai_router::ExecutionResult) -> String {
 /// Ask the planner for a revised plan. One call + one validator corrective
 /// round (the same `validate_plan` contract `plan_task` enforces — revision
 /// grants the planner no extra power).
+/// Deterministic repair for a reviser reply that parses as JSON but omits
+/// the required `goal` field: inject the original goal (an object without
+/// `goal`), or wrap a bare steps array as `{goal, steps}`. Anything that
+/// isn't JSON passes through unchanged so the normal parse error +
+/// corrective-feedback path still applies.
+fn repair_revised_plan_json(raw: &str, goal: &str) -> String {
+    let Ok(mut v) = serde_json::from_str::<serde_json::Value>(raw.trim()) else {
+        return raw.to_string();
+    };
+    match &mut v {
+        serde_json::Value::Object(map) => {
+            let needs = map
+                .get("goal")
+                .and_then(|g| g.as_str())
+                .map(str::trim)
+                .is_none_or(str::is_empty);
+            if needs {
+                map.insert("goal".to_string(), serde_json::Value::String(goal.to_string()));
+            }
+        },
+        serde_json::Value::Array(_) => {
+            v = serde_json::json!({ "goal": goal, "steps": v });
+        },
+        _ => return raw.to_string(),
+    }
+    v.to_string()
+}
+
+/// Rewrite a revised plan so references to COMPLETED steps of the original
+/// execution resolve without those steps being re-included:
+/// - `dependsOn` entries not present in the revised plan are dropped
+///   (completed steps need no waiting).
+/// - `arguments` `{"fromStep": "<completed id>", "output": …}` become the
+///   literal output value (bounded — a fileId, a count — with large outputs
+///   truncated to a preview the model can still read).
+fn resolve_completed_refs(raw: &str, result: &kawai_router::ExecutionResult) -> String {
+    let mut plan = match serde_json::from_str::<serde_json::Value>(raw.trim()) {
+        Ok(v) => v,
+        Err(_) => return raw.to_string(),
+    };
+    let Some(steps) = plan.get_mut("steps").and_then(|s| s.as_array_mut()) else {
+        return raw.to_string();
+    };
+    let plan_ids: std::collections::HashSet<String> = steps
+        .iter()
+        .filter_map(|s| s.get("id").and_then(|v| v.as_str()).map(str::to_string))
+        .collect();
+    let completed = |id: &str| -> Option<String> {
+        result.get(id).and_then(|r| {
+            (r.status == kawai_router::StepStatus::Completed)
+                .then(|| r.output.clone())
+        })
+    };
+    for step in steps.iter_mut() {
+        // arguments: inline completed-step outputs referenced via fromStep.
+        if let Some(args) = step.get_mut("arguments").and_then(|a| a.as_object_mut()) {
+            for (_k, v) in args.iter_mut() {
+                let Some(obj) = v.as_object() else { continue };
+                let Some(from) = obj.get("fromStep").and_then(|f| f.as_str()) else {
+                    continue;
+                };
+                if let Some(mut output) = completed(from) {
+                    if output.chars().count() > 2_000 {
+                        output = output.chars().take(2_000).collect::<String>()
+                            + "… (truncated)";
+                    }
+                    *v = serde_json::Value::String(output);
+                }
+            }
+        }
+        // dependsOn: drop entries that are not steps of THIS plan.
+        if let Some(deps) = step.get_mut("dependsOn").and_then(|d| d.as_array_mut()) {
+            deps.retain(|d| {
+                d.as_str()
+                    .map(|s| plan_ids.contains(s))
+                    .unwrap_or(true)
+            });
+        }
+    }
+    plan.to_string()
+}
+
 async fn revise_plan(
     goal: &str,
     reason: &str,
@@ -1777,8 +2005,10 @@ async fn revise_plan(
             r
         })
         .ok_or_else(|| "remote LLM is not configured".to_string())?;
-    let core_tools = planner_core_tools(registry);
-    let system = plan_loop_system_prompt(&registry.catalog_lines_for(&core_tools));
+    // Reviser gets the FULL catalog and a search-free prompt — the revision
+    // loop has no search handler, so a `{"action":"search"}` reply is an
+    // automatic dead end (observed live 2026: both corrective rounds burned).
+    let system = revise_system_prompt(&registry.catalog_lines());
     let task = format!(
         "The execution of the plan for this goal DIVERGED. The remaining plan is no longer trusted.\
          \n\nOriginal goal:\n{goal}\
@@ -1828,7 +2058,18 @@ async fn revise_plan(
                 raw.len()
             );
         }
-        match parse_supervisor_plan(&raw, registry) {
+        // Deterministic repair: revisers routinely emit a bare steps array
+        // (observed live 2026: `{"steps": [...]}` / `[...]` without `goal`).
+        // The revision's goal is by definition the original goal — inject it
+        // instead of burning the last corrective round on a mechanical fix.
+        let raw = repair_revised_plan_json(&raw, goal);
+        // Revisers routinely reference ORIGINAL-plan steps that already
+        // completed (fromStep / dependsOn) without re-including them — the
+        // validator rejects those as unknown ids (observed live 2026). Rewrite
+        // the plan so completed outputs are inlined as literal arguments and
+        // dangling dependsOn entries are dropped; then validate normally.
+        let raw = resolve_completed_refs(&raw, result);
+        match parse_supervisor_plan_scoped(&raw, registry, REVISE_FORBIDDEN_TOOLS) {
             Ok(plan) if !plan.steps.is_empty() => return Ok(plan),
             Ok(_) => {
                 materials.push_str(
@@ -1836,6 +2077,9 @@ async fn revise_plan(
                 );
             }
             Err(plan_err) => {
+                eprintln!(
+                    "[supervisor] revise round {round}: plan rejected: {plan_err}; raw: {raw}"
+                );
                 if round == 0 {
                     let suggestions = suggest_tools(registry, &plan_err);
                     materials.push_str(&format!(
@@ -1934,19 +2178,37 @@ async fn synthesize_final_answer(
         // the plan).
         let task = format!("The user's verbatim goal — answer exactly this:\n{goal}");
         let mut text = String::new();
-        let mut stream = remote.stream(system, &task, materials).await.ok()?;
+        let mut stream = match remote.stream(system, &task, materials).await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[supervisor] deliverable writer: planner pool unavailable ({e}) — falling back to raw output");
+                return None;
+            }
+        };
         while let Some(event) = stream.next().await {
-            match event.ok()? {
-                remote_llm::RemoteEvent::Token { text: t } => {
+            match event {
+                Ok(remote_llm::RemoteEvent::Token { text: t }) => {
                     if text.len() < 24_000 {
                         text.push_str(&t);
                     }
                 }
-                _ => {}
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!(
+                        "[supervisor] deliverable writer: stream failed mid-generation ({e}) — falling back to raw output"
+                    );
+                    return None;
+                }
             }
         }
         let trimmed = text.trim();
-        (!trimmed.is_empty()).then(|| trimmed.to_string())
+        if trimmed.is_empty() {
+            eprintln!(
+                "[supervisor] deliverable writer: model returned empty text — falling back to raw output"
+            );
+            return None;
+        }
+        Some(trimmed.to_string())
     }
 }
 
@@ -2043,6 +2305,7 @@ async fn synthesize_deck(
             {\"layout\":\"quote\",\"quote\":…≤220 chars,\"author\":?}}; \
             {\"layout\":\"table\",\"title\":…,\"headers\":[2-5 cols],\"rows\":[≤6]}}; \
             {\"layout\":\"image\",\"title\":…,\"fileId\":\"<stored file id>\",\"caption\":?}}.\n\
+            Use ONLY the fields listed for the chosen layout — any extra field is rejected. \
             Rules: ONE idea per slide; quote every number from the step outputs EXACTLY — never \
             invent or round figures; titles state the takeaway, not a label; VARY the layouts — \
             never 3 same-layout slides in a row."
@@ -2056,6 +2319,7 @@ async fn synthesize_deck(
         let mut round = 0usize;
         loop {
             if round > 2 {
+                eprintln!("[supervisor] deliverable writer: exhausted 3 synthesis rounds — falling back to raw output");
                 return None;
             }
             round += 1;
@@ -2646,25 +2910,30 @@ pub fn execute_plan_stream_with_cancel(
                                     continue 'plans;
                                 }
                                 Err(e) => {
+                                    let error = format!(
+                                        "{}; replan (attempt {replan_attempt}) failed: {e}",
+                                        reason
+                                    );
+                                    eprintln!("[supervisor] PlanFailed: {error}");
                                     yield SupervisorEvent::PlanFailed {
-                                        error: format!(
-                                            "{}; replan (attempt {replan_attempt}) failed: {e}",
-                                            reason
-                                        ),
+                                        error,
                                     };
                                     break;
                                 }
                             }
                         }
                     }
+                    let error = result.failures().into_iter().map(|f| {
+                        format!("step '{}' failed: {}", f.step_id, f.error.as_deref().unwrap_or("unknown"))
+                    }).collect::<Vec<_>>().join("; ");
+                    eprintln!("[supervisor] PlanFailed: {error}");
                     yield SupervisorEvent::PlanFailed {
-                        error: result.failures().into_iter().map(|f| {
-                            format!("step '{}' failed: {}", f.step_id, f.error.as_deref().unwrap_or("unknown"))
-                        }).collect::<Vec<_>>().join("; "),
+                        error,
                     };
                     break;
                 }
                 Err(e) => {
+                    eprintln!("[supervisor] PlanFailed: {e}");
                     yield SupervisorEvent::PlanFailed {
                         error: e.to_string(),
                     };
@@ -2699,6 +2968,35 @@ mod tests {
     use kawai_router::{StepStatus, TaskStep};
 
     #[test]
+    #[test]
+    fn repair_revised_plan_json_injects_missing_goal() {
+        let raw = r#"{"steps": [{"id": "s1", "task": "t", "tool": "x"}]}"#;
+        let out = repair_revised_plan_json(raw, "original goal");
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["goal"], "original goal");
+        assert_eq!(v["steps"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn repair_revised_plan_json_wraps_bare_array() {
+        let out = repair_revised_plan_json(
+            r#"[{"id": "s1", "task": "t", "tool": "x"}]"#,
+            "original goal",
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["goal"], "original goal");
+        assert!(v["steps"].is_array());
+    }
+
+    #[test]
+    fn repair_revised_plan_json_keeps_existing_goal_and_non_json() {
+        let with_goal = r#"{"goal": "mine", "steps": []}"#;
+        let out = repair_revised_plan_json(with_goal, "other");
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["goal"], "mine"); // existing goal preserved
+        assert_eq!(repair_revised_plan_json("no json at all", "g"), "no json at all");
+    }
+
     fn preview_chars_is_char_boundary_safe_and_capped() {
         assert_eq!(preview_chars("short", 2000), "short");
         let long = "x".repeat(5000);

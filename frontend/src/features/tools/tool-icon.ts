@@ -63,6 +63,8 @@ export const getToolIcon = (toolName: string): ComponentType<ToolIconProps> => {
       return iconWrap("file-text");
     case "office_create_deck":
       return iconWrap("presentation");
+    case "office_extract_images":
+      return iconWrap("image");
     case "office_export_deck":
       return iconWrap("file-down");
     default:

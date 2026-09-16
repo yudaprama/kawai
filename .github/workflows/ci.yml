@@ -413,11 +413,23 @@ jobs:
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
         run: cargo run --example planner_smoke --features litert,binance
 
-      # Tool-catalog drift gate: the remote Turso catalog must cover the
-      # merged supervisor toolset exactly. Read-only — credentials come from
-      # the baked constants in kawai-vault/constants (env override optional).
-      # After a legit tool change, re-seed: examples/seed_tool_catalog.rs.
+      # ── Tool catalog: drift gate + auto-seed (additive only) ──────────
+      # Drift check: read-only, verifies catalog coverage vs merged toolset.
+      # Auto-seed: additive only (no --prune), fixes drift automatically.
+      # Write token as GitHub secret; only used when drift is detected.
+      # After a legit tool deletion, re-seed manually with --prune:
+      #   KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \
+      #     cargo run --example seed_tool_catalog --features litert,binance,codegraph -- --prune
+      - name: Cache embedding model (seed)
+        id: embed-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.kawai/models
+          key: embeddinggemma-300m
+
       - name: tool_catalog_drift_check (planner catalog coverage)
+        id: drift-check
+        continue-on-error: true
         working-directory: src-tauri
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
@@ -425,6 +437,26 @@ jobs:
           LLVM_PROFILE_FILE: /dev/null
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
         run: cargo run --example tool_catalog_drift_check --features litert,binance,codegraph
+
+      - name: tool_catalog_seed (auto-seed, additive only)
+        if: steps.drift-check.outcome == 'failure'
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
+          KAWAI_TURSO_WRITE_TOKEN: ${{ secrets.KAWAI_TURSO_WRITE_TOKEN }}
+        run: cargo run --example seed_tool_catalog --features litert,binance,codegraph
+
+      - name: Report catalog status
+        if: always()
+        run: |
+          if [ "${{ steps.drift-check.outcome }}" = "failure" ]; then
+            echo "## ⚠️ Tool catalog drifted — auto-seeded (additive, no prune)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## ✅ Tool catalog in sync" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       # ── Smoke 4 (macOS): keyless Binance market data + TA. Geo-blocked hosts
       #    SKIP (exit 0), not fail — see the example header.

@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 
-import { fmtDate, fmtNumber, isRecord, pick } from "./format";
-import { KeyValueView, RecordListView } from "./atoms";
+import { FileIcon } from "@/components/shared/file-icon";
+import { emitOpenPreview } from "@/lib/preview-bridge";
+import { fmtBytes, fmtDate, fmtNumber, isRecord, pick } from "./format";
+import { KeyValueView, RecordListView, SectionLabel } from "./atoms";
 import type { RecordItem } from "./atoms";
 import { MarkdownView } from "./markdown-views";
 
@@ -139,4 +141,105 @@ export function GenericHumanView({ data, raw }: { data: unknown; raw: string }) 
     if (entries.length > 0) return <KeyValueView entries={entries} />;
   }
   return <MarkdownView text={raw.slice(0, 3000)} />;
+}
+
+// ── office_extract_images — image gallery with OCR text ───────────────────
+
+/** office_extract_images → { ok, summary, data: { images: [{fileId,name,bytes,locator,altText,text}], count } }.
+ *  Renders a compact image list with size, alt text, and OCR preview. */
+export function ImageExtractView({ data }: { data: Record<string, unknown> }) {
+  const summary = pick<string>(data, "summary");
+  const inner = isRecord(data.data) ? data.data : data;
+  const images = Array.isArray(inner.images) ? inner.images.filter(isRecord) : [];
+  if (images.length === 0 && !summary) return null;
+
+  // count how many have OCR text
+  const withText = images.filter((img) => typeof img.text === "string" && img.text.trim()).length;
+  // detect cap note from summary
+  const capped = typeof summary === "string" && summary.includes("capped");
+
+  return (
+    <div className="space-y-3">
+      {/* summary pills */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium">
+          🖼 {images.length} gambar diekstrak
+        </span>
+        {withText > 0 && (
+          <span className="bg-success/10 text-success inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium">
+            ✓ {withText} dengan teks (OCR)
+          </span>
+        )}
+        {capped && (
+          <span className="bg-warning/10 text-warning inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium">
+            ⚠ dibatasi 20 gambar untuk OCR
+          </span>
+        )}
+      </div>
+
+      {/* image list */}
+      {images.length > 0 && (
+        <ul className="space-y-1.5">
+          {images.slice(0, 30).map((img, i) => {
+            const id = pick<string>(img, "fileId", "file_id");
+            const name = pick<string>(img, "name") ?? `gambar ${i + 1}`;
+            const bytes = typeof img.bytes === "number" ? img.bytes : null;
+            const altText = pick<string>(img, "altText", "alt_text");
+            const ocrText = pick<string>(img, "text");
+            const locator = pick<string>(img, "locator");
+
+            return (
+              <li
+                className="bg-card flex items-start gap-3 rounded-lg border px-3 py-2"
+                key={id ?? i}
+              >
+                {id ? (
+                  <button
+                    className="flex shrink-0 items-center gap-2 text-left hover:underline"
+                    onClick={() => emitOpenPreview(id, name)}
+                    title={`Buka ${name}`}
+                    type="button"
+                  >
+                    <FileIcon className="size-5 shrink-0" name={name} />
+                  </button>
+                ) : (
+                  <FileIcon className="size-5 shrink-0" name={name} />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-foreground truncate text-sm font-medium" title={name}>
+                      {name}
+                    </span>
+                    {bytes != null && (
+                      <span className="text-muted-foreground shrink-0 font-mono text-[11px]">
+                        {fmtBytes(bytes)}
+                      </span>
+                    )}
+                    {locator && (
+                      <span className="text-muted-foreground shrink-0 font-mono text-[10px]">
+                        {locator}
+                      </span>
+                    )}
+                  </div>
+                  {altText && (
+                    <p className="text-muted-foreground mt-0.5 text-xs" title={altText}>
+                      {altText.length > 80 ? `${altText.slice(0, 80)}…` : altText}
+                    </p>
+                  )}
+                  {ocrText && (
+                    <p className="text-muted-foreground mt-1 border-l-2 border-success/40 pl-2 text-xs italic">
+                      {ocrText.length > 120 ? `${ocrText.slice(0, 120)}…` : ocrText}
+                    </p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {images.length > 30 && (
+        <SectionLabel>…dan {images.length - 30} gambar lainnya</SectionLabel>
+      )}
+    </div>
+  );
 }

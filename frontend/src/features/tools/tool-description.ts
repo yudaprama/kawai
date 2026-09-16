@@ -132,6 +132,9 @@ export function getToolDescription(rawToolName: string, rawArgs: unknown): strin
     case "knowledge_import_youtube":
       if (args.url) return `importing ${getStringValue(args.url as ToolArgValue)}`;
       return "importing YouTube";
+    case "office_extract_images":
+      if (args.fileId) return `extracting images from ${getStringValue(args.fileId as ToolArgValue)}`;
+      return "extracting images";
     default:
       break;
   }

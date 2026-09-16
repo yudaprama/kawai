@@ -988,7 +988,14 @@ async fn office_import_file_handler(
         (None, (Some(name), Some(data))) => logic::office::import_base64(&user_id, name, data),
         _ => Err("provide sourcePath, or name + dataBase64".into()),
     };
-    result.map(Json).map_err(|e| (StatusCode::BAD_REQUEST, e))
+    result
+        .map(|file| {
+            // Upload = analysis intent: warm the parquet sidecars in the
+            // background.
+            logic::analytics::prewarm_tabular(&user_id, &file);
+            Json(file)
+        })
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
 #[derive(Deserialize)]

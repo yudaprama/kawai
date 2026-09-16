@@ -1,438 +1,136 @@
-# TROUBLESHOOT — debugging the agent pipeline
+# TROUBLESHOOT — how to debug the agent pipeline
 
-Runbook for coding agents diagnosing agent / tool-calling / hybrid-cloud
-failures. Examples assume the default macOS data dir and a signed-in local
-account (identity = the login email).
+Method for diagnosing agent / tool-calling / hybrid-cloud failures. Examples
+assume the default macOS data dir; identity = the login email.
 
-**Procedure — follow in order:**
-1. §1: collect evidence (DB + turn_log + app.log). Never reason past missing
-   evidence — run the queries, don't assume.
-2. §2: compare the trace against a healthy turn.
-3. §3: match symptoms to an entry; run that entry's Check commands verbatim
-   and compare output against the stated expectations BEFORE changing code.
-4. Fix. Every §3 Action names the exact file(s) to touch.
-5. §4: run the verification block — a fix is not done until all of it passes
-   and the retried prompt produces a §2-shaped healthy turn.
+## 1. Method (follow in order — never skip ahead)
 
-## 1. Evidence sources (read these first — never guess)
+1. **Reproduce.** If possible, use a probe example instead of the app
+   (`src-tauri/examples`: `web_read_check`, `web_search_check`,
+   `sql_remote_check`, LLM smokes) — it removes UI, session state, and the
+   data dir from the equation.
+2. **Collect evidence before any hypothesis.** Run the §2 queries. Never
+   reason past missing evidence.
+3. **Baseline against a healthy turn** (§3). The FIRST line where the trace
+   diverges from healthy localizes the bug; everything before it works.
+4. **Localize the layer**, top-down:
+
+   | Divergence | Layer |
+   |---|---|
+   | Events never reached the frontend | transport (`commands.rs`/`web.rs`, `use-supervisor-plan.ts`) |
+   | Model emitted raw `call:` markup | tool-call parser (§3.3-class) |
+   | `tool result <name>: ok=false` | tool / args — read the exact error |
+   | Result reached the log but the model ignored it | agent loop / context budget |
+   | Cloud call failed (`turn_log` outcome, `[remote]` lines) | provider / failover |
+   | Only inside the app, never in a probe | app shell (env, features, data dir) |
+
+5. **Fix at that layer, minimally.** Guards already exist (repair rounds,
+   failover, retries) — recurrence means a NEW shape/trigger; find it, don't
+   re-implement the guard. New failure classes: add them to this file.
+6. **Verify** (§5). Not done until all checks pass AND the original failing
+   prompt produces a §3-shaped healthy turn.
+
+## 2. Evidence sources
 
 ```sh
 DB="$HOME/Library/Application Support/pro.kawai.app/demo/kawai.db"
 LOG="$HOME/Library/Logs/kawai/app.log"     # symlink: ./app.log at repo root
 
-# What the user & model said (raw — includes any leaked markup)
-sqlite3 "$DB" "SELECT id, session_id, role, length(content), substr(replace(content,char(10),' '),1,120), created_at FROM messages ORDER BY id DESC LIMIT 10;"
-
-# Per-turn telemetry: provider, tool, tokens, latency, outcome
-sqlite3 "$DB" "SELECT id, session_id, provider, tool, input_tokens, output_tokens, latency_ms, outcome, created_at FROM turn_log ORDER BY id DESC LIMIT 10;"
-
-# Loop execution trace (the most informative grep)
-grep -a "agent_chat\]\|remote\]\|office\]" "$LOG" | tail -n 30
+sqlite3 "$DB" "SELECT id, role, length(content), substr(replace(content,char(10),' '),1,120), created_at FROM messages ORDER BY id DESC LIMIT 10;"
+sqlite3 "$DB" "SELECT id, provider, tool, input_tokens, output_tokens, latency_ms, outcome, created_at FROM turn_log ORDER BY id DESC LIMIT 10;"
+grep -a "agent_chat\]\|remote\]\|office\]\|supervisor\]\|webread\]" "$LOG" | tail -n 30
 ```
 
-Quick diagnosis table (`turn_log.outcome`):
+## 3. Healthy turn shape
 
-| Observation | Meaning |
+```
+[agent_chat] toolset for agent=… remote.is_some()=true has_toolset=true
+[agent_chat] tool call N/M: <tool> args={…}
+[agent_chat] tool result <tool>: ok=true {…}
+[agent_chat] reset conversation after deep_write passthrough   ← required after passthrough
+```
+
+Normal: cloud ~80–90 tok/s; local Gemma 5–30 s per generation. `turn_log`
+healthy row: `outcome=answer|tool` with `output_tokens` below the cap.
+
+## 4. Common symptoms (quick index)
+
+| Symptom | First check |
 |---|---|
-| `answer`, `tool` set | healthy turn, tool ran (check `latency_ms` is proportional to output) |
-| `answer`, `tool` empty, `provider=local` | model answered by itself (degraded OR legitimately short — check messages) |
-| `error`, `tool=deep_write` | cloud failed → find the `deep_write failed:` line in the log |
-| `answer`, `output_tokens` == output cap | answer cut at the provider cap (see §3.7) |
+| 0-char answer, <1 s | prior turn had `reset … passthrough`? |
+| Refusal ("I cannot access…") | `rag_files.status=ready` + row in `session_files`? |
+| Raw `call:` markup persisted | add the exact text as a `parse_tool_call` unit test, extend parser |
+| Tool card vanishes, broken JSON args | parser repair path; new arg-corruption shape → unit test |
+| `office_read_document` ok=false | fileId corruption (LCS retry line?) or wrong tool for PDFs |
+| "cloud writer returned an empty answer" | `grep -a "\[remote\]"` — all candidates failed = expected local fallback |
+| Answer cut mid-sentence | `output_tokens` == cap (`KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS`) |
+| "exceeds available state entries" | context over K/V budget → lower budgets or raise `KAWAI_LLM_MAX_TOKENS` (Gemma 4 max 32003) |
+| `database is locked` | two processes on one data dir, or run tests `--test-threads=1` |
+| Empty search hits despite content | model used whole-phrase query; test the shape against `fts_match_query` |
+| `data_query_nl` invalid JSON / slow | `parse_llm_json` guards in place; >60 s = failover retries or local fallback; `timeoutMs: 120000` |
+| `data_schema` columns named A, B, C (xlsx) | no header found — check the sheet's real shape: `cargo run -p analytics --example xlsx_probe -- <file> [sheet]`; if text samples are ALL null, the SST deref broke (see `cell_typed` in `analytics/src/excel.rs`); a pivot fragment with no header is correct output |
+| xlsx text columns all `null` / text data vanished | shared strings not dereferenced — `CellValue::SharedString` must resolve via `XlsxDocument.shared_strings` (`get_shared`), not map to empty |
+| PlanFailed after revise rounds | read logged `raw:` — repeated same failure = fix the prompt, not the validator |
+| Deliverable is raw JSON | all providers failed synthesis; check `[remote]` per-candidate lines |
+| web_read/search `engine=none` | budgets, walls, or relevance gates — probe with `web_read_check` / `web_search_check` |
 
-## 2. What a HEALTHY turn looks like in the log
+Anything not here: work §1 step 4 and record what you find.
 
-```
-[agent_chat] toolset for agent=builtin.office remote.is_some()=true has_toolset=true
-[agent_chat] reset conversation for takeover (agent=builtin.office)   ← new epoch only
-[agent_chat] tool call 1/8: knowledge_search args={...}
-[agent_chat] tool result knowledge_search: ok=true {"hits":[... "fileId":"..."}]}
-[agent_chat] tool call 2/8: office_read_document args={"fileId":"..."}
-[agent_chat] tool result office_read_document: ok=true {"markdown":"..."}
-[agent_chat] deep_write (delegated): task=<short brief>
-[agent_chat] reset conversation after deep_write passthrough          ← REQUIRED after passthrough
-```
-
-Normal latency: cloud (zai) ~80–90 tok/s (7.5k tokens ≈ 90 s); each local
-on-device generation takes 5–30 s depending on the call-line length.
-
-## 3. Symptom → root cause → action
-
-### 3.1 No response at all (0 chars, <1 s)
-
-- **Check**: `messages` assistant row with `length=0`; `turn_log` `local`,
-  `output_tokens=0`, latency ~400 ms.
-- **Root cause**: local generation returned empty (immediate EOS). Class:
-  engine state dangling mid-tool-lifecycle (e.g. the previous turn ended in a
-  passthrough without reset), or other corrupted state.
-- **Action**: the guard (one retry nudge) already exists. If it recurs, check
-  whether `reset conversation after deep_write passthrough` IS present in the
-  previous turn's log — if absent you are running an old backend build; if
-  present and still empty, reproduce with `agent_smoke` and report the engine
-  state.
-
-### 3.2 Refusal answer ("I cannot access YouTube/videos")
-
-- **Check**: `turn_log` `local`, `tool` empty.
-- **Root cause**: the model doesn't know the content is in the knowledge base
-  (it never called `knowledge_search`).
-- **Action**: verify the file is imported AND associated:
-  ```sh
-  sqlite3 "$DB" "SELECT * FROM rag_files; SELECT * FROM session_files;"
-  ```
-  `rag_files.status` must be `ready`. If `failed` → retry from the Knowledge
-  panel (read the `error` column). If the file exists but the session_id is
-  missing from `session_files` → re-add via the panel (association lost).
-
-### 3.3 Raw markup on screen (`<|tool_call>call:...`, `call:name{...}`)
-
-- **Check**: `messages` assistant row contains a literal `call:` / `<|tool_call>`.
-- **Root cause**: the parser didn't recognize the emitted format → treated as a
-  final answer. The parser accepts: the ```tool fence, native
-  `<|tool_call>...<tool_call|>` wrappers, bare `call:NAME{json}` (plus keys
-  missing their opening quote, `<|"|>` escapes).
-- **Action**: copy the exact shape from `messages`, add a `parse_tool_call`
-  unit test in `crates/engines/agent/src/lib.rs` with it, extend the parser. The
-  frontend `stripToolMarkup` (use-local-chat.ts) is the display safety net —
-  if the markup reaches it too, extend its regex.
-
-### 3.4 Tool card appears then VANISHES, no answer
-
-- **Check**: `messages` assistant row contains `call:...` plus **broken JSON**
-  (string self-truncated as `... "`, a key missing its opening quote `",task":`).
-- **Root cause**: the model typed a huge payload (a copied materials/text) and
-  gave up mid-way — invalid JSON, unbalanced braces → parser returns `None` →
-  raw persist → frontend strips it → empty display.
-- **Action**: this class is closed by two policies: (a) materials stay a
-  one-line pointer (the injection system attaches tool results — never let the
-  persona suggest pasting long text again), (b) the parser repair path. A NEW
-  broken shape → unit test + extend `quote_bare_keys` / the repair retry.
-
-### 3.4b Recognizable-but-broken `call:` lines persisted raw
-
-- **Check**: `messages` assistant row contains one or more `call:NAME{...}`
-  lines where the NAME is a real tool but the args are invalid JSON
-  (consecutive string values, doubled tool-name suffix, `file_Id` casing).
-- **Root cause**: a bare-call candidate with a valid name + BALANCED braces
-  whose args fail to parse is surfaced as a malformed call → ONE repair
-  round teaches the correct shape. If the repair also fails and no remote
-  is configured, the raw line can still be persisted as the final answer.
-- **Action**: the repair round normally closes this. A NEW arg-corruption
-  shape → add a `parse_tool_call` unit test with the exact persisted text;
-  if the shape is systematically repairable (like keys missing opening
-  quotes), extend `quote_bare_keys` / the repair retry in agent.rs.
-
-### 3.5 `office_read_document` error ("the tool failed")
-
-- **Check**: log line `tool result office_read_document: ok=false`.
-- **Root cause 1**: the model corrupted the fileId while copying it (missing/
-  scrambled digits). A `fuzzy matched, retrying` log line = the LCS matcher
-  saved it; without that line the corruption is below threshold (ratio <0.6 or
-  ambiguous margin <0.1).
-- **Root cause 2**: unsupported extension for the reader (all office formats
-  plus `md` are supported; PDFs must use `pdf_extract_text`).
-- **Action**: for heavy id corruption, model self-recovery via
-  `office_list_files` is the normal path. A single-file-session shortcut could
-  be considered (NOT implemented — a design decision).
-
-### 3.6 "cloud writer returned an empty answer"
-
-- **Check**: log line `deep_write failed: cloud writer returned an empty
-  answer`; `turn_log` `error`, latency can be ~100 s.
-- **Root cause**: the provider finished the stream without a transport error
-  but zero text. Failover now happens IN-STREAM (the boundary is the first
-  text token) — an empty provider goes to cooldown and the next candidate is
-  tried.
-- **Action**: if you still see this, ALL candidates were empty/failed → run
-  `grep -a "\[remote\]" "$LOG"` for `attempt <label> ... trying next candidate`
-  lines; the last failure is in `all remote candidates failed; last error: ...`.
-  The local degradation that follows is EXPECTED behavior.
-
-### 3.7 Answer cut off mid-sentence
-
-- **Check**: `turn_log` `output_tokens` EXACTLY equals the cap
-  (`KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS`, default 16384); the message tail may
-  carry the marker `_[output truncated at the provider token cap]_`.
-- **Root cause**: the provider stopped at max_tokens (not a natural finish).
-- **Action**: raise the env var, or ask for less (a task brief with a maximum
-  length). Do not raise the cap without bound — latency is linear in output
-  (~80 tok/s).
-
-### 3.8 Latency feels long
-
-- **Check**: split the time. The zai `turn_log` row is purely the cloud phase.
-  User-perceived total = local phase (number of Gemma generations × length) +
-  cloud.
-- **Normal**: cloud ~80–90 tok/s; local 5–30 s per generation.
-- **Action**: reduce local steps (SOP violations → see 3.4/3.5), request
-  shorter output, or accept it (a classic trade-off).
-
-### 3.9 Prefill overflow ("exceeds available state entries")
-
-- **Root cause**: context exceeds the K/V budget (`KAWAI_LLM_MAX_TOKENS`,
-  default 8192). Automatic recovery: reset + one retry with a smaller
-  transcript.
-- **Action**: if it repeats on long sessions, lower `TOOL_RESULT_MODEL_CHARS` /
-  the transcript budgets, or raise `KAWAI_LLM_MAX_TOKENS` (Gemma 4 max: 32003
-  — K/V memory cost rises).
-
-### 3.10 `sql: ... database is locked`
-
-- Parallel tests sharing one DB file (flaky) → run with `-- --test-threads=1`.
-- At runtime: make sure two app processes are not sharing the same data dir.
-
-### 3.11 Empty search hits but the content IS there
-
-- **Check**: `hits: []` while the document demonstrably contains the term:
-  ```sh
-  sqlite3 "$DB" "SELECT count(*) FROM rag_chunks WHERE file_id='<fid>' AND content LIKE '%<term>%';"
-  ```
-- **Root cause**: the model forwarded the user's whole phrase as the query;
-  FTS token semantics dropped or missed it. The query builder ORs tokens and
-  BM25-ranks them; the empty-hits note nudges the model to retry with ONE
-  distinctive keyword.
-- **Action**: if a query shape still misses, reproduce with the SQL above,
-  then inspect `fts_match_query` (src-tauri/src/logic/rag.rs) and add a unit
-  test for the shape.
-
-### 3.12 web_read / web_search failures
-
-Read chain: cache → Cloudflare → plain HTTP → webview (engine field names
-the tier that served: `cache` / `cloudflare` / `http` / `webview`).
-Search chain: DDG (DoH, single-flight + one 3s anomaly retry) → webview
-(Brave) → Wikipedia (`id` then `en`); every fallback logs its reason:
+## 5. Verification after a fix
 
 ```sh
-grep -a "[webread] web_search tier=" "$LOG"
+bun run build
+cargo check && cargo check --features web && cargo check --features litert,full
+cd src-tauri && env LITERT_LM_LIB_DIR="$PWD/../cognee-litert-lm/native" \
+  RUSTFLAGS="-C link-arg=-Wl,-rpath,$PWD/../cognee-litert-lm/native" \
+  LLVM_PROFILE_FILE=/dev/null cargo test --features litert --lib -- --test-threads=1
 ```
 
-- **Check (read)**: `app.log` line `tool result web_read: ok=true
-  {"engine":"..."}`; the engine field names the tier that served the call.
-- **Root cause (read, engine none + "bot-protected")**: Cloudflare walled
-  AND the webview tier missed (marker detection or thin content) — hard
-  JS-challenge site.
-- **Root cause ("budget exhausted for today")**: `KAWAI_CF_PER_USER_DAILY`
-  (user) or `KAWAI_CF_GLOBAL_DAILY` (dev-wallet fuse) cap hit; the tool
-  result carries guidance, it is NOT an error.
-- **Root cause (engine never "webview" on desktop)**: engine not registered —
-  check `webread::set_webview_engine` runs in the `lib.rs` setup hook
-  (always on desktop); `kawai-web` degrades to Cloudflare-only by design.
-- **Check (search)**: the per-tier fallback lines above name the exact
-  reason per tier (`anomaly/challenge page`, `datacenter junk-serve`,
-  `per-hit relevance filter`, `no usable hits`).
-- **Root cause (search, `duckduckgo: anomaly/challenge page persisted after
-  retry`)**: DDG volume-limits rapid POSTs from one IP — the built-in 3s
-  backoff retry already ran; the webview (Brave) tier is the designed
-  takeover. Frequent recurrence with many-search plans → consider a larger
-  stagger between DDG fetches.
-- **Root cause (search, `engine=none`, all tiers)": every tier was filtered
-  by the relevance gates — engines returned genuinely unrelated results for
-  the query. Working as designed (honest unavailability beats junk). Check
-  the query itself for generic-word salads; per-step latency/outcome rows
-  live in `turn_log`.
-- **Probe the read chain outside the app shell and read the raw payload:**
+Then retest e2e (`bun tauri dev`) with the failing prompt; re-read §2 — the
+turn must match §3.
+
+## References (look up, don't read through)
+
+- **Tool-calling protocol**: manifest teaches `call:NAME{"arg":"val"}`;
+  feedback arrives as `response:NAME: …`; parser also accepts the ```tool
+  fence, `<|tool_call>` wrappers, `<|"|>` escapes, unquoted keys. Special
+  tokens never appear as prose.
+- **Auth**: identity = login email; artifacts `<user_data_dir>/auth.token`
+  (7-day Ed25519 bearer) + `<data_root>/last_session`. Sign-in failures →
+  probe `POST /auth/salt` on the worker; 409-with-no-account → stale D1 row;
+  session lost each restart → decode the token's `sub`/`exp`.
+- **Agent Observability** (`crates/foundation/telemetry`): every cloud call
+  exports to Grafana — generations via `gcx agento11y conversations get
+  kawai-session-<id>`, traces via Tempo (`service.name="kawai"`), metrics
+  `gen_ai_client_*` + `kawai_remote_failover`. Env-gated by `AGENTO11Y_*`/
+  `OTEL_*`; one `glc_` token covers both channels. Agent roles: a NEW system
+  prompt = a NEW role (`with_agent`/`reason_as`), or it collapses into
+  `kawai-agent`. Short-lived processes must call
+  `kawai_telemetry::shutdown()` before exit.
+- **Connecting to Grafana**: stack = `giganticgecko512` (org slug lives in
+  `~/.config/gcx/config.yaml`; refresh OAuth with `gcx cloud login` when
+  commands 401). Read token = `GRAFANA_SERVICE_ACCOUNT_TOKEN` (glsa_) in
+  `kawai/.env` — verify with a 1-liner before querying:
   ```sh
-  cd src-tauri && cargo run --example web_read_check -- <url>
+  source kawai/.env
+  BASE="https://giganticgecko512.grafana.net/api/datasources/proxy/uid"
+  curl -s -o /dev/null -w '%{http_code}\n' "$BASE/../../api/datasources" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN"  # expect 200
+  # traces (Tempo):
+  curl -s "$BASE/grafanacloud-traces/api/search?tags=service.name%3Dkawai&limit=10" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN"
+  curl -s "$BASE/grafanacloud-traces/api/traces/<traceID>" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN"   # waterfall
+  # metrics (Prometheus — PromQL via GET/POST 'query='):
+  curl -s "$BASE/grafanacloud-prom/api/v1/query" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
+    --data-urlencode 'query=sum by (gen_ai_agent_name, gen_ai_provider_name) (increase(gen_ai_client_token_usage_total[24h]))'
+  # handy: histogram_quantile(0.50|0.95, sum by (le, gen_ai_agent_name) (rate(gen_ai_client_operation_duration_bucket[5m])))
+  #        sum by (reason) (increase(kawai_remote_failover[1h]))
+  # logs (Loki — note the /loki/api/v1 path segment):
+  curl -s -G "$BASE/grafanacloud-logs/loki/api/v1/query_range" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
+    --data-urlencode 'query={service_name="kawai"}' --data-urlencode 'since=24h' --data-urlencode 'limit=20'
+  # log labels: component (supervisor/remote_llm/…), user_id, severity_text, target
   ```
-  * `[probe] ERROR: eval channel closed` on the very first poll → WKWebView
-    dropped the evaluation (provisional-navigation race). `extract()` must
-    retry failed/incomplete polls until the deadline — a hard-fail there
-    reintroduces this (fixed once; regression = re-read webview_engine.rs).
-  * Payload starts `{"t":"","x":"","e":"..."}` → the EXTRACTOR JS itself threw
-    in-page; the `e` field names the error.
-- **Probe the search chain headlessly** (no webview — exercises DDG/
-  Cloudflare/Wikipedia + all relevance gates):
-  ```sh
-  cd src-tauri && cargo run --example web_search_check -- "<query>"
-  cd src-tauri && cargo run --example bing_dom_check -- <serp-url>  # live DOM census + Brave extractor
-  ```
-  * Short/empty `x`+`h` on a sparse page → legitimately below
-    `MIN_USABLE_CHARS`; Cloudflare serving is correct behavior, not a bug.
-- **Action**: budget → raise the env cap or wait for the UTC-day rollover;
-  walled page → nothing to fix locally (excluded by design); missing tier 0 →
-  verify the office feature is compiled in; silent tier-0 miss → the probe
-  above discriminates the three cases before any code change.
-
-## 4. Verification after a fix
-
-```sh
-bun run build                                  # frontend
-cargo check && cargo check --features web \
-  && cargo check --features litert,full        # backend, all variants
-ABS="$PWD/cognee-litert-lm/native"
-cd src-tauri && env LITERT_LM_LIB_DIR="$ABS" \
-  RUSTFLAGS="-C link-arg=-Wl,-rpath,$ABS" LLVM_PROFILE_FILE=/dev/null \
-  cargo test --features litert --lib -- --test-threads=1
-```
-
-Then retest e2e from the app (`bun tauri dev`) with the failing prompt, and
-re-read §1 — a healthy turn must match the shape in §2.
-
-## 5. Tool-calling protocol (quick reference)
-
-- The manifest TEACHES: one line `call:NAME{"arg": "value"}` (the native Gemma
-  body, plain quotes) → feedback arrives as `response:NAME: ...`.
-- The parser ALSO ACCEPTS: the legacy ```tool fence, native wrappers
-  `<|tool_call>call:NAME{...}<tool_call|>` (opener/terminator variants), the
-  `<|"|>`/`<|'|>` escapes, keys missing their opening quote.
-- Gemma special tokens (`<|tool|>`, `<|tool_response|>`, `<|channel>thought>`,
-  `<|message|>`, `<|end|>`) are stripped from the display stream — they must
-  never appear as prose.
-- Subagent materials = a one-line pointer; the backend attaches the full
-  content (`[tool results gathered this turn]`, 32k cap) or falls back to
-  `[conversation so far]` when the turn ran no tools.
-
-## 6. Auth (remote account) quick reference
-
-Identity is the login email; the account directory lives on the kawai-server
-worker (D1 `kawai-auth`). Client-side artifacts:
-
-- `<user_data_dir>/auth.token` — Ed25519 bearer token (7-day), sent as
-  `Authorization: Bearer` to worker endpoints; `sub`/`exp` are decodable
-  client-side.
-- `<data_root>/last_session` — pointer file used by `restore_session` to
-  re-establish the desktop session at startup without a password prompt.
-
-| Symptom | Cause | Action |
-|---|---|---|
-| sign-in fails with "auth server unreachable" | worker down / no network | `curl -s -o /dev/null -w '%{http_code}' -X POST https://kawai-worker.akuntestinguntukseto.workers.dev/auth/salt -H 'Content-Type: application/json' -d '{"email":"x@y.z"}'` — expect 404/200, not 000 |
-| 409 "an account with this email already exists" but sign-in says "no account found" | leftover row from a different credential scheme (e.g. legacy pbkdf2 table era) | inspect D1: `npx wrangler d1 execute kawai-auth --remote --command "SELECT email, created_at FROM users WHERE email='<email>'"` — row's salt/credential won't match any password; remove or rename per user request |
-| session lost every restart (desktop) | `restore_session` bailed: token expired or `last_session`/`auth.token` missing/mismatched | check both files exist, decode token payload (`sub`, `exp`) — base64url JSON; re-login if `exp` is past |
-| worker returns 500 with a text message | an auth "soft" error predating the status-code cleanup, or a genuine handler bug | check the message body; `npx wrangler tail --format json` on kawai-server/worker for the D1/Rust error line |
-| "missing Authorization header" / 401 on worker calls | client has no `auth.token` (never signed in) or stale token after `ED25519_SEED` rotation | sign in again; rotation invalidates all tokens |
-
-## 7. Agent Observability — Grafana Cloud tracing (generations + OTel)
-
-Every cloud LLM call is exported to Grafana Agent Observability
-(`crates/foundation/telemetry`, hand-rolled — agento11y has no Rust SDK).
-Fully env-gated: without the `AGENTO11Y_*`/`OTEL_*` vars nothing is sent and
-no thread exists.
-
-### Where data goes (two SEPARATE channels — verify both independently)
-
-| Channel | Carries | Endpoint | Lands in |
-|---|---|---|---|
-| A: generation ingest | prompt, response, tokens, model, stop reason, errors | `POST $AGENTO11Y_ENDPOINT/api/v1/generations:export` (protojson, `X-Scope-OrgID` + Basic auth) | Agents/Conversations tabs |
-| B: OTel traces/metrics | spans + `gen_ai.client.operation.duration` / `gen_ai.client.token.usage` | `POST <endpoint>/v1/traces` + `/v1/metrics` | Tempo / Prometheus (Performance view) |
-
-Env lives in the repo-root `.env` (gitignored): `AGENTO11Y_ENDPOINT`,
-`AGENTO11Y_PROTOCOL=http`, `AGENTO11Y_AUTH_MODE=basic`,
-`AGENTO11Y_AUTH_TENANT_ID`, `AGENTO11Y_AUTH_TOKEN`,
-`OTEL_EXPORTER_OTLP_ENDPOINT` and optionally `OTEL_EXPORTER_OTLP_HEADERS`
-(`Authorization=Basic base64("<tenant>:<glc_ token>")` — `tr -d '\n'` the
-base64). One `glc_` token covers both channels (scopes: `sigil:write`,
-`metrics:write`, `traces:write`, `logs:write`). The OTLP headers have a
-BUILT-IN distribution default baked into `kawai-vault/constants/src/otel.rs`
-(obfuscated, generated by `gen-rust-constants`) — the code uses the vault
-value first and only falls back to the env var when the baked one is empty,
-so a broken/pasted-with-spaces env header can't silently break Channel B.
-
-### Agent roles (the UI grouping key)
-
-Each LLM call is tagged with a logical role via
-`RemoteLlm::with_agent(...)` / `reason::reason_as(..., role)`:
-
-- `planner` — plan_task rounds + failure-driven replans
-- `deliverable-writer` — post-plan synthesis
-- `followup-suggester` — suggest_followups one-shot
-- `analytics-nl2query` — analytics natural-language → query translation
-- `kawai-agent` — everything else via `reason()` (memory extract, deep_write, …)
-
-Rule: a NEW system prompt = a NEW role. Adding a cloud call without a role
-collapses it into `kawai-agent` and ruins the Agents-tab grouping.
-`conversation_id` = `kawai-session-<id>` (planner + deliverable-writer) —
-that is what stitches a run into one Conversations thread.
-
-### How to trace one run end-to-end (the 3-step workflow)
-
-1. **Generations (what the LLM said)**: `gcx agento11y conversations get kawai-session-<id>`
-   — every planner round / synthesis call with its prompt, response, tokens.
-2. **Traces (where the time went)**: Tempo search `{service.name="kawai"}` —
-   each pool call is one trace: root `remote_llm.stream` → child
-   `remote_llm.attempt` per provider candidate (outcome attr: ok /
-   reasoning_overflow / transport_error / …) → `streamText <model>` gen_ai span.
-   Long `attempt` spans = slow provider; several attempts under one root = failover.
-3. **Metrics (trends)**: Prometheus — `gen_ai_client_operation_duration`,
-   `gen_ai_client_token_usage`, `kawai_remote_failover`, `kawai_remote_reasoning_overflow`.
-
-### Querying Tempo from the CLI (stack proxy, no extra scopes needed)
-
-The `glc_` ingest token usually lacks `traces:read`, so query Tempo THROUGH the
-stack API with a service account token (`glsa_…`, Admin role; note: a role
-change only applies to tokens created after it):
-
-```sh
-SA=glsa_...   # or read GRAFANA_SERVICE_ACCOUNT_TOKEN from .env
-curl -s "https://<slug>.grafana.net/api/datasources/proxy/uid/grafanacloud-traces/api/search?tags=service.name%3Dkawai&limit=10" \
-  -H "Authorization: Bearer $SA"
-# single waterfall:
-curl -s ".../api/datasources/proxy/uid/grafanacloud-traces/api/traces/<traceID>" -H "Authorization: Bearer $SA"
-```
-
-Managed stack details (Tempo host, ds uid `grafanacloud-traces`,
-`grafanacloud-prom`, Loki `grafanacloud-logs`) are discoverable with
-`gcx cloud stacks get <slug>` (needs `gcx cloud login` when its OAuth
-expires — tokens expire after a few hours). Grafana's own OAuth also
-expires; `gcx cloud login` again fixes both. The glsa service-account
-token in `.env` (`GRAFANA_SERVICE_ACCOUNT_TOKEN`, Admin role) is used by
-the stack-proxy queries above and needs no refresh.
-
-### Plumbing notes (why it silently failed before — do not regress)
-
-- opentelemetry-otlp **0.32** posts to `with_endpoint` **verbatim** (0.30
-  appended `/v1/traces`). `init_otel` appends the signal path itself; posting
-  to `.../otlp` alone 404s silently at the Grafana gateway.
-- The export worker thread is spawned with a **16 MB stack** — provider
-  construction overflows the 2 MB default and the thread dies silently (all
-  exports gone, no error anywhere).
-- The endpoint is `OTEL_EXPORTER_OTLP_ENDPOINT` env (dev override) falling back
-  to the baked constant; headers are the reverse (baked vault value first, env
-  fallback). The regression test
-  `cargo test -p kawai-telemetry span_export` asserts a POST actually arrives.
-- Console noise: the tracing subscriber defaults to `INFO`; set `RUST_LOG`
-  to go deeper.
-
-### Metrics catalog (already exported — dashboard-ready)
-
-| Metric | Type | Labels |
-|---|---|---|
-| `gen_ai_client_operation_duration` | histogram (s) | `gen_ai_agent_name`, `gen_ai_provider_name`, `gen_ai_request_model`, `gen_ai_operation_name` |
-| `gen_ai_client_token_usage` | counter | same + `gen_ai_token_type` (input/output) |
-| `kawai_remote_failover` | counter | `from_provider`, `reason` (transport / rate_limited / server_error / empty / client_error / stream_error) |
-| `kawai_remote_reasoning_overflow` | counter | `provider` |
-
-Example PromQL (latency p50/p95 per role, 5m window):
-
-    histogram_quantile(0.50, sum by (le, gen_ai_agent_name) (rate(gen_ai_client_operation_duration_bucket[5m])))
-    histogram_quantile(0.95, sum by (le, gen_ai_agent_name) (rate(gen_ai_client_operation_duration_bucket[5m])))
-    sum by (reason) (increase(kawai_remote_failover[1h]))
-
-A latency dashboard (p50/p95 per role, failover/overflow counters, token
-usage) can be imported as a Grafana dashboard JSON built on exactly these
-queries — no new instrumentation required.
-
-### Evidence queries (channel A — what gcx can see)
-
-```sh
-gcx agento11y agents list                                   # roles + generation counts
-gcx agento11y conversations list --limit 5                  # recent runs (kawai-session-<id>)
-gcx agento11y conversations get kawai-session-74            # per-generation payload (tokens, model, error)
-gcx agento11y generations get <generation-id>               # single generation detail
-```
-
-Channel B is invisible to gcx — confirm by Tempo (filter `service.name="kawai"`)
-or the Performance view. Local wiring proof: point
-`OTEL_EXPORTER_OTLP_ENDPOINT` at a local HTTP catcher and expect TWO POSTs
-(`/v1/traces`, `/v1/metrics`).
-
-| Symptom | Cause | Action |
-|---|---|---|
-| Agents tab empty but app runs | env missing from the shell that launched the app, or 401 | `grep AGENTO11Y .env`; export failure logs `[agento11y] generation export failed` to app.log |
-| Performance view empty while Conversations populate | OTel channel broken (checklist #1/#2): providers not built, or `OTEL_EXPORTER_OTLP_HEADERS` malformed (trailing newline from base64 without `tr -d '\n'`, a wrapped/pasted token with spaces — the gateway then answers 401 silently) | test the header verbatim: `curl -s -X POST "$OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces" -H "$OTEL_EXPORTER_OTLP_HEADERS" -H "X-Scope-OrgID: $TENANT" -w '%{http_code}' -o /dev/null --data-binary ""` — expect 200; rebuild it with `printf '%s' '<tenant>:<glc_ token>' | base64 | tr -d '\n'` |
-| spans/metrics never sent, no error anywhere | the export worker thread overflowed its default 2 MB stack building the OTel providers (silent thread death) | FIXED: `kawai-telemetry::init` spawns the worker with a 16 MB stack — don't shrink it |
-| Tempo empty despite provider "ok" | opentelemetry-otlp 0.32 posts to `with_endpoint` VERBATIM — no `/v1/traces` suffix is appended (0.30 appended it), so posting to `.../otlp` alone 404s silently | FIXED: `init_otel` appends `/v1/traces` (and `/v1/metrics` for the metric exporter); the isolated `span_export_reaches_local_collector` test guards this |
-| Tempo read via CLI 401/"invalid scope" | the `glc_` token needs `traces:read`/`metrics:read` scopes; the SA token path works through the stack proxy: `GET https://<slug>.grafana.net/api/datasources/proxy/uid/grafanacloud-traces/api/search?tags=service.name%3Dkawai` with `Authorization: Bearer glsa_...` (SA needs Admin role) | use the stack-proxy query (working) or add read scopes to the access policy |
-| short-lived process (smoke/example) drops telemetry | exporters flush on `kawai_telemetry::shutdown()` — short-lived processes MUST call it before exit | call `kawai_telemetry::shutdown()` at the end of the example |
-| one agent row, unfilterable | missing `with_agent`/`reason_as` role on a new call site | add the role at the call site (see above) |
-| spans in Tempo but no "T" icon in the conversation | `operation_name` must be a recognized value — kawai emits `streamText`; don't invent others | keep `operation_name: "streamText"` in `telemetry::record_generation` |
-| app.log spam: "burned the entire output cap on reasoning with no visible text" | zai/GLM thinking counts toward `max_tokens`; a heavy round exhausts the cap before writing any visible text (this is the old 20–60 s "produced no text" freeze) | EXPECTED now — the pool auto-retries the same candidate once with thinking disabled; if EVERY planner round shows it, raise the planner output cap (`with_output_cap` in `supervisor.rs`) |
-| app.log: "produced no text (usage in=… out=… finish_length=…)" | provider returned a clean empty stream, no reasoning involved | one-off failover is normal; frequent occurrences → check the provider's status page / vault key quota |
+  Trace shape: root `remote_llm.stream` → child `remote_llm.attempt` per
+  provider candidate → `streamText` span. Several attempts = failover. When
+  to use which channel: local/log for repro, Tempo for "slow/empty but tools
+  ran" (shows which provider served and why others were skipped), gcx for
+  the actual prompts/responses. The Grafana MCP tool in agent sessions may
+  401 (its own token) — fall back to the curl path above.

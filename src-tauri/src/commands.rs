@@ -816,14 +816,17 @@ pub fn office_import_file(
     session: State<'_, Session>,
 ) -> Result<logic::office::OfficeFile, String> {
     let user_id = session_user_id(&session)?;
-    match (
+    let imported = match (
         source_path.as_deref(),
         (name.as_deref(), data_base64.as_deref()),
     ) {
         (Some(src), _) => logic::office::import_path(&user_id, src),
         (None, (Some(name), Some(data))) => logic::office::import_base64(&user_id, name, data),
         _ => Err("provide sourcePath, or name + dataBase64".into()),
-    }
+    }?;
+    // Upload = analysis intent: warm the parquet sidecars in the background.
+    logic::analytics::prewarm_tabular(&user_id, &imported);
+    Ok(imported)
 }
 
 /// Interim usage billing (per-turn flat fee, honor system — docs

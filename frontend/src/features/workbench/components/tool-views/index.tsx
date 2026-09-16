@@ -57,7 +57,7 @@ import {
 // ── family views — one file per tool family ─────────────────────────────────
 import { KeyValueView } from "./atoms";
 import { FileCreatedView, FileListView } from "./file-views";
-import { BrowserView, CalculationView, CodeGraphView, GenericHumanView } from "./generic-views";
+import { BrowserView, CalculationView, CodeGraphView, GenericHumanView, ImageExtractView } from "./generic-views";
 import { MarkdownView, PdfPagesView } from "./markdown-views";
 import { MemoryGraphView, MemoryLinesView, SessionStepResultsView } from "./memory-views";
 import { NewsListView } from "./news-views";
@@ -271,6 +271,7 @@ const registry: Record<string, StepView> = {
   convert_document: (p, raw) => <GenericHumanView data={p} raw={raw} />,
   new_deck: (p, raw) => <GenericHumanView data={p} raw={raw} />,
   extract_text: (p, raw) => <GenericHumanView data={p} raw={raw} />,
+  office_extract_images: (p) => (isRecord(p) ? <ImageExtractView data={p} /> : null),
   pdf_extract_images: (p, raw) => <GenericHumanView data={p} raw={raw} />,
   pdf_merge: (p) => {
     const v = unwrapEnvelope(p);
