@@ -88,7 +88,7 @@ async fn main() {
         stored.original_name, stored.id
     );
 
-    let schema = DataTableSchemaTool(user.to_string())
+    let schema = DataTableSchemaTool(user.to_string(), 0)
         .call(data::SchemaArgs {
             file_id: stored.id.clone(),
             sheet: None,
@@ -102,7 +102,7 @@ async fn main() {
     let args: data::QueryArgs =
         serde_json::from_value(serde_json::json!({ "fileId": stored.id, "limit": 5 }))
             .expect("query args");
-    let rows = DataQueryTool(user.to_string())
+    let rows = DataQueryTool(user.to_string(), 0)
         .call(args)
         .await
         .expect("data_query");
@@ -115,7 +115,7 @@ async fn main() {
     let xlsx =
         store::import_bytes(user, "smoke-sales.xlsx", &sales_xlsx_bytes()).expect("import xlsx");
     let info: Value = serde_json::from_str(
-        &DataTableSchemaTool(user.to_string())
+        &DataTableSchemaTool(user.to_string(), 0)
             .call(data::SchemaArgs {
                 file_id: xlsx.id.clone(),
                 sheet: None,
@@ -149,7 +149,7 @@ async fn main() {
     println!("[analytics_smoke] PASS data_schema(xlsx): typed columns, dates resolved");
 
     // Aggregate through the serde wire shape (camelCase, string values).
-    let out = DataQueryTool(user.to_string())
+    let out = DataQueryTool(user.to_string(), 0)
         .call(
             serde_json::from_value(serde_json::json!({
                 "fileId": xlsx.id,
@@ -173,7 +173,7 @@ async fn main() {
     println!("[analytics_smoke] PASS data_query(xlsx): filter+group+sum+sort → laptop 2500");
 
     // Date-styled serials filter as real dates.
-    let out = DataQueryTool(user.to_string())
+    let out = DataQueryTool(user.to_string(), 0)
         .call(
             serde_json::from_value(serde_json::json!({
                 "fileId": xlsx.id,
@@ -189,7 +189,7 @@ async fn main() {
     println!("[analytics_smoke] PASS data_query(xlsx): date range filter");
 
     // Calendar-part filter: "January" as datePart month == 1.
-    let out = DataQueryTool(user.to_string())
+    let out = DataQueryTool(user.to_string(), 0)
         .call(
             serde_json::from_value(serde_json::json!({
                 "fileId": xlsx.id,
@@ -207,7 +207,7 @@ async fn main() {
     // Cache invalidation: rewrite the workbook with one more row (new size +
     // mtime) — the sidecar must rebuild, not serve stale data.
     store::import_bytes(user, "smoke-sales-v2.xlsx", &sales_xlsx_bytes()).expect("import v2");
-    let out = DataQueryTool(user.to_string())
+    let out = DataQueryTool(user.to_string(), 0)
         .call(serde_json::from_value(serde_json::json!({ "fileId": xlsx.id })).expect("query args"))
         .await
         .expect("data_query(re-read)");
@@ -217,7 +217,7 @@ async fn main() {
     println!("[analytics_smoke] PASS xlsx sidecar cache stable across reads");
 
     // ── self-correcting errors reach the model verbatim ──────────────────
-    let err = DataQueryTool(user.to_string())
+    let err = DataQueryTool(user.to_string(), 0)
         .call(
             serde_json::from_value(serde_json::json!({
                 "fileId": xlsx.id,
@@ -233,7 +233,7 @@ async fn main() {
     println!("[analytics_smoke] PASS error contract: {err}");
 
     // Unknown Excel sheet echoes the available ones.
-    let err = DataTableSchemaTool(user.to_string())
+    let err = DataTableSchemaTool(user.to_string(), 0)
         .call(data::SchemaArgs {
             file_id: xlsx.id.clone(),
             sheet: Some("Q1".into()),
@@ -247,7 +247,7 @@ async fn main() {
 
     // ── non-tabular ext guard ─────────────────────────────────────────────
     let md = store::import_bytes(user, "smoke-notes.md", b"# hi\n").expect("import md");
-    let err = DataTableSchemaTool(user.to_string())
+    let err = DataTableSchemaTool(user.to_string(), 0)
         .call(data::SchemaArgs {
             file_id: md.id,
             sheet: None,
@@ -282,7 +282,7 @@ async fn main() {
     }
     let ta_file =
         store::import_bytes(user, "smoke-ohlcv.csv", ohlcv.as_bytes()).expect("import ohlcv");
-    let out = DataTaTool(user.to_string())
+    let out = DataTaTool(user.to_string(), 0)
         .call(
             serde_json::from_value(serde_json::json!({
                 "fileId": ta_file.id,
@@ -340,7 +340,7 @@ async fn main() {
             .as_bytes(),
     )
     .expect("import short ohlcv");
-    let out = DataTaTool(user.to_string())
+    let out = DataTaTool(user.to_string(), 0)
         .call(
             serde_json::from_value(serde_json::json!({
                 "fileId": short.id,
@@ -365,7 +365,7 @@ async fn main() {
     println!("[analytics_smoke] PASS data_ta: warm-up skips reported instead of fake values");
 
     // Unknown kind → guidance error listing the valid kinds.
-    let err = DataTaTool(user.to_string())
+    let err = DataTaTool(user.to_string(), 0)
         .call(
             serde_json::from_value(serde_json::json!({
                 "fileId": ta_file.id, "close": "close",

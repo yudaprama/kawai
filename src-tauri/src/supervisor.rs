@@ -834,6 +834,7 @@ pub fn parse_supervisor_plan_scoped(
             plan.final_writer = None;
         },
         Some(WRITER_DECK) => {},
+        Some(WRITER_DELIVERABLE) => {},
         Some(other) => {
             eprintln!(
                 "[supervisor] unknown finalWriter \"{other}\" — using the default markdown writer"
@@ -1109,6 +1110,10 @@ Plan rules:
    built-in writer agent you never see. NEVER plan a
    summarization / writing / "produce the answer" step yourself; plan only the
    data-gathering and artifact-producing steps that feed it.
+ - "fileId" arguments MUST be a LITERAL file id (from office_list_files or the
+   attached-files context) — NEVER a fromStep reference to another step's
+   output, and never an invented id. Chaining fileId across steps is a plan
+   validation error.
  - "finalWriter" (optional): which writer synthesizes the deliverable. Omit it
    for the default markdown answer. Set "finalWriter":"deck_writer" ONLY when
    the user EXPLICITLY asks for a slide deck / presentation / .pptx as the
@@ -1155,7 +1160,9 @@ Rules:
   real columns) — prefer it for data questions.
 - NEVER use "*" as a column name — to count all rows, aggregate any real column.
 - "fileId" arguments must come from office_list_files' output (or a literal
-  id) — never from data_schema output, which contains no file id.
+  id) — never from data_schema output, which contains no file id, and NEVER a
+  fromStep reference to another step's output (chaining fileId across steps is
+  a validation error).
 - The supervisor writes the final user-facing deliverable itself — never plan a summarization step.
 - "finalWriter" (optional): OMIT it for the default markdown answer. Set
   "finalWriter":"deck_writer" ONLY when the user EXPLICITLY asks for a slide

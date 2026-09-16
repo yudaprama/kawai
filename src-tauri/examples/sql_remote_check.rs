@@ -211,7 +211,7 @@ async fn roundtrip(table: &str) -> Value {
         .as_str()
         .unwrap_or_else(|| die("import returned no fileId"))
         .to_string();
-    let sch_out = DataTableSchemaTool("check-user".into())
+    let sch_out = DataTableSchemaTool("check-user".into(), 0)
         .call(data::SchemaArgs {
             file_id: file_id.clone(),
             sheet: None,
@@ -219,7 +219,7 @@ async fn roundtrip(table: &str) -> Value {
         .await
         .unwrap_or_else(|e| die(&format!("schema {table}: {}", e.0)));
     println!("[sql_remote_check] data_schema({table}) → {sch_out}");
-    let q = DataQueryTool("check-user".into())
+    let q = DataQueryTool("check-user".into(), 0)
         .call(data::QueryArgs {
             file_id,
             sheet: None,
