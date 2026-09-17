@@ -43,6 +43,11 @@ pub fn run() {
         .manage(auth::new_session())
         .manage(supervisor_pending_state())
         .setup(|app| {
+            // Stamp the release version (tauri.conf.json) onto remote telemetry
+            // labels before any WARN/ERROR can ship.
+            kawai_telemetry::set_app_version(
+                app.config().version.clone().unwrap_or_else(|| "unknown".into()),
+            );
             // Inject office engine directories from the Tauri app paths
             // (env overrides still win — see logic::office). Resolution:
             // resource dir first, exe-dir sibling as dev fallback.
