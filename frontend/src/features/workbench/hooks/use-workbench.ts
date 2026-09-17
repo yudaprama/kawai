@@ -549,6 +549,8 @@ export function useWorkbench() {
           return;
         }
       }
+      // All referenced — consumed. Clear so the composer shows a clean slate.
+      setAttachedFiles([]);
       setDeck(null); // a new run — its own deck (if any) replaces the hero
       setRuns((prev) => [
         ...prev,

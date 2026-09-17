@@ -465,6 +465,54 @@ async fn attached_files_block(user_id: &str, session_id: i64) -> String {
     out
 }
 
+/// Prior runs' persisted step outputs, as a compact planner-context index
+/// (run, step, tool, size, head snippet). With it the planner KNOWS a previous
+/// run's outputs already exist (e.g. a 25k-char `office_extract_images`
+/// report) and reads them via `session_step_results` + `fromStep` instead of
+/// re-running the tools — and it can phrase `session_step_results` filters
+/// that actually match. Observed live 2026: with no index the planner guessed
+/// a query filter that matched nothing, then re-planned the extraction and
+/// crashed the run on a PNG. Best-effort — a read failure degrades to an
+/// empty block, planning never fails on it.
+async fn previous_runs_block(user_id: &str, session_id: i64) -> String {
+    const HEAD_CHARS: usize = 120;
+    const MAX_ROWS: usize = 20;
+    let rows =
+        match kawai_db::list_supervisor_step_results_by_session(user_id, session_id, MAX_ROWS).await
+        {
+            Ok(rows) => rows,
+            Err(_) => return String::new(),
+        };
+    if rows.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from(
+        "<previous-runs>\nPersisted step outputs from EARLIER runs in this session (newest first). \
+These already exist — do NOT redo their tools. To use one, plan a `session_step_results` step \
+(filters are exact: `tool` matches the tool name, `query` = ALL words must appear in the output; \
+omit filters to list the latest entries) and pass its output onward with `fromStep`:\n",
+    );
+    let mut current_run = String::new();
+    for r in &rows {
+        if r.plan_key != current_run {
+            current_run = r.plan_key.clone();
+            let label = current_run.get(..12).unwrap_or(&current_run);
+            out.push_str(&format!("Run {label}:\n"));
+        }
+        let head: String = r.output.chars().take(HEAD_CHARS).collect();
+        let head = head.replace('\n', " ");
+        out.push_str(&format!(
+            "  - {} {} — {} chars — \"{}…\"\n",
+            r.step_id,
+            r.tool,
+            r.output.chars().count(),
+            head
+        ));
+    }
+    out.push_str("</previous-runs>");
+    out
+}
+
 /// Build a [`ToolRegistry`] from the supervisor's toolset.
 ///
 /// The registry contains metadata for the planner prompt and a dispatch
@@ -567,6 +615,16 @@ via the always-available `session_step_results` tool. If the goal depends on det
 (equity, risk %, stop-loss distance); source them from that read, from another step's artifact, or from \
 `memory_search`.</system-note>",
         );
+    }
+    // The index of what earlier runs in this session already produced —
+    // injected on EVERY plan, not just quoted follow-ups. Observed live 2026:
+    // a typed (unquoted) follow-up skipped the tag gate, the planner stayed
+    // blind, and re-ran a 25k-char extraction a previous run had already
+    // persisted. The block is bounded and best-effort — empty on first run.
+    let prior = previous_runs_block(user_id, session_id).await;
+    if !prior.is_empty() {
+        task.push('\n');
+        task.push_str(&prior);
     }
     let mut materials = String::new();
     let mut seen: std::collections::HashSet<String> = core_tools.iter().cloned().collect();
@@ -2027,7 +2085,9 @@ async fn revise_plan(
         execution_report(result)
     );
 
-    let mut materials = String::new();
+    // The reviser plans from the CURRENT state — earlier runs' persisted
+    // outputs are part of that state. Same rationale as the planner index.
+    let mut materials = previous_runs_block(user_id, session_id).await;
     for round in 0..2 {
         let mut raw = String::new();
         eprintln!(
@@ -2306,15 +2366,18 @@ async fn synthesize_deck(
             Each slide PICKS A LAYOUT and fills its fields — you NEVER write HTML:\n\
             {\"layout\":\"title\",\"title\":…,\"kicker\":?,\"subtitle\":?}} — cover; \
             {\"layout\":\"section\",\"title\":…,\"kicker\":?}} — divider; \
-            {\"layout\":\"bullets\",\"title\":…,\"items\":[2-6 SHORT points ≤140 chars]}} — workhorse; \
-            {\"layout\":\"two-cols\",\"title\":?,\"leftTitle\":?,\"left\":[],\"rightTitle\":?,\"right\":[]}}; \
-            {\"layout\":\"fact\",\"big\":\"ONE number ≤14 chars\",\"caption\":…}}; \
+            {\"layout\":\"bullets\",\"title\":…≤90 chars,\"items\":[2-6 points, EACH ≤140 chars]}} — workhorse; \
+            {\"layout\":\"two-cols\",\"title\":?,\"leftTitle\":?,\"left\":[],\"rightTitle\":?,\"right\":[]}} — each entry ≤140 chars; \
+            {\"layout\":\"fact\",\"big\":\"ONE number ≤14 chars\",\"caption\":\"1-140 chars\"}}; \
             {\"layout\":\"quote\",\"quote\":…≤220 chars,\"author\":?}}; \
-            {\"layout\":\"table\",\"title\":…,\"headers\":[2-5 cols],\"rows\":[≤6]}}; \
+            {\"layout\":\"table\",\"title\":…,\"headers\":[2-5 cols],\"rows\":[≤6 rows × ≤5 cols, EVERY cell ≤80 chars — abbreviate, never truncate a figure]}}; \
             {\"layout\":\"image\",\"title\":…,\"fileId\":\"<stored file id>\",\"caption\":?}}.\n\
             Use ONLY the fields listed for the chosen layout — any extra field is rejected. \
-            Rules: ONE idea per slide; quote every number from the step outputs EXACTLY — never \
-            invent or round figures; titles state the takeaway, not a label; VARY the layouts — \
+            HARD LIMITS enforced by validation — a violation rejects the WHOLE deck, so respect \
+            them on the FIRST pass: titles ≤90 chars; bullets/entries/captions ≤140; table cells \
+            ≤80; quotes ≤220; big numbers ≤14. Rules: ONE idea per slide; quote every number from \
+            the step outputs EXACTLY — never invent or round figures; titles state the takeaway, \
+            not a label; VARY the layouts — \
             never 3 same-layout slides in a row."
             .to_string();
         let mut task = format!(

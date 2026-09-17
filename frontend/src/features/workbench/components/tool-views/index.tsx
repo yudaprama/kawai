@@ -49,6 +49,7 @@ import {
   renderDataChart,
   renderDataImport,
   renderDataQuery,
+  renderDataQueryNl,
   renderDataSchema,
   renderDataTa,
   renderDataTables,
@@ -248,7 +249,7 @@ const registry: Record<string, StepView> = {
   // analytics — data_* (polars over office store / sql)
   data_schema: (p) => renderDataSchema(p),
   data_query: (p) => renderDataQuery(p),
-  data_query_nl: (p) => renderDataQuery(p),
+  data_query_nl: (p) => renderDataQueryNl(p),
   data_ta: (p) => renderDataTa(p),
   data_chart: (p) => renderDataChart(p),
   data_tables: (p) => renderDataTables(p),

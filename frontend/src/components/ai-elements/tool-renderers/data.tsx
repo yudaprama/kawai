@@ -197,6 +197,48 @@ export function renderDataQuery(output: unknown): ReactNode {
   return <DataQueryCard meta={m} rows={rows} />;
 }
 
+/** data_query_nl → single {rows,_meta} OR multi [{queryIndex,result},…]. */
+export function renderDataQueryNl(output: unknown): ReactNode {
+  const d = parse(output);
+
+  // Single result: { rows, _meta }
+  if (isRecord(d) && Array.isArray(d.rows)) {
+    const rows = d.rows.filter(isRecord);
+    const m = isRecord(d._meta) ? d._meta : {};
+    return <DataQueryCard meta={m} rows={rows} />;
+  }
+
+  // Multi result: [{ queryIndex, result }, ...]
+  if (Array.isArray(d)) {
+    const items = d.filter(
+      (x): x is { queryIndex: number; result: Record<string, unknown> } =>
+        isRecord(x) && typeof x.queryIndex === "number" && isRecord(x.result),
+    );
+    if (items.length === 0) return null;
+    return (
+      <div className="not-prose space-y-3">
+        {items.map((item) => {
+          const r = item.result;
+          const rows = Array.isArray(r.rows) ? r.rows.filter(isRecord) : [];
+          const m = isRecord(r._meta) ? r._meta : {};
+          return (
+            <div key={item.queryIndex} className="space-y-1">
+              {items.length > 1 && (
+                <p className="text-muted-foreground text-xs font-medium">
+                  Query {item.queryIndex}
+                </p>
+              )}
+              <DataQueryCard meta={m} rows={rows} />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return null;
+}
+
 /** data_schema → SchemaInfo (camelCase): columns with dtypes + samples. */
 export function renderDataSchema(output: unknown): ReactNode {
   const d = parse(output);
