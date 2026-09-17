@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AssetBadge,
   AssetItemBadges,
@@ -258,59 +258,70 @@ function GraphPane() {
   );
 }
 
+/** Shared pane scaffolding: toolbar row on top, scrollable content below. */
+function Pane({ toolbar, children }: { toolbar: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-4 py-2">{toolbar}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
+    </div>
+  );
+}
+
 /** L2 — scenes: named clusters of related memories (regenerated wholesale). */
 function ScenePane() {
   const tiers = useMemoryTiers(true);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-4 py-2">
-        <Button
-          disabled={tiers.extracting}
-          onClick={() => void tiers.extractScenes()}
-          size="xs"
-          title="Cluster related memories and name each scene via the cloud tier (needs a configured vault). Replaces all existing scenes."
-          variant="outline"
-        >
-          {tiers.extracting ? <Spinner className="size-3" /> : <Icon name="layers" className="size-3" />}
-          {tiers.extracting ? "Extracting scenes…" : "Extract scenes"}
-        </Button>
-        <span className="text-muted-foreground ml-auto text-xs">
-          {tiers.scenes.length} {tiers.scenes.length === 1 ? "scene" : "scenes"}
-        </span>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {!tiers.scenesLoaded ? (
-          <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            <Spinner className="size-4" /> Loading…
-          </div>
-        ) : tiers.scenes.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            No scenes yet — extract them from your memories above (needs at least a couple of related memories).
-          </p>
-        ) : (
-          <ol className="flex flex-col gap-2">
-            {tiers.scenes.map((s) => (
-              <li className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3" key={s.id}>
-                <p className="text-sm font-medium">{s.title}</p>
-                {s.summary && <p className="text-muted-foreground mt-0.5 text-xs">{s.summary}</p>}
-                <ul className="mt-2 flex flex-wrap gap-1">
-                  {s.memories.map((m) => (
-                    <li
-                      className="rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 text-[11px]"
-                      key={m.id}
-                      title={m.content}
-                    >
-                      {m.title}
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-    </div>
+    <Pane
+      toolbar={
+        <>
+          <Button
+            disabled={tiers.extracting}
+            onClick={() => void tiers.extractScenes()}
+            size="xs"
+            title="Cluster related memories and name each scene via the cloud tier (needs a configured vault). Replaces all existing scenes."
+            variant="outline"
+          >
+            {tiers.extracting ? <Spinner className="size-3" /> : <Icon name="layers" className="size-3" />}
+            {tiers.extracting ? "Extracting scenes…" : "Extract scenes"}
+          </Button>
+          <span className="text-muted-foreground ml-auto text-xs">
+            {tiers.scenes.length} {tiers.scenes.length === 1 ? "scene" : "scenes"}
+          </span>
+        </>
+      }
+    >
+      {!tiers.scenesLoaded ? (
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Spinner className="size-4" /> Loading…
+        </div>
+      ) : tiers.scenes.length === 0 ? (
+        <p className="text-muted-foreground text-sm">
+          No scenes yet — extract them from your memories above (needs at least a couple of related memories).
+        </p>
+      ) : (
+        <ol className="flex flex-col gap-2">
+          {tiers.scenes.map((s) => (
+            <li className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3" key={s.id}>
+              <p className="text-sm font-medium">{s.title}</p>
+              {s.summary && <p className="text-muted-foreground mt-0.5 text-xs">{s.summary}</p>}
+              <ul className="mt-2 flex flex-wrap gap-1">
+                {s.memories.map((m) => (
+                  <li
+                    className="rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 text-[11px]"
+                    key={m.id}
+                    title={m.content}
+                  >
+                    {m.title}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Pane>
   );
 }
 
@@ -319,38 +330,39 @@ function PersonaPane() {
   const tiers = useMemoryTiers(true);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-4 py-2">
-        <Button
-          disabled={tiers.generating}
-          onClick={() => void tiers.generatePersona()}
-          size="xs"
-          title="Synthesize the persona from all memories via the cloud tier (needs a configured vault). Replaces the stored persona."
-          variant="outline"
-        >
-          {tiers.generating ? <Spinner className="size-3" /> : <Icon name="sparkles" className="size-3" />}
-          {tiers.generating ? "Generating…" : "Generate persona"}
-        </Button>
-        {tiers.persona && (
-          <span className="text-muted-foreground text-xs">updated {new Date().toLocaleDateString()}</span>
-        )}
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {!tiers.personaLoaded ? (
-          <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            <Spinner className="size-4" /> Loading…
-          </div>
-        ) : !tiers.persona ? (
-          <p className="text-muted-foreground text-sm">
-            No persona yet — generate one from your memories (needs at least one memory).
-          </p>
-        ) : (
-          <div className="streamdown rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3 text-sm">
-            <MessageResponse mode="static">{tiers.persona}</MessageResponse>
-          </div>
-        )}
-      </div>
-    </div>
+    <Pane
+      toolbar={
+        <>
+          <Button
+            disabled={tiers.generating}
+            onClick={() => void tiers.generatePersona()}
+            size="xs"
+            title="Synthesize the persona from all memories via the cloud tier (needs a configured vault). Replaces the stored persona."
+            variant="outline"
+          >
+            {tiers.generating ? <Spinner className="size-3" /> : <Icon name="sparkles" className="size-3" />}
+            {tiers.generating ? "Generating…" : "Generate persona"}
+          </Button>
+          {tiers.persona && (
+            <span className="text-muted-foreground text-xs">updated {new Date().toLocaleDateString()}</span>
+          )}
+        </>
+      }
+    >
+      {!tiers.personaLoaded ? (
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Spinner className="size-4" /> Loading…
+        </div>
+      ) : !tiers.persona ? (
+        <p className="text-muted-foreground text-sm">
+          No persona yet — generate one from your memories (needs at least one memory).
+        </p>
+      ) : (
+        <div className="streamdown rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3 text-sm">
+          <MessageResponse mode="static">{tiers.persona}</MessageResponse>
+        </div>
+      )}
+    </Pane>
   );
 }
 

@@ -5806,6 +5806,7 @@ dependencies = [
  "kawai-constants",
  "kawai-paths",
  "libsql",
+ "rand 0.9.5",
  "reqwest 0.13.5",
  "serde",
  "serde_json",
