@@ -2195,6 +2195,22 @@ fn synthesis_materials(plan: &kawai_router::TaskPlan, result: &kawai_router::Exe
     truncate_chars(&out, TOTAL_CHARS)
 }
 
+/// Attach an optional telemetry span parent to a remote LLM handle.
+/// Returns `None` when `remote` is `None` (pool unavailable).
+#[cfg(not(test))]
+fn attach_span_parent(
+    run_span: Option<&Arc<Mutex<kawai_telemetry::TelemetrySpan>>>,
+    remote: &mut Option<remote_llm::RemoteLlm>,
+) -> Option<remote_llm::RemoteLlm> {
+    let mut r = remote.take()?;
+    if let Some(rs) = run_span {
+        if let Ok(guard) = rs.lock() {
+            r.with_span_parent(&guard);
+        }
+    }
+    Some(r)
+}
+
 /// One cloud call that turns the plan's step results into the user-facing
 /// answer for the goal. Returns `None` when the remote pool is unavailable
 /// or every candidate fails — the caller falls back to the raw tool output.
@@ -2225,15 +2241,7 @@ async fn synthesize_final_answer(
                     // link it to the planner's latest generation.
                     .with_parent_agent("planner")
             });
-        let remote = match (run_span, &mut remote) {
-            (Some(rs), Some(r)) => {
-                if let Ok(guard) = rs.lock() {
-                    r.with_span_parent(&guard);
-                }
-                remote
-            }
-            _ => remote,
-        }?;
+        let remote = attach_span_parent(run_span, &mut remote)?;
         let system = "You are Kawai, a task-completion assistant. A deterministic supervisor just executed a \
             plan of tool steps toward the user's goal. Write the ANSWER to the user's goal from the step \
             results: lead with the answer, keep it concise markdown, and preserve facts/numbers exactly. \
@@ -2320,15 +2328,7 @@ async fn synthesize_deck(
                     .with_user(user_id)
                     .with_parent_agent("planner")
             });
-        let remote = match (run_span, &mut remote) {
-            (Some(rs), Some(r)) => {
-                if let Ok(guard) = rs.lock() {
-                    r.with_span_parent(&guard);
-                }
-                remote
-            }
-            _ => remote,
-        }?;
+        let remote = attach_span_parent(run_span, &mut remote)?;
 
         // Optional planner guidance: an office_create_deck step in the plan
         // may carry {filename, templateId, title} (outline intent) without
