@@ -406,20 +406,23 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const restorePersisted = useCallback(
     (record: {
       goal?: string | null;
-      steps?: { id: string; tool: string; state: string; output?: string }[];
+      steps?: { id: string; tool: string; state: string; output?: string; task?: string; dependsOn?: string[] }[];
       output?: string | null;
       artifacts?: PersistedPlan["artifacts"];
       error?: string;
     }) => {
       if (streamCtrl.current) return;
+      // Hydrate EXACTLY like use-workbench's hydrateStep — same task names,
+      // same dependsOn-derived phases, and non-terminal states stay pending
+      // so a restored rail matches the live-run rail field for field.
       const steps: SupervisorStep[] = (record.steps ?? []).map((s) => ({
         stepId: s.id,
         tool: s.tool,
-        task: s.tool,
-        dependsOn: [],
+        task: s.task ?? s.tool,
+        dependsOn: s.dependsOn ?? [],
         state: (s.state === "completed" || s.state === "failed" || s.state === "skipped"
           ? s.state
-          : "skipped") as SupervisorStep["state"],
+          : "pending") as SupervisorStep["state"],
         output: s.output,
         artifacts: [],
       }));
