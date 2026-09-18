@@ -197,7 +197,7 @@ describe("supervisorReducer — step skipped", () => {
 describe("supervisorReducer — planning progress", () => {
   it("planningStarted sets planning.searching", () => {
     const s = supervisorReducer(initialSupervisorState(), { type: "planningStarted" }, { now: NOW });
-    expect(s.planning).toEqual({ round: 1, provider: "", searching: true, tools: [] });
+    expect(s.planning).toEqual({ round: 1, provider: "", searching: true, tools: [], queries: [] });
   });
 
   it("planningRound updates round/provider/searching", () => {
@@ -207,7 +207,7 @@ describe("supervisorReducer — planning progress", () => {
       { type: "planningRound", round: 2, provider: "openai", searching: false },
       { now: NOW + 100 },
     );
-    expect(s.planning).toEqual({ round: 2, provider: "openai", searching: false, tools: [] });
+    expect(s.planning).toEqual({ round: 2, provider: "openai", searching: false, tools: [], queries: [], activity: undefined, context: undefined });
   });
 
   it("planningToolSearch sets searching=true and updates tools", () => {
@@ -222,7 +222,7 @@ describe("supervisorReducer — planning progress", () => {
       { type: "planningToolSearch", queries: ["q1"], tools: ["web_read", "code_write"] },
       { now: NOW + 100 },
     );
-    expect(s.planning).toEqual({ round: 1, provider: "openai", searching: true, tools: ["web_read", "code_write"] });
+    expect(s.planning).toEqual({ round: 1, provider: "openai", searching: true, tools: ["web_read", "code_write"], queries: ["q1"], activity: undefined, context: undefined });
   });
 });
 
