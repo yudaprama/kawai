@@ -1,7 +1,10 @@
 import usdtLogo from "@/assets/usdt.svg";
 import type { NetworkInfo } from "../lib/types";
 
-const TOKEN_COLORS: Record<string, { branded: string; mono: string; glyph: string; glyphFontSize: string; letterSpacing: string }> = {
+const TOKEN_COLORS: Record<
+  string,
+  { branded: string; mono: string; glyph: string; glyphFontSize: string; letterSpacing: string }
+> = {
   usdt: { branded: "#009393", mono: "#6B7280", glyph: "₮", glyphFontSize: "18", letterSpacing: "0" },
   usdc: { branded: "#0B53BF", mono: "#6B7280", glyph: "$", glyphFontSize: "16", letterSpacing: "-0.5px" },
 };

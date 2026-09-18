@@ -328,7 +328,6 @@ function ChatComposerInner({
                 <div className="max-h-56 overflow-y-auto">
                   {filtered.map((f) => (
                     <button
-                      aria-selected={filtered.indexOf(f) === activeMentionIndex}
                       className={`hover:bg-accent flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left ${
                         filtered.indexOf(f) === activeMentionIndex ? "bg-accent" : ""
                       }`}

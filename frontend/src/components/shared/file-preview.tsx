@@ -103,7 +103,13 @@ function VideoPreview({ file }: { file: PreviewFile }) {
   return (
     <MediaPreview file={file} fallbackKind="video-native">
       {({ dataUrl, onError }) => (
-        <video src={dataUrl} controls aria-label={file.name} onError={onError} className="max-h-full max-w-full rounded-lg">
+        <video
+          src={dataUrl}
+          controls
+          aria-label={file.name}
+          onError={onError}
+          className="max-h-full max-w-full rounded-lg"
+        >
           <track kind="captions" />
         </video>
       )}

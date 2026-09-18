@@ -12,14 +12,13 @@ function iconSrc(name: string): string {
 }
 
 async function fetchSvg(name: string): Promise<string> {
-  if (cache.has(name)) return cache.get(name)!;
+  const cached = cache.get(name);
+  if (cached !== undefined) return cached;
   const res = await fetch(iconSrc(name), { redirect: "follow" });
   const text = await res.text();
   const cleaned = text
     .replace(/<svg([^>]*)>/, (_m, attrs: string) => {
-      const sansDimensions = attrs
-        .replace(/\bwidth="[^"]*"/, "")
-        .replace(/\bheight="[^"]*"/, "");
+      const sansDimensions = attrs.replace(/\bwidth="[^"]*"/, "").replace(/\bheight="[^"]*"/, "");
       return `<svg${sansDimensions}>`;
     })
     .replace(/stroke="[^"]*"/, 'stroke="currentColor"');
@@ -29,8 +28,18 @@ async function fetchSvg(name: string): Promise<string> {
 
 // Pre-warm common icons
 for (const n of [
-  "loader-circle", "check", "x", "plus", "trash", "search", "pencil",
-  "chevron-down", "chevron-right", "external-link", "wrench", "copy",
+  "loader-circle",
+  "check",
+  "x",
+  "plus",
+  "trash",
+  "search",
+  "pencil",
+  "chevron-down",
+  "chevron-right",
+  "external-link",
+  "wrench",
+  "copy",
 ]) {
   fetchSvg(n).catch(() => {});
 }
@@ -44,8 +53,9 @@ export function Icon({ name, className = "size-4 shrink-0" }: IconProps) {
   const [svg, setSvg] = useState(() => cache.get(name) ?? null);
 
   useEffect(() => {
-    if (cache.has(name)) {
-      setSvg(cache.get(name)!);
+    const cached = cache.get(name);
+    if (cached !== undefined) {
+      setSvg(cached);
       return;
     }
     let cancelled = false;
@@ -62,17 +72,13 @@ export function Icon({ name, className = "size-4 shrink-0" }: IconProps) {
       <span
         className={className}
         aria-hidden="true"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: markup is fetched from the pinned lucide-static CDN and stripped of dimension/stroke attributes before caching
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     );
   }
 
   return (
-    <img
-      src={iconSrc(name)}
-      alt=""
-      loading="lazy"
-      className={`pointer-events-none object-contain ${className}`}
-    />
+    <img src={iconSrc(name)} alt="" loading="lazy" className={`pointer-events-none object-contain ${className}`} />
   );
 }

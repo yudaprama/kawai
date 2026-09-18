@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SupervisorPlanState } from "./supervisor-types";
+import type { SupervisorEvent, SupervisorPlanState } from "./supervisor-types";
 import {
   initialSupervisorState,
   supervisorReducer,
@@ -229,7 +229,7 @@ describe("supervisorReducer — planning progress", () => {
 describe("supervisorReducer — edge cases", () => {
   it("unknown event returns state unchanged", () => {
     // planStarted IS handled, so use a truly unknown type
-    const s = supervisorReducer(initialSupervisorState(), { type: "nope" } as any);
+    const s = supervisorReducer(initialSupervisorState(), { type: "nope" } as unknown as SupervisorEvent);
     expect(s).toEqual(initialSupervisorState());
   });
 
@@ -321,10 +321,10 @@ describe("parseReview", () => {
     const plan = { goal: "analyze", steps: [step("a"), step("b")] };
     const review = parseReview(plan, 42, "agent-1");
     expect(review).not.toBeNull();
-    expect(review!.goal).toBe("analyze");
-    expect(review!.sessionId).toBe(42);
-    expect(review!.agentId).toBe("agent-1");
-    expect(review!.steps).toHaveLength(2);
+    expect(review?.goal).toBe("analyze");
+    expect(review?.sessionId).toBe(42);
+    expect(review?.agentId).toBe("agent-1");
+    expect(review?.steps).toHaveLength(2);
   });
 
   it("filters out non-dispatchable tools", () => {
@@ -333,8 +333,8 @@ describe("parseReview", () => {
       steps: [step("a"), { id: "c", tool: "deep_write", task: "skip me", dependsOn: [] }],
     };
     const review = parseReview(plan, 1, "a");
-    expect(review!.steps).toHaveLength(1);
-    expect(review!.steps[0].id).toBe("a");
+    expect(review?.steps).toHaveLength(1);
+    expect(review?.steps[0].id).toBe("a");
   });
 
   it("returns null for non-object plan", () => {
@@ -356,7 +356,7 @@ describe("parseReview", () => {
       steps: [{ id: "a", tool: "web_read", task: "t", dependsOn: [], requiresConfirmation: true }],
     };
     const review = parseReview(plan, 1, "a");
-    expect(review!.steps[0].requiresConfirmation).toBe(true);
+    expect(review?.steps[0].requiresConfirmation).toBe(true);
   });
 });
 
@@ -373,7 +373,8 @@ describe("pruneReviewStep", () => {
       },
       1,
       "a",
-    )!;
+    );
+    if (!review) throw new Error("expected parseReview to succeed");
     const pruned = pruneReviewStep(review, "a");
     expect(pruned.steps.map((s) => s.id)).toEqual([]);
   });
@@ -389,7 +390,8 @@ describe("pruneReviewStep", () => {
       },
       1,
       "a",
-    )!;
+    );
+    if (!review) throw new Error("expected parseReview to succeed");
     const pruned = pruneReviewStep(review, "a");
     expect(pruned.steps.map((s) => s.id)).toEqual(["b"]);
   });

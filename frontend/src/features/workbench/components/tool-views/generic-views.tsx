@@ -189,10 +189,7 @@ export function ImageExtractView({ data }: { data: Record<string, unknown> }) {
             const locator = pick<string>(img, "locator");
 
             return (
-              <li
-                className="bg-card flex items-start gap-3 rounded-lg border px-3 py-2"
-                key={id ?? i}
-              >
+              <li className="bg-card flex items-start gap-3 rounded-lg border px-3 py-2" key={id ?? i}>
                 {id ? (
                   <button
                     className="flex shrink-0 items-center gap-2 text-left hover:underline"
@@ -211,15 +208,9 @@ export function ImageExtractView({ data }: { data: Record<string, unknown> }) {
                       {name}
                     </span>
                     {bytes != null && (
-                      <span className="text-muted-foreground shrink-0 font-mono text-[11px]">
-                        {fmtBytes(bytes)}
-                      </span>
+                      <span className="text-muted-foreground shrink-0 font-mono text-[11px]">{fmtBytes(bytes)}</span>
                     )}
-                    {locator && (
-                      <span className="text-muted-foreground shrink-0 font-mono text-[10px]">
-                        {locator}
-                      </span>
-                    )}
+                    {locator && <span className="text-muted-foreground shrink-0 font-mono text-[10px]">{locator}</span>}
                   </div>
                   {altText && (
                     <p className="text-muted-foreground mt-0.5 text-xs" title={altText}>
@@ -237,9 +228,7 @@ export function ImageExtractView({ data }: { data: Record<string, unknown> }) {
           })}
         </ul>
       )}
-      {images.length > 30 && (
-        <SectionLabel>…dan {images.length - 30} gambar lainnya</SectionLabel>
-      )}
+      {images.length > 30 && <SectionLabel>…dan {images.length - 30} gambar lainnya</SectionLabel>}
     </div>
   );
 }
