@@ -271,16 +271,13 @@ export function useWorkbench() {
 
   /** Detach: drop the chip locally and (when a session exists) remove the
    *  server-side association. Best-effort — the chip never blocks on it. */
-  const removeAttachedFile = useCallback(
-    (file: KnowledgeFileInfo) => {
-      setAttachedFiles((prev) => prev.filter((f) => f.id !== file.id));
-      const sid = sessionIdRef.current;
-      if (sid != null) {
-        void call("knowledge_forget", { sessionId: sid, fileIds: [file.id] }).catch(() => {});
-      }
-    },
-    [],
-  );
+  const removeAttachedFile = useCallback((file: KnowledgeFileInfo) => {
+    setAttachedFiles((prev) => prev.filter((f) => f.id !== file.id));
+    const sid = sessionIdRef.current;
+    if (sid != null) {
+      void call("knowledge_forget", { sessionId: sid, fileIds: [file.id] }).catch(() => {});
+    }
+  }, []);
 
   // Hydrate on session change: chips for a reopened session come from the
   // server's session_files. MERGE (never replace) — imports made before the
@@ -404,8 +401,7 @@ export function useWorkbench() {
         // records written before those fields existed — they fall back to
         // tool/[]/null respectively. A restored planKey lets "see report"
         // fetch the FULL step body from supervisor_step_results.
-        const runSteps = (f: (typeof found)[number]) =>
-          f.record.steps!.map(hydrateStep);
+        const runSteps = (f: (typeof found)[number]) => f.record.steps?.map(hydrateStep) ?? [];
         setRuns((prev) =>
           prev.length > 0
             ? prev // a live run owns the canvas — never clobber it
@@ -419,8 +415,8 @@ export function useWorkbench() {
                 outputFull: f.record.output ?? undefined,
                 planKey: f.record.planKey ?? null,
                 steps: runSteps(f),
-                stepsDone: f.record.steps!.filter((s) => s.state === "completed").length,
-                stepsTotal: f.record.steps!.length,
+                stepsDone: f.record.steps?.filter((s) => s.state === "completed").length ?? 0,
+                stepsTotal: f.record.steps?.length ?? 0,
               })),
         );
       } catch (err) {

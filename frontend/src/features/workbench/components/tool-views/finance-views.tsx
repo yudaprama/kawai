@@ -371,10 +371,13 @@ export function PredictionMarketsView({ data }: { data: unknown }) {
         <span className="text-muted-foreground text-[11px]">crowd odds</span>
       </div>
       <ul className="space-y-2">
-        {parsed.markets.map((m, i) => {
+        {parsed.markets.map((m) => {
           const pct = Math.round(m.probability * 100);
           return (
-            <li className="bg-muted/40 space-y-1.5 rounded-lg border p-3" key={`${m.question}-${i}`}>
+            <li
+              className="bg-muted/40 space-y-1.5 rounded-lg border p-3"
+              key={`${m.question}-${m.outcome}-${m.resolves}`}
+            >
               <div className="flex items-start justify-between gap-3">
                 <p className="text-sm leading-snug font-medium">{m.question}</p>
                 <div className="shrink-0 text-right">
