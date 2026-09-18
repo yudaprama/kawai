@@ -3,6 +3,9 @@ pub mod auth;
 #[cfg(feature = "desktop")]
 mod commands;
 pub mod logging;
+// Consumed by the Monad hot-wallet logic, which compiles under the `monad`
+// feature; standalone it would be dead weight.
+#[cfg_attr(not(feature = "monad"), allow(dead_code))]
 #[cfg(feature = "desktop")]
 mod keychain;
 pub mod logic;
@@ -242,6 +245,13 @@ pub fn run() {
     ]);
 
     builder
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|_app, event| {
+            // Flush the last telemetry batch (generations queue + OTel
+            // providers) before the process drops.
+            if let tauri::RunEvent::Exit = event {
+                kawai_telemetry::shutdown();
+            }
+        });
 }

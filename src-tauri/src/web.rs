@@ -1,4 +1,3 @@
-use crate::auth::Session;
 use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo};
 use axum::{
     extract::{Json, Request},
@@ -24,11 +23,6 @@ const COOKIE_MAX_AGE: u32 = 30 * 24 * 60 * 60; // 30 days, seconds
 #[derive(Deserialize)]
 struct GreetRequest {
     name: String,
-}
-
-#[derive(Deserialize)]
-struct SetSessionRequest {
-    token: String,
 }
 
 #[derive(Deserialize, Default)]
@@ -209,10 +203,6 @@ async fn memory_search_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryConsolidateRequest {}
-
 async fn memory_consolidate_handler(
     Extension(user_id): Extension<String>,
 ) -> Result<Json<logic::memory::ConsolidationReport>, (StatusCode, String)> {
@@ -255,10 +245,6 @@ async fn memory_graph_export_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemorySceneExtractRequest {}
-
 async fn memory_scene_extract_handler(
     Extension(user_id): Extension<String>,
 ) -> Result<Json<Vec<logic::memory::SceneHit>>, (StatusCode, String)> {
@@ -267,10 +253,6 @@ async fn memory_scene_extract_handler(
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
 }
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemorySceneListRequest {}
 
 async fn memory_scene_list_handler(
     Extension(user_id): Extension<String>,
@@ -281,10 +263,6 @@ async fn memory_scene_list_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryPersonaGenerateRequest {}
-
 async fn memory_persona_generate_handler(
     Extension(user_id): Extension<String>,
 ) -> Result<Json<String>, (StatusCode, String)> {
@@ -293,10 +271,6 @@ async fn memory_persona_generate_handler(
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
 }
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MemoryPersonaGetRequest {}
 
 async fn memory_persona_get_handler(
     Extension(user_id): Extension<String>,
@@ -749,7 +723,7 @@ fn db_status(e: &logic::DbError) -> StatusCode {
 /// the first message; no agent identity — supervisor runs in `auto` mode.
 async fn create_chat_session_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<CreateChatSessionRequest>,
+    _req: Json<CreateChatSessionRequest>,
 ) -> Result<Json<ChatSession>, (StatusCode, String)> {
     logic::create_chat_session(&user_id)
         .await
@@ -1854,6 +1828,11 @@ pub async fn serve(addr: &str, dist_dir: PathBuf) -> Result<(), String> {
         .await
         .map_err(|e| format!("bind {addr}: {e}"))?;
     axum::serve(listener, router(dist_dir))
+        .with_graceful_shutdown(async {
+            let _ = tokio::signal::ctrl_c().await;
+            // Flush the last telemetry batch before the process drops.
+            kawai_telemetry::shutdown();
+        })
         .await
         .map_err(|e| format!("serve kawai-web: {e}"))
 }

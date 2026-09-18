@@ -31,6 +31,7 @@ async fn main() {
     eprintln!("[kawai-web] serving {} with dist {}", addr, dist_dir.display());
     if let Err(e) = kawai_lib::web::serve(&addr, dist_dir).await {
         eprintln!("fatal: {e}");
+        kawai_telemetry::shutdown();
         std::process::exit(1);
     }
 }

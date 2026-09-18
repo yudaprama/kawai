@@ -1006,7 +1006,9 @@ pub async fn office_read_deck(
 }
 
 /// Authenticated RPC: extract stored documents into a prompt-injectable
-/// context block (composer @-mention knowledge).
+/// context block (composer @-mention knowledge). Registered under `litert`
+/// (rides the local rig-tool path); web wrapper always exposes it.
+#[cfg_attr(not(feature = "litert"), allow(dead_code))]
 #[tauri::command]
 pub async fn knowledge_context(
     file_ids: Vec<String>,

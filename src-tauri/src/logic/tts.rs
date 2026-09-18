@@ -9,9 +9,12 @@
 use std::path::PathBuf;
 
 /// Default voice id (matches huggingface.co/rhasspy/piper-voices directory layout).
+/// Only referenced by the piper pipeline, which compiles under the `tts` feature.
+#[cfg_attr(not(feature = "tts"), allow(dead_code))]
 const DEFAULT_VOICE: &str = "en_US-libritts_r-medium";
 
 /// HuggingFace Piper voices base URL.
+#[cfg_attr(not(feature = "tts"), allow(dead_code))]
 const VOICES_BASE_URL: &str = "https://huggingface.co/rhasspy/piper-voices/resolve/main";
 
 /// TTS error type.
@@ -37,6 +40,8 @@ impl std::fmt::Display for TtsError {
 impl std::error::Error for TtsError {}
 
 /// Return the TTS model directory (`~/.kawai/models/tts/`).
+/// Only referenced by the piper pipeline, which compiles under the `tts` feature.
+#[cfg_attr(not(feature = "tts"), allow(dead_code))]
 fn tts_model_dir() -> Result<PathBuf, TtsError> {
     kawai_paths::tts_model_dir()
         .ok_or_else(|| TtsError::ModelNotFound("HOME not set".into()))
