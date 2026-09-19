@@ -333,7 +333,6 @@ export function WorkbenchPage({
                       doc={view?.doc ?? "final"}
                       loadFullOutput={workbench.loadFullOutput}
                       onBuildOn={buildOn}
-                      onPickDoc={(d) => userPick(shown.id, d)}
                       run={shown}
                     />
                   );
@@ -344,7 +343,6 @@ export function WorkbenchPage({
                 return (
                   <DeliverableViewer
                     doc={view != null && view.runId === activeRunId ? view.doc : "final"}
-                    onPickDoc={(d) => activeRunId != null && userPick(activeRunId, d)}
                     runIndex={workbench.runs.length - 1}
                     unseeded={planningUnseeded}
                     workbench={workbench}

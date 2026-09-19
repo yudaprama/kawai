@@ -89,7 +89,7 @@ export function StepTree({
                 {phase.map((step) => (
                   <div key={step.stepId} className="space-y-0.5">
                     <div className="flex items-center justify-between gap-2 font-mono text-xs">
-                      <span className="text-foreground/90 min-w-0 truncate" title={agentName(step)}>
+                      <span className="text-foreground/90 min-w-0 flex-1 whitespace-normal break-words leading-snug" title={agentName(step)}>
                         {agentName(step)}
                       </span>
                       <StateIcon state={step.state} />
@@ -98,7 +98,7 @@ export function StepTree({
                       {live && step.state === "running" && step.startedAt != null ? (
                         <Duration from={step.startedAt} />
                       ) : (
-                        <span className="text-muted-foreground truncate font-mono text-[10px]">{step.tool}</span>
+                        <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-[10px]" title={step.tool}>{step.tool}</span>
                       )}
                       {reportable(step, live) && (
                         <button

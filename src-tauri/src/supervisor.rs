@@ -1905,11 +1905,129 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
     }
 }
 
-// ── Failure-triggered replanning ───────────────────────────────────────
+// ── Failure-triggered SURGICAL repair (replaces whole-plan replanning) ──
 
-/// Hard cap on planner revisions per plan execution. Without it, a
-/// systematically misunderstood goal would burn LLM calls in a loop.
+/// Hard cap on planner repair rounds per plan execution. Each round only
+/// rewrites the FAILED subgraph — successful steps are frozen — so a round
+/// is cheap and its blast radius is small.
 const MAX_REPLANS: u32 = 1;
+
+/// The subgraph a repair round may rewrite: the failed steps plus every
+/// step that (transitively) depends on one. Everything else is FROZEN —
+/// the validator rejects a revision that alters it.
+fn repairable_step_ids(
+    plan: &kawai_router::TaskPlan,
+    result: &kawai_router::ExecutionResult,
+) -> std::collections::HashSet<String> {
+    let mut repairable: std::collections::HashSet<String> = result
+        .failures()
+        .iter()
+        .map(|f| f.step_id.clone())
+        .collect();
+    loop {
+        let mut grew = false;
+        for step in &plan.steps {
+            if repairable.contains(&step.id) {
+                continue;
+            }
+            if step.depends_on.iter().any(|d| repairable.contains(d)) {
+                repairable.insert(step.id.clone());
+                grew = true;
+            }
+        }
+        if !grew {
+            break;
+        }
+    }
+    repairable
+}
+
+/// Enforce the repair mandate: every step that is NOT in the repairable
+/// subgraph must reappear in the revision UNCHANGED (same tool, same
+/// arguments). Succeeded steps are facts, not drafts. Deterministic — the
+/// prompt asks nicely, this refuses.
+fn validate_frozen_steps(
+    revised: &kawai_router::TaskPlan,
+    original: &kawai_router::TaskPlan,
+    repairable: &std::collections::HashSet<String>,
+) -> Result<(), String> {
+    for orig in &original.steps {
+        if repairable.contains(&orig.id) {
+            continue;
+        }
+        let Some(step) = revised.steps.iter().find(|s| s.id == orig.id) else {
+            return Err(format!(
+                "frozen step '{}' (already succeeded) is missing from the revision — return it UNCHANGED (same id, tool, arguments)",
+                orig.id
+            ));
+        };
+        if step.tool != orig.tool {
+            return Err(format!(
+                "frozen step '{}' changed tool — succeeded steps must be kept unchanged; only the failed steps may change",
+                orig.id
+            ));
+        }
+        if step.arguments != orig.arguments {
+            return Err(format!(
+                "frozen step '{}' changed arguments — succeeded steps must be kept unchanged; only the failed steps may change",
+                orig.id
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Rich per-step materials for the surgical repairer: each step carries its
+/// FULL arguments (not a 300-char output preview) and its full error, plus
+/// an explicit frozen/revisable marker. This is what makes the repair able
+/// to actually fix args instead of re-emitting them blind.
+fn repair_materials(
+    plan: &kawai_router::TaskPlan,
+    result: &kawai_router::ExecutionResult,
+    repairable: &std::collections::HashSet<String>,
+) -> String {
+    const OUTPUT_CHARS: usize = 300;
+    const ERROR_CHARS: usize = 4_000;
+    let mut out = String::from("<original-plan>\n");
+    for step in &plan.steps {
+        let r = result.get(&step.id);
+        let status = match r.map(|r| r.status) {
+            Some(kawai_router::StepStatus::Completed) => "completed",
+            Some(kawai_router::StepStatus::Failed) => "failed",
+            _ => "skipped",
+        };
+        let frozen = !repairable.contains(&step.id);
+        let args = serde_json::to_string(&step.arguments).unwrap_or_default();
+        out.push_str(&format!(
+            "<step id=\"{}\" tool=\"{}\" status=\"{status}\" frozen=\"{frozen}\">\n",
+            step.id,
+            step.tool.clone().unwrap_or_else(|| step.agent_id.clone()),
+        ));
+        out.push_str(&format!("arguments: {args}\n"));
+        if let Some(r) = r {
+            match r.status {
+                kawai_router::StepStatus::Completed => {
+                    let preview: String = r.output.chars().take(OUTPUT_CHARS).collect();
+                    out.push_str(&format!("output-preview: {preview}\n"));
+                },
+                kawai_router::StepStatus::Failed => {
+                    let error: String = r
+                        .error
+                        .as_deref()
+                        .unwrap_or("unknown")
+                        .chars()
+                        .take(ERROR_CHARS)
+                        .collect();
+                    out.push_str(&format!("error: {error}\n"));
+                },
+                _ => {},
+            }
+        }
+        out.push_str("</step>\n");
+    }
+    out.push_str("</original-plan>");
+    out
+}
 
 /// Core tools visible to the revise prompt (same whitelist plan_task uses).
 fn planner_core_tools(registry: &ToolRegistry) -> Vec<String> {
@@ -2065,6 +2183,7 @@ fn resolve_completed_refs(raw: &str, result: &kawai_router::ExecutionResult) -> 
 
 async fn revise_plan(
     goal: &str,
+    original: &kawai_router::TaskPlan,
     reason: &str,
     result: &kawai_router::ExecutionResult,
     registry: &ToolRegistry,
@@ -2073,6 +2192,20 @@ async fn revise_plan(
     run_span: Option<&Arc<Mutex<kawai_telemetry::TelemetrySpan>>>,
 ) -> Result<kawai_router::TaskPlan, String> {
     eprintln!("[supervisor] revise_plan: entered (reason={} chars)", reason.len());
+    // The repair mandate is surgical: only the failed subgraph may change.
+    let repairable = repairable_step_ids(original, result);
+    let repairable_list: Vec<&str> = original
+        .steps
+        .iter()
+        .filter(|s| repairable.contains(&s.id))
+        .map(|s| s.id.as_str())
+        .collect();
+    let frozen_list: Vec<&str> = original
+        .steps
+        .iter()
+        .filter(|s| !repairable.contains(&s.id))
+        .map(|s| s.id.as_str())
+        .collect();
     let remote = remote_llm::RemoteLlm::from_env()
         .map(|r| {
             let mut r = r
@@ -2092,20 +2225,24 @@ async fn revise_plan(
     // loop has no search handler, so a `{"action":"search"}` reply is an
     // automatic dead end (observed live 2026: both corrective rounds burned).
     let system = revise_system_prompt(&registry.catalog_lines());
+
+    let mut materials = repair_materials(original, result, &repairable);
+    materials.push_str(&previous_runs_block(user_id, session_id).await);
+
     let task = format!(
-        "The execution of the plan for this goal DIVERGED. The remaining plan is no longer trusted.\
-         \n\nOriginal goal:\n{goal}\
+        "The execution of the plan for this goal FAILED at some steps. Repair it SURGICALLY — \
+         do NOT rewrite the whole plan.\n\nOriginal goal:\n{goal}\
          \n\nFailures:\n{reason}\
-         \n\nExecution report — completed steps already produced their artifacts; do NOT redo \
-          them unless their outputs are the direct cause of the failures:\n{}\
-         \n\nProduce a REVISED plan that completes the original goal from the current state.\
+         \n\n{materials}\
+         \n\nREPAIR MANDATE:\n\
+         - FROZEN steps ({}) already succeeded: return them UNCHANGED — same id, tool, and arguments, byte-for-byte.\
+         \n- You may rewrite ONLY these steps (the failed steps and their dependents): {}\
+         \n- Produce the COMPLETE plan: every frozen step + the repaired steps. Never drop or alter a frozen step.\
          \nRespond ONLY with the plan JSON.",
-        execution_report(result)
+        frozen_list.join(", "),
+        repairable_list.join(", "),
     );
 
-    // The reviser plans from the CURRENT state — earlier runs' persisted
-    // outputs are part of that state. Same rationale as the planner index.
-    let mut materials = previous_runs_block(user_id, session_id).await;
     for round in 0..2 {
         let mut raw = String::new();
         eprintln!(
@@ -2155,7 +2292,23 @@ async fn revise_plan(
         // dangling dependsOn entries are dropped; then validate normally.
         let raw = resolve_completed_refs(&raw, result);
         match parse_supervisor_plan_scoped(&raw, registry, REVISE_FORBIDDEN_TOOLS) {
-            Ok(plan) if !plan.steps.is_empty() => return Ok(plan),
+            Ok(plan) if !plan.steps.is_empty() => {
+                if let Err(frozen_err) = validate_frozen_steps(&plan, original, &repairable) {
+                    eprintln!(
+                        "[supervisor] revise round {round}: frozen-step violation: {frozen_err}"
+                    );
+                    if round == 0 {
+                        materials.push_str(&format!(
+                            "\n<plan-rejected>{frozen_err}</plan-rejected>\
+                             \nRespond ONLY with the corrected plan JSON."
+                        ));
+                    } else {
+                        return Err(format!("revised plan violated the repair mandate: {frozen_err}"));
+                    }
+                } else {
+                    return Ok(plan);
+                }
+            }
             Ok(_) => {
                 materials.push_str(
                     "\n<plan-rejected>The revised plan had no steps. Respond ONLY with plan JSON.</plan-rejected>",
@@ -2972,6 +3125,7 @@ pub fn execute_plan_stream_with_cancel(
                             );
                             match revise_plan(
                                 &current_plan.goal,
+                                &current_plan,
                                 &reason,
                                 &result,
                                 &registry,

@@ -70,6 +70,8 @@ healthy row: `outcome=answer|tool` with `output_tokens` below the cap.
 | `data_query_nl` invalid JSON / slow | `parse_llm_json` guards in place; >60 s = failover retries or local fallback; `timeoutMs: 120000` |
 | `data_schema` columns named A, B, C (xlsx) | no header found — check the sheet's real shape: `cargo run -p analytics --example xlsx_probe -- <file> [sheet]`; if text samples are ALL null, the SST deref broke (see `cell_typed` in `analytics/src/excel.rs`); a pivot fragment with no header is correct output |
 | xlsx text columns all `null` / text data vanished | shared strings not dereferenced — `CellValue::SharedString` must resolve via `XlsxDocument.shared_strings` (`get_shared`), not map to empty |
+| `data_chart` plan rejected: `missing required property 'x'` / `sortBy: expected "string", got array` | planner shapes vs chart schema — x now defaults to the sole groupBy column and sortBy accepts name / {column,descending} / list (2026-09 OCR backtest session burned every revise round on these) |
+| `avg`/`sum` over percent text reads wrong ("95,5" → 955) | decimal-comma coercion in `agg_expr` (`engines/analytics/src/engine.rs`): thousands comma = exactly 3 digits after; otherwise decimal comma → dot |
 | PlanFailed after revise rounds | read logged `raw:` — repeated same failure = fix the prompt, not the validator |
 | Deliverable is raw JSON | all providers failed synthesis; check `[remote]` per-candidate lines |
 | web_read/search `engine=none` | budgets, walls, or relevance gates — probe with `web_read_check` / `web_search_check` |

@@ -6,7 +6,7 @@ import { FileIcon } from "@/components/shared/file-icon";
 import { Streamdown } from "@/lib/streamdown";
 import { DeckPreview } from "@/features/workbench/components/deck-preview";
 import { call, errText } from "@/lib/api";
-import { AgentReportsSwitcher, StepReportBody } from "@/features/workbench/components/shared-canvas";
+import { StepReportBody } from "@/features/workbench/components/shared-canvas";
 import { agentName, isDeliverableStep, type useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import { fmtDuration } from "./progress-rail";
@@ -73,20 +73,17 @@ export function RunSwitcher({
  *  Same shape as the active-run canvas: header, document, doc switcher. */
 export function PastRunCanvas({
   loadFullOutput,
-  onPickDoc,
   run,
   doc,
   onBuildOn,
 }: {
   loadFullOutput: (stepId: string, planKey?: string) => Promise<string | null>;
-  onPickDoc: (doc: string) => void;
   run: WorkbenchRun;
   doc: string;
   /** "Build on this": arm this run's deliverable as the follow-up quote
    *  target. Only offered when the run has a quotable deliverable. */
   onBuildOn?: (run: WorkbenchRun) => void;
 }) {
-  const reportableSteps = (run.steps ?? []).filter((s) => s.state === "completed" || s.state === "failed");
   const isDeliverable = doc === "final";
   /** Header label: the step's task (agentName), or the tool — never the raw
    *  step id. Same derivation the active canvas uses. */
@@ -151,17 +148,6 @@ export function PastRunCanvas({
           />
         )}
 
-        <AgentReportsSwitcher
-          activeDoc={doc}
-          hasDeliverable={deliverableBody != null}
-          onBuildOn={
-            onBuildOn != null && run.status === "completed" && run.outputFull != null && run.planKey != null
-              ? () => onBuildOn(run)
-              : undefined
-          }
-          onPickDoc={onPickDoc}
-          reports={reportableSteps.map((s) => ({ stepId: s.stepId, label: s.task || s.tool }))}
-        />
       </div>
     </div>
   );
@@ -171,7 +157,6 @@ export function PastRunCanvas({
 
 export function DeliverableViewer({
   doc,
-  onPickDoc,
   runIndex,
   unseeded,
   workbench,
@@ -179,7 +164,6 @@ export function DeliverableViewer({
   /** Pinned document: "final" | stepId. The page owns navigation policy —
    *  this component NEVER auto-jumps on its own. */
   doc: string;
-  onPickDoc: (doc: string) => void;
   runIndex: number;
   /** True while the supervisor state still BELONGS to the previous run
    *  (new run submitted but planStarted hasn't seeded it yet) — the goal,
@@ -255,8 +239,24 @@ export function DeliverableViewer({
       <div className="mx-auto max-w-4xl space-y-6 p-6">
         <div>
           <h3 className="text-foreground flex items-start gap-2 text-xl font-semibold" title={headerGoal ?? undefined}>
-            <span>{headerGoal ?? "Working…"}</span>
+            <span className="line-clamp-2">{headerGoal ?? "Working…"}</span>
           </h3>
+          {/* Raw goal, readable: long submissions render as a collapsible
+              pre-wrapped request block instead of an unbounded h3 dump. */}
+          {(headerGoal?.length ?? 0) > 160 && (
+            <details className="group border-border/60 mt-2 rounded-lg border">
+              <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer select-none items-center gap-1.5 px-3 py-1.5 font-mono text-[11px] tracking-wider uppercase transition-colors">
+                <Icon
+                  name="chevron-down"
+                  className="size-3 transition-transform group-open:rotate-180"
+                />
+                Original request
+              </summary>
+              <p className="text-foreground/80 border-border/60 border-t px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">
+                {headerGoal}
+              </p>
+            </details>
+          )}
           {effective !== "final" && step != null && (
             <div className="text-muted-foreground mt-1 font-mono text-xs">Agent report · {agentName(step)}</div>
           )}
@@ -333,12 +333,6 @@ export function DeliverableViewer({
             tool={step.tool}
           />
         )}
-        <AgentReportsSwitcher
-          activeDoc={effective}
-          hasDeliverable={!unseeded && supervisor.finalOutput != null}
-          onPickDoc={onPickDoc}
-          reports={reports.map((r) => ({ stepId: r.stepId, label: agentName(r) }))}
-        />
       </div>
     </div>
   );

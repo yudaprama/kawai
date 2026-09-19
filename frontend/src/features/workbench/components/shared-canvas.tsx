@@ -179,11 +179,11 @@ export function AgentReportsSwitcher({
         ))}
       <div className="rounded-lg border p-4">
         <h4 className="text-muted-foreground mb-3 text-center font-mono text-sm tracking-[0.2em]">AGENT REPORTS</h4>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {reports.map((r) => (
             <button
               aria-pressed={activeDoc === r.stepId}
-              className={`text-foreground truncate rounded-lg border px-3 py-2 font-mono text-xs transition-colors ${
+              className={`text-foreground min-w-0 whitespace-normal break-words rounded-lg border px-3 py-2 text-left font-mono text-xs leading-snug transition-colors ${
                 activeDoc === r.stepId ? "border-primary bg-primary/10" : "hover:border-primary/60"
               }`}
               key={r.stepId}
