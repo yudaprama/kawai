@@ -899,6 +899,10 @@ pub(crate) const PLANNER_FORBIDDEN_TOOLS: &[&str] = &[
     // writes is a guess that burns repair rounds (observed repeatedly). The
     // schema-aware plan REVISION may still emit data_query.
     "data_query",
+    // Same blindness: mark/x/y/aggregations written at plan time are guesses.
+    // The NL variant (data_chart_nl) self-serves the schema; the schema-aware
+    // plan REVISION may still emit data_chart.
+    "data_chart",
 ];
 /// The schema-aware reviser may plan data_query (it sees the execution
 /// report with real columns) — only the internal machinery stays forbidden.
@@ -1233,10 +1237,10 @@ Plan rules:
  - Core tools below are ALWAYS available — never search for them. Their
    FULL argument schemas follow; copy required properties exactly:
 {}
- - FORBIDDEN tools — validation will reject them: deep_write, draft_document, plan_task, plan_revise, artifact_recall, data_query. Never name them in steps. For data questions use data_query_nl. To create documents use office_create_document / office_create_deck / pdf_create_from_markdown.
- - For data questions use data_query_nl — "data_query" is NOT available at
-   planning time (validation rejects it): the plan-REVISION phase writes the
-   structured query after data_schema has run.
+ - FORBIDDEN tools — validation will reject them: deep_write, draft_document, plan_task, plan_revise, artifact_recall, data_query, data_chart. Never name them in steps. For data questions use data_query_nl. For visualizations use data_chart_nl. To create documents use office_create_document / office_create_deck / pdf_create_from_markdown.
+ - For data questions use data_query_nl and for charts use data_chart_nl — "data_query" and "data_chart" are NOT available at
+   planning time (validation rejects them): the plan-REVISION phase writes
+   the structured query/chart after data_schema has run.
  - The supervisor AUTOMATICALLY writes the final user-facing deliverable
    (answer / summary / report) from the step outputs after they finish — via a
    built-in writer agent you never see. NEVER plan a
