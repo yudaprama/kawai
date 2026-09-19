@@ -152,10 +152,15 @@ export function agentName(step: SupervisorStep): string {
 }
 
 /** The virtual post-plan synthesis step is rendered as a dedicated rail row,
- *  not a phase member (it runs after ALL phases). */
+ *  not a phase member (it runs after ALL phases). The step arrives with
+ *  tool = the chosen writer ("deliverable_writer" or "deck_writer"), keyed
+ *  by the reserved step id `__deliverable` — match on that id so the deck
+ *  writer variant is excluded from phases too (it has no dependencies and
+ *  would otherwise land in phase 1). */
+export const DELIVERABLE_STEP_ID = "__deliverable";
 export const DELIVERABLE_TOOL = "deliverable_writer";
 export function isDeliverableStep(s: SupervisorStep): boolean {
-  return s.tool === DELIVERABLE_TOOL;
+  return s.stepId === DELIVERABLE_STEP_ID || s.tool === DELIVERABLE_TOOL;
 }
 
 /** Waves (dispatch order from `dependsOn`) — same derivation the plan card

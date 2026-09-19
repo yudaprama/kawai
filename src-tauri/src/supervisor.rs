@@ -891,7 +891,24 @@ pub fn parse_supervisor_plan_scoped(
         Some("") | Some("default") | Some("markdown") | None => {
             plan.final_writer = None;
         },
-        Some(WRITER_DECK) => {},
+        Some(WRITER_DECK) => {
+            // Deck synthesis is expensive (a full cloud round-trip per deck
+            // round, with up to 3 rejection-retry rounds). Models over-pick
+            // it for plain analysis/report goals despite the prompt saying
+            // "ONLY when the user explicitly asks for slides" — guard it
+            // deterministically: strip it unless the goal itself signals a
+            // slide/deck/presentation deliverable.
+            let goal = plan.goal.to_lowercase();
+            let slide_intent = ["slide", "deck", "presentation", "presentasi", "ppt", "pptx", "pitch"]
+                .iter()
+                .any(|k| goal.contains(k));
+            if !slide_intent {
+                eprintln!(
+                    "[supervisor] finalWriter \"deck_writer\" stripped — goal has no slide/deck/presentation intent"
+                );
+                plan.final_writer = None;
+            }
+        },
         Some(WRITER_DELIVERABLE) => {},
         Some(other) => {
             eprintln!(
@@ -1116,8 +1133,9 @@ pub const NON_DISPATCHABLE_TOOLS: [&str; 5] = [
 ];
 /// Sync budget — an unreachable Turso must never stall planning, but it must
 /// be long enough for the FIRST sync of a cold replica (a full frame pull,
-/// not an incremental one); 5 s made the cold path time out and left the
-/// replica permanently empty.
+/// not an incremental one) — a too-tight budget leaves the replica empty and
+/// tool discovery blind. Frontend shows live "loading context" progress
+/// during this window instead.
 const PLAN_SEARCH_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 /// Cap on the accumulated search results package (matches the remote pool's
 /// typical small-candidate materials budget).
@@ -2375,7 +2393,8 @@ async fn synthesize_deck(
             Use ONLY the fields listed for the chosen layout — any extra field is rejected. \
             HARD LIMITS enforced by validation — a violation rejects the WHOLE deck, so respect \
             them on the FIRST pass: titles ≤90 chars; bullets/entries/captions ≤140; table cells \
-            ≤80; quotes ≤220; big numbers ≤14. Rules: ONE idea per slide; quote every number from \
+            ≤80; quotes ≤220; big numbers ≤14. Char limits are BYTES the validator counts — when \
+            a string is near a limit, shorten it rather than risk rejection. Rules: ONE idea per slide; quote every number from \
             the step outputs EXACTLY — never invent or round figures; titles state the takeaway, \
             not a label; VARY the layouts — \
             never 3 same-layout slides in a row."

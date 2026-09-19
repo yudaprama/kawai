@@ -16,9 +16,6 @@ import {
 } from "./prompt-input-context";
 import { useState, useCallback } from "react";
 
-const PASTE_CARD_THRESHOLD = 2000;
-const PASTED_TEXT_FILENAME = "pasted-text.txt";
-
 export type PromptInputTextareaProps = ComponentProps<
   typeof InputGroupTextarea
 >;
@@ -87,14 +84,6 @@ export const PromptInputTextarea = ({
         return;
       }
 
-      const text = event.clipboardData.getData("text/plain");
-      if (text.length > PASTE_CARD_THRESHOLD) {
-        event.preventDefault();
-        const textFile = new File([text], PASTED_TEXT_FILENAME, {
-          type: "text/plain",
-        });
-        attachments.add([textFile]);
-      }
     },
     [attachments]
   );

@@ -298,11 +298,20 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
             streamCtrl.current = null;
             const wasStopping = stoppingRef.current;
             stoppingRef.current = false;
-            patch({
+            const message = wasStopping ? "Plan stopped." : err.message;
+            setState((prev) => ({
+              ...prev,
               status: "failed",
               pendingConfirmation: null,
-              error: wasStopping ? "Plan stopped." : err.message,
-            });
+              error: message,
+              // Close in-flight steps — no terminal step events arrive on a
+              // transport error, so their rail rows would spin forever.
+              steps: prev.steps.map((s) =>
+                s.state === "running"
+                  ? { ...s, state: "failed" as const, error: message, errorKind: "cancelled" }
+                  : s,
+              ),
+            }));
             void persist(sessionId, "assistant", `Plan error: ${err.message}`);
           },
         },

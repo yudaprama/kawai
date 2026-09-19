@@ -288,8 +288,17 @@ export function supervisorReducer(
       };
     }
     case "planFailed": {
+      // The scheduler cancels in-flight steps silently when the plan fails
+      // (no per-step terminal event arrives) — close them out here or their
+      // rail rows spin forever.
+      const steps = state.steps.map((s) =>
+        s.state === "running"
+          ? { ...s, state: "failed" as const, error: event.error, errorKind: "cancelled", finishedAt: now }
+          : s,
+      );
       return {
         ...state,
+        steps,
         status: "failed",
         pendingConfirmation: null,
         error: event.error,

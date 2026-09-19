@@ -299,6 +299,19 @@ export function ProgressRail({
   unseeded: boolean;
 }) {
   const { supervisor } = workbench;
+  // Per-second tick while planning is in flight — the silent windows (context
+  // fan-out, each planner LLM round) otherwise read as a frozen UI.
+  const [planningTick, setPlanningTick] = useState(0);
+  const planningLive = unseeded && supervisor.planning != null;
+  useEffect(() => {
+    if (!planningLive) {
+      setPlanningTick(0);
+      return;
+    }
+    const t = setInterval(() => setPlanningTick((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [planningLive]);
+  const planningElapsed = ` · ${planningTick}s`;
   // During planning `supervisor.goal` is still the PREVIOUS run's (or null on
   // the first) until planStarted seeds it — the run record already knows the
   // submitted goal, so show it immediately (system-status visibility).
@@ -366,9 +379,11 @@ export function ProgressRail({
                 <Icon name="loader-circle" className="text-primary size-3.5 animate-spin" />
                 {supervisor.planning != null
                   ? supervisor.planning.round === 0
-                    ? "starting…"
-                    : `${supervisor.planning.searching ? "searching tools" : "writing plan"} · round ${supervisor.planning.round}${supervisor.planning.provider ? ` · ${supervisor.planning.provider}` : ""}`
-                  : "preparing context…"}
+                    ? supervisor.planning.context != null
+                      ? `context loaded — starting planner${planningElapsed}`
+                      : `loading context (persona · memories · skills · catalog)${planningElapsed}`
+                    : `${supervisor.planning.searching ? "searching tools" : "writing plan"} · round ${supervisor.planning.round}${supervisor.planning.provider ? ` · ${supervisor.planning.provider}` : ""}${planningElapsed}`
+                  : `preparing context…${planningElapsed}`}
               </div>
               {supervisor.planning?.searching && supervisor.planning.tools.length > 0 && (
                 <div className="text-muted-foreground/80 pl-5.5 text-[11px]">

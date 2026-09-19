@@ -4,6 +4,7 @@ import { useState } from "react";
 import { type ChartSpec, detectQueryChart, rowsToCsv } from "@/features/analytics/lib/analytics";
 import { triggerDownload } from "@/lib/download";
 import { emitOpenPreview } from "@/lib/preview-bridge";
+import { type PreviewFile, useFilePreview } from "@/lib/preview-file";
 import { formatBytes } from "@/lib/utils";
 import { fmtNum, Footnote, isRecord, MetricGrid, parse, str, type Metric } from "./shared";
 
@@ -349,33 +350,48 @@ export function renderDataTables(output: unknown): ReactNode {
   );
 }
 
-/** data_chart → { fileId, fileName, mark, x, rows, note } */
+/** Inline preview of the chart svg stored by data_chart — fetched via
+ *  office_read_file (module-cached, shared with the file preview modal). */
+function InlineChartPreview({ fileId, name }: { fileId: string; name: string }) {
+  const file: PreviewFile = { id: fileId, name };
+  const { data, isLoading, error } = useFilePreview(file);
+  const [errored, setErrored] = useState(false);
+  if (isLoading || error || errored || !data?.dataUrl) return null;
+  return (
+    <button
+      className="bg-card block w-full cursor-zoom-in rounded-md border p-2"
+      onClick={() => emitOpenPreview(fileId, name)}
+      title="Open chart"
+      type="button"
+    >
+      <img
+        alt={name}
+        className="mx-auto max-h-72 w-auto max-w-full object-contain"
+        onError={() => setErrored(true)}
+        src={data.dataUrl}
+      />
+    </button>
+  );
+}
+
+/** data_chart → { fileId, fileName, mark, x, rows, note } — the stored svg
+ *  renders inline; clicking it opens the full file preview. */
 export function renderDataChart(output: unknown): ReactNode {
   const d = parse(output);
   if (!isRecord(d) || !str(d.fileId)) return null;
   const fileId = str(d.fileId) ?? "";
-  const fileName = str(d.fileName);
+  const fileName = str(d.fileName) ?? "chart.svg";
   const mark = str(d.mark) ?? "chart";
   const rows = typeof d.rows === "number" ? fmtNum(d.rows) : null;
-  const items: Metric[] = [
-    {
-      label: fileName ?? `${mark} chart`,
-      value: `${mark} chart`,
-      sub: rows ? `${rows} rows plotted` : undefined,
-    },
-  ];
+  const metaBits = [`${mark} chart`, rows ? `${rows} rows plotted` : null].filter(
+    (v): v is string => v != null,
+  );
   return (
     <div className="not-prose space-y-1.5">
-      <MetricGrid items={items} />
-      {fileId && (
-        <button
-          className="text-primary hover:underline text-xs"
-          onClick={() => emitOpenPreview(fileId, fileName ?? "chart")}
-          type="button"
-        >
-          Open chart
-        </button>
-      )}
+      <InlineChartPreview fileId={fileId} name={fileName} />
+      <Footnote>
+        {metaBits.join(" · ")}
+      </Footnote>
     </div>
   );
 }

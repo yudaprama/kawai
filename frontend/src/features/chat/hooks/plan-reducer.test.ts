@@ -103,6 +103,25 @@ describe("supervisorReducer — happy path", () => {
     expect(s.status).toBe("failed");
     expect(s.error).toBe("step a failed");
   });
+
+  it("planFailed closes in-flight running steps as cancelled", () => {
+    let s = makePlan([step("a"), step("b"), step("c")]);
+    s = supervisorReducer(s, { type: "stepStarted", stepId: "a", tool: "data_chart" }, { now: NOW + 100 });
+    s = supervisorReducer(s, { type: "stepStarted", stepId: "b", tool: "data_chart" }, { now: NOW + 110 });
+    s = supervisorReducer(
+      s,
+      { type: "stepFailed", stepId: "a", error: "boom", kind: "tool" },
+      { now: NOW + 200 },
+    );
+    // b never gets its own stepFailed — the scheduler cancelled it silently.
+    s = supervisorReducer(s, { type: "planFailed", error: "step a failed" }, { now: NOW + 300 });
+    expect(s.steps[0].state).toBe("failed");
+    expect(s.steps[1].state).toBe("failed");
+    expect(s.steps[1].errorKind).toBe("cancelled");
+    expect(s.steps[1].finishedAt).toBe(NOW + 300);
+    // Pending (never started) steps stay pending — they were never loading.
+    expect(s.steps[2].state).toBe("pending");
+  });
 });
 
 describe("supervisorReducer — replan", () => {
