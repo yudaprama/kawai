@@ -241,22 +241,6 @@ export function DeliverableViewer({
           <h3 className="text-foreground flex items-start gap-2 text-xl font-semibold" title={headerGoal ?? undefined}>
             <span className="line-clamp-2">{headerGoal ?? "Working…"}</span>
           </h3>
-          {/* Raw goal, readable: long submissions render as a collapsible
-              pre-wrapped request block instead of an unbounded h3 dump. */}
-          {(headerGoal?.length ?? 0) > 160 && (
-            <details className="group border-border/60 mt-2 rounded-lg border">
-              <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer select-none items-center gap-1.5 px-3 py-1.5 font-mono text-[11px] tracking-wider uppercase transition-colors">
-                <Icon
-                  name="chevron-down"
-                  className="size-3 transition-transform group-open:rotate-180"
-                />
-                Original request
-              </summary>
-              <p className="text-foreground/80 border-border/60 border-t px-3 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">
-                {headerGoal}
-              </p>
-            </details>
-          )}
           {effective !== "final" && step != null && (
             <div className="text-muted-foreground mt-1 font-mono text-xs">Agent report · {agentName(step)}</div>
           )}

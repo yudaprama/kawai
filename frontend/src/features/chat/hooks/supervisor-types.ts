@@ -9,6 +9,7 @@ export type SupervisorEvent =
       steps: { id: string; tool: string; task: string; dependsOn: string[] }[];
       /** Hash of the executed plan — read key for supervisor_step_output. */
       planKey: string;
+      summary: PlanSummaryInfo;
     }
   | { type: "stepStarted"; stepId: string; tool: string }
   | {
@@ -75,6 +76,7 @@ export type SupervisorEvent =
       steps: { id: string; tool: string; task: string; dependsOn: string[] }[];
       /** Key of the REVISED plan — replaces the planStarted key. */
       planKey: string;
+      summary: PlanSummaryInfo;
     }
   | {
       type: "planCompleted";
@@ -133,6 +135,7 @@ export interface PlanReviewStep {
 
 export interface PlanReview {
   plan: unknown;
+  summary: PlanSummaryInfo | null;
   goal: string;
   steps: PlanReviewStep[];
   sessionId: number;
@@ -148,11 +151,22 @@ export interface PriorPlanVersion {
   note: string;
 }
 
+export interface PlanSummaryInfo {
+  /** 1–3 sentences (user's language): what the agent will do and why. */
+  overview: string;
+  /** ≤5 plain-language actions. */
+  actions: string[];
+  /** ≤5 expected outputs / deliverables. */
+  outputs: string[];
+}
+
 export interface SupervisorPlanState {
   status: SupervisorStatus;
   goal: string | null;
   /** Full plan structure — seeded at planStarted, before any step runs. */
   steps: SupervisorStep[];
+  /** User-facing "what will the agent do / produce" — from planStarted/planRevised. */
+  summary: PlanSummaryInfo | null;
   /** Live planning progress — non-null only while `plan_task` is in flight. */
   planning: {
     round: number;

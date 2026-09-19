@@ -102,6 +102,39 @@ fn structured_label(value: &serde_json::Value) -> String {
     "data".into()
 }
 
+/// Fill `plan.summary` when the planner omitted it — deterministic, from the
+/// goal and the steps' `produces` artifacts. Actions stay EMPTY: the step
+/// list renders directly below the summary card, so copying step tasks here
+/// would be read twice.
+fn ensure_plan_summary(plan: &mut kawai_router::TaskPlan) {
+    if plan.summary.is_some() {
+        return;
+    }
+    let overview = plan.goal.trim().to_string();
+    let outputs: Vec<String> = plan
+        .steps
+        .iter()
+        .flat_map(|s| s.produces.iter())
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty())
+        .take(5)
+        .collect();
+    plan.summary = Some(kawai_router::PlanSummary {
+        overview,
+        actions: Vec::new(),
+        outputs,
+    });
+}
+
+fn plan_summary_info(plan: &kawai_router::TaskPlan) -> kawai_router::PlanSummary {
+    if let Some(s) = &plan.summary {
+        return s.clone();
+    }
+    let mut fallback = plan.clone();
+    ensure_plan_summary(&mut fallback);
+    fallback.summary.unwrap()
+}
+
 fn plan_step_infos(plan: &kawai_router::TaskPlan) -> Vec<PlanStepInfo> {
     plan.steps
         .iter()
@@ -135,6 +168,10 @@ pub enum SupervisorEvent {
         /// Hash of the executed plan — the read key for persisted step results
         /// (`supervisor_step_output` op). Changes when the plan is revised.
         plan_key: String,
+        /// User-facing "what will the agent do / produce" — LLM-written or
+        /// backfilled deterministically from the steps (see
+        /// `ensure_plan_summary`). Drives the Plan Summary card in the rail.
+        summary: kawai_router::PlanSummary,
     },
     StepStarted {
         step_id: String,
@@ -180,6 +217,9 @@ pub enum SupervisorEvent {
         /// Key of the REVISED plan — replaces the planStarted key for all
         /// subsequent `supervisor_step_output` reads.
         plan_key: String,
+        /// Refreshed summary for the revised plan (same contract as
+        /// `planStarted.summary`).
+        summary: kawai_router::PlanSummary,
     },
     /// Emitted once at `plan_task` entry — the instant acknowledgment that
     /// planning began (context building + the first LLM round can stay
@@ -885,6 +925,14 @@ pub fn parse_supervisor_plan_scoped(
     let slice = kawai_router::extract_json_slice(raw).map_err(|e| e.to_string())?;
     let mut plan: kawai_router::TaskPlan = serde_json::from_str(slice)
         .map_err(|e| format!("invalid plan JSON: {e}"))?;
+    // Clamp an LLM-written summary to the UI contract, then backfill the
+    // deterministic fallback when the planner omitted it — the summary is
+    // always present on any plan leaving this parse path.
+    plan.summary = plan.summary.take().map(kawai_router::sanitize_plan_summary);
+    // Actions that restate a step task would be read twice (summary card +
+    // step list directly below) — drop them.
+    kawai_router::dedupe_plan_summary(&mut plan);
+    ensure_plan_summary(&mut plan);
     // Models emit `""`, `"default"`, or other loose writer names meaning the
     // markdown deliverable — map them instead of burning a repair round.
     match plan.final_writer.as_deref().map(str::trim) {
@@ -1151,10 +1199,18 @@ Respond ONLY with ONE JSON object — either:
   (request tool search results; up to 3 diverse queries; describe CAPABILITIES, not tool names)
   — ALWAYS write the queries in ENGLISH: the catalog descriptions are English,
   so queries in any other language return junk and waste the search budget.
-{{"goal": "<one-line goal>", "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
+{{"goal": "<one-line goal>", "summary": {{"overview": "<1–3 sentences>", "actions": ["…"], "outputs": ["…"]}}, "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
   (the final plan, once you know which tools to use)
 
 Plan rules:
+- "summary" is REQUIRED in the final plan: "overview" = 1–3 sentences (≤2
+  recommended) in the USER'S LANGUAGE describing what the agent will do and
+  why; "actions" = ≤4 plain-language actions that GROUP the steps into
+  phases — NEVER restate an individual step's task verbatim (the step list
+  is shown separately); "outputs" = ≤5 expected deliverables.
+  Describe OUTCOMES, not tool mechanics — the user must understand the plan
+  without reading the step list, and never promise an output no step
+  produces (the supervisor's own final deliverable needs no entry).
 - Decompose into 1..{} concrete steps; each step names exactly ONE tool.
 - "task" is REQUIRED: a single line ≤80 chars describing the step in the
   USER'S LANGUAGE (the goal's language), for the progress UI — e.g.
@@ -1223,12 +1279,14 @@ completes the original goal from the current state.
 
 The FULL tool catalog is provided below — do NOT ask for more tools, do NOT
 search. Respond ONLY with ONE JSON object, exactly this shape:
-{{"goal": "<one-line goal>", "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
+{{"goal": "<one-line goal>", "summary": {{"overview": "<1–3 sentences, user's language>", "actions": ["…"], "outputs": ["…"]}}, "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
 
 Rules:
 - Reuse the outputs of already-completed steps via {{"fromStep": "<step id>", "output": "<artifact name>"}} — never redo work that succeeded.
 - Fix ONLY what failed: the failure reason is in the execution report.
 - "task" is REQUIRED: one line ≤80 chars in the USER'S LANGUAGE.
+- "summary" mirrors the planner's contract: overview = 1–3 sentences in
+  the user's language; ≤4 actions that GROUP steps (never restate one); ≤5 expected outputs.
 - Keep "arguments" complete and precise — they are what the tool executes.
 - Side-effect tools MUST set "requiresConfirmation": true with a short "confirmationDescription".
 - Never name FORBIDDEN internal tools: deep_write, draft_document, plan_task, plan_revise, artifact_recall.
@@ -2715,6 +2773,7 @@ pub fn execute_plan_stream_with_cancel(
             step_count,
             steps: plan_step_infos(&plan),
             plan_key: plan_key(&plan),
+            summary: plan_summary_info(&plan),
         };
 
         // ── Telemetry: one Tempo trace per run + one workflow step per node ──
@@ -3148,6 +3207,7 @@ pub fn execute_plan_stream_with_cancel(
                                         step_count: count,
                                         steps: plan_step_infos(&revised),
                                         plan_key: plan_key(&revised),
+                                        summary: plan_summary_info(&revised),
                                     };
                                     current_plan = revised;
                                     continue 'plans;
@@ -3336,6 +3396,7 @@ mod tests {
             goal: "g".into(),
             steps: vec![confirm_step("s1")],
             final_writer: None,
+            summary: None,
         };
         let stream = execute_plan_stream_with_cancel(
             plan,
@@ -3411,6 +3472,7 @@ mod tests {
             goal: "g".into(),
             steps: vec![confirm_step("s1")],
             final_writer: None,
+            summary: None,
         };
         let stream = execute_plan_stream_with_cancel(
             plan,
@@ -3475,6 +3537,7 @@ mod tests {
                 ..Default::default()
             }],
             final_writer: None,
+            summary: None,
         };
         let stream = execute_plan_stream_with_cancel(
             plan,

@@ -6,7 +6,13 @@
  *  and ZERO side effects, so it can be unit-tested without a renderer.
  */
 
-import type { SupervisorArtifact, SupervisorEvent, SupervisorPlanState, SupervisorStep } from "./supervisor-types";
+import type {
+  SupervisorArtifact,
+  SupervisorEvent,
+  SupervisorPlanState,
+  SupervisorStep,
+  PlanSummaryInfo,
+} from "./supervisor-types";
 
 export type {
   SupervisorEvent,
@@ -15,6 +21,7 @@ export type {
   SupervisorArtifact,
   PlanReview,
   PlanReviewStep,
+  PlanSummaryInfo,
   PriorPlanVersion,
   SupervisorPlanState,
 } from "./supervisor-types";
@@ -56,6 +63,7 @@ export function parseReview(plan: unknown, sessionId: number, agentId: string) {
   if (typeof plan !== "object" || plan == null) return null;
   const p = plan as {
     goal?: unknown;
+    summary?: { overview?: unknown; actions?: unknown; outputs?: unknown };
     steps?: {
       id?: unknown;
       tool?: unknown;
@@ -65,6 +73,18 @@ export function parseReview(plan: unknown, sessionId: number, agentId: string) {
     }[];
   };
   if (typeof p.goal !== "string" || !Array.isArray(p.steps)) return null;
+  const summary: PlanSummaryInfo | null =
+    typeof p.summary === "object" && p.summary != null && typeof (p.summary as { overview?: unknown }).overview === "string"
+      ? {
+          overview: (p.summary as { overview: string }).overview,
+          actions: Array.isArray((p.summary as { actions?: unknown }).actions)
+            ? ((p.summary as { actions: unknown[] }).actions.filter((a) => typeof a === "string") as string[])
+            : [],
+          outputs: Array.isArray((p.summary as { outputs?: unknown }).outputs)
+            ? ((p.summary as { outputs: unknown[] }).outputs.filter((o) => typeof o === "string") as string[])
+            : [],
+        }
+      : null;
   const steps: import("./supervisor-types").PlanReviewStep[] = [];
   for (const s of p.steps) {
     if (typeof s.id !== "string") continue;
@@ -78,7 +98,7 @@ export function parseReview(plan: unknown, sessionId: number, agentId: string) {
     });
   }
   if (steps.length === 0) return null;
-  return { plan, goal: p.goal, steps, sessionId, agentId } as import("./supervisor-types").PlanReview;
+  return { plan, goal: p.goal, summary, steps, sessionId, agentId } as import("./supervisor-types").PlanReview;
 }
 
 /** Remove a step from the review model — steps that (transitively) depended
@@ -117,8 +137,9 @@ export function pruneReviewStep(
 
 export function initialSupervisorState(): SupervisorPlanState {
   return {
-    status: "idle",
+    status: "idle" as const,
     goal: null,
+    summary: null,
     steps: [],
     planning: null,
     planStartedAt: null,
@@ -183,6 +204,7 @@ export function supervisorReducer(
       return {
         ...state,
         goal: event.goal,
+        summary: event.summary,
         steps,
         planStartedAt: now,
         planCompletedAt: null,
@@ -266,6 +288,7 @@ export function supervisorReducer(
         status: "running",
         steps,
         error: null,
+        summary: event.summary,
         planVersion: priorVersion + 1,
         planKey: event.planKey,
         priorVersions,

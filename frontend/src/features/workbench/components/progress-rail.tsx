@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
+import type { PlanSummaryInfo } from "@/features/chat/hooks/supervisor-types";
 import {
   agentName,
   computePhases,
@@ -18,6 +19,43 @@ export function fmtDuration(from: number, to?: number): string {
   const mm = Math.floor(secs / 60);
   const ss = secs % 60;
   return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+/** Plan Summary — "what will the agent do, what will I get" without reading
+ *  the technical step list. LLM-written (sanitized) or the deterministic
+ *  fallback from the step tasks; `null` hides the card entirely. */
+function PlanSummaryCard({ summary }: { summary: PlanSummaryInfo | null }) {
+  if (!summary || (!summary.overview && summary.actions.length === 0 && summary.outputs.length === 0)) {
+    return null;
+  }
+  return (
+    <div>
+      <p className="text-primary font-mono text-[11px] font-bold uppercase tracking-wide">Plan summary</p>
+      {summary.overview && (
+        <p className="text-foreground/90 mt-1 text-xs leading-relaxed">{summary.overview}</p>
+      )}
+      {summary.actions.length > 0 && (
+        <ul className="text-foreground/80 mt-2 space-y-0.5 text-xs">
+          {summary.actions.map((a, i) => (
+            <li key={i}>· {a}</li>
+          ))}
+        </ul>
+      )}
+      {summary.outputs.length > 0 && (
+        <div className="mt-2">
+          <p className="text-muted-foreground font-mono text-[10px] uppercase">Expected outputs</p>
+          <ul className="mt-1 space-y-0.5">
+            {summary.outputs.map((o, i) => (
+              <li className="text-foreground/80 flex items-start gap-1 text-xs" key={i}>
+                <Icon name="check-circle-2" className="text-success mt-0.5 size-3 shrink-0" />
+                {o}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function StateIcon({ state }: { state: SupervisorStep["state"] }) {
@@ -323,6 +361,12 @@ export function ProgressRail({
   // Live-tick while a run is in flight so the elapsed timers move every
   // second even when no events arrive (long silent planner rounds).
   const [, tick] = useState(0);
+  // Execution steps start COLLAPSED in review — the plan summary is the
+  // contract; the step list is an appendix opened on demand.
+  const [reviewStepsOpen, setReviewStepsOpen] = useState(false);
+  useEffect(() => {
+    if (supervisor.status === "reviewing") setReviewStepsOpen(false);
+  }, [supervisor.status, supervisor.planVersion]);
   useEffect(() => {
     if (supervisor.status !== "running") return;
     const t = setInterval(() => tick((n) => n + 1), 1000);
@@ -349,14 +393,25 @@ export function ProgressRail({
 
       {supervisor.status === "reviewing" && supervisor.review ? (
         <div className="space-y-2">
-          <p className="text-muted-foreground font-mono text-[11px] uppercase">
-            Review plan · {supervisor.review.steps.length} steps
-          </p>
-          {supervisor.review.steps.map((s) => (
-            <div className="text-foreground/80 font-mono text-xs" key={s.id}>
-              · {s.task || s.tool || s.id}
-            </div>
-          ))}
+          <PlanSummaryCard summary={supervisor.review.summary ?? supervisor.summary} />
+          <button
+            aria-expanded={reviewStepsOpen}
+            className="text-muted-foreground flex w-full items-center gap-1 font-mono text-[11px] uppercase hover:text-foreground"
+            onClick={() => setReviewStepsOpen((o) => !o)}
+            type="button"
+          >
+            <Icon
+              className={`size-3 transition-transform ${reviewStepsOpen ? "rotate-90" : ""}`}
+              name="chevron-right"
+            />
+            {reviewStepsOpen ? "Hide" : "View"} {supervisor.review.steps.length} execution steps
+          </button>
+          {reviewStepsOpen &&
+            supervisor.review.steps.map((s) => (
+              <div className="text-foreground/80 pl-4 font-mono text-xs" key={s.id}>
+                · {s.task || s.tool || s.id}
+              </div>
+            ))}
           <div className="flex gap-2 pt-2">
             <Button className="flex-1" onClick={workbench.supervisor.approvePlan} size="sm">
               <Icon name="play" className="size-3" />
@@ -369,6 +424,7 @@ export function ProgressRail({
         </div>
       ) : (
         <div className="flex-1">
+          <PlanSummaryCard summary={supervisor.summary} />
           {/* Unseeded planning window: the stale tree is the PREVIOUS run's —
               show only the planning spinner until planStarted seeds the new
               steps (same policy as the canvas). */}

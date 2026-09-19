@@ -25,7 +25,7 @@ function makePlan(
   const { goal = "g", planKey = "pk", t = NOW } = opts;
   return supervisorReducer(
     initialSupervisorState(),
-    { type: "planStarted", goal, stepCount: steps.length, steps, planKey },
+    { type: "planStarted", goal, stepCount: steps.length, steps, planKey, summary: { overview: "o", actions: [], outputs: [] } },
     { now: t },
   );
 }
@@ -54,7 +54,7 @@ describe("supervisorReducer — happy path", () => {
   it("planStarted seeds steps and sets goal", () => {
     const s = supervisorReducer(
       initialSupervisorState(),
-      { type: "planStarted", goal: "analyze data", stepCount: 2, steps: [step("a"), step("b")], planKey: "pk1" },
+      { type: "planStarted", goal: "analyze data", stepCount: 2, steps: [step("b", { tool: "code_write" }), step("b")], planKey: "pk1", summary: { overview: "o", actions: [], outputs: [] } },
       { now: NOW },
     );
     expect(s.status).toBe("idle"); // planStarted doesn't change status
@@ -141,7 +141,7 @@ describe("supervisorReducer — replan", () => {
 
     s = supervisorReducer(
       s,
-      { type: "planRevised", attempt: 1, stepCount: 1, steps: [step("b", { tool: "code_write" })], planKey: "pk2" },
+      { type: "planRevised", attempt: 1, stepCount: 1, steps: [step("b", { tool: "code_write" })], planKey: "pk2", summary: { overview: "o", actions: [], outputs: [] } },
       { now: NOW + 500 },
     );
     expect(s.status).toBe("running");
@@ -160,14 +160,14 @@ describe("supervisorReducer — replan", () => {
     let s = makePlan([step("a")], { planKey: "pk1" });
     s = supervisorReducer(
       s,
-      { type: "planRevised", attempt: 1, stepCount: 1, steps: [step("a")], planKey: "pk2" },
+      { type: "planRevised", attempt: 1, stepCount: 1, steps: [step("a")], planKey: "pk2", summary: { overview: "o", actions: [], outputs: [] } },
       { now: NOW + 100 },
     );
     expect(s.replansExhausted).toBe(true); // 1 prior >= 1
 
     s = supervisorReducer(
       s,
-      { type: "planRevised", attempt: 2, stepCount: 1, steps: [step("a")], planKey: "pk3" },
+      { type: "planRevised", attempt: 2, stepCount: 1, steps: [step("a")], planKey: "pk3", summary: { overview: "o", actions: [], outputs: [] } },
       { now: NOW + 200 },
     );
     expect(s.replansExhausted).toBe(true); // 2 prior >= 1
@@ -298,7 +298,7 @@ describe("supervisorReducer — edge cases", () => {
     expect(s.error).toBe("plan boom");
     s = supervisorReducer(
       s,
-      { type: "planRevised", attempt: 1, stepCount: 1, steps: [step("a")], planKey: "pk2" },
+      { type: "planRevised", attempt: 1, stepCount: 1, steps: [step("a")], planKey: "pk2", summary: { overview: "o", actions: [], outputs: [] } },
       { now: NOW + 200 },
     );
     expect(s.error).toBeNull();
