@@ -401,6 +401,36 @@ async fn build_supervisor_toolset(
     }
 }
 
+/// Declared artifact contracts — the machine-readable "what does this tool
+/// emit for downstream steps" per tool, derived from each tool's actual
+/// output envelope (see `tool_output_artifacts` for the extraction side).
+/// Names here are the only ones plan validation accepts as a binding target
+/// from that tool; tools not listed stay runtime-guarded (permissive).
+/// data_schema is deliberately declared with only "columns" — it never
+/// yields a file id, so binding fileId from a data_schema step is rejected
+/// at plan time instead of failing mid-run.
+const DECLARED_PRODUCES: &[(&str, &[&str])] = &[
+    ("office_list_files", &["files"]),
+    ("office_create_document", &["file"]),
+    ("office_create_deck", &["file", "slides"]),
+    ("office_export_deck", &["file", "slides"]),
+    ("office_restore_backup", &["file"]),
+    ("pdf_merge", &["file"]),
+    ("pdf_split", &["files"]),
+    ("pdf_create_from_markdown", &["file"]),
+    ("data_schema", &["columns"]),
+    ("data_export", &["fileId"]),
+];
+
+/// The declared artifact contract for one tool, if any.
+fn declared_produces(tool: &str) -> Vec<String> {
+    DECLARED_PRODUCES
+        .iter()
+        .find(|(name, _)| *name == tool)
+        .map(|(_, produces)| produces.iter().map(|p| p.to_string()).collect())
+        .unwrap_or_default()
+}
+
 /// Convert a [`kawai_tools::ToolDefinition`] into a [`kawai_router::ToolMeta`].
 fn tool_meta_from_definition(def: &kawai_tools::ToolDefinition) -> ToolMeta {
     ToolMeta {
@@ -409,7 +439,7 @@ fn tool_meta_from_definition(def: &kawai_tools::ToolDefinition) -> ToolMeta {
         description: def.description.clone(),
         input_schema: def.parameters.clone(),
         output_schema: serde_json::json!({}),
-        produces: vec![],
+        produces: declared_produces(&def.name),
         requires_confirmation: def.requires_confirmation,
     }
 }
@@ -1237,7 +1267,9 @@ Plan rules:
 - NEVER hardcode user-specific numbers (equity, risk %, prices, levels, dates)
   into step arguments — source them from a step artifact ("fromStep"), the
   quoted earlier run via "session_step_results", or "memory_search".
-- "produces" names the artifacts a step emits for later steps.
+- "produces" names the artifacts a step emits for later steps. Tools listing
+  a declared contract ("produces: …" in their catalog line) are AUTHORITATIVE:
+  bindings from those steps must use exactly those names.
 - Side-effect tools MUST set "requiresConfirmation": true with a short "confirmationDescription".
 - "onError" is one of "fail", "skip", "continue". Default "fail".
  - Keep each task description under {} chars.
@@ -1256,7 +1288,7 @@ Plan rules:
  - "fileId" arguments MUST come from a real file id: a LITERAL id (from
    office_list_files or the attached-files context), OR an "inputs" binding
    to a step that actually produces a file id (e.g. office_list_files →
-   {"fileId": {"fromStep": "<id>", "output": "files"}}). NEVER invent an id,
+   {{"fileId": {{"fromStep": "<id>", "output": "files"}}}}). NEVER invent an id,
    NEVER reference a step whose output contains no file id (e.g.
    data_schema), and NEVER put a fromStep reference inside "arguments" —
    cross-step bindings belong in "inputs".
@@ -3284,6 +3316,7 @@ pub fn execute_plan_stream_with_cancel(
 
 #[cfg(all(test, feature = "litert"))]
 mod tests {
+
     use super::*;
     use kawai_router::{StepStatus, TaskStep};
 
@@ -3657,5 +3690,25 @@ mod coerce_tests {
         let args = json!({"fileId": {"type": "handle", "value": "f1", "kind": "files"}});
         let out = coerce_resolved_args("data_schema", &args, Some(&schema));
         assert_eq!(out["fileId"], "f1");
+    }
+}
+
+#[cfg(test)]
+mod produces_contracts_tests {
+    use super::declared_produces;
+
+    #[test]
+    fn declared_produces_contracts_are_exact() {
+        // data_schema never yields a file id — the contract must not grow one
+        // (binding fileId from a data_schema step must stay a plan-time error).
+        assert_eq!(declared_produces("data_schema"), vec!["columns".to_string()]);
+        assert_eq!(declared_produces("office_list_files"), vec!["files".to_string()]);
+        assert_eq!(
+            declared_produces("office_create_deck"),
+            vec!["file".to_string(), "slides".to_string()]
+        );
+        // Undeclared tools stay permissive (runtime-guarded only).
+        assert!(declared_produces("office_edit_document").is_empty());
+        assert!(declared_produces("web_search").is_empty());
     }
 }
