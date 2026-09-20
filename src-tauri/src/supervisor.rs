@@ -1338,6 +1338,12 @@ Plan rules:
    NEVER reference a step whose output contains no file id (e.g.
    data_schema), and NEVER put a fromStep reference inside "arguments" —
    cross-step bindings belong in "inputs".
+ - MANY steps, ONE file → ONE office_list_files step + "inputs" bindings.
+   Do NOT copy a file id between steps or repeat a remembered id as a
+   literal in several steps: plan office_list_files ONCE at the start, then
+   bind "fileId" via "inputs" ({{"fromStep": "<list step>", "output": "files"}})
+   in every consumer. Copy-pasted literals break every consumer at once when
+   the id is wrong; a binding self-corrects against the listing.
  - "finalWriter" (optional): which writer synthesizes the deliverable. Omit it
    for the default markdown answer. Set "finalWriter":"deck_writer" ONLY when
    the user EXPLICITLY asks for a slide deck / presentation / .pptx as the
@@ -1389,7 +1395,8 @@ Rules:
   office_list_files or the attached-files context) or an "inputs" binding to
   a step that produces a file id. NEVER from data_schema output (no file id
   there), never an invented id, and never a fromStep reference inside
-  "arguments" — cross-step bindings belong in "inputs".
+  "arguments" — cross-step bindings belong in "inputs". Do not copy the
+  same literal id across several steps — bind via "inputs" instead.
 - The supervisor writes the final user-facing deliverable itself — never plan a summarization step.
 - "finalWriter" (optional): OMIT it for the default markdown answer. Set
   "finalWriter":"deck_writer" ONLY when the user EXPLICITLY asks for a slide
