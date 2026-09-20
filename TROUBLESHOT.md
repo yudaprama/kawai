@@ -9,8 +9,10 @@ assume the default macOS data dir; identity = the login email.
    (`src-tauri/examples`: `web_read_check`, `web_search_check`,
    `sql_remote_check`, LLM smokes) — it removes UI, session state, and the
    data dir from the equation.
-2. **Collect evidence before any hypothesis.** Run the §2 queries. Never
-   reason past missing evidence.
+2. **Collect evidence before any hypothesis.** Run the §2 queries (local
+   sqlite/log AND the Grafana block for anything cloud-related — provider
+   choice, failover, slow/empty generations, actual prompts). Never reason
+   past missing evidence.
 3. **Baseline against a healthy turn** (§3). The FIRST line where the trace
    diverges from healthy localizes the bug; everything before it works.
 4. **Localize the layer**, top-down:
@@ -41,6 +43,37 @@ sqlite3 "$DB" "SELECT id, provider, tool, input_tokens, output_tokens, latency_m
 grep -a "agent_chat\]\|remote\]\|office\]\|supervisor\]\|webread\]" "$LOG" | tail -n 30
 ```
 
+**Grafana (cloud evidence — MANDATORY for provider/failover/slow-generation
+questions, not optional).** Stack `giganticgecko512`; read token
+`GRAFANA_SERVICE_ACCOUNT_TOKEN` (glsa_) in `kawai/.env`. The Grafana MCP tool
+may 401 (its own token) — go straight to curl. When to use which channel:
+local/log for repro, Tempo for "slow/empty but tools ran" (which provider
+served, why others were skipped), gcx for the actual prompts/responses.
+
+```sh
+source kawai/.env
+BASE="https://giganticgecko512.grafana.net/api/datasources/proxy/uid"
+curl -s -o /dev/null -w '%{http_code}\n' "$BASE/../../api/datasources" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN"  # expect 200; 401 → `gcx cloud login` first
+# traces (Tempo):
+curl -s "$BASE/grafanacloud-traces/api/search?tags=service.name%3Dkawai&limit=10" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN"
+curl -s "$BASE/grafanacloud-traces/api/traces/<traceID>" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN"   # waterfall
+# metrics (Prometheus — PromQL via GET/POST 'query='):
+curl -s "$BASE/grafanacloud-prom/api/v1/query" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
+  --data-urlencode 'query=sum by (gen_ai_agent_name, gen_ai_provider_name) (increase(gen_ai_client_token_usage_total[24h]))'
+# handy: histogram_quantile(0.50|0.95, sum by (le, gen_ai_agent_name) (rate(gen_ai_client_operation_duration_bucket[5m])))
+#        sum by (reason) (increase("kawai.remote.failover"[1h]))
+# logs (Loki — note the /loki/api/v1 path segment):
+curl -s -G "$BASE/grafanacloud-logs/loki/api/v1/query_range" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
+  --data-urlencode 'query={service_name="kawai"}' --data-urlencode 'since=24h' --data-urlencode 'limit=20'
+# log labels: component (supervisor/remote_llm/…), user_id, severity_text, target
+# prompts/responses (Agent Observability):
+gcx agento11y conversations get kawai-session-<id>
+```
+
+Trace shape: root `remote_llm.stream` → child `remote_llm.attempt` per
+provider candidate → `streamText` span. Several attempts = failover.
+Instrumentation details (roles, env gating, `shutdown()`): see References.
+
 ## 3. Healthy turn shape
 
 ```
@@ -63,6 +96,8 @@ healthy row: `outcome=answer|tool` with `output_tokens` below the cap.
 | Tool card vanishes, broken JSON args | parser repair path; new arg-corruption shape → unit test |
 | `office_read_document` ok=false | fileId corruption (LCS retry line?) or wrong tool for PDFs |
 | "cloud writer returned an empty answer" | `grep -a "\[remote\]"` — all candidates failed = expected local fallback |
+| Cloud call slow/empty but tools ran | Tempo: `service.name="kawai"` trace — which provider served, which attempts failed/skipped (§2 Grafana block) |
+| Failover storm / provider health | Prometheus: `sum by (reason) (increase("kawai.remote.failover"[1h]))` + per-provider latency p95 |
 | Answer cut mid-sentence | `output_tokens` == cap (`KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS`) |
 | "exceeds available state entries" | context over K/V budget → lower budgets or raise `KAWAI_LLM_MAX_TOKENS` (Gemma 4 max 32003) |
 | `database is locked` | two processes on one data dir, or run tests `--test-threads=1` |
@@ -102,37 +137,10 @@ turn must match §3.
   probe `POST /auth/salt` on the worker; 409-with-no-account → stale D1 row;
   session lost each restart → decode the token's `sub`/`exp`.
 - **Agent Observability** (`crates/foundation/telemetry`): every cloud call
-  exports to Grafana — generations via `gcx agento11y conversations get
-  kawai-session-<id>`, traces via Tempo (`service.name="kawai"`), metrics
-  `gen_ai_client_*` + `kawai.remote.failover`. Env-gated by `AGENTO11Y_*`/
+  exports to Grafana — query paths in §2. Env-gated by `AGENTO11Y_*`/
   `OTEL_*`; one `glc_` token covers both channels. Agent roles: a NEW system
   prompt = a NEW role (`with_agent`/`reason_as`), or it collapses into
   `kawai-agent`. Short-lived processes must call
-  `kawai_telemetry::shutdown()` before exit.
-- **Connecting to Grafana**: stack = `giganticgecko512` (org slug lives in
+  `kawai_telemetry::shutdown()` before exit. Org slug lives in
   `~/.config/gcx/config.yaml`; refresh OAuth with `gcx cloud login` when
-  commands 401). Read token = `GRAFANA_SERVICE_ACCOUNT_TOKEN` (glsa_) in
-  `kawai/.env` — verify with a 1-liner before querying:
-  ```sh
-  source kawai/.env
-  BASE="https://giganticgecko512.grafana.net/api/datasources/proxy/uid"
-  curl -s -o /dev/null -w '%{http_code}\n' "$BASE/../../api/datasources" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN"  # expect 200
-  # traces (Tempo):
-  curl -s "$BASE/grafanacloud-traces/api/search?tags=service.name%3Dkawai&limit=10" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN"
-  curl -s "$BASE/grafanacloud-traces/api/traces/<traceID>" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN"   # waterfall
-  # metrics (Prometheus — PromQL via GET/POST 'query='):
-  curl -s "$BASE/grafanacloud-prom/api/v1/query" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
-    --data-urlencode 'query=sum by (gen_ai_agent_name, gen_ai_provider_name) (increase(gen_ai_client_token_usage_total[24h]))'
-  # handy: histogram_quantile(0.50|0.95, sum by (le, gen_ai_agent_name) (rate(gen_ai_client_operation_duration_bucket[5m])))
-  #        sum by (reason) (increase("kawai.remote.failover"[1h]))
-  # logs (Loki — note the /loki/api/v1 path segment):
-  curl -s -G "$BASE/grafanacloud-logs/loki/api/v1/query_range" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
-    --data-urlencode 'query={service_name="kawai"}' --data-urlencode 'since=24h' --data-urlencode 'limit=20'
-  # log labels: component (supervisor/remote_llm/…), user_id, severity_text, target
-  ```
-  Trace shape: root `remote_llm.stream` → child `remote_llm.attempt` per
-  provider candidate → `streamText` span. Several attempts = failover. When
-  to use which channel: local/log for repro, Tempo for "slow/empty but tools
-  ran" (shows which provider served and why others were skipped), gcx for
-  the actual prompts/responses. The Grafana MCP tool in agent sessions may
-  401 (its own token) — fall back to the curl path above.
+  Grafana calls 401.

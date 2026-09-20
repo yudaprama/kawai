@@ -28,6 +28,7 @@ const registry: Record<string, ToolRenderer> = {
   data_query: renderDataQuery,
   data_ta: renderDataTa,
   data_chart: renderDataChart,
+  data_chart_nl: renderDataChart, // NL variant: AnswerArtifact with the chart envelope in context.chart
   data_tables: renderDataTables,
   data_import: renderDataImport,
   knowledge_search: renderKnowledgeSearch,

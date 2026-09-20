@@ -198,10 +198,114 @@ export function renderDataQuery(output: unknown): ReactNode {
   return <DataQueryCard meta={m} rows={rows} />;
 }
 
-/** data_query_nl → single {rows,_meta} OR multi [{queryIndex,result},…]. */
+/** AnswerArtifact shape check: the NL tools wrap results in a grounded
+ *  answer object (question + narrative + keyFacts). */
+function isAnswerArtifact(d: unknown): d is Record<string, unknown> {
+  return (
+    isRecord(d) &&
+    typeof d.question === "string" &&
+    (typeof d.answer === "string" || Array.isArray(d.keyFacts))
+  );
+}
+
+/** Grounded answer card: question → narrative → key metrics → details
+ *  (table / sub-queries / chart). The narrative is LLM-written but validated
+ *  against machine-computed keyFacts server-side; `answerKind: "stats"`
+ *  means the deterministic stat-line fallback is shown. */
+function AnswerCard({ artifact }: { artifact: Record<string, unknown> }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const question = str(artifact.question) ?? "";
+  const answer = str(artifact.answer) ?? "";
+  const answerKind = str(artifact.answerKind);
+  const facts: Metric[] = Array.isArray(artifact.keyFacts)
+    ? artifact.keyFacts
+        .filter(isRecord)
+        .map((f) => ({ label: str(f.label) ?? "", value: cellNum(f.value) }))
+        .filter((f) => f.label !== "")
+    : [];
+  const caveats = Array.isArray(artifact.caveats)
+    ? artifact.caveats.map((c) => str(c)).filter((c): c is string => !!c)
+    : [];
+
+  // Details payload: chart envelope, single result rows, or sub-queries.
+  const ctx = isRecord(artifact.context) ? artifact.context : {};
+  const chart = isRecord(ctx.chart) && str(ctx.chart.fileId) ? ctx.chart : null;
+  const singleRows = Array.isArray(artifact.rows)
+    ? artifact.rows.filter(isRecord)
+    : [];
+  const subQueries = Array.isArray(artifact.subQueries)
+    ? artifact.subQueries.filter(
+        (x): x is { queryIndex: number; result: Record<string, unknown> } =>
+          isRecord(x) && typeof x.queryIndex === "number" && isRecord(x.result),
+      )
+    : [];
+  const hasDetails = chart !== null || singleRows.length > 0 || subQueries.length > 0;
+
+  return (
+    <div className="not-prose space-y-1.5">
+      {question && <p className="text-foreground text-sm font-medium">{question}</p>}
+      {answer && (
+        <p className="text-sm leading-relaxed">
+          {answer}
+          {answerKind === "stats" && (
+            <span className="text-muted-foreground ml-1 text-[11px]">(key figures)</span>
+          )}
+        </p>
+      )}
+      {facts.length > 0 && <MetricGrid items={facts} />}
+      {caveats.length > 0 && <Footnote>{caveats.join(" · ")}</Footnote>}
+      {chart && <div className="pt-1">{renderDataChart(chart)}</div>}
+      {hasDetails && !chart && (
+        <>
+          <button
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-[11px]"
+            onClick={() => setShowDetails((v) => !v)}
+            type="button"
+          >
+            <Icon
+              className={`size-3 transition-transform ${showDetails ? "rotate-180" : ""}`}
+              name="chevron-down"
+            />
+            {showDetails ? "Hide details" : "Show details"}
+          </button>
+          {showDetails && (
+            <div className="space-y-3 pt-1">
+              {singleRows.length > 0 && (
+                <DataQueryCard
+                  meta={isRecord(artifact._meta) ? artifact._meta : {}}
+                  rows={singleRows}
+                />
+              )}
+              {subQueries.map((item) => (
+                <div key={item.queryIndex} className="space-y-1">
+                  {subQueries.length > 1 && (
+                    <p className="text-muted-foreground text-xs font-medium">
+                      Query {item.queryIndex}
+                    </p>
+                  )}
+                  <DataQueryCard
+                    meta={isRecord(item.result._meta) ? item.result._meta : {}}
+                    rows={Array.isArray(item.result.rows)
+                      ? item.result.rows.filter(isRecord)
+                      : []}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** data_query_nl → AnswerArtifact (question + narrative + keyFacts + details).
+ *  Falls back to the legacy shapes for older persisted outputs. */
 export function renderDataQueryNl(output: unknown): ReactNode {
   const d = parse(output);
 
+  // AnswerArtifact (current)
+  if (isAnswerArtifact(d)) return <AnswerCard artifact={d} />;
   // Single result: { rows, _meta }
   if (isRecord(d) && Array.isArray(d.rows)) {
     const rows = d.rows.filter(isRecord);
@@ -375,14 +479,19 @@ function InlineChartPreview({ fileId, name }: { fileId: string; name: string }) 
 }
 
 /** data_chart → { fileId, fileName, mark, x, rows, note } — the stored svg
- *  renders inline; clicking it opens the full file preview. */
+ *  renders inline; clicking it opens the full file preview. Also accepts the
+ *  NL wrapper (AnswerArtifact with the envelope in `context.chart`). */
 export function renderDataChart(output: unknown): ReactNode {
   const d = parse(output);
-  if (!isRecord(d) || !str(d.fileId)) return null;
-  const fileId = str(d.fileId) ?? "";
-  const fileName = str(d.fileName) ?? "chart.svg";
-  const mark = str(d.mark) ?? "chart";
-  const rows = typeof d.rows === "number" ? fmtNum(d.rows) : null;
+  if (!isRecord(d)) return null;
+  // NL wrapper: render via AnswerCard (which routes the chart back here).
+  if (isAnswerArtifact(d)) return <AnswerCard artifact={d} />;
+  const env = d as Record<string, unknown>;
+  if (!str(env.fileId)) return null;
+  const fileId = str(env.fileId) ?? "";
+  const fileName = str(env.fileName) ?? "chart.svg";
+  const mark = str(env.mark) ?? "chart";
+  const rows = typeof env.rows === "number" ? fmtNum(env.rows) : null;
   const metaBits = [`${mark} chart`, rows ? `${rows} rows plotted` : null].filter(
     (v): v is string => v != null,
   );

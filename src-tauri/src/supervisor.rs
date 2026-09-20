@@ -606,6 +606,10 @@ pub async fn plan_task(
             .map(|r| {
                 r.with_output_cap(4_000)
                     .with_agent("planner")
+                    // Planner rounds emit short JSON — thinking only burns the
+                    // output cap (measured: ~111 s of reasoning with zero
+                    // content tokens before the thinking-off retry).
+                    .with_thinking_disabled()
                     .with_conversation(format!("kawai-session-{session_id}"))
                     .with_user(user_id)
             })
@@ -1704,7 +1708,17 @@ pub async fn build_supervisor_registry(
             }
             let args = kawai_router::canonical_json(&args_value);
             let started = std::time::Instant::now();
-            let result = toolset.execute(&name, args.clone()).await;
+            // Cooperative deadline: tools with internal retry loops (the NL
+            // data tools) read this and return a structured "budget ran out"
+            // error instead of being hard-killed into an opaque timeout.
+            let step_deadline = call
+                .timeout_ms
+                .map(|ms| started + std::time::Duration::from_millis(ms));
+            let result = kawai_analytics::deadline::scope(
+                step_deadline,
+                toolset.execute(&name, args.clone()),
+            )
+            .await;
             let latency_ms = started.elapsed().as_millis() as i64;
             // Per-step telemetry (turn_log) — best-effort, never fails a step.
             let success = result.is_success();
@@ -2400,6 +2414,8 @@ async fn revise_plan(
             let mut r = r
                 .with_output_cap(4_000)
                 .with_agent("planner")
+                // Same reasoning-burns-the-cap shape as the planner loop.
+                .with_thinking_disabled()
                 .with_conversation(format!("kawai-session-{session_id}"))
                 .with_user(user_id);
             if let Some(rs) = run_span {
@@ -2606,6 +2622,11 @@ async fn synthesize_final_answer(
             .map(|r| {
                 r.with_output_cap(4_000)
                     .with_agent("deliverable-writer")
+                    // The writer's measured failure mode is identical to the
+                    // planner's: thinking burns the whole output cap with zero
+                    // content (98 s wasted on a run that then succeeded in
+                    // 40 s with thinking off).
+                    .with_thinking_disabled()
                     .with_conversation(format!("kawai-session-{session_id}"))
                     .with_user(user_id)
                     // DAG: the deliverable consumes the planner's plan —
@@ -2695,6 +2716,9 @@ async fn synthesize_deck(
             .map(|r| {
                 r.with_output_cap(16_000)
                     .with_agent("deck-writer")
+                    // Structured JSON slides — same reasoning-burns-the-cap
+                    // shape as the markdown writer.
+                    .with_thinking_disabled()
                     .with_conversation(format!("kawai-session-{session_id}"))
                     .with_user(user_id)
                     .with_parent_agent("planner")
@@ -2808,6 +2832,7 @@ async fn synthesize_deck(
                 args,
                 Vec::new(),
                 tokio_util::sync::CancellationToken::new(),
+                std::time::Duration::from_secs(300),
             )
             .await
             .ok()?;

@@ -252,6 +252,7 @@ const registry: Record<string, StepView> = {
   data_query_nl: (p) => renderDataQueryNl(p),
   data_ta: (p) => renderDataTa(p),
   data_chart: (p) => renderDataChart(p),
+  data_chart_nl: (p) => renderDataChart(p), // NL variant: AnswerArtifact with the chart envelope in context.chart
   data_tables: (p) => renderDataTables(p),
   data_import: (p) => renderDataImport(p),
 
