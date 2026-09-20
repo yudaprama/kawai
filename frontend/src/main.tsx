@@ -3,6 +3,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { SentryErrorBoundary } from "@/components/error-boundary";
 import { AuthGate } from "@/features/auth/auth-gate";
+import { ContextGatheringStep } from "@/features/auth/context-gathering-step";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NotificationProvider, useNotificationPermission } from "@/contexts/NotificationContext";
@@ -53,7 +54,9 @@ if (rootEl) {
           <NotificationProvider>
             <NotificationPermissionGate>
               <AuthGate>
-                <App />
+                <ContextGatheringStep>
+                  <App />
+                </ContextGatheringStep>
               </AuthGate>
             </NotificationPermissionGate>
           </NotificationProvider>

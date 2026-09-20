@@ -8,3 +8,24 @@ export type LocalChatEvent = { type: "started" } | { type: "token"; text: string
  *  and telemetry, never part of the answer.
  */
 { type: "thinking"; text: string } | { type: "toolCall"; id?: string | null; tool: string; args: unknown } | { type: "toolResult"; id?: string | null; tool: string; ok: boolean; summary: string } | { type: "finished" } | { type: "error"; message: string };
+
+/**
+ *  Events from the `onboarding_run` stream (PLAN-personal-context §2.3):
+ *  per-source lifecycle, the compression pass, and the terminal variants.
+ *  Terminal variants are `onboardingFinished` / `onboardingError`.
+ */
+export type OnboardingEvent = 
+/**  One source began processing. */
+{ type: "sourceStarted"; 
+/**  `questions` | `github` | `linkedin` | `document` */
+source: string } | 
+/**  Mid-source progress note (e.g. "found 2 profile candidates"). */
+{ type: "sourceProgress"; source: string; note: string } | 
+/**  One source finished; `items_found` = memory items it produced. */
+{ type: "sourceCompleted"; source: string; items_found: number } | 
+/**  The cloud compression pass started. */
+{ type: "compressStarted" } | 
+/**  Compression finished — per-namespace counts of what was parsed. */
+{ type: "profileReady"; profile: number; people: number; goals: number } | 
+/**  All sources processed (skipped ones report zero); state marked done. */
+{ type: "onboardingFinished"; total_items: number } | { type: "onboardingError"; message: string };

@@ -596,6 +596,49 @@ pub async fn experience_delete(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: read the onboarding gate state.
+#[tauri::command]
+pub async fn onboarding_status(
+    session: State<'_, Session>,
+) -> Result<logic::onboarding::OnboardingStatus, String> {
+    let user_id = session_user_id(&session)?;
+    logic::onboarding::onboarding_status(&user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated streaming RPC: run the context-gathering pipeline.
+#[tauri::command]
+pub async fn onboarding_run(
+    stream_id: String,
+    sources: logic::onboarding::OnboardingSources,
+    on_event: Channel<kawai_events::OnboardingEvent>,
+    session: State<'_, Session>,
+    registry: State<'_, StreamRegistry>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    let stream = logic::onboarding::onboarding_run_stream(user_id, sources);
+    run_streaming(stream_id, on_event, &registry, stream, None).await
+}
+
+/// Authenticated RPC: mark onboarding done with zero sources.
+#[tauri::command]
+pub async fn onboarding_skip(session: State<'_, Session>) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::onboarding::onboarding_skip(&user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: clear onboarding state + profile memories (dev/re-run).
+#[tauri::command]
+pub async fn onboarding_reset(session: State<'_, Session>) -> Result<usize, String> {
+    let user_id = session_user_id(&session)?;
+    logic::onboarding::onboarding_reset(&user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: extract memories from a session's transcript via the
 /// cloud tier (needs the hybrid vault); dedups and stores the results.
 #[tauri::command]

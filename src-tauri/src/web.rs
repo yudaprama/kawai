@@ -214,6 +214,57 @@ async fn experience_delete_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
+async fn onboarding_status_handler(
+    Extension(user_id): Extension<String>,
+) -> Result<Json<logic::onboarding::OnboardingStatus>, (StatusCode, String)> {
+    logic::onboarding::onboarding_status(&user_id)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn onboarding_skip_handler(
+    Extension(user_id): Extension<String>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    logic::onboarding::onboarding_skip(&user_id)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn onboarding_reset_handler(
+    Extension(user_id): Extension<String>,
+) -> Result<Json<usize>, (StatusCode, String)> {
+    logic::onboarding::onboarding_reset(&user_id)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn onboarding_run_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<logic::onboarding::OnboardingSources>,
+) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
+    let s = logic::onboarding::onboarding_run_stream(user_id, req)
+        .map(|event| Ok::<_, Infallible>(onboarding_event_to_sse(event)));
+    Sse::new(s).keep_alive(KeepAlive::default())
+}
+
+fn onboarding_event_to_sse(event: kawai_events::OnboardingEvent) -> SseFrame {
+    use kawai_events::OnboardingEvent as E;
+    let name = match &event {
+        E::SourceStarted { .. } => "sourceStarted",
+        E::SourceProgress { .. } => "sourceProgress",
+        E::SourceCompleted { .. } => "sourceCompleted",
+        E::CompressStarted => "compressStarted",
+        E::ProfileReady { .. } => "profileReady",
+        E::OnboardingFinished { .. } => "onboardingFinished",
+        E::OnboardingError { .. } => "onboardingError",
+    };
+    let data = serde_json::to_string(&event).unwrap_or_default();
+    SseFrame::default().event(name).data(data)
+}
+
 async fn memory_extract_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<MemoryExtractRequest>,
@@ -1729,6 +1780,10 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/memory_delete", post(memory_delete_handler))
         .route("/api/experience_list", post(experience_list_handler))
         .route("/api/experience_delete", post(experience_delete_handler))
+        .route("/api/onboarding_status", post(onboarding_status_handler))
+        .route("/api/onboarding_skip", post(onboarding_skip_handler))
+        .route("/api/onboarding_reset", post(onboarding_reset_handler))
+        .route("/api/onboarding_run", post(onboarding_run_handler))
         .route("/api/memory_extract", post(memory_extract_handler))
         .route("/api/memory_search", post(memory_search_handler))
         .route("/api/memory_consolidate", post(memory_consolidate_handler))
