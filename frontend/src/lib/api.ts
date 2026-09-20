@@ -105,6 +105,17 @@ export interface ExperienceItem {
   createdAt: number;
 }
 
+/** Profile facet — one stable, classified fact about the user
+ *  (PLAN-personal-context §2.6). Mirrors the Rust `ProfileFacet`. */
+export interface ProfileFacet {
+  key: string;
+  class: "identity" | "style" | "tooling" | "goal";
+  value: string;
+  stability: number;
+  userState: "active" | "pinned" | "dropped";
+  updatedAt: number;
+}
+
 // ---- Frontend-local overrides for generated types ----
 
 /** Frontend never sends null timestamps; backend returns them as i64 from DB. */

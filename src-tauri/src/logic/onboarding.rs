@@ -123,6 +123,9 @@ pub async fn onboarding_reset(user_id: &str) -> Result<usize, DbError> {
     let _ = conn
         .execute("DELETE FROM onboarding_state", ())
         .await;
+    let _ = conn
+        .execute("DELETE FROM profile_facets", ())
+        .await;
     Ok(n)
 }
 
@@ -271,6 +274,12 @@ pub fn onboarding_run_stream(
         }
 
         yield OnboardingEvent::ProfileReady { profile: counts.0, people: counts.1, goals: counts.2 };
+        // Facet distill rides the onboarding persist (best-effort — a
+        // vault-less run just skips; the profile facts still live as
+        // general-namespace memories and inject normally).
+        if let Err(e) = kawai_memory::facet_distill(&user_id).await {
+            eprintln!("[onboarding] facet distill skipped: {e}");
+        }
         let conn = match db_connection(&user_id).await {
             Ok(c) => c,
             Err(e) => {
@@ -314,6 +323,12 @@ async fn compress_with_cloud(materials: &str) -> Result<onboarding::compress::Co
 
 /// Store compressed items as memories (dedup by title, case-insensitive).
 /// Returns how many rows landed.
+///
+/// Namespace mapping: `profile`-namespace items from the QUICK QUESTIONS
+/// source are stored as `general` so they inject into agent prompts
+/// immediately — the `profile` namespace stays reserved for external
+/// identity data (LinkedIn/documents, Phase 3) which becomes the facet
+/// block in Phase 4. `people`/`goals` inject in either namespace.
 async fn persist_compressed(
     user_id: &str,
     compressed: &onboarding::compress::CompressedProfile,
@@ -333,12 +348,17 @@ async fn persist_compressed(
             continue;
         }
         seen.push(key);
+        let namespace = if item.namespace == "profile" {
+            "general"
+        } else {
+            item.namespace.as_str()
+        };
         if kawai_memory::memory_create_ns(
             user_id,
             "fact",
             &item.title,
             &item.content,
-            &item.namespace,
+            namespace,
             false,
             "questions",
         )

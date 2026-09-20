@@ -214,6 +214,64 @@ async fn experience_delete_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FacetPinRequest {
+    key: String,
+    pinned: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FacetKeyRequest {
+    key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FacetListRequest {
+    include_dropped: Option<bool>,
+}
+
+async fn facet_list_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<FacetListRequest>,
+) -> Result<Json<Vec<logic::memory::ProfileFacet>>, (StatusCode, String)> {
+    logic::memory::facet_list(&user_id, req.include_dropped.unwrap_or(false))
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn facet_pin_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<FacetPinRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    logic::memory::facet_pin(&user_id, &req.key, req.pinned)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn facet_forget_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<FacetKeyRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    logic::memory::facet_forget(&user_id, &req.key)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn facet_reset_handler(
+    Extension(user_id): Extension<String>,
+) -> Result<Json<usize>, (StatusCode, String)> {
+    logic::memory::facet_reset_non_pinned(&user_id)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
 async fn onboarding_status_handler(
     Extension(user_id): Extension<String>,
 ) -> Result<Json<logic::onboarding::OnboardingStatus>, (StatusCode, String)> {
@@ -250,8 +308,7 @@ async fn onboarding_run_handler(
     Sse::new(s).keep_alive(KeepAlive::default())
 }
 
-fn onboarding_event_to_sse(event: kawai_events::OnboardingEvent) -> SseFrame {
-    use kawai_events::OnboardingEvent as E;
+fn onboarding_event_to_sse(event: kawai_events::OnboardingEvent) -> SseFrame {    use kawai_events::OnboardingEvent as E;
     let name = match &event {
         E::SourceStarted { .. } => "sourceStarted",
         E::SourceProgress { .. } => "sourceProgress",
@@ -1784,6 +1841,10 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/onboarding_skip", post(onboarding_skip_handler))
         .route("/api/onboarding_reset", post(onboarding_reset_handler))
         .route("/api/onboarding_run", post(onboarding_run_handler))
+        .route("/api/facet_list", post(facet_list_handler))
+        .route("/api/facet_pin", post(facet_pin_handler))
+        .route("/api/facet_forget", post(facet_forget_handler))
+        .route("/api/facet_reset_non_pinned", post(facet_reset_handler))
         .route("/api/memory_extract", post(memory_extract_handler))
         .route("/api/memory_search", post(memory_search_handler))
         .route("/api/memory_consolidate", post(memory_consolidate_handler))

@@ -40,11 +40,12 @@ import {
   type ExperienceItem,
   type MemoryGraphExport,
   type MemoryItem,
+  type ProfileFacet,
 } from "@/lib/api";
 import { useOp } from "@/hooks/use-op";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 
-type MemoryTab = "l0" | "l1" | "l2" | "l3" | "exp" | "graph";
+type MemoryTab = "l0" | "l1" | "l2" | "l3" | "exp" | "profile" | "graph";
 
 // Code-split: the force-graph (d3-force + worker) only loads when the user
 // opens the Graph tab.
@@ -176,6 +177,7 @@ function BlockDetail({
             <TabsTrigger value="l2">L2 · Scenes</TabsTrigger>
             <TabsTrigger value="l3">L3 · Persona</TabsTrigger>
             <TabsTrigger value="exp">Experiences</TabsTrigger>
+            <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="graph">Graph</TabsTrigger>
           </TabsList>
         </div>
@@ -193,6 +195,9 @@ function BlockDetail({
         </TabsContent>
         <TabsContent className="flex min-h-0 flex-1 flex-col" value="exp">
           <ExperiencesPane />
+        </TabsContent>
+        <TabsContent className="flex min-h-0 flex-1 flex-col" value="profile">
+          <ProfilePane />
         </TabsContent>
         <TabsContent className="flex min-h-0 flex-1 flex-col" value="graph">
           <GraphPane />
@@ -359,6 +364,122 @@ function ExperiencesPane() {
                 >
                   <Icon name="trash" className="size-3.5" />
                 </button>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Pane>
+  );
+}
+
+/** Profile — stable facets distilled from profile memories (kawai's
+ *  PROFILE.md as a table): pin/forget, reset non-pinned, re-distill via
+ *  memory extraction. */
+function ProfilePane() {
+  const op = useOp<ProfileFacet[]>("facet_list", {}, { onError: "toast" });
+  const [confirmForgetKey, setConfirmForgetKey] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  useEffect(() => {
+    if (confirmForgetKey == null && !confirmReset) return;
+    const t = setTimeout(() => {
+      setConfirmForgetKey(null);
+      setConfirmReset(false);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [confirmForgetKey, confirmReset]);
+
+  const act = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn();
+      await op.execute();
+    } catch (err) {
+      showErrorToast(errText(err));
+    }
+  };
+
+  const items = op.data ?? [];
+  return (
+    <Pane
+      toolbar={
+        <>
+          <Button disabled={op.loading} onClick={() => void op.execute()} size="xs" variant="outline">
+            {op.loading ? <Spinner className="size-3" /> : <Icon name="search" className="size-3" />}
+            Refresh
+          </Button>
+          <Button
+            disabled={items.length === 0}
+            onClick={async () => {
+              if (!confirmReset) {
+                setConfirmReset(true);
+                return;
+              }
+              setConfirmReset(false);
+              await act(() => call("facet_reset_non_pinned"));
+            }}
+            size="xs"
+            title={confirmReset ? "Click again to confirm" : "Delete all non-pinned facets"}
+            variant="outline"
+          >
+            {confirmReset ? "Confirm reset" : "Reset non-pinned"}
+          </Button>
+          <span className="text-muted-foreground ml-auto text-xs">
+            {items.length} {items.length === 1 ? "facet" : "facets"} · injected as {'<profile>'}
+          </span>
+        </>
+      }
+    >
+      {op.loading && items.length === 0 ? (
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Spinner className="size-4" /> Loading…
+        </div>
+      ) : items.length === 0 ? (
+        <p className="text-muted-foreground text-sm">
+          No facets yet — run memory extraction (L1 tab) or onboarding, and the distiller folds
+          profile facts into stable facets here.
+        </p>
+      ) : (
+        <ol className="flex flex-col gap-2">
+          {items.map((f) => (
+            <li className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3" key={f.key}>
+              <div className="flex items-start gap-2">
+                <span className="text-muted-foreground shrink-0 rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 font-mono text-[11px]">
+                  {f.key}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm">{f.value}</p>
+                  <p className="text-muted-foreground mt-1 text-[11px]">
+                    stability {(f.stability * 100).toFixed(0)}% · {f.userState}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    aria-label={f.userState === "pinned" ? `Unpin ${f.key}` : `Pin ${f.key}`}
+                    className={`rounded p-1 ${f.userState === "pinned" ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    onClick={() => void act(() => call("facet_pin", { key: f.key, pinned: f.userState !== "pinned" }))}
+                    title={f.userState === "pinned" ? "Unpin" : "Pin (survives resets)"}
+                    type="button"
+                  >
+                    <Icon name="star" className="size-3.5" />
+                  </button>
+                  <button
+                    aria-label={`Forget ${f.key}`}
+                    className={`rounded p-1 ${confirmForgetKey === f.key ? "text-destructive" : "text-muted-foreground hover:text-destructive"}`}
+                    onClick={async () => {
+                      if (confirmForgetKey !== f.key) {
+                        setConfirmForgetKey(f.key);
+                        return;
+                      }
+                      setConfirmForgetKey(null);
+                      await act(() => call("facet_forget", { key: f.key }));
+                    }}
+                    title={confirmForgetKey === f.key ? "Click again to confirm" : "Forget facet"}
+                    type="button"
+                  >
+                    <Icon name="trash" className="size-3.5" />
+                  </button>
+                </div>
               </div>
             </li>
           ))}

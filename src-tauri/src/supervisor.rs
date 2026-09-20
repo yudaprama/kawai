@@ -458,18 +458,21 @@ fn render_planner_context(
     skills_block: String,
     attached_files_block: String,
     experiences_block: String,
+    profile_block: String,
 ) -> String {
     if persona_block.is_empty()
         && memories_block.is_empty()
         && skills_block.is_empty()
         && attached_files_block.is_empty()
         && experiences_block.is_empty()
+        && profile_block.is_empty()
     {
         return String::new();
     }
     let mut out = String::from("<user-context>\nBackground about the user and this run's inputs. Ground decisions in it when relevant; ignore it when not.\n");
     for block in [
         persona_block,
+        profile_block,
         memories_block,
         skills_block,
         attached_files_block,
@@ -669,12 +672,13 @@ pub async fn plan_task(
     // All independent, so they run concurrently — sequential awaits here were
     // the bulk of the dead time between submit and the first planner round.
     // The Turso catalog sync joins the same fan-out (best-effort).
-    let (persona_block, memories_block, skills_block, attached_files_block, experiences_block, catalog) = tokio::join! {
+    let (persona_block, memories_block, skills_block, attached_files_block, experiences_block, profile_block, catalog) = tokio::join! {
         kawai_memory::persona_prompt_block(user_id),
         kawai_memory::prompt_block_relevant(user_id, goal),
         kawai_skills::prompt_block(user_id),
         attached_files_block(user_id, session_id),
         experiences_block(user_id, goal),
+        kawai_memory::profile_prompt_block(user_id),
         open_synced_catalog(PLAN_SEARCH_SYNC_TIMEOUT),
     };
     // Surface what got loaded into the planner call (coarse counts — the
@@ -698,6 +702,7 @@ pub async fn plan_task(
         skills_block,
         attached_files_block,
         experiences_block,
+        profile_block,
     );
 
     // The planner sees NO full catalog. It discovers tools through bounded

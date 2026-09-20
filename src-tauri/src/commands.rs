@@ -639,6 +639,50 @@ pub async fn onboarding_reset(session: State<'_, Session>) -> Result<usize, Stri
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: list profile facets (dropped rows behind a flag).
+#[tauri::command]
+pub async fn facet_list(
+    include_dropped: Option<bool>,
+    session: State<'_, Session>,
+) -> Result<Vec<logic::memory::ProfileFacet>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::facet_list(&user_id, include_dropped.unwrap_or(false))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: pin or unpin a facet.
+#[tauri::command]
+pub async fn facet_pin(
+    key: String,
+    pinned: bool,
+    session: State<'_, Session>,
+) -> Result<bool, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::facet_pin(&user_id, &key, pinned)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: drop one facet (user veto).
+#[tauri::command]
+pub async fn facet_forget(key: String, session: State<'_, Session>) -> Result<bool, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::facet_forget(&user_id, &key)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: delete all non-pinned facets (openhuman reset
+/// semantics). Returns how many rows were removed.
+#[tauri::command]
+pub async fn facet_reset_non_pinned(session: State<'_, Session>) -> Result<usize, String> {
+    let user_id = session_user_id(&session)?;
+    logic::memory::facet_reset_non_pinned(&user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: extract memories from a session's transcript via the
 /// cloud tier (needs the hybrid vault); dedups and stores the results.
 #[tauri::command]

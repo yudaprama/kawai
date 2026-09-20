@@ -101,6 +101,7 @@ healthy row: `outcome=answer|tool` with `output_tokens` below the cap.
 | Answer cut mid-sentence | `output_tokens` == cap (`KAWAI_REMOTE_LLM_MAX_OUTPUT_TOKENS`) |
 | "exceeds available state entries" | context over K/V budget → lower budgets or raise `KAWAI_LLM_MAX_TOKENS` (Gemma 4 max 32003) |
 | `database is locked` | two processes on one data dir, or run tests `--test-threads=1` |
+| `duplicate column name: …` during any op / `bad parameter or other API misuse` at startup | two processes ran `ensure_schema` on one data dir — kill the second instance; the version rows self-heal on the next clean open |
 | Empty search hits despite content | model used whole-phrase query; test the shape against `fts_match_query` |
 | `data_query_nl` invalid JSON / slow | `parse_llm_json` guards in place; >60 s = failover retries or local fallback; `timeoutMs: 120000` |
 | `data_schema` columns named A, B, C (xlsx) | no header found — check the sheet's real shape: `cargo run -p analytics --example xlsx_probe -- <file> [sheet]`; if text samples are ALL null, the SST deref broke (see `cell_typed` in `analytics/src/excel.rs`); a pivot fragment with no header is correct output |

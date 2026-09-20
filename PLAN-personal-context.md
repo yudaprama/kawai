@@ -1,14 +1,17 @@
 # Implementation Plan — Personal context: "knows you in minutes"
 
-Status: **IN PROGRESS** — the standalone Apify client and identity-discovery
-foundation are implemented; transport wiring, Gmail/Composio ingestion,
-consent UI, memory persistence, and onboarding orchestration remain. Inspired
-by openhuman's onboarding/memory stack (Gmail/LinkedIn scan → LLM compress →
-PROFILE.md → 18 memory families → experience store → facet cache), re-scoped
-to kawai's architecture: per-user SQLite, pure `crates/`, dual wrappers,
-prompt-block injection. The claim we are implementing: **after a 1–2 minute
-opt-in flow, the agent already knows what the user cares about and has useful
-identity context — before the user types anything.**
+Status: **IN PROGRESS** — Phases 1, 2, and 4 are implemented (memory namespaces + agent
+experiences; the onboarding pipeline + UI; profile facets + `<profile>` injection). Remaining:
+Phase 3 (Gmail connector — Composio-vs-direct OAuth decision in §6.1 is unresolved; document
+import; Apify opt-in enrichment), the `onboarding_smoke` example, and the §2.7 continuous
+learning loop (deferred). Inspired by openhuman's onboarding/memory stack (Gmail/LinkedIn scan →
+LLM compress → PROFILE.md → memory families → experience store → facet cache), re-scoped to
+kawai's architecture: per-user SQLite, pure `crates/`, dual wrappers, prompt-block injection.
+The shipped claim (Phases 2+4): after a 1–2 minute opt-in flow, the agent already knows what
+the user cares about and has useful identity context — before the user types anything.
+Migration numbers in the body below are STALE — the authoritative numbers are:
+0016_memory_namespaces, 0017_agent_experiences, 0018_onboarding_state, 0019_profile_facets
+(live in `crates/foundation/db/migrations/`).
 
 Non-goals up front:
 
@@ -376,7 +379,37 @@ frontend Memory page                       # tabs: L1 | Experiences | Profile (f
 - Workspace registration for both crates in `crates/Cargo.toml`.
 - Verification: `cargo test -p apify -p onboarding` — 47 tests passed.
 
-### Remaining phases
+### Implementation status (update 2026 — phases 1/2/4 shipped)
+
+**Phase 1 — namespaces + experiences: SHIPPED.** Migrations 0016 + 0017;
+`memory_create_ns`/`memory_update_ns` + pinned-first prompt blocks (profile
+excluded); `crates/engines/agent/src/experience.rs` (record/list/top_k/delete,
+prune >200/agent); supervisor writes one experience per completed run (lesson
+via the `experience-distiller` role, vault-less = empty lesson, row still
+lands); planner `<experiences>` block incl. repair materials; ops
+`experience_list`/`experience_delete`; Memory page Experiences tab.
+
+**Phase 2 — onboarding pipeline + UI: SHIPPED** (minus the smoke example).
+`crates/engines/onboarding` compress.rs (strict-JSON profile parser) +
+`logic/onboarding.rs` orchestration; `OnboardingEvent` in kawai-events + TS
+bindings; `onboarding_status/run/skip/reset` ops (Tauri Channel + Axum SSE);
+`ContextGatheringStep` post-auth (skippable, never re-prompts); state in
+`onboarding_state` (0018). Quick-question `profile` items persist as
+`general` so they inject immediately; `source='questions'` provenance.
+Missing: `onboarding_smoke` example.
+
+**Phase 4 — facets + distill: SHIPPED.** Migration 0019;
+`crates/foundation/memory/src/facets.rs` (upsert/list/pin/forget/reset +
+class_from_key + stability math + `profile_prompt_block` 2k/16);
+`facet_distill` rides `memory_extract` and onboarding persist (best-effort);
+`<profile>` block in the planner context; ops `facet_list/pin/forget/
+reset_non_pinned`; Memory page Profile tab. The "memory_extract stops
+emitting profile rows" deprecation pressure is NOT applied — extract still
+classifies into namespaces and the distill folds them.
+
+**Phase 3 — connectors + LinkedIn enrichment: REMAINING.**
+
+### Remaining phases (original gate descriptions — migration numbers stale, see header)
 
 **Phase 1 — namespaces + experiences** (no new deps, no UI risk)
 Migration 0010 + 0011; memory namespace filter; experience write/read;
