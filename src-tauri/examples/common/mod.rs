@@ -72,6 +72,7 @@ pub async fn build_stub_registry() -> Result<kawai_router::ToolRegistry, String>
             description: def.description.clone(),
             input_schema: def.parameters.clone(),
             output_schema: serde_json::json!({}),
+            produces: vec![],
             requires_confirmation: false,
         });
     }

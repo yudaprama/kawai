@@ -409,6 +409,7 @@ fn tool_meta_from_definition(def: &kawai_tools::ToolDefinition) -> ToolMeta {
         description: def.description.clone(),
         input_schema: def.parameters.clone(),
         output_schema: serde_json::json!({}),
+        produces: vec![],
         requires_confirmation: def.requires_confirmation,
     }
 }
@@ -929,6 +930,10 @@ pub fn parse_supervisor_plan_scoped(
     let slice = kawai_router::extract_json_slice(raw).map_err(|e| e.to_string())?;
     let mut plan: kawai_router::TaskPlan = serde_json::from_str(slice)
         .map_err(|e| format!("invalid plan JSON: {e}"))?;
+    // Explicit dataflow bindings ("inputs"): shape + target checks, and each
+    // binding implies its dependency — the planner can never desynchronize
+    // dependsOn from the dataflow it declared.
+    kawai_router::bind_dataflow(&mut plan).map_err(|e| e.to_string())?;
     // Clamp an LLM-written summary to the UI contract, then backfill the
     // deterministic fallback when the planner omitted it — the summary is
     // always present on any plan leaving this parse path.
@@ -1203,7 +1208,7 @@ Respond ONLY with ONE JSON object — either:
   (request tool search results; up to 3 diverse queries; describe CAPABILITIES, not tool names)
   — ALWAYS write the queries in ENGLISH: the catalog descriptions are English,
   so queries in any other language return junk and waste the search budget.
-{{"goal": "<one-line goal>", "summary": {{"overview": "<1–3 sentences>", "actions": ["…"], "outputs": ["…"]}}, "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
+{{"goal": "<one-line goal>", "summary": {{"overview": "<1–3 sentences>", "actions": ["…"], "outputs": ["…"]}}, "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "inputs": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
   (the final plan, once you know which tools to use)
 
 Plan rules:
@@ -1222,8 +1227,10 @@ Plan rules:
   complete and precise — the arguments are what the tool executes.
 - Be concise overall: no prose outside the JSON, no repeated context.
 - "dependsOn" lists step ids that must finish first; no cycles.
-- To pass a previous step's artifact: {{"fromStep": "<step id>", "output": "<artifact name>"}} — never paste large content.
-  Use fromStep ONLY for scalar string values (a fileId, a count). NEVER fill
+- To consume a previous step's output, bind it in "inputs": {{"<arg name>": {{"fromStep": "<step id>", "output": "<artifact name>"}}}} — never paste large content.
+  A bound input implies its dependency (no separate dependsOn needed) and
+  overrides "arguments" on the same key. Use fromStep ONLY for scalar string
+  values (a fileId, a count). NEVER fill
   array-typed arguments (columns, groupBy, aggregations, filters, items) with
   fromStep — write the literal array yourself using the columns from
   data_schema.
@@ -1283,10 +1290,10 @@ completes the original goal from the current state.
 
 The FULL tool catalog is provided below — do NOT ask for more tools, do NOT
 search. Respond ONLY with ONE JSON object, exactly this shape:
-{{"goal": "<one-line goal>", "summary": {{"overview": "<1–3 sentences, user's language>", "actions": ["…"], "outputs": ["…"]}}, "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
+{{"goal": "<one-line goal>", "summary": {{"overview": "<1–3 sentences, user's language>", "actions": ["…"], "outputs": ["…"]}}, "steps": [{{"id": "s1", "tool": "<exact name>", "task": "…", "arguments": {{}}, "inputs": {{}}, "dependsOn": [], "produces": [], "timeoutMs": 30000, "retries": 0, "onError": "fail", "requiresConfirmation": false}}], "finalWriter": "deck_writer"}}
 
 Rules:
-- Reuse the outputs of already-completed steps via {{"fromStep": "<step id>", "output": "<artifact name>"}} — never redo work that succeeded.
+- Reuse the outputs of already-completed steps by binding them in "inputs": {{"<arg name>": {{"fromStep": "<step id>", "output": "<artifact name>"}}}} — never redo work that succeeded. A bound input implies its dependency.
 - Fix ONLY what failed: the failure reason is in the execution report.
 - "task" is REQUIRED: one line ≤80 chars in the USER'S LANGUAGE.
 - "summary" mirrors the planner's contract: overview = 1–3 sentences in
@@ -1970,9 +1977,11 @@ fn log_scheduler_event(stream_id: &str, event: kawai_router::SchedulerEvent) -> 
 // ── Failure-triggered SURGICAL repair (replaces whole-plan replanning) ──
 
 /// Hard cap on planner repair rounds per plan execution. Each round only
-/// rewrites the FAILED subgraph — successful steps are frozen — so a round
-/// is cheap and its blast radius is small.
-const MAX_REPLANS: u32 = 1;
+/// rewrites the FAILED subgraph — successful steps are frozen (and their
+/// outputs replayed from the supervisor_step_results cache) — so a round is
+/// cheap and its blast radius is small. 3 rounds = the system retries
+/// itself instead of surfacing the failure to the user.
+const MAX_REPLANS: u32 = 3;
 
 /// The subgraph a repair round may rewrite: the failed steps plus every
 /// step that (transitively) depends on one. Everything else is FROZEN —
@@ -2029,9 +2038,9 @@ fn validate_frozen_steps(
                 orig.id
             ));
         }
-        if step.arguments != orig.arguments {
+        if step.arguments != orig.arguments || step.inputs != orig.inputs {
             return Err(format!(
-                "frozen step '{}' changed arguments — succeeded steps must be kept unchanged; only the failed steps may change",
+                "frozen step '{}' changed arguments or inputs bindings — succeeded steps must be kept unchanged; only the failed steps may change",
                 orig.id
             ));
         }
@@ -3374,6 +3383,7 @@ mod tests {
             description: "test tool".into(),
             input_schema: serde_json::json!({}),
             output_schema: serde_json::json!({}),
+            produces: vec![],
             requires_confirmation: false,
         });
         registry
