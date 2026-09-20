@@ -565,6 +565,37 @@ pub async fn memory_delete(memory_id: String, session: State<'_, Session>) -> Re
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: list agent experiences, newest first (optional
+/// agent/session filters).
+#[tauri::command]
+pub async fn experience_list(
+    agent_id: Option<String>,
+    session_id: Option<i64>,
+    session: State<'_, Session>,
+) -> Result<Vec<logic::experience::ExperienceItem>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::experience::experience_list(
+        &user_id,
+        agent_id.as_deref(),
+        session_id,
+        None,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: delete one agent experience.
+#[tauri::command]
+pub async fn experience_delete(
+    experience_id: String,
+    session: State<'_, Session>,
+) -> Result<bool, String> {
+    let user_id = session_user_id(&session)?;
+    logic::experience::experience_delete(&user_id, &experience_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: extract memories from a session's transcript via the
 /// cloud tier (needs the hybrid vault); dedups and stores the results.
 #[tauri::command]
@@ -1286,13 +1317,7 @@ pub async fn graph_search(
     session: State<'_, Session>,
 ) -> Result<serde_json::Value, String> {
     let user_id = session_user_id(&session)?;
-    let m = match mode.as_deref().unwrap_or("hybrid") {
-        "naive" => logic::graph::GraphSearchMode::Naive,
-        "local" => logic::graph::GraphSearchMode::Local,
-        "global" => logic::graph::GraphSearchMode::Global,
-        "mix" => logic::graph::GraphSearchMode::Mix,
-        _ => logic::graph::GraphSearchMode::Hybrid,
-    };
+    let m = logic::graph::GraphSearchMode::parse(mode.as_deref());
     let hits = logic::graph::graph_search(user_id, query, Some(m), limit).await?;
     Ok(serde_json::to_value(hits).unwrap_or(serde_json::Value::Array(vec![])))
 }

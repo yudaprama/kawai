@@ -139,6 +139,8 @@ pub fn run() {
         commands::memory_list,
         commands::memory_update,
         commands::memory_delete,
+        commands::experience_list,
+        commands::experience_delete,
         commands::memory_extract,
         commands::memory_search,
         commands::memory_consolidate,

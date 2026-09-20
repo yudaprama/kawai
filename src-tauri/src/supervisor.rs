@@ -3337,6 +3337,56 @@ pub fn execute_plan_stream_with_cancel(
                             artifacts: deck_artifact.clone().into_iter().collect(),
                             retries_used: 0,
                         };
+                        // ── Agent experience (PLAN-personal-context §2.2) ──
+                        // One distilled row per completed run: tools used,
+                        // outcome, and (best-effort, cloud tier) a one-line
+                        // lesson. The lesson is SKIPPED silently when no
+                        // cloud provider is configured — the row still lands.
+                        if !user_id.is_empty() {
+                            let exp_tools: Vec<String> = current_plan
+                                .steps
+                                .iter()
+                                .map(|s| s.tool.clone().unwrap_or_else(|| s.agent_id.clone()))
+                                .filter(|t| !t.is_empty())
+                                .collect();
+                            let exp_outcome = if result.failures().is_empty() {
+                                "success"
+                            } else {
+                                "partial"
+                            };
+                            let exp_tags: Vec<String> = exp_tools.iter().cloned().collect();
+                            let lesson_task = format!(
+                                "Goal: {}\nTools used in order: {}\nOutcome: {}. \
+                                 In ONE sentence (max 40 words), state the single most useful \
+                                 takeaway for a future run of a similar task — what worked or \
+                                 what to do differently. No preamble.",
+                                preview_chars(&current_plan.goal, 300),
+                                exp_tools.join(", "),
+                                exp_outcome,
+                            );
+                            let lesson = remote_llm::reason::reason_as(
+                                "You distill one reusable lesson from a completed AI agent run.",
+                                &lesson_task,
+                                "experience-distiller",
+                            )
+                            .await
+                            .map(|s| preview_chars(s.trim(), 400).to_string())
+                            .unwrap_or_default();
+                            if let Err(e) = kawai_agent::experience_record(
+                                &user_id,
+                                AUTO_AGENT_ID,
+                                session_id,
+                                &preview_chars(&current_plan.goal, 300).to_string(),
+                                &lesson,
+                                &exp_tools,
+                                exp_outcome,
+                                &exp_tags,
+                            )
+                            .await
+                            {
+                                eprintln!("[supervisor] experience record failed: {e:?}");
+                            }
+                        }
                         yield SupervisorEvent::PlanCompleted {
                             final_output: synthesized.or(raw_final),
                             artifacts: run_artifacts,

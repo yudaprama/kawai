@@ -127,6 +127,19 @@ struct MemoryDeleteRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ExperienceListRequest {
+    agent_id: Option<String>,
+    session_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExperienceDeleteRequest {
+    experience_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MemoryExtractRequest {
     session_id: i64,
 }
@@ -171,6 +184,31 @@ async fn memory_delete_handler(
     Json(req): Json<MemoryDeleteRequest>,
 ) -> Result<Json<bool>, (StatusCode, String)> {
     logic::memory::memory_delete(&user_id, &req.memory_id)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn experience_list_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<ExperienceListRequest>,
+) -> Result<Json<Vec<logic::experience::ExperienceItem>>, (StatusCode, String)> {
+    logic::experience::experience_list(
+        &user_id,
+        req.agent_id.as_deref(),
+        req.session_id,
+        None,
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+async fn experience_delete_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<ExperienceDeleteRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    logic::experience::experience_delete(&user_id, &req.experience_id)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -1506,13 +1544,7 @@ async fn graph_search_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<GraphSearchRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let m = match req.mode.as_deref().unwrap_or("hybrid") {
-        "naive" => logic::graph::GraphSearchMode::Naive,
-        "local" => logic::graph::GraphSearchMode::Local,
-        "global" => logic::graph::GraphSearchMode::Global,
-        "mix" => logic::graph::GraphSearchMode::Mix,
-        _ => logic::graph::GraphSearchMode::Hybrid,
-    };
+    let m = logic::graph::GraphSearchMode::parse(req.mode.as_deref());
     let hits = logic::graph::graph_search(user_id, req.query, Some(m), req.limit)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
@@ -1695,6 +1727,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/memory_list", post(memory_list_handler))
         .route("/api/memory_update", post(memory_update_handler))
         .route("/api/memory_delete", post(memory_delete_handler))
+        .route("/api/experience_list", post(experience_list_handler))
+        .route("/api/experience_delete", post(experience_delete_handler))
         .route("/api/memory_extract", post(memory_extract_handler))
         .route("/api/memory_search", post(memory_search_handler))
         .route("/api/memory_consolidate", post(memory_consolidate_handler))
