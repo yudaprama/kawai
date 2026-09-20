@@ -2957,11 +2957,22 @@ pub fn execute_plan_stream_with_cancel(
         let mut current_plan = plan;
         let mut replan_attempt: u32 = 0;
         'plans: loop {
-            let execution = kawai_router::run_plan_with_cancel(
+            let execution = kawai_router::run_plan_scoped(
                 current_plan.clone(),
                 dispatch.clone(),
                 limits.clone(),
                 cancel.clone(),
+                // Producer contracts (step id → declared artifact names):
+                // bindings from contract-bearing tools resolve strictly.
+                current_plan
+                    .steps
+                    .iter()
+                    .filter_map(|s| {
+                        let tool = s.dispatch_key();
+                        let produces = registry.get(tool)?.produces.clone();
+                        (!produces.is_empty()).then(|| (s.id.clone(), produces))
+                    })
+                    .collect::<kawai_router::StepContracts>(),
             );
             tokio::pin!(execution);
             let result = loop {
