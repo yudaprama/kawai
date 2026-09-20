@@ -31,17 +31,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useMemories } from "@/features/memory/hooks/use-memories";
 import { useMemoryTiers } from "@/features/memory/hooks/use-memory-tiers";
+import { call, errText } from "@/lib/api";
+import { showErrorToast } from "@/lib/utils";
 import {
   MEMORY_KINDS,
   type ChatMessageInfo,
   type ChatSessionInfo,
+  type ExperienceItem,
   type MemoryGraphExport,
   type MemoryItem,
 } from "@/lib/api";
 import { useOp } from "@/hooks/use-op";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 
-type MemoryTab = "l0" | "l1" | "l2" | "l3" | "graph";
+type MemoryTab = "l0" | "l1" | "l2" | "l3" | "exp" | "graph";
 
 // Code-split: the force-graph (d3-force + worker) only loads when the user
 // opens the Graph tab.
@@ -172,6 +175,7 @@ function BlockDetail({
             <TabsTrigger value="l1">L1 · Memories</TabsTrigger>
             <TabsTrigger value="l2">L2 · Scenes</TabsTrigger>
             <TabsTrigger value="l3">L3 · Persona</TabsTrigger>
+            <TabsTrigger value="exp">Experiences</TabsTrigger>
             <TabsTrigger value="graph">Graph</TabsTrigger>
           </TabsList>
         </div>
@@ -186,6 +190,9 @@ function BlockDetail({
         </TabsContent>
         <TabsContent className="flex min-h-0 flex-1 flex-col" value="l3">
           <PersonaPane />
+        </TabsContent>
+        <TabsContent className="flex min-h-0 flex-1 flex-col" value="exp">
+          <ExperiencesPane />
         </TabsContent>
         <TabsContent className="flex min-h-0 flex-1 flex-col" value="graph">
           <GraphPane />
@@ -265,6 +272,99 @@ function Pane({ toolbar, children }: { toolbar: ReactNode; children: ReactNode }
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-4 py-2">{toolbar}</div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">{children}</div>
     </div>
+  );
+}
+
+/** Experiences — one distilled row per completed supervisor run (read-only
+ *  list + delete; written by the supervisor, consumed by the planner). */
+function ExperiencesPane() {
+  const op = useOp<ExperienceItem[]>("experience_list", {}, { onError: "toast" });
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (confirmDeleteId == null) return;
+    const t = setTimeout(() => setConfirmDeleteId(null), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDeleteId]);
+
+  const remove = async (id: string) => {
+    try {
+      await call<boolean>("experience_delete", { experienceId: id });
+      await op.execute();
+    } catch (err) {
+      showErrorToast(errText(err));
+    }
+  };
+
+  const items = op.data ?? [];
+  return (
+    <Pane
+      toolbar={
+        <>
+          <Button disabled={op.loading} onClick={() => void op.execute()} size="xs" variant="outline">
+            {op.loading ? <Spinner className="size-3" /> : <Icon name="search" className="size-3" />}
+            Refresh
+          </Button>
+          <span className="text-muted-foreground ml-auto text-xs">
+            {items.length} {items.length === 1 ? "experience" : "experiences"} · what each run learned
+          </span>
+        </>
+      }
+    >
+      {op.loading && items.length === 0 ? (
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Spinner className="size-4" /> Loading…
+        </div>
+      ) : items.length === 0 ? (
+        <p className="text-muted-foreground text-sm">
+          No experiences yet — finish a run and the supervisor records what it did and learned here.
+        </p>
+      ) : (
+        <ol className="flex flex-col gap-2">
+          {items.map((e) => (
+            <li className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3" key={e.id}>
+              <div className="flex items-start gap-2">
+                <span
+                  className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[11px] uppercase ${
+                    e.outcome === "success"
+                      ? "bg-[var(--tea-color-bg-secondary-default)]"
+                      : "text-destructive bg-[var(--tea-color-bg-secondary-default)]"
+                  }`}
+                >
+                  {e.outcome}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium" title={e.taskSummary}>
+                    {e.taskSummary}
+                  </p>
+                  {e.lesson && <p className="mt-1 text-xs">💡 {e.lesson}</p>}
+                  <p className="text-muted-foreground mt-1.5 text-[11px]">
+                    run #{e.sessionId} · tools: {e.toolSequence.join(", ") || "—"} ·{"\n"}
+                    {new Date(e.createdAt * 1000).toLocaleString()}
+                  </p>
+                </div>
+                <button
+                  aria-label="Delete experience"
+                  className={`rounded p-1 ${confirmDeleteId === e.id ? "text-destructive" : "text-muted-foreground hover:text-destructive"}`}
+                  onClick={async () => {
+                    if (confirmDeleteId !== e.id) {
+                      setConfirmDeleteId(e.id);
+                      return;
+                    }
+                    setConfirmDeleteId(null);
+                    await remove(e.id);
+                  }}
+                  title={confirmDeleteId === e.id ? "Click again to confirm" : "Delete experience"}
+                  type="button"
+                >
+                  <Icon name="trash" className="size-3.5" />
+                </button>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Pane>
   );
 }
 

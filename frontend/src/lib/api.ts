@@ -90,6 +90,21 @@ export interface KnowledgeContext {
 }
 export const MEMORY_KINDS = ["preference", "rule", "event", "fact", "goal"] as const;
 
+/** Agent experience — one distilled row per completed supervisor run
+ *  (PLAN-personal-context §2.2). Not in generated types yet; mirrors the
+ *  Rust `ExperienceItem` (camelCase serde). */
+export interface ExperienceItem {
+  id: string;
+  agentId: string;
+  sessionId: number;
+  taskSummary: string;
+  lesson: string;
+  toolSequence: string[];
+  outcome: "success" | "partial" | "failed";
+  tags: string[];
+  createdAt: number;
+}
+
 // ---- Frontend-local overrides for generated types ----
 
 /** Frontend never sends null timestamps; backend returns them as i64 from DB. */

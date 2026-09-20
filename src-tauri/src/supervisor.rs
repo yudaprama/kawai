@@ -457,16 +457,24 @@ fn render_planner_context(
     memories_block: String,
     skills_block: String,
     attached_files_block: String,
+    experiences_block: String,
 ) -> String {
     if persona_block.is_empty()
         && memories_block.is_empty()
         && skills_block.is_empty()
         && attached_files_block.is_empty()
+        && experiences_block.is_empty()
     {
         return String::new();
     }
     let mut out = String::from("<user-context>\nBackground about the user and this run's inputs. Ground decisions in it when relevant; ignore it when not.\n");
-    for block in [persona_block, memories_block, skills_block, attached_files_block] {
+    for block in [
+        persona_block,
+        memories_block,
+        skills_block,
+        attached_files_block,
+        experiences_block,
+    ] {
         if !block.is_empty() {
             out.push_str(&block);
             out.push('\n');
@@ -548,6 +556,44 @@ async fn attached_files_block(user_id: &str, session_id: i64) -> String {
 /// a query filter that matched nothing, then re-planned the extraction and
 /// crashed the run on a PNG. Best-effort — a read failure degrades to an
 /// empty block, planning never fails on it.
+/// Last N agent experiences (PLAN-personal-context §2.2) as a planner-context
+/// block — the planner avoids repeating tool sequences that already ran (and
+/// sees recorded lessons). Ranked by recency + goal overlap; best-effort.
+const PLANNER_EXPERIENCES: usize = 3;
+const EXPERIENCE_HEAD_CHARS: usize = 200;
+
+async fn experiences_block(user_id: &str, goal: &str) -> String {
+    let items = match
+        kawai_agent::experience_top_k(user_id, AUTO_AGENT_ID, goal, PLANNER_EXPERIENCES).await
+    {
+        Ok(items) => items,
+        Err(_) => return String::new(),
+    };
+    if items.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from(
+        "<experiences>\nWhat earlier runs of this workspace learned (newest first). Avoid repeating \
+         a failed tool sequence; apply the recorded lessons when they fit:\n",
+    );
+    for e in &items {
+        let head: String = e.task_summary.chars().take(EXPERIENCE_HEAD_CHARS).collect();
+        let head = head.replace('\n', " ");
+        out.push_str(&format!(
+            "- [{}] {}\n  tools: {}\n",
+            e.outcome,
+            head,
+            e.tool_sequence.join(", ")
+        ));
+        if !e.lesson.is_empty() {
+            let lesson: String = e.lesson.chars().take(EXPERIENCE_HEAD_CHARS).collect();
+            out.push_str(&format!("  lesson: {}\n", lesson.replace('\n', " ")));
+        }
+    }
+    out.push_str("</experiences>");
+    out
+}
+
 async fn previous_runs_block(user_id: &str, session_id: i64) -> String {
     const HEAD_CHARS: usize = 120;
     const MAX_ROWS: usize = 20;
@@ -623,11 +669,12 @@ pub async fn plan_task(
     // All independent, so they run concurrently — sequential awaits here were
     // the bulk of the dead time between submit and the first planner round.
     // The Turso catalog sync joins the same fan-out (best-effort).
-    let (persona_block, memories_block, skills_block, attached_files_block, catalog) = tokio::join! {
+    let (persona_block, memories_block, skills_block, attached_files_block, experiences_block, catalog) = tokio::join! {
         kawai_memory::persona_prompt_block(user_id),
         kawai_memory::prompt_block_relevant(user_id, goal),
         kawai_skills::prompt_block(user_id),
         attached_files_block(user_id, session_id),
+        experiences_block(user_id, goal),
         open_synced_catalog(PLAN_SEARCH_SYNC_TIMEOUT),
     };
     // Surface what got loaded into the planner call (coarse counts — the
@@ -650,6 +697,7 @@ pub async fn plan_task(
         memories_block,
         skills_block,
         attached_files_block,
+        experiences_block,
     );
 
     // The planner sees NO full catalog. It discovers tools through bounded
@@ -2444,6 +2492,7 @@ async fn revise_plan(
             .collect(),
     );
     materials.push_str(&previous_runs_block(user_id, session_id).await);
+    materials.push_str(&experiences_block(user_id, &goal).await);
 
     let task = format!(
         "The execution of the plan for this goal FAILED at some steps. Repair it SURGICALLY — \
