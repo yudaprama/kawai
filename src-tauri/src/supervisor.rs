@@ -401,37 +401,9 @@ async fn build_supervisor_toolset(
     }
 }
 
-/// Declared artifact contracts — the machine-readable "what does this tool
-/// emit for downstream steps" per tool, derived from each tool's actual
-/// output envelope (see `tool_output_artifacts` for the extraction side).
-/// Names here are the only ones plan validation accepts as a binding target
-/// from that tool; tools not listed stay runtime-guarded (permissive).
-/// data_schema is deliberately declared with only "columns" — it never
-/// yields a file id, so binding fileId from a data_schema step is rejected
-/// at plan time instead of failing mid-run.
-const DECLARED_PRODUCES: &[(&str, &[&str])] = &[
-    ("office_list_files", &["files"]),
-    ("office_create_document", &["file"]),
-    ("office_create_deck", &["file", "slides"]),
-    ("office_export_deck", &["file", "slides"]),
-    ("office_restore_backup", &["file"]),
-    ("pdf_merge", &["file"]),
-    ("pdf_split", &["files"]),
-    ("pdf_create_from_markdown", &["file"]),
-    ("data_schema", &["columns"]),
-    ("data_export", &["fileId"]),
-];
-
-/// The declared artifact contract for one tool, if any.
-fn declared_produces(tool: &str) -> Vec<String> {
-    DECLARED_PRODUCES
-        .iter()
-        .find(|(name, _)| *name == tool)
-        .map(|(_, produces)| produces.iter().map(|p| p.to_string()).collect())
-        .unwrap_or_default()
-}
-
 /// Convert a [`kawai_tools::ToolDefinition`] into a [`kawai_router::ToolMeta`].
+/// The artifact contract rides the definition — declared at the tool, beside
+/// the code that produces the output — so it can never drift from it.
 fn tool_meta_from_definition(def: &kawai_tools::ToolDefinition) -> ToolMeta {
     ToolMeta {
         name: def.name.clone(),
@@ -439,7 +411,7 @@ fn tool_meta_from_definition(def: &kawai_tools::ToolDefinition) -> ToolMeta {
         description: def.description.clone(),
         input_schema: def.parameters.clone(),
         output_schema: serde_json::json!({}),
-        produces: declared_produces(&def.name),
+        produces: def.produces.clone(),
         requires_confirmation: def.requires_confirmation,
     }
 }
@@ -3695,20 +3667,20 @@ mod coerce_tests {
 
 #[cfg(test)]
 mod produces_contracts_tests {
-    use super::declared_produces;
-
+    /// The contract now lives AT the tool (AgentTool::produces →
+    /// ToolDefinition.produces), beside the code that produces the output —
+    /// guarded by the office/analytics crates' own contract tests. The
+    /// supervisor only forwards it (see tool_meta_from_definition).
     #[test]
-    fn declared_produces_contracts_are_exact() {
-        // data_schema never yields a file id — the contract must not grow one
-        // (binding fileId from a data_schema step must stay a plan-time error).
-        assert_eq!(declared_produces("data_schema"), vec!["columns".to_string()]);
-        assert_eq!(declared_produces("office_list_files"), vec!["files".to_string()]);
-        assert_eq!(
-            declared_produces("office_create_deck"),
-            vec!["file".to_string(), "slides".to_string()]
-        );
-        // Undeclared tools stay permissive (runtime-guarded only).
-        assert!(declared_produces("office_edit_document").is_empty());
-        assert!(declared_produces("web_search").is_empty());
+    fn contracts_are_declared_at_the_tool() {
+        let def = kawai_tools::ToolDefinition {
+            name: "t".into(),
+            description: "t".into(),
+            parameters: serde_json::json!({}),
+            requires_confirmation: false,
+            produces: vec!["file".into()],
+        };
+        let meta = super::tool_meta_from_definition(&def);
+        assert_eq!(meta.produces, vec!["file".to_string()]);
     }
 }

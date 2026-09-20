@@ -83,6 +83,11 @@ pub struct ToolDefinition {
     pub parameters: Value,
     /// Whether invoking this tool must be confirmed by the user.
     pub requires_confirmation: bool,
+    /// Declared artifact contract: the names this tool emits for downstream
+    /// supervisor steps (e.g. "files" for a file-listing tool). Declared at
+    /// the tool, beside the code that produces the output — the supervisor's
+    /// plan validator treats these names as exact-match binding targets.
+    pub produces: Vec<String>,
 }
 
 /// Model-visible output of a tool call, as a single text body.
@@ -135,6 +140,16 @@ pub trait AgentTool: Sized + Send + Sync {
     /// Tools default to pure/read-only; side-effecting tools override this.
     fn requires_confirmation(&self) -> bool {
         false
+    }
+
+    /// Declared artifact contract: the output names downstream supervisor
+    /// steps may bind via `{"fromStep": …, "output": …}`. Declare ONLY names
+    /// the tool deterministically emits (its envelope's stable keys, e.g.
+    /// `"file"`, `"files"`, `"columns"`); the plan validator enforces them
+    /// as exact-match binding targets. Default: no contract — bindings are
+    /// then guarded by the runtime resolver alone.
+    fn produces(&self) -> Vec<String> {
+        Vec::new()
     }
 
     /// Execute one owned invocation.
@@ -231,6 +246,7 @@ fn erase<T: AgentTool + 'static>(tool: T) -> ErasedEntry {
         description: tool.description(),
         parameters: tool.parameters(),
         requires_confirmation: tool.requires_confirmation(),
+        produces: tool.produces(),
     };
     let tool = Arc::new(tool);
     let captured = Arc::clone(&tool);
