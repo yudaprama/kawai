@@ -2089,12 +2089,14 @@ fn validate_frozen_steps(
 
 /// Rich per-step materials for the surgical repairer: each step carries its
 /// FULL arguments (not a 300-char output preview) and its full error, plus
-/// an explicit frozen/revisable marker. This is what makes the repair able
-/// to actually fix args instead of re-emitting them blind.
+/// an explicit frozen/revisable marker and its dataflow bindings (with the
+/// producing tool's contract). This is what makes the repair able to
+/// actually fix args instead of re-emitting them blind.
 fn repair_materials(
     plan: &kawai_router::TaskPlan,
     result: &kawai_router::ExecutionResult,
     repairable: &std::collections::HashSet<String>,
+    tool_contracts: &std::collections::HashMap<String, Vec<String>>,
 ) -> String {
     const OUTPUT_CHARS: usize = 300;
     const ERROR_CHARS: usize = 4_000;
@@ -2114,6 +2116,33 @@ fn repair_materials(
             step.tool.clone().unwrap_or_else(|| step.agent_id.clone()),
         ));
         out.push_str(&format!("arguments: {args}\n"));
+        // Dataflow bindings + the producing contract, so the repairer sees
+        // WHAT each step consumes and from WHOM — a failed step is often a
+        // mis-wired binding, and dependents of a rewired step must be shown
+        // the new source.
+        if let Some(bindings) = step.inputs.as_object().filter(|b| !b.is_empty()) {
+            let mut lines = Vec::new();
+            for (arg, reference) in bindings {
+                let from = reference.get("fromStep").and_then(|v| v.as_str()).unwrap_or("?");
+                let name = reference.get("output").and_then(|v| v.as_str()).unwrap_or("?");
+                let contract = plan
+                    .steps
+                    .iter()
+                    .find(|p| p.id == from)
+                    .map(|p| tool_contracts.get(p.dispatch_key()).cloned())
+                    .flatten()
+                    .unwrap_or_default();
+                if contract.is_empty() {
+                    lines.push(format!("  {arg} ← {from}.{name}"));
+                } else {
+                    lines.push(format!(
+                        "  {arg} ← {from}.{name} (tool contract: {})",
+                        contract.join(", ")
+                    ));
+                }
+            }
+            out.push_str(&format!("consumes:\n{}\n", lines.join("\n")));
+        }
         if let Some(r) = r {
             match r.status {
                 kawai_router::StepStatus::Completed => {
@@ -2336,7 +2365,18 @@ async fn revise_plan(
     // automatic dead end (observed live 2026: both corrective rounds burned).
     let system = revise_system_prompt(&registry.catalog_lines());
 
-    let mut materials = repair_materials(original, result, &repairable);
+    let mut materials = repair_materials(
+        original,
+        result,
+        &repairable,
+        // Tool → declared artifact contract — the repairer sees each
+        // binding's provenance and the names the source tool guarantees.
+        &registry
+            .metas()
+            .filter(|m| !m.produces.is_empty())
+            .map(|m| (m.name.clone(), m.produces.clone()))
+            .collect(),
+    );
     materials.push_str(&previous_runs_block(user_id, session_id).await);
 
     let task = format!(
@@ -3335,6 +3375,37 @@ mod tests {
     use kawai_router::{StepStatus, TaskStep};
 
     #[test]
+    fn repair_materials_shows_bindings_and_contracts() {
+        use std::collections::HashMap;
+        let plan = kawai_router::TaskPlan {
+            goal: "g".into(),
+            steps: vec![
+                TaskStep {
+                    id: "list".into(),
+                    agent_id: "t".into(),
+                    tool: Some("office_list_files".into()),
+                    ..Default::default()
+                },
+                TaskStep {
+                    id: "read".into(),
+                    agent_id: "t".into(),
+                    tool: Some("office_read_document".into()),
+                    inputs: serde_json::json!({"fileId": {"fromStep": "list", "output": "files"}}),
+                    ..Default::default()
+                },
+            ],
+            final_writer: None,
+            summary: None,
+        };
+        let result = kawai_router::ExecutionResult { results: vec![] };
+        let mut contracts = HashMap::new();
+        contracts.insert("office_list_files".to_string(), vec!["files".to_string()]);
+        let out = repair_materials(&plan, &result, &Default::default(), &contracts);
+        assert!(out.contains("consumes:"), "{out}");
+        assert!(out.contains("fileId \u{2190} list.files"), "{out}");
+        assert!(out.contains("tool contract: files"), "{out}");
+    }
+
     #[test]
     fn repair_revised_plan_json_injects_missing_goal() {
         let raw = r#"{"steps": [{"id": "s1", "task": "t", "tool": "x"}]}"#;
