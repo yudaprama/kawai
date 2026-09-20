@@ -25,6 +25,19 @@ pub struct PlanStepInfo {
     pub tool: String,
     pub task: String,
     pub depends_on: Vec<String>,
+    /// Explicit dataflow bindings — rendered in the plan review / progress
+    /// UI as "arg ← step.output" so the wiring a step consumes is visible.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<PlanInputBinding>,
+}
+
+/// One `inputs` binding of a plan step, display-shaped.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanInputBinding {
+    pub arg: String,
+    pub from_step: String,
+    pub output: String,
 }
 
 /// Artifact emitted by a completed step, carried on `stepCompleted` so the
@@ -149,6 +162,24 @@ fn plan_step_infos(plan: &kawai_router::TaskPlan) -> Vec<PlanStepInfo> {
                 s.task.clone()
             },
             depends_on: s.depends_on.clone(),
+            inputs: s
+                .inputs
+                .as_object()
+                .map(|bindings| {
+                    bindings
+                        .iter()
+                        .filter_map(|(arg, reference)| {
+                            let from = reference.get("fromStep")?.as_str()?;
+                            let output = reference.get("output").and_then(|v| v.as_str());
+                            Some(PlanInputBinding {
+                                arg: arg.clone(),
+                                from_step: from.to_string(),
+                                output: output.unwrap_or("").to_string(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
         .collect()
 }
