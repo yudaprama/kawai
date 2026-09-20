@@ -6,7 +6,14 @@ export type SupervisorEvent =
       type: "planStarted";
       goal: string;
       stepCount: number;
-      steps: { id: string; tool: string; task: string; dependsOn: string[] }[];
+      steps: {
+        id: string;
+        tool: string;
+        task: string;
+        dependsOn: string[];
+        /** Explicit dataflow bindings (display-shaped). */
+        inputs?: { arg: string; fromStep: string; output: string }[];
+      }[];
       /** Hash of the executed plan — read key for supervisor_step_output. */
       planKey: string;
       summary: PlanSummaryInfo;
@@ -73,7 +80,13 @@ export type SupervisorEvent =
       type: "planRevised";
       attempt: number;
       stepCount: number;
-      steps: { id: string; tool: string; task: string; dependsOn: string[] }[];
+      steps: {
+        id: string;
+        tool: string;
+        task: string;
+        dependsOn: string[];
+        inputs?: { arg: string; fromStep: string; output: string }[];
+      }[];
       /** Key of the REVISED plan — replaces the planStarted key. */
       planKey: string;
       summary: PlanSummaryInfo;
@@ -104,6 +117,14 @@ export interface SupervisorArtifact {
   label?: string;
 }
 
+/** One explicit dataflow binding: the step consumes `fromStep`'s `output`
+ *  artifact as its `arg` argument. Rendered as "arg ← step.output". */
+export interface SupervisorInputBinding {
+  arg: string;
+  fromStep: string;
+  output: string;
+}
+
 export interface SupervisorStep {
   stepId: string;
   tool: string;
@@ -121,6 +142,8 @@ export interface SupervisorStep {
   /** Wall-clock end — freezes the per-step duration. */
   finishedAt?: number;
   artifacts: SupervisorArtifact[];
+  /** Explicit dataflow bindings — shown as the wiring the step consumes. */
+  inputs?: SupervisorInputBinding[];
 }
 
 /** One step of a plan awaiting user review (before execution). Wire shape
@@ -130,6 +153,9 @@ export interface PlanReviewStep {
   tool: string;
   task: string;
   dependsOn: string[];
+  /** Dataflow bindings — reviewed alongside the step list so the user sees
+   *  what each step consumes, not just what it runs. */
+  inputs?: SupervisorInputBinding[];
   requiresConfirmation: boolean;
 }
 

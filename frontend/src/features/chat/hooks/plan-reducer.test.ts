@@ -345,6 +345,7 @@ describe("seedSteps", () => {
       tool: "code_write",
       task: "write code",
       dependsOn: [],
+      inputs: [],
       state: "pending",
       artifacts: [],
     });

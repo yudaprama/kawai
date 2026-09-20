@@ -30,12 +30,13 @@ export type {
 
 /** Seed the tracked plan structure from planStarted/planRevised wire steps —
  *  every step starts pending with no artifacts. */
-export function seedSteps(steps: { id: string; tool: string; task: string; dependsOn: string[] }[]): SupervisorStep[] {
+export function seedSteps(steps: { id: string; tool: string; task: string; dependsOn: string[]; inputs?: { arg: string; fromStep: string; output: string }[] }[]): SupervisorStep[] {
   return steps.map((s) => ({
     stepId: s.id,
     tool: s.tool,
     task: s.task,
     dependsOn: s.dependsOn,
+    inputs: s.inputs ?? [],
     state: "pending" as const,
     artifacts: [],
   }));
@@ -94,11 +95,32 @@ export function parseReview(plan: unknown, sessionId: number, agentId: string) {
       tool: typeof s.tool === "string" ? s.tool : "",
       task: typeof s.task === "string" ? s.task : "",
       dependsOn: Array.isArray(s.dependsOn) ? s.dependsOn.filter((d): d is string => typeof d === "string") : [],
+      inputs: parseInputBindings((s as { inputs?: unknown }).inputs),
       requiresConfirmation: s.requiresConfirmation === true,
     });
   }
   if (steps.length === 0) return null;
   return { plan, goal: p.goal, summary, steps, sessionId, agentId } as import("./supervisor-types").PlanReview;
+}
+
+/** Parse a step's raw `inputs` bindings into the display shape. The review
+ *  wire (TaskPlan serialization) is object-form: {"arg": {"fromStep": …,
+ *  "output": …}}. Tolerant of junk; junk entries are dropped, never fail. */
+function parseInputBindings(
+  raw: unknown,
+): { arg: string; fromStep: string; output: string }[] {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return [];
+  return Object.entries(raw as Record<string, unknown>)
+    .filter(([, ref]) => {
+      if (typeof ref !== "object" || ref === null) return false;
+      const r = ref as Record<string, unknown>;
+      return typeof r.fromStep === "string" && typeof r.output === "string";
+    })
+    .map(([arg, ref]) => ({
+      arg,
+      fromStep: (ref as { fromStep: string }).fromStep,
+      output: (ref as { output: string }).output,
+    }));
 }
 
 /** Remove a step from the review model — steps that (transitively) depended

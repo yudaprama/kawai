@@ -15,6 +15,8 @@ export interface PersistedPlanStep {
   output?: string;
   task?: string;
   dependsOn?: string[];
+  /** Dataflow bindings — restored so the rail shows the step's wiring. */
+  inputs?: { arg: string; fromStep: string; output: string }[];
 }
 
 /** Wire shape of a persisted plan record (assistant message JSON blob). */
@@ -36,6 +38,7 @@ export function hydrateStep(s: PersistedPlanStep) {
     task: s.task ?? s.tool,
     state: s.state as SupervisorStep["state"],
     dependsOn: s.dependsOn ?? [],
+    inputs: s.inputs ?? [],
     output: s.output,
   };
 }
@@ -132,6 +135,7 @@ export interface WorkbenchRun {
     task: string;
     state: SupervisorStep["state"];
     dependsOn: string[];
+    inputs?: { arg: string; fromStep: string; output: string }[];
     output?: string;
   }[];
 }
@@ -499,6 +503,7 @@ export function useWorkbench() {
                 task: s.task,
                 state: s.state,
                 dependsOn: s.dependsOn,
+                inputs: s.inputs,
               })),
             }
           : r,

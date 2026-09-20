@@ -82,6 +82,8 @@ export interface PersistedPlan {
     task?: string;
     /** Dispatch order — lets a restored journal re-derive phases. */
     dependsOn?: string[];
+    /** Dataflow bindings — restored so the rail shows the step's wiring. */
+    inputs?: { arg: string; fromStep: string; output: string }[];
   }[];
   output: string | null;
   /** Execution-memo key — lets a restored journal fetch FULL step bodies
@@ -121,6 +123,7 @@ function persistPlanSnapshot(
       output: s.output ? s.output.slice(0, 500) : s.output,
       task: s.task,
       dependsOn: s.dependsOn,
+      inputs: s.inputs,
     })),
     output: extra.output,
     artifacts: extra.artifacts,
@@ -415,7 +418,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const restorePersisted = useCallback(
     (record: {
       goal?: string | null;
-      steps?: { id: string; tool: string; state: string; output?: string; task?: string; dependsOn?: string[] }[];
+      steps?: { id: string; tool: string; state: string; output?: string; task?: string; dependsOn?: string[]; inputs?: { arg: string; fromStep: string; output: string }[] }[];
       output?: string | null;
       artifacts?: PersistedPlan["artifacts"];
       error?: string;
@@ -429,6 +432,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         tool: s.tool,
         task: s.task ?? s.tool,
         dependsOn: s.dependsOn ?? [],
+        inputs: s.inputs ?? [],
         state: (s.state === "completed" || s.state === "failed" || s.state === "skipped"
           ? s.state
           : "pending") as SupervisorStep["state"],

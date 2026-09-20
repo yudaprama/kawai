@@ -149,6 +149,15 @@ export function StepTree({
                         </button>
                       )}
                     </div>
+                    {(step.inputs?.length ?? 0) > 0 && (
+                      <div className="text-muted-foreground/80 flex flex-wrap gap-x-2 font-mono text-[10px]" title="Dataflow bindings from earlier steps">
+                        {step.inputs!.map((b) => (
+                          <span key={b.arg}>
+                            {b.arg} ← {b.fromStep}.{b.output}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -255,6 +264,7 @@ export function RunHistoryRail({
                     task: s.task,
                     state: s.state,
                     dependsOn: s.dependsOn,
+                    inputs: s.inputs ?? [],
                     artifacts: [],
                   }));
                   return (
@@ -410,6 +420,15 @@ export function ProgressRail({
             supervisor.review.steps.map((s) => (
               <div className="text-foreground/80 pl-4 font-mono text-xs" key={s.id}>
                 · {s.task || s.tool || s.id}
+                {(s.inputs?.length ?? 0) > 0 && (
+                  <div className="text-muted-foreground/80 pl-4 text-[10px]">
+                    {s.inputs!.map((b) => (
+                      <div key={b.arg}>
+                        {b.arg} ← {b.fromStep}.{b.output}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           <div className="flex gap-2 pt-2">
