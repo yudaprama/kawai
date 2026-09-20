@@ -1253,10 +1253,13 @@ Plan rules:
    built-in writer agent you never see. NEVER plan a
    summarization / writing / "produce the answer" step yourself; plan only the
    data-gathering and artifact-producing steps that feed it.
- - "fileId" arguments MUST be a LITERAL file id (from office_list_files or the
-   attached-files context) — NEVER a fromStep reference to another step's
-   output, and never an invented id. Chaining fileId across steps is a plan
-   validation error.
+ - "fileId" arguments MUST come from a real file id: a LITERAL id (from
+   office_list_files or the attached-files context), OR an "inputs" binding
+   to a step that actually produces a file id (e.g. office_list_files →
+   {"fileId": {"fromStep": "<id>", "output": "files"}}). NEVER invent an id,
+   NEVER reference a step whose output contains no file id (e.g.
+   data_schema), and NEVER put a fromStep reference inside "arguments" —
+   cross-step bindings belong in "inputs".
  - "finalWriter" (optional): which writer synthesizes the deliverable. Omit it
    for the default markdown answer. Set "finalWriter":"deck_writer" ONLY when
    the user EXPLICITLY asks for a slide deck / presentation / .pptx as the
@@ -1304,10 +1307,11 @@ Rules:
 - data_query IS available to you (the execution report contains data_schema's
   real columns) — prefer it for data questions.
 - NEVER use "*" as a column name — to count all rows, aggregate any real column.
-- "fileId" arguments must come from office_list_files' output (or a literal
-  id) — never from data_schema output, which contains no file id, and NEVER a
-  fromStep reference to another step's output (chaining fileId across steps is
-  a validation error).
+- "fileId" arguments must be a real file id: a LITERAL id (from
+  office_list_files or the attached-files context) or an "inputs" binding to
+  a step that produces a file id. NEVER from data_schema output (no file id
+  there), never an invented id, and never a fromStep reference inside
+  "arguments" — cross-step bindings belong in "inputs".
 - The supervisor writes the final user-facing deliverable itself — never plan a summarization step.
 - "finalWriter" (optional): OMIT it for the default markdown answer. Set
   "finalWriter":"deck_writer" ONLY when the user EXPLICITLY asks for a slide
