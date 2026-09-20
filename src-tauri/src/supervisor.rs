@@ -955,6 +955,48 @@ pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai
 /// Parse + validate a plan, additionally rejecting steps whose tool is in
 /// `forbidden` (scoped enforcement: the initial planner and the reviser have
 /// different tool vocabularies).
+/// Non-fatal dataflow audit over a parsed plan: counts and logs (stderr) the
+/// two plan-quality smells that validation deliberately tolerates —
+/// (1) legacy `fromStep` references nested inside plain `arguments` (the
+/// pre-`inputs` wiring style) and (2) `arguments` keys that an `inputs`
+/// binding silently overrides. Pure: returns the counts, caller logs.
+fn audit_dataflow(plan: &kawai_router::TaskPlan) -> (usize, usize) {
+    fn has_legacy_ref(value: &serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::Object(obj) => {
+                obj.contains_key("fromStep")
+                    || obj.values().any(has_legacy_ref)
+            },
+            serde_json::Value::Array(items) => items.iter().any(has_legacy_ref),
+            _ => false,
+        }
+    }
+
+    let mut legacy = 0usize;
+    let mut collisions = 0usize;
+    for step in &plan.steps {
+        if has_legacy_ref(&step.arguments) {
+            legacy += 1;
+            eprintln!(
+                "[supervisor] plan-quality: step \"{}\" uses a legacy fromStep reference inside arguments — move it to \"inputs\" (deprecated wiring)",
+                step.id
+            );
+        }
+        if let (Some(args), Some(bindings)) = (step.arguments.as_object(), step.inputs.as_object()) {
+            for key in bindings.keys() {
+                if args.contains_key(key) {
+                    collisions += 1;
+                    eprintln!(
+                        "[supervisor] plan-quality: step \"{}\": argument \"{key}\" is OVERRIDDEN by an inputs binding — the literal value in arguments is discarded",
+                        step.id
+                    );
+                }
+            }
+        }
+    }
+    (legacy, collisions)
+}
+
 pub fn parse_supervisor_plan_scoped(
     raw: &str,
     registry: &ToolRegistry,
@@ -967,6 +1009,7 @@ pub fn parse_supervisor_plan_scoped(
     // binding implies its dependency — the planner can never desynchronize
     // dependsOn from the dataflow it declared.
     kawai_router::bind_dataflow(&mut plan).map_err(|e| e.to_string())?;
+    audit_dataflow(&plan);
     // Clamp an LLM-written summary to the UI contract, then backfill the
     // deterministic fallback when the planner omitted it — the summary is
     // always present on any plan leaving this parse path.
@@ -3373,6 +3416,42 @@ mod tests {
 
     use super::*;
     use kawai_router::{StepStatus, TaskStep};
+
+    #[test]
+    fn audit_dataflow_counts_legacy_refs_and_collisions() {
+        let plan = kawai_router::TaskPlan {
+            goal: "g".into(),
+            steps: vec![
+                // Legacy: fromStep nested inside arguments.
+                TaskStep {
+                    id: "legacy".into(),
+                    agent_id: "t".into(),
+                    arguments: serde_json::json!({"fileId": {"fromStep": "x", "output": "y"}}),
+                    ..Default::default()
+                },
+                // Collision: "fileId" bound in inputs AND present in arguments.
+                TaskStep {
+                    id: "clash".into(),
+                    agent_id: "t".into(),
+                    arguments: serde_json::json!({"fileId": "f_literal"}),
+                    inputs: serde_json::json!({"fileId": {"fromStep": "legacy", "output": "y"}}),
+                    ..Default::default()
+                },
+                // Clean: binding without a colliding literal.
+                TaskStep {
+                    id: "clean".into(),
+                    agent_id: "t".into(),
+                    inputs: serde_json::json!({"other": {"fromStep": "legacy", "output": "z"}}),
+                    ..Default::default()
+                },
+            ],
+            final_writer: None,
+            summary: None,
+        };
+        let (legacy, collisions) = audit_dataflow(&plan);
+        assert_eq!(legacy, 1, "one legacy ref");
+        assert_eq!(collisions, 1, "one collision");
+    }
 
     #[test]
     fn repair_materials_shows_bindings_and_contracts() {
