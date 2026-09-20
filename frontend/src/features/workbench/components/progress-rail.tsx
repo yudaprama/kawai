@@ -443,7 +443,6 @@ export function ProgressRail({
         </div>
       ) : (
         <div className="flex-1">
-          <PlanSummaryCard summary={supervisor.summary} />
           {/* Unseeded planning window: the stale tree is the PREVIOUS run's —
               show only the planning spinner until planStarted seeds the new
               steps (same policy as the canvas). */}
