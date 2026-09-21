@@ -28,6 +28,8 @@ export interface QuickAnswerInput {
 export interface OnboardingSourcesInput {
   questions: QuickAnswerInput[];
   githubUsername?: string;
+  /** Opt-in Gmail scan (read-only, Composio connection required). */
+  gmail?: boolean;
 }
 
 /**

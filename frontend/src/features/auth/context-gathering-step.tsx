@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { call, errText } from "@/lib/api";
 import { useOnboarding, type OnboardingEvent } from "@/hooks/use-onboarding";
 
 const QUICK_QUESTIONS = [
@@ -20,12 +21,45 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
   const onboarding = useOnboarding();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [github, setGithub] = useState("");
+  const [gmailOptIn, setGmailOptIn] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [importingDoc, setImportingDoc] = useState(false);
+  const [docResult, setDocResult] = useState<string | null>(null);
 
   // Not yet known → render children rather than flashing the step.
   if (onboarding.loading || onboarding.status == null) return <>{children}</>;
   // Completed, skipped, errored-out, or user closed it → straight in.
   if (onboarding.status.completed || onboarding.done || dismissed) return <>{children}</>;
+
+  const importDocument = async (file: File) => {
+    setImportingDoc(true);
+    setDocResult(null);
+    try {
+      const dataBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = String(reader.result ?? "");
+          resolve(result.slice(result.indexOf(",") + 1));
+        };
+        reader.onerror = () => reject(new Error("failed to read file"));
+        reader.readAsDataURL(file);
+      });
+      const imported = await call<{ id: string }>("office_import_file", {
+        name: file.name,
+        dataBase64,
+      });
+      const stored = await call<number>("onboarding_import_document", { fileId: imported.id });
+      setDocResult(
+        stored > 0
+          ? `✓ ${file.name} — ${stored} profile ${stored === 1 ? "fact" : "facts"} saved`
+          : `✓ ${file.name} imported, but nothing new was learned from it`,
+      );
+    } catch (err) {
+      setDocResult(`✗ ${errText(err)}`);
+    } finally {
+      setImportingDoc(false);
+    }
+  };
 
   const start = async () => {
     await onboarding.run({
@@ -34,6 +68,7 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
         answer: (answers[key] ?? "").trim(),
       })).filter((qa) => qa.answer.length > 0),
       githubUsername: github.trim() || undefined,
+      gmail: gmailOptIn,
     });
   };
 
@@ -62,6 +97,44 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
                 />
               </div>
             ))}
+            <label className="flex items-start gap-2 text-sm" htmlFor="ob-gmail">
+              <input
+                checked={gmailOptIn}
+                className="mt-0.5"
+                id="ob-gmail"
+                onChange={(e) => setGmailOptIn(e.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                Scan my Gmail notifications for identity context
+                <span className="text-muted-foreground">
+                  {" "}— read-only, only if a Gmail connection already exists; just the LinkedIn
+                  profile link is kept, email content is never stored.
+                </span>
+              </span>
+            </label>
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">
+                Resume / LinkedIn data export <span className="text-muted-foreground font-normal">(optional)</span>
+              </label>
+              <input
+                accept=".zip,.pdf,.html,.htm,.csv,.docx,.md,.txt"
+                className="text-muted-foreground block w-full cursor-pointer text-xs file:mr-2 file:cursor-pointer file:rounded-md file:border file:border-input file:bg-transparent file:px-2 file:py-1 file:text-xs"
+                disabled={importingDoc}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void importDocument(f);
+                  e.target.value = "";
+                }}
+                type="file"
+              />
+              {importingDoc && (
+                <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <Spinner className="size-3" /> Extracting…
+                </span>
+              )}
+              {docResult && <span className="text-xs">{docResult}</span>}
+            </div>
             <div className="grid gap-1">
               <label className="text-sm font-medium" htmlFor="ob-github">
                 Public GitHub username <span className="text-muted-foreground font-normal">(optional)</span>

@@ -299,6 +299,22 @@ async fn onboarding_reset_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OnboardingImportDocumentRequest {
+    file_id: String,
+}
+
+async fn onboarding_import_document_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<OnboardingImportDocumentRequest>,
+) -> Result<Json<u32>, (StatusCode, String)> {
+    logic::onboarding::onboarding_import_document(&user_id, &req.file_id)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
 async fn onboarding_run_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<logic::onboarding::OnboardingSources>,
@@ -1840,6 +1856,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/onboarding_status", post(onboarding_status_handler))
         .route("/api/onboarding_skip", post(onboarding_skip_handler))
         .route("/api/onboarding_reset", post(onboarding_reset_handler))
+        .route("/api/onboarding_import_document", post(onboarding_import_document_handler))
         .route("/api/onboarding_run", post(onboarding_run_handler))
         .route("/api/facet_list", post(facet_list_handler))
         .route("/api/facet_pin", post(facet_pin_handler))

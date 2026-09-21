@@ -2399,6 +2399,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "composio"
+version = "0.1.0"
+dependencies = [
+ "kawai-constants",
+ "kawai-http-client",
+ "kawai-tools",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+]
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5645,6 +5659,7 @@ dependencies = [
  "block2",
  "browser",
  "codegraph",
+ "composio",
  "dotenvy",
  "entertainment",
  "finance",

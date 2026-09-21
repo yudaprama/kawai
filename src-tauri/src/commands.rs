@@ -639,6 +639,19 @@ pub async fn onboarding_reset(session: State<'_, Session>) -> Result<usize, Stri
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: import an uploaded document (LinkedIn data export /
+/// resume / bio, already in the office store) as an onboarding source.
+#[tauri::command]
+pub async fn onboarding_import_document(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<u32, String> {
+    let user_id = session_user_id(&session)?;
+    logic::onboarding::onboarding_import_document(&user_id, &file_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: list profile facets (dropped rows behind a flag).
 #[tauri::command]
 pub async fn facet_list(

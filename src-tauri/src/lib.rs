@@ -145,6 +145,7 @@ pub fn run() {
         commands::onboarding_run,
         commands::onboarding_skip,
         commands::onboarding_reset,
+        commands::onboarding_import_document,
         commands::facet_list,
         commands::facet_pin,
         commands::facet_forget,

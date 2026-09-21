@@ -21,6 +21,12 @@ use kawai_db::{db_connection, unix_now, DbError};
 pub const SOURCE_QUESTIONS: &str = "questions";
 pub const SOURCE_GITHUB: &str = "github";
 pub const SOURCE_LINKEDIN: &str = "linkedin";
+pub const SOURCE_DOCUMENT: &str = "document";
+pub const SOURCE_GMAIL: &str = "gmail";
+
+/// Head chars of extracted document text fed to the compressor (compress
+/// tail-keeps again, so this bounds the read without losing the tail).
+const DOCUMENT_MATERIALS_CHARS: usize = 24_000;
 
 /// The Apify actor behind the opt-in LinkedIn enrichment (plan §2.5 — the
 /// scrape and its ToS exposure live on Apify's platform). Token comes from
@@ -47,6 +53,11 @@ pub struct OnboardingSources {
     /// Optional public GitHub username — identity discovery seed.
     #[serde(default)]
     pub github_username: Option<String>,
+    /// Opt-in Gmail scan (read-only, metadata + ≤10 `from:linkedin.com`
+    /// bodies for self-URL extraction — bodies are never persisted). Only
+    /// runs when a Composio Gmail connection already exists.
+    #[serde(default)]
+    pub gmail: bool,
 }
 
 /// Current onboarding state, read back by the UI gate.
@@ -201,115 +212,159 @@ pub fn onboarding_run_stream(
             yield OnboardingEvent::SourceCompleted { source: SOURCE_GITHUB.into(), items_found: 0 };
         }
 
-        // ── Source: LinkedIn discovery (URL-only fallback — Apify is Phase 3) ──
-        if let Some(search) = linkedin_search.take() {
+        // ── Source: Gmail self-URL extraction (opt-in, Composio read-only) ──
+        // The openhuman trick: notification emails from LinkedIn always
+        // reference the RECIPIENT's own profile, so `from:linkedin.com`
+        // bodies reliably yield the self URL. Priority 1:
+        // `linkedin.com/comm/in/<user>`; priority 2: `linkedin.com/in/<user>`.
+        // Bodies and all other matches are discarded in-memory, never
+        // persisted. Only runs when a Composio Gmail connection exists.
+        let mut gmail_linkedin_url: Option<String> = None;
+        if sources.gmail {
+            yield OnboardingEvent::SourceStarted { source: SOURCE_GMAIL.into() };
+            match gmail_self_url().await {
+                Ok(Some(url)) => {
+                    yield OnboardingEvent::SourceProgress {
+                        source: SOURCE_GMAIL.into(),
+                        note: "found self LinkedIn URL in Gmail notifications".into(),
+                    };
+                    gmail_linkedin_url = Some(url);
+                }
+                Ok(None) => {
+                    yield OnboardingEvent::SourceProgress {
+                        source: SOURCE_GMAIL.into(),
+                        note: "no LinkedIn self URL in recent notifications".into(),
+                    };
+                }
+                Err(e) => {
+                    yield OnboardingEvent::SourceProgress {
+                        source: SOURCE_GMAIL.into(),
+                        note: format!("gmail unavailable: {e} — connect via composio_authorize"),
+                    };
+                }
+            }
+            processed.push(SOURCE_GMAIL.into());
+            yield OnboardingEvent::SourceCompleted {
+                source: SOURCE_GMAIL.into(),
+                items_found: gmail_linkedin_url.is_some() as u32,
+            };
+        }
+
+        // ── Source: LinkedIn (Gmail self URL > discovery; URL-only fallback; auto-scrape) ──
+        // Resolve the profile URL: a Gmail-extracted self URL wins outright;
+        // otherwise fall back to web-search discovery over identity signals.
+        let mut linkedin_target: Option<(String, String)> = None; // (url, title)
+        let mut linkedin_high_confidence = false;
+        if let Some(url) = gmail_linkedin_url.clone() {
+            linkedin_target = Some((url, "self URL from Gmail notifications".into()));
+            linkedin_high_confidence = true;
+        } else if let Some(search) = linkedin_search.take() {
             if signals.has_minimum_signals() {
                 yield OnboardingEvent::SourceStarted { source: SOURCE_LINKEDIN.into() };
                 // `discover` builds the privacy-preserving queries, runs the
                 // injected search, and returns candidates ranked by
                 // confidence (highest first); empty = nothing plausible.
                 let candidates = discover(&signals, &search).await;
-                if candidates.is_empty() {
-                    yield OnboardingEvent::SourceProgress {
-                        source: SOURCE_LINKEDIN.into(),
-                        note: "no plausible profile found".into(),
-                    };
-                } else {
-                    yield OnboardingEvent::SourceProgress {
-                        source: SOURCE_LINKEDIN.into(),
-                        note: format!("found {} profile candidate(s)", candidates.len()),
-                    };
-                    let top = &candidates[0];
-                    if top.confidence >= CONFIDENCE_HIGH {
-                        // High confidence ⇒ the URL is treated as the user's
-                        // own profile. Auto-scrape via the vault-keyed Apify
-                        // token (skipped silently when the vault has none);
-                        // otherwise URL-only hint.
-                        if apify::Apify::is_configured() {
-                            yield OnboardingEvent::SourceProgress {
-                                source: SOURCE_LINKEDIN.into(),
-                                note: format!("scraping {} via Apify", top.url),
-                            };
-                            match scrape_linkedin(&top.url).await {
-                                Ok(md) if !md.trim().is_empty() => {
-                                    linkedin_materials.push_str(&md);
-                                }
-                                Ok(_) => {
-                                    yield OnboardingEvent::SourceProgress {
-                                        source: SOURCE_LINKEDIN.into(),
-                                        note: "scrape returned an empty profile — URL-only fallback".into(),
-                                    };
-                                    materials.push_str(&format!(
-                                        "LinkedIn profile: {} ({})\n\n",
-                                        top.url, top.title
-                                    ));
-                                }
-                                Err(e) => {
-                                    yield OnboardingEvent::SourceProgress {
-                                        source: SOURCE_LINKEDIN.into(),
-                                        note: format!("scrape failed ({e}) — URL-only fallback"),
-                                    };
-                                    materials.push_str(&format!(
-                                        "LinkedIn profile: {} ({})\n\n",
-                                        top.url, top.title
-                                    ));
-                                }
-                            }
-                        } else {
-                            materials.push_str(&format!(
-                                "LinkedIn profile: {} ({})\n\n",
-                                top.url, top.title
-                            ));
-                        }
-                    } else {
-                        // Low confidence: still a hint, flagged as unverified.
-                        // Never scraped regardless of consent.
-                        materials.push_str(&format!(
-                            "Possible LinkedIn profile (unverified): {}\n\n",
-                            top.url
-                        ));
+                match candidates.first() {
+                    None => {
+                        yield OnboardingEvent::SourceProgress {
+                            source: SOURCE_LINKEDIN.into(),
+                            note: "no plausible profile found".into(),
+                        };
+                    }
+                    Some(top) => {
+                        yield OnboardingEvent::SourceProgress {
+                            source: SOURCE_LINKEDIN.into(),
+                            note: format!("found {} profile candidate(s)", candidates.len()),
+                        };
+                        linkedin_high_confidence = top.confidence >= CONFIDENCE_HIGH;
+                        linkedin_target = Some((top.url.clone(), top.title.clone()));
                     }
                 }
-                processed.push(SOURCE_LINKEDIN.into());
+            }
+        }
 
-                // LinkedIn materials compress separately so provenance is
-                // honest: these items land with source='linkedin' and keep
-                // their `profile` namespace (facet distill folds them).
-                if !linkedin_materials.trim().is_empty() {
-                    yield OnboardingEvent::CompressStarted;
-                    match compress_with_cloud(&linkedin_materials).await {
-                        Ok(compressed) => {
-                            let counts = (
-                                compressed.profile.len() as u32,
-                                compressed.people.len() as u32,
-                                compressed.goals.len() as u32,
-                            );
-                            match persist_compressed(&user_id, &compressed, "linkedin", false).await {
-                                Ok(n) => linkedin_items = n,
-                                Err(e) => {
-                                    yield OnboardingEvent::SourceProgress {
-                                        source: SOURCE_LINKEDIN.into(),
-                                        note: format!("persistence failed: {e}"),
-                                    };
-                                }
-                            }
-                            yield OnboardingEvent::ProfileReady {
-                                profile: counts.0,
-                                people: counts.1,
-                                goals: counts.2,
+        if let Some((url, title)) = linkedin_target {
+            yield OnboardingEvent::SourceStarted { source: SOURCE_LINKEDIN.into() };
+            if linkedin_high_confidence {
+                // High confidence ⇒ the URL is treated as the user's own
+                // profile. Auto-scrape via the vault-keyed Apify token
+                // (skipped silently when the vault has none); otherwise
+                // URL-only hint.
+                if apify::Apify::is_configured() {
+                    yield OnboardingEvent::SourceProgress {
+                        source: SOURCE_LINKEDIN.into(),
+                        note: format!("scraping {url} via Apify"),
+                    };
+                    match scrape_linkedin(&url).await {
+                        Ok(md) if !md.trim().is_empty() => {
+                            linkedin_materials.push_str(&md);
+                        }
+                        Ok(_) => {
+                            yield OnboardingEvent::SourceProgress {
+                                source: SOURCE_LINKEDIN.into(),
+                                note: "scrape returned an empty profile — URL-only fallback".into(),
                             };
+                            materials.push_str(&format!("LinkedIn profile: {url} ({title})\n\n"));
                         }
                         Err(e) => {
                             yield OnboardingEvent::SourceProgress {
                                 source: SOURCE_LINKEDIN.into(),
-                                note: format!("compression failed: {e}"),
+                                note: format!("scrape failed ({e}) — URL-only fallback"),
                             };
+                            materials.push_str(&format!("LinkedIn profile: {url} ({title})\n\n"));
                         }
                     }
+                } else {
+                    materials.push_str(&format!("LinkedIn profile: {url} ({title})\n\n"));
                 }
-                yield OnboardingEvent::SourceCompleted { source: SOURCE_LINKEDIN.into(), items_found: linkedin_items };
+            } else {
+                // Low confidence: still a hint, flagged as unverified. Never scraped.
+                materials.push_str(&format!("Possible LinkedIn profile (unverified): {url}\n\n"));
             }
+            processed.push(SOURCE_LINKEDIN.into());
+
+            // LinkedIn materials compress separately so provenance is
+            // honest: these items land with source='linkedin' and keep
+            // their `profile` namespace (facet distill folds them).
+            if !linkedin_materials.trim().is_empty() {
+                yield OnboardingEvent::CompressStarted;
+                match compress_with_cloud(&linkedin_materials).await {
+                    Ok(compressed) => {
+                        let counts = (
+                            compressed.profile.len() as u32,
+                            compressed.people.len() as u32,
+                            compressed.goals.len() as u32,
+                        );
+                        match persist_compressed(&user_id, &compressed, "linkedin", false).await {
+                            Ok(n) => linkedin_items = n,
+                            Err(e) => {
+                                yield OnboardingEvent::SourceProgress {
+                                    source: SOURCE_LINKEDIN.into(),
+                                    note: format!("persistence failed: {e}"),
+                                };
+                            }
+                        }
+                        yield OnboardingEvent::ProfileReady {
+                            profile: counts.0,
+                            people: counts.1,
+                            goals: counts.2,
+                        };
+                    }
+                    Err(e) => {
+                        yield OnboardingEvent::SourceProgress {
+                            source: SOURCE_LINKEDIN.into(),
+                            note: format!("compression failed: {e}"),
+                        };
+                    }
+                }
+            }
+            yield OnboardingEvent::SourceCompleted {
+                source: SOURCE_LINKEDIN.into(),
+                items_found: linkedin_items,
+            };
         }
+
 
         // ── Compress + persist the local-sources materials ──
         if materials.trim().is_empty() {
@@ -392,6 +447,118 @@ async fn scrape_linkedin(profile_url: &str) -> Result<String, String> {
         md.push_str(&format!("LinkedIn summary: {summary}\n"));
     }
     Ok(md)
+}
+
+/// Import one uploaded document (LinkedIn data export / resume / bio) as an
+/// onboarding source (plan §2.5 path 1, the zero-dependency default):
+/// ragloader extracts text from the already-imported store file → one cloud
+/// compression pass → persist with `source='document'` provenance (external
+/// source: `profile`-namespace items are kept for the facet distill) →
+/// best-effort facet distill → the source is recorded in onboarding state.
+/// Returns the number of memories stored.
+pub async fn onboarding_import_document(user_id: &str, file_id: &str) -> Result<u32, DbError> {
+    let path = kawai_office::store::file_path(user_id, file_id).map_err(DbError::Config)?;
+    let chunks = ragloader::load_file(&path, &ragloader::LoadOptions::default())
+        .await
+        .map_err(|e| DbError::Config(format!("document extract failed: {e}")))?;
+    let mut materials = String::new();
+    for c in &chunks {
+        materials.push_str(&c.content);
+        materials.push('\n');
+        if materials.chars().count() >= DOCUMENT_MATERIALS_CHARS {
+            break;
+        }
+    }
+    if materials.trim().is_empty() {
+        return Err(DbError::Config("document contained no extractable text".into()));
+    }
+
+    let compressed = compress_with_cloud(&materials)
+        .await
+        .map_err(DbError::Config)?;
+    let stored = persist_compressed(user_id, &compressed, SOURCE_DOCUMENT, false).await?;
+
+    if let Err(e) = kawai_memory::facet_distill(user_id).await {
+        eprintln!("[onboarding] facet distill skipped: {e}");
+    }
+
+    // Record the source in onboarding state (append if not present).
+    let conn = db_connection(user_id).await?;
+    let mut sources: Vec<String> = kv_get(&conn, KV_SOURCES)
+        .await
+        .and_then(|v| serde_json::from_str(&v).ok())
+        .unwrap_or_default();
+    if !sources.iter().any(|s| s == SOURCE_DOCUMENT) {
+        sources.push(SOURCE_DOCUMENT.into());
+        kv_set(&conn, KV_SOURCES, &serde_json::to_string(&sources).unwrap_or_default()).await;
+    }
+    Ok(stored)
+}
+
+/// Scan recent `from:linkedin.com` notifications via the Composio Gmail
+/// connection and extract the recipient's own profile URL (priority 1:
+/// `linkedin.com/comm/in/<user>` — notification emails always reference the
+/// recipient; priority 2: `linkedin.com/in/<user>`). Read-only: only the URL
+/// survives — message bodies and all other matches are discarded in-memory.
+/// `Ok(None)` = connected but nothing found; `Err` = no vault key / no
+/// active Gmail connection / fetch failure (all best-effort skip reasons).
+async fn gmail_self_url() -> Result<Option<String>, String> {
+    let api_key = kawai_constants::composio::get_composio_api_key();
+    if api_key.trim().is_empty() {
+        return Err("no Composio key".into());
+    }
+    let client = composio::ComposioClient::new(api_key);
+    let accounts = client
+        .list_connected_accounts()
+        .await
+        .map_err(|e| format!("list connections: {e}"))?;
+    let account = accounts
+        .items
+        .iter()
+        .find(|a| a.toolkit.eq_ignore_ascii_case("gmail") && a.status.eq_ignore_ascii_case("ACTIVE"))
+        .ok_or_else(|| "no active Gmail connection".to_string())?;
+
+    let resp = client
+        .execute_tool(
+            "GMAIL_FETCH_EMAILS",
+            serde_json::json!({ "query": "from:linkedin.com", "maxResults": 10 }),
+            Some(account.id.clone()),
+        )
+        .await
+        .map_err(|e| format!("fetch emails: {e}"))?;
+    if !resp.successful {
+        return Err(resp.error.unwrap_or_else(|| "gmail fetch failed".into()));
+    }
+
+    // Defensive shape handling: Composio action output shapes vary — search
+    // the serialized payload for the URL patterns instead of walking it.
+    let payload = resp.data.to_string();
+    Ok(extract_self_linkedin_url(&payload))
+}
+
+/// Two-priority self-URL extraction over arbitrary Gmail payload text.
+fn extract_self_linkedin_url(text: &str) -> Option<String> {
+    for pattern in ["linkedin.com/comm/in/", "linkedin.com/in/"] {
+        let mut search_from = 0usize;
+        while let Some(idx) = text[search_from..].find(pattern) {
+            let start = search_from + idx + pattern.len();
+            let slug: String = text[start..]
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+                .collect();
+            // A real profile slug is at least 3 chars — this also skips
+            // template placeholders like `/in/` with nothing after it.
+            if slug.chars().count() >= 3 {
+                if let Some(canonical) = apify::linkedin::ProfileUrl::parse(&format!(
+                    "https://www.{pattern}{slug}"
+                )) {
+                    return Some(canonical.as_str().to_string());
+                }
+            }
+            search_from = start;
+        }
+    }
+    None
 }
 
 /// Mark onboarding done with the processed source list.
@@ -489,4 +656,31 @@ async fn persist_compressed(
         }
     }
     Ok(stored)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_self_linkedin_url;
+
+    #[test]
+    fn priority_comm_url_wins() {
+        let body = r#"{"items":[{"body":"check https://www.linkedin.com/in/someone-else and
+            your profile https://www.linkedin.com/comm/in/yuda-prama"}]}"#;
+        let url = extract_self_linkedin_url(body).unwrap();
+        // The /comm/in/ notification form canonicalizes to /in/<slug>.
+        assert!(url.ends_with("/in/yuda-prama"), "got {url}");
+    }
+
+    #[test]
+    fn falls_back_to_plain_in_url() {
+        let body = r#"{"messages":[{"snippet":"see linkedin.com/in/budi-santoso today"}]}"#;
+        let url = extract_self_linkedin_url(body).unwrap();
+        assert!(url.ends_with("/in/budi-santoso"), "got {url}");
+    }
+
+    #[test]
+    fn empty_slug_and_garbage_are_skipped() {
+        assert!(extract_self_linkedin_url(r#"{"a":"linkedin.com/in/"}"#).is_none());
+        assert!(extract_self_linkedin_url("no urls here at all").is_none());
+    }
 }

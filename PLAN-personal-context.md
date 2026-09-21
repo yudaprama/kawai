@@ -409,7 +409,15 @@ reset_non_pinned`; Memory page Profile tab. The "memory_extract stops
 emitting profile rows" deprecation pressure is NOT applied — extract still
 classifies into namespaces and the distill folds them.
 
-**Phase 3 — connectors + LinkedIn enrichment: REMAINING.**
+**Phase 3 — connectors + LinkedIn enrichment: MOSTLY SHIPPED** (decision
+§6.1: Composio). Shipped: Apify auto-scrape (vault-keyed, high-confidence
+only), document import (`onboarding_import_document`: ragloader → compress →
+`source='document'`), and the Gmail LinkedIn-URL stage via the existing
+`crates/toolsets/composio` client (opt-in `gmail` source; `GMAIL_FETCH_EMAILS`
+`from:linkedin.com` ≤10; `/comm/in/` > `/in/` priorities; bodies never
+persisted; Gmail URL outranks discovery and goes straight to the scrape).
+Remaining: `recent_contacts`/`topic_hints` metadata scan, `onboarding_smoke`
+example.
 
 ### Remaining phases (original gate descriptions — migration numbers stale, see header)
 
