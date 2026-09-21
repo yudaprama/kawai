@@ -22,6 +22,11 @@ pub const SOURCE_QUESTIONS: &str = "questions";
 pub const SOURCE_GITHUB: &str = "github";
 pub const SOURCE_LINKEDIN: &str = "linkedin";
 
+/// The Apify actor behind the opt-in LinkedIn enrichment (plan §2.5 — the
+/// scrape and its ToS exposure live on Apify's platform). Token comes from
+/// the kawai vault (`kawai_constants::apify`); no env var, no user key.
+pub const LINKEDIN_ACTOR: &str = "dev_fusion~linkedin-profile-scraper";
+
 const KV_COMPLETED: &str = "completed";
 const KV_SOURCES: &str = "sources";
 
@@ -141,6 +146,10 @@ pub fn onboarding_run_stream(
 ) -> impl Stream<Item = OnboardingEvent> + Send {
     async_stream::stream! {
         let mut materials = String::new();
+        // Scraped-profile materials (opt-in Apify) compress separately so
+        // their memories carry source='linkedin' provenance.
+        let mut linkedin_materials = String::new();
+        let mut linkedin_items: u32 = 0;
         let mut signals = IdentitySignals::default();
         let mut processed: Vec<String> = Vec::new();
         let mut linkedin_search: Option<onboarding::SearchFn> =
@@ -212,12 +221,49 @@ pub fn onboarding_run_stream(
                     };
                     let top = &candidates[0];
                     if top.confidence >= CONFIDENCE_HIGH {
-                        materials.push_str(&format!(
-                            "LinkedIn profile: {} ({})\n\n",
-                            top.url, top.title
-                        ));
+                        // High confidence ⇒ the URL is treated as the user's
+                        // own profile. Auto-scrape via the vault-keyed Apify
+                        // token (skipped silently when the vault has none);
+                        // otherwise URL-only hint.
+                        if apify::Apify::is_configured() {
+                            yield OnboardingEvent::SourceProgress {
+                                source: SOURCE_LINKEDIN.into(),
+                                note: format!("scraping {} via Apify", top.url),
+                            };
+                            match scrape_linkedin(&top.url).await {
+                                Ok(md) if !md.trim().is_empty() => {
+                                    linkedin_materials.push_str(&md);
+                                }
+                                Ok(_) => {
+                                    yield OnboardingEvent::SourceProgress {
+                                        source: SOURCE_LINKEDIN.into(),
+                                        note: "scrape returned an empty profile — URL-only fallback".into(),
+                                    };
+                                    materials.push_str(&format!(
+                                        "LinkedIn profile: {} ({})\n\n",
+                                        top.url, top.title
+                                    ));
+                                }
+                                Err(e) => {
+                                    yield OnboardingEvent::SourceProgress {
+                                        source: SOURCE_LINKEDIN.into(),
+                                        note: format!("scrape failed ({e}) — URL-only fallback"),
+                                    };
+                                    materials.push_str(&format!(
+                                        "LinkedIn profile: {} ({})\n\n",
+                                        top.url, top.title
+                                    ));
+                                }
+                            }
+                        } else {
+                            materials.push_str(&format!(
+                                "LinkedIn profile: {} ({})\n\n",
+                                top.url, top.title
+                            ));
+                        }
                     } else {
                         // Low confidence: still a hint, flagged as unverified.
+                        // Never scraped regardless of consent.
                         materials.push_str(&format!(
                             "Possible LinkedIn profile (unverified): {}\n\n",
                             top.url
@@ -225,23 +271,51 @@ pub fn onboarding_run_stream(
                     }
                 }
                 processed.push(SOURCE_LINKEDIN.into());
-                yield OnboardingEvent::SourceCompleted { source: SOURCE_LINKEDIN.into(), items_found: 0 };
+
+                // LinkedIn materials compress separately so provenance is
+                // honest: these items land with source='linkedin' and keep
+                // their `profile` namespace (facet distill folds them).
+                if !linkedin_materials.trim().is_empty() {
+                    yield OnboardingEvent::CompressStarted;
+                    match compress_with_cloud(&linkedin_materials).await {
+                        Ok(compressed) => {
+                            let counts = (
+                                compressed.profile.len() as u32,
+                                compressed.people.len() as u32,
+                                compressed.goals.len() as u32,
+                            );
+                            match persist_compressed(&user_id, &compressed, "linkedin", false).await {
+                                Ok(n) => linkedin_items = n,
+                                Err(e) => {
+                                    yield OnboardingEvent::SourceProgress {
+                                        source: SOURCE_LINKEDIN.into(),
+                                        note: format!("persistence failed: {e}"),
+                                    };
+                                }
+                            }
+                            yield OnboardingEvent::ProfileReady {
+                                profile: counts.0,
+                                people: counts.1,
+                                goals: counts.2,
+                            };
+                        }
+                        Err(e) => {
+                            yield OnboardingEvent::SourceProgress {
+                                source: SOURCE_LINKEDIN.into(),
+                                note: format!("compression failed: {e}"),
+                            };
+                        }
+                    }
+                }
+                yield OnboardingEvent::SourceCompleted { source: SOURCE_LINKEDIN.into(), items_found: linkedin_items };
             }
         }
 
-        // ── Compress + persist ──
+        // ── Compress + persist the local-sources materials ──
         if materials.trim().is_empty() {
             // Zero usable sources: still completes (never blocks chat).
-            let conn = match db_connection(&user_id).await {
-                Ok(c) => c,
-                Err(e) => {
-                    yield OnboardingEvent::OnboardingError { message: e.to_string() };
-                    return;
-                }
-            };
-            kv_set(&conn, KV_COMPLETED, "true").await;
-            kv_set(&conn, KV_SOURCES, &serde_json::to_string(&processed).unwrap_or_default()).await;
-            yield OnboardingEvent::OnboardingFinished { total_items: 0 };
+            mark_done(&user_id, &processed).await;
+            yield OnboardingEvent::OnboardingFinished { total_items: linkedin_items };
             return;
         }
 
@@ -261,11 +335,8 @@ pub fn onboarding_run_stream(
             compressed.goals.len() as u32,
         );
 
-        // Persist: dedup against existing titles (case-insensitive), store
-        // with source='questions' provenance (external provenance upgrades —
-        // linkedin/document — land in Phase 3).
         let mut stored = 0u32;
-        match persist_compressed(&user_id, &compressed).await {
+        match persist_compressed(&user_id, &compressed, "questions", true).await {
             Ok(n) => stored = n,
             Err(e) => {
                 yield OnboardingEvent::OnboardingError { message: format!("persistence failed: {e}") };
@@ -280,16 +351,62 @@ pub fn onboarding_run_stream(
         if let Err(e) = kawai_memory::facet_distill(&user_id).await {
             eprintln!("[onboarding] facet distill skipped: {e}");
         }
-        let conn = match db_connection(&user_id).await {
-            Ok(c) => c,
-            Err(e) => {
-                yield OnboardingEvent::OnboardingError { message: e.to_string() };
-                return;
-            }
-        };
-        kv_set(&conn, KV_COMPLETED, "true").await;
-        kv_set(&conn, KV_SOURCES, &serde_json::to_string(&processed).unwrap_or_default()).await;
-        yield OnboardingEvent::OnboardingFinished { total_items: stored };
+        mark_done(&user_id, &processed).await;
+        yield OnboardingEvent::OnboardingFinished { total_items: stored + linkedin_items };
+    }
+}
+
+/// Run the consented Apify LinkedIn-profile actor and render the result to
+/// markdown for the compressor. Token resolves from the kawai vault inside
+/// the client (`is_configured` was checked by the caller).
+async fn scrape_linkedin(profile_url: &str) -> Result<String, String> {
+    let client = apify::Apify::new().map_err(|e| e.to_string())?;
+    let items = client
+        .run_sync(&apify::RunRequest::new(
+            LINKEDIN_ACTOR,
+            serde_json::json!({ "profileUrls": [profile_url] }),
+        ))
+        .await
+        .map_err(|e| e.to_string())?;
+    let Some(first) = items.first() else {
+        return Ok(String::new());
+    };
+    let p = apify::linkedin::Profile::from_item(first);
+    let mut md = String::new();
+    if let Some(name) = &p.full_name {
+        md.push_str(&format!("LinkedIn name: {name}\n"));
+    }
+    if let Some(headline) = &p.headline {
+        md.push_str(&format!("LinkedIn headline: {headline}\n"));
+    }
+    if let Some(company) = &p.company {
+        md.push_str(&format!("LinkedIn company: {company}\n"));
+    }
+    if let Some(location) = &p.location {
+        md.push_str(&format!("LinkedIn location: {location}\n"));
+    }
+    if !p.skills.is_empty() {
+        md.push_str(&format!("LinkedIn skills: {}\n", p.skills.join(", ")));
+    }
+    if let Some(summary) = &p.summary {
+        md.push_str(&format!("LinkedIn summary: {summary}\n"));
+    }
+    Ok(md)
+}
+
+/// Mark onboarding done with the processed source list.
+async fn mark_done(user_id: &str, processed: &[String]) {
+    match db_connection(user_id).await {
+        Ok(conn) => {
+            kv_set(&conn, KV_COMPLETED, "true").await;
+            kv_set(
+                &conn,
+                KV_SOURCES,
+                &serde_json::to_string(processed).unwrap_or_default(),
+            )
+            .await;
+        }
+        Err(e) => eprintln!("[onboarding] state write failed: {e}"),
     }
 }
 
@@ -324,14 +441,17 @@ async fn compress_with_cloud(materials: &str) -> Result<onboarding::compress::Co
 /// Store compressed items as memories (dedup by title, case-insensitive).
 /// Returns how many rows landed.
 ///
-/// Namespace mapping: `profile`-namespace items from the QUICK QUESTIONS
-/// source are stored as `general` so they inject into agent prompts
-/// immediately — the `profile` namespace stays reserved for external
-/// identity data (LinkedIn/documents, Phase 3) which becomes the facet
-/// block in Phase 4. `people`/`goals` inject in either namespace.
+/// `source` is the provenance written on every row. Namespace mapping: for
+/// LOCAL sources (`questions`) `profile`-namespace items are stored as
+/// `general` so they inject into agent prompts immediately; EXTERNAL
+/// sources (linkedin/documents) keep `profile` — those rows are the facet
+/// distill's input and inject via the `<profile>` block. `people`/`goals`
+/// inject in either namespace.
 async fn persist_compressed(
     user_id: &str,
     compressed: &onboarding::compress::CompressedProfile,
+    source: &str,
+    local_source: bool,
 ) -> Result<u32, DbError> {
     let existing = kawai_memory::memory_list(user_id).await?;
     let mut seen: Vec<String> = existing.iter().map(|m| m.title.to_lowercase()).collect();
@@ -348,7 +468,7 @@ async fn persist_compressed(
             continue;
         }
         seen.push(key);
-        let namespace = if item.namespace == "profile" {
+        let namespace = if local_source && item.namespace == "profile" {
             "general"
         } else {
             item.namespace.as_str()
@@ -360,7 +480,7 @@ async fn persist_compressed(
             &item.content,
             namespace,
             false,
-            "questions",
+            source,
         )
         .await
         .is_ok()

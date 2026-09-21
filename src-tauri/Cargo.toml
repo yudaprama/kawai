@@ -61,6 +61,7 @@ kawai-paths = { path = "../crates/foundation/paths" }
 kawai-skills = { path = "../crates/foundation/skills" }
 kawai-memory = { path = "../crates/foundation/memory" }
 kawai-events = { path = "../crates/foundation/events" }
+apify = { path = "../crates/integrations/apify" }
 onboarding = { path = "../crates/engines/onboarding", features = ["webread-backend"] }
 kawai-tool-catalog = { path = "../crates/foundation/tool-catalog" }
 kawai-office = { path = "../crates/engines/office", features = ["paddle-ocr"] }

@@ -16,11 +16,13 @@ Migration numbers in the body below are STALE — the authoritative numbers are:
 Non-goals up front:
 
 - **kawai never scrapes LinkedIn itself.** The openhuman mechanism — Apify
-  actor `dev_fusion/linkedin-profile-scraper` — is ported as an **opt-in,
-  API-key-gated path** (§2.5): the scrape and its ToS exposure live on
-  Apify's platform, behind an explicit consent dialog. The zero-dependency
-  default remains a user-uploaded LinkedIn **data export** (HTML/CSV/PDF zip
-  → ragloader) and/or structured quick-questions.
+  actor `dev_fusion/linkedin-profile-scraper` — runs as an **automatic,
+  vault-keyed path** (§2.5): when discovery finds a high-confidence match,
+  kawai scrapes it via the Apify token baked into the kawai vault (no env
+  var, no user key); the scrape and its ToS exposure live on Apify's
+  platform. Low-confidence URLs stay URL-only hints (never scraped). The
+  zero-dependency default remains a user-uploaded LinkedIn **data export**
+  (HTML/CSV/PDF zip → ragloader) and/or structured quick-questions.
 - **No raw email content is ever persisted.** Gmail is read-only scope,
   scanned in-memory, compressed to memory items, discarded.
 - **No background scheduler in v1.** Re-learning is user-triggered
@@ -257,16 +259,16 @@ Three paths into the same compressor, ascending effort/risk:
    handles HTML/PDF/docx; CSV Profile rows (positions, education) get a
    small line-oriented extractor in the onboarding crate. File association
    follows the existing `session_files` / knowledge-add pattern.
-2. **Apify actor scrape (opt-in, API-key-gated).** When §2.4 produced a
-   profile URL *and* `KAWAI_APIFY_API_KEY` is set *and* the user confirms
-   the consent dialog, `crates/integrations/apify` runs
+2. **Apify actor scrape (automatic, vault-keyed).** When discovery produced a
+   HIGH-confidence profile URL *and* the vault carries an Apify token,
+   `crates/integrations/apify` runs
    `POST https://api.apify.com/v2/acts/<actor>/run-sync-get-dataset-items`
    with `{ "profileUrls": ["<url>"] }` (sync, 120 s timeout). Response JSON
-   (name, headline, company, education, skills) is rendered to Markdown,
-   compressed by the same LLM pass as every other source, and stored with
-   `source='linkedin'` + provenance (url, actor id). kawai never talks to
-   LinkedIn directly — the scrape and its ToS exposure live on Apify's
-   platform. No key or consent ⇒ stage skips silently.
+   (name, headline, company, skills) is rendered to Markdown, compressed by
+   a dedicated LLM pass, and stored with `source='linkedin'` + `profile`
+   namespace (facet distill folds it). kawai never talks to LinkedIn
+   directly — the scrape and its ToS exposure live on Apify's platform.
+   No token or low confidence ⇒ stage falls back to the URL-only hint.
 3. **URL-only fallback.** If the Apify run fails or is unconfigured but a
    URL was extracted, the compressor still receives
    "LinkedIn profile: <url>" as an identity hint — enough to seed facets
@@ -459,10 +461,12 @@ in the same commit.
    user's trust chain. Direct Google OAuth keeps kawai local-first. Pick
    one; don't ship both.
 2. **Apify actor = third-party cloud service** receiving the user's profile
-   URL and returning scraped profile JSON. Mitigations: opt-in only,
-   consent dialog names the actor, provenance on every produced memory row,
-   and path 1 (data export) is the permanent fallback if the actor breaks
-   or is taken down — the pipeline treats it as just another source.
+   URL and returning scraped profile JSON. Mitigations: high-confidence
+   matches only (low-confidence URLs are never scraped), the token is
+   first-party (kawai vault, not the user's), provenance on every produced
+   memory row, and path 1 (data export) is the permanent fallback if the
+   actor breaks or is taken down — the pipeline treats it as just another
+   source.
 3. **Body reads are confined to the LinkedIn-URL stage** (≤10
    `from:linkedin.com` messages; URL extracted, bodies discarded,
    never persisted) — the contacts/topics path stays metadata-only. If

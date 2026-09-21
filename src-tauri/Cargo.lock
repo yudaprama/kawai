@@ -816,6 +816,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "apify"
+version = "0.1.0"
+dependencies = [
+ "kawai-constants",
+ "kawai-http-client",
+ "log",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5624,6 +5637,7 @@ name = "kawai"
 version = "0.1.0"
 dependencies = [
  "analytics",
+ "apify",
  "async-stream",
  "axum 0.8.9",
  "base64 0.22.1",
