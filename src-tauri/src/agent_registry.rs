@@ -128,10 +128,18 @@ fn add_runtime_tools(
     // dispatch see one consistent view. NEVER seeded into the Turso tool
     // catalog — catalog_composition::PER_DEVICE_TOOLS excludes it.
     if !kawai_cli::inventory().is_empty() {
-        set.add_tool(kawai_cli::CliRunTool::from_cached_inventory(
+        let mut tool = kawai_cli::CliRunTool::from_cached_inventory(
             context.user_id,
             context.session_id,
-        ));
+        );
+        // Attachments become addressable by filename: materialize every file
+        // attached to this session into a per-session CLI workspace and make
+        // it cli_run's default CWD. Best-effort — on any failure the tool
+        // stays on the process CWD (previous behavior).
+        if let Some(dir) = session_cli_workspace(context.user_id, context.session_id) {
+            tool = tool.with_work_dir(dir);
+        }
+        set.add_tool(tool);
     }
     #[cfg(feature = "codegraph")]
     {
@@ -152,6 +160,86 @@ fn add_runtime_tools(
 }
 
 /// Tool builder for disabled/unavailable agents.
+/// Session CLI workspace: `<user_data_dir>/cli_workspace/session-<id>/`.
+/// Every file attached to the session is copied in under its original name
+/// (via the office store), and `cli_run` defaults its CWD here — so a
+/// command like `sips thumbnail_image.png …` addresses an attachment by
+/// filename without any export step. Copying is fire-and-forget (the path is
+/// deterministic; the first command runs seconds later); any failure is
+/// non-fatal — the tool just keeps the process CWD.
+fn session_cli_workspace(user_id: &str, session_id: i64) -> Option<std::path::PathBuf> {
+    let dir = kawai_paths::user_data_dir(user_id)
+        .join("cli_workspace")
+        .join(format!("session-{session_id}"));
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("[cli_workspace] mkdir {}: {e}", dir.display());
+        return None;
+    }
+    // Materialize off the synchronous toolset-build path. Inside a tokio
+    // runtime (agent turn) we spawn; headless contexts without a runtime
+    // materialize inline via a scratch single-thread runtime.
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) => {
+            handle.spawn(materialize_session_files(user_id.to_string(), session_id, dir.clone()));
+        }
+        Err(_) => {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .ok()?;
+            rt.block_on(materialize_session_files(user_id.to_string(), session_id, dir.clone()));
+        }
+    }
+    Some(dir)
+}
+
+async fn materialize_session_files(user_id: String, session_id: i64, dir: std::path::PathBuf) {
+    let Ok(conn) = crate::logic::db_connection(&user_id).await else {
+        eprintln!("[cli_workspace] db_connection failed");
+        return;
+    };
+    let Ok(mut rows) = conn
+        .query(
+            "SELECT file_id FROM session_files WHERE session_id = ?",
+            vec![session_id],
+        )
+        .await
+    else {
+        eprintln!("[cli_workspace] session_files query failed");
+        return;
+    };
+    let mut want: std::collections::HashSet<String> = std::collections::HashSet::new();
+    loop {
+        match rows.next().await {
+            Ok(Some(row)) => {
+                if let Ok(id) = row.get::<String>(0) {
+                    want.insert(id);
+                }
+            }
+            _ => break,
+        }
+    }
+    let files = match kawai_office::list_files(&user_id) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("[cli_workspace] list_files: {e}");
+            return;
+        }
+    };
+    for f in &files {
+        if !want.contains(&f.id) {
+            continue;
+        }
+        let dest = dir.join(kawai_office::store::sanitize_component(&f.original_name));
+        if dest.exists() {
+            continue; // already materialized
+        }
+        if let Err(e) = kawai_office::export_file(&user_id, &f.id, Some(&dest.to_string_lossy())) {
+            eprintln!("[cli_workspace] export {}: {e}", f.id);
+        }
+    }
+}
+
 fn unavailable_tools(_: &AgentContext<'_>, _: bool) -> Option<kawai_tools::ToolSet> {
     None
 }
