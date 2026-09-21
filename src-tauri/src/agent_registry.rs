@@ -122,6 +122,17 @@ fn add_runtime_tools(
         context.user_id.to_string(),
         context.session_id,
     ));
+    // Per-device CLI executor (PLAN-cli-tools.md): cross-cutting like
+    // memory_search, but only when this machine actually has CLIs. The
+    // inventory snapshot is taken here so registry, prompt block, and
+    // dispatch see one consistent view. NEVER seeded into the Turso tool
+    // catalog — catalog_composition::PER_DEVICE_TOOLS excludes it.
+    if !kawai_cli::inventory().is_empty() {
+        set.add_tool(kawai_cli::CliRunTool::from_cached_inventory(
+            context.user_id,
+            context.session_id,
+        ));
+    }
     #[cfg(feature = "codegraph")]
     {
         // Hot-path agent tools — LRU-cached sidecar (phase0), native (phase1) when available.

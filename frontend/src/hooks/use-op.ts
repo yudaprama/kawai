@@ -40,6 +40,12 @@ export function useOp<T>(command: string, args?: Record<string, unknown>, opts?:
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const mountedRef = useRef(true);
+  // Latest args, without identity churn: a literal `args` object at the call
+  // site changes identity every render, which used to (a) recreate `execute`
+  // and (b) re-fire the mount effect — an infinite invoke loop for every
+  // useOp call with a non-memoized args literal.
+  const argsRef = useRef(args);
+  argsRef.current = args;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -53,7 +59,7 @@ export function useOp<T>(command: string, args?: Record<string, unknown>, opts?:
       setLoading(true);
       setError(null);
       try {
-        const result = await call<T>(command, overrideArgs ?? args);
+        const result = await call<T>(command, overrideArgs ?? argsRef.current);
         if (mountedRef.current) {
           setData(result);
           setUnavailable(false);
@@ -75,7 +81,7 @@ export function useOp<T>(command: string, args?: Record<string, unknown>, opts?:
         if (mountedRef.current) setLoading(false);
       }
     },
-    [command, args, onError],
+    [command, onError],
   );
 
   useEffect(() => {

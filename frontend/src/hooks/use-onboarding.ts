@@ -54,7 +54,22 @@ export function useOnboarding() {
       "onboarding_run",
       { sources },
       {
-        onEvent: (e) => setEvents((prev) => [...prev, e]),
+        onEvent: (e) => {
+          setEvents((prev) => [...prev, e]);
+          // The OnboardingEvent union's terminal variants are
+          // `onboardingFinished`/`onboardingError` — streamOperation's
+          // generic `finished`/`error` shortcut never fires for them, so
+          // the terminal state transitions happen HERE. Without this the
+          // spinner runs forever after the backend completes.
+          if (e.type === "onboardingFinished") {
+            setRunning(false);
+            setDone(true);
+            void statusOp.execute();
+          } else if (e.type === "onboardingError") {
+            setRunning(false);
+            showErrorToast(e.message);
+          }
+        },
         onDone: () => {
           setRunning(false);
           setDone(true);
@@ -83,6 +98,7 @@ export function useOnboarding() {
   return {
     status: statusOp.data ?? null,
     loading: statusOp.loading && statusOp.data == null,
+    error: statusOp.error,
     running,
     events,
     done,

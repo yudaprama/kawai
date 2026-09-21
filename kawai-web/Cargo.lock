@@ -195,6 +195,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "apify"
+version = "0.1.0"
+dependencies = [
+ "kawai-constants",
+ "kawai-http-client",
+ "log",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1066,6 +1079,20 @@ dependencies = [
  "ryu",
  "serde",
  "static_assertions",
+]
+
+[[package]]
+name = "composio"
+version = "0.1.0"
+dependencies = [
+ "kawai-constants",
+ "kawai-http-client",
+ "kawai-tools",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -3212,11 +3239,13 @@ name = "kawai"
 version = "0.1.0"
 dependencies = [
  "analytics",
+ "apify",
  "async-stream",
  "axum 0.8.9",
  "base64 0.22.1",
  "block2",
  "browser",
+ "composio",
  "dotenvy",
  "entertainment",
  "finance",
@@ -3232,10 +3261,12 @@ dependencies = [
  "kawai-analytics",
  "kawai-auth",
  "kawai-billing",
+ "kawai-cli",
  "kawai-constants",
  "kawai-db",
  "kawai-email",
  "kawai-embedding",
+ "kawai-events",
  "kawai-knowledge",
  "kawai-memory",
  "kawai-office",
@@ -3254,6 +3285,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-user-notifications",
  "office_oxide 0.1.8",
+ "onboarding",
  "pdf_oxide",
  "ragloader",
  "rand 0.9.5",
@@ -3357,6 +3389,17 @@ dependencies = [
  "reqwest 0.13.4",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "kawai-cli"
+version = "0.1.0"
+dependencies = [
+ "kawai-tools",
+ "remote-llm",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -3554,6 +3597,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -4485,6 +4529,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "zip",
+]
+
+[[package]]
+name = "onboarding"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "webread",
 ]
 
 [[package]]

@@ -13,6 +13,8 @@
 //! round (invalid input messages name the problem; unknown-tool messages list
 //! the available names).
 
+pub mod deadline;
+
 use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { call, errText } from "@/lib/api";
-import { useOnboarding, type OnboardingEvent } from "@/hooks/use-onboarding";
+import { useOnboardingContext } from "@/features/auth/onboarding-provider";
+import type { OnboardingEvent } from "@/hooks/use-onboarding";
 
 const QUICK_QUESTIONS = [
   { key: "name", question: "What's your name?" },
@@ -18,7 +19,7 @@ const QUICK_QUESTIONS = [
  * between the auth gate and the app; never shown again after finish/skip.
  */
 export function ContextGatheringStep({ children }: { children: React.ReactNode }) {
-  const onboarding = useOnboarding();
+  const onboarding = useOnboardingContext();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [github, setGithub] = useState("");
   const [gmailOptIn, setGmailOptIn] = useState(false);
@@ -26,10 +27,40 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
   const [importingDoc, setImportingDoc] = useState(false);
   const [docResult, setDocResult] = useState<string | null>(null);
 
-  // Not yet known → render children rather than flashing the step.
-  if (onboarding.loading || onboarding.status == null) return <>{children}</>;
-  // Completed, skipped, errored-out, or user closed it → straight in.
-  if (onboarding.status.completed || onboarding.done || dismissed) return <>{children}</>;
+  // Not yet known → render children rather than flashing the step. If the
+  // status op FAILED (command missing / backend error), surface it instead
+  // of silently entering the app — a silent skip would hide onboarding
+  // forever with no way to tell why.
+  if (onboarding.status == null) {
+    if (!onboarding.loading) {
+      return (
+        <main className="flex min-h-screen items-center justify-center bg-background p-6">
+          <div className="w-full max-w-md space-y-4 text-center">
+            <p className="text-muted-foreground text-sm">
+              Couldn't read onboarding state — {onboarding.error ?? "unknown error"}
+            </p>
+            <div className="flex justify-center gap-2">
+              <Button onClick={() => void onboarding.refresh()} size="sm" variant="outline">
+                Retry
+              </Button>
+              <Button onClick={() => setDismissed(true)} size="sm" variant="ghost">
+                Enter Kawai anyway
+              </Button>
+            </div>
+          </div>
+        </main>
+      );
+    }
+    return <>{children}</>;
+  }
+  // Completed, skipped, running-in-background, or user closed it → straight in.
+  if (onboarding.status.completed || onboarding.done || dismissed || onboarding.entered)
+    return (
+      <>
+        {children}
+        <BackgroundProgress />
+      </>
+    );
 
   const importDocument = async (file: File) => {
     setImportingDoc(true);
@@ -203,5 +234,51 @@ function RunLog({ events, running }: { events: OnboardingEvent[]; running: boole
         </li>
       )}
     </ol>
+  );
+}
+
+/** Compact bottom-right progress card for a background onboarding run. */
+function BackgroundProgress() {
+  const onboarding = useOnboardingContext();
+  const [showDone, setShowDone] = useState(false);
+
+  useEffect(() => {
+    if (!onboarding.done) return;
+    setShowDone(true);
+    const t = setTimeout(() => setShowDone(false), 6000);
+    return () => clearTimeout(t);
+  }, [onboarding.done]);
+
+  if (!onboarding.running && !showDone) return null;
+
+  const completed = onboarding.events.filter((e) => e.type === "sourceCompleted").length;
+  const last = [...onboarding.events]
+    .reverse()
+    .find((e) => e.type === "sourceProgress" || e.type === "sourceStarted");
+  const note =
+    last?.type === "sourceProgress"
+      ? last.note
+      : last?.type === "sourceStarted"
+        ? `gathering ${last.source}…`
+        : "distilling profile…";
+
+  return (
+    <div className="fixed right-4 bottom-4 z-50 w-72 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3 shadow-lg">
+      {onboarding.running ? (
+        <>
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <Spinner className="size-3.5" /> Setting up your profile…
+          </p>
+          <p className="text-muted-foreground mt-1 truncate text-xs" title={note}>
+            {note}
+          </p>
+          <p className="text-muted-foreground mt-1 text-[11px]">
+            {completed} source{completed === 1 ? "" : "s"} done — you can keep using Kawai.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm font-medium">✓ Profile ready — you're all set.</p>
+      )}
+    </div>
   );
 }

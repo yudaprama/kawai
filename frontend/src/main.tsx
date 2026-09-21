@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import { SentryErrorBoundary } from "@/components/error-boundary";
 import { AuthGate } from "@/features/auth/auth-gate";
 import { ContextGatheringStep } from "@/features/auth/context-gathering-step";
+import { OnboardingProvider } from "@/features/auth/onboarding-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { NotificationProvider, useNotificationPermission } from "@/contexts/NotificationContext";
@@ -54,9 +55,11 @@ if (rootEl) {
           <NotificationProvider>
             <NotificationPermissionGate>
               <AuthGate>
-                <ContextGatheringStep>
-                  <App />
-                </ContextGatheringStep>
+                <OnboardingProvider>
+                  <ContextGatheringStep>
+                    <App />
+                  </ContextGatheringStep>
+                </OnboardingProvider>
               </AuthGate>
             </NotificationPermissionGate>
           </NotificationProvider>

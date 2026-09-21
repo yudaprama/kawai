@@ -722,7 +722,10 @@ pub async fn plan_task(
     // into a different space.
     let embedder = kawai_embedding::build_litert_embedder();
 
-    let system = plan_loop_system_prompt(&registry.catalog_lines_for(&core_tools));
+    let system = plan_loop_system_prompt(
+        &registry.catalog_lines_for(&core_tools),
+        &kawai_cli::prompt_block(),
+    );
     let mut task = if context.is_empty() {
         format!("User goal:\n{goal}")
     } else {
@@ -1120,6 +1123,7 @@ pub fn parse_supervisor_plan_scoped(
             ));
         }
     }
+    registry.enforce_confirmation_policy(&mut plan);
     registry.validate_plan(&plan).map_err(|e| e.to_string())?;
     Ok(plan)
 }
@@ -1309,7 +1313,15 @@ const PLAN_MAX_CALLS: usize = 6;
 /// artifact_recall) are deliberately absent — the scheduler executes steps
 /// via `ToolSet::execute`, where those tools return an "unavailable here"
 /// error text instead of doing their work.
-const PLAN_CORE_TOOLS: [&str; 3] = ["memory_search", "web_search", "session_step_results"];
+const PLAN_CORE_TOOLS: [&str; 4] = [
+    "memory_search",
+    "web_search",
+    "session_step_results",
+    // Per-device CLI executor (PLAN-cli-tools.md). Present in the registry
+    // only when the machine's CLI inventory is non-empty — the filter below
+    // drops it otherwise, exactly like the feature-gated domains.
+    "cli_run",
+];
 /// Subagent/internal-dispatch tools: excluded from the supervisor registry
 /// entirely so the planner can neither see nor plan against them. Must stay
 /// in sync with `examples/catalog_composition::NON_DISPATCHABLE_TOOLS` —
@@ -1331,7 +1343,7 @@ const PLAN_SEARCH_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_
 /// typical small-candidate materials budget).
 const PLAN_MATERIALS_CAP: usize = 12_000;
 
-fn plan_loop_system_prompt(core_tools: &str) -> String {
+fn plan_loop_system_prompt(core_tools: &str, cli_block: &str) -> String {
     format!(
         r#"You are a task planner for a deterministic supervisor.
 The full tool catalog is NOT provided. Discover tools by searching.
@@ -1379,6 +1391,12 @@ Plan rules:
  - Core tools below are ALWAYS available — never search for them. Their
    FULL argument schemas follow; copy required properties exactly:
 {}
+{cli_block}
+ - CLI commands (see <cli-tools>): DEFAULT to passing `intent` — cli_run
+   self-corrects internally (reads --help, retries on stderr) and can take
+   1–2 minutes: set "timeoutMs": 120000 on cli_run steps that use `intent`.
+   Pass exact `args` only when you are confident about the flags (fast
+   path, instant). NEVER name a CLI that is not listed in <cli-tools>.
  - FORBIDDEN tools — validation will reject them: deep_write, draft_document, plan_task, plan_revise, artifact_recall, data_query, data_chart. Never name them in steps. For data questions use data_query_nl. For visualizations use data_chart_nl. To create documents use office_create_document / office_create_deck / pdf_create_from_markdown.
  - For data questions use data_query_nl and for charts use data_chart_nl — "data_query" and "data_chart" are NOT available at
    planning time (validation rejects them): the plan-REVISION phase writes

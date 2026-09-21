@@ -40,6 +40,15 @@ pub const NON_DISPATCHABLE_TOOLS: &[&str] = &[
     "artifact_recall",
 ];
 
+/// Per-device tools: registered by the runtime from THIS machine's state
+/// (`cli_run` rides the live CLI inventory, PLAN-cli-tools.md) and therefore
+/// never representable in the globally-curated Turso catalog. The planner
+/// discovers them through the always-visible core tools + the <cli-tools>
+/// prompt block instead — keeping them out of the seed AND the drift
+/// comparison is load-bearing: seeding them would leak one dev machine's
+/// inventory to every user, and drift-checking them would fail everywhere.
+pub const PER_DEVICE_TOOLS: &[&str] = &["cli_run"];
+
 /// Tools whose catalog `kind` mirrors `ToolKind::Subagent` (subset of the
 /// non-dispatchable set that would be `subagent` if they were dispatchable).
 pub const SUBAGENT_TOOLS: &[&str] = &["deep_write", "draft_document", "plan_task", "plan_revise"];
@@ -132,6 +141,7 @@ pub async fn merged_definitions() -> Result<Vec<ToolDefinition>, String> {
         !RPC_ONLY_TOOLS.contains(&d.name.as_str())
             && !NON_DISPATCHABLE_TOOLS.contains(&d.name.as_str())
             && !BROWSER_INTERNAL_TOOLS.contains(&d.name.as_str())
+            && !PER_DEVICE_TOOLS.contains(&d.name.as_str())
             && !d.name.starts_with("browser_")
     });
     if definitions.len() != before {
@@ -182,6 +192,20 @@ mod tests {
                 !RPC_ONLY_TOOLS.contains(&name),
                 "{name:?} must not be in both RPC_ONLY and NON_DISPATCHABLE"
             );
+        }
+    }
+
+    #[test]
+    fn per_device_tools_are_never_seeded() {
+        // cli_run must never reach merged_definitions() — the catalog is
+        // global curation, the CLI inventory is per-device state. If this
+        // test fails, a dev machine's CLI set is about to be published to
+        // every user (PLAN-cli-tools.md).
+        assert_eq!(PER_DEVICE_TOOLS, &["cli_run"]);
+        for &name in PER_DEVICE_TOOLS {
+            assert!(!RPC_ONLY_TOOLS.contains(&name));
+            assert!(!NON_DISPATCHABLE_TOOLS.contains(&name));
+            assert!(!BROWSER_INTERNAL_TOOLS.contains(&name));
         }
     }
 

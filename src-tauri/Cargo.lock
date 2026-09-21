@@ -5675,6 +5675,7 @@ dependencies = [
  "kawai-analytics",
  "kawai-auth",
  "kawai-billing",
+ "kawai-cli",
  "kawai-constants",
  "kawai-db",
  "kawai-email",
@@ -5819,6 +5820,17 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "kawai-cli"
+version = "0.1.0"
+dependencies = [
+ "kawai-tools",
+ "remote-llm",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -6040,6 +6052,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
