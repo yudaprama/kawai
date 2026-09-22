@@ -3395,7 +3395,11 @@ dependencies = [
 name = "kawai-cli"
 version = "0.1.0"
 dependencies = [
+ "kawai-db",
+ "kawai-embedding",
+ "kawai-paths",
  "kawai-tools",
+ "libsql",
  "remote-llm",
  "serde",
  "serde_json",

@@ -194,7 +194,7 @@ web = ["dep:axum", "dep:tower-http"]
 codegraph = ["dep:codegraph"]
 # On-device LLM. Also owns the kawai-router dep (rule-based auto-routing is
 # only used by the litert supervisor stack).
-litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "kawai-agent/litert", "kawai-vision/litert", "kawai-knowledge/litert", "remote-llm/litert", "kawai-analytics/litert", "dep:kawai-router"]
+litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "kawai-agent/litert", "kawai-vision/litert", "kawai-knowledge/litert", "remote-llm/litert", "kawai-analytics/litert", "kawai-cli/litert", "dep:kawai-router"]
 # Export operational tracing logs to Grafana Cloud Loki directly.
 loki-logs = ["kawai-telemetry/loki-logs"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +

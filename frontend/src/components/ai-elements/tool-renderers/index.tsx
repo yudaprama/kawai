@@ -14,6 +14,7 @@ import { renderWebSearch, renderWebSearchSuggest } from "./search";
 import { renderDataSchema, renderDataQuery, renderDataTa, renderDataChart, renderDataTables, renderDataImport } from "./data";
 import { renderKnowledgeSearch } from "./knowledge";
 import { renderOfficeDocument } from "./artifacts";
+import { renderCliRun } from "./terminal";
 
 // ---------------------------------------------------------------------------
 // registry
@@ -22,6 +23,7 @@ import { renderOfficeDocument } from "./artifacts";
 type ToolRenderer = (output: unknown) => ReactNode;
 
 const registry: Record<string, ToolRenderer> = {
+  cli_run: renderCliRun,
   web_search: renderWebSearch,
   web_search_suggest: renderWebSearchSuggest,
   data_schema: renderDataSchema,

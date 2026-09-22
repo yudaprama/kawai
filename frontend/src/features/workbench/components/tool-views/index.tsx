@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { cards } from "@/components/ai-elements/tool-renderers/shared";
 import { renderKnowledgeSearch } from "@/components/ai-elements/tool-renderers/knowledge";
 import { renderWebSearch, renderWebSearchSuggest } from "@/components/ai-elements/tool-renderers/search";
+import { renderCliRun } from "@/components/ai-elements/tool-renderers/terminal";
 import { renderConnectorTools } from "@/components/ai-elements/tool-renderers/connector";
 import {
   renderBibleVerse,
@@ -131,6 +132,9 @@ const registry: Record<string, StepView> = {
   // web search — reuse the shared search result renderer
   web_search: (p) => renderWebSearch(p),
   web_search_suggest: (p) => renderWebSearchSuggest(p),
+
+  // cli — terminal-style command execution view (shared with the chat side)
+  cli_run: (p) => renderCliRun(p),
 
   // knowledge — reuse the vendored renderer (same RagHit shape)
   knowledge_search: (p) => renderKnowledgeSearch(p),
