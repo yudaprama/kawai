@@ -1124,8 +1124,29 @@ pub fn parse_supervisor_plan_scoped(
         }
     }
     registry.enforce_confirmation_policy(&mut plan);
+    enforce_cli_run_confirmation_tiering(&mut plan);
     registry.validate_plan(&plan).map_err(|e| e.to_string())?;
     Ok(plan)
+}
+
+/// cli_run tiering (deterministic, planner-proof): a step whose command is
+/// NOT on the audited safe read-only allowlist gets confirmation forced on —
+/// the manager only ever approves, in plain language, steps that can
+/// actually mutate something; read/inspect steps run prompt-free.
+fn enforce_cli_run_confirmation_tiering(plan: &mut kawai_router::TaskPlan) {
+    for step in &mut plan.steps {
+        if step.dispatch_key() != "cli_run" {
+            continue;
+        }
+        let command = step
+            .arguments
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if !kawai_cli::is_safe_readonly(command) {
+            step.requires_confirmation = Some(true);
+        }
+    }
 }
 
 // ── Planner search-loop (mode A: no full-catalog fallback) ──────────────────
@@ -1386,6 +1407,16 @@ Plan rules:
   a declared contract ("produces: …" in their catalog line) are AUTHORITATIVE:
   bindings from those steps must use exactly those names.
 - Side-effect tools MUST set "requiresConfirmation": true with a short "confirmationDescription".
+- For cli_run steps: read-only commands (ls, cat, grep, jq, du, …) run
+  WITHOUT user approval — set "requiresConfirmation": false for those.
+  Everything else that can mutate (ffmpeg, mv-class, installs, network
+  fetches) REQUIRES "requiresConfirmation": true, and the
+  confirmationDescription is what the user approves: state the concrete
+  goal (e.g. "convert input.mov to h264 mp4 under 20MB"), not just
+  "run ffmpeg". The validator enforces this: a non-read-only cli_run step
+  without the flag is rejected. The binary is fixed at confirmation; the
+  tool's translator may only vary that binary's arguments, under a static
+  policy that blocks inline code and second-program execution.
 - "onError" is one of "fail", "skip", "continue". Default "fail".
  - Keep each task description under {} chars.
  - Core tools below are ALWAYS available — never search for them. Their
@@ -1462,6 +1493,16 @@ Rules:
   the user's language; ≤4 actions that GROUP steps (never restate one); ≤5 expected outputs.
 - Keep "arguments" complete and precise — they are what the tool executes.
 - Side-effect tools MUST set "requiresConfirmation": true with a short "confirmationDescription".
+- For cli_run steps: read-only commands (ls, cat, grep, jq, du, …) run
+  WITHOUT user approval — set "requiresConfirmation": false for those.
+  Everything else that can mutate (ffmpeg, mv-class, installs, network
+  fetches) REQUIRES "requiresConfirmation": true, and the
+  confirmationDescription is what the user approves: state the concrete
+  goal (e.g. "convert input.mov to h264 mp4 under 20MB"), not just
+  "run ffmpeg". The validator enforces this: a non-read-only cli_run step
+  without the flag is rejected. The binary is fixed at confirmation; the
+  tool's translator may only vary that binary's arguments, under a static
+  policy that blocks inline code and second-program execution.
 - Never name FORBIDDEN internal tools: deep_write, draft_document, plan_task, plan_revise, artifact_recall.
 - data_query IS available to you (the execution report contains data_schema's
   real columns) — prefer it for data questions.
@@ -1490,10 +1531,10 @@ FULL tool catalog (schemas included — copy required properties exactly):
     )
 }
 
-/// Execute one search round: embed the queries, hit the Turso catalog,
-/// dedupe against everything already shown, and format the results block.
-/// Returns the block plus the names of the newly surfaced tools (planner
-/// progress telemetry).
+/// Execute one search round: embed the queries, hit the Turso catalog AND
+/// the device-local cli-catalog, dedupe against everything already shown,
+/// and format the results block. Returns the block plus the names of the
+/// newly surfaced tools/CLIs (planner progress telemetry).
 async fn run_tool_search(
     catalog: Option<&kawai_tool_catalog::Catalog>,
     embedder: &kawai_embedding::TenantAwareEmbedder,
@@ -1517,6 +1558,7 @@ async fn run_tool_search(
     };
     let mut block = String::from("\n<tool-search-results>\n");
     let mut found: Vec<String> = Vec::new();
+    let mut cli_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (query, qvec) in queries.iter().zip(vecs) {
         block.push_str(&format!("\nquery: {query}\n"));
         // k=8 (was 6): the vector side is noisy — generic-description tools
@@ -1564,6 +1606,35 @@ async fn run_tool_search(
         }
         if listed == 0 {
             block.push_str("- (no new tools beyond those already listed)\n");
+        }
+
+        // Device CLI side — the local cli-catalog (on-device EmbeddingGemma
+        // space, same hybrid recipe, independent of the Turso catalog). A
+        // not-yet-ready catalog skips silently: the <cli-tools> prompt block
+        // already carries the inventory head as fallback.
+        let mut cli_listed = 0;
+        if let Ok(cli_hits) = kawai_cli::search_installed(query, 4).await {
+            for hit in cli_hits {
+                if !cli_seen.insert(hit.name.clone()) {
+                    continue;
+                }
+                cli_listed += 1;
+                found.push(hit.name.clone());
+                surfaced.push(hit.name.clone());
+                match hit.description {
+                    Some(desc) => block.push_str(&format!(
+                        "- {} — {desc}\n  (installed CLI — run it via `cli_run`)\n",
+                        hit.name
+                    )),
+                    None => block.push_str(&format!(
+                        "- {}\n  (installed CLI — run it via `cli_run`)\n",
+                        hit.name
+                    )),
+                }
+            }
+        }
+        if cli_listed > 0 {
+            tracing::info!(component = "supervisor", query = %query, surfaced = ?surfaced, "cli-catalog search surfaced CLIs");
         }
         // Planner-search telemetry: which query surfaced which tools (the
         // search block itself is otherwise invisible outside the LLM call).
@@ -3436,14 +3507,23 @@ pub fn execute_plan_stream_with_cancel(
                                 exp_tools.join(", "),
                                 exp_outcome,
                             );
-                            let lesson = remote_llm::reason::reason_as(
-                                "You distill one reusable lesson from a completed AI agent run.",
-                                &lesson_task,
-                                "experience-distiller",
+                            // Best-effort AND bounded: the terminal events
+                            // (PlanCompleted) must never wait on the cloud
+                            // longer than this — a slow provider just skips
+                            // the lesson (the row still lands).
+                            let lesson = match tokio::time::timeout(
+                                std::time::Duration::from_secs(4),
+                                remote_llm::reason::reason_as(
+                                    "You distill one reusable lesson from a completed AI agent run.",
+                                    &lesson_task,
+                                    "experience-distiller",
+                                ),
                             )
                             .await
-                            .map(|s| preview_chars(s.trim(), 400).to_string())
-                            .unwrap_or_default();
+                            {
+                                Ok(Ok(s)) => preview_chars(s.trim(), 400).to_string(),
+                                _ => String::new(),
+                            };
                             if let Err(e) = kawai_agent::experience_record(
                                 &user_id,
                                 AUTO_AGENT_ID,
@@ -3681,13 +3761,22 @@ mod tests {
     #[test]
     fn planner_context_omits_empty_blocks_and_wraps_present_ones() {
         assert_eq!(
-            render_planner_context(String::new(), String::new(), String::new(), String::new()),
+            render_planner_context(
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new()
+            ),
             ""
         );
         let out = render_planner_context(
             "<persona>likes dark UIs</persona>".into(),
             String::new(),
             "<skills>pdf skill</skills>".into(),
+            String::new(),
+            String::new(),
             String::new(),
         );
         assert!(out.starts_with("<user-context>"));
@@ -3705,6 +3794,8 @@ mod tests {
             String::new(),
             String::new(),
             "<attached-files>\n- report.docx\n</attached-files>".into(),
+            String::new(),
+            String::new(),
         );
         assert!(out.starts_with("<user-context>"));
         assert!(out.contains("<attached-files>\n- report.docx\n</attached-files>"));
@@ -3753,6 +3844,70 @@ mod tests {
             confirmation_description: Some("about to act".into()),
             ..Default::default()
         }
+    }
+
+    /// Tiering validator: a cli_run step whose command is on the audited
+    /// safe read-only list stays prompt-free; anything else (including an
+    /// absent/unknown command) gets confirmation FORCED on, whatever the
+    /// planner authored.
+    #[test]
+    fn cli_run_confirmation_tiering() {
+        let dispatch: ToolDispatch = Arc::new(|_| {
+            Box::pin(async {
+                Ok(kawai_router::StepResult {
+                    step_id: String::new(),
+                    agent_id: String::new(),
+                    status: StepStatus::Completed,
+                    output: String::new(),
+                    artifacts: Vec::new(),
+                    error: None,
+                    retries_used: 0,
+                    error_kind: kawai_router::FailureKind::Other,
+                })
+            })
+        });
+        let mut registry = ToolRegistry::new(dispatch);
+        registry.register(ToolMeta {
+            name: "cli_run".into(),
+            kind: ToolKind::Pure,
+            description: "test".into(),
+            input_schema: serde_json::json!({}),
+            output_schema: serde_json::json!({}),
+            produces: vec![],
+            requires_confirmation: false,
+        });
+
+        let mk_step = |id: &str, command: &str, flag: bool| TaskStep {
+            id: id.into(),
+            agent_id: "cli_run".into(),
+            tool: Some("cli_run".into()),
+            task: format!("task {id}"),
+            requires_confirmation: Some(flag),
+            arguments: serde_json::json!({ "command": command }),
+            ..Default::default()
+        };
+
+        let mk_plan = |step: TaskStep| kawai_router::TaskPlan {
+            goal: "g".into(),
+            steps: vec![step],
+            final_writer: None,
+            summary: None,
+        };
+
+        // Read-only grep authored WITHOUT the flag → stays prompt-free…
+        let mut plan = mk_plan(mk_step("s1", "grep", false));
+        enforce_cli_run_confirmation_tiering(&mut plan);
+        assert_eq!(plan.steps[0].requires_confirmation, Some(false));
+
+        // Mutating ffmpeg authored WITHOUT the flag → forced on.
+        let mut plan = mk_plan(mk_step("s2", "ffmpeg", false));
+        enforce_cli_run_confirmation_tiering(&mut plan);
+        assert_eq!(plan.steps[0].requires_confirmation, Some(true));
+
+        // Absent command (malformed step) → treated as unsafe.
+        let mut plan = mk_plan(mk_step("s3", "", false));
+        enforce_cli_run_confirmation_tiering(&mut plan);
+        assert_eq!(plan.steps[0].requires_confirmation, Some(true));
     }
 
     /// Full loop: planStarted → stepStarted → confirmationRequested → approve
@@ -3811,7 +3966,10 @@ mod tests {
 
         let mut finished = false;
         loop {
-            let ev = tokio::time::timeout(std::time::Duration::from_millis(500), stream.as_mut().next())
+            // 5s window: the terminal path makes one best-effort cloud call
+            // (experience distiller) before PlanCompleted — a 500ms window
+            // loses to real network latency.
+            let ev = tokio::time::timeout(std::time::Duration::from_secs(5), stream.as_mut().next())
                 .await
                 .expect("stream stalled after approval");
             match ev {

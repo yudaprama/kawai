@@ -3632,6 +3632,7 @@ name = "kawai-web"
 version = "0.1.0"
 dependencies = [
  "kawai",
+ "kawai-cli",
  "kawai-telemetry",
  "tokio",
 ]

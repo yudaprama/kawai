@@ -59,6 +59,11 @@ pub fn run() {
                 if let Ok(data) = app.path().app_data_dir() {
                     // One per-user data root: <app_data>/<user_id>/ holds
                     // kawai.db + docs/ (office store defaults into it).
+                    // On-device models (LiteRT embedder, OCR, TTS) live in
+                    // the app data dir — the home-derived ~/.kawai/models
+                    // is unwritable in mobile sandboxes. (Models first:
+                    // set_data_root consumes `data`.)
+                    kawai_paths::set_models_dir(data.join("models"));
                     logic::db::set_data_root(data);
                 // Auto-restore the previous session from the persisted worker
                 // token (no password prompt after a restart, until it expires).
@@ -82,6 +87,10 @@ pub fn run() {
                 // live in supervisor (the plan-time path uses the same one).
                 #[cfg(feature = "litert")]
                 crate::supervisor::prefetch_tool_catalog();
+                // Warm the device cli-catalog in the background too (no-op
+                // without the on-device embedder): scan → reconcile → embed
+                // lands before the first plan_task instead of racing it.
+                kawai_cli::ensure_catalog_init();
             }
             // Tier-0 web read engine: hidden webview owned by the shell.
             // kawai-web never registers one (Cloudflare-only there).

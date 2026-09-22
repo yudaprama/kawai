@@ -11,6 +11,9 @@ use std::path::PathBuf;
 async fn main() {
     kawai_lib::auth::load_dotenv();
     kawai_lib::logging::init();
+    // Warm the device cli-catalog in the background (no-op without the
+    // on-device embedder).
+    kawai_cli::ensure_catalog_init();
     kawai_telemetry::set_app_version(env!("CARGO_PKG_VERSION").to_string());
     kawai_telemetry::init();
 
