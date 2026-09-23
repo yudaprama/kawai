@@ -102,8 +102,9 @@ webread/knowledge.
 
 ## 5. Binance (`builtin.binance`) — `crates/toolsets/binance` (feature `binance`)
 
-Keyless public spot market data + in-process TA. Also gets webread + runtime tools
-(`supports_draft_document: false`).
+Keyless public spot market data + in-process TA. Credentialed US-stock reads
+(`stock_quote` / `stock_info`) ride the same capability probe as the account
+tools. Also gets webread + runtime tools (`supports_draft_document: false`).
 
 | Tool | Purpose |
 |---|---|
@@ -112,6 +113,7 @@ Keyless public spot market data + in-process TA. Also gets webread + runtime too
 | `crypto_depth` | order book |
 | `crypto_ta_analyze` | indicator suite over klines |
 | `crypto_balances` / `crypto_open_orders` | read-only account tools — compiled **only** when `BINANCE_API_KEY` + `BINANCE_API_SECRET` are both set (never trade permission) |
+| `stock_quote` / `stock_info` | Binance Stocks US-equity bid/ask quote + symbol metadata — registered **only** when `BINANCE_API_KEY` + `BINANCE_API_SECRET` are both set |
 
 ## 6. Cross-cutting: web read/search — `crates/toolsets/webread`
 
@@ -255,6 +257,18 @@ Memory / knowledge (`kawai-memory`, `kawai-knowledge`):
 | `memory_graph_search` | `## Entity` sections of the same lines | `MemoryGraphView` |
 | `knowledge_search` | JSON array of `{source, locator, content}` hits | reuses vendored `renderKnowledgeSearch` |
 | `session_step_results` | `{"entries":[{run, is_last_run, tool, finished_at, output, truncated}], "note"?}` | `SessionStepResultsView` — card per entry, markdown body, "last run" pill, truncation note |
+
+Binance (`crates/toolsets/binance`):
+
+| Tool | Output shape | View |
+|---|---|---|
+| `crypto_price` | `{symbol, lastPrice, priceChange, priceChangePercent, openPrice, highPrice, lowPrice, volume, quoteVolume, bidPrice, askPrice, weightedAvgPrice, count}` | `renderTicker24` |
+| `crypto_depth` | `{symbol, book:{bestBid, bestAsk, spread, mid}, bids, asks}` | `renderBinanceDepth` |
+| `crypto_klines` | `{symbol, interval, count, candles:[[openTime, open, high, low, close, volume],…]}` | `chart(binanceKlineSeries)` |
+| `crypto_ta_analyze` | indicator finals (e.g. `rsi14`, `ema9`, `macd12269`) + `windowChangePct`, `skipped` | `renderBinanceTa` |
+| `crypto_balances` | `{canTrade, balances:[{asset, free, locked}]}` | `renderBinanceBalances` |
+| `crypto_open_orders` | `{count, orders:[…]}` | `renderBinanceOpenOrders` |
+| `stock_quote` / `stock_info` | `{symbol, bidPrice?, askPrice?, bidSize?, askSize?, mid?}` / `{symbol, tradability, fractionable, …}` | `KeyValueView` (via `genericKv`) |
 
 Finance (`generated-tools/finance`):
 

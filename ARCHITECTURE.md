@@ -142,7 +142,12 @@ The Presentation persona emphasizes audience, narrative structure, one idea per 
 
 ### `builtin.binance` — Binance
 
-Crypto market data and technical analysis on Binance spot.
+Crypto market data and technical analysis on Binance spot, plus US-stock
+quotes and symbol metadata on Binance Stocks. Every REST call on this agent
+resolves DNS through DoH (`kawai_http_client::doh`, injected via the SDK's
+`HttpAgent` hook), so an ISP-poisoned system answer for `api.binance.com`
+cannot redirect a tool to a block page — same anti-hijack approach as
+webread's DuckDuckGo tier.
 
 | Tool | Source | Notes |
 |------|--------|-------|
@@ -152,6 +157,8 @@ Crypto market data and technical analysis on Binance spot.
 | `crypto_ta_analyze` | `crates/toolsets/binance` | Fetches klines + runs indicator suites in-process (ema/sma/rsi/macd/bb/atr + 12 more) |
 | `crypto_balances` | `crates/toolsets/binance` | Signed read-only spot balances *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
 | `crypto_open_orders` | `crates/toolsets/binance` | Signed read-only open orders *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
+| `stock_quote` | `crates/toolsets/binance` | Binance Stocks US-equity bid/ask quote + derived mid *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
+| `stock_info` | `crates/toolsets/binance` | US symbol tradability / order limits / listing dates *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
 | `web_read` | `webread` | Read a URL → markdown *(capability-probe: engine must exist)* |
 | `web_search` | `webread` | DuckDuckGo/Brave/Wikipedia SERP → enriched hits *(capability-probe: engine must exist)* |
 | `artifact_recall` | `agent.rs` | Page through oversized tool results from this turn |

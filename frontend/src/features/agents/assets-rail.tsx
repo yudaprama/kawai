@@ -81,6 +81,7 @@ export function AssetsRail({
   collapsed,
   userId,
   walletAvailable = true,
+  codegraphAvailable = false,
   onSelectAsset,
   onToggle,
   onLogout,
@@ -92,6 +93,8 @@ export function AssetsRail({
   userId: string | null;
   /** Backend has Monad compiled in (opt-in `monad` feature) — hide the wallet entry when off. */
   walletAvailable?: boolean;
+  /** Backend has CodeGraph compiled in (opt-in `codegraph` feature) — hide the code entry when off. */
+  codegraphAvailable?: boolean;
   onSelectAsset: (id: AssetViewId) => void;
   onToggle: () => void;
   onLogout: () => void;
@@ -144,7 +147,9 @@ export function AssetsRail({
         )}
 
         <nav className={`flex flex-col gap-1 pb-2 ${collapsed ? "px-1.5" : "px-2"}`}>
-          {ASSET_NAV.filter((asset) => asset.id !== "wallet" || walletAvailable).map((asset) => {
+          {ASSET_NAV.filter(
+            (asset) => (asset.id !== "wallet" || walletAvailable) && (asset.id !== "code" || codegraphAvailable),
+          ).map((asset) => {
             const active = assetView === asset.id;
             return (
               <button

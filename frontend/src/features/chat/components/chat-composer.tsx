@@ -123,13 +123,12 @@ function ChatComposerInner({
   const mentionOp = useOp<KnowledgeFileInfo[]>("knowledge_list", undefined, { enabled: false, onError: "log" });
   const mentionFiles = mentionOp.data ?? null;
 
-  // Fetch on first popover open — subsequent opens reuse the cached list.
-  const mentionFetched = useRef(false);
+  // Fresh fetch on every popover open — files imported after mount appear
+  // without remounting the composer, and a failed fetch retries on the next
+  // open. Typing keeps the popover open and does NOT re-fetch (filtering
+  // happens client-side over the loaded list).
   useEffect(() => {
-    if (mentionOpen && !mentionFetched.current) {
-      mentionFetched.current = true;
-      void mentionOp.execute();
-    }
+    if (mentionOpen) void mentionOp.execute();
   }, [mentionOpen, mentionOp.execute]);
 
   const toggleMention = useCallback((file: KnowledgeFileInfo) => {
@@ -317,7 +316,11 @@ function ChatComposerInner({
             </PopoverTrigger>
             <PopoverContent align="start" className="w-72 p-1">
               {mentionFiles === null ? (
-                <div className="text-muted-foreground px-2 py-3 text-xs">Loading files…</div>
+                <div className="text-muted-foreground px-2 py-3 text-xs">
+                  {mentionOp.loading
+                    ? "Loading files…"
+                    : `Couldn't load files — ${mentionOp.error ?? "unknown error"}. Reopen to retry.`}
+                </div>
               ) : filtered.length === 0 ? (
                 <div className="text-muted-foreground px-2 py-3 text-xs">
                   {remaining.length === 0
@@ -345,7 +348,6 @@ function ChatComposerInner({
                 <div className="mt-1 flex gap-1 border-t px-1 pt-1">
                   {onAddLink && (
                     <Button
-                      disabled={mentionFiles === null}
                       onClick={onAddLink}
                       size="xs"
                       title="Ingest a YouTube video transcript into your knowledge base"
@@ -357,7 +359,6 @@ function ChatComposerInner({
                   )}
                   {onAddFiles && (
                     <Button
-                      disabled={mentionFiles === null}
                       onClick={onAddFiles}
                       size="xs"
                       title="Import documents & images (.docx .xlsx .pptx .pdf .png .jpg …)"

@@ -1601,6 +1601,7 @@ version = "0.1.0"
 dependencies = [
  "binance-sdk",
  "kawai-agent-contract",
+ "kawai-http-client",
  "kawai-tools",
  "serde",
  "serde_json",

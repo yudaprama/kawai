@@ -81,7 +81,7 @@ bun run typecheck      # tsc -b --force
 # Desktop (Tauri) — the `tauri` npm script is wrapped by scripts/tauri.sh.
 # `dev` = on-device LLM stack: litert feature + native/ rpath
 # + profraw off (needs the Bazel-built dylibs; run bundle:litert once).
-# The binance agent tools (crypto_*) ride the dev feature set too.
+# The binance agent tools (crypto_* / stock_*) ride the dev feature set too.
 # `build` and everything else pass through unchanged.
 bun tauri dev
 bun tauri build
@@ -213,7 +213,7 @@ crates/
 ├── toolsets/                       # agent toolset adapters
 │   ├── analytics-tools/ (kawai-analytics) # thin AgentTool wrappers over crates/engines/analytics engine — data_schema/query/ta/chart (spawn_blocking) + sql_profiles/effective_profiles + DataTablesTool/DataImportTool (sqlx Postgres/MySQL, analytics-sql)
 │   ├── cli/ (kawai-cli)           # per-device CLI inventory (PATH + GUI-landmine dirs, denylist, process-cached) + the single `cli_run` AgentTool: fast path (exact argv) or a data_query_nl-style self-correcting loop over `intent` (reason_in argv translation grounded on an internal --help capture, stderr fed back, cooperative step-deadline) — planner sees it via PLAN_CORE_TOOLS + the <cli-tools> block; NEVER Turso-seeded (PLAN-cli-tools.md)
-│   ├── binance/                   # Binance agent tools (hand-written, feature "binance"): keyless public spot market data via binance-sdk + in-process TA over ta
+│   ├── binance/                   # Binance agent tools (hand-written, feature "binance"): keyless public spot market data + (BINANCE_API_KEY set) US-stock quote/info via binance-sdk + in-process TA over ta
 │   ├── codegraph/ (codegraph)     # CodeGraph bridge (feature "codegraph" sidecar cached): codegraph_explore/status AgentTools — 15m LRU + single-flight + 12/min budget
 │   └── webread/ (webread)         # web read + search tiering (always compiled; reusable by any agent): web_read + web_search PortableTools — search = DDG over DoH (primary) → webview Brave → Wikipedia (id/en); read = Cloudflare → plain HTTP → webview; every hit's page auto-enriched; per-hit/set-level relevance gates, daily CF budgets, LRU cache
 ├── integrations/                   # external service clients
@@ -226,7 +226,7 @@ crates/
 └── vendor/                        # vendored dependencies (binance-sdk, ta)
 
 src-tauri/src/webview_engine.rs  # tauri-side webread::WebViewFetch: hidden WebviewWindow + eval_with_callback extractor (#[cfg(feature="desktop")], never in kawai-web)
-src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), binance_smoke (keyless market data + TA; geo-blocked hosts skip), analytics_smoke (data_schema/data_query/data_ta + xlsx bridge; offline), sql_remote_check (LIVE remote SQL — --deep seeds fixture tables), web_read_check (desktop read-chain e2e), web_search_check (search chain headless), bing_dom_check (live SERP extractor probe), turn_log_report (hybrid calibration), agent_eval (H1 gate — office ≥19/20 + analytics ≥16/18)
+src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), binance_smoke (keyless market data + TA, credentialed stock reads; geo-blocked hosts skip), analytics_smoke (data_schema/data_query/data_ta + xlsx bridge; offline), sql_remote_check (LIVE remote SQL — --deep seeds fixture tables), web_read_check (desktop read-chain e2e), web_search_check (search chain headless), bing_dom_check (live SERP extractor probe), turn_log_report (hybrid calibration), agent_eval (H1 gate — office ≥19/20 + analytics ≥16/18)
 src-tauri/src/logging.rs         # stderr tee → platform log dir (macOS ~/Library/Logs/, Linux $XDG_STATE_HOME)
 src-tauri/src/auth.rs            # shim → kawai-auth (pure auth; Session + dotenv loader)
 src-tauri/src/commands.rs        # #[tauri::command] wrappers + Channel + cancel registry (#[cfg(feature="desktop")])
@@ -322,7 +322,8 @@ KAWAI_REMOTE_LLM_MATERIALS_CHARS=        # optional absolute ceiling on every pr
 # KAWAI_STOCKTWITS_API_BASE=https://api.stocktwits.com/api/2  # optional API base override
 # ── Binance agent tools (crates/toolsets/binance) ──
 # KAWAI_BINANCE_REST_BASE=https://data-api.binance.vision  # optional REST base override. Default: the market-data-only mirror (keyless market tools) — api.binance.com 403/451 geo-blocks some regions. Signed account tools (BINANCE_API_KEY set) stay on api.binance.com. Also where a testnet base (https://testnet.binance.vision) would go.
-BINANCE_API_KEY=  # optional READ-ONLY spot keys; set BOTH to register the binance_balances/binance_open_orders account tools (never compiled in, no trade permission)
+# Every binance-sdk REST client resolves DNS via DoH (kawai-http-client doh — cloudflare-dns.com → 1.1.1.1 fallback, 10-min cache, injected through the SDK's HttpAgent hook): an ISP-poisoned system answer for api.binance.com / data-api.binance.vision cannot route the call to a block page (same anti-hijack trick as webread's DDG tier).
+BINANCE_API_KEY=  # optional READ-ONLY spot keys; set BOTH to register the binance_balances/binance_open_orders account tools AND the stock_quote/stock_info US-stock tools (never compiled in, no trade permission)
 BINANCE_API_SECRET=
 # ── Monad EVM chain client (crates/integrations/monad, `monad` feature) ──
 # KAWAI_MONAD_RPC_URL=https://testnet-rpc.monad.xyz  # optional RPC override; default = Monad TESTNET (active wallet network — testnet Round 8 addresses; flip with logic/monad_contracts.rs when promoting to mainnet)

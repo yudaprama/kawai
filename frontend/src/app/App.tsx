@@ -4,7 +4,7 @@ import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
 import { useKnowledgeActions } from "@/features/knowledge/hooks/use-knowledge-actions";
 import { useSupervisorChat } from "@/features/chat/hooks/use-supervisor-chat";
 import { WorkbenchPage } from "@/features/workbench/components/workbench-page";
-import { type AgentInfo, call, tauriOpenFile, errText } from "@/lib/api";
+import { type AgentInfo, call, codegraphIsAvailable, tauriOpenFile, errText } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
 import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
 import { runningInTauri } from "@/platform";
@@ -30,6 +30,12 @@ export default function App() {
   const [walletAvailable, setWalletAvailable] = useState(false);
   useEffect(() => {
     void tauriWalletAdapter.isAvailable().then(setWalletAvailable);
+  }, []);
+  const [codegraphAvailable, setCodegraphAvailable] = useState(false);
+  useEffect(() => {
+    void codegraphIsAvailable()
+      .then(setCodegraphAvailable)
+      .catch(() => {});
   }, []);
   const [mobileDrawer, setMobileDrawer] = useState<null | "agents">(null);
   // Workbench publishes its selectSession here (App owns the dialog; the
@@ -198,6 +204,7 @@ export default function App() {
           collapsed={agentsRail}
           userId={chat.userId}
           walletAvailable={walletAvailable}
+          codegraphAvailable={codegraphAvailable}
           onSelectAsset={(id) => {
             setAssetView(id);
           }}
@@ -236,6 +243,7 @@ export default function App() {
                 collapsed={false}
                 userId={chat.userId}
                 walletAvailable={walletAvailable}
+                codegraphAvailable={codegraphAvailable}
                 onSelectAsset={(id) => {
                   setAssetView(id);
                   setMobileDrawer(null);

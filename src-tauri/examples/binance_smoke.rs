@@ -1,14 +1,19 @@
 // Headless smoke test for the Binance agent tools (builtin.binance, feature
-// "binance"). Keyless public market data only — no credentials needed.
+// "binance"). Keyless public spot market data + TA — no credentials needed
+// for that part; the signed account tools AND the US-stock tools
+// (stock_quote / stock_info) only run when BINANCE_API_KEY/SECRET are set.
 //
 // Exercises: crypto_price → crypto_depth → crypto_klines → the composite
-// crypto_ta_analyze (klines fetch + in-process `ta` indicator suite).
+// crypto_ta_analyze (klines fetch + in-process `ta` indicator suite), then
+// (with creds) stock_quote + stock_info.
 //
 // Geo-skip: api.binance.com answers 451/403 to some hosting regions (e.g.
 // US-based CI runners). When NOTHING has succeeded yet and the failure looks
 // like a transport/geo block, this smoke exits 0 with a SKIP notice instead
 // of failing. Set KAWAI_BINANCE_REST_BASE=https://data-api.binance.vision to
-// point it at the market-data-only mirror (works from most regions).
+// point it at the market-data-only mirror (works from most regions). The
+// stock routes exist ONLY on api.binance.com (no mirror), so they skip
+// independently on a transport/geo block even after spot data succeeded.
 //
 // Usage:
 //   cargo run --example binance_smoke --features binance
@@ -213,6 +218,75 @@ async fn main() {
     } else {
         println!(
             "[binance_smoke] account tools SKIPPED (no {}/{} env) — market-data coverage complete",
+            binance::account::API_KEY_ENV,
+            binance::account::API_SECRET_ENV
+        );
+    }
+
+    // ── 7. US-stock reads (only when BINANCE_API_KEY/SECRET are set) ──
+    // api.binance.com is the ONLY host serving /sapi/v1/equity/* — no data-api
+    // mirror — so a transport/geo block here skips (not fails) even after the
+    // spot mirror succeeded above.
+    if binance::account::has_credentials() {
+        match binance::stocks::StockQuoteTool
+            .call(binance::stocks::StockQuoteArgs {
+                symbol: "AAPL".into(),
+            })
+            .await
+        {
+            Ok(raw) => {
+                let quote = parse("stock_quote", raw);
+                assert!(
+                    quote["symbol"].is_string(),
+                    "stock_quote: symbol missing/unparseable"
+                );
+                succeeded += 1;
+                println!(
+                    "[binance_smoke] stockquote AAPL bid={} ask={} mid={}",
+                    quote["bidPrice"], quote["askPrice"], quote["mid"]
+                );
+                match binance::stocks::StockInfoTool
+                    .call(binance::stocks::StockInfoArgs {
+                        symbol: "AAPL".into(),
+                    })
+                    .await
+                {
+                    Ok(raw) => {
+                        let info = parse("stock_info", raw);
+                        assert!(
+                            info["symbol"].is_string(),
+                            "stock_info: symbol missing/unparseable"
+                        );
+                        succeeded += 1;
+                        println!(
+                            "[binance_smoke] stockinfo AAPL tradability={}",
+                            info["tradability"]
+                        );
+                    }
+                    Err(e) if transportish(&e.0) => {
+                        println!("[binance_smoke] stock_info SKIP: {}", e.0);
+                    }
+                    Err(e) => {
+                        println!("[binance_smoke] FAIL at stock_info: {}", e.0);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            Err(e) if transportish(&e.0) => {
+                println!(
+                    "[binance_smoke] stock tools SKIP: api.binance.com unreachable from this \
+                     host ({}) — geo/transport block, not a code regression",
+                    e.0
+                );
+            }
+            Err(e) => {
+                println!("[binance_smoke] FAIL at stock_quote: {}", e.0);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        println!(
+            "[binance_smoke] stock tools SKIPPED (no {}/{} env)",
             binance::account::API_KEY_ENV,
             binance::account::API_SECRET_ENV
         );
