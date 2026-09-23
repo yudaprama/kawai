@@ -240,6 +240,10 @@ name = "binance_smoke"
 required-features = ["binance"]
 
 [[example]]
+name = "monad_wallet_smoke"
+required-features = ["monad"]
+
+[[example]]
 name = "planner_smoke"
 required-features = ["litert", "binance"]
 

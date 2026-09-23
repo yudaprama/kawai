@@ -44,7 +44,7 @@ file listed in "Mirror points" in sync when anything changes.
 2. `crates/integrations/monad/src/lib.rs` — `DEFAULT_RPC_URL`.
 3. `frontend/src/features/wallet/lib/network-config.ts` — `DEFAULT_NETWORK` (chain id, explorer, isTestnet, stablecoin labels) + `CONTRACTS`.
 4. `frontend/src/features/wallet/lib/blockchain-adapter.ts` — `HARDCODED_NETWORK`.
-5. `kawai-server/worker/wrangler.toml` — `MONAD_RPC_URL`, `KAWAI_TOKEN_ADDRESS` (⚠️ currently `0x9cbd…f64c`, matches NEITHER deployment — confirm before relying on `/transfer`).
+5. `kawai-server/worker/wrangler.toml` — `MONAD_RPC_URL` (mainnet: the server payout/faucet path deliberately runs on MAINNET while the in-app wallet defaults to testnet) + `KAWAI_TOKEN_ADDRESS` (must equal the mainnet KAWAI row above — verified live 2026-09-23, symbol KAWAI / 18 dec. NOTE: `0x9cbd…f64c` is ALSO a live KAWAI contract with totalSupply 0, so it validates on-chain yet matches NEITHER deployment row here — always check the pair together. Takes effect only after `wrangler deploy`).
 
 ## Wallet ops → contract usage
 
@@ -61,4 +61,6 @@ file listed in "Mirror points" in sync when anything changes.
 
 `contracts/rust/` (`kawai-contracts`, alloy 2.4 full bindings) is not consumed
 by the kawai app — candidates for adoption if claim/mining/cashback ops land in
-the wallet; requires aligning alloy versions first.
+the wallet; requires aligning alloy versions first. Its `config.rs` points
+at `0x9cbd…f64c` plus a vault/OTC/mining set that matches NEITHER table
+above — refresh it against this file when adopted.

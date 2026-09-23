@@ -675,6 +675,13 @@ jobs:
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
         run: cargo run --example binance_smoke --features binance
 
+      # ── Smoke 4b (Linux): Monad wallet — read-only chain probes ──────
+      #    Public-RPC reads only (no keychain, no tx); the example's
+      #    --with-wallet / --self-transfer flags stay local-only.
+      - name: monad_wallet_smoke (read-only Monad chain probes)
+        working-directory: src-tauri
+        run: cargo run --example monad_wallet_smoke --features monad
+
       # ── Smoke (offline): analytics agent tools — csv + the xlsx bridge
       #    (typed conversion, sidecar cache) through the office store, on
       #    every OS. No network, no model.

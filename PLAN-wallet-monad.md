@@ -1,16 +1,25 @@
 # PLAN: Wire the wallet feature to real Monad chain commands
 
-> **Status:** Phases 0–1 SHIPPED (frontend hardening + read-only commands
-> `get_token_balance`/`get_token_info`/`estimate_gas` + adapters on canonical
-> names; default RPC switched to Monad mainnet to match the hardcoded
-> contract addresses). Phase 2 executed as Option A (mnemonic story removed).
-> Phase 3 (fund-moving) NOT started — frontend transfer paths throw a clear
-> "not available yet" error pending a green light.
+> **Status:** Phases 0–3 SHIPPED — frontend hardening (fake-mnemonic
+> fallback removed, feature-gate probe, real contract constants, dead adapter
+> surface cut), read-only chain commands (`get_token_balance`/
+> `get_token_info`/`estimate_gas`/`get_transaction_receipt`), Phase 2 Option A
+> (mnemonic story removed), and fund-moving ops (`transfer_native`/
+> `transfer_token`/`transfer_usdt`/`deposit_to_vault` — both wrappers, web
+> routes on the **protected** router, signed on-device by the keychain key).
+> Active network: Monad **TESTNET** (`monad_contracts::TESTNET = true`;
+> mainnet constants kept for the flip). Phase 4: `monad_wallet_smoke` example
+> + CI read-only gate landed (linux-smoke); `--with-wallet` (keychain
+> lifecycle, deletes only a wallet it created) and `--self-transfer`
+> (testnet-gated 1-wei self-send + receipt poll) are local-only flags. Still
+> open from Phase 4.4: the ARCHITECTURE.md/AGENTS.md description bullet.
+> Deliberately not built: the self-transfer short-circuit guard (the
+> self-send IS the smoke's broadcast proof) and Rewards claim ops (need
+> distributor ABIs).
 
-Frontend `features/wallet/` is complete (typecheck + build green) against a
-Tauri adapter that targets command names that mostly do not exist yet. This
-plan lands the Rust side, fixes two unsafe frontend fallbacks, and shrinks the
-adapter surface to what the UI actually calls.
+Frontend `features/wallet/` is complete (typecheck + build green) and every
+command the adapter targets exists behind both wrappers; the phases below are
+the executed checklist, in order.
 
 Ground truth already in place:
 
