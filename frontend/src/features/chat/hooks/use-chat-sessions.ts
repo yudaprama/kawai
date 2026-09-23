@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { type ChatMessageInfo, type ChatSessionInfo, call, errText } from "@/lib/api";
 import { historyToMessages, sessionPeriod } from "@/features/chat/lib/chat-helpers";
 import { logError, logWarn } from "@/lib/logger";
 import type { StreamControl } from "@/lib/stream";
 import { showErrorToast } from "@/lib/utils";
 import type { SupervisorChatState } from "./use-supervisor-chat";
+
+/** Undo window for a delete: the row disappears now, the real
+ *  `delete_chat_session` call fires only after this expires unopposed. */
+const DELETE_UNDO_MS = 5000;
+
+/** Backend list order (list_chat_sessions): activity desc, then id desc. */
+const byActivityDesc = (a: ChatSessionInfo, b: ChatSessionInfo) =>
+  (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0) || b.id - a.id;
 
 export function useChatSessions({
   patch,
@@ -102,22 +111,59 @@ export function useChatSessions({
     [streamCtrl, resetSession, loadMessages],
   );
 
+  const pendingDeletes = useRef(new Map<number, number>());
+  // Unmount abandons pending deletes (sign-out / teardown): the rows were
+  // only optimistically removed, so nothing is lost — they reload as-is.
+  useEffect(() => {
+    const pending = pendingDeletes.current;
+    return () => {
+      for (const timer of pending.values()) window.clearTimeout(timer);
+      pending.clear();
+    };
+  }, []);
+
+  /** Optimistically remove the row, then delete for real once the Undo
+   *  window expires. Undo cancels the call and reloads server truth. */
   const deleteSession = useCallback(
     async (sessionId: number) => {
       if (streamCtrl.current) return;
-      try {
-        await call("delete_chat_session", { sessionId });
-      } catch (err) {
-        logError("delete_chat_session", err);
-        showErrorToast(`Couldn't delete the session — ${errText(err)}`);
-        return;
-      }
-      if (sessionIdRef.current === sessionId) {
-        await resetSession(null);
-      }
-      void loadSessions();
+      if (pendingDeletes.current.has(sessionId)) return;
+      const target = [...state.sessions, ...state.archivedSessions].find((s) => s.id === sessionId);
+      if (!target) return;
+
+      patch({
+        sessions: state.sessions.filter((s) => s.id !== sessionId),
+        archivedSessions: state.archivedSessions.filter((s) => s.id !== sessionId),
+      });
+      const wasActive = sessionIdRef.current === sessionId;
+      if (wasActive) await resetSession(null);
+
+      const timer = window.setTimeout(() => {
+        pendingDeletes.current.delete(sessionId);
+        void call("delete_chat_session", { sessionId }).catch((err) => {
+          logError("delete_chat_session", err);
+          showErrorToast(`Couldn't delete the session — ${errText(err)}`);
+          void loadSessions(); // reconcile: the row may still exist
+        });
+      }, DELETE_UNDO_MS);
+      pendingDeletes.current.set(sessionId, timer);
+
+      toast(`Deleted "${target.title || `Session #${target.id}`}"`, {
+        duration: DELETE_UNDO_MS,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            const pending = pendingDeletes.current.get(sessionId);
+            if (!pending) return; // window elapsed — the delete already committed
+            window.clearTimeout(pending);
+            pendingDeletes.current.delete(sessionId);
+            void loadSessions(); // server still owns the row — restore truth
+            if (wasActive) void selectSession(sessionId);
+          },
+        },
+      });
     },
-    [loadSessions, streamCtrl, resetSession],
+    [state.sessions, state.archivedSessions, patch, streamCtrl, resetSession, loadSessions, selectSession],
   );
 
   const renameSession = useCallback(
@@ -151,7 +197,7 @@ export function useChatSessions({
     async (sessionId: number, archived: boolean) => {
       const priorSessions = state.sessions;
       const priorArchived = state.archivedSessions;
-      const byCreatedDesc = (a: ChatSessionInfo, b: ChatSessionInfo) => (b.createdAt ?? 0) - (a.createdAt ?? 0);
+      const byCreatedDesc = byActivityDesc;
 
       let optimisticSessions: ChatSessionInfo[];
       let optimisticArchived: ChatSessionInfo[];
@@ -223,7 +269,7 @@ export function useChatSessions({
     ? (["Today", "Yesterday", "Earlier"] as const)
         .map((label) => ({
           label,
-          sessions: state.sessions.filter((s) => sessionPeriod(s.createdAt) === label),
+          sessions: state.sessions.filter((s) => sessionPeriod(s.updatedAt ?? s.createdAt) === label),
         }))
         .filter((g) => g.sessions.length > 0)
     : [];

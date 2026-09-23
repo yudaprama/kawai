@@ -1,4 +1,4 @@
-use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo};
+use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, RecentRun, UserInfo};
 use axum::{
     extract::{Json, Request},
     http::{header, HeaderValue, StatusCode},
@@ -33,6 +33,12 @@ struct CreateChatSessionRequest {}
 #[serde(rename_all = "camelCase")]
 struct ListChatSessionsRequest {
     archived: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListRecentRunsRequest {
+    limit: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -920,6 +926,20 @@ async fn list_chat_sessions_handler(
 ) -> Result<Json<Vec<ChatSession>>, (StatusCode, String)> {
     let archived = body.and_then(|Json(req)| req.archived).unwrap_or(false);
     logic::list_chat_sessions(&user_id, archived)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+/// Protected RPC: the most recent supervisor runs across sessions (landing
+/// hero's cross-session recents), newest first. The body is optional so an
+/// empty POST uses the default limit.
+async fn list_recent_runs_handler(
+    Extension(user_id): Extension<String>,
+    body: Option<Json<ListRecentRunsRequest>>,
+) -> Result<Json<Vec<RecentRun>>, (StatusCode, String)> {
+    let limit = body.and_then(|Json(req)| req.limit).unwrap_or(20);
+    logic::list_recent_runs(&user_id, limit)
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -1825,6 +1845,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
             post(create_chat_session_handler),
         )
         .route("/api/list_chat_sessions", post(list_chat_sessions_handler))
+        .route("/api/list_recent_runs", post(list_recent_runs_handler))
         .route(
             "/api/rename_chat_session",
             post(rename_chat_session_handler),

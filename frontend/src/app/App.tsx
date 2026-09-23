@@ -223,6 +223,7 @@ export default function App() {
           onAddLink={ka.submitKnowledgeLink}
           onImageToKnowledge={ka.imageToKnowledge}
           onOpenSessions={() => setSessionsOpen(true)}
+          sessionsOpen={sessionsOpen}
           sessionSelectorRef={workbenchSelectRef}
         />
       )}

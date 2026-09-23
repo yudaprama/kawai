@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   activeMentionRange,
   historyToMessages,
+  relativeTime,
   sessionPeriod,
   stripToolMarkup,
   toFriendlyError,
@@ -24,6 +25,38 @@ describe("stripToolMarkup", () => {
 
   it("trims surrounding whitespace", () => {
     expect(stripToolMarkup("  hi  ")).toBe("hi");
+  });
+});
+
+describe("relativeTime", () => {
+  // Fixed clock so bucket assertions never flake.
+  const now = 1_800_000_000_000;
+  const ago = (ms: number) => Math.floor((now - ms) / 1000);
+
+  it("returns empty for a missing timestamp", () => {
+    expect(relativeTime(null)).toBe("");
+    expect(relativeTime(undefined)).toBe("");
+  });
+
+  it("collapses the first minute", () => {
+    expect(relativeTime(ago(30_000), now)).toBe("just now");
+    expect(relativeTime(ago(59_000), now)).toBe("just now");
+  });
+
+  it("buckets minutes, hours, and days", () => {
+    expect(relativeTime(ago(5 * 60_000), now)).toBe("5m ago");
+    expect(relativeTime(ago(3 * 3_600_000), now)).toBe("3h ago");
+    expect(relativeTime(ago(2 * 86_400_000), now)).toBe("2d ago");
+  });
+
+  it("switches to an absolute date past a week", () => {
+    const label = relativeTime(ago(10 * 86_400_000), now);
+    expect(label).not.toMatch(/^(just now|\d+[mhd] ago)$/);
+    expect(label.length).toBeGreaterThan(0);
+  });
+
+  it("never reports a future timestamp as negative age", () => {
+    expect(relativeTime(Math.floor(now / 1000) + 600, now)).toBe("just now");
   });
 });
 

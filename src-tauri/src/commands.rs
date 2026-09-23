@@ -1,5 +1,5 @@
 use crate::auth::Session;
-use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, UserInfo};
+use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, RecentRun, UserInfo};
 use futures_util::{Stream, StreamExt};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -370,6 +370,19 @@ pub async fn set_chat_session_archived(
 ) -> Result<ChatSession, String> {
     let user_id = session_user_id(&session)?;
     logic::set_chat_session_archived(&user_id, session_id, archived)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: list the most recent supervisor runs across sessions
+/// (landing hero's cross-session recents), newest first.
+#[tauri::command]
+pub async fn list_recent_runs(
+    limit: Option<i64>,
+    session: State<'_, Session>,
+) -> Result<Vec<RecentRun>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::list_recent_runs(&user_id, limit.unwrap_or(20))
         .await
         .map_err(|e| e.to_string())
 }

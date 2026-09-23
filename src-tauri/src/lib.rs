@@ -132,6 +132,7 @@ pub fn run() {
         commands::whoami,
         commands::create_chat_session,
         commands::list_chat_sessions,
+        commands::list_recent_runs,
         commands::rename_chat_session,
         commands::set_chat_session_archived,
         commands::list_chat_messages,

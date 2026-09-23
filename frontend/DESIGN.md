@@ -28,8 +28,11 @@ primary surface is the **Workbench** — a goal-centric two-pane layout:
 
 Full-screen hero with a centered capsule composer. The goal is the whole
 screen — no rails, no distractions. Below the composer: a hint about `@`
-file attachments. Below that: run history (clickable rows for the most
-recent completed run). Submitting a goal transitions to the Workbench run
+file attachments. Below that: history — the in-session run history when the
+current session has runs, otherwise the cross-session **Recent runs** strip
+(the newest plan record from every session with runs: goal or session title,
+relative time, step count, status icon; clicking one opens that session and
+its report). Submitting a goal transitions to the Workbench run
 view.
 
 ## Panes
@@ -90,7 +93,23 @@ a run is idle. Each run shows: goal, timestamp, step count, output preview
 (first 60 chars). The most recent completed/failed run is a clickable button
 with a "View report" affordance and hover state; clicking opens the
 Workbench run view with that run's deliverable. Older runs are non-interactive
-(S1: only the latest run's supervisor state is held in memory).
+(S1: only the latest run's supervisor state is held in memory). When the
+session has no in-memory runs, the landing hero instead shows **Recent
+runs** — `list_recent_runs` across sessions, same row shape. Restored runs
+take their timestamps from the persisted record's write time, so a reopened
+session shows when each run actually finished.
+
+## Session switcher
+
+Cmd/Ctrl+K (or the Sessions button) opens the session history dialog: a
+search box over sessions grouped by last activity (Today / Yesterday /
+Earlier) plus a collapsible Archive. Rows show the goal/title with a
+relative timestamp and hover-revealed actions — rename (inline input),
+archive, and delete. Delete is immediate to the eye but deferred to the
+backend: the row disappears optimistically and a sonner toast offers
+**Undo** for 5 seconds before `delete_chat_session` fires. Arrow keys move
+a highlighted cursor over the flat row list (groups, then archive), Enter
+opens the selected session.
 
 ## Visual language
 

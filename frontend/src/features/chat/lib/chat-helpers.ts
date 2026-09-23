@@ -70,6 +70,30 @@ export function sessionPeriod(createdAt: number | null): "Today" | "Yesterday" |
   return "Earlier";
 }
 
+/** Compact relative time for session rows and run lists — "just now",
+ *  "5m ago", "3h ago", "2d ago", then an absolute date ("Aug 12" within the
+ *  current year, "Aug 12, 2024" otherwise). `now` (ms) is injectable so tests
+ *  stay deterministic; a missing timestamp renders as an empty string. */
+export function relativeTime(unixSeconds: number | null | undefined, now = Date.now()): string {
+  if (!unixSeconds) return "";
+  const delta = Math.max(0, now - unixSeconds * 1000);
+  const minutes = Math.floor(delta / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const date = new Date(unixSeconds * 1000);
+  const currentYear = new Date(now).getFullYear();
+  return date.toLocaleDateString(
+    undefined,
+    date.getFullYear() === currentYear
+      ? { month: "short", day: "numeric" }
+      : { year: "numeric", month: "short", day: "numeric" },
+  );
+}
+
 // Tool-call markup never renders as prose: taught ```tool fences and Gemma 4 native <|tool_call>… forms are stripped to tool cards.
 export function stripToolMarkup(s: string): string {
   return s

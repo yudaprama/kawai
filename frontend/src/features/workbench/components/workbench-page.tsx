@@ -2,6 +2,8 @@ import { Icon } from "@/components/shared/icon";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ChatComposer } from "@/features/chat/components/chat-composer";
+import type { RecentRunInfo } from "@/lib/api";
+import { RecentRuns } from "@/features/workbench/components/recent-runs";
 import { isDeliverableStep, useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 
@@ -39,6 +41,9 @@ export interface WorkbenchPageProps {
   onAddLink?: () => void;
   /** Open the session-history dialog (same modal as Cmd/Ctrl+K). */
   onOpenSessions?: () => void;
+  /** App-owned: the session dialog is open — the landing recents list
+   *  refetches when it closes (renames/deletes happened underneath). */
+  sessionsOpen?: boolean;
   /** App-owned ref: on mount the page publishes its `selectSession` here so
    *  the App-level session dialog can target the WORKBENCH's session state
    *  (the workbench keeps its own sessions, separate from the chat hook). */
@@ -54,6 +59,7 @@ export function WorkbenchPage({
   onAddFiles,
   onAddLink,
   onOpenSessions,
+  sessionsOpen = false,
   sessionSelectorRef,
 }: WorkbenchPageProps) {
   const workbench = useWorkbench();
@@ -70,6 +76,20 @@ export function WorkbenchPage({
   // Home = the landing composer. Submitting a goal moves to the workbench;
   // "New goal" returns here.
   const [home, setHome] = useState(true);
+  // Landing recents: refetch when a run lands its plan record (the edge
+  // below) and when the sessions dialog closes (rename/delete underneath —
+  // that edge flips RecentRuns' `open` prop via `sessionsOpen`).
+  const [recentKey, setRecentKey] = useState(0);
+  const runWasInFlight = useRef(false);
+  useEffect(() => {
+    const inFlight = ["running", "stopping", "awaitingConfirmation", "reviewing"].includes(supervisor.status);
+    if (runWasInFlight.current && !inFlight) setRecentKey((k) => k + 1);
+    runWasInFlight.current = inFlight;
+  }, [supervisor.status]);
+  // A cross-session pick opens AFTER its records rehydrate: the effect below
+  // waits for the picked session's runs to land, then opens that run's report
+  // (restored run ids are `restored-<message rowId>` — exact match on rowId).
+  const pendingPickRow = useRef<number | null>(null);
   // Canvas navigation (PLAN-workbench-multi-run-ux.md, canvas policy):
   // view = which run + which document is on the right pane. null = the first
   // run hasn't produced anything yet. The canvas NEVER moves on its own
@@ -97,10 +117,10 @@ export function WorkbenchPage({
     !seededForActiveRun && (supervisor.planning != null || runInFlight || supervisor.status === "reviewing");
 
   /** User-initiated navigation — cancels the deliverable steal. */
-  const userPick = (runId: string, doc: string) => {
+  const userPick = useCallback((runId: string, doc: string) => {
     setStealAllowed(false);
     setView({ runId, doc });
-  };
+  }, []);
 
   // Auto-switch ONCE per run: only AFTER the supervisor has seeded the new
   // run (planStarted) and its first content lands. During planning the
@@ -136,6 +156,28 @@ export function WorkbenchPage({
     setView({ runId: activeRunId, doc: "final" });
     setStealAllowed(false);
   }, [stealAllowed, seededForActiveRun, supervisor.finalOutput, activeRunId]);
+
+  // Resolve a pending cross-session pick once the target session's runs are
+  // restored (no-op until `restored-<rowId>` shows up in the journal).
+  useEffect(() => {
+    const rowId = pendingPickRow.current;
+    if (rowId == null) return;
+    const hit = workbench.runs.find((r) => r.id === `restored-${rowId}`);
+    if (!hit) return;
+    pendingPickRow.current = null;
+    userPick(hit.id, "final");
+  }, [workbench.runs, userPick]);
+
+  /** Open a recent run from the landing strip: point the session at it and
+   *  queue the report pick for when its records restore. */
+  const openRecent = useCallback(
+    (run: RecentRunInfo) => {
+      pendingPickRow.current = run.rowId;
+      setHome(false);
+      workbench.selectSession(run.sessionId);
+    },
+    [workbench.selectSession],
+  );
 
   /** Rail "see report" — a user pick. The steps shown in the rail belong to
    *  the active run once seeded, otherwise (planning) to the previous run. */
@@ -229,7 +271,7 @@ export function WorkbenchPage({
               Attach knowledge files with @ — the run's agents can search them.
             </p>
           </div>
-          {workbench.runs.length > 0 && (
+          {workbench.runs.length > 0 ? (
             <div className="w-full max-w-2xl text-left">
               <RunHistory
                 latestRunId={workbench.runs.at(-1)?.id}
@@ -243,6 +285,8 @@ export function WorkbenchPage({
                 runs={workbench.runs}
               />
             </div>
+          ) : (
+            <RecentRuns open={!sessionsOpen} reloadKey={recentKey} onOpen={openRecent} />
           )}
         </div>
       </div>

@@ -20,8 +20,15 @@ export type ChatSessionInfo = {
 	id: number,
 	title: string | null,
 	createdAt: number | null,
+	/**  Last message append — switcher ordering and period grouping key. */
+	updatedAt: number | null,
 	archived: boolean,
 	archivedAt: number | null,
+	runCount: number,
+	/**  Goal of the session's newest plan record, when it carried one. */
+	lastGoal: string | null,
+	/**  The session's newest plan record terminated with a non-empty `error`. */
+	lastFailed: boolean,
 };
 
 export type CodegraphExploreResult = {
@@ -123,6 +130,25 @@ export type RagHit = {
 	source: string,
 	locator: string,
 	content: string,
+};
+
+/**
+ *  One recent supervisor run across sessions — the landing hero's
+ *  cross-session recents list.
+ */
+export type RecentRunInfo = {
+	/**  `messages.id` — maps to the restored run id (`restored-<row_id>`). */
+	rowId: number,
+	sessionId: number,
+	sessionTitle: string,
+	/**  Record write time (unix seconds) — when the run terminated. */
+	createdAt: number,
+	goal: string | null,
+	/**  "completed" | "failed" */
+	status: string,
+	stepsDone: number,
+	stepsTotal: number,
+	outputPreview: string | null,
 };
 
 export type SceneHit = {

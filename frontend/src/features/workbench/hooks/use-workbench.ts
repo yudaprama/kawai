@@ -381,19 +381,22 @@ export function useWorkbench() {
     let cancelled = false;
     void (async () => {
       try {
-        const rows = await call<{ id: number; role: string; content: string }[]>("list_chat_messages", {
-          sessionId,
-          archived: false,
-        });
+        const rows = await call<{ id: number; role: string; content: string; createdAt: number | null }[]>(
+          "list_chat_messages",
+          {
+            sessionId,
+            archived: false,
+          },
+        );
         if (cancelled) return;
-        const found: { rowId: number; record: PersistedPlanRecord }[] = [];
+        const found: { rowId: number; createdAt: number; record: PersistedPlanRecord }[] = [];
         for (const row of rows) {
           if (row.role !== "assistant" || !row.content.startsWith("{")) continue;
           try {
             const record = JSON.parse(row.content) as PersistedPlanRecord;
             if (record.type !== "supervisor-plan" || !Array.isArray(record.steps)) continue;
             if (typeof record.error === "string" && record.error.startsWith("superseded by revision")) continue;
-            found.push({ rowId: row.id, record });
+            found.push({ rowId: row.id, createdAt: row.createdAt ?? Math.floor(Date.now() / 1000), record });
           } catch {
             // not a plan record — skip
           }
@@ -418,8 +421,10 @@ export function useWorkbench() {
                 id: `restored-${f.rowId}`,
                 goal: f.record.goal ?? "(restored run)",
                 status: f.record.error ? ("failed" as const) : ("completed" as const),
-                startedAt: Date.now(),
-                finishedAt: Date.now(),
+                // The record's write time — when the run actually terminated
+                // (the DB row's created_at), not the moment of restoration.
+                startedAt: f.createdAt * 1000,
+                finishedAt: f.createdAt * 1000,
                 outputPreview: (f.record.output ?? "").slice(0, 500),
                 outputFull: f.record.output ?? undefined,
                 planKey: f.record.planKey ?? null,
@@ -677,6 +682,9 @@ export function useWorkbench() {
     /** "New session": the ONLY reset — the next run gets a fresh session and
      *  recalls nothing from these runs. Named for what it actually does. */
     startNewSession: () => {
+      // Clear the restore guard so re-opening the PREVIOUS session later
+      // rehydrates its records instead of silently skipping the fetch.
+      restoredSessionRef.current = null;
       setSessionId(null);
       setRuns([]);
       setDeck(null);
