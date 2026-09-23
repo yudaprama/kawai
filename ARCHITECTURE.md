@@ -154,7 +154,7 @@ webread's DuckDuckGo tier.
 | `crypto_price` | `crates/toolsets/binance` | 24h price stats |
 | `crypto_depth` | `crates/toolsets/binance` | Order book + derived spread/mid |
 | `crypto_klines` | `crates/toolsets/binance` | Raw OHLCV candle data |
-| `crypto_ta_analyze` | `crates/toolsets/binance` | Fetches klines + runs the 34-indicator TA suite in-process — preset names or custom `{kind, period, fast, slow, signal, multiplier, alias}` windows |
+| `crypto_ta_analyze` | `crates/toolsets/binance` | Fetches klines + runs the 35-indicator TA suite in-process — preset names or custom `{kind, period, fast, slow, signal, multiplier, alias}` windows |
 | `crypto_balances` | `crates/toolsets/binance` | Signed read-only spot balances *(baked kawai-vault read-only pair)* |
 | `crypto_open_orders` | `crates/toolsets/binance` | Signed read-only open orders *(baked kawai-vault read-only pair)* |
 | `stock_quote` | `crates/toolsets/binance` | Binance Stocks US-equity bid/ask quote + derived mid *(baked kawai-vault pair)* |
@@ -176,6 +176,7 @@ Structured queries over tabular data files (csv/parquet/Excel) and SQL sources.
 |------|--------|-------|
 | `data_schema` | `logic::analytics` | Discover columns, dtypes, sample rows, sheet names (for xlsx) |
 | `data_query` | `logic::analytics` | AST queries: filters → groupBy → aggregations → sort → limit |
+| `data_ta` | `logic::analytics` | Time-series TA over one file: 41 indicator kinds folded, final value per indicator returned (+ warm-up skips) |
 | `office_list_files` | `office::tools` | Shared with office agent — list stored files |
 | `data_tables` | `logic::analytics` | List tables from configured SQL sources *(only when SQL profiles exist)* |
 | `data_import` | `logic::analytics` | Snapshot a SQL table → csv in office store *(only when SQL profiles exist)* |
