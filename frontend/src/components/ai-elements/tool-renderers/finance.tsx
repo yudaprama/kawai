@@ -303,6 +303,52 @@ export function renderBinanceTa(output: unknown): ReactNode {
   bands("bb202", "BB 20×2");
   bands("kc102", "KC 10×2");
 
+  // Fallback: everything the curated lists don't cover — preset keys outside
+  // TA_KEYS (obv, roc9, the newer indicator families) plus custom-window
+  // keys and aliases from {kind, period, …} indicator specs.
+  const covered = new Set([
+    ...TA_KEYS.map(([key]) => key),
+    "macd12269",
+    "ppo12269",
+    "bb202",
+    "kc102",
+    "symbol",
+    "lastClose",
+    "windowChangePct",
+    "skipped",
+  ]);
+  for (const [key, raw] of Object.entries(d)) {
+    if (covered.has(key)) continue;
+    if (isRecord(raw)) {
+      const fields = Object.entries(raw).filter(
+        ([, v]) => typeof v === "number" || typeof v === "boolean",
+      );
+      if (!fields.length) continue;
+      const primary = fields.find(([, v]) => typeof v === "number");
+      items.push({
+        label: key,
+        value: primary ? fmtNum(primary[1] as number) : String(fields[0][1]),
+        sub:
+          fields.length > 1
+            ? fields
+                .map(([k, v]) =>
+                  `${k}: ${typeof v === "number" ? fmtNum(v) : String(v)}`
+                )
+                .join(" · ")
+            : undefined,
+      });
+      continue;
+    }
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      items.push({ label: key, value: fmtNum(raw) });
+      continue;
+    }
+    // roc-style values are formatted strings ("1.2345").
+    if (typeof raw === "string" && raw.trim() !== "" && Number.isFinite(Number(raw))) {
+      items.push({ label: key, value: fmtNum(Number(raw)) });
+    }
+  }
+
   const skipped = Array.isArray(d.skipped)
     ? d.skipped
         .map((s) => (isRecord(s) && typeof s.name === "string" ? s.name : null))
