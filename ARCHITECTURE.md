@@ -154,7 +154,7 @@ webread's DuckDuckGo tier.
 | `crypto_price` | `crates/toolsets/binance` | 24h price stats |
 | `crypto_depth` | `crates/toolsets/binance` | Order book + derived spread/mid |
 | `crypto_klines` | `crates/toolsets/binance` | Raw OHLCV candle data |
-| `crypto_ta_analyze` | `crates/toolsets/binance` | Fetches klines + runs indicator suites in-process (ema/sma/rsi/macd/bb/atr + 12 more) |
+| `crypto_ta_analyze` | `crates/toolsets/binance` | Fetches klines + runs the 34-indicator TA suite in-process — preset names or custom `{kind, period, fast, slow, signal, multiplier, alias}` windows |
 | `crypto_balances` | `crates/toolsets/binance` | Signed read-only spot balances *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
 | `crypto_open_orders` | `crates/toolsets/binance` | Signed read-only open orders *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
 | `stock_quote` | `crates/toolsets/binance` | Binance Stocks US-equity bid/ask quote + derived mid *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
