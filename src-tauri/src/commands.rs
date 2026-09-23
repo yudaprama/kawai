@@ -336,14 +336,15 @@ pub async fn create_chat_session(session: State<'_, Session>) -> Result<ChatSess
 
 /// Authenticated RPC: list the user's chat sessions, newest first. Defaults to
 /// the active (non-archived) sidebar list; pass `archived: true` for the
-/// archive view.
+/// archive view. An optional `query` filters by title or message content.
 #[tauri::command]
 pub async fn list_chat_sessions(
     archived: Option<bool>,
+    query: Option<String>,
     session: State<'_, Session>,
 ) -> Result<Vec<ChatSession>, String> {
     let user_id = session_user_id(&session)?;
-    logic::list_chat_sessions(&user_id, archived.unwrap_or(false))
+    logic::list_chat_sessions(&user_id, archived.unwrap_or(false), query.as_deref())
         .await
         .map_err(|e| e.to_string())
 }
@@ -429,6 +430,14 @@ pub async fn delete_chat_session(
     logic::delete_chat_session(&user_id, session_id)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: archive every session idle past the auto-archive
+/// window; returns how many sessions were archived.
+#[tauri::command]
+pub async fn archive_stale_sessions(session: State<'_, Session>) -> Result<i64, String> {
+    let user_id = session_user_id(&session)?;
+    logic::archive_stale_sessions(&user_id).await.map_err(|e| e.to_string())
 }
 
 // ── Skills (ungated; plain libsql CRUD) ────────────────────────────────────
@@ -1067,7 +1076,7 @@ pub fn office_list_files(
 }
 
 /// Authenticated RPC: export markdown content (e.g. a workbench deliverable)
-/// as a stored .pdf or .docx document — becomes a first-class store member.
+/// as a stored .pdf, .docx, or .md file — a first-class store member.
 #[tauri::command]
 pub async fn export_deliverable(
     session: State<'_, Session>,

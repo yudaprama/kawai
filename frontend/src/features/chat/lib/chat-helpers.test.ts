@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   activeMentionRange,
+  groupSessions,
   historyToMessages,
   relativeTime,
   sessionPeriod,
+  sessionToMarkdown,
   stripToolMarkup,
   toFriendlyError,
 } from "@/features/chat/lib/chat-helpers";
+import type { ChatSessionInfo } from "@/lib/api";
 
 describe("stripToolMarkup", () => {
   it("keeps plain prose untouched", () => {
@@ -144,5 +147,79 @@ describe("historyToMessages", () => {
         parts: [{ type: "text", text: "hi", state: "done" }],
       },
     ]);
+  });
+});
+
+describe("groupSessions", () => {
+  const sess = (id: number, updatedAt: number | null): ChatSessionInfo => ({
+    id,
+    title: `s${id}`,
+    createdAt: updatedAt,
+    updatedAt,
+    archived: false,
+    archivedAt: null,
+    runCount: 0,
+    lastGoal: null,
+    lastFailed: false,
+  });
+  const now = Math.floor(Date.now() / 1000);
+
+  it("buckets by last activity, input order preserved, empty buckets dropped", () => {
+    const groups = groupSessions([
+      sess(1, now),
+      sess(2, now - 86_400),
+      sess(3, Math.floor(new Date(2000, 0, 1).getTime() / 1000)),
+      sess(4, now - 60),
+    ]);
+    expect(groups.map((g) => g.label)).toEqual(["Today", "Yesterday", "Earlier"]);
+    expect(groups[0].sessions.map((s) => s.id)).toEqual([1, 4]);
+    expect(groups[1].sessions.map((s) => s.id)).toEqual([2]);
+    expect(groups[2].sessions.map((s) => s.id)).toEqual([3]);
+  });
+
+  it("passes empty input through", () => {
+    expect(groupSessions([])).toEqual([]);
+  });
+});
+
+describe("sessionToMarkdown", () => {
+  it("renders title, UTC export stamp, and You/Assistant sections", () => {
+    const md = sessionToMarkdown(
+      " My Session  ",
+      [
+        { id: 1, sessionId: 1, role: "user", content: "question", createdAt: 1_800_000_000 },
+        { id: 2, sessionId: 1, role: "assistant", content: "answer", createdAt: null },
+      ],
+      Date.UTC(2026, 8, 23, 10, 30),
+    );
+    expect(md).toMatch(/^# My Session$/m);
+    expect(md).toMatch(/^_Exported 2026-09-23 10:30 UTC_$/m);
+    expect(md).toMatch(/^## You · \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m);
+    expect(md).toMatch(/^## Assistant$/m);
+    expect(md).toContain("question");
+    expect(md).toContain("answer");
+  });
+
+  it("renders a persisted plan record, not its raw JSON", () => {
+    const record = JSON.stringify({
+      type: "supervisor-plan",
+      v: 1,
+      goal: "Ship it",
+      steps: [{ id: "a", tool: "web_search", state: "completed" }],
+      output: "DONE",
+    });
+    const md = sessionToMarkdown("t", [{ id: 7, sessionId: 1, role: "assistant", content: record, createdAt: null }]);
+    expect(md).toContain("Ship it");
+    expect(md).toContain("DONE");
+    expect(md).not.toContain("supervisor-plan");
+  });
+
+  it("strips tool markup and titles null sessions", () => {
+    const md = sessionToMarkdown(null, [
+      { id: 3, sessionId: 1, role: "assistant", content: "hi ```tool{secret}``` there", createdAt: null },
+    ]);
+    expect(md).toMatch(/^# Untitled session$/m);
+    expect(md).not.toContain("secret");
+    expect(md).toContain("there");
   });
 });

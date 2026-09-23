@@ -1,10 +1,6 @@
 import { useMemo } from "react";
+import type { SessionGroup } from "@/features/chat/lib/chat-helpers";
 import type { ChatSessionInfo } from "@/lib/api";
-
-interface SessionGroup {
-  label: string;
-  sessions: ChatSessionInfo[];
-}
 
 export function useSessionFilter(groupedSessions: SessionGroup[], archivedSessions: ChatSessionInfo[], query: string) {
   return useMemo(() => {

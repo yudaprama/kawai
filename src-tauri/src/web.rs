@@ -33,6 +33,7 @@ struct CreateChatSessionRequest {}
 #[serde(rename_all = "camelCase")]
 struct ListChatSessionsRequest {
     archived: Option<bool>,
+    query: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -919,13 +920,17 @@ struct GenerateSessionTitleRequest {
 
 /// Protected RPC: list the user's chat sessions, newest first. Defaults to the
 /// active (non-archived) sidebar list; `{ "archived": true }` for the archive.
-/// The body is optional so an empty POST lists the active sessions.
+/// `query` filters by title or message content. The body is optional so an
+/// empty POST lists the active sessions.
 async fn list_chat_sessions_handler(
     Extension(user_id): Extension<String>,
     body: Option<Json<ListChatSessionsRequest>>,
 ) -> Result<Json<Vec<ChatSession>>, (StatusCode, String)> {
-    let archived = body.and_then(|Json(req)| req.archived).unwrap_or(false);
-    logic::list_chat_sessions(&user_id, archived)
+    let (archived, query) = match body {
+        Some(Json(req)) => (req.archived.unwrap_or(false), req.query),
+        None => (false, None),
+    };
+    logic::list_chat_sessions(&user_id, archived, query.as_deref())
         .await
         .map(Json)
         .map_err(|e| (db_status(&e), e.to_string()))
@@ -997,6 +1002,20 @@ async fn delete_chat_session_handler(
         .await
         .map(|_| StatusCode::NO_CONTENT)
         .map_err(|e| (db_status(&e), e.to_string()))
+}
+
+/// Protected RPC: archive every session idle past the auto-archive window,
+/// returning how many were archived. Idempotent — a re-run only sweeps what
+/// is still stale. The sweep is maintenance, so a db failure degrades to 0
+/// (logged) and the client may simply retry.
+async fn archive_stale_sessions_handler(Extension(user_id): Extension<String>) -> Json<i64> {
+    match logic::archive_stale_sessions(&user_id).await {
+        Ok(count) => Json(count),
+        Err(e) => {
+            tracing::warn!(component = "chat", user = %user_id, error = %e, "archive_stale_sessions sweep failed");
+            Json(0)
+        }
+    }
 }
 
 /// Protected RPC: load an on-device model (`.litertlm`).
@@ -1862,6 +1881,10 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route(
             "/api/delete_chat_session",
             post(delete_chat_session_handler),
+        )
+        .route(
+            "/api/archive_stale_sessions",
+            post(archive_stale_sessions_handler),
         )
         .route("/api/skill_create", post(skill_create_handler))
         .route("/api/skill_list", post(skill_list_handler))

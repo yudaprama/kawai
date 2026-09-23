@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { type ChatMessageInfo, type ChatSessionInfo, call, errText } from "@/lib/api";
-import { historyToMessages, sessionPeriod } from "@/features/chat/lib/chat-helpers";
+import { groupSessions, historyToMessages, sessionToMarkdown } from "@/features/chat/lib/chat-helpers";
 import { logError, logWarn } from "@/lib/logger";
 import type { StreamControl } from "@/lib/stream";
-import { showErrorToast } from "@/lib/utils";
+import { showErrorToast, slugify } from "@/lib/utils";
 import type { SupervisorChatState } from "./use-supervisor-chat";
 
 /** Undo window for a delete: the row disappears now, the real
@@ -59,7 +59,18 @@ export function useChatSessions({
   }, [patch]);
 
   useEffect(() => {
-    if (state.userId) void loadSessions();
+    if (!state.userId) return;
+    void (async () => {
+      // Stale-session sweep (30+ idle days auto-archive) runs once per
+      // session load, before the first list read. Idempotent UPDATE,
+      // best-effort — a failure never blocks the list.
+      try {
+        await call<number>("archive_stale_sessions", {});
+      } catch (err) {
+        logWarn("archive_stale_sessions", err);
+      }
+      await loadSessions();
+    })();
   }, [state.userId, loadSessions]);
 
   const ensureSessionId = useCallback(
@@ -122,43 +133,55 @@ export function useChatSessions({
     };
   }, []);
 
-  /** Optimistically remove the row, then delete for real once the Undo
-   *  window expires. Undo cancels the call and reloads server truth. */
-  const deleteSession = useCallback(
-    async (sessionId: number) => {
+  /** Optimistically remove the rows, then delete for real once the Undo
+   *  window expires. One timer + one Undo toast covers the whole batch (ids
+   *  already pending are skipped so a solo delete can't collide with one). */
+  const deleteSessions = useCallback(
+    async (sessionIds: number[]) => {
       if (streamCtrl.current) return;
-      if (pendingDeletes.current.has(sessionId)) return;
-      const target = [...state.sessions, ...state.archivedSessions].find((s) => s.id === sessionId);
-      if (!target) return;
+      const ids = sessionIds.filter((id) => !pendingDeletes.current.has(id));
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
+      const targets = [...state.sessions, ...state.archivedSessions].filter((s) => idSet.has(s.id));
+      if (targets.length === 0) return;
 
       patch({
-        sessions: state.sessions.filter((s) => s.id !== sessionId),
-        archivedSessions: state.archivedSessions.filter((s) => s.id !== sessionId),
+        sessions: state.sessions.filter((s) => !idSet.has(s.id)),
+        archivedSessions: state.archivedSessions.filter((s) => !idSet.has(s.id)),
       });
-      const wasActive = sessionIdRef.current === sessionId;
+      const activeId = sessionIdRef.current;
+      const wasActive = activeId != null && idSet.has(activeId);
       if (wasActive) await resetSession(null);
 
-      const timer = window.setTimeout(() => {
-        pendingDeletes.current.delete(sessionId);
-        void call("delete_chat_session", { sessionId }).catch((err) => {
+      const fire = () => {
+        for (const id of ids) pendingDeletes.current.delete(id);
+        void Promise.all(ids.map((id) => call("delete_chat_session", { sessionId: id }))).catch((err) => {
           logError("delete_chat_session", err);
-          showErrorToast(`Couldn't delete the session — ${errText(err)}`);
-          void loadSessions(); // reconcile: the row may still exist
+          showErrorToast(
+            `Couldn't delete ${ids.length === 1 ? "the session" : `${ids.length} sessions`} — ${errText(err)}`,
+          );
+          void loadSessions(); // reconcile: rows may still exist
         });
-      }, DELETE_UNDO_MS);
-      pendingDeletes.current.set(sessionId, timer);
+      };
+      const timer = window.setTimeout(fire, DELETE_UNDO_MS);
+      for (const id of ids) pendingDeletes.current.set(id, timer);
 
-      toast(`Deleted "${target.title || `Session #${target.id}`}"`, {
+      const label =
+        targets.length === 1
+          ? `Deleted "${targets[0].title || `Session #${targets[0].id}`}"`
+          : `Deleted ${targets.length} sessions`;
+      toast(label, {
         duration: DELETE_UNDO_MS,
         action: {
           label: "Undo",
           onClick: () => {
-            const pending = pendingDeletes.current.get(sessionId);
-            if (!pending) return; // window elapsed — the delete already committed
-            window.clearTimeout(pending);
-            pendingDeletes.current.delete(sessionId);
-            void loadSessions(); // server still owns the row — restore truth
-            if (wasActive) void selectSession(sessionId);
+            // A different timer owns this id now — or the window elapsed and
+            // the delete already committed.
+            if (pendingDeletes.current.get(ids[0]) !== timer) return;
+            window.clearTimeout(timer);
+            for (const id of ids) pendingDeletes.current.delete(id);
+            void loadSessions(); // server still owns the rows — restore truth
+            if (wasActive && activeId != null) void selectSession(activeId);
           },
         },
       });
@@ -193,69 +216,100 @@ export function useChatSessions({
     [state.sessions, patch],
   );
 
-  const setSessionArchived = useCallback(
-    async (sessionId: number, archived: boolean) => {
+  /** Archive/restore a batch — optimistic move for every id living in either
+   *  list, per-id server calls, then reconcile with server truth (drop every
+   *  touched id from both lists, reinsert each row where it belongs). */
+  const setSessionsArchived = useCallback(
+    async (sessionIds: number[], archived: boolean) => {
+      const ids = [...new Set(sessionIds)].filter((id) => id > 0);
+      if (ids.length === 0) return;
+      const idSet = new Set(ids);
       const priorSessions = state.sessions;
       const priorArchived = state.archivedSessions;
       const byCreatedDesc = byActivityDesc;
+      const now = Math.floor(Date.now() / 1000);
 
-      let optimisticSessions: ChatSessionInfo[];
-      let optimisticArchived: ChatSessionInfo[];
-      if (archived) {
-        const moving = priorSessions.find((s) => s.id === sessionId);
-        optimisticSessions = priorSessions.filter((s) => s.id !== sessionId);
-        optimisticArchived = moving
-          ? [...priorArchived, { ...moving, archived: true, archivedAt: Math.floor(Date.now() / 1000) }].sort(
-              byCreatedDesc,
-            )
-          : [...priorArchived].sort(byCreatedDesc);
-      } else {
-        const moving = priorArchived.find((s) => s.id === sessionId);
-        optimisticArchived = priorArchived.filter((s) => s.id !== sessionId);
-        optimisticSessions = moving
-          ? [...priorSessions, { ...moving, archived: false, archivedAt: null }].sort(byCreatedDesc)
-          : [...priorSessions].sort(byCreatedDesc);
-      }
+      const moving = archived
+        ? priorSessions.filter((s) => idSet.has(s.id))
+        : priorArchived.filter((s) => idSet.has(s.id));
+      const optimisticSessions = archived
+        ? priorSessions.filter((s) => !idSet.has(s.id))
+        : [
+            ...priorArchived.filter((s) => !idSet.has(s.id)),
+            ...moving.map((s) => ({ ...s, archived: false, archivedAt: null })),
+          ].sort(byCreatedDesc);
+      const optimisticArchived = archived
+        ? [
+            ...priorArchived.filter((s) => !idSet.has(s.id)),
+            ...moving.map((s) => ({ ...s, archived: true, archivedAt: now })),
+          ].sort(byCreatedDesc)
+        : priorArchived.filter((s) => !idSet.has(s.id));
       patch({ sessions: optimisticSessions, archivedSessions: optimisticArchived });
 
-      let updated: ChatSessionInfo;
+      let updated: ChatSessionInfo[];
       try {
-        updated = await call<ChatSessionInfo>("set_chat_session_archived", {
-          sessionId,
-          archived,
-        });
+        updated = await Promise.all(
+          ids.map((sessionId) => call<ChatSessionInfo>("set_chat_session_archived", { sessionId, archived })),
+        );
       } catch (err) {
         logError("set_chat_session_archived", err);
-        showErrorToast(`${archived ? "Couldn't archive" : "Couldn't restore"} the session — ${errText(err)}`);
+        showErrorToast(
+          `${archived ? "Couldn't archive" : "Couldn't restore"} ${
+            ids.length === 1 ? "the session" : `${ids.length} sessions`
+          } — ${errText(err)}`,
+        );
         patch({ sessions: priorSessions, archivedSessions: priorArchived });
         return;
       }
 
-      // Reconcile with server truth — the optimistically moved row may have
-      // stale fields; replace it wherever it landed and ensure it lives in the
-      // correct list.
-      let finalSessions = optimisticSessions.map((s) => (s.id === sessionId ? updated : s));
-      let finalArchived = optimisticArchived.map((s) => (s.id === sessionId ? updated : s));
-      const inSessions = finalSessions.some((s) => s.id === sessionId);
-      const inArchived = finalArchived.some((s) => s.id === sessionId);
-      if (archived && inSessions && !inArchived) {
-        finalSessions = finalSessions.filter((s) => s.id !== sessionId);
-        finalArchived = [...finalArchived.filter((s) => s.id !== sessionId), updated].sort(byCreatedDesc);
-      } else if (!archived && inArchived && !inSessions) {
-        finalArchived = finalArchived.filter((s) => s.id !== sessionId);
-        finalSessions = [...finalSessions.filter((s) => s.id !== sessionId), updated].sort(byCreatedDesc);
-      } else if (archived && !inSessions && !inArchived) {
-        finalArchived = [...finalArchived, updated].sort(byCreatedDesc);
-      } else if (!archived && !inSessions && !inArchived) {
-        finalSessions = [...finalSessions, updated].sort(byCreatedDesc);
-      }
+      // Reconcile: drop every touched id from both lists, then reinsert each
+      // server row where it belongs (rows that failed server-side stay out —
+      // the error toast above said so; reload resyncs on the next list read).
+      const finalSessions = optimisticSessions.filter((s) => !idSet.has(s.id));
+      const finalArchived = optimisticArchived.filter((s) => !idSet.has(s.id));
+      for (const u of updated) (u.archived ? finalArchived : finalSessions).push(u);
+      finalSessions.sort(byCreatedDesc);
+      finalArchived.sort(byCreatedDesc);
       patch({ sessions: finalSessions, archivedSessions: finalArchived });
 
-      if (archived && sessionIdRef.current === sessionId) {
-        await resetSession(null);
-      }
+      const activeId = sessionIdRef.current;
+      if (archived && activeId != null && idSet.has(activeId)) await resetSession(null);
     },
     [state.sessions, state.archivedSessions, patch, resetSession],
+  );
+
+  /** Server-side session search (title + message content) — active and
+   *  archived lists split exactly like `list_chat_sessions`. */
+  const searchSessions = useCallback(async (query: string) => {
+    const q = query.trim();
+    const [sessions, archivedSessions] = await Promise.all([
+      call<ChatSessionInfo[]>("list_chat_sessions", { archived: false, ...(q ? { query: q } : {}) }),
+      call<ChatSessionInfo[]>("list_chat_sessions", { archived: true, ...(q ? { query: q } : {}) }),
+    ]);
+    return { sessions, archivedSessions };
+  }, []);
+
+  /** Export a session transcript to a stored `.md` file (previewable record;
+   *  the hook toasts on failure and resolves null). */
+  const exportSession = useCallback(
+    async (session: ChatSessionInfo): Promise<{ id: string; originalName: string; bytes: number } | null> => {
+      try {
+        const rows = await call<ChatMessageInfo[]>("list_chat_messages", { sessionId: session.id });
+        const md = sessionToMarkdown(session.title, rows);
+        const filename = `${slugify(session.title ?? "", `session-${session.id}`)}.md`;
+        const file = await call<{ id: string; originalName: string; bytes: number }>("export_deliverable", {
+          markdown: md,
+          filename,
+        });
+        toast.success(`Saved ${file.originalName}`);
+        return file;
+      } catch (err) {
+        logError("export_deliverable", err);
+        showErrorToast(`Couldn't export the session — ${errText(err)}`);
+        return null;
+      }
+    },
+    [],
   );
 
   const retryHistoryLoad = useCallback(async () => {
@@ -265,14 +319,7 @@ export function useChatSessions({
     await loadMessages(sid);
   }, [streamCtrl, loadMessages, patch]);
 
-  const groupedSessions = state.sessions.length
-    ? (["Today", "Yesterday", "Earlier"] as const)
-        .map((label) => ({
-          label,
-          sessions: state.sessions.filter((s) => sessionPeriod(s.updatedAt ?? s.createdAt) === label),
-        }))
-        .filter((g) => g.sessions.length > 0)
-    : [];
+  const groupedSessions = groupSessions(state.sessions);
 
   return {
     sessionIdRef,
@@ -280,9 +327,11 @@ export function useChatSessions({
     ensureSessionId,
     newChat,
     selectSession,
-    deleteSession,
+    deleteSessions,
     renameSession,
-    setSessionArchived,
+    setSessionsArchived,
+    searchSessions,
+    exportSession,
     retryHistoryLoad,
     groupedSessions,
   };

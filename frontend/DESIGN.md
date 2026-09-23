@@ -103,13 +103,19 @@ session shows when each run actually finished.
 
 Cmd/Ctrl+K (or the Sessions button) opens the session history dialog: a
 search box over sessions grouped by last activity (Today / Yesterday /
-Earlier) plus a collapsible Archive. Rows show the goal/title with a
-relative timestamp and hover-revealed actions — rename (inline input),
-archive, and delete. Delete is immediate to the eye but deferred to the
-backend: the row disappears optimistically and a sonner toast offers
-**Undo** for 5 seconds before `delete_chat_session` fires. Arrow keys move
-a highlighted cursor over the flat row list (groups, then archive), Enter
-opens the selected session.
+Earlier) plus a collapsible Archive. Search filters titles instantly and,
+after 250ms, queries message content server-side (failures fall back to
+the local filter). Rows show the goal/title with a relative timestamp and
+hover-revealed actions — export (writes the transcript as a stored `.md`
+and opens its preview), rename (inline input), archive, and delete.
+Delete is immediate to the eye but deferred to the backend: the row
+disappears optimistically and a sonner toast offers **Undo** for 5 seconds
+before `delete_chat_session` fires (one toast covers a bulk batch). The
+header's **Select** button swaps rows to checkboxes behind a bulk bar —
+Archive/Restore (enabled per selection side), Delete, Cancel. Arrow keys
+move a highlighted cursor over the flat row list (groups, then archive),
+Enter opens the selected session (toggles it in Select mode); hover moves
+the same cursor.
 
 ## Visual language
 

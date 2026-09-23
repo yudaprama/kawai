@@ -3,8 +3,7 @@
 //! `/markdown` fallback → markdown-link parsing. Exercises everything except
 //! tier 0, which needs a running Tauri shell (`bun tauri dev`).
 //!
-//! Usage: cargo run --example web_search_check --features office
-//!        cargo run --example web_search_check --features office -- <query> [maxResults]
+//! Usage: cargo run --example web_search_check -- <query> [maxResults]
 
 use webread::search_web;
 
@@ -67,9 +66,9 @@ async fn debug_dump_serp(query: &str) {
     let args = BrowserMarkdownExtractArgs {
         url: Some(u.into()),
         html: None,
-        rejectRequestPattern: None,
-        gotoOptions: None,
-        userAgent: None,
+        reject_request_pattern: None,
+        goto_options: None,
+        user_agent: None,
     };
     match tool.call(args).await {
         Ok(out) => {

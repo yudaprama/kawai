@@ -28,3 +28,16 @@ export function formatBytes(n: number): string {
 export function showErrorToast(e: unknown): void {
   toast.error(errText(e));
 }
+
+/** URL/filename-safe slug of `text` (lowercased, non-alnum runs collapsed to
+ *  "-", edges trimmed, capped at 40 chars), falling back to `fallback` when
+ *  nothing survives. The canonical slug for stored export filenames. */
+export function slugify(text: string, fallback: string): string {
+  return (
+    text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || fallback
+  );
+}

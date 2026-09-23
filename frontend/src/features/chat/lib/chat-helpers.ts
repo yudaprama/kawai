@@ -1,5 +1,10 @@
 import type { UIMessage } from "@/lib/ai-types";
-import type { ChatMessageInfo } from "@/lib/api";
+import type { ChatMessageInfo, ChatSessionInfo } from "@/lib/api";
+
+export interface SessionGroup {
+  label: string;
+  sessions: ChatSessionInfo[];
+}
 
 export function historyToMessages(rows: ChatMessageInfo[]): UIMessage[] {
   return rows.map((row) => {
@@ -118,4 +123,40 @@ export function activeMentionRange(value: string, caret: number): { query: strin
   const query = upTo.slice(at + 1);
   if (/\s/.test(query)) return null;
   return { query, start: at, end: caret };
+}
+
+/** Bucket sessions into Today / Yesterday / Earlier by last activity,
+ *  preserving list order; empty buckets drop out. Shared by the sessions hook
+ *  and the switcher (server-side search results group through this too). */
+export function groupSessions(sessions: ChatSessionInfo[]): SessionGroup[] {
+  if (sessions.length === 0) return [];
+  return (["Today", "Yesterday", "Earlier"] as const)
+    .map((label) => ({
+      label,
+      sessions: sessions.filter((s) => sessionPeriod(s.updatedAt ?? s.createdAt) === label),
+    }))
+    .filter((g) => g.sessions.length > 0);
+}
+
+/** Markdown transcript of a session — the export payload. One `##` section
+ *  per message (plan records render through the same `planToText` the history
+ *  view uses; plain text strips tool markup). Times and the export stamp are
+ *  UTC; `exportedAt` (ms) is injectable so tests stay deterministic. */
+export function sessionToMarkdown(title: string | null, rows: ChatMessageInfo[], exportedAt = Date.now()): string {
+  const stamp = (d: Date) =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  const lines: string[] = [
+    `# ${title?.trim() || "Untitled session"}`,
+    "",
+    `_Exported ${stamp(new Date(exportedAt))} UTC_`,
+    "",
+  ];
+  for (const row of rows) {
+    const plan = parsePersistedPlan(row.content);
+    const body = plan ? planToText(plan) : stripToolMarkup(row.content);
+    const who = row.role === "user" ? "You" : "Assistant";
+    const at = row.createdAt ? ` · ${stamp(new Date(row.createdAt * 1000))}` : "";
+    lines.push(`## ${who}${at}`, "", body, "");
+  }
+  return lines.join("\n");
 }

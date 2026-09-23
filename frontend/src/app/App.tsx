@@ -276,9 +276,28 @@ export default function App() {
           if (workbenchSelectRef.current) workbenchSelectRef.current(id);
           else void chat.selectSession(id);
         }}
-        onDeleteSession={(id) => void chat.deleteSession(id)}
+        onSearchSessions={chat.searchSessions}
+        onDeleteSessions={(ids) => void chat.deleteSessions(ids)}
         onRenameSession={(id, title) => void chat.renameSession(id, title)}
-        onArchiveSession={(id, archived) => chat.setSessionArchived(id, archived)}
+        onArchiveSessions={(ids, archived) => chat.setSessionsArchived(ids, archived)}
+        onExportSession={async (session) => {
+          const file = await chat.exportSession(session);
+          if (file) {
+            ka.setPreviewFile({
+              id: file.id,
+              originalName: file.originalName,
+              ext: "md",
+              bytes: file.bytes,
+              createdAt: Math.floor(Date.now() / 1000),
+              status: "not_indexed",
+              chunks: 0,
+              error: null,
+              inSession: true,
+              raw: null,
+            });
+          }
+          return file;
+        }}
       />
       <PreviewDialog file={ka.previewFile} onClose={() => ka.setPreviewFile(null)} />
       <LinkDialog

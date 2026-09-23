@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { FileIcon } from "@/components/shared/file-icon";
 import { Streamdown } from "@/lib/streamdown";
 import { DeckPreview } from "@/features/workbench/components/deck-preview";
+import { slugify } from "@/lib/utils";
 import { call, errText } from "@/lib/api";
 import { StepReportBody } from "@/features/workbench/components/shared-canvas";
 import { agentName, isDeliverableStep, type useWorkbench } from "@/features/workbench/hooks/use-workbench";
@@ -147,7 +148,6 @@ export function PastRunCanvas({
             tool={stepTool}
           />
         )}
-
       </div>
     </div>
   );
@@ -213,12 +213,7 @@ export function DeliverableViewer({
     setExporting(format);
     setExportedName(null);
     setExportError(null);
-    const slug =
-      (supervisor.goal ?? "deliverable")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 40) || "deliverable";
+    const slug = slugify(supervisor.goal ?? "deliverable", "deliverable");
     try {
       const file = await call<{ originalName: string }>("export_deliverable", {
         markdown: supervisor.finalOutput,
