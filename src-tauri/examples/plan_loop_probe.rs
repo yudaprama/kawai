@@ -41,10 +41,11 @@ async fn run() -> Result<(), String> {
 
     for step in &plan.steps {
         println!(
-            "  [{}] tool={} depends_on={:?} task={}",
+            "  [{}] tool={} depends_on={:?} arguments={} task={}",
             step.id,
             step.dispatch_key(),
             step.depends_on,
+            serde_json::to_string(&step.arguments).unwrap_or_default(),
             step.task.chars().take(80).collect::<String>()
         );
     }
