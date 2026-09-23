@@ -61,8 +61,8 @@ where the model or a human is in the loop, JSON is sufficient forever.
 ## 2. Stage 1 — Phase 2 signing patterns (signed account reads)
 
 Status update (2026-08-24): **Phase 2 core has SHIPPED** —
-`binance_balances` / `binance_open_orders` are live (signed via
-user-supplied `BINANCE_API_KEY`/`BINANCE_API_SECRET` from `.env`,
+`binance_balances` / `binance_open_orders` are live (signed via the
+baked read-only kawai-vault pair (`kawai_constants::binance`),
 capability-probe registration; see AGENTS.md → Binance agent entry). The
 client choice this stage argued for (`binance-sdk`, no nautilus) is the
 shipped reality. What remains here are the hardening residuals below —

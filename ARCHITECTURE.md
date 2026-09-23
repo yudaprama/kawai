@@ -155,10 +155,10 @@ webread's DuckDuckGo tier.
 | `crypto_depth` | `crates/toolsets/binance` | Order book + derived spread/mid |
 | `crypto_klines` | `crates/toolsets/binance` | Raw OHLCV candle data |
 | `crypto_ta_analyze` | `crates/toolsets/binance` | Fetches klines + runs the 34-indicator TA suite in-process — preset names or custom `{kind, period, fast, slow, signal, multiplier, alias}` windows |
-| `crypto_balances` | `crates/toolsets/binance` | Signed read-only spot balances *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
-| `crypto_open_orders` | `crates/toolsets/binance` | Signed read-only open orders *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
-| `stock_quote` | `crates/toolsets/binance` | Binance Stocks US-equity bid/ask quote + derived mid *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
-| `stock_info` | `crates/toolsets/binance` | US symbol tradability / order limits / listing dates *(only when `BINANCE_API_KEY` + `BINANCE_API_SECRET` set)* |
+| `crypto_balances` | `crates/toolsets/binance` | Signed read-only spot balances *(baked kawai-vault read-only pair)* |
+| `crypto_open_orders` | `crates/toolsets/binance` | Signed read-only open orders *(baked kawai-vault read-only pair)* |
+| `stock_quote` | `crates/toolsets/binance` | Binance Stocks US-equity bid/ask quote + derived mid *(baked kawai-vault pair)* |
+| `stock_info` | `crates/toolsets/binance` | US symbol tradability / order limits / listing dates *(baked kawai-vault pair)* |
 | `web_read` | `webread` | Read a URL → markdown *(capability-probe: engine must exist)* |
 | `web_search` | `webread` | DuckDuckGo/Brave/Wikipedia SERP → enriched hits *(capability-probe: engine must exist)* |
 | `artifact_recall` | `agent.rs` | Page through oversized tool results from this turn |

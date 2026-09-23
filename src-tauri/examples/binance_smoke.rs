@@ -1,7 +1,7 @@
 // Headless smoke test for the Binance agent tools (builtin.binance, feature
 // "binance"). Keyless public spot market data + TA — no credentials needed
 // for that part; the signed account tools AND the US-stock tools
-// (stock_quote / stock_info) only run when BINANCE_API_KEY/SECRET are set.
+// (stock_quote / stock_info) only run when the baked kawai-vault credential pair resolves.
 //
 // Exercises: crypto_price → crypto_depth → crypto_klines → the composite
 // crypto_ta_analyze (klines fetch + in-process `ta` indicator suite), then
@@ -184,7 +184,7 @@ async fn main() {
     succeeded += 1;
     println!("[binance_smoke] validation rejects bad intervals: OK");
 
-    // ── 6. signed account reads (only when BINANCE_API_KEY/SECRET are set) ──
+    // ── 6. signed account reads (only when the kawai-vault pair resolves) ──
     if binance::account::has_credentials() {
         let balances = parse(
             "crypto_balances",
@@ -217,13 +217,11 @@ async fn main() {
         succeeded += 2;
     } else {
         println!(
-            "[binance_smoke] account tools SKIPPED (no {}/{} env) — market-data coverage complete",
-            binance::account::API_KEY_ENV,
-            binance::account::API_SECRET_ENV
+            "[binance_smoke] account tools SKIPPED (no kawai-vault credentials) — market-data coverage complete"
         );
     }
 
-    // ── 7. US-stock reads (only when BINANCE_API_KEY/SECRET are set) ──
+    // ── 7. US-stock reads (only when the kawai-vault pair resolves) ──
     // api.binance.com is the ONLY host serving /sapi/v1/equity/* — no data-api
     // mirror — so a transport/geo block here skips (not fails) even after the
     // spot mirror succeeded above.
@@ -285,11 +283,7 @@ async fn main() {
             }
         }
     } else {
-        println!(
-            "[binance_smoke] stock tools SKIPPED (no {}/{} env)",
-            binance::account::API_KEY_ENV,
-            binance::account::API_SECRET_ENV
-        );
+        println!("[binance_smoke] stock tools SKIPPED (no kawai-vault credentials)");
     }
 
     println!(

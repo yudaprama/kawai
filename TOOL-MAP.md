@@ -112,8 +112,8 @@ tools. Also gets webread + runtime tools (`supports_draft_document: false`).
 | `crypto_klines` | OHLCV candles |
 | `crypto_depth` | order book |
 | `crypto_ta_analyze` | indicator suite over klines |
-| `crypto_balances` / `crypto_open_orders` | read-only account tools — compiled **only** when `BINANCE_API_KEY` + `BINANCE_API_SECRET` are both set (never trade permission) |
-| `stock_quote` / `stock_info` | Binance Stocks US-equity bid/ask quote + symbol metadata — registered **only** when `BINANCE_API_KEY` + `BINANCE_API_SECRET` are both set |
+| `crypto_balances` / `crypto_open_orders` | read-only account tools — signed via the baked kawai-vault read-only pair (never trade permission) |
+| `stock_quote` / `stock_info` | Binance Stocks US-equity bid/ask quote + symbol metadata — same baked kawai-vault pair |
 
 ## 6. Cross-cutting: web read/search — `crates/toolsets/webread`
 

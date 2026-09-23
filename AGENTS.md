@@ -213,7 +213,7 @@ crates/
 ├── toolsets/                       # agent toolset adapters
 │   ├── analytics-tools/ (kawai-analytics) # thin AgentTool wrappers over crates/engines/analytics engine — data_schema/query/ta/chart (spawn_blocking) + sql_profiles/effective_profiles + DataTablesTool/DataImportTool (sqlx Postgres/MySQL, analytics-sql)
 │   ├── cli/ (kawai-cli)           # per-device CLI inventory (PATH + GUI-landmine dirs, denylist, process-cached) + the single `cli_run` AgentTool: fast path (exact argv) or a data_query_nl-style self-correcting loop over `intent` (reason_in argv translation grounded on an internal --help capture, stderr fed back, cooperative step-deadline) — planner sees it via PLAN_CORE_TOOLS + the <cli-tools> block; NEVER Turso-seeded (PLAN-cli-tools.md)
-│   ├── binance/                   # Binance agent tools (hand-written, feature "binance"): keyless public spot market data + (BINANCE_API_KEY set) US-stock quote/info via binance-sdk + in-process TA over ta
+│   ├── binance/                   # Binance agent tools (hand-written, feature "binance"): keyless public spot market data + (credential pair resolved) US-stock quote/info via binance-sdk + in-process TA over ta
 │   ├── codegraph/ (codegraph)     # CodeGraph bridge (feature "codegraph" sidecar cached): codegraph_explore/status AgentTools — 15m LRU + single-flight + 12/min budget
 │   └── webread/ (webread)         # web read + search tiering (always compiled; reusable by any agent): web_read + web_search PortableTools — search = DDG over DoH (primary) → webview Brave → Wikipedia (id/en); read = Cloudflare → plain HTTP → webview; every hit's page auto-enriched; per-hit/set-level relevance gates, daily CF budgets, LRU cache
 ├── integrations/                   # external service clients
@@ -321,10 +321,8 @@ KAWAI_REMOTE_LLM_MATERIALS_CHARS=        # optional absolute ceiling on every pr
 # (stock_sentiment / stock_social_feed / trending_stocks) are StockTwits-only.
 # KAWAI_STOCKTWITS_API_BASE=https://api.stocktwits.com/api/2  # optional API base override
 # ── Binance agent tools (crates/toolsets/binance) ──
-# KAWAI_BINANCE_REST_BASE=https://data-api.binance.vision  # optional REST base override. Default: the market-data-only mirror (keyless market tools) — api.binance.com 403/451 geo-blocks some regions. Signed account tools (BINANCE_API_KEY set) stay on api.binance.com. Also where a testnet base (https://testnet.binance.vision) would go.
+# KAWAI_BINANCE_REST_BASE=https://data-api.binance.vision  # optional REST base override. Default: the market-data-only mirror (keyless market tools) — api.binance.com 403/451 geo-blocks some regions. Signed account tools (baked kawai-vault read-only pair) stay on api.binance.com. Also where a testnet base (https://testnet.binance.vision) would go.
 # Every binance-sdk REST client resolves DNS via DoH (kawai-http-client doh — cloudflare-dns.com → 1.1.1.1 fallback, 10-min cache, injected through the SDK's HttpAgent hook): an ISP-poisoned system answer for api.binance.com / data-api.binance.vision cannot route the call to a block page (same anti-hijack trick as webread's DDG tier).
-BINANCE_API_KEY=  # optional READ-ONLY spot keys; set BOTH to register the binance_balances/binance_open_orders account tools AND the stock_quote/stock_info US-stock tools (never compiled in, no trade permission)
-BINANCE_API_SECRET=
 # ── Monad EVM chain client (crates/integrations/monad, `monad` feature) ──
 # KAWAI_MONAD_RPC_URL=https://testnet-rpc.monad.xyz  # optional RPC override; default = Monad TESTNET (active wallet network — testnet Round 8 addresses; flip with logic/monad_contracts.rs when promoting to mainnet)
 # ── Web read tiering — Cloudflare budget caps (crates/toolsets/webread) ──
