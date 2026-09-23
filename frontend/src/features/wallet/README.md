@@ -38,7 +38,9 @@ SendForm/SmartDepositForm (string desimal, "1.5" — tanpa float math)
 | Op | Fungsi | Auth (web) |
 |---|---|---|
 | `monad_wallet_address/create/sign_message/delete` | siklus hidup device wallet | public (SIWE) |
-| `check_monad_balance`, `monad_chain_status`, `get_token_balance`, `get_token_info`, `estimate_gas`, `get_transaction_receipt` | baca chain | public |
+| `check_monad_balance`, `monad_chain_status`, `get_token_balance`, `get_token_info`, `estimate_gas` | baca chain | public |
+| `get_transaction_receipt` | receipt on-chain (broadcast → mined) | **protected** |
+| `monad_wallet_history` | riwayat tx device (file JSON lokal `wallet_history.json`, newest-first) | **protected** |
 | `transfer_native`, `transfer_token`, `transfer_usdt`, `deposit_to_vault` | kirim dana user (USDT = stablecoin 6 desimal; testnet simbol USDT, mainnet USDC) | **protected** |
 
 Frontend: `frontend/src/features/wallet/` — `lib/wallet-adapter.ts` (5 method,

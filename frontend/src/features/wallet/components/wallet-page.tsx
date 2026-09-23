@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Icon } from "@/components/shared/icon";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 import { tauriBlockchainAdapter } from "../lib/blockchain-adapter";
-import type { NetworkInfo } from "../lib/types";
+import type { NetworkInfo, WalletTransaction } from "../lib/types";
 import { DEFAULT_CHAIN_ID } from "../lib/types";
 import { useBalances } from "../hooks/use-balances";
 import { useNetwork } from "../hooks/use-network";
@@ -42,10 +42,24 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
   const [modal, setModal] = useState<ModalType>(null);
   const [creating, setCreating] = useState(false);
   const [balanceVisible, setBalanceVisible] = useState(true);
-  // mock tx history until backend provides real
-  const [transactions] = useState<{ id: string; txType: string; amount: string; txHash: string; createdAt: string }[]>(
-    [],
-  );
+  // Device-side tx history — monad_wallet_history (local JSON log, newest first).
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const loadHistory = useCallback(async () => {
+    const records = await tauriBlockchainAdapter.getTransactionHistory();
+    setTransactions(
+      records.map((r) => ({
+        id: r.txHash,
+        txType: r.kind === "deposit" ? "Deposit" : "Send",
+        amount: r.amount,
+        symbol: r.symbol,
+        txHash: r.txHash,
+        createdAt: new Date(r.createdAtMs).toISOString(),
+      })),
+    );
+  }, []);
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
 
   const [sending, setSending] = useState(false);
 
@@ -66,6 +80,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
         }
       }
       void reloadBalances();
+      void loadHistory();
       setModal(null);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -95,6 +110,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
       }
       toast.success(`Sent — tx ${tx.txHash.slice(0, 10)}...`);
       void reloadBalances();
+      void loadHistory();
       setModal(null);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));

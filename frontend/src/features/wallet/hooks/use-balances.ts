@@ -10,6 +10,8 @@ export function useBalances(address: string, currentNetwork: NetworkInfo | null)
   const [gasEstimate, setGasEstimate] = useState<GasEstimate | null>(null);
   const [currentBlock, setCurrentBlock] = useState(0);
   const [loading, setLoading] = useState(false);
+  // Best-effort USD price of MON — 0 means "no dollar figure", never a guess.
+  const [nativePrice, setNativePrice] = useState(0);
 
   const load = useCallback(async () => {
     if (!address || !currentNetwork) return;
@@ -25,6 +27,17 @@ export function useBalances(address: string, currentNetwork: NetworkInfo | null)
       if (native) setNativeBalance(native.formatted);
       if (gas) setGasEstimate(gas);
       setCurrentBlock(block);
+
+      // Best-effort MON/USD price (CoinGecko public endpoint, hardcoded id).
+      // Failure leaves the price at 0 — HomeContent then shows no dollar figure.
+      void fetch("https://api.coingecko.com/api/v3/simple/price?ids=monad&vs_currencies=usd", {
+        signal: AbortSignal.timeout(8000),
+      })
+        .then((r) => r.json())
+        .then((d: { monad?: { usd?: number } }) => {
+          if (typeof d?.monad?.usd === "number") setNativePrice(d.monad.usd);
+        })
+        .catch(() => {});
 
       // token balances/prices — best effort
       const kawaiAddr = CONTRACTS.kawai;
@@ -50,8 +63,8 @@ export function useBalances(address: string, currentNetwork: NetworkInfo | null)
     kawaiBalance,
     gasEstimate,
     currentBlock,
-    nativePrice: 0,
-    kawaiPrice: 0,
+    nativePrice,
+    kawaiPrice: 0, // no price feed for KAWAI — unit display only
     loading,
     reload: load,
   };

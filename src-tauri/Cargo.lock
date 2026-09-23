@@ -2256,12 +2256,15 @@ version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb419e10cfcf49451682391193d92c48cd99c1358030cb4ef2417a48d0d53d8e"
 dependencies = [
+ "ab_glyph",
  "ahash",
  "csscolorparser",
+ "fontdb 0.23.0",
  "html-escape",
  "kernel-density-estimation",
  "thiserror 2.0.20",
  "time",
+ "tiny-skia",
  "wasm-bindgen",
  "web-sys",
 ]
@@ -3909,6 +3912,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbc773e24e02d4ddd8395fd30dc147524273a83e54e0f312d986ea30de5f5646"
 dependencies = [
  "roxmltree",
+]
+
+[[package]]
+name = "fontdb"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "457e789b3d1202543297a350643cf459f836cade38934e7a4cf6a39e7cde2905"
+dependencies = [
+ "fontconfig-parser",
+ "log",
+ "memmap2",
+ "slotmap",
+ "tinyvec",
+ "ttf-parser",
 ]
 
 [[package]]
@@ -7830,7 +7847,7 @@ dependencies = [
  "fast_image_resize 6.1.0",
  "fax 0.3.0",
  "flate2",
- "fontdb",
+ "fontdb 0.24.0",
  "getrandom 0.4.3",
  "harfrust",
  "hayro-jbig2",
@@ -12513,6 +12530,9 @@ name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
+dependencies = [
+ "core_maths",
+]
 
 [[package]]
 name = "tungstenite"

@@ -76,6 +76,8 @@ export type WalletTransaction = {
   id: string;
   txType: string;
   amount: string;
+  /** Display symbol resolved at record time (MON/USDT/KAWAI/…). */
+  symbol?: string;
   txHash: string;
   createdAt: string;
   status?: string;

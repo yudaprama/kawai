@@ -11,8 +11,10 @@
 > mainnet constants kept for the flip). Phase 4: `monad_wallet_smoke` example
 > + CI read-only gate landed (linux-smoke); `--with-wallet` (keychain
 > lifecycle, deletes only a wallet it created) and `--self-transfer`
-> (testnet-gated 1-wei self-send + receipt poll) are local-only flags. Still
-> open from Phase 4.4: the ARCHITECTURE.md/AGENTS.md description bullet.
+> (testnet-gated 1-wei self-send + receipt poll + history-log assertion) are
+> local-only flags. Phase 4.4 bullet: landed (ARCHITECTURE.md + AGENTS.md now
+> describe the wallet, incl. the device tx log `monad_wallet_history` over
+> local `wallet_history.json` feeding the Recent Activity list).
 > Deliberately not built: the self-transfer short-circuit guard (the
 > self-send IS the smoke's broadcast proof) and Rewards claim ops (need
 > distributor ABIs).

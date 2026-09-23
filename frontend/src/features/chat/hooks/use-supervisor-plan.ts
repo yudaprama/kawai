@@ -87,7 +87,7 @@ export interface PersistedPlan {
   }[];
   output: string | null;
   /** Execution-memo key — lets a restored journal fetch FULL step bodies
-   *  from supervisor_step_results (not just the ≤500-char embeds). Absent on
+   *  from supervisor_step_results (not just the ≤2000-char embeds). Absent on
    *  records written before this field existed. */
   planKey?: string | null;
   /** Deliverable artifacts (deck hero, stored files) — restored on reopen. */
@@ -102,9 +102,9 @@ export interface PersistedPlan {
 const planKeyRef: { current: string | null } = { current: null };
 
 /** Persist the structured plan record (goal + per-step states). Embedded
- *  outputs are capped — full results live in plan progress panel /
- *  supervisor_step_results (reachable via the record's planKey) / artifacts,
- *  not in chat history. */
+ *  outputs are the wire previews (≤2000 chars each) — full results live in
+ *  plan progress panel / supervisor_step_results (reachable via the record's
+ *  planKey) / artifacts, not in chat history. */
 function persistPlanSnapshot(
   sessionId: number,
   goal: string | null,
@@ -120,7 +120,7 @@ function persistPlanSnapshot(
       id: s.stepId,
       tool: s.tool,
       state: s.state,
-      output: s.output ? s.output.slice(0, 500) : s.output,
+      output: s.output,
       task: s.task,
       dependsOn: s.dependsOn,
       inputs: s.inputs,

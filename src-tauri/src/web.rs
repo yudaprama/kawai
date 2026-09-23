@@ -858,6 +858,12 @@ async fn get_transaction_receipt_handler(
         .map_err(wallet_err)
 }
 
+/// Device tx history (local JSON log) — activity read, behind auth on web
+/// like the receipt op; the Tauri command is sessionless (device-scoped).
+async fn monad_wallet_history_handler() -> Result<Json<Vec<logic::monad_wallet::TxRecord>>, (StatusCode, String)> {
+    logic::monad_wallet::history().map(Json).map_err(wallet_err)
+}
+
 async fn generate_activity_handler(
     Json(input): Json<ActivityInput>,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
@@ -1859,6 +1865,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/transfer_usdt", post(transfer_usdt_handler))
         .route("/api/deposit_to_vault", post(deposit_to_vault_handler))
         .route("/api/get_transaction_receipt", post(get_transaction_receipt_handler))
+        .route("/api/monad_wallet_history", post(monad_wallet_history_handler))
         .route(
             "/api/create_chat_session",
             post(create_chat_session_handler),

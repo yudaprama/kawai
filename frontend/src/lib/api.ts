@@ -1,11 +1,36 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { runningInTauri } from "@/platform";
 
 /**
- * Request-response RPC to the Tauri backend (in-process IPC). Command names
- * are the snake_case Rust fn names; args are camelCase on the JS side.
+ * Request-response RPC to the kawai backend. Desktop runs Tauri invoke
+ * (in-process IPC); the Axum web build falls back to `POST /api/<command>`
+ * (same one-snake_case-string contract, `{ error }` failure shape).
+ * Command names are the snake_case Rust fn names; args are camelCase.
  */
 export function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  return invoke<T>(command, args ?? {});
+  if (runningInTauri) return invoke<T>(command, args ?? {});
+  return httpCall<T>(command, args);
+}
+
+/** HTTP bridge for the web build — mirrors invoke's rejection shape so
+ *  `errText()` keeps working unchanged. */
+async function httpCall<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  const res = await fetch(`/api/${command}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(args ?? {}),
+  });
+  if (!res.ok) {
+    let message = res.statusText || `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body?.error) message = body.error;
+    } catch {
+      /* non-JSON error body — keep the status text */
+    }
+    throw new Error(message);
+  }
+  return (await res.json()) as T;
 }
 
 /** RPC that ALSO streams progress events over a Channel while awaiting the

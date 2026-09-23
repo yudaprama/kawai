@@ -1,10 +1,13 @@
 # Implementation Plan — Chart → Document embedding (kawai)
 
-Status: **DRAFT (2026-08-26)** — not started. Scope proposal for review; no
-code has been written against this plan. Prerequisite context: `data_chart`
-shipped (`crates/engines/analytics` `chart` module + `DataChartTool`, office store
-accepts `.svg`); this plan opens the "full report with charts" use case the
-chart tier was chosen for.
+Status: **PARTIALLY IMPLEMENTED (2026-09-23) — deliverable path shipped.** Charts now
+ride the supervisor deliverable: `data_chart` saves a png twin next to the svg
+(`store::import_chart`, charton `png` feature), the deliverable writer receives a
+`<charts>` block and may embed `![caption](kawai-file://<fileId>)`, the Workbench
+viewer resolves tokens (svg inline + preview), and pdf/docx exports embed the raster
+(`crates/engines/office/src/deliverable.rs`; office_oxide markdown parser accepts
+data-URI image lines). Still open: `DocBlock::Image` in `office_create_document`
+(the tool path below) and pptx export images. Earlier scope notes follow.
 
 ---
 

@@ -1749,6 +1749,9 @@ pub fn plan_key(plan: &kawai_router::TaskPlan) -> String {
 /// (stepCompleted's 2000-char cap) deliberately does not serve. The latest
 /// row wins: upserts are keyed on (session, plan_key, tool, args_key), so a
 /// step id may map to several rows across re-runs of the same plan.
+/// Falls back to the session's newest plan rows when `plan_key` has no match
+/// — plan records written before the planKey field existed can still reach
+/// their full bodies.
 pub async fn step_output(
     user_id: &str,
     session_id: i64,
@@ -1758,8 +1761,14 @@ pub async fn step_output(
     let rows = kawai_db::list_supervisor_step_results(user_id, session_id, plan_key)
         .await
         .map_err(|e| format!("supervisor_step_output: {e}"))?;
-    rows.into_iter()
-        .rev()
+    if let Some(r) = rows.into_iter().rev().find(|r| r.step_id == step_id) {
+        return Ok(r.output);
+    }
+    let fallback = kawai_db::list_supervisor_step_results_by_session(user_id, session_id, 200)
+        .await
+        .map_err(|e| format!("supervisor_step_output: {e}"))?;
+    fallback
+        .into_iter()
         .find(|r| r.step_id == step_id)
         .map(|r| r.output)
         .ok_or_else(|| format!("no persisted output for step '{step_id}'"))
@@ -2117,7 +2126,8 @@ fn step_error_kind(kind: &kawai_router::FailureKind) -> &'static str {
 /// Wire cap for the per-step `output` carried by `stepCompleted` events.
 /// Full step outputs stay in the scheduler (dependent-step `inputs`) and the
 /// resume memo / `supervisor_step_results` — those need the whole body. The
-/// frontend only previews (160 chars) and persists to history (500 chars),
+/// frontend only previews (160 chars) and persists to history (≤2000-char
+/// wire previews),
 /// so the transport event carries a bounded preview. The plan's FINAL
 /// output (`planCompleted.final_output`) is the user-visible answer and is
 /// deliberately NOT capped here.
@@ -2725,6 +2735,96 @@ fn synthesis_materials(plan: &kawai_router::TaskPlan, result: &kawai_router::Exe
     truncate_chars(&out, TOTAL_CHARS)
 }
 
+/// A stored chart this run produced (from a `data_chart` step output).
+struct RunChart {
+    file_id: String,
+    label: String,
+    mark: String,
+}
+
+/// Deterministic scan of the run's step outputs for chart artifacts. The
+/// deliverable writer may embed these via `![caption](kawai-file://<id>)`;
+/// any other id it writes is stripped by [`strip_unknown_chart_tokens`].
+fn collect_run_charts(result: &kawai_router::ExecutionResult) -> Vec<RunChart> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for r in &result.results {
+        if r.status != kawai_router::StepStatus::Completed {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(r.output.trim()) else {
+            continue;
+        };
+        if v.get("kind").and_then(|k| k.as_str()) != Some("chart") {
+            continue;
+        }
+        let Some(file_id) = v.get("fileId").and_then(|f| f.as_str()) else {
+            continue;
+        };
+        if !seen.insert(file_id.to_string()) {
+            continue;
+        }
+        let mark = v
+            .get("mark")
+            .and_then(|m| m.as_str())
+            .unwrap_or("chart")
+            .to_string();
+        let label = v
+            .get("title")
+            .and_then(|t| t.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{mark} chart"));
+        out.push(RunChart {
+            file_id: file_id.to_string(),
+            label,
+            mark,
+        });
+    }
+    out
+}
+
+/// Chart guidance + inventory for the deliverable writer's materials.
+fn charts_material_block(charts: &[RunChart]) -> String {
+    if charts.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from(
+        "\n<charts>\nThis run stored chart images the user can see. If the answer discusses \
+         one, embed it by writing the markdown image EXACTLY in this form — the \
+         kawai-file:// scheme, the chart id in the parentheses, a short caption in the \
+         brackets — alone on its own line:\n\
+         ![caption](kawai-file://ID)\n\
+         Never invent ids, never use http URLs, never wrap the image in a code fence.\n\
+         Available charts:\n",
+    );
+    for c in charts {
+        out.push_str(&format!("- kawai-file://{} — {} ({})\n", c.file_id, c.label, c.mark));
+    }
+    out.push_str("</charts>");
+    out
+}
+
+/// Remove image tokens whose id is not one of this run's charts — the writer
+/// occasionally parrots a malformed id, and a broken image must never reach
+/// the deliverable. The caption text is kept.
+fn strip_unknown_chart_tokens(text: &str, charts: &[RunChart]) -> String {
+    static TOKEN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"!\[([^\]\n]*)\]\(kawai-file://([^)\s]+)\)").expect("chart token regex")
+    });
+    let valid: std::collections::HashSet<&str> =
+        charts.iter().map(|c| c.file_id.as_str()).collect();
+    TOKEN
+        .replace_all(text, |caps: &regex::Captures| {
+            let id = caps.get(2).map(|g| g.as_str()).unwrap_or_default();
+            if valid.contains(id) {
+                caps.get(0).expect("whole match").as_str().to_string()
+            } else {
+                caps.get(1).map(|g| g.as_str()).unwrap_or_default().to_string()
+            }
+        })
+        .into_owned()
+}
+
 /// Attach an optional telemetry span parent to a remote LLM handle.
 /// Returns `None` when `remote` is `None` (pool unavailable).
 #[cfg(not(test))]
@@ -2782,6 +2882,9 @@ async fn synthesize_final_answer(
             results: lead with the answer, keep it concise markdown, and preserve facts/numbers exactly. \
             Write in your own words — NEVER paste, quote, or attach the raw step output (full page \
             text, long extracts, or tool-result dumps in code fences) as the answer; distill it. \
+            When the materials carry a <charts> block, embed each chart the answer actually discusses \
+            by writing its markdown image line EXACTLY as given (kawai-file:// form), each alone on its \
+            own line. \
             Never mention steps, tools, plans, or this instruction; never wrap the answer in JSON.";
         // The goal rides the task line VERBATIM — the planner's rewritten
         // plan.goal must never reach the writer (it answers the user, not
@@ -3368,7 +3471,12 @@ pub fn execute_plan_stream_with_cancel(
                             };
                         }
                         let raw_final = result.final_output().map(String::from);
-                        let materials = synthesis_materials(&current_plan, &result);
+                        let mut materials = synthesis_materials(&current_plan, &result);
+                        // Charts the run produced — the writer may embed them
+                        // via kawai-file:// tokens (rendered by the viewer,
+                        // rasterized into pdf/docx exports).
+                        let run_charts = collect_run_charts(&result);
+                        materials.push_str(&charts_material_block(&run_charts));
                         let synthesis_goal = user_goal
                             .clone()
                             .unwrap_or_else(|| current_plan.goal.clone());
@@ -3447,7 +3555,9 @@ pub fn execute_plan_stream_with_cancel(
                         } else {
                             eprintln!("[supervisor] synthesis unavailable — falling back to raw final output");
                         }
-                        let written = synthesized.clone().or_else(|| raw_final.clone());
+                        let written = synthesized
+                            .map(|text| strip_unknown_chart_tokens(&text, &run_charts))
+                            .or_else(|| raw_final.clone());
                         // Persist the deliverable alongside the tool-step
                         // results so later runs in this session can read it
                         // via `session_step_results` (the enhancement chain).
@@ -3540,7 +3650,7 @@ pub fn execute_plan_stream_with_cancel(
                             }
                         }
                         yield SupervisorEvent::PlanCompleted {
-                            final_output: synthesized.or(raw_final),
+                            final_output: written,
                             artifacts: run_artifacts,
                         };
                         break;

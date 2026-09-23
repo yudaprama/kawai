@@ -144,6 +144,13 @@ pub async fn monad_wallet_address() -> Result<Option<logic::monad_wallet::Wallet
     logic::monad_wallet::address()
 }
 
+/// Device tx history — the local JSON log of fund-moving sends/deposits
+/// (newest first; missing log = empty list).
+#[tauri::command]
+pub async fn monad_wallet_history() -> Result<Vec<logic::monad_wallet::TxRecord>, String> {
+    logic::monad_wallet::history()
+}
+
 /// Create the device hot wallet (idempotent). Returns ONLY the address —
 /// the private key stays in the OS keychain inside the backend process.
 #[tauri::command]

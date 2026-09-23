@@ -20,10 +20,21 @@ export interface BlockchainAdapter {
   transferToken(token: string, to: string, amount: string, decimals: number): Promise<TxResult>;
   depositToVault(amount: string): Promise<TxResult>;
   getTransactionReceipt(txHash: string): Promise<ReceiptInfo | null>;
+  /** Device-local tx history (JSON log of fund-moving sends/deposits, newest first). */
+  getTransactionHistory(): Promise<TxRecord[]>;
 }
 
 export type TxResult = { txHash: string; from: string; to: string; amount: string; nonce: number };
 export type ReceiptInfo = { txHash: string; success: boolean; blockNumber: number } | null;
+export type TxRecord = {
+  txHash: string;
+  kind: string; // "send" | "deposit"
+  symbol: string; // display symbol resolved at record time (MON/USDT/KAWAI/…)
+  to: string;
+  amount: string; // decimal string, as entered
+  token: string | null; // ERC-20 contract; null = native MON
+  createdAtMs: number;
+};
 
 async function tryCall<T>(cmd: string, args?: Record<string, unknown>): Promise<T | null> {
   try {
@@ -41,9 +52,9 @@ const HARDCODED_NETWORK: NetworkInfo = {
   explorerURL: "https://testnet.monadexplorer.com",
   isTestnet: true,
   icon: "monad",
-  stablecoinSymbol: "USDC",
-  stablecoinName: "USD Coin",
-  stablecoinShort: "USDC",
+  stablecoinSymbol: "USDT",
+  stablecoinName: "Tether USD",
+  stablecoinShort: "USDT",
 };
 
 export const tauriBlockchainAdapter: BlockchainAdapter = {
@@ -79,7 +90,7 @@ export const tauriBlockchainAdapter: BlockchainAdapter = {
     const s = await tryCall<{ blockNumber: number }>("monad_chain_status", { rpcUrl: null });
     return s?.blockNumber ?? 0;
   },
-  /** On-chain stablecoin (USDC, 6 decimals — verified live) balance of the wallet. */
+  /** On-chain stablecoin (active network: testnet USDT, 6 decimals) balance of the wallet. */
   async getVaultBalance(address: string): Promise<string> {
     const b = await this.getTokenBalance(CONTRACTS.usdt, address, 10143);
     return b?.formatted ?? "0.00";
@@ -98,5 +109,8 @@ export const tauriBlockchainAdapter: BlockchainAdapter = {
   },
   async getTransactionReceipt(txHash: string): Promise<ReceiptInfo | null> {
     return tryCall<ReceiptInfo>("get_transaction_receipt", { txHash });
+  },
+  async getTransactionHistory(): Promise<TxRecord[]> {
+    return (await tryCall<TxRecord[]>("monad_wallet_history")) ?? [];
   },
 };

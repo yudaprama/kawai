@@ -24,7 +24,7 @@ type Props = {
   setModalType: (
     t: "send" | "receive" | "swap" | "deposit" | "addAccount" | "createWallet" | "addToken" | null,
   ) => void;
-  transactions: { id: string; txType: string; amount: string; txHash: string; createdAt: string }[];
+  transactions: { id: string; txType: string; amount: string; symbol?: string; txHash: string; createdAt: string }[];
   currentNetwork: NetworkInfo | null;
   gasEstimate: GasEstimate | null;
   currentBlock: number;
@@ -268,7 +268,7 @@ export function HomeContent({
               <div key={tx.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                 <Badge>{tx.txType}</Badge>
                 <span>
-                  {tx.amount} {currentNetwork?.stablecoinSymbol}
+                  {tx.amount} {tx.symbol ?? currentNetwork?.stablecoinSymbol}
                 </span>
                 <span className="font-mono text-xs">{tx.txHash.slice(0, 10)}...</span>
               </div>

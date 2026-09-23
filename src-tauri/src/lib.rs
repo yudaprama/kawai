@@ -180,6 +180,7 @@ pub fn run() {
         commands::get_token_info,
         commands::estimate_gas,
         commands::monad_wallet_address,
+        commands::monad_wallet_history,
         commands::monad_wallet_create,
         commands::monad_wallet_sign_message,
         commands::monad_wallet_delete,

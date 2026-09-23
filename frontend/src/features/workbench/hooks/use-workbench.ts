@@ -128,7 +128,7 @@ export interface WorkbenchRun {
   /** Lightweight step snapshot captured at terminal state — backs the
    *  journal's step timeline. Full bodies stay in supervisor_step_results.
    *  `output` is set only on restored runs (from the persisted plan record's
-   *  ≤500-char embeds) — live runs fetch full bodies via planKey instead. */
+   *  ≤2000-char embeds) — live runs fetch full bodies via planKey instead. */
   steps?: {
     stepId: string;
     tool: string;
@@ -409,7 +409,7 @@ export function useWorkbench() {
         // non-empty — seed one completed run per record so a reopened
         // session shows its full journal (incl. the deck hero of the last).
         // Steps come straight from the record (id/tool/task/state/dependsOn
-        // + ≤500-char output embeds); task/dependsOn/planKey are absent on
+        // + ≤2000-char output embeds); task/dependsOn/planKey are absent on
         // records written before those fields existed — they fall back to
         // tool/[]/null respectively. A restored planKey lets "see report"
         // fetch the FULL step body from supervisor_step_results.
@@ -646,7 +646,10 @@ export function useWorkbench() {
   const loadFullOutput = useCallback(
     async (stepId: string, planKey?: string): Promise<string | null> => {
       const key = planKey ?? supervisor.planKey;
-      if (sessionId == null || key == null) return null;
+      if (sessionId == null || key == null) {
+        console.warn("[workbench] supervisor_step_output skipped:", { sessionId, planKey: key, stepId });
+        return null;
+      }
       try {
         return await call<string>("supervisor_step_output", {
           sessionId,

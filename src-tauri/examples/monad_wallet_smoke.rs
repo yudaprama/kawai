@@ -71,6 +71,12 @@ async fn wallet_checks(created_here: bool, self_transfer: bool) -> Result<(), St
         match receipt {
             Some(r) if r.success => {
                 println!("[monad_wallet_smoke] mined in block {} (success)", r.block_number);
+                // The broadcast must have landed in the device history log.
+                let hist = monad_wallet::history()?;
+                if !hist.iter().any(|h| h.tx_hash == tx.tx_hash) {
+                    return Err(format!("tx {} missing from the device history log", tx.tx_hash));
+                }
+                println!("[monad_wallet_smoke] history recorded {}", tx.tx_hash);
             }
             Some(r) => return Err(format!("tx {} reverted on-chain", r.tx_hash)),
             None => return Err(format!("tx {} not mined after 30s", tx.tx_hash)),
@@ -194,6 +200,16 @@ async fn main() {
         "[monad_wallet_smoke] vault {} native balance: {} MON",
         native.address, native.balance_mon
     );
+    checks += 1;
+
+    // Device history file read (no wallet needed — reads a local JSON log).
+    match monad_wallet::history() {
+        Ok(hist) => println!(
+            "[monad_wallet_smoke] wallet history readable ({} record(s))",
+            hist.len()
+        ),
+        Err(e) => die(&format!("monad_wallet_history: {e}")),
+    }
     checks += 1;
 
     // ── Optional device-wallet lifecycle (local-only flags) ────────────

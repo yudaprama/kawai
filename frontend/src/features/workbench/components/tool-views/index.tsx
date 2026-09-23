@@ -62,7 +62,7 @@ import { FileCreatedView, FileListView } from "./file-views";
 import { BrowserView, CalculationView, CodeGraphView, GenericHumanView, ImageExtractView } from "./generic-views";
 import { MarkdownView, PdfPagesView } from "./markdown-views";
 import { MemoryGraphView, MemoryLinesView, SessionStepResultsView } from "./memory-views";
-import { NewsListView } from "./news-views";
+import { MarketSquawkView, NewsListView } from "./news-views";
 import {
   CountryView,
   DrawCardsView,
@@ -147,6 +147,9 @@ const registry: Record<string, StepView> = {
   stock_social_feed: (p) => <SocialFeedView data={p} />,
   get_stock_news: (p) => <NewsListView data={p} />,
   get_reddit_posts: (p) => <NewsListView data={p} />,
+  // market squawk (FinancialJuice — headline stream)
+  market_squawk: (p) => <MarketSquawkView data={p} />,
+  market_squawk_search: (p) => <MarketSquawkView data={p} />,
 
   // finance — statements
   get_balance_sheet: (p) => (isRecord(p) ? <FinancialTableView data={p} /> : null),

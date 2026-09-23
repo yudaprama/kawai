@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FileIcon } from "@/components/shared/file-icon";
-import { Streamdown } from "@/lib/streamdown";
+import { MarkdownWithCharts } from "@/features/workbench/components/markdown-with-charts";
 import { DeckPreview } from "@/features/workbench/components/deck-preview";
 import { slugify } from "@/lib/utils";
 import { call, errText } from "@/lib/api";
@@ -126,7 +126,7 @@ export function PastRunCanvas({
         {isDeliverable ? (
           deliverableBody ? (
             <div className="border-primary/30 bg-card rounded-lg border p-6">
-              <Streamdown>{deliverableBody}</Streamdown>
+              <MarkdownWithCharts>{deliverableBody}</MarkdownWithCharts>
             </div>
           ) : (
             <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center font-mono text-sm">
@@ -140,7 +140,7 @@ export function PastRunCanvas({
             // (records persist it now; restored runs would otherwise hit the
             // supervisor's CURRENT planKey — the newest run, wrong run for
             // past-run journals). Without a planKey, serve the record's
-            // ≤500-char output embed as-is.
+            // ≤2000-char output embed as-is.
             needsFetch={run.planKey != null || docStep?.output == null}
             planKey={run.planKey ?? undefined}
             previewOutput={docStep?.output ?? ""}
@@ -193,12 +193,12 @@ export function DeliverableViewer({
   const effective = doc;
   const step = reports.find((r) => r.stepId === effective);
 
-  // The wire preview is capped at 2000 chars — when the shown report hits
-  // that bound, fetch the full body from the persisted step results. Values
-  // are `string` on success, `"failed"` after a failed fetch (stay on the
+  // The wire preview is capped at 2000 chars. Always fetch the full body
+  // from the persisted step results — the length heuristic missed truncated
+  // reports (e.g. a 2000-char JSON that parses into a few items). Values are
+  // `string` on success, `"failed"` after a failed fetch (stay on the
   // preview; no retry spinner). In-flight tracking lives in a ref — a state
   // flag here would re-trigger this very effect and deadlock the fetch.
-  const previewTruncated = (step?.output?.length ?? 0) >= 2000;
   const output = step?.output;
 
   // Export the deliverable as a stored .pdf/.docx via the office engines.
@@ -272,7 +272,7 @@ export function DeliverableViewer({
         )}
         {effective === "final" && !unseeded && supervisor.finalOutput != null && (
           <div className="border-primary/30 bg-card rounded-lg border p-6">
-            <Streamdown>{supervisor.finalOutput}</Streamdown>
+            <MarkdownWithCharts>{supervisor.finalOutput}</MarkdownWithCharts>
           </div>
         )}
         {effective === "final" && !unseeded && supervisor.finalOutput != null && supervisor.status === "completed" && (
@@ -305,7 +305,7 @@ export function DeliverableViewer({
         {effective !== "final" && step != null && output != null && step.tool !== "deck_writer" && (
           <StepReportBody
             fetcher={workbench.loadFullOutput}
-            needsFetch={previewTruncated}
+            needsFetch
             cacheKey={`${supervisor.goal ?? ""}::${supervisor.planVersion ?? ""}`}
             previewOutput={output}
             stepId={step.stepId}

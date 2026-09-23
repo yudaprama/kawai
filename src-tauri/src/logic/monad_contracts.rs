@@ -10,7 +10,7 @@ pub const TESTNET: bool = true;
 /// wallet ops so the testnet addresses always pair with the testnet RPC.
 pub const RPC_URL: &str = "https://testnet-rpc.monad.xyz";
 
-/// Stablecoin on the active network (testnet symbol: MockUSDT, 6 decimals).
+/// Stablecoin on the active network (testnet symbol: USDT, 6 decimals).
 pub const USDT: &str = "0x3AE05118C5B75b1B0b860ec4b7Ec5095188D1CCc";
 /// KAWAI token (18 decimals).
 pub const KAWAI: &str = "0x5eB56dB2203cfbebDa20ef4a7c11C559D4396C60";
@@ -32,4 +32,11 @@ pub fn stablecoin() -> &'static str {
 }
 pub fn vault() -> &'static str {
     if TESTNET { PAYMENT_VAULT } else { MAINNET_PAYMENT_VAULT }
+}
+pub fn kawai_token() -> &'static str {
+    if TESTNET { KAWAI } else { MAINNET_KAWAI }
+}
+/// Display symbol for the active network's stablecoin (NETWORKS.md mirror).
+pub fn stablecoin_symbol() -> &'static str {
+    if TESTNET { "USDT" } else { "USDC" }
 }
