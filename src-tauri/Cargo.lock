@@ -1601,6 +1601,7 @@ version = "0.1.0"
 dependencies = [
  "binance-sdk",
  "kawai-agent-contract",
+ "kawai-constants",
  "kawai-http-client",
  "kawai-tools",
  "serde",
@@ -3796,9 +3797,25 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
+ "ta",
  "thiserror 2.0.20",
  "tokio",
  "urlencoding",
+]
+
+[[package]]
+name = "financialjuice"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "kawai-constants",
+ "libsql",
+ "log",
+ "quick-xml 0.39.4",
+ "reqwest 0.13.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -6937,6 +6954,8 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 name = "news_media"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "financialjuice",
  "kawai-constants",
  "kawai-http-common",
  "kawai-tools",
