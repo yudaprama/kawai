@@ -137,13 +137,15 @@ export function PastRunCanvas({
         ) : (
           <StepReportBody
             fetcher={loadFullOutput}
-            // Fetch the full body only when the run's own planKey is known
-            // (records persist it now; restored runs would otherwise hit the
-            // supervisor's CURRENT planKey — the newest run, wrong run for
-            // past-run journals). Without a planKey, serve the record's
-            // ≤2000-char output embed as-is.
-            needsFetch={run.planKey != null || docStep?.output == null}
-            planKey={run.planKey ?? undefined}
+            // Always fetch the full body — same as the live canvas, so a
+            // restored report matches what the run showed. Runs with a
+            // planKey read their own plan's rows; legacy records without one
+            // pass "" which hits supervisor::step_output's session-scope
+            // fallback (newest rows for that step id, still user-scoped —
+            // a same-id step from a NEWER run can win). On failure the
+            // ≤2000-char record embed stays visible.
+            needsFetch
+            planKey={run.planKey ?? ""}
             previewOutput={docStep?.output ?? ""}
             stepId={doc}
             tool={stepTool}
@@ -321,7 +323,8 @@ export function DeliverableViewer({
             needsFetch
             // The shown run's OWN planKey — supervisor.planKey is the ACTIVE
             // run's key and is null/stale once the session is reopened.
-            planKey={runRecord?.planKey ?? supervisor.planKey ?? undefined}
+            // Legacy records without a planKey pass "" (session-scope read).
+            planKey={runRecord?.planKey ?? supervisor.planKey ?? ""}
             cacheKey={runRecord?.id ?? "live"}
             previewOutput={output}
             stepId={resolvedStep.stepId}

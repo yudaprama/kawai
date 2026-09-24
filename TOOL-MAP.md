@@ -214,18 +214,22 @@ AgentTool::call → Output (String) ─▶ stepCompleted { output ≤2000 chars 
 | `supervisor_step_output` op | **full body** of one persisted step result (pull, not push) | — |
 
 Full step bodies live in `supervisor_step_results` and never ride the wire.
-The viewer fetches lazily: when the opened report's preview hits the 2000-char
-bound, `useWorkbench.loadFullOutput(stepId)` calls the op once per step
-(cached; invalidated on goal/planVersion change) and re-renders with the full
-text — see `DeliverableViewer` in `workbench-page.tsx`. The JSON-repair in
-`parseMaybeJson` remains as the safety net for fetch failures and for reports
-nobody opened.
+The viewer always fetches the full body for an opened report:
+`useWorkbench.loadFullOutput(stepId, planKey)` calls the op once per opened
+step (per-instance cache in `useStepReport`) and re-renders with the full
+text — see `DeliverableViewer` and `PastRunCanvas`. Past runs read through
+their OWN `planKey`; a record without one (legacy) passes `""`, which hits
+`supervisor::step_output`'s session-scope fallback (newest rows for that step
+id, still user-scoped — a same-id step from a newer run can win). The
+JSON-repair in `parseMaybeJson` remains as the safety net for fetch failures —
+the ≤2000-char preview stays visible then.
 
 ### 11.2 Storage
 
 | Data | Where | Notes |
 |---|---|---|
 | Full step output (text) | `supervisor_step_results` SQLite table, keyed by plan-JSON hash | read path: `supervisor_step_output` op (both wrappers, auth at edge); also powers Resume + the ExecutionMemo |
+| Per-step artifacts + failure text | embedded in the persisted plan record (session history JSON); restored on reopen by `hydrateStep` / `restorePersisted` | metadata only — full artifact files stay in the office store; records written before these fields existed restore empty |
 | Files a tool produces (docx, pdf, svg, decks) | office store (`<data_root>/<user>/docs/`), referenced by handle | `ArtifactInfo { handle, filename }` rides the event; preview via `office_read_file` |
 | Final deliverable | `planCompleted.final_output` on the wire; persisted plan record goes to session history | user-exportable to a stored .pdf/.docx via the `export_deliverable` op (auto-persist to the office store is still an open S2 item) |
 | Sessions / messages | `sessions` / `messages` tables | chat history, not tool output |

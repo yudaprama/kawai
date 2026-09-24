@@ -5,7 +5,7 @@ import { call, callWithEvents, respondSupervisorConfirmation } from "@/lib/api";
 import { type StreamControl, streamOperation } from "@/lib/stream";
 import type { UIMessage, UIMessagePart } from "@/lib/ai-types";
 import { initialSupervisorState, parseReview, pruneReviewStep, supervisorReducer } from "./plan-reducer";
-import type { SupervisorEvent, SupervisorPlanState, SupervisorStep } from "./supervisor-types";
+import type { SupervisorArtifact, SupervisorEvent, SupervisorPlanState, SupervisorStep } from "./supervisor-types";
 
 // Re-export types so existing import paths (`@/features/chat/hooks/use-supervisor-plan`) keep working.
 export type {
@@ -84,6 +84,11 @@ export interface PersistedPlan {
     dependsOn?: string[];
     /** Dataflow bindings — restored so the rail shows the step's wiring. */
     inputs?: { arg: string; fromStep: string; output: string }[];
+    /** Per-step artifacts (charts/files) — captured once here at terminal
+     *  write; the wire events that carried them are gone by reopen time. */
+    artifacts?: PersistedPlan["artifacts"];
+    /** Failure message — restored so failed steps keep their why. */
+    error?: string;
   }[];
   output: string | null;
   /** Execution-memo key — lets a restored journal fetch FULL step bodies
@@ -124,6 +129,8 @@ function persistPlanSnapshot(
       task: s.task,
       dependsOn: s.dependsOn,
       inputs: s.inputs,
+      artifacts: s.artifacts.length > 0 ? s.artifacts : undefined,
+      error: s.error,
     })),
     output: extra.output,
     artifacts: extra.artifacts,
@@ -413,12 +420,13 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
 
   /** Rehydrate terminal state from a persisted supervisor-plan record
    *  (session reopen). Artifacts ride along so the deliverable viewer can
-   *  render the deck hero; planKey stays null — persisted full outputs are
-   *  not re-readable without the original key. No-op mid-run. */
+   *  render the deck hero; planKey stays null — the viewer reads the run
+   *  record's own planKey, or falls back to the session-scope step_output
+   *  read for records without one. No-op mid-run. */
   const restorePersisted = useCallback(
     (record: {
       goal?: string | null;
-      steps?: { id: string; tool: string; state: string; output?: string; task?: string; dependsOn?: string[]; inputs?: { arg: string; fromStep: string; output: string }[] }[];
+      steps?: { id: string; tool: string; state: string; output?: string; task?: string; dependsOn?: string[]; inputs?: { arg: string; fromStep: string; output: string }[]; artifacts?: PersistedPlan["artifacts"]; error?: string }[];
       output?: string | null;
       artifacts?: PersistedPlan["artifacts"];
       error?: string;
@@ -437,7 +445,13 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           ? s.state
           : "pending") as SupervisorStep["state"],
         output: s.output,
-        artifacts: [],
+        artifacts: (s.artifacts ?? []).map((a) => ({
+          kind: a.kind as SupervisorArtifact["kind"],
+          handle: a.handle,
+          filename: a.filename,
+          label: a.label,
+        })),
+        error: s.error,
       }));
       patch({
         status: record.error ? "failed" : "completed",
@@ -445,7 +459,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         steps,
         finalOutput: record.output ?? null,
         artifacts: (record.artifacts ?? []).map((a) => ({
-          kind: a.kind as import("./supervisor-types").SupervisorArtifact["kind"],
+          kind: a.kind as SupervisorArtifact["kind"],
           handle: a.handle,
           filename: a.filename,
           label: a.label,

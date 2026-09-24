@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { errText, call, type KnowledgeFileInfo } from "@/lib/api";
 import { isTabularExt } from "@/lib/extensions";
 import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
-import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
+import type { SupervisorArtifact, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 
 // ── Derived view models ─────────────────────────────────────────────────────
@@ -19,6 +19,10 @@ export interface PersistedPlanStep {
   dependsOn?: string[];
   /** Dataflow bindings — restored so the rail shows the step's wiring. */
   inputs?: { arg: string; fromStep: string; output: string }[];
+  /** Per-step artifacts (charts/files) — restored on reopen. */
+  artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
+  /** Failure message — restored so failed steps keep their why. */
+  error?: string;
 }
 
 /** Wire shape of a persisted plan record (assistant message JSON blob). */
@@ -42,6 +46,15 @@ export function hydrateStep(s: PersistedPlanStep) {
     dependsOn: s.dependsOn ?? [],
     inputs: s.inputs ?? [],
     output: s.output,
+    // JSON round-trips widened `kind` to string — cast back at the parse
+    // boundary (same as plan-reducer's stepCompleted handler).
+    artifacts: (s.artifacts ?? []).map((a) => ({
+      kind: a.kind as SupervisorArtifact["kind"],
+      handle: a.handle,
+      filename: a.filename,
+      label: a.label,
+    })),
+    error: s.error,
   };
 }
 
@@ -139,6 +152,10 @@ export interface WorkbenchRun {
     dependsOn: string[];
     inputs?: { arg: string; fromStep: string; output: string }[];
     output?: string;
+    /** Per-step artifacts + failure message — restored on reopen so the
+     *  journal matches what the live rail held. */
+    artifacts?: SupervisorArtifact[];
+    error?: string;
   }[];
 }
 
@@ -511,6 +528,8 @@ export function useWorkbench() {
                 state: s.state,
                 dependsOn: s.dependsOn,
                 inputs: s.inputs,
+                artifacts: s.artifacts,
+                error: s.error,
               })),
             }
           : r,
@@ -658,8 +677,10 @@ export function useWorkbench() {
 
   /** Full body of a step's output, from the persisted supervisor_step_results
    *  (the wire preview is capped at 2000 chars). Pass `planKey` to read a
-   *  PAST run's step (the journal); omit it for the current run. Null when
-   *  nothing is running yet or the fetch fails — caller keeps the preview. */
+   *  PAST run's step (the journal); omit it for the current run. Pass "" for
+   *  records without a planKey — the backend's session-scope fallback (newest
+   *  rows for that step id, still user-scoped). Null when nothing is running
+   *  yet or the fetch fails — caller keeps the preview. */
   const loadFullOutput = useCallback(
     async (stepId: string, planKey?: string): Promise<string | null> => {
       const key = planKey ?? supervisor.planKey;
