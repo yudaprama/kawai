@@ -109,6 +109,7 @@ healthy row: `outcome=answer|tool` with `output_tokens` below the cap.
 | `data_chart` plan rejected: `missing required property 'x'` / `sortBy: expected "string", got array` | planner shapes vs chart schema — x now defaults to the sole groupBy column and sortBy accepts name / {column,descending} / list (2026-09 OCR backtest session burned every revise round on these) |
 | `avg`/`sum` over percent text reads wrong ("95,5" → 955) | decimal-comma coercion in `agg_expr` (`engines/analytics/src/engine.rs`): thousands comma = exactly 3 digits after; otherwise decimal comma → dot |
 | PlanFailed after revise rounds | read logged `raw:` — repeated same failure = fix the prompt, not the validator |
+| Replan burned by frozen-step mandate violations | mechanical now — drift is auto-restored, log line `[supervisor] revise round N: frozen-step drift auto-restored: <ids>`; if the repaired plan still fails, check (a) every same-defect sibling is Failed, not Skipped (fail-fast used to bury them outside `failures()`), (b) the binding error's `(result keys: …)` / `(declared: …)` hint names a key the reviser actually bound |
 | Deliverable is raw JSON | all providers failed synthesis; check `[remote]` per-candidate lines |
 | web_read/search `engine=none` | budgets, walls, or relevance gates — probe with `web_read_check` / `web_search_check` |
 

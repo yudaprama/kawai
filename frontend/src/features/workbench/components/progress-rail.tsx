@@ -504,6 +504,15 @@ export function ProgressRail({
         </div>
       )}
 
+      {supervisor.revising && supervisor.status === "running" && (
+        <div className="border-amber-500/30 mt-4 flex items-center gap-1.5 rounded-md border p-3 font-mono text-xs font-bold">
+          <Icon name="refresh-cw" className="size-3.5 animate-spin text-amber-500" />
+          <span className="text-foreground/80">
+            Repairing plan (attempt {supervisor.revising.attempt})…
+          </span>
+        </div>
+      )}
+
       {supervisor.status === "awaitingConfirmation" && supervisor.pendingConfirmation && (
         <div className="border-primary/30 mt-4 space-y-2 rounded-md border p-3">
           <div className="text-foreground inline-flex items-center gap-1.5 font-mono text-xs font-bold">

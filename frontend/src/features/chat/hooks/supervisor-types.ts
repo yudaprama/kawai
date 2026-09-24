@@ -232,4 +232,8 @@ export interface SupervisorPlanState {
   priorVersions: PriorPlanVersion[];
   /** True when the replan budget is spent — failure then offers "new plan". */
   replansExhausted: boolean;
+  /** Surgical repair in progress (planRevising) — cleared by planRevised /
+   *  planCompleted / planFailed. Surfaces a "repairing plan" rail row so the
+   *  LLM revise rounds don't read as a hung run. */
+  revising: { attempt: number } | null;
 }

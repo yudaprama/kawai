@@ -10,6 +10,7 @@ import { call, errText } from "@/lib/api";
 import { StepReportBody } from "@/features/workbench/components/shared-canvas";
 import { agentName, isDeliverableStep, type useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
+import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { fmtDuration } from "./progress-rail";
 
 /** The run's deck artifact, if any — the deliverable hero. Set DIRECTLY from
@@ -191,7 +192,19 @@ export function DeliverableViewer({
     [unseeded, supervisor.steps],
   );
   const effective = doc;
-  const step = reports.find((r) => r.stepId === effective);
+  // Step source: supervisor state for the run it currently holds; the run
+  // RECORD (≤2000-char embeds + its own planKey) otherwise — a reopened
+  // session's newest run renders here too, and the supervisor may be empty
+  // or hold a different run's state.
+  const runRecord = workbench.runs[runIndex];
+  const step =
+    reports.find((r) => r.stepId === effective) ??
+    (runRecord?.steps ?? []).find(
+      (s) => s.stepId === effective && (s.state === "completed" || s.state === "failed") && s.output != null,
+    ) ?? null;
+  const resolvedStep: SupervisorStep | undefined = step
+    ? { artifacts: [], ...step }
+    : undefined;
 
   // The wire preview is capped at 2000 chars. Always fetch the full body
   // from the persisted step results — the length heuristic missed truncated
@@ -199,7 +212,7 @@ export function DeliverableViewer({
   // `string` on success, `"failed"` after a failed fetch (stay on the
   // preview; no retry spinner). In-flight tracking lives in a ref — a state
   // flag here would re-trigger this very effect and deadlock the fetch.
-  const output = step?.output;
+  const output = resolvedStep?.output;
 
   // Export the deliverable as a stored .pdf/.docx via the office engines.
   const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
@@ -236,8 +249,8 @@ export function DeliverableViewer({
           <h3 className="text-foreground flex items-start gap-2 text-xl font-semibold" title={headerGoal ?? undefined}>
             <span className="line-clamp-2">{headerGoal ?? "Working…"}</span>
           </h3>
-          {effective !== "final" && step != null && (
-            <div className="text-muted-foreground mt-1 font-mono text-xs">Agent report · {agentName(step)}</div>
+          {effective !== "final" && resolvedStep != null && (
+            <div className="text-muted-foreground mt-1 font-mono text-xs">Agent report · {agentName(resolvedStep)}</div>
           )}
           <div className="text-muted-foreground mt-1 font-mono text-sm">
             {done}/{unseeded ? 0 : supervisor.steps.length} steps
@@ -302,14 +315,17 @@ export function DeliverableViewer({
             )}
           </div>
         )}
-        {effective !== "final" && step != null && output != null && step.tool !== "deck_writer" && (
+        {effective !== "final" && resolvedStep != null && output != null && resolvedStep.tool !== "deck_writer" && (
           <StepReportBody
             fetcher={workbench.loadFullOutput}
             needsFetch
-            cacheKey={`${supervisor.goal ?? ""}::${supervisor.planVersion ?? ""}`}
+            // The shown run's OWN planKey — supervisor.planKey is the ACTIVE
+            // run's key and is null/stale once the session is reopened.
+            planKey={runRecord?.planKey ?? supervisor.planKey ?? undefined}
+            cacheKey={runRecord?.id ?? "live"}
             previewOutput={output}
-            stepId={step.stepId}
-            tool={step.tool}
+            stepId={resolvedStep.stepId}
+            tool={resolvedStep.tool}
           />
         )}
       </div>

@@ -175,6 +175,7 @@ export function initialSupervisorState(): SupervisorPlanState {
     planKey: null,
     priorVersions: [],
     replansExhausted: false,
+    revising: null,
   };
 }
 
@@ -290,7 +291,7 @@ export function supervisorReducer(
       return { ...state, steps };
     }
     case "planRevising": {
-      return { ...state, status: "running", pendingConfirmation: null };
+      return { ...state, status: "running", pendingConfirmation: null, revising: { attempt: event.attempt } };
     }
     case "planRevised": {
       const priorCompleted = state.steps.filter((s) => s.state === "completed").length;
@@ -315,6 +316,7 @@ export function supervisorReducer(
         planKey: event.planKey,
         priorVersions,
         replansExhausted: priorVersions.length >= 1,
+        revising: null,
       };
     }
     case "planCompleted": {
@@ -322,6 +324,7 @@ export function supervisorReducer(
         ...state,
         status: "completed",
         pendingConfirmation: null,
+        revising: null,
         finalOutput: event.finalOutput ?? null,
         artifacts: (event.artifacts ?? []).map((a) => ({
           kind: a.kind as SupervisorArtifact["kind"],
@@ -348,6 +351,7 @@ export function supervisorReducer(
         pendingConfirmation: null,
         error: event.error,
         planCompletedAt: now,
+        revising: null,
       };
     }
     // ── planning progress (plan_task) ───────────────────────────────────────

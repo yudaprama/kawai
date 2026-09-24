@@ -2268,39 +2268,42 @@ fn repairable_step_ids(
     repairable
 }
 
-/// Enforce the repair mandate: every step that is NOT in the repairable
-/// subgraph must reappear in the revision UNCHANGED (same tool, same
-/// arguments). Succeeded steps are facts, not drafts. Deterministic — the
-/// prompt asks nicely, this refuses.
-fn validate_frozen_steps(
-    revised: &kawai_router::TaskPlan,
+/// Enforce the repair mandate mechanically: every step outside the
+/// repairable subgraph is restored from the ORIGINAL plan — byte-identical
+/// tool, arguments, and inputs — whether the reviser mutated it or dropped
+/// it. The prompt asks nicely; this guarantees. Re-execution never re-runs
+/// a restored step: the ExecutionMemo serves the identical completed call.
+/// Returns the ids that drifted (non-empty = the reviser touched frozen
+/// steps; logged, not fatal — rejection here used to burn the whole run).
+fn restore_frozen_steps(
+    revised: &mut kawai_router::TaskPlan,
     original: &kawai_router::TaskPlan,
     repairable: &std::collections::HashSet<String>,
-) -> Result<(), String> {
+) -> Vec<String> {
+    let mut restored = Vec::new();
     for orig in &original.steps {
         if repairable.contains(&orig.id) {
             continue;
         }
-        let Some(step) = revised.steps.iter().find(|s| s.id == orig.id) else {
-            return Err(format!(
-                "frozen step '{}' (already succeeded) is missing from the revision — return it UNCHANGED (same id, tool, arguments)",
-                orig.id
-            ));
+        let drifted = match revised.steps.iter().position(|s| s.id == orig.id) {
+            Some(idx) => {
+                let existing = &revised.steps[idx];
+                let drifted = existing.tool != orig.tool
+                    || existing.arguments != orig.arguments
+                    || existing.inputs != orig.inputs;
+                revised.steps[idx] = orig.clone();
+                drifted
+            }
+            None => {
+                revised.steps.push(orig.clone());
+                true
+            }
         };
-        if step.tool != orig.tool {
-            return Err(format!(
-                "frozen step '{}' changed tool — succeeded steps must be kept unchanged; only the failed steps may change",
-                orig.id
-            ));
-        }
-        if step.arguments != orig.arguments || step.inputs != orig.inputs {
-            return Err(format!(
-                "frozen step '{}' changed arguments or inputs bindings — succeeded steps must be kept unchanged; only the failed steps may change",
-                orig.id
-            ));
+        if drifted {
+            restored.push(orig.id.clone());
         }
     }
-    Ok(())
+    restored
 }
 
 /// Rich per-step materials for the surgical repairer: each step carries its
@@ -2662,21 +2665,15 @@ async fn revise_plan(
         let raw = resolve_completed_refs(&raw, result);
         match parse_supervisor_plan_scoped(&raw, registry, REVISE_FORBIDDEN_TOOLS) {
             Ok(plan) if !plan.steps.is_empty() => {
-                if let Err(frozen_err) = validate_frozen_steps(&plan, original, &repairable) {
+                let mut plan = plan;
+                let restored = restore_frozen_steps(&mut plan, original, &repairable);
+                if !restored.is_empty() {
                     eprintln!(
-                        "[supervisor] revise round {round}: frozen-step violation: {frozen_err}"
+                        "[supervisor] revise round {round}: frozen-step drift auto-restored: {}",
+                        restored.join(", ")
                     );
-                    if round == 0 {
-                        materials.push_str(&format!(
-                            "\n<plan-rejected>{frozen_err}</plan-rejected>\
-                             \nRespond ONLY with the corrected plan JSON."
-                        ));
-                    } else {
-                        return Err(format!("revised plan violated the repair mandate: {frozen_err}"));
-                    }
-                } else {
-                    return Ok(plan);
                 }
+                return Ok(plan);
             }
             Ok(_) => {
                 materials.push_str(
@@ -4018,6 +4015,78 @@ mod tests {
         let mut plan = mk_plan(mk_step("s3", "", false));
         enforce_cli_run_confirmation_tiering(&mut plan);
         assert_eq!(plan.steps[0].requires_confirmation, Some(true));
+    }
+
+    #[test]
+    fn frozen_step_drift_is_restored_not_rejected() {
+        // The reviser routinely embellishes or drops frozen steps (observed
+        // live 2026: it added a `limit` argument to a completed step, twice).
+        // The mandate is enforced mechanically — restore, don't reject — so
+        // the reviser's legitimate work on repairable steps survives.
+        let mk = |id: &str, args: serde_json::Value| TaskStep {
+            id: id.into(),
+            agent_id: "a".into(),
+            task: format!("do {id}"),
+            arguments: args,
+            ..Default::default()
+        };
+        let original = kawai_router::TaskPlan {
+            goal: "g".into(),
+            steps: vec![
+                mk("s1", serde_json::json!({})),
+                mk("s2", serde_json::json!({"q": "x"})),
+                mk("s3", serde_json::json!({})),
+                mk("s4", serde_json::json!({})),
+            ],
+            final_writer: None,
+            summary: None,
+        };
+        // s2 failed; s3 depends on s2 → both repairable. s1 (root) and s4
+        // (depends only on s1) are frozen.
+        let mut repairable = std::collections::HashSet::new();
+        repairable.insert("s2".to_string());
+        repairable.insert("s3".to_string());
+
+        let mut revised = kawai_router::TaskPlan {
+            goal: "g".into(),
+            steps: vec![
+                // Frozen s1 mutated (planner-invented argument)…
+                mk("s1", serde_json::json!({"limit": 20})),
+                // Repairable s2/s3 legitimately rewritten…
+                mk("s2", serde_json::json!({"q": "fixed"})),
+                mk("s3", serde_json::json!({"q": "also fixed"})),
+                // …and frozen s4 dropped entirely.
+            ],
+            final_writer: None,
+            summary: None,
+        };
+
+        let restored = restore_frozen_steps(&mut revised, &original, &repairable);
+        assert_eq!(restored, vec!["s1".to_string(), "s4".to_string()]);
+        assert_eq!(revised.steps[0].arguments, serde_json::json!({}));
+        assert_eq!(
+            revised
+                .steps
+                .iter()
+                .find(|s| s.id == "s2")
+                .unwrap()
+                .arguments,
+            serde_json::json!({"q": "fixed"}),
+            "the reviser's fix on a repairable step must survive"
+        );
+        assert_eq!(
+            revised
+                .steps
+                .iter()
+                .find(|s| s.id == "s3")
+                .unwrap()
+                .arguments,
+            serde_json::json!({"q": "also fixed"}),
+        );
+        assert!(
+            revised.steps.iter().any(|s| s.id == "s4"),
+            "dropped frozen step re-inserted"
+        );
     }
 
     /// Full loop: planStarted → stepStarted → confirmationRequested → approve
