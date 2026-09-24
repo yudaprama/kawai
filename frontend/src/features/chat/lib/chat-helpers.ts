@@ -31,6 +31,9 @@ interface PersistedPlanRecord {
   goal: string | null;
   steps: { id: string; tool: string; state: string; output?: string }[];
   output: string | null;
+  /** Still in flight when last written — the run never reached a terminal
+   *  event (app quit / crash). */
+  partial?: boolean;
 }
 
 function parsePersistedPlan(content: string): PersistedPlanRecord | null {
@@ -52,7 +55,8 @@ function planToText(plan: PersistedPlanRecord): string {
   });
   const goal = plan.goal ? `Goal: ${plan.goal}\n` : "";
   const outline = lines.length > 0 ? `[plan]\n${lines.join("\n")}\n\n` : "";
-  return `${goal}${outline}${plan.output ?? "(plan completed)"}`;
+  const tail = plan.partial ? "(run interrupted before completion)" : (plan.output ?? "(plan completed)");
+  return `${goal}${outline}${tail}`;
 }
 
 export function toFriendlyError(raw: string): string {

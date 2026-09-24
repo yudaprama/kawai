@@ -137,6 +137,7 @@ pub fn run() {
         commands::set_chat_session_archived,
         commands::list_chat_messages,
         commands::append_chat_message,
+        commands::update_chat_message,
         commands::delete_chat_session,
         commands::archive_stale_sessions,
         commands::generate_session_title,

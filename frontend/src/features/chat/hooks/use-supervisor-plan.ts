@@ -99,6 +99,11 @@ export interface PersistedPlan {
   artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
   /** Present on failed-plan records — the terminal error. */
   error?: string;
+  /** True while the run is in flight: the row is appended once and updated
+   *  in place per step event, then replaced by the terminal record. A row
+   *  that stays partial means the run never reached a terminal event (app
+   *  quit / crash) — history renders it as an interrupted run. */
+  partial?: boolean;
 }
 
 /** The current run's execution-memo key, kept in sync from planStarted /
@@ -106,17 +111,20 @@ export interface PersistedPlan {
  *  module-level) embeds it in every record. One supervisor runs at a time. */
 const planKeyRef: { current: string | null } = { current: null };
 
-/** Persist the structured plan record (goal + per-step states). Embedded
- *  outputs are the wire previews (≤2000 chars each) — full results live in
- *  plan progress panel / supervisor_step_results (reachable via the record's
- *  planKey) / artifacts, not in chat history. */
-function persistPlanSnapshot(
-  sessionId: number,
+/** The current run's partial-snapshot message row (appended once, updated in
+ *  place per step event) and the chain serializing those writes — a row id
+ *  is never raced by a later snapshot. Module-level like planKeyRef; reset
+ *  to a fresh row on planStarted/planRevised (new plan → new row). */
+const partialRowRef: { current: number | null } = { current: null };
+const partialWriteChainRef: { current: Promise<void> } = { current: Promise.resolve() };
+
+function buildPlanRecord(
   goal: string | null,
   steps: SupervisorStep[],
   extra: { output: string | null; artifacts?: PersistedPlan["artifacts"]; error?: string },
-): void {
-  const record: PersistedPlan = {
+  partial: boolean,
+): PersistedPlan {
+  return {
     type: "supervisor-plan",
     v: 1,
     goal,
@@ -135,8 +143,58 @@ function persistPlanSnapshot(
     output: extra.output,
     artifacts: extra.artifacts,
     error: extra.error,
+    partial: partial || undefined,
   };
-  void persist(sessionId, "assistant", JSON.stringify(record));
+}
+
+/** Write a plan record to session history (best-effort, never throws).
+ *  PARTIAL records: appended once at the first write, then updated IN PLACE
+ *  per step event — an interrupted run survives as exactly one row instead
+ *  of one row per write. TERMINAL records replace the run's partial row, so
+ *  a completed run leaves a single history row. */
+function writePlanRecord(sessionId: number, record: PersistedPlan): void {
+  const content = sanitizeForIpc(JSON.stringify(record)) ?? JSON.stringify(record);
+  partialWriteChainRef.current = partialWriteChainRef.current
+    .then(async () => {
+      if (record.partial) {
+        if (partialRowRef.current == null) {
+          const row = await call<{ id: number }>("append_chat_message", {
+            sessionId,
+            role: "assistant",
+            content,
+          });
+          partialRowRef.current = typeof row?.id === "number" ? row.id : null;
+        } else {
+          await call("update_chat_message", {
+            sessionId,
+            messageId: partialRowRef.current,
+            content,
+          });
+        }
+        return;
+      }
+      const rowId = partialRowRef.current;
+      partialRowRef.current = null;
+      if (rowId != null) {
+        await call("update_chat_message", { sessionId, messageId: rowId, content });
+      } else {
+        await call("append_chat_message", { sessionId, role: "assistant", content });
+      }
+    })
+    .catch((err) => console.error("[supervisor] plan record persist failed:", err));
+}
+
+/** Persist the structured plan record (goal + per-step states). Embedded
+ *  outputs are the wire previews (≤2000 chars each) — full results live in
+ *  plan progress panel / supervisor_step_results (reachable via the record's
+ *  planKey) / artifacts, not in chat history. */
+function persistPlanSnapshot(
+  sessionId: number,
+  goal: string | null,
+  steps: SupervisorStep[],
+  extra: { output: string | null; artifacts?: PersistedPlan["artifacts"]; error?: string },
+): void {
+  writePlanRecord(sessionId, buildPlanRecord(goal, steps, extra, false));
 }
 
 export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
@@ -165,7 +223,11 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       const next = supervisorReducer(prev, event);
       stepsRef.current = next.steps;
       if (event.type === "planStarted") goalRef.current = event.goal;
-      if (event.type === "planStarted" || event.type === "planRevised") planKeyRef.current = event.planKey;
+      if (event.type === "planStarted" || event.type === "planRevised") {
+        planKeyRef.current = event.planKey;
+        // New plan → its progress snapshot is a NEW history row.
+        partialRowRef.current = null;
+      }
       return next;
     });
   }, []);
@@ -284,12 +346,37 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                   syncAssistant();
                 }
                 dispatch(ev);
+                // Progress snapshot: appended once at planStarted, updated in
+                // place on every step lifecycle event — an interrupted run
+                // leaves exactly one partial row behind.
+                if (
+                  ev.type === "planStarted" ||
+                  ev.type === "stepStarted" ||
+                  ev.type === "stepCompleted" ||
+                  ev.type === "stepFailed" ||
+                  ev.type === "stepSkipped"
+                ) {
+                  writePlanRecord(
+                    sessionId,
+                    buildPlanRecord(goalRef.current, stepsRef.current, { output: null }, true),
+                  );
+                }
                 break;
               }
             }
           },
           onDone: () => {
             streamCtrl.current = null;
+            const wasStopping = stoppingRef.current;
+            if (wasStopping) {
+              // A user stop surfaces as stream end (no planFailed arrives) —
+              // finalize the partial row so history shows a stopped run, not
+              // an interrupted one.
+              persistPlanSnapshot(sessionId, goalRef.current, stepsRef.current, {
+                output: null,
+                error: "Plan stopped.",
+              });
+            }
             setState((prev) => {
               if (stoppingRef.current) {
                 stoppingRef.current = false;
@@ -309,6 +396,16 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
             const wasStopping = stoppingRef.current;
             stoppingRef.current = false;
             const message = wasStopping ? "Plan stopped." : err.message;
+            // Finalize the partial row — a transport error is terminal, and
+            // in-flight steps close failed exactly like the rail state.
+            persistPlanSnapshot(
+              sessionId,
+              goalRef.current,
+              stepsRef.current.map((s) =>
+                s.state === "running" ? { ...s, state: "failed" as const, error: message } : s,
+              ),
+              { output: null, error: message },
+            );
             setState((prev) => ({
               ...prev,
               status: "failed",
@@ -317,9 +414,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
               // Close in-flight steps — no terminal step events arrive on a
               // transport error, so their rail rows would spin forever.
               steps: prev.steps.map((s) =>
-                s.state === "running"
-                  ? { ...s, state: "failed" as const, error: message, errorKind: "cancelled" }
-                  : s,
+                s.state === "running" ? { ...s, state: "failed" as const, error: message, errorKind: "cancelled" } : s,
               ),
             }));
             void persist(sessionId, "assistant", `Plan error: ${err.message}`);
@@ -328,7 +423,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         streamId,
       );
     },
-    [dispatch, patch, callbacks],
+    [dispatch, callbacks],
   );
 
   const planAndRun = useCallback(
@@ -426,10 +521,21 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const restorePersisted = useCallback(
     (record: {
       goal?: string | null;
-      steps?: { id: string; tool: string; state: string; output?: string; task?: string; dependsOn?: string[]; inputs?: { arg: string; fromStep: string; output: string }[]; artifacts?: PersistedPlan["artifacts"]; error?: string }[];
+      steps?: {
+        id: string;
+        tool: string;
+        state: string;
+        output?: string;
+        task?: string;
+        dependsOn?: string[];
+        inputs?: { arg: string; fromStep: string; output: string }[];
+        artifacts?: PersistedPlan["artifacts"];
+        error?: string;
+      }[];
       output?: string | null;
       artifacts?: PersistedPlan["artifacts"];
       error?: string;
+      partial?: boolean;
     }) => {
       if (streamCtrl.current) return;
       // Hydrate EXACTLY like use-workbench's hydrateStep — same task names,
@@ -454,7 +560,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         error: s.error,
       }));
       patch({
-        status: record.error ? "failed" : "completed",
+        status: record.error || record.partial ? "failed" : "completed",
         goal: record.goal ?? null,
         steps,
         finalOutput: record.output ?? null,
@@ -464,7 +570,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           filename: a.filename,
           label: a.label,
         })),
-        error: record.error ?? null,
+        error: record.error ?? (record.partial ? "Run interrupted before completion." : null),
         planCompletedAt: Date.now(),
       });
     },

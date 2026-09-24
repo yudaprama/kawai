@@ -214,6 +214,23 @@ describe("sessionToMarkdown", () => {
     expect(md).not.toContain("supervisor-plan");
   });
 
+  it("renders partial records as interrupted, not completed", () => {
+    const record = JSON.stringify({
+      type: "supervisor-plan",
+      v: 1,
+      goal: "Ship it",
+      steps: [
+        { id: "a", tool: "web_search", state: "completed" },
+        { id: "b", tool: "data_query_nl", state: "running" },
+      ],
+      output: null,
+      partial: true,
+    });
+    const md = sessionToMarkdown("t", [{ id: 8, sessionId: 1, role: "assistant", content: record, createdAt: null }]);
+    expect(md).toContain("(run interrupted before completion)");
+    expect(md).not.toContain("(plan completed)");
+  });
+
   it("strips tool markup and titles null sessions", () => {
     const md = sessionToMarkdown(null, [
       { id: 3, sessionId: 1, role: "assistant", content: "hi ```tool{secret}``` there", createdAt: null },

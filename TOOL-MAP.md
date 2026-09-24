@@ -230,6 +230,7 @@ the ≤2000-char preview stays visible then.
 |---|---|---|
 | Full step output (text) | `supervisor_step_results` SQLite table, keyed by plan-JSON hash | read path: `supervisor_step_output` op (both wrappers, auth at edge); also powers Resume + the ExecutionMemo |
 | Per-step artifacts + failure text | embedded in the persisted plan record (session history JSON); restored on reopen by `hydrateStep` / `restorePersisted` | metadata only — full artifact files stay in the office store; records written before these fields existed restore empty |
+| Run progress (partial records) | the SAME plan-record row, appended once at plan start and updated in place per step event (`update_chat_message` op, both wrappers); a row that stays `partial: true` never reached a terminal event and renders as an interrupted run | avoids one history row per write; transcripts render partials via `planToText`'s interrupted note |
 | Files a tool produces (docx, pdf, svg, decks) | office store (`<data_root>/<user>/docs/`), referenced by handle | `ArtifactInfo { handle, filename }` rides the event; preview via `office_read_file` |
 | Final deliverable | `planCompleted.final_output` on the wire; persisted plan record goes to session history | user-exportable to a stored .pdf/.docx via the `export_deliverable` op (auto-persist to the office store is still an open S2 item) |
 | Sessions / messages | `sessions` / `messages` tables | chat history, not tool output |

@@ -34,6 +34,9 @@ export interface PersistedPlanRecord {
   output?: string | null;
   artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
   error?: string;
+  /** Still in flight when last written — the run never reached a terminal
+   *  event (app quit / crash). Renders as an interrupted (failed) run. */
+  partial?: boolean;
 }
 
 /** Normalize a persisted plan step into the live SupervisorStep shape. */
@@ -439,7 +442,7 @@ export function useWorkbench() {
             : found.map((f) => ({
                 id: `restored-${f.rowId}`,
                 goal: f.record.goal ?? "(restored run)",
-                status: f.record.error ? ("failed" as const) : ("completed" as const),
+                status: f.record.error || f.record.partial ? ("failed" as const) : ("completed" as const),
                 // The record's write time — when the run actually terminated
                 // (the DB row's created_at), not the moment of restoration.
                 startedAt: f.createdAt * 1000,
