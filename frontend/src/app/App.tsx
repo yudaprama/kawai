@@ -45,6 +45,12 @@ export default function App() {
   // Cmd/Ctrl+N; the workbench keeps its runs/session/view state, so the chat
   // hook's newChat() alone is invisible on that surface).
   const workbenchNewRef = useRef<(() => void) | null>(null);
+  // Workbench publishes its attachFiles here (App owns the LinkDialog; a
+  // successful YouTube import auto-attaches the transcript as a composer chip
+  // — same UX as the file-import auto-attach).
+  const workbenchAttachRef = useRef<((files: { id: string; originalName: string; ext: string }[]) => void) | null>(
+    null,
+  );
 
   useEffect(() => {
     let disposed = false;
@@ -232,12 +238,13 @@ export default function App() {
       {assetWorkspace ?? (
         <WorkbenchPage
           onAddFiles={ka.addKnowledgeFiles}
-          onAddLink={ka.submitKnowledgeLink}
+          onAddLink={ka.addKnowledgeLink}
           onImageToKnowledge={ka.imageToKnowledge}
           onOpenSessions={() => setSessionsOpen(true)}
           sessionsOpen={sessionsOpen}
           sessionSelectorRef={workbenchSelectRef}
           newSessionRef={workbenchNewRef}
+          attachFilesRef={workbenchAttachRef}
         />
       )}
 
@@ -315,7 +322,11 @@ export default function App() {
         linking={ka.linking}
         linkUrl={ka.linkUrl}
         setLinkUrl={ka.setLinkUrl}
-        onSubmit={ka.submitKnowledgeLink}
+        error={ka.linkError}
+        onSubmit={async () => {
+          const file = await ka.submitKnowledgeLink();
+          if (file) workbenchAttachRef.current?.([file]);
+        }}
       />
     </div>
   );

@@ -48,6 +48,7 @@ export function LinkDialog({
   linking,
   linkUrl,
   setLinkUrl,
+  error,
   onSubmit,
 }: {
   open: boolean;
@@ -55,15 +56,28 @@ export function LinkDialog({
   linking: boolean;
   linkUrl: string;
   setLinkUrl: (v: string) => void;
+  /** Inline failure from the last submit — stays visible while the dialog is
+   *  open so the user can edit the URL and retry. */
+  error?: string | null;
   onSubmit: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // The import owns the dialog until it settles — no Esc/overlay dismiss
+        // mid-flight (the Cancel button is disabled too).
+        if (!next && linking) return;
+        onOpenChange(next);
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add a YouTube link</DialogTitle>
           <DialogDescription>
-            Paste a YouTube video URL to ingest its transcript into your knowledge base.
+            {linking
+              ? "Fetching the transcript — hang tight, this can take a few seconds…"
+              : "Paste a YouTube video URL to ingest its transcript into your knowledge base."}
           </DialogDescription>
         </DialogHeader>
         <Input
@@ -77,6 +91,7 @@ export function LinkDialog({
           type="url"
           value={linkUrl}
         />
+        {error && !linking && <p className="text-destructive text-sm">{error}</p>}
         <DialogFooter>
           <DialogClose asChild>
             <Button disabled={linking} variant="outline">
@@ -84,7 +99,14 @@ export function LinkDialog({
             </Button>
           </DialogClose>
           <Button disabled={linking || !linkUrl.trim()} onClick={() => void onSubmit()}>
-            {linking ? <Spinner className="size-3" /> : "Add"}
+            {linking ? (
+              <>
+                <Spinner className="size-3" />
+                Importing…
+              </>
+            ) : (
+              "Add"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

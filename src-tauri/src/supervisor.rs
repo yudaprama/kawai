@@ -2387,6 +2387,46 @@ fn repair_materials(
     out
 }
 
+/// Targeted repair hints derived from known mis-tooling failure shapes. The
+/// reviser sees the raw error but not WHY the tool choice itself was wrong —
+/// observed live 2026: a `cli_run cat <attachment>` step failed with `spawn
+/// failed: No such file or directory`, and the reviser kept `cli_run` and
+/// only tweaked the argv, burning the repair round on a hopeless fix. Each
+/// recognized shape states the actual replacement tool. Best-effort — no
+/// match yields an empty string.
+fn repair_hints(
+    plan: &kawai_router::TaskPlan,
+    result: &kawai_router::ExecutionResult,
+) -> String {
+    let mut hints: Vec<String> = Vec::new();
+    for step in &plan.steps {
+        let Some(r) = result.get(&step.id) else { continue };
+        if r.status != kawai_router::StepStatus::Failed {
+            continue;
+        }
+        let error = r.error.as_deref().unwrap_or("");
+        let tool = step.tool.clone().unwrap_or_else(|| step.agent_id.clone());
+        if tool == "cli_run" && error.contains("No such file or directory") {
+            hints.push(format!(
+                "- step {}: cli_run failed because the path does not exist on this \
+                 machine's filesystem. Session attachments and knowledge files are NOT \
+                 filesystem files — replace this step with knowledge_search (their \
+                 content is indexed for this session). Do NOT retry cli_run with a \
+                 different path.",
+                step.id
+            ));
+        }
+    }
+    if hints.is_empty() {
+        return String::new();
+    }
+    format!(
+        "\n<repair-hints>\nKnown mis-tooling shapes in this failure — these are TOOL-CHOICE \
+         problems, not argv problems; apply the stated replacement:\n{}\n</repair-hints>",
+        hints.join("\n")
+    )
+}
+
 /// Core tools visible to the revise prompt (same whitelist plan_task uses).
 fn planner_core_tools(registry: &ToolRegistry) -> Vec<String> {
     PLAN_CORE_TOOLS
@@ -2598,6 +2638,11 @@ async fn revise_plan(
             .map(|m| (m.name.clone(), m.produces.clone()))
             .collect(),
     );
+    // Known mis-tooling shapes get an explicit replacement directive — the
+    // raw error alone led the reviser to keep the wrong tool (see
+    // `repair_hints`). Rides BEFORE previous_runs/experiences so it sits
+    // closest to the failure details.
+    materials.push_str(&repair_hints(original, result));
     materials.push_str(&previous_runs_block(user_id, session_id).await);
     materials.push_str(&experiences_block(user_id, &goal).await);
 
@@ -3794,6 +3839,46 @@ mod tests {
         assert_eq!(collisions, 1, "one collision");
     }
 
+    #[test]
+    fn repair_hints_flags_cli_run_attachment_read() {
+        let plan = kawai_router::TaskPlan {
+            goal: "g".into(),
+            steps: vec![TaskStep {
+                id: "s1".into(),
+                agent_id: "t".into(),
+                tool: Some("cli_run".into()),
+                ..Default::default()
+            }],
+            final_writer: None,
+            summary: None,
+        };
+        let failed = |error: &str| kawai_router::StepResult {
+            step_id: "s1".into(),
+            agent_id: "t".into(),
+            status: kawai_router::StepStatus::Failed,
+            output: String::new(),
+            artifacts: Vec::new(),
+            error: Some(error.into()),
+            error_kind: kawai_router::FailureKind::Tool,
+            retries_used: 0,
+        };
+        let spawn_miss = kawai_router::ExecutionResult {
+            results: vec![failed("`cat` failed: exit code -1 in 2 ms. stderr: spawn failed: No such file or directory (os error 2)")],
+        };
+        let out = repair_hints(&plan, &spawn_miss);
+        assert!(out.contains("<repair-hints>"), "{out}");
+        assert!(out.contains("knowledge_search"), "{out}");
+        // A different cli_run failure (not a filesystem miss) gets no hint.
+        let timeout = kawai_router::ExecutionResult {
+            results: vec![failed("`sleep` failed: step deadline exceeded")],
+        };
+        assert!(repair_hints(&plan, &timeout).is_empty());
+        // A filesystem miss on a NON-cli_run tool gets no hint.
+        let mut plan2 = plan.clone();
+        plan2.steps[0].tool = Some("office_read_document".into());
+        let out2 = repair_hints(&plan2, &spawn_miss);
+        assert!(out2.is_empty(), "{out2}");
+    }
     #[test]
     fn repair_materials_shows_bindings_and_contracts() {
         use std::collections::HashMap;

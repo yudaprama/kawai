@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useKnowledgeFiles } from "@/features/knowledge/hooks/use-knowledge-files";
-import { useRetryableToast } from "@/hooks/use-retryable-toast";
 import { call, errText, type KnowledgeFileInfo, type OfficeFileInfo } from "@/lib/api";
 import { dataUrlToFile, fileToBase64 } from "@/lib/base64";
 import { ADD_FILE_ACCEPT } from "@/lib/extensions";
@@ -36,7 +35,7 @@ export function useKnowledgeActions(chat: {
   const [previewFile, setPreviewFile] = useState<KnowledgeFileInfo | null>(null);
   const [linkPromptOpen, setLinkPromptOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
-  const runWithRetry = useRetryableToast();
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   useEffect(() => {
     setKnowledgeSessionId(chat.sessionId);
@@ -291,39 +290,44 @@ export function useKnowledgeActions(chat: {
 
   const addKnowledgeLink = useCallback(() => {
     setLinkUrl("");
+    setLinkError(null);
     setLinkPromptOpen(true);
   }, []);
 
-  const submitKnowledgeLink = useCallback(async () => {
+  // The dialog STAYS open for the whole import — it is the progress surface
+  // (spinner + "Fetching…") and the error surface (inline message, URL kept
+  // for editing). It only closes on success, where the toast confirms.
+  // Returns the imported file on success (so callers can auto-attach it as a
+  // composer chip), null otherwise.
+  const submitKnowledgeLink = useCallback(async (): Promise<OfficeFileInfo | null> => {
     const url = linkUrl.trim();
-    if (!url) return;
+    if (!url) return null;
     if (!isYouTubeUrl(url)) {
-      showErrorToast("Only YouTube URLs are supported for now");
-      setLinkPromptOpen(false);
-      return;
+      setLinkError("Only YouTube URLs are supported for now");
+      return null;
     }
-    setLinkPromptOpen(false);
+    setLinkError(null);
     setLinking(true);
-    const importVideo = async () => {
+    try {
       const info = await call<OfficeFileInfo>("knowledge_import_youtube", {
         url,
         sessionId: chat.sessionId,
       });
       await refreshKnowledge();
-      return info;
-    };
-    try {
-      const info = await importVideo();
       toast.success(`Imported ${info.originalName}`, {
-        description: "Indexing runs in the background.",
+        description: "Indexing runs in the background — it appears in Knowledge shortly.",
       });
+      setLinkPromptOpen(false);
+      setLinkUrl("");
+      return info;
     } catch (err) {
       logWarn("knowledge_import_youtube", err);
-      runWithRetry(`Couldn't import the YouTube video — ${errText(err)}`, importVideo);
+      setLinkError(`Couldn't import the YouTube video — ${errText(err)}`);
+      return null;
     } finally {
       setLinking(false);
     }
-  }, [chat.sessionId, refreshKnowledge, linkUrl, runWithRetry]);
+  }, [chat.sessionId, refreshKnowledge, linkUrl]);
 
   return {
     knowledge,
@@ -337,6 +341,7 @@ export function useKnowledgeActions(chat: {
     setLinkPromptOpen,
     linkUrl,
     setLinkUrl,
+    linkError,
     addKnowledgeFiles,
     imageToKnowledge,
     addToSession,

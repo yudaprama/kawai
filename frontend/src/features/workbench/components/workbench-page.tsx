@@ -52,6 +52,12 @@ export interface WorkbenchPageProps {
    *  so the App-level "New" button (rail + Cmd/Ctrl+N) can reset the
    *  WORKBENCH — resetting the chat hook alone is invisible on this surface. */
   newSessionRef?: React.MutableRefObject<(() => void) | null>;
+  /** App-owned ref: on mount the page publishes its attachFiles here so the
+   *  App-level LinkDialog can auto-attach a freshly imported YouTube
+   *  transcript as a composer chip (same UX as the file-import auto-attach). */
+  attachFilesRef?: React.MutableRefObject<
+    ((files: { id: string; originalName: string; ext: string }[]) => void) | null
+  >;
 }
 
 /** The kawai Workbench — the work-centric primary surface (PLAN-workbench.md).
@@ -66,6 +72,7 @@ export function WorkbenchPage({
   sessionsOpen = false,
   sessionSelectorRef,
   newSessionRef,
+  attachFilesRef,
 }: WorkbenchPageProps) {
   const workbench = useWorkbench();
   const { supervisor } = workbench;
@@ -78,6 +85,15 @@ export function WorkbenchPage({
       sessionSelectorRef.current = null;
     };
   }, [sessionSelectorRef, workbench.selectSession]);
+  // Publish attachFiles upward while mounted (App owns the LinkDialog — a
+  // successful YouTube import attaches the transcript chip through this ref).
+  useEffect(() => {
+    if (attachFilesRef == null) return;
+    attachFilesRef.current = workbench.attachFiles;
+    return () => {
+      attachFilesRef.current = null;
+    };
+  }, [attachFilesRef, workbench.attachFiles]);
   // Home = the landing composer. Submitting a goal moves to the workbench;
   // "New goal" returns here.
   const [home, setHome] = useState(true);
