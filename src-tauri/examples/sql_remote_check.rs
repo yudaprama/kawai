@@ -215,6 +215,7 @@ async fn roundtrip(table: &str) -> Value {
         .call(data::SchemaArgs {
             file_id: file_id.clone(),
             sheet: None,
+            header_row: None,
         })
         .await
         .unwrap_or_else(|e| die(&format!("schema {table}: {}", e.0)));
