@@ -63,27 +63,52 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
 
   const [sending, setSending] = useState(false);
 
+  // Map raw chain/RPC errors to plain-language messages.
+  const describeTxError = (raw: string): string => {
+    const m = raw.toLowerCase();
+    if (m.includes("insufficient funds")) return "Not enough native MON to pay network fees.";
+    if (m.includes("insufficient")) return "Insufficient token balance for this amount.";
+    if (m.includes("reject") || m.includes("denied")) return "The transaction was rejected.";
+    if (m.includes("revert")) return "The contract rejected the transaction (reverted).";
+    if (m.includes("timeout") || m.includes("deadline")) return "The network took too long to respond. Check the history list before retrying.";
+    return raw;
+  };
+
+  // Background receipt polling (15 × 2s) — never blocks the UI; the modal
+  // closes right after broadcast and the outcome arrives as a toast.
+  const pollDepositReceipt = useCallback(
+    async (txHash: string) => {
+      for (let i = 0; i < 15; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          const res = await tauriBlockchainAdapter.getTransactionReceipt(txHash);
+          if (res) {
+            if (res.success) toast.success("Deposit confirmed on-chain");
+            else toast.error("Deposit transaction failed on-chain");
+            void reloadBalances();
+            void loadHistory();
+            return;
+          }
+        } catch {
+          // transient RPC error — keep polling
+        }
+      }
+      toast.info("Deposit is still pending — check the history list for its status.");
+      void loadHistory();
+    },
+    [reloadBalances, loadHistory],
+  );
+
   const handleDeposit = async (amount: string) => {
     setSending(true);
     try {
       // Rust does approve + deposit(uint256); returns the deposit tx hash
       const tx = await tauriBlockchainAdapter.depositToVault(amount);
-      toast.success(`Deposit sent ${tx.txHash.slice(0, 10)}...`);
-      // poll for the receipt (15 × 2s, veridium parity)
-      for (let i = 0; i < 15; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const res = await tauriBlockchainAdapter.getTransactionReceipt(tx.txHash);
-        if (res) {
-          if (res.success) toast.success("Deposit confirmed on-chain");
-          else toast.error("Deposit transaction failed on-chain");
-          break;
-        }
-      }
-      void reloadBalances();
-      void loadHistory();
+      toast.success(`Deposit sent — ${tx.txHash.slice(0, 10)}...`);
       setModal(null);
+      void pollDepositReceipt(tx.txHash);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      toast.error(describeTxError(e instanceof Error ? e.message : String(e)));
     } finally {
       setSending(false);
     }
@@ -113,7 +138,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
       void loadHistory();
       setModal(null);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      toast.error(describeTxError(e instanceof Error ? e.message : String(e)));
     } finally {
       setSending(false);
     }
@@ -223,17 +248,39 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
         </Tabs>
       </div>
 
-      {/* Modals */}
-      <Dialog open={modal === "deposit"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent>
+      {/* Modals — locked (no outside-click / Esc) while a tx is in flight */}
+      <Dialog
+        open={modal === "deposit"}
+        onOpenChange={(o) => {
+          if (!o && !sending) setModal(null);
+        }}
+      >
+        <DialogContent
+          onEscapeKeyDown={(e) => sending && e.preventDefault()}
+          onInteractOutside={(e) => sending && e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Smart Deposit</DialogTitle>
           </DialogHeader>
-          <SmartDepositForm onDeposit={handleDeposit} loading={sending} currentNetwork={currentNetwork} />
+          <SmartDepositForm
+            onDeposit={handleDeposit}
+            loading={sending}
+            currentNetwork={currentNetwork}
+            gasEstimate={gasEstimate}
+            nativeBalance={nativeBalance}
+          />
         </DialogContent>
       </Dialog>
-      <Dialog open={modal === "send"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent>
+      <Dialog
+        open={modal === "send"}
+        onOpenChange={(o) => {
+          if (!o && !sending) setModal(null);
+        }}
+      >
+        <DialogContent
+          onEscapeKeyDown={(e) => sending && e.preventDefault()}
+          onInteractOutside={(e) => sending && e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Send Assets</DialogTitle>
           </DialogHeader>
