@@ -154,8 +154,6 @@ jobs:
         run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr whatlang-rs kawai-server
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -202,10 +200,10 @@ jobs:
         run: cargo check --features tts
         working-directory: src-tauri
 
-      # kawai-server auth worker (Rust → WASM): compile gate for the D1 auth
-      # directory + Ed25519 token mint/verify (see kawai-server/worker).
-      - name: cargo check (kawai-server worker, wasm32)
-        run: cargo check --target wasm32-unknown-unknown
+      # kawai-server auth worker (TypeScript, Cloudflare Workers): type gate for
+      # the D1 auth directory + Ed25519 token mint/verify (see kawai-server/worker).
+      - name: typecheck (kawai-server worker)
+        run: bun install --frozen-lockfile && bun run typecheck
         working-directory: kawai-server/worker
 
       # Remote SQL sources (sqlx, rustls): compile gate + LIVE-server checks
