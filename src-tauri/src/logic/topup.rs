@@ -130,9 +130,17 @@ pub async fn topup_qris_claim(
     parsed(post(token, "/topup/qris/claim", body).await?)
 }
 
-/// `GET /topup/qris/status/:txId` — owner-scoped (404 for foreign tx ids).
-pub async fn topup_qris_status(token: &str, tx_id: &str) -> std::result::Result<Status, String> {
-    parsed(get(token, &format!("/topup/qris/status/{tx_id}")).await?)
+/// `GET /topup/qris/status/:txId` — owner-scoped (404 for foreign tx ids);
+/// `None` when the tx id is absent (worker body `null` — passed through).
+pub async fn topup_qris_status(
+    token: &str,
+    tx_id: &str,
+) -> std::result::Result<Option<Status>, String> {
+    let json = get(token, &format!("/topup/qris/status/{tx_id}")).await?;
+    if json.is_null() {
+        return Ok(None);
+    }
+    parsed(json).map(Some)
 }
 
 /// `GET /topup/balance` — current credit (0 for an account never topped up).

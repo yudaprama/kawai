@@ -436,6 +436,26 @@ pub async fn append_chat_message(
         })
 }
 
+/// Authenticated RPC: overwrite one message's content in place (the
+/// supervisor's partial-plan snapshots — appended once, updated per step).
+#[tauri::command]
+pub async fn update_chat_message(
+    session_id: i64,
+    message_id: i64,
+    content: String,
+    session: State<'_, Session>,
+) -> Result<ChatMessage, String> {
+    let user_id = session_user_id(&session)?;
+    logic::update_chat_message(&user_id, session_id, message_id, &content)
+        .await
+        .map_err(|e| {
+            // History writes are best-effort on the caller side (fire-and-
+            // forget persist) — without this log a rejection is invisible.
+            tracing::warn!(component = "chat", user = %user_id, session = session_id, message = message_id, len = content.len(), error = %e, "chat message update failed");
+            e.to_string()
+        })
+}
+
 /// Authenticated RPC: delete a chat session and its messages.
 #[tauri::command]
 pub async fn delete_chat_session(
@@ -1028,7 +1048,7 @@ pub async fn topup_qris_claim(
 pub async fn topup_qris_status(
     tx_id: String,
     session: State<'_, Session>,
-) -> Result<logic::topup::Status, String> {
+) -> Result<Option<logic::topup::Status>, String> {
     let token = session_bearer(&session)?;
     logic::topup::topup_qris_status(&token, &tx_id).await
 }

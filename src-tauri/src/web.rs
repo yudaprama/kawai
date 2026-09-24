@@ -72,6 +72,14 @@ struct AppendChatMessageRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UpdateChatMessageRequest {
+    session_id: i64,
+    message_id: i64,
+    content: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct DeleteChatSessionRequest {
     session_id: i64,
 }
@@ -1000,6 +1008,18 @@ async fn append_chat_message_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
+/// Protected RPC: overwrite one message's content in place (the supervisor's
+/// partial-plan snapshots — appended once, updated per step).
+async fn update_chat_message_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<UpdateChatMessageRequest>,
+) -> Result<Json<ChatMessage>, (StatusCode, String)> {
+    logic::update_chat_message(&user_id, req.session_id, req.message_id, &req.content)
+        .await
+        .map(Json)
+        .map_err(|e| (db_status(&e), e.to_string()))
+}
+
 async fn delete_chat_session_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<DeleteChatSessionRequest>,
@@ -1820,7 +1840,7 @@ struct TopupQrisStatusRequest {
 async fn topup_qris_status_handler(
     headers: HeaderMap,
     Json(req): Json<TopupQrisStatusRequest>,
-) -> Result<Json<logic::topup::Status>, (StatusCode, String)> {
+) -> Result<Json<Option<logic::topup::Status>>, (StatusCode, String)> {
     let token = cookie_bearer(&headers)?;
     logic::topup::topup_qris_status(&token, &req.tx_id)
         .await
@@ -1952,6 +1972,10 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route(
             "/api/append_chat_message",
             post(append_chat_message_handler),
+        )
+        .route(
+            "/api/update_chat_message",
+            post(update_chat_message_handler),
         )
         .route(
             "/api/delete_chat_session",

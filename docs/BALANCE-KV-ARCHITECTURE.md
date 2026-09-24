@@ -108,7 +108,10 @@ unik klaim, lalu confirm/reject (QRIS statis murni).
 Lifecycles:
 
 ```
-qris_topups.status : pending → credited    (confirm admin, batch atomik)
+qris_topups.status : pending → crediting → credited (CAS lalu SATU batch atomik:
+                            │              ledger ref=tx_id + UPSERT saldo + tutup status;
+                            │              gagal non-UNIQUE → balik pending, retryable;
+                            │              crash → re-drive setelah 30s / UNIQUE = idempoten)
                       pending → rejected    (reject admin)
                       pending → expired     (lazy, saat expires_at terlampaui)
 user_balances.credit: +paket (confirm, UPSERT) | ±koreksi admin | -usage (debit, guard ≥ 0)

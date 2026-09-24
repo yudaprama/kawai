@@ -136,7 +136,9 @@ CREATE TABLE IF NOT EXISTS qris_topups (
 CREATE INDEX IF NOT EXISTS qris_topups_email_status ON qris_topups(email, status);
 ```
 
-Alokasi nominal unik: loop `100_000 + rand(900) * 1000` (Rp100.000–Rp999.990) → `INSERT … ON CONFLICT DO NOTHING`, retry ≤100, habis → 503. Cek dulu 1-row-per-email (klaim idempoten). Expiry lazy: read `status`/`pending` mengubah `pending` lewat `EXPIRY_SECS` → `expired` (nominal dibebaskan).
+Alokasi nominal unik: `pkg.idr + rand(900) * 10` (suffix Rp0–8.990 step 10 —
+nominal ≈ harga kartu, unik antar klaim aktif; selisih harga antar paket
+wajib > 8.990) → `INSERT … ON CONFLICT DO NOTHING`, retry ≤100, habis → 503. Cek dulu 1-row-per-email (klaim idempoten). Expiry lazy: read `status`/`pending` mengubah `pending` lewat `EXPIRY_SECS` → `expired` (nominal dibebaskan).
 
 Endpoint (semua lewat `authenticate()` yang sudah ada; admin = `ADMIN_EMAIL`):
 
