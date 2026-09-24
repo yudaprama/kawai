@@ -664,6 +664,22 @@ export function useWorkbench() {
     [sessionId, supervisor.planKey],
   );
 
+  /** "New session": the ONLY reset — the next run gets a fresh session and
+   *  recalls nothing from these runs. Named for what it actually does. */
+  const startNewSession = useCallback(() => {
+    // Clear the restore guard so re-opening the PREVIOUS session later
+    // rehydrates its records instead of silently skipping the fetch.
+    restoredSessionRef.current = null;
+    setSessionId(null);
+    setRuns([]);
+    setDeck(null);
+    setFollowUp(false);
+    setQuotedLastRun(false);
+    setQuoteTarget(null);
+    setDynamicChips([]);
+    setAttachedFiles([]);
+  }, []);
+
   return {
     supervisor,
     runs,
@@ -682,21 +698,7 @@ export function useWorkbench() {
     dynamicChips,
     quoteTarget,
     setQuoteTarget,
-    /** "New session": the ONLY reset — the next run gets a fresh session and
-     *  recalls nothing from these runs. Named for what it actually does. */
-    startNewSession: () => {
-      // Clear the restore guard so re-opening the PREVIOUS session later
-      // rehydrates its records instead of silently skipping the fetch.
-      restoredSessionRef.current = null;
-      setSessionId(null);
-      setRuns([]);
-      setDeck(null);
-      setFollowUp(false);
-      setQuotedLastRun(false);
-      setQuoteTarget(null);
-      setDynamicChips([]);
-      setAttachedFiles([]);
-    },
+    startNewSession,
     // ── Attached knowledge files (composer chips) ─────────────────────────
     /** Session-attached knowledge files — rendered as chips above the
      *  composer. Status is hydrated from the library list and polled while

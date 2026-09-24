@@ -41,6 +41,10 @@ export default function App() {
   // Workbench publishes its selectSession here (App owns the dialog; the
   // workbench keeps its own session state separate from the chat hook).
   const workbenchSelectRef = useRef<((id: number) => void) | null>(null);
+  // Workbench publishes its own reset here (App owns the "New" button +
+  // Cmd/Ctrl+N; the workbench keeps its runs/session/view state, so the chat
+  // hook's newChat() alone is invisible on that surface).
+  const workbenchNewRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -99,10 +103,21 @@ export default function App() {
     return () => window.removeEventListener(OPEN_PREVIEW_EVENT, onOpen);
   }, [ka.setPreviewFile, ka.knowledge.files]);
 
+  // App-level "New" (rail button + Cmd/Ctrl+N): close any asset view, then
+  // reset both shells — the chat hook (knowledge/session-dialog binding) and
+  // the WORKBENCH's own reset (fresh session back at the landing hero).
+  // No-op mid-run: the workbench handler guards an in-flight plan.
+  const handleNew = () => {
+    setAssetView(null);
+    setMobileDrawer(null);
+    void chat.newChat();
+    workbenchNewRef.current?.();
+  };
+
   useAppShortcuts({
     busy,
     onToggleAgentsRail: () => setAgentsRail((v) => !v),
-    onNewChat: () => void chat.newChat(),
+    onNewChat: handleNew,
     onOpenSessions: () => setSessionsOpen(true),
   });
 
@@ -210,10 +225,7 @@ export default function App() {
           }}
           onToggle={() => setAgentsRail((v) => !v)}
           onLogout={() => void chat.logout()}
-          onNew={() => {
-            setAssetView(null);
-            void chat.newChat();
-          }}
+          onNew={handleNew}
         />
       </div>
 
@@ -225,6 +237,7 @@ export default function App() {
           onOpenSessions={() => setSessionsOpen(true)}
           sessionsOpen={sessionsOpen}
           sessionSelectorRef={workbenchSelectRef}
+          newSessionRef={workbenchNewRef}
         />
       )}
 
@@ -251,11 +264,7 @@ export default function App() {
                 }}
                 onToggle={() => setMobileDrawer(null)}
                 onLogout={() => void chat.logout()}
-                onNew={() => {
-                  setAssetView(null);
-                  setMobileDrawer(null);
-                  void chat.newChat();
-                }}
+                onNew={handleNew}
               />
             </div>
           )}

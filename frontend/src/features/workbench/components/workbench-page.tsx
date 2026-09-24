@@ -48,6 +48,10 @@ export interface WorkbenchPageProps {
    *  the App-level session dialog can target the WORKBENCH's session state
    *  (the workbench keeps its own sessions, separate from the chat hook). */
   sessionSelectorRef?: React.MutableRefObject<((id: number) => void) | null>;
+  /** App-owned ref: on mount the page publishes its new-session handler here
+   *  so the App-level "New" button (rail + Cmd/Ctrl+N) can reset the
+   *  WORKBENCH — resetting the chat hook alone is invisible on this surface. */
+  newSessionRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 /** The kawai Workbench — the work-centric primary surface (PLAN-workbench.md).
@@ -61,6 +65,7 @@ export function WorkbenchPage({
   onOpenSessions,
   sessionsOpen = false,
   sessionSelectorRef,
+  newSessionRef,
 }: WorkbenchPageProps) {
   const workbench = useWorkbench();
   const { supervisor } = workbench;
@@ -224,6 +229,38 @@ export function WorkbenchPage({
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)
     : ("ready" as const);
+
+  /** App-level "New" (rail button + Cmd/Ctrl+N): fresh session back at the
+   *  landing hero. Blocked while a run/plan is in flight — same guard as the
+   *  chat hook's newChat — and a plan awaiting review is discarded first: it
+   *  owns the rail and would silently block the next submit. */
+  const newSession = useCallback(() => {
+    if (supervisor.planning != null || runInFlight) return;
+    if (supervisor.status === "reviewing") supervisor.cancelPlan();
+    workbench.startNewSession();
+    pendingPickRow.current = null;
+    autoSwitchedRun.current = null;
+    setChipDraft(null);
+    setView(null);
+    setHome(true);
+  }, [
+    supervisor.planning,
+    supervisor.status,
+    supervisor.cancelPlan,
+    runInFlight,
+    workbench.startNewSession,
+  ]);
+
+  // Publish the App-level "New" while mounted (App owns the rail button +
+  // Cmd/Ctrl+N) — the workbench keeps its own session/runs/view state, so
+  // resetting the chat hook alone is invisible on this surface.
+  useEffect(() => {
+    if (newSessionRef == null) return;
+    newSessionRef.current = newSession;
+    return () => {
+      newSessionRef.current = null;
+    };
+  }, [newSessionRef, newSession]);
 
   // Keep the history list's step tally fresh while a run progresses.
   useEffect(() => {
