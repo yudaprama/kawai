@@ -46,44 +46,47 @@ export function useOnboarding() {
 
   useEffect(() => () => controlRef.current?.cancel(), []);
 
-  const run = useCallback(async (sources: OnboardingSourcesInput) => {
-    if (running) return;
-    setRunning(true);
-    setEvents([]);
-    controlRef.current = streamOperation<OnboardingEvent>(
-      "onboarding_run",
-      { sources },
-      {
-        onEvent: (e) => {
-          setEvents((prev) => [...prev, e]);
-          // The OnboardingEvent union's terminal variants are
-          // `onboardingFinished`/`onboardingError` — streamOperation's
-          // generic `finished`/`error` shortcut never fires for them, so
-          // the terminal state transitions happen HERE. Without this the
-          // spinner runs forever after the backend completes.
-          if (e.type === "onboardingFinished") {
+  const run = useCallback(
+    async (sources: OnboardingSourcesInput) => {
+      if (running) return;
+      setRunning(true);
+      setEvents([]);
+      controlRef.current = streamOperation<OnboardingEvent>(
+        "onboarding_run",
+        { sources },
+        {
+          onEvent: (e) => {
+            setEvents((prev) => [...prev, e]);
+            // The OnboardingEvent union's terminal variants are
+            // `onboardingFinished`/`onboardingError` — streamOperation's
+            // generic `finished`/`error` shortcut never fires for them, so
+            // the terminal state transitions happen HERE. Without this the
+            // spinner runs forever after the backend completes.
+            if (e.type === "onboardingFinished") {
+              setRunning(false);
+              setDone(true);
+              void statusOp.execute();
+            } else if (e.type === "onboardingError") {
+              setRunning(false);
+              showErrorToast(e.message);
+            }
+          },
+          onDone: () => {
             setRunning(false);
             setDone(true);
             void statusOp.execute();
-          } else if (e.type === "onboardingError") {
+          },
+          onError: (err) => {
             setRunning(false);
-            showErrorToast(e.message);
-          }
+            showErrorToast(errText(err));
+          },
         },
-        onDone: () => {
-          setRunning(false);
-          setDone(true);
-          void statusOp.execute();
-        },
-        onError: (err) => {
-          setRunning(false);
-          showErrorToast(errText(err));
-        },
-      },
-    );
-    // The invoke resolves when the stream command returns; onDone already
-    // flipped the flags, this just satisfies the async contract.
-  }, [running, statusOp]);
+      );
+      // The invoke resolves when the stream command returns; onDone already
+      // flipped the flags, this just satisfies the async contract.
+    },
+    [running, statusOp],
+  );
 
   const skip = useCallback(async () => {
     try {

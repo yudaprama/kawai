@@ -30,7 +30,15 @@ export type {
 
 /** Seed the tracked plan structure from planStarted/planRevised wire steps —
  *  every step starts pending with no artifacts. */
-export function seedSteps(steps: { id: string; tool: string; task: string; dependsOn: string[]; inputs?: { arg: string; fromStep: string; output: string }[] }[]): SupervisorStep[] {
+export function seedSteps(
+  steps: {
+    id: string;
+    tool: string;
+    task: string;
+    dependsOn: string[];
+    inputs?: { arg: string; fromStep: string; output: string }[];
+  }[],
+): SupervisorStep[] {
   return steps.map((s) => ({
     stepId: s.id,
     tool: s.tool,
@@ -75,7 +83,9 @@ export function parseReview(plan: unknown, sessionId: number, agentId: string) {
   };
   if (typeof p.goal !== "string" || !Array.isArray(p.steps)) return null;
   const summary: PlanSummaryInfo | null =
-    typeof p.summary === "object" && p.summary != null && typeof (p.summary as { overview?: unknown }).overview === "string"
+    typeof p.summary === "object" &&
+    p.summary != null &&
+    typeof (p.summary as { overview?: unknown }).overview === "string"
       ? {
           overview: (p.summary as { overview: string }).overview,
           actions: Array.isArray((p.summary as { actions?: unknown }).actions)
@@ -106,9 +116,7 @@ export function parseReview(plan: unknown, sessionId: number, agentId: string) {
 /** Parse a step's raw `inputs` bindings into the display shape. The review
  *  wire (TaskPlan serialization) is object-form: {"arg": {"fromStep": …,
  *  "output": …}}. Tolerant of junk; junk entries are dropped, never fail. */
-function parseInputBindings(
-  raw: unknown,
-): { arg: string; fromStep: string; output: string }[] {
+function parseInputBindings(raw: unknown): { arg: string; fromStep: string; output: string }[] {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return [];
   return Object.entries(raw as Record<string, unknown>)
     .filter(([, ref]) => {

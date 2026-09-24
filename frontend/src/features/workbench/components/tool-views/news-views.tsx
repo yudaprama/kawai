@@ -146,9 +146,7 @@ export function MarketSquawkView({ data }: { data: unknown }) {
                   ) : (
                     <span className="text-foreground text-sm font-medium">{it.title}</span>
                   )}
-                  {it.summary && (
-                    <p className="text-muted-foreground mt-1 text-sm leading-relaxed">{it.summary}</p>
-                  )}
+                  {it.summary && <p className="text-muted-foreground mt-1 text-sm leading-relaxed">{it.summary}</p>}
                 </div>
                 {date && (
                   <span className="text-muted-foreground shrink-0 whitespace-nowrap pt-0.5 font-mono text-[10px]">

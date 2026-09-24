@@ -203,10 +203,9 @@ export function DeliverableViewer({
     reports.find((r) => r.stepId === effective) ??
     (runRecord?.steps ?? []).find(
       (s) => s.stepId === effective && (s.state === "completed" || s.state === "failed") && s.output != null,
-    ) ?? null;
-  const resolvedStep: SupervisorStep | undefined = step
-    ? { artifacts: [], ...step }
-    : undefined;
+    ) ??
+    null;
+  const resolvedStep: SupervisorStep | undefined = step ? { artifacts: [], ...step } : undefined;
 
   // The wire preview is capped at 2000 chars. Always fetch the full body
   // from the persisted step results — the length heuristic missed truncated

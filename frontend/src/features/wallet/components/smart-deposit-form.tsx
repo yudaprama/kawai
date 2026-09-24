@@ -116,7 +116,11 @@ export function SmartDepositForm({ onDeposit, loading, currentNetwork, gasEstima
           ))}
         </div>
       </div>
-      <Button className="w-full" disabled={!valid} onClick={() => (valid ? setReview(true) : toast.error("Invalid amount"))}>
+      <Button
+        className="w-full"
+        disabled={!valid}
+        onClick={() => (valid ? setReview(true) : toast.error("Invalid amount"))}
+      >
         Review Deposit
       </Button>
     </div>

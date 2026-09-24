@@ -31,12 +31,11 @@ function PlanSummaryCard({ summary }: { summary: PlanSummaryInfo | null }) {
   return (
     <div>
       <p className="text-primary font-mono text-[11px] font-bold uppercase tracking-wide">Plan summary</p>
-      {summary.overview && (
-        <p className="text-foreground/90 mt-1 text-xs leading-relaxed">{summary.overview}</p>
-      )}
+      {summary.overview && <p className="text-foreground/90 mt-1 text-xs leading-relaxed">{summary.overview}</p>}
       {summary.actions.length > 0 && (
         <ul className="text-foreground/80 mt-2 space-y-0.5 text-xs">
           {summary.actions.map((a, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static display list, no unique IDs
             <li key={i}>· {a}</li>
           ))}
         </ul>
@@ -46,6 +45,7 @@ function PlanSummaryCard({ summary }: { summary: PlanSummaryInfo | null }) {
           <p className="text-muted-foreground font-mono text-[10px] uppercase">Expected outputs</p>
           <ul className="mt-1 space-y-0.5">
             {summary.outputs.map((o, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: static display list, no unique IDs
               <li className="text-foreground/80 flex items-start gap-1 text-xs" key={i}>
                 <Icon name="check-circle-2" className="text-success mt-0.5 size-3 shrink-0" />
                 {o}
@@ -127,7 +127,10 @@ export function StepTree({
                 {phase.map((step) => (
                   <div key={step.stepId} className="space-y-0.5">
                     <div className="flex items-center justify-between gap-2 font-mono text-xs">
-                      <span className="text-foreground/90 min-w-0 flex-1 whitespace-normal break-words leading-snug" title={agentName(step)}>
+                      <span
+                        className="text-foreground/90 min-w-0 flex-1 whitespace-normal break-words leading-snug"
+                        title={agentName(step)}
+                      >
                         {agentName(step)}
                       </span>
                       <StateIcon state={step.state} />
@@ -136,7 +139,12 @@ export function StepTree({
                       {live && step.state === "running" && step.startedAt != null ? (
                         <Duration from={step.startedAt} />
                       ) : (
-                        <span className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-[10px]" title={step.tool}>{step.tool}</span>
+                        <span
+                          className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-[10px]"
+                          title={step.tool}
+                        >
+                          {step.tool}
+                        </span>
                       )}
                       {reportable(step, live) && (
                         <button
@@ -150,8 +158,11 @@ export function StepTree({
                       )}
                     </div>
                     {(step.inputs?.length ?? 0) > 0 && (
-                      <div className="text-muted-foreground/80 flex flex-wrap gap-x-2 font-mono text-[10px]" title="Dataflow bindings from earlier steps">
-                        {step.inputs!.map((b) => (
+                      <div
+                        className="text-muted-foreground/80 flex flex-wrap gap-x-2 font-mono text-[10px]"
+                        title="Dataflow bindings from earlier steps"
+                      >
+                        {step.inputs?.map((b) => (
                           <span key={b.arg}>
                             {b.arg} ← {b.fromStep}.{b.output}
                           </span>
@@ -265,7 +276,8 @@ export function RunHistoryRail({
                     state: s.state,
                     dependsOn: s.dependsOn,
                     inputs: s.inputs ?? [],
-                    artifacts: [],
+                    artifacts: s.artifacts ?? [],
+                    error: s.error,
                   }));
                   return (
                     <div className="border-border/60 border-t px-2 py-1.5">
@@ -374,6 +386,7 @@ export function ProgressRail({
   // Execution steps start COLLAPSED in review — the plan summary is the
   // contract; the step list is an appendix opened on demand.
   const [reviewStepsOpen, setReviewStepsOpen] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: planVersion intentionally re-collapses steps on revision
   useEffect(() => {
     if (supervisor.status === "reviewing") setReviewStepsOpen(false);
   }, [supervisor.status, supervisor.planVersion]);
@@ -422,7 +435,7 @@ export function ProgressRail({
                 · {s.task || s.tool || s.id}
                 {(s.inputs?.length ?? 0) > 0 && (
                   <div className="text-muted-foreground/80 pl-4 text-[10px]">
-                    {s.inputs!.map((b) => (
+                    {s.inputs?.map((b) => (
                       <div key={b.arg}>
                         {b.arg} ← {b.fromStep}.{b.output}
                       </div>
@@ -507,9 +520,7 @@ export function ProgressRail({
       {supervisor.revising && supervisor.status === "running" && (
         <div className="border-amber-500/30 mt-4 flex items-center gap-1.5 rounded-md border p-3 font-mono text-xs font-bold">
           <Icon name="refresh-cw" className="size-3.5 animate-spin text-amber-500" />
-          <span className="text-foreground/80">
-            Repairing plan (attempt {supervisor.revising.attempt})…
-          </span>
+          <span className="text-foreground/80">Repairing plan (attempt {supervisor.revising.attempt})…</span>
         </div>
       )}
 

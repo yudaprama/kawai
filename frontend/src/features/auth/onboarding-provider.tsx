@@ -43,9 +43,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <OnboardingContext.Provider
-      value={{ ...onboarding, entered, run, refresh, enterApp: () => setEntered(true) }}
-    >
+    <OnboardingContext.Provider value={{ ...onboarding, entered, run, refresh, enterApp: () => setEntered(true) }}>
       {children}
     </OnboardingContext.Provider>
   );

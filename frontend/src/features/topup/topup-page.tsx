@@ -126,26 +126,23 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
 
   /** Claim (idempotent server-side: one active pending row per email). On
    *  any failure — incl. 404 — the txId state is cleared back to the picker. */
-  const claimNow = useCallback(
-    async (packageId: string) => {
-      setClaiming(true);
-      setClaimError(null);
-      try {
-        const data = await call<TopupClaim>("topup_qris_claim", { packageId });
-        claimStartRef.current = Date.now();
-        setClaimPkgId(packageId);
-        setTxStatus(null);
-        setClaim(data);
-      } catch (err) {
-        setClaim(null);
-        setTxStatus(null);
-        setClaimError(errText(err));
-      } finally {
-        setClaiming(false);
-      }
-    },
-    [],
-  );
+  const claimNow = useCallback(async (packageId: string) => {
+    setClaiming(true);
+    setClaimError(null);
+    try {
+      const data = await call<TopupClaim>("topup_qris_claim", { packageId });
+      claimStartRef.current = Date.now();
+      setClaimPkgId(packageId);
+      setTxStatus(null);
+      setClaim(data);
+    } catch (err) {
+      setClaim(null);
+      setTxStatus(null);
+      setClaimError(errText(err));
+    } finally {
+      setClaiming(false);
+    }
+  }, []);
 
   const effectiveStatus: TopupStatus = txStatus?.status ?? "pending";
   const isTerminal = claim != null && TERMINAL_STATUSES.includes(effectiveStatus);
@@ -212,7 +209,9 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
           <CardContent className="px-4 text-sm">
             <p>
               <span className="text-muted-foreground">Saldo kredit: </span>
-              <span className="text-base font-semibold">{balance === null ? "—" : balance.toLocaleString("id-ID")}</span>
+              <span className="text-base font-semibold">
+                {balance === null ? "—" : balance.toLocaleString("id-ID")}
+              </span>
               {balance === 0 && <span className="text-muted-foreground ml-2 text-xs">Hubungi admin</span>}
             </p>
           </CardContent>

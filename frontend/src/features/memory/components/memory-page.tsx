@@ -425,7 +425,7 @@ function ProfilePane() {
             {confirmReset ? "Confirm reset" : "Reset non-pinned"}
           </Button>
           <span className="text-muted-foreground ml-auto text-xs">
-            {items.length} {items.length === 1 ? "facet" : "facets"} · injected as {'<profile>'}
+            {items.length} {items.length === 1 ? "facet" : "facets"} · injected as {"<profile>"}
           </span>
         </>
       }
@@ -436,8 +436,8 @@ function ProfilePane() {
         </div>
       ) : items.length === 0 ? (
         <p className="text-muted-foreground text-sm">
-          No facets yet — run memory extraction (L1 tab) or onboarding, and the distiller folds
-          profile facts into stable facets here.
+          No facets yet — run memory extraction (L1 tab) or onboarding, and the distiller folds profile facts into
+          stable facets here.
         </p>
       ) : (
         <ol className="flex flex-col gap-2">

@@ -259,13 +259,7 @@ export function WorkbenchPage({
     setChipDraft(null);
     setView(null);
     setHome(true);
-  }, [
-    supervisor.planning,
-    supervisor.status,
-    supervisor.cancelPlan,
-    runInFlight,
-    workbench.startNewSession,
-  ]);
+  }, [supervisor.planning, supervisor.status, supervisor.cancelPlan, runInFlight, workbench.startNewSession]);
 
   // Publish the App-level "New" while mounted (App owns the rail button +
   // Cmd/Ctrl+N) — the workbench keeps its own session/runs/view state, so

@@ -25,7 +25,14 @@ function makePlan(
   const { goal = "g", planKey = "pk", t = NOW } = opts;
   return supervisorReducer(
     initialSupervisorState(),
-    { type: "planStarted", goal, stepCount: steps.length, steps, planKey, summary: { overview: "o", actions: [], outputs: [] } },
+    {
+      type: "planStarted",
+      goal,
+      stepCount: steps.length,
+      steps,
+      planKey,
+      summary: { overview: "o", actions: [], outputs: [] },
+    },
     { now: t },
   );
 }
@@ -54,7 +61,14 @@ describe("supervisorReducer — happy path", () => {
   it("planStarted seeds steps and sets goal", () => {
     const s = supervisorReducer(
       initialSupervisorState(),
-      { type: "planStarted", goal: "analyze data", stepCount: 2, steps: [step("b", { tool: "code_write" }), step("b")], planKey: "pk1", summary: { overview: "o", actions: [], outputs: [] } },
+      {
+        type: "planStarted",
+        goal: "analyze data",
+        stepCount: 2,
+        steps: [step("b", { tool: "code_write" }), step("b")],
+        planKey: "pk1",
+        summary: { overview: "o", actions: [], outputs: [] },
+      },
       { now: NOW },
     );
     expect(s.status).toBe("idle"); // planStarted doesn't change status
@@ -108,11 +122,7 @@ describe("supervisorReducer — happy path", () => {
     let s = makePlan([step("a"), step("b"), step("c")]);
     s = supervisorReducer(s, { type: "stepStarted", stepId: "a", tool: "data_chart" }, { now: NOW + 100 });
     s = supervisorReducer(s, { type: "stepStarted", stepId: "b", tool: "data_chart" }, { now: NOW + 110 });
-    s = supervisorReducer(
-      s,
-      { type: "stepFailed", stepId: "a", error: "boom", kind: "tool" },
-      { now: NOW + 200 },
-    );
+    s = supervisorReducer(s, { type: "stepFailed", stepId: "a", error: "boom", kind: "tool" }, { now: NOW + 200 });
     // b never gets its own stepFailed — the scheduler cancelled it silently.
     s = supervisorReducer(s, { type: "planFailed", error: "step a failed" }, { now: NOW + 300 });
     expect(s.steps[0].state).toBe("failed");
@@ -141,7 +151,14 @@ describe("supervisorReducer — replan", () => {
 
     s = supervisorReducer(
       s,
-      { type: "planRevised", attempt: 1, stepCount: 1, steps: [step("b", { tool: "code_write" })], planKey: "pk2", summary: { overview: "o", actions: [], outputs: [] } },
+      {
+        type: "planRevised",
+        attempt: 1,
+        stepCount: 1,
+        steps: [step("b", { tool: "code_write" })],
+        planKey: "pk2",
+        summary: { overview: "o", actions: [], outputs: [] },
+      },
       { now: NOW + 500 },
     );
     expect(s.status).toBe("running");
@@ -160,14 +177,28 @@ describe("supervisorReducer — replan", () => {
     let s = makePlan([step("a")], { planKey: "pk1" });
     s = supervisorReducer(
       s,
-      { type: "planRevised", attempt: 1, stepCount: 1, steps: [step("a")], planKey: "pk2", summary: { overview: "o", actions: [], outputs: [] } },
+      {
+        type: "planRevised",
+        attempt: 1,
+        stepCount: 1,
+        steps: [step("a")],
+        planKey: "pk2",
+        summary: { overview: "o", actions: [], outputs: [] },
+      },
       { now: NOW + 100 },
     );
     expect(s.replansExhausted).toBe(true); // 1 prior >= 1
 
     s = supervisorReducer(
       s,
-      { type: "planRevised", attempt: 2, stepCount: 1, steps: [step("a")], planKey: "pk3", summary: { overview: "o", actions: [], outputs: [] } },
+      {
+        type: "planRevised",
+        attempt: 2,
+        stepCount: 1,
+        steps: [step("a")],
+        planKey: "pk3",
+        summary: { overview: "o", actions: [], outputs: [] },
+      },
       { now: NOW + 200 },
     );
     expect(s.replansExhausted).toBe(true); // 2 prior >= 1
@@ -298,7 +329,14 @@ describe("supervisorReducer — edge cases", () => {
     expect(s.error).toBe("plan boom");
     s = supervisorReducer(
       s,
-      { type: "planRevised", attempt: 1, stepCount: 1, steps: [step("a")], planKey: "pk2", summary: { overview: "o", actions: [], outputs: [] } },
+      {
+        type: "planRevised",
+        attempt: 1,
+        stepCount: 1,
+        steps: [step("a")],
+        planKey: "pk2",
+        summary: { overview: "o", actions: [], outputs: [] },
+      },
       { now: NOW + 200 },
     );
     expect(s.error).toBeNull();

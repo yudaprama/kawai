@@ -109,8 +109,8 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
         <div className="space-y-1.5 text-center">
           <h1 className="text-2xl font-semibold text-foreground">Make Kawai yours</h1>
           <p className="text-muted-foreground text-sm">
-            Answer what you like — every field is optional. Kawai uses this to know who you are
-            before your first goal. You can always change it later in Memory.
+            Answer what you like — every field is optional. Kawai uses this to know who you are before your first goal.
+            You can always change it later in Memory.
           </p>
         </div>
 
@@ -139,15 +139,16 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
               <span>
                 Scan my Gmail notifications for identity context
                 <span className="text-muted-foreground">
-                  {" "}— read-only, only if a Gmail connection already exists; just the LinkedIn
-                  profile link is kept, email content is never stored.
+                  {" "}
+                  — read-only, only if a Gmail connection already exists; just the LinkedIn profile link is kept, email
+                  content is never stored.
                 </span>
               </span>
             </label>
             <div className="grid gap-1">
-              <label className="text-sm font-medium">
+              <p className="text-sm font-medium">
                 Resume / LinkedIn data export <span className="text-muted-foreground font-normal">(optional)</span>
-              </label>
+              </p>
               <input
                 accept=".zip,.pdf,.html,.htm,.csv,.docx,.md,.txt"
                 className="text-muted-foreground block w-full cursor-pointer text-xs file:mr-2 file:cursor-pointer file:rounded-md file:border file:border-input file:bg-transparent file:px-2 file:py-1 file:text-xs"
@@ -170,12 +171,7 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
               <label className="text-sm font-medium" htmlFor="ob-github">
                 Public GitHub username <span className="text-muted-foreground font-normal">(optional)</span>
               </label>
-              <Input
-                id="ob-github"
-                onChange={(e) => setGithub(e.target.value)}
-                placeholder="octocat"
-                value={github}
-              />
+              <Input id="ob-github" onChange={(e) => setGithub(e.target.value)} placeholder="octocat" value={github} />
             </div>
           </div>
         ) : (
@@ -214,9 +210,15 @@ function RunLog({ events, running }: { events: OnboardingEvent[]; running: boole
   return (
     <ol className="space-y-1.5 rounded-lg border p-4 font-mono text-xs">
       {events.map((e, i) => (
-        <li className="text-muted-foreground" key={i}>
+        // biome-ignore lint/suspicious/noArrayIndexKey: append-only event log, no stable IDs
+        <li className="text-muted-foreground" key={`${e.type}-${i}`}>
           {e.type === "sourceStarted" && <>→ gathering {e.source}…</>}
-          {e.type === "sourceProgress" && <>  {e.source}: {e.note}</>}
+          {e.type === "sourceProgress" && (
+            <>
+              {" "}
+              {e.source}: {e.note}
+            </>
+          )}
           {e.type === "sourceCompleted" && <>✓ {e.source}</>}
           {e.type === "compressStarted" && <>→ distilling profile…</>}
           {e.type === "profileReady" && (
@@ -252,9 +254,7 @@ function BackgroundProgress() {
   if (!onboarding.running && !showDone) return null;
 
   const completed = onboarding.events.filter((e) => e.type === "sourceCompleted").length;
-  const last = [...onboarding.events]
-    .reverse()
-    .find((e) => e.type === "sourceProgress" || e.type === "sourceStarted");
+  const last = [...onboarding.events].reverse().find((e) => e.type === "sourceProgress" || e.type === "sourceStarted");
   const note =
     last?.type === "sourceProgress"
       ? last.note

@@ -71,7 +71,8 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
     if (m.includes("insufficient")) return "Insufficient token balance for this amount.";
     if (m.includes("reject") || m.includes("denied")) return "The transaction was rejected.";
     if (m.includes("revert")) return "The contract rejected the transaction (reverted).";
-    if (m.includes("timeout") || m.includes("deadline")) return "The network took too long to respond. Check the history list before retrying.";
+    if (m.includes("timeout") || m.includes("deadline"))
+      return "The network took too long to respond. Check the history list before retrying.";
     return raw;
   };
 
