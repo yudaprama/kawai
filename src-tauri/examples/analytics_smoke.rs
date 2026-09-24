@@ -92,6 +92,7 @@ async fn main() {
         .call(data::SchemaArgs {
             file_id: stored.id.clone(),
             sheet: None,
+            header_row: None,
         })
         .await
         .expect("data_schema");
@@ -119,6 +120,7 @@ async fn main() {
             .call(data::SchemaArgs {
                 file_id: xlsx.id.clone(),
                 sheet: None,
+                header_row: None,
             })
             .await
             .expect("data_schema(xlsx)"),
@@ -237,6 +239,7 @@ async fn main() {
         .call(data::SchemaArgs {
             file_id: xlsx.id.clone(),
             sheet: Some("Q1".into()),
+            header_row: None,
         })
         .await
         .expect_err("unknown sheet must fail");
@@ -251,6 +254,7 @@ async fn main() {
         .call(data::SchemaArgs {
             file_id: md.id,
             sheet: None,
+            header_row: None,
         })
         .await
         .expect_err("data tools must reject non-tabular files");
