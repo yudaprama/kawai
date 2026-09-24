@@ -1,17 +1,20 @@
-# Balance & KV Architecture — Worker ⇄ Supabase
+# Balance & KV Architecture — Worker ⇄ D1
 
-**Tanggal:** 2026-09-02 (rev 2 — token credit 1:1, flat per-turn dihapus)
-**Status:** ✅ Live & terverifikasi end-to-end di project test
-**Project Supabase:** `mpencmdcjzfoahbuepwu` (ap-southeast-1)
-**Worker:** `https://kawai-worker.akuntestinguntukseto.workers.dev`
-**Commits:** kawai `866d8b3`, crates `e17e96a`
+**Tanggal:** 2026-09-24 (rev 3 — ledger credit di D1, rute QRIS top-up)
+**Status:** ✅ Kod live & terverifikasi (lihat §6); rute **berbayar** menunggu
+pengisian konstanta `QRIS_PAYLOAD` di worker (sampai itu preview balik 503 dan
+UI menampilkan notice "QRIS belum dikonfigurasi").
+**Worker:** `https://kawai-worker.akuntestinguntukseto.workers.dev` (source:
+`kawai-server/worker/`, TypeScript + Hono di Cloudflare Workers, binding D1
+`DB` = database `kawai-auth` — satu database untuk identitas **dan** uang).
 
-Dokumen ini menggantikan peran modul balance/billing di `x/store` (Go, Cloudflare
-KV via REST API) dengan arsitektur Supabase-first + Cloudflare Worker (Rust/WASM).
+Dokumen ini menjelaskan arsitektur saldo/credit yang berjalan sekarang:
+**Cloudflare Worker + D1**, tanpa cache — setiap data hidup di satu tempat.
 
-**Model rilis saat ini:** saldo = **token credit** (1:1 dengan token provider,
-tanpa konversi USDT — konversi disusul saat model bisnis jelas). Debit
-usage-based dari `RemoteUsage` nyata; top up manual via CLI admin.
+**Model rilis:** saldo = **token credit** (1:1 dengan token provider, tanpa
+konversi USDT). Debit usage-based dari `RemoteUsage` nyata (Fase 0b), top-up
+lewat **QRIS statis** (klaim nominal unik, verifikasi admin) atau koreksi admin
+via CLI.
 
 ---
 
@@ -19,273 +22,226 @@ usage-based dari `RemoteUsage` nyata; top up manual via CLI admin.
 
 ### 1.1 Partisi data — TIDAK ADA CACHE
 
-Setiap data hidup di **satu** tempat (source of truth tunggal). Tidak ada cache
-→ tidak ada invalidation yang perlu di-maintain.
-
 | Data | Source of truth | Alasan |
 |---|---|---|
-| **Saldo, ledger, debt** | 🔒 Supabase (Postgres) | Uang — butuh ACID & atomic debit |
-| **Settlement, Merkle, claim** (rencana) | 🔒 Supabase | Transactional, agregasi SQL |
+| **Saldo, ledger credit, klaim QRIS** | 🔒 D1 (`kawai-auth`, binding `DB`) | Uang — butuh ACID & atomic debit; D1 = SQLite ACID single-primary, satu database dg auth (email PK, tanpa join identitas) |
+| **Identitas (auth)** | 🔒 D1 (sama) | Sudah di worker (Ed25519, email PRIMARY KEY) |
+| **Settlement, Merkle, claim** (rencana) | 🔒 D1 | Transactional, agregasi SQL |
 | **API key** (`apikey:`, `authz:`) | ✅ KV worker | Write-once, delete saat revoke |
 | **Marketplace ephemeral** | ✅ KV worker | TTL native, expire sendiri |
 | **Presence/heartbeat** (`online:{addr}`) | ✅ KV worker | TTL 120s = kebenaran; expire = offline |
-| **Idempotency window** (`seen:{id}`) | ✅ KV worker | Dedup jendela pendek; ledger tetap di Supabase |
+| **Idempotency window** (`seen:{id}`) | ✅ KV worker | Dedup jendela pendek; ledger tetap di D1 |
 
 Kriteria data yang boleh jadi source of truth di KV:
-1. **Bukan uang** (bukan saldo/ledger/debt)
+1. **Bukan uang** (bukan saldo/ledger/klaim)
 2. **Toleran kehilangan** (re-register, bukan rugi finansial)
 3. **Immutable atau self-expiring** (TTL)
 
-### 1.2 Kenapa billing TIDAK bisa client → Edge Function langsung
+### 1.2 Kenapa billing TIDAK bisa dari client
 
 Client yang menentukan jumlah tagihan = tidak ada tagihan:
 - client bisa **skip** pemanggilan debit,
 - client bisa **manipulasi `amount`**,
-- JWT hanya membuktikan *siapa*, bukan *berapa* pemakaiannya.
+- token membuktikan *siapa*, bukan *berapa* pemakaiannya.
 
 Nilai tagihan hanya diketahui server yang melayani → **worker yang menagih**.
-Client hanya boleh: baca saldo (`get-my-balance`) dan credit terkontrol
-(`credit_my_balance`, reason whitelist, hanya menambah).
+Debit dipanggil dari satu titik komposisi (`supervisor::plan_task`) sehingga
+transport desktop **dan** web sama-sama terdebit; kebijakannya fail-open
+(hormat-sistem — enforcement ketat butuh proxy LLM server-side, lihat §8).
+Client hanya boleh: baca saldo (`GET /topup/balance`) dan credit terkontrol
+admin (`POST /admin/balance/credit`, hanya menambah/mengurang dengan guard
+saldo ≥ 0).
 
-### 1.3 Admin client → Edge Function: BOLEH
+### 1.3 Admin → worker endpoint: BOLEH
 
-Admin panel memanggil `debit-balance` langsung dengan JWT admin
-(`app_metadata.role = 'admin'` — **bukan** `user_metadata`, itu bisa diedit user).
-Koreksi manual wajib `reason='manual'` + `admin_id` tercatat di ledger `ref`.
+Koreksi saldo manual lewat `POST /admin/balance/credit` dengan Bearer admin —
+identity dijamin token Ed25519 dan wajib sama dengan `ADMIN_EMAIL` (konstanta
+di worker). Setiap koreksi masuk ledger append-only `admin_adjustment`.
 
 ---
 
 ## 2. Arsitektur final
 
 ```
-client (user)
-  │  Authorization: Bearer <JWT user>
+app (user login — Bearer Ed25519 session token)
   │
-  ├── POST /transfer ──────────→ Cloudflare Worker (Rust/WASM)
-  │                               ├─ verifikasi JWT via JWKS (auth.rs)
-  │                               ├─ alloy: sign EIP-1559 → Monad RPC
-  │                               └─ [rencana] billing hook → EF debit-balance
-  │
-  ├── GET /balance/:address ───→ Worker → KV `balance:{addr}`
-  │
-  └── POST /functions/v1/get-my-balance ──→ EF → RPC public.get_my_balance
-                                                   └→ private.user_balances
+  ├── Rust: logic/topup.rs (proxy tipis, dua wrapper) ─┐
+  │     desktop: commands.rs (baca auth.token)         │
+  │     web:     web.rs     (baca cookie kawai_session)│
+  │                                                    ▼
+  ├── GET  /topup/balance ────────────────→ D1 user_balances
+  ├── GET  /topup/qris/preview ───────────→ konstanta QRIS_PAYLOAD + PACKAGES
+  ├── POST /topup/qris/claim {packageId} ─→ D1 qris_topups (idempotent/email)
+  ├── GET  /topup/qris/status/:txId ──────→ qris_topups (owner-scope)
+  └── POST /billing/debit {amount} ───────→ UPDATE credit = credit - ?
+                                              WHERE email = ? AND credit >= ?
+                                              (guard atomic → 409 bila kurang)
 
-worker (server, billing)
-  └── POST /functions/v1/debit-balance
-        Authorization: Bearer <anon key>   (sekadar utk gateway)
-        x-worker-secret: <WORKER_FN_SECRET> (auth sebenarnya)
-        └─→ RPC public.debit_balance (SECURITY DEFINER, atomic)
-              ├─ UPDATE ... WHERE usdt_balance >= amount   ← atomic guard
-              ├─ INSERT private.balance_ledger             ← append-only audit
-              └─ gagal → EF panggil public.record_debt
+  supervisor::plan_task  → debit usage sekali per plan (amount = input+output tokens,
+                           1 token = 1 credit; gagal → warn + lanjut, fail-open)
+  use-workbench.run()    → pre-check credit ≤ 0 → blokir + buka halaman Top Up
+                           (gagal baca → fail-open, submit jalan)
 
-admin panel
-  └── POST /functions/v1/debit-balance
-        Authorization: Bearer <JWT admin>   (app_metadata.role='admin')
-        └─→ RPC sama, reason dipaksa 'manual' + admin_id di ledger ref
+admin (CLI, Bearer admin = ADMIN_EMAIL)
+  ├── scripts/qris.ts list              → pending claims
+  ├── scripts/qris.ts confirm <tx_id>   → batch: status pending → credited
+  │                                       + UPSERT saldo + ledger (ref = tx_id)
+  ├── scripts/qris.ts reject <tx_id>    → pending → rejected (dana tak dikredit)
+  └── scripts/topup.ts <email> <±amount>→ POST /admin/balance/credit + ledger
+
+verifikasi bayar: TANPA webhook — admin mencocokkan mutasi bank dengan nominal
+unik klaim, lalu confirm/reject (QRIS statis murni).
 ```
 
 ---
 
 ## 3. Komponen
 
-### 3.1 Database (`kawai/supabase/migrations/`)
-
-**`20260315000001_balance_system.sql`** — schema `private` (TIDAK terekspos
-Data API; token user tidak punya jalur akses sama sekali):
+### 3.1 Tabel D1 (binding `DB` — database `kawai-auth`)
 
 | Tabel | Isi |
 |---|---|
-| `private.user_balances` | saldo per user (micro-USDT bigint, non-negatif), `trial_claimed` |
-| `private.balance_ledger` | append-only: setiap delta + `balance_after` + `reason` + `ref` jsonb |
-| `private.balance_debts` | debt saat debit gagal setelah layanan terpakai |
+| `user_balances` | saldo credit per email (`email` PRIMARY KEY, `credit` integer ≥ 0) |
+| `balance_ledger` | append-only audit: delta signed + `ref` (tx_id klaim / null) + dibuat saat setiap perubahan credit |
+| `qris_topups` | klaim top-up: `tx_id` (IDR unique-nominal), paket, `qr_payload`, `status`, waktu, row owner = email |
 
-**`20260315000002_rpc_public.sql`** — RPC di schema `public` (PostgREST hanya
-expose `public`; **tabel tetap di `private`**):
+Lifecycles:
 
-| RPC | Grant | Guard di body |
+```
+qris_topups.status : pending → credited    (confirm admin, batch atomik)
+                      pending → rejected    (reject admin)
+                      pending → expired     (lazy, saat expires_at terlampaui)
+user_balances.credit: +paket (confirm, UPSERT) | ±koreksi admin | -usage (debit, guard ≥ 0)
+```
+
+Schema dibuat idempoten saat startup worker (`ensureQrisSchema`) — tidak ada
+migration runner terpisah.
+
+### 3.2 Endpoint worker (Bearer Ed25519, kecuali admin guard `ADMIN_EMAIL`)
+
+| Method | Path | Fungsi |
 |---|---|---|
-| `get_my_balance()` | authenticated | `auth.uid()` — hanya dirinya |
-| `credit_my_balance(amount, reason)` | authenticated | hanya menambah; reason ∈ {trial, deposit_claim} |
-| `debit_balance(user_id, amount, reason, admin_id?)` | service_role + authenticated | 3 jalur: service_role (siapa pun), user (dirinya), admin (role check `auth.jwt()`, wajib reason='manual' + admin_id) |
-| `record_debt(user_id, amount, reason)` | service_role | — |
+| GET | `/topup/qris/preview` | payload QR statis + daftar paket (503 bila `QRIS_PAYLOAD` belum diisi) |
+| POST | `/topup/qris/claim` | klaim nominal unik (idempotent: klaim saat masih pending → row sama) |
+| GET | `/topup/qris/status/:txId` | status klaim (owner-scope; 404 untuk tx bukan miliknya) |
+| GET | `/topup/balance` | saldo credit pemanggil (0 bila belum pernah top-up) |
+| POST | `/billing/debit` | debit usage (guard atomic → 409 `insufficient_balance`) |
+| GET | `/topup/qris/pending` | daftar klaim pending (admin) |
+| POST | `/topup/qris/confirm` | kredit klaim (admin, idempotent) |
+| POST | `/topup/qris/reject` | tolak klaim (admin) |
+| POST | `/admin/balance/credit` | koreksi saldo signed ± (admin, guard saldo ≥ 0) |
 
-⚠️ `EXECUTE` di-REVOKE dari `public`/`anon` (Postgres grant EXECUTE ke PUBLIC
-secara default). RLS on di semua tabel (defense in depth).
+Tabel endpoint + detail pemanggilan lengkap: `kawai-server/worker/README.md`.
 
-### 3.2 Edge Functions (`kawai/supabase/functions/`)
+### 3.3 Sisi aplikasi
 
-**`debit-balance`** (`verify_jwt = false`) — dua jalur auth:
-1. **Worker:** `Authorization: Bearer <anon key>` (untuk gateway) +
-   `x-worker-secret: <WORKER_FN_SECRET>` → path service_role, reason bebas,
-   auto `record_debt` saat debit gagal (409 `insufficient_balance`).
-2. **Admin:** `Authorization: Bearer <JWT admin>` → diverifikasi eksplisit ke
-   `/auth/v1/user` (signature+exp, karena verify_jwt=false), role dicek dari
-   `app_metadata`, reason dipaksa `'manual'`.
-
-**`get-my-balance`** — pass-through tipis; JWT user diteruskan ke RPC,
-`auth.uid()` di DB yang memutuskan.
-
-Kenapa secret worker di header custom: gateway platform menuntut header
-`Authorization` terisi (error `UNAUTHORIZED_NO_AUTH_HEADER` kalau kosong),
-dan secret hex bukan JWT.
-
-### 3.3 Cloudflare Worker (Rust) (`kawai/contracts/worker/`)
-
-**`src/kvstore.rs`** — `KVStore` di atas KV binding `KV`
-(namespace `KAWAI_WORKER`, id `68b0a930665b4844bb3bc7e9965b40b8`,
-terisolasi dari namespace lama `x/store`):
-
-- Generic: `get_raw` / `put_raw` / `put_raw_with_ttl` (min 60s) / `delete` / `list_keys`
-- Balance (KV): `get_balance`, `credit_balance`, `debit_balance` — ⚠️
-  read-modify-write non-atomic; source of truth finansial = Supabase
-- API key: dual-write `apikey:{key}` + reverse `authz:{addr}`, dengan rollback
-- Marketplace: TTL/ephemeral
-- Presence: `heartbeat(addr)` TTL 120s, `list_online`, `is_online`
-- Idempotency: `check_and_mark(id, ttl)` — get→put bisa race pada request
-  paralel persis bersamaan (acceptable untuk window dedup)
-
-**Endpoint live:**
-
-| Method | Path | Auth | Fungsi |
-|---|---|---|---|
-| POST | `/transfer` | JWT Supabase + `PRIVATE_KEY` secret | transfer KAWAI (ERC20) |
-| POST | `/kv` | ❌ belum ada auth | `{key, value, ttl?}` |
-| GET | `/kv/:key` | ❌ belum ada auth | raw value (404 jika absen) |
-| GET | `/balance/:address` | ❌ belum ada auth | saldo KV (default 0) |
-
-> ⚠️ Endpoint KV/balance worker **belum ber-auth** — jika akan di-expose,
-> tambahkan middleware JWT seperti `/transfer`.
+- **Rust** — `src-tauri/src/logic/topup.rs` (murni, reqwest, tanpa tauri/axum)
+  diemban **kedua** wrapper: `commands.rs` (4 op, Bearer dari `auth.token`)
+  dan `web.rs` (4 route `POST /api/<name>` di protected router, Bearer dari
+  cookie `kawai_session`). Frontend tidak pernah mengirim token/user id.
+- **Frontend** — `frontend/src/features/topup/` (Assets rail → Top Up):
+  preview → pilih paket → klaim → QR + countdown → polling status (5s × 5
+  menit, lalu 30s; terminal sembunyikan QR). Kartu saldo dipakai lagi oleh
+  pre-check Fase 0a di `use-workbench.run()`.
+- **KV worker** — tidak berubah: `apikey:`/`authz:`/`online:`/`seen:`/dll.
+  Endpoint `/kv` + `/balance/:address` kini **wajib Bearer** dan menolak
+  reserved key prefixes.
 
 ---
 
 ## 4. Secrets & konfigurasi
 
-| Secret | Lokasi | Cara set |
+| Nilai | Bentuk | Catatan |
 |---|---|---|
-| `WORKER_FN_SECRET` | Supabase secrets + Worker secret | `supabase secrets set WORKER_FN_SECRET=<hex>` **dan** `echo -n <hex> \| npx wrangler secret put WORKER_FN_SECRET` — **nilai harus sama** |
-| `PRIVATE_KEY` | Worker secret saja | `npx wrangler secret put PRIVATE_KEY` — **belum di-set**, `/transfer` error sampai diisi. Hot wallet terpisah! |
-| role admin | `auth.users.app_metadata` | Dashboard → Authentication → Users → `{"role":"admin"}` — hanya service yang bisa menulis |
-| `KV` binding | `wrangler.toml` | `[[kv_namespaces]]` id `68b0a930665b4844bb3bc7e9965b40b8` |
+| `ED25519_SEED` | wrangler secret | makan token session (auth) |
+| `PRIVATE_KEY` | wrangler secret | hot wallet `/transfer` — TERPISAH dari kredit app, tidak menyentuh ledger credit |
+| `QRIS_PAYLOAD`, `PACKAGES`, `EXPIRY_SECS`, `ADMIN_EMAIL` | konstanta di `qris.ts`/`billing.ts` | hardcode (aturan repo: nol env baru) |
+| `KV` binding + D1 `DB` | `wrangler.toml` | sudah live (`kawai-auth`) |
 
 ---
 
-## 4b. Top up (release interim — manual admin)
+## 4b. Top up — dua jalur
 
-Model release: saldo = **token credit** (1 token provider = 1 credit, tanpa
-konversi USDT). Konversi ke pembayaran nyata disusun belakangan.
+**Jalur user (QRIS, rute berbayar):** Assets rail → Top Up → pilih paket →
+klaim → bayar **tepat sesuai nominal** lewat app bank/e-wallet → tunggu
+verifikasi admin → `credited` (saldo naik). Nominal salah/klaim expired tidak
+otomatis dikreditkan (reject admin / klaim baru — nominal dibebaskan).
 
-**CLI (recommended):**
+**Jalur admin (koreksi manual):**
 ```bash
 cd kawai
-bun scripts/topup.ts list [query]               # daftar/cari user + saldo
-bun scripts/topup.ts <email|uuid> <amount>      # top up (+/-) token credit
-# contoh: bun scripts/topup.ts user@example.com 1000000
+bun scripts/topup.ts <email> 1000000     # +1jt credit
+bun scripts/topup.ts <email> -500000     # koreksi minus (gagal bila saldo kurang)
+bun scripts/qris.ts list                 # klaim pending (admin)
 ```
-CLI melakukan: resolve user → ensure row → transaksi (update saldo +
-ledger `reason='manual'`, `ref: {via: 'topup-cli'}`) → tampilkan saldo baru.
-Koneksi via `DATABASE_URL` di `kawai/.env`.
-
-Manual via psql (tanpa ledger, tidak recommended):
-```bash
-psql "$DATABASE_URL" -c "
-  select private.ensure_balance_row('<user-uuid>');
-  update private.user_balances set usdt_balance = usdt_balance + 1000000
-   where user_id = '<user-uuid>';"
-```
+`scripts/topup.ts` memanggil `POST /admin/balance/credit` (Bearer admin dari
+berkas `auth.token`, flag `--token-file`/`--url`) — tanpa env var baru.
 
 ---
 
 ## 5. Deployment runbook
 
 ```bash
-# ── Supabase ──
-cd kawai/supabase
-supabase link --project-ref mpencmdcjzfoahbuepwu   # sekali
-supabase db push                                    # apply migrations
-supabase functions deploy debit-balance
-supabase functions deploy get-my-balance
-supabase secrets set WORKER_FN_SECRET=<hex>
-
-# ── Cloudflare Worker ──
-cd kawai/contracts/worker
-cargo check --target wasm32-unknown-unknown   # gate cepat
-worker-build --release                        # generate build/worker/shim.mjs
-npx wrangler deploy
-echo -n <hex-yang-sama> | npx wrangler secret put WORKER_FN_SECRET
-npx wrangler secret put PRIVATE_KEY           # sekali (hot wallet)
+cd kawai-server/worker
+bun install
+bun run typecheck
+npx wrangler secret put ED25519_SEED    # sekali
+npx wrangler secret put PRIVATE_KEY     # sekali (hot wallet /transfer)
+bun run deploy                          # D1 kawai-auth sudah ada; schema idempoten
 ```
 
-CLI: `supabase` v2.116.0 (login via `supabase login`), `wrangler` via
-`bunx wrangler` (OAuth login; token dari `.env` `CLOUDFLARE_API_TOKEN_TUNNEL`
-hanya punya izin KV, **tidak cukup** untuk deploy Workers).
+Detail endpoint & tabel: `kawai-server/worker/README.md`.
 
 ---
 
-## 6. Verifikasi yang sudah dilakukan (2026-09-02)
+## 6. Verifikasi
 
-Semua dijalankan nyata terhadap project `mpencmdcjzfoahbuepwu`:
-
-| Test | Hasil |
+| Lapis | Hasil |
 |---|---|
-| Migration ter-apply (2 file) | ✅ `supabase migration list` |
-| `anon` akses schema `private` | ✅ ditolak total (level schema) |
-| Grant: `anon` tanpa EXECUTE debit; `authenticated` get/credit/debit; `service_role` semua | ✅ `has_function_privilege` |
-| RLS on di 3 tabel | ✅ pg_class |
-| Debit non-service tanpa JWT | ✅ `forbidden` |
-| Debit service_role 400/1000 → 600 | ✅ |
-| Over-debit 700 > 600 | ✅ `insufficient balance` (atomic) |
-| Ledger + debt tercatat | ✅ |
-| **E2E:** EF debit-balance (worker path) → `{"ok":true,"balance":600}` | ✅ HTTP 200 |
-| Gateway tanpa/wrong auth → 401/403 | ✅ |
-| Worker live: `/kv` put+get, `/balance` default 0 | ✅ |
-| Data test di-cleanup | ✅ |
+| Rust `cargo check` (desktop / desktop+web / web-only / kawai-web / `--features full`) | ✅ nol error |
+| Frontend `bun run build` (tsc -b + vite) | ✅ |
+| Worker `bun run typecheck` + e2e lokal idempotency (claim 2× → 1 row; confirm 2× → saldo naik 1×; confirm tx random → 404; debit over → 409) | ⏳ dijalankan pada integrasi akhir — lihat §11 `PLAN-qris-topup.md` |
+| E2E uang nyata (klaim → bayar → confirm → saldo naik 1×) | ⏳ setelah `QRIS_PAYLOAD` terisi + deploy |
 
-## 7. Gotchas yang sudah ditemukan (jangan diulang)
+---
 
-1. **Urutan migration:** `ALTER TABLE ... ENABLE RLS` sebelum `CREATE TABLE` = error `42P01`.
-2. **`service_role` butuh `GRANT USAGE ON SCHEMA private`** — tanpa itu EF path 401, padahal test lokal postgres lolos.
-3. **PostgREST hanya expose `public`** — RPC di schema lain = `PGRST202` walau grant benar.
-4. **`auth.role()` / `auth.uid()` membaca `request.jwt.claims`** (di-set PostgREST), bukan `current_role` — test psql harus `set_config('request.jwt.claims', '{"role":"service_role"}', true)`.
-5. **Supabase secrets list menampilkan nilai ter-mask** — jangan pakai untuk disalin; set ulang dari satu nilai sumber.
-6. **KV eventually-consistent ~60s** — api key baru/revoke belum efektif global sesaat. `check_and_mark` idempotency bisa race (worst case 1 duplikat lolos; ledger di Supabase yang menjaga).
-7. **`supabase db query` default ke lokal** (Docker) — remote pakai psql + `DATABASE_URL` dari `kawai/.env`, atau MCP Supabase (perlu `supabase_auth`).
+## 7. Gotchas (jangan diulang)
+
+1. **QRIS statis tanpa webhook** = kredit sepenuhnya kerja admin: konfirmasi
+   wajib mencocokkan mutasi bank; jangan pernah auto-confirm dari nominal saja
+   (attacker yang tahu nominal bisa "klaim" — dana asli tetap milik pembayar
+   sah, tapi ledger jadi bohong).
+2. **Nominal unik dibebaskan saat expired** — transfer ke QR klaim yang sudah
+   expired TIDAK dikreditkan (UI memperingatkan; admin menolak dengan alasan
+   ini). Nominal dipakai ulang oleh klaim berikutnya.
+3. **Confirm idempotent wajib** — `status = pending` dicek di dalam batch
+   atomik yang sama dengan UPSERT saldo + insert ledger; confirm kedua tidak
+   boleh menaikkan saldo dua kali (dicek di e2e).
+4. **Guard debit ada di SQL** (`WHERE credit >= ?` + `changes == 0` → 409),
+   bukan baca-tulis di aplikasi — dua debit paralel tak bisa meng-overdraw.
+5. **KV eventually-consistent ~60s** — api key baru/revoke belum efektif
+   global sesaat; `seen:` idempotency bisa race (worst case 1 duplikat lolos —
+   ledger D1 yang menjaga).
+6. **Fail-open adalah kebijakan, bukan bug** — pre-check dan debit usage tidak
+   boleh pernah menjatuhkan goal submit/plan bila worker tak terjangkau
+   (hormat-sistem; penegakan ketat = proxy LLM server-side, lihat §8).
+
+---
 
 ## 8. Roadmap
 
-- [x] **Release 2026-09: billing token credit 1:1** (SUDAH DI-COMMIT & PUSH:
-  kawai `866d8b3`, crates `e17e96a`)
-  - crate `crates/foundation/billing` (`kawai-billing`): `bill_usage()` —
-    debit dari `RemoteUsage` nyata yang dilaporkan provider, **1 token = 1
-    credit** (`usage_to_micros` = `input + output`, tanpa konversi USDT).
-  - Desktop: `commands.rs::plan_task` memanggil `bill_usage` post-plan
-    (token dari keychain, bukan frontend). `supervisor::plan_task`
-    sekarang mengembalikan `(TaskPlan, RemoteUsage)`.
-  - Frontend (`gateTurn` di `use-supervisor-plan.ts`): pre-check saldo
-    SAJA (desktop & web) — blokir kalau saldo 0, fail-open kalau Supabase
-    tidak terjangkau. TIDAK ada debit flat per-turn di frontend.
-  - Web: pre-check saja, belum ada debit (menunggu backend web server —
-    user web saat ini bisa pakai tanpa saldo, acceptable untuk rilis).
-  - `scripts/topup.ts`: CLI admin top up token credit (audit ke ledger
-    `reason='manual'`, `ref: {via: 'topup-cli'}`). Lihat §4b.
-  - Error message: "insufficient token credit — contact admin to top up".
-  - ⚠️ Tetap bukan kontrol keamanan (user bisa patch binary / skip).
-- [ ] Konversi token credit ↔ USDT/payment (menunggu keputusan bisnis —
-  bagaimana top up on-chain vs gateway vs voucher).
+- [ ] **Isi `QRIS_PAYLOAD` + konfirmasi daftar `PACKAGES` `{IDR → credit}`** +
+      `ADMIN_EMAIL` (rute berbayar menunggu ini — `PLAN-qris-topup.md` §14).
+- [ ] Gateway QRIS **dinamis** (Midtrans/Xendit/DOKU/Tripay): API key +
+      webhook → verifikasi otomatis tanpa admin (fase 2).
 - [ ] Rate-card per-model (saat ini 1:1 flat) — pinjam pola `metering/`
-  `pricing.yaml`: input/output terpisah + cache discount + suffix `:free`.
-- [ ] Idempotency key di `balance_ledger` (pinjam pola `metering/`:
-  SHA-256 trace+span → `requestId` unique) — anti double-debit.
-- [ ] Fase 1: key LLM server-issued (runtime fetch via RPC, bukan bundled di
-  `kawai_constants::llm`) — menutup vektor ekstraksi key dari binary.
-- [ ] Fase 2: reserve quota + daily cap server-side di Postgres;
-  metering untuk seluruh turn (saat ini baru planner call yang terukur —
-  step tools lokal tidak ada LLM call per step).
-- [ ] Billing web: backend web server memanggil `kawai-billing` di
-  endpointnya (web user saat ini belum didebit).
-- [ ] Fase 3 (opsional, saat revenue justifikasi): proxy LLM server-side
-  untuk penegakan ketat. Worker CF/EF debit yang sudah live tetap dipakai.
-- [ ] Auth untuk endpoint `/kv` dan `/balance` worker
-- [ ] Migrasi job rewards / referral payout / settlement ke Supabase
-- [ ] Set `PRIVATE_KEY` (user, manual)
+      `pricing.yaml`: input/output terpisah + cache discount + suffix `:free`.
+- [ ] Idempotency key unik di `balance_ledger` (pinjam pola `metering/`:
+      SHA-256 trace+span → `requestId` unique) — anti double-debit lintas retry.
+- [ ] Key LLM server-issued (runtime fetch, bukan bundled di
+      `kawai_constants::llm`) — menutup vektor ekstraksi key dari binary.
+- [ ] Quota harian + reserve server-side (D1) — metering untuk seluruh turn
+      (saat ini baru planner call yang terukur).
+- [ ] Proxy LLM server-side (opsional, saat revenue justifikasi) —
+      penegakan billing yang sesungguhnya; debit fail-open tetap hidup.
+- [ ] Settlement/Merkle/rewards pindah ke D1 (keputusan terpisah saat dibangun).

@@ -24,7 +24,9 @@ use crate::logic::email;
 use sha2::{Digest, Sha256};
 
 /// Base URL worker (env `KAWAI_WORKER_URL`, fallback ke deployment resmi).
-fn worker_base_url() -> String {
+/// `pub` for the other worker-proxy modules (`logic::topup`); callers inside
+/// this module are unchanged.
+pub fn worker_base_url() -> String {
     std::env::var("KAWAI_WORKER_URL")
         .unwrap_or_else(|_| "https://kawai-worker.akuntestinguntukseto.workers.dev".into())
         .trim_end_matches('/')

@@ -333,6 +333,15 @@ fn session_user_id(session: &Session) -> Result<String, String> {
         .ok_or_else(|| "not authenticated".to_string())
 }
 
+/// Session email → its stored worker bearer token (written at sign-in by
+/// `local_auth::persist_token`, read exactly like the `worker_post` flow).
+/// Desktop twin of the web handlers' raw `kawai_session` cookie read.
+fn session_bearer(session: &Session) -> Result<String, String> {
+    let email = session_user_id(session)?;
+    logic::local_auth::stored_token(&email)
+        .ok_or_else(|| "not authenticated (no token — sign in first)".to_string())
+}
+
 /// Authenticated RPC: start a new chat session. Sessions are created lazily
 /// on the first message; no agent identity — supervisor runs in `auto` mode.
 #[tauri::command]
@@ -989,12 +998,46 @@ pub fn office_import_file(
     Ok(imported)
 }
 
-/// Interim usage billing (per-turn flat fee, honor system — docs
-/// BALANCE-KV-ARCHITECTURE.md §8). Dormant under local auth: no Supabase
-/// session token is held anymore, so billing always skips (fail-open).
+/// ── QRIS top-up (PLAN-qris-topup.md Fase 3) — 4 auth-required thin ────────
+/// proxies to the worker. The bearer is the session's stored Ed25519 token;
+/// the frontend only sends op args (camelCase → snake_case params), never a
+/// token or user id.
+///
+/// Public preview of the static QRIS payload + purchasable packages.
 #[tauri::command]
-pub async fn bill_turn() -> Result<kawai_billing::BillOutcome, String> {
-    Ok(kawai_billing::BillOutcome::Skipped)
+pub async fn topup_qris_preview(
+    session: State<'_, Session>,
+) -> Result<logic::topup::Preview, String> {
+    let token = session_bearer(&session)?;
+    logic::topup::topup_qris_preview(&token).await
+}
+
+/// Claim a package's unique-nominal bill. Idempotent per email — an existing
+/// active pending row is returned unchanged.
+#[tauri::command]
+pub async fn topup_qris_claim(
+    package_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::topup::Claim, String> {
+    let token = session_bearer(&session)?;
+    logic::topup::topup_qris_claim(&token, &package_id).await
+}
+
+/// Poll a claimed top-up's status (owner-scoped on the worker).
+#[tauri::command]
+pub async fn topup_qris_status(
+    tx_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::topup::Status, String> {
+    let token = session_bearer(&session)?;
+    logic::topup::topup_qris_status(&token, &tx_id).await
+}
+
+/// Current credit balance (0 for an account that never topped up).
+#[tauri::command]
+pub async fn topup_balance(session: State<'_, Session>) -> Result<logic::topup::Balance, String> {
+    let token = session_bearer(&session)?;
+    logic::topup::topup_balance(&token).await
 }
 
 /// Authenticated RPC: create and validate a deterministic supervisor plan.
@@ -1018,7 +1061,9 @@ pub async fn plan_task(
     // the planner loop can take a minute+, and a silent UI during it was the
     // worst-rated part of the flow. The command still resolves with the plan.
     let on_event = on_event.clone();
-    let (plan, usage) =
+    // Usage accounting is consumed inside supervisor::plan_task (the Fase 0b
+    // debit runs at the composition root before this returns).
+    let (plan, _usage) =
         crate::supervisor::plan_task(&user_id, session_id, &goal, &registry, move |event| {
         let _ = on_event.send(event);
     })
@@ -1029,10 +1074,6 @@ pub async fn plan_task(
             tracing::warn!(component = "supervisor", user = %user_id, error = %e, "planning failed");
             e
         })?;
-
-    // Fair billing (usage-based debit via Supabase RPC) is dormant under
-    // local auth — no session token is held to present to the RPC.
-    let _ = usage;
 
     Ok(plan)
 }

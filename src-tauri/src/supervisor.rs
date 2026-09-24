@@ -875,7 +875,30 @@ via the always-available `session_step_results` tool. If the goal depends on det
         if let Some(v) = &parsed {
             if v.get("steps").is_some() && v.get("goal").is_some() {
                 match parse_supervisor_plan_scoped(&raw, registry, PLANNER_FORBIDDEN_TOOLS) {
-                    Ok(plan) => return Ok((plan, usage)),
+                    Ok(plan) => {
+                        // Fase 0b billing (PLAN-qris-topup.md) — composition
+                        // root: BOTH transports (Tauri command, web handler)
+                        // call this fn, so the debit lives here and no
+                        // wrapper carries billing logic. Amount = this plan's
+                        // real token usage, 1 token = 1 credit (integer unit
+                        // of the worker ledger — crates/foundation/billing
+                        // docs, `usage_to_micros`). Honor-system fail-open:
+                        // missing token or worker error → warn + continue,
+                        // NEVER fail planning (docs/BALANCE-KV-ARCHITECTURE.md).
+                        let amount = usage.input_tokens.saturating_add(usage.output_tokens);
+                        match crate::logic::local_auth::stored_token(user_id) {
+                            Some(token) => {
+                                if let Err(e) = crate::logic::topup::billing_debit(&token, amount).await
+                                {
+                                    tracing::warn!(component = "billing", user_id = %user_id, amount, error = %e, "usage debit failed — continuing (fail-open)");
+                                }
+                            }
+                            None => {
+                                tracing::warn!(component = "billing", user_id = %user_id, "no stored bearer token — usage debit skipped (fail-open)");
+                            }
+                        }
+                        return Ok((plan, usage));
+                    }
                     Err(plan_err) => {
                         // One corrective round with validator feedback, fuzzy
                         // name suggestions, and the schemas of every tool the

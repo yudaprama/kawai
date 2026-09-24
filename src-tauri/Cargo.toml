@@ -54,7 +54,6 @@ local-llm = { path = "../local-llm", optional = true }
 # `crate::auth::*` and `crate::logic::*` remain stable.
 kawai-auth = { path = "../crates/foundation/auth" }
 kawai-telemetry = { path = "../crates/foundation/telemetry" }
-kawai-billing = { path = "../crates/foundation/billing" }
 remote-llm = { path = "../crates/foundation/remote-llm" }
 kawai-db = { path = "../crates/foundation/db" }
 kawai-paths = { path = "../crates/foundation/paths" }

@@ -136,7 +136,7 @@ const registry: Record<string, StepView> = {
   // cli — terminal-style command execution view (shared with the chat side)
   cli_run: (p) => renderCliRun(p),
 
-  // knowledge — reuse the vendored renderer (same RagHit shape)
+  // knowledge — shared renderer; it unpacks the {hits, note?} envelope itself
   knowledge_search: (p) => renderKnowledgeSearch(p),
 
   // finance — quotes & history (StockQuoteView stays kawai-specific; history unified to web chart)

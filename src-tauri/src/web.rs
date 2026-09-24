@@ -1,7 +1,7 @@
 use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, RecentRun, UserInfo};
 use axum::{
     extract::{Json, Request},
-    http::{header, HeaderValue, StatusCode},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     middleware::{from_fn, Next},
     response::{sse::Event as SseFrame, sse::KeepAlive, IntoResponse, Response, Sse},
     routing::post,
@@ -1770,6 +1770,74 @@ async fn graph_stats_handler(
 
 
 
+/// ── QRIS top-up (PLAN-qris-topup.md Fase 3) ────────────────────────────────
+/// Auth-required thin proxies sharing `logic::topup` with the Tauri commands.
+/// The worker bearer here is the RAW `kawai_session` cookie value (the
+/// Ed25519 token) read straight from the request headers; the middleware
+/// still only resolves it to the email extension, unchanged.
+fn cookie_bearer(headers: &HeaderMap) -> Result<String, (StatusCode, String)> {
+    headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| extract_cookie(s, SESSION_COOKIE))
+        .map(str::to_string)
+        .ok_or_else(|| (StatusCode::UNAUTHORIZED, "no session".to_string()))
+}
+
+async fn topup_qris_preview_handler(
+    headers: HeaderMap,
+) -> Result<Json<logic::topup::Preview>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::topup::topup_qris_preview(&token)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TopupQrisClaimRequest {
+    package_id: String,
+}
+
+async fn topup_qris_claim_handler(
+    headers: HeaderMap,
+    Json(req): Json<TopupQrisClaimRequest>,
+) -> Result<Json<logic::topup::Claim>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::topup::topup_qris_claim(&token, &req.package_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TopupQrisStatusRequest {
+    tx_id: String,
+}
+
+async fn topup_qris_status_handler(
+    headers: HeaderMap,
+    Json(req): Json<TopupQrisStatusRequest>,
+) -> Result<Json<logic::topup::Status>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::topup::topup_qris_status(&token, &req.tx_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+async fn topup_balance_handler(
+    headers: HeaderMap,
+) -> Result<Json<logic::topup::Balance>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::topup::topup_balance(&token)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
 /// Reads the `kawai_session` cookie (the signed-in email) and injects it as a
 /// request extension. 401 on missing/foreign cookie. Uses
 /// `from_fn` (state `()`), so it composes with a `Router<()>`.
@@ -1922,6 +1990,12 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/memory_scene_list", post(memory_scene_list_handler))
         .route("/api/memory_persona_generate", post(memory_persona_generate_handler))
         .route("/api/memory_persona_get", post(memory_persona_get_handler))
+        // QRIS top-up (PLAN-qris-topup.md Fase 3) — op name = path segment,
+        // the same 4 ops as the Tauri commands (POST on both transports).
+        .route("/api/topup_qris_preview", post(topup_qris_preview_handler))
+        .route("/api/topup_qris_claim", post(topup_qris_claim_handler))
+        .route("/api/topup_qris_status", post(topup_qris_status_handler))
+        .route("/api/topup_balance", post(topup_balance_handler))
         .route_layer(from_fn(auth_middleware));
 
     #[cfg(feature = "litert")]
@@ -2120,8 +2194,8 @@ async fn plan_task_handler(
     )
     .await
     .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e))?;
-    // Usage-based billing is dormant under local auth (no session token is
-    // held anywhere) — flat per-turn in the frontend was removed with it.
+    // Usage debit (Fase 0b) runs inside supervisor::plan_task — the
+    // composition root both transports share; no billing logic here.
     // Web transport has no live planning surface — progress rounds are logged
     // only (the plan still resolves as JSON).
     crate::supervisor::plan_task(&user_id, req.session_id, &req.goal, &registry, |event| {

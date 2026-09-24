@@ -197,6 +197,13 @@ pub fn run() {
         commands::graph_stats,
         commands::frontend_log,
         commands::synthesize_speech,
+
+        // ── QRIS top-up (PLAN-qris-topup.md Fase 3) ─────────────────────
+        commands::topup_qris_preview,
+        commands::topup_qris_claim,
+        commands::topup_qris_status,
+        commands::topup_balance,
+
         native_notifications::notification_permission_state,
         native_notifications::notification_permission_request,
         native_notifications::show_native_notification,
@@ -224,7 +231,6 @@ pub fn run() {
         commands::plan_task,
         #[cfg(feature = "litert")]
         commands::supervisor_step_output,
-        commands::bill_turn,
 
         // ── litert + office (knowledge context + rig tools) ─────────────
         #[cfg(feature = "litert")]

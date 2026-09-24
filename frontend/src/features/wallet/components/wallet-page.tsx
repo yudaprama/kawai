@@ -14,6 +14,7 @@ import { DEFAULT_CHAIN_ID } from "../lib/types";
 import { useBalances } from "../hooks/use-balances";
 import { useNetwork } from "../hooks/use-network";
 import { useWallet } from "../hooks/use-wallet";
+import { QRCodeSVG } from "qrcode.react";
 import { CopyButton } from "./copy-button";
 import { HomeContent } from "./home-content";
 import { SendForm } from "./send-form";
@@ -293,9 +294,8 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
             <DialogTitle>Receive</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 py-2">
-            <div className="rounded-xl border bg-white p-3">
-              {/* simple text fallback for QR — add qrcode.react later if needed */}
-              <div className="font-mono text-xs break-all w-[200px] text-center">{address}</div>
+            <div className="rounded-xl bg-white p-3">
+              <QRCodeSVG value={address} size={200} marginSize={0} />
             </div>
             <div className="flex items-center gap-2 font-mono text-xs">
               <span>

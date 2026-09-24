@@ -3293,7 +3293,6 @@ dependencies = [
  "kawai-agent-contract",
  "kawai-analytics",
  "kawai-auth",
- "kawai-billing",
  "kawai-cli",
  "kawai-constants",
  "kawai-db",
@@ -3413,15 +3412,6 @@ dependencies = [
  "libsql",
  "serde",
  "thiserror 2.0.20",
-]
-
-[[package]]
-name = "kawai-billing"
-version = "0.1.0"
-dependencies = [
- "reqwest 0.13.4",
- "serde",
- "serde_json",
 ]
 
 [[package]]

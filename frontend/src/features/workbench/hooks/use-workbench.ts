@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { errText, call, type KnowledgeFileInfo } from "@/lib/api";
 import { isTabularExt } from "@/lib/extensions";
 import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
+import { emitOpenTopup } from "@/features/topup/open-topup";
 
 // ── Derived view models ─────────────────────────────────────────────────────
 
@@ -520,14 +522,29 @@ export function useWorkbench() {
     async (goal: string, fileIds?: string[], opts?: { quote?: boolean }) => {
       const trimmed = goal.trim();
       if (!trimmed) return;
-      setFollowUp(false);
       // Pin the explicit target BEFORE any await — the planner must quote
       // exactly what the user armed, not whatever completes later.
       const target = quoteTarget;
       const targetUsable =
         target != null && target.status === "completed" && target.outputFull != null && target.planKey != null;
-      setQuoteTarget(null);
       const quote = opts?.quote === true || targetUsable;
+      // Fase 0a credit pre-check (PLAN-qris-topup) — ONE balance read per
+      // submit attempt: zero credit blocks the run and hands off to Top Up;
+      // ANY fetch error fails open so an unreachable worker never blocks a
+      // goal (legacy gateTurn behavior). Sits before every state mutation so
+      // a blocked submit leaves the composer/badges untouched.
+      try {
+        const { credit } = await call<{ credit: number }>("topup_balance");
+        if (credit <= 0) {
+          toast("Kredit habis — isi ulang lewat Top Up");
+          emitOpenTopup();
+          return;
+        }
+      } catch {
+        // fail-open — submit normally
+      }
+      setFollowUp(false);
+      setQuoteTarget(null);
       setQuotedLastRun(quote);
       // Sessions are lazy — create on first desk run. Workbench runs live in
       // their own session so chat history stays chat.

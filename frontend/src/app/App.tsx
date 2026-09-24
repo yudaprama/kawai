@@ -17,6 +17,8 @@ import { SkillsAssetPage } from "@/features/skills/components/skills-page";
 import { WikiAssetPage } from "@/features/assets/pages/wiki-page";
 import { SqlSourcesAssetPage } from "@/features/assets/pages/sql-sources-page";
 import { WalletPage } from "@/features/wallet/components/wallet-page";
+import { OPEN_TOPUP_EVENT } from "@/features/topup/open-topup";
+import { TopupPage } from "@/features/topup/topup-page";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
 
 export default function App() {
@@ -108,6 +110,17 @@ export default function App() {
     window.addEventListener(OPEN_PREVIEW_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_PREVIEW_EVENT, onOpen);
   }, [ka.setPreviewFile, ka.knowledge.files]);
+
+  // Top Up navigation — the Fase 0a credit gate at goal submit opens the Top
+  // Up asset page (App owns assetView; same window-event bridge as previews).
+  useEffect(() => {
+    const onOpen = () => {
+      setAssetView("topup");
+      setMobileDrawer(null);
+    };
+    window.addEventListener(OPEN_TOPUP_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_TOPUP_EVENT, onOpen);
+  }, []);
 
   // App-level "New" (rail button + Cmd/Ctrl+N): close any asset view, then
   // reset both shells — the chat hook (knowledge/session-dialog binding) and
@@ -215,6 +228,8 @@ export default function App() {
       />
     ) : assetView === "wallet" ? (
       <WalletPage onBack={() => setAssetView(null)} />
+    ) : assetView === "topup" ? (
+      <TopupPage onBack={() => setAssetView(null)} />
     ) : null;
 
   return (

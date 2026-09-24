@@ -255,7 +255,7 @@ Memory / knowledge (`kawai-memory`, `kawai-knowledge`):
 |---|---|---|
 | `memory_search` | text lines `- (kind \| mem_id) Title: content` | `MemoryLinesView` — badge = kind |
 | `memory_graph_search` | `## Entity` sections of the same lines | `MemoryGraphView` |
-| `knowledge_search` | JSON array of `{source, locator, content}` hits | reuses vendored `renderKnowledgeSearch` |
+| `knowledge_search` | `{"hits":[{source, locator, content, fileId}], "note"?}` — empty search → `hits: []` with retry guidance in `note`; a bare hit array is the pre-envelope shape of already-persisted rows | `renderKnowledgeSearch` (shared via `tool-renderers/knowledge.tsx`) — count line + source/locator/content cards, `note` as footnote |
 | `session_step_results` | `{"entries":[{run, is_last_run, tool, finished_at, output, truncated}], "note"?}` | `SessionStepResultsView` — card per entry, markdown body, "last run" pill, truncation note |
 
 Binance (`crates/toolsets/binance`):
