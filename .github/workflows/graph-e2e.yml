@@ -68,7 +68,7 @@ jobs:
         working-directory: src-tauri
 
       - name: cargo check (graph + web)
-        run: cargo check,web
+        run: cargo check --features web
         working-directory: src-tauri
 
       - name: cargo check (graph + office + litert)
@@ -93,7 +93,6 @@ jobs:
       # pure gate above stays green on forks without secrets.
       - name: graph_index_and_search E2E (ignored, needs vault)
         working-directory: src-tauri
-        env:
         run: |
           set +e
           cargo test --lib logic::graph::tests::graph_index_and_search_e2e -- --ignored --nocapture

@@ -36,3 +36,6 @@
 [submodule "whatlang-rs"]
 	path = whatlang-rs
 	url = https://github.com/greyblake/whatlang-rs.git
+[submodule "nautilus_trader"]
+	path = nautilus_trader
+	url = https://github.com/nautechsystems/nautilus_trader
