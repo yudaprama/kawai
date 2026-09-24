@@ -121,7 +121,7 @@ dependencies = [
  "charton",
  "chrono",
  "kawai-tools",
- "office_oxide 0.1.8",
+ "office_oxide",
  "polars",
  "serde",
  "serde_json",
@@ -3316,7 +3316,7 @@ dependencies = [
  "objc2",
  "objc2-foundation",
  "objc2-user-notifications",
- "office_oxide 0.1.8",
+ "office_oxide",
  "onboarding",
  "pdf_oxide",
  "ragloader",
@@ -3519,7 +3519,7 @@ dependencies = [
  "kawai-tools",
  "kawai-vision",
  "libsql",
- "office_oxide 0.1.8",
+ "office_oxide",
  "pdf_oxide",
  "ragloader",
  "regex",
@@ -3558,7 +3558,7 @@ dependencies = [
  "kawai-vision",
  "office-common",
  "office-editops",
- "office_oxide 0.1.8",
+ "office_oxide",
  "pdf_oxide",
  "regex",
  "reqwest 0.13.4",
@@ -4523,31 +4523,13 @@ dependencies = [
 name = "office-editops"
 version = "0.1.0"
 dependencies = [
- "office_oxide 0.1.8",
+ "office_oxide",
  "serde_json",
 ]
 
 [[package]]
 name = "office_oxide"
-version = "0.1.8"
-dependencies = [
- "atoi_simd",
- "encoding_rs",
- "fast-float2",
- "libc",
- "log",
- "quick-xml 0.41.0",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "zip",
-]
-
-[[package]]
-name = "office_oxide"
-version = "0.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e07e156a6bc62caaa66fc698daad7405dd62e86f5292fd22898c1a55f154748d"
+version = "0.1.99"
 dependencies = [
  "atoi_simd",
  "encoding_rs",
@@ -4753,7 +4735,7 @@ dependencies = [
  "md-5",
  "memchr",
  "nom 8.0.0",
- "office_oxide 0.1.9",
+ "office_oxide",
  "phf 0.14.0",
  "qcms",
  "quick-xml 0.41.0",
@@ -6010,7 +5992,7 @@ dependencies = [
  "async-trait",
  "jigsawstack",
  "kawai-vision",
- "office_oxide 0.1.8",
+ "office_oxide",
  "pdf_oxide",
  "serde",
  "text-splitter",
