@@ -2,7 +2,8 @@
 # tauri CLI wrapper (invoked via `bun tauri ...`).
 # `dev` launches the on-device LLM stack: LiteRT dylibs rpath, litert feature,
 # binance agent tools (crypto_price/klines/ta in the supervisor registry),
-# dev-bypass auth, profraw disabled. Everything else passes through unchanged.
+# the Kawai wallet (Monad device hot-wallet + chain ops), dev-bypass auth,
+# profraw disabled. Everything else passes through unchanged.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,7 +23,7 @@ if [ "$CMD" = "dev" ]; then
     LITERT_LM_LIB_DIR="$LITERT_NATIVE" \
     LLVM_PROFILE_FILE=/dev/null \
     KAWAI_AUTH_DEV_USER_ID=demo \
-    "$TAURI" dev -- --features litert,binance
+    "$TAURI" dev -- --features litert,binance,monad
 fi
 
 exec "$TAURI" "$@"
