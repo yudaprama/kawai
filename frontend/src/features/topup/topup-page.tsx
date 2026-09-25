@@ -377,11 +377,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                   : `Masukkan ${preview.minBase.toLocaleString("id-ID")}–${preview.maxBase.toLocaleString("id-ID")}, kelipatan ${preview.baseStep}`}
               </p>
             </div>
-            <Button
-              className="w-full"
-              disabled={!baseValid || claiming}
-              onClick={() => void claimNow(base)}
-            >
+            <Button className="w-full" disabled={!baseValid || claiming} onClick={() => void claimNow(base)}>
               {claiming ? <Spinner className="size-4" /> : <Icon name="qr-code" className="size-4" />}
               Buat QR
             </Button>
