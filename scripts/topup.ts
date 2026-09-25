@@ -1,14 +1,14 @@
 #!/usr/bin/env bun
 /**
- * topup.ts — CLI admin: kredit / debit saldo top-up user.
+ * topup.ts — CLI admin: tambah / kurang saldo token top-up user.
  *
  * Pemakaian:
- *   bun scripts/topup.ts <email> <amount>   # amount integer signed: + kredit, - debit
+ *   bun scripts/topup.ts <email> <amount>   # amount integer signed: + = tambah, - = potong
  *   [--token-file <path>] berkas auth.token admin (default: direktori data app)
  *   [--url <worker>] default production worker; lokal: --url http://127.0.0.1:8787
  *
  * Contoh:
- *   bun scripts/topup.ts user@example.com 1000000   # +1jt kredit
+ *   bun scripts/topup.ts user@example.com 1000000   # +1jt token
  *   bun scripts/topup.ts user@example.com -500000   # koreksi -500rb (gagal bila saldo kurang)
  *
  * Token dibaca dari berkas (pola sama scripts/qris.ts) - tidak ada env var baru.
@@ -50,7 +50,7 @@ if (tokenFile === "") {
 
 if (!email || !amountStr) {
   console.error(`Pemakaian:
-  bun scripts/topup.ts <email> <amount>   # amount integer signed: + kredit, - debit
+  bun scripts/topup.ts <email> <amount>   # amount integer signed: + = tambah, - = potong
   [--token-file <path>] [--url <worker>]`);
   process.exit(1);
 }
@@ -78,9 +78,9 @@ const resp = await fetch(`${url}/admin/balance/credit`, {
   headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
   body: JSON.stringify({ email, amount }),
 });
-const data = (await resp.json().catch(() => ({}))) as { email?: string; credit?: number; error?: string };
+const data = (await resp.json().catch(() => ({}))) as { email?: string; tokens?: number; error?: string };
 if (!resp.ok) {
   console.error(`HTTP ${resp.status}${data.error ? ` ${data.error}` : ""}`);
   process.exit(1);
 }
-console.log(`${data.email ?? email}: saldo kredit ${data.credit ?? "?"} (${amount > 0 ? "+" : ""}${amount})`);
+console.log(`${data.email ?? email}: saldo token ${data.tokens ?? "?"} (${amount > 0 ? "+" : ""}${amount})`);

@@ -550,15 +550,15 @@ export function useWorkbench() {
       const targetUsable =
         target != null && target.status === "completed" && target.outputFull != null && target.planKey != null;
       const quote = opts?.quote === true || targetUsable;
-      // Fase 0a credit pre-check (PLAN-qris-topup) — ONE balance read per
-      // submit attempt: zero credit blocks the run and hands off to Top Up;
+      // Fase 0a tokens pre-check (PLAN-qris-topup) — ONE balance read per
+      // submit attempt: zero tokens blocks the run and hands off to Top Up;
       // ANY fetch error fails open so an unreachable worker never blocks a
       // goal (legacy gateTurn behavior). Sits before every state mutation so
       // a blocked submit leaves the composer/badges untouched.
       try {
-        const { credit } = await call<{ credit: number }>("topup_balance");
-        if (credit <= 0) {
-          toast("Kredit habis — isi ulang lewat Top Up");
+        const { tokens } = await call<{ tokens: number }>("topup_balance");
+        if (tokens <= 0) {
+          toast("Token habis — isi ulang lewat Top Up");
           emitOpenTopup();
           return;
         }

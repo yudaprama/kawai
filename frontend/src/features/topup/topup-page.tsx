@@ -4,27 +4,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 import { call, errText } from "@/lib/api";
 
 // ── Wire shapes (camelCase JSON — local mirrors of the worker contract) ─────
 
-export interface TopupPackage {
-  id: string;
-  idr: number;
-  credit: number;
-}
-
 export interface TopupPreview {
   qrPayload: string;
-  packages: TopupPackage[];
+  /** Inclusive base range (IDR) the user may request. */
+  minBase: number;
+  maxBase: number;
+  /** Base must be a multiple of this (1000). */
+  baseStep: number;
+  /** `tokens = base * tokensPerIdr`. */
+  tokensPerIdr: number;
 }
 
 export interface TopupClaim {
   txId: string;
   idrAmount: number;
-  credit: number;
+  tokens: number;
   qrPayload: string;
   /** Unix seconds. */
   expiresAt: number;
@@ -35,13 +36,13 @@ export type TopupStatus = "pending" | "crediting" | "credited" | "rejected" | "e
 export interface TopupStatusInfo {
   status: TopupStatus;
   idrAmount: number;
-  credit: number;
+  tokens: number;
   createdAt: number;
   creditedAt?: number | null;
 }
 
 interface TopupBalance {
-  credit: number;
+  tokens: number;
 }
 
 // ── Constants (source-hardcoded — repo rule: no new env) ────────────────────
@@ -80,7 +81,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
   const [balance, setBalance] = useState<number | null>(null);
   const loadBalance = useCallback(() => {
     void call<TopupBalance>("topup_balance")
-      .then(({ credit }) => setBalance(credit))
+      .then(({ tokens }) => setBalance(tokens))
       .catch(() => setBalance(null));
   }, []);
   useEffect(() => {
@@ -108,9 +109,22 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
     loadPreview();
   }, [loadPreview]);
 
+  // ── Amount picker (pay-as-you-go) ─────────────────────────────────────────
+  const [amountInput, setAmountInput] = useState("");
+
+  /** Base: integer, within [minBase, maxBase], kelipatan baseStep. */
+  const base = Number(amountInput);
+  const baseValid =
+    amountInput !== "" &&
+    Number.isInteger(base) &&
+    preview != null &&
+    base >= preview.minBase &&
+    base <= preview.maxBase &&
+    base % preview.baseStep === 0;
+
   // ── Active claim (the QR tx) ──────────────────────────────────────────────
   const [claim, setClaim] = useState<TopupClaim | null>(null);
-  const [claimPkgId, setClaimPkgId] = useState<string | null>(null);
+  const [claimAmount, setClaimAmount] = useState<number | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [txStatus, setTxStatus] = useState<TopupStatusInfo | null>(null);
@@ -119,20 +133,21 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
 
   const resetClaim = useCallback(() => {
     setClaim(null);
-    setClaimPkgId(null);
+    setClaimAmount(null);
     setTxStatus(null);
     setClaimError(null);
   }, []);
 
-  /** Claim (idempotent server-side: one active pending row per email). On
-   *  any failure — incl. 404 — the txId state is cleared back to the picker. */
-  const claimNow = useCallback(async (packageId: string) => {
+  /** Claim (idempotent server-side: one active pending row per email — an
+   *  existing pending claim returns unchanged regardless of the requested
+   *  base). On any failure the tx state is cleared back to the picker. */
+  const claimNow = useCallback(async (amount: number) => {
     setClaiming(true);
     setClaimError(null);
     try {
-      const data = await call<TopupClaim>("topup_qris_claim", { packageId });
+      const data = await call<TopupClaim>("topup_qris_claim", { amount });
       claimStartRef.current = Date.now();
-      setClaimPkgId(packageId);
+      setClaimAmount(amount);
       setTxStatus(null);
       setClaim(data);
     } catch (err) {
@@ -203,12 +218,12 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <AssetShell title="Top Up" subtitle="QRIS · app credit" onBack={onBack}>
+    <AssetShell title="Top Up" subtitle="QRIS · app tokens" onBack={onBack}>
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
         <Card className="py-4">
           <CardContent className="px-4 text-sm">
             <p>
-              <span className="text-muted-foreground">Saldo kredit: </span>
+              <span className="text-muted-foreground">Saldo token: </span>
               <span className="text-base font-semibold">
                 {balance === null ? "—" : balance.toLocaleString("id-ID")}
               </span>
@@ -228,10 +243,10 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                   <p className="flex items-center gap-2 text-sm">
                     <Icon name="check-circle-2" className="size-4 text-emerald-500" />
                     <span className="font-medium text-emerald-500">Masuk ✓</span>
-                    <span className="text-muted-foreground">+{txStatus.credit} kredit</span>
+                    <span className="text-muted-foreground">+{txStatus.tokens} token</span>
                   </p>
                   <p className="text-muted-foreground text-xs">
-                    Saldo kredit:{" "}
+                    Saldo token:{" "}
                     <span className="font-medium">{balance === null ? "—" : balance.toLocaleString("id-ID")}</span>
                   </p>
                   <Button onClick={resetClaim} size="sm" variant="outline">
@@ -261,7 +276,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                   <Button
                     disabled={claiming}
                     onClick={() => {
-                      if (claimPkgId != null) void claimNow(claimPkgId);
+                      if (claimAmount != null) void claimNow(claimAmount);
                       else resetClaim();
                     }}
                     size="sm"
@@ -288,7 +303,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                     <span className="text-muted-foreground">Berlaku </span>
                     <Countdown expiresAt={claim.expiresAt} />
                   </p>
-                  <p className="text-xs">+{claim.credit} kredit setelah terverifikasi</p>
+                  <p className="text-xs">+{claim.tokens} token setelah terverifikasi</p>
                 </div>
               </div>
               <div className="border-amber-500/30 space-y-1 rounded-md border p-3 text-xs">
@@ -315,34 +330,61 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
           // ── Not configured (503 QRIS_PAYLOAD) or preview failure — a notice, never a crash ──
           <div className="border-amber-500/30 space-y-2 rounded-md border p-4 text-sm">
             <p className="font-medium text-amber-500">
-              {previewError.includes("QRIS_PAYLOAD") ? "QRIS belum dikonfigurasi" : "Gagal memuat paket"}
+              {previewError.includes("QRIS_PAYLOAD") ? "QRIS belum dikonfigurasi" : "Gagal memuat pengaturan"}
             </p>
             <p className="text-muted-foreground font-mono text-xs break-words">{previewError}</p>
             <Button onClick={loadPreview} size="sm" variant="outline">
               Coba lagi
             </Button>
           </div>
-        ) : preview == null || preview.packages.length === 0 ? (
-          <p className="text-muted-foreground text-sm">Belum ada paket top-up.</p>
+        ) : preview == null ? (
+          <p className="text-muted-foreground text-sm">Pengaturan top-up belum dimuat.</p>
         ) : (
-          // ── Package picker ────────────────────────────────────────────────
+          // ── Amount picker (pay-as-you-go) ─────────────────────────────────
           <>
-            <h3 className="text-sm font-medium">Pilih paket</h3>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {preview.packages.map((pkg) => (
-                <button
-                  className="hover:bg-[var(--tea-color-bg-secondary-default)] rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4 text-left transition-colors disabled:opacity-50"
-                  disabled={claiming}
-                  key={pkg.id}
-                  onClick={() => void claimNow(pkg.id)}
-                  type="button"
-                >
-                  <span className="block text-base font-semibold">{formatIdr(pkg.idr)}</span>
-                  <span className="text-muted-foreground block text-xs">+{pkg.credit} kredit</span>
-                </button>
-              ))}
+            <h3 className="text-sm font-medium">Nominal top-up</h3>
+            <div className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
+              <div className="flex items-center gap-2">
+                <Input
+                  className="w-40 font-semibold"
+                  inputMode="numeric"
+                  max={preview.maxBase}
+                  min={preview.minBase}
+                  onChange={(e) => setAmountInput(e.target.value.replace(/[^\d]/g, ""))}
+                  placeholder={String(preview.minBase)}
+                  step={preview.baseStep}
+                  type="number"
+                  value={amountInput}
+                />
+                <span className="text-muted-foreground text-sm">IDR</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[10000, 30000, 50000, 99000].map((preset) => (
+                  <button
+                    className="hover:bg-[var(--tea-color-bg-secondary-default)] rounded-md border px-3 py-1 text-xs transition-colors disabled:opacity-50"
+                    disabled={claiming}
+                    key={preset}
+                    onClick={() => setAmountInput(String(preset))}
+                    type="button"
+                  >
+                    {formatIdr(preset)}
+                  </button>
+                ))}
+              </div>
+              <p className="text-muted-foreground mt-3 text-xs">
+                {baseValid
+                  ? `+${(base * preview.tokensPerIdr).toLocaleString("id-ID")} token — bayar nominal persis yang tampil setelah klaim`
+                  : `Masukkan ${preview.minBase.toLocaleString("id-ID")}–${preview.maxBase.toLocaleString("id-ID")}, kelipatan ${preview.baseStep}`}
+              </p>
             </div>
-            {claiming && <p className="text-muted-foreground text-xs">Menyiapkan QR…</p>}
+            <Button
+              className="w-full"
+              disabled={!baseValid || claiming}
+              onClick={() => void claimNow(base)}
+            >
+              {claiming ? <Spinner className="size-4" /> : <Icon name="qr-code" className="size-4" />}
+              Buat QR
+            </Button>
             {claimError && <p className="text-destructive text-xs">{claimError}</p>}
           </>
         )}

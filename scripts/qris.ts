@@ -24,7 +24,7 @@ interface PendingItem {
   txId: string;
   email: string;
   idrAmount: number;
-  credit: number;
+  tokens: number;
   createdAt: number;
 }
 
@@ -88,14 +88,14 @@ if (cmd === "list") {
   for (const it of items) {
     const when = new Date(it.createdAt * 1000).toISOString().replace("T", " ").slice(0, 19);
     console.log(
-      `${it.txId}  ${when}  ${it.email}  Rp${it.idrAmount.toLocaleString("id-ID")}  ->  ${it.credit} kredit`,
+      `${it.txId}  ${when}  ${it.email}  Rp${it.idrAmount.toLocaleString("id-ID")}  ->  ${it.tokens} token`,
     );
   }
   console.log(`\nVerifikasi mutasi bank dulu, lalu: bun scripts/qris.ts confirm <tx_id>`);
 } else if ((cmd === "confirm" || cmd === "reject") && txId) {
   const out = await req(`/topup/qris/${cmd}`, { txId });
-  const credit = out.credit !== undefined ? `  (saldo user: ${out.credit})` : "";
-  console.log(`${cmd} ${txId} -> ${String(out.status)}${credit}`);
+  const note = out.tokens !== undefined ? `  (saldo user: ${out.tokens})` : "";
+  console.log(`${cmd} ${txId} -> ${String(out.status)}${note}`);
 } else {
   console.error(
     "Pakai: bun scripts/qris.ts list | confirm <tx_id> | reject <tx_id> [--token-file <path>] [--url <worker>]",

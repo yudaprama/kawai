@@ -1,4 +1,4 @@
-//! QRIS top-up + credit-balance worker proxies (PLAN-qris-topup.md Fase 3).
+//! QRIS top-up + token-balance worker proxies (PLAN-qris-topup.md Fase 3).
 //!
 //! Pure layer — `reqwest` only, no tauri/axum: BOTH transports (Tauri
 //! commands in `commands.rs`, Axum routes in `web.rs`) call these same fns.
@@ -68,20 +68,16 @@ fn parsed<T: DeserializeOwned>(json: serde_json::Value) -> std::result::Result<T
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Package {
-    pub id: String,
-    /// Price in whole Rupiah.
-    pub idr: i64,
-    /// Credit granted, integer units — same unit as the worker ledger
-    /// (1 token = 1 credit, see crates/foundation/billing docs).
-    pub credit: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Preview {
     pub qr_payload: String,
-    pub packages: Vec<Package>,
+    /// Base minimum (inclusive) that the user may request.
+    pub min_base: i64,
+    /// Base maksimum (inclusive) that the user may request.
+    pub max_base: i64,
+    /// Base wajib kelipatan ini (1000).
+    pub base_step: i64,
+    /// Token per 1 IDR base — `tokens = base * tokens_per_idr`.
+    pub tokens_per_idr: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,7 +85,7 @@ pub struct Preview {
 pub struct Claim {
     pub tx_id: String,
     pub idr_amount: i64,
-    pub credit: i64,
+    pub tokens: i64,
     pub qr_payload: String,
     /// Unix seconds — unique-nominal bill expiry.
     pub expires_at: u64,
@@ -101,7 +97,7 @@ pub struct Status {
     /// `pending | crediting | credited | rejected | expired`.
     pub status: String,
     pub idr_amount: i64,
-    pub credit: i64,
+    pub tokens: i64,
     pub created_at: u64,
     pub credited_at: Option<u64>,
 }
@@ -109,24 +105,27 @@ pub struct Status {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Balance {
-    pub credit: i64,
+    pub tokens: i64,
 }
 
 // ── Ops (auth-required thin proxies) ─────────────────────────────────────────
 
-/// `GET /topup/qris/preview` — static QRIS payload + purchasable packages.
+/// `GET /topup/qris/preview` — static QRIS payload + pay-as-you-go range
+/// config (`minBase`/`maxBase`/`baseStep`/`tokensPerIdr`).
 /// Errors while the merchant's EMVCo payload constant is unset (worker 503).
 pub async fn topup_qris_preview(token: &str) -> std::result::Result<Preview, String> {
     parsed(get(token, "/topup/qris/preview").await?)
 }
 
-/// `POST /topup/qris/claim` — claim a package's unique-nominal bill.
-/// Idempotent per email: an existing active pending row returns unchanged.
+/// `POST /topup/qris/claim` — claim a unique-nominal bill for `amount` (base,
+/// integer, `min_base`–`max_base`, kelipatan `base_step`). The worker adds a
+/// `000–900` suffix → `idr_amount`. Idempotent per email: an existing active
+/// pending row returns unchanged.
 pub async fn topup_qris_claim(
     token: &str,
-    package_id: &str,
+    amount: i64,
 ) -> std::result::Result<Claim, String> {
-    let body = serde_json::json!({ "packageId": package_id });
+    let body = serde_json::json!({ "amount": amount });
     parsed(post(token, "/topup/qris/claim", body).await?)
 }
 
@@ -143,7 +142,7 @@ pub async fn topup_qris_status(
     parsed(json).map(Some)
 }
 
-/// `GET /topup/balance` — current credit (0 for an account never topped up).
+/// `GET /topup/balance` — current tokens (0 for an account never topped up).
 pub async fn topup_balance(token: &str) -> std::result::Result<Balance, String> {
     parsed(get(token, "/topup/balance").await?)
 }

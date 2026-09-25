@@ -371,6 +371,15 @@ async fn build_supervisor_toolset(
             None
         }
     };
+    let monad = || -> Option<kawai_tools::ToolSet> {
+        #[cfg(feature = "litert")]
+        { agent_registry::monad_tools_for_supervisor(&context, remote_configured) }
+        #[cfg(not(feature = "litert"))]
+        {
+            let _ = (&context, remote_configured);
+            None
+        }
+    };
     let generated = || -> Option<kawai_tools::ToolSet> {
         #[cfg(feature = "litert")]
         {
@@ -410,6 +419,7 @@ async fn build_supervisor_toolset(
             analytics(),
             finance(),
             entertainment(),
+            monad(),
             generated(),
         ]
             .into_iter()
@@ -428,6 +438,7 @@ async fn build_supervisor_toolset(
         agent_registry::BINANCE_AGENT_ID => binance(),
         agent_registry::ANALYTICS_AGENT_ID => analytics(),
         agent_registry::ENTERTAINMENT_AGENT_ID => entertainment(),
+        agent_registry::MONAD_AGENT_ID => monad(),
         _ => None,
     }
 }
@@ -880,10 +891,10 @@ via the always-available `session_step_results` tool. If the goal depends on det
                         // root: BOTH transports (Tauri command, web handler)
                         // call this fn, so the debit lives here and no
                         // wrapper carries billing logic. Amount = this plan's
-                        // real token usage, 1 token = 1 credit (integer unit
-                        // of the worker ledger — crates/foundation/billing
-                        // docs, `usage_to_micros`). Honor-system fail-open:
-                        // missing token or worker error → warn + continue,
+                        // real token usage (input+output tokens), debited 1:1
+                        // against the user's token balance — the integer unit
+                        // of the worker ledger. Honor-system fail-open:
+                        // missing bearer or worker error → warn + continue,
                         // NEVER fail planning (docs/BALANCE-KV-ARCHITECTURE.md).
                         let amount = usage.input_tokens.saturating_add(usage.output_tokens);
                         match crate::logic::local_auth::stored_token(user_id) {
@@ -1325,7 +1336,7 @@ async fn open_synced_catalog(
             eprintln!(
                 "[tool-catalog] local replica is EMPTY (sync failed or remote unseeded) — \
                  planner restricted to core tools; re-seed via \
-                 `cargo run --example seed_tool_catalog --features litert,binance,codegraph`"
+                 `cargo run --example seed_tool_catalog --features litert,binance,codegraph,monad`"
             );
             None
         }

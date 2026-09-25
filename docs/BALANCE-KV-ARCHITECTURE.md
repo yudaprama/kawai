@@ -1,6 +1,6 @@
 # Balance & KV Architecture — Worker ⇄ D1
 
-**Tanggal:** 2026-09-24 (rev 3 — ledger credit di D1, rute QRIS top-up)
+**Tanggal:** 2026-09-24 (rev 3 — ledger token di D1, rute QRIS top-up)
 **Status:** ✅ Kod live & terverifikasi (lihat §6); rute **berbayar** menunggu
 pengisian konstanta `QRIS_PAYLOAD` di worker (sampai itu preview balik 503 dan
 UI menampilkan notice "QRIS belum dikonfigurasi").
@@ -8,10 +8,10 @@ UI menampilkan notice "QRIS belum dikonfigurasi").
 `kawai-server/worker/`, TypeScript + Hono di Cloudflare Workers, binding D1
 `DB` = database `kawai-auth` — satu database untuk identitas **dan** uang).
 
-Dokumen ini menjelaskan arsitektur saldo/credit yang berjalan sekarang:
+Dokumen ini menjelaskan arsitektur saldo/token yang berjalan sekarang:
 **Cloudflare Worker + D1**, tanpa cache — setiap data hidup di satu tempat.
 
-**Model rilis:** saldo = **token credit** (1:1 dengan token provider, tanpa
+**Model rilis:** saldo = **token** (1:1 dengan pemakaian token di provider LLM, tanpa
 konversi USDT). Debit usage-based dari `RemoteUsage` nyata (Fase 0b), top-up
 lewat **QRIS statis** (klaim nominal unik, verifikasi admin) atau koreksi admin
 via CLI.
@@ -24,7 +24,7 @@ via CLI.
 
 | Data | Source of truth | Alasan |
 |---|---|---|
-| **Saldo, ledger credit, klaim QRIS** | 🔒 D1 (`kawai-auth`, binding `DB`) | Uang — butuh ACID & atomic debit; D1 = SQLite ACID single-primary, satu database dg auth (email PK, tanpa join identitas) |
+| **Saldo, ledger token, klaim QRIS** | 🔒 D1 (`kawai-auth`, binding `DB`) | Uang — butuh ACID & atomic debit; D1 = SQLite ACID single-primary, satu database dg auth (email PK, tanpa join identitas) |
 | **Identitas (auth)** | 🔒 D1 (sama) | Sudah di worker (Ed25519, email PRIMARY KEY) |
 | **Settlement, Merkle, claim** (rencana) | 🔒 D1 | Transactional, agregasi SQL |
 | **API key** (`apikey:`, `authz:`) | ✅ KV worker | Write-once, delete saat revoke |
@@ -48,7 +48,7 @@ Nilai tagihan hanya diketahui server yang melayani → **worker yang menagih**.
 Debit dipanggil dari satu titik komposisi (`supervisor::plan_task`) sehingga
 transport desktop **dan** web sama-sama terdebit; kebijakannya fail-open
 (hormat-sistem — enforcement ketat butuh proxy LLM server-side, lihat §8).
-Client hanya boleh: baca saldo (`GET /topup/balance`) dan credit terkontrol
+Client hanya boleh: baca saldo (`GET /topup/balance`) dan penyesuaian saldo terkontrol
 admin (`POST /admin/balance/credit`, hanya menambah/mengurang dengan guard
 saldo ≥ 0).
 
@@ -70,16 +70,16 @@ app (user login — Bearer Ed25519 session token)
   │     web:     web.rs     (baca cookie kawai_session)│
   │                                                    ▼
   ├── GET  /topup/balance ────────────────→ D1 user_balances
-  ├── GET  /topup/qris/preview ───────────→ konstanta QRIS_PAYLOAD + PACKAGES
-  ├── POST /topup/qris/claim {packageId} ─→ D1 qris_topups (idempotent/email)
+  ├── GET  /topup/qris/preview ───────────→ konstanta QRIS_PAYLOAD + rentang (MIN/MAX_BASE, BASE_STEP, TOKENS_PER_IDR)
+  ├── POST /topup/qris/claim {amount} ────→ D1 qris_topups (idempotent/email)
   ├── GET  /topup/qris/status/:txId ──────→ qris_topups (owner-scope)
-  └── POST /billing/debit {amount} ───────→ UPDATE credit = credit - ?
-                                              WHERE email = ? AND credit >= ?
+  └── POST /billing/debit {amount} ───────→ UPDATE tokens = tokens - ?
+                                              WHERE email = ? AND tokens >= ?
                                               (guard atomic → 409 bila kurang)
 
   supervisor::plan_task  → debit usage sekali per plan (amount = input+output tokens,
-                           1 token = 1 credit; gagal → warn + lanjut, fail-open)
-  use-workbench.run()    → pre-check credit ≤ 0 → blokir + buka halaman Top Up
+                           debit 1:1 dari saldo; gagal → warn + lanjut, fail-open)
+  use-workbench.run()    → pre-check token ≤ 0 → blokir + buka halaman Top Up
                            (gagal baca → fail-open, submit jalan)
 
 admin (CLI, Bearer admin = ADMIN_EMAIL)
@@ -101,9 +101,9 @@ unik klaim, lalu confirm/reject (QRIS statis murni).
 
 | Tabel | Isi |
 |---|---|
-| `user_balances` | saldo credit per email (`email` PRIMARY KEY, `credit` integer ≥ 0) |
-| `balance_ledger` | append-only audit: delta signed + `ref` (tx_id klaim / null) + dibuat saat setiap perubahan credit |
-| `qris_topups` | klaim top-up: `tx_id` (IDR unique-nominal), paket, `qr_payload`, `status`, waktu, row owner = email |
+| `user_balances` | saldo token per email (`email` PRIMARY KEY, `tokens` integer ≥ 0) |
+| `balance_ledger` | append-only audit: delta signed + `ref` (tx_id klaim / null) + dibuat saat setiap perubahan saldo |
+| `qris_topups` | klaim top-up: `tx_id` (IDR unique-nominal), `package` (base nominal, string), `qr_payload`, `status`, waktu, row owner = email |
 
 Lifecycles:
 
@@ -114,7 +114,7 @@ qris_topups.status : pending → crediting → credited (CAS lalu SATU batch ato
                             │              crash → re-drive setelah 30s / UNIQUE = idempoten)
                       pending → rejected    (reject admin)
                       pending → expired     (lazy, saat expires_at terlampaui)
-user_balances.credit: +paket (confirm, UPSERT) | ±koreksi admin | -usage (debit, guard ≥ 0)
+user_balances.tokens: +nominal klaim (confirm, UPSERT) | ±koreksi admin | -usage (debit, guard ≥ 0)
 ```
 
 Schema dibuat idempoten saat startup worker (`ensureQrisSchema`) — tidak ada
@@ -124,10 +124,10 @@ migration runner terpisah.
 
 | Method | Path | Fungsi |
 |---|---|---|
-| GET | `/topup/qris/preview` | payload QR statis + daftar paket (503 bila `QRIS_PAYLOAD` belum diisi) |
+| GET | `/topup/qris/preview` | payload QR statis + rentang nominal pay-as-you-go (503 bila `QRIS_PAYLOAD` belum diisi) |
 | POST | `/topup/qris/claim` | klaim nominal unik (idempotent: klaim saat masih pending → row sama) |
 | GET | `/topup/qris/status/:txId` | status klaim (owner-scope; 404 untuk tx bukan miliknya) |
-| GET | `/topup/balance` | saldo credit pemanggil (0 bila belum pernah top-up) |
+| GET | `/topup/balance` | saldo token pemanggil (0 bila belum pernah top-up) |
 | POST | `/billing/debit` | debit usage (guard atomic → 409 `insufficient_balance`) |
 | GET | `/topup/qris/pending` | daftar klaim pending (admin) |
 | POST | `/topup/qris/confirm` | kredit klaim (admin, idempotent) |
@@ -143,7 +143,7 @@ Tabel endpoint + detail pemanggilan lengkap: `kawai-server/worker/README.md`.
   dan `web.rs` (4 route `POST /api/<name>` di protected router, Bearer dari
   cookie `kawai_session`). Frontend tidak pernah mengirim token/user id.
 - **Frontend** — `frontend/src/features/topup/` (Assets rail → Top Up):
-  preview → pilih paket → klaim → QR + countdown → polling status (5s × 5
+  preview → isi nominal → klaim → QR + countdown → polling status (5s × 5
   menit, lalu 30s; terminal sembunyikan QR). Kartu saldo dipakai lagi oleh
   pre-check Fase 0a di `use-workbench.run()`.
 - **KV worker** — tidak berubah: `apikey:`/`authz:`/`online:`/`seen:`/dll.
@@ -157,15 +157,15 @@ Tabel endpoint + detail pemanggilan lengkap: `kawai-server/worker/README.md`.
 | Nilai | Bentuk | Catatan |
 |---|---|---|
 | `ED25519_SEED` | wrangler secret | makan token session (auth) |
-| `PRIVATE_KEY` | wrangler secret | hot wallet `/transfer` — TERPISAH dari kredit app, tidak menyentuh ledger credit |
-| `QRIS_PAYLOAD`, `PACKAGES`, `EXPIRY_SECS`, `ADMIN_EMAIL` | konstanta di `qris.ts`/`billing.ts` | hardcode (aturan repo: nol env baru) |
+| `PRIVATE_KEY` | wrangler secret | hot wallet `/transfer` — TERPISAH dari token app, tidak menyentuh ledger token |
+| `QRIS_PAYLOAD`, `MIN_BASE`/`MAX_BASE`/`BASE_STEP`/`TOKENS_PER_IDR`, `EXPIRY_SECS`, `ADMIN_EMAIL` | konstanta di `qris.ts`/`billing.ts` | hardcode (aturan repo: nol env baru) |
 | `KV` binding + D1 `DB` | `wrangler.toml` | sudah live (`kawai-auth`) |
 
 ---
 
 ## 4b. Top up — dua jalur
 
-**Jalur user (QRIS, rute berbayar):** Assets rail → Top Up → pilih paket →
+**Jalur user (QRIS, rute berbayar):** Assets rail → Top Up → isi nominal →
 klaim → bayar **tepat sesuai nominal** lewat app bank/e-wallet → tunggu
 verifikasi admin → `credited` (saldo naik). Nominal salah/klaim expired tidak
 otomatis dikreditkan (reject admin / klaim baru — nominal dibebaskan).
@@ -173,7 +173,7 @@ otomatis dikreditkan (reject admin / klaim baru — nominal dibebaskan).
 **Jalur admin (koreksi manual):**
 ```bash
 cd kawai
-bun scripts/topup.ts <email> 1000000     # +1jt credit
+bun scripts/topup.ts <email> 1000000     # +1jt token
 bun scripts/topup.ts <email> -500000     # koreksi minus (gagal bila saldo kurang)
 bun scripts/qris.ts list                 # klaim pending (admin)
 ```
@@ -210,7 +210,7 @@ Detail endpoint & tabel: `kawai-server/worker/README.md`.
 
 ## 7. Gotchas (jangan diulang)
 
-1. **QRIS statis tanpa webhook** = kredit sepenuhnya kerja admin: konfirmasi
+1. **QRIS statis tanpa webhook** = verifikasi sepenuhnya kerja admin: konfirmasi
    wajib mencocokkan mutasi bank; jangan pernah auto-confirm dari nominal saja
    (attacker yang tahu nominal bisa "klaim" — dana asli tetap milik pembayar
    sah, tapi ledger jadi bohong).
@@ -220,7 +220,7 @@ Detail endpoint & tabel: `kawai-server/worker/README.md`.
 3. **Confirm idempotent wajib** — `status = pending` dicek di dalam batch
    atomik yang sama dengan UPSERT saldo + insert ledger; confirm kedua tidak
    boleh menaikkan saldo dua kali (dicek di e2e).
-4. **Guard debit ada di SQL** (`WHERE credit >= ?` + `changes == 0` → 409),
+4. **Guard debit ada di SQL** (`WHERE tokens >= ?` + `changes == 0` → 409),
    bukan baca-tulis di aplikasi — dua debit paralel tak bisa meng-overdraw.
 5. **KV eventually-consistent ~60s** — api key baru/revoke belum efektif
    global sesaat; `seen:` idempotency bisa race (worst case 1 duplikat lolos —
@@ -233,7 +233,8 @@ Detail endpoint & tabel: `kawai-server/worker/README.md`.
 
 ## 8. Roadmap
 
-- [ ] **Isi `QRIS_PAYLOAD` + konfirmasi daftar `PACKAGES` `{IDR → credit}`** +
+- [ ] **Isi `QRIS_PAYLOAD` + konfirmasi rentang/rate `MIN_BASE`/`MAX_BASE`/
+      `TOKENS_PER_IDR` {IDR → token}** +
       `ADMIN_EMAIL` (rute berbayar menunggu ini — `PLAN-qris-topup.md` §14).
 - [ ] Gateway QRIS **dinamis** (Midtrans/Xendit/DOKU/Tripay): API key +
       webhook → verifikasi otomatis tanpa admin (fase 2).

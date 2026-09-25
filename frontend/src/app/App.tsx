@@ -111,7 +111,7 @@ export default function App() {
     return () => window.removeEventListener(OPEN_PREVIEW_EVENT, onOpen);
   }, [ka.setPreviewFile, ka.knowledge.files]);
 
-  // Top Up navigation — the Fase 0a credit gate at goal submit opens the Top
+  // Top Up navigation — the Fase 0a token gate at goal submit opens the Top
   // Up asset page (App owns assetView; same window-event bridge as previews).
   useEffect(() => {
     const onOpen = () => {

@@ -1817,7 +1817,7 @@ async fn topup_qris_preview_handler(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TopupQrisClaimRequest {
-    package_id: String,
+    amount: i64,
 }
 
 async fn topup_qris_claim_handler(
@@ -1825,7 +1825,7 @@ async fn topup_qris_claim_handler(
     Json(req): Json<TopupQrisClaimRequest>,
 ) -> Result<Json<logic::topup::Claim>, (StatusCode, String)> {
     let token = cookie_bearer(&headers)?;
-    logic::topup::topup_qris_claim(&token, &req.package_id)
+    logic::topup::topup_qris_claim(&token, req.amount)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))

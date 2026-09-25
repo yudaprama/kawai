@@ -12,7 +12,7 @@ export interface AssetNavEntry {
 export const ASSET_NAV: AssetNavEntry[] = [
   { id: "wiki", label: "Wiki", subtitle: "knowledge base", icon: "book" },
   { id: "wallet", label: "KAWAI Wallet", subtitle: "Monad assets", icon: "wallet" },
-  { id: "topup", label: "Top Up", subtitle: "QRIS credit", icon: "qr-code" },
+  { id: "topup", label: "Top Up", subtitle: "app tokens", icon: "qr-code" },
   { id: "code", label: "Code", subtitle: "code graph", icon: "code-xml" },
   { id: "skills", label: "Skills", subtitle: "agent skills", icon: "wrench" },
   { id: "memory", label: "Memory", subtitle: "chat memory", icon: "brain" },

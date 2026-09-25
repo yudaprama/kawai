@@ -1023,7 +1023,7 @@ pub fn office_import_file(
 /// the frontend only sends op args (camelCase → snake_case params), never a
 /// token or user id.
 ///
-/// Public preview of the static QRIS payload + purchasable packages.
+/// Public preview of the static QRIS payload + pay-as-you-go range config.
 #[tauri::command]
 pub async fn topup_qris_preview(
     session: State<'_, Session>,
@@ -1032,15 +1032,16 @@ pub async fn topup_qris_preview(
     logic::topup::topup_qris_preview(&token).await
 }
 
-/// Claim a package's unique-nominal bill. Idempotent per email — an existing
-/// active pending row is returned unchanged.
+/// Claim a unique-nominal bill for `amount` (base IDR, kelipatan 1000,
+/// 10000–99000). Idempotent per email — an existing active pending row is
+/// returned unchanged.
 #[tauri::command]
 pub async fn topup_qris_claim(
-    package_id: String,
+    amount: i64,
     session: State<'_, Session>,
 ) -> Result<logic::topup::Claim, String> {
     let token = session_bearer(&session)?;
-    logic::topup::topup_qris_claim(&token, &package_id).await
+    logic::topup::topup_qris_claim(&token, amount).await
 }
 
 /// Poll a claimed top-up's status (owner-scoped on the worker).
@@ -1053,7 +1054,7 @@ pub async fn topup_qris_status(
     logic::topup::topup_qris_status(&token, &tx_id).await
 }
 
-/// Current credit balance (0 for an account that never topped up).
+/// Current token balance (0 for an account that never topped up).
 #[tauri::command]
 pub async fn topup_balance(session: State<'_, Session>) -> Result<logic::topup::Balance, String> {
     let token = session_bearer(&session)?;

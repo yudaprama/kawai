@@ -1,7 +1,7 @@
-# PLAN — QRIS Static Top-up (App Credit di D1)
+# PLAN — QRIS Static Top-up (App Token di D1)
 
-**Status:** proposed · **rev2 — 2026-09-24**: buku besar kredit dipindah ke **D1 Cloudflare** (keputusan pemilik — konsolidasi auth+money di satu provider).
-**Scope fase ini:** QRIS **statis** (payload merchant tetap, verifikasi manual admin) → **app credit di D1 `kawai-auth`** (binding `DB`, satu database dengan auth), berjalan di **semua build** (excluded & `kawai-mono`).
+**Status:** proposed · **rev2 — 2026-09-24**: buku besar token dipindah ke **D1 Cloudflare** (keputusan pemilik — konsolidasi auth+money di satu provider).
+**Scope fase ini:** QRIS **statis** (payload merchant tetap, verifikasi manual admin) → **app token di D1 `kawai-auth`** (binding `DB`, satu database dengan auth), berjalan di **semua build** (excluded & `kawai-mono`).
 
 ---
 
@@ -9,13 +9,13 @@
 
 | # | Keputusan | Alasan / bukti |
 |---|---|---|
-| D1 | **Paddle tidak dipakai** untuk top-up baru | Paddle AUP melarang "exchanges, dealers, trading platforms … crypto/virtual currency" **dan** "virtual currency or stored value, including store credit, gift cards, vouchers" → dead end untuk jual token *maupun* app credit. [Paddle AUP](https://www.paddle.com/help/start/intro-to-paddle/what-am-i-not-allowed-to-sell-on-paddle) |
+| D1 | **Paddle tidak dipakai** untuk top-up baru | Paddle AUP melarang "exchanges, dealers, trading platforms … crypto/virtual currency" **dan** "virtual currency or stored value, including store credit, gift cards, vouchers" → dead end untuk jual token on-chain *maupun* token app. [Paddle AUP](https://www.paddle.com/help/start/intro-to-paddle/what-am-i-not-allowed-to-sell-on-paddle) |
 | D2 | **QRIS statis** — payload EMVCo merchant tetap, admin konfirmasi manual | Tanpa gateway akuisisi (Midtrans/Xendit/DOKU/Tripay): nol API key baru, nol webhook, nol langganan. Gateway **dinamis** (QR per-transaksi + webhook) = fase 2. |
-| D3 | Target kredit = **app/service credit** (ledger `user_balances`), **bukan** token on-chain | Menjual token KAWAI untuk Rupiah ke publik = penawaran aset kripto → wajib berizin PFAK/bursa ([POJK 27/2024](https://ojk.go.id/id/regulasi/Pages/POJK-27-2024-AKD-RK.aspx), diubah POJK 23/2025; pengawasan pindah Bappepti→OJK sejak 10 Jan 2025, transisi berakhir 20 Jan 2026). Jalur internasional (kartu/Paddle) sudah diblokir AUP (D1-row). Credit = produk "top up kredit layanan" — bersih dari sisi akuisir dan di luar rezim kripto OJK. |
-| D4 | **2-build status quo dipertahankan** | Bukti di repo: `release.yml` membangun main `--features litert,tts,binance` (tanpa `monad`) + variant `kawai-mono` (`…,monad`); `src-tauri/Cargo.toml` `default = ["desktop"]`; web `--features web,tts` (tanpa monad). Credit universal → QRIS top-up **tidak menambah build**. |
-| D5 | **Tukar credit→token tidak dibangun** (larang in-app) | Kalau credit bisa dibeli Rupiah lalu ditukar token di dalam app, regulator kembali melihat "penjualan token untuk Rupiah" → kembali ke masalah D3. Credit hanya untuk pemakaian layanan. |
+| D3 | Target = **token app** (ledger `user_balances`), **bukan** token on-chain | Menjual token KAWAI untuk Rupiah ke publik = penawaran aset kripto → wajib berizin PFAK/bursa ([POJK 27/2024](https://ojk.go.id/id/regulasi/Pages/POJK-27-2024-AKD-RK.aspx), diubah POJK 23/2025; pengawasan pindah Bappepti→OJK sejak 10 Jan 2025, transisi berakhir 20 Jan 2026). Jalur internasional (kartu/Paddle) sudah diblokir AUP (D1-row). Token app = produk "top up token layanan" — bersih dari sisi akuisir dan di luar rezim kripto OJK. |
+| D4 | **2-build status quo dipertahankan** | Bukti di repo: `release.yml` membangun main `--features litert,tts,binance` (tanpa `monad`) + variant `kawai-mono` (`…,monad`); `src-tauri/Cargo.toml` `default = ["desktop"]`; web `--features web,tts` (tanpa monad). Token app universal → QRIS top-up **tidak menambah build**. |
+| D5 | **Tukar token app→token on-chain tidak dibangun** (larang in-app) | Kalau token app bisa dibeli Rupiah lalu ditukar token on-chain di dalam app, regulator kembali melihat "penjualan token untuk Rupiah" → kembali ke masalah D3. Token app hanya untuk pemakaian layanan. |
 | D6 | QRIS **hanya menerima pembayar Indonesia, Rupiah** | QRIS = rail domestik; pembayar sudah di yurisdiksi Indonesia. Pertanyaan lisensi melekat pada **produk yang dijual** (D3), bukan pada rail. |
-| **D7** | **Ledger credit pindah ke D1** (`kawai-auth`, binding `DB`) — auth + uang + klaim QRIS satu database | Identitas sudah di worker D1 (Ed25519, email) — `wrangler.toml` D1 `kawai-auth`. Jalur Supabase di repo ini sudah dicutover: `commands.rs::bill_turn` dihapus, debit usage kini `POST /billing/debit` (D1), admin top-up lewat `POST /admin/balance/credit` — satu-satunya penulis Supabase lama (`scripts/topup.ts` psql) ikut ditulis ulang. D1 = SQLite ACID single-primary — alasan doc lama memilih Supabase adalah ACID vs **KV**, bukan vs D1. Konsekuensi: confirm = **satu `DB.batch()` transaksional**, `email` = PK (tanpa bridge email→UUID), nol EF, nol secret baru. Revisi keputusan `[LOCK]` §1.1 `docs/BALANCE-KV-ARCHITECTURE.md` (same-commit). |
+| **D7** | **Ledger token pindah ke D1** (`kawai-auth`, binding `DB`) — auth + uang + klaim QRIS satu database | Identitas sudah di worker D1 (Ed25519, email) — `wrangler.toml` D1 `kawai-auth`. Jalur Supabase di repo ini sudah dicutover: `commands.rs::bill_turn` dihapus, debit usage kini `POST /billing/debit` (D1), admin top-up lewat `POST /admin/balance/credit` — satu-satunya penulis Supabase lama (`scripts/topup.ts` psql) ikut ditulis ulang. D1 = SQLite ACID single-primary — alasan doc lama memilih Supabase adalah ACID vs **KV**, bukan vs D1. Konsekuensi: confirm = **satu `DB.batch()` transaksional**, `email` = PK (tanpa bridge email→UUID), nol EF, nol secret baru. Revisi keputusan `[LOCK]` §1.1 `docs/BALANCE-KV-ARCHITECTURE.md` (same-commit). |
 
 Referensi:
 
@@ -45,7 +45,7 @@ Referensi:
 
 ```mermaid
 flowchart LR
-    U[User app<br/>pilih paket] -->|topup_qris_claim| W[Worker CF<br/>qris.ts]
+    U[User app<br/>isi nominal] -->|topup_qris_claim| W[Worker CF<br/>qris.ts]
     W -->|1 pending / email<br/>nominal unik| QT[(D1 kawai-auth<br/>qris_topups)]
     W --> U2[Tampilkan QR statis<br/>+ nominal tagihan]
     U2 -->|Bayar Rupiah<br/>QRIS banking/e-wallet| B[Bank/PJS merchant<br/>→ settlement rekening Anda]
@@ -78,9 +78,9 @@ Idempotency lapis (konfirmasi = transfer uang):
    -- stmt1: unique ref = jaring pengaman ganda (conflict → SELURUH batch rollback)
    INSERT INTO balance_ledger(email, amount, reason, ref, created_at)
    VALUES (?, ?, 'qris', ?, ?);
-   -- stmt2: upsert nominal kredit
-   INSERT INTO user_balances(email, credit, updated_at) VALUES (?, ?, ?)
-   ON CONFLICT(email) DO UPDATE SET credit = user_balances.credit + excluded.credit,
+   -- stmt2: upsert nominal token
+   INSERT INTO user_balances(email, tokens, updated_at) VALUES (?, ?, ?)
+   ON CONFLICT(email) DO UPDATE SET tokens = user_balances.tokens + excluded.tokens,
                                     updated_at = excluded.updated_at;
    -- stmt3: tutup status
    UPDATE qris_topups SET status='credited', credited_at=? WHERE tx_id=? AND status='crediting';
@@ -91,12 +91,12 @@ Idempotency lapis (konfirmasi = transfer uang):
 
 ---
 
-## 3. Fase 0 — Prasyarat: konsumen credit (🔴 PERLU GO ANDA)
+## 3. Fase 0 — Prasyarat: konsumen token (🔴 PERLU GO ANDA)
 
-**Masalah:** credit yang dijual **tidak punya pembeli** — `bill_turn` stub `Skipped`, `gateTurn` tidak ada, `bill_usage` tanpa pemanggil. Menjual top-up untuk ledger yang tak pernah didebit = menjual sesuatu yang tak bisa dipakai.
+**Masalah:** token yang dijual **tidak punya pembeli** — `bill_turn` stub `Skipped`, `gateTurn` tidak ada, `bill_usage` tanpa pemanggil. Menjual top-up untuk ledger yang tak pernah didebit = menjual sesuatu yang tak bisa dipakai.
 
-- **0a — Pre-check (wajib, murah):** UI baca `topup_balance`; submit goal diblokir bila kredit 0 ("kredit habis — Top Up"), fail-open bila worker tak terjangkau (perilaku `gateTurn` lama pulih).
-- **0b — Debit (wajib sebelum top-up berbayar dibuka):** worker `POST /billing/debit` (Bearer → email) → D1 atomic guard `UPDATE user_balances SET credit = credit - ? WHERE email=? AND credit >= ?` → `changes==0` → 409 `insufficient_balance` (semantik `debit_balance` lama, kini lokal). Pemanggilan dipasang di **composition root `src-tauri/src/supervisor.rs`** (`plan_task` sudah menerima `usage`) — satu titik, desktop **dan** web sama-sama terdebit, tanpa logika billing di wrapper transport. Stub `commands.rs::bill_turn` **dihapus** (nol pemanggil — cutover bersih; kembali ke "ganti stub" tidak diperlukan). Enforcement tetap lemah (binary bisa di-patch — dokumentasi billing sudah mengakui), tapi credit punya konsumen nyata; debit gagal = `warn` + lanjut (fail-open honor-system).
+- **0a — Pre-check (wajib, murah):** UI baca `topup_balance`; submit goal diblokir bila token 0 ("Token habis — isi ulang lewat Top Up"), fail-open bila worker tak terjangkau (perilaku `gateTurn` lama pulih).
+- **0b — Debit (wajib sebelum top-up berbayar dibuka):** worker `POST /billing/debit` (Bearer → email) → D1 atomic guard `UPDATE user_balances SET tokens = tokens - ? WHERE email=? AND tokens >= ?` → `changes==0` → 409 `insufficient_balance` (semantik `debit_balance` lama, kini lokal). Pemanggilan dipasang di **composition root `src-tauri/src/supervisor.rs`** (`plan_task` sudah menerima `usage`) — satu titik, desktop **dan** web sama-sama terdebit, tanpa logika billing di wrapper transport. Stub `commands.rs::bill_turn` **dihapus** (nol pemanggil — cutover bersih; kembali ke "ganti stub" tidak diperlukan). Enforcement tetap lemah (binary bisa di-patch — dokumentasi billing sudah mengakui), tapi token punya konsumen nyata; debit gagal = `warn` + lanjut (fail-open honor-system).
 
 Efek samping pembersihan (clean cutover, saat Fase 0): jalur Supabase di `crates/foundation/billing` (fungsi JWT `bill_usage`/`get_my_balance`, `BillOpts`) diganti worker-proxy / dihapus dari panggilan — jangan biarkan dua jalur debit. **Tanpa GO Fase 0: shipping QRIS ditahan.**
 
@@ -108,7 +108,8 @@ Modul baru `src/qris.ts` (pola `paddle.ts`, termasuk `ensureSchema()` idempotent
 
 ```ts
 const QRIS_PAYLOAD = "00020101…"      // payload EMVCo QRIS statis milik merchant Anda
-const PACKAGES: Record<string, { idr: number; credit: number }> = { … }; // credit = integer unit sama dgn scripts/topup.ts
+const MIN_BASE = 10_000; const MAX_BASE = 99_000; const BASE_STEP = 1_000; // rentang nominal pay-as-you-go
+const TOKENS_PER_IDR = 100;           // tokens = base × rate (integer unit sama dgn scripts/topup.ts)
 const EXPIRY_SECS = 86_400;
 const ADMIN_EMAIL = "…";              // satu-satunya akun boleh confirm/list
 ```
@@ -117,7 +118,7 @@ Skema D1 (binding `DB` yang sudah ada, `ensureSchema` idempotent gaya `paddle.ts
 
 ```sql
 CREATE TABLE IF NOT EXISTS user_balances (
-  email TEXT PRIMARY KEY, credit INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL
+  email TEXT PRIMARY KEY, tokens INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS balance_ledger (
   id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL, amount INTEGER NOT NULL,
@@ -129,27 +130,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS balance_ledger_ref ON balance_ledger(ref) WHER
 
 CREATE TABLE IF NOT EXISTS qris_topups (
   tx_id TEXT PRIMARY KEY, email TEXT NOT NULL, package TEXT NOT NULL,
-  idr_amount INTEGER NOT NULL, credit INTEGER NOT NULL,
+  idr_amount INTEGER NOT NULL, tokens INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',  -- pending|crediting|credited|rejected|expired
   created_at INTEGER NOT NULL, reported_at INTEGER, credited_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS qris_topups_email_status ON qris_topups(email, status);
 ```
 
-Alokasi nominal unik: `pkg.idr + rand(900) * 10` (suffix Rp0–8.990 step 10 —
-nominal ≈ harga kartu, unik antar klaim aktif; selisih harga antar paket
-wajib > 8.990) → `INSERT … ON CONFLICT DO NOTHING`, retry ≤100, habis → 503. Cek dulu 1-row-per-email (klaim idempoten). Expiry lazy: read `status`/`pending` mengubah `pending` lewat `EXPIRY_SECS` → `expired` (nominal dibebaskan).
+Alokasi nominal unik: `base` (dipilih user, kelipatan 1000 dalam
+`MIN_BASE..MAX_BASE`) + suffix `000–900` step 100 → `INSERT … ON CONFLICT DO
+NOTHING`, rotasi start acak (konflik slot → suffix berikutnya), habis semua
+10 slot → 503 `amount_pool_exhausted`. Base kelipatan 1000 + suffix < 1000 →
+total selalu menentukan (base, suffix) unik, tidak mungkin tumpang tindih
+antar base. Cek dulu 1-row-per-email (klaim idempoten: baris pending aktif
+dikembalikan apa adanya). Expiry lazy: read `status`/`pending` mengubah `pending` lewat `EXPIRY_SECS` → `expired` (nominal dibebaskan).
 
 Endpoint (semua lewat `authenticate()` yang sudah ada; admin = `ADMIN_EMAIL`):
 
 | Method | Path | Body/Arg | Respons |
 |---|---|---|---|
-| GET | `/topup/qris/preview` | — | `{ qrPayload, packages: [{id, idr, credit}] }` (stateless) |
-| POST | `/topup/qris/claim` | `{ packageId }` | `{ txId, idrAmount, credit, qrPayload, expiresAt }` — idempoten per email |
-| GET | `/topup/qris/status/:txId` | owner-scoped | `{ status, idrAmount, credit, createdAt, creditedAt? }` |
-| GET | `/topup/balance` | — | `{ credit }` → `SELECT credit FROM user_balances WHERE email=?` (0 bila belum ada) |
+| GET | `/topup/qris/preview` | — | `{ qrPayload, minBase, maxBase, baseStep, tokensPerIdr }` (stateless) |
+| POST | `/topup/qris/claim` | `{ amount }` | `{ txId, idrAmount, tokens, qrPayload, expiresAt }` — idempoten per email |
+| GET | `/topup/qris/status/:txId` | owner-scoped | `{ status, idrAmount, tokens, createdAt, creditedAt? }` |
+| GET | `/topup/balance` | — | `{ tokens }` → `SELECT tokens FROM user_balances WHERE email=?` (0 bila belum ada) |
 | GET | `/topup/qris/pending` | admin | daftar `pending` (email, nominal, waktu) untuk matching mutasi bank |
-| POST | `/topup/qris/confirm` | admin, `{ txId }` | alur CAS + batch (§2) → `{ status, credit }` |
+| POST | `/topup/qris/confirm` | admin, `{ txId }` | alur CAS + batch (§2) → `{ status, tokens }` |
 | POST | `/billing/debit` *(Fase 0b)* | `{ amount }` | atomic guard D1 → 409 `insufficient_balance` bila kurang |
 
 `/transfer`, Paddle, auth, KV **tidak disentuh**.
@@ -183,7 +188,7 @@ Semua op **auth-required**, proxy tipis ke worker dengan token dari session (fro
 | Op (snake_case = fn = invoke = `POST /api/<op>`) | Pemicu worker |
 |---|---|
 | `topup_qris_preview()` | `GET /topup/qris/preview` |
-| `topup_qris_claim(package_id)` | `POST /topup/qris/claim` |
+| `topup_qris_claim(amount)` | `POST /topup/qris/claim` |
 | `topup_qris_status(tx_id)` | `GET /topup/qris/status/:txId` |
 | `topup_balance()` | `GET /topup/balance` |
 
@@ -197,9 +202,9 @@ Semua op **auth-required**, proxy tipis ke worker dengan token dari session (fro
 
 - **`frontend/src/features/topup/` (baru)** — halaman **Top Up** terdaftar di Assets rail (`features/agents/assets-rail.tsx` / mirror registrasi halaman wallet — titik pasti saat implementasi). **Tanpa ikatan fitur `monad`** → tampil di build excluded **dan** mono.
 - `QRCodeSVG` dari `qrcode.react` (sudah ada).
-- Alur: pilih paket → `topup_qris_claim` → QR + **nominal unik** + instruksi "transfer tepat, nominal ≠ dikembalikan" → polling `topup_qris_status` (5s × 5 menit, lalu backoff/manual refresh).
+- Alur: isi nominal (pay-as-you-go, validasi rentang/kelipatan) → `topup_qris_claim` → QR + **nominal unik** + instruksi "transfer tepat, nominal ≠ dikembalikan" → polling `topup_qris_status` (5s × 5 menit, lalu backoff/manual refresh).
 - States: `pending` "Menunggu verifikasi admin" → `credited` "Masuk ✓" / `rejected` / `expired` (klaim ulang).
-- Kartu saldo `topup_balance`: "Saldo kredit: N" + empty-state "Hubungi admin"; bacaan yang sama untuk pre-check Fase 0a.
+- Kartu saldo `topup_balance`: "Saldo token: N" + empty-state "Hubungi admin"; bacaan yang sama untuk pre-check Fase 0a.
 - Data lewat `call()` `@/lib/api` — komponen murni, jalan di web build. **Tanpa** on-chain/monad.
 
 ## 8. Fase 5 — Admin CLI + Dokumen (same-commit, aturan hygiene)
@@ -217,7 +222,7 @@ Semua op **auth-required**, proxy tipis ke worker dengan token dari session (fro
 
 | Nilai | Bentuk | Kenapa bukan env |
 |---|---|---|
-| `QRIS_PAYLOAD`, `PACKAGES`, `EXPIRY_SECS`, `ADMIN_EMAIL` | konstanta `qris.ts` | 1 nilai benar per deployment → hardcode (aturan repo) |
+| `QRIS_PAYLOAD`, `MIN_BASE`/`MAX_BASE`/`BASE_STEP`/`TOKENS_PER_IDR`, `EXPIRY_SECS`, `ADMIN_EMAIL` | konstanta `qris.ts` | 1 nilai benar per deployment → hardcode (aturan repo) |
 | D1 `kawai-auth` (binding `DB`) | `wrangler.toml` **sudah ada** (auth) | tabel baru di binding yang sama |
 | `KAWAI_WORKER_URL` | pola **sudah ada** (`logic/local_auth.rs`) | fallback konstan sudah dibawa |
 | `kawai_session` / `auth.token` | mekanisme auth **sudah ada** | — |
@@ -228,13 +233,13 @@ Semua op **auth-required**, proxy tipis ke worker dengan token dari session (fro
 
 | Risiko | Mitigasi |
 |---|---|
-| Double-credit (crash/retry/double klik) | CAS status + unique `balance_ledger.ref` → conflict membatalkan seluruh batch + re-drive `crediting` — **dibuktikan uji §11** (bukan asumsi) |
+| Kredit ganda (crash/retry/double klik) | CAS status + unique `balance_ledger.ref` → conflict membatalkan seluruh batch + re-drive `crediting` — **dibuktikan uji §11** (bukan asumsi) |
 | Semantik rollback `batch()` D1 berbeda dari harapan | uji eksplisit: confirm 2× & simulasikan conflict → saldo naik 1×, lokal (`bun run dev`, D1 miniflare) sebelum deploy |
 | Verifikasi manual salah cocok (transfer batal/nominal salah) | inherent QRIS statis → **cocok mutasi bank** sebelum confirm; `pending` list menampilkan email/nominal/waktu; confirm idempoten |
 | Nominal habis/bentrok (kombinasi 900) | 1 row aktif per email + expiry 24 jam + retry loop + 503 |
 | Baris ledger lama tak termigrasi / jumlah tak diketahui | Fase 2 step 1 cek dulu (psql — DNS dulu); verifikasi count+sum sebelum deploy; nol → skip |
 | Akuisir QRIS: ToS/MDR/blokir | cek perjanjian merchant Anda (D3) — di luar repo |
-| Credit mati (tanpa konsumen) | Fase 0 GO/NO-GO — tanpa 0b, top-up berbayar tidak dibuka |
+| Token tanpa konsumen | Fase 0 GO/NO-GO — tanpa 0b, top-up berbayar tidak dibuka |
 | Enforce lemak (client laporkan usage) | disadari dokumen billing lama; pengetatan = proxy LLM server-side (roadmap terpisah, di luar scope) |
 
 ## 11. Verifikasi (per lapisan)
@@ -259,10 +264,10 @@ E2E uang nyata (setelah deploy): klaim → bayar nominal kecil sungguhan → `bu
 ## 12. Non-goals (fase ini)
 
 - QRIS **dinamis** gateway (Midtrans/Xendit/DOKU/Tripay): API key + webhook → fase 2.
-- Penjualan IDR→token on-chain (D3/D5), konversi credit↔token.
+- Penjualan IDR→token on-chain (D3/D5), konversi token app↔token on-chain.
 - Menyentuh Paddle (`paddle.ts`), `/transfer`, auth, KV.
 - Masa depan settlement/Merkle/rewards (dokumen lama menunjuk Supabase) — keputusan terpisah saat dibangun; jangan menghalangi konsolidasi ini.
-- Varian web `kawai-mono` untuk top-up (credit universal — tidak perlu).
+- Varian web `kawai-mono` untuk top-up (token universal — tidak perlu).
 - UI admin (CLI/curl cukup).
 
 ## 13. Urutan kerja
@@ -277,6 +282,6 @@ E2E uang nyata (setelah deploy): klaim → bayar nominal kecil sungguhan → `bu
 ## 14. Keputusan yang saya butuhkan dari Anda
 
 1. **Fase 0: terpasang** — 0a (gate pre-check `topup_balance` di `use-workbench.run()`, fail-open) + 0b (debit `POST /billing/debit` di `supervisor::plan_task`, fail-open). Nonaktifkan bila berubah pikiran.
-2. **Paket & harga**: daftar `{ IDR → kredit }` (angka persis; unit = integer sama dengan `scripts/topup.ts`).
+2. **Rate & rentang nominal**: konfirmasi `MIN_BASE`/`MAX_BASE`/`BASE_STEP` + `TOKENS_PER_IDR` di `qris.ts` (angka persis; unit = integer sama dengan `scripts/topup.ts`; komentar `ANGKA BISNIS — konfirmasi pemilik sebelum rilis` masih menunggu).
 3. **Payload QRIS statis**: string EMVCo dari dashboard bank/PJS merchant Anda.
 4. **`ADMIN_EMAIL`** (akun yang boleh `confirm`/`pending`).
