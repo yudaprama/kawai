@@ -120,7 +120,7 @@ youtube_transcript = { path = "../crates/integrations/youtube-transcript" }
 # docx/xlsx/pptx (in-process), raw-part surgery for in-place edits. PDF
 # operations via pdf_oxide (fetched from GitHub, no local submodule).
 office_oxide = { path = "../office_oxide" }
-pdf_oxide = { git = "https://github.com/yfedoseev/pdf_oxide", features = ["rendering"] }
+pdf_oxide = { git = "https://github.com/yudaprama/pdf_oxide", features = ["rendering"] }
 regex = "1"
 # Web read + search tiering: the reusable crates/toolsets/webread tool crate —
 # engine chain + budgets + cache for the `web_read` / `web_search` agent
