@@ -240,7 +240,9 @@ Detail endpoint & tabel: `kawai-server/worker/README.md`.
 - [x] **Konfirmasi rentang/rate** — `MIN_BASE` 10_000 / `MAX_BASE` 99_000 /
       `BASE_STEP` 1_000 / `TOKENS_PER_IDR` 100 {IDR → token}, 2026-09-25
       (`PLAN-qris-topup.md` §14).
-- [ ] **Deploy worker + e2e pembayaran** (`PLAN-qris-topup.md` §14).
+- [x] **Deploy worker + e2e pembayaran** — 2026-09-25: pembayaran QRIS nyata
+      (Rp10.900) masuk, dikredit via `autoconfirm`, saldo +1.000.000,
+      retry idempoten terverifikasi (`PLAN-qris-topup.md` §14).
 - [ ] Gateway QRIS **dinamis** (Midtrans/Xendit/DOKU/Tripay): API key +
       webhook → verifikasi otomatis tanpa admin (fase 2).
 - [ ] Rate-card per-model (saat ini 1:1 flat) — pinjam pola `metering/`
