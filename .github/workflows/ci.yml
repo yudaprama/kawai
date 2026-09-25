@@ -242,6 +242,16 @@ jobs:
         run: cargo test -p codegraph
         working-directory: crates
 
+      # Monad crates: alloy Transfer decoder + range shrink/merge (pure, no
+      # network) + the read-only tool arg resolution / registration contracts.
+      - name: cargo test (crates/integrations/monad)
+        run: cargo test -p kawai-monad
+        working-directory: crates
+
+      - name: cargo test (crates/toolsets/monad-tools)
+        run: cargo test -p monad-tools
+        working-directory: crates
+
       # PaddleOCR on-device OCR (kawai-vision paddle-ocr feature): compile gate
       # + live inference smoke. The MNN prebuilt lib downloads during the cargo
       # build; the tiny model suite (det/rec/keys, ~4 MB total) is downloaded
