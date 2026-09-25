@@ -1,4 +1,3 @@
-import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Icon } from "@/components/shared/icon";
@@ -8,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 import { call, errText } from "@/lib/api";
+import { QrisCard } from "@/features/topup/qris-card";
 
 // ── Wire shapes (camelCase JSON — local mirrors of the worker contract) ─────
 
@@ -292,9 +292,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
             // ── Pending / crediting: QR + instructions ──────────────────────
             <section className="space-y-4 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
               <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
-                <div className="shrink-0 rounded-xl bg-white p-3">
-                  <QRCodeSVG value={claim.qrPayload} size={200} marginSize={0} />
-                </div>
+                <QrisCard qrPayload={claim.qrPayload} amountLabel={formatIdr(claim.idrAmount)} />
                 <div className="min-w-0 flex-1 space-y-1.5">
                   <p className="text-xl font-semibold">{formatIdr(claim.idrAmount)}</p>
                   <p className="text-muted-foreground text-xs">Bayar lewat aplikasi bank / e-wallet (QRIS)</p>
