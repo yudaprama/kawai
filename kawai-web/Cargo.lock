@@ -1073,6 +1073,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "coinmarketcap"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "color_quant"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3314,6 +3324,7 @@ dependencies = [
  "base64 0.22.1",
  "block2",
  "browser",
+ "coinmarketcap",
  "composio",
  "dotenvy",
  "entertainment",

@@ -106,6 +106,13 @@ Keyless public spot market data + in-process TA. Credentialed US-stock reads
 (`stock_quote` / `stock_info`) ride the same capability probe as the account
 tools. Also gets webread + runtime tools (`supports_draft_document: false`).
 
+`crypto_price` and `crypto_klines` are tiered — Binance REST first, then a
+CoinMarketCap fallback tier (vault Pro key, same pattern as web_search's
+tiers) when Binance is unreachable; `_source` names the serving tier and only
+these two tools carry the fallback. The key's current plan allows quotes+map
+but gates every OHLCV endpoint (403/1006), so klines tier-2 reports both
+tiers' reasons until the CMC plan is upgraded.
+
 | Tool | Purpose |
 |---|---|
 | `crypto_price` | current price / 24hr ticker |
@@ -148,13 +155,15 @@ degrades to CF-only). Added to office (via `office_toolset`), presentation, and 
 
 Per-category `AgentTool` crates for public-API wrappers. One category = one
 crate; each tool is a thin typed wrapper over a public API. Hand-maintained —
-edit the tool files directly. Currently **not** wired into the
-supervisor's `auto` registry by default — they join when a definition's `build_tools` includes
-them (catalog via tool-catalog search). Categories:
+edit the tool files directly — except `coinmarketcap`, generated from the
+CoinMarketCap TypeScript SDK (`coinmarketcap-api-typescript/`) by
+`crates/generated-tools/coinmarketcap/tools/gen.py`. All categories merge
+first-wins into the supervisor's `auto` registry. Categories:
 
 | Crate | Example tools (non-exhaustive) |
 |---|---|
 | `browser` | `browser_markdown_extract`, `browser_content_extract`, `browser_json_extract`, `browser_links_extract`, `browser_scrape_elements` |
+| `coinmarketcap` | `get_v1_cryptocurrency_map`, `get_v3_cryptocurrency_listings_latest`, `get_v1_tools_priceconversion`, `get_trending_list`, `batch_query_tokens` |
 | `entertainment` | `search_anime`, `get_top_anime`, `search_manga`, `search_artist`, `search_album`, `search_books`, `get_book_by_isbn`, `search_photos`, `search_videos`, `search_poems_by_title`, `get_tv_show_detail`, `search_star_wars_people` |
 | `finance` | `get_stock_quote`, `get_stock_history`, `search_crypto`, `get_crypto_price`, `get_crypto_klines`, `get_forex_history`, `currency_exchange`, `get_balance_sheet`, `get_cashflow`, `get_income_statement`, `get_insider_transactions`, `get_stock_news` |
 | `food-drink` | `search_recipe`, `get_random_recipe`, `search_cocktail`, `get_food_by_barcode`, `get_all_fruits` |
@@ -286,9 +295,9 @@ Binance (`crates/toolsets/binance`):
 
 | Tool | Output shape | View |
 |---|---|---|
-| `crypto_price` | `{symbol, lastPrice, priceChange, priceChangePercent, openPrice, highPrice, lowPrice, volume, quoteVolume, bidPrice, askPrice, weightedAvgPrice, count}` | `renderTicker24` |
+| `crypto_price` | `{symbol, lastPrice, priceChange, priceChangePercent, openPrice, highPrice, lowPrice, volume, quoteVolume, bidPrice, askPrice, weightedAvgPrice, count, _source}` | `renderTicker24` |
 | `crypto_depth` | `{symbol, book:{bestBid, bestAsk, spread, mid}, bids, asks}` | `renderBinanceDepth` |
-| `crypto_klines` | `{symbol, interval, count, candles:[[openTime, open, high, low, close, volume],…]}` | `chart(binanceKlineSeries)` |
+| `crypto_klines` | `{symbol, interval, count, candles:[[openTime, open, high, low, close, volume],…], _source}` | `chart(binanceKlineSeries)` |
 | `crypto_ta_analyze` | indicator finals (e.g. `rsi14`, `ema9`, `macd12269`) + `windowChangePct`, `skipped` | `renderBinanceTa` |
 | `crypto_balances` | `{canTrade, balances:[{asset, free, locked}]}` | `renderBinanceBalances` |
 | `crypto_open_orders` | `{count, orders:[…]}` | `renderBinanceOpenOrders` |

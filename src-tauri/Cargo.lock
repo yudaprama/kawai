@@ -1600,6 +1600,7 @@ name = "binance"
 version = "0.1.0"
 dependencies = [
  "binance-sdk",
+ "coinmarketcap",
  "kawai-agent-contract",
  "kawai-constants",
  "kawai-http-client",
@@ -2353,6 +2354,16 @@ dependencies = [
  "futures",
  "thiserror 2.0.20",
  "tokio",
+]
+
+[[package]]
+name = "coinmarketcap"
+version = "0.1.0"
+dependencies = [
+ "kawai-http-common",
+ "kawai-tools",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5694,6 +5705,7 @@ dependencies = [
  "block2",
  "browser",
  "codegraph",
+ "coinmarketcap",
  "composio",
  "dotenvy",
  "entertainment",

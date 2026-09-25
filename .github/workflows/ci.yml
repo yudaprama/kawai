@@ -561,7 +561,10 @@ jobs:
   # ── Linux full gate: bazel-built litert-lm + unit tests + all smokes ─────
   linux-smoke:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    # Cold-cache `cargo test (litert + office)` alone ran 117 min on a runner
+    # before the old 120-min ceiling killed it mid-compile (run 36127357424,
+    # 2026-09-25) — unit-test results were lost and every smoke below skipped.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
@@ -748,7 +751,10 @@ jobs:
   # ── Windows full gate: bazel-built litert-lm + unit tests + all smokes ──
   windows-smoke:
     runs-on: windows-latest
-    timeout-minutes: 150
+    # Same compile-timeout kill as linux-smoke: cold `cargo test (litert +
+    # office)` ran 101 min on windows-latest before the old 150-min ceiling
+    # cut the job (run 36127357424, 2026-09-25).
+    timeout-minutes: 210
     steps:
       - uses: actions/checkout@v4
         with:

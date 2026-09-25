@@ -397,6 +397,7 @@ generated_http_tools!(geospace_tools_for_supervisor, geospace);
 generated_http_tools!(knowledge_tools_for_supervisor, knowledge);
 generated_http_tools!(religion_tools_for_supervisor, religion);
 generated_http_tools!(utility_tools_for_supervisor, utility);
+generated_http_tools!(coinmarketcap_tools_for_supervisor, coinmarketcap);
 
 /// Stock/social finance tools: keyed stock providers (TwelveData/AlphaVantage/
 /// Tiingo, each with a keyless StockTwits fallback) plus the StockTwits-only
