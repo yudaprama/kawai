@@ -658,6 +658,24 @@ pub async fn plan_task(
     registry: &ToolRegistry,
     on_progress: impl Fn(SupervisorEvent),
 ) -> Result<(kawai_router::TaskPlan, remote_llm::RemoteUsage), String> {
+    // Fase 0a, server side — the balance gate is FAIL-CLOSED: a balance that
+    // cannot be read blocks the goal exactly like an empty one, because an
+    // unreadable balance means this run cannot be billed. Three cases block:
+    // no stored bearer, worker error/HTTP failure, tokens <= 0. The client
+    // pre-check in use-workbench.run() is UX only (toast + Top Up handoff) and
+    // is bypassable; this call at the composition root is the enforcement both
+    // transports share, and it runs BEFORE the planner so no token is spent on
+    // a goal that cannot be paid for. The bearer is read ONCE here and reused
+    // by the debit at plan completion, so the two billing calls can never
+    // disagree about which session was authorized.
+    let token = crate::logic::local_auth::stored_token(user_id)
+        .ok_or_else(|| "not authenticated (no token — sign in first)".to_string())?;
+    match crate::logic::topup::topup_balance(&token).await {
+        Ok(balance) if balance.tokens > 0 => {}
+        Ok(_) => return Err("Token habis — isi ulang lewat Top Up".to_string()),
+        Err(e) => return Err(format!("balance check failed: {e}")),
+    }
+
     // The remote pool serves the planner with a tight per-call output cap:
     // the loop's rounds must stay short (the 2026-02 benchmark showed 14.6k
     // output tokens = the whole 250 s latency).
@@ -893,20 +911,21 @@ via the always-available `session_step_results` tool. If the goal depends on det
                         // wrapper carries billing logic. Amount = this plan's
                         // real token usage (input+output tokens), debited 1:1
                         // against the user's token balance — the integer unit
-                        // of the worker ledger. Honor-system fail-open:
-                        // missing bearer or worker error → warn + continue,
-                        // NEVER fail planning (docs/BALANCE-KV-ARCHITECTURE.md).
+                        // of the worker ledger. FAIL-CLOSED: a debit that does
+                        // not land means this plan was never paid for, so the
+                        // plan is NOT returned. A fail-open debit here would
+                        // let a balance too small to cover a plan run forever —
+                        // the guard passes on `tokens > 0`, the D1 atomic guard
+                        // rejects the debit with 409, the balance never reaches
+                        // 0, and the entry gate never trips again.
+                        // (docs/BALANCE-KV-ARCHITECTURE.md). The bearer cannot
+                        // be missing: the entry gate already returned Err.
                         let amount = usage.input_tokens.saturating_add(usage.output_tokens);
-                        match crate::logic::local_auth::stored_token(user_id) {
-                            Some(token) => {
-                                if let Err(e) = crate::logic::topup::billing_debit(&token, amount).await
-                                {
-                                    tracing::warn!(component = "billing", user_id = %user_id, amount, error = %e, "usage debit failed — continuing (fail-open)");
-                                }
-                            }
-                            None => {
-                                tracing::warn!(component = "billing", user_id = %user_id, "no stored bearer token — usage debit skipped (fail-open)");
-                            }
+                        if let Err(e) = crate::logic::topup::billing_debit(&token, amount).await {
+                            tracing::warn!(component = "billing", user_id = %user_id, amount, error = %e, "usage debit failed — refusing the unpaid plan (fail-closed)");
+                            return Err(format!(
+                                "billing failed — plan not delivered: {e}"
+                            ));
                         }
                         return Ok((plan, usage));
                     }
@@ -3001,6 +3020,35 @@ async fn synthesize_final_answer(
     }
 }
 
+/// Best-effort lesson distillation for the agent-experience row: one cloud
+/// call, capped at 4s — the terminal `PlanCompleted` must never wait on the
+/// cloud longer than that; a slow provider just skips the lesson (the row
+/// still lands with an empty one).
+#[cfg(not(test))]
+async fn distill_lesson(lesson_task: &str) -> String {
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(4),
+        remote_llm::reason::reason_as(
+            "You distill one reusable lesson from a completed AI agent run.",
+            lesson_task,
+            "experience-distiller",
+        ),
+    )
+    .await
+    {
+        Ok(Ok(s)) => preview_chars(s.trim(), 400).to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Test twin: the vault carries compiled-in keys, so the real call would hit
+/// the live API from `cargo test`/CI — keep the terminal path deterministic
+/// under test; the experience row still lands with an empty lesson.
+#[cfg(test)]
+async fn distill_lesson(_lesson_task: &str) -> String {
+    String::new()
+}
+
 /// What the deck writer produced: the short markdown pointer for the
 /// deliverable text plus the deck artifact (viewer renders the file).
 struct DeckSynthesis {
@@ -3693,23 +3741,7 @@ pub fn execute_plan_stream_with_cancel(
                                 exp_tools.join(", "),
                                 exp_outcome,
                             );
-                            // Best-effort AND bounded: the terminal events
-                            // (PlanCompleted) must never wait on the cloud
-                            // longer than this — a slow provider just skips
-                            // the lesson (the row still lands).
-                            let lesson = match tokio::time::timeout(
-                                std::time::Duration::from_secs(4),
-                                remote_llm::reason::reason_as(
-                                    "You distill one reusable lesson from a completed AI agent run.",
-                                    &lesson_task,
-                                    "experience-distiller",
-                                ),
-                            )
-                            .await
-                            {
-                                Ok(Ok(s)) => preview_chars(s.trim(), 400).to_string(),
-                                _ => String::new(),
-                            };
+                            let lesson = distill_lesson(&lesson_task).await;
                             if let Err(e) = kawai_agent::experience_record(
                                 &user_id,
                                 AUTO_AGENT_ID,
@@ -4264,9 +4296,10 @@ mod tests {
 
         let mut finished = false;
         loop {
-            // 5s window: the terminal path makes one best-effort cloud call
-            // (experience distiller) before PlanCompleted — a 500ms window
-            // loses to real network latency.
+            // 5s headroom per event: under test the terminal path is
+            // local-only (the experience-distiller call is gated off), so
+            // this bounds SQLite contention with the parallel tests that
+            // share the per-user data dir.
             let ev = tokio::time::timeout(std::time::Duration::from_secs(5), stream.as_mut().next())
                 .await
                 .expect("stream stalled after approval");

@@ -106,7 +106,12 @@ jobs:
   # ── Linux desktop gate: litert + the full feature battery compile on Linux ─
   linux-check:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    # 30m was not enough: the battery of `cargo check --features …` runs plus
+    # the two `sql_remote_check --deep` live-DB gates (~8m) reaches ~28m on a
+    # cold cache, leaving the `cargo test (agent_eval harness)` build without
+    # the time to compile — the job was killed mid-compile by the job-level
+    # timeout, not by a test failure.
+    timeout-minutes: 60
     # Real database engines for the remote-SQL snapshot gate below — the
     # data_tables/data_import live checks need servers, not mocks.
     services:

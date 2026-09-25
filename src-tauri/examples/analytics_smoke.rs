@@ -538,11 +538,36 @@ async fn main() {
     if pv2["mark"] != "pie" {
         die(&format!("pie redundant color should still render pie: {out}"));
     }
-    // Distinct color on pie must be a guidance error.
+    // Distinct color on pie must be a guidance error. Asserted on the ENGINE,
+    // not through DataChartTool: the tool wraps render in a bounded LLM repair
+    // round (CHART_REPAIR_ROUNDS) that legitimately rewrites the args and
+    // SUCCEEDS whenever a cloud provider answers — a tool-level expect_err
+    // would then depend on whether a remote pool is configured.
     let pie_color_csv = "city,sales,region\njakarta,100,west\nbandung,80,east\njakarta,60,west\n";
     let pie_color_file =
         store::import_bytes(user, "pie-color.csv", pie_color_csv.as_bytes()).expect("import pie color csv");
-    let err = data::DataChartTool(user.to_string(), 1)
+    let (pie_path, _) = store::resolve(user, &pie_color_file.id).expect("resolve pie color csv");
+    let pie_spec = analytics::chart::ChartSpec {
+        mark: analytics::chart::ChartMark::Pie,
+        x: "city".into(),
+        y: Some("sales".into()),
+        color: Some("region".into()),
+        stack: None,
+        x_scale: None,
+        y_scale: None,
+        title: None,
+    };
+    let engine_err =
+        analytics::chart::render(&pie_path, None, &analytics::QueryArgs::default(), &pie_spec)
+            .expect_err("pie color must fail");
+    if !engine_err.0.contains("color") {
+        die(&format!("pie color error lacks guidance: {engine_err}"));
+    }
+    println!("[analytics_smoke] PASS data_chart pie error contract: {engine_err}");
+
+    // Same call through the tool: either the repair round dropped the color
+    // channel (valid pie) or the guidance error surfaces — never a wrong chart.
+    match data::DataChartTool(user.to_string(), 1)
         .call(
             serde_json::from_value(serde_json::json!({
                 "fileId": pie_color_file.id, "mark": "pie", "x": "city", "y": "sales",
@@ -551,11 +576,21 @@ async fn main() {
             .expect("chart args"),
         )
         .await
-        .expect_err("pie color must fail");
-    if !err.0.contains("color") {
-        die(&format!("pie color error lacks guidance: {err}"));
+    {
+        Ok(out) => {
+            let pv3: Value = serde_json::from_str(&out).unwrap();
+            if pv3["mark"] != "pie" {
+                die(&format!("pie color repair must still render pie: {out}"));
+            }
+            println!("[analytics_smoke] PASS data_chart pie color repaired (color dropped): {out}");
+        }
+        Err(err) => {
+            if !err.0.contains("color") {
+                die(&format!("pie color error lacks guidance: {err}"));
+            }
+            println!("[analytics_smoke] PASS data_chart pie color surfaced as guidance: {err}");
+        }
     }
-    println!("[analytics_smoke] PASS data_chart pie error contract: {err}");
 
     println!("[analytics_smoke] ALL PASS");
 }

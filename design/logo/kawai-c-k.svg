@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Concept C: lowercase k monogram, rounded terminals, accent leg -->
+  <rect width="512" height="512" rx="115" fill="#14121A"/>
+  <rect x="150" y="122" width="60" height="268" rx="30" fill="#F5EDE6"/>
+  <path d="M 212 268 C 262 230, 304 198, 348 178" stroke="#F5EDE6" stroke-width="60" stroke-linecap="round" fill="none"/>
+  <path d="M 212 272 C 262 308, 310 344, 352 392" stroke="#FF6B9D" stroke-width="60" stroke-linecap="round" fill="none"/>
+</svg>

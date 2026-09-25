@@ -551,10 +551,13 @@ export function useWorkbench() {
         target != null && target.status === "completed" && target.outputFull != null && target.planKey != null;
       const quote = opts?.quote === true || targetUsable;
       // Fase 0a tokens pre-check (PLAN-qris-topup) — ONE balance read per
-      // submit attempt: zero tokens blocks the run and hands off to Top Up;
-      // ANY fetch error fails open so an unreachable worker never blocks a
-      // goal (legacy gateTurn behavior). Sits before every state mutation so
-      // a blocked submit leaves the composer/badges untouched.
+      // submit attempt. FAIL-CLOSED: zero tokens AND an unreadable balance
+      // both block the run — an error means the worker cannot bill it, so it
+      // must not silently proceed (the old `catch {}` fail-open let every
+      // transport hiccup through, which is how runs slipped past a zero
+      // balance). Sits before every state mutation so a blocked submit leaves
+      // the composer/badges untouched. The authoritative gate is the same
+      // read inside `supervisor::plan_task`; this one is UX only.
       try {
         const { tokens } = await call<{ tokens: number }>("topup_balance");
         if (tokens <= 0) {
@@ -562,8 +565,9 @@ export function useWorkbench() {
           emitOpenTopup();
           return;
         }
-      } catch {
-        // fail-open — submit normally
+      } catch (err) {
+        toast(`Saldo tidak terbaca — coba lagi (${errText(err)})`);
+        return;
       }
       setFollowUp(false);
       setQuoteTarget(null);

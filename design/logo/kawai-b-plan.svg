@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Concept B: supervisor graph — one goal, plan waves, deliverable -->
+  <rect width="512" height="512" rx="115" fill="#14121A"/>
+  <g stroke="#F5EDE6" stroke-width="24" stroke-linecap="round" fill="none">
+    <path d="M 256 176 L 148 288"/>
+    <path d="M 256 176 L 256 288"/>
+    <path d="M 256 176 L 364 288"/>
+    <path d="M 148 360 L 228 408"/>
+    <path d="M 256 360 L 256 408"/>
+    <path d="M 364 360 L 284 408"/>
+  </g>
+  <circle cx="256" cy="130" r="46" fill="none" stroke="#F5EDE6" stroke-width="24"/>
+  <circle cx="148" cy="324" r="30" fill="#F5EDE6"/>
+  <circle cx="256" cy="324" r="30" fill="#F5EDE6"/>
+  <circle cx="364" cy="324" r="30" fill="#F5EDE6"/>
+  <rect x="168" y="400" width="176" height="64" rx="22" fill="#FF6B9D"/>
+</svg>

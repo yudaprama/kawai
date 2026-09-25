@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Concept A: "kawa" (川, river) — three flowing streams; goal flows to the delta -->
+  <rect width="512" height="512" rx="115" fill="#14121A"/>
+  <g fill="none" stroke-linecap="round">
+    <path d="M 152 148 C 130 210, 130 302, 152 364" stroke="#F5EDE6" stroke-width="42"/>
+    <path d="M 256 118 C 236 200, 236 312, 256 394" stroke="#FF6B9D" stroke-width="48"/>
+    <path d="M 360 148 C 382 210, 382 302, 360 364" stroke="#F5EDE6" stroke-width="42"/>
+  </g>
+</svg>
