@@ -6,6 +6,7 @@ import { isTabularExt } from "@/lib/extensions";
 import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
 import type { SupervisorArtifact, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { emitOpenTopup } from "@/features/topup/open-topup";
+import { publishTokenBalance, refreshTokenBalance } from "@/features/topup/use-token-balance";
 
 // ── Derived view models ─────────────────────────────────────────────────────
 
@@ -560,6 +561,10 @@ export function useWorkbench() {
       // read inside `supervisor::plan_task`; this one is UX only.
       try {
         const { tokens } = await call<{ tokens: number }>("topup_balance");
+        // The gate's read doubles as the shared chip's freshest PRE-debit
+        // value — it lands before `plan_task` debits, so the run below
+        // re-reads once it resolves.
+        publishTokenBalance(tokens);
         if (tokens <= 0) {
           toast("Token habis — isi ulang lewat Top Up");
           emitOpenTopup();
@@ -643,6 +648,9 @@ export function useWorkbench() {
               sessionId: sid ?? 0,
             });
       await supervisor.planAndRun(quotedGoal, sid, "auto", trimmed);
+      // The Fase 0b usage debit lands INSIDE `plan_task` (before planAndRun
+      // resolves) — re-read so the rail chip shows the POST-debit balance.
+      void refreshTokenBalance();
     },
     [attachedFiles, sessionId, supervisor, canFollowUp, quoteTarget, runs],
   );

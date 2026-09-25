@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { type Theme, useTheme } from "@/hooks/use-theme";
 import { type AssetViewId, ASSET_NAV } from "@/features/assets/components/asset-nav";
+import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
 
 interface AgentPresentation {
   icon: string;
@@ -138,6 +139,10 @@ export function AssetsRail({
           {!collapsed && <span>New</span>}
         </Button>
       </div>
+
+      {/* Always-visible app-token balance (shared store — same read the Top Up
+          page and the goal-submit gate consume). */}
+      <TokenBalanceChip collapsed={collapsed} onSelectAsset={onSelectAsset} />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!collapsed && (

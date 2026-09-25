@@ -108,6 +108,30 @@ pub struct Balance {
     pub tokens: i64,
 }
 
+/// Riwayat ledger — halaman batas section Riwayat (source-hardcoded, no env).
+const HISTORY_LIMIT: u64 = 50;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryEntry {
+    /// Ledger primary key — the stable row key for the UI list.
+    pub id: i64,
+    /// Signed token delta — kredit positif (`qris`, `admin_adjustment`),
+    /// pemakaian negatif (`usage`).
+    pub amount: i64,
+    /// `qris | usage | admin_adjustment`.
+    pub reason: String,
+    /// Unix seconds.
+    pub created_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct History {
+    /// Terbaru dulu.
+    pub entries: Vec<HistoryEntry>,
+}
+
 // ── Ops (auth-required thin proxies) ─────────────────────────────────────────
 
 /// `GET /topup/qris/preview` — static QRIS payload + pay-as-you-go range
@@ -145,6 +169,14 @@ pub async fn topup_qris_status(
 /// `GET /topup/balance` — current tokens (0 for an account never topped up).
 pub async fn topup_balance(token: &str) -> std::result::Result<Balance, String> {
     parsed(get(token, "/topup/balance").await?)
+}
+
+/// `GET /billing/history?limit=50` — the owner's balance ledger, newest
+/// first: top-ups positive, Fase 0b usage debits negative. Read-only, so an
+/// undeployed worker surfaces as `Err` and the UI shows a notice — never a
+/// blocked top-up.
+pub async fn topup_history(token: &str) -> std::result::Result<History, String> {
+    parsed(get(token, &format!("/billing/history?limit={HISTORY_LIMIT}")).await?)
 }
 
 /// `POST /billing/debit` — Fase 0b honor-system usage debit. Worker 409

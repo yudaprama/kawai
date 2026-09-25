@@ -82,7 +82,9 @@ app (user login — Bearer Ed25519 session token)
                                               (guard atomic → 409 bila kurang)
 
   use-workbench.run()    → pre-check token ≤ 0 → blokir + buka halaman Top Up
-                           (UX saja; gagal baca → fail-open, submit jalan)
+                           (baca dipublikasikan ke shared store saldo;
+                           gagal baca → blokir juga: toast "Saldo tidak
+                           terbaca")
   supervisor::plan_task  → gate Fase 0a: bearer dari transport edge →
                            GET /topup/balance; saldo ≤ 0 ATAU gagal baca →
                            Err sebelum planner (fail-closed)
@@ -117,7 +119,7 @@ unik klaim, lalu confirm/reject (QRIS statis murni).
 | Tabel | Isi |
 |---|---|
 | `user_balances` | saldo token per email (`email` PRIMARY KEY, `tokens` integer ≥ 0) |
-| `balance_ledger` | append-only audit: delta signed + `ref` (tx_id klaim / null) + dibuat saat setiap perubahan saldo |
+| `balance_ledger` | append-only audit: delta signed + `ref` (tx_id klaim / null) + dibuat saat setiap perubahan saldo — kredit `qris`/`admin_adjustment` positif, pemakaian `usage` negatif; dibaca via `GET /billing/history` (index `(email, id)`) |
 | `qris_topups` | klaim top-up: `tx_id` (IDR unique-nominal), `package` (base nominal, string), `qr_payload`, `status`, waktu, row owner = email |
 
 Lifecycles:
@@ -143,7 +145,8 @@ migration runner terpisah.
 | POST | `/topup/qris/claim` | klaim nominal unik (idempotent: klaim saat masih pending → row sama) |
 | GET | `/topup/qris/status/:txId` | status klaim (owner-scope; 404 untuk tx bukan miliknya) |
 | GET | `/topup/balance` | saldo token pemanggil (0 bila belum pernah top-up) |
-| POST | `/billing/debit` | debit usage (guard atomic → 409 `insufficient_balance`) |
+| POST | `/billing/debit` | debit usage (guard atomic → 409 `insufficient_balance`) + baris ledger `usage` negatif |
+| GET | `/billing/history` | riwayat ledger pemilik (terbaru dulu, `?limit=` default 50 / maks 200) |
 | GET | `/topup/qris/pending` | daftar klaim pending (admin) |
 | POST | `/topup/qris/confirm` | kredit klaim (admin, idempotent) |
 | POST | `/topup/qris/reject` | tolak klaim (admin) |
@@ -241,15 +244,14 @@ Detail endpoint & tabel: `kawai-server/worker/README.md`.
 5. **KV eventually-consistent ~60s** — api key baru/revoke belum efektif
    global sesaat; `seen:` idempotency bisa race (worst case 1 duplikat lolos —
    ledger D1 yang menjaga).
-6. **Fail-open hanya untuk pre-check UI; penegakan fail-closed** — pre-check
-   `use-workbench.run()` tetap fail-open (hormat-sistem: worker tak
-   terjangkau tidak boleh mematikan submit), tetapi gate Fase 0a di
-   `supervisor::plan_task`, gate eksekusi di
-   `execute_plan_stream_with_cancel`, dan debit Fase 0b ketiganya
-   fail-closed: saldo 0, saldo tak terbaca, atau debit gagal → plan
-   dihentikan (jalur eksekusi berhenti sebelum `PlanStarted`, sehingga
-   Resume yang tak pernah kembali ke `plan_task` ikut terjaga). Penegakan
-   yang tak bisa di-bypass tetap butuh proxy LLM server-side, lihat §8.
+6. **Fail-closed di semua lapis** — pre-check UI `use-workbench.run()` juga
+   fail-closed (saldo 0 ATAU baca gagal → submit ditahan dengan toast),
+   sama seperti gate Fase 0a di `supervisor::plan_task`, gate eksekusi di
+   `execute_plan_stream_with_cancel`, dan debit Fase 0b: saldo 0, saldo tak
+   terbaca, atau debit gagal → plan dihentikan (jalur eksekusi berhenti
+   sebelum `PlanStarted`, sehingga Resume yang tak pernah kembali ke
+   `plan_task` ikut terjaga). Penegakan yang tak bisa di-bypass tetap butuh
+   proxy LLM server-side, lihat §8.
 
 ---
 

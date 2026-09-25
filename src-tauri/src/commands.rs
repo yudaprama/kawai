@@ -1018,7 +1018,7 @@ pub fn office_import_file(
     Ok(imported)
 }
 
-/// ── QRIS top-up (PLAN-qris-topup.md Fase 3) — 4 auth-required thin ────────
+/// ── QRIS top-up (PLAN-qris-topup.md Fase 3) — 5 auth-required thin ────────
 /// proxies to the worker. The bearer is the session's stored Ed25519 token;
 /// the frontend only sends op args (camelCase → snake_case params), never a
 /// token or user id.
@@ -1059,6 +1059,16 @@ pub async fn topup_qris_status(
 pub async fn topup_balance(session: State<'_, Session>) -> Result<logic::topup::Balance, String> {
     let token = session_bearer(&session)?;
     logic::topup::topup_balance(&token).await
+}
+
+/// Balance ledger history, newest first — top-ups positive, usage debits
+/// negative (the Top Up page's Riwayat section).
+#[tauri::command]
+pub async fn topup_history(
+    session: State<'_, Session>,
+) -> Result<logic::topup::History, String> {
+    let token = session_bearer(&session)?;
+    logic::topup::topup_history(&token).await
 }
 
 /// Authenticated RPC: create and validate a deterministic supervisor plan.

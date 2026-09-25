@@ -204,6 +204,7 @@ pub fn run() {
         commands::topup_qris_claim,
         commands::topup_qris_status,
         commands::topup_balance,
+        commands::topup_history,
 
         native_notifications::notification_permission_state,
         native_notifications::notification_permission_request,

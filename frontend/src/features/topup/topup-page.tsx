@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 import { call, errText } from "@/lib/api";
 import { QrisCard } from "@/features/topup/qris-card";
+import { isLowTokenBalance, refreshTokenBalance, useTokenBalance } from "@/features/topup/use-token-balance";
 
 // ── Wire shapes (camelCase JSON — local mirrors of the worker contract) ─────
 
@@ -41,8 +42,19 @@ export interface TopupStatusInfo {
   creditedAt?: number | null;
 }
 
-interface TopupBalance {
-  tokens: number;
+export interface HistoryEntry {
+  /** Ledger primary key — the stable row key for the list. */
+  id: number;
+  /** Signed: kredit positif, pemakaian negatif. */
+  amount: number;
+  /** `qris | usage | admin_adjustment`. */
+  reason: string;
+  /** Unix seconds. */
+  createdAt: number;
+}
+
+interface History {
+  entries: HistoryEntry[];
 }
 
 // ── Constants (source-hardcoded — repo rule: no new env) ────────────────────
@@ -65,6 +77,22 @@ function formatCountdown(ms: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+/** Ledger reason → Indonesian label; unknown reasons fall back verbatim. */
+const REASON_LABEL: Record<string, string> = {
+  qris: "Top up QRIS",
+  usage: "Pemakaian run",
+  admin_adjustment: "Penyesuaian admin",
+};
+
+function formatWhen(unix: number): string {
+  return new Date(unix * 1000).toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /** Live countdown to `expiresAt` — owns its own 1s ticker so the page (and
  *  the QR) don't re-render every second. */
 function Countdown({ expiresAt }: { expiresAt: number }) {
@@ -77,16 +105,29 @@ function Countdown({ expiresAt }: { expiresAt: number }) {
 }
 
 export function TopupPage({ onBack }: { onBack: () => void }) {
-  // ── Balance card ──────────────────────────────────────────────────────────
-  const [balance, setBalance] = useState<number | null>(null);
-  const loadBalance = useCallback(() => {
-    void call<TopupBalance>("topup_balance")
-      .then(({ tokens }) => setBalance(tokens))
-      .catch(() => setBalance(null));
+  // ── Balance card — shared store (the rail chip, the submit gate and this
+  // page all read the same value; `useTokenBalance` reads on mount) ─────────
+  const { tokens: balance, pending: balancePending } = useTokenBalance();
+
+  // ── Riwayat (balance ledger: kredit positif, pemakaian negatif) ──────────
+  const [history, setHistory] = useState<HistoryEntry[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const loadHistory = useCallback(() => {
+    void call<History>("topup_history")
+      .then(({ entries }) => {
+        setHistory(entries);
+        setHistoryError(null);
+      })
+      .catch((err) => setHistoryError(errText(err)));
   }, []);
+  // Follows the shared balance: it settles once after mount, and every later
+  // change (credited claim, a run's debit, focus refresh) re-reads the ledger.
+  // While a read is pending the balance is about to change — wait for it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `balance` is the TRIGGER (the effect re-runs when a settled read changes it), not a value it reads
   useEffect(() => {
-    loadBalance();
-  }, [loadBalance]);
+    if (balancePending) return;
+    loadHistory();
+  }, [balance, balancePending, loadHistory]);
 
   // ── Package preview ───────────────────────────────────────────────────────
   const [preview, setPreview] = useState<TopupPreview | null>(null);
@@ -162,7 +203,8 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
   const effectiveStatus: TopupStatus = txStatus?.status ?? "pending";
   const isTerminal = claim != null && TERMINAL_STATUSES.includes(effectiveStatus);
 
-  /** One status read; credited refreshes the balance card. Transient errors
+  /** One status read; credited re-reads the shared balance (the claim just
+   *  landed). Transient errors
    *  keep the current view — polling and "Cek ulang" retry. A null body (no
    *  such tx) clears the txId state. */
   const checkStatus = useCallback(async () => {
@@ -176,13 +218,13 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
         return;
       }
       setTxStatus(info);
-      if (info.status === "credited") loadBalance();
+      if (info.status === "credited") void refreshTokenBalance();
     } catch {
       // transient — keep the current state; manual check retries
     } finally {
       setChecking(false);
     }
-  }, [claim, loadBalance, resetClaim]);
+  }, [claim, resetClaim]);
 
   // Status polling: 5s for the first 5 minutes after the claim, then 30s
   // backoff; stops entirely on a terminal status. "Cek ulang" is the manual
@@ -225,10 +267,15 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
             <p>
               <span className="text-muted-foreground">Saldo token: </span>
               <span className="text-base font-semibold">
-                {balance === null ? "—" : balance.toLocaleString("id-ID")}
+                {balance === null ? (balancePending ? "…" : "—") : balance.toLocaleString("id-ID")}
               </span>
               {balance === 0 && <span className="text-muted-foreground ml-2 text-xs">Hubungi admin</span>}
             </p>
+            {isLowTokenBalance(balance) && (
+              <p className="text-amber-500 mt-1 text-xs">
+                Saldo menipis — isi ulang sebelum menjalankan run berikutnya.
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -382,6 +429,62 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
             {claimError && <p className="text-destructive text-xs">{claimError}</p>}
           </>
         )}
+
+        {/* Riwayat ledger — kredit (+) dan pemakaian (−), terbaru dulu.
+            A read error only surfaces while there is nothing to show; a
+            previously loaded list stays (same policy as the balance card). */}
+        <section className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-medium">Riwayat</h3>
+            <Button onClick={loadHistory} size="sm" variant="ghost">
+              <Icon name="rotate-ccw" className="size-3.5" />
+              Muat ulang
+            </Button>
+          </div>
+          {history == null ? (
+            historyError ? (
+              <div className="border-amber-500/30 space-y-1 rounded-md border p-3 text-xs">
+                <p className="text-amber-500 font-medium">Riwayat tidak tersedia</p>
+                <p className="text-muted-foreground font-mono break-words">{historyError}</p>
+                <Button onClick={loadHistory} size="sm" variant="outline">
+                  Coba lagi
+                </Button>
+              </div>
+            ) : (
+              <div className="flex justify-center py-4">
+                <Spinner />
+              </div>
+            )
+          ) : history.length === 0 ? (
+            <p className="text-muted-foreground text-sm">Belum ada transaksi.</p>
+          ) : (
+            <ul>
+              {history.map((entry) => (
+                <li
+                  className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0"
+                  key={entry.id}
+                >
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span
+                      className={`font-mono font-medium tabular-nums ${
+                        entry.amount >= 0 ? "text-emerald-500" : "text-destructive"
+                      }`}
+                    >
+                      {entry.amount >= 0 ? "+" : "−"}
+                      {Math.abs(entry.amount).toLocaleString("id-ID")}
+                    </span>
+                    <span className="text-muted-foreground truncate text-xs">
+                      {REASON_LABEL[entry.reason] ?? entry.reason}
+                    </span>
+                  </span>
+                  <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                    {formatWhen(entry.createdAt)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
     </AssetShell>
   );

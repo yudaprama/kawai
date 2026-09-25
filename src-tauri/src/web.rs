@@ -1858,6 +1858,18 @@ async fn topup_balance_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
+/// Balance ledger history (no body — the op takes no args, like
+/// `topup_qris_preview`).
+async fn topup_history_handler(
+    headers: HeaderMap,
+) -> Result<Json<logic::topup::History>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::topup::topup_history(&token)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
 /// Reads the `kawai_session` cookie (the signed-in email) and injects it as a
 /// request extension. 401 on missing/foreign cookie. Uses
 /// `from_fn` (state `()`), so it composes with a `Router<()>`.
@@ -2015,11 +2027,12 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/memory_persona_generate", post(memory_persona_generate_handler))
         .route("/api/memory_persona_get", post(memory_persona_get_handler))
         // QRIS top-up (PLAN-qris-topup.md Fase 3) — op name = path segment,
-        // the same 4 ops as the Tauri commands (POST on both transports).
+        // the same 5 ops as the Tauri commands (POST on both transports).
         .route("/api/topup_qris_preview", post(topup_qris_preview_handler))
         .route("/api/topup_qris_claim", post(topup_qris_claim_handler))
         .route("/api/topup_qris_status", post(topup_qris_status_handler))
         .route("/api/topup_balance", post(topup_balance_handler))
+        .route("/api/topup_history", post(topup_history_handler))
         .route_layer(from_fn(auth_middleware));
 
     #[cfg(feature = "litert")]

@@ -78,6 +78,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Default post-if is `success()`: a timed-out run saves no target
+          # dir, so the next run recompiles from cold (the 120/150-min loop).
+          cache-on-failure: true
 
       # The kawai lib crate depends on tauri unconditionally (glib-sys et al.
       # need the GTK/webkit dev headers even when checking only kawai-web).
@@ -172,6 +175,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Default post-if is `success()`: a timed-out run saves no target
+          # dir, so the next run recompiles from cold (the 120/150-min loop).
+          cache-on-failure: true
 
       # Tauri needs GTK/webkit headers; bindgen (litert feature) needs libclang.
       # clang-18 NOT needed here — cargo check doesn't build the LiteRT-LM C
@@ -331,6 +337,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Default post-if is `success()`: a timed-out run saves no target
+          # dir, so the next run recompiles from cold (the 120/150-min loop).
+          cache-on-failure: true
 
       # Key is per-runner-generation: objects built against an older Xcode's
       # libc++ headers must not be reused after a toolchain jump (same as
@@ -533,11 +542,16 @@ jobs:
           cat ${{ github.workspace }}/agent-eval-report.md >> "$GITHUB_STEP_SUMMARY"
 
       # ── Analytics suite (EVAL_SUITE=analytics): data_schema/data_query/data_ta
-      #    selection + argument composition over a stated schema (A01-A17,
-      #    incl. in/offset/having + data_chart bar/line/histogram). GATED at
-      #    15/17 — two-scenario tolerance, mirroring the office gate's 19/20;
+      #    selection + argument composition over a stated schema (A01-A18,
+      #    incl. in/offset/having + data_chart bar/line/histogram/pie). GATED at
+      #    16/18 — two-scenario tolerance, mirroring the office gate's 19/20;
       #    the report artifact carries EVAL_DEBUG raw dumps for any failure
       #    diagnosis.
+      #    Sampling is temp=1.0, so a whole assert cluster can drop in one run
+      #    (2026-09-25: A12/A13/A14 all lost the "query power" prompt block →
+      #    15/18, then 18/18 on the next run with zero code change). One retry
+      #    keeps the 16/18 gate itself untouched: a real regression fails both
+      #    attempts.
       - name: agent_eval (analytics suite)
         working-directory: src-tauri
         env:
@@ -549,10 +563,20 @@ jobs:
           EVAL_DEBUG: "1"
           EVAL_MIN_PASS: "16"
         run: |
-          cargo run --release --example agent_eval --features litert -- \
-            ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
-            ${{ github.workspace }}/agent-eval-report-analytics.md
-          cat ${{ github.workspace }}/agent-eval-report-analytics.md >> "$GITHUB_STEP_SUMMARY"
+          status=1
+          for attempt in 1 2; do
+            if cargo run --release --example agent_eval --features litert -- \
+              ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
+              ${{ github.workspace }}/agent-eval-report-analytics.md; then
+              status=0
+              break
+            fi
+            echo "::warning::agent_eval (analytics suite) attempt ${attempt}/2 failed — retrying (sampling flake vs regression is told apart by attempt 2)"
+          done
+          if [ -f "${{ github.workspace }}/agent-eval-report-analytics.md" ]; then
+            cat "${{ github.workspace }}/agent-eval-report-analytics.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
 
       - name: Upload eval report
         if: always()
@@ -596,6 +620,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Default post-if is `success()`: a timed-out run saves no target
+          # dir, so the next run recompiles from cold (the 120/150-min loop).
+          cache-on-failure: true
 
       - name: Mount bazel cache
         uses: actions/cache@v4
@@ -787,6 +814,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          # Default post-if is `success()`: a timed-out run saves no target
+          # dir, so the next run recompiles from cold (the 120/150-min loop).
+          cache-on-failure: true
 
       - name: Mount bazel cache
         uses: actions/cache@v4

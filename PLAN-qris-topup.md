@@ -95,8 +95,8 @@ Idempotency lapis (konfirmasi = transfer uang):
 
 **Masalah:** token yang dijual **tidak punya pembeli** — `bill_turn` stub `Skipped`, `gateTurn` tidak ada, `bill_usage` tanpa pemanggil. Menjual top-up untuk ledger yang tak pernah didebit = menjual sesuatu yang tak bisa dipakai.
 
-- **0a — Pre-check (wajib, murah):** UI baca `topup_balance`; submit goal diblokir bila token 0 ("Token habis — isi ulang lewat Top Up"), fail-open bila worker tak terjangkau (perilaku `gateTurn` lama pulih).
-- **0b — Debit (wajib sebelum top-up berbayar dibuka):** worker `POST /billing/debit` (Bearer → email) → D1 atomic guard `UPDATE user_balances SET tokens = tokens - ? WHERE email=? AND tokens >= ?` → `changes==0` → 409 `insufficient_balance` (semantik `debit_balance` lama, kini lokal). Pemanggilan dipasang di **composition root `src-tauri/src/supervisor.rs`** (`plan_task` sudah menerima `usage`) — satu titik, desktop **dan** web sama-sama terdebit, tanpa logika billing di wrapper transport. Stub `commands.rs::bill_turn` **dihapus** (nol pemanggil — cutover bersih; kembali ke "ganti stub" tidak diperlukan). Enforcement tetap lemah (binary bisa di-patch — dokumentasi billing sudah mengakui), tapi token punya konsumen nyata; debit gagal → `Err` dan plan tidak dikembalikan (fail-closed).
+- **0a — Pre-check (wajib, murah):** UI baca `topup_balance`; submit goal diblokir bila token 0 ("Token habis — isi ulang lewat Top Up"), dan fail-closed juga bila worker tak terjangkau (baca gagal → toast "Saldo tidak terbaca", submit ditahan) — gate server `supervisor::plan_task` tetap otoritatif.
+- **0b — Debit (wajib sebelum top-up berbayar dibuka):** worker `POST /billing/debit` (Bearer → email) → D1 atomic guard `UPDATE user_balances SET tokens = tokens - ? WHERE email=? AND tokens >= ?` → `changes==0` → 409 `insufficient_balance` (semantik `debit_balance` lama, kini lokal). Guard lolos → baris ledger `reason='usage'` dengan amount **negatif** (`ref` NULL — kolom `ref` unik dipakai jaring pengaman kredit ganda), sehingga riwayat bisa menjelaskan saldo yang berkurang (`GET /billing/history`). Pemanggilan dipasang di **composition root `src-tauri/src/supervisor.rs`** (`plan_task` sudah menerima `usage`) — satu titik, desktop **dan** web sama-sama terdebit, tanpa logika billing di wrapper transport. Stub `commands.rs::bill_turn` **dihapus** (nol pemanggil — cutover bersih; kembali ke "ganti stub" tidak diperlukan). Enforcement tetap lemah (binary bisa di-patch — dokumentasi billing sudah mengakui), tapi token punya konsumen nyata; debit gagal → `Err` dan plan tidak dikembalikan (fail-closed).
 
 Efek samping pembersihan (clean cutover, saat Fase 0): jalur Supabase di `crates/foundation/billing` (fungsi JWT `bill_usage`/`get_my_balance`, `BillOpts`) diganti worker-proxy / dihapus dari panggilan — jangan biarkan dua jalur debit. **Tanpa GO Fase 0: shipping QRIS ditahan.**
 
@@ -155,7 +155,8 @@ Endpoint (semua lewat `authenticate()` yang sudah ada; admin = `ADMIN_EMAIL`):
 | GET | `/topup/balance` | — | `{ tokens }` → `SELECT tokens FROM user_balances WHERE email=?` (0 bila belum ada) |
 | GET | `/topup/qris/pending` | admin | daftar `pending` (email, nominal, waktu) untuk matching mutasi bank |
 | POST | `/topup/qris/confirm` | admin, `{ txId }` | alur CAS + batch (§2) → `{ status, tokens }` |
-| POST | `/billing/debit` *(Fase 0b)* | `{ amount }` | atomic guard D1 → 409 `insufficient_balance` bila kurang |
+| POST | `/billing/debit` *(Fase 0b)* | `{ amount }` | atomic guard D1 → 409 `insufficient_balance` bila kurang; guard lolos → baris ledger `reason='usage'` **negatif** (`ref` NULL) |
+| GET | `/billing/history` | `?limit=` (default 50, maks 200) | `{ entries: [{ id, amount, reason, createdAt }] }` — ledger pemilik, terbaru dulu |
 
 `/transfer`, Paddle, auth, KV **tidak disentuh**.
 
@@ -181,7 +182,7 @@ Prasyarat: koneksi `DATABASE_URL` pulih (gagal DNS saat ini — cek host/VPN).
 5. **Cutover hygiene (same-commit):** baris `SUPABASE_URL` di `wrangler.toml` + `types.ts` dihapus (tak pernah dibaca); jalur billing Supabase diarahkan/dihapus sesuai Fase 0; `docs/BALANCE-KV-ARCHITECTURE.md` §1.1 ditulis ulang partisi-datanya (**data sekarang**: saldo/ledger/debt → D1 `kawai-auth`; KV tetap apikey/presence; auth tetap D1) — dokumentasi deskriptif kondisi kini, tanpa cerita migrasi.
    (Catatan implementasi: `.env` `SUPABASE_*`/`VITE_SUPABASE_*` jangan dihapus oleh agen — rahasia milik user; cukup tidak dipakai.)
 
-## 6. Fase 3 — Ops Rust (4 op, dua wrapper — invarian wajib)
+## 6. Fase 3 — Ops Rust (5 op, dua wrapper — invarian wajib)
 
 Semua op **auth-required**, proxy tipis ke worker dengan token dari session (frontend **tidak pernah** kirim token/user_id):
 
@@ -191,11 +192,12 @@ Semua op **auth-required**, proxy tipis ke worker dengan token dari session (fro
 | `topup_qris_claim(amount)` | `POST /topup/qris/claim` |
 | `topup_qris_status(tx_id)` | `GET /topup/qris/status/:txId` |
 | `topup_balance()` | `GET /topup/balance` |
+| `topup_history()` | `GET /billing/history` |
 
 - **`src-tauri/src/logic/topup.rs` (baru)** — murni (reqwest, tanpa tauri/axum), meniru `logic/local_auth.rs`; base URL helper worker yang sudah ada (pola `KAWAI_WORKER_URL` fallback konstan di `logic/local_auth.rs:27`) → **tanpa env baru**.
-- **`commands.rs`** — 4 `#[tauri::command]`: ambil token (`stored_token(email)`) → `logic::topup::*` → `Result<T, String>`.
-- **`web.rs`** — 4 route di **protected** router; handler **baca cookie `kawai_session` mentah** sebagai bearer (middleware tetap hanya meng-inject email).
-- **`lib.rs`** — daftarkan 4 command di `generate_handler!` + `bill_turn` bila Fase 0 GO.
+- **`commands.rs`** — 5 `#[tauri::command]`: ambil token (`stored_token(email)`) → `logic::topup::*` → `Result<T, String>`.
+- **`web.rs`** — 5 route di **protected** router; handler **baca cookie `kawai_session` mentah** sebagai bearer (middleware tetap hanya meng-inject email).
+- **`lib.rs`** — daftarkan 5 command di `generate_handler!` + `bill_turn` bila Fase 0 GO.
 - `cargo check` desktop/web/feature-web wajib; mobile check karena `logic/` bersama (aturan repo).
 
 ## 7. Fase 4 — Frontend
@@ -205,6 +207,8 @@ Semua op **auth-required**, proxy tipis ke worker dengan token dari session (fro
 - Alur: isi nominal (pay-as-you-go, validasi rentang/kelipatan) → `topup_qris_claim` → QR + **nominal unik** + instruksi "transfer tepat, nominal ≠ dikembalikan" → polling `topup_qris_status` (5s × 5 menit, lalu backoff/manual refresh).
 - States: `pending` "Menunggu verifikasi admin" → `credited` "Masuk ✓" / `rejected` / `expired` (klaim ulang).
 - Kartu saldo `topup_balance`: "Saldo token: N" + empty-state "Hubungi admin"; bacaan yang sama untuk pre-check Fase 0a.
+- Chip saldo **selalu terlihat di rail** (`token-balance-chip.tsx` atas store bersama `use-token-balance.ts`: baca mount → hasil pre-check → re-read pasca `plan_task` → klaim `credited` → focus ≤1×/30s; amber + satu toast per sesi di bawah `LOW_BALANCE_TOKENS`).
+- Section **Riwayat** (`topup_history`): baris ledger terbaru — kredit `+` hijau, pemakaian `−` merah, label alasan + waktu; gagal baca → notice, list lama tetap tampil, tidak pernah crash.
 - Data lewat `call()` `@/lib/api` — komponen murni, jalan di web build. **Tanpa** on-chain/monad.
 
 ## 8. Fase 5 — Admin CLI + Dokumen (same-commit, aturan hygiene)
@@ -281,7 +285,7 @@ E2E uang nyata (setelah deploy): klaim → bayar nominal kecil sungguhan → `bu
 
 ## 14. Keputusan yang saya butuhkan dari Anda
 
-1. **Fase 0: terpasang** — 0a pre-check UI `topup_balance` di `use-workbench.run()` (fail-open UX) + gate server-side fail-closed di `supervisor::plan_task` + gate eksekusi fail-closed di `execute_plan_stream_with_cancel` (menutup jalur Resume yang tak lewat `plan_task`) + 0b debit `POST /billing/debit` di `supervisor::plan_task` (fail-closed). Nonaktifkan bila berubah pikiran.
+1. **Fase 0: terpasang** — 0a pre-check UI `topup_balance` di `use-workbench.run()` (fail-closed UX) + gate server-side fail-closed di `supervisor::plan_task` + gate eksekusi fail-closed di `execute_plan_stream_with_cancel` (menutup jalur Resume yang tak lewat `plan_task`) + 0b debit `POST /billing/debit` di `supervisor::plan_task` (fail-closed). Nonaktifkan bila berubah pikiran.
 2. **Rate & rentang nominal**: ✅ dikonfirmasi 2026-09-25 — `MIN_BASE` 10_000 / `MAX_BASE` 99_000 / `BASE_STEP` 1_000 / `TOKENS_PER_IDR` 100 (Rp10.000 per 1 juta token; cost basis = langganan GLM Coding Plan, marginal cost ~0 di dalam kuota, retail per-token ≈ break-even).
 3. **Payload QRIS statis**: ✅ diterima 2026-09-25 (TOKO KAWAI / Speed Cash) — terisi di `qris.ts`, CRC tervalidasi.
 4. **`ADMIN_EMAIL`** (akun yang boleh `confirm`/`pending`) — ✅ terisi: `yudaprama@icloud.com` (konstanta `ADMIN_EMAIL` di `qris.ts`).
