@@ -2,6 +2,8 @@ import { useMemo } from "react";
 
 import { QRCodeSVG } from "qrcode.react";
 
+import gpnLogo from "@/assets/GPN.svg";
+
 // ── QRIS standee-style card (mirror of the printed static QRIS look) ────────
 // White card, QRIS wordmark + "QR Code Standar Pembayaran Nasional" header,
 // GPN mark, merchant name + NMID from the payload itself, red ribbon accents.
@@ -81,10 +83,7 @@ export function QrisCard({ qrPayload, amountLabel }: QrisCardProps) {
             Pembayaran Nasional
           </p>
         </div>
-        <div className="flex flex-col items-center">
-          <span aria-hidden className="text-[10px] leading-none text-[#d7282f]">▲</span>
-          <span className="text-xs leading-none font-black text-[#1e3a8a] italic">GPN</span>
-        </div>
+        <img src={gpnLogo} alt="GPN" className="h-7 w-auto" />
       </div>
 
       {/* Merchant identity — from the payload, not constants */}
