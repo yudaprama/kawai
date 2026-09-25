@@ -39,3 +39,6 @@
 [submodule "nautilus_trader"]
 	path = nautilus_trader
 	url = https://github.com/nautechsystems/nautilus_trader
+[submodule "pdf_oxide"]
+	path = pdf_oxide
+	url = https://github.com/yudaprama/pdf_oxide
