@@ -25,6 +25,9 @@ pub const PRESENTATION_AGENT_ID: &str = "builtin.presentation";
 pub const BINANCE_AGENT_ID: &str = "builtin.binance";
 pub const ANALYTICS_AGENT_ID: &str = "builtin.analytics";
 pub const ENTERTAINMENT_AGENT_ID: &str = "builtin.entertainment";
+/// Read-only Monad EVM chain reporter (wallet snapshot, token reads, tx
+/// status, transfer history). Feature "monad".
+pub const MONAD_AGENT_ID: &str = "builtin.monad";
 
 /// Build the agent catalog list from the built-in registry.
 pub fn list_agents() -> Vec<AgentInfo> {
@@ -281,6 +284,98 @@ pub fn entertainment_tools_for_supervisor(
     Some(entertainment::all_tools())
 }
 
+/// Monad: strictly read-only chain tools (wallet snapshot via Multicall3,
+/// ERC-20 balance/info, gas, chain status, tx receipts, bounded Transfer log
+/// scans, allowance). RPC + contracts come from `logic::monad_contracts`
+/// (NETWORKS.md mirror) and are pinned here — the model never supplies an
+/// RPC URL. The device wallet address rides as the zero-arg default on
+/// desktop (keychain is desktop-only); web builds pass explicit addresses.
+/// Web read/search ride along when an engine exists. No cloud-writer tools:
+/// the agent is a pure reporter.
+#[cfg(feature = "litert")]
+pub fn monad_tools_for_supervisor(
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    #[cfg(all(feature = "monad", not(target_os = "android")))]
+    {
+        // Keychain resolution is desktop-only; other builds take explicit
+        // addresses.
+        #[cfg(feature = "desktop")]
+        let device_wallet = crate::logic::monad_wallet::address()
+            .ok()
+            .flatten()
+            .map(|w| w.address);
+        #[cfg(not(feature = "desktop"))]
+        let device_wallet: Option<String> = None;
+        monad_tools_inner(device_wallet, context, remote_configured)
+    }
+    #[cfg(not(all(feature = "monad", not(target_os = "android"))))]
+    {
+        let _ = (context, remote_configured);
+        None
+    }
+}
+
+/// Catalog-seed/drift variant: builds the same toolset with NO device wallet
+/// bound. The Turso catalog is global curation — one dev machine's keychain
+/// state must never leak into it (the `PER_DEVICE_TOOLS` principle), and
+/// seeding/drift-checking must never touch the OS keychain (a test or CLI
+/// binary has no keychain ACL and would hang on a securityd prompt).
+#[cfg(feature = "litert")]
+pub fn monad_tools_for_catalog(
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    monad_tools_inner(None, context, remote_configured)
+}
+
+#[cfg(feature = "litert")]
+fn monad_tools_inner(
+    device_wallet: Option<String>,
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    #[cfg(all(feature = "monad", not(target_os = "android")))]
+    {
+        use monad_tools::{ChainConfig, TokenPreset};
+        use crate::logic::monad_contracts as contracts;
+        let config = ChainConfig {
+            rpc_url: contracts::rpc().to_string(),
+            chain_label: if contracts::TESTNET { "Monad Testnet" } else { "Monad Mainnet" },
+            explorer_tx_base: if contracts::TESTNET {
+                "https://testnet.monadexplorer.com/tx/"
+            } else {
+                "https://monadexplorer.com/tx/"
+            },
+            stablecoin: TokenPreset {
+                label: contracts::stablecoin_symbol(),
+                address: contracts::stablecoin().to_string(),
+                decimals: contracts::stablecoin_decimals(),
+            },
+            kawai: TokenPreset {
+                label: "KAWAI",
+                address: contracts::kawai_token().to_string(),
+                decimals: contracts::KAWAI_DECIMALS,
+            },
+            vault: contracts::vault().to_string(),
+            multicall3: contracts::multicall3().to_string(),
+        };
+        let mut set = monad_tools::toolset(config, device_wallet);
+        if webread::any_engine() {
+            set.add_tool(webread::WebReadTool(context.user_id.to_string()));
+            set.add_tool(webread::WebSearchTool(context.user_id.to_string()));
+        }
+        let _ = remote_configured;
+        return Some(set);
+    }
+    #[cfg(not(all(feature = "monad", not(target_os = "android"))))]
+    {
+        let _ = (device_wallet, context, remote_configured);
+        None
+    }
+}
+
 macro_rules! generated_http_tools {
     ($name:ident, $crate_name:ident) => {
         #[cfg(feature = "litert")]
@@ -401,7 +496,23 @@ pub fn builtin() -> AgentRegistry {
         summary_directive: None,
     };
 
-    AgentRegistry::new(vec![office, presentation, binance, analytics, entertainment])
+    let monad = {
+        #[cfg(all(feature = "monad", not(target_os = "android")))]
+        {
+            let mut d = monad_tools::agent::definition();
+            d.build_tools = monad_tools_for_supervisor;
+            d
+        }
+        #[cfg(not(all(feature = "monad", not(target_os = "android"))))]
+        unavailable_definition(
+            MONAD_AGENT_ID,
+            "Monad",
+            "Read-only Monad EVM wallet and chain data.",
+            false,
+        )
+    };
+
+    AgentRegistry::new(vec![office, presentation, binance, analytics, entertainment, monad])
 }
 
 /// Non-litert build: all agents are disabled placeholders.
@@ -438,6 +549,12 @@ pub fn builtin() -> AgentRegistry {
             "Anime, manga, books, television, music, poetry, and photos.",
             false,
         ),
+        unavailable_definition(
+            MONAD_AGENT_ID,
+            "Monad",
+            "Read-only Monad EVM wallet and chain data.",
+            false,
+        ),
     ])
 }
 
@@ -462,7 +579,28 @@ mod tests {
                 BINANCE_AGENT_ID,
                 ANALYTICS_AGENT_ID,
                 ENTERTAINMENT_AGENT_ID,
+                MONAD_AGENT_ID,
             ]
+        );
+    }
+
+    #[cfg(all(feature = "litert", feature = "monad", not(target_os = "android")))]
+    #[test]
+    fn monad_definition_registers_read_only() {
+        // Deliberately does NOT call build_tools: the real builder resolves
+        // the device wallet from the OS keychain, and a test binary has no
+        // keychain ACL (it would hang on a securityd prompt). Toolset shape
+        // is pinned by monad-tools' own tests; here we pin the wiring.
+        let registry = builtin();
+        let def = registry
+            .resolve(MONAD_AGENT_ID)
+            .expect("monad definition registered");
+        assert_eq!(def.id, MONAD_AGENT_ID);
+        assert!(def.tools, "monad agent carries tools");
+        // Read-only agent: no confirmation path, no cloud writer.
+        assert!(
+            def.confirmation_for_tool("monad_send", &serde_json::json!({}))
+                .is_none()
         );
     }
 

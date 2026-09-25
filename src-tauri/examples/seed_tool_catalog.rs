@@ -13,7 +13,7 @@
 //! `tool_catalog_drift_check.rs` — exactly one copy).
 //!
 //! Requires:
-//!   --features litert,binance,codegraph
+//!   --features litert,binance,codegraph,monad
 //!                            (the domain tool builders are feature-gated;
 //!                             every feature that the runtime registry can
 //!                             include MUST be on here, or its tools silently
@@ -25,7 +25,7 @@
 //!
 //! Usage:
 //!   KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \
-//!     cargo run --example seed_tool_catalog --features litert,binance,codegraph -- --prune
+//!     cargo run --example seed_tool_catalog --features litert,binance,codegraph,monad -- --prune
 
 #[path = "catalog_composition.rs"]
 mod composition;

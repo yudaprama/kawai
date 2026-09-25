@@ -115,6 +115,25 @@ tools. Also gets webread + runtime tools (`supports_draft_document: false`).
 | `crypto_balances` / `crypto_open_orders` | read-only account tools — signed via the baked kawai-vault read-only pair (never trade permission) |
 | `stock_quote` / `stock_info` | Binance Stocks US-equity bid/ask quote + symbol metadata — same baked kawai-vault pair |
 
+## 5b. Monad (`builtin.monad`) — `crates/toolsets/monad-tools` (feature `monad`)
+
+Strictly read-only Monad EVM reads over `kawai-monad` (alloy). RPC + contract
+addresses come from `logic::monad_contracts` (NETWORKS.md mirror) and are
+pinned at toolset build — the model never supplies an RPC URL. The device
+wallet address is bound at construction (desktop keychain); every tool
+prompt-free. Also gets webread + runtime tools.
+
+| Tool | Purpose |
+|---|---|
+| `monad_wallet_status` | one-call wallet snapshot: native MON + stablecoin + KAWAI balances via the canonical Multicall3 aggregate, with block height |
+| `monad_token_balance` | ERC-20 balance for a (token, wallet) pair — "usdt"/"kawai" presets or an address; raw + human-readable |
+| `monad_token_info` | ERC-20 symbol + decimals |
+| `monad_gas_price` | current gas price (gwei) |
+| `monad_chain_status` | latest block number + chain id |
+| `monad_tx_receipt` | tx status by hash: pending / success / failed + block + explorer link |
+| `monad_logs` | recent ERC-20 Transfer activity for an address (in + out, newest first) over a bounded block window (default 50k requested, cap 200k blocks; cap 200 logs) — endpoints that cap getLogs ranges (public Monad RPC: 100 blocks) are handled by adaptive shrink; the result reports the window actually scanned + `rangeShrunk` |
+| `monad_allowance` | ERC-20 allowance (defaults: device wallet × stablecoin × PaymentVault) |
+
 ## 6. Cross-cutting: web read/search — `crates/toolsets/webread`
 
 Registered under `webread::any_engine()` (desktop webview or Cloudflare configured; kawai-web
@@ -169,7 +188,7 @@ Full inventory: `grep -rhoE 'const NAME: &'"'"'static str = "[a-z_0-9]+"' crates
   `src-tauri/examples/seed_tool_catalog.rs` — butuh write token (`KAWAI_TURSO_WRITE_TOKEN`, tidak pernah baked):
   ```sh
   KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \
-    cargo run --example seed_tool_catalog --features litert,binance,codegraph -- --prune
+    cargo run --example seed_tool_catalog --features litert,binance,codegraph,monad -- --prune
   ```
 - **Drift check** (read-only, tanpa secret — kredensial dari baked constants):
   `src-tauri/examples/tool_catalog_drift_check.rs` — wajib lulus di CI (gate tool-catalog coverage).

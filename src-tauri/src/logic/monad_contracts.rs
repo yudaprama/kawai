@@ -16,6 +16,11 @@ pub const USDT: &str = "0x3AE05118C5B75b1B0b860ec4b7Ec5095188D1CCc";
 pub const KAWAI: &str = "0x5eB56dB2203cfbebDa20ef4a7c11C559D4396C60";
 /// Payment vault (`deposit(uint256)` pulls the stablecoin via `transferFrom`).
 pub const PAYMENT_VAULT: &str = "0x57C13B0fC9B854779cae43469095eAF8cE434276";
+/// Multicall3 aggregate contract — the canonical
+/// `0xcA11bde05977b3631167028862bE2a173976CA11` deployment, same address on
+/// Monad testnet and mainnet (docs.monad.xyz, multicall3.com). Chain infra,
+/// not a kawai deployment.
+pub const MULTICALL3: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 // ── Mainnet (deployment 2026-01-23) — inactive, kept for the flip ──────────
 pub const MAINNET_RPC_URL: &str = "https://rpc.monad.xyz";
@@ -39,4 +44,14 @@ pub fn kawai_token() -> &'static str {
 /// Display symbol for the active network's stablecoin (NETWORKS.md mirror).
 pub fn stablecoin_symbol() -> &'static str {
     if TESTNET { "USDT" } else { "USDC" }
+}
+/// Stablecoin decimals (testnet USDT 6, mainnet USDC 6 — same on both).
+pub fn stablecoin_decimals() -> u8 {
+    6
+}
+/// KAWAI token decimals (18 on both networks).
+pub const KAWAI_DECIMALS: u8 = 18;
+/// Active-network Multicall3 address (same on both networks).
+pub fn multicall3() -> &'static str {
+    MULTICALL3
 }

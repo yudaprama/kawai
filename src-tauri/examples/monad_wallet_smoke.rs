@@ -212,6 +212,122 @@ async fn main() {
     }
     checks += 1;
 
+    // ── Agent-tool layer (builtin.monad toolset over the same RPC) ─────
+    // The supervisor dispatches these through monad_tools::toolset; exercise
+    // the real tool surface, not just the underlying ops.
+    let tool_config = monad_tools::ChainConfig {
+        rpc_url: rpc.clone(),
+        chain_label: if monad_contracts::TESTNET { "Monad Testnet" } else { "Monad Mainnet" },
+        explorer_tx_base: if monad_contracts::TESTNET {
+            "https://testnet.monadexplorer.com/tx/"
+        } else {
+            "https://monadexplorer.com/tx/"
+        },
+        stablecoin: monad_tools::TokenPreset {
+            label: monad_contracts::stablecoin_symbol(),
+            address: monad_contracts::stablecoin().to_string(),
+            decimals: monad_contracts::stablecoin_decimals(),
+        },
+        kawai: monad_tools::TokenPreset {
+            label: "KAWAI",
+            address: monad_contracts::KAWAI.to_string(),
+            decimals: monad_contracts::KAWAI_DECIMALS,
+        },
+        vault: monad_contracts::vault().to_string(),
+        multicall3: monad_contracts::multicall3().to_string(),
+    };
+    let tools = monad_tools::toolset(tool_config, None);
+
+    // No bound device wallet + no address = guidance error, never a panic or
+    // an argument-shape error — pins the wallet-binding contract.
+    match tools.execute("monad_wallet_status", "{}").await {
+        r if r.is_success() => {
+            die("monad_wallet_status with no address must fail when no device wallet is bound")
+        }
+        r => {
+            let msg = r.error_message().unwrap_or_default();
+            if msg.contains("invalid arguments") {
+                die(&format!("monad_wallet_status arg-shape regression: {msg}"));
+            }
+            println!("[monad_wallet_smoke] unbound wallet probe correctly guided: {msg}");
+        }
+    }
+    checks += 1;
+
+    // Wallet snapshot through the Multicall3 aggregate against the vault.
+    let probe = serde_json::json!({ "address": monad_contracts::vault() });
+    let body = match tools.execute("monad_wallet_status", &probe.to_string()).await {
+        r if r.is_success() => r.text().unwrap_or_default().to_string(),
+        r => die(&format!(
+            "monad_wallet_status via Multicall3: {}",
+            r.error_message().unwrap_or_default()
+        )),
+    };
+    let v: serde_json::Value = serde_json::from_str(&body)
+        .unwrap_or_else(|e| die(&format!("wallet_status output not JSON: {e}: {body}")));
+    if v["tokens"].as_array().map(|a| a.len()) != Some(2) {
+        die(&format!("wallet_status expected 2 token slots: {body}"));
+    }
+    println!(
+        "[monad_wallet_smoke] wallet_status @ block {} — {} MON, slots {}",
+        v["blockNumber"],
+        v["balanceMon"],
+        v["tokens"]
+            .as_array()
+            .map(|a| a
+                .iter()
+                .map(|t| t["label"].as_str().unwrap_or("?"))
+                .collect::<Vec<_>>()
+                .join(","))
+            .unwrap_or_default(),
+    );
+    checks += 1;
+
+    // Bounded transfer-log scan (small window so the run stays quick).
+    let probe = serde_json::json!({
+        "address": monad_contracts::vault(),
+        "token": "usdt",
+        "maxBlocks": 5000,
+        "maxLogs": 5,
+    });
+    match tools.execute("monad_logs", &probe.to_string()).await {
+        r if r.is_success() => {
+            let text = r.text().unwrap_or_default().to_string();
+            let v: serde_json::Value = serde_json::from_str(&text)
+                .unwrap_or_else(|e| die(&format!("monad_logs output not JSON: {e}: {text}")));
+            println!(
+                "[monad_wallet_smoke] monad_logs scanned blocks {}..{} ({} event(s), truncated={})",
+                v["fromBlock"],
+                v["toBlock"],
+                v["transfers"].as_array().map(|a| a.len()).unwrap_or(0),
+                v["truncated"],
+            );
+        }
+        r => die(&format!("monad_logs: {}", r.error_message().unwrap_or_default())),
+    }
+    checks += 1;
+
+    // Receipt tool on a well-formed-but-unmined hash → "pending", no error.
+    let probe = serde_json::json!({
+        "txHash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+    });
+    match tools.execute("monad_tx_receipt", &probe.to_string()).await {
+        r if r.is_success() => {
+            let text = r.text().unwrap_or_default().to_string();
+            let v: serde_json::Value = serde_json::from_str(&text)
+                .unwrap_or_else(|e| die(&format!("monad_tx_receipt output not JSON: {e}: {text}")));
+            if v["status"].as_str() != Some("pending") {
+                die(&format!("unmined hash unexpectedly resolved: {text}"));
+            }
+            println!("[monad_wallet_smoke] monad_tx_receipt pending path ok");
+        }
+        r => die(&format!(
+            "monad_tx_receipt: {}",
+            r.error_message().unwrap_or_default()
+        )),
+    }
+    checks += 1;
+
     // ── Optional device-wallet lifecycle (local-only flags) ────────────
     if with_wallet {
         let pre = match monad_wallet::address() {

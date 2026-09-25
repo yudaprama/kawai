@@ -12,7 +12,7 @@
 //! `seed_tool_catalog.rs` — exactly one copy).
 //!
 //! Usage:
-//!   cargo run --example tool_catalog_drift_check --features litert,binance,codegraph
+//!   cargo run --example tool_catalog_drift_check --features litert,binance,codegraph,monad
 
 #[path = "catalog_composition.rs"]
 mod composition;
@@ -78,7 +78,7 @@ async fn run() -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "tool catalog drifted: {} missing, {} stale. Fix:\n  KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \\\n    cargo run --example seed_tool_catalog --features litert,binance,codegraph -- --prune",
+        "tool catalog drifted: {} missing, {} stale. Fix:\n  KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \\\n    cargo run --example seed_tool_catalog --features litert,binance,codegraph,monad -- --prune",
         missing.len(),
         stale.len()
     ))

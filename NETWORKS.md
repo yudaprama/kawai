@@ -15,6 +15,7 @@ file listed in "Mirror points" in sync when anything changes.
 | Stablecoin (USDT, 6 dec) | `0x3AE05118C5B75b1B0b860ec4b7Ec5095188D1CCc` |
 | KAWAI token (18 dec) | `0x5eB56dB2203cfbebDa20ef4a7c11C559D4396C60` |
 | PaymentVault | `0x57C13B0fC9B854779cae43469095eAF8cE434276` |
+| Multicall3 (chain infra — same address on both networks, docs.monad.xyz) | `0xcA11bde05977b3631167028862bE2a173976CA11` |
 | OTC Market | `0x9c4a679cE79BB3334D82EeBA3e80C034a0Ad9863` |
 | Mining Distributor | `0xD2D1CAC75976a0438aF0Ab2bC0741cE86857953f` |
 | Cashback Distributor | `0x585FBD1dC3806bE0A5b047c1c4616DAF3eAe5114` |
@@ -32,6 +33,7 @@ file listed in "Mirror points" in sync when anything changes.
 | Stablecoin (USDC, 6 dec) | `0x754704bc059f8c67012fed69bc8a327a5aafb603` |
 | KAWAI token (18 dec) | `0xBd95bDB3a6FE48CbC2dE3890B8e67Ef96Af65322` |
 | PaymentVault | `0x8381DBC83DdfEc1Ee958BcBdCf5340b406cA9E64` |
+| Multicall3 (chain infra — same address on both networks, docs.monad.xyz) | `0xcA11bde05977b3631167028862bE2a173976CA11` |
 | OTC Market | `0x75d1A6CC51035D7E5Cbe88aEc6DCfd6ABEB22bfE` |
 | Mining Distributor | `0x6326F97DAf97e51fc7480Df5A5D0DB08bCDed4c8` |
 | Cashback Distributor | `0x646A1724E7375eFDBd6Ed5073cBb50569c4C15A1` |

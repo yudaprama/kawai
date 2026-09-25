@@ -112,6 +112,10 @@ pub async fn merged_definitions() -> Result<Vec<ToolDefinition>, String> {
                 remote_configured,
             ),
         ),
+        (
+            "monad",
+            kawai_lib::agent_registry::monad_tools_for_catalog(&context, remote_configured),
+        ),
         ("weather-geo", kawai_lib::agent_registry::weather_geo_tools_for_supervisor(&context, remote_configured)),
         ("news-media", kawai_lib::agent_registry::news_media_tools_for_supervisor(&context, remote_configured)),
         ("sports", kawai_lib::agent_registry::sports_tools_for_supervisor(&context, remote_configured)),
@@ -127,7 +131,7 @@ pub async fn merged_definitions() -> Result<Vec<ToolDefinition>, String> {
         // is exactly how the catalog drifted out of coverage before.
         let set = set.ok_or_else(|| format!(
             "domain toolset `{label}` could not be built — check that its cargo feature is enabled \
-             (expected: --features litert,binance,codegraph) and its env is present"
+             (expected: --features litert,binance,codegraph,monad) and its env is present"
         ))?;
         match &mut merged {
             Some(base) => base.merge(&mut { set }),

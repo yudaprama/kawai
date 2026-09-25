@@ -46,7 +46,7 @@ Gemini `embedding-001`, each requesting 768 dims).
 KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \
   cargo run --example seed_tool_catalog \
     --manifest-path src-tauri/Cargo.toml \
-    --features litert,binance,codegraph
+    --features litert,binance,codegraph,monad
 ```
 
 This re-seeds ALL tools with embeddings. The `ON CONFLICT(name) DO UPDATE` in

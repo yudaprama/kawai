@@ -157,6 +157,10 @@ piper-rs = { version = "0.2.0", optional = true }
 binance = { path = "../crates/toolsets/binance", optional = true }
 # Monad EVM chain client (feature "monad") — read-only public RPC.
 kawai-monad = { path = "../crates/integrations/monad", optional = true }
+# Monad agent tools (builtin.monad): thin read-only AgentTool wrappers over
+# kawai-monad — wallet snapshot via Multicall3, token reads, tx status,
+# bounded Transfer log scans, allowance.
+monad-tools = { path = "../crates/toolsets/monad-tools", optional = true }
 
 # libSQL-native GraphRAG engine — pure crate (crates/engines/graph). Feature-gated
 # so it can be included/excluded as a module (@crates/engines/graph).
@@ -200,8 +204,9 @@ loki-logs = ["kawai-telemetry/loki-logs"]
 # technical-analysis tools. Needs a tool-loop runtime.
 binance = ["dep:binance", "kawai-agent/binance"]
 # Monad EVM chain client (read-only RPC: balance + chain status). Pure alloy
-# HTTP provider — no keys, no signing.
-monad = ["dep:kawai-monad"]
+# HTTP provider — no keys, no signing. monad-tools carries the read-only
+# AgentTool surface (builtin.monad).
+monad = ["dep:kawai-monad", "dep:monad-tools"]
 # Remote SQL sources (Postgres/MySQL) for the analytics snapshot tools.
 # Implies analytics (always compiled); SQLite needs no feature (libsql rides along).
 analytics-sql = ["kawai-analytics/analytics-sql", "dep:sqlx"]
