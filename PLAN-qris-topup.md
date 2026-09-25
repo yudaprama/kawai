@@ -282,6 +282,6 @@ E2E uang nyata (setelah deploy): klaim → bayar nominal kecil sungguhan → `bu
 ## 14. Keputusan yang saya butuhkan dari Anda
 
 1. **Fase 0: terpasang** — 0a (gate pre-check `topup_balance` di `use-workbench.run()`, fail-open) + 0b (debit `POST /billing/debit` di `supervisor::plan_task`, fail-open). Nonaktifkan bila berubah pikiran.
-2. **Rate & rentang nominal**: konfirmasi `MIN_BASE`/`MAX_BASE`/`BASE_STEP` + `TOKENS_PER_IDR` di `qris.ts` (angka persis; unit = integer sama dengan `scripts/topup.ts`; komentar `ANGKA BISNIS — konfirmasi pemilik sebelum rilis` masih menunggu).
+2. **Rate & rentang nominal**: ✅ dikonfirmasi 2026-09-25 — `MIN_BASE` 10_000 / `MAX_BASE` 99_000 / `BASE_STEP` 1_000 / `TOKENS_PER_IDR` 100 (Rp10.000 per 1 juta token; cost basis = langganan GLM Coding Plan, marginal cost ~0 di dalam kuota, retail per-token ≈ break-even).
 3. **Payload QRIS statis**: ✅ diterima 2026-09-25 (TOKO KAWAI / Speed Cash) — terisi di `qris.ts`, CRC tervalidasi.
-4. **`ADMIN_EMAIL`** (akun yang boleh `confirm`/`pending`).
+4. **`ADMIN_EMAIL`** (akun yang boleh `confirm`/`pending`) — ✅ terisi: `yudaprama@icloud.com` (konstanta `ADMIN_EMAIL` di `qris.ts`).

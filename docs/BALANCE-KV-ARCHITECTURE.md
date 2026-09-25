@@ -236,9 +236,10 @@ Detail endpoint & tabel: `kawai-server/worker/README.md`.
 
 - [x] **Isi `QRIS_PAYLOAD`** (terisi 2026-09-25 — TOKO KAWAI / Speed Cash,
       CRC tervalidasi).
-- [ ] **Konfirmasi rentang/rate `MIN_BASE`/`MAX_BASE`/`TOKENS_PER_IDR`
-      {IDR → token}** + deploy worker + e2e pembayaran
+- [x] **Konfirmasi rentang/rate** — `MIN_BASE` 10_000 / `MAX_BASE` 99_000 /
+      `BASE_STEP` 1_000 / `TOKENS_PER_IDR` 100 {IDR → token}, 2026-09-25
       (`PLAN-qris-topup.md` §14).
+- [ ] **Deploy worker + e2e pembayaran** (`PLAN-qris-topup.md` §14).
 - [ ] Gateway QRIS **dinamis** (Midtrans/Xendit/DOKU/Tripay): API key +
       webhook → verifikasi otomatis tanpa admin (fase 2).
 - [ ] Rate-card per-model (saat ini 1:1 flat) — pinjam pola `metering/`
