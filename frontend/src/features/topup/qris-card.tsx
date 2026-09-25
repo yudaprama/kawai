@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
 import gpnLogo from "@/assets/GPN.svg";
+import qrisLogo from "@/assets/QRIS-withtext.svg";
 
 // ── QRIS standee-style card (mirror of the printed static QRIS look) ────────
 // White card, QRIS wordmark + "QR Code Standar Pembayaran Nasional" header,
@@ -66,23 +67,9 @@ export function QrisCard({ qrPayload, amountLabel }: QrisCardProps) {
         style={{ clipPath: "polygon(100% 0, 100% 100%, 0 100%)" }}
       />
 
-      {/* Header: QRIS wordmark + national standard title, GPN mark right */}
+      {/* Header: real QRIS lockup + GPN mark right */}
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="relative text-2xl leading-none font-black tracking-tighter">
-            {/* Corner brackets around the wordmark, QRIS-logo style */}
-            <span aria-hidden className="absolute top-0 left-0 h-1.5 w-1.5 border-t-2 border-l-2 border-black" />
-            <span aria-hidden className="absolute top-0 right-0 h-1.5 w-1.5 border-t-2 border-r-2 border-black" />
-            <span aria-hidden className="absolute bottom-0 left-0 h-1.5 w-1.5 border-b-2 border-l-2 border-black" />
-            <span aria-hidden className="absolute right-0 bottom-0 h-1.5 w-1.5 border-r-2 border-b-2 border-black" />
-            <span className="px-1">QRIS</span>
-          </span>
-          <p className="text-[10px] leading-tight font-bold">
-            QR Code Standar
-            <br />
-            Pembayaran Nasional
-          </p>
-        </div>
+        <img src={qrisLogo} alt="QRIS — QR Code Standar Pembayaran Nasional" className="h-6 w-auto" />
         <img src={gpnLogo} alt="GPN" className="h-7 w-auto" />
       </div>
 
