@@ -655,25 +655,37 @@ pub async fn plan_task(
     user_id: &str,
     session_id: i64,
     goal: &str,
+    bearer: Option<&str>,
     registry: &ToolRegistry,
     on_progress: impl Fn(SupervisorEvent),
 ) -> Result<(kawai_router::TaskPlan, remote_llm::RemoteUsage), String> {
     // Fase 0a, server side — the balance gate is FAIL-CLOSED: a balance that
     // cannot be read blocks the goal exactly like an empty one, because an
-    // unreadable balance means this run cannot be billed. Three cases block:
-    // no stored bearer, worker error/HTTP failure, tokens <= 0. The client
-    // pre-check in use-workbench.run() is UX only (toast + Top Up handoff) and
-    // is bypassable; this call at the composition root is the enforcement both
-    // transports share, and it runs BEFORE the planner so no token is spent on
-    // a goal that cannot be paid for. The bearer is read ONCE here and reused
-    // by the debit at plan completion, so the two billing calls can never
-    // disagree about which session was authorized.
-    let token = crate::logic::local_auth::stored_token(user_id)
-        .ok_or_else(|| "not authenticated (no token — sign in first)".to_string())?;
-    match crate::logic::topup::topup_balance(&token).await {
-        Ok(balance) if balance.tokens > 0 => {}
-        Ok(_) => return Err("Token habis — isi ulang lewat Top Up".to_string()),
-        Err(e) => return Err(format!("balance check failed: {e}")),
+    // unreadable balance means this run cannot be billed. Two cases block:
+    // worker error/HTTP failure, and tokens <= 0. The client pre-check in
+    // use-workbench.run() is UX only (toast + Top Up handoff) and is
+    // bypassable; this call at the composition root is the enforcement both
+    // transports share, and it runs BEFORE the planner so no token is spent
+    // on a goal that cannot be paid for. It runs BEFORE the planner so no
+    // token is spent on a goal that cannot be paid for.
+    //
+    // The bearer comes from the TRANSPORT EDGE, not from reading the stored
+    // `auth.token` file here: the web transport authenticates off the
+    // `kawai_session` cookie, which can outlive that file (logout clears the
+    // cookie but not the file, and a failed token write still lets sign-in
+    // succeed), so a file read at this layer would both false-block a valid
+    // web session and, if treated as "no bearer", let a zero-balance goal
+    // run unbilled. Wrappers resolve identity/auth first (AGENTS.md #8) and
+    // fail closed on a missing bearer; `None` reaches here only from
+    // non-billing contexts (dev probes, headless examples). The SAME bearer
+    // is reused by the debit at plan completion, so the two billing calls
+    // can never disagree about which session was authorized.
+    if let Some(token) = bearer {
+        match crate::logic::topup::topup_balance(token).await {
+            Ok(balance) if balance.tokens > 0 => {}
+            Ok(_) => return Err("Token habis — isi ulang lewat Top Up".to_string()),
+            Err(e) => return Err(format!("balance check failed: {e}")),
+        }
     }
 
     // The remote pool serves the planner with a tight per-call output cap:
@@ -918,14 +930,28 @@ via the always-available `session_step_results` tool. If the goal depends on det
                         // the guard passes on `tokens > 0`, the D1 atomic guard
                         // rejects the debit with 409, the balance never reaches
                         // 0, and the entry gate never trips again.
-                        // (docs/BALANCE-KV-ARCHITECTURE.md). The bearer cannot
-                        // be missing: the entry gate already returned Err.
+                        // (docs/BALANCE-KV-ARCHITECTURE.md).
+                        //
+                        // The bearer is the SAME one the entry gate checked,
+                        // so gate and debit can never disagree about which
+                        // session was authorized. `None` means the caller is
+                        // a non-billing context (the gate was skipped with
+                        // it) — nothing to debit.
                         let amount = usage.input_tokens.saturating_add(usage.output_tokens);
-                        if let Err(e) = crate::logic::topup::billing_debit(&token, amount).await {
-                            tracing::warn!(component = "billing", user_id = %user_id, amount, error = %e, "usage debit failed — refusing the unpaid plan (fail-closed)");
-                            return Err(format!(
-                                "billing failed — plan not delivered: {e}"
-                            ));
+                        match bearer {
+                            Some(token) => {
+                                if let Err(e) =
+                                    crate::logic::topup::billing_debit(token, amount).await
+                                {
+                                    tracing::warn!(component = "billing", user_id = %user_id, amount, error = %e, "usage debit failed — refusing the unpaid plan (fail-closed)");
+                                    return Err(format!(
+                                        "billing failed — plan not delivered: {e}"
+                                    ));
+                                }
+                            }
+                            None => {
+                                tracing::warn!(component = "billing", user_id = %user_id, amount, "no bearer — usage debit skipped (non-billing caller)");
+                            }
                         }
                         return Ok((plan, usage));
                     }
@@ -3284,6 +3310,7 @@ pub fn execute_plan_stream(
         String::new(),
         0,
         None,
+        None,
     )
 }
 
@@ -3302,8 +3329,41 @@ pub fn execute_plan_stream_with_cancel(
     // (it plans, so it reframes) — but the deliverable must answer what the
     // USER asked, so synthesis prefers this over the rewritten goal.
     user_goal: Option<String>,
+    // Billing bearer from the transport edge (AGENTS.md #8) — same contract
+    // as supervisor::plan_task. `None` = non-billing caller (legacy/test).
+    bearer: Option<&str>,
 ) -> impl Stream<Item = SupervisorEvent> + Send {
+    // Clone out of the borrow before the stream! block: the returned stream
+    // must own its state, or `impl Stream` would have to capture the caller's
+    // lifetime.
+    let bearer = bearer.map(str::to_string);
     async_stream::stream! {
+        // ── Fase 0a, execution side ─────────────────────────────────────────
+        // The same balance gate the planner passed, enforced again here
+        // because execution has an entry point that never re-enters
+        // plan_task: Resume re-runs a stored plan straight through this
+        // function. Fail-closed like the planner's copy (a balance that
+        // cannot be read blocks exactly like an empty one) and it runs
+        // BEFORE PlanStarted, so a rejected run never looks like it began.
+        // Gate only — no debit here (billing is planner-token scoped today).
+        if let Some(token) = &bearer {
+            match crate::logic::topup::topup_balance(token).await {
+                Ok(balance) if balance.tokens > 0 => {}
+                Ok(_) => {
+                    yield SupervisorEvent::PlanFailed {
+                        error: "Token habis — isi ulang lewat Top Up".to_string(),
+                    };
+                    return;
+                }
+                Err(e) => {
+                    yield SupervisorEvent::PlanFailed {
+                        error: format!("balance check failed: {e}"),
+                    };
+                    return;
+                }
+            }
+        }
+
         let step_count = plan.steps.len();
         yield SupervisorEvent::PlanStarted {
             goal: plan.goal.clone(),
@@ -4261,6 +4321,7 @@ mod tests {
             "test-user".into(),
             1,
             None,
+            None,
         );
         let mut stream = Box::pin(stream);
 
@@ -4341,6 +4402,7 @@ mod tests {
             "test-user".into(),
             1,
             None,
+            None,
         );
         let mut stream = Box::pin(stream);
 
@@ -4405,6 +4467,7 @@ mod tests {
             "st-p".into(),
             "test-user".into(),
             1,
+            None,
             None,
         );
         let events: Vec<SupervisorEvent> = Box::pin(stream)

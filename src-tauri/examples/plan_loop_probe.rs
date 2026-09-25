@@ -26,8 +26,15 @@ async fn run() -> Result<(), String> {
     println!("[probe] registry: {} tools (invisible to the planner)", registry.len());
 
     let started = std::time::Instant::now();
-    let (plan, usage) =
-        kawai_lib::supervisor::plan_task("seed", 0, &goal, &registry, |_| {}).await?;
+    let (plan, usage) = kawai_lib::supervisor::plan_task(
+        "seed",
+        0,
+        &goal,
+        None, // dev probe — no billing identity, so the balance gate is off
+        &registry,
+        |_| {},
+    )
+    .await?;
     let elapsed = started.elapsed();
 
     println!("\n[probe] GOAL: {goal}");

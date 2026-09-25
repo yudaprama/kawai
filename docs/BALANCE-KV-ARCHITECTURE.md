@@ -47,8 +47,11 @@ Client yang menentukan jumlah tagihan = tidak ada tagihan:
 
 Nilai tagihan hanya diketahui server yang melayani → **worker yang menagih**.
 Debit dipanggil dari satu titik komposisi (`supervisor::plan_task`) sehingga
-transport desktop **dan** web sama-sama terdebit; kebijakannya fail-open
-(hormat-sistem — enforcement ketat butuh proxy LLM server-side, lihat §8).
+transport desktop **dan** web sama-sama terdebit; titik yang sama juga
+menolak goal yang tidak bisa ditagih **sebelum** planner membelanjakan token
+(gate Fase 0a server-side). Keduanya **fail-closed**: debit yang tak mendarat
+berarti plan tak pernah dibayar, jadi plan tidak dikembalikan. Enforcement
+yang tak bisa di-bypass tetap butuh proxy LLM server-side (lihat §8).
 Client hanya boleh: baca saldo (`GET /topup/balance`) dan penyesuaian saldo terkontrol
 admin (`POST /admin/balance/credit`, hanya menambah/mengurang dengan guard
 saldo ≥ 0).
@@ -78,10 +81,21 @@ app (user login — Bearer Ed25519 session token)
                                               WHERE email = ? AND tokens >= ?
                                               (guard atomic → 409 bila kurang)
 
-  supervisor::plan_task  → debit usage sekali per plan (amount = input+output tokens,
-                           debit 1:1 dari saldo; gagal → warn + lanjut, fail-open)
   use-workbench.run()    → pre-check token ≤ 0 → blokir + buka halaman Top Up
-                           (gagal baca → fail-open, submit jalan)
+                           (UX saja; gagal baca → fail-open, submit jalan)
+  supervisor::plan_task  → gate Fase 0a: bearer dari transport edge →
+                           GET /topup/balance; saldo ≤ 0 ATAU gagal baca →
+                           Err sebelum planner (fail-closed)
+                        → debit usage sekali per plan (amount = input+output
+                           tokens, 1:1 dari saldo; gagal → Err, plan tak
+                           dikembalikan — fail-closed)
+  supervisor::execute_plan_stream_with_cancel
+                        → gate eksekusi: balance check yang sama, di depan
+                           SEMUA event stream — PlanStarted tak pernah muncul
+                           kalau saldo ≤ 0. Menutup jalur Resume / re-run yang
+                           memanggil execute_supervisor_plan langsung dan tak
+                           pernah lewat plan_task (fail-closed; pemanggil
+                           legacy/test pass None → gate nonaktif)
 
 admin (CLI, Bearer admin = ADMIN_EMAIL)
   ├── scripts/qris.ts list              → pending claims
@@ -227,9 +241,15 @@ Detail endpoint & tabel: `kawai-server/worker/README.md`.
 5. **KV eventually-consistent ~60s** — api key baru/revoke belum efektif
    global sesaat; `seen:` idempotency bisa race (worst case 1 duplikat lolos —
    ledger D1 yang menjaga).
-6. **Fail-open adalah kebijakan, bukan bug** — pre-check dan debit usage tidak
-   boleh pernah menjatuhkan goal submit/plan bila worker tak terjangkau
-   (hormat-sistem; penegakan ketat = proxy LLM server-side, lihat §8).
+6. **Fail-open hanya untuk pre-check UI; penegakan fail-closed** — pre-check
+   `use-workbench.run()` tetap fail-open (hormat-sistem: worker tak
+   terjangkau tidak boleh mematikan submit), tetapi gate Fase 0a di
+   `supervisor::plan_task`, gate eksekusi di
+   `execute_plan_stream_with_cancel`, dan debit Fase 0b ketiganya
+   fail-closed: saldo 0, saldo tak terbaca, atau debit gagal → plan
+   dihentikan (jalur eksekusi berhenti sebelum `PlanStarted`, sehingga
+   Resume yang tak pernah kembali ke `plan_task` ikut terjaga). Penegakan
+   yang tak bisa di-bypass tetap butuh proxy LLM server-side, lihat §8.
 
 ---
 
@@ -254,5 +274,7 @@ Detail endpoint & tabel: `kawai-server/worker/README.md`.
 - [ ] Quota harian + reserve server-side (D1) — metering untuk seluruh turn
       (saat ini baru planner call yang terukur).
 - [ ] Proxy LLM server-side (opsional, saat revenue justifikasi) —
-      penegakan billing yang sesungguhnya; debit fail-open tetap hidup.
+      penegakan billing yang sesungguhnya: token dihitung dan didebit di
+      server yang generate, sehingga client tak bisa melewati gate maupun
+      debit sama sekali.
 - [ ] Settlement/Merkle/rewards pindah ke D1 (keputusan terpisah saat dibangun).

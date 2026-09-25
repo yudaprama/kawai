@@ -2195,8 +2195,15 @@ struct PlanTaskRequest {
 #[cfg(feature = "litert")]
 async fn plan_task_handler(
     Extension(user_id): Extension<String>,
+    headers: HeaderMap,
     Json(req): Json<PlanTaskRequest>,
 ) -> Result<Json<kawai_router::TaskPlan>, (StatusCode, String)> {
+    // Billing bearer (Fase 0a/0b) off the session cookie — the same auth
+    // material the edge middleware already validated (AGENTS.md #8). Resolving
+    // it here instead of from a local `auth.token` file matters: the cookie can
+    // outlive that file, so a file read would false-block a valid web session
+    // (or, if treated as "no bearer", let a zero-balance goal run unbilled).
+    let bearer = cookie_bearer(&headers)?;
     if !kawai_db::session_exists(&user_id, req.session_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -2222,7 +2229,13 @@ async fn plan_task_handler(
     // composition root both transports share; no billing logic here.
     // Web transport has no live planning surface — progress rounds are logged
     // only (the plan still resolves as JSON).
-    crate::supervisor::plan_task(&user_id, req.session_id, &req.goal, &registry, |event| {
+    crate::supervisor::plan_task(
+        &user_id,
+        req.session_id,
+        &req.goal,
+        Some(&bearer),
+        &registry,
+        |event| {
         if let crate::supervisor::SupervisorEvent::PlanningRound { round, provider, searching } = event {
             tracing::info!(component = "supervisor", transport = "web", round, provider = %provider, searching, "planning round served");
         }
@@ -2252,8 +2265,15 @@ struct ExecuteSupervisorPlanRequest {
 async fn execute_supervisor_plan_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Extension(user_id): Extension<String>,
+    headers: HeaderMap,
     Json(req): Json<ExecuteSupervisorPlanRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, StatusCode> {
+    // Billing bearer off the session cookie — the edge middleware already
+    // validated it (AGENTS.md #8). Needed here because Resume streams
+    // straight into execution without re-entering plan_task.
+    // This handler's error type is a bare StatusCode (unlike plan_task's
+    // (StatusCode, String) tuple), so drop the message.
+    let bearer = cookie_bearer(&headers).map_err(|(status, _)| status)?;
     if !kawai_db::session_exists(&user_id, req.session_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
@@ -2281,6 +2301,7 @@ async fn execute_supervisor_plan_handler(
         user_id,
         req.session_id,
         req.user_goal,
+        Some(&bearer),
     );
     let s = stream.map(|event| {
         let name = match &event {

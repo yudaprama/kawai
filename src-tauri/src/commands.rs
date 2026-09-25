@@ -1072,6 +1072,10 @@ pub async fn plan_task(
         session: State<'_, Session>,
 ) -> Result<kawai_router::TaskPlan, String> {
     let user_id = session_user_id(&session)?;
+    // Billing bearer (Fase 0a/0b): resolved at the transport edge like the
+    // identity above (AGENTS.md #8) — fail closed here, never inside
+    // supervisor::plan_task where the web transport cannot be checked.
+    let bearer = session_bearer(&session)?;
     if !kawai_db::session_exists(&user_id, session_id).await.map_err(|e| e.to_string())? {
         return Err(format!("session {session_id} not found"));
     }
@@ -1084,8 +1088,13 @@ pub async fn plan_task(
     let on_event = on_event.clone();
     // Usage accounting is consumed inside supervisor::plan_task (the Fase 0b
     // debit runs at the composition root before this returns).
-    let (plan, _usage) =
-        crate::supervisor::plan_task(&user_id, session_id, &goal, &registry, move |event| {
+    let (plan, _usage) = crate::supervisor::plan_task(
+        &user_id,
+        session_id,
+        &goal,
+        Some(&bearer),
+        &registry,
+        move |event| {
         let _ = on_event.send(event);
     })
         .await
@@ -1595,6 +1604,9 @@ pub async fn execute_supervisor_plan(
     pending: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
     let user_id = session_user_id(&session)?;
+    // Billing bearer (Fase 0a execution side) — resolved at the transport
+    // edge like the identity above (AGENTS.md #8), fail closed here.
+    let bearer = session_bearer(&session)?;
     let registry = Arc::clone(&registry);
 
     if !kawai_db::session_exists(&user_id, session_id)
@@ -1626,7 +1638,7 @@ pub async fn execute_supervisor_plan(
 
     let step_count = plan.steps.len();
     let token = CancellationToken::new();
-    let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone(), user_id.clone(), session_id, user_goal);
+    let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone(), user_id.clone(), session_id, user_goal, Some(&bearer));
     tracing::info!(component = "supervisor", steps = step_count, user = %user_id, session = session_id, "executing plan");
     run_streaming(stream_id, on_event, &registry, stream, Some(token)).await
 }
