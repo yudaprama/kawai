@@ -133,6 +133,7 @@ migration runner terpisah.
 | GET | `/topup/qris/pending` | daftar klaim pending (admin) |
 | POST | `/topup/qris/confirm` | kredit klaim (admin, idempotent) |
 | POST | `/topup/qris/reject` | tolak klaim (admin) |
+| POST | `/topup/qris/autoconfirm` | kredit otomatis via forwarder notifikasi Android — auth **token device statis** (`NOTIF_DEVICE_TOKEN` di `qris.ts`, bukan Bearer user/admin); parse nominal dari `bigText`/`text` → cocokkan ke tepat satu klaim pending → jalur confirm yang sama (idempoten); cap `AUTO_CONFIRM_MAX_IDR` (di atas → dicatat `over_cap`, manual); hasil terminal dicatat `qris_notif_log` (dedup by `id` hash app); hasil non-terminal (409/500) sengaja non-2xx agar app retry |
 | POST | `/admin/balance/credit` | koreksi saldo signed ± (admin, guard saldo ≥ 0) |
 
 Tabel endpoint + detail pemanggilan lengkap: `kawai-server/worker/README.md`.
