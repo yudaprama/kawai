@@ -20,6 +20,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual admin runs — e.g. the tool-catalog `--prune` re-seed (seed step in
+  # macos-smoke below). Seeding is CI-only: never run `seed_tool_catalog` on a
+  # dev machine (AGENTS.md RESOURCE rule).
+  workflow_dispatch:
+    inputs:
+      prune:
+        description: "Re-seed the tool catalog with --prune (delete rows no longer in the merged toolset: renames/deletions)"
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -430,9 +439,10 @@ jobs:
       # Drift check: read-only, verifies catalog coverage vs merged toolset.
       # Auto-seed: additive only (no --prune), fixes drift automatically.
       # Write token as GitHub secret; only used when drift is detected.
-      # After a legit tool deletion, re-seed manually with --prune:
-      #   KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \
-      #     cargo run --example seed_tool_catalog --features litert,binance,codegraph,monad -- --prune
+      # Seeding is CI-ONLY (AGENTS.md RESOURCE rule) — never run the seed on a
+      # dev machine. After a legit rename/deletion, dispatch this workflow
+      # manually (Actions → ci → Run workflow) with the `prune` input checked:
+      # the seed step below then runs with --prune.
       - name: Cache embedding model (seed)
         id: embed-cache
         uses: actions/cache@v4
@@ -451,8 +461,8 @@ jobs:
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
         run: cargo run --example tool_catalog_drift_check --features litert,binance,codegraph,monad
 
-      - name: tool_catalog_seed (auto-seed, additive only)
-        if: steps.drift-check.outcome == 'failure'
+      - name: tool_catalog_seed (auto-seed on drift; --prune when dispatched with the prune input)
+        if: steps.drift-check.outcome == 'failure' || inputs.prune == true
         working-directory: src-tauri
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
@@ -460,12 +470,14 @@ jobs:
           LLVM_PROFILE_FILE: /dev/null
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
           KAWAI_TURSO_WRITE_TOKEN: ${{ secrets.KAWAI_TURSO_WRITE_TOKEN }}
-        run: cargo run --example seed_tool_catalog --features litert,binance,codegraph,monad
+        run: cargo run --example seed_tool_catalog --features litert,binance,codegraph,monad ${{ inputs.prune == true && '-- --prune' || '' }}
 
       - name: Report catalog status
         if: always()
         run: |
-          if [ "${{ steps.drift-check.outcome }}" = "failure" ]; then
+          if [ "${{ inputs.prune }}" = "true" ]; then
+            echo "## ♻️ Tool catalog re-seeded with --prune" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.drift-check.outcome }}" = "failure" ]; then
             echo "## ⚠️ Tool catalog drifted — auto-seeded (additive, no prune)" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "## ✅ Tool catalog in sync" >> "$GITHUB_STEP_SUMMARY"

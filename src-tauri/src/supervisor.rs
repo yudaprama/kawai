@@ -1381,8 +1381,8 @@ async fn open_synced_catalog(
         Ok(_) => {
             eprintln!(
                 "[tool-catalog] local replica is EMPTY (sync failed or remote unseeded) — \
-                 planner restricted to core tools; re-seed via \
-                 `cargo run --example seed_tool_catalog --features litert,binance,codegraph,monad`"
+                 planner restricted to core tools; re-seed via the ci.yml seed job \
+                 (workflow_dispatch with the `prune` input — seeding is CI-only)"
             );
             None
         }

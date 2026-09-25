@@ -41,13 +41,12 @@ Gemini `embedding-001`, each requesting 768 dims).
 
 ### Approach 1: Run seed_tool_catalog (proper fix)
 
-```sh
-# From kawai/ repo root, on a machine with litert built:
-KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \
-  cargo run --example seed_tool_catalog \
-    --manifest-path src-tauri/Cargo.toml \
-    --features litert,binance,codegraph,monad
-```
+CI-only (AGENTS.md RESOURCE rule — never seed from a dev machine): dispatch
+`.github/workflows/ci.yml` manually (Actions → ci → Run workflow) and let the
+`tool_catalog_seed` step in `macos-smoke` run with the `KAWAI_TURSO_WRITE_TOKEN`
+repo secret — check the `prune` input for a full prune re-seed. Purely additive
+fixes like this one are handled automatically by the drift gate's auto-seed on
+the next CI run.
 
 This re-seeds ALL tools with embeddings. The `ON CONFLICT(name) DO UPDATE` in
 `upsert_tools` will overwrite descriptions (so use the current descriptions from

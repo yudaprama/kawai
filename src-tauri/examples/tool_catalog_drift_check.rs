@@ -78,7 +78,7 @@ async fn run() -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "tool catalog drifted: {} missing, {} stale. Fix:\n  KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \\\n    cargo run --example seed_tool_catalog --features litert,binance,codegraph,monad -- --prune",
+        "tool catalog drifted: {} missing, {} stale. Fix: dispatch .github/workflows/ci.yml manually (Actions → ci → Run workflow) with the `prune` input checked — seeding is CI-only (AGENTS.md RESOURCE rule)",
         missing.len(),
         stale.len()
     ))

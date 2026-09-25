@@ -23,9 +23,11 @@
 //!   KAWAI_TURSO_WRITE_TOKEN  (full-access token — NEVER baked; generate with
 //!                             `turso db tokens create kawai-tool-catalog`)
 //!
-//! Usage:
-//!   KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \
-//!     cargo run --example seed_tool_catalog --features litert,binance,codegraph,monad -- --prune
+//! Usage: CI-ONLY (AGENTS.md RESOURCE rule — never run this seed on a dev
+//!   machine). `.github/workflows/ci.yml` drift-gates every CI and auto-seeds
+//!   additively on drift; for `--prune` (renames/deletions) dispatch that
+//!   workflow manually (Actions → ci → Run workflow) with the `prune` input
+//!   checked — the write token is the `KAWAI_TURSO_WRITE_TOKEN` repo secret.
 
 #[path = "catalog_composition.rs"]
 mod composition;

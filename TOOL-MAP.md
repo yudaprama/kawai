@@ -163,7 +163,7 @@ first-wins into the supervisor's `auto` registry. Categories:
 | Crate | Example tools (non-exhaustive) |
 |---|---|
 | `browser` | `browser_markdown_extract`, `browser_content_extract`, `browser_json_extract`, `browser_links_extract`, `browser_scrape_elements` |
-| `coinmarketcap` | `get_v1_cryptocurrency_map`, `get_v3_cryptocurrency_listings_latest`, `get_v1_tools_priceconversion`, `get_trending_list`, `batch_query_tokens` |
+| `coinmarketcap` | `crypto_map`, `crypto_listings_latest`, `price_conversion`, `dex_trending_tokens`, `dex_tokens_batch_query` |
 | `entertainment` | `search_anime`, `get_top_anime`, `search_manga`, `search_artist`, `search_album`, `search_books`, `get_book_by_isbn`, `search_photos`, `search_videos`, `search_poems_by_title`, `get_tv_show_detail`, `search_star_wars_people` |
 | `finance` | `get_stock_quote`, `get_stock_history`, `search_crypto`, `get_crypto_price`, `get_crypto_klines`, `get_forex_history`, `currency_exchange`, `get_balance_sheet`, `get_cashflow`, `get_income_statement`, `get_insider_transactions`, `get_stock_news` |
 | `food-drink` | `search_recipe`, `get_random_recipe`, `search_cocktail`, `get_food_by_barcode`, `get_all_fruits` |
@@ -194,11 +194,10 @@ Full inventory: `grep -rhoE 'const NAME: &'"'"'static str = "[a-z_0-9]+"' crates
 ## 9. Seeder & drift gate
 
 - **Seed** (insert + update, idempotent upsert; `--prune` menghapus baris basi):
-  `src-tauri/examples/seed_tool_catalog.rs` — butuh write token (`KAWAI_TURSO_WRITE_TOKEN`, tidak pernah baked):
-  ```sh
-  KAWAI_TURSO_WRITE_TOKEN=$(turso db tokens create kawai-tool-catalog) \
-    cargo run --example seed_tool_catalog --features litert,binance,codegraph,monad -- --prune
-  ```
+  `src-tauri/examples/seed_tool_catalog.rs` — **CI-only** (aturan RESOURCE di AGENTS.md; jangan
+  pernah dijalankan di mesin dev). Seed jalan di `.github/workflows/ci.yml` (drift gate → auto-seed
+  aditif tiap CI); untuk `--prune` (rename/hapus tool), dispatch workflow itu manual
+  (Actions → ci → Run workflow) dengan input `prune` — write token = repo secret `KAWAI_TURSO_WRITE_TOKEN`.
 - **Drift check** (read-only, tanpa secret — kredensial dari baked constants):
   `src-tauri/examples/tool_catalog_drift_check.rs` — wajib lulus di CI (gate tool-catalog coverage).
 - Kedua example berbagi satu komposisi toolset: `src-tauri/examples/catalog_composition.rs` (jangan duplikasi logika di sana).
