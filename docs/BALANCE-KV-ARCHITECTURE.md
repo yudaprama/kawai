@@ -1,9 +1,10 @@
 # Balance & KV Architecture — Worker ⇄ D1
 
 **Tanggal:** 2026-09-24 (rev 3 — ledger token di D1, rute QRIS top-up)
-**Status:** ✅ Kod live & terverifikasi (lihat §6); rute **berbayar** menunggu
-pengisian konstanta `QRIS_PAYLOAD` di worker (sampai itu preview balik 503 dan
-UI menampilkan notice "QRIS belum dikonfigurasi").
+**Status:** ✅ Kod live & terverifikasi (lihat §6); konstanta `QRIS_PAYLOAD`
+terisi (2026-09-25) sehingga preview/claim aktif — klaim menghasilkan QR
+**dinamis** (tag 54 = nominal unik, langsung ter-prefill di dompet pembayar).
+Rute berbayar menunggu konfirmasi rate, deploy worker, dan e2e.
 **Worker:** `https://kawai-worker.akuntestinguntukseto.workers.dev` (source:
 `kawai-server/worker/`, TypeScript + Hono di Cloudflare Workers, binding D1
 `DB` = database `kawai-auth` — satu database untuk identitas **dan** uang).
@@ -233,9 +234,11 @@ Detail endpoint & tabel: `kawai-server/worker/README.md`.
 
 ## 8. Roadmap
 
-- [ ] **Isi `QRIS_PAYLOAD` + konfirmasi rentang/rate `MIN_BASE`/`MAX_BASE`/
-      `TOKENS_PER_IDR` {IDR → token}** +
-      `ADMIN_EMAIL` (rute berbayar menunggu ini — `PLAN-qris-topup.md` §14).
+- [x] **Isi `QRIS_PAYLOAD`** (terisi 2026-09-25 — TOKO KAWAI / Speed Cash,
+      CRC tervalidasi).
+- [ ] **Konfirmasi rentang/rate `MIN_BASE`/`MAX_BASE`/`TOKENS_PER_IDR`
+      {IDR → token}** + deploy worker + e2e pembayaran
+      (`PLAN-qris-topup.md` §14).
 - [ ] Gateway QRIS **dinamis** (Midtrans/Xendit/DOKU/Tripay): API key +
       webhook → verifikasi otomatis tanpa admin (fase 2).
 - [ ] Rate-card per-model (saat ini 1:1 flat) — pinjam pola `metering/`
