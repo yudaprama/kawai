@@ -647,10 +647,14 @@ export function useWorkbench() {
               planKey: supervisor.planKey ?? "",
               sessionId: sid ?? 0,
             });
-      await supervisor.planAndRun(quotedGoal, sid, "auto", trimmed);
-      // The Fase 0b usage debit lands INSIDE `plan_task` (before planAndRun
-      // resolves) — re-read so the rail chip shows the POST-debit balance.
-      void refreshTokenBalance();
+      try {
+        await supervisor.planAndRun(quotedGoal, sid, "auto", trimmed);
+      } finally {
+        // The Fase 0b usage debit lands INSIDE `plan_task` (before
+        // planAndRun resolves) — re-read so the rail chip shows the
+        // POST-debit balance even when the run throws after the debit.
+        void refreshTokenBalance();
+      }
     },
     [attachedFiles, sessionId, supervisor, canFollowUp, quoteTarget, runs],
   );

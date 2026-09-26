@@ -2058,6 +2058,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         post(respond_supervisor_confirmation_handler),
     )
     .route("/api/plan_task", post(plan_task_handler))
+    .route("/api/run_analysis_desk", post(run_analysis_desk_handler))
     .route("/api/supervisor_step_output", post(supervisor_step_output_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
@@ -2316,35 +2317,102 @@ async fn execute_supervisor_plan_handler(
         req.user_goal,
         Some(&bearer),
     );
-    let s = stream.map(|event| {
-        let name = match &event {
-            crate::supervisor::SupervisorEvent::PlanStarted { .. } => "planStarted",
-            crate::supervisor::SupervisorEvent::PlanRevising { .. } => "planRevising",
-            crate::supervisor::SupervisorEvent::PlanRevised { .. } => "planRevised",
-            crate::supervisor::SupervisorEvent::StepStarted { .. } => "stepStarted",
-            crate::supervisor::SupervisorEvent::StepCompleted { .. } => "stepCompleted",
-            crate::supervisor::SupervisorEvent::StepFailed { .. } => "stepFailed",
-            crate::supervisor::SupervisorEvent::StepSkipped { .. } => "stepSkipped",
-            crate::supervisor::SupervisorEvent::ConfirmationRequested { .. } => {
-                "confirmationRequested"
-            }
-            crate::supervisor::SupervisorEvent::PlanCompleted { .. } => "planCompleted",
-            crate::supervisor::SupervisorEvent::PlanFailed { .. } => "planFailed",
-            crate::supervisor::SupervisorEvent::PlanningStarted { .. } => "planningStarted",
-            crate::supervisor::SupervisorEvent::PlanningRound { .. } => "planningRound",
-            crate::supervisor::SupervisorEvent::PlanningToolSearch { .. } => {
-                "planningToolSearch"
-            }
-            crate::supervisor::SupervisorEvent::PlanningActivity { .. } => {
-                "planningActivity"
-            }
-            crate::supervisor::SupervisorEvent::PlanningContext { .. } => {
-                "planningContext"
-            }
-        };
-        let data = serde_json::to_string(&event).unwrap_or_default();
-        Ok::<_, Infallible>(SseFrame::default().event(name).data(data))
-    });
+    let s = stream.map(|event| Ok::<_, Infallible>(supervisor_sse_frame(&event)));
+    Ok(Sse::new(s).keep_alive(KeepAlive::default()))
+}
+
+/// Map one `SupervisorEvent` onto an SSE frame (event name = camelCase op
+/// event name, data = the serde JSON body).
+#[cfg(feature = "litert")]
+fn supervisor_sse_frame(
+    event: &crate::supervisor::SupervisorEvent,
+) -> SseFrame {
+    let name = match &event {
+        crate::supervisor::SupervisorEvent::PlanStarted { .. } => "planStarted",
+        crate::supervisor::SupervisorEvent::PlanRevising { .. } => "planRevising",
+        crate::supervisor::SupervisorEvent::PlanRevised { .. } => "planRevised",
+        crate::supervisor::SupervisorEvent::StepStarted { .. } => "stepStarted",
+        crate::supervisor::SupervisorEvent::StepCompleted { .. } => "stepCompleted",
+        crate::supervisor::SupervisorEvent::StepFailed { .. } => "stepFailed",
+        crate::supervisor::SupervisorEvent::StepSkipped { .. } => "stepSkipped",
+        crate::supervisor::SupervisorEvent::ConfirmationRequested { .. } => {
+            "confirmationRequested"
+        }
+        crate::supervisor::SupervisorEvent::PlanCompleted { .. } => "planCompleted",
+        crate::supervisor::SupervisorEvent::PlanFailed { .. } => "planFailed",
+        crate::supervisor::SupervisorEvent::PlanningStarted { .. } => "planningStarted",
+        crate::supervisor::SupervisorEvent::PlanningRound { .. } => "planningRound",
+        crate::supervisor::SupervisorEvent::PlanningToolSearch { .. } => "planningToolSearch",
+        crate::supervisor::SupervisorEvent::PlanningActivity { .. } => "planningActivity",
+        crate::supervisor::SupervisorEvent::PlanningContext { .. } => "planningContext",
+    };
+    let data = serde_json::to_string(&event).unwrap_or_default();
+    SseFrame::default().event(name).data(data)
+}
+
+/// Analysis Desk (PLAN-analysis-desk): run the fixed stock-research pipeline
+/// for one ticker and stream the same `SupervisorEvent` lifecycle.
+#[cfg(feature = "litert")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunAnalysisDeskRequest {
+    session_id: i64,
+    ticker: String,
+    trade_date: Option<String>,
+    analysts: Option<Vec<String>>,
+    stream_id: String,
+}
+
+#[cfg(feature = "litert")]
+async fn run_analysis_desk_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+    Extension(user_id): Extension<String>,
+    headers: HeaderMap,
+    Json(req): Json<RunAnalysisDeskRequest>,
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, StatusCode> {
+    // Billing bearer off the session cookie — the edge middleware already
+    // validated it (AGENTS.md #8); fail closed here before the supervisor.
+    let bearer = cookie_bearer(&headers).map_err(|(status, _)| status)?;
+    if !kawai_db::session_exists(&user_id, req.session_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        return Err(StatusCode::NOT_FOUND);
+    }
+
+    let analyst_slices: Vec<&str> = req
+        .analysts
+        .unwrap_or_default()
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let plan = kawai_desk::build_desk_plan(
+        &req.ticker,
+        req.trade_date.as_deref().unwrap_or(""),
+        &analyst_slices,
+    );
+    let user_goal = kawai_desk::desk_user_goal(
+        &req.ticker,
+        req.trade_date.as_deref().unwrap_or(""),
+    );
+    let tool_registry = crate::supervisor::build_desk_registry(
+        &user_id,
+        req.session_id,
+        &crate::supervisor::plan_key(&plan),
+    )
+    .await
+    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+
+    let stream = crate::supervisor::execute_plan_stream_with_cancel(
+        plan, tool_registry,
+        tokio_util::sync::CancellationToken::new(), pending,
+        req.stream_id,
+        user_id,
+        req.session_id,
+        Some(user_goal),
+        Some(&bearer),
+    );
+    let s = stream.map(|event| Ok::<_, Infallible>(supervisor_sse_frame(&event)));
     Ok(Sse::new(s).keep_alive(KeepAlive::default()))
 }
 

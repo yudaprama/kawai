@@ -5724,6 +5724,7 @@ dependencies = [
  "kawai-cli",
  "kawai-constants",
  "kawai-db",
+ "kawai-desk",
  "kawai-email",
  "kawai-embedding",
  "kawai-events",
@@ -5896,6 +5897,19 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "kawai-desk"
+version = "0.1.0"
+dependencies = [
+ "finance",
+ "kawai-router",
+ "kawai-tools",
+ "remote-llm",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]

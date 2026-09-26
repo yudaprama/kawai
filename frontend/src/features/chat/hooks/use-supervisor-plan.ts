@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 
+import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { call, callWithEvents, respondSupervisorConfirmation } from "@/lib/api";
 import { type StreamControl, streamOperation } from "@/lib/stream";
 import type { UIMessage, UIMessagePart } from "@/lib/ai-types";
@@ -450,6 +451,17 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         void persist(sessionId, "assistant", `Plan error: ${message}`);
         callbacks?.onPlanFailed?.(cleanGoal, message);
         return;
+      } finally {
+        // The Fase 0b usage debit lands INSIDE `plan_task` (supervisor.rs —
+        // the composition root both transports share), so the balance has
+        // already moved by the time this call settles. Re-read HERE instead
+        // of waiting for the whole run to finish: the rail chip drops the
+        // moment the plan resolves, even while steps are still executing.
+        // Runs on the failure path too — a ledger INSERT that fails after
+        // the balance UPDATE still moved the balance (fail-closed to the
+        // plan, but not to the user's shown saldo). One event-driven read
+        // per run, no polling.
+        void refreshTokenBalance();
       }
       const review = parseReview(plan, sessionId, agentId);
       if (review == null) {

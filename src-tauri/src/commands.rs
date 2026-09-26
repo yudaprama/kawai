@@ -1653,7 +1653,72 @@ pub async fn execute_supervisor_plan(
     run_streaming(stream_id, on_event, &registry, stream, Some(token)).await
 }
 
-// ── TTS (piper-rs, feature "tts") ──────────────────────────────────────────
+/// Analysis Desk (PLAN-analysis-desk): run the fixed stock-research pipeline
+/// (selected analysts → bull/bear debate → research manager → trader → risk
+/// debate → risk manager → portfolio manager) and stream the same
+/// `SupervisorEvent` lifecycle the planner-driven runs emit.
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub async fn run_analysis_desk(
+    session_id: i64,
+    ticker: String,
+    trade_date: Option<String>,
+    analysts: Option<Vec<String>>,
+    stream_id: String,
+    on_event: Channel<crate::supervisor::SupervisorEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+    pending: State<'_, crate::supervisor::PendingConfirmations>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    // Billing bearer — resolved at the transport edge (AGENTS.md #8),
+    // fail closed here before the supervisor runs.
+    let bearer = session_bearer(&session)?;
+    let registry = Arc::clone(&registry);
+
+    if !kawai_db::session_exists(&user_id, session_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Err(format!("session {session_id} not found"));
+    }
+
+    let analyst_refs: Vec<String> = analysts.unwrap_or_default();
+    let analyst_slices: Vec<&str> = analyst_refs.iter().map(String::as_str).collect();
+    let plan = kawai_desk::build_desk_plan(
+        &ticker,
+        trade_date.as_deref().unwrap_or(""),
+        &analyst_slices,
+    );
+    let user_goal = kawai_desk::desk_user_goal(
+        &ticker,
+        trade_date.as_deref().unwrap_or(""),
+    );
+    let tool_registry = crate::supervisor::build_desk_registry(
+        &user_id,
+        session_id,
+        &crate::supervisor::plan_key(&plan),
+    )
+    .await?;
+
+    let step_count = plan.steps.len();
+    let token = CancellationToken::new();
+    let stream = crate::supervisor::execute_plan_stream_with_cancel(
+        plan,
+        tool_registry,
+        token.clone(),
+        pending.inner().clone(),
+        stream_id.clone(),
+        user_id.clone(),
+        session_id,
+        Some(user_goal),
+        Some(&bearer),
+    );
+    tracing::info!(component = "desk", steps = step_count, user = %user_id, session = session_id, "running analysis desk");
+    run_streaming(stream_id, on_event, &registry, stream, Some(token)).await
+}
+
+// ── TTS (piper-rs, feature "tts") ──────────────────────────────────────
 
 /// Synthesize speech from text using the Piper neural TTS engine.
 /// Returns base64-encoded WAV audio for playback in the frontend.

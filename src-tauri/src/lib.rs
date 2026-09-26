@@ -228,6 +228,8 @@ pub fn run() {
         #[cfg(feature = "litert")]
         commands::execute_supervisor_plan,
         #[cfg(feature = "litert")]
+        commands::run_analysis_desk,
+        #[cfg(feature = "litert")]
         commands::respond_supervisor_confirmation,
         #[cfg(feature = "litert")]
         commands::plan_task,

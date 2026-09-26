@@ -1868,6 +1868,32 @@ pub async fn build_supervisor_registry(
         }
     })?;
 
+    build_registry_from_toolset(user_id, session_id, toolset, plan_key)
+}
+
+/// The Analysis Desk execution registry: the merged auto catalog narrowed
+/// for dispatch PLUS the one desk role tool. Desk steps are never visible to
+/// the planner (never in the Turso tool catalog or `PLAN_CORE_TOOLS`) — this
+/// registry is the dispatch view only.
+#[cfg(feature = "litert")]
+pub async fn build_desk_registry(
+    user_id: &str,
+    session_id: i64,
+    plan_key: &str,
+) -> Result<ToolRegistry, String> {
+    let mut toolset = build_supervisor_toolset(user_id, session_id, AUTO_AGENT_ID)
+        .await
+        .ok_or_else(|| "no supervisor toolsets available (all domain builders returned None)".to_string())?;
+    toolset.add_tool(kawai_desk::DeskRoleTool::default());
+    build_registry_from_toolset(user_id, session_id, toolset, plan_key)
+}
+
+fn build_registry_from_toolset(
+    user_id: &str,
+    session_id: i64,
+    toolset: kawai_tools::ToolSet,
+    plan_key: &str,
+) -> Result<ToolRegistry, String> {
     // Convert definitions → ToolMeta, and keep each tool's input schema at
     // hand for dispatch-time coercion of resolved artifact references.
     // Internal-dispatch subagent tools are dropped: they are engine
