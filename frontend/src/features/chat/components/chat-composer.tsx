@@ -294,7 +294,8 @@ function ChatComposerInner({
           placeholder={
             importProgress
               ? `Importing images… ${importProgress.done}/${importProgress.total}`
-              : (placeholder ?? (agentName === "Workbench" ? "Describe your goal…" : `Message ${agentName}…`))
+              : (placeholder ??
+                (agentName === "Workbench" ? "What would you like Kawai to do?" : `Message ${agentName}…`))
           }
           onChange={handleComposerChange}
           onKeyDown={handleTextareaKeyDown}

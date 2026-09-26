@@ -66,7 +66,7 @@ Behavior:
 ```tsx
 const placeholder = lastRunCompleted && deliverableCompleted
   ? "Follow up on the previous deliverable… (e.g. expand section 2, change tone)"
-  : "Describe your goal…";
+  : "What would you like Kawai to do?";
 ```
 
 ### Verify Fase 1

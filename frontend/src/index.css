@@ -34,7 +34,7 @@
   --tea-color-bg-brand-hover: #266fe8;
   --tea-color-bg-brand-lighten-default: #e3ecff;
   --tea-color-text-brand-default: #0052d9;
-  --tea-color-text-on-bg-brand-default: hsla(0, 0%, 100%, 0.9);
+  --tea-color-text-on-bg-brand-default: #ffffff;
   --tea-color-border-brand-default: #0052d9;
 
   /* Text */
@@ -146,7 +146,7 @@
   --tea-color-bg-brand-hover: #478dff;
   --tea-color-bg-brand-lighten-default: #1d2852;
   --tea-color-text-brand-default: #69a1ff;
-  --tea-color-text-on-bg-brand-default: hsla(0, 0%, 100%, 0.9);
+  --tea-color-text-on-bg-brand-default: #ffffff;
   --tea-color-border-brand-default: #69a1ff;
 
   /* Text */

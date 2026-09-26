@@ -202,6 +202,11 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
 
   const effectiveStatus: TopupStatus = txStatus?.status ?? "pending";
   const isTerminal = claim != null && TERMINAL_STATUSES.includes(effectiveStatus);
+  /** Active (non-terminal) claim — rendered as a pending row in Riwayat. */
+  const activeClaim = claim != null && !isTerminal ? claim : null;
+  /** Worker bills base + a unique 0–900 suffix so the bank mutation matches
+   *  this claim exactly (auto-confirm); 0 when the suffix happened to be 0. */
+  const uniqueCode = claim ? claim.idrAmount - (claimAmount ?? claim.idrAmount) : 0;
 
   /** One status read; credited re-reads the shared balance (the claim just
    *  landed). Transient errors
@@ -269,7 +274,6 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
               <span className="text-base font-semibold">
                 {balance === null ? (balancePending ? "…" : "—") : balance.toLocaleString("id-ID")}
               </span>
-              {balance === 0 && <span className="text-muted-foreground ml-2 text-xs">Hubungi admin</span>}
             </p>
             {isLowTokenBalance(balance) && (
               <p className="text-amber-500 mt-1 text-xs">
@@ -290,7 +294,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                   <p className="flex items-center gap-2 text-sm">
                     <Icon name="check-circle-2" className="size-4 text-emerald-500" />
                     <span className="font-medium text-emerald-500">Masuk ✓</span>
-                    <span className="text-muted-foreground">+{txStatus.tokens} token</span>
+                    <span className="text-muted-foreground">+{txStatus.tokens.toLocaleString("id-ID")} token</span>
                   </p>
                   <p className="text-muted-foreground text-xs">
                     Saldo token:{" "}
@@ -341,24 +345,50 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
               <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
                 <QrisCard qrPayload={claim.qrPayload} amountLabel={formatIdr(claim.idrAmount)} />
                 <div className="min-w-0 flex-1 space-y-1.5">
+                  <p className="text-muted-foreground text-xs">Total pembayaran</p>
                   <p className="text-xl font-semibold">{formatIdr(claim.idrAmount)}</p>
-                  <p className="text-muted-foreground text-xs">Bayar lewat aplikasi bank / e-wallet (QRIS)</p>
+                  {uniqueCode > 0 && (
+                    <div className="space-y-0.5 text-xs">
+                      <p className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Nominal top-up</span>
+                        <span className="font-medium">{formatIdr(claimAmount ?? claim.idrAmount)}</span>
+                      </p>
+                      <p className="flex justify-between gap-3">
+                        <span className="text-muted-foreground">Kode unik</span>
+                        <span className="font-medium">{formatIdr(uniqueCode)}</span>
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs">
+                    +{claim.tokens.toLocaleString("id-ID")} token
+                    {preview != null && <> · Rp1 = {preview.tokensPerIdr} token</>}
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    Bayar lewat aplikasi bank / e-wallet (QRIS) — nominal terisi otomatis saat scan
+                  </p>
                   <p className="text-muted-foreground font-mono text-xs break-all">tx: {claim.txId}</p>
                   <p className="text-xs">
-                    <span className="text-muted-foreground">Berlaku </span>
+                    <span className="text-muted-foreground">QR berlaku </span>
                     <Countdown expiresAt={claim.expiresAt} />
+                    <span className="text-muted-foreground"> lagi</span>
                   </p>
-                  <p className="text-xs">+{claim.tokens} token setelah terverifikasi</p>
                 </div>
               </div>
               <div className="border-amber-500/30 space-y-1 rounded-md border p-3 text-xs">
-                <p>Transfer tepat sesuai nominal — nominal salah tidak otomatis dikreditkan</p>
-                <p>Setelah bayar, tunggu verifikasi admin</p>
+                <p>
+                  Bayar tepat {formatIdr(claim.idrAmount)} — nominal persis inilah yang mencocokkan pembayaran
+                  secara otomatis.
+                </p>
+                <p className="text-muted-foreground">
+                  Nominal berbeda tidak terdeteksi otomatis dan menunggu pemeriksaan manual (lebih lama).
+                </p>
               </div>
               <div className="flex items-center justify-between gap-3">
                 <p className="text-muted-foreground flex items-center gap-2 text-xs">
                   <Spinner className="size-3.5" />
-                  {effectiveStatus === "crediting" ? "Sedang dikreditkan…" : "Menunggu verifikasi admin"}
+                  {effectiveStatus === "crediting"
+                    ? "Pembayaran diterima — sedang menambahkan token…"
+                    : "Menunggu pembayaran — status diperbarui otomatis"}
                 </p>
                 <Button disabled={checking} onClick={() => void checkStatus()} size="sm" variant="outline">
                   <Icon name="rotate-ccw" className="size-3.5" />
@@ -393,13 +423,10 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                 <Input
                   className="w-40 font-semibold"
                   inputMode="numeric"
-                  max={preview.maxBase}
-                  min={preview.minBase}
-                  onChange={(e) => setAmountInput(e.target.value.replace(/[^\d]/g, ""))}
-                  placeholder={String(preview.minBase)}
-                  step={preview.baseStep}
-                  type="number"
-                  value={amountInput}
+                  onChange={(e) => setAmountInput(e.target.value.replace(/\D/g, "").slice(0, 9))}
+                  placeholder={preview.minBase.toLocaleString("id-ID")}
+                  type="text"
+                  value={amountInput === "" ? "" : Number(amountInput).toLocaleString("id-ID")}
                 />
                 <span className="text-muted-foreground text-sm">IDR</span>
               </div>
@@ -416,15 +443,36 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                   </button>
                 ))}
               </div>
-              <p className="text-muted-foreground mt-3 text-xs">
-                {baseValid
-                  ? `+${(base * preview.tokensPerIdr).toLocaleString("id-ID")} token — bayar nominal persis yang tampil setelah klaim`
-                  : `Masukkan ${preview.minBase.toLocaleString("id-ID")}–${preview.maxBase.toLocaleString("id-ID")}, kelipatan ${preview.baseStep}`}
-              </p>
+              {baseValid ? (
+                <div className="mt-3 space-y-1 text-xs">
+                  <p className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Token diterima</span>
+                    <span className="font-medium">
+                      +{(base * preview.tokensPerIdr).toLocaleString("id-ID")} token · Rp1 = {preview.tokensPerIdr} token
+                    </span>
+                  </p>
+                  <p className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Nominal</span>
+                    <span className="font-medium">{formatIdr(base)}</span>
+                  </p>
+                  <p className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Kode unik</span>
+                    <span className="font-medium">Rp0–Rp900 — ditentukan saat klaim</span>
+                  </p>
+                  <p className="text-muted-foreground">
+                    Kode unik membuat pembayaran terdeteksi otomatis. Nominal final tampil di QR dan terisi sendiri
+                    saat scan.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-muted-foreground mt-3 text-xs">
+                  Masukkan {preview.minBase.toLocaleString("id-ID")}–{preview.maxBase.toLocaleString("id-ID")}, kelipatan {preview.baseStep}
+                </p>
+              )}
             </div>
             <Button className="w-full" disabled={!baseValid || claiming} onClick={() => void claimNow(base)}>
               {claiming ? <Spinner className="size-4" /> : <Icon name="qr-code" className="size-4" />}
-              Buat QR
+              Buat QR Pembayaran
             </Button>
             {claimError && <p className="text-destructive text-xs">{claimError}</p>}
           </>
@@ -455,10 +503,25 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                 <Spinner />
               </div>
             )
-          ) : history.length === 0 ? (
+          ) : history.length === 0 && activeClaim == null ? (
             <p className="text-muted-foreground text-sm">Belum ada transaksi.</p>
           ) : (
             <ul>
+              {activeClaim && (
+                <li className="flex items-center justify-between gap-3 border-b py-2 text-sm">
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="font-mono font-medium text-emerald-500 tabular-nums">
+                      +{activeClaim.tokens.toLocaleString("id-ID")}
+                    </span>
+                    <span className="truncate text-xs text-amber-500">
+                      Top up QRIS — {effectiveStatus === "crediting" ? "diproses" : "menunggu pembayaran"}
+                    </span>
+                  </span>
+                  <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
+                    {formatWhen(Math.floor(claimStartRef.current / 1000))}
+                  </span>
+                </li>
+              )}
               {history.map((entry) => (
                 <li
                   className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0"
