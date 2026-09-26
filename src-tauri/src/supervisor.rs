@@ -471,6 +471,7 @@ fn render_planner_context(
     attached_files_block: String,
     experiences_block: String,
     profile_block: String,
+    environment_block: String,
 ) -> String {
     if persona_block.is_empty()
         && memories_block.is_empty()
@@ -478,11 +479,13 @@ fn render_planner_context(
         && attached_files_block.is_empty()
         && experiences_block.is_empty()
         && profile_block.is_empty()
+        && environment_block.is_empty()
     {
         return String::new();
     }
     let mut out = String::from("<user-context>\nBackground about the user and this run's inputs. Ground decisions in it when relevant; ignore it when not.\n");
     for block in [
+        environment_block,
         persona_block,
         profile_block,
         memories_block,
@@ -497,6 +500,24 @@ fn render_planner_context(
     }
     out.push_str("</user-context>");
     out
+}
+
+/// The `<environment>` planner-context block: the device's IANA timezone and
+/// the user's current local time, computed FRESH on every plan — never stored
+/// (it is a property of the moment, not of the user; travel changes it).
+/// Best-effort: an unavailable timezone degrades to an empty block.
+fn planner_environment_block() -> String {
+    let tz = iana_time_zone::get_timezone().unwrap_or_default();
+    if tz.is_empty() {
+        return String::new();
+    }
+    let now = chrono::Local::now();
+    format!(
+        "<environment>Local time for the user: {} ({}). Timezone: {}.</environment>",
+        now.format("%Y-%m-%d %H:%M (%A)"),
+        now.format("UTC%:z"),
+        tz,
+    )
 }
 
 /// Cap on how many attached-file names ride the planner prompt (names only —
@@ -745,6 +766,7 @@ pub async fn plan_task(
         attached_files_block,
         experiences_block,
         profile_block,
+        planner_environment_block(),
     );
 
     // The planner sees NO full catalog. It discovers tools through bounded
@@ -1087,6 +1109,20 @@ pub(crate) const REVISE_FORBIDDEN_TOOLS: &[&str] = &[
     "plan_revise",
     "artifact_recall",
 ];
+
+/// Shared planner/reviser prompt block: the side-effect confirmation rule
+/// and the cli_run read-only carve-out (identical contract in both prompts).
+const CONFIRMATION_PROMPT_RULES: &str = "- Side-effect tools MUST set \"requiresConfirmation\": true with a short \"confirmationDescription\".\
+  \n- For cli_run steps: read-only commands (ls, cat, grep, jq, du, …) run\
+  \n  WITHOUT user approval — set \"requiresConfirmation\": false for those.\
+  \n  Everything else that can mutate (ffmpeg, mv-class, installs, network\
+  \n  fetches) REQUIRES \"requiresConfirmation\": true, and the\
+  \n  confirmationDescription is what the user approves: state the concrete\
+  \n  goal (e.g. \"convert input.mov to h264 mp4 under 20MB\"), not just\
+  \n  \"run ffmpeg\". The validator enforces this: a non-read-only cli_run step\
+  \n  without the flag is rejected. The binary is fixed at confirmation; the\
+  \n  tool's translator may only vary that binary's arguments, under a static\
+  \n  policy that blocks inline code and second-program execution.";
 
 pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai_router::TaskPlan, String> {
     parse_supervisor_plan_scoped(raw, registry, &[])
@@ -1486,17 +1522,7 @@ Plan rules:
 - "produces" names the artifacts a step emits for later steps. Tools listing
   a declared contract ("produces: …" in their catalog line) are AUTHORITATIVE:
   bindings from those steps must use exactly those names.
-- Side-effect tools MUST set "requiresConfirmation": true with a short "confirmationDescription".
-- For cli_run steps: read-only commands (ls, cat, grep, jq, du, …) run
-  WITHOUT user approval — set "requiresConfirmation": false for those.
-  Everything else that can mutate (ffmpeg, mv-class, installs, network
-  fetches) REQUIRES "requiresConfirmation": true, and the
-  confirmationDescription is what the user approves: state the concrete
-  goal (e.g. "convert input.mov to h264 mp4 under 20MB"), not just
-  "run ffmpeg". The validator enforces this: a non-read-only cli_run step
-  without the flag is rejected. The binary is fixed at confirmation; the
-  tool's translator may only vary that binary's arguments, under a static
-  policy that blocks inline code and second-program execution.
+{confirmation_rules}
 - "onError" is one of "fail", "skip", "continue". Default "fail".
  - Keep each task description under {} chars.
  - Core tools below are ALWAYS available — never search for them. Their
@@ -1547,6 +1573,7 @@ Plan rules:
         kawai_router::types::MAX_PLAN_STEPS,
         kawai_router::types::MAX_TASK_CHARS,
         core_tools,
+        confirmation_rules = CONFIRMATION_PROMPT_RULES,
     )
 }
 
@@ -1572,17 +1599,7 @@ Rules:
 - "summary" mirrors the planner's contract: overview = 1–3 sentences in
   the user's language; ≤4 actions that GROUP steps (never restate one); ≤5 expected outputs.
 - Keep "arguments" complete and precise — they are what the tool executes.
-- Side-effect tools MUST set "requiresConfirmation": true with a short "confirmationDescription".
-- For cli_run steps: read-only commands (ls, cat, grep, jq, du, …) run
-  WITHOUT user approval — set "requiresConfirmation": false for those.
-  Everything else that can mutate (ffmpeg, mv-class, installs, network
-  fetches) REQUIRES "requiresConfirmation": true, and the
-  confirmationDescription is what the user approves: state the concrete
-  goal (e.g. "convert input.mov to h264 mp4 under 20MB"), not just
-  "run ffmpeg". The validator enforces this: a non-read-only cli_run step
-  without the flag is rejected. The binary is fixed at confirmation; the
-  tool's translator may only vary that binary's arguments, under a static
-  policy that blocks inline code and second-program execution.
+{confirmation_rules}
 - Never name FORBIDDEN internal tools: deep_write, draft_document, plan_task, plan_revise, artifact_recall.
 - data_query IS available to you (the execution report contains data_schema's
   real columns) — prefer it for data questions.
@@ -1607,7 +1624,8 @@ Rules:
 
 FULL tool catalog (schemas included — copy required properties exactly):
 {}"#,
-        catalog
+        catalog,
+        confirmation_rules = CONFIRMATION_PROMPT_RULES,
     )
 }
 
@@ -4114,7 +4132,8 @@ mod tests {
                 String::new(),
                 String::new(),
                 String::new(),
-                String::new()
+                String::new(),
+                String::new(),
             ),
             ""
         );
@@ -4125,8 +4144,12 @@ mod tests {
             String::new(),
             String::new(),
             String::new(),
+            "<environment>Local time for the user: 2026-09-26 14:05 (Saturday). Timezone: Asia/Jakarta.</environment>".into(),
         );
         assert!(out.starts_with("<user-context>"));
+        assert!(out.contains("<environment>Local time"));
+        // Environment rides FIRST (fresh context before user background).
+        assert!(out.find("<environment>").unwrap() < out.find("<persona>").unwrap());
         assert!(out.contains("<persona>likes dark UIs</persona>"));
         assert!(out.contains("<skills>pdf skill</skills>"));
         assert!(out.ends_with("</user-context>"));
@@ -4141,6 +4164,7 @@ mod tests {
             String::new(),
             String::new(),
             "<attached-files>\n- report.docx\n</attached-files>".into(),
+            String::new(),
             String::new(),
             String::new(),
         );
