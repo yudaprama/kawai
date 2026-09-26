@@ -257,7 +257,7 @@ export function WorkbenchPage({
       planStartedBaseline.current = supervisor.planStartedAt;
       void workbench.runDesk(ticker, tradeDate, analysts);
     },
-    [supervisor.status, workbench.runDesk],
+    [supervisor.status, supervisor.planStartedAt, workbench.runDesk],
   );
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)

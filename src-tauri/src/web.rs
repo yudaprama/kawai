@@ -2380,12 +2380,8 @@ async fn run_analysis_desk_handler(
         return Err(StatusCode::NOT_FOUND);
     }
 
-    let analyst_slices: Vec<&str> = req
-        .analysts
-        .unwrap_or_default()
-        .iter()
-        .map(String::as_str)
-        .collect();
+    let analysts = req.analysts.unwrap_or_default();
+    let analyst_slices: Vec<&str> = analysts.iter().map(String::as_str).collect();
     let plan = kawai_desk::build_desk_plan(
         &req.ticker,
         req.trade_date.as_deref().unwrap_or(""),
