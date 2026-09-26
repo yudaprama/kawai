@@ -1,7 +1,8 @@
 import { Icon } from "@/components/shared/icon";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import type { PlanSummaryInfo } from "@/features/chat/hooks/supervisor-types";
 import {
@@ -424,6 +425,24 @@ export function ProgressRail({
     const t = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [supervisor.status]);
+  // Focus moves to the blocking card when the run needs the user (review or
+  // confirmation gate) — keyboard and screen-reader users otherwise keep
+  // typing into the composer with no signal. The short delay lets the mobile
+  // drawer (auto-opened by the page in the same commit; child effects run
+  // first) become visible before focus lands — focus() on a hidden element
+  // is a no-op.
+  const confirmCardRef = useRef<HTMLDivElement>(null);
+  const reviewCardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (supervisor.status !== "awaitingConfirmation") return;
+    const t = setTimeout(() => confirmCardRef.current?.focus(), 50);
+    return () => clearTimeout(t);
+  }, [supervisor.status]);
+  useEffect(() => {
+    if (supervisor.status !== "reviewing") return;
+    const t = setTimeout(() => reviewCardRef.current?.focus(), 50);
+    return () => clearTimeout(t);
+  }, [supervisor.status]);
   return (
     <div className="flex h-full flex-col">
       <div className="border-primary/30 mb-4 border-b pb-3">
@@ -448,10 +467,26 @@ export function ProgressRail({
             Duration: {fmtDuration(startedAt, supervisor.planCompletedAt ?? undefined)}
           </div>
         )}
+        {/* Determinate run progress: settled steps over the planned total —
+            glanceable completion without reading the step tree. Hidden while
+            planning (the steps still belong to the previous run) and for
+            empty plans. */}
+        {!unseeded && supervisor.steps.length > 0 && (
+          <Progress
+            aria-label={`${supervisor.steps.filter((s) => s.state === "completed" || s.state === "failed" || s.state === "skipped").length} of ${supervisor.steps.length} steps done`}
+            className="mt-2 h-1"
+            value={
+              (supervisor.steps.filter((s) => s.state === "completed" || s.state === "failed" || s.state === "skipped")
+                .length /
+                supervisor.steps.length) *
+              100
+            }
+          />
+        )}
       </div>
 
       {supervisor.status === "reviewing" && supervisor.review ? (
-        <div className="space-y-2">
+        <div className="space-y-2" ref={reviewCardRef} tabIndex={-1}>
           <PlanSummaryCard summary={supervisor.review.summary ?? supervisor.summary} />
           <button
             aria-expanded={reviewStepsOpen}
@@ -572,7 +607,7 @@ export function ProgressRail({
       )}
 
       {supervisor.status === "awaitingConfirmation" && supervisor.pendingConfirmation && (
-        <div className="border-primary/30 mt-4 space-y-2 rounded-md border p-3">
+        <div className="border-primary/30 mt-4 space-y-2 rounded-md border p-3" ref={confirmCardRef} tabIndex={-1}>
           <div className="text-foreground inline-flex items-center gap-1.5 font-mono text-xs font-bold">
             <Icon name="shield-alert" className="text-primary size-3.5" />
             Approval required

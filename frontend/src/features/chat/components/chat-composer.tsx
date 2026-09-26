@@ -206,6 +206,10 @@ function ChatComposerInner({
         }
       }
       if (mentionOpen && e.key === "Escape") {
+        // stopPropagation: the window-level Esc handler stops a running plan,
+        // and with the composer now editable mid-run this Esc must mean
+        // "close the file popover", never "kill the run".
+        e.stopPropagation();
         e.preventDefault();
         setMentionOpen(false);
         return;

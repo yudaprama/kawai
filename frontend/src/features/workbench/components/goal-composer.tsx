@@ -41,7 +41,6 @@ export function GoalComposer({
       <ChatComposer
         agentName="Workbench"
         chipDraft={chipDraft}
-        disabled={isGenerating}
         lastUserText={workbench.lastUserText}
         onAddFiles={onAddFiles}
         onAddLink={onAddLink}
@@ -49,7 +48,7 @@ export function GoalComposer({
         onSubmit={onSubmit}
         onStop={supervisor.stop}
         status={composerStatus}
-        placeholder={placeholder}
+        placeholder={isGenerating ? "Draft your next goal — submit after this run finishes…" : placeholder}
         attachedFiles={attachedFiles}
         onRemoveAttachedFile={removeAttachedFile}
       />

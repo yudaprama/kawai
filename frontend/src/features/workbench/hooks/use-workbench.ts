@@ -223,6 +223,10 @@ export function computePhases(steps: SupervisorStep[]): SupervisorStep[][] {
 
 // ── Hook ────────────────────────────────────────────────────────────────────
 
+/** The workbench controller `useWorkbench()` returns. Named here (the owning
+ *  module) so consumers import the contract instead of inlining `ReturnType`. */
+export type WorkbenchController = ReturnType<typeof useWorkbench>;
+
 export function useWorkbench() {
   const [runs, setRuns] = useState<WorkbenchRun[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
@@ -566,6 +570,15 @@ export function useWorkbench() {
     ) => {
       const trimmed = goal.trim();
       if (!trimmed) return;
+      // One run at a time: the composer stays EDITABLE while a run executes
+      // (drafting), but a submit during run/stopping/confirmation rejects
+      // with the reason — the draft survives for the retry (PromptInput
+      // clears only on resolution).
+      if (["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)) {
+        const msg = "A run is already in progress — stop it or wait for it to finish before submitting.";
+        setSessionError(msg);
+        throw new Error(msg);
+      }
       // A fresh attempt clears the previous gate failure.
       setSessionError(null);
       setLastUserText(trimmed);

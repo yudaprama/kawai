@@ -266,6 +266,25 @@ pub use local_llm::local_model_status;
 pub mod evidence_cache;
 pub mod knowledge;
 pub mod office;
+
+/// Import an office file from either a desktop path or base64 payload.
+/// Uploads also trigger best-effort tabular prewarming; this shared helper
+/// keeps the Tauri and Axum transport wrappers behaviorally identical.
+pub fn import_office_file(
+    user_id: &str,
+    source_path: Option<&str>,
+    name: Option<&str>,
+    data_base64: Option<&str>,
+) -> Result<office::OfficeFile, String> {
+    let imported = match (source_path, (name, data_base64)) {
+        (Some(src), _) => office::import_path(user_id, src),
+        (None, (Some(name), Some(data))) => office::import_base64(user_id, name, data),
+        _ => Err("provide sourcePath, or name + dataBase64".into()),
+    }?;
+    analytics::prewarm_tabular(user_id, &imported);
+    Ok(imported)
+}
+
 pub mod rag;
 pub mod remote;
 // Data analysis agent tools (builtin.analytics). Implies office — the

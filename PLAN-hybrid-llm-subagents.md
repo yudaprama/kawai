@@ -387,7 +387,9 @@ costs per agent per day.
    `filename` + curated `materials` → cloud composes structured
    `{"blocks":[...]}` JSON (same DocBlock vocabulary as
    `office_create_document`) → `extract_draft_blocks` validates (fence/prose
-   stripping, bare-array acceptance, schema validation; 4 unit tests) →
+   stripping, bare-array acceptance, trailing-comma / stray-brace repair,
+   per-entry coercion of bare strings and nested arrays, schema validation;
+   unit tests) →
    `ooxml::create_document_from_blocks` writes the file in-process → short
    receipt `{file, blocks, outline}` fed back so local closes the turn.
    Draft JSON is machine payload: streamed tokens accumulate silently

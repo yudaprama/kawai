@@ -24,7 +24,7 @@ export function RecentRuns({
   reloadKey: number;
   onOpen: (run: RecentRunInfo) => void;
 }) {
-  const [runs, setRuns] = useState<RecentRunInfo[]>([]);
+  const [runs, setRuns] = useState<RecentRunInfo[] | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -34,12 +34,34 @@ export function RecentRuns({
       .then((rows) => {
         if (!cancelled) setRuns(rows);
       })
-      .catch((err) => logWarn("list_recent_runs", err));
+      .catch((err) => {
+        logWarn("list_recent_runs", err);
+        // First-load failure renders nothing (documented) — a refetch
+        // failure keeps the rows already on screen.
+        if (!cancelled) setRuns((prev) => prev ?? []);
+      });
     return () => {
       cancelled = true;
     };
   }, [open, reloadKey]);
 
+  // First load: skeleton rows instead of a silent pop-in.
+  if (runs === null) {
+    return (
+      <div className="mx-auto w-full max-w-4xl space-y-2 p-6 text-left">
+        <div className="text-muted-foreground font-mono text-xs tracking-wider uppercase">Recent runs</div>
+        {[0, 1, 2].map((i) => (
+          <div className="border-border/60 flex items-center justify-between gap-3 rounded-lg border p-3" key={i}>
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <div className="h-4 w-2/3 animate-pulse rounded bg-accent" />
+              <div className="h-3 w-1/3 animate-pulse rounded bg-accent" />
+            </div>
+            <div className="h-4 w-4 shrink-0 animate-pulse rounded-full bg-accent" />
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (runs.length === 0) return null;
   return (
     <div className="mx-auto w-full max-w-4xl space-y-2 p-6 text-left">

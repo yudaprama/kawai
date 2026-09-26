@@ -6,18 +6,12 @@
 //!   cargo run --example tool_search_probe --features litert                 # built-in queries
 //!   cargo run --example tool_search_probe --features litert -- "query saya"  # custom query
 
+#[path = "common/mod.rs"]
+mod common;
+
 fn main() {
-    kawai_lib::auth::load_dotenv();
-
     #[cfg(feature = "litert")]
-    {
-        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
-        if let Err(e) = rt.block_on(run()) {
-            eprintln!("[search_probe] FAIL: {e}");
-            std::process::exit(1);
-        }
-    }
-
+    common::run_async("search_probe", run());
     #[cfg(not(feature = "litert"))]
     {
         eprintln!("[search_probe] FAIL: rebuild with --features litert");

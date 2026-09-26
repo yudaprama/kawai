@@ -28,7 +28,9 @@ primary surface is the **Workbench** — a goal-centric two-pane layout:
 
 Full-screen hero with a centered capsule composer. The goal is the whole
 screen — no rails, no distractions. One primary input: below the composer sit
-a hint about `@` file attachments and the **Templates** chip row (single-select,
+a hint about `@` file attachments, a **Try** row of example-goal chips
+(first session only — each drops an editable draft into the composer, never
+auto-submits), and the **Templates** chip row (single-select,
 click again to clear) — Research, Market Analysis, Coding, Data Analysis.
 Research-flavored picks disclose the **Analysis Desk** panel (the fixed
 stock-research pipeline: ticker, optional as-of date, analyst team, Run desk);
@@ -37,7 +39,8 @@ never visible uninvited. Below that: history — the in-session run history when
 the current session has runs, otherwise the cross-session **Recent runs** strip
 (the newest plan record from every session with runs: goal or session title,
 relative time, step count, status icon; clicking one opens that session and
-its report). Submitting a goal transitions to the Workbench run
+its report; while the first fetch is in flight the strip shows skeleton rows).
+Submitting a goal transitions to the Workbench run
 view.
 
 ## Panes
@@ -49,23 +52,34 @@ view.
   to close).
 - **ProgressRail (left, 72px wide, lg+).** Visible during a run. Shows the
   status header (mapped from supervisor state — Planning, Running, Complete,
-  Failed, etc.), duration, and collapsible phases. Each phase header is an
-  `aria-expanded` toggle with a rotating chevron; clicking collapses or
-  expands the step list. Step rows show: agent name (truncated to 48 chars),
-  state icon (pending/running/completed/failed/skipped), tool name or live
-  duration, and a "see report" link for completed steps. Below the phases:
-  the deliverable writer row, then context-sensitive buttons (Stop, Resume,
-  New goal).
+  Failed, etc.), duration, a determinate progress bar (settled steps over the
+  planned total, hidden while planning), and collapsible phases. Each phase
+  header is an `aria-expanded` toggle with a rotating chevron; clicking
+  collapses or expands the step list. Step rows show: agent name (truncated
+  to 48 chars), state icon (pending/running/completed/failed/skipped), tool
+  name or live duration, and a "see report" link for completed steps. Below
+  the phases: the deliverable writer row, then context-sensitive buttons
+  (Stop, Resume, New goal). When the run needs the user — plan review or a
+  confirmation gate — the corresponding card takes keyboard focus (after the
+  mobile drawer auto-opens), so the request is announced and reachable.
 - **DeliverableViewer (center).** The main content area. Shows the rendered
   deliverable (markdown via Streamdown), individual step reports, or the
-  run history when idle. A header shows the title and step count + duration.
-  Below the deliverable: the AGENT REPORTS switcher (grid of step name
-  buttons — "★ Deliverable" plus one per completed/failed step). Clicking a
-  step name pins the viewer to that report; "auto" mode follows the newest
-  completed work. Export buttons (PDF, DOCX) appear below the deliverable
-  when a run is completed — on the live canvas and on past-run deliverables
-  alike; success shows the saved filename, failure shows an inline error
-  message.
+  run history when idle. A header shows the title and step count + duration
+  (`planning…` and a live elapsed clock while the plan is being written).
+  While a run is in flight the final view carries a compact status strip —
+  planning round and activity, the current running step, a "Writing your
+  answer…" skeleton while the deliverable writer synthesizes (its output
+  lands only at plan completion), an approval prompt, or the stop state —
+  so the canvas never sits blank between submit and the deliverable; a
+  visually-hidden `aria-live` region announces phase transitions once each.
+  Below the document: the AGENT REPORTS switcher (grid of step name buttons —
+  a Deliverable row plus one per completed/failed step) switches the canvas
+  between this run's documents; the rail's "see report" links stay as a
+  second path. Export buttons appear below the deliverable when a run is
+  completed — Copy (markdown to the clipboard), PDF, DOCX — on the live
+  canvas and on past-run deliverables alike; success renders the saved
+  filename as a button that opens the file in the preview dialog, failure
+  shows an inline error message.
 - **Sidebar (left, 384px wide, lg+).** Upper region (scrolls): ProgressRail
   (status header, collapsible phases, deliverable writer row, stop/resume/new
   goal buttons). While the plan awaits review the rail shows the review card
@@ -83,29 +97,34 @@ Capsule input (max-w-2xl) with attachment chips on top. The composer is
 shared between the Workbench landing, the sidebar footer during a run, and any
 asset workspace that needs text input. Left tools: `@` file mention
 (knowledge search + import entry points), template picker, speech input.
-Right: submit; while streaming it becomes stop. ArrowUp recalls the last
-user message; Esc stops a running plan (except inside dialogs and other
-editable contexts outside the composer). Placeholder changes by context: "Describe your goal…" by default on the
-Workbench (the Coding/Data Analysis templates reframe it), "Message <agent>…"
-for chat-style agents.
+Right: submit; while a run is in flight it becomes stop. The textarea stays
+editable during a run — drafting the next goal is allowed, and a submit
+attempt rejects with the reason shown under the composer (the draft is kept).
+ArrowUp recalls the last user message; Esc stops a running plan (except inside
+dialogs and other editable contexts outside the composer). Placeholder changes
+by context: "Describe your goal…" by default on the Workbench (the Coding/Data
+Analysis templates reframe it), "Draft your next goal — submit after this run
+finishes…" while a run executes, "Message <agent>…" for chat-style agents.
 
 ## Confirmations
 
 Sensitive plan steps pause the run with `status: "awaitingConfirmation"`. The
-confirmation card appears in the center pane: icon and tool badge derived from
-the executing step's tool, the action prompt, and Approve / Reject buttons.
-Buttons disable while the plan is busy.
+confirmation card appears twice: in the progress rail and as a card on the
+center-pane canvas (shield icon, the step's action prompt, Approve / Deny
+buttons — both mounts act on the same supervisor actions and disappear
+together once answered). When the gate opens, focus moves to the rail card;
+on mobile the progress drawer auto-opens in the same commit.
 
 ## Run history
 
 Visible on the landing hero (below the composer) and in the center pane when
 a run is idle. Each run shows: goal, timestamp, step count, output preview
-(first 60 chars). The most recent completed/failed run is a clickable button
-with a "View report" affordance and hover state; clicking opens the
-Workbench run view with that run's deliverable. Older runs are non-interactive
-(S1: only the latest run's supervisor state is held in memory) and rendered
-visibly muted (reduced contrast, no pointer cursor) so they don't read as
-broken buttons. When the session has no in-memory runs, the landing hero
+(first 60 chars). Every finished run is a clickable button with a "View
+report" affordance and hover state; clicking opens the Workbench run view
+with that run's deliverable (the canvas renders past runs from their
+persisted records — live supervisor state holds only the active run). A
+still-running row is inert but keeps full contrast: it's live, just not
+clickable yet. When the session has no in-memory runs, the landing hero
 instead shows **Recent runs** — `list_recent_runs` across sessions, same row
 shape. Restored runs
 take their timestamps from the persisted record's write time, so a reopened
@@ -139,6 +158,14 @@ Archive/Restore (enabled per selection side), Delete, Cancel. Arrow keys
 move a highlighted cursor over the flat row list (groups, then archive),
 Enter opens the selected session (toggles it in Select mode); hover moves
 the same cursor.
+
+## Keyboard shortcuts
+
+`?` (outside editable fields and dialogs) opens a cheat-sheet dialog listing
+the live keys: Cmd/Ctrl+K sessions, Cmd/Ctrl+N new session, Cmd/Ctrl+1 assets
+rail, Esc drawer-close then stop-run, ArrowUp last-goal recall, `@` file
+mention. The dialog's list mirrors the handlers in `useAppShortcuts` and the
+workbench — update them together.
 
 ## Notifications
 

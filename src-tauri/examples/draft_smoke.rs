@@ -8,7 +8,8 @@ use futures_util::StreamExt;
 use kawai_agent::extract_draft_blocks;
 use kawai_lib::logic::remote::{RemoteEvent, RemoteLlm};
 
-// Mirrors DRAFT_DOCUMENT_SYSTEM in logic/agent.rs (kept in sync by hand).
+// Mirrors DRAFT_DOCUMENT_SYSTEM in crates/engines/agent/src/subagents.rs
+// (kept in sync by hand).
 const DRAFT_SYSTEM: &str = "You compose document content as structured JSON for an office file writer. \
 Rules:\n\
 - Output ONLY one JSON object, exactly {\"blocks\": [...]}. No markdown, no code fence, no commentary.\n\

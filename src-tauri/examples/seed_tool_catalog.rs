@@ -31,19 +31,12 @@
 
 #[path = "catalog_composition.rs"]
 mod composition;
+#[path = "common/mod.rs"]
+mod common;
 
 fn main() {
-    kawai_lib::auth::load_dotenv();
-
     #[cfg(feature = "litert")]
-    {
-        let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
-        if let Err(e) = rt.block_on(run()) {
-            eprintln!("[seed_tool_catalog] FAIL: {e}");
-            std::process::exit(1);
-        }
-    }
-
+    common::run_async("seed_tool_catalog", run());
     #[cfg(not(feature = "litert"))]
     {
         eprintln!("[seed_tool_catalog] FAIL: rebuild with --features litert (domain tool builders are litert-gated)");

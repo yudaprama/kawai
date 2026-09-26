@@ -20,6 +20,7 @@ import { WalletPage } from "@/features/wallet/components/wallet-page";
 import { OPEN_TOPUP_EVENT } from "@/features/topup/open-topup";
 import { TopupPage } from "@/features/topup/topup-page";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
+import { ShortcutsDialog } from "@/components/shared/shortcuts-dialog";
 
 export default function App() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -139,6 +140,22 @@ export default function App() {
     onNewChat: handleNew,
     onOpenSessions: () => setSessionsOpen(true),
   });
+
+  // "?" opens the shortcut cheat sheet — ignored while typing (editable
+  // fields, including the composer where "?" is literal text) and inside
+  // other dialogs.
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "?" || shortcutsOpen) return;
+      const el = e.target instanceof HTMLElement ? e.target : null;
+      if (el?.closest("input, textarea, select, [contenteditable=true], [role=dialog]") != null) return;
+      e.preventDefault();
+      setShortcutsOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shortcutsOpen]);
 
   // Esc closes mobile drawer when idle
   useEffect(() => {
@@ -307,6 +324,7 @@ export default function App() {
         }}
       />
       <PreviewDialog file={ka.previewFile} onClose={() => ka.setPreviewFile(null)} />
+      <ShortcutsDialog onOpenChange={setShortcutsOpen} open={shortcutsOpen} />
       <LinkDialog
         open={ka.linkPromptOpen}
         onOpenChange={ka.setLinkPromptOpen}

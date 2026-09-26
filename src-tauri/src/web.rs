@@ -1191,22 +1191,14 @@ async fn office_import_file_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<OfficeImportFileRequest>,
 ) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
-    let result = match (
+    logic::import_office_file(
+        &user_id,
         req.source_path.as_deref(),
-        (req.name.as_deref(), req.data_base64.as_deref()),
-    ) {
-        (Some(src), _) => logic::office::import_path(&user_id, src),
-        (None, (Some(name), Some(data))) => logic::office::import_base64(&user_id, name, data),
-        _ => Err("provide sourcePath, or name + dataBase64".into()),
-    };
-    result
-        .map(|file| {
-            // Upload = analysis intent: warm the parquet sidecars in the
-            // background.
-            logic::analytics::prewarm_tabular(&user_id, &file);
-            Json(file)
-        })
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+        req.name.as_deref(),
+        req.data_base64.as_deref(),
+    )
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
 #[derive(Deserialize)]

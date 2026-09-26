@@ -6,9 +6,10 @@ import type { RecentRunInfo } from "@/lib/api";
 import { RecentRuns } from "@/features/workbench/components/recent-runs";
 import { isDeliverableStep, useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
+import { logInfo } from "@/lib/logger";
 
 import { AnalysisDeskForm } from "./analysis-desk-form";
-import { DeliverableViewer, PastRunCanvas, RunHistory, RunSwitcher } from "./deliverable-viewer";
+import { DeliverableViewer, EMPTY_RUNS_HINT, PastRunCanvas, RunHistory, RunSwitcher } from "./deliverable-viewer";
 import type { CanvasView } from "./deliverable-viewer";
 import { ComposerQuoteBadge, FollowUpChips } from "./follow-up-composer";
 import { GoalComposer } from "./goal-composer";
@@ -36,6 +37,15 @@ function SessionsButton({ onOpen }: { onOpen: () => void }) {
 }
 
 // ── Page ────────────────────────────────────────────────────────────────────
+
+/** First-run quick starts — dropped into the composer as an editable draft
+ *  (never auto-submitted). Shown on the landing only while the session has
+ *  no runs yet. */
+const EXAMPLE_GOALS = [
+  "Research the current state of solid-state batteries and write a brief",
+  "Analyze BTC's price action this month and chart it",
+  "Draft a one-page project proposal for a customer portal",
+];
 
 export interface WorkbenchPageProps {
   /** Knowledge integration for the composer's @ menu + image drop. */
@@ -164,7 +174,7 @@ export function WorkbenchPage({
     const firstReport = supervisor.steps.find(
       (s) => !isDeliverableStep(s) && s.output != null && (s.state === "completed" || s.state === "failed"),
     );
-    console.log("[workbench] AUTO-SWITCH to new run", activeRunId);
+    logInfo("workbench", "auto-switch to new run", { runId: activeRunId });
     setView({ runId: activeRunId, doc: supervisor.finalOutput != null ? "final" : (firstReport?.stepId ?? "final") });
   }, [activeRunId, seededForActiveRun, supervisor.finalOutput, supervisor.steps]);
 
@@ -477,6 +487,24 @@ export function WorkbenchPage({
                 {workbench.sessionError}
               </p>
             )}
+            {workbench.runs.length === 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                <span className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">Try</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {EXAMPLE_GOALS.map((g) => (
+                    <button
+                      className="border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground inline-flex items-center rounded-full border px-3 py-1 font-mono text-[11px] transition-colors"
+                      key={g}
+                      onClick={() => setChipDraft({ text: g, nonce: Date.now() })}
+                      title="Drop this goal into the composer to edit"
+                      type="button"
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <GoalTemplates value={template} disabled={composerStatus === "submitted"} onChange={setTemplate} />
             {templateOpensDesk(template) && (
               <div className="mt-3">
@@ -492,13 +520,9 @@ export function WorkbenchPage({
           {workbench.runs.length > 0 ? (
             <div className="w-full max-w-2xl text-left">
               <RunHistory
-                latestRunId={workbench.runs.at(-1)?.id}
                 onReopen={(runId) => {
-                  // S1: only the latest run's report is inspectable.
-                  if (runId === workbench.runs.at(-1)?.id) {
-                    setHome(false);
-                    userPick(runId, "final");
-                  }
+                  setHome(false);
+                  userPick(runId, "final");
                 }}
                 runs={workbench.runs}
               />
@@ -632,7 +656,7 @@ export function WorkbenchPage({
         </div>
         {workbench.runs.length === 0 ? (
           <div className="text-muted-foreground flex flex-1 items-center justify-center p-8 text-center font-mono text-sm">
-            State a goal in the composer to start a run.
+            {EMPTY_RUNS_HINT}
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
@@ -654,6 +678,7 @@ export function WorkbenchPage({
                       doc={view?.doc ?? "final"}
                       loadFullOutput={workbench.loadFullOutput}
                       onBuildOn={buildOn}
+                      onPickDoc={(doc) => userPick(shown.id, doc)}
                       run={shown}
                     />
                   );
@@ -667,6 +692,9 @@ export function WorkbenchPage({
                     runIndex={workbench.runs.length - 1}
                     unseeded={planningUnseeded}
                     workbench={workbench}
+                    onPickDoc={(doc) => {
+                      if (activeRunId != null) userPick(activeRunId, doc);
+                    }}
                   />
                 );
               })()}

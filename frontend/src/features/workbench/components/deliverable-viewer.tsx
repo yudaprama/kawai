@@ -1,5 +1,5 @@
 import { Icon } from "@/components/shared/icon";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FileIcon } from "@/components/shared/file-icon";
@@ -7,8 +7,15 @@ import { MarkdownWithCharts } from "@/features/workbench/components/markdown-wit
 import { DeckPreview } from "@/features/workbench/components/deck-preview";
 import { slugify } from "@/lib/utils";
 import { call, errText } from "@/lib/api";
-import { StepReportBody } from "@/features/workbench/components/shared-canvas";
-import { agentName, isDeliverableStep, type useWorkbench } from "@/features/workbench/hooks/use-workbench";
+import { emitOpenPreview } from "@/lib/preview-bridge";
+import { AgentReportsSwitcher, StepReportBody } from "@/features/workbench/components/shared-canvas";
+import {
+  agentName,
+  DELIVERABLE_STEP_ID,
+  DELIVERABLE_TOOL,
+  isDeliverableStep,
+  type WorkbenchController,
+} from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { fmtDuration } from "./progress-rail";
@@ -18,6 +25,10 @@ import { fmtDuration } from "./progress-rail";
  *  the reducer — so the hero cannot be lost to a state-chain regression. */
 
 // ── Canvas view ───────────────────────────────────────────────────────────────
+
+/** Shared empty-state line — the canvas (idle viewer) and the page's
+ *  zero-runs branch render the same words, so the hint reads as one system. */
+export const EMPTY_RUNS_HINT = "State a goal in the composer to start a run.";
 
 /** Canvas view: which run's which document is on the right pane. Null only
  *  before the first run produces anything. doc = "final" | stepId. */
@@ -72,28 +83,43 @@ export function RunSwitcher({
 }
 
 /** PDF/DOCX export row for a completed deliverable — shared by the live
- *  canvas and PastRunCanvas; owns its own in-flight/feedback state. */
+ *  canvas and PastRunCanvas; owns its own in-flight/feedback state. Copy
+ *  puts the raw markdown on the clipboard; the saved filename opens the
+ *  office-store file in the app-level preview dialog (same bridge the
+ *  tool-renderer cards use). */
 function DeliverableExport({ goal, markdown }: { goal: string; markdown: string }) {
   const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
-  const [exportedName, setExportedName] = useState<string | null>(null);
+  const [exported, setExported] = useState<{ id: string; name: string } | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyMarkdown = async () => {
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+      setExportError("Copy failed — clipboard unavailable");
+    }
+  };
 
   const runExport = async (format: "pdf" | "docx") => {
     if (exporting) return;
     setExporting(format);
-    setExportedName(null);
+    setExported(null);
     setExportError(null);
     const slug = slugify(goal, "deliverable");
     try {
-      const file = await call<{ originalName: string }>("export_deliverable", {
+      const file = await call<{ id: string; originalName: string }>("export_deliverable", {
         markdown,
         filename: `${slug}.${format}`,
       });
-      setExportedName(file.originalName);
+      setExported({ id: file.id, name: file.originalName });
       setExportError(null);
     } catch (err) {
       console.error("[workbench] export_deliverable:", errText(err));
-      setExportedName(null);
+      setExported(null);
       setExportError(errText(err));
     } finally {
       setExporting(null);
@@ -102,6 +128,10 @@ function DeliverableExport({ goal, markdown }: { goal: string; markdown: string 
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <Button disabled={copied} onClick={() => void copyMarkdown()} size="sm" variant="outline">
+        <Icon name={copied ? "check" : "copy"} className="size-3" />
+        {copied ? "Copied" : "Copy"}
+      </Button>
       <span className="text-muted-foreground mr-1 font-mono text-[11px] uppercase">Export</span>
       <Button disabled={exporting != null} onClick={() => void runExport("pdf")} size="sm" variant="outline">
         {exporting === "pdf" ? (
@@ -119,8 +149,16 @@ function DeliverableExport({ goal, markdown }: { goal: string; markdown: string 
         )}
         DOCX
       </Button>
-      {exportedName && (
-        <span className="text-success font-mono text-[11px]">Saved as {exportedName} — view it in Documents</span>
+      {exported && (
+        <button
+          className="text-success hover:text-primary inline-flex items-center gap-1 font-mono text-[11px] hover:underline"
+          onClick={() => emitOpenPreview(exported.id, exported.name)}
+          title="Open the exported file"
+          type="button"
+        >
+          Saved as {exported.name}
+          <Icon name="external-link" className="size-3" />
+        </button>
       )}
       {exportError && <span className="text-destructive font-mono text-[11px]">Export failed: {exportError}</span>}
     </div>
@@ -135,6 +173,7 @@ export function PastRunCanvas({
   run,
   doc,
   onBuildOn,
+  onPickDoc,
 }: {
   loadFullOutput: (stepId: string, planKey?: string) => Promise<string | null>;
   run: WorkbenchRun;
@@ -142,6 +181,9 @@ export function PastRunCanvas({
   /** "Build on this": arm this run's deliverable as the follow-up quote
    *  target. Only offered when the run has a quotable deliverable. */
   onBuildOn?: (run: WorkbenchRun) => void;
+  /** Switch the canvas to one of this run's documents (deliverable or a
+   *  step report) — wired by the page to its canvas-view navigation. */
+  onPickDoc?: (doc: string) => void;
 }) {
   const isDeliverable = doc === "final";
   /** Header label: the step's task (agentName), or the tool — never the raw
@@ -228,6 +270,175 @@ export function PastRunCanvas({
         {isDeliverable && run.status === "completed" && run.outputFull != null && (
           <DeliverableExport goal={run.goal} markdown={run.outputFull} />
         )}
+
+        {/* Document picker: jump between this run's deliverable and its step
+            reports without going through the rail. Restored records embed
+            their steps; live records carry tallies only, so runs without
+            embedded steps simply hide the grid. */}
+        {onPickDoc != null && (run.steps ?? []).length > 0 && (
+          <AgentReportsSwitcher
+            activeDoc={doc}
+            hasDeliverable={run.status === "completed" && run.outputFull != null}
+            onPickDoc={onPickDoc}
+            reports={(run.steps ?? [])
+              .filter(
+                (s) =>
+                  // Record steps are the persisted shape (optional fields) —
+                  // match the reserved writer step by id/tool instead of
+                  // isDeliverableStep (which needs the live SupervisorStep).
+                  s.stepId !== DELIVERABLE_STEP_ID &&
+                  s.tool !== DELIVERABLE_TOOL &&
+                  (s.state === "completed" || s.state === "failed") &&
+                  (s.output != null || s.error != null),
+              )
+              .map((s) => ({ label: (s.task || s.tool || s.stepId).trim(), stepId: s.stepId }))}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── In-flight status strip ───────────────────────────────────────────────────
+
+/** Live status card on the FINAL view while a run is in flight — the canvas
+ *  never sits blank between submit and the deliverable landing. Covers the
+ *  planning window (unseeded), step execution, the deliverable writer (whose
+ *  output only lands at planCompleted), approval gates, and stop. The rich
+ *  planning telemetry stays in the rail; this is the compact canvas mirror.
+ *  Elapsed clocks tick via the parent's per-second re-render. */
+function RunStatusStrip({
+  startedAt,
+  unseeded,
+  workbench,
+}: {
+  /** Current run's submit time — the elapsed clock source while unseeded
+   *  (planStartedAt still belongs to the previous run then). */
+  startedAt: number | null;
+  unseeded: boolean;
+  workbench: WorkbenchController;
+}) {
+  const { supervisor } = workbench;
+
+  // Approval gate on the canvas (DESIGN: "the confirmation card appears in
+  // the center pane") — the run is paused; both mounts act on the same
+  // supervisor.approve/reject and disappear together once answered.
+  if (supervisor.status === "awaitingConfirmation" && supervisor.pendingConfirmation) {
+    return (
+      <div className="border-primary/30 bg-card space-y-3 rounded-lg border p-6">
+        <div className="text-foreground inline-flex items-center gap-2 font-mono text-xs font-bold tracking-wider uppercase">
+          <Icon name="shield-alert" className="text-primary size-4" />
+          Approval required
+        </div>
+        <p className="text-foreground/90 font-mono text-sm leading-relaxed break-words">
+          {supervisor.pendingConfirmation.description || supervisor.pendingConfirmation.task}
+        </p>
+        <div className="flex gap-2">
+          <Button onClick={workbench.supervisor.approve} size="sm">
+            <Icon name="play" className="size-3" />
+            Approve
+          </Button>
+          <Button onClick={workbench.supervisor.reject} size="sm" variant="outline">
+            Deny
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Plan awaiting review: the review card (summary + Run/Discard) lives in
+  // the rail (mobile: the drawer auto-opens); the canvas says what's up.
+  if (unseeded && supervisor.status === "reviewing") {
+    return (
+      <div className="border-primary/30 bg-card rounded-lg border p-6">
+        <div className="text-foreground inline-flex items-center gap-2 font-mono text-xs font-bold tracking-wider uppercase">
+          <Icon name="clipboard-check" className="text-primary size-4" />
+          Plan ready for review
+        </div>
+        <p className="text-muted-foreground mt-2 font-mono text-xs">
+          Review the plan in the progress panel, then run or discard it.
+        </p>
+      </div>
+    );
+  }
+
+  // Planning window (unseeded): the supervisor steps/goal still belong to the
+  // previous run — mirror the rail's compact planning line instead.
+  if (unseeded) {
+    const planning = supervisor.planning;
+    const label =
+      planning == null
+        ? "Preparing run…"
+        : planning.round === 0
+          ? planning.context != null
+            ? "Starting planner…"
+            : "Loading context (persona · memories · skills)…"
+          : `${planning.searching ? "Searching tools" : "Writing plan"} · round ${planning.round}${planning.provider ? ` · ${planning.provider}` : ""}`;
+    return (
+      <div className="border-border/60 bg-card space-y-2 rounded-lg border p-6">
+        <div className="text-foreground inline-flex items-center gap-2 font-mono text-xs">
+          <Icon name="loader-circle" className="text-primary size-3.5 animate-spin" />
+          {label}
+          {startedAt != null && <span className="text-muted-foreground">· {fmtDuration(startedAt)}</span>}
+        </div>
+        {planning?.activity && (
+          <p className="text-muted-foreground/70 line-clamp-2 pl-5.5 font-mono text-[11px] italic">
+            ⌁ {planning.activity}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  // Seeded execution window: settled-step tally + what's happening now.
+  const count = `${supervisor.steps.filter((s) => s.state === "completed" || s.state === "failed" || s.state === "skipped").length}/${supervisor.steps.length} steps`;
+  const elapsed = supervisor.planStartedAt != null ? ` · ${fmtDuration(supervisor.planStartedAt)}` : "";
+
+  if (supervisor.status === "stopping") {
+    return (
+      <div className="border-border/60 bg-card rounded-lg border p-6">
+        <div className="text-foreground inline-flex items-center gap-2 font-mono text-xs">
+          <Icon name="square" className="text-muted-foreground size-3.5" />
+          Stopping…
+          <span className="text-muted-foreground">
+            · {count}
+            {elapsed}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // Deliverable writer running: its output arrives only with planCompleted —
+  // show a writing skeleton instead of a blank pane.
+  if (supervisor.steps.some((s) => isDeliverableStep(s) && s.state === "running")) {
+    return (
+      <div className="border-primary/30 bg-card space-y-3 rounded-lg border p-6">
+        <div className="text-foreground inline-flex items-center gap-2 font-mono text-xs">
+          <Icon name="loader-circle" className="text-primary size-3.5 animate-spin" />
+          Writing your answer…
+          <span className="text-muted-foreground">{elapsed}</span>
+        </div>
+        <div className="space-y-2.5 pt-1">
+          <div className="h-3 w-3/4 animate-pulse rounded bg-accent" />
+          <div className="h-3 w-full animate-pulse rounded bg-accent" />
+          <div className="h-3 w-5/6 animate-pulse rounded bg-accent" />
+          <div className="h-3 w-2/3 animate-pulse rounded bg-accent" />
+        </div>
+      </div>
+    );
+  }
+
+  const runningStep = supervisor.steps.find((s) => s.state === "running" && !isDeliverableStep(s));
+  return (
+    <div className="border-border/60 bg-card rounded-lg border p-6">
+      <div className="text-foreground inline-flex items-center gap-2 font-mono text-xs">
+        <Icon name="loader-circle" className="text-primary size-3.5 animate-spin" />
+        {runningStep != null ? `Running · ${agentName(runningStep)}` : "Working…"}
+        <span className="text-muted-foreground">
+          · {count}
+          {elapsed}
+        </span>
       </div>
     </div>
   );
@@ -240,6 +451,7 @@ export function DeliverableViewer({
   runIndex,
   unseeded,
   workbench,
+  onPickDoc,
 }: {
   /** Pinned document: "final" | stepId. The page owns navigation policy —
    *  this component NEVER auto-jumps on its own. */
@@ -250,7 +462,10 @@ export function DeliverableViewer({
    *  steps, and finalOutput read from the supervisor are stale and must not
    *  render; the run record's own goal stands in for the header instead. */
   unseeded?: boolean;
-  workbench: ReturnType<typeof useWorkbench>;
+  workbench: WorkbenchController;
+  /** Switch the canvas document (deliverable ↔ step reports) — wired by the
+   *  page to its canvas-view navigation; without it the reports grid hides. */
+  onPickDoc?: (doc: string) => void;
 }) {
   const { supervisor } = workbench;
   // Header goal: the run record knows the submitted goal from the moment of
@@ -300,8 +515,44 @@ export function DeliverableViewer({
 
   const done = unseeded ? 0 : supervisor.steps.filter((s) => s.state === "completed").length;
 
+  // In-flight strip on the final view: shown through the whole submit →
+  // deliverable window (planning unseeded, execution, writer, approval gate,
+  // stop) — the canvas must never sit blank in between. `unseeded` alone is
+  // enough while the supervisor state belongs to the previous run; afterwards
+  // the in-flight statuses qualify until the final output lands.
+  const inFlightNow = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status);
+  const stripVisible = effective === "final" && (unseeded === true || (inFlightNow && supervisor.finalOutput == null));
+  // Per-second tick while the strip is up — silent windows (planner rounds,
+  // deliverable synthesis, no-event steps) otherwise read as a frozen UI.
+  // Also keeps the header's duration line moving.
+  const [, setStripTick] = useState(0);
+  useEffect(() => {
+    if (!stripVisible) return;
+    const t = setInterval(() => setStripTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [stripVisible]);
+  // Screen-reader phase announcement — the text changes ONLY on coarse phase
+  // transitions (never on the per-second tick or per-step churn), so the live
+  // region announces once per phase instead of chattering.
+  const phaseAnnouncement = !stripVisible
+    ? ""
+    : unseeded
+      ? supervisor.status === "reviewing"
+        ? "Plan ready for review"
+        : "Planning your goal"
+      : supervisor.status === "awaitingConfirmation"
+        ? "Approval required"
+        : supervisor.status === "stopping"
+          ? "Stopping"
+          : supervisor.steps.some((s) => isDeliverableStep(s) && s.state === "running")
+            ? "Writing your answer"
+            : "Running";
+
   return (
     <div className="h-full overflow-y-auto">
+      <div aria-live="polite" className="sr-only" role="status">
+        {phaseAnnouncement}
+      </div>
       <div className="mx-auto max-w-4xl space-y-6 p-6">
         <div>
           <h3 className="text-foreground flex items-start gap-2 text-xl font-semibold" title={headerGoal ?? undefined}>
@@ -311,15 +562,30 @@ export function DeliverableViewer({
             <div className="text-muted-foreground mt-1 font-mono text-xs">Agent report · {agentName(resolvedStep)}</div>
           )}
           <div className="text-muted-foreground mt-1 font-mono text-sm">
-            {done}/{unseeded ? 0 : supervisor.steps.length} steps
-            {supervisor.planStartedAt != null &&
-              ` · ${fmtDuration(supervisor.planStartedAt, supervisor.planCompletedAt ?? undefined)}`}
+            {unseeded ? (
+              <>
+                planning…
+                {runRecord?.startedAt != null && ` · ${fmtDuration(runRecord.startedAt)}`}
+              </>
+            ) : (
+              <>
+                {done}/{supervisor.steps.length} steps
+                {supervisor.planStartedAt != null &&
+                  ` · ${fmtDuration(supervisor.planStartedAt, supervisor.planCompletedAt ?? undefined)}`}
+              </>
+            )}
           </div>
         </div>
 
+        {/* In-flight status strip: planning, execution, writer, approval gate,
+            stop — never a blank pane between submit and the deliverable. */}
+        {stripVisible && (
+          <RunStatusStrip startedAt={runRecord?.startedAt ?? null} unseeded={unseeded === true} workbench={workbench} />
+        )}
+
         {supervisor.status === "idle" && supervisor.planning == null && (
           <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center font-mono text-sm">
-            State a goal in the composer to start a run.
+            {EMPTY_RUNS_HINT}
           </div>
         )}
 
@@ -388,6 +654,18 @@ export function DeliverableViewer({
             tool={resolvedStep.tool}
           />
         )}
+
+        {/* Document picker: the canvas-native way back to the deliverable or
+            on to another report (the rail's "see report" links stay). Hidden
+            while planning (no reports yet) and when navigation isn't wired. */}
+        {onPickDoc != null && reports.length > 0 && (
+          <AgentReportsSwitcher
+            activeDoc={effective}
+            hasDeliverable={supervisor.finalOutput != null}
+            onPickDoc={onPickDoc}
+            reports={reports.map((r) => ({ label: agentName(r), stepId: r.stepId }))}
+          />
+        )}
       </div>
     </div>
   );
@@ -398,12 +676,12 @@ export function DeliverableViewer({
 export function RunHistory({
   runs,
   onReopen,
-  latestRunId,
 }: {
   runs: WorkbenchRun[];
-  /** Open the run's deliverable in the viewer. Only wired for the latest run (S1: supervisor holds one run's state). */
+  /** Open the run's deliverable in the viewer — any finished run qualifies:
+   *  the canvas renders past runs from their record (PastRunCanvas), not
+   *  from the single-run supervisor state. */
   onReopen?: (runId: string) => void;
-  latestRunId?: string;
 }) {
   if (runs.length === 0) return null;
   return (
@@ -413,7 +691,7 @@ export function RunHistory({
         .slice()
         .reverse()
         .map((r) => {
-          const clickable = onReopen != null && latestRunId === r.id && r.status !== "running";
+          const clickable = onReopen != null && r.status !== "running";
           const RowInner = (
             <>
               <div className="min-w-0 flex-1 text-left">
@@ -452,9 +730,9 @@ export function RunHistory({
               {RowInner}
             </button>
           ) : (
-            // Not reopenable (only the latest run is) — visibly inert so it
-            // doesn't read as a broken button. A running row keeps full
-            // contrast: it's live, just not clickable yet.
+            // Not reopenable while running — visibly inert so it doesn't read
+            // as a broken button. A running row keeps full contrast: it's
+            // live, just not clickable yet.
             <div
               className={`border-border/60 flex items-center justify-between gap-3 rounded-lg border p-3${
                 r.status !== "running" ? " cursor-default opacity-60" : ""

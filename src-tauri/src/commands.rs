@@ -1024,17 +1024,12 @@ pub fn office_import_file(
     session: State<'_, Session>,
 ) -> Result<logic::office::OfficeFile, String> {
     let user_id = session_user_id(&session)?;
-    let imported = match (
+    logic::import_office_file(
+        &user_id,
         source_path.as_deref(),
-        (name.as_deref(), data_base64.as_deref()),
-    ) {
-        (Some(src), _) => logic::office::import_path(&user_id, src),
-        (None, (Some(name), Some(data))) => logic::office::import_base64(&user_id, name, data),
-        _ => Err("provide sourcePath, or name + dataBase64".into()),
-    }?;
-    // Upload = analysis intent: warm the parquet sidecars in the background.
-    logic::analytics::prewarm_tabular(&user_id, &imported);
-    Ok(imported)
+        name.as_deref(),
+        data_base64.as_deref(),
+    )
 }
 
 /// ── QRIS top-up (PLAN-qris-topup.md Fase 3) — 5 auth-required thin ────────
