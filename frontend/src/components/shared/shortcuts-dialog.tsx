@@ -10,7 +10,7 @@ const SHORTCUTS: { action: string; keys: string[] }[] = [
   { action: "Browse sessions", keys: [mod, "K"] },
   { action: "New session / goal", keys: [mod, "N"] },
   { action: "Toggle the assets rail", keys: [mod, "1"] },
-  { action: "Close a drawer — or stop the running plan", keys: ["Esc"] },
+  { action: "Close a drawer — or press twice to stop the running plan", keys: ["Esc"] },
   { action: "Recall your last goal (empty composer)", keys: ["↑"] },
   { action: "Attach a knowledge file in the composer", keys: ["@"] },
   { action: "This shortcut list", keys: ["?"] },

@@ -160,7 +160,7 @@ function DeliverableExport({ goal, markdown }: { goal: string; markdown: string 
           <Icon name="external-link" className="size-3" />
         </button>
       )}
-      {exportError && <span className="text-destructive font-mono text-[11px]">Export failed: {exportError}</span>}
+      {exportError && <span className="text-destructive font-mono text-xs">Export failed: {exportError}</span>}
     </div>
   );
 }
@@ -386,9 +386,7 @@ function RunStatusStrip({
           {startedAt != null && <span className="text-muted-foreground">· {fmtDuration(startedAt)}</span>}
         </div>
         {planning?.activity && (
-          <p className="text-muted-foreground/70 line-clamp-2 pl-5.5 font-mono text-[11px] italic">
-            ⌁ {planning.activity}
-          </p>
+          <p className="text-muted-foreground/80 line-clamp-2 pl-5.5 font-mono text-xs italic">⌁ {planning.activity}</p>
         )}
       </div>
     );

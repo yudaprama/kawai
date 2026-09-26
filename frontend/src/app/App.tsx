@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "@/components/shared/icon";
+import { Button } from "@/components/ui/button";
 import { LinkDialog, PreviewDialog } from "@/features/knowledge/components/knowledge-dialogs";
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
 import { useKnowledgeActions } from "@/features/knowledge/hooks/use-knowledge-actions";
@@ -55,22 +57,34 @@ export default function App() {
     null,
   );
 
+  // Backend-readiness gate: the shell renders once the agent catalog answers.
+  // A failure surfaces as an error card with Retry — a bare catch left an
+  // empty window until restart. `auto` mode has no agent picker; the catalog
+  // only proves the backend is up.
+  const [agentsError, setAgentsError] = useState<string | null>(null);
+  const [agentsAttempt, setAgentsAttempt] = useState(0);
   useEffect(() => {
+    void agentsAttempt; // retry trigger — a bump refetches the catalog
     let disposed = false;
+    setAgentsError(null);
     call<AgentInfo[]>("list_agents")
       .then((catalog) => {
-        if (!disposed && catalog.length) setAgents(catalog);
+        if (disposed) return;
+        if (!catalog.length) {
+          setAgentsError("The backend returned an empty agent catalog.");
+          return;
+        }
+        setAgents(catalog);
       })
-      .catch((err) => logWarn("list_agents", err));
+      .catch((err) => {
+        logWarn("list_agents", err);
+        if (!disposed) setAgentsError(errText(err));
+      });
     return () => {
       disposed = true;
     };
-  }, []);
+  }, [agentsAttempt]);
 
-  // No agent picker: every request runs in `auto` mode (merged all-domain
-  // registry — the planner picks tools itself). The first catalog agent only
-  // drives presentation/context UI.
-  const agent = agents[0] ?? null;
   const chat = useSupervisorChat();
   const { status } = chat;
   const busy = status === "submitted" || status === "streaming";
@@ -186,8 +200,30 @@ export default function App() {
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     if (dx < -60 && mobileDrawer) setMobileDrawer(null);
   };
-  if (!agent) {
-    return <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center" />;
+  if (agentsError != null) {
+    return (
+      <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center p-6">
+        <div className="bg-card border-border w-full max-w-sm space-y-3 rounded-lg border p-6 text-center">
+          <p className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">
+            Couldn&apos;t start the workbench
+          </p>
+          <p className="text-muted-foreground font-mono text-xs leading-snug break-words" role="alert">
+            {agentsError}
+          </p>
+          <Button size="sm" variant="outline" onClick={() => setAgentsAttempt((a) => a + 1)}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  if (agents.length === 0) {
+    return (
+      <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center gap-2">
+        <Icon name="loader-circle" className="text-primary size-4 animate-spin" />
+        <span className="text-muted-foreground font-mono text-xs">Loading workbench…</span>
+      </div>
+    );
   }
 
   // Asset workspace — replaces the chat center pane while an asset view is

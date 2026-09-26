@@ -100,8 +100,10 @@ asset workspace that needs text input. Left tools: `@` file mention
 Right: submit; while a run is in flight it becomes stop. The textarea stays
 editable during a run — drafting the next goal is allowed, and a submit
 attempt rejects with the reason shown under the composer (the draft is kept).
-ArrowUp recalls the last user message; Esc stops a running plan (except inside
-dialogs and other editable contexts outside the composer). Placeholder changes
+ArrowUp recalls the last user message; Esc stops a running plan in two steps —
+the first press arms with a "Press Esc again to stop" toast (2s window), the
+second stops (except inside dialogs and other editable contexts outside the
+composer). Placeholder changes
 by context: "Describe your goal…" by default on the Workbench (the Coding/Data
 Analysis templates reframe it), "Draft your next goal — submit after this run
 finishes…" while a run executes, "Message <agent>…" for chat-style agents.
@@ -163,7 +165,7 @@ the same cursor.
 
 `?` (outside editable fields and dialogs) opens a cheat-sheet dialog listing
 the live keys: Cmd/Ctrl+K sessions, Cmd/Ctrl+N new session, Cmd/Ctrl+1 assets
-rail, Esc drawer-close then stop-run, ArrowUp last-goal recall, `@` file
+rail, Esc drawer-close then two-step stop-run, ArrowUp last-goal recall, `@` file
 mention. The dialog's list mirrors the handlers in `useAppShortcuts` and the
 workbench — update them together.
 
@@ -207,5 +209,5 @@ backdrop, Esc/tap-out to close). The Workbench run view has a top bar
 backdrop/Esc close, ← → back to the landing composer, disabled mid-run).
 The progress sidebar auto-opens when the plan needs the user (review,
 confirmation gates) so a run can't stall invisibly; Esc closes the drawer
-first, then stops a running plan. Run history and the goal composer are
-available on the landing hero throughout.
+first, then arms the two-step stop — the second press stops the run. Run
+history and the goal composer are available on the landing hero throughout.

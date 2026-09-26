@@ -458,7 +458,7 @@ export function ProgressRail({
         {/* Failure visibility: the plan-level WHY rides the header — the
             status label alone ("Failed · goal") never said what broke. */}
         {!unseeded && supervisor.status === "failed" && supervisor.error != null && (
-          <p className="text-destructive mt-1 font-mono text-[11px] leading-snug break-words" role="alert">
+          <p className="text-destructive mt-1 font-mono text-xs leading-snug break-words" role="alert">
             {supervisor.error}
           </p>
         )}
@@ -555,18 +555,18 @@ export function ProgressRail({
                   : `preparing context…${planningElapsed}`}
               </div>
               {supervisor.planning?.searching && supervisor.planning.tools.length > 0 && (
-                <div className="text-muted-foreground/80 pl-5.5 text-[11px]">
+                <div className="text-muted-foreground/80 pl-5.5 text-xs">
                   found tools: {supervisor.planning.tools.slice(0, 3).join(", ")}
                   {supervisor.planning.tools.length > 3 ? "…" : ""}
                 </div>
               )}
               {supervisor.planning?.searching && (supervisor.planning.queries?.length ?? 0) > 0 && (
-                <div className="text-muted-foreground/60 pl-5.5 truncate text-[11px] italic">
+                <div className="text-muted-foreground/80 pl-5.5 truncate text-xs italic">
                   searching: “{supervisor.planning.queries[supervisor.planning.queries.length - 1]}”
                 </div>
               )}
               {supervisor.planning?.activity && (
-                <div className="text-muted-foreground/60 pl-5.5 line-clamp-2 max-h-8 overflow-hidden text-[11px] italic">
+                <div className="text-muted-foreground/80 pl-5.5 line-clamp-2 max-h-8 overflow-hidden text-xs italic">
                   ⌁ {supervisor.planning.activity}
                 </div>
               )}
@@ -575,7 +575,7 @@ export function ProgressRail({
                   supervisor.planning.context.memories > 0 ||
                   supervisor.planning.context.skills > 0 ||
                   supervisor.planning.context.files > 0) && (
-                  <div className="text-muted-foreground/60 pl-5.5 text-[11px]">
+                  <div className="text-muted-foreground/80 pl-5.5 text-xs">
                     context:{" "}
                     {[
                       supervisor.planning.context.persona ? "persona" : null,
@@ -590,7 +590,7 @@ export function ProgressRail({
                   </div>
                 )}
               {supervisor.planning != null && currentRun != null && (
-                <div className="text-muted-foreground/60 pl-5.5 text-[11px] tabular-nums">
+                <div className="text-muted-foreground/80 pl-5.5 text-xs tabular-nums">
                   {fmtDuration(currentRun.startedAt)} elapsed
                 </div>
               )}
@@ -612,7 +612,7 @@ export function ProgressRail({
             <Icon name="shield-alert" className="text-primary size-3.5" />
             Approval required
           </div>
-          <p className="text-foreground/80 font-mono text-[11px]">
+          <p className="text-foreground/80 font-mono text-xs">
             {supervisor.pendingConfirmation.description || supervisor.pendingConfirmation.task}
           </p>
           <div className="flex gap-2">

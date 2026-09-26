@@ -7,6 +7,7 @@ import { RecentRuns } from "@/features/workbench/components/recent-runs";
 import { isDeliverableStep, useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import { logInfo } from "@/lib/logger";
+import { toast } from "sonner";
 
 import { AnalysisDeskForm } from "./analysis-desk-form";
 import { DeliverableViewer, EMPTY_RUNS_HINT, PastRunCanvas, RunHistory, RunSwitcher } from "./deliverable-viewer";
@@ -254,6 +255,11 @@ export function WorkbenchPage({
   /** Double-submit guard: submit is synchronous up to its gates, so this
    *  flips false again only after the returned promise settles. */
   const startingRef = useRef(false);
+  /** Two-step Esc stop: the first press arms (toast hint), a second press
+   *  within 2s stops. A stray Esc ("close this" reflex after clicking a
+   *  report button) must not kill a long run; the rail's Stop button stays
+   *  the one-click path. Timestamp self-expires — no timer cleanup. */
+  const escStopArmedAt = useRef(0);
 
   /** Landing → run view handoff. The planning baseline is captured at SUBMIT
    *  time (planStarted fires later, inside the run) and applied here — onStart
@@ -377,7 +383,8 @@ export function WorkbenchPage({
     setHome(true);
   }, [supervisor.planning, supervisor.status, supervisor.cancelPlan, runInFlight, workbench.startNewSession]);
 
-  // Esc: close the mobile progress drawer, else stop a running plan. Mirrors
+  // Esc: close the mobile progress drawer, else two-step-stop a running plan
+  // (see escStopArmedAt). Mirrors
   // the composer's editable-context rule — the composer opts back in via
   // data-chat-composer; dialogs and the App nav drawer own their own Esc.
   useEffect(() => {
@@ -393,9 +400,19 @@ export function WorkbenchPage({
         setMobileRail(false);
         return;
       }
-      if (["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)) {
+      if (supervisor.status === "stopping") return;
+      if (["running", "awaitingConfirmation"].includes(supervisor.status)) {
         e.preventDefault();
-        supervisor.stop();
+        const now = Date.now();
+        if (now - escStopArmedAt.current < 2000) {
+          escStopArmedAt.current = 0;
+          supervisor.stop();
+        } else {
+          escStopArmedAt.current = now;
+          toast("Press Esc again to stop the run", { id: "esc-stop", duration: 2000 });
+        }
+      } else {
+        escStopArmedAt.current = 0;
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -477,13 +494,13 @@ export function WorkbenchPage({
               attachedFiles={workbench.attachedFiles}
               onRemoveAttachedFile={workbench.removeAttachedFile}
             />
-            <p className="text-muted-foreground mt-3 font-mono text-[10px]">
+            <p className="text-muted-foreground mt-3 font-mono text-xs">
               Attach knowledge files with @ — the run's agents can search them.
             </p>
             {/* Blocked submits reject the composer promise (draft kept) —
                 this is where the WHY lands; before, it only toasted. */}
             {workbench.sessionError && (
-              <p className="text-destructive mt-2 font-mono text-[11px] leading-snug break-words" role="alert">
+              <p className="text-destructive mt-2 font-mono text-xs leading-snug break-words" role="alert">
                 {workbench.sessionError}
               </p>
             )}
@@ -550,7 +567,7 @@ export function WorkbenchPage({
       {/* Left: one sidebar — progress + timeline (scrolls), composer pinned at
            the bottom. Hidden below lg by default; open = overlay drawer. */}
       <aside
-        className={`border-border/60 bg-background w-96 shrink-0 flex-col border-r lg:flex ${
+        className={`border-border/60 bg-background w-96 max-w-[88vw] shrink-0 flex-col border-r lg:flex ${
           mobileRail ? "fixed inset-y-0 left-0 z-50 flex shadow-xl lg:static lg:z-auto lg:shadow-none" : "hidden"
         }`}
       >
@@ -593,7 +610,7 @@ export function WorkbenchPage({
             {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
           </div>
           {supervisor.status === "reviewing" && (
-            <p className="text-muted-foreground mb-2 font-mono text-[11px]">
+            <p className="text-muted-foreground mb-2 font-mono text-xs">
               A plan is awaiting your review above — run or discard it first.
             </p>
           )}

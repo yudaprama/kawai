@@ -53,7 +53,7 @@ export function GoalComposer({
         onRemoveAttachedFile={removeAttachedFile}
       />
       {workbench.sessionError && (
-        <p className="text-destructive mt-2 font-mono text-[11px]" role="alert">
+        <p className="text-destructive mt-2 font-mono text-xs" role="alert">
           {workbench.sessionError}
         </p>
       )}

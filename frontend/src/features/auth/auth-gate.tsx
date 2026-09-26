@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/shared/icon";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/features/auth/use-auth";
 import { call } from "@/lib/api";
@@ -13,6 +14,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [showPassword, setShowPassword] = useState(false);
 
   if (userId) return <>{children}</>;
 
@@ -48,19 +50,44 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         <h1 className="text-center text-2xl font-semibold text-foreground">Welcome to Kawai</h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <Input
+            type="email"
+            name="email"
+            autoComplete="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+          />
           {!(mode === "signup" && codeSent) && (
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="pr-10"
+              />
+              <button
+                type="button"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                title={showPassword ? "Hide password" : "Show password"}
+                onClick={() => setShowPassword((v) => !v)}
+                className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md transition-colors"
+              >
+                <Icon name={showPassword ? "eye-off" : "eye"} className="size-4" />
+              </button>
+            </div>
           )}
           {mode === "signup" && codeSent && (
             <Input
               inputMode="numeric"
+              name="one-time-code"
+              autoComplete="one-time-code"
               placeholder="6-digit code sent to your email"
               value={code}
               onChange={(e) => setCode(e.target.value)}
@@ -68,6 +95,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             />
           )}
           <Button type="submit" className="w-full" disabled={loading}>
+            {loading && <Icon name="loader-circle" className="size-3.5 animate-spin" />}
             {loading
               ? "Loading..."
               : mode === "signin"
@@ -111,7 +139,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           </button>
         </p>
 
-        {(authError || error) && <p className="text-center text-sm text-destructive">{error ?? authError}</p>}
+        {(authError || error) && (
+          <p className="text-destructive text-center text-sm" role="alert">
+            {error ?? authError}
+          </p>
+        )}
       </div>
     </main>
   );
