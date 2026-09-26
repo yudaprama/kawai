@@ -289,3 +289,46 @@ E2E uang nyata (setelah deploy): klaim → bayar nominal kecil sungguhan → `bu
 2. **Rate & rentang nominal**: ✅ dikonfirmasi 2026-09-25 — `MIN_BASE` 10_000 / `MAX_BASE` 99_000 / `BASE_STEP` 1_000 / `TOKENS_PER_IDR` 100 (Rp10.000 per 1 juta token; cost basis = langganan GLM Coding Plan, marginal cost ~0 di dalam kuota, retail per-token ≈ break-even).
 3. **Payload QRIS statis**: ✅ diterima 2026-09-25 (TOKO KAWAI / Speed Cash) — terisi di `qris.ts`, CRC tervalidasi.
 4. **`ADMIN_EMAIL`** (akun yang boleh `confirm`/`pending`) — ✅ terisi: `yudaprama@icloud.com` (konstanta `ADMIN_EMAIL` di `qris.ts`).
+
+## 15. Recap billing (Variant A) — cron lokal `crates/ops/recap`
+
+Recap menggantikan debit klien pada cutover: **migrasi counter token dari Grafana Cloud menjadi tagihan**, sehingga pemakaian yang tak teratribusi ke `plan_task` (subagent, writer/revise, agent tanpa `user_id` di jalur klien) ikut tercatat struktural. Debit klien (`POST /billing/debit` di `supervisor::plan_task`) tetap berjalan sampai cutover — keduanya tidak pernah aktif bersamaan (anti dobel-charge).
+
+### Arsitektur
+
+```
+kawai-recap (Rust, lokal, default dry-run)                kawai-server/worker (D1)
+  1. GET  /internal/recap/cursor   ←─ Bearer RECAP_SECRET    billing_recap_cursor (id=1)
+  2. Prometheus query_range                                      │
+     gen_ai_client_token_usage_total{job="kawai"}                │
+     window [from−600s, now], step = ceil(window/10k) min 15s    │
+  3. delta per user (aritmetika uang, bukan increase())           │
+  4. POST /internal/recap {expectedFrom, to, items, apply} ──►  DB.batch() atomik:
+                                                                  balance_ledger(ref='recap:<from>:<email>' UNIQUE)
+                                                                + user_balances (boleh negatif)
+                                                                + billing_recap_runs (audit)
+                                                                → CAS cursor WHERE cursor=expectedFrom
+```
+
+- **Aritmetika delta**: sampel pertama per series = base (tak ditagih); hanya delta positif dengan `t > cursor`; jump negatif = counter reset → rebase tanpa tambahan; series tanpa `user_id` → wadah `unattributed` (dilaporkan, tak ditagih).
+- **`to` = timestamp sampel terakhir (jangkar data)**: boundary antar-run jatuh tepat di sampel terakhir yang dilihat run sebelumnya — tak ada pemakaian bolong/dobel di batas window. Window tanpa sampel TIDAK menggeser cursor (gangguan scraper tidak membakar window).
+- **Idempoten dua lapis**: ref unik per window+email (crash di tengah → batch rollback penuh, jalur `already_applied` hanya majukan CAS) + CAS cursor (run ganda → pemenang tunggal). Saldo **boleh negatif** di recap — gate `tokens > 0` di `plan_task` yang menutup run berikutnya.
+- **Fuse worker**: item > 10_000 atau > 50_000_000 tok/user → 400; `to` di masa depan → 400; auth 403 tanpa `RECAP_SECRET` cocok.
+
+### Mode & rollout
+
+| Langkah | Perintah |
+|---|---|
+| 1. Pasang secret + deploy worker | `npx wrangler secret put RECAP_SECRET` + `bun run deploy` (di `kawai-server/worker`) |
+| 2. Bootstrap cursor (menagih NOL) | `cargo run -p kawai-recap --manifest-path crates/Cargo.toml -- --once --apply` |
+| 3. Observasi dry-run 2–3 hari | `cargo run -p kawai-recap --manifest-path crates/Cargo.toml -- --once` (cetak delta vs window, tanpa mutasi) |
+| 4. Cutover (satu commit) | hapus `billing_debit` di `supervisor.rs` → `--once --apply --rebase` (cursor ke "sekarang", window dry-run tidak ikut ditagih) → jalankan loop `--apply` |
+
+Flag: `--once` (satu siklus; tanpa itu loop 5 menit) · `--apply` (tulis; default dry-run) · `--rebase` (geser cursor tanpa tagih, wajib bersama `--apply`) · `--since <unix>` (paksa awal window, dry-run saja).
+
+### Verifikasi
+
+- `cd crates && cargo test -p kawai-recap` — 9 test aritmetika delta (base, reset, unattributed, jangkar `to`, step).
+- `cd kawai-server/worker && bun run typecheck`.
+- Dry-run: baris `PERHATIAN: N token tanpa user_id` = lubang atribusi yang terlihat (nilai ini yang menutup saat cutover makin banyak jalur melewati klien).
+- Setelah apply: bandingkan `billing_recap_runs` vs mutasi `balance_ledger` `reason='usage'` per window; `handleHistory` menampilkan baris recap sebagai `usage` biasa (tanpa perubahan UI).
