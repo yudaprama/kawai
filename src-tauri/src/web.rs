@@ -169,6 +169,16 @@ async fn memory_create_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
+/// Best-effort startup location sync (see the Tauri twin). No body — the op
+/// takes no args, like `topup_qris_preview`.
+async fn memory_location_sync_handler(
+    Extension(user_id): Extension<String>,
+) -> Result<Json<Option<logic::memory::MemoryItem>>, (StatusCode, String)> {
+    let uid = user_id.clone();
+    tokio::spawn(async move { crate::agent_registry::location_sync_via_tool(&uid).await });
+    Ok(Json(None))
+}
+
 async fn memory_list_handler(
     Extension(user_id): Extension<String>,
 ) -> Result<Json<Vec<logic::memory::MemoryItem>>, (StatusCode, String)> {
@@ -2003,6 +2013,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/skill_update", post(skill_update_handler))
         .route("/api/skill_delete", post(skill_delete_handler))
         .route("/api/memory_create", post(memory_create_handler))
+        .route("/api/memory_location_sync", post(memory_location_sync_handler))
         .route("/api/memory_list", post(memory_list_handler))
         .route("/api/memory_update", post(memory_update_handler))
         .route("/api/memory_delete", post(memory_delete_handler))

@@ -69,8 +69,15 @@ pub fn run() {
                 // token (no password prompt after a restart, until it expires).
                 if let Some(email) = logic::local_auth::restore_session() {
                     if let Ok(mut guard) = app.state::<crate::auth::Session>().write() {
-                        *guard = Some(email);
+                        *guard = Some(email.clone());
                     }
+                    // Seamless location inference: execute the same
+                    // get_ip_location tool the LLM uses, upsert one
+                    // low-confidence `inferred` memory. Silent on
+                    // failure/offline; never blocks startup.
+                    tauri::async_runtime::spawn(async move {
+                        crate::agent_registry::location_sync_via_tool(&email).await;
+                    });
                 }
                 }
                 // Warm the deck-template registry cache in the background
@@ -148,6 +155,7 @@ pub fn run() {
         commands::skill_update,
         commands::skill_delete,
         commands::memory_create,
+        commands::memory_location_sync,
         commands::memory_list,
         commands::memory_update,
         commands::memory_delete,

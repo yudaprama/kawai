@@ -559,6 +559,26 @@ pub fn builtin() -> AgentRegistry {
     ])
 }
 
+/// Best-effort startup location sync: execute the SAME `get_ip_location`
+/// AgentTool the LLM uses (the one shared ipwho path — no second HTTP client)
+/// and feed the raw result to `kawai-memory`'s location rules (single
+/// low-confidence `inferred` memory). Silent on any failure.
+pub async fn location_sync_via_tool(user_id: &str) {
+    use kawai_tools::AgentTool;
+    let tool = weather_geo::generated::GetIpLocationTool::new(Default::default());
+    match tool
+        .call(weather_geo::generated::GetIpLocationArgs { ip_address: None })
+        .await
+    {
+        Ok(json) => {
+            if let Err(e) = kawai_memory::location::memory_location_sync(user_id, &json).await {
+                eprintln!("location sync skipped: {e}");
+            }
+        }
+        Err(e) => eprintln!("location sync skipped: {e}"),
+    }
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]

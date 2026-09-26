@@ -582,6 +582,19 @@ pub async fn memory_create(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: best-effort startup location sync — one keyless ipwho
+/// lookup of the device's public IP, upserted as a single low-confidence
+/// `inferred` memory (`Ok(None)` when offline/unchanged). Also spawned
+/// automatically at desktop startup after session restore.
+#[tauri::command]
+pub async fn memory_location_sync(
+    session: State<'_, Session>,
+) -> Result<Option<logic::memory::MemoryItem>, String> {
+    let user_id = session_user_id(&session)?;
+    tokio::spawn(async move { crate::agent_registry::location_sync_via_tool(&user_id).await });
+    Ok(None)
+}
+
 /// Authenticated RPC: list all memories, newest-updated first.
 #[tauri::command]
 pub async fn memory_list(
