@@ -10,6 +10,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { renderStepReport } from "@/features/workbench/components/tool-views";
 
+import { AskAboutResult } from "./ask-about-result";
+
 // ── useStepReport hook ──────────────────────────────────────────────────────
 
 /** Per-step full-output fetch with cache + inflight guard.
@@ -90,6 +92,7 @@ export function StepReportBody({
   planKey,
   needsFetch,
   cacheKey,
+  onAsk,
 }: {
   cacheKey?: string;
   stepId: string;
@@ -101,6 +104,9 @@ export function StepReportBody({
   planKey?: string;
   /** true = full body must be fetched (preview truncated or history). */
   needsFetch: boolean;
+  /** When set, renders the "Tanya tentang hasil ini" affordance below the
+   *  report (PLAN-ask-about-step-result.md). */
+  onAsk?: (stepId: string, question: string) => Promise<string | null>;
 }) {
   const { output, loading } = useStepReport({
     cacheKey: cacheKey ?? "step-report",
@@ -119,6 +125,7 @@ export function StepReportBody({
         </p>
       )}
       {renderStepReport(tool, body)}
+      {onAsk != null && <AskAboutResult onAsk={onAsk} stepId={stepId} />}
     </div>
   );
 }

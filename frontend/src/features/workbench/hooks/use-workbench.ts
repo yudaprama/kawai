@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { errText, call, type KnowledgeFileInfo } from "@/lib/api";
+import { errText, call, callWithEvents, type KnowledgeFileInfo } from "@/lib/api";
 import { isTabularExt } from "@/lib/extensions";
 import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
-import type { SupervisorArtifact, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
+import type { SupervisorArtifact, SupervisorEvent, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { publishTokenBalance, refreshTokenBalance } from "@/features/topup/use-token-balance";
 
@@ -921,6 +921,42 @@ export function useWorkbench() {
     [sessionId, supervisor.planKey],
   );
 
+  /** Ask a follow-up question about a specific step result.
+   *  Streams a 1-step mini-plan with the explain_step_result tool; resolves
+   *  with the explanation text once the stream closes (null on failure).
+   *  `planKeyOverride` reads a PAST run's step (its own plan key); omit it
+   *  for the active run. */
+  const askAboutResult = useCallback(
+    async (stepId: string, question: string, planKeyOverride?: string): Promise<string | null> => {
+      const planKey = planKeyOverride ?? supervisor.planKey;
+      if (!planKey || sessionId == null) {
+        console.warn("[workbench] askAboutResult skipped:", { planKey, sessionId });
+        return null;
+      }
+      let answer: string | null = null;
+      try {
+        await callWithEvents<void, SupervisorEvent>(
+          "ask_about_step_result",
+          { sessionId, planKey, stepId, question, streamId: `ask-${stepId}-${Date.now()}` },
+          (event) => {
+            if (event.type === "stepCompleted" && event.stepId === "explain") {
+              // ≤2000-char wire preview — fallback only.
+              if (answer == null) answer = event.output;
+            } else if (event.type === "planCompleted") {
+              // Raw-writer mini-plan: final_output is the FULL explanation.
+              answer = event.finalOutput ?? answer;
+            }
+          },
+        );
+      } catch (err) {
+        console.error("[workbench] ask_about_step_result:", errText(err));
+        return null;
+      }
+      return answer;
+    },
+    [sessionId, supervisor.planKey],
+  );
+
   /** "New session": the ONLY reset — the next run gets a fresh session and
    *  recalls nothing from these runs. Named for what it actually does. */
   const startNewSession = useCallback(() => {
@@ -960,6 +996,8 @@ export function useWorkbench() {
     quoteTarget,
     setQuoteTarget,
     startNewSession,
+    /** Ask a follow-up question about a specific step result. */
+    askAboutResult,
     // ── Attached knowledge files (composer chips) ─────────────────────────
     /** Session-attached knowledge files — rendered as chips above the
      *  composer. Status is hydrated from the library list and polled while

@@ -248,6 +248,8 @@ pub fn run() {
         commands::plan_task,
         #[cfg(feature = "litert")]
         commands::supervisor_step_output,
+        #[cfg(feature = "litert")]
+        commands::ask_about_step_result,
 
         // ── litert + office (knowledge context + rig tools) ─────────────
         #[cfg(feature = "litert")]

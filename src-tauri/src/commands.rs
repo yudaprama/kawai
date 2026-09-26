@@ -1814,3 +1814,25 @@ pub async fn synthesize_speech(
     use base64::Engine;
     Ok(base64::engine::general_purpose::STANDARD.encode(&wav))
 }
+
+// ── Ask About Step Result ────────────────────────────────────────────────────
+
+/// Authenticated streaming RPC: ask a follow-up question about a specific
+/// supervisor step result. Loads the step result from `supervisor_step_results`
+/// and executes a 1-step mini-plan with the `explain_step_result` tool.
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub async fn ask_about_step_result(
+    session_id: i64,
+    plan_key: String,
+    step_id: String,
+    question: String,
+    stream_id: String,
+    on_event: Channel<crate::supervisor::SupervisorEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    let stream = logic::ask_about_step_result(&user_id, session_id, &plan_key, &step_id, &question).await?;
+    run_streaming(stream_id, on_event, &registry, stream, None).await
+}

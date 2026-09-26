@@ -1892,7 +1892,7 @@ pub async fn build_youtube_registry(
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
 
-async fn build_registry_from_toolset(
+pub(crate) async fn build_registry_from_toolset(
     user_id: &str,
     session_id: i64,
     toolset: kawai_tools::ToolSet,
@@ -2052,6 +2052,23 @@ async fn build_registry_from_toolset(
     }
 
     Ok(registry)
+}
+
+/// The ask-about-step-result toolset: the merged `auto` supervisor catalog
+/// (which already carries every dispatchable tool the run used) plus the
+/// `explain_step_result` explainer. The explainer is deliberately NOT part
+/// of the planner-visible catalog — it is an internal reflection tool the
+/// planner must never plan against; this builder is the only place it rides.
+#[cfg(feature = "litert")]
+pub async fn supervisor_toolset_with_explainer(
+    user_id: &str,
+    session_id: i64,
+) -> Result<kawai_tools::ToolSet, String> {
+    let mut toolset = build_supervisor_toolset(user_id, session_id, AUTO_AGENT_ID)
+        .await
+        .ok_or_else(|| "no supervisor toolsets available (all domain builders returned None)".to_string())?;
+    toolset.add_tool(kawai_agent::ExplainStepResultTool);
+    Ok(toolset)
 }
 
 /// Convert structured tool envelopes into scheduler artifacts.
@@ -2257,6 +2274,15 @@ pub const DELIVERABLE_TOOL: &str = "deliverable_writer";
 /// carry. Planner picks the synthesis agent; the supervisor executes it.
 pub const WRITER_DELIVERABLE: &str = DELIVERABLE_TOOL; // "deliverable_writer"
 pub const WRITER_DECK: &str = "deck_writer";
+/// Internal-only writer: skip ALL synthesis — the last step's raw output IS
+/// the final answer. Used by the ask-about-step-result mini-plan
+/// (`logic::ask_about_step_result`); never planner-choosable (plan
+/// validation rejects unknown `finalWriter` values, so only in-process
+/// callers can set it). Skips the deliverable synthesis call, the
+/// `__deliverable` lifecycle events, the deliverable persistence row, and
+/// the agent-experience distillation — a reflection op must not bill a
+/// second cloud call nor pollute the planner's `<experiences>` context.
+pub const WRITER_RAW: &str = "raw";
 
 /// Char-boundary-safe prefix of `s` (at most `max_chars` characters).
 fn preview_chars(s: &str, max_chars: usize) -> &str {
@@ -3641,6 +3667,18 @@ pub fn execute_plan_stream_with_cancel(
                             .flat_map(|r| artifact_infos(&r.output))
                             .filter(|a| a.kind == "file")
                             .collect();
+
+                        // Internal raw writer: the last step's output is the
+                        // answer — no synthesis, no `__deliverable` step, no
+                        // experience row (see WRITER_RAW).
+                        if chosen_writer == WRITER_RAW {
+                            let raw_final = result.final_output().map(String::from);
+                            yield SupervisorEvent::PlanCompleted {
+                                final_output: raw_final,
+                                artifacts: run_artifacts,
+                            };
+                            break;
+                        }
 
                         let (synthesized, deck_artifact) = if chosen_writer == WRITER_DECK {
                             yield SupervisorEvent::StepStarted {

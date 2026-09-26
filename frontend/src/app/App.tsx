@@ -178,6 +178,14 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [assetView]);
 
+  const touchStartX = useRef(0);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    if (dx < -60 && mobileDrawer) setMobileDrawer(null);
+  };
   if (!agent) {
     return <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center" />;
   }
@@ -241,7 +249,6 @@ export default function App() {
           onNew={handleNew}
         />
       </div>
-
       {assetWorkspace ?? (
         <WorkbenchPage
           onAddFiles={ka.addKnowledgeFiles}
@@ -255,7 +262,6 @@ export default function App() {
           attachFilesRef={workbenchAttachRef}
         />
       )}
-
       {/* Mobile drawers — replace hidden rails under 768px */}
       {mobileDrawer && (
         <div className="fixed inset-0 z-50 flex lg:hidden" role="dialog" aria-modal="true" data-open-drawer>
@@ -266,7 +272,11 @@ export default function App() {
             type="button"
           />
           {mobileDrawer === "agents" && (
-            <div className="bg-background relative flex h-full w-[210px] max-w-[85vw] flex-col shadow-xl">
+            <div
+              className="bg-background relative flex h-full w-[210px] max-w-[85vw] flex-col shadow-xl"
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            >
               <AssetsRail
                 assetView={assetView}
                 collapsed={false}
@@ -285,7 +295,6 @@ export default function App() {
           )}
         </div>
       )}
-
       <SessionHistoryDialog
         open={sessionsOpen}
         onOpenChange={setSessionsOpen}

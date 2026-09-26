@@ -3324,6 +3324,7 @@ dependencies = [
  "base64 0.22.1",
  "block2",
  "browser",
+ "chrono",
  "coinmarketcap",
  "composio",
  "dotenvy",
@@ -3335,6 +3336,7 @@ dependencies = [
  "geospace",
  "graph",
  "hex",
+ "iana-time-zone",
  "jsonwebtoken",
  "kawai-agent",
  "kawai-agent-contract",
@@ -3573,6 +3575,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "youtube-shared",
  "youtube_transcript",
 ]
 
@@ -9041,6 +9044,13 @@ dependencies = [
  "quote",
  "syn 2.0.119",
  "synstructure",
+]
+
+[[package]]
+name = "youtube-shared"
+version = "0.1.0"
+dependencies = [
+ "youtube_transcript",
 ]
 
 [[package]]

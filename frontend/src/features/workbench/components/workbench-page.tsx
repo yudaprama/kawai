@@ -679,6 +679,7 @@ export function WorkbenchPage({
                       loadFullOutput={workbench.loadFullOutput}
                       onBuildOn={buildOn}
                       onPickDoc={(doc) => userPick(shown.id, doc)}
+                      onAsk={workbench.askAboutResult}
                       run={shown}
                     />
                   );

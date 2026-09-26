@@ -345,5 +345,103 @@ pub async fn delete_chat_session(user_id: &str, session_id: i64) -> Result<(), D
     evidence_cache::drop_session(user_id, session_id);
     db::delete_chat_session(user_id, session_id).await
 }
+// ── Ask About Step Result ───────────────────────────────────────────────────
 
+
+/// Ask a follow-up question about a specific supervisor step result.
+/// Loads the step result from `supervisor_step_results` (by plan_key + step_id),
+/// then executes a 1-step mini-plan with the `explain_step_result` tool.
+#[cfg(feature = "litert")]
+pub async fn ask_about_step_result(
+    user_id: &str,
+    session_id: i64,
+    plan_key: &str,
+    step_id: &str,
+    question: &str,
+) -> Result<impl Stream<Item = crate::supervisor::SupervisorEvent> + Send, String> {
+    use crate::supervisor::{build_registry_from_toolset, execute_plan_stream_with_cancel, supervisor_toolset_with_explainer};
+    use kawai_agent::ExplainStepResultArgs;
+    use kawai_router::{TaskPlan, TaskStep};
+    use serde_json::Value;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use tokio_util::sync::CancellationToken;
+
+    // 1. Load the step result from supervisor_step_results (user-scoped),
+    //    with the session-scope fallback the live read path uses.
+    let rows = kawai_db::list_supervisor_step_results(user_id, session_id, plan_key)
+        .await
+        .map_err(|e| format!("supervisor_step_results read failed: {e}"))?;
+    let hit = rows
+        .into_iter()
+        .rev()
+        .find(|r| r.step_id == step_id)
+        .map(|r| (r.tool, r.output, r.artifacts_json));
+    let hit = if hit.is_some() {
+        hit
+    } else {
+        kawai_db::list_supervisor_step_results_by_session(user_id, session_id, 200)
+            .await
+            .map_err(|e| format!("supervisor_step_results read failed: {e}"))?
+            .into_iter()
+            .find(|r| r.step_id == step_id && r.plan_key == plan_key)
+            .map(|r| (r.tool, r.output, String::new()))
+    };
+    let (step_tool_name, step_output, artifacts_json) =
+        hit.ok_or_else(|| format!("step result not found: plan_key={plan_key}, step_id={step_id}"))?;
+
+    // The persisted artifacts are typed kawai_router::Artifact values —
+    // passed through verbatim as JSON context for the explainer.
+    let step_artifacts: Value = serde_json::from_str(&artifacts_json).unwrap_or(Value::Null);
+
+    // 2. Build the 1-step TaskPlan over explain_step_result.
+    let plan = TaskPlan {
+        goal: format!("Explain step {step_id} result to the user"),
+        steps: vec![TaskStep {
+            id: "explain".into(),
+            agent_id: "builtin.explain".into(),
+            task: question.to_string(),
+            arguments: serde_json::to_value(ExplainStepResultArgs {
+                step_tool: step_tool_name,
+                step_args: Value::Null,
+                step_output,
+                step_artifacts,
+                question: question.to_string(),
+            })
+            .map_err(|e| format!("serialize args failed: {e}"))?,
+            depends_on: vec![],
+            ..Default::default()
+        }],
+        final_writer: Some(crate::supervisor::WRITER_RAW.to_string()),
+        summary: None,
+    };
+
+    // 3. Registry: merged supervisor catalog + the explainer tool.
+    let toolset = supervisor_toolset_with_explainer(user_id, session_id).await?;
+    let registry = build_registry_from_toolset(user_id, session_id, toolset, plan_key).await?;
+
+    // 4. Execute the mini-plan — same scheduler, same event lifecycle.
+    let cancel = CancellationToken::new();
+    let pending: crate::supervisor::PendingConfirmations =
+        Arc::new(std::sync::Mutex::new(HashMap::new()));
+    let stream_id = format!(
+        "ask-{step_id}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or_default()
+    );
+
+    Ok(execute_plan_stream_with_cancel(
+        plan,
+        registry,
+        cancel,
+        pending,
+        stream_id,
+        user_id.to_string(),
+        session_id,
+        Some(question.to_string()), // user_goal = the question
+        None,                       // internal call — no billing bearer
+    ))
+}
 

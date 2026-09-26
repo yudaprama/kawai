@@ -113,6 +113,9 @@
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
+  /* Focus ring — used by interactive hover states across components */
+  --tea-color-border-focus: #0052d9;
+
   --shadow-2xs: var(--tea-shadow-xs);
   --shadow-xs: var(--tea-shadow-xs);
   --shadow-sm: var(--tea-shadow-sm);
@@ -148,6 +151,9 @@
   --tea-color-text-brand-default: #69a1ff;
   --tea-color-text-on-bg-brand-default: #ffffff;
   --tea-color-border-brand-default: #69a1ff;
+
+  /* Focus ring — brighter for dark mode */
+  --tea-color-border-focus: #69a1ff;
 
   /* Text */
   --tea-color-text-primary: hsla(0, 0%, 100%, 0.9);
@@ -312,6 +318,20 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--foreground) 20%, transparent);
+}
+
+/* Dark mode: lighter thumb for visibility on dark surfaces. Two selectors:
+ * `.dark ::-webkit-scrollbar-thumb` covers inner scroll containers;
+ * `.dark::-webkit-scrollbar-thumb` covers the root page scrollbar (.dark
+ * sits on <html>, and the viewport scrollbar pseudo hangs off html itself). */
+.dark ::-webkit-scrollbar-thumb,
+.dark::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--foreground) 25%, transparent);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover,
+.dark::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--foreground) 40%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

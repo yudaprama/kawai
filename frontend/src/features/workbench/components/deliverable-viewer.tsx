@@ -174,6 +174,7 @@ export function PastRunCanvas({
   doc,
   onBuildOn,
   onPickDoc,
+  onAsk,
 }: {
   loadFullOutput: (stepId: string, planKey?: string) => Promise<string | null>;
   run: WorkbenchRun;
@@ -184,6 +185,8 @@ export function PastRunCanvas({
   /** Switch the canvas to one of this run's documents (deliverable or a
    *  step report) — wired by the page to its canvas-view navigation. */
   onPickDoc?: (doc: string) => void;
+  /** Ask-about-result for this run's step reports (its own planKey). */
+  onAsk?: (stepId: string, question: string, planKeyOverride?: string) => Promise<string | null>;
 }) {
   const isDeliverable = doc === "final";
   /** Header label: the step's task (agentName), or the tool — never the raw
@@ -263,6 +266,7 @@ export function PastRunCanvas({
             previewOutput={docStep?.output ?? ""}
             stepId={doc}
             tool={stepTool}
+            onAsk={onAsk ? (stepId, question) => onAsk(stepId, question, run.planKey ?? "") : undefined}
           />
         )}
 
@@ -652,6 +656,7 @@ export function DeliverableViewer({
             previewOutput={output}
             stepId={resolvedStep.stepId}
             tool={resolvedStep.tool}
+            onAsk={workbench.askAboutResult}
           />
         )}
 

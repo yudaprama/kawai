@@ -1,6 +1,7 @@
 import { Icon } from "@/components/shared/icon";
 import { FileIcon } from "@/components/shared/file-icon";
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   PromptInput,
   PromptInputBody,
@@ -111,6 +112,7 @@ function ChatComposerInner({
   const [importProgress, setImportProgress] = useState<{ done: number; total: number } | null>(null);
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const mentionRange = useRef<{ start: number; end: number } | null>(null);
+  const [recallFlash, setRecallFlash] = useState(false);
   const consumedNonce = useRef<number | null>(null);
 
   // Drop an external draft (prompt chip) into the input for editing.
@@ -217,6 +219,10 @@ function ChatComposerInner({
       if (e.key === "ArrowUp" && controller.textInput.value === "" && lastUserText) {
         e.preventDefault();
         controller.textInput.setInput(lastUserText);
+        setRecallFlash(true);
+        toast("Last goal recalled", { duration: 1500 });
+        setTimeout(() => setRecallFlash(false), 1500);
+        return;
       }
     },
     [activeMentionIndex, controller, filtered, lastUserText, mentionOpen, pickMention],
@@ -312,6 +318,7 @@ function ChatComposerInner({
           }
           onChange={handleComposerChange}
           onKeyDown={handleTextareaKeyDown}
+          className={recallFlash ? "ring-2 ring-primary/50 rounded transition-all duration-300" : undefined}
         />
       </PromptInputBody>
       <PromptInputFooter>

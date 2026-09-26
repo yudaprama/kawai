@@ -2051,10 +2051,15 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/local_llm_unload", post(local_llm_unload_handler))
         ;
 
+
     #[cfg(feature = "litert")]
     let protected = protected.route(
         "/api/execute_supervisor_plan",
         post(execute_supervisor_plan_handler),
+    )
+    .route(
+        "/api/ask_about_step_result",
+        post(ask_about_step_result_handler),
     )
     .route(
         "/api/respond_supervisor_confirmation",
@@ -2118,8 +2123,6 @@ pub fn router(dist_dir: PathBuf) -> Router {
             "/api/office_capabilities",
             post(office_capabilities_handler),
         );
-
-    // SQL data-source profiles: analytics-only (implies office).
     let protected = protected
         .route("/api/data_preview", post(data_preview_handler))
         .route("/api/sql_profile_list", post(sql_profile_list_handler))
@@ -2523,4 +2526,54 @@ async fn synthesize_speech_handler(
     // tts is on, so this is always reachable when we get here.
     use base64::Engine;
     Ok(Json(base64::engine::general_purpose::STANDARD.encode(&wav)))
+}
+
+// ── Ask About Step Result ────────────────────────────────────────────────────
+
+/// Authenticated streaming: ask a follow-up question about a specific
+/// supervisor step result via SSE (1-step mini-plan over the
+/// `explain_step_result` tool). Same event lifecycle as
+/// `execute_supervisor_plan_handler`.
+#[cfg(feature = "litert")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AskAboutStepResultRequest {
+    session_id: i64,
+    plan_key: String,
+    step_id: String,
+    question: String,
+}
+
+#[cfg(feature = "litert")]
+async fn ask_about_step_result_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<AskAboutStepResultRequest>,
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
+    use futures_util::StreamExt;
+    use tokio::sync::mpsc;
+    use tokio_stream::wrappers::ReceiverStream;
+
+    let logic_stream = logic::ask_about_step_result(
+        &user_id,
+        req.session_id,
+        &req.plan_key,
+        &req.step_id,
+        &req.question,
+    )
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    let (tx, rx) = mpsc::unbounded_channel();
+
+    tokio::spawn(async move {
+        let mut stream = logic_stream;
+        while let Some(event) = stream.next().await {
+            let frame = supervisor_sse_frame(&event);
+            if tx.send(Ok(frame)).is_err() {
+                break; // receiver dropped
+            }
+        }
+    });
+
+    Ok(Sse::new(ReceiverStream::new(rx)))
 }
