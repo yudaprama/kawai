@@ -27,9 +27,14 @@ primary surface is the **Workbench** — a goal-centric two-pane layout:
 ## Landing (home)
 
 Full-screen hero with a centered capsule composer. The goal is the whole
-screen — no rails, no distractions. Below the composer: a hint about `@`
-file attachments. Below that: history — the in-session run history when the
-current session has runs, otherwise the cross-session **Recent runs** strip
+screen — no rails, no distractions. One primary input: below the composer sit
+a hint about `@` file attachments and the **Templates** chip row (single-select,
+click again to clear) — Research, Market Analysis, Coding, Data Analysis.
+Research-flavored picks disclose the **Analysis Desk** panel (the fixed
+stock-research pipeline: ticker, optional as-of date, analyst team, Run desk);
+Coding/Data Analysis only reframe the composer's placeholder. The desk is
+never visible uninvited. Below that: history — the in-session run history when
+the current session has runs, otherwise the cross-session **Recent runs** strip
 (the newest plan record from every session with runs: goal or session title,
 relative time, step count, status icon; clicking one opens that session and
 its report). Submitting a goal transitions to the Workbench run
@@ -75,9 +80,9 @@ asset workspace that needs text input. Left tools: `@` file mention
 (knowledge search + import entry points), template picker, speech input.
 Right: submit; while streaming it becomes stop. ArrowUp recalls the last
 user message; Esc stops a running plan (except inside dialogs and other
-editable contexts outside the composer). Placeholder changes by context:
-"Describe your goal…" on the Workbench, "Message <agent>…" for chat-style
-agents.
+editable contexts outside the composer). Placeholder changes by context: "Describe your goal…" by default on the
+Workbench (the Coding/Data Analysis templates reframe it), "Message <agent>…"
+for chat-style agents.
 
 ## Confirmations
 

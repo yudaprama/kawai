@@ -12,6 +12,8 @@ import { DeliverableViewer, PastRunCanvas, RunHistory, RunSwitcher } from "./del
 import type { CanvasView } from "./deliverable-viewer";
 import { ComposerQuoteBadge, FollowUpChips } from "./follow-up-composer";
 import { GoalComposer } from "./goal-composer";
+import { GoalTemplates, placeholderForTemplate, templateOpensDesk } from "./goal-templates";
+import type { GoalTemplateId } from "./goal-templates";
 import { ProgressRail, RunHistoryRail } from "./progress-rail";
 
 // ── Sessions button ─────────────────────────────────────────────────────────
@@ -209,6 +211,10 @@ export function WorkbenchPage({
   };
   // Chip click → draft dropped into the input for editing (not auto-submit).
   const [chipDraft, setChipDraft] = useState<{ text: string; nonce: number } | null>(null);
+  // Landing goal template (single-select, null = none). Research-flavored
+  // picks disclose the Analysis Desk panel; the rest reframe the composer's
+  // placeholder. Reset whenever the landing is re-entered fresh.
+  const [template, setTemplate] = useState<GoalTemplateId | null>(null);
 
   /** Wrap the App-level import handler: when the import returns the office
    *  files, auto-attach them as workbench chips (optimistic status = indexing
@@ -274,6 +280,7 @@ export function WorkbenchPage({
     pendingPickRow.current = null;
     autoSwitchedRun.current = null;
     setChipDraft(null);
+    setTemplate(null);
     setView(null);
     setHome(true);
   }, [supervisor.planning, supervisor.status, supervisor.cancelPlan, runInFlight, workbench.startNewSession]);
@@ -316,7 +323,7 @@ export function WorkbenchPage({
               not in a chat.
             </p>
           </div>
-          <div className="w-full max-w-2xl">
+          <div className="w-full max-w-2xl text-left">
             <ChatComposer
               agentName="Workbench"
               chipDraft={chipDraft}
@@ -328,15 +335,19 @@ export function WorkbenchPage({
               onSubmit={(text, fileIds) => submit(text, fileIds)}
               onStop={workbench.supervisor.stop}
               status={composerStatus}
+              placeholder={placeholderForTemplate(template)}
               attachedFiles={workbench.attachedFiles}
               onRemoveAttachedFile={workbench.removeAttachedFile}
             />
-            <p className="text-muted-foreground mt-3 text-left font-mono text-[10px]">
+            <p className="text-muted-foreground mt-3 font-mono text-[10px]">
               Attach knowledge files with @ — the run's agents can search them.
             </p>
-          </div>
-          <div className="w-full max-w-2xl">
-            <AnalysisDeskForm disabled={composerStatus === "submitted"} onSubmit={submitDesk} />
+            <GoalTemplates value={template} disabled={composerStatus === "submitted"} onChange={setTemplate} />
+            {templateOpensDesk(template) && (
+              <div className="mt-3">
+                <AnalysisDeskForm disabled={composerStatus === "submitted"} onSubmit={submitDesk} />
+              </div>
+            )}
           </div>
           {workbench.runs.length > 0 ? (
             <div className="w-full max-w-2xl text-left">
@@ -378,6 +389,7 @@ export function WorkbenchPage({
             onNewGoal={() => {
               setView(null);
               autoSwitchedRun.current = null;
+              setTemplate(null);
               setHome(true);
             }}
             onOpenReport={openReport}
