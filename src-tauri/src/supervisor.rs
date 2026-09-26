@@ -1868,7 +1868,7 @@ pub async fn build_supervisor_registry(
         }
     })?;
 
-    build_registry_from_toolset(user_id, session_id, toolset, plan_key)
+    build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
 
 /// The Analysis Desk execution registry: the merged auto catalog narrowed
@@ -1885,10 +1885,10 @@ pub async fn build_desk_registry(
         .await
         .ok_or_else(|| "no supervisor toolsets available (all domain builders returned None)".to_string())?;
     toolset.add_tool(kawai_desk::DeskRoleTool::default());
-    build_registry_from_toolset(user_id, session_id, toolset, plan_key)
+    build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
 
-fn build_registry_from_toolset(
+async fn build_registry_from_toolset(
     user_id: &str,
     session_id: i64,
     toolset: kawai_tools::ToolSet,
@@ -1920,7 +1920,9 @@ fn build_registry_from_toolset(
     // steps that already completed before a crash/failure.
     let memo = Arc::new(kawai_router::ExecutionMemo::new());
     if !plan_key.is_empty() {
-        match kawai_db::list_supervisor_step_results(user_id, session_id, plan_key).await {
+        match kawai_db::list_supervisor_step_results(user_id, session_id, plan_key)
+            .await
+        {
             Ok(rows) => {
                 let resumed = rows.len();
                 for row in rows {

@@ -659,6 +659,64 @@ export function useWorkbench() {
     [attachedFiles, sessionId, supervisor, canFollowUp, quoteTarget, runs],
   );
 
+  /** Analysis Desk (PLAN-analysis-desk): run the FIXED stock-research
+   *  pipeline for one ticker. Same client mechanics as `run()` — balance
+   *  gate (fail-closed), lazy session — but no planner, no review gate, no
+   *  quote: the desk builds its own plan server-side and streams the same
+   *  SupervisorEvent lifecycle, so rail/canvas/reports render it unchanged. */
+  const runDesk = useCallback(
+    async (ticker: string, tradeDate?: string, analysts?: string[]) => {
+      const sym = ticker.trim().toUpperCase();
+      if (!sym) return;
+      // Fase 0a tokens pre-check — the same fail-closed UX gate as run();
+      // the authoritative gate rides the backend op.
+      try {
+        const { tokens } = await call<{ tokens: number }>("topup_balance");
+        publishTokenBalance(tokens);
+        if (tokens <= 0) {
+          toast("Token habis — isi ulang lewat Top Up");
+          emitOpenTopup();
+          return;
+        }
+      } catch (err) {
+        toast(`Saldo tidak terbaca — coba lagi (${errText(err)})`);
+        return;
+      }
+      setFollowUp(false);
+      setQuoteTarget(null);
+      setQuotedLastRun(false);
+      // Sessions are lazy — created on the first desk run, same as run().
+      let sid = sessionId;
+      if (sid == null) {
+        try {
+          const s = await call<{ id: number }>("create_chat_session", {
+            title: `Desk: ${sym}${tradeDate ? ` · ${tradeDate}` : ""}`.slice(0, 80),
+          });
+          sid = s.id;
+          setSessionId(s.id);
+        } catch (err) {
+          setSessionError(`Couldn't start the analysis — ${errText(err)}`);
+          return;
+        }
+      }
+      setDeck(null); // a new run — its own deck (if any) replaces the hero
+      const goal = `Analyze ${sym}${tradeDate ? ` as of ${tradeDate}` : ""} — full research desk pipeline`;
+      setRuns((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}`,
+          goal,
+          status: "running",
+          startedAt: Date.now(),
+        },
+      ]);
+      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
+      supervisor.runDesk({ ticker: sym, tradeDate, analysts }, sid);
+      void refreshTokenBalance();
+    },
+    [sessionId, supervisor],
+  );
+
   /** Open a past session in the workbench: clears the in-memory runs and
    *  points sessionId at the picked session — the restore effect below then
    *  rehydrates the latest persisted plan record (runs + deliverable + deck).
@@ -745,6 +803,7 @@ export function useWorkbench() {
     sessionError,
     composing,
     run,
+    runDesk,
     selectSession,
     syncLatestRun,
     loadFullOutput,

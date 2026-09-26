@@ -29,6 +29,13 @@ interface RunPlanOptions {
   userGoal?: string;
 }
 
+interface RunDeskOptions {
+  ticker: string;
+  tradeDate?: string;
+  /** Selected analysts (market|social|news|fundamentals); empty = all 4. */
+  analysts?: string[];
+}
+
 export interface SupervisorPlanCallbacks {
   onPlanCompleted?: (
     goal: string | null,
@@ -241,16 +248,11 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     });
   }, []);
 
-  const runPlan = useCallback(
-    (options: RunPlanOptions) => {
-      if (streamCtrl.current) return;
-      lastPlanRef.current = {
-        plan: options.plan,
-        sessionId: options.sessionId,
-        agentId: options.agentId ?? "",
-      };
-      const sessionId = options.sessionId;
-
+  /** Shared stream body for BOTH supervisor clients: the planner-driven
+   *  execute_supervisor_plan and the Analysis Desk's run_analysis_desk.
+   *  Same SupervisorEvent pipeline, persistence, and terminal handling. */
+  const startStream = useCallback(
+    (payload: Record<string, unknown>, sessionId: number, op = "execute_supervisor_plan") => {
       const streamId = crypto.randomUUID();
       streamIdRef.current = streamId;
       goalRef.current = null;
@@ -279,12 +281,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         });
       };
       streamCtrl.current = streamOperation<SupervisorEvent>(
-        "execute_supervisor_plan",
+        op,
         {
-          plan: options.plan,
-          sessionId,
-          agentId: options.agentId,
-          userGoal: options.userGoal,
+          ...payload,
           streamId,
         },
         {
@@ -368,6 +367,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           },
           onDone: () => {
             streamCtrl.current = null;
+
             const wasStopping = stoppingRef.current;
             if (wasStopping) {
               // A user stop surfaces as stream end (no planFailed arrives) —
@@ -425,6 +425,49 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       );
     },
     [dispatch, callbacks],
+  );
+
+  const runPlan = useCallback(
+    (options: RunPlanOptions) => {
+      if (streamCtrl.current) return;
+      lastPlanRef.current = {
+        plan: options.plan,
+        sessionId: options.sessionId,
+        agentId: options.agentId ?? "",
+      };
+      startStream(
+        {
+          plan: options.plan,
+          sessionId: options.sessionId,
+          agentId: options.agentId,
+          userGoal: options.userGoal,
+        },
+        options.sessionId,
+      );
+    },
+    [startStream],
+  );
+
+  /** Analysis Desk (PLAN-analysis-desk): execute the FIXED stock-research
+   *  pipeline — no planner, no review gate. Streams the same SupervisorEvent
+   *  lifecycle as runPlan, so the Workbench rail/deliverable/reports render
+   *  it unchanged. The caller has already persisted the user message and
+   *  resolved the session. */
+  const runDesk = useCallback(
+    (options: RunDeskOptions, sessionId: number) => {
+      if (streamCtrl.current) return;
+      startStream(
+        {
+          sessionId,
+          ticker: options.ticker,
+          tradeDate: options.tradeDate ?? "",
+          analysts: options.analysts ?? [],
+        },
+        sessionId,
+        "run_analysis_desk",
+      );
+    },
+    [startStream],
   );
 
   const planAndRun = useCallback(
@@ -594,6 +637,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     messages,
     clearMessages,
     runPlan,
+    runDesk,
     planAndRun,
     resume,
     approvePlan,

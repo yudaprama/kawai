@@ -7,6 +7,7 @@ import { RecentRuns } from "@/features/workbench/components/recent-runs";
 import { isDeliverableStep, useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 
+import { AnalysisDeskForm } from "./analysis-desk-form";
 import { DeliverableViewer, PastRunCanvas, RunHistory, RunSwitcher } from "./deliverable-viewer";
 import type { CanvasView } from "./deliverable-viewer";
 import { ComposerQuoteBadge, FollowUpChips } from "./follow-up-composer";
@@ -242,6 +243,22 @@ export function WorkbenchPage({
     const quote = workbench.followUp;
     void workbench.run(text, fileIds, { quote });
   };
+
+  /** Analysis Desk submit (PLAN-analysis-desk): the FIXED stock-research
+   *  pipeline for one ticker. Same canvas handoff as a goal submit — the
+   *  desk streams the same SupervisorEvent lifecycle, so the rail, deliverable
+   *  viewer, and AGENT REPORTS render it unchanged. */
+  const submitDesk = useCallback(
+    (ticker: string, tradeDate: string | undefined, analysts: string[] | undefined) => {
+      if (supervisor.status === "reviewing") return;
+      setHome(false);
+      setView(null);
+      setStealAllowed(true);
+      planStartedBaseline.current = supervisor.planStartedAt;
+      void workbench.runDesk(ticker, tradeDate, analysts);
+    },
+    [supervisor.status, workbench.runDesk],
+  );
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)
     : ("ready" as const);
@@ -317,6 +334,9 @@ export function WorkbenchPage({
             <p className="text-muted-foreground mt-3 text-left font-mono text-[10px]">
               Attach knowledge files with @ — the run's agents can search them.
             </p>
+          </div>
+          <div className="w-full max-w-2xl">
+            <AnalysisDeskForm disabled={composerStatus === "submitted"} onSubmit={submitDesk} />
           </div>
           {workbench.runs.length > 0 ? (
             <div className="w-full max-w-2xl text-left">
