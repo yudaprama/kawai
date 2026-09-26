@@ -376,8 +376,8 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
               </div>
               <div className="border-amber-500/30 space-y-1 rounded-md border p-3 text-xs">
                 <p>
-                  Bayar tepat {formatIdr(claim.idrAmount)} — nominal persis inilah yang mencocokkan pembayaran
-                  secara otomatis.
+                  Bayar tepat {formatIdr(claim.idrAmount)} — nominal persis inilah yang mencocokkan pembayaran secara
+                  otomatis.
                 </p>
                 <p className="text-muted-foreground">
                   Nominal berbeda tidak terdeteksi otomatis dan menunggu pemeriksaan manual (lebih lama).
@@ -448,7 +448,8 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                   <p className="flex justify-between gap-3">
                     <span className="text-muted-foreground">Token diterima</span>
                     <span className="font-medium">
-                      +{(base * preview.tokensPerIdr).toLocaleString("id-ID")} token · Rp1 = {preview.tokensPerIdr} token
+                      +{(base * preview.tokensPerIdr).toLocaleString("id-ID")} token · Rp1 = {preview.tokensPerIdr}{" "}
+                      token
                     </span>
                   </p>
                   <p className="flex justify-between gap-3">
@@ -460,13 +461,14 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                     <span className="font-medium">Rp0–Rp900 — ditentukan saat klaim</span>
                   </p>
                   <p className="text-muted-foreground">
-                    Kode unik membuat pembayaran terdeteksi otomatis. Nominal final tampil di QR dan terisi sendiri
-                    saat scan.
+                    Kode unik membuat pembayaran terdeteksi otomatis. Nominal final tampil di QR dan terisi sendiri saat
+                    scan.
                   </p>
                 </div>
               ) : (
                 <p className="text-muted-foreground mt-3 text-xs">
-                  Masukkan {preview.minBase.toLocaleString("id-ID")}–{preview.maxBase.toLocaleString("id-ID")}, kelipatan {preview.baseStep}
+                  Masukkan {preview.minBase.toLocaleString("id-ID")}–{preview.maxBase.toLocaleString("id-ID")},
+                  kelipatan {preview.baseStep}
                 </p>
               )}
             </div>
@@ -511,7 +513,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                 <li className="flex items-center justify-between gap-3 border-b py-2 text-sm">
                   <span className="flex min-w-0 items-baseline gap-2">
                     <span className="font-mono font-medium text-emerald-500 tabular-nums">
-                      +{activeClaim.tokens.toLocaleString("id-ID")}
+                      +{activeClaim.tokens.toLocaleString("id-ID")} token
                     </span>
                     <span className="truncate text-xs text-amber-500">
                       Top up QRIS — {effectiveStatus === "crediting" ? "diproses" : "menunggu pembayaran"}
@@ -534,7 +536,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                       }`}
                     >
                       {entry.amount >= 0 ? "+" : "−"}
-                      {Math.abs(entry.amount).toLocaleString("id-ID")}
+                      {Math.abs(entry.amount).toLocaleString("id-ID")} token
                     </span>
                     <span className="text-muted-foreground truncate text-xs">
                       {REASON_LABEL[entry.reason] ?? entry.reason}
