@@ -82,37 +82,12 @@ jobs:
           # dir, so the next run recompiles from cold (the 120/150-min loop).
           cache-on-failure: true
 
-      # The kawai lib crate depends on tauri unconditionally (glib-sys et al.
-      # need the GTK/webkit dev headers even when checking only kawai-web).
-      - name: Install Tauri Linux system deps
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-
-      - name: cargo check (web feature; axum must compile here)
-        run: cargo check --features web
-        working-directory: src-tauri
-
-      - name: cargo check (codegraph feature; sidecar LRU cache)
-        run: cargo check --features codegraph
-        working-directory: src-tauri
-
-      - name: cargo check (tts feature; piper-rs neural TTS)
-        run: cargo check --features tts
-        working-directory: src-tauri
-
-      # Lightweight audit: duplicate crate versions (no release build, no CPU heavy).
-      # Reports `cargo tree --duplicates` — base64/phf/hashbrown multi-versions
-      # are the expected hotspots (see docs). Non-blocking: just logs.
-      - name: Duplicate crates audit (cargo tree --duplicates)
-        run: |
-          echo "## Duplicate crates (cargo tree --duplicates)" >> "$GITHUB_STEP_SUMMARY"
-          cargo tree --duplicates 2>&1 | tee /tmp/dup.txt
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          head -n 80 /tmp/dup.txt >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "Top duplicates:"
-          cargo tree --duplicates 2>&1 | grep -E "^[a-z].* v[0-9]" | cut -d' ' -f1 | sort | uniq -c | sort -nr | head -n 20 | tee -a "$GITHUB_STEP_SUMMARY"
+      # True kawai-web deploy gate: web feature without desktop/tauri (matches
+      # kawai-web/Cargo.toml's default-features=false, features=[web]).
+      # The per-feature checks (codegraph, tts) are subsumed by linux-check's
+      # `cargo check --features full`.
+      - name: cargo check (web only; no desktop/tauri)
+        run: cargo check --no-default-features --features web
         working-directory: src-tauri
 
   # ── Linux desktop gate: litert + the full feature battery compile on Linux ─
@@ -162,8 +137,6 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
-      - name: Install JS deps
-        run: bun install
 
       # Recursive: the litert feature runs bindgen, which parses the C headers
       # of the NESTED submodule cognee-litert-lm/vendor/LiteRT-LM.
@@ -174,7 +147,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            crates
+            local-llm
           # Default post-if is `success()`: a timed-out run saves no target
           # dir, so the next run recompiles from cold (the 120/150-min loop).
           cache-on-failure: true
@@ -218,6 +194,20 @@ jobs:
 
       - name: cargo check (tts feature)
         run: cargo check --features tts
+        working-directory: src-tauri
+
+      # Lightweight audit: duplicate crate versions (no release build, no CPU heavy).
+      # Reports `cargo tree --duplicates` — base64/phf/hashbrown multi-versions
+      # are the expected hotspots (see docs). Non-blocking: just logs.
+      - name: Duplicate crates audit (cargo tree --duplicates)
+        run: |
+          echo "## Duplicate crates (cargo tree --duplicates)" >> "$GITHUB_STEP_SUMMARY"
+          cargo tree --duplicates 2>&1 | tee /tmp/dup.txt
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          head -n 80 /tmp/dup.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Top duplicates:"
+          cargo tree --duplicates 2>&1 | grep -E "^[a-z].* v[0-9]" | cut -d' ' -f1 | sort | uniq -c | sort -nr | head -n 20 | tee -a "$GITHUB_STEP_SUMMARY"
         working-directory: src-tauri
 
       # kawai-server auth worker (TypeScript, Cloudflare Workers): type gate for
@@ -610,11 +600,6 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
-      - uses: oven-sh/setup-bun@v2
-
-      - name: Install JS deps
-        run: bun install
-
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
@@ -821,7 +806,9 @@ jobs:
       - name: Mount bazel cache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/bazel
+          path: |
+            ~/.cache/bazel
+            C:\_b
           key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-windows-x86_64-
 
