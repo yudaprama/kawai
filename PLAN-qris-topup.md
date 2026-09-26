@@ -327,6 +327,8 @@ kawai-recap (Rust, lokal, default dry-run)                kawai-server/worker (D
 
 Flag: `--once` (satu siklus; tanpa itu loop 5 menit) · `--apply` (tulis; default dry-run) · `--rebase` (geser cursor tanpa tagih, wajib bersama `--apply`) · `--since <unix>` (paksa awal window, dry-run saja).
 
+**Status: LIVE.** Keempat langkah sudah dijalankan — secret terdeploy, worker live, bootstrap + rebase selesai, panggilan `billing_debit` di `supervisor.rs` dihapus (gate klien tinggal baca `tokens > 0`), dan loop `--apply` berjalan lokal. Endpoint `/billing/debit` tinggal deprecated (tidak lagi dipanggil klien).
+
 ### Verifikasi
 
 - `cd crates && cargo test -p kawai-recap` — 9 test aritmetika delta (base, reset, unattributed, jangkar `to`, step).

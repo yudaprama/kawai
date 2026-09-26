@@ -699,9 +699,9 @@ pub async fn plan_task(
     // web session and, if treated as "no bearer", let a zero-balance goal
     // run unbilled. Wrappers resolve identity/auth first (AGENTS.md #8) and
     // fail closed on a missing bearer; `None` reaches here only from
-    // non-billing contexts (dev probes, headless examples). The SAME bearer
-    // is reused by the debit at plan completion, so the two billing calls
-    // can never disagree about which session was authorized.
+    // non-billing contexts (dev probes, headless examples). This read-only
+    // gate is the client's only billing involvement — usage itself is
+    // debited server-side by the recap cron from telemetry (`user.id`).
     if let Some(token) = bearer {
         match crate::logic::topup::topup_balance(token).await {
             Ok(balance) if balance.tokens > 0 => {}
@@ -940,42 +940,11 @@ via the always-available `session_step_results` tool. If the goal depends on det
             if v.get("steps").is_some() && v.get("goal").is_some() {
                 match parse_supervisor_plan_scoped(&raw, registry, PLANNER_FORBIDDEN_TOOLS) {
                     Ok(plan) => {
-                        // Fase 0b billing (PLAN-qris-topup.md) — composition
-                        // root: BOTH transports (Tauri command, web handler)
-                        // call this fn, so the debit lives here and no
-                        // wrapper carries billing logic. Amount = this plan's
-                        // real token usage (input+output tokens), debited 1:1
-                        // against the user's token balance — the integer unit
-                        // of the worker ledger. FAIL-CLOSED: a debit that does
-                        // not land means this plan was never paid for, so the
-                        // plan is NOT returned. A fail-open debit here would
-                        // let a balance too small to cover a plan run forever —
-                        // the guard passes on `tokens > 0`, the D1 atomic guard
-                        // rejects the debit with 409, the balance never reaches
-                        // 0, and the entry gate never trips again.
-                        // (docs/BALANCE-KV-ARCHITECTURE.md).
-                        //
-                        // The bearer is the SAME one the entry gate checked,
-                        // so gate and debit can never disagree about which
-                        // session was authorized. `None` means the caller is
-                        // a non-billing context (the gate was skipped with
-                        // it) — nothing to debit.
-                        let amount = usage.input_tokens.saturating_add(usage.output_tokens);
-                        match bearer {
-                            Some(token) => {
-                                if let Err(e) =
-                                    crate::logic::topup::billing_debit(token, amount).await
-                                {
-                                    tracing::warn!(component = "billing", user_id = %user_id, amount, error = %e, "usage debit failed — refusing the unpaid plan (fail-closed)");
-                                    return Err(format!(
-                                        "billing failed — plan not delivered: {e}"
-                                    ));
-                                }
-                            }
-                            None => {
-                                tracing::warn!(component = "billing", user_id = %user_id, amount, "no bearer — usage debit skipped (non-billing caller)");
-                            }
-                        }
+                        // Usage is debited server-side: the local recap
+                        // cron reads token counters from Grafana telemetry
+                        // (`user.id` attribution) and posts deltas to the
+                        // worker — the client never debits
+                        // (PLAN-qris-topup.md §15).
                         return Ok((plan, usage));
                     }
                     Err(plan_err) => {
