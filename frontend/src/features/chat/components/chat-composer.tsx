@@ -27,7 +27,10 @@ type ChatComposerProps = {
   agentName: string;
   status: ChatStatus;
   onStop: () => void;
-  onSubmit: (text: string, fileIds?: string[]) => void;
+  /** Submit the draft. A returned/rejected promise matters: PromptInput only
+   *  clears the input when this resolves — returning a promise that REJECTS
+   *  keeps the draft (blocked submits, failed imports). */
+  onSubmit: (text: string, fileIds?: string[]) => void | Promise<void>;
   lastUserText: string | null;
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
   /** Knowledge import actions — the composer's attachment menu is the only
@@ -217,7 +220,10 @@ function ChatComposerInner({
 
   const handleSubmit = useCallback(
     async (message: { text: string; files: { url: string; mediaType: string; fileName?: string }[] }) => {
-      if (importProgress) return;
+      // Re-entry guard: an import or a previous submit is still in flight.
+      // REJECT so the draft stays (a resolve would clear it while the first
+      // attempt is still running).
+      if (importProgress) throw new Error("Submit already in progress");
       const imageFiles = message.files.filter(
         (file) => file.mediaType.startsWith("image/") && file.url.startsWith("data:"),
       );
@@ -247,10 +253,13 @@ function ChatComposerInner({
           }
         }
         // Do not silently submit a message after an attachment import failed;
-        // keeping the draft lets the user retry.
-        if (importFailed) return;
+        // REJECT so PromptInput keeps the draft and the user can retry.
+        if (importFailed) throw new Error("Attachment import failed");
         if (message.text.trim() || ids.length > 0) {
-          onSubmit(message.text, ids.length > 0 ? ids : undefined);
+          // Awaited: PromptInput clears the input only once this settles —
+          // a rejected run gate (no tokens, session create failed…) lands as
+          // a kept draft instead of a silent wipe.
+          await onSubmit(message.text, ids.length > 0 ? ids : undefined);
         }
         setMentions([]);
       } finally {

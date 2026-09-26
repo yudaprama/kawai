@@ -7,7 +7,9 @@ export interface GoalComposerProps {
   onAddFiles?: () => void;
   onAddLink?: () => void;
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
-  onSubmit: (text: string, fileIds?: string[]) => void;
+  /** Submit — may return a promise; a rejection keeps the composer draft
+   *  (PromptInput clears only on resolution). */
+  onSubmit: (text: string, fileIds?: string[]) => void | Promise<void>;
   placeholder?: string;
 }
 

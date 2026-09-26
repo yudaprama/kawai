@@ -157,6 +157,19 @@ export function StepTree({
                         </button>
                       )}
                     </div>
+                    {/* Failure visibility: a failed/skipped step shows its WHY
+                        right in the rail (live rows and history rows share
+                        this tree). Full body still lives behind "see report". */}
+                    {step.error != null && (step.state === "failed" || step.state === "skipped") && (
+                      <p
+                        className={`font-mono text-[10px] leading-snug break-words ${
+                          step.state === "failed" ? "text-destructive" : "text-muted-foreground"
+                        }`}
+                        title={step.error}
+                      >
+                        {step.error}
+                      </p>
+                    )}
                     {(step.inputs?.length ?? 0) > 0 && (
                       <div
                         className="text-muted-foreground/80 flex flex-wrap gap-x-2 font-mono text-[10px]"
@@ -205,10 +218,14 @@ export function StepTree({
   );
 }
 
-/** A step carries an inspectable report: live rows gate on the wire preview
- *  existing (completed), history rows on the state being terminal. */
+/** A step carries an inspectable report: live rows gate on something being
+ *  showable — a completed step's wire preview, or a failed step's error —
+ *  history rows on the state being terminal. */
 function reportable(step: SupervisorStep, live: boolean): boolean {
-  if (live) return step.output != null && step.state === "completed";
+  if (live) {
+    if (step.state === "failed") return step.error != null || step.output != null;
+    return step.state === "completed" && step.output != null;
+  }
   return step.state === "completed" || step.state === "failed";
 }
 
@@ -407,6 +424,13 @@ export function ProgressRail({
             ? `${unseeded && supervisor.planning != null ? "Planning" : statusLabel(supervisor.status)} · ${headerGoal}`
             : "Idle"}
         </div>
+        {/* Failure visibility: the plan-level WHY rides the header — the
+            status label alone ("Failed · goal") never said what broke. */}
+        {!unseeded && supervisor.status === "failed" && supervisor.error != null && (
+          <p className="text-destructive mt-1 font-mono text-[11px] leading-snug break-words" role="alert">
+            {supervisor.error}
+          </p>
+        )}
         {startedAt != null && (
           <div className="text-muted-foreground font-mono text-xs">
             Duration: {fmtDuration(startedAt, supervisor.planCompletedAt ?? undefined)}

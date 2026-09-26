@@ -136,6 +136,10 @@ export interface WorkbenchRun {
   /** Full deliverable text (in-memory only) — backs the run journal sections
    *  (A2); full step reports still live in supervisor_step_results. */
   outputFull?: string;
+  /** Plan-level failure — WHY the run failed (terminal `planFailed` events
+   *  and restored failed/interrupted records). Rendered on the canvas and
+   *  the history rows; `outputPreview` alone truncates to 200 chars. */
+  error?: string;
   stepsDone?: number;
   stepsTotal?: number;
   /** True when THIS run was submitted with a quote of the previous run's
@@ -383,7 +387,7 @@ export function useWorkbench() {
       setRuns((prev) =>
         prev.map((r, i) =>
           i === prev.length - 1 && r.status === "running"
-            ? { ...r, status: "failed", finishedAt: Date.now(), outputPreview: error.slice(0, 200) }
+            ? { ...r, status: "failed", finishedAt: Date.now(), outputPreview: error.slice(0, 200), error }
             : r,
         ),
       );
@@ -450,6 +454,9 @@ export function useWorkbench() {
                 finishedAt: f.createdAt * 1000,
                 outputPreview: (f.record.output ?? "").slice(0, 500),
                 outputFull: f.record.output ?? undefined,
+                // A failed plan record carries the terminal error; a partial
+                // (interrupted) record never reached one.
+                error: f.record.error ?? (f.record.partial ? "Run interrupted before completion." : undefined),
                 planKey: f.record.planKey ?? null,
                 steps: runSteps(f),
                 stepsDone: f.record.steps?.filter((s) => s.state === "completed").length ?? 0,
@@ -542,9 +549,22 @@ export function useWorkbench() {
   }, [terminal, supervisor.planKey, supervisor.steps]);
 
   const run = useCallback(
-    async (goal: string, fileIds?: string[], opts?: { quote?: boolean }) => {
+    async (
+      goal: string,
+      fileIds?: string[],
+      opts?: {
+        quote?: boolean;
+        /** Invoked the moment the run REALLY starts — every gate passed, the
+         *  run record is about to append. The page moves off the landing HERE,
+         *  never at submit time: a blocked submit leaves the user (and their
+         *  draft) exactly where they were. */
+        onStart?: () => void;
+      },
+    ) => {
       const trimmed = goal.trim();
       if (!trimmed) return;
+      // A fresh attempt clears the previous gate failure.
+      setSessionError(null);
       // Pin the explicit target BEFORE any await — the planner must quote
       // exactly what the user armed, not whatever completes later.
       const target = quoteTarget;
@@ -557,26 +577,27 @@ export function useWorkbench() {
       // must not silently proceed (the old `catch {}` fail-open let every
       // transport hiccup through, which is how runs slipped past a zero
       // balance). Sits before every state mutation so a blocked submit leaves
-      // the composer/badges untouched. The authoritative gate is the same
-      // read inside `supervisor::plan_task`; this one is UX only.
+      // the composer/badges untouched, and it THROWS: the composer keeps its
+      // draft (PromptInput clears only on resolution) and the page never
+      // leaves the landing. The authoritative gate is the same read inside
+      // `supervisor::plan_task`; this one is UX only.
+      let tokens: number;
       try {
-        const { tokens } = await call<{ tokens: number }>("topup_balance");
-        // The gate's read doubles as the shared chip's freshest PRE-debit
-        // value — it lands before `plan_task` debits, so the run below
-        // re-reads once it resolves.
-        publishTokenBalance(tokens);
-        if (tokens <= 0) {
-          toast("Token habis — isi ulang lewat Top Up");
-          emitOpenTopup();
-          return;
-        }
+        ({ tokens } = await call<{ tokens: number }>("topup_balance"));
       } catch (err) {
-        toast(`Saldo tidak terbaca — coba lagi (${errText(err)})`);
-        return;
+        const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
+        toast(msg);
+        throw new Error(msg);
       }
-      setFollowUp(false);
-      setQuoteTarget(null);
-      setQuotedLastRun(quote);
+      // The gate's read doubles as the shared chip's freshest PRE-debit
+      // value — it lands before `plan_task` debits, so the run below
+      // re-reads once it resolves.
+      publishTokenBalance(tokens);
+      if (tokens <= 0) {
+        toast("Token habis — isi ulang lewat Top Up");
+        emitOpenTopup();
+        throw new Error("Token habis — isi ulang lewat Top Up");
+      }
       // Sessions are lazy — create on first desk run. Workbench runs live in
       // their own session so chat history stays chat.
       let sid = sessionId;
@@ -588,8 +609,9 @@ export function useWorkbench() {
           sid = s.id;
           setSessionId(s.id);
         } catch (err) {
-          setSessionError(`Couldn't start the run — ${errText(err)}`);
-          return;
+          const msg = `Couldn't start the run — ${errText(err)}`;
+          setSessionError(msg);
+          throw new Error(msg);
         }
       }
       // Knowledge files attached via the composer's @ menu AND files
@@ -604,10 +626,16 @@ export function useWorkbench() {
         try {
           await call("knowledge_add_to_session", { sessionId: sid, fileIds: attachIds });
         } catch (err) {
-          setSessionError(`Couldn't attach the mentioned files to the run — ${errText(err)}`);
-          return;
+          const msg = `Couldn't attach the mentioned files to the run — ${errText(err)}`;
+          setSessionError(msg);
+          throw new Error(msg);
         }
       }
+      // All gates passed — consume the follow-up/quote arming here, AFTER
+      // the gates, so a blocked submit leaves them intact for the retry.
+      setFollowUp(false);
+      setQuoteTarget(null);
+      setQuotedLastRun(quote);
       // All referenced — consumed. Clear so the composer shows a clean slate.
       setAttachedFiles([]);
       setDeck(null); // a new run — its own deck (if any) replaces the hero
@@ -621,6 +649,9 @@ export function useWorkbench() {
           quoted: quote,
         },
       ]);
+      // The run is really starting — the page's navigation (landing → run
+      // view) rides this callback, batched with the setRuns above.
+      opts?.onStart?.();
       // Quoted vs clean (decision #10): the planner receives the quote block
       // + goal; userGoal, the runs list, and all persisted records keep the
       // clean verbatim form. Quote source: the pinned quoteTarget when armed
@@ -665,26 +696,37 @@ export function useWorkbench() {
    *  quote: the desk builds its own plan server-side and streams the same
    *  SupervisorEvent lifecycle, so rail/canvas/reports render it unchanged. */
   const runDesk = useCallback(
-    async (ticker: string, tradeDate?: string, analysts?: string[]) => {
+    async (
+      ticker: string,
+      tradeDate?: string,
+      analysts?: string[],
+      opts?: {
+        /** Same contract as `run()`'s — fires once every gate passed, right
+         *  before the run record appends; the page navigates from here. */
+        onStart?: () => void;
+      },
+    ) => {
       const sym = ticker.trim().toUpperCase();
       if (!sym) return;
+      // A fresh attempt clears the previous gate failure.
+      setSessionError(null);
       // Fase 0a tokens pre-check — the same fail-closed UX gate as run();
-      // the authoritative gate rides the backend op.
+      // the authoritative gate rides the backend op. A blocked submit THROWS
+      // so the form keeps its inputs and the page never leaves the landing.
+      let tokens: number;
       try {
-        const { tokens } = await call<{ tokens: number }>("topup_balance");
-        publishTokenBalance(tokens);
-        if (tokens <= 0) {
-          toast("Token habis — isi ulang lewat Top Up");
-          emitOpenTopup();
-          return;
-        }
+        ({ tokens } = await call<{ tokens: number }>("topup_balance"));
       } catch (err) {
-        toast(`Saldo tidak terbaca — coba lagi (${errText(err)})`);
-        return;
+        const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
+        toast(msg);
+        throw new Error(msg);
       }
-      setFollowUp(false);
-      setQuoteTarget(null);
-      setQuotedLastRun(false);
+      publishTokenBalance(tokens);
+      if (tokens <= 0) {
+        toast("Token habis — isi ulang lewat Top Up");
+        emitOpenTopup();
+        throw new Error("Token habis — isi ulang lewat Top Up");
+      }
       // Sessions are lazy — created on the first desk run, same as run().
       let sid = sessionId;
       if (sid == null) {
@@ -695,10 +737,16 @@ export function useWorkbench() {
           sid = s.id;
           setSessionId(s.id);
         } catch (err) {
-          setSessionError(`Couldn't start the analysis — ${errText(err)}`);
-          return;
+          const msg = `Couldn't start the analysis — ${errText(err)}`;
+          setSessionError(msg);
+          throw new Error(msg);
         }
       }
+      // All gates passed — consume the follow-up/quote arming after them so
+      // a blocked submit leaves both intact for the retry.
+      setFollowUp(false);
+      setQuoteTarget(null);
+      setQuotedLastRun(false);
       setDeck(null); // a new run — its own deck (if any) replaces the hero
       const goal = `Analyze ${sym}${tradeDate ? ` as of ${tradeDate}` : ""} — full research desk pipeline`;
       setRuns((prev) => [
@@ -710,6 +758,7 @@ export function useWorkbench() {
           startedAt: Date.now(),
         },
       ]);
+      opts?.onStart?.();
       void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
       supervisor.runDesk({ ticker: sym, tradeDate, analysts }, sid);
       void refreshTokenBalance();
@@ -727,6 +776,7 @@ export function useWorkbench() {
       if (sessionId === id) return;
       setRuns([]);
       setDeck(null);
+      setSessionError(null);
       setFollowUp(false);
       setQuotedLastRun(false);
       setQuoteTarget(null);
@@ -786,6 +836,7 @@ export function useWorkbench() {
     // rehydrates its records instead of silently skipping the fetch.
     restoredSessionRef.current = null;
     setSessionId(null);
+    setSessionError(null);
     setRuns([]);
     setDeck(null);
     setFollowUp(false);

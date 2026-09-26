@@ -315,6 +315,42 @@ Finance (`generated-tools/finance`):
 | `get_stock_news` / `get_reddit_posts` | `{"articles"\|"posts":[{title, summary, publisher, link, published?}]}` | `NewsListView` — headline cards, id-ID dates |
 | `get_balance_sheet` / `get_income_statement` / `get_cashflow` | `{"ticker","freq","count","statements":[…]}` (yfinance) | `FinancialTableView` — periods × line items |
 
+CoinMarketCap (generated-tools/coinmarketcap — 68 tools):
+
+All CMC tools return the raw upstream HTTP body — the vendor envelope
+`{"status":{"error_code":…},"data":…}` passes through verbatim (http-common
+`ToolBase::exec`, GET). Views unwrap it in `tool-views/cmc-views.tsx`;
+`error_code ≠ 0` or an unrecognized shape returns null → `FallbackView`.
+
+| Tools | `data` shape | View |
+|---|---|---|
+| `crypto_listings_latest` / `_historical`, `crypto_quotes_latest` / `_historical`, `dex_listings_quotes`, `dex_pairs_quotes_latest`, `dex_token_price`, `dex_token_liquidity`, `simple_price`, `rwa_quotes_latest`, `flipside_fcas_quotes_latest`, `index_cmc100_latest` / `_historical`, `index_cmc20_latest` / `_historical`, `global_metrics_quotes_latest` / `_historical` (incl. `{quotes:[…]}` records) | records with `quote.USD` `{price, percent_change_24h, market_cap, …}` | `CmcView` → quote rows: rank, name/symbol, price, ▲/▼ 24h, compact market cap |
+| `fear_and_greed_latest` / `_historical` | `[{value, value_classification}]` | `CmcFearGreedView` — big index + tone pill (Rakus/Takut) |
+| `kline_candles`, `kline_points`, `dex_pairs_ohlcv_latest` / `_historical` | positional candles `[open, high, low, close, volume, timestamp, traders]` | `CmcOhlcvView` → `SparklineView` over closes (index 3) |
+| everything else (`crypto_info`, `exchange_*`, `dex_*` info/security/holders, `rwa_*` lists, `*_map`, derivatives, posts, …) | record → flattened key-value; plain record array → titled cards | `CmcView` smart dispatch |
+
+Monad (`crates/toolsets/monad-tools` — all camelCase + top-level `chain`
+stamp; views in `tool-views/monad-views.tsx`, unrecognized shape →
+`GenericHumanView`, never nothing):
+
+| Tool | Output shape | View |
+|---|---|---|
+| `monad_wallet_status` | `{address, balanceWei, balanceMon, blockNumber, tokens:[{label, address, available, raw, formatted}], rpcUrl, chain}` | `MonadWalletStatusView` — big MON balance + token cards |
+| `monad_token_balance` / `monad_allowance` | `{token, wallet\|owner, spender?, raw, formatted, decimals, rpcUrl, chain}` | `MonadTokenBalanceView` — big formatted amount + raw/decimals |
+| `monad_gas_price` | `{gasPriceGwei, isDynamicFee, rpcUrl, chain}` | `MonadGasView` — big gwei value |
+| `monad_chain_status` | `{rpcUrl, blockNumber, chainId, chain}` | `MonadChainStatusView` — key-value |
+| `monad_tx_receipt` | `{txHash, status: success\|failed\|pending, blockNumber?, explorerUrl, chain}` | `MonadTxReceiptView` — status pill + explorer link |
+| `monad_logs` | `{tokenLabel, scannedBlocks, transfers:[{txHash, blockNumber, direction, counterparty, amountRaw}], truncated, chain}` | `MonadLogsView` — in/out transfer rows |
+| `monad_token_info` | `{address, symbol, decimals, rpcUrl, chain}` | `MonadTokenInfoView` — key-value |
+
+Analytics export & runtime notes:
+
+| Tool | Output shape | View |
+|---|---|---|
+| `data_export` | `{fileId, filename, format, rows, bytes}` | `FileCreatedView` — stored-file card, click opens the preview |
+| `deep_write` / `draft_document` / `plan_task` / `plan_revise` / `artifact_recall` | loop-intercepted by the agent engine before dispatch (`subagents.rs`) — never produce step outputs; nothing to register | — |
+| `memory_search` / `memory_graph_search` / `session_step_results` | see Memory/knowledge above (already registered) | — |
+
 Generic (any tool):
 
 | Situation | View |

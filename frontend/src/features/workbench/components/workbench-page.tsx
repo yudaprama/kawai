@@ -42,6 +42,9 @@ export interface WorkbenchPageProps {
   /** Import file handler — returns the imported office files (for auto-attach). */
   onAddFiles?: () => Promise<{ id: string; originalName: string; ext: string }[] | undefined> | undefined;
   onAddLink?: () => void;
+  /** App-owned: open the nav drawer (the mobile nav lives outside the
+   *  Workbench — the landing header's hamburger calls it). */
+  onOpenNav?: () => void;
   /** Open the session-history dialog (same modal as Cmd/Ctrl+K). */
   onOpenSessions?: () => void;
   /** App-owned: the session dialog is open — the landing recents list

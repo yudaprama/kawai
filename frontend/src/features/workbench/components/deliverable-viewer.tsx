@@ -125,7 +125,15 @@ export function PastRunCanvas({
         </div>
 
         {isDeliverable ? (
-          deliverableBody ? (
+          run.status === "failed" && run.error != null ? (
+            // Failure visibility: a failed run never produced a deliverable —
+            // and its outputPreview is just the error's first 200 chars, which
+            // must not render AS the deliverable body.
+            <div className="border-destructive/40 bg-card rounded-lg border p-6">
+              <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Run failed</div>
+              <p className="text-muted-foreground mt-2 font-mono text-xs leading-relaxed break-words">{run.error}</p>
+            </div>
+          ) : deliverableBody ? (
             <div className="border-primary/30 bg-card rounded-lg border p-6">
               <MarkdownWithCharts>{deliverableBody}</MarkdownWithCharts>
             </div>
@@ -134,6 +142,13 @@ export function PastRunCanvas({
               No deliverable was produced.
             </div>
           )
+        ) : docStep?.state === "failed" && docStep.error != null && docStep.output == null ? (
+          <div className="border-destructive/40 bg-card rounded-lg border p-4">
+            <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Step failed</div>
+            <p className="text-muted-foreground mt-1.5 font-mono text-xs leading-relaxed break-words">
+              {docStep.error}
+            </p>
+          </div>
         ) : (
           <StepReportBody
             fetcher={loadFullOutput}
@@ -189,7 +204,10 @@ export function DeliverableViewer({
       unseeded
         ? []
         : supervisor.steps.filter(
-            (s) => !isDeliverableStep(s) && s.output && (s.state === "completed" || s.state === "failed"),
+            (s) =>
+              !isDeliverableStep(s) &&
+              (s.state === "completed" || s.state === "failed") &&
+              (s.output != null || s.error != null),
           ),
     [unseeded, supervisor.steps],
   );
@@ -202,7 +220,10 @@ export function DeliverableViewer({
   const step =
     reports.find((r) => r.stepId === effective) ??
     (runRecord?.steps ?? []).find(
-      (s) => s.stepId === effective && (s.state === "completed" || s.state === "failed") && s.output != null,
+      (s) =>
+        s.stepId === effective &&
+        (s.state === "completed" || s.state === "failed") &&
+        (s.output != null || s.error != null),
     ) ??
     null;
   const resolvedStep: SupervisorStep | undefined = step ? { artifacts: [], ...step } : undefined;
@@ -266,6 +287,20 @@ export function DeliverableViewer({
           </div>
         )}
 
+        {/* Failure visibility: a failed run says WHY on the canvas — the
+            final view otherwise rendered nothing but the step counter. */}
+        {effective === "final" &&
+          !unseeded &&
+          supervisor.status === "failed" &&
+          supervisor.finalOutput == null && (
+            <div className="border-destructive/40 bg-card rounded-lg border p-6">
+              <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Run failed</div>
+              <p className="text-muted-foreground mt-2 font-mono text-xs leading-relaxed break-words">
+                {supervisor.error ?? "The run ended before a deliverable was written."}
+              </p>
+            </div>
+          )}
+
         {/* Planning progress lives in the sidebar rail (PlanningStatus inside
             ProgressRail). The canvas keeps showing the previous run's content
             until the new run's first content lands (canvas policy). */}
@@ -316,6 +351,20 @@ export function DeliverableViewer({
             )}
           </div>
         )}
+        {/* Failed step with no output: show its WHY instead of an empty body
+            (the rail's "see report" now opens something meaningful). */}
+        {effective !== "final" &&
+          resolvedStep != null &&
+          resolvedStep.state === "failed" &&
+          output == null &&
+          resolvedStep.error != null && (
+            <div className="border-destructive/40 bg-card rounded-lg border p-4">
+              <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Step failed</div>
+              <p className="text-muted-foreground mt-1.5 font-mono text-xs leading-relaxed break-words">
+                {resolvedStep.error}
+              </p>
+            </div>
+          )}
         {effective !== "final" && resolvedStep != null && output != null && resolvedStep.tool !== "deck_writer" && (
           <StepReportBody
             fetcher={workbench.loadFullOutput}
@@ -363,7 +412,10 @@ export function RunHistory({
                 <div className="text-muted-foreground font-mono text-[11px]">
                   {new Date(r.startedAt).toLocaleString()}
                   {r.stepsTotal != null && ` · ${r.stepsDone ?? 0}/${r.stepsTotal} steps`}
-                  {r.outputPreview && ` · ${r.outputPreview.slice(0, 60)}…`}
+                  {/* Failed rows fall back to the plan-level error — restored
+                      failed records have an empty outputPreview. */}
+                  {(r.outputPreview || (r.status === "failed" ? r.error : null)) &&
+                    ` · ${(r.outputPreview || r.error || "").slice(0, 60)}…`}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
