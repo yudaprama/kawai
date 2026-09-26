@@ -106,12 +106,13 @@ Keyless public spot market data + in-process TA. Credentialed US-stock reads
 (`stock_quote` / `stock_info`) ride the same capability probe as the account
 tools. Also gets webread + runtime tools (`supports_draft_document: false`).
 
-`crypto_price` and `crypto_klines` are tiered — Binance REST first, then a
-CoinMarketCap fallback tier (vault Pro key, same pattern as web_search's
-tiers) when Binance is unreachable; `_source` names the serving tier and only
-these two tools carry the fallback. The key's current plan allows quotes+map
-but gates every OHLCV endpoint (403/1006), so klines tier-2 reports both
-tiers' reasons until the CMC plan is upgraded.
+`crypto_price` is tiered — Binance REST first, then a CoinMarketCap quotes
+tier (vault Pro key, same pattern as web_search's tiers) when Binance is
+unreachable; `_source` names the serving tier. `crypto_klines` is
+Binance-only: its CMC OHLCV endpoint is plan-gated on the key's current plan
+(403/1006) and is excluded from generation (`PLAN_GATED` in
+`coinmarketcap/tools/gen.py`), so an unreachable Binance fails the step with
+the reason.
 
 | Tool | Purpose |
 |---|---|
@@ -163,7 +164,7 @@ first-wins into the supervisor's `auto` registry. Categories:
 | Crate | Example tools (non-exhaustive) |
 |---|---|
 | `browser` | `browser_markdown_extract`, `browser_content_extract`, `browser_json_extract`, `browser_links_extract`, `browser_scrape_elements` |
-| `coinmarketcap` | `crypto_map`, `crypto_listings_latest`, `price_conversion`, `dex_trending_tokens`, `dex_tokens_batch_query` |
+| `coinmarketcap` | `crypto_map`, `crypto_listings_latest`, `price_conversion`, `kline_candles`, `dex_search` |
 | `entertainment` | `search_anime`, `get_top_anime`, `search_manga`, `search_artist`, `search_album`, `search_books`, `get_book_by_isbn`, `search_photos`, `search_videos`, `search_poems_by_title`, `get_tv_show_detail`, `search_star_wars_people` |
 | `finance` | `get_stock_quote`, `get_stock_history`, `search_crypto`, `get_crypto_price`, `get_crypto_klines`, `get_forex_history`, `currency_exchange`, `get_balance_sheet`, `get_cashflow`, `get_income_statement`, `get_insider_transactions`, `get_stock_news` |
 | `food-drink` | `search_recipe`, `get_random_recipe`, `search_cocktail`, `get_food_by_barcode`, `get_all_fruits` |
