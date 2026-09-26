@@ -71,6 +71,9 @@ pub fn run() {
                     if let Ok(mut guard) = app.state::<crate::auth::Session>().write() {
                         *guard = Some(email.clone());
                     }
+                    // Same attribution as sign-in: the restored session owns
+                    // this process's generation metrics.
+                    kawai_telemetry::set_current_user(Some(&email));
                     // Seamless location inference: execute the same
                     // get_ip_location tool the LLM uses, upsert one
                     // low-confidence `inferred` memory. Silent on

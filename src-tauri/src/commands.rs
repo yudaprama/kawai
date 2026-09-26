@@ -293,6 +293,10 @@ fn establish_local_session(email: &str, session: State<'_, Session>) -> Result<U
         .write()
         .map_err(|_| "session state unavailable (lock poisoned)".to_string())? =
         Some(email.to_string());
+    // Single-user desktop process: attribute every generation — including
+    // tool one-shots with no user in scope — to this email via telemetry's
+    // process-wide current user (the billing recap reads that metric label).
+    kawai_telemetry::set_current_user(Some(email));
     Ok(logic::whoami(email))
 }
 
@@ -305,6 +309,8 @@ pub fn logout(session: State<'_, Session>) {
             let _ = std::fs::remove_file(path);
         }
     }
+    // Clear the process-wide attribution user with the session.
+    kawai_telemetry::set_current_user(None);
     // Drop the restore pointer too — the next launch shows the login screen.
     let _ = std::fs::remove_file(kawai_paths::last_session());
 }

@@ -314,6 +314,7 @@ kawai-recap (Rust, lokal, default dry-run)                kawai-server/worker (D
 - **`to` = timestamp sampel terakhir (jangkar data)**: boundary antar-run jatuh tepat di sampel terakhir yang dilihat run sebelumnya — tak ada pemakaian bolong/dobel di batas window. Window tanpa sampel TIDAK menggeser cursor (gangguan scraper tidak membakar window).
 - **Idempoten dua lapis**: ref unik per window+email (crash di tengah → batch rollback penuh, jalur `already_applied` hanya majukan CAS) + CAS cursor (run ganda → pemenang tunggal). Saldo **boleh negatif** di recap — gate `tokens > 0` di `plan_task` yang menutup run berikutnya.
 - **Fuse worker**: item > 10_000 atau > 50_000_000 tok/user → 400; `to` di masa depan → 400; auth 403 tanpa `RECAP_SECRET` cocok.
+- **Atribusi `user.id`**: recap menagih `sum by (user_id)` — label metric hanya terisi kalau telemetry membawa `user.id`. Desktop/mobile (proses satu-user) menyetel `kawai_telemetry::set_current_user` di tepi transport (sign-in / auto-restore / logout), dan `record_generation` memakainya sebagai fallback untuk semua panggilan tanpa user eksplisit (one-shot `reason`, pool telanjang `from_env`) — hampir semua pemakaian teratribusi. Web TIDAK menyetel global (proses multi-user): jalur besar (planner/deliverable/deck) sudah `with_user` eksplisit, one-shot tanpa user jatuh ke `unattributed`.
 
 ### Mode & rollout
 
@@ -330,5 +331,5 @@ Flag: `--once` (satu siklus; tanpa itu loop 5 menit) · `--apply` (tulis; defaul
 
 - `cd crates && cargo test -p kawai-recap` — 9 test aritmetika delta (base, reset, unattributed, jangkar `to`, step).
 - `cd kawai-server/worker && bun run typecheck`.
-- Dry-run: baris `PERHATIAN: N token tanpa user_id` = lubang atribusi yang terlihat (nilai ini yang menutup saat cutover makin banyak jalur melewati klien).
+- Dry-run: baris `PERHATIAN: N token tanpa user_id` = lubang atribusi yang terlihat — di desktop N harus 0 setelah rebuild + sign-in (`set_current_user` menutup semua one-shot); sisa >0 = jalur web tanpa user eksplisit. Angka inilah yang menutup saat cutover makin banyak jalur melewati klien.
 - Setelah apply: bandingkan `billing_recap_runs` vs mutasi `balance_ledger` `reason='usage'` per window; `handleHistory` menampilkan baris recap sebagai `usage` biasa (tanpa perubahan UI).
