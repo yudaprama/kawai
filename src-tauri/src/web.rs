@@ -2070,6 +2070,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
     )
     .route("/api/plan_task", post(plan_task_handler))
     .route("/api/run_analysis_desk", post(run_analysis_desk_handler))
+    .route("/api/run_youtube_summary", post(run_youtube_summary_handler))
     .route("/api/supervisor_step_output", post(supervisor_step_output_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
@@ -2409,6 +2410,64 @@ async fn run_analysis_desk_handler(
     )
     .await
     .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+
+    let stream = crate::supervisor::execute_plan_stream_with_cancel(
+        plan, tool_registry,
+        tokio_util::sync::CancellationToken::new(), pending,
+        req.stream_id,
+        user_id,
+        req.session_id,
+        Some(user_goal),
+        Some(&bearer),
+    );
+    let s = stream.map(|event| Ok::<_, Infallible>(supervisor_sse_frame(&event)));
+    Ok(Sse::new(s).keep_alive(KeepAlive::default()))
+}
+
+/// YouTube Summary (PLAN-youtube-summary): fetch the transcript, build the
+/// FIXED map→compose plan over it, stream the same `SupervisorEvent`
+/// lifecycle. The transcript fetch happens BEFORE the stream opens, so a bad
+/// URL or a transcript-less video is a 4xx carrying the reason — never a
+/// half-started run. Error body mirrors the Tauri command's `Err(String)`.
+#[cfg(feature = "litert")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunYoutubeSummaryRequest {
+    session_id: i64,
+    url: String,
+    stream_id: String,
+}
+
+#[cfg(feature = "litert")]
+async fn run_youtube_summary_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+    Extension(user_id): Extension<String>,
+    headers: HeaderMap,
+    Json(req): Json<RunYoutubeSummaryRequest>,
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
+    // Billing bearer off the session cookie — the edge middleware already
+    // validated it (AGENTS.md #8); fail closed here before the supervisor.
+    let bearer = cookie_bearer(&headers)?;
+    if !kawai_db::session_exists(&user_id, req.session_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    {
+        return Err((StatusCode::NOT_FOUND, "session not found".to_string()));
+    }
+
+    let video = kawai_youtube::fetch_video(&req.url)
+        .await
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let plan = kawai_youtube::build_youtube_plan(&video)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let user_goal = kawai_youtube::youtube_user_goal(&video);
+    let tool_registry = crate::supervisor::build_youtube_registry(
+        &user_id,
+        req.session_id,
+        &crate::supervisor::plan_key(&plan),
+    )
+    .await
+    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e))?;
 
     let stream = crate::supervisor::execute_plan_stream_with_cancel(
         plan, tool_registry,

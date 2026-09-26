@@ -227,6 +227,9 @@ export function useWorkbench() {
   const [runs, setRuns] = useState<WorkbenchRun[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  // Last goal submitted through the composer — feeds ArrowUp recall in both
+  // composer mounts (the draft itself clears on submit).
+  const [lastUserText, setLastUserText] = useState<string | null>(null);
   // Follow-up intent (Fase 2): explicit UI state, never regex. True only via
   // chip click or the "include quote" suggestion; reset after every submit.
   const [followUp, setFollowUp] = useState(false);
@@ -565,6 +568,7 @@ export function useWorkbench() {
       if (!trimmed) return;
       // A fresh attempt clears the previous gate failure.
       setSessionError(null);
+      setLastUserText(trimmed);
       // Pin the explicit target BEFORE any await — the planner must quote
       // exactly what the user armed, not whatever completes later.
       const target = quoteTarget;
@@ -766,6 +770,81 @@ export function useWorkbench() {
     [sessionId, supervisor],
   );
 
+  /** YouTube Summary (PLAN-youtube-summary): one link in, the FIXED
+   *  pipeline out. Same client mechanics as `runDesk` — balance gate
+   *  (fail-closed), lazy session — but no planner, no review gate: the
+   *  backend fetches the transcript and builds the plan, then streams the
+   *  same SupervisorEvent lifecycle, so rail/canvas/reports render it
+   *  unchanged. */
+  const runYoutube = useCallback(
+    async (
+      url: string,
+      opts?: {
+        /** Same contract as `run()`'s — fires once every gate passed, right
+         *  before the run record appends; the page navigates from here. */
+        onStart?: () => void;
+      },
+    ) => {
+      const link = url.trim();
+      if (!link) return;
+      // A fresh attempt clears the previous gate failure.
+      setSessionError(null);
+      // Fase 0a tokens pre-check — the same fail-closed UX gate as run();
+      // the authoritative gate rides the backend op. A blocked submit THROWS
+      // so the form keeps its input and the page never leaves the landing.
+      let tokens: number;
+      try {
+        ({ tokens } = await call<{ tokens: number }>("topup_balance"));
+      } catch (err) {
+        const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
+        toast(msg);
+        throw new Error(msg);
+      }
+      publishTokenBalance(tokens);
+      if (tokens <= 0) {
+        toast("Token habis — isi ulang lewat Top Up");
+        emitOpenTopup();
+        throw new Error("Token habis — isi ulang lewat Top Up");
+      }
+      // Sessions are lazy — created on the first youtube run, same as run().
+      let sid = sessionId;
+      if (sid == null) {
+        try {
+          const s = await call<{ id: number }>("create_chat_session", {
+            title: `YouTube: ${link}`.slice(0, 80),
+          });
+          sid = s.id;
+          setSessionId(s.id);
+        } catch (err) {
+          const msg = `Couldn't start the summary — ${errText(err)}`;
+          setSessionError(msg);
+          throw new Error(msg);
+        }
+      }
+      // All gates passed — consume the follow-up/quote arming after them so
+      // a blocked submit leaves both intact for the retry.
+      setFollowUp(false);
+      setQuoteTarget(null);
+      setQuotedLastRun(false);
+      setDeck(null); // a new run — its own deck (if any) replaces the hero
+      const goal = `YouTube summary — ${link}`.slice(0, 140);
+      setRuns((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}`,
+          goal,
+          status: "running",
+          startedAt: Date.now(),
+        },
+      ]);
+      opts?.onStart?.();
+      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
+      supervisor.runYoutube({ url: link }, sid);
+      void refreshTokenBalance();
+    },
+    [sessionId, supervisor],
+  );
+
   /** Open a past session in the workbench: clears the in-memory runs and
    *  points sessionId at the picked session — the restore effect below then
    *  rehydrates the latest persisted plan record (runs + deliverable + deck).
@@ -852,9 +931,11 @@ export function useWorkbench() {
     deck,
     sessionId,
     sessionError,
+    lastUserText,
     composing,
     run,
     runDesk,
+    runYoutube,
     selectSession,
     syncLatestRun,
     loadFullOutput,

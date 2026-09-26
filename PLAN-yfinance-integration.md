@@ -14,7 +14,7 @@
 | History | `get_stock_history` | TwelveData |
 | Fundamentals | `get_stock_fundamentals` | Tiingo (**Dow 30 only**) |
 | Financials | `get_stock_financials` | Tiingo (**Dow 30 only**) |
-| TA | `get_rsi`, `get_macd`, `get_sma`, `get_ema`, `get_bbands` | TwelveData |
+| TA | `ta_rsi`, `ta_macd`, `ta_sma`, `ta_ema`, `ta_bbands` | TwelveData |
 | Social | `stock_sentiment`, `stock_social_feed`, `trending_stocks` | StockTwits |
 | Search | `search_stock` | TwelveData + StockTwits |
 

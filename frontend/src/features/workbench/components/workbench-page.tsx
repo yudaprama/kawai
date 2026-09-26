@@ -12,9 +12,10 @@ import { DeliverableViewer, PastRunCanvas, RunHistory, RunSwitcher } from "./del
 import type { CanvasView } from "./deliverable-viewer";
 import { ComposerQuoteBadge, FollowUpChips } from "./follow-up-composer";
 import { GoalComposer } from "./goal-composer";
-import { GoalTemplates, placeholderForTemplate, templateOpensDesk } from "./goal-templates";
+import { GoalTemplates, placeholderForTemplate, templateOpensDesk, templateOpensYoutube } from "./goal-templates";
 import type { GoalTemplateId } from "./goal-templates";
 import { ProgressRail, RunHistoryRail } from "./progress-rail";
+import { YoutubeSummaryForm } from "./youtube-summary-form";
 
 // ── Sessions button ─────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ export function WorkbenchPage({
   onImageToKnowledge,
   onAddFiles,
   onAddLink,
+  onOpenNav,
   onOpenSessions,
   sessionsOpen = false,
   sessionSelectorRef,
@@ -218,6 +220,9 @@ export function WorkbenchPage({
   // picks disclose the Analysis Desk panel; the rest reframe the composer's
   // placeholder. Reset whenever the landing is re-entered fresh.
   const [template, setTemplate] = useState<GoalTemplateId | null>(null);
+  // Mobile progress drawer (below lg the sidebar IS a drawer — opened from
+  // the run view's top bar, auto-opened when the plan needs the user).
+  const [mobileRail, setMobileRail] = useState(false);
 
   /** Wrap the App-level import handler: when the import returns the office
    *  files, auto-attach them as workbench chips (optimistic status = indexing
@@ -236,11 +241,16 @@ export function WorkbenchPage({
     workbench.setFollowUp(false);
     workbench.setQuoteTarget(run);
   };
-  const submit = (text: string, fileIds?: string[]) => {
-    if (!text.trim()) return;
-    // A plan awaiting review owns the rail — new goals wait until it is run
-    // or discarded.
-    if (supervisor.status === "reviewing") return;
+  /** Double-submit guard: submit is synchronous up to its gates, so this
+   *  flips false again only after the returned promise settles. */
+  const startingRef = useRef(false);
+
+  /** Landing → run view handoff. The planning baseline is captured at SUBMIT
+   *  time (planStarted fires later, inside the run) and applied here — onStart
+   *  only runs once every gate passed, so a blocked submit never leaves the
+   *  landing or clears the composer's draft. Below lg the progress sidebar is
+   *  a drawer: surface it immediately so planning/progress is reachable. */
+  const enterRunView = useCallback((baseline: number | null) => {
     setHome(false);
     // Canvas policy (same as Run 1): drop the pinned view so the canvas
     // defaults to the newest run with doc "final" — the new run's prompt
@@ -248,9 +258,47 @@ export function WorkbenchPage({
     // takes over when its first content lands.
     setView(null);
     setStealAllowed(true);
-    planStartedBaseline.current = supervisor.planStartedAt;
+    planStartedBaseline.current = baseline;
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) setMobileRail(true);
+  }, []);
+
+  /** Back to the landing hero — keeps the session + runs ("New goal"
+   *  semantics). Blocked while a plan is in flight or awaiting review: the
+   *  run view must keep showing progress (there is no way back mid-run). */
+  const goHome = useCallback(() => {
+    if (supervisor.planning != null || runInFlight || supervisor.status === "reviewing") return;
+    setView(null);
+    autoSwitchedRun.current = null;
+    setTemplate(null);
+    setMobileRail(false);
+    setHome(true);
+  }, [supervisor.planning, runInFlight, supervisor.status]);
+
+  /** Submit a goal. Navigation to the run view happens INSIDE run()'s onStart
+   *  (every gate passed). A rejection keeps the composer's draft — PromptInput
+   *  clears only when the returned promise resolves — and the failure surfaces
+   *  on the landing (`sessionError`) instead of as a silent no-op. */
+  const submit = (text: string, fileIds?: string[]) => {
+    if (!text.trim()) return;
+    // A plan awaiting review owns the rail — new goals wait until it is run
+    // or discarded. REJECT (not return) so the composer keeps the draft.
+    if (supervisor.status === "reviewing") throw new Error("A plan is awaiting your review — run or discard it first");
+    if (startingRef.current) throw new Error("Submit already in progress");
+    startingRef.current = true;
     const quote = workbench.followUp;
-    void workbench.run(text, fileIds, { quote });
+    const baseline = supervisor.planStartedAt;
+    return new Promise<void>((resolve, reject) => {
+      void workbench.run(text, fileIds, { quote, onStart: () => enterRunView(baseline) }).then(
+        () => {
+          startingRef.current = false;
+          resolve();
+        },
+        (err) => {
+          startingRef.current = false;
+          reject(err);
+        },
+      );
+    });
   };
 
   /** Analysis Desk submit (PLAN-analysis-desk): the FIXED stock-research
@@ -260,13 +308,43 @@ export function WorkbenchPage({
   const submitDesk = useCallback(
     (ticker: string, tradeDate: string | undefined, analysts: string[] | undefined) => {
       if (supervisor.status === "reviewing") return;
-      setHome(false);
-      setView(null);
-      setStealAllowed(true);
-      planStartedBaseline.current = supervisor.planStartedAt;
-      void workbench.runDesk(ticker, tradeDate, analysts);
+      if (startingRef.current) return;
+      startingRef.current = true;
+      const baseline = supervisor.planStartedAt;
+      void workbench.runDesk(ticker, tradeDate, analysts, { onStart: () => enterRunView(baseline) }).then(
+        () => {
+          startingRef.current = false;
+        },
+        () => {
+          // Gates already toasted + sessionError'd (shown on the landing).
+          startingRef.current = false;
+        },
+      );
     },
-    [supervisor.status, supervisor.planStartedAt, workbench.runDesk],
+    [supervisor.status, supervisor.planStartedAt, workbench.runDesk, enterRunView],
+  );
+
+  /** YouTube Summary submit (PLAN-youtube-summary): one link in, the FIXED
+   *  pipeline out. Same canvas handoff as a desk submit — the run streams the
+   *  same SupervisorEvent lifecycle, so the rail, deliverable viewer, and
+   *  AGENT REPORTS render it unchanged. */
+  const submitYoutube = useCallback(
+    (url: string) => {
+      if (supervisor.status === "reviewing") return;
+      if (startingRef.current) return;
+      startingRef.current = true;
+      const baseline = supervisor.planStartedAt;
+      void workbench.runYoutube(url, { onStart: () => enterRunView(baseline) }).then(
+        () => {
+          startingRef.current = false;
+        },
+        () => {
+          // Gates already toasted + sessionError'd (shown on the landing).
+          startingRef.current = false;
+        },
+      );
+    },
+    [supervisor.status, supervisor.planStartedAt, workbench.runYoutube, enterRunView],
   );
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)
@@ -285,8 +363,42 @@ export function WorkbenchPage({
     setChipDraft(null);
     setTemplate(null);
     setView(null);
+    setMobileRail(false);
     setHome(true);
   }, [supervisor.planning, supervisor.status, supervisor.cancelPlan, runInFlight, workbench.startNewSession]);
+
+  // Esc: close the mobile progress drawer, else stop a running plan. Mirrors
+  // the composer's editable-context rule — the composer opts back in via
+  // data-chat-composer; dialogs and the App nav drawer own their own Esc.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (document.querySelector("[data-open-drawer]") != null) return;
+      const el = e.target instanceof HTMLElement ? e.target : null;
+      if (el?.closest("[role=dialog]") != null) return;
+      const inEditable = el != null && el.closest("input, textarea, select, [contenteditable=true]") != null;
+      if (inEditable && el?.closest("[data-chat-composer]") == null) return;
+      if (mobileRail) {
+        e.preventDefault();
+        setMobileRail(false);
+        return;
+      }
+      if (["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)) {
+        e.preventDefault();
+        supervisor.stop();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileRail, supervisor.status, supervisor.stop]);
+
+  // Below lg the sidebar is a drawer — force it open when the plan needs the
+  // user (confirmation gates, review) so the run can't stall invisibly.
+  useEffect(() => {
+    if (!["awaitingConfirmation", "reviewing"].includes(supervisor.status)) return;
+    if (typeof window === "undefined" || !window.matchMedia("(max-width: 1023px)").matches) return;
+    setMobileRail(true);
+  }, [supervisor.status]);
 
   // Publish the App-level "New" while mounted (App owns the rail button +
   // Cmd/Ctrl+N) — the workbench keeps its own session/runs/view state, so
@@ -309,9 +421,22 @@ export function WorkbenchPage({
     return (
       <div className="bg-background flex h-full w-full flex-col">
         <div className="flex items-center justify-between px-4 py-2">
-          <span className="text-foreground inline-flex items-center gap-1.5 font-mono text-xs font-bold tracking-wider uppercase">
-            <Icon name="zap" className="text-primary size-4" />
-            Kawai Workbench
+          <span className="inline-flex items-center gap-1.5">
+            {onOpenNav && (
+              <button
+                type="button"
+                aria-label="Open navigation"
+                title="Navigation"
+                onClick={onOpenNav}
+                className="text-muted-foreground hover:text-foreground -ml-1.5 rounded-lg p-1.5 transition-colors lg:hidden"
+              >
+                <Icon name="menu" className="size-4" />
+              </button>
+            )}
+            <span className="text-foreground inline-flex items-center gap-1.5 font-mono text-xs font-bold tracking-wider uppercase">
+              <Icon name="zap" className="text-primary size-4" />
+              Kawai Workbench
+            </span>
           </span>
           {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
         </div>
@@ -331,7 +456,7 @@ export function WorkbenchPage({
               agentName="Workbench"
               chipDraft={chipDraft}
               disabled={composerStatus === "submitted"}
-              lastUserText={null}
+              lastUserText={workbench.lastUserText}
               onAddFiles={handleAddFiles}
               onAddLink={onAddLink}
               onImageToKnowledge={onImageToKnowledge}
@@ -345,10 +470,22 @@ export function WorkbenchPage({
             <p className="text-muted-foreground mt-3 font-mono text-[10px]">
               Attach knowledge files with @ — the run's agents can search them.
             </p>
+            {/* Blocked submits reject the composer promise (draft kept) —
+                this is where the WHY lands; before, it only toasted. */}
+            {workbench.sessionError && (
+              <p className="text-destructive mt-2 font-mono text-[11px] leading-snug break-words" role="alert">
+                {workbench.sessionError}
+              </p>
+            )}
             <GoalTemplates value={template} disabled={composerStatus === "submitted"} onChange={setTemplate} />
             {templateOpensDesk(template) && (
               <div className="mt-3">
                 <AnalysisDeskForm disabled={composerStatus === "submitted"} onSubmit={submitDesk} />
+              </div>
+            )}
+            {templateOpensYoutube(template) && (
+              <div className="mt-3">
+                <YoutubeSummaryForm disabled={composerStatus === "submitted"} onSubmit={submitYoutube} />
               </div>
             )}
           </div>
@@ -376,9 +513,36 @@ export function WorkbenchPage({
 
   return (
     <div className="bg-background flex h-full w-full overflow-hidden">
+      {/* Mobile: the progress sidebar is a drawer — a tap-outside backdrop
+          closes it (Esc closes it too, see the keydown effect above). */}
+      {mobileRail && (
+        <button
+          type="button"
+          aria-label="Close progress panel"
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          onClick={() => setMobileRail(false)}
+        />
+      )}
       {/* Left: one sidebar — progress + timeline (scrolls), composer pinned at
-           the bottom. */}
-      <aside className="border-border/60 hidden w-96 shrink-0 flex-col border-r lg:flex">
+           the bottom. Hidden below lg by default; open = overlay drawer. */}
+      <aside
+        className={`border-border/60 bg-background w-96 shrink-0 flex-col border-r lg:flex ${
+          mobileRail ? "fixed inset-y-0 left-0 z-50 flex shadow-xl lg:static lg:z-auto lg:shadow-none" : "hidden"
+        }`}
+      >
+        {/* Drawer header (below lg): label + close affordance. */}
+        <div className="border-border/60 flex items-center justify-between border-b px-3 py-2 lg:hidden">
+          <span className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">Progress</span>
+          <button
+            type="button"
+            aria-label="Close progress panel"
+            title="Close"
+            onClick={() => setMobileRail(false)}
+            className="text-muted-foreground hover:text-foreground rounded-lg p-1.5 transition-colors"
+          >
+            <Icon name="x" className="size-4" />
+          </button>
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <RunHistoryRail
             onBuildOn={buildOn}
@@ -389,12 +553,7 @@ export function WorkbenchPage({
           <ProgressRail
             unseeded={planningUnseeded}
             workbench={workbench}
-            onNewGoal={() => {
-              setView(null);
-              autoSwitchedRun.current = null;
-              setTemplate(null);
-              setHome(true);
-            }}
+            onNewGoal={goHome}
             onOpenReport={openReport}
           />
         </div>
@@ -435,6 +594,42 @@ export function WorkbenchPage({
       {/* Right: the CANVAS — run switcher + exactly one full document. The
            canvas never moves on its own except the two approved steals. */}
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Mobile run-view chrome (the sidebar is a drawer below lg): nav +
+            progress drawer + back-to-landing. */}
+        <div className="border-border/60 flex items-center gap-1 border-b px-2 py-1.5 lg:hidden">
+          {onOpenNav && (
+            <button
+              type="button"
+              aria-label="Open navigation"
+              title="Navigation"
+              onClick={onOpenNav}
+              className="text-muted-foreground hover:text-foreground rounded-lg p-1.5 transition-colors"
+            >
+              <Icon name="menu" className="size-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label="Open progress panel"
+            title="Progress"
+            onClick={() => setMobileRail(true)}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors"
+          >
+            <Icon name="panel-left" className="size-4" />
+            <span className="font-mono text-[10px] tracking-wider uppercase">Progress</span>
+          </button>
+          <span className="flex-1" />
+          <button
+            type="button"
+            aria-label="Back to goal composer"
+            title="New goal"
+            disabled={supervisor.planning != null || runInFlight || supervisor.status === "reviewing"}
+            onClick={goHome}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors disabled:opacity-40"
+          >
+            <Icon name="arrow-left" className="size-4" />
+          </button>
+        </div>
         {workbench.runs.length === 0 ? (
           <div className="text-muted-foreground flex flex-1 items-center justify-center p-8 text-center font-mono text-sm">
             State a goal in the composer to start a run.

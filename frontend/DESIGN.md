@@ -63,11 +63,16 @@ view.
   buttons — "★ Deliverable" plus one per completed/failed step). Clicking a
   step name pins the viewer to that report; "auto" mode follows the newest
   completed work. Export buttons (PDF, DOCX) appear below the deliverable
-  when a run is completed; success shows the saved filename, failure shows
-  an inline error message.
+  when a run is completed — on the live canvas and on past-run deliverables
+  alike; success shows the saved filename, failure shows an inline error
+  message.
 - **Sidebar (left, 384px wide, lg+).** Upper region (scrolls): ProgressRail
   (status header, collapsible phases, deliverable writer row, stop/resume/new
-  goal buttons) then the collapsible "Messages & Tools" timeline —
+  goal buttons). While the plan awaits review the rail shows the review card
+  (summary, collapsible step list, Run / Discard): Discard arms on first
+  click — it reads "Confirm discard" for 3s, then discards or reverts — so a
+  misclick can't throw away a long planner round. Below sits the collapsible
+  "Messages & Tools" timeline —
   chronological machine log of planner rounds, step starts, completions, and
   failures, each with a colored badge (Plan, Tool, Done, Failed) and
   wall-clock offset from plan start. Footer (pinned): the goal composer.
@@ -98,11 +103,24 @@ a run is idle. Each run shows: goal, timestamp, step count, output preview
 (first 60 chars). The most recent completed/failed run is a clickable button
 with a "View report" affordance and hover state; clicking opens the
 Workbench run view with that run's deliverable. Older runs are non-interactive
-(S1: only the latest run's supervisor state is held in memory). When the
-session has no in-memory runs, the landing hero instead shows **Recent
-runs** — `list_recent_runs` across sessions, same row shape. Restored runs
+(S1: only the latest run's supervisor state is held in memory) and rendered
+visibly muted (reduced contrast, no pointer cursor) so they don't read as
+broken buttons. When the session has no in-memory runs, the landing hero
+instead shows **Recent runs** — `list_recent_runs` across sessions, same row
+shape. Restored runs
 take their timestamps from the persisted record's write time, so a reopened
-session shows when each run actually finished.
+session shows when each run actually finished. Failed runs fall back to the
+plan-level error in the row preview.
+
+## Failure visibility
+
+A failed run always says WHY: the progress rail header carries the
+plan-level error (rendered as an `alert`), each failed/skipped step shows its
+error inline in the tree (live and history rows) and gained a "see report"
+link, and the canvas shows a `Run failed` card on the deliverable view plus a
+`Step failed` card on a failed step's report. Blocked submits reject the
+composer promise (the draft is kept) and surface the reason under both
+composer mounts (landing hero and mid-run sidebar, both `role="alert"`).
 
 ## Session switcher
 
@@ -121,6 +139,15 @@ Archive/Restore (enabled per selection side), Delete, Cancel. Arrow keys
 move a highlighted cursor over the flat row list (groups, then archive),
 Enter opens the selected session (toggles it in Select mode); hover moves
 the same cursor.
+
+## Notifications
+
+The bell (rail footer) opens a popover: category filter tabs (All, agents,
+messages, skills, system — `aria-pressed`), a newest-first item list, and
+mark-all-read / clear-all actions. Category badges use token classes
+(`primary`/`success`/`warning`/muted) — never raw palette hex, so they track
+the `.dark` overrides. Tapping an item marks it read and closes the popover.
+Clear-all is optimistic with a 5s Undo toast (snapshot restore).
 
 ## Visual language
 
@@ -147,8 +174,11 @@ the same cursor.
 
 ## Mobile (< lg)
 
-Assets rail becomes a full-screen overlay drawer (dark backdrop, Esc/tap-out
-to close). The Workbench run view shows only the deliverable viewer pane —
-the sidebar (ProgressRail, timeline, composer) is hidden. Run history is
-visible on the landing hero. Mobile composer access is available on landing;
-during a run, the composer is only accessible on lg+ screens.
+Assets rail becomes a full-screen overlay drawer (hamburger button, dark
+backdrop, Esc/tap-out to close). The Workbench run view has a top bar
+(hamburger → assets drawer, Progress → the sidebar as an overlay drawer with
+backdrop/Esc close, ← → back to the landing composer, disabled mid-run).
+The progress sidebar auto-opens when the plan needs the user (review,
+confirmation gates) so a run can't stall invisibly; Esc closes the drawer
+first, then stops a running plan. Run history and the goal composer are
+available on the landing hero throughout.

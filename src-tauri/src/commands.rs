@@ -1737,6 +1737,62 @@ pub async fn run_analysis_desk(
     run_streaming(stream_id, on_event, &registry, stream, Some(token)).await
 }
 
+/// YouTube Summary (PLAN-youtube-summary): fetch the transcript, build the
+/// FIXED map→compose plan over it, and stream the same `SupervisorEvent`
+/// lifecycle the planner-driven runs emit. The fetch happens BEFORE the
+/// stream opens, so a bad URL or a transcript-less video rejects the op
+/// cleanly — no plan, no steps, no run record.
+#[cfg(feature = "litert")]
+#[tauri::command]
+pub async fn run_youtube_summary(
+    session_id: i64,
+    url: String,
+    stream_id: String,
+    on_event: Channel<crate::supervisor::SupervisorEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+    pending: State<'_, crate::supervisor::PendingConfirmations>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    // Billing bearer — resolved at the transport edge (AGENTS.md #8),
+    // fail closed here before the supervisor runs.
+    let bearer = session_bearer(&session)?;
+    let registry = Arc::clone(&registry);
+
+    if !kawai_db::session_exists(&user_id, session_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Err(format!("session {session_id} not found"));
+    }
+
+    let video = kawai_youtube::fetch_video(&url).await?;
+    let plan = kawai_youtube::build_youtube_plan(&video)?;
+    let user_goal = kawai_youtube::youtube_user_goal(&video);
+    let tool_registry = crate::supervisor::build_youtube_registry(
+        &user_id,
+        session_id,
+        &crate::supervisor::plan_key(&plan),
+    )
+    .await?;
+
+    let step_count = plan.steps.len();
+    let token = CancellationToken::new();
+    let stream = crate::supervisor::execute_plan_stream_with_cancel(
+        plan,
+        tool_registry,
+        token.clone(),
+        pending.inner().clone(),
+        stream_id.clone(),
+        user_id.clone(),
+        session_id,
+        Some(user_goal),
+        Some(&bearer),
+    );
+    tracing::info!(component = "youtube", steps = step_count, user = %user_id, session = session_id, "running youtube summary");
+    run_streaming(stream_id, on_event, &registry, stream, Some(token)).await
+}
+
 // ── TTS (piper-rs, feature "tts") ──────────────────────────────────────
 
 /// Synthesize speech from text using the Piper neural TTS engine.

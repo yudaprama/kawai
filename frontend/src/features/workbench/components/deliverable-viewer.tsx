@@ -53,6 +53,7 @@ export function RunSwitcher({
             }`}
             key={r.id}
             onClick={() => onPick(r.id)}
+            title={r.goal}
             type="button"
           >
             Run {i + 1}
@@ -66,6 +67,62 @@ export function RunSwitcher({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+/** PDF/DOCX export row for a completed deliverable — shared by the live
+ *  canvas and PastRunCanvas; owns its own in-flight/feedback state. */
+function DeliverableExport({ goal, markdown }: { goal: string; markdown: string }) {
+  const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
+  const [exportedName, setExportedName] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const runExport = async (format: "pdf" | "docx") => {
+    if (exporting) return;
+    setExporting(format);
+    setExportedName(null);
+    setExportError(null);
+    const slug = slugify(goal, "deliverable");
+    try {
+      const file = await call<{ originalName: string }>("export_deliverable", {
+        markdown,
+        filename: `${slug}.${format}`,
+      });
+      setExportedName(file.originalName);
+      setExportError(null);
+    } catch (err) {
+      console.error("[workbench] export_deliverable:", errText(err));
+      setExportedName(null);
+      setExportError(errText(err));
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-muted-foreground mr-1 font-mono text-[11px] uppercase">Export</span>
+      <Button disabled={exporting != null} onClick={() => void runExport("pdf")} size="sm" variant="outline">
+        {exporting === "pdf" ? (
+          <Icon name="loader-circle" className="size-3 animate-spin" />
+        ) : (
+          <FileIcon className="size-3" name="export.pdf" />
+        )}
+        PDF
+      </Button>
+      <Button disabled={exporting != null} onClick={() => void runExport("docx")} size="sm" variant="outline">
+        {exporting === "docx" ? (
+          <Icon name="loader-circle" className="size-3 animate-spin" />
+        ) : (
+          <FileIcon className="size-3" name="export.docx" />
+        )}
+        DOCX
+      </Button>
+      {exportedName && (
+        <span className="text-success font-mono text-[11px]">Saved as {exportedName} — view it in Documents</span>
+      )}
+      {exportError && <span className="text-destructive font-mono text-[11px]">Export failed: {exportError}</span>}
     </div>
   );
 }
@@ -166,6 +223,11 @@ export function PastRunCanvas({
             tool={stepTool}
           />
         )}
+
+        {/* Past runs export too — same office pipeline as the live canvas. */}
+        {isDeliverable && run.status === "completed" && run.outputFull != null && (
+          <DeliverableExport goal={run.goal} markdown={run.outputFull} />
+        )}
       </div>
     </div>
   );
@@ -236,34 +298,8 @@ export function DeliverableViewer({
   // flag here would re-trigger this very effect and deadlock the fetch.
   const output = resolvedStep?.output;
 
-  // Export the deliverable as a stored .pdf/.docx via the office engines.
-  const [exporting, setExporting] = useState<"pdf" | "docx" | null>(null);
-  const [exportedName, setExportedName] = useState<string | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
-
   const done = unseeded ? 0 : supervisor.steps.filter((s) => s.state === "completed").length;
 
-  const exportGoal = async (format: "pdf" | "docx") => {
-    if (unseeded || supervisor.finalOutput == null || exporting) return;
-    setExporting(format);
-    setExportedName(null);
-    setExportError(null);
-    const slug = slugify(supervisor.goal ?? "deliverable", "deliverable");
-    try {
-      const file = await call<{ originalName: string }>("export_deliverable", {
-        markdown: supervisor.finalOutput,
-        filename: `${slug}.${format}`,
-      });
-      setExportedName(file.originalName);
-      setExportError(null);
-    } catch (err) {
-      console.error("[workbench] export_deliverable:", errText(err));
-      setExportedName(null);
-      setExportError(errText(err));
-    } finally {
-      setExporting(null);
-    }
-  };
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl space-y-6 p-6">
@@ -289,17 +325,14 @@ export function DeliverableViewer({
 
         {/* Failure visibility: a failed run says WHY on the canvas — the
             final view otherwise rendered nothing but the step counter. */}
-        {effective === "final" &&
-          !unseeded &&
-          supervisor.status === "failed" &&
-          supervisor.finalOutput == null && (
-            <div className="border-destructive/40 bg-card rounded-lg border p-6">
-              <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Run failed</div>
-              <p className="text-muted-foreground mt-2 font-mono text-xs leading-relaxed break-words">
-                {supervisor.error ?? "The run ended before a deliverable was written."}
-              </p>
-            </div>
-          )}
+        {effective === "final" && !unseeded && supervisor.status === "failed" && supervisor.finalOutput == null && (
+          <div className="border-destructive/40 bg-card rounded-lg border p-6">
+            <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Run failed</div>
+            <p className="text-muted-foreground mt-2 font-mono text-xs leading-relaxed break-words">
+              {supervisor.error ?? "The run ended before a deliverable was written."}
+            </p>
+          </div>
+        )}
 
         {/* Planning progress lives in the sidebar rail (PlanningStatus inside
             ProgressRail). The canvas keeps showing the previous run's content
@@ -325,31 +358,7 @@ export function DeliverableViewer({
           </div>
         )}
         {effective === "final" && !unseeded && supervisor.finalOutput != null && supervisor.status === "completed" && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-muted-foreground mr-1 font-mono text-[11px] uppercase">Export</span>
-            <Button disabled={exporting != null} onClick={() => void exportGoal("pdf")} size="sm" variant="outline">
-              {exporting === "pdf" ? (
-                <Icon name="loader-circle" className="size-3 animate-spin" />
-              ) : (
-                <FileIcon className="size-3" name="export.pdf" />
-              )}
-              PDF
-            </Button>
-            <Button disabled={exporting != null} onClick={() => void exportGoal("docx")} size="sm" variant="outline">
-              {exporting === "docx" ? (
-                <Icon name="loader-circle" className="size-3 animate-spin" />
-              ) : (
-                <FileIcon className="size-3" name="export.docx" />
-              )}
-              DOCX
-            </Button>
-            {exportedName && (
-              <span className="text-success font-mono text-[11px]">Saved as {exportedName} — view it in Documents</span>
-            )}
-            {exportError && (
-              <span className="text-destructive font-mono text-[11px]">Export failed: {exportError}</span>
-            )}
-          </div>
+          <DeliverableExport goal={supervisor.goal ?? "deliverable"} markdown={supervisor.finalOutput} />
         )}
         {/* Failed step with no output: show its WHY instead of an empty body
             (the rail's "see report" now opens something meaningful). */}
@@ -443,7 +452,15 @@ export function RunHistory({
               {RowInner}
             </button>
           ) : (
-            <div className="border-border/60 flex items-center justify-between gap-3 rounded-lg border p-3" key={r.id}>
+            // Not reopenable (only the latest run is) — visibly inert so it
+            // doesn't read as a broken button. A running row keeps full
+            // contrast: it's live, just not clickable yet.
+            <div
+              className={`border-border/60 flex items-center justify-between gap-3 rounded-lg border p-3${
+                r.status !== "running" ? " cursor-default opacity-60" : ""
+              }`}
+              key={r.id}
+            >
               {RowInner}
             </div>
           );

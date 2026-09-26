@@ -13,6 +13,7 @@ const DRAFT_SYSTEM: &str = "You compose document content as structured JSON for 
 Rules:\n\
 - Output ONLY one JSON object, exactly {\"blocks\": [...]}. No markdown, no code fence, no commentary.\n\
 - Block types (in document order): {\"type\":\"title\",\"text\":\"...\"} | {\"type\":\"heading\",\"text\":\"...\",\"level\":1} | {\"type\":\"paragraph\",\"text\":\"...\"} | {\"type\":\"bullets\",\"items\":[\"...\"]} | {\"type\":\"table\",\"rows\":[[\"a\",\"b\"]]}\n\
+- Every element of \"blocks\" must be exactly one of those block objects — never a bare string, never a nested array, never a section title on its own.\n\
 - Ground content in the provided materials when given; use general knowledge only to fill gaps.\n\
 - Be substantive: full paragraphs, real headings, complete tables — the writer will not edit or extend your content.\n\
 - If materials are insufficient for part of the task, complete the rest and add a short paragraph noting the gap.";
@@ -37,15 +38,22 @@ Results: cloud smoke 3.6s, 193 output tokens; local tests 40/40. Next: calibrati
     let t0 = std::time::Instant::now();
     // One retry: a cloud stream can drop mid-generation after the failover
     // boundary (first text token) — truncated JSON is a transient provider
-    // flake, not a regression.
+    // flake, not a regression. The retry carries the rejection reason back to
+    // the model (the production draft path's correction round).
     let mut blocks = None;
+    let mut feedback = String::new();
     for attempt in 1..=2 {
+        let attempt_task = if feedback.is_empty() {
+            task.to_string()
+        } else {
+            format!("{task}\n\n{feedback}")
+        };
         let mut raw = String::new();
         let mut usage = None;
         let mut winner = String::new();
         let mut hit_cap = false;
         let stream = remote
-            .stream(DRAFT_SYSTEM, task, materials)
+            .stream(DRAFT_SYSTEM, &attempt_task, materials)
             .await
             .expect("stream");
         let mut stream = Box::pin(stream);
@@ -83,6 +91,9 @@ Results: cloud smoke 3.6s, 193 output tokens; local tests 40/40. Next: calibrati
             }
             Err(e) if attempt == 1 => {
                 println!("[draft_smoke] JSON invalid ({e}) — retrying once\n--- raw ---\n{raw}");
+                feedback = format!(
+                    "CORRECTION — your previous attempt was rejected: {e}. Return ONLY one JSON object {{\"blocks\": [...]}} whose every element is exactly one of the documented block objects."
+                );
             }
             Err(e) => {
                 println!("[draft_smoke] JSON invalid after retry: {e}\n--- raw ---\n{raw}");

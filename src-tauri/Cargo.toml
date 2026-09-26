@@ -84,6 +84,7 @@ kawai-tools = { path = "../kawai-tools" }
 # Auto-routing: rule-based agent selection for auto mode.
 kawai-router = { path = "../crates/router", optional = true }
 kawai-desk = { path = "../crates/engines/desk", optional = true }
+kawai-youtube = { path = "../crates/engines/youtube", optional = true }
 # default-features=false keeps only the local-SQLite core: replication/remote
 # would pull tonic 0.11 + hyper 0.14 + axum 0.6 + rustls 0.22 (dead weight —
 # every call site uses Builder::new_local; re-add "remote" with sqld sync).
@@ -202,7 +203,7 @@ web = ["dep:axum", "dep:tower-http"]
 codegraph = ["dep:codegraph"]
 # On-device LLM. Also owns the kawai-router dep (rule-based auto-routing is
 # only used by the litert supervisor stack).
-litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "kawai-agent/litert", "kawai-vision/litert", "kawai-knowledge/litert", "remote-llm/litert", "kawai-analytics/litert", "kawai-cli/litert", "dep:kawai-router", "dep:kawai-desk"]
+litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "kawai-agent/litert", "kawai-vision/litert", "kawai-knowledge/litert", "remote-llm/litert", "kawai-analytics/litert", "kawai-cli/litert", "dep:kawai-router", "dep:kawai-desk", "dep:kawai-youtube"]
 # Export operational tracing logs to Grafana Cloud Loki directly.
 loki-logs = ["kawai-telemetry/loki-logs"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +

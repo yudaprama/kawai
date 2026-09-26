@@ -1906,6 +1906,23 @@ pub async fn build_desk_registry(
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
 
+/// The YouTube Summary execution registry: the merged auto catalog narrowed
+/// for dispatch PLUS the one youtube stage tool. Stage steps are never
+/// visible to the planner (never in the Turso tool catalog or
+/// `PLAN_CORE_TOOLS`) — this registry is the dispatch view only.
+#[cfg(feature = "litert")]
+pub async fn build_youtube_registry(
+    user_id: &str,
+    session_id: i64,
+    plan_key: &str,
+) -> Result<ToolRegistry, String> {
+    let mut toolset = build_supervisor_toolset(user_id, session_id, AUTO_AGENT_ID)
+        .await
+        .ok_or_else(|| "no supervisor toolsets available (all domain builders returned None)".to_string())?;
+    toolset.add_tool(kawai_youtube::YoutubeStageTool::default());
+    build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
+}
+
 async fn build_registry_from_toolset(
     user_id: &str,
     session_id: i64,
@@ -1969,7 +1986,9 @@ async fn build_registry_from_toolset(
         let db_plan_key = db_plan_key.clone();
         let db_session_id = session_id;
         Box::pin(async move {
-            let name = call.step.dispatch_key().to_string();
+            // Legacy tool names (persisted plans, stale catalog) resolve to the
+            // current tool here — the single dispatch choke point.
+            let name = kawai_router::legacy::canonical_tool_name(call.step.dispatch_key()).to_string();
             let args_value = coerce_resolved_args(&name, &call.args, schemas.get(&name));
             if let Some(hit) = memo.get(&name, &args_value) {
                 return Ok(kawai_router::StepResult {

@@ -140,31 +140,6 @@ export default function App() {
     onOpenSessions: () => setSessionsOpen(true),
   });
 
-  // Esc stops generation (global, mirrors web/ chat-composer.tsx:450-461) —
-  // but keeps its local meaning inside other editable contexts: renaming a
-  // session, dialog inputs, etc. The main chat composer opts back in via
-  // data-chat-composer so Esc stops the stream from where you're typing.
-  useEffect(() => {
-    if (!busy) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      const target = e.target;
-      const el = target instanceof HTMLElement ? target : null;
-      const inEditable =
-        el != null &&
-        (el.isContentEditable ||
-          el.tagName === "INPUT" ||
-          el.tagName === "TEXTAREA" ||
-          el.tagName === "SELECT" ||
-          el.closest("[role=dialog]") != null);
-      if (inEditable && el?.closest("[data-chat-composer]") == null) return;
-      e.preventDefault();
-      chat.stop();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [busy, chat]);
-
   // Esc closes mobile drawer when idle
   useEffect(() => {
     if (mobileDrawer == null || busy) return;
@@ -255,6 +230,7 @@ export default function App() {
           onAddFiles={ka.addKnowledgeFiles}
           onAddLink={ka.addKnowledgeLink}
           onImageToKnowledge={ka.imageToKnowledge}
+          onOpenNav={() => setMobileDrawer("agents")}
           onOpenSessions={() => setSessionsOpen(true)}
           sessionsOpen={sessionsOpen}
           sessionSelectorRef={workbenchSelectRef}
@@ -265,7 +241,7 @@ export default function App() {
 
       {/* Mobile drawers — replace hidden rails under 768px */}
       {mobileDrawer && (
-        <div className="fixed inset-0 z-50 flex lg:hidden" role="dialog" aria-modal="true">
+        <div className="fixed inset-0 z-50 flex lg:hidden" role="dialog" aria-modal="true" data-open-drawer>
           <button
             aria-label="Close navigation"
             className="absolute inset-0 bg-black/50"

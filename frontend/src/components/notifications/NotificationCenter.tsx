@@ -1,5 +1,6 @@
 import { Icon } from "@/components/shared/icon";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,7 +10,7 @@ import { NotificationEmptyState, NotificationItemCard } from "./NotificationItem
 const CATEGORY_TABS = ["all", "agents", "messages", "skills", "system"] as const;
 
 export function NotificationCenter() {
-  const { items, unreadCount, markRead, markAllRead, clearAll } = useNotifications();
+  const { items, unreadCount, markRead, markAllRead, clearAll, restore } = useNotifications();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<(typeof CATEGORY_TABS)[number]>("all");
 
@@ -42,7 +43,22 @@ export function NotificationCenter() {
               </Button>
             )}
             {items.length > 0 && (
-              <Button aria-label="Clear all" onClick={clearAll} size="icon" variant="ghost" className="size-7">
+              <Button
+                aria-label="Clear all"
+                onClick={() => {
+                  // Optimistic clear + 5s Undo, matching the session-delete
+                  // convention; items are in-memory so restore is lossless.
+                  const snapshot = items;
+                  clearAll();
+                  toast(`Cleared ${snapshot.length} notification${snapshot.length === 1 ? "" : "s"}`, {
+                    duration: 5000,
+                    action: { label: "Undo", onClick: () => restore(snapshot) },
+                  });
+                }}
+                size="icon"
+                variant="ghost"
+                className="size-7"
+              >
                 <Icon name="trash-2" className="size-3.5" />
               </Button>
             )}
@@ -53,6 +69,7 @@ export function NotificationCenter() {
         <div className="flex gap-1 border-b px-3 py-1.5">
           {CATEGORY_TABS.map((tab) => (
             <button
+              aria-pressed={filter === tab}
               key={tab}
               className={`rounded-md px-2 py-0.5 text-xs font-medium capitalize transition-colors ${
                 filter === tab ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
@@ -71,7 +88,18 @@ export function NotificationCenter() {
             {filtered.length === 0 ? (
               <NotificationEmptyState />
             ) : (
-              filtered.map((item) => <NotificationItemCard key={item.id} item={item} onRead={markRead} />)
+              filtered.map((item) => (
+                <NotificationItemCard
+                  key={item.id}
+                  item={item}
+                  onRead={(id) => {
+                    // Tap = mark read AND dismiss; an open popover whose only
+                    // effect is a subtle unread-dot change reads as broken.
+                    markRead(id);
+                    setOpen(false);
+                  }}
+                />
+              ))
             )}
           </div>
         </ScrollArea>

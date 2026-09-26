@@ -42,7 +42,7 @@ export function GoalComposer({
         agentName="Workbench"
         chipDraft={chipDraft}
         disabled={isGenerating}
-        lastUserText={null}
+        lastUserText={workbench.lastUserText}
         onAddFiles={onAddFiles}
         onAddLink={onAddLink}
         onImageToKnowledge={onImageToKnowledge}
@@ -54,7 +54,9 @@ export function GoalComposer({
         onRemoveAttachedFile={removeAttachedFile}
       />
       {workbench.sessionError && (
-        <p className="text-destructive mt-2 font-mono text-[11px]">{workbench.sessionError}</p>
+        <p className="text-destructive mt-2 font-mono text-[11px]" role="alert">
+          {workbench.sessionError}
+        </p>
       )}
     </>
   );

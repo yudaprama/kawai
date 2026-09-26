@@ -55,6 +55,9 @@ interface NotificationContextValue {
   markRead: (id: string) => void;
   markAllRead: () => void;
   clearAll: () => void;
+  /** Undo target for Clear-all: reinstate a pre-clear snapshot exactly
+   *  (items are in-memory only, so the restore is lossless). */
+  restore: (items: NotificationItem[]) => void;
   setPreference: (category: NotificationCategory, enabled: boolean) => void;
 }
 
@@ -120,6 +123,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     setItems([]);
   }, []);
 
+  const restore = useCallback((snapshot: NotificationItem[]) => {
+    setItems(snapshot);
+  }, []);
+
   const setPreference = useCallback((category: NotificationCategory, enabled: boolean) => {
     setPreferences((prev) => {
       const next = { ...prev, [category]: enabled };
@@ -139,9 +146,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       markRead,
       markAllRead,
       clearAll,
+      restore,
       setPreference,
     }),
-    [items, unreadCount, preferences, dispatch, markRead, markAllRead, clearAll, setPreference],
+    [items, unreadCount, preferences, dispatch, markRead, markAllRead, clearAll, restore, setPreference],
   );
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;

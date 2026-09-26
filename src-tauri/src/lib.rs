@@ -241,6 +241,8 @@ pub fn run() {
         #[cfg(feature = "litert")]
         commands::run_analysis_desk,
         #[cfg(feature = "litert")]
+        commands::run_youtube_summary,
+        #[cfg(feature = "litert")]
         commands::respond_supervisor_confirmation,
         #[cfg(feature = "litert")]
         commands::plan_task,

@@ -1,13 +1,14 @@
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
 
-export type GoalTemplateId = "research" | "market" | "coding" | "data";
+export type GoalTemplateId = "research" | "market" | "coding" | "data" | "youtube";
 
 const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "research", label: "Research" },
   { id: "market", label: "Market Analysis" },
   { id: "coding", label: "Coding" },
   { id: "data", label: "Data Analysis" },
+  { id: "youtube", label: "YouTube Summary" },
 ];
 
 /** Templates whose workflow includes the fixed-pipeline Analysis Desk — only
@@ -16,6 +17,13 @@ const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
 const DESK_TEMPLATES: readonly GoalTemplateId[] = ["research", "market"];
 
 export const templateOpensDesk = (t: GoalTemplateId | null): boolean => t != null && DESK_TEMPLATES.includes(t);
+
+/** Templates whose workflow is the fixed-pipeline YouTube Summary (a link in,
+ *  a five-section summary out — no planning round). Discloses its URL form
+ *  the same way research templates disclose the desk panel. */
+const YOUTUBE_TEMPLATES: readonly GoalTemplateId[] = ["youtube"];
+
+export const templateOpensYoutube = (t: GoalTemplateId | null): boolean => t != null && YOUTUBE_TEMPLATES.includes(t);
 
 /** Contextual composer framing per template. Desk templates keep the default
  *  goal placeholder — the desk panel is their framing. */

@@ -235,6 +235,7 @@ export function SessionHistoryDialog({
             className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-7 size-3.5 -translate-y-1/2"
           />
           <Input
+            autoFocus
             className="h-8 pl-8 text-xs"
             onChange={(e) => {
               setQuery(e.target.value);

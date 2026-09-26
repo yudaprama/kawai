@@ -28,7 +28,19 @@ Git usage from an agent is ADDITIVE ONLY: `status`, `log`, `diff`, `show`, `add`
 
 ## 🚨 CONFIGURATION — MINIMIZE ENV VARS, HARDCODE WHEN POSSIBLE 🚨
 
-***Minimize the use of environment variables. If a value can be hardcoded, hardcode it.*** Every env var is a configuration failure mode: it can be unset, mistyped, stale in `.env`, or different across machines, and `dotenvy` never overrides shell-exported vars. A compile-time constant (`const` / string literal with a sane default baked in) has none of these failure modes and shows up in code search.
+***Minimize the use of environment variables. If a value can be hardcoded, hardcode it.***
+
+## 🚨 TESTING — NEVER DO BROWSER TEST 🚨
+
+***NEVER run or write browser-based tests (Playwright, Cypress, Selenium, Puppeteer, etc.). NEVER invoke browser automation tools or start a browser instance for testing. NEVER rely on end-to-end tests that require a running browser.***
+
+Browser tests are slow, flaky, and introduce external dependencies that conflict with this project's architecture and resource constraints. All testing must be done via unit tests, integration tests, and contract tests that run against the code directly, without a browser.
+
+- **Unit tests**: Test individual functions, modules, and components in isolation.
+- **Integration tests**: Test interactions between components at the API or service level.
+- **Contract tests**: Verify interfaces and data formats without launching a browser.
+
+**If a test scenario would normally require browser automation, rewrite it to test the underlying logic or API surface instead.** Every env var is a configuration failure mode: it can be unset, mistyped, stale in `.env`, or different across machines, and `dotenvy` never overrides shell-exported vars. A compile-time constant (`const` / string literal with a sane default baked in) has none of these failure modes and shows up in code search.
 
 - **Default: hardcode.** URLs, model names, limits, timeouts, budgets, tiers, ports — anything with one correct value for the product ships as a constant in the source.
 - **Env var only when truly necessary**: secrets/credentials (API keys, tokens — and those prefer the vault/keychain), values that genuinely differ per deployment, or an explicit, documented dev seam. Never add an env knob "just in case".
@@ -140,6 +152,7 @@ Run all that apply. Everything must pass clean:
 
 ```sh
 bun run build                  # frontend: tsc -b + vite build (frontend changes)
+biome check frontend/src      # frontend formatting and lint checks
 cargo check                    # desktop (default) — office/RAG/PDF stack always compiles; axum must NOT compile here
 cargo check --manifest-path kawai-web/Cargo.toml  # web standalone — zero tauri/wry (cargo tree | grep tauri is empty)
 cargo check -p kawai --no-default-features --features web  # web module via src-tauri crate (no desktop)
@@ -274,7 +287,7 @@ app.log                          # symlink → platform log dir (macOS ~/Library
    - If it requires auth: mount it on the `protected` router (behind `auth_middleware`) and take `Extension<String>` (the user id); pass it to the same `logic.rs` fn. Public ops stay on `public`.
 4. Register the command in `lib.rs` `generate_handler!`.
 5. Call from React: `call('<name>', args)` from `@/lib/api`, or `streamOperation('<name>', args, handlers)` from `@/lib/stream` — mirror any new event variant in the matching union type (e.g. `SupervisorEvent` in `features/chat/hooks/use-supervisor-plan.ts`).
-6. Verify: `bun run build`, `cargo check`, `cargo check --features web`.
+6. Verify: `bun run build`, `biome check frontend/src`, `cargo check`, `cargo check --features web`.
 
 ## Authentication
 

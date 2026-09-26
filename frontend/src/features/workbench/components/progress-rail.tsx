@@ -407,6 +407,18 @@ export function ProgressRail({
   useEffect(() => {
     if (supervisor.status === "reviewing") setReviewStepsOpen(false);
   }, [supervisor.status, supervisor.planVersion]);
+  // Discard throws away a possibly long planner round in one click — arm
+  // first, confirm within 3s (auto-disarms; also disarms when the review
+  // gate closes).
+  const [discardArmed, setDiscardArmed] = useState(false);
+  useEffect(() => {
+    if (!discardArmed || supervisor.status !== "reviewing") {
+      setDiscardArmed(false);
+      return;
+    }
+    const t = setTimeout(() => setDiscardArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [discardArmed, supervisor.status]);
   useEffect(() => {
     if (supervisor.status !== "running") return;
     const t = setInterval(() => tick((n) => n + 1), 1000);
@@ -473,8 +485,19 @@ export function ProgressRail({
               <Icon name="play" className="size-3" />
               Run
             </Button>
-            <Button onClick={workbench.supervisor.cancelPlan} size="sm" variant="outline">
-              Discard
+            <Button
+              onClick={() => {
+                if (discardArmed) {
+                  workbench.supervisor.cancelPlan();
+                  setDiscardArmed(false);
+                } else {
+                  setDiscardArmed(true);
+                }
+              }}
+              size="sm"
+              variant="outline"
+            >
+              {discardArmed ? "Confirm discard" : "Discard"}
             </Button>
           </div>
         </div>

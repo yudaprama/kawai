@@ -36,6 +36,12 @@ interface RunDeskOptions {
   analysts?: string[];
 }
 
+interface RunYoutubeOptions {
+  /** The video link — the backend extracts the id and fetches the transcript
+   *  before the plan exists (a bad link rejects the op as an ordinary error). */
+  url: string;
+}
+
 export interface SupervisorPlanCallbacks {
   onPlanCompleted?: (
     goal: string | null,
@@ -248,8 +254,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     });
   }, []);
 
-  /** Shared stream body for BOTH supervisor clients: the planner-driven
-   *  execute_supervisor_plan and the Analysis Desk's run_analysis_desk.
+  /** Shared stream body for EVERY supervisor client: the planner-driven
+   *  execute_supervisor_plan, the Analysis Desk's run_analysis_desk, and
+   *  the YouTube Summary's run_youtube_summary.
    *  Same SupervisorEvent pipeline, persistence, and terminal handling. */
   const startStream = useCallback(
     (payload: Record<string, unknown>, sessionId: number, op = "execute_supervisor_plan") => {
@@ -470,6 +477,26 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [startStream],
   );
 
+  /** YouTube Summary (PLAN-youtube-summary): execute the FIXED summarization
+   *  pipeline — no planner, no review gate. Streams the same SupervisorEvent
+   *  lifecycle as runPlan, so the Workbench rail/deliverable/reports render
+   *  it unchanged. The caller has already persisted the user message and
+   *  resolved the session. */
+  const runYoutube = useCallback(
+    (options: RunYoutubeOptions, sessionId: number) => {
+      if (streamCtrl.current) return;
+      startStream(
+        {
+          sessionId,
+          url: options.url,
+        },
+        sessionId,
+        "run_youtube_summary",
+      );
+    },
+    [startStream],
+  );
+
   const planAndRun = useCallback(
     async (goal: string, sessionId: number, agentId: string, userGoal?: string) => {
       const cleanGoal = userGoal ?? goal;
@@ -638,6 +665,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     clearMessages,
     runPlan,
     runDesk,
+    runYoutube,
     planAndRun,
     resume,
     approvePlan,

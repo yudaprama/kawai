@@ -14,11 +14,12 @@ function relativeTime(timestamp: number): string {
   return `${days}d ago`;
 }
 
+// Token classes only (DESIGN.md: raw palette hex never tracks .dark overrides).
 const CATEGORY_COLORS: Record<string, string> = {
-  messages: "bg-blue-500/15 text-blue-500",
-  agents: "bg-purple-500/15 text-purple-500",
-  skills: "bg-emerald-500/15 text-emerald-500",
-  system: "bg-amber-500/15 text-amber-500",
+  messages: "bg-primary/15 text-primary",
+  agents: "bg-muted text-foreground",
+  skills: "bg-success/15 text-success",
+  system: "bg-warning/15 text-warning",
 };
 
 export function NotificationItemCard({ item, onRead }: { item: NotificationItemType; onRead: (id: string) => void }) {
