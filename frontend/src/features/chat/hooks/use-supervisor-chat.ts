@@ -29,6 +29,10 @@ export interface SupervisorChatState {
   confirmation: SupervisorConfirmation | null;
   sessions: ChatSessionInfo[];
   archivedSessions: ChatSessionInfo[];
+  /** Session list lifecycle — the switcher shows a skeleton during the first
+   *  fetch and a retry row on failure, never a false "No sessions yet". */
+  sessionsLoading: boolean;
+  sessionsError: string | null;
   sessionId: number | null;
 }
 
@@ -48,6 +52,8 @@ export function useSupervisorChat(userId?: string | null) {
     confirmation: null,
     sessions: [],
     archivedSessions: [],
+    sessionsLoading: true,
+    sessionsError: null,
     sessionId: null,
   });
 
@@ -111,6 +117,8 @@ export function useSupervisorChat(userId?: string | null) {
       sessionId: null,
       sessions: [],
       archivedSessions: [],
+      sessionsLoading: false,
+      sessionsError: null,
       messages: [],
     } as Partial<SupervisorChatState>);
   }, [logout, patch]);

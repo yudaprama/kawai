@@ -1,5 +1,5 @@
 import { Icon } from "@/components/shared/icon";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,14 @@ export function SqlProfilesSection() {
   const [source, setSource] = useState("");
   const [testing, setTesting] = useState<string | null>(null);
   const [test, setTest] = useState<TestState | null>(null);
+  /** Two-click destructive confirm: the trash arms, a second click inside 3s
+   *  deletes — same arm/disarm convention as every other delete in the app. */
+  const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
+  useEffect(() => {
+    if (confirmDeleteName == null) return;
+    const t = setTimeout(() => setConfirmDeleteName(null), 3000);
+    return () => clearTimeout(t);
+  }, [confirmDeleteName]);
 
   const pickFile = async () => {
     try {
@@ -211,10 +219,20 @@ export function SqlProfilesSection() {
                     <Icon name="pencil" className="size-3.5" />
                   </Button>
                   <Button
-                    aria-label={`Delete profile ${p.name}`}
-                    onClick={() => remove(p.name)}
+                    aria-label={
+                      confirmDeleteName === p.name ? `Confirm delete profile ${p.name}` : `Delete profile ${p.name}`
+                    }
+                    onClick={() => {
+                      if (confirmDeleteName !== p.name) {
+                        setConfirmDeleteName(p.name);
+                        return;
+                      }
+                      setConfirmDeleteName(null);
+                      void remove(p.name);
+                    }}
                     size="icon-sm"
-                    variant="ghost"
+                    title={confirmDeleteName === p.name ? "Click again to delete" : "Delete source"}
+                    variant={confirmDeleteName === p.name ? "destructive" : "ghost"}
                   >
                     <Icon name="trash-2" className="size-3.5" />
                   </Button>

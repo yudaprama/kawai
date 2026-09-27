@@ -329,6 +329,9 @@ export default function App() {
         archivedSessions={chat.archivedSessions}
         activeSessionId={chat.sessionId}
         busy={busy}
+        sessionsLoading={chat.sessionsLoading}
+        sessionsError={chat.sessionsError}
+        onRetrySessions={chat.refreshSessions}
         onSelectSession={(id) => {
           // Prefer the workbench session (its restore effect rehydrates runs
           // + deliverable); fall back to the chat hook when the workbench

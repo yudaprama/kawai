@@ -47,14 +47,16 @@ export function useChatSessions({
   );
 
   const loadSessions = useCallback(async () => {
+    patch({ sessionsLoading: true, sessionsError: null });
     try {
       const [sessions, archivedSessions] = await Promise.all([
         call<ChatSessionInfo[]>("list_chat_sessions", { archived: false }),
         call<ChatSessionInfo[]>("list_chat_sessions", { archived: true }),
       ]);
-      patch({ sessions, archivedSessions });
+      patch({ sessions, archivedSessions, sessionsLoading: false });
     } catch (err) {
       logWarn("list_chat_sessions", err);
+      patch({ sessionsLoading: false, sessionsError: errText(err) });
     }
   }, [patch]);
 

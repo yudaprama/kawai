@@ -15,6 +15,9 @@ export function SessionHistoryDialog({
   archivedSessions,
   activeSessionId,
   busy,
+  sessionsLoading,
+  sessionsError,
+  onRetrySessions,
   onSelectSession,
   onDeleteSessions,
   onRenameSession,
@@ -28,6 +31,11 @@ export function SessionHistoryDialog({
   archivedSessions: ChatSessionInfo[];
   activeSessionId: number | null;
   busy: boolean;
+  /** Session list lifecycle: skeleton on the first fetch, a retry row on
+   *  failure — a failed load must never read as an empty account. */
+  sessionsLoading: boolean;
+  sessionsError: string | null;
+  onRetrySessions: () => void;
   onSelectSession: (id: number) => void;
   onDeleteSessions: (ids: number[]) => void;
   onRenameSession: (id: number, title: string) => void;
@@ -260,6 +268,33 @@ export function SessionHistoryDialog({
 
         {/* Session list */}
         <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto px-3 py-3" ref={listRef}>
+          {/* List lifecycle — a failed load shows a retry row (also above
+              existing rows, so a refresh failure after a mutation isn't
+              silent); a first fetch shows a skeleton. Neither may be read as
+              an empty account. */}
+          {sessionsError != null && !sessionsLoading && (
+            <div className="flex items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+              <p className="text-destructive min-w-0 text-xs" role="alert">
+                Couldn't load sessions — {sessionsError}
+              </p>
+              <Button onClick={onRetrySessions} size="sm" variant="outline">
+                Retry
+              </Button>
+            </div>
+          )}
+          {!q && sessionsLoading && displayGroups.length === 0 && displayArchived.length === 0 && (
+            <div aria-busy="true" className="space-y-3 px-2 py-3" role="status">
+              <span className="sr-only">Loading sessions…</span>
+              {[0, 1, 2].map((i) => (
+                <div className="flex items-center gap-2" key={i}>
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="h-4 w-2/3 animate-pulse rounded bg-accent" />
+                    <div className="h-3 w-1/3 animate-pulse rounded bg-accent" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {displayGroups.map((group) => (
             <div key={group.label}>
               <p className="text-muted-foreground px-2 pb-1 font-mono text-[11px] tracking-wider uppercase">
@@ -307,11 +342,15 @@ export function SessionHistoryDialog({
             </p>
           )}
 
-          {displayGroups.length === 0 && displayArchived.length === 0 && !q && (
-            <p className="text-muted-foreground/70 px-2 py-4 text-center text-xs">
-              No sessions yet. Start a conversation to create one.
-            </p>
-          )}
+          {displayGroups.length === 0 &&
+            displayArchived.length === 0 &&
+            !q &&
+            !sessionsLoading &&
+            sessionsError == null && (
+              <p className="text-muted-foreground/70 px-2 py-4 text-center text-xs">
+                No sessions yet. Start a conversation to create one.
+              </p>
+            )}
 
           {displayArchived.length > 0 && (
             <div>
