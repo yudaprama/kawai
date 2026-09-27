@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
+import type { SupervisorController, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import type { PlanSummaryInfo } from "@/features/chat/hooks/supervisor-types";
 import {
   agentName,
@@ -55,6 +55,37 @@ function PlanSummaryCard({ summary }: { summary: PlanSummaryInfo | null }) {
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Run / Discard actions for the plan-review gate — the rail's review card
+ *  and the canvas mirror both mount these, so both panes act on the same
+ *  supervisor actions. Discard arms on the first click ("Confirm discard",
+ *  3s window) so a misclick can't throw away a planner round. */
+export function ReviewActions({ supervisor }: { supervisor: SupervisorController }) {
+  const [discardArmed, setDiscardArmed] = useState(false);
+  useEffect(() => {
+    if (!discardArmed) return;
+    const t = setTimeout(() => setDiscardArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [discardArmed]);
+  return (
+    <div className="flex gap-2 pt-2">
+      <Button className="flex-1" onClick={supervisor.approvePlan} size="sm">
+        <Icon name="play" className="size-3" />
+        Run
+      </Button>
+      <Button
+        onClick={() => {
+          if (discardArmed) supervisor.cancelPlan();
+          else setDiscardArmed(true);
+        }}
+        size="sm"
+        variant="outline"
+      >
+        {discardArmed ? "Confirm discard" : "Discard"}
+      </Button>
     </div>
   );
 }
@@ -411,18 +442,6 @@ export function ProgressRail({
   useEffect(() => {
     if (supervisor.status === "reviewing") setReviewStepsOpen(false);
   }, [supervisor.status, supervisor.planVersion]);
-  // Discard throws away a possibly long planner round in one click — arm
-  // first, confirm within 3s (auto-disarms; also disarms when the review
-  // gate closes).
-  const [discardArmed, setDiscardArmed] = useState(false);
-  useEffect(() => {
-    if (!discardArmed || supervisor.status !== "reviewing") {
-      setDiscardArmed(false);
-      return;
-    }
-    const t = setTimeout(() => setDiscardArmed(false), 3000);
-    return () => clearTimeout(t);
-  }, [discardArmed, supervisor.status]);
   // Focus moves to the blocking card when the run needs the user (review or
   // confirmation gate) — keyboard and screen-reader users otherwise keep
   // typing into the composer with no signal. The short delay lets the mobile
@@ -527,26 +546,7 @@ export function ProgressRail({
                 )}
               </div>
             ))}
-          <div className="flex gap-2 pt-2">
-            <Button className="flex-1" onClick={workbench.supervisor.approvePlan} size="sm">
-              <Icon name="play" className="size-3" />
-              Run
-            </Button>
-            <Button
-              onClick={() => {
-                if (discardArmed) {
-                  workbench.supervisor.cancelPlan();
-                  setDiscardArmed(false);
-                } else {
-                  setDiscardArmed(true);
-                }
-              }}
-              size="sm"
-              variant="outline"
-            >
-              {discardArmed ? "Confirm discard" : "Discard"}
-            </Button>
-          </div>
+          <ReviewActions supervisor={workbench.supervisor} />
         </div>
       ) : (
         <div className="flex-1">
@@ -612,8 +612,8 @@ export function ProgressRail({
       )}
 
       {supervisor.revising && supervisor.status === "running" && (
-        <div className="border-amber-500/30 mt-4 flex items-center gap-1.5 rounded-md border p-3 font-mono text-xs font-bold">
-          <Icon name="refresh-cw" className="size-3.5 animate-spin text-amber-500" />
+        <div className="border-warning/30 mt-4 flex items-center gap-1.5 rounded-md border p-3 font-mono text-xs font-bold">
+          <Icon name="refresh-cw" className="size-3.5 animate-spin text-warning" />
           <span className="text-foreground/80">Repairing plan (attempt {supervisor.revising.attempt})…</span>
         </div>
       )}

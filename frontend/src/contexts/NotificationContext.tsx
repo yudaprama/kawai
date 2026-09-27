@@ -70,6 +70,18 @@ export function useNotifications(): NotificationContextValue {
 }
 
 /**
+ * Request OS notification permission exactly once per session, lazily — called
+ * from the first dispatch() so the prompt appears together with the first real
+ * notification instead of at boot. Fire-and-forget.
+ */
+let permissionRequested = false;
+function requestNotificationPermissionOnce(): void {
+  if (permissionRequested) return;
+  permissionRequested = true;
+  void ensureNotificationPermission();
+}
+
+/**
  * Dispatch a notification: adds it to the in-app list, and fires a native
  * OS banner when the window is NOT focused (to avoid redundant toasts).
  */
@@ -101,6 +113,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
 
   const dispatch = useCallback(
     (item: Omit<NotificationItem, "timestamp" | "read">) => {
+      requestNotificationPermissionOnce();
       const full: NotificationItem = {
         ...item,
         timestamp: Date.now(),
@@ -153,15 +166,4 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   );
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
-}
-
-/**
- * Request notification permission on mount. Call once at app boot.
- */
-export function useNotificationPermission(): void {
-  // Fire-and-forget — permission state is logged for diagnostics.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useMemo(() => {
-    void ensureNotificationPermission();
-  }, []);
 }

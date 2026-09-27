@@ -126,12 +126,24 @@ function PdfPreview({ file }: { file: PreviewFile }) {
 }
 
 function PdfEmbedPreview({ file }: { file: PreviewFile }) {
-  return <IframePreview file={file} sandbox="allow-scripts allow-same-origin allow-downloads" />;
+  return <IframePreview file={file} sandbox="allow-scripts allow-same-origin allow-downloads" fallbackKind="pdf" />;
 }
 
-function IframePreview({ file, sandbox }: { file: PreviewFile; sandbox: string }) {
+function IframePreview({
+  file,
+  sandbox,
+  fallbackKind,
+}: {
+  file: PreviewFile;
+  sandbox: string;
+  fallbackKind: FileKind;
+}) {
   const { data, isLoading, error } = useFilePreview(file);
-  if (isLoading || error || !data?.dataUrl) return <PreviewLoading />;
+  if (isLoading) return <PreviewLoading />;
+  if (error || !data?.dataUrl) {
+    logWarn("file-preview", error);
+    return <FallbackPreview file={file} kind={fallbackKind} />;
+  }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <iframe
@@ -151,7 +163,7 @@ function IframePreview({ file, sandbox }: { file: PreviewFile; sandbox: string }
  * server-side before the file is ever stored.
  */
 function HtmlPreview({ file }: { file: PreviewFile }) {
-  return <IframePreview file={file} sandbox="allow-scripts" />;
+  return <IframePreview file={file} sandbox="allow-scripts" fallbackKind="html" />;
 }
 
 /**
@@ -286,7 +298,7 @@ function DataPreviewPane({ file }: { file: PreviewFile }) {
 
 function FallbackPreview({ file, kind }: { file: PreviewFile; kind: FileKind }) {
   const { data } = useFilePreview(file);
-  const href = data?.dataUrl ?? "#";
+  const href = data?.dataUrl;
   const reason = FALLBACK_REASON[kind] ?? FALLBACK_REASON.unknown ?? "Preview isn't available for this file type.";
 
   return (
@@ -298,11 +310,17 @@ function FallbackPreview({ file, kind }: { file: PreviewFile; kind: FileKind }) 
         <p className="text-foreground text-sm font-medium">Can't preview this file</p>
         <p className="text-xs">{reason}</p>
       </div>
-      <Button asChild variant="secondary" size="sm">
-        <a href={href} target="_blank" rel="noreferrer" download={file.name}>
+      {href ? (
+        <Button asChild variant="secondary" size="sm">
+          <a href={href} target="_blank" rel="noreferrer" download={file.name}>
+            <Icon name="download" className="size-4" /> Download
+          </a>
+        </Button>
+      ) : (
+        <Button variant="secondary" size="sm" disabled aria-disabled="true">
           <Icon name="download" className="size-4" /> Download
-        </a>
-      </Button>
+        </Button>
+      )}
     </div>
   );
 }

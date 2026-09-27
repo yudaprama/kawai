@@ -8,8 +8,8 @@ primary surface is the **Workbench** — a goal-centric two-pane layout:
 ┌──────────┬───────────────────────────────────────────┐
 │ ASSETS   │ deliverable viewer                        │
 │ RAIL     │  · status header (step count, duration)   │
-│ (left)   │  · rendered deliverable (markdown)        │
-│          │  · AGENT REPORTS switcher                 │
+│ (left)   │  · AGENT REPORTS switcher (sticky)        │
+│          │  · rendered deliverable (markdown)        │
 │ New Task ├───────────────────────────────────────────┤
 │ Wiki     │ sidebar: ProgressRail (lg+)               │
 │ Code     │  · status header + phase list             │
@@ -69,23 +69,27 @@ view.
   While a run is in flight the final view carries a compact status strip —
   planning round and activity, the current running step, a "Writing your
   answer…" skeleton while the deliverable writer synthesizes (its output
-  lands only at plan completion), an approval prompt, or the stop state —
-  so the canvas never sits blank between submit and the deliverable; a
+  lands only at plan completion), an approval prompt, the plan-ready review
+  card (Run / Discard, mirroring the rail), or the stop state — so the
+  canvas never sits blank between submit and the deliverable; a
   visually-hidden `aria-live` region announces phase transitions once each.
-  Below the document: the AGENT REPORTS switcher (grid of step name buttons —
-  a Deliverable row plus one per completed/failed step) switches the canvas
-  between this run's documents; the rail's "see report" links stay as a
-  second path. Export buttons appear below the deliverable when a run is
-  completed — Copy (markdown to the clipboard), PDF, DOCX — on the live
-  canvas and on past-run deliverables alike; success renders the saved
-  filename as a button that opens the file in the preview dialog, failure
-  shows an inline error message.
+  Sticking to the top of the canvas: the AGENT REPORTS switcher (a chip
+  strip — a Deliverable chip plus one per completed/failed step) switches
+  the canvas between this run's documents and stays reachable while reading
+  a long deliverable; the rail's "see report" links stay as a second path.
+  Switching documents scrolls the canvas back to the top. Sticking to the
+  bottom: the Export row when a run is completed — Copy (markdown to the
+  clipboard), PDF, DOCX — on the live canvas and on past-run deliverables
+  alike; success renders the saved filename as a button that opens the file
+  in the preview dialog, failure shows an inline error message.
 - **Sidebar (left, 384px wide, lg+).** Upper region (scrolls): ProgressRail
   (status header, collapsible phases, deliverable writer row, stop/resume/new
   goal buttons). While the plan awaits review the rail shows the review card
   (summary, collapsible step list, Run / Discard): Discard arms on first
   click — it reads "Confirm discard" for 3s, then discards or reverts — so a
-  misclick can't throw away a long planner round. Below sits the collapsible
+  misclick can't throw away a long planner round. Both mounts of that gate —
+  the rail card and the canvas status strip — render the same shared
+  Run / Discard button pair. Below sits the collapsible
   "Messages & Tools" timeline —
   chronological machine log of planner rounds, step starts, completions, and
   failures, each with a colored badge (Plan, Tool, Done, Failed) and
@@ -180,17 +184,20 @@ Clear-all is optimistic with a 5s Undo toast (snapshot restore).
 
 ## Visual language
 
-- **Tokens:** Tea Design tokens (tea-component default palette) aliased into
-  shadcn semantic variables (`src/index.css`); `.dark` overrides only the raw
-  `--tea-*` values. Step-state and status colors use token classes
+- **Tokens:** tweakcn shadcn theme (neutral mono palette) as literal semantic
+  variables in `src/index.css` (`:root` light, `.dark` dark). The `--tea-*`
+  names alias this layer (vendored asset components + a few direct usages),
+  so they follow the theme in both modes; only `success`/`warning` stay
+  literal status colors. Step-state and status colors use token classes
   (`text-success`, `text-primary`, `text-destructive`) — never raw palette
   hex classes.
-- **Typography:** system sans (`--tea-font-family-default`) for body text and
-  labels; monospace (`--tea-font-family-code`) for tool names, handles,
-  durations, phase headers, step rows, and the Messages & Tools timeline.
-  Deliverable body renders as markdown (system sans). Composer placeholder
-  and rail hints use `text-[10px]`–`text-xs` sizes.
-- **Radii/elevation:** `--radius: 0.375rem` base; cards `rounded-lg` with
+- **Typography:** sans (`--font-sans`: bundled Inter Variable → system-ui) for
+  body text and labels; monospace (`--font-mono`: bundled JetBrains Mono
+  Variable → SF Mono) for tool names, handles, durations, phase headers, step
+  rows, and the Messages & Tools timeline. Deliverable body renders as
+  markdown (sans). Composer placeholder and rail hints use `text-[10px]`–
+  `text-xs` sizes.
+- **Radii/elevation:** `--radius: 0.75rem` base; cards `rounded-lg` with
   `border`; pills only for small controls (status pills, chips).
 - **Motion:** press feedback `scale(0.97)` under `prefers-reduced-motion:
   no-preference`; phase chevron rotates 90° on collapse; spinner animation

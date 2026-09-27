@@ -2,7 +2,7 @@
  * Shared canvas primitives for the workbench viewer.
  *
  * Extracted from DeliverableViewer + PastRunCanvas to eliminate duplicated
- * per-step fetch/cache/render and AGENT REPORTS grid logic — the root cause
+ * per-step fetch/cache/render and AGENT REPORTS switcher logic — the root cause
  * of the StrictMode deadlock and renderer-mismatch bugs.
  */
 import { Icon } from "@/components/shared/icon";
@@ -132,76 +132,62 @@ export function StepReportBody({
 
 // ── AgentReportsSwitcher ────────────────────────────────────────────────────
 
-/** The AGENT REPORTS grid — a document picker that switches the canvas
- *  between step reports (and, when one exists, the final deliverable).
- *  The deliverable sits on its own row above the grid — it is the run's
- *  primary output, not a peer of the reports. With no reports to switch
- *  to, the whole switcher stays hidden: the deliverable needs no button
- *  to show itself. */
+/** The document picker — a compact chip strip that switches the canvas
+ *  between the deliverable and the run's step reports. It renders inside the
+ *  canvas's sticky header bar, so document navigation stays reachable while
+ *  reading a long deliverable instead of hiding below it. With no reports to
+ *  switch to, the whole switcher stays hidden: the deliverable needs no
+ *  button to show itself. */
 export function AgentReportsSwitcher({
   activeDoc,
   reports,
   hasDeliverable,
   onPickDoc,
-  onBuildOn,
 }: {
   activeDoc: string;
   reports: { stepId: string; label: string }[];
   hasDeliverable: boolean;
   onPickDoc: (doc: string) => void;
-  /** When set (past-run canvas), the deliverable row becomes the
-   *  "build on this" action — arm the run's deliverable as the follow-up
-   *  quote target. Returning to the "final" doc stays possible via the
-   *  run switcher (picking a run resets doc to "final"). */
-  onBuildOn?: () => void;
 }) {
   if (reports.length === 0) return null;
   return (
-    <div className="space-y-4">
-      {hasDeliverable &&
-        (onBuildOn != null ? (
-          <button
-            className="text-foreground hover:border-primary/60 hover:bg-primary/5 flex w-full items-center gap-2 rounded-lg border px-3 py-2.5 font-mono text-xs transition-colors"
-            onClick={onBuildOn}
-            title="Arm this deliverable as the follow-up context"
-            type="button"
-          >
-            <Icon name="corner-down-right" className="text-primary size-3.5 shrink-0" />
-            <span className="font-bold">Build on this</span>
-            <span className="text-muted-foreground ml-auto truncate font-normal">follow up from this run</span>
-          </button>
-        ) : (
+    <div className="flex min-w-0 items-center gap-2">
+      <span className="text-muted-foreground shrink-0 font-mono text-[10px] tracking-widest uppercase">
+        Agent reports
+      </span>
+      <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {hasDeliverable && (
           <button
             aria-pressed={activeDoc === "final"}
-            className={`text-foreground flex w-full items-center gap-2 rounded-lg border px-3 py-2.5 font-mono text-xs transition-colors ${
-              activeDoc === "final" ? "border-primary bg-primary/10" : "hover:border-primary/60"
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+              activeDoc === "final"
+                ? "border-primary bg-primary/10 text-foreground"
+                : "border-border/60 text-foreground/80 hover:border-primary/60"
             }`}
             onClick={() => onPickDoc("final")}
+            title="The run's final deliverable"
             type="button"
           >
-            <Icon name="file-text" className="text-primary size-3.5 shrink-0" />
-            <span className="font-bold">Deliverable</span>
-            <span className="text-muted-foreground ml-auto truncate font-normal">final output</span>
+            <Icon name="file-text" className="text-primary size-3 shrink-0" />
+            Deliverable
+          </button>
+        )}
+        {reports.map((r) => (
+          <button
+            aria-pressed={activeDoc === r.stepId}
+            className={`inline-flex max-w-[12rem] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+              activeDoc === r.stepId
+                ? "border-primary bg-primary/10 text-foreground"
+                : "border-border/60 text-foreground/80 hover:border-primary/60"
+            }`}
+            key={r.stepId}
+            onClick={() => onPickDoc(r.stepId)}
+            title={r.label}
+            type="button"
+          >
+            <span className="truncate">{r.label}</span>
           </button>
         ))}
-      <div className="rounded-lg border p-4">
-        <h4 className="text-muted-foreground mb-3 text-center font-mono text-sm tracking-[0.2em]">AGENT REPORTS</h4>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {reports.map((r) => (
-            <button
-              aria-pressed={activeDoc === r.stepId}
-              className={`text-foreground min-w-0 whitespace-normal break-words rounded-lg border px-3 py-2 text-left font-mono text-xs leading-snug transition-colors ${
-                activeDoc === r.stepId ? "border-primary bg-primary/10" : "hover:border-primary/60"
-              }`}
-              key={r.stepId}
-              onClick={() => onPickDoc(r.stepId)}
-              title={r.label}
-              type="button"
-            >
-              {r.label}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );

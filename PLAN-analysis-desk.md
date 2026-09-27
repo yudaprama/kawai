@@ -39,7 +39,7 @@ Every primitive the desk needs already exists:
     Management Agents / Final Verdict*, per-agent row = name + status +
     `see report`.
   - **Center** — report viewer: recommendation card (decision verb + as-of
-    date) → full markdown report (prose) → `AGENT REPORTS` switcher grid →
+    date) → full markdown report (prose) → `AGENT REPORTS` switcher →
     post-run actions (analyze another / history).
   - **Right rail** — `Analysis Configuration` (date, analyst team, research
     depth shallow/medium/deep, quick+deep LLM; locked during/after the run)

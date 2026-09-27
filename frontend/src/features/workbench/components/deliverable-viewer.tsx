@@ -19,7 +19,7 @@ import {
 } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
-import { fmtDuration } from "./progress-rail";
+import { fmtDuration, ReviewActions } from "./progress-rail";
 
 /** The run's deck artifact, if any — the deliverable hero. Set DIRECTLY from
  *  the planCompleted callback / restored record (workbench.deck) — not via
@@ -156,7 +156,7 @@ function DeliverableExport({ goal, markdown }: { goal: string; markdown: string 
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="border-border/60 bg-background sticky bottom-0 z-10 -mx-6 flex flex-wrap items-center gap-2 border-t px-6 py-2">
       <Button disabled={copied} onClick={() => void copyMarkdown()} size="sm" variant="outline">
         <Icon name={copied ? "check" : "copy"} className="size-3" />
         {copied ? "Copied" : "Copy"}
@@ -406,7 +406,7 @@ export function PastRunCanvas({
   const deliverableBody = run.outputFull ?? (run.outputPreview ? `${run.outputPreview}…` : null);
   const stepTool = run.steps?.find((s) => s.stepId === doc)?.tool ?? "";
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto" key={`${run.id}:${doc}`}>
       <div className="mx-auto max-w-4xl space-y-6 p-6">
         <div>
           <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
@@ -434,6 +434,31 @@ export function PastRunCanvas({
             )}
           </div>
         </div>
+
+        {/* Sticky document nav — the deliverable ↔ report picker stays
+            reachable while reading instead of sitting below a long document.
+            The rail's "see report" links stay a second path. */}
+        {onPickDoc != null && (run.steps ?? []).length > 0 && (
+          <div className="sticky top-0 z-10 -mx-6 border-b border-border/60 bg-background py-2">
+            <AgentReportsSwitcher
+              activeDoc={doc}
+              hasDeliverable={run.status === "completed" && run.outputFull != null}
+              onPickDoc={onPickDoc}
+              reports={(run.steps ?? [])
+                .filter(
+                  (s) =>
+                    // Record steps are the persisted shape (optional fields) —
+                    // match the reserved writer step by id/tool instead of
+                    // isDeliverableStep (which needs the live SupervisorStep).
+                    s.stepId !== DELIVERABLE_STEP_ID &&
+                    s.tool !== DELIVERABLE_TOOL &&
+                    (s.state === "completed" || s.state === "failed") &&
+                    (s.output != null || s.error != null),
+                )
+                .map((s) => ({ label: (s.task || s.tool || s.stepId).trim(), stepId: s.stepId }))}
+            />
+          </div>
+        )}
 
         {isDeliverable ? (
           run.status === "failed" && run.error != null ? (
@@ -479,30 +504,6 @@ export function PastRunCanvas({
             stepId={doc}
             tool={stepTool}
             onAsk={onAsk ? (stepId, question) => onAsk(stepId, question, run.planKey ?? "") : undefined}
-          />
-        )}
-
-        {/* Document picker: jump between this run's deliverable and its step
-            reports without going through the rail. Restored records embed
-            their steps; live records carry tallies only, so runs without
-            embedded steps simply hide the grid. */}
-        {onPickDoc != null && (run.steps ?? []).length > 0 && (
-          <AgentReportsSwitcher
-            activeDoc={doc}
-            hasDeliverable={run.status === "completed" && run.outputFull != null}
-            onPickDoc={onPickDoc}
-            reports={(run.steps ?? [])
-              .filter(
-                (s) =>
-                  // Record steps are the persisted shape (optional fields) —
-                  // match the reserved writer step by id/tool instead of
-                  // isDeliverableStep (which needs the live SupervisorStep).
-                  s.stepId !== DELIVERABLE_STEP_ID &&
-                  s.tool !== DELIVERABLE_TOOL &&
-                  (s.state === "completed" || s.state === "failed") &&
-                  (s.output != null || s.error != null),
-              )
-              .map((s) => ({ label: (s.task || s.tool || s.stepId).trim(), stepId: s.stepId }))}
           />
         )}
       </div>
@@ -557,18 +558,24 @@ function RunStatusStrip({
     );
   }
 
-  // Plan awaiting review: the review card (summary + Run/Discard) lives in
-  // the rail (mobile: the drawer auto-opens); the canvas says what's up.
+  // Plan awaiting review: the full review card (summary + step list) lives in
+  // the rail (mobile: the drawer auto-opens) — the canvas mirrors its ACTIONS
+  // so the gate is answerable from whichever pane the user is reading.
   if (unseeded && supervisor.status === "reviewing") {
+    const review = supervisor.review;
+    const overview = review?.summary?.overview ?? supervisor.summary?.overview ?? null;
     return (
-      <div className="border-primary/30 bg-card rounded-lg border p-6">
+      <div className="border-primary/30 bg-card space-y-3 rounded-lg border p-6">
         <div className="text-foreground inline-flex items-center gap-2 font-mono text-xs font-bold tracking-wider uppercase">
           <Icon name="clipboard-check" className="text-primary size-4" />
           Plan ready for review
         </div>
-        <p className="text-muted-foreground mt-2 font-mono text-xs">
-          Review the plan in the progress panel, then run or discard it.
+        {overview != null && <p className="text-foreground/90 text-sm leading-relaxed">{overview}</p>}
+        <p className="text-muted-foreground font-mono text-xs">
+          {review != null ? `${review.steps.length} steps planned` : "Plan written"} — run it here, or discard to plan
+          again.
         </p>
+        <ReviewActions supervisor={supervisor} />
       </div>
     );
   }
@@ -758,7 +765,7 @@ export function DeliverableViewer({
             : "Running";
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto" key={`${runIndex}:${effective}`}>
       <div aria-live="polite" className="sr-only" role="status">
         {phaseAnnouncement}
       </div>
@@ -785,6 +792,21 @@ export function DeliverableViewer({
             )}
           </div>
         </div>
+
+        {/* Sticky document nav — the deliverable ↔ report picker stays
+            reachable while reading instead of sitting below a long document.
+            Hidden while planning (no reports yet) and when navigation isn't
+            wired; the rail's "see report" links stay a second path. */}
+        {onPickDoc != null && reports.length > 0 && (
+          <div className="sticky top-0 z-10 -mx-6 border-b border-border/60 bg-background py-2">
+            <AgentReportsSwitcher
+              activeDoc={effective}
+              hasDeliverable={supervisor.finalOutput != null}
+              onPickDoc={onPickDoc}
+              reports={reports.map((r) => ({ label: agentName(r), stepId: r.stepId }))}
+            />
+          </div>
+        )}
 
         {/* In-flight status strip: planning, execution, writer, approval gate,
             stop — never a blank pane between submit and the deliverable. */}
@@ -862,18 +884,6 @@ export function DeliverableViewer({
             stepId={resolvedStep.stepId}
             tool={resolvedStep.tool}
             onAsk={workbench.askAboutResult}
-          />
-        )}
-
-        {/* Document picker: the canvas-native way back to the deliverable or
-            on to another report (the rail's "see report" links stay). Hidden
-            while planning (no reports yet) and when navigation isn't wired. */}
-        {onPickDoc != null && reports.length > 0 && (
-          <AgentReportsSwitcher
-            activeDoc={effective}
-            hasDeliverable={supervisor.finalOutput != null}
-            onPickDoc={onPickDoc}
-            reports={reports.map((r) => ({ label: agentName(r), stepId: r.stepId }))}
           />
         )}
       </div>

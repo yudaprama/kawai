@@ -15,7 +15,10 @@ export function useAuth() {
       setAuthError(null);
     } catch (err) {
       setUserId(null);
-      setAuthError(errText(err));
+      const message = errText(err);
+      // "not authenticated" just means no live session — the normal signed-out
+      // state, not an error to surface above the sign-in form.
+      setAuthError(message.toLowerCase().includes("not authenticated") ? null : message);
     }
   }, []);
 

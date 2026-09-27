@@ -159,6 +159,7 @@ function SourceDetail({
   onRetry: (file: KnowledgeFileInfo) => void;
   onDelete: (file: KnowledgeFileInfo) => void;
 }) {
+  const [tab, setTab] = useState("pages");
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-4 pt-3">
@@ -198,7 +199,7 @@ function SourceDetail({
           }
         />
       </div>
-      <Tabs className="flex min-h-0 flex-1 flex-col gap-0" value="pages">
+      <Tabs className="flex min-h-0 flex-1 flex-col gap-0" value={tab} onValueChange={setTab}>
         <div className="shrink-0 border-b px-4">
           <TabsList className="h-9">
             <TabsTrigger value="pages">Pages</TabsTrigger>

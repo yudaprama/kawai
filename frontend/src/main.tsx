@@ -7,7 +7,7 @@ import { ContextGatheringStep } from "@/features/auth/context-gathering-step";
 import { OnboardingProvider } from "@/features/auth/onboarding-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { NotificationProvider, useNotificationPermission } from "@/contexts/NotificationContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 import App from "./app/App";
 import "./index.css";
 
@@ -41,11 +41,6 @@ if (sentryDsn) {
   });
 }
 
-function NotificationPermissionGate({ children }: { children: React.ReactNode }) {
-  useNotificationPermission();
-  return <>{children}</>;
-}
-
 const rootEl = document.getElementById("root");
 if (rootEl) {
   ReactDOM.createRoot(rootEl).render(
@@ -53,15 +48,13 @@ if (rootEl) {
       <SentryErrorBoundary>
         <TooltipProvider>
           <NotificationProvider>
-            <NotificationPermissionGate>
-              <AuthGate>
-                <OnboardingProvider>
-                  <ContextGatheringStep>
-                    <App />
-                  </ContextGatheringStep>
-                </OnboardingProvider>
-              </AuthGate>
-            </NotificationPermissionGate>
+            <AuthGate>
+              <OnboardingProvider>
+                <ContextGatheringStep>
+                  <App />
+                </ContextGatheringStep>
+              </OnboardingProvider>
+            </AuthGate>
           </NotificationProvider>
           <Toaster />
         </TooltipProvider>

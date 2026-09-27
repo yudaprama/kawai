@@ -211,6 +211,12 @@ function persistPlanSnapshot(
   writePlanRecord(sessionId, buildPlanRecord(goal, steps, extra, false));
 }
 
+/** The supervisor controller — the live plan state (steps, planning, review
+ *  gate, deliverable) plus its actions (approve/reject, approvePlan/cancelPlan,
+ *  stop, resume). Consumers import this name instead of deriving it from the
+ *  hook signature at their call site. */
+export type SupervisorController = ReturnType<typeof useSupervisorPlan>;
+
 export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   const [state, setState] = useState<SupervisorPlanState>(() => initialSupervisorState());
   const [messages, setMessages] = useState<UIMessage[]>([]);
