@@ -2551,7 +2551,7 @@ async fn ask_about_step_result_handler(
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
     use futures_util::StreamExt;
     use tokio::sync::mpsc;
-    use tokio_stream::wrappers::ReceiverStream;
+    use tokio_stream::wrappers::UnboundedReceiverStream;
 
     let logic_stream = logic::ask_about_step_result(
         &user_id,
@@ -2566,7 +2566,7 @@ async fn ask_about_step_result_handler(
     let (tx, rx) = mpsc::unbounded_channel();
 
     tokio::spawn(async move {
-        let mut stream = logic_stream;
+        let mut stream = Box::pin(logic_stream);
         while let Some(event) = stream.next().await {
             let frame = supervisor_sse_frame(&event);
             if tx.send(Ok(frame)).is_err() {
@@ -2575,5 +2575,5 @@ async fn ask_about_step_result_handler(
         }
     });
 
-    Ok(Sse::new(ReceiverStream::new(rx)))
+    Ok(Sse::new(UnboundedReceiverStream::new(rx)))
 }

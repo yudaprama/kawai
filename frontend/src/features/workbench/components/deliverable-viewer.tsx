@@ -1,5 +1,5 @@
 import { Icon } from "@/components/shared/icon";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { FileIcon } from "@/components/shared/file-icon";
@@ -49,35 +49,63 @@ export function RunSwitcher({
   runs: WorkbenchRun[];
   view: CanvasView | null;
 }) {
+  // Single-row scroll instead of unbounded wrapping — a 10-run session must
+  // not eat the canvas with chip rows. The right-edge fade appears only when
+  // the strip actually overflows (ResizeObserver, so window resizes track).
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    void runs.length; // re-check the overflow state when runs are added/removed
+    const el = scrollerRef.current;
+    if (!el) return;
+    const check = () => setOverflows(el.scrollWidth > el.clientWidth + 4);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [runs.length]);
   if (runs.length === 0) return null;
   const selectedId = view?.runId ?? activeRunId;
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      {runs.map((r, i) => {
-        const sel = r.id === selectedId;
-        return (
-          <button
-            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors ${
-              sel
-                ? "border-primary bg-primary/10 text-foreground"
-                : "border-border/60 text-foreground/80 hover:border-primary/60"
-            }`}
-            key={r.id}
-            onClick={() => onPick(r.id)}
-            title={r.goal}
-            type="button"
-          >
-            Run {i + 1}
-            {r.status === "running" ? (
-              <Icon name="loader-circle" className="text-primary size-3 shrink-0 animate-spin" />
-            ) : r.status === "completed" ? (
-              <Icon name="check-circle-2" className="text-success size-3 shrink-0" />
-            ) : (
-              <Icon name="circle-x" className="text-destructive size-3 shrink-0" />
-            )}
-          </button>
-        );
-      })}
+    <div className="relative">
+      <div
+        className="flex flex-nowrap items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        ref={scrollerRef}
+      >
+        {runs.map((r, i) => {
+          const sel = r.id === selectedId;
+          const goalLabel = r.goal.length > 28 ? `${r.goal.slice(0, 27).trimEnd()}…` : r.goal;
+          return (
+            <button
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors ${
+                sel
+                  ? "border-primary bg-primary/10 text-foreground"
+                  : "border-border/60 text-foreground/80 hover:border-primary/60"
+              }`}
+              key={r.id}
+              onClick={() => onPick(r.id)}
+              title={r.goal}
+              type="button"
+            >
+              <span className="whitespace-nowrap">Run {i + 1}</span>
+              {goalLabel !== "" && <span className="max-w-[12rem] truncate">{goalLabel}</span>}
+              {r.status === "running" ? (
+                <Icon name="loader-circle" className="text-primary size-3 shrink-0 animate-spin" />
+              ) : r.status === "completed" ? (
+                <Icon name="check-circle-2" className="text-success size-3 shrink-0" />
+              ) : (
+                <Icon name="circle-x" className="text-destructive size-3 shrink-0" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {overflows && (
+        <div
+          aria-hidden
+          className="from-background pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l to-transparent"
+        />
+      )}
     </div>
   );
 }

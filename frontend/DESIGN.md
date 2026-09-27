@@ -209,5 +209,7 @@ backdrop, Esc/tap-out to close). The Workbench run view has a top bar
 backdrop/Esc close, ← → back to the landing composer, disabled mid-run).
 The progress sidebar auto-opens when the plan needs the user (review,
 confirmation gates) so a run can't stall invisibly; Esc closes the drawer
-first, then arms the two-step stop — the second press stops the run. Run
+first, then arms the two-step stop — the second press stops the run. The
+drawer header carries a collapsed Saldo-token chip, so the balance stays
+visible mid-run without opening the nav drawer. Run
 history and the goal composer are available on the landing hero throughout.

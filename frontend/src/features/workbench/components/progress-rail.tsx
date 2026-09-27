@@ -67,8 +67,10 @@ function StateIcon({ state }: { state: SupervisorStep["state"] }) {
   return <span className="text-muted-foreground/50 block size-3.5 shrink-0 rounded-full border" />;
 }
 
-/** Live-ticking duration, freezing at `to` once set. */
-function Duration({ from, to }: { from: number; to?: number }) {
+/** Live-ticking duration, freezing at `to` once set. The tick lives HERE so
+ *  the parent rail/tree never re-renders per second. `className` upgrades
+ *  the text size (header uses text-xs; step rows keep text-[10px]). */
+function Duration({ className, from, to }: { className?: string; from: number; to?: number }) {
   const [, tick] = useState(0);
   useEffect(() => {
     if (to != null) return;
@@ -76,7 +78,11 @@ function Duration({ from, to }: { from: number; to?: number }) {
     return () => clearInterval(t);
   }, [to]);
   return (
-    <span className="text-muted-foreground shrink-0 font-mono text-[10px] tabular-nums">{fmtDuration(from, to)}</span>
+    <span
+      className={`text-muted-foreground shrink-0 font-mono tabular-nums ${className == null ? "text-[10px]" : className}`}
+    >
+      {fmtDuration(from, to)}
+    </span>
   );
 }
 
@@ -398,9 +404,6 @@ export function ProgressRail({
   const startedAt = unseeded
     ? (currentRun?.startedAt ?? null)
     : (supervisor.planStartedAt ?? currentRun?.startedAt ?? null);
-  // Live-tick while a run is in flight so the elapsed timers move every
-  // second even when no events arrive (long silent planner rounds).
-  const [, tick] = useState(0);
   // Execution steps start COLLAPSED in review — the plan summary is the
   // contract; the step list is an appendix opened on demand.
   const [reviewStepsOpen, setReviewStepsOpen] = useState(false);
@@ -420,11 +423,6 @@ export function ProgressRail({
     const t = setTimeout(() => setDiscardArmed(false), 3000);
     return () => clearTimeout(t);
   }, [discardArmed, supervisor.status]);
-  useEffect(() => {
-    if (supervisor.status !== "running") return;
-    const t = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(t);
-  }, [supervisor.status]);
   // Focus moves to the blocking card when the run needs the user (review or
   // confirmation gate) — keyboard and screen-reader users otherwise keep
   // typing into the composer with no signal. The short delay lets the mobile
@@ -464,24 +462,38 @@ export function ProgressRail({
         )}
         {startedAt != null && (
           <div className="text-muted-foreground font-mono text-xs">
-            Duration: {fmtDuration(startedAt, supervisor.planCompletedAt ?? undefined)}
+            Duration:{" "}
+            <Duration
+              className="text-xs"
+              from={startedAt}
+              /* Unseeded: planCompletedAt still belongs to the previous run —
+                 tick live from this run's submit instead of freezing on it. */
+              to={unseeded ? undefined : (supervisor.planCompletedAt ?? undefined)}
+            />
           </div>
         )}
         {/* Determinate run progress: settled steps over the planned total —
-            glanceable completion without reading the step tree. Hidden while
-            planning (the steps still belong to the previous run) and for
-            empty plans. */}
-        {!unseeded && supervisor.steps.length > 0 && (
-          <Progress
-            aria-label={`${supervisor.steps.filter((s) => s.state === "completed" || s.state === "failed" || s.state === "skipped").length} of ${supervisor.steps.length} steps done`}
-            className="mt-2 h-1"
-            value={
-              (supervisor.steps.filter((s) => s.state === "completed" || s.state === "failed" || s.state === "skipped")
-                .length /
-                supervisor.steps.length) *
-              100
-            }
-          />
+            glanceable completion without reading the step tree. While
+            planning the slot holds an indeterminate pulse (the steps still
+            belong to the previous run); empty plans render nothing. */}
+        {unseeded ? (
+          // Planning window: reserve the bar's slot with an indeterminate
+          // pulse so the determinate bar doesn't shift the layout in later.
+          <div aria-hidden className="bg-accent mt-2 h-1 animate-pulse rounded-full" />
+        ) : (
+          supervisor.steps.length > 0 && (
+            <Progress
+              aria-label={`${supervisor.steps.filter((s) => s.state === "completed" || s.state === "failed" || s.state === "skipped").length} of ${supervisor.steps.length} steps done`}
+              className="mt-2 h-1"
+              value={
+                (supervisor.steps.filter(
+                  (s) => s.state === "completed" || s.state === "failed" || s.state === "skipped",
+                ).length /
+                  supervisor.steps.length) *
+                100
+              }
+            />
+          )
         )}
       </div>
 

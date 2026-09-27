@@ -37,6 +37,7 @@ tracing = "0.1"
 # when the corresponding feature is on. `stream` for reqwest is likewise
 # owned by remote-llm/kawai-embedding.
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
+tokio-stream = "0.1"
 async-stream = "0.3"
 futures-core = "0.3"
 futures-util = "0.3"

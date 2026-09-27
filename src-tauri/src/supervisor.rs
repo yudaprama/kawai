@@ -926,7 +926,6 @@ via the always-available `session_step_results` tool. If the goal depends on det
                             }
                         }
                     }
-                    _ => {}
                 }
             }
         }
