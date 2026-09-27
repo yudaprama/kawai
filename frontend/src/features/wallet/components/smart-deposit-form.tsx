@@ -56,7 +56,7 @@ export function SmartDepositForm({ onDeposit, loading, currentNetwork, gasEstima
           </div>
         </div>
         {needsGas && (
-          <p className="text-xs text-amber-600 dark:text-amber-400">
+          <p className="text-xs text-warning">
             This wallet has no MON — network fees are paid in MON, so the deposit will fail without it.
           </p>
         )}
@@ -77,7 +77,7 @@ export function SmartDepositForm({ onDeposit, loading, currentNetwork, gasEstima
       <p className="text-sm text-muted-foreground">
         Deposit {symLong} into your kawai balance on the {name} network.
       </p>
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+      <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm">
         <p className="font-semibold">Only deposit {symLong} on Monad Network!</p>
         <p className="text-muted-foreground mt-1">Bridge from other networks first if needed.</p>
         <p className="text-xs text-muted-foreground mt-2">

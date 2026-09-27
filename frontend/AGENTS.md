@@ -55,7 +55,7 @@ frontend/
 │   ├── main.tsx            # React root + TooltipProvider + Toaster (sonner)
 │   ├── app/
 │   │   └── App.tsx         # main app: the app header (asset nav) + the Workbench (only surface) + asset workspace pages
-│   ├── index.css           # Tailwind v4 + shadcn semantics aliased to Tea design tokens (--tea-* in :root/.dark)
+│   ├── index.css           # Tailwind v4 + tweakcn shadcn theme (semantic literals :root/.dark); --tea-* names alias the theme for the vendored asset components
 │   │
 │   ├── features/           # feature-organized domain code
 │   │   ├── auth/            # authentication: auth-gate.tsx, use-auth.ts
@@ -128,7 +128,7 @@ User goal → WorkbenchPage (landing hero composer) → use-workbench.run()
 | Imports | `@/` alias for all local imports (`@/lib/api`, `@/components/ui/button`, `@/hooks/use-theme`) |
 | Lucide icons | Import individually: `import { MoonIcon, SunIcon } from "lucide-react"` |
 | Styling | Tailwind v4 utility classes + `cn()` from `@/lib/utils` for conditional classes |
-| CSS | `index.css` defines the raw `--tea-*` tokens (light + dark) and aliases the shadcn semantics to them — theme both via the tea vars, never hardcode colors |
+| CSS | `index.css` carries the tweakcn shadcn theme (literal light/dark semantic values); the `--tea-*` names are an alias bridge into it for the vendored asset components (`success`/`warning` stay literal status colors) — theme via token classes, never hardcode colors |
 | Components | Prefer `ai-elements/` → `ui/` first; add new shadcn components via `bunx shadcn@latest add` only when nothing fits |
 | Hooks | Custom hooks in `hooks/`; each hook is a single file |
 | Platform | All platform capabilities go through the `Platform` interface in `platform/types.ts` — never use browser globals directly in components |

@@ -1,197 +1,200 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
 
 @custom-variant dark (&:is(.dark *));
 
-/* Tea Design tokens — resolved from tea-component@2.8.0's default theme
- * (tea-component/dist/themes/default-pack.css, MIT). The asset-management
- * components (components/asset/*, vendored from TencentDB-Agent-Memory's
- * MemoryPanel) consume the --tea-* names verbatim; the shadcn semantic
- * variables alias them so the whole app follows one palette. `.dark`
- * overrides only the raw tea tokens — custom-property aliases resolve per
- * element, so the :root mappings pick the dark values up automatically. */
+/* Theme — tweakcn shadcn theme (neutral mono palette,
+ * https://tweakcn.com/r/themes/cmuiu1037000004l25pcv1ycl): shadcn semantic
+ * variables are literal light values in :root and dark values in .dark.
+ * The --tea-* names are a compatibility bridge for the vendored
+ * asset-management components (components/asset/*, from
+ * TencentDB-Agent-Memory's MemoryPanel) and other direct consumers: they
+ * alias the semantic layer (color-mix where the theme has no direct token),
+ * so they follow the global theme in both modes — custom-property aliases
+ * resolve per element, so the .dark overrides flow through. Only
+ * success/warning stay literal status colors (no theme counterpart; .dark
+ * keeps their tuned dark variants). */
 :root {
   color-scheme: light;
 
-  /* Fonts (Tea typography primitives) */
-  --tea-font-family-default:
-    -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", Helvetica,
-    "Microsoft YaHei UI", "Microsoft YaHei", SimSun, Arial, sans-serif;
-  --tea-font-family-code: Consolas, Menlo, Monaco, Andale Mono, Ubuntu Mono, monospace;
+  /* Tea-name bridge — vendored asset components and a few direct usages
+   * consume these names verbatim; aliasing them to the semantic layer makes
+   * them follow the global theme (aliases resolve per element, so the .dark
+   * semantic overrides flow through). color-mix fills the roles the theme
+   * has no direct token for (brand hover/selected tints, layered text). */
+  --tea-font-family-default: var(--font-sans);
+  --tea-font-family-code: var(--font-mono);
   --tea-typography-body-sm: normal 400 12px/20px var(--tea-font-family-default);
 
   /* Surfaces */
-  --tea-color-bg-page-default: #f2f4f8;
-  --tea-color-bg-primary-default: #fff;
-  --tea-color-bg-primary-hover: #f2f4f8;
-  --tea-color-bg-secondary-default: #f2f4f8;
-  --tea-color-bg-secondary-hover: #e9ecf1;
-  --tea-color-bg-container-default: #fff;
+  --tea-color-bg-page-default: var(--background);
+  --tea-color-bg-primary-default: var(--card);
+  --tea-color-bg-primary-hover: var(--accent);
+  --tea-color-bg-secondary-default: var(--muted);
+  --tea-color-bg-secondary-hover: var(--accent);
+  --tea-color-bg-container-default: var(--card);
 
   /* Brand */
-  --tea-color-bg-brand-default: #0052d9;
-  --tea-color-bg-brand-hover: #266fe8;
-  --tea-color-bg-brand-lighten-default: #e3ecff;
-  --tea-color-text-brand-default: #0052d9;
-  --tea-color-text-on-bg-brand-default: #ffffff;
-  --tea-color-border-brand-default: #0052d9;
+  --tea-color-bg-brand-default: var(--primary);
+  --tea-color-bg-brand-hover: color-mix(in oklab, var(--primary) 85%, var(--background));
+  --tea-color-bg-brand-lighten-default: color-mix(in oklab, var(--primary) 10%, var(--background));
+  --tea-color-text-brand-default: var(--primary);
+  --tea-color-text-on-bg-brand-default: var(--primary-foreground);
+  --tea-color-border-brand-default: var(--primary);
 
   /* Text */
-  --tea-color-text-primary: rgba(0, 0, 0, 0.9);
-  --tea-color-text-secondary: rgba(0, 0, 0, 0.7);
-  --tea-color-text-tertiary: rgba(0, 0, 0, 0.5);
-  --tea-color-text-disabled: rgba(0, 0, 0, 0.3);
-  --tea-color-text-link-default: #0052d9;
+  --tea-color-text-primary: var(--foreground);
+  --tea-color-text-secondary: var(--muted-foreground);
+  --tea-color-text-tertiary: color-mix(in oklab, var(--muted-foreground) 75%, transparent);
+  --tea-color-text-disabled: color-mix(in oklab, var(--muted-foreground) 55%, transparent);
+  --tea-color-text-link-default: var(--primary);
 
-  /* Borders */
-  --tea-color-border-primary-default: #e6e9ef;
-  --tea-color-border-secondary-default: #e9ecf1;
+  /* Borders + focus */
+  --tea-color-border-primary-default: var(--border);
+  --tea-color-border-secondary-default: var(--border);
+  --tea-color-border-focus: var(--ring);
 
-  /* Functional */
-  --tea-color-bg-error-default: #f64041;
-  --tea-color-text-error-default: #f64041;
-  --tea-color-text-on-bg-error-default: hsla(0, 0%, 100%, 0.9);
+  /* Functional — success/warning stay literal status colors (no theme
+   * counterpart; .dark keeps their tuned dark variants below). */
+  --tea-color-bg-error-default: var(--destructive);
+  --tea-color-text-error-default: var(--destructive);
+  --tea-color-text-on-bg-error-default: var(--destructive-foreground);
   --tea-color-bg-success-default: #0cbf5b;
   --tea-color-text-success-default: #0cbf5b;
   --tea-color-text-on-bg-success-default: hsla(0, 0%, 100%, 0.9);
   --tea-color-bg-warning-default: #ff7800;
   --tea-color-text-warning-default: #ff7800;
   --tea-color-text-on-bg-warning-default: hsla(0, 0%, 100%, 0.9);
-  --tea-color-bg-inverse-default: #202020;
-  --tea-color-text-on-bg-inverse-default: hsla(0, 0%, 100%, 0.9);
+  --tea-color-bg-inverse-default: var(--foreground);
+  --tea-color-text-on-bg-inverse-default: var(--background);
 
   /* Shadows */
-  --tea-shadow-xs: 0 1px 4px 0 rgba(0, 0, 0, 0.05);
-  --tea-shadow-sm: 0 2px 8px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-  --tea-shadow-md: 0 8px 24px -4px rgba(0, 0, 0, 0.1), 0 8px 12px -8px rgba(0, 0, 0, 0.05);
+  --tea-shadow-xs: var(--shadow-2xs);
+  --tea-shadow-sm: var(--shadow-sm);
+  --tea-shadow-md: var(--shadow-md);
 
-  /* ── shadcn semantics → Tea (mirrors the MemoryPanel Tailwind/Tea bridge) ──
-   * background is the page grey; cards/popovers sit on it as white panels. */
-  --background: var(--tea-color-bg-page-default);
-  --foreground: var(--tea-color-text-primary);
-  --card: var(--tea-color-bg-primary-default);
-  --card-foreground: var(--tea-color-text-primary);
-  --popover: var(--tea-color-bg-primary-default);
-  --popover-foreground: var(--tea-color-text-primary);
-  --primary: var(--tea-color-bg-brand-default);
-  --primary-foreground: var(--tea-color-text-on-bg-brand-default);
-  --secondary: var(--tea-color-bg-secondary-default);
-  --secondary-foreground: var(--tea-color-text-primary);
-  --muted: var(--tea-color-bg-secondary-default);
-  --muted-foreground: var(--tea-color-text-secondary);
-  --accent: var(--tea-color-bg-secondary-default);
-  --accent-foreground: var(--tea-color-text-primary);
-  --destructive: var(--tea-color-bg-error-default);
-  --destructive-foreground: var(--tea-color-text-on-bg-error-default);
+  /* ── shadcn semantics (tweakcn theme, light) ── */
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(0 0% 0%);
+  --card: hsl(240 6.6667% 97.0588%);
+  --card-foreground: hsl(0 0% 0%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(0 0% 0%);
+  --primary: hsl(0 0% 0%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(0 0% 89.8039%);
+  --secondary-foreground: hsl(0 0% 0%);
+  --muted: hsl(0 0% 94.1176%);
+  --muted-foreground: hsl(240 7.563% 46.6667%);
+  --accent: hsl(0 0% 94.1176%);
+  --accent-foreground: hsl(0 0% 0%);
+  --destructive: hsl(0 79.3388% 47.451%);
+  --destructive-foreground: hsl(0 0% 100%);
   --success: var(--tea-color-bg-success-default);
   --success-foreground: var(--tea-color-text-on-bg-success-default);
   --warning: var(--tea-color-bg-warning-default);
   --warning-foreground: var(--tea-color-text-on-bg-warning-default);
-  --border: var(--tea-color-border-primary-default);
-  --input: var(--tea-color-border-primary-default);
-  --ring: var(--tea-color-border-brand-default);
-  --chart-1: #0052d9;
-  --chart-2: #0cbf5b;
-  --chart-3: #ff7800;
-  --chart-4: #f64041;
-  --chart-5: #4787f0;
-  --sidebar: var(--tea-color-bg-primary-default);
-  --sidebar-foreground: var(--tea-color-text-primary);
-  --sidebar-primary: var(--tea-color-bg-brand-default);
-  --sidebar-primary-foreground: var(--tea-color-text-on-bg-brand-default);
-  --sidebar-accent: var(--tea-color-bg-secondary-default);
-  --sidebar-accent-foreground: var(--tea-color-text-primary);
-  --sidebar-border: var(--tea-color-border-primary-default);
-  --sidebar-ring: var(--tea-color-border-brand-default);
+  --border: hsl(0 0% 89.8039%);
+  --input: hsl(0 0% 89.8039%);
+  --ring: hsl(0 0% 0%);
+  --chart-1: hsl(0 0% 0%);
+  --chart-2: hsl(0 0% 20%);
+  --chart-3: hsl(0 0% 40%);
+  --chart-4: hsl(0 0% 60%);
+  --chart-5: hsl(0 0% 80%);
+  --sidebar: hsl(0 0% 97.6471%);
+  --sidebar-foreground: hsl(0 0% 0%);
+  --sidebar-primary: hsl(0 0% 0%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(0 0% 89.8039%);
+  --sidebar-accent-foreground: hsl(0 0% 0%);
+  --sidebar-border: hsl(0 0% 89.8039%);
+  --sidebar-ring: hsl(0 0% 0%);
 
   /* ── kawai extras ── */
-  --font-sans: var(--tea-font-family-default);
-  --font-serif: Georgia, "Times New Roman", serif;
-  --font-mono: var(--tea-font-family-code);
-  --radius: 0.375rem;
-  --tracking-normal: 0em;
+  --font-sans: "Inter Variable", system-ui, -apple-system, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: "JetBrains Mono Variable", SFMono-Regular, monospace;
+  --radius: 0.75rem;
+  --tracking-normal: -0.015em;
   --spacing: 0.25rem;
 
-  /* Focus ring — used by interactive hover states across components */
-  --tea-color-border-focus: #0052d9;
-
-  --shadow-2xs: var(--tea-shadow-xs);
-  --shadow-xs: var(--tea-shadow-xs);
-  --shadow-sm: var(--tea-shadow-sm);
-  --shadow: var(--tea-shadow-sm);
-  --shadow-md: var(--tea-shadow-md);
-  --shadow-lg: var(--tea-shadow-md);
-  --shadow-xl: 0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 8px 20px -8px rgba(0, 0, 0, 0.08);
-  --shadow-2xl: 0 16px 48px -8px rgba(0, 0, 0, 0.25);
-  --shadow-color: rgb(0 0 0);
-  --shadow-opacity: 0.1;
-  --shadow-blur: 3px;
+  --shadow-2xs: 0px 4px 20px 0px hsl(0 0% 0% / 0.02);
+  --shadow-xs: 0px 4px 20px 0px hsl(0 0% 0% / 0.02);
+  --shadow-sm: 0px 4px 20px 0px hsl(0 0% 0% / 0.04), 0px 1px 2px -1px hsl(0 0% 0% / 0.04);
+  --shadow: 0px 4px 20px 0px hsl(0 0% 0% / 0.04), 0px 1px 2px -1px hsl(0 0% 0% / 0.04);
+  --shadow-md: 0px 4px 20px 0px hsl(0 0% 0% / 0.04), 0px 2px 4px -1px hsl(0 0% 0% / 0.04);
+  --shadow-lg: 0px 4px 20px 0px hsl(0 0% 0% / 0.04), 0px 4px 6px -1px hsl(0 0% 0% / 0.04);
+  --shadow-xl: 0px 4px 20px 0px hsl(0 0% 0% / 0.04), 0px 8px 10px -1px hsl(0 0% 0% / 0.04);
+  --shadow-2xl: 0px 4px 20px 0px hsl(0 0% 0% / 0.10);
+  --shadow-color: #000000;
+  --shadow-opacity: 0.04;
+  --shadow-blur: 20px;
   --shadow-spread: 0px;
   --shadow-offset-x: 0px;
-  --shadow-offset-y: 1px;
+  --shadow-offset-y: 4px;
   --letter-spacing: 0em;
 }
 
 .dark {
   color-scheme: dark;
 
-  /* Surfaces */
-  --tea-color-bg-page-default: #181818;
-  --tea-color-bg-primary-default: #202020;
-  --tea-color-bg-primary-hover: #2c2c2c;
-  --tea-color-bg-secondary-default: #2c2c2c;
-  --tea-color-bg-secondary-hover: #383838;
-  --tea-color-bg-container-default: #202020;
-
-  /* Brand */
-  --tea-color-bg-brand-default: #2174ff;
-  --tea-color-bg-brand-hover: #478dff;
-  --tea-color-bg-brand-lighten-default: #1d2852;
-  --tea-color-text-brand-default: #69a1ff;
-  --tea-color-text-on-bg-brand-default: #ffffff;
-  --tea-color-border-brand-default: #69a1ff;
-
-  /* Focus ring — brighter for dark mode */
-  --tea-color-border-focus: #69a1ff;
-
-  /* Text */
-  --tea-color-text-primary: hsla(0, 0%, 100%, 0.9);
-  --tea-color-text-secondary: hsla(0, 0%, 100%, 0.55);
-  --tea-color-text-tertiary: hsla(0, 0%, 100%, 0.5);
-  --tea-color-text-disabled: hsla(0, 0%, 100%, 0.35);
-  --tea-color-text-link-default: #69a1ff;
-
-  /* Borders */
-  --tea-color-border-primary-default: #383838;
-  --tea-color-border-secondary-default: #383838;
-
-  /* Functional */
-  --tea-color-bg-error-default: #fb6e77;
-  --tea-color-text-error-default: #fb6e77;
-  --tea-color-text-on-bg-error-default: hsla(0, 0%, 100%, 0.9);
+  /* Success/warning keep their tuned dark variants — the theme has no
+   * counterpart for them (every other --tea-* name is aliased in :root and
+   * follows the semantic overrides below). */
   --tea-color-bg-success-default: #07a872;
   --tea-color-text-success-default: #07a872;
-  --tea-color-text-on-bg-success-default: hsla(0, 0%, 100%, 0.9);
   --tea-color-bg-warning-default: #ed8139;
   --tea-color-text-warning-default: #ed8139;
-  --tea-color-text-on-bg-warning-default: hsla(0, 0%, 100%, 0.9);
-  --tea-color-bg-inverse-default: #fff;
-  --tea-color-text-on-bg-inverse-default: rgba(0, 0, 0, 0.9);
 
-  /* Shadows */
-  --tea-shadow-xs: 2px 4px 8px 0 rgba(0, 0, 0, 0.2);
-  --tea-shadow-sm: 0 2px 12px 0 rgba(0, 0, 0, 0.2), 2px 4px 8px 0 rgba(0, 0, 0, 0.2);
-  --tea-shadow-md: 0 4px 24px -4px rgba(0, 0, 0, 0.3), 0 4px 24px -8px rgba(0, 0, 0, 0.2);
+  /* ── shadcn semantics (tweakcn theme, dark) ── */
+  --background: hsl(0 0% 0%);
+  --foreground: hsl(0 0% 94.1176%);
+  --card: hsl(0 0% 7.0588%);
+  --card-foreground: hsl(0 0% 94.1176%);
+  --popover: hsl(0 0% 3.9216%);
+  --popover-foreground: hsl(0 0% 94.1176%);
+  --primary: hsl(0 0% 100%);
+  --primary-foreground: hsl(0 0% 0%);
+  --secondary: hsl(0 0% 10.1961%);
+  --secondary-foreground: hsl(0 0% 94.1176%);
+  --muted: hsl(0 0% 7.0588%);
+  --muted-foreground: hsl(0 0% 61.9608%);
+  --accent: hsl(0 0% 10.1961%);
+  --accent-foreground: hsl(0 0% 100%);
+  --destructive: hsl(0 79.3388% 47.451%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(0 0% 12.1569%);
+  --input: hsl(0 0% 12.1569%);
+  --ring: hsl(0 0% 100%);
+  --chart-1: hsl(0 0% 100%);
+  --chart-2: hsl(0 0% 80%);
+  --chart-3: hsl(0 0% 60%);
+  --chart-4: hsl(0 0% 40%);
+  --chart-5: hsl(0 0% 20%);
+  --sidebar: hsl(0 0% 1.9608%);
+  --sidebar-foreground: hsl(0 0% 94.1176%);
+  --sidebar-primary: hsl(0 0% 100%);
+  --sidebar-primary-foreground: hsl(0 0% 0%);
+  --sidebar-accent: hsl(0 0% 7.0588%);
+  --sidebar-accent-foreground: hsl(0 0% 94.1176%);
+  --sidebar-border: hsl(0 0% 12.1569%);
+  --sidebar-ring: hsl(0 0% 100%);
 
-  --chart-1: #69a1ff;
-  --chart-2: #07a872;
-  --chart-3: #ed8139;
-  --chart-4: #fb6e77;
-  --chart-5: #8cb8ff;
-
-  --shadow-xl: 0 12px 32px -4px rgba(0, 0, 0, 0.45), 0 8px 20px -8px rgba(0, 0, 0, 0.35);
-  --shadow-2xl: 0 16px 48px -8px rgba(0, 0, 0, 0.55);
+  --shadow-2xs: 0px 10px 40px 0px hsl(0 0% 0% / 0.40);
+  --shadow-xs: 0px 10px 40px 0px hsl(0 0% 0% / 0.40);
+  --shadow-sm: 0px 10px 40px 0px hsl(0 0% 0% / 0.80), 0px 1px 2px -1px hsl(0 0% 0% / 0.80);
+  --shadow: 0px 10px 40px 0px hsl(0 0% 0% / 0.80), 0px 1px 2px -1px hsl(0 0% 0% / 0.80);
+  --shadow-md: 0px 10px 40px 0px hsl(0 0% 0% / 0.80), 0px 2px 4px -1px hsl(0 0% 0% / 0.80);
+  --shadow-lg: 0px 10px 40px 0px hsl(0 0% 0% / 0.80), 0px 4px 6px -1px hsl(0 0% 0% / 0.80);
+  --shadow-xl: 0px 10px 40px 0px hsl(0 0% 0% / 0.80), 0px 8px 10px -1px hsl(0 0% 0% / 0.80);
+  --shadow-2xl: 0px 10px 40px 0px hsl(0 0% 0% / 2.00);
+  --shadow-opacity: 0.8;
+  --shadow-blur: 40px;
+  --shadow-offset-y: 10px;
 }
 
 @theme inline {
@@ -230,9 +233,9 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  --font-sans: var(--tea-font-family-default);
-  --font-mono: var(--tea-font-family-code);
-  --font-serif: Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -247,7 +250,6 @@
   --shadow-lg: var(--shadow-lg);
   --shadow-xl: var(--shadow-xl);
   --shadow-2xl: var(--shadow-2xl);
-  --radius: 0.375rem;
   --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
   --tracking-tight: calc(var(--tracking-normal) - 0.025em);
   --tracking-wide: calc(var(--tracking-normal) + 0.025em);

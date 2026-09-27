@@ -276,9 +276,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
               </span>
             </p>
             {isLowTokenBalance(balance) && (
-              <p className="text-amber-500 mt-1 text-xs">
-                Saldo menipis — isi ulang sebelum menjalankan run berikutnya.
-              </p>
+              <p className="text-warning mt-1 text-xs">Saldo menipis — isi ulang sebelum menjalankan run berikutnya.</p>
             )}
           </CardContent>
         </Card>
@@ -292,8 +290,8 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
               {effectiveStatus === "credited" && txStatus ? (
                 <>
                   <p className="flex items-center gap-2 text-sm">
-                    <Icon name="check-circle-2" className="size-4 text-emerald-500" />
-                    <span className="font-medium text-emerald-500">Masuk ✓</span>
+                    <Icon name="check-circle-2" className="size-4 text-success" />
+                    <span className="font-medium text-success">Masuk ✓</span>
                     <span className="text-muted-foreground">+{txStatus.tokens.toLocaleString("id-ID")} token</span>
                   </p>
                   <p className="text-muted-foreground text-xs">
@@ -318,8 +316,8 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
               ) : (
                 <>
                   <p className="flex items-center gap-2 text-sm">
-                    <Icon name="alert-circle" className="size-4 text-amber-500" />
-                    <span className="font-medium text-amber-500">Klaim kedaluwarsa</span>
+                    <Icon name="alert-circle" className="size-4 text-warning" />
+                    <span className="font-medium text-warning">Klaim kedaluwarsa</span>
                   </p>
                   <p className="text-muted-foreground text-xs">
                     Nominal telah dibebaskan — transfer ke QR lama tidak dikreditkan.
@@ -374,7 +372,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                   </p>
                 </div>
               </div>
-              <div className="border-amber-500/30 space-y-1 rounded-md border p-3 text-xs">
+              <div className="border-warning/30 space-y-1 rounded-md border p-3 text-xs">
                 <p>
                   Bayar tepat {formatIdr(claim.idrAmount)} — nominal persis inilah yang mencocokkan pembayaran secara
                   otomatis.
@@ -403,8 +401,8 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
           </div>
         ) : previewError ? (
           // ── Not configured (503 QRIS_PAYLOAD) or preview failure — a notice, never a crash ──
-          <div className="border-amber-500/30 space-y-2 rounded-md border p-4 text-sm">
-            <p className="font-medium text-amber-500">
+          <div className="border-warning/30 space-y-2 rounded-md border p-4 text-sm">
+            <p className="font-medium text-warning">
               {previewError.includes("QRIS_PAYLOAD") ? "QRIS belum dikonfigurasi" : "Gagal memuat pengaturan"}
             </p>
             <p className="text-muted-foreground font-mono text-xs break-words">{previewError}</p>
@@ -493,8 +491,8 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
           </div>
           {history == null ? (
             historyError ? (
-              <div className="border-amber-500/30 space-y-1 rounded-md border p-3 text-xs">
-                <p className="text-amber-500 font-medium">Riwayat tidak tersedia</p>
+              <div className="border-warning/30 space-y-1 rounded-md border p-3 text-xs">
+                <p className="text-warning font-medium">Riwayat tidak tersedia</p>
                 <p className="text-muted-foreground font-mono break-words">{historyError}</p>
                 <Button onClick={loadHistory} size="sm" variant="outline">
                   Coba lagi
@@ -512,10 +510,10 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
               {activeClaim && (
                 <li className="flex items-center justify-between gap-3 border-b py-2 text-sm">
                   <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="font-mono font-medium text-emerald-500 tabular-nums">
+                    <span className="font-mono font-medium text-success tabular-nums">
                       +{activeClaim.tokens.toLocaleString("id-ID")} token
                     </span>
-                    <span className="truncate text-xs text-amber-500">
+                    <span className="truncate text-xs text-warning">
                       Top up QRIS — {effectiveStatus === "crediting" ? "diproses" : "menunggu pembayaran"}
                     </span>
                   </span>
@@ -532,7 +530,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                   <span className="flex min-w-0 items-baseline gap-2">
                     <span
                       className={`font-mono font-medium tabular-nums ${
-                        entry.amount >= 0 ? "text-emerald-500" : "text-destructive"
+                        entry.amount >= 0 ? "text-success" : "text-destructive"
                       }`}
                     >
                       {entry.amount >= 0 ? "+" : "−"}

@@ -96,14 +96,16 @@ export function HomeContent({
                     </span>
                   </div>
                   {trackedBalance && (
-                    <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 dark:border-green-900 dark:bg-green-950/20">
-                      <Badge variant="secondary" className="bg-green-600 text-white">
+                    <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-1.5">
+                      <Badge variant="secondary" className="bg-success text-success-foreground">
                         AI Balance
                       </Badge>
                       <span className="text-foreground">
                         {balanceVisible ? trackedBalance.usdt_balance : "•••"} {currentNetwork.stablecoinSymbol}
                       </span>
-                      {trackedBalance.trial_claimed && <Badge className="bg-green-600">Trial ✓</Badge>}
+                      {trackedBalance.trial_claimed && (
+                        <Badge className="bg-success text-success-foreground">Trial ✓</Badge>
+                      )}
                     </div>
                   )}
                   <div className="flex items-center gap-2">

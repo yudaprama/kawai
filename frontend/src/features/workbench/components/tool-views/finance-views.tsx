@@ -346,7 +346,7 @@ function parsePredictionMarkets(data: unknown): {
 /** Crowd-odds bar color: conviction tiers (green ≥70, amber 30–70, red <30). */
 function probTone(p: number): string {
   if (p >= 0.7) return "bg-success";
-  if (p >= 0.3) return "bg-yellow-500";
+  if (p >= 0.3) return "bg-warning";
   return "bg-destructive";
 }
 
