@@ -1,5 +1,5 @@
 use crate::auth::Session;
-use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, RecentRun, UserInfo};
+use crate::logic::{self, ActivityEvent, ActivityInput, ChatMessage, ChatSession, DeliverableTranslationMeta, RecentRun, UserInfo};
 use futures_util::{Stream, StreamExt};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -527,6 +527,31 @@ pub async fn suggest_followups(
 ) -> Result<Vec<String>, String> {
     let user_id = session_user_id(&session)?;
     Ok(logic::suggest_followups(&user_id, session_id, excerpt).await)
+}
+
+/// Authenticated RPC: translate a finished deliverable into another
+/// language — one remote-llm one-shot returning the translated markdown.
+#[tauri::command]
+pub async fn translate_deliverable(
+    markdown: String,
+    language: String,
+    session_id: Option<i64>,
+    session: State<'_, Session>,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    logic::translate_deliverable(&user_id, session_id, &markdown, &language).await
+}
+
+/// Authenticated RPC: saved translations (language chips) for this exact
+/// deliverable text — metadata only; restoring a chip rides the translate
+/// op's cache hit, so no stored body ships and no LLM call happens.
+#[tauri::command]
+pub async fn deliverable_translations(
+    markdown: String,
+    session: State<'_, Session>,
+) -> Result<Vec<DeliverableTranslationMeta>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::deliverable_translations(&user_id, &markdown).await
 }
 
 /// Authenticated RPC: fetch one skill including its body; None → null.

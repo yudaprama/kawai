@@ -10,7 +10,8 @@ import { type AgentInfo, call, codegraphIsAvailable, tauriOpenFile, errText } fr
 import { logWarn } from "@/lib/logger";
 import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
 import { runningInTauri } from "@/platform";
-import { AssetsRail } from "@/features/agents/assets-rail";
+import { ProfileControls } from "@/features/agents/profile-controls";
+import { AssetNavList } from "@/features/assets/components/asset-nav-list";
 import type { AssetViewId } from "@/features/assets/components/asset-nav";
 import { tauriWalletAdapter } from "@/features/wallet/lib/wallet-adapter";
 import { CodeAssetPage } from "@/features/codegraph/components/code-page";
@@ -26,7 +27,6 @@ import { ShortcutsDialog } from "@/components/shared/shortcuts-dialog";
 
 export default function App() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [agentsRail, setAgentsRail] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [assetView, setAssetView] = useState<AssetViewId | null>(null);
   const [codeGraphSeed, setCodeGraphSeed] = useState<{ query: string; result: string } | null>(null);
@@ -150,7 +150,6 @@ export default function App() {
 
   useAppShortcuts({
     busy,
-    onToggleAgentsRail: () => setAgentsRail((v) => !v),
     onNewChat: handleNew,
     onOpenSessions: () => setSessionsOpen(true),
   });
@@ -270,21 +269,6 @@ export default function App() {
 
   return (
     <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">
-      <div className="hidden shrink-0 lg:flex">
-        <AssetsRail
-          assetView={assetView}
-          collapsed={agentsRail}
-          userId={chat.userId}
-          walletAvailable={walletAvailable}
-          codegraphAvailable={codegraphAvailable}
-          onSelectAsset={(id) => {
-            setAssetView(id);
-          }}
-          onToggle={() => setAgentsRail((v) => !v)}
-          onLogout={() => void chat.logout()}
-          onNew={handleNew}
-        />
-      </div>
       {assetWorkspace ?? (
         <WorkbenchPage
           onAddFiles={ka.addKnowledgeFiles}
@@ -296,9 +280,22 @@ export default function App() {
           sessionSelectorRef={workbenchSelectRef}
           newSessionRef={workbenchNewRef}
           attachFilesRef={workbenchAttachRef}
+          topBarExtra={
+            <ProfileControls
+              assetView={assetView}
+              codegraphAvailable={codegraphAvailable}
+              userId={chat.userId}
+              walletAvailable={walletAvailable}
+              onLogout={() => void chat.logout()}
+              onSelectAsset={(id) => {
+                setAssetView(id);
+              }}
+            />
+          }
         />
       )}
-      {/* Mobile drawers — replace hidden rails under 768px */}
+      {/* Mobile drawer — the nav list under 1024px (the profile dropdown is
+          desktop-side; the drawer gives small screens the same entries). */}
       {mobileDrawer && (
         <div className="fixed inset-0 z-50 flex lg:hidden" role="dialog" aria-modal="true" data-open-drawer>
           <button
@@ -307,28 +304,22 @@ export default function App() {
             onClick={() => setMobileDrawer(null)}
             type="button"
           />
-          {mobileDrawer === "agents" && (
-            <div
-              className="bg-background relative flex h-full w-[210px] max-w-[85vw] flex-col shadow-xl"
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-            >
-              <AssetsRail
-                assetView={assetView}
-                collapsed={false}
-                userId={chat.userId}
-                walletAvailable={walletAvailable}
-                codegraphAvailable={codegraphAvailable}
-                onSelectAsset={(id) => {
-                  setAssetView(id);
-                  setMobileDrawer(null);
-                }}
-                onToggle={() => setMobileDrawer(null)}
-                onLogout={() => void chat.logout()}
-                onNew={handleNew}
-              />
-            </div>
-          )}
+          <div
+            className="bg-background relative flex h-full w-[210px] max-w-[85vw] flex-col gap-2 p-3 shadow-xl"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+          >
+            <AssetNavList
+              assetView={assetView}
+              codegraphAvailable={codegraphAvailable}
+              orientation="vertical"
+              walletAvailable={walletAvailable}
+              onSelectAsset={(id) => {
+                setAssetView(id);
+                setMobileDrawer(null);
+              }}
+            />
+          </div>
         </div>
       )}
       <SessionHistoryDialog

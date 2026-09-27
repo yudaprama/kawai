@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Icon } from "@/components/shared/icon";
 import { relativeTime } from "@/features/chat/lib/chat-helpers";
 import { type RecentRunInfo, call } from "@/lib/api";
@@ -17,12 +17,14 @@ export function RecentRuns({
   open,
   reloadKey,
   onOpen,
+  sessionsAction,
 }: {
   /** The landing hero is visible (and the dialog is closed) — fetch/show. */
   open: boolean;
   /** Bumped by the owner to force a refetch. */
   reloadKey: number;
   onOpen: (run: RecentRunInfo) => void;
+  sessionsAction?: ReactNode;
 }) {
   const [runs, setRuns] = useState<RecentRunInfo[] | null>(null);
 
@@ -49,7 +51,10 @@ export function RecentRuns({
   if (runs === null) {
     return (
       <div className="mx-auto w-full max-w-4xl space-y-2 p-6 text-left">
-        <div className="text-muted-foreground font-mono text-xs tracking-wider uppercase">Recent runs</div>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-muted-foreground font-mono text-xs tracking-wider uppercase">Recent runs</h3>
+          {sessionsAction}
+        </div>
         {[0, 1, 2].map((i) => (
           <div className="border-border/60 flex items-center justify-between gap-3 rounded-lg border p-3" key={i}>
             <div className="min-w-0 flex-1 space-y-1.5">
@@ -65,7 +70,10 @@ export function RecentRuns({
   if (runs.length === 0) return null;
   return (
     <div className="mx-auto w-full max-w-4xl space-y-2 p-6 text-left">
-      <h3 className="text-muted-foreground font-mono text-xs tracking-wider uppercase">Recent runs</h3>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-muted-foreground font-mono text-xs tracking-wider uppercase">Recent runs</h3>
+        {sessionsAction}
+      </div>
       {runs.map((run) => (
         <button
           className="group border-border/60 hover:border-primary/50 flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors"

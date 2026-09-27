@@ -69,7 +69,7 @@ export interface WorkbenchPageProps {
    *  (the workbench keeps its own sessions, separate from the chat hook). */
   sessionSelectorRef?: React.MutableRefObject<((id: number) => void) | null>;
   /** App-owned ref: on mount the page publishes its new-session handler here
-   *  so the App-level "New" button (rail + Cmd/Ctrl+N) can reset the
+   *  so the App-level "New" shortcut (Cmd/Ctrl+N) can reset the
    *  WORKBENCH — resetting the chat hook alone is invisible on this surface. */
   newSessionRef?: React.MutableRefObject<(() => void) | null>;
   /** App-owned ref: on mount the page publishes its attachFiles here so the
@@ -78,6 +78,10 @@ export interface WorkbenchPageProps {
   attachFilesRef?: React.MutableRefObject<
     ((files: { id: string; originalName: string; ext: string }[]) => void) | null
   >;
+  /** App-owned account cluster (Saldo chip + theme + profile dropdown with
+   *  the asset destinations) — rendered into the landing top bar, the mobile
+   *  run strip, and the run switcher row. */
+  topBarExtra?: React.ReactNode;
 }
 
 /** The kawai Workbench — the work-centric primary surface (PLAN-workbench.md).
@@ -94,6 +98,7 @@ export function WorkbenchPage({
   sessionSelectorRef,
   newSessionRef,
   attachFilesRef,
+  topBarExtra,
 }: WorkbenchPageProps) {
   const workbench = useWorkbench();
   const { supervisor } = workbench;
@@ -449,26 +454,7 @@ export function WorkbenchPage({
   if (home) {
     return (
       <div className="bg-background flex h-full w-full flex-col">
-        <div className="flex items-center justify-between px-4 py-2">
-          <span className="inline-flex items-center gap-1.5">
-            {onOpenNav && (
-              <button
-                type="button"
-                aria-label="Open navigation"
-                title="Navigation"
-                onClick={onOpenNav}
-                className="text-muted-foreground hover:text-foreground -ml-1.5 rounded-lg p-1.5 transition-colors lg:hidden"
-              >
-                <Icon name="menu" className="size-4" />
-              </button>
-            )}
-            <span className="text-foreground inline-flex items-center gap-1.5 font-mono text-xs font-bold tracking-wider uppercase">
-              <Icon name="zap" className="text-primary size-4" />
-              Kawai Workbench
-            </span>
-          </span>
-          {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
-        </div>
+        <div className="flex items-center justify-end gap-1 px-4 py-2">{topBarExtra}</div>
         <div className="flex flex-1 flex-col items-center justify-center gap-5 p-6 text-center">
           <div className="space-y-2">
             <p className="text-foreground inline-flex items-center gap-2 text-lg font-semibold">
@@ -547,7 +533,12 @@ export function WorkbenchPage({
               />
             </div>
           ) : (
-            <RecentRuns open={!sessionsOpen} reloadKey={recentKey} onOpen={openRecent} />
+            <RecentRuns
+              open={!sessionsOpen}
+              reloadKey={recentKey}
+              onOpen={openRecent}
+              sessionsAction={onOpenSessions ? <SessionsButton onOpen={onOpenSessions} /> : null}
+            />
           )}
         </div>
       </div>
@@ -579,7 +570,7 @@ export function WorkbenchPage({
           <div className="flex items-center gap-1">
             {/* Balance stays visible mid-run on mobile — the submit gate is
                 unreachable from here without opening the nav drawer. */}
-            <TokenBalanceChip collapsed onSelectAsset={() => emitOpenTopup()} />
+            <TokenBalanceChip onSelectAsset={() => emitOpenTopup()} />
             <button
               type="button"
               aria-label="Close progress panel"
@@ -614,7 +605,6 @@ export function WorkbenchPage({
             ) : (
               <span />
             )}
-            {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
           </div>
           {supervisor.status === "reviewing" && (
             <p className="text-muted-foreground mb-2 font-mono text-xs">
@@ -667,6 +657,7 @@ export function WorkbenchPage({
             <span className="font-mono text-[10px] tracking-wider uppercase">Progress</span>
           </button>
           <span className="flex-1" />
+          {topBarExtra}
           <button
             type="button"
             aria-label="Back to goal composer"
@@ -684,13 +675,16 @@ export function WorkbenchPage({
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="border-border/60 border-b px-4 py-2">
-              <RunSwitcher
-                activeRunId={activeRunId}
-                onPick={(runId) => userPick(runId, "final")}
-                runs={workbench.runs}
-                view={view}
-              />
+            <div className="border-border/60 flex items-center gap-2 border-b px-4 py-2">
+              <div className="min-w-0 flex-1">
+                <RunSwitcher
+                  activeRunId={activeRunId}
+                  onPick={(runId) => userPick(runId, "final")}
+                  runs={workbench.runs}
+                  view={view}
+                />
+              </div>
+              {topBarExtra}
             </div>
             <div className="min-h-0 flex-1">
               {(() => {
@@ -705,6 +699,7 @@ export function WorkbenchPage({
                       onPickDoc={(doc) => userPick(shown.id, doc)}
                       onAsk={workbench.askAboutResult}
                       run={shown}
+                      sessionId={workbench.sessionId}
                     />
                   );
                 }

@@ -154,6 +154,8 @@ pub fn run() {
         commands::skill_create,
         commands::skill_list,
         commands::suggest_followups,
+        commands::translate_deliverable,
+        commands::deliverable_translations,
         commands::skill_get,
         commands::skill_update,
         commands::skill_delete,

@@ -2,13 +2,11 @@ import { useEffect } from "react";
 
 export function useAppShortcuts({
   busy,
-  onToggleAgentsRail,
   onToggleCanvas,
   onOpenSessions,
   onNewChat,
 }: {
   busy: boolean;
-  onToggleAgentsRail: () => void;
   onToggleCanvas?: () => void;
   onOpenSessions: () => void;
   onNewChat: () => void;
@@ -16,10 +14,7 @@ export function useAppShortcuts({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
-      if (e.key === "1") {
-        e.preventDefault();
-        onToggleAgentsRail();
-      } else if (e.key === "2") {
+      if (e.key === "2") {
         e.preventDefault();
         onToggleCanvas?.();
       } else if (e.key === "k" || e.key === "K") {
@@ -32,5 +27,5 @@ export function useAppShortcuts({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onToggleAgentsRail, onToggleCanvas, onOpenSessions, onNewChat]);
+  }, [busy, onToggleCanvas, onOpenSessions, onNewChat]);
 }

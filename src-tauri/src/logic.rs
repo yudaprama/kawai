@@ -94,6 +94,133 @@ pub async fn suggest_followups(_user_id: &str, session_id: Option<i64>, excerpt:
         .collect()
 }
 
+/// Drop a markdown fence the model wrapped its WHOLE answer in
+/// (` ```markdown … ``` `) — the viewer wants raw markdown, not one giant
+/// code block. Skipped when the SOURCE itself starts with a fence, so a
+/// legitimately fence-first deliverable is never stripped; also skipped when
+/// the first line isn't a plain opener (inline code at document start is
+/// content, not a wrapper).
+fn strip_outer_fence<'a>(source: &str, response: &'a str) -> &'a str {
+    let t = response.trim();
+    if !t.starts_with("```") || source.trim_start().starts_with("```") {
+        return t;
+    }
+    let Some(newline) = t.find('\n') else {
+        return t; // single line — nothing to unwrap
+    };
+    let (first, rest) = t.split_at(newline);
+    let rest = &rest[1..]; // drop the newline
+    let plain_opener = first[3..]
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_'));
+    if !plain_opener {
+        return t;
+    }
+    rest.strip_suffix("```").map(str::trim_end).unwrap_or(rest)
+}
+
+/// Translate a finished deliverable into another language (one cloud/local
+/// one-shot via the remote-llm pool). Returns translated markdown with its
+/// structure intact — headings, lists, tables, links and `kawai-file://`
+/// chart tokens survive, so the viewer renders it and the export pipeline
+/// accepts it exactly like the original. Errors instead of degrading: the
+/// viewer shows the message next to the translate control.
+///
+/// Read-through cache keyed by (source hash, language): a repeat translate
+/// of the same text serves the stored body with zero LLM calls, and the write
+/// lands inside this op — there is no frontend write path to lose.
+pub async fn translate_deliverable(
+    user_id: &str,
+    session_id: Option<i64>,
+    markdown: &str,
+    language: &str,
+) -> Result<String, String> {
+    // Hard cap: one pass, no chunking. The deliverable writer's own output
+    // budget (~8192 tokens) keeps real deliverables well under this.
+    const MAX_SOURCE_CHARS: usize = 48_000;
+    let language = language.trim();
+    if language.is_empty() {
+        return Err("target language required".to_string());
+    }
+    let source = markdown.trim();
+    if source.is_empty() {
+        return Err("nothing to translate".to_string());
+    }
+    if source.chars().count() > MAX_SOURCE_CHARS {
+        return Err(format!(
+            "deliverable too long to translate in one pass (limit {MAX_SOURCE_CHARS} characters)"
+        ));
+    }
+    let source_hash = translation_source_hash(source);
+    if let Some(stored) = kawai_db::get_deliverable_translation(user_id, &source_hash, language)
+        .await
+        .map_err(|e| format!("translation cache unreadable: {e}"))?
+    {
+        return Ok(stored);
+    }
+    let system = "You are a professional translator of finished report deliverables. You reply with the translated markdown and nothing else.";
+    let task = format!(
+        "Translate the markdown deliverable below into {language}.\n\
+         - Keep the markdown structure exactly: headings, lists, tables, links, bold/italic, inline code and fences change only their TEXT, never their markup.\n\
+         - In image tokens `![caption](kawai-file://ID)`, translate only the caption and copy the `(kawai-file://ID)` URL exactly.\n\
+         - Keep numbers, dates, proper nouns and code identifiers unchanged.\n\
+         - Reply with ONLY the translated markdown — no commentary, no code fence around the whole answer.\n\n\
+         Deliverable:\n{source}"
+    );
+    let response = remote_llm::reason::reason_in(
+        system,
+        &task,
+        "deliverable-translator",
+        session_id.map(|id| format!("kawai-session-{id}")),
+        Some(user_id.to_string()),
+    )
+    .await
+    .map_err(|e| format!("translation failed: {e}"))?;
+    let translated = strip_outer_fence(source, &response);
+    if translated.trim().is_empty() {
+        return Err("translator returned an empty result".to_string());
+    }
+    // Persist (read-through write): the translation itself already succeeded,
+    // so a storage failure only costs future cache hits — warn, don't fail the
+    // user's result away.
+    if let Err(e) = kawai_db::put_deliverable_translation(
+        user_id,
+        &source_hash,
+        language,
+        &translated,
+        session_id,
+    )
+    .await
+    {
+        tracing::warn!(component = "deliverable", error = %e, "translation not persisted");
+    }
+    Ok(translated.to_string())
+}
+
+/// Storage identity for a translation: sha256 hex of the canonical (trimmed)
+/// source markdown. Content-keyed on purpose — planKey-less legacy records
+/// and any session holding the same deliverable resolve to one row.
+fn translation_source_hash(source: &str) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha256::digest(source.as_bytes()))
+}
+
+/// Saved translations (language chips) for this exact deliverable text.
+/// Read-only metadata — restoring a chip rides `translate_deliverable`'s
+/// cache hit, so no stored body ships and no LLM call happens.
+pub async fn deliverable_translations(
+    user_id: &str,
+    markdown: &str,
+) -> Result<Vec<kawai_db::DeliverableTranslationMeta>, String> {
+    let source = markdown.trim();
+    if source.is_empty() {
+        return Ok(Vec::new());
+    }
+    kawai_db::list_deliverable_translations(user_id, &translation_source_hash(source))
+        .await
+        .map_err(|e| format!("failed to list saved translations: {e}"))
+}
+
 /// Resolve the on-device model path from standard development and bundled locations.
 ///   3. `~/.kawai/models/gemma-4-E4B-it.litertlm` (user home)
 pub fn resolve_model_path() -> Result<String, String> {
@@ -443,5 +570,95 @@ pub async fn ask_about_step_result(
         Some(question.to_string()), // user_goal = the question
         None,                       // internal call — no billing bearer
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_outer_fence;
+
+    #[test]
+    fn strip_outer_fence_unwraps_model_wrapper() {
+        // Model wrapped its whole answer → the wrapper goes, content stays.
+        assert_eq!(
+            strip_outer_fence("# Judul", "```markdown\n# Terjemahan\n```"),
+            "# Terjemahan"
+        );
+        // No wrapper → the answer passes through untouched.
+        assert_eq!(strip_outer_fence("# Judul", "# Terjemahan"), "# Terjemahan");
+    }
+
+    #[test]
+    fn strip_outer_fence_never_touches_fence_first_source() {
+        // A source that IS fence-first keeps its fences even when the
+        // answer mirrors it (the heuristic can't tell wrapper from content).
+        let md = "```json\n{}\n```";
+        assert_eq!(strip_outer_fence(md, md), md);
+        // An unterminated wrapper still loses its opener line.
+        assert_eq!(strip_outer_fence("# Judul", "```markdown\n# X"), "# X");
+        // A first line carrying inline code is content, not a wrapper.
+        let inline = "```js x``` tail";
+        assert_eq!(strip_outer_fence("# Judul", inline), inline);
+    }
+
+    /// Read-through cache contract: a stored (source-hash, language) row is
+    /// served by `translate_deliverable` with ZERO LLM calls — the identity
+    /// is the private hash fn itself, so any path that reached the model
+    /// instead would come back `Err("translation failed …")`, never the
+    /// stored body. The list op reports the same row as one chip, and input
+    /// validation precedes cache and model alike.
+    #[tokio::test]
+    async fn translate_deliverable_serves_stored_row_without_llm() {
+        use super::{deliverable_translations, translation_source_hash, translate_deliverable};
+
+        let dir = tempfile::tempdir().unwrap();
+        super::db::set_data_root(dir.path());
+        // Leaked on purpose — parallel tests share the first-set data root;
+        // dropping it mid-run breaks the others (same pattern as kawai-db's).
+        std::mem::forget(dir);
+        let user = format!(
+            "xlate-logic-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+
+        let source = "# Laporan\n\nIsi deliverable.";
+        let language = "Klingon";
+        let stored = "# bogh\n\nDeliverable mu.";
+        kawai_db::put_deliverable_translation(
+            &user,
+            &translation_source_hash(source.trim()),
+            language,
+            stored,
+            None,
+        )
+        .await
+        .unwrap();
+
+        // Cache hit serves the row verbatim — no pool, no vault, no model.
+        let out = translate_deliverable(&user, None, source, language)
+            .await
+            .unwrap();
+        assert_eq!(out, stored, "stored translation is served as-is");
+
+        // The chip list reads the same row for the same (trimmed) source.
+        let chips = deliverable_translations(&user, source).await.unwrap();
+        assert_eq!(chips.len(), 1);
+        assert_eq!(chips[0].language, language);
+
+        // Validation runs before cache and model: empty input is refused
+        // with a user-facing message, never a phantom row or a model call.
+        let empty_source = translate_deliverable(&user, None, "   ", language)
+            .await
+            .unwrap_err();
+        assert!(empty_source.contains("nothing to translate"), "{empty_source}");
+        let empty_lang = translate_deliverable(&user, None, source, "  ")
+            .await
+            .unwrap_err();
+        assert!(empty_lang.contains("target language required"), "{empty_lang}");
+        assert!(deliverable_translations(&user, " ").await.unwrap().is_empty());
+    }
 }
 

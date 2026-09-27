@@ -10,18 +10,12 @@ import { isLowTokenBalance, useTokenBalance } from "@/features/topup/use-token-b
 let warnedThisSession = false;
 
 /**
- * The rail's always-visible "Saldo token" chip — the balance is readable
- * without opening the Top Up page. Click opens the Top Up asset page; an
- * amber state marks a balance inside the low band. Collapsed rails get the
- * icon-only form so it still fits the 64px rail.
+ * The app header's always-visible "Saldo" chip — the balance is readable
+ * without opening the Top Up page (same shared store the goal-submit gate
+ * consumes). Click opens the Top Up asset page; an amber state marks a
+ * balance inside the low band.
  */
-export function TokenBalanceChip({
-  collapsed,
-  onSelectAsset,
-}: {
-  collapsed: boolean;
-  onSelectAsset: (id: AssetViewId) => void;
-}) {
+export function TokenBalanceChip({ onSelectAsset }: { onSelectAsset: (id: AssetViewId) => void }) {
   const { tokens, pending } = useTokenBalance();
   const low = isLowTokenBalance(tokens);
 
@@ -34,53 +28,21 @@ export function TokenBalanceChip({
   const value = tokens === null ? (pending ? "…" : "—") : tokens.toLocaleString("id-ID");
   const label = `Saldo token: ${value} — buka Top Up`;
 
-  if (collapsed) {
-    return (
-      <div className="px-1.5 pb-1.5">
-        <button
-          aria-label={label}
-          className={`flex w-full items-center justify-center rounded-lg border p-2 transition-colors ${
-            low ? "border-amber-500/40 hover:bg-amber-500/10" : "hover:bg-[var(--tea-color-bg-secondary-default)]"
-          }`}
-          onClick={() => onSelectAsset("topup")}
-          title={label}
-          type="button"
-        >
-          <span className="bg-muted flex size-7 shrink-0 items-center justify-center rounded-lg">
-            <Icon name="qr-code" className="size-[15px]" />
-          </span>
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="px-2 pb-1.5">
-      <button
-        className={`flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-colors ${
-          low ? "border-amber-500/40 hover:bg-amber-500/10" : "hover:bg-[var(--tea-color-bg-secondary-default)]"
-        }`}
-        onClick={() => onSelectAsset("topup")}
-        title={low ? `${label} · saldo menipis` : label}
-        type="button"
-      >
-        <span className="bg-muted flex size-7 shrink-0 items-center justify-center rounded-lg">
-          <Icon name="qr-code" className="size-[15px]" />
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="text-muted-foreground text-[11px] leading-tight">Saldo token</span>
-          <span
-            className={`truncate font-mono text-sm leading-tight font-medium tabular-nums ${
-              low ? "text-amber-500" : ""
-            }`}
-          >
-            {value}
-          </span>
-        </span>
-        {low && (
-          <span className="text-amber-500 shrink-0 text-[10px] font-medium tracking-wide uppercase">menipis</span>
-        )}
-      </button>
-    </div>
+    <button
+      aria-label={label}
+      className={`mr-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 transition-colors ${
+        low
+          ? "border-amber-500/40 text-amber-500 hover:bg-amber-500/10"
+          : "hover:bg-[var(--tea-color-bg-secondary-default)]"
+      }`}
+      onClick={() => onSelectAsset("topup")}
+      title={low ? `${label} · saldo menipis` : label}
+      type="button"
+    >
+      <Icon name="qr-code" className="size-4" />
+      <span className="text-muted-foreground hidden text-xs md:inline">Saldo</span>
+      <span className="font-mono text-xs font-medium tabular-nums">{value}</span>
+    </button>
   );
 }

@@ -2,6 +2,7 @@ import { Icon } from "@/components/shared/icon";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileIcon } from "@/components/shared/file-icon";
 import { MarkdownWithCharts } from "@/features/workbench/components/markdown-with-charts";
 import { DeckPreview } from "@/features/workbench/components/deck-preview";
@@ -193,6 +194,182 @@ function DeliverableExport({ goal, markdown }: { goal: string; markdown: string 
   );
 }
 
+/** Target languages for the deliverable translator. `value` is the language
+ *  name the prompt carries (the model resolves it), `label` is the native
+ *  display in the picker — a fixed menu, hardcoded like every other constant. */
+const TRANSLATE_LANGUAGES = [
+  { value: "English", label: "English" },
+  { value: "Bahasa Indonesia", label: "Bahasa Indonesia" },
+  { value: "Japanese", label: "日本語" },
+  { value: "Korean", label: "한국어" },
+  { value: "Simplified Chinese", label: "中文 (Simplified)" },
+  { value: "Spanish", label: "Español" },
+  { value: "French", label: "Français" },
+  { value: "German", label: "Deutsch" },
+  { value: "Portuguese", label: "Português" },
+  { value: "Russian", label: "Русский" },
+  { value: "Arabic", label: "العربية" },
+  { value: "Hindi", label: "हिन्दी" },
+];
+
+/** Display label for a language value (unknown/custom values pass through). */
+const translateLabel = (value: string) => TRANSLATE_LANGUAGES.find((l) => l.value === value)?.label ?? value;
+
+/** A stored translation of the current deliverable — metadata only; the body
+ *  itself comes back from `translate_deliverable`'s cache hit on restore. */
+type SavedTranslation = { language: string; createdAt: number };
+
+/** Deliverable body + its toolbar: the translate control, the body (original
+ *  or a translated copy), and the export row. Shared by the live canvas and
+ *  PastRunCanvas so the translate feature exists in exactly one place. The
+ *  original markdown stays the source of truth — a translation is a view
+ *  overlay (re-translating always runs from the original; "Show original"
+ *  drops it), and Copy/Export follow whatever is on screen. */
+function DeliverableBody({
+  goal,
+  markdown,
+  sessionId,
+  showExport,
+}: {
+  goal: string;
+  markdown: string;
+  /** Observability conversation key — groups this one-shot with the
+   *  session's other generations when known (past runs may not carry one). */
+  sessionId?: number | null;
+  /** Offer the Copy/Export row (a completed run only). */
+  showExport: boolean;
+}) {
+  const [language, setLanguage] = useState<string>(TRANSLATE_LANGUAGES[0].value);
+  const [translating, setTranslating] = useState(false);
+  const [translated, setTranslated] = useState<{ language: string; text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // Server-side saved translations for THIS exact text (content-hash keyed):
+  // chips restore one instantly from storage — no LLM call on reopen.
+  const [saved, setSaved] = useState<SavedTranslation[]>([]);
+
+  // A NEW deliverable must never inherit the previous one's overlay, and a
+  // translation response landing after the deliverable changed must be
+  // dropped — sourceRef holds the markdown the in-flight call started from.
+  const sourceRef = useRef(markdown);
+  useEffect(() => {
+    sourceRef.current = markdown;
+    setTranslated(null);
+    setError(null);
+    setSaved([]);
+    // Saved chips are progressive enhancement: a failed list just renders none.
+    void (async () => {
+      try {
+        const rows = await call<SavedTranslation[]>("deliverable_translations", { markdown });
+        if (sourceRef.current === markdown) setSaved(rows);
+      } catch (err) {
+        console.error("[workbench] deliverable_translations:", errText(err));
+      }
+    })();
+  }, [markdown]);
+
+  /** Translate (button) OR restore a saved chip — same op either way: a chip's
+   *  language already exists server-side, so it returns the stored body with
+   *  zero LLM calls. */
+  const runTranslate = async (lang: string) => {
+    if (translating) return;
+    const source = markdown;
+    setTranslating(true);
+    setError(null);
+    try {
+      const text = await call<string>("translate_deliverable", {
+        markdown: source,
+        language: lang,
+        sessionId: sessionId ?? null,
+      });
+      if (sourceRef.current === source) {
+        setTranslated({ language: lang, text });
+        // Mirror the write the op just persisted (server list is authoritative
+        // on next mount; this keeps chips complete within the session).
+        setSaved((prev) =>
+          prev.some((t) => t.language === lang)
+            ? prev
+            : [{ language: lang, createdAt: Math.floor(Date.now() / 1000) }, ...prev],
+        );
+      }
+    } catch (err) {
+      console.error("[workbench] translate_deliverable:", errText(err));
+      if (sourceRef.current === source) setError(errText(err));
+    } finally {
+      setTranslating(false);
+    }
+  };
+
+  const shown = translated?.text ?? markdown;
+  const shownLanguage = translated == null ? null : translateLabel(translated.language);
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted-foreground font-mono text-[11px] uppercase">Translate</span>
+        <Select onValueChange={setLanguage} value={language}>
+          <SelectTrigger aria-label="Target language" className="w-44" size="sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TRANSLATE_LANGUAGES.map((l) => (
+              <SelectItem key={l.value} value={l.value}>
+                {l.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button disabled={translating} onClick={() => void runTranslate(language)} size="sm" variant="outline">
+          {translating ? (
+            <Icon name="loader-circle" className="size-3 animate-spin" />
+          ) : (
+            <Icon name="languages" className="size-3" />
+          )}
+          {translating ? "Translating…" : "Translate"}
+        </Button>
+        {shownLanguage != null && (
+          <>
+            <span className="text-muted-foreground font-mono text-[11px]">Showing {shownLanguage}</span>
+            <button
+              className="text-muted-foreground hover:text-primary font-mono text-[11px] hover:underline"
+              onClick={() => setTranslated(null)}
+              title="Back to the original deliverable"
+              type="button"
+            >
+              Show original
+            </button>
+          </>
+        )}
+        {saved.length > 0 && (
+          <span className="text-muted-foreground flex items-center gap-1 font-mono text-[11px]">
+            Saved:
+            {saved
+              .filter((t) => t.language !== translated?.language)
+              .map((t) => (
+                <button
+                  key={t.language}
+                  className="border-border text-muted-foreground hover:text-primary rounded-full border px-2 py-0.5 text-[11px] hover:border-current disabled:opacity-50"
+                  disabled={translating}
+                  onClick={() => void runTranslate(t.language)}
+                  title={`Show the saved ${translateLabel(t.language)} translation`}
+                  type="button"
+                >
+                  {translateLabel(t.language)}
+                </button>
+              ))}
+          </span>
+        )}
+        {error != null && <span className="text-destructive font-mono text-xs">Translate failed: {error}</span>}
+      </div>
+
+      <div className="border-primary/30 bg-card rounded-lg border p-6">
+        <MarkdownWithCharts>{shown}</MarkdownWithCharts>
+      </div>
+
+      {showExport && <DeliverableExport goal={goal} markdown={shown} />}
+    </>
+  );
+}
+
 /** Canvas content for a PAST run: its deliverable or one of its step reports
  *  (fetched on demand from supervisor_step_results via the run's planKey).
  *  Same shape as the active-run canvas: header, document, doc switcher. */
@@ -200,6 +377,7 @@ export function PastRunCanvas({
   loadFullOutput,
   run,
   doc,
+  sessionId,
   onBuildOn,
   onPickDoc,
   onAsk,
@@ -207,6 +385,9 @@ export function PastRunCanvas({
   loadFullOutput: (stepId: string, planKey?: string) => Promise<string | null>;
   run: WorkbenchRun;
   doc: string;
+  /** Session this run belongs to — observability/lifecycle key for the
+   *  translate op so saved translations follow the session. */
+  sessionId?: number | null;
   /** "Build on this": arm this run's deliverable as the follow-up quote
    *  target. Only offered when the run has a quotable deliverable. */
   onBuildOn?: (run: WorkbenchRun) => void;
@@ -264,9 +445,12 @@ export function PastRunCanvas({
               <p className="text-muted-foreground mt-2 font-mono text-xs leading-relaxed break-words">{run.error}</p>
             </div>
           ) : deliverableBody ? (
-            <div className="border-primary/30 bg-card rounded-lg border p-6">
-              <MarkdownWithCharts>{deliverableBody}</MarkdownWithCharts>
-            </div>
+            <DeliverableBody
+              goal={run.goal}
+              markdown={deliverableBody}
+              sessionId={sessionId}
+              showExport={run.status === "completed" && run.outputFull != null}
+            />
           ) : (
             <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center font-mono text-sm">
               No deliverable was produced.
@@ -296,11 +480,6 @@ export function PastRunCanvas({
             tool={stepTool}
             onAsk={onAsk ? (stepId, question) => onAsk(stepId, question, run.planKey ?? "") : undefined}
           />
-        )}
-
-        {/* Past runs export too — same office pipeline as the live canvas. */}
-        {isDeliverable && run.status === "completed" && run.outputFull != null && (
-          <DeliverableExport goal={run.goal} markdown={run.outputFull} />
         )}
 
         {/* Document picker: jump between this run's deliverable and its step
@@ -649,12 +828,12 @@ export function DeliverableViewer({
           </div>
         )}
         {effective === "final" && !unseeded && supervisor.finalOutput != null && (
-          <div className="border-primary/30 bg-card rounded-lg border p-6">
-            <MarkdownWithCharts>{supervisor.finalOutput}</MarkdownWithCharts>
-          </div>
-        )}
-        {effective === "final" && !unseeded && supervisor.finalOutput != null && supervisor.status === "completed" && (
-          <DeliverableExport goal={supervisor.goal ?? "deliverable"} markdown={supervisor.finalOutput} />
+          <DeliverableBody
+            goal={supervisor.goal ?? "deliverable"}
+            markdown={supervisor.finalOutput}
+            sessionId={workbench.sessionId}
+            showExport={supervisor.status === "completed"}
+          />
         )}
         {/* Failed step with no output: show its WHY instead of an empty body
             (the rail's "see report" now opens something meaningful). */}

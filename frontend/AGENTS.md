@@ -54,14 +54,14 @@ frontend/
 ├── src/
 │   ├── main.tsx            # React root + TooltipProvider + Toaster (sonner)
 │   ├── app/
-│   │   └── App.tsx         # main app: the Workbench (only surface) + assets rail + asset workspace pages
+│   │   └── App.tsx         # main app: the app header (asset nav) + the Workbench (only surface) + asset workspace pages
 │   ├── index.css           # Tailwind v4 + shadcn semantics aliased to Tea design tokens (--tea-* in :root/.dark)
 │   │
 │   ├── features/           # feature-organized domain code
 │   │   ├── auth/            # authentication: auth-gate.tsx, use-auth.ts
-│   │   ├── agents/          # assets rail: assets-rail.tsx (incl. the Saldo token chip), context-panel.tsx, registry.tsx (ContextOnboarding type)
+│   │   ├── agents/          # profile-controls.tsx (Saldo chip + theme + profile dropdown carrying the asset destinations), context-panel.tsx, registry.tsx (ContextOnboarding type)
 │   │   ├── wallet/          # Monad wallet asset page (README.md inside = end-to-end reference: adapters, ops, network/security model)
-│   │   ├── topup/           # Top Up asset page: static QRIS → D1 app token, balance card + ledger Riwayat (`topup_history`) (+ open-topup.ts nav bridge for the submit gate, use-token-balance.ts shared balance store/hook, token-balance-chip.tsx rail chip)
+│   │   ├── topup/           # Top Up asset page: static QRIS → D1 app token, balance card + ledger Riwayat (`topup_history`) (+ open-topup.ts nav bridge for the submit gate, use-token-balance.ts shared balance store/hook, token-balance-chip.tsx header chip)
 │   │   ├── workbench/       # THE primary surface: goal → plan → deliverable
 │   │   │   ├── components/  # workbench-page (landing hero composer + 3-pane run view), recent-runs (cross-session recents strip) + tool-views/ (per-tool step-report renderers; registry maps tool name → human view, shape map in TOOL-MAP.md §11)
 │   │   │   └── hooks/       # use-workbench (run list, phases/agents view models, follow-up-composer state) wrapping use-supervisor-plan
@@ -81,7 +81,8 @@ frontend/
 │   │   ├── tools/           # tool-workbench.tsx, tool-description.ts, tool-icon.ts
 │   │   └── assets/          # shared asset-management UI primitives
 │   │       ├── components/asset/  # vendored Tea-style: asset-split-layout, asset-list-panel, asset-page-header
-│   │       ├── components/asset-nav.tsx  # ASSET_NAV + AssetViewId — the rail's Assets section metadata
+│   │       ├── components/asset-nav.tsx  # ASSET_NAV + AssetViewId — the header's Assets section metadata
+│   │       ├── components/asset-nav-list.tsx  # shared nav renderer (header row + mobile drawer)
 │   │       ├── components/asset-shell.tsx  # shared shell: back-to-chat header + scroll body
 │   │       └── pages/wiki-page.tsx  # knowledge base as wiki sources
 │   │
@@ -108,7 +109,7 @@ frontend/
 User goal → WorkbenchPage (landing hero composer) → use-workbench.run()
   → use-supervisor-plan.planAndRun()
   → callWithEvents("plan_task", …) → live planningRound/planningToolSearch events + validated TaskPlan
-  → review gate (rail) → streamOperation("execute_supervisor_plan", {plan, sessionId, streamId})
+  → review gate (workbench rail) → streamOperation("execute_supervisor_plan", {plan, sessionId, streamId})
   → Tauri Channel<SupervisorEvent> (via @tauri-apps/api/core)
   → events: "planStarted" | "stepStarted" | "confirmationRequested" | "stepCompleted" | "stepFailed" | "stepSkipped" | "planCompleted" | "planFailed"
   → use-supervisor-plan folds events into plan steps + deliverable
@@ -144,8 +145,7 @@ User goal → WorkbenchPage (landing hero composer) → use-workbench.run()
 - **File @-mentions carry IDs, not content.** The composer's @ button opens a `knowledge_list` popover; picked files render as chips and their IDs ride along on the next submit (`onSubmit(text, fileIds)`). The backend binds them to the session and the supervisor tools read them from session scope. Chips clear after submit.
 - **Auth is local email+password.** `auth-gate.tsx` posts `auth_sign_in`/`auth_sign_up` (duplicate emails are rejected backend-side); both establish the session directly — in-memory only, so a signed-in user signs in again after an app restart. `use-auth.ts` bootstraps via `whoami` on mount; `logout` calls the backend `logout`. There is no token in the frontend and no Supabase.
 - **Theme is applied before React mounts** via an inline script in `index.html:7-20`. The `use-theme.ts` hook writes to the same `localStorage` key (`"kawai-theme"`).
-- **Agent presentation is a frontend map** (`AGENT_META` in `features/agents/agents-rail.tsx`). The backend owns agent ids via `list_agents`; the frontend adds icons, subtitles, and suggested prompts. Unknown ids fall back to a generic entry.
-- **Asset workspace navigation is frontend-owned** (`ASSET_NAV` in `features/assets/components/asset-nav.tsx`; `assetView` state in `app/App.tsx`). Opening an asset swaps the center pane (chat → asset page) without touching the chat state — the stream keeps folding in the background; Esc or an agent click returns. Wiki reuses the app's knowledge state, Memory reads `list_chat_sessions`/`list_chat_messages` directly; Skills/Code pages state plainly that their backend tier doesn't exist yet; Top Up (QRIS → app token) reads `topup_*` through `call()` — no availability gate, so it renders on every build. The rail always shows the **Saldo token chip** (`features/topup/token-balance-chip.tsx`) over the shared balance store (`use-token-balance.ts`): one deduped read per trigger — first mount, the submit gate's own read (published as the pre-debit value), a re-read after `plan_task` resolves (post-debit — fired on the failure path too, since a ledger write that fails after the balance UPDATE still moved the balance), a claim turning `credited`, and window focus at most once per 30 s. Never polled. Amber state + a single session toast below `LOW_BALANCE_TOKENS` (100_000 = 10% of the smallest top-up). The store is display-only — the gates keep their own authoritative read. The page's **Riwayat** section reads the ledger through `topup_history` (no args) and re-reads it whenever a settled balance read changes: credits `+` green, usage `−` red, reason label + timestamp; a read error only surfaces while nothing is loaded (a previously loaded list stays).
+- **Asset workspace navigation is frontend-owned** (`ASSET_NAV` in `features/assets/components/asset-nav.tsx`; `assetView` state in `app/App.tsx`). Opening an asset swaps the center pane (workbench → asset page) without touching the chat state — the stream keeps folding in the background; Esc or the asset page's back button returns. There is no app chrome: the account cluster (`ProfileControls` in `features/agents/profile-controls.tsx` — Saldo chip + theme + avatar dropdown listing every asset) is injected into the Workbench's own top bars via its `topBarExtra` prop; an active-asset dot marks the avatar while an asset page is open. The mobile nav drawer (`AssetNavList`, opened by the workbench hamburger under 1024px) lists the assets vertically. Wiki reuses the app's knowledge state, Memory reads `list_chat_sessions`/`list_chat_messages` directly; Skills/Code pages state plainly that their backend tier doesn't exist yet; Top Up (QRIS → app token) reads `topup_*` through `call()` — no availability gate, so it renders on every build. The header always shows the **Saldo token chip** (`features/topup/token-balance-chip.tsx`) over the shared balance store (`use-token-balance.ts`): one deduped read per trigger — first mount, the submit gate's own read (published as the pre-debit value), a re-read after `plan_task` resolves (post-debit — fired on the failure path too, since a ledger write that fails after the balance UPDATE still moved the balance), a claim turning `credited`, and window focus at most once per 30 s. Never polled. Amber state + a single session toast below `LOW_BALANCE_TOKENS` (100_000 = 10% of the smallest top-up). The store is display-only — the gates keep their own authoritative read. The page's **Riwayat** section reads the ledger through `topup_history` (no args) and re-reads it whenever a settled balance read changes: credits `+` green, usage `−` red, reason label + timestamp; a read error only surfaces while nothing is loaded (a previously loaded list stays).
 - **`file-preview.tsx`** (in `components/shared/`) uses `useFilePreview` from `lib/preview-file.ts` which calls `office_read_file` — every mount triggers a backend call. The preview switch mounts only one renderer at a time, so only one fetch happens.
 - **`useKnowledgeFiles`** (in `features/knowledge/hooks/use-knowledge-files.ts`) is feature-gated — if the backend rejects `knowledge_list` (no `office` feature), it settles on an empty list with `unavailable=true`.
 

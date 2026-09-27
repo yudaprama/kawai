@@ -8,7 +8,9 @@ export interface AssetNavEntry {
   icon: string;
 }
 
-/** The rail's Assets section — presentation only, owned by the frontend. */
+/** The app's asset nav — presentation only, owned by the frontend. All
+ *  entries open from the profile dropdown in the header; the mobile nav
+ *  drawer lists them vertically. */
 export const ASSET_NAV: AssetNavEntry[] = [
   { id: "wiki", label: "Wiki", subtitle: "knowledge base", icon: "book" },
   { id: "wallet", label: "KAWAI Wallet", subtitle: "Monad assets", icon: "wallet" },

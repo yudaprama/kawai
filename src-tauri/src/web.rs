@@ -498,6 +498,44 @@ async fn suggest_followups_handler(
     Json(logic::suggest_followups(&user_id, req.session_id, req.excerpt).await)
 }
 
+/// Authenticated RPC: translate a finished deliverable — one remote-llm
+/// one-shot returning the translated markdown.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TranslateDeliverableReq {
+    markdown: String,
+    language: String,
+    session_id: Option<i64>,
+}
+
+async fn translate_deliverable_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<TranslateDeliverableReq>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::translate_deliverable(&user_id, req.session_id, &req.markdown, &req.language)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+/// Authenticated RPC: saved translations (language chips) for this exact
+/// deliverable text — metadata only; restoring a chip rides the translate
+/// op's cache hit.
+#[derive(Deserialize)]
+struct DeliverableTranslationsReq {
+    markdown: String,
+}
+
+async fn deliverable_translations_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<DeliverableTranslationsReq>,
+) -> Result<Json<Vec<logic::DeliverableTranslationMeta>>, (StatusCode, String)> {
+    logic::deliverable_translations(&user_id, &req.markdown)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
 async fn skill_list_handler(
     Extension(user_id): Extension<String>,
 ) -> Result<Json<Vec<logic::skills::SkillSummary>>, (StatusCode, String)> {
@@ -2078,6 +2116,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
 
     // Follow-up composer chips (PLAN-followup-composer.md, Fase 3).
     let protected = protected.route("/api/suggest_followups", post(suggest_followups_handler));
+    let protected = protected.route("/api/translate_deliverable", post(translate_deliverable_handler));
+    let protected = protected.route("/api/deliverable_translations", post(deliverable_translations_handler));
 
     let protected = protected
         .route("/api/office_import_file", post(office_import_file_handler))

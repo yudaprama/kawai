@@ -1,11 +1,10 @@
 import type { AgentInfo } from "@/lib/api";
 
 /**
- * Per-agent composition of the right context pane — the UI counterpart of
- * `AGENT_META` in assets-rail.tsx. The backend catalog (`list_agents`) stays
- * the single source of truth for agent identity; this map only decides which
- * tabs the pane shows for a given id. Agents absent from the map (or with
- * `tools: false`) get no context pane at all.
+ * Per-agent composition of the right context pane. The backend catalog
+ * (`list_agents`) stays the single source of truth for agent identity; this
+ * map only decides which tabs the pane shows for a given id. Agents absent
+ * from the map (or with `tools: false`) get no context pane at all.
  */
 
 /** Ids of the tab contents rendered by ContextPanel (context-panel.tsx). */
