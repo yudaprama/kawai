@@ -15,8 +15,8 @@ name: agent-eval-candidate
 # <think> chains are catastrophically slow on CPU (observed 38min/scenario)
 # and its post-JSON continuation breaks agent_eval's strict `call:NAME{json}`
 # line parser — use Instruct (non-thinking) variants only.
-# Shares the bazel cache with ci.yml/kv-sweep and the E4B model cache
-# (gemma-4-E4B-it-litertlm), so baseline runs are ~free after ci.yml.
+# Shares the bazel cache with ci.yml/kv-sweep. The E4B baseline is downloaded
+# directly so this manual workflow does not recreate a multi-GB model cache.
 
 on:
   workflow_dispatch:
@@ -110,18 +110,8 @@ jobs:
           mkdir -p cand-model
           curl -fL --retry 3 -o "cand-model/${MODEL_NAME}.litertlm" "${{ inputs.model_url }}"
 
-      - name: Cache E4B baseline model
-        id: base-model
-        if: ${{ inputs.with_baseline }}
-        uses: actions/cache@v4
-        with:
-          # Same key as ci.yml/kv-sweep — restores their cache into this dir;
-          # on a miss only this dir (E4B alone) is saved back.
-          path: base-model
-          key: gemma-4-E4B-it-litertlm
-
       - name: Download E4B baseline model
-        if: ${{ inputs.with_baseline && steps.base-model.outputs.cache-hit != 'true' }}
+        if: ${{ inputs.with_baseline }}
         run: |
           set -euo pipefail
           mkdir -p base-model
