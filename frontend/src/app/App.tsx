@@ -26,6 +26,8 @@ import { OPEN_TOPUP_EVENT } from "@/features/topup/open-topup";
 import { TopupPage } from "@/features/topup/topup-page";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
 import { ShortcutsDialog } from "@/components/shared/shortcuts-dialog";
+import { Dialog, DialogContent, DialogOverlay, DialogPortal } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 export default function App() {
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -328,17 +330,19 @@ export default function App() {
         />
       )}
       {/* Mobile drawer — the nav list under 1024px (the profile dropdown is
-          desktop-side; the drawer gives small screens the same entries). */}
-      {mobileDrawer && (
-        <div className="fixed inset-0 z-50 flex lg:hidden" role="dialog" aria-modal="true" data-open-drawer>
-          <button
-            aria-label="Close navigation"
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setMobileDrawer(null)}
-            type="button"
-          />
-          <div
-            className="bg-background relative flex h-full w-[210px] max-w-[85vw] flex-col gap-2 p-3 shadow-xl"
+          desktop-side; the drawer gives small screens the same entries).
+          Uses Dialog primitive for proper focus management, focus trapping,
+          and accessibility (ARIA, Escape handling, portal rendering). */}
+      <Dialog open={mobileDrawer !== null} onOpenChange={() => setMobileDrawer(null)}>
+        <DialogPortal>
+          <DialogOverlay className="lg:hidden" />
+          <DialogContent
+            className={cn(
+              "fixed inset-y-0 left-0 z-50 w-[210px] max-w-[85vw] p-3 shadow-xl",
+              "data-[state=open]:animate-in data-[state=open]:slide-in-from-left",
+              "data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left",
+              "lg:hidden",
+            )}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
@@ -352,9 +356,9 @@ export default function App() {
                 setMobileDrawer(null);
               }}
             />
-          </div>
-        </div>
-      )}
+          </DialogContent>
+        </DialogPortal>
+      </Dialog>
       <SessionHistoryDialog
         open={sessionsOpen}
         onOpenChange={setSessionsOpen}

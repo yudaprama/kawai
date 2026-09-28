@@ -9,9 +9,6 @@ pub mod logging;
 #[cfg(feature = "desktop")]
 mod keychain;
 pub mod logic;
-#[cfg(feature = "desktop")]
-pub mod native_notifications;
-
 #[cfg(feature = "litert")]
 pub mod supervisor;
 
@@ -40,7 +37,6 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_fs::init())
         .manage(commands::new_registry())
         .manage(auth::new_session())
@@ -218,10 +214,6 @@ pub fn run() {
         commands::topup_qris_status,
         commands::topup_balance,
         commands::topup_history,
-
-        native_notifications::notification_permission_state,
-        native_notifications::notification_permission_request,
-        native_notifications::show_native_notification,
 
         // ── litert (local LLM + supervisor) ────────────────────────────
         #[cfg(feature = "litert")]

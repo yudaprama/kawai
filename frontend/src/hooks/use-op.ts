@@ -36,7 +36,7 @@ export function useOp<T>(command: string, args?: Record<string, unknown>, opts?:
   const onError = opts?.onError ?? "log";
 
   const [data, setData] = useState<T | undefined>(undefined);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const mountedRef = useRef(true);

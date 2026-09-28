@@ -6,10 +6,11 @@ const mod = isMac ? "Cmd" : "Ctrl";
 
 /** Live shortcuts only — mirrors useAppShortcuts (App) and the workbench's
  *  Esc/ArrowUp/@ handlers. Update together with those handlers. */
-const SHORTCUTS: { action: string; keys: string[] }[] = [
+const SHORTCUTS: { action: string; keys: string[]; note?: string }[] = [
   { action: "Browse sessions", keys: [mod, "K"] },
   { action: "New session / goal", keys: [mod, "N"] },
   { action: "Close a drawer — or press twice to stop the running plan", keys: ["Esc"] },
+  { action: "Leave asset view (back to chat)", keys: ["Esc"], note: "(unavailable while a run is in flight)" },
   { action: "Recall your last goal (empty composer)", keys: ["↑"] },
   { action: "Attach a knowledge file in the composer", keys: ["@"] },
   { action: "This shortcut list", keys: ["?"] },
@@ -31,7 +32,10 @@ export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenC
         <div className="divide-y">
           {SHORTCUTS.map((s) => (
             <div className="flex items-center justify-between gap-4 py-2" key={s.action}>
-              <span className="text-foreground text-sm">{s.action}</span>
+              <div className="flex-1 min-w-0">
+                <span className="text-foreground text-sm">{s.action}</span>
+                {s.note && <span className="block text-muted-foreground text-[10px] mt-0.5">{s.note}</span>}
+              </div>
               <span className="flex shrink-0 gap-1">
                 {s.keys.map((k) => (
                   <kbd

@@ -9,10 +9,6 @@
     "core:default",
     "opener:default",
     "dialog:default",
-    "notification:default",
-    "notification:allow-show",
-    "notification:allow-request-permission",
-    "notification:allow-is-permission-granted",
     {
       "identifier": "fs:allow-read-text-file",
       "allow": [{ "path": "$APPDATA" }, { "path": "$APPDATA/**" }]

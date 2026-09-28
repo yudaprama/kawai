@@ -30,8 +30,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Planner <environment> block: device timezone + local time (fresh per plan).
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-iana-time-zone = "0.1"
 tracing = "0.1"
+thiserror = "1"
+iana-time-zone = "0.1"
 # Minimal tokio for the core crate: `process` only via codegraph/office-common
 # and `io-util` only via kawai-vision — they enable those features transitively
 # when the corresponding feature is on. `stream` for reqwest is likewise
@@ -108,7 +109,6 @@ hex = "0.4"
 # Office tool store imports (drag-drop/web base64 blobs) + TTS audio payloads.
 base64 = "0.22"
 tauri-plugin-dialog = { version = "2", optional = true }
-tauri-plugin-notification = { version = "2", optional = true }
 # RAG pipeline for knowledge files:
 #   kawai-embedding — embed (local LiteRT embedder fallback under the litert
 #   feature, desktop only, no API key)
@@ -188,17 +188,9 @@ sqlx = { version = "0.8", optional = true, default-features = false, features = 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# macOS native notification via UNUserNotificationCenter (reliable permission
-# check + delivery confirmation — the plugin's permission_state is hardcoded).
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-foundation = "0.3"
-objc2-user-notifications = "0.3"
-block2 = "0.6"
-
 [features]
 default = ["desktop"]
-desktop = ["dep:tauri", "dep:tauri-plugin-opener", "dep:tauri-plugin-fs", "dep:tauri-plugin-dialog", "dep:tauri-plugin-notification", "dep:keyring"]
+desktop = ["dep:tauri", "dep:tauri-plugin-opener", "dep:tauri-plugin-fs", "dep:tauri-plugin-dialog", "dep:keyring"]
 web = ["dep:axum", "dep:tower-http"]
 # CodeGraph — sidecar only (AgentTool + LRU cache, zero cost off)
 codegraph = ["dep:codegraph"]

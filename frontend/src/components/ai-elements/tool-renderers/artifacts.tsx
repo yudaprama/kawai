@@ -14,7 +14,7 @@ export function renderOfficeDocument(output: unknown): ReactNode {
   const name = str(file.originalName) ?? str(file.filename) ?? "Document";
   if (!fileId) return null;
   const bytes = typeof file.bytes === "number" ? file.bytes : undefined;
-  const items: Metric[] = [{ label: name, value: bytes ? `${bytes.toLocaleString("id-ID")} byte` : "Dokumen berhasil dibuat" }];
+  const items: Metric[] = [{ label: name, value: bytes ? `${bytes.toLocaleString()} bytes` : "Document created" }];
   return (
     <div className="not-prose space-y-3">
       <MetricGrid items={items} />

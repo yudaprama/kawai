@@ -19,7 +19,7 @@ import {
 } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
-import { fmtDuration, ReviewActions } from "./progress-rail";
+import { fmtDuration, ReviewActions, settledCount } from "./progress-rail";
 
 /** The run's deck artifact, if any — the deliverable hero. Set DIRECTLY from
  *  the planCompleted callback / restored record (workbench.deck) — not via
@@ -779,10 +779,17 @@ export function DeliverableViewer({
           )}
           <div className="text-muted-foreground mt-1 font-mono text-sm">
             {unseeded ? (
-              <>
-                planning…
-                {runRecord?.startedAt != null && ` · ${fmtDuration(runRecord.startedAt)}`}
-              </>
+              supervisor.status === "reviewing" ? (
+                <>
+                  plan ready
+                  {runRecord?.startedAt != null && ` · ${fmtDuration(runRecord.startedAt)}`}
+                </>
+              ) : (
+                <>
+                  planning…
+                  {runRecord?.startedAt != null && ` · ${fmtDuration(runRecord.startedAt)}`}
+                </>
+              )
             ) : (
               <>
                 {done}/{supervisor.steps.length} steps
@@ -801,7 +808,7 @@ export function DeliverableViewer({
           <div className="sticky top-0 z-10 -mx-6 border-b border-border/60 bg-background py-2">
             <AgentReportsSwitcher
               activeDoc={effective}
-              hasDeliverable={supervisor.finalOutput != null}
+              hasDeliverable={effective === "final" || inFlightNow}
               onPickDoc={onPickDoc}
               reports={reports.map((r) => ({ label: agentName(r), stepId: r.stepId }))}
             />

@@ -5,9 +5,10 @@ import { type AssetViewId, ASSET_NAV } from "./asset-nav";
 /**
  * The app's asset navigation — one entry per ASSET_NAV id, feature-gated by
  * backend availability (wallet needs the `monad` feature, code needs
- * `codegraph`). Rendered horizontally in the app header (inline subset) and
- * vertically in the mobile nav drawer (all entries); the center-pane swap and
- * its Esc/back behavior are owned by app/App.tsx either way.
+ * `codegraph`). Rendered vertically in the mobile nav drawer (the profile
+ * dropdown carries the same entries on larger screens, including inside the
+ * asset workspace); the center-pane swap and its Esc/back behavior are owned
+ * by app/App.tsx either way.
  */
 export function AssetNavList({
   assetView,

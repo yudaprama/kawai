@@ -222,8 +222,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
           <TabsContent value="rewards" className="mt-4">
             <Card>
               <CardContent className="pt-6 text-center text-sm text-muted-foreground">
-                Rewards (mining / referral) reuse same contracts. Claiming will call the same distributors — hook up
-                `get_claimable_rewards` when backend exposes it.
+                Rewards coming soon — not enabled yet
               </CardContent>
             </Card>
           </TabsContent>
@@ -295,7 +294,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
             <DialogTitle>Receive</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 py-2">
-            <div className="rounded-xl bg-white p-3">
+            <div className="rounded-xl bg-card p-3 border">
               <QRCodeSVG value={address} size={200} marginSize={0} />
             </div>
             <div className="flex items-center gap-2 font-mono text-xs">

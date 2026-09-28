@@ -56,7 +56,7 @@ export function HomeContent({
 
   return (
     <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-5">
-      <Card className="relative overflow-hidden">
+      <Card className="relative overflow-hidden bg-card">
         <CardContent className="pt-6">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -112,7 +112,7 @@ export function HomeContent({
                     <Icon name="gift" className="size-3.5" /> KAWAI Rewards:{" "}
                     <span className="text-foreground font-medium">{balanceVisible ? kawaiBalance : "•••"} KAWAI</span>
                     {trackedBalance?.has_referrer && (
-                      <Badge variant="secondary" className="bg-purple-600 text-white">
+                      <Badge variant="secondary" className="bg-purple-600/10 text-purple-600 border-purple-600/30">
                         +5% Referral
                       </Badge>
                     )}
@@ -151,7 +151,7 @@ export function HomeContent({
             onClick={a.action}
             className="flex flex-col items-center gap-2 rounded-xl border bg-card p-4 hover:bg-accent transition"
           >
-            <span className="flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <Icon name={a.icon} className="size-6" />
             </span>
             <span className="text-xs font-semibold">{a.label}</span>
@@ -203,7 +203,7 @@ export function HomeContent({
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div className="flex items-center gap-3">
-              <span className="flex size-8 items-center justify-center rounded-full bg-gradient-to-br from-pink-300 to-rose-400 text-white">
+              <span className="flex size-8 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-rose-500 text-white">
                 <Icon name="gift" className="size-4" />
               </span>
               <div>

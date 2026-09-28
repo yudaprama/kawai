@@ -62,7 +62,7 @@ function planToText(plan: PersistedPlanRecord): string {
 export function toFriendlyError(raw: string): string {
   const lower = raw.toLowerCase();
   if (lower.includes("already running") || lower.includes("generation is already")) {
-    return "Masih memproses jawaban sebelumnya. Tunggu sebentar atau tekan Stop untuk membatalkan.";
+    return "Still processing the previous answer. Wait a moment or press Stop to cancel.";
   }
   return raw;
 }

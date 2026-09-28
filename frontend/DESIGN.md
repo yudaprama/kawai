@@ -5,23 +5,23 @@ against the merged all-domain tool registry. There is no agent picker. The
 primary surface is the **Workbench** — a goal-centric two-pane layout:
 
 ```text
-┌──────────┬───────────────────────────────────────────┐
-│ ASSETS   │ deliverable viewer                        │
-│ RAIL     │  · status header (step count, duration)   │
-│ (left)   │  · AGENT REPORTS switcher (sticky)        │
-│          │  · rendered deliverable (markdown)        │
-│ New Task ├───────────────────────────────────────────┤
-│ Wiki     │ sidebar: ProgressRail (lg+)               │
-│ Code     │  · status header + phase list             │
-│ Skills   │  · collapsible phases with step states    │
-│ Memory   │  · Messages & Tools timeline (collapsible)│
-│ Databases│  · deliverable writer row                 │
-│          │  · stop / resume / new goal buttons       │
-│          ├───────────────────────────────────────────┤
-│          │ sidebar footer: goal composer (pinned)    │
-├──────────┴───────────────────────────────────────────┤
-│ rail footer: avatar · user · sign out · appearance    │
-└──────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│  top bar: hamburger (mobile) · Sessions · Assets ▼ avatar  │
+├──────────────┬─────────────────────────────────────────────┤
+│              │ deliverable viewer                          │
+│              │  · status header (step count, duration)     │
+│  (empty      │  · AGENT REPORTS switcher (sticky)          │
+│   on lg+)    │  · rendered deliverable (markdown)          │
+│              ├─────────────────────────────────────────────┤
+│              │ sidebar: ProgressRail (lg+)                 │
+│              │  · status header + phase list               │
+│              │  · collapsible phases with step states      │
+│              │  · Messages & Tools timeline (collapsible)  │
+│              │  · deliverable writer row                   │
+│              │  · stop / resume / new goal buttons         │
+│              ├─────────────────────────────────────────────┤
+│              │ sidebar footer: goal composer (pinned)      │
+└──────────────┴─────────────────────────────────────────────┘
 ```
 
 ## Landing (home)
@@ -45,11 +45,14 @@ view.
 
 ## Panes
 
-- **Assets rail (left, 190–210px, collapsible).** New Task plus six asset
-  workspaces (Wiki, Code, Skills, Memory, Databases, Wallet). An asset view
-  replaces the center pane; Esc or Back returns to the Workbench. Below `lg`
-  the rail becomes a full-screen overlay drawer (dark backdrop, Esc/tap-out
-  to close).
+- **Asset destinations (profile dropdown + drawer).** Wiki, Code, Skills,
+  Memory, Databases, Wallet, Top Up — every asset view replaces the center
+  pane; Esc or Back returns to the Workbench. They open from the profile
+  dropdown (Workbench top bars: landing, mobile run strip, run switcher row)
+  and from an asset workspace's own header — the same account cluster, so
+  moving between assets never needs a round trip. Below `lg` a hamburger
+  opens a full-screen overlay drawer listing them vertically (dark backdrop,
+  Esc/tap-out to close).
 - **ProgressRail (left, 72px wide, lg+).** Visible during a run. Shows the
   status header (mapped from supervisor state — Planning, Running, Complete,
   Failed, etc.), duration, a determinate progress bar (settled steps over the
@@ -168,19 +171,17 @@ the same cursor.
 ## Keyboard shortcuts
 
 `?` (outside editable fields and dialogs) opens a cheat-sheet dialog listing
-the live keys: Cmd/Ctrl+K sessions, Cmd/Ctrl+N new session, Cmd/Ctrl+1 assets
-rail, Esc drawer-close then two-step stop-run, ArrowUp last-goal recall, `@` file
-mention. The dialog's list mirrors the handlers in `useAppShortcuts` and the
-workbench — update them together.
+the live keys: Cmd/Ctrl+K sessions, Cmd/Ctrl+N new session, Esc drawer-close
+then two-step stop-run, ArrowUp last-goal recall, `@` file mention. The
+dialog's list mirrors the handlers in `useAppShortcuts` and the workbench —
+update them together.
 
-## Notifications
+## Copy language
 
-The bell (rail footer) opens a popover: category filter tabs (All, agents,
-messages, skills, system — `aria-pressed`), a newest-first item list, and
-mark-all-read / clear-all actions. Category badges use token classes
-(`primary`/`success`/`warning`/muted) — never raw palette hex, so they track
-the `.dark` overrides. Tapping an item marks it read and closes the popover.
-Clear-all is optimistic with a 5s Undo toast (snapshot restore).
+The UI is English. The QRIS money flow stays Indonesian by design — the Top
+Up page, the Saldo balance chip, and its balance toasts (IDR amounts, QRIS =
+Indonesian rails). Everything else — tool-view labels, errors, toasts — is
+English.
 
 ## Visual language
 

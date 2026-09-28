@@ -361,6 +361,7 @@ export function DeckPreview({ fileId }: { fileId: string }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const presentRef = useRef<HTMLDivElement | null>(null);
   const presentCloseRef = useRef<HTMLButtonElement | null>(null);
+  const presentDialogRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -408,6 +409,62 @@ export function DeckPreview({ fileId }: { fileId: string }) {
     return () => {
       if (prev instanceof HTMLElement && prev !== document.body) prev.focus();
     };
+  }, [presenting]);
+  // Present overlay focus trap + Esc containment: when the dialog is open,
+  // Tab/Shift+Tab cycle within the dialog; Escape only closes when the dialog
+  // (or its children) has focus. This prevents the window-level runtime handler
+  // from firing when focus is outside the modal.
+  useEffect(() => {
+    if (!presenting) return;
+    const dialog = presentDialogRef.current;
+    if (!dialog) return;
+
+    const focusableSelectors = [
+      "button:not([disabled])",
+      "[href]",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(", ");
+
+    const getFocusable = () =>
+      Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelectors)).filter(
+        (el) => el.offsetParent !== null && !el.hasAttribute("disabled"),
+      );
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        // Only handle Escape if focus is inside this dialog
+        if (dialog.contains(document.activeElement)) {
+          e.stopPropagation();
+          setPresenting(false);
+        }
+        return;
+      }
+      if (e.key !== "Tab") return;
+
+      const focusable = getFocusable();
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    dialog.addEventListener("keydown", onKeyDown);
+    return () => dialog.removeEventListener("keydown", onKeyDown);
   }, [presenting]);
 
   const [pptxExported, setPptxExported] = useState<string | null>(null);
@@ -476,6 +533,7 @@ export function DeckPreview({ fileId }: { fileId: string }) {
           aria-modal="true"
           className="fixed inset-0 z-50 overflow-hidden bg-black"
           role="dialog"
+          ref={presentDialogRef}
         >
           <div ref={presentRef} className="relative h-full w-full overflow-hidden" />
           <button

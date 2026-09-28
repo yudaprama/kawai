@@ -22,6 +22,13 @@ export function fmtDuration(from: number, to?: number): string {
   return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
+/** Count of settled steps (completed + failed + skipped) — shared by
+ *  ProgressRail, RunStatusStrip, and DeliverableViewer for consistent
+ *  progress reporting. */
+export function settledCount(steps: SupervisorStep[]): number {
+  return steps.filter((s) => s.state === "completed" || s.state === "failed" || s.state === "skipped").length;
+}
+
 /** Plan Summary — "what will the agent do, what will I get" without reading
  *  the technical step list. LLM-written (sanitized) or the deterministic
  *  fallback from the step tasks; `null` hides the card entirely. */
@@ -509,15 +516,9 @@ export function ProgressRail({
         ) : (
           supervisor.steps.length > 0 && (
             <Progress
-              aria-label={`${supervisor.steps.filter((s) => s.state === "completed" || s.state === "failed" || s.state === "skipped").length} of ${supervisor.steps.length} steps done`}
+              aria-label={`${settledCount(supervisor.steps)} of ${supervisor.steps.length} steps done`}
               className="mt-2 h-1"
-              value={
-                (supervisor.steps.filter(
-                  (s) => s.state === "completed" || s.state === "failed" || s.state === "skipped",
-                ).length /
-                  supervisor.steps.length) *
-                100
-              }
+              value={(settledCount(supervisor.steps) / supervisor.steps.length) * 100}
             />
           )
         )}

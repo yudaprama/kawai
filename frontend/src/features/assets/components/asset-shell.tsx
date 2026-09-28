@@ -1,13 +1,17 @@
 import { Icon } from "@/components/shared/icon";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { ProfileControls } from "@/features/agents/profile-controls";
 import { cn } from "@/lib/utils";
+import { AssetChromeContext } from "./asset-chrome";
 
 /**
  * Shell for the center-pane asset workspace pages: back-to-workbench affordance +
- * page title, then the page body fills the remaining height (children own
- * their scrolling — the asset split layout scrolls internally).
+ * page title + the account cluster (asset switcher, balance chip, theme,
+ * sign-out — the same ProfileControls the Workbench top bar carries), then the
+ * page body fills the remaining height (children own their scrolling — the
+ * asset split layout scrolls internally).
  */
 export function AssetShell({
   title,
@@ -20,6 +24,7 @@ export function AssetShell({
   onBack: () => void;
   children: ReactNode;
 }) {
+  const chrome = useContext(AssetChromeContext);
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const mql = window.matchMedia("(max-width: 1023px)");
@@ -47,6 +52,18 @@ export function AssetShell({
           <h2 className="truncate text-sm font-semibold">{title}</h2>
           {subtitle && <p className="text-muted-foreground truncate text-xs leading-tight">{subtitle}</p>}
         </div>
+        {chrome && (
+          <div className="ml-auto">
+            <ProfileControls
+              assetView={chrome.assetView}
+              codegraphAvailable={chrome.codegraphAvailable}
+              userId={chrome.userId}
+              walletAvailable={chrome.walletAvailable}
+              onLogout={chrome.onLogout}
+              onSelectAsset={chrome.onSelectAsset}
+            />
+          </div>
+        )}
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">{children}</div>
     </main>

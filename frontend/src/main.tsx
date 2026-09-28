@@ -7,7 +7,6 @@ import { ContextGatheringStep } from "@/features/auth/context-gathering-step";
 import { OnboardingProvider } from "@/features/auth/onboarding-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { NotificationProvider } from "@/contexts/NotificationContext";
 import App from "./app/App";
 import "./index.css";
 
@@ -47,15 +46,13 @@ if (rootEl) {
     <React.StrictMode>
       <SentryErrorBoundary>
         <TooltipProvider>
-          <NotificationProvider>
-            <AuthGate>
-              <OnboardingProvider>
-                <ContextGatheringStep>
-                  <App />
-                </ContextGatheringStep>
-              </OnboardingProvider>
-            </AuthGate>
-          </NotificationProvider>
+          <AuthGate>
+            <OnboardingProvider>
+              <ContextGatheringStep>
+                <App />
+              </ContextGatheringStep>
+            </OnboardingProvider>
+          </AuthGate>
           <Toaster />
         </TooltipProvider>
       </SentryErrorBoundary>

@@ -9,9 +9,20 @@ pub fn generate_verification_code() -> String {
     format!("{n:06}")
 }
 
+/// Errors that can occur during email operations.
+#[derive(Debug, thiserror::Error)]
+pub enum EmailError {
+    #[error("Failed to send email: {0}")]
+    SendFailed(String),
+    #[error("Verification store unavailable")]
+    StoreUnavailable,
+    #[error("Invalid email address: {0}")]
+    InvalidAddress(String),
+}
+
 /// Generate a code and email it to `to`. Returns the code so the caller can
 /// verify the user's input locally.
-pub async fn send_verification_email(to: &str) -> Result<String, String> {
+pub async fn send_verification_email(to: &str) -> Result<String, EmailError> {
     let code = generate_verification_code();
     let subject = "Kawai — your verification code";
     let text = format!("Your Kawai verification code is: {code}\n\nIt expires when you close the app.");
@@ -22,13 +33,13 @@ pub async fn send_verification_email(to: &str) -> Result<String, String> {
     );
     kawai_email::send_email_html(to, subject, &text, &html)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| EmailError::SendFailed(e.to_string()))?;
     Ok(code)
 }
 
 /// Best-effort confirmation email sent after a successful local sign-up
 /// (no code — the account is already active).
-pub async fn send_welcome_email(to: &str) -> Result<(), String> {
+pub async fn send_welcome_email(to: &str) -> Result<(), EmailError> {
     let subject = "Welcome to Kawai";
     let text = format!(
         "Your Kawai account ({to}) has been created.\n\nIf this wasn't you, you can ignore this email."
@@ -39,7 +50,33 @@ pub async fn send_welcome_email(to: &str) -> Result<(), String> {
     );
     kawai_email::send_email_html(to, subject, &text, &html)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| EmailError::SendFailed(e.to_string()))
+}
+
+// ── Sign-up verification codes (client-side flow, desktop option A) ─────────
+
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+/// email → (code, sent-at). In-memory only: restarting the app invalidates
+/// pending codes, which is acceptable for a sign-up flow.
+fn codes() -> &'static Mutex<HashMap<String, (String, Instant)>> {
+    static CODES: OnceLock<Mutex<HashMap<String, (String, Instant)>>> = OnceLock::new();
+    CODES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+const CODE_TTL: Duration = Duration::from_secs(10 * 60);
+
+/// Email a 6-digit code to `to` and remember it for later [`verify_code`].
+pub async fn send_sign_up_code(to: &str) -> Result<(), EmailError> {
+    let to = to.trim().to_lowercase();
+    let code = send_verification_email(&to).await?;
+    codes()
+        .lock()
+        .map_err(|_| EmailError::StoreUnavailable)?
+        .insert(to, (code, Instant::now()));
+    Ok(())
 }
 
 // ── Sign-up verification codes (client-side flow, desktop option A) ─────────

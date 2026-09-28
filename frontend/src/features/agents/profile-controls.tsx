@@ -67,8 +67,8 @@ export function ProfileControls({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            aria-label="Account"
-            className="ml-0.5 shrink-0"
+            aria-label="Assets and account"
+            className="ml-0.5 shrink-0 gap-1.5"
             size="icon"
             title={`Signed in as ${userId ?? "demo"}`}
             variant="ghost"
@@ -79,11 +79,17 @@ export function ProfileControls({
                 <span className="bg-primary -top-0.5 -right-0.5 absolute size-2 rounded-full ring-2 ring-background" />
               )}
             </span>
+            <span className="hidden lg:inline-flex items-center font-mono text-xs tracking-wider uppercase text-muted-foreground">
+              Assets
+            </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-60">
           <DropdownMenuLabel className="font-mono text-xs break-all">{userId ?? "demo"}</DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <DropdownMenuLabel className="font-mono text-xs tracking-wider uppercase text-muted-foreground">
+            Assets
+          </DropdownMenuLabel>
           {assets.map((asset) => (
             <DropdownMenuItem
               key={asset.id}

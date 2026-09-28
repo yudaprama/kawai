@@ -89,15 +89,12 @@ frontend/
 │   ├── components/
 │   │   ├── ui/             # shadcn primitives (vendored from web/)
 │   │   ├── ai-elements/    # vendored chat components (from web/ SPA, trimmed)
-│   │   │   └── tool-renderers/   # per-domain tool result cards
-│   │   ├── notifications/   # NotificationCenter, NotificationItem
+│   │   ├── tool-renderers/   # per-domain tool result cards
 │   │   ├── shared/          # cross-feature reusable product UI: file-preview, file-icon, rename-input
 │   │   └── error-boundary.tsx # top-level render crash fallback (mirrors to frontend_log)
 │   ├── hooks/              # truly global hooks (use-theme, use-app-shortcuts, use-session-filter, etc.)
 │   ├── lib/                # infrastructure: api.ts, stream.ts, utils.ts, logger.ts, ai-types.ts, preview-*.ts, ...
-│   │   ├── streamdown/     # vendored streaming markdown renderer
-│   │   └── native-notifications/ # tauriBridge.ts
-│   ├── contexts/           # React contexts (NotificationContext.tsx)
+│   │   └── streamdown/     # vendored streaming markdown renderer
 │   ├── platform/           # platform adapter (types.ts, index.ts, shared-media.ts)
 │   ├── generated/          # generated API types and events (never edit manually)
 │   └── assets/             # static asset helpers (icon-map.json, type.ts, utils.ts)

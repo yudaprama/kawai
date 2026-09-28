@@ -392,7 +392,21 @@ export function WorkbenchPage({
    *  chat hook's newChat — and a plan awaiting review is discarded first: it
    *  owns the rail and would silently block the next submit. */
   const newSession = useCallback(() => {
-    if (supervisor.planning != null || runInFlight) return;
+    if (supervisor.planning != null) {
+      toast("Can't start a new session while a plan is being created", { id: "new-session-blocked" });
+      return;
+    }
+    if (runInFlight) {
+      const status = supervisor.status;
+      const reason =
+        status === "running"
+          ? "A run is in progress"
+          : status === "stopping"
+            ? "A run is stopping"
+            : "A run is awaiting confirmation";
+      toast(`Can't start a new session: ${reason}`, { id: "new-session-blocked" });
+      return;
+    }
     if (supervisor.status === "reviewing") supervisor.cancelPlan();
     workbench.startNewSession();
     pendingPickRow.current = null;

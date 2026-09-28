@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/shared/icon";
 import { Input } from "@/components/ui/input";
@@ -15,8 +15,14 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [showPassword, setShowPassword] = useState(false);
+  const [signUpFailed, setSignUpFailed] = useState(false);
+  const emailRef = useRef<HTMLInputElement>(null);
 
   if (userId) return <>{children}</>;
+
+  useEffect(() => {
+    emailRef.current?.focus();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

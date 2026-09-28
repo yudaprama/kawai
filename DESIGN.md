@@ -257,3 +257,21 @@ The composer is the strongest rounded silhouette in the shell, using a broad pil
 - **Don't** add gradients, decorative display typography, or saturated surfaces that compete with tool output.
 - **Don't** introduce a new color when an existing semantic token can express the state.
 - **Don't** treat titles/tooltips as a substitute for visible hierarchy where space permits.
+## Keyboard Shortcuts
+
+The following global shortcuts are available throughout the application. They are surfaced in the "?" cheat-sheet dialog and mirror the handlers in `useAppShortcuts` and the workbench's key listeners.
+
+| Shortcut | Action | Notes |
+|----------|--------|-------|
+| `Cmd/Ctrl+K` | Browse sessions | Opens the sessions panel |
+| `Cmd/Ctrl+N` | New session / goal | Resets chat and closes asset view; no-op while a run is in flight |
+| `Esc` | Close drawer / modal | First press; presses twice within 2s to stop a running plan |
+| `Esc` | Leave asset view (back to chat) | **Unavailable while a run is in flight** — only works when viewing an asset page |
+| `↑` (Arrow Up) | Recall last goal | Works when composer is empty |
+| `@` | Attach knowledge file | Opens file mention picker in composer |
+| `?` | Show this shortcut list | Ignored inside editable fields and dialogs |
+
+**Design notes:**
+- Shortcuts use the modifier key appropriate to the platform (⌘ Command on macOS, Ctrl on Windows/Linux).
+- The cheat sheet is intentionally minimal — only live, global shortcuts are listed. Context-specific keys (e.g., ArrowUp/Down in the file picker) are not shown.
+- The two Esc behaviors are distinct: the "close drawer" handler runs at the shell level; "leave asset view" runs only when an asset page is active. The "stop run" two-step is armed only from the workbench center, not from asset views.

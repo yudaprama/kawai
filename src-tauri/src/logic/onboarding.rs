@@ -17,6 +17,30 @@ use serde::{Deserialize, Serialize};
 
 use kawai_db::{db_connection, unix_now, DbError};
 
+
+/// Errors that can occur during onboarding.
+#[derive(Debug, thiserror::Error)]
+pub enum OnboardingError {
+    #[error("Apify client error: {0}")]
+    Apify(String),
+    #[error("Composio unavailable: {0}")]
+    Composio(String),
+    #[error("Gmail scan failed: {0}")]
+    Gmail(String),
+    #[error("GitHub profile fetch failed: {0}")]
+    GitHub(String),
+    #[error("LLM compression failed: {0}")]
+    Compression(String),
+    #[error("Memory persistence failed: {0}")]
+    Persistence(String),
+    #[error("KV store error: {0}")]
+    Kv(String),
+    #[error("Database error: {0}")]
+    Database(#[from] DbError),
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+}
+
 /// Sources recorded in `onboarding_state` once processed.
 pub const SOURCE_QUESTIONS: &str = "questions";
 pub const SOURCE_GITHUB: &str = "github";
@@ -414,15 +438,15 @@ pub fn onboarding_run_stream(
 /// Run the consented Apify LinkedIn-profile actor and render the result to
 /// markdown for the compressor. Token resolves from the kawai vault inside
 /// the client (`is_configured` was checked by the caller).
-async fn scrape_linkedin(profile_url: &str) -> Result<String, String> {
-    let client = apify::Apify::new().map_err(|e| e.to_string())?;
+async fn scrape_linkedin(profile_url: &str) -> Result<String, OnboardingError> {
+    let client = apify::Apify::new().map_err(OnboardingError::Apify)?;
     let items = client
         .run_sync(&apify::RunRequest::new(
             LINKEDIN_ACTOR,
             serde_json::json!({ "profileUrls": [profile_url] }),
         ))
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(OnboardingError::Apify)?;
     let Some(first) = items.first() else {
         return Ok(String::new());
     };
@@ -475,7 +499,7 @@ pub async fn onboarding_import_document(user_id: &str, file_id: &str) -> Result<
 
     let compressed = compress_with_cloud(&materials)
         .await
-        .map_err(DbError::Config)?;
+        .map_err(|e| DbError::Config(e.to_string()))?;
     let stored = persist_compressed(user_id, &compressed, SOURCE_DOCUMENT, false).await?;
 
     if let Err(e) = kawai_memory::facet_distill(user_id).await {
@@ -502,21 +526,21 @@ pub async fn onboarding_import_document(user_id: &str, file_id: &str) -> Result<
 /// survives — message bodies and all other matches are discarded in-memory.
 /// `Ok(None)` = connected but nothing found; `Err` = no vault key / no
 /// active Gmail connection / fetch failure (all best-effort skip reasons).
-async fn gmail_self_url() -> Result<Option<String>, String> {
+async fn gmail_self_url() -> Result<Option<String>, OnboardingError> {
     let api_key = kawai_constants::composio::get_composio_api_key();
     if api_key.trim().is_empty() {
-        return Err("no Composio key".into());
+        return Err(OnboardingError::Composio("no Composio key".into()));
     }
     let client = composio::ComposioClient::new(api_key);
     let accounts = client
         .list_connected_accounts()
         .await
-        .map_err(|e| format!("list connections: {e}"))?;
+        .map_err(|e| OnboardingError::Composio(format!("list connections: {e}")))?;
     let account = accounts
         .items
         .iter()
         .find(|a| a.toolkit.eq_ignore_ascii_case("gmail") && a.status.eq_ignore_ascii_case("ACTIVE"))
-        .ok_or_else(|| "no active Gmail connection".to_string())?;
+        .ok_or_else(|| OnboardingError::Composio("no active Gmail connection".into()))?;
 
     let resp = client
         .execute_tool(
@@ -525,9 +549,9 @@ async fn gmail_self_url() -> Result<Option<String>, String> {
             Some(account.id.clone()),
         )
         .await
-        .map_err(|e| format!("fetch emails: {e}"))?;
+        .map_err(|e| OnboardingError::Composio(format!("fetch emails: {e}")))?;
     if !resp.successful {
-        return Err(resp.error.unwrap_or_else(|| "gmail fetch failed".into()));
+        return Err(OnboardingError::Composio(resp.error.unwrap_or_else(|| "gmail fetch failed".into())));
     }
 
     // Defensive shape handling: Composio action output shapes vary — search
@@ -592,7 +616,7 @@ impl RoleMerged for IdentitySignals {
 
 /// One cloud one-shot over the materials. Errors when no provider is
 /// configured or the answer is malformed.
-async fn compress_with_cloud(materials: &str) -> Result<onboarding::compress::CompressedProfile, String> {
+async fn compress_with_cloud(materials: &str) -> Result<onboarding::compress::CompressedProfile, OnboardingError> {
     let answer = remote_llm::reason::reason_in(
         compress_system_prompt(),
         &compress_task(materials),
@@ -601,8 +625,8 @@ async fn compress_with_cloud(materials: &str) -> Result<onboarding::compress::Co
         None,
     )
     .await
-    .map_err(|e| e.to_string())?;
-    parse_compressed(&answer)
+    .map_err(|e| OnboardingError::Compression(e.to_string()))?;
+    parse_compressed(&answer).map_err(|e| OnboardingError::Compression(e.to_string()))
 }
 
 /// Store compressed items as memories (dedup by title, case-insensitive).

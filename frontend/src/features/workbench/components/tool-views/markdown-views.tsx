@@ -36,13 +36,13 @@ export function PdfPagesView({ data }: { data: Record<string, unknown> }) {
   if (entries.length === 0) return null;
   return (
     <div className="space-y-2">
-      <SectionLabel>{entries.length} halaman diekstrak — klik untuk membuka</SectionLabel>
+      <SectionLabel>{entries.length} pages extracted — click to open</SectionLabel>
       {entries.map(([page, text]) => (
         <details className="bg-card rounded-lg border p-3" key={page}>
           <summary className="text-foreground cursor-pointer text-sm font-medium">
-            Halaman {page}
+            Page {page}
             <span className="text-muted-foreground ml-2 font-mono text-[11px]">
-              {text.length.toLocaleString("id-ID")} karakter
+              {text.length.toLocaleString()} characters
             </span>
           </summary>
           <div className="mt-3 border-t pt-3">

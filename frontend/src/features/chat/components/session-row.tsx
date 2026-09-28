@@ -71,9 +71,10 @@ export function SessionRow({
     >
       <button
         aria-pressed={selectMode ? selected : undefined}
-        className={`flex min-w-0 flex-1 flex-col gap-0.5 text-left disabled:opacity-50 ${archivedStyle ? "text-muted-foreground" : ""}`}
+        className={`flex min-w-0 flex-1 flex-col gap-0.5 text-left disabled:opacity-50 ${archivedStyle ? "text-muted-foreground" : ""} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
         disabled={busy}
         onMouseEnter={onHighlight}
+        onFocus={onHighlight}
         onClick={selectMode ? onToggleSelect : onSelect}
         type="button"
       >

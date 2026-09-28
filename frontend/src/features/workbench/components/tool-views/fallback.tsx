@@ -75,5 +75,5 @@ export function FallbackView({ output }: { output: string }) {
 }
 
 export function EmptyView() {
-  return <p className="text-muted-foreground text-sm">Tidak ada hasil yang dikembalikan.</p>;
+  return <p className="text-muted-foreground text-sm">No results returned.</p>;
 }
