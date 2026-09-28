@@ -39,16 +39,16 @@ fn transportish(err: &str) -> bool {
 /// found no wallet before this run and will delete it during cleanup.
 async fn wallet_checks(created_here: bool, self_transfer: bool) -> Result<(), String> {
     let addr = if created_here {
-        let w = monad_wallet::create()?;
+        let w = monad_wallet::create().map_err(|e| e.to_string())?;
         println!("[monad_wallet_smoke] created device wallet {}", w.address);
         w.address
     } else {
-        monad_wallet::address()?
+        monad_wallet::address().map_err(|e| e.to_string())?
             .map(|w| w.address)
             .ok_or_else(|| "no wallet present although the pre-run probe found one".to_string())?
     };
 
-    let sig = monad_wallet::sign_message("kawai wallet smoke").await?;
+    let sig = monad_wallet::sign_message("kawai wallet smoke").await.map_err(|e| e.to_string())?;
     if !sig.starts_with("0x") || sig.len() != 132 || !sig[2..].chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(format!("EIP-191 signature malformed: {sig}"));
     }
@@ -62,7 +62,7 @@ async fn wallet_checks(created_here: bool, self_transfer: bool) -> Result<(), St
         println!("[monad_wallet_smoke] broadcast {}", tx.tx_hash);
         let mut receipt = None;
         for _ in 0..15 {
-            receipt = monad_wallet::transaction_receipt(&tx.tx_hash).await?;
+            receipt = monad_wallet::transaction_receipt(&tx.tx_hash).await.map_err(|e| e.to_string())?;
             if receipt.is_some() {
                 break;
             }
@@ -72,7 +72,7 @@ async fn wallet_checks(created_here: bool, self_transfer: bool) -> Result<(), St
             Some(r) if r.success => {
                 println!("[monad_wallet_smoke] mined in block {} (success)", r.block_number);
                 // The broadcast must have landed in the device history log.
-                let hist = monad_wallet::history()?;
+                let hist = monad_wallet::history().map_err(|e| e.to_string())?;
                 if !hist.iter().any(|h| h.tx_hash == tx.tx_hash) {
                     return Err(format!("tx {} missing from the device history log", tx.tx_hash));
                 }
