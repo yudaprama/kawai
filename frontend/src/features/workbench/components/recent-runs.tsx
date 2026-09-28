@@ -4,6 +4,11 @@ import { relativeTime } from "@/features/chat/lib/chat-helpers";
 import { type RecentRunInfo, call } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
 
+/** Backend-read fuse: a stalled invoke must land in the error/Retry state,
+ *  never skeleton forever (a deadlocked backend task never settles the
+ *  promise — e.g. a wiped data dir under a cached DB handle). */
+const LOAD_TIMEOUT_MS = 20_000;
+
 /**
  * Landing "Recent runs" — the cross-session journal strip: the newest plan
  * record from every session with runs. Row markup mirrors RunHistory
@@ -39,10 +44,19 @@ export function RecentRuns({
     void reloadKey; // refetch trigger — a bump forces a fresh list read
     void retryKey; // manual Retry — same, via the button below
     let cancelled = false;
-    void call<RecentRunInfo[]>("list_recent_runs", {})
+    // The timer lives for the fetch only; a settled (or cancelled) read
+    // disarms it so no stray rejection flips the state later.
+    let timer: number | undefined;
+    const stale = () =>
+      new Promise<never>((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error("list_recent_runs timed out")), LOAD_TIMEOUT_MS);
+      });
+    void Promise.race([call<RecentRunInfo[]>("list_recent_runs", {}), stale()])
       .then((rows) => {
         if (!cancelled) {
-          setRuns(rows);
+          // Defensive: a non-array body must not re-poison `runs` (null
+          // would pin the skeleton forever).
+          setRuns(Array.isArray(rows) ? rows : []);
           setFailed(false);
         }
       })
@@ -52,9 +66,11 @@ export function RecentRuns({
           setFailed(true);
           setRuns((prev) => prev ?? []);
         }
-      });
+      })
+      .finally(() => window.clearTimeout(timer));
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [open, reloadKey, retryKey]);
 
@@ -97,7 +113,12 @@ export function RecentRuns({
             </button>
           </div>
         ) : (
-          <p className="text-muted-foreground font-mono text-xs">No runs yet — your completed runs will appear here.</p>
+          <div className="space-y-1">
+            <p className="text-foreground font-mono text-xs">No runs yet.</p>
+            <p className="text-muted-foreground font-mono text-xs">
+              State a goal above — completed runs land here, and reopening one shows its full deliverable.
+            </p>
+          </div>
         )}
       </div>
     );
