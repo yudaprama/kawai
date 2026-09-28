@@ -1103,7 +1103,7 @@ pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai
 pub enum SupervisorError {
     /// Planner/reviser output could not be parsed into a valid plan
     /// (JSON extraction, schema validation, dataflow binding).
-    #[error("{0}")]
+    #[error("invalid plan: {0}")]
     PlanParse(String),
     /// A step names a tool forbidden in this planning phase.
     #[error("step \"{step}\" uses forbidden tool \"{tool}\" in this planning phase")]
@@ -1117,6 +1117,10 @@ pub enum SupervisorError {
     /// No domain builder produced a toolset for the requested agent.
     #[error("no supervisor toolset available for agent '{0}'")]
     NoToolset(String),
+    /// Bug-shaped failure that is not caller-fixable (e.g. serializing a
+    /// locally-constructed struct).
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 /// Parse + validate a plan, additionally rejecting steps whose tool is in
@@ -1172,7 +1176,7 @@ pub fn parse_supervisor_plan_scoped(
     let slice = kawai_router::extract_json_slice(raw)
         .map_err(|e| SupervisorError::PlanParse(e.to_string()))?;
     let mut plan: kawai_router::TaskPlan = serde_json::from_str(slice)
-        .map_err(|e| SupervisorError::PlanParse(format!("invalid plan JSON: {e}")))?;
+        .map_err(|e| SupervisorError::PlanParse(format!("deserialization failed: {e}")))?;
     // Explicit dataflow bindings ("inputs"): shape + target checks, and each
     // binding implies its dependency — the planner can never desynchronize
     // dependsOn from the dataflow it declared.

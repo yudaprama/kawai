@@ -2601,7 +2601,7 @@ async fn ask_about_step_result_handler(
         &req.question,
     )
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let (tx, rx) = mpsc::unbounded_channel();
 

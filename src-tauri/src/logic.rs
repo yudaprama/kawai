@@ -9,21 +9,22 @@ use std::time::Duration;
 #[derive(Debug, thiserror::Error)]
 pub enum LogicError {
     /// Invalid caller input (empty language, oversized deliverable, missing args).
-    #[error("{0}")]
+    #[error("invalid input: {0}")]
     InvalidInput(String),
     /// The on-device model file is not installed in any standard location.
-    #[error("{0}")]
+    #[error("model not found: {0}")]
     ModelNotFound(String),
     /// On-device model download failed (network/HTTP/filesystem).
-    #[error("{0}")]
+    #[error("model download failed: {0}")]
     ModelDownload(String),
     /// Office file import failed (unreadable path, decode, unsupported type).
-    #[error("{0}")]
+    #[error("office import failed: {0}")]
     OfficeImport(String),
     /// Remote-LLM-backed op failed (translate, suggest).
-    #[error("{0}")]
+    #[error("llm call failed: {0}")]
     Llm(String),
-    /// Persistence/cache failure.
+    /// Persistence/cache failure. `DbError`'s own Display already names the
+    /// category ("db config:", "not found:", "io:", "sql:") — pass through.
     #[error("{0}")]
     Db(#[from] kawai_db::DbError),
 }
@@ -202,7 +203,9 @@ pub async fn translate_deliverable(
     .map_err(|e| LogicError::Llm(format!("translation failed: {e}")))?;
     let translated = strip_outer_fence(source, &response);
     if translated.trim().is_empty() {
-        return Err(LogicError::InvalidInput(
+        // The caller's input was valid — an empty result is an upstream
+        // model failure, not invalid input.
+        return Err(LogicError::Llm(
             "translator returned an empty result".into(),
         ));
     }
@@ -255,7 +258,7 @@ pub fn resolve_model_path() -> Result<String, LogicError> {
         .map(|path| path.to_string_lossy().into_owned())
         .ok_or_else(|| {
             LogicError::ModelNotFound(format!(
-                "model not found: install {filename} in the app resources or ~/.kawai/models/"
+                "install {filename} in the app resources or ~/.kawai/models/"
             ))
         })
 }
@@ -330,7 +333,7 @@ pub async fn ensure_model() -> Result<String, LogicError> {
     } else {
         local_llm::mark_download_failed();
         return Err(LogicError::ModelDownload(format!(
-            "download failed: HTTP {} for {model_url}",
+            "HTTP {} for {model_url}",
             response.status()
         )));
     }
@@ -517,8 +520,8 @@ pub async fn ask_about_step_result(
     plan_key: &str,
     step_id: &str,
     question: &str,
-) -> Result<impl Stream<Item = crate::supervisor::SupervisorEvent> + Send, String> {
-    use crate::supervisor::{build_registry_from_toolset, execute_plan_stream_with_cancel, supervisor_toolset_with_explainer};
+) -> Result<impl Stream<Item = crate::supervisor::SupervisorEvent> + Send, crate::supervisor::SupervisorError> {
+    use crate::supervisor::{SupervisorError, build_registry_from_toolset, execute_plan_stream_with_cancel, supervisor_toolset_with_explainer};
     use kawai_agent::ExplainStepResultArgs;
     use kawai_router::{TaskPlan, TaskStep};
     use serde_json::Value;
@@ -528,9 +531,7 @@ pub async fn ask_about_step_result(
 
     // 1. Load the step result from supervisor_step_results (user-scoped),
     //    with the session-scope fallback the live read path uses.
-    let rows = kawai_db::list_supervisor_step_results(user_id, session_id, plan_key)
-        .await
-        .map_err(|e| format!("supervisor_step_results read failed: {e}"))?;
+    let rows = kawai_db::list_supervisor_step_results(user_id, session_id, plan_key).await?;
     let hit = rows
         .into_iter()
         .rev()
@@ -540,14 +541,14 @@ pub async fn ask_about_step_result(
         hit
     } else {
         kawai_db::list_supervisor_step_results_by_session(user_id, session_id, 200)
-            .await
-            .map_err(|e| format!("supervisor_step_results read failed: {e}"))?
+            .await?
             .into_iter()
             .find(|r| r.step_id == step_id && r.plan_key == plan_key)
             .map(|r| (r.tool, r.output, String::new()))
     };
-    let (step_tool_name, step_output, artifacts_json) =
-        hit.ok_or_else(|| format!("step result not found: plan_key={plan_key}, step_id={step_id}"))?;
+    let (step_tool_name, step_output, artifacts_json) = hit.ok_or_else(|| {
+        SupervisorError::StepNotFound(format!("{step_id} (plan_key={plan_key})"))
+    })?;
 
     // The persisted artifacts are typed kawai_router::Artifact values —
     // passed through verbatim as JSON context for the explainer.
@@ -567,7 +568,7 @@ pub async fn ask_about_step_result(
                 step_artifacts,
                 question: question.to_string(),
             })
-            .map_err(|e| format!("serialize args failed: {e}"))?,
+            .map_err(|e| SupervisorError::Internal(format!("serialize args failed: {e}")))?,
             depends_on: vec![],
             ..Default::default()
         }],
@@ -576,12 +577,8 @@ pub async fn ask_about_step_result(
     };
 
     // 3. Registry: merged supervisor catalog + the explainer tool.
-    let toolset = supervisor_toolset_with_explainer(user_id, session_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    let registry = build_registry_from_toolset(user_id, session_id, toolset, plan_key)
-        .await
-        .map_err(|e| e.to_string())?;
+    let toolset = supervisor_toolset_with_explainer(user_id, session_id).await?;
+    let registry = build_registry_from_toolset(user_id, session_id, toolset, plan_key).await?;
 
     // 4. Execute the mini-plan — same scheduler, same event lifecycle.
     let cancel = CancellationToken::new();
@@ -639,7 +636,8 @@ mod tests {
     /// Read-through cache contract: a stored (source-hash, language) row is
     /// served by `translate_deliverable` with ZERO LLM calls — the identity
     /// is the private hash fn itself, so any path that reached the model
-    /// instead would come back `Err("translation failed …")`, never the
+    /// instead would come back `Err("llm call failed: translation failed …")`,
+    /// never the
     /// stored body. The list op reports the same row as one chip, and input
     /// validation precedes cache and model alike.
     #[tokio::test]
