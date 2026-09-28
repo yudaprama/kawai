@@ -3,6 +3,31 @@ use futures_core::Stream;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+/// Errors surfaced by the pure logic layer's public ops. Transports render
+/// via `Display`; the variants let callers distinguish user-fixable input
+/// problems from environment/infrastructure failures.
+#[derive(Debug, thiserror::Error)]
+pub enum LogicError {
+    /// Invalid caller input (empty language, oversized deliverable, missing args).
+    #[error("{0}")]
+    InvalidInput(String),
+    /// The on-device model file is not installed in any standard location.
+    #[error("{0}")]
+    ModelNotFound(String),
+    /// On-device model download failed (network/HTTP/filesystem).
+    #[error("{0}")]
+    ModelDownload(String),
+    /// Office file import failed (unreadable path, decode, unsupported type).
+    #[error("{0}")]
+    OfficeImport(String),
+    /// Remote-LLM-backed op failed (translate, suggest).
+    #[error("{0}")]
+    Llm(String),
+    /// Persistence/cache failure.
+    #[error("{0}")]
+    Db(#[from] kawai_db::DbError),
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityInput {
@@ -134,27 +159,26 @@ pub async fn translate_deliverable(
     session_id: Option<i64>,
     markdown: &str,
     language: &str,
-) -> Result<String, String> {
+) -> Result<String, LogicError> {
     // Hard cap: one pass, no chunking. The deliverable writer's own output
     // budget (~8192 tokens) keeps real deliverables well under this.
     const MAX_SOURCE_CHARS: usize = 48_000;
     let language = language.trim();
     if language.is_empty() {
-        return Err("target language required".to_string());
+        return Err(LogicError::InvalidInput("target language required".into()));
     }
     let source = markdown.trim();
     if source.is_empty() {
-        return Err("nothing to translate".to_string());
+        return Err(LogicError::InvalidInput("nothing to translate".into()));
     }
     if source.chars().count() > MAX_SOURCE_CHARS {
-        return Err(format!(
+        return Err(LogicError::InvalidInput(format!(
             "deliverable too long to translate in one pass (limit {MAX_SOURCE_CHARS} characters)"
-        ));
+        )));
     }
     let source_hash = translation_source_hash(source);
-    if let Some(stored) = kawai_db::get_deliverable_translation(user_id, &source_hash, language)
-        .await
-        .map_err(|e| format!("translation cache unreadable: {e}"))?
+    if let Some(stored) =
+        kawai_db::get_deliverable_translation(user_id, &source_hash, language).await?
     {
         return Ok(stored);
     }
@@ -175,10 +199,12 @@ pub async fn translate_deliverable(
         Some(user_id.to_string()),
     )
     .await
-    .map_err(|e| format!("translation failed: {e}"))?;
+    .map_err(|e| LogicError::Llm(format!("translation failed: {e}")))?;
     let translated = strip_outer_fence(source, &response);
     if translated.trim().is_empty() {
-        return Err("translator returned an empty result".to_string());
+        return Err(LogicError::InvalidInput(
+            "translator returned an empty result".into(),
+        ));
     }
     // Persist (read-through write): the translation itself already succeeded,
     // so a storage failure only costs future cache hits — warn, don't fail the
@@ -211,25 +237,27 @@ fn translation_source_hash(source: &str) -> String {
 pub async fn deliverable_translations(
     user_id: &str,
     markdown: &str,
-) -> Result<Vec<kawai_db::DeliverableTranslationMeta>, String> {
+) -> Result<Vec<kawai_db::DeliverableTranslationMeta>, LogicError> {
     let source = markdown.trim();
     if source.is_empty() {
         return Ok(Vec::new());
     }
-    kawai_db::list_deliverable_translations(user_id, &translation_source_hash(source))
-        .await
-        .map_err(|e| format!("failed to list saved translations: {e}"))
+    let rows = kawai_db::list_deliverable_translations(user_id, &translation_source_hash(source))
+        .await?;
+    Ok(rows)
 }
 
 /// Resolve the on-device model path from standard development and bundled locations.
 ///   3. `~/.kawai/models/gemma-4-E4B-it.litertlm` (user home)
-pub fn resolve_model_path() -> Result<String, String> {
+pub fn resolve_model_path() -> Result<String, LogicError> {
     let filename = kawai_paths::LLM_MODEL_FILENAME;
     kawai_paths::find_model(filename)
         .map(|path| path.to_string_lossy().into_owned())
-        .ok_or_else(|| format!(
-            "model not found: install {filename} in the app resources or ~/.kawai/models/"
-        ))
+        .ok_or_else(|| {
+            LogicError::ModelNotFound(format!(
+                "model not found: install {filename} in the app resources or ~/.kawai/models/"
+            ))
+        })
 }
 
 /// Download the on-device model from HuggingFace Hub if not locally present.
@@ -240,7 +268,7 @@ pub fn resolve_model_path() -> Result<String, String> {
 /// Repo: `litert-community/gemma-4-E4B-it-litert-lm` (Apache-2.0, public,
 /// not gated — no token needed).
 #[cfg(feature = "litert")]
-pub async fn ensure_model() -> Result<String, String> {
+pub async fn ensure_model() -> Result<String, LogicError> {
     let filename = "gemma-4-E4B-it.litertlm";
     let repo_id = "litert-community/gemma-4-E4B-it-litert-lm";
     let model_url = format!("https://huggingface.co/{repo_id}/resolve/main/{filename}");
@@ -255,13 +283,15 @@ pub async fn ensure_model() -> Result<String, String> {
     local_llm::reset_download_state();
 
     // Determine target: ~/.kawai/models/<filename>
-    let model_dir = kawai_paths::user_models_dir()
-        .ok_or_else(|| "HOME not set — cannot download model".to_string())?;
+    let model_dir = kawai_paths::user_models_dir().ok_or_else(|| {
+        LogicError::ModelDownload("HOME not set — cannot download model".into())
+    })?;
     let target_path = model_dir.join(filename);
     let tmp_path = model_dir.join(format!("{filename}.part"));
 
-    std::fs::create_dir_all(&model_dir)
-        .map_err(|e| format!("create model dir {}: {e}", model_dir.display()))?;
+    std::fs::create_dir_all(&model_dir).map_err(|e| {
+        LogicError::ModelDownload(format!("create model dir {}: {e}", model_dir.display()))
+    })?;
 
     // Check for a partial download (supports resume).
     let existing_size = std::fs::metadata(&tmp_path)
@@ -271,7 +301,7 @@ pub async fn ensure_model() -> Result<String, String> {
 
     let client = reqwest::Client::builder()
         .build()
-        .map_err(|e| format!("reqwest client: {e}"))?;
+        .map_err(|e| LogicError::ModelDownload(format!("reqwest client: {e}")))?;
 
     let response = if existing_size > 0 {
         eprintln!(
@@ -283,30 +313,31 @@ pub async fn ensure_model() -> Result<String, String> {
             .header("Range", format!("bytes={}-", existing_size))
             .send()
             .await
-            .map_err(|e| format!("http request (resume): {e}"))?
+            .map_err(|e| LogicError::ModelDownload(format!("http request (resume): {e}")))?
     } else {
         client
             .get(&model_url)
             .send()
             .await
-            .map_err(|e| format!("http request: {e}"))?
+            .map_err(|e| LogicError::ModelDownload(format!("http request: {e}")))?
     };
 
     if response.status() == 206 || response.status().is_success() {
         if let Err(e) = download_stream(response, &tmp_path, existing_size, filename).await {
             local_llm::mark_download_failed();
-            return Err(e);
+            return Err(LogicError::ModelDownload(e));
         }
     } else {
         local_llm::mark_download_failed();
-        return Err(format!(
+        return Err(LogicError::ModelDownload(format!(
             "download failed: HTTP {} for {model_url}",
             response.status()
-        ));
+        )));
     }
 
     // Atomically move the completed file into place.
-    std::fs::rename(&tmp_path, &target_path).map_err(|e| format!("rename to target: {e}"))?;
+    std::fs::rename(&tmp_path, &target_path)
+        .map_err(|e| LogicError::ModelDownload(format!("rename to target: {e}")))?;
 
     local_llm::mark_download_complete();
 
@@ -402,12 +433,13 @@ pub fn import_office_file(
     source_path: Option<&str>,
     name: Option<&str>,
     data_base64: Option<&str>,
-) -> Result<office::OfficeFile, String> {
+) -> Result<office::OfficeFile, LogicError> {
     let imported = match (source_path, (name, data_base64)) {
         (Some(src), _) => office::import_path(user_id, src),
         (None, (Some(name), Some(data))) => office::import_base64(user_id, name, data),
         _ => Err("provide sourcePath, or name + dataBase64".into()),
-    }?;
+    }
+    .map_err(LogicError::OfficeImport)?;
     analytics::prewarm_tabular(user_id, &imported);
     Ok(imported)
 }
@@ -544,8 +576,12 @@ pub async fn ask_about_step_result(
     };
 
     // 3. Registry: merged supervisor catalog + the explainer tool.
-    let toolset = supervisor_toolset_with_explainer(user_id, session_id).await?;
-    let registry = build_registry_from_toolset(user_id, session_id, toolset, plan_key).await?;
+    let toolset = supervisor_toolset_with_explainer(user_id, session_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    let registry = build_registry_from_toolset(user_id, session_id, toolset, plan_key)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // 4. Execute the mini-plan — same scheduler, same event lifecycle.
     let cancel = CancellationToken::new();
@@ -652,11 +688,13 @@ mod tests {
         // with a user-facing message, never a phantom row or a model call.
         let empty_source = translate_deliverable(&user, None, "   ", language)
             .await
-            .unwrap_err();
+            .unwrap_err()
+            .to_string();
         assert!(empty_source.contains("nothing to translate"), "{empty_source}");
         let empty_lang = translate_deliverable(&user, None, source, "  ")
             .await
-            .unwrap_err();
+            .unwrap_err()
+            .to_string();
         assert!(empty_lang.contains("target language required"), "{empty_lang}");
         assert!(deliverable_translations(&user, " ").await.unwrap().is_empty());
     }

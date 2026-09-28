@@ -543,7 +543,9 @@ pub async fn translate_deliverable(
     session: State<'_, Session>,
 ) -> Result<String, String> {
     let user_id = session_user_id(&session)?;
-    logic::translate_deliverable(&user_id, session_id, &markdown, &language).await
+    logic::translate_deliverable(&user_id, session_id, &markdown, &language)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Authenticated RPC: saved translations (language chips) for this exact
@@ -555,7 +557,9 @@ pub async fn deliverable_translations(
     session: State<'_, Session>,
 ) -> Result<Vec<DeliverableTranslationMeta>, String> {
     let user_id = session_user_id(&session)?;
-    logic::deliverable_translations(&user_id, &markdown).await
+    logic::deliverable_translations(&user_id, &markdown)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Authenticated RPC: fetch one skill including its body; None → null.
@@ -947,7 +951,7 @@ pub async fn local_load_model(
             // Try local candidates first, then download from HuggingFace Hub.
             match logic::resolve_model_path() {
                 Ok(p) => p,
-                Err(_) => logic::ensure_model().await?,
+                Err(_) => logic::ensure_model().await.map_err(|e| e.to_string())?,
             }
         }
     };
@@ -1059,6 +1063,7 @@ pub fn office_import_file(
         name.as_deref(),
         data_base64.as_deref(),
     )
+    .map_err(|e| e.to_string())
 }
 
 /// ── QRIS top-up (PLAN-qris-topup.md Fase 3) — 5 auth-required thin ────────
@@ -1134,7 +1139,9 @@ pub async fn plan_task(
     }
     let registry = crate::supervisor::build_supervisor_registry(
         &user_id, session_id, &agent_id, "",
-    ).await?;
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     // Planning-progress events ride the same channel pattern as execution:
     // the planner loop can take a minute+, and a silent UI during it was the
     // worst-rated part of the flow. The command still resolves with the plan.
@@ -1178,7 +1185,9 @@ pub async fn supervisor_step_output(
     {
         return Err(format!("session {session_id} not found"));
     }
-    crate::supervisor::step_output(&user_id, session_id, &plan_key, &step_id).await
+    crate::supervisor::step_output(&user_id, session_id, &plan_key, &step_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Authenticated RPC: respond to a pending supervisor confirmation gate.
@@ -1693,7 +1702,8 @@ pub async fn execute_supervisor_plan(
         agent_id,
         &crate::supervisor::plan_key(&plan),
     )
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
 
     let step_count = plan.steps.len();
     let token = CancellationToken::new();
@@ -1748,7 +1758,8 @@ pub async fn run_analysis_desk(
         session_id,
         &crate::supervisor::plan_key(&plan),
     )
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
 
     let step_count = plan.steps.len();
     let token = CancellationToken::new();
@@ -1804,7 +1815,8 @@ pub async fn run_youtube_summary(
         session_id,
         &crate::supervisor::plan_key(&plan),
     )
-    .await?;
+    .await
+    .map_err(|e| e.to_string())?;
 
     let step_count = plan.steps.len();
     let token = CancellationToken::new();

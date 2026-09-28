@@ -954,7 +954,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
                         // without the exact required properties in view.
                         if repairs_used < 2 {
                             repairs_used += 1;
-                            let suggestions = suggest_tools(registry, &plan_err);
+                            let suggestions = suggest_tools(registry, &plan_err.to_string());
                             let used_tools: Vec<String> = v
                                 .get("steps")
                                 .and_then(|s| s.as_array())
@@ -1850,21 +1850,17 @@ pub async fn step_output(
     session_id: i64,
     plan_key: &str,
     step_id: &str,
-) -> Result<String, String> {
-    let rows = kawai_db::list_supervisor_step_results(user_id, session_id, plan_key)
-        .await
-        .map_err(|e| format!("supervisor_step_output: {e}"))?;
+) -> Result<String, SupervisorError> {
+    let rows = kawai_db::list_supervisor_step_results(user_id, session_id, plan_key).await?;
     if let Some(r) = rows.into_iter().rev().find(|r| r.step_id == step_id) {
         return Ok(r.output);
     }
-    let fallback = kawai_db::list_supervisor_step_results_by_session(user_id, session_id, 200)
-        .await
-        .map_err(|e| format!("supervisor_step_output: {e}"))?;
+    let fallback = kawai_db::list_supervisor_step_results_by_session(user_id, session_id, 200).await?;
     fallback
         .into_iter()
         .find(|r| r.step_id == step_id)
         .map(|r| r.output)
-        .ok_or_else(|| format!("no persisted output for step '{step_id}'"))
+        .ok_or_else(|| SupervisorError::StepNotFound(step_id.to_string()))
 }
 
 pub async fn build_supervisor_registry(
@@ -1872,14 +1868,10 @@ pub async fn build_supervisor_registry(
     session_id: i64,
     agent_id: &str,
     plan_key: &str,
-) -> Result<ToolRegistry, String> {
-    let toolset = build_supervisor_toolset(user_id, session_id, agent_id).await.ok_or_else(|| {
-        if agent_id == AUTO_AGENT_ID {
-            "no supervisor toolsets available (all domain builders returned None)".to_string()
-        } else {
-            format!("no toolset available for agent '{agent_id}'")
-        }
-    })?;
+) -> Result<ToolRegistry, SupervisorError> {
+    let toolset = build_supervisor_toolset(user_id, session_id, agent_id)
+        .await
+        .ok_or_else(|| SupervisorError::NoToolset(agent_id.to_string()))?;
 
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
@@ -1893,10 +1885,10 @@ pub async fn build_desk_registry(
     user_id: &str,
     session_id: i64,
     plan_key: &str,
-) -> Result<ToolRegistry, String> {
+) -> Result<ToolRegistry, SupervisorError> {
     let mut toolset = build_supervisor_toolset(user_id, session_id, AUTO_AGENT_ID)
         .await
-        .ok_or_else(|| "no supervisor toolsets available (all domain builders returned None)".to_string())?;
+        .ok_or_else(|| SupervisorError::NoToolset(AUTO_AGENT_ID.to_string()))?;
     toolset.add_tool(kawai_desk::DeskRoleTool::default());
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
@@ -1910,10 +1902,10 @@ pub async fn build_youtube_registry(
     user_id: &str,
     session_id: i64,
     plan_key: &str,
-) -> Result<ToolRegistry, String> {
+) -> Result<ToolRegistry, SupervisorError> {
     let mut toolset = build_supervisor_toolset(user_id, session_id, AUTO_AGENT_ID)
         .await
-        .ok_or_else(|| "no supervisor toolsets available (all domain builders returned None)".to_string())?;
+        .ok_or_else(|| SupervisorError::NoToolset(AUTO_AGENT_ID.to_string()))?;
     toolset.add_tool(kawai_youtube::YoutubeStageTool::default());
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
@@ -1923,7 +1915,7 @@ pub(crate) async fn build_registry_from_toolset(
     session_id: i64,
     toolset: kawai_tools::ToolSet,
     plan_key: &str,
-) -> Result<ToolRegistry, String> {
+) -> Result<ToolRegistry, SupervisorError> {
     // Convert definitions → ToolMeta, and keep each tool's input schema at
     // hand for dispatch-time coercion of resolved artifact references.
     // Internal-dispatch subagent tools are dropped: they are engine
@@ -2089,10 +2081,10 @@ pub(crate) async fn build_registry_from_toolset(
 pub async fn supervisor_toolset_with_explainer(
     user_id: &str,
     session_id: i64,
-) -> Result<kawai_tools::ToolSet, String> {
+) -> Result<kawai_tools::ToolSet, SupervisorError> {
     let mut toolset = build_supervisor_toolset(user_id, session_id, AUTO_AGENT_ID)
         .await
-        .ok_or_else(|| "no supervisor toolsets available (all domain builders returned None)".to_string())?;
+        .ok_or_else(|| SupervisorError::NoToolset(AUTO_AGENT_ID.to_string()))?;
     toolset.add_tool(kawai_agent::ExplainStepResultTool);
     Ok(toolset)
 }
@@ -2896,7 +2888,7 @@ async fn revise_plan(
                     "[supervisor] revise round {round}: plan rejected: {plan_err}; raw: {raw}"
                 );
                 if round == 0 {
-                    let suggestions = suggest_tools(registry, &plan_err);
+                    let suggestions = suggest_tools(registry, &plan_err.to_string());
                     materials.push_str(&format!(
                         "\n<plan-rejected>Your revised plan was rejected by the validator: {plan_err}\n{}\
                          Respond ONLY with the corrected plan JSON.</plan-rejected>",

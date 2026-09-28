@@ -515,7 +515,7 @@ async fn translate_deliverable_handler(
     logic::translate_deliverable(&user_id, req.session_id, &req.markdown, &req.language)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 /// Authenticated RPC: saved translations (language chips) for this exact
@@ -533,7 +533,7 @@ async fn deliverable_translations_handler(
     logic::deliverable_translations(&user_id, &req.markdown)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn skill_list_handler(
@@ -1117,7 +1117,7 @@ async fn local_load_model_handler(
                 Ok(p) => p,
                 Err(_) => logic::ensure_model()
                     .await
-                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?,
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
             }
         }
     };
@@ -1236,7 +1236,7 @@ async fn office_import_file_handler(
         req.data_base64.as_deref(),
     )
     .map(Json)
-    .map_err(|e| (StatusCode::BAD_REQUEST, e))
+    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
 }
 
 #[derive(Deserialize)]
@@ -2238,7 +2238,7 @@ async fn supervisor_step_output_handler(
     crate::supervisor::step_output(&user_id, req.session_id, &req.plan_key, &req.step_id)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::NOT_FOUND, e))
+        .map_err(|e| (StatusCode::NOT_FOUND, e.to_string()))
 }
 
 /// Authenticated RPC: plan a task against the agent's tool catalog.
@@ -2285,7 +2285,7 @@ async fn plan_task_handler(
         "",
     )
     .await
-    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e))?;
+    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
     // Usage debit (Fase 0b) runs inside supervisor::plan_task — the
     // composition root both transports share; no billing logic here.
     // Web transport has no live planning surface — progress rounds are logged
@@ -2502,7 +2502,7 @@ async fn run_youtube_summary_handler(
         &crate::supervisor::plan_key(&plan),
     )
     .await
-    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e))?;
+    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
 
     let stream = crate::supervisor::execute_plan_stream_with_cancel(
         plan, tool_registry,
