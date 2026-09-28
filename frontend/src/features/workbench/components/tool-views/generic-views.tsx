@@ -20,8 +20,8 @@ export function BrowserView({ data }: { data: Record<string, unknown> }) {
         entries={
           [
             ["URL", url],
-            ["Judul", title],
-            ["Konten", markdown ? `${markdown.slice(0, 400)}…` : null],
+            ["Title", title],
+            ["Content", markdown ? `${markdown.slice(0, 400)}…` : null],
           ].filter(([, v]) => v != null) as Array<[string, ReactNode]>
         }
       />
@@ -51,8 +51,8 @@ export function CalculationView({ data }: { data: Record<string, unknown> }) {
     return (
       <KeyValueView
         entries={[
-          ["Ekspresi", expr],
-          ["Hasil", pretty],
+          ["Expression", expr],
+          ["Result", pretty],
         ]}
       />
     );
@@ -163,16 +163,16 @@ export function ImageExtractView({ data }: { data: Record<string, unknown> }) {
       {/* summary pills */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium">
-          🖼 {images.length} gambar diekstrak
+          🖼 {images.length} images extracted
         </span>
         {withText > 0 && (
           <span className="bg-success/10 text-success inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium">
-            ✓ {withText} dengan teks (OCR)
+            ✓ {withText} with text (OCR)
           </span>
         )}
         {capped && (
           <span className="bg-warning/10 text-warning inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium">
-            ⚠ dibatasi 20 gambar untuk OCR
+            ⚠ capped at 20 images for OCR
           </span>
         )}
       </div>
@@ -182,7 +182,7 @@ export function ImageExtractView({ data }: { data: Record<string, unknown> }) {
         <ul className="space-y-1.5">
           {images.slice(0, 30).map((img, i) => {
             const id = pick<string>(img, "fileId", "file_id");
-            const name = pick<string>(img, "name") ?? `gambar ${i + 1}`;
+            const name = pick<string>(img, "name") ?? `image ${i + 1}`;
             const bytes = typeof img.bytes === "number" ? img.bytes : null;
             const altText = pick<string>(img, "altText", "alt_text");
             const ocrText = pick<string>(img, "text");
@@ -194,7 +194,7 @@ export function ImageExtractView({ data }: { data: Record<string, unknown> }) {
                   <button
                     className="flex shrink-0 items-center gap-2 text-left hover:underline"
                     onClick={() => emitOpenPreview(id, name)}
-                    title={`Buka ${name}`}
+                    title={`Open ${name}`}
                     type="button"
                   >
                     <FileIcon className="size-5 shrink-0" name={name} />
@@ -228,7 +228,7 @@ export function ImageExtractView({ data }: { data: Record<string, unknown> }) {
           })}
         </ul>
       )}
-      {images.length > 30 && <SectionLabel>…dan {images.length - 30} gambar lainnya</SectionLabel>}
+      {images.length > 30 && <SectionLabel>…and {images.length - 30} more images</SectionLabel>}
     </div>
   );
 }

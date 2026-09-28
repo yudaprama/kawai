@@ -372,6 +372,24 @@ export function useWorkbench() {
     setDeck({ handle: first.handle, filename: first.filename, label: first.label });
   }, []);
 
+  /** Close the CURRENT journal row on a terminal signal that arrives WITHOUT
+   *  a `planFailed` event — a user Stop (stream end after `stoppingRef`), a
+   *  transport error, or a Discard at the review gate (see `onPlanEnded`).
+   *  Guarded on `last.status === "running"` so exactly the just-appended row
+   *  flips, exactly once. The signal itself is the proof this run terminated
+   *  — never a `supervisor.status` read, which still shows the PREVIOUS
+   *  run's "completed" while the new run is planning (the run record appends
+   *  at submit, before `planAndRun` seeds anything). */
+  const failLastRun = useCallback((error: string) => {
+    setRuns((prev) =>
+      prev.map((r, i) =>
+        i === prev.length - 1 && r.status === "running"
+          ? { ...r, status: "failed", finishedAt: Date.now(), outputPreview: error.slice(0, 200), error }
+          : r,
+      ),
+    );
+  }, []);
+
   const supervisor = useSupervisorPlan({
     onPlanCompleted: (goal, output, artifacts) => {
       pickDeck(artifacts);
@@ -391,15 +409,11 @@ export function useWorkbench() {
       void goal;
     },
     onPlanFailed: (goal, error) => {
-      setRuns((prev) =>
-        prev.map((r, i) =>
-          i === prev.length - 1 && r.status === "running"
-            ? { ...r, status: "failed", finishedAt: Date.now(), outputPreview: error.slice(0, 200), error }
-            : r,
-        ),
-      );
+      failLastRun(error);
       void goal;
     },
+    // Stop / transport end / Discard: terminal without a planFailed event.
+    onPlanEnded: failLastRun,
   });
   // Session reopen: rehydrate EVERY persisted plan record (goal, steps,
   // deliverable, deck artifacts) so the deliverable viewer — including the
@@ -980,6 +994,10 @@ export function useWorkbench() {
     deck,
     sessionId,
     sessionError,
+    /** Set the reason a submit was rejected — the page sets it BEFORE
+     *  throwing, because PromptInput swallows rejections: the `role="alert"`
+     *  line under the composer is the only surface that reaches. */
+    setSessionError,
     lastUserText,
     composing,
     run,

@@ -232,8 +232,12 @@ function ChatComposerInner({
     async (message: { text: string; files: { url: string; mediaType: string; fileName?: string }[] }) => {
       // Re-entry guard: an import or a previous submit is still in flight.
       // REJECT so the draft stays (a resolve would clear it while the first
-      // attempt is still running).
-      if (importProgress) throw new Error("Submit already in progress");
+      // attempt is still running) — and toast FIRST: PromptInput swallows
+      // the rejection, so a bare throw would surface nothing.
+      if (importProgress) {
+        toast.error("Submit already in progress");
+        throw new Error("Submit already in progress");
+      }
       const imageFiles = message.files.filter(
         (file) => file.mediaType.startsWith("image/") && file.url.startsWith("data:"),
       );
@@ -263,8 +267,12 @@ function ChatComposerInner({
           }
         }
         // Do not silently submit a message after an attachment import failed;
-        // REJECT so PromptInput keeps the draft and the user can retry.
-        if (importFailed) throw new Error("Attachment import failed");
+        // REJECT so PromptInput keeps the draft and the user can retry — and
+        // toast FIRST (the rejection itself is swallowed by PromptInput).
+        if (importFailed) {
+          toast.error("Attachment import failed — fix the image and submit again");
+          throw new Error("Attachment import failed");
+        }
         if (message.text.trim() || ids.length > 0) {
           // Awaited: PromptInput clears the input only once this settles —
           // a rejected run gate (no tokens, session create failed…) lands as

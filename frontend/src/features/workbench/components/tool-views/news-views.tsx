@@ -43,7 +43,7 @@ export function NewsListView({ data }: { data: unknown }) {
   if (items.length === 0) return null;
   return (
     <div className="space-y-2">
-      <SectionLabel>{items.length} berita / pos ditemukan</SectionLabel>
+      <SectionLabel>{items.length} news / posts found</SectionLabel>
       <ul className="space-y-2">
         {items.slice(0, 15).map((it, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: tool outputs may legitimately contain duplicate entries
@@ -112,7 +112,7 @@ function squawkItems(data: unknown): {
     });
   }
   const query = pick<string>(data, "query");
-  const header = query ? `Hasil pencarian squawk: "${query}"` : null;
+  const header = query ? `Squawk search results: "${query}"` : null;
   const note = pick<string>(data, "note") ?? null;
   return { header, note, items };
 }
@@ -122,7 +122,7 @@ function squawkItems(data: unknown): {
 export function MarketSquawkView({ data }: { data: unknown }) {
   const { header, note, items } = squawkItems(data);
   if (items.length === 0) return null;
-  const label = header ?? `${items.length} squawk ditemukan`;
+  const label = header ?? `${items.length} squawk headlines found`;
   return (
     <div className="space-y-2">
       <SectionLabel>{label}</SectionLabel>

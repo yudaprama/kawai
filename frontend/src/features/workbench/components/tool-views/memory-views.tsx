@@ -54,7 +54,7 @@ export function SessionStepResultsView({ data }: { data: Record<string, unknown>
 
 const MEMORY_LINE = /^-\s*\((\w+)\s*\|\s*([\w-]+)\)\s*(.+?):\s*(.*)$/;
 
-/** memory_search → "- (fact | mem_xxx) Judul: isi…" per baris. */
+/** memory_search → "- (fact | mem_xxx) Judul: isi…" per line. */
 export function MemoryLinesView({ text }: { text: string }) {
   const items: RecordItem[] = [];
   for (const line of text.split("\n")) {

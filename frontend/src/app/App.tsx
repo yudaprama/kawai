@@ -3,9 +3,11 @@ import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { LinkDialog, PreviewDialog } from "@/features/knowledge/components/knowledge-dialogs";
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
+import { overlayOwnsEscape } from "@/lib/esc";
 import { useKnowledgeActions } from "@/features/knowledge/hooks/use-knowledge-actions";
 import { useSupervisorChat } from "@/features/chat/hooks/use-supervisor-chat";
 import { WorkbenchPage } from "@/features/workbench/components/workbench-page";
+import { AssetChromeContext } from "@/features/assets/components/asset-chrome";
 import { type AgentInfo, call, codegraphIsAvailable, tauriOpenFile, errText } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
 import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
@@ -174,7 +176,11 @@ export default function App() {
   useEffect(() => {
     if (mobileDrawer == null || busy) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMobileDrawer(null);
+      if (e.key === "Escape") {
+        // A dialog/menu/popup in front owns Esc; the drawer must stand down.
+        if (overlayOwnsEscape()) return;
+        setMobileDrawer(null);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -185,7 +191,11 @@ export default function App() {
   useEffect(() => {
     if (assetView == null) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAssetView(null);
+      if (e.key === "Escape") {
+        // A dialog/menu/popup in front owns Esc; the asset pane must stand down.
+        if (overlayOwnsEscape()) return;
+        setAssetView(null);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -235,10 +245,14 @@ export default function App() {
     assetView === "wiki" ? (
       <WikiAssetPage
         confirmDeleteId={ka.confirmDeleteId}
+        error={ka.knowledge.error}
         files={ka.knowledge.files}
         importing={ka.importing}
+        loading={ka.knowledge.loading}
         loaded={ka.knowledge.loaded}
+        onRefresh={() => void ka.knowledge.refresh()}
         sessionId={chat.sessionId}
+        unavailable={ka.knowledge.unavailable}
         onAdd={ka.addToSession}
         onBack={() => setAssetView(null)}
         onDelete={ka.deleteFile}
@@ -247,7 +261,13 @@ export default function App() {
         onRetry={ka.retryIndex}
       />
     ) : assetView === "memory" ? (
-      <MemoryAssetPage sessions={[...chat.sessions, ...chat.archivedSessions]} onBack={() => setAssetView(null)} />
+      <MemoryAssetPage
+        onRetrySessions={() => void chat.refreshSessions()}
+        sessions={[...chat.sessions, ...chat.archivedSessions]}
+        sessionsError={chat.sessionsError}
+        sessionsLoading={chat.sessionsLoading}
+        onBack={() => setAssetView(null)}
+      />
     ) : assetView === "sources" ? (
       <SqlSourcesAssetPage onBack={() => setAssetView(null)} />
     ) : assetView === "skills" ? (
@@ -269,7 +289,20 @@ export default function App() {
 
   return (
     <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">
-      {assetWorkspace ?? (
+      {assetWorkspace ? (
+        <AssetChromeContext.Provider
+          value={{
+            assetView,
+            userId: chat.userId,
+            walletAvailable,
+            codegraphAvailable,
+            onSelectAsset: setAssetView,
+            onLogout: () => void chat.logout(),
+          }}
+        >
+          {assetWorkspace}
+        </AssetChromeContext.Provider>
+      ) : (
         <WorkbenchPage
           onAddFiles={ka.addKnowledgeFiles}
           onAddLink={ka.addKnowledgeLink}

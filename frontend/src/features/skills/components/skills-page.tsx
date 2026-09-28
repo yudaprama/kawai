@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { useSkills } from "@/features/skills/hooks/use-skills";
+import { fmtTimestamp } from "@/features/workbench/components/tool-views/format";
 import type { SkillInfo, SkillSummary } from "@/generated/api-types";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 
@@ -40,9 +41,12 @@ import { AssetShell } from "@/features/assets/components/asset-shell";
  */
 export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
   const store = useSkills(true);
-  const { skills, loaded } = store;
+  const { skills, loaded, error } = store;
   const [detail, setDetail] = useState<SkillInfo | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(false);
+  // Bumped by the detail Retry button — re-keys the fetch effect below.
+  const [detailAttempt, setDetailAttempt] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<SkillInfo | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -57,17 +61,24 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
   });
   const { get } = store;
 
-  // Load the selected skill's body.
+  // Load the selected skill's body. `skill_get` resolves `null` on failure
+  // (it logs internally), so that counts as an error too.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: detailAttempt is the Retry TRIGGER — bumping it re-runs the fetch
   useEffect(() => {
     if (activeId == null) {
       setDetail(null);
+      setDetailError(false);
       return;
     }
     let cancelled = false;
     setDetailLoading(true);
+    setDetail(null);
+    setDetailError(false);
     void get(activeId)
       .then((skill) => {
-        if (!cancelled) setDetail(skill);
+        if (cancelled) return;
+        if (skill) setDetail(skill);
+        else setDetailError(true);
       })
       .finally(() => {
         if (!cancelled) setDetailLoading(false);
@@ -75,7 +86,7 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, [activeId, get]);
+  }, [activeId, get, detailAttempt]);
 
   useEffect(() => {
     if (confirmDeleteId == null) return;
@@ -114,6 +125,7 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
             <SkillDetail
               confirmDelete={confirmDeleteId === active.id}
               detail={detail}
+              error={detailError}
               loading={detailLoading}
               summary={active}
               onDelete={async () => {
@@ -130,6 +142,7 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
                 setEditing(detail);
                 setEditorOpen(true);
               }}
+              onRetry={() => setDetailAttempt((n) => n + 1)}
             />
           ) : (
             <div className="_alp-detail-empty">Select a skill to read its instructions</div>
@@ -138,7 +151,20 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
         sidebar={
           <AssetListPanel
             count={`${filtered.length}`}
-            emptyText="No skills yet — create one with “New skill”."
+            emptyText={
+              error != null ? (
+                <span className="flex flex-col items-center gap-2">
+                  <span className="text-muted-foreground" role="alert">
+                    Couldn&apos;t load skills — {error}
+                  </span>
+                  <Button onClick={() => void store.refresh()} size="xs" variant="outline">
+                    Retry
+                  </Button>
+                </span>
+              ) : (
+                "No skills yet — create one with “New skill”."
+              )
+            }
             getItemId={(s) => s.id}
             items={filtered}
             loading={!loaded}
@@ -152,7 +178,7 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
                 {s.description && <AssetItemDesc>{s.description}</AssetItemDesc>}
                 <AssetItemBadges>
                   <AssetBadge title="Updated on every save">v{s.version}</AssetBadge>
-                  <AssetItemTime>{new Date(s.updatedAt * 1000).toLocaleString()}</AssetItemTime>
+                  <AssetItemTime>{fmtTimestamp(new Date(s.updatedAt * 1000))}</AssetItemTime>
                 </AssetItemBadges>
               </>
             )}
@@ -187,16 +213,22 @@ function SkillDetail({
   summary,
   detail,
   loading,
+  error,
   confirmDelete,
   onEdit,
   onDelete,
+  onRetry,
 }: {
   summary: { id: string; name: string; version: number; updatedAt: number };
   detail: SkillInfo | null;
   loading: boolean;
+  /** The `skill_get` read failed — show the failure instead of a bare dead end. */
+  error: boolean;
   confirmDelete: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  /** Re-fetches this skill's body. */
+  onRetry: () => void;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -207,7 +239,7 @@ function SkillDetail({
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
             <AssetBadge title="Updated on every save">v{detail?.version ?? summary.version}</AssetBadge>
             <span className="text-muted-foreground">
-              updated {new Date((detail?.updatedAt ?? summary.updatedAt) * 1000).toLocaleString()}
+              updated {fmtTimestamp(new Date((detail?.updatedAt ?? summary.updatedAt) * 1000))}
             </span>
           </div>
         </div>
@@ -241,12 +273,20 @@ function SkillDetail({
           </div>
         ) : detail ? (
           <MessageResponse mode="static">{detail.content}</MessageResponse>
-        ) : (
+        ) : error ? (
           <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
             <div className="bg-muted flex size-12 items-center justify-center rounded-lg">
               <Icon name="wrench" className="size-5" />
             </div>
             <p className="text-foreground text-sm font-medium">Couldn&apos;t load this skill</p>
+            <Button onClick={onRetry} size="xs" variant="outline">
+              Retry
+            </Button>
+          </div>
+        ) : (
+          /* Selection just changed and the fetch effect hasn't run yet. */
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
+            <Spinner className="size-4" /> Loading…
           </div>
         )}
       </div>

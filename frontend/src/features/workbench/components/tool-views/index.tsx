@@ -120,7 +120,7 @@ const registry: Record<string, StepView> = {
     isRecord(p)
       ? genericKv({
           pattern: p.pattern,
-          jumlah_hasil: Array.isArray(p.matches) ? p.matches.length : undefined,
+          result_count: Array.isArray(p.matches) ? p.matches.length : undefined,
           matches: p.matches,
         })
       : null,

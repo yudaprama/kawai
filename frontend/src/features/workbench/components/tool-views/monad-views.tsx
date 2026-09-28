@@ -41,7 +41,7 @@ export function MonadWalletStatusView({ data }: { data: Record<string, unknown> 
           entries={
             [
               [
-                "Alamat",
+                "Address",
                 address ? (
                   <span key="addr" className="font-mono text-xs">
                     {short(address)}
@@ -49,12 +49,12 @@ export function MonadWalletStatusView({ data }: { data: Record<string, unknown> 
                 ) : null,
               ],
               [
-                "Saldo (wei)",
+                "Balance (wei)",
                 <span key="wei" className="font-mono text-xs">
                   {pick<string>(data, "balanceWei")}
                 </span>,
               ],
-              ["Blok", blockNum != null ? fmtNumber(blockNum) : null],
+              ["Block", blockNum != null ? fmtNumber(blockNum) : null],
             ].filter(([, v]) => v != null) as Array<[string, React.ReactNode]>
           }
         />
@@ -63,7 +63,7 @@ export function MonadWalletStatusView({ data }: { data: Record<string, unknown> 
         <RecordListView
           items={tokens.map((t) => ({
             title: pick<string>(t, "label") ?? "Token",
-            badge: pick(t, "available") === true ? undefined : "tidak tersedia",
+            badge: pick(t, "available") === true ? undefined : "unavailable",
             body: `${pick<string>(t, "formatted") ?? "—"} · ${short(pick<string>(t, "address") ?? "")}`,
           }))}
         />
@@ -82,7 +82,7 @@ export function MonadTokenBalanceView({ data }: { data: Record<string, unknown> 
   return (
     <div className="bg-card space-y-1.5 rounded-lg border p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <SectionLabel>{spender ? "Allowance" : "Saldo token"}</SectionLabel>
+        <SectionLabel>{spender ? "Allowance" : "Token balance"}</SectionLabel>
         <ChainTag data={data} />
       </div>
       <div className="flex items-baseline gap-2">
@@ -150,7 +150,7 @@ export function MonadChainStatusView({ data }: { data: Record<string, unknown> }
         entries={
           [
             ["Chain ID", chainId != null ? String(chainId) : null],
-            ["Blok terakhir", block != null ? fmtNumber(block) : null],
+            ["Latest block", block != null ? fmtNumber(block) : null],
             [
               "RPC",
               <span key="rpc" className="font-mono text-xs">
@@ -170,7 +170,7 @@ const TX_TONE: Record<string, "up" | "down" | "neutral"> = {
   pending: "neutral",
 };
 
-const TX_LABEL: Record<string, string> = { success: "Berhasil", failed: "Gagal", pending: "Tertunda" };
+const TX_LABEL: Record<string, string> = { success: "Success", failed: "Failed", pending: "Pending" };
 
 /** monad_tx_receipt → {txHash, status: success|failed|pending, blockNumber?,
  *  explorerUrl}. */
@@ -192,13 +192,13 @@ export function MonadTxReceiptView({ data }: { data: Record<string, unknown> }) 
       <KeyValueView
         entries={
           [
-            ["Blok", block != null ? fmtNumber(block) : null],
+            ["Block", block != null ? fmtNumber(block) : null],
             ...(explorer
               ? ([
                   [
                     "Explorer",
                     <a key="explorer" className="text-xs underline" href={explorer} target="_blank" rel="noreferrer">
-                      Lihat transaksi ↗
+                      View transaction ↗
                     </a>,
                   ],
                 ] as Array<[string, React.ReactNode]>)
@@ -222,11 +222,11 @@ export function MonadLogsView({ data }: { data: Record<string, unknown> }) {
     <div className="space-y-2">
       <SectionLabel>
         {label} — {transfers.length} transfer
-        {scanned != null ? ` (memindai ${fmtNumber(scanned)} blok)` : ""}
-        {pick(data, "truncated") === true && " · hasil dipotong"}
+        {scanned != null ? ` (scanned ${fmtNumber(scanned)} blocks)` : ""}
+        {pick(data, "truncated") === true && " · results truncated"}
       </SectionLabel>
       {transfers.length === 0 ? (
-        <p className="text-muted-foreground text-sm">Tidak ada transfer ditemukan pada rentang ini.</p>
+        <p className="text-muted-foreground text-sm">No transfers found in this range.</p>
       ) : (
         <ul className="space-y-1.5">
           {transfers.slice(0, 15).map((t, i) => {
@@ -237,7 +237,7 @@ export function MonadLogsView({ data }: { data: Record<string, unknown> }) {
             return (
               // biome-ignore lint/suspicious/noArrayIndexKey: transfer lists may repeat tx hashes
               <li key={i} className="bg-card flex items-center gap-3 rounded-lg border px-3 py-2">
-                <Pill tone={incoming ? "up" : "neutral"}>{incoming ? "↓ masuk" : "↑ keluar"}</Pill>
+                <Pill tone={incoming ? "up" : "neutral"}>{incoming ? "↓ in" : "↑ out"}</Pill>
                 <div className="min-w-0 flex-1">
                   <div
                     className="text-muted-foreground truncate font-mono text-xs"
@@ -247,7 +247,7 @@ export function MonadLogsView({ data }: { data: Record<string, unknown> }) {
                   </div>
                   <div className="text-muted-foreground font-mono text-[10px]">
                     {hash && <span title={hash}>{short(hash)}</span>}
-                    {block != null ? ` · blok ${fmtNumber(block)}` : ""}
+                    {block != null ? ` · block ${fmtNumber(block)}` : ""}
                   </div>
                 </div>
                 <span className="shrink-0 font-mono text-xs">{pick<string>(t, "amountRaw") ?? "—"}</span>
@@ -275,7 +275,7 @@ export function MonadTokenInfoView({ data }: { data: Record<string, unknown> }) 
         entries={
           [
             [
-              "Alamat",
+              "Address",
               <span key="addr" className="font-mono text-xs">
                 {address ?? "—"}
               </span>,

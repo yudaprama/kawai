@@ -360,6 +360,7 @@ export function DeckPreview({ fileId }: { fileId: string }) {
   const [presenting, setPresenting] = useState(false);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const presentRef = useRef<HTMLDivElement | null>(null);
+  const presentCloseRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -395,6 +396,19 @@ export function DeckPreview({ fileId }: { fileId: string }) {
     });
     return cleanup;
   }, [presenting, data]);
+
+  // Present overlay a11y: move focus into the dialog when it opens (its Close
+  // button) and hand focus back when it closes — the runtime's Esc exit and
+  // the workbench's [role="dialog"] Esc guard both rely on the overlay being
+  // a real dialog.
+  useEffect(() => {
+    if (!presenting) return;
+    const prev = document.activeElement;
+    presentCloseRef.current?.focus();
+    return () => {
+      if (prev instanceof HTMLElement && prev !== document.body) prev.focus();
+    };
+  }, [presenting]);
 
   const [pptxExported, setPptxExported] = useState<string | null>(null);
   const openPptxExport = useCallback(async () => {
@@ -457,12 +471,18 @@ export function DeckPreview({ fileId }: { fileId: string }) {
         )}
       </div>
       {presenting && (
-        <div className="fixed inset-0 z-50 overflow-hidden bg-black">
+        <div
+          aria-label="Presentation"
+          aria-modal="true"
+          className="fixed inset-0 z-50 overflow-hidden bg-black"
+          role="dialog"
+        >
           <div ref={presentRef} className="relative h-full w-full overflow-hidden" />
           <button
             aria-label="Close presentation"
             className="absolute right-4 top-4 z-10 rounded-md bg-white/15 px-3 py-2 text-sm text-white hover:bg-white/25"
             onClick={() => setPresenting(false)}
+            ref={presentCloseRef}
             type="button"
           >
             Close

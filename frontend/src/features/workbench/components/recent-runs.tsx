@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "@/components/shared/icon";
 import { relativeTime } from "@/features/chat/lib/chat-helpers";
 import { type RecentRunInfo, call } from "@/lib/api";
@@ -8,7 +8,8 @@ import { logWarn } from "@/lib/logger";
  * Landing "Recent runs" — the cross-session journal strip: the newest plan
  * record from every session with runs. Row markup mirrors RunHistory
  * (bordered card, goal + meta line + status icon) so the two history surfaces
- * read as one system. Renders nothing on an empty list or a fetch failure.
+ * read as one system. An empty list or a first-load failure renders an
+ * inline line (failure: with a Retry) instead of nothing.
  *
  * `reloadKey` bumps when a run just finished or the session dialog closed —
  * the list refetches so fresh records, renames, and deletes show up.
@@ -17,35 +18,45 @@ export function RecentRuns({
   open,
   reloadKey,
   onOpen,
-  sessionsAction,
 }: {
   /** The landing hero is visible (and the dialog is closed) — fetch/show. */
   open: boolean;
   /** Bumped by the owner to force a refetch. */
   reloadKey: number;
   onOpen: (run: RecentRunInfo) => void;
-  sessionsAction?: ReactNode;
 }) {
   const [runs, setRuns] = useState<RecentRunInfo[] | null>(null);
+  // The fetch failed AND there is nothing on screen to show — surface the
+  // error line + Retry instead of a silent blank. A failed REFETCH of a
+  // non-empty list keeps the rows already visible (never blanks them).
+  const [failed, setFailed] = useState(false);
+  // Manual Retry re-runs the effect (a failed first load also leaves
+  // `runs` at [], so the effect must be re-triggerable without a bump).
+  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     if (!open) return;
     void reloadKey; // refetch trigger — a bump forces a fresh list read
+    void retryKey; // manual Retry — same, via the button below
     let cancelled = false;
     void call<RecentRunInfo[]>("list_recent_runs", {})
       .then((rows) => {
-        if (!cancelled) setRuns(rows);
+        if (!cancelled) {
+          setRuns(rows);
+          setFailed(false);
+        }
       })
       .catch((err) => {
         logWarn("list_recent_runs", err);
-        // First-load failure renders nothing (documented) — a refetch
-        // failure keeps the rows already on screen.
-        if (!cancelled) setRuns((prev) => prev ?? []);
+        if (!cancelled) {
+          setFailed(true);
+          setRuns((prev) => prev ?? []);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [open, reloadKey]);
+  }, [open, reloadKey, retryKey]);
 
   // First load: skeleton rows instead of a silent pop-in.
   if (runs === null) {
@@ -53,7 +64,6 @@ export function RecentRuns({
       <div className="mx-auto w-full max-w-4xl space-y-2 p-6 text-left">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-muted-foreground font-mono text-xs tracking-wider uppercase">Recent runs</h3>
-          {sessionsAction}
         </div>
         {[0, 1, 2].map((i) => (
           <div className="border-border/60 flex items-center justify-between gap-3 rounded-lg border p-3" key={i}>
@@ -67,12 +77,35 @@ export function RecentRuns({
       </div>
     );
   }
-  if (runs.length === 0) return null;
+  // Nothing on screen: a failed fetch says WHY and offers a Retry, an empty
+  // result sets expectations — both beats a silent blank.
+  if (runs.length === 0) {
+    return (
+      <div className="mx-auto w-full max-w-4xl p-6 text-left">
+        {failed ? (
+          <div className="flex items-center gap-3">
+            <p className="text-muted-foreground font-mono text-xs" role="alert">
+              Couldn&apos;t load recent runs.
+            </p>
+            <button
+              type="button"
+              onClick={() => setRetryKey((k) => k + 1)}
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md font-mono text-[10px] tracking-wider uppercase transition-colors hover:underline"
+            >
+              <Icon name="refresh-cw" className="size-3" />
+              Retry
+            </button>
+          </div>
+        ) : (
+          <p className="text-muted-foreground font-mono text-xs">No runs yet — your completed runs will appear here.</p>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="mx-auto w-full max-w-4xl space-y-2 p-6 text-left">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-muted-foreground font-mono text-xs tracking-wider uppercase">Recent runs</h3>
-        {sessionsAction}
       </div>
       {runs.map((run) => (
         <button

@@ -58,15 +58,17 @@
   --tea-color-border-focus: var(--ring);
 
   /* Functional — success/warning stay literal status colors (no theme
-   * counterpart; .dark keeps their tuned dark variants below). */
+   * counterpart; .dark keeps their tuned dark variants below). The light
+   * literals are darkened to clear WCAG 4.5:1 as text and 3:1 as icons on
+   * white, while keeping white-on-fill badges ≥4.5:1. */
   --tea-color-bg-error-default: var(--destructive);
   --tea-color-text-error-default: var(--destructive);
   --tea-color-text-on-bg-error-default: var(--destructive-foreground);
-  --tea-color-bg-success-default: #0cbf5b;
-  --tea-color-text-success-default: #0cbf5b;
+  --tea-color-bg-success-default: #0a7d43;
+  --tea-color-text-success-default: #0a7d43;
   --tea-color-text-on-bg-success-default: hsla(0, 0%, 100%, 0.9);
-  --tea-color-bg-warning-default: #ff7800;
-  --tea-color-text-warning-default: #ff7800;
+  --tea-color-bg-warning-default: #b45309;
+  --tea-color-text-warning-default: #b45309;
   --tea-color-text-on-bg-warning-default: hsla(0, 0%, 100%, 0.9);
   --tea-color-bg-inverse-default: var(--foreground);
   --tea-color-text-on-bg-inverse-default: var(--background);
@@ -272,6 +274,15 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+
+  /* Explicit keyboard-focus ring for raw controls (features/**, shared/**).
+   Component primitives bring their own focus-visible rings and utilities
+   like outline-none still win (utilities layer > base), so this only
+   guarantees a visible ring where nothing else defines one. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
 
   body {

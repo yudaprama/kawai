@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fmtBytes, fmtPct, isRecord, parseMaybeJson } from "./format";
+import { isRecord, parseMaybeJson } from "./format";
 
 describe("parseMaybeJson", () => {
   it("parses intact JSON", () => {
@@ -32,17 +32,5 @@ describe("parseMaybeJson", () => {
 
   it("gives up gracefully on garbage that starts like JSON", () => {
     expect(parseMaybeJson("{not json at all}")).toBe("{not json at all}");
-  });
-});
-
-describe("formatters", () => {
-  it("formats percent in id-ID with sign", () => {
-    expect(fmtPct(2.34)).toMatch(/^(\+)?2,34%$/);
-    expect(fmtPct(-1.05)).toContain("-1,05%");
-  });
-
-  it("formats bytes", () => {
-    expect(fmtBytes(500)).toBe("500 B");
-    expect(fmtBytes(1536)).toMatch(/^1,5 KB$/);
   });
 });

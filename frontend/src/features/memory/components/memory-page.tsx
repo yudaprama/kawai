@@ -31,6 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useMemories } from "@/features/memory/hooks/use-memories";
 import { useMemoryTiers } from "@/features/memory/hooks/use-memory-tiers";
+import { fmtTimestamp } from "@/features/workbench/components/tool-views/format";
 import { call, errText } from "@/lib/api";
 import { showErrorToast } from "@/lib/utils";
 import {
@@ -60,10 +61,29 @@ const MemoryGraph = lazy(() =>
  * cloud extraction + manual CRUD) are real; L2/L3 (scenes, persona) have no
  * pipeline tier yet and say so.
  */
-export function MemoryAssetPage({ sessions, onBack }: { sessions: ChatSessionInfo[]; onBack: () => void }) {
+export function MemoryAssetPage({
+  sessions,
+  sessionsLoading,
+  sessionsError,
+  onRetrySessions,
+  onBack,
+}: {
+  sessions: ChatSessionInfo[];
+  /** In-flight `list_chat_sessions` read (App's chat state). */
+  sessionsLoading?: boolean;
+  /** Last sessions read failure — replaces the empty state, never a false "No memory blocks yet". */
+  sessionsError?: string | null;
+  /** Re-reads the session list (App's `loadSessions` / `refreshSessions`). */
+  onRetrySessions?: () => void;
+  onBack: () => void;
+}) {
   const [tab, setTab] = useState<MemoryTab>("l0");
 
   const memories = useMemories(true);
+
+  // Settled failure only — while a refetch is in flight the skeleton owns
+  // the pane (mirrors session-history-dialog.tsx).
+  const sessionsFailed = sessionsError != null && !sessionsLoading;
 
   const sorted = useMemo(() => [...sessions].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)), [sessions]);
 
@@ -117,9 +137,25 @@ export function MemoryAssetPage({ sessions, onBack }: { sessions: ChatSessionInf
         sidebar={
           <AssetListPanel
             count={`${filtered.length}`}
-            emptyText="No memory blocks yet — start a chat with an agent first."
+            emptyText={
+              sessionsFailed ? (
+                <span className="flex flex-col items-center gap-2">
+                  <span className="text-muted-foreground" role="alert">
+                    Couldn&apos;t load sessions — {sessionsError}
+                  </span>
+                  {onRetrySessions != null && (
+                    <Button onClick={onRetrySessions} size="xs" variant="outline">
+                      Retry
+                    </Button>
+                  )}
+                </span>
+              ) : (
+                "No memory blocks yet — start a chat with an agent first."
+              )
+            }
             getItemId={(s) => String(s.id)}
             items={filtered}
+            loading={!!sessionsLoading && sessions.length === 0}
             onSelect={(s) => setSelectedId(s.id)}
             renderItem={(s) => (
               <>
@@ -166,7 +202,7 @@ function BlockDetail({
       <div className="shrink-0 px-4 pt-3">
         <h3 className="truncate text-sm font-semibold">{session.title ?? "Untitled"}</h3>
         <p className="text-muted-foreground mt-0.5 text-xs">
-          block #{session.id} · {new Date((session.createdAt ?? 0) * 1000).toLocaleString()}
+          block #{session.id} · {fmtTimestamp(new Date((session.createdAt ?? 0) * 1000))}
         </p>
       </div>
       <Tabs className="flex min-h-0 flex-1 flex-col" onValueChange={(v) => onTabChange(v as MemoryTab)} value={tab}>
@@ -345,7 +381,7 @@ function ExperiencesPane() {
                   {e.lesson && <p className="mt-1 text-xs">💡 {e.lesson}</p>}
                   <p className="text-muted-foreground mt-1.5 text-[11px]">
                     run #{e.sessionId} · tools: {e.toolSequence.join(", ") || "—"} ·{"\n"}
-                    {new Date(e.createdAt * 1000).toLocaleString()}
+                    {fmtTimestamp(new Date(e.createdAt * 1000))}
                   </p>
                 </div>
                 <button
@@ -665,6 +701,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
                 setSearchQuery("");
               }}
               size="xs"
+              aria-label="Clear search"
               title="Clear search"
               variant="ghost"
             >
@@ -682,6 +719,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
                 });
               }}
               size="xs"
+              aria-label="Search by semantic similarity"
               title="Search by semantic similarity"
               variant="ghost"
             >
@@ -725,7 +763,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
                       {m.origin === "extracted" && m.sourceSessionId != null
                         ? `extracted · block #${m.sourceSessionId} · `
                         : `${m.origin} · `}
-                      {new Date(m.updatedAt * 1000).toLocaleString()}
+                      {fmtTimestamp(new Date(m.updatedAt * 1000))}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">

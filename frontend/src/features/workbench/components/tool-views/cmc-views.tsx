@@ -67,7 +67,7 @@ function CmcQuoteRows({ rows, label }: { rows: Array<Record<string, unknown>>; l
                   {name} {sym && <span className="text-muted-foreground font-mono text-xs">{sym}</span>}
                 </div>
                 <div className="text-muted-foreground text-xs">
-                  {mcap != null ? `Kap. pasar ${fmtNumber(mcap, { notation: "compact" })}` : ""}
+                  {mcap != null ? `Market cap ${fmtNumber(mcap, { notation: "compact" })}` : ""}
                 </div>
               </div>
               <div className="text-right">
@@ -82,7 +82,7 @@ function CmcQuoteRows({ rows, label }: { rows: Array<Record<string, unknown>>; l
           );
         })}
       </ul>
-      {rows.length > 12 && <SectionLabel>…dan {rows.length - 12} baris lainnya</SectionLabel>}
+      {rows.length > 12 && <SectionLabel>…and {rows.length - 12} more rows</SectionLabel>}
     </div>
   );
 }
@@ -93,7 +93,7 @@ function CmcRecordView({ data }: { data: Record<string, unknown> }) {
   // Historical quotes ride `{quotes: […]}` — render as rows.
   if (Array.isArray(data.quotes)) {
     const rows = data.quotes.filter(isRecord).filter((q) => quoteOf(q) != null);
-    if (rows.length > 0) return <CmcQuoteRows rows={rows} label={`${rows.length} titik data historis`} />;
+    if (rows.length > 0) return <CmcQuoteRows rows={rows} label={`${rows.length} historical data points`} />;
   }
   const entries: Array<[string, ReactNode]> = [];
   for (const [k, v] of Object.entries(data)) {
@@ -146,7 +146,7 @@ export function CmcView({ parsed }: { parsed: unknown }) {
   if (Array.isArray(data)) {
     const recs = data.filter(isRecord);
     if (recs.length > 0 && recs.every((r) => quoteOf(r) != null)) {
-      return <CmcQuoteRows rows={recs} label={`${recs.length} aset — harga pasar`} />;
+      return <CmcQuoteRows rows={recs} label={`${recs.length} assets — market price`} />;
     }
     if (recs.length > 0 && recs.every((r) => quoteOf(r) == null)) {
       return (
@@ -182,11 +182,11 @@ const FG_TONE: Record<string, "up" | "down" | "neutral"> = {
 };
 
 const FG_LABEL: Record<string, string> = {
-  extreme_greed: "Sangat Rakus",
-  greed: "Rakus",
-  neutral: "Netral",
-  fear: "Takut",
-  extreme_fear: "Sangat Takut",
+  extreme_greed: "Extreme Greed",
+  greed: "Greed",
+  neutral: "Neutral",
+  fear: "Fear",
+  extreme_fear: "Extreme Fear",
 };
 
 /** fear_and_greed_latest / _historical → big index value + classification. */
@@ -206,7 +206,7 @@ export function CmcFearGreedView({ parsed }: { parsed: unknown }) {
         <Pill tone={FG_TONE[cls] ?? "neutral"}>{FG_LABEL[cls] ?? cls}</Pill>
       </div>
       {env.data.length > 1 && (
-        <p className="text-muted-foreground text-xs">{env.data.length} titik historis dikembalikan</p>
+        <p className="text-muted-foreground text-xs">{env.data.length} historical points returned</p>
       )}
     </div>
   );

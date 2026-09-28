@@ -50,6 +50,13 @@ export interface SupervisorPlanCallbacks {
     artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[],
   ) => void;
   onPlanFailed?: (goal: string | null, error: string) => void;
+  /** Terminal path that arrives WITHOUT a `planFailed` event: a user Stop
+   *  ends the stream silently (`onDone`/`onError` with `stoppingRef`), a
+   *  transport error kills it outright, and the review gate's Discard never
+   *  starts a stream at all. Subscribers must close their run record (the
+   *  workbench journal) on this — nothing else ever will. `reason` is the
+   *  user-facing terminal error. */
+  onPlanEnded?: (reason: string) => void;
   /** Called after a title has been generated (fire-and-forget) so the UI can
    *  reload the session list. */
   onTitleGenerated?: () => void;
@@ -390,6 +397,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 output: null,
                 error: "Plan stopped.",
               });
+              // …and tell the subscriber the run is terminal: the workbench
+              // journal's row would otherwise spin as "running" forever.
+              callbacks?.onPlanEnded?.("Plan stopped.");
             }
             setState((prev) => {
               if (stoppingRef.current) {
@@ -432,6 +442,9 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
               ),
             }));
             void persist(sessionId, "assistant", `Plan error: ${err.message}`);
+            // Terminal with NO planFailed event (a transport error, or a Stop
+            // that surfaced as one) — the journal row must not spin forever.
+            callbacks?.onPlanEnded?.(message);
           },
         },
         streamId,
@@ -565,8 +578,12 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
 
   /** Review gate: discard the plan without executing anything. */
   const cancelPlan = useCallback(() => {
+    // No stream ever ran for this plan, so no planFailed event will close
+    // the run row the workbench appended at submit — surface the discard as
+    // terminal, or its journal chip spins forever.
+    callbacks?.onPlanEnded?.("Plan discarded.");
     patch({ status: "idle", review: null, error: null });
-  }, [patch]);
+  }, [patch, callbacks]);
 
   /** Review gate: remove one step — transitively dependent steps are pruned
    *  with it (they could never run once their source is gone). */

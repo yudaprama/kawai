@@ -460,6 +460,13 @@ export function ProgressRail({
     const t = setTimeout(() => reviewCardRef.current?.focus(), 50);
     return () => clearTimeout(t);
   }, [supervisor.status]);
+  // "New goal" — the desktop's only path back to the landing hero once no
+  // run/review owns the rail (the run view's back arrow is mobile-only, so
+  // idle/completed/failed used to be a dead end). Hidden while a run is in
+  // flight or awaiting review; disabled through the planning window, where
+  // `goHome` deliberately no-ops (same rule as the mobile strip's back
+  // button — the run must keep showing progress).
+  const showNewGoal = !["running", "stopping", "awaitingConfirmation", "reviewing"].includes(supervisor.status);
   return (
     <div className="flex h-full flex-col">
       <div className="border-primary/30 mb-4 border-b pb-3">
@@ -661,19 +668,48 @@ export function ProgressRail({
               Resume
             </Button>
           )}
-          <Button
-            className="w-full"
-            title="Starts a fresh session — the next run will not recall these runs."
-            onClick={() => {
-              workbench.startNewSession();
-              onNewGoal();
-            }}
-            size="sm"
-            variant="outline"
-          >
-            New session
-          </Button>
+          {/* The two "start over" actions side by side: New goal keeps this
+              session and its runs, New session drops them. */}
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              disabled={supervisor.planning != null}
+              title="Back to the landing composer — this session and its runs stay."
+              onClick={onNewGoal}
+              size="sm"
+              variant="outline"
+            >
+              <Icon name="plus" className="size-3" />
+              New goal
+            </Button>
+            <Button
+              title="Starts a fresh session — the next run will not recall these runs."
+              onClick={() => {
+                workbench.startNewSession();
+                onNewGoal();
+              }}
+              size="sm"
+              variant="outline"
+            >
+              New session
+            </Button>
+          </div>
         </div>
+      )}
+      {/* Idle/completed: the same affordance at full width — before this the
+          rail showed NOTHING once the run stopped needing the user, leaving
+          desktop with no way back to the landing hero. */}
+      {showNewGoal && supervisor.status !== "failed" && (
+        <Button
+          className="mt-4 w-full"
+          disabled={supervisor.planning != null}
+          title="Back to the landing composer — this session and its runs stay."
+          onClick={onNewGoal}
+          size="sm"
+          variant="outline"
+        >
+          <Icon name="plus" className="size-3" />
+          New goal
+        </Button>
       )}
     </div>
   );

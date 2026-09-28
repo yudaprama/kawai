@@ -1,6 +1,6 @@
 /** Ask About Step Result (PLAN-ask-about-step-result.md)
  *
- *  "Tanya tentang hasil ini" — a compact inline affordance on step reports
+ *  "Ask about this result" — a compact inline affordance on step reports
  *  that lets a non-technical user ask a follow-up question about the result
  *  they're looking at. The question rides the `ask_about_step_result` op
  *  (1-step mini-plan, `explain_step_result` tool); the explanation arrives
@@ -37,7 +37,7 @@ export function AskAboutResult({
     try {
       const answer = await onAsk(stepId, q);
       if (answer == null) {
-        setState({ phase: "error", message: "Tidak dapat menjelaskan — coba lagi." });
+        setState({ phase: "error", message: "Couldn't explain — try again." });
       } else {
         setState({ phase: "done", answer });
       }
@@ -51,13 +51,13 @@ export function AskAboutResult({
       <div className="mt-3 rounded-lg border border-dashed p-3">
         <div className="mb-2 flex items-center gap-2">
           <Icon name="message-circle-question" className="text-primary size-4" />
-          <span className="text-foreground text-xs font-bold">Penjelasan</span>
+          <span className="text-foreground text-xs font-bold">Explanation</span>
           <button
             className="text-muted-foreground hover:text-foreground ml-auto text-xs"
             onClick={() => setState({ phase: "idle" })}
             type="button"
           >
-            Tutup
+            Close
           </button>
         </div>
         {state.phase === "error" ? (
@@ -75,7 +75,7 @@ export function AskAboutResult({
     return (
       <div className="mt-3 flex items-center gap-2 rounded-lg border border-dashed p-3">
         <Icon name="loader-circle" className="text-primary size-3.5 animate-spin" />
-        <span className="text-muted-foreground text-xs">Menjelaskan hasil…</span>
+        <span className="text-muted-foreground text-xs">Explaining the result…</span>
       </div>
     );
   }
@@ -85,11 +85,11 @@ export function AskAboutResult({
       <Input
         className="h-8 flex-1 text-xs"
         onChange={(e) => setQuestion(e.target.value)}
-        placeholder="Tanya tentang hasil ini…"
+        placeholder="Ask about this result…"
         value={question}
       />
       <Button className="h-8 px-3 text-xs" disabled={!question.trim()} size="sm" type="submit" variant="secondary">
-        Tanya
+        Ask
       </Button>
     </form>
   );

@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { isRemoteSource, maskSource } from "@/features/analytics/lib/analytics";
 import { call, errText, type SqlProfileTest } from "@/lib/api";
 import { useOp } from "@/hooks/use-op";
+import { toast } from "sonner";
 
 type SqlProfile = { name: string; source: string };
 
@@ -88,8 +89,11 @@ export function SqlProfilesSection() {
       setEditing(null);
       setFormOpen(false);
       await listOp.execute();
-    } catch {
-      // error surfaces via listOp after re-fetch
+    } catch (err) {
+      // A rejected save skips both the form reset and the refetch, so nothing
+      // else would ever show the failure — toast it and keep the form open so
+      // the typed input isn't lost.
+      toast.error(errText(err));
     } finally {
       setSaving(false);
     }
@@ -100,8 +104,10 @@ export function SqlProfilesSection() {
       await call("sql_profile_delete", { name: profileName });
       if (test?.name === profileName) setTest(null);
       await listOp.execute();
-    } catch {
-      // error surfaces via listOp after re-fetch
+    } catch (err) {
+      // The delete never succeeded, so `test` and the list stay untouched —
+      // report the failure instead of swallowing it.
+      toast.error(errText(err));
     }
   };
 
@@ -124,6 +130,10 @@ export function SqlProfilesSection() {
     }
   };
 
+  /** Mirrors the save() guard: name lowercased/trimmed, source trimmed. */
+  const nameOk = NAME_OK.test(name.trim().toLowerCase());
+  const sourceOk = source.trim().length > 0;
+  const saveDisabled = saving || !nameOk || !sourceOk;
   const loaded = !listOp.loading;
 
   return (
@@ -168,10 +178,17 @@ export function SqlProfilesSection() {
           )}
           <div className="flex items-center justify-end gap-2">
             {saving && <Spinner className="size-3" />}
-            <Button disabled={saving} onClick={save} size="sm">
+            <Button disabled={saveDisabled} onClick={save} size="sm">
               Save
             </Button>
           </div>
+          {!saving && saveDisabled && (
+            <p className="text-xs text-destructive">
+              {!nameOk
+                ? "Enter a valid profile name: lowercase letters, numbers, hyphens, or underscores (max 32 characters)."
+                : "Enter the database source path."}
+            </p>
+          )}
         </div>
       )}
       {listOp.error && <p className="px-1 pb-2 text-xs text-destructive">{listOp.error}</p>}

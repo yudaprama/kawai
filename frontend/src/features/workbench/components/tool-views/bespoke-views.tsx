@@ -62,8 +62,8 @@ export function PokemonView({ data }: { data: Record<string, unknown> }) {
       <KeyValueView
         entries={
           [
-            ["Tinggi", height != null ? `${height / 10} m` : null],
-            ["Berat", weight != null ? `${weight / 10} kg` : null],
+            ["Height", height != null ? `${height / 10} m` : null],
+            ["Weight", weight != null ? `${weight / 10} kg` : null],
             ["Stats", stats],
           ].filter(([, v]) => v != null) as Array<[string, ReactNode]>
         }
@@ -108,11 +108,11 @@ export function CountryView({ data }: { data: Record<string, unknown> }) {
       <KeyValueView
         entries={
           [
-            ["Ibu kota", capital],
-            ["Populasi", pop != null ? fmtNumber(pop) : null],
-            ["Luas", area != null ? `${fmtNumber(area)} km²` : null],
-            ["Mata uang", currencies],
-            ["Bahasa", langs],
+            ["Capital", capital],
+            ["Population", pop != null ? fmtNumber(pop) : null],
+            ["Area", area != null ? `${fmtNumber(area)} km²` : null],
+            ["Currency", currencies],
+            ["Languages", langs],
           ].filter(([, v]) => v != null) as Array<[string, ReactNode]>
         }
       />
@@ -170,9 +170,9 @@ export function TimeZoneView({ data }: { data: Record<string, unknown> }) {
     <KeyValueView
       entries={
         [
-          ["Waktu lokal", dt ? (fmtDate(dt) ?? dt) : null],
-          ["Zona", zone],
-          ["DST", typeof dst === "boolean" ? (dst ? "aktif" : "tidak") : dst != null ? String(dst) : null],
+          ["Local time", dt ? (fmtDate(dt) ?? dt) : null],
+          ["Zone", zone],
+          ["DST", typeof dst === "boolean" ? (dst ? "active" : "inactive") : dst != null ? String(dst) : null],
         ].filter(([, v]) => v != null) as Array<[string, ReactNode]>
       }
     />
@@ -190,7 +190,7 @@ export function DrawCardsView({ data }: { data: Record<string, unknown> }) {
   return (
     <div className="space-y-2">
       <SectionLabel>
-        {cardsArr.length} kartu ditarik {remaining != null ? `· sisa ${remaining} kartu` : ""}
+        {cardsArr.length} cards drawn {remaining != null ? `· ${remaining} cards left` : ""}
       </SectionLabel>
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
         {cardsArr.slice(0, 12).map((c, i) => {
@@ -230,7 +230,7 @@ export function SunTimesView({ data }: { data: Record<string, unknown> }) {
           [
             "Day length",
             len != null && /^\d+$/.test(len)
-              ? `${Math.floor(Number(len) / 3600)}j ${Math.floor((Number(len) % 3600) / 60)}m`
+              ? `${Math.floor(Number(len) / 3600)}h ${Math.floor((Number(len) % 3600) / 60)}m`
               : len,
           ],
           ["Civil twilight", twilightBegin && twilightEnd ? `${twilightBegin} → ${twilightEnd}` : null],

@@ -7,6 +7,7 @@ import { RecentRuns } from "@/features/workbench/components/recent-runs";
 import { isDeliverableStep, useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import { logInfo } from "@/lib/logger";
+import { overlayOwnsEscape } from "@/lib/esc";
 import { toast } from "sonner";
 
 import { AnalysisDeskForm } from "./analysis-desk-form";
@@ -23,8 +24,11 @@ import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
 
 // ── Sessions button ─────────────────────────────────────────────────────────
 
-/** Opens the shared SessionHistoryDialog (App owns the dialog state). */
-function SessionsButton({ onOpen }: { onOpen: () => void }) {
+/** Opens the shared SessionHistoryDialog (App owns the dialog state).
+ *  Rendered in the landing top bar, the run-switcher row, and (icon-only)
+ *  the mobile run strip — the landing recents strip no longer carries it,
+ *  so it must not disappear once the session has runs. */
+function SessionsButton({ onOpen, iconOnly = false }: { onOpen: () => void; iconOnly?: boolean }) {
   return (
     <button
       type="button"
@@ -34,7 +38,7 @@ function SessionsButton({ onOpen }: { onOpen: () => void }) {
       className="text-muted-foreground hover:bg-[var(--tea-color-bg-secondary-default)] hover:text-foreground inline-flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] tracking-wider uppercase transition-colors"
     >
       <Icon name="history" className="size-3.5" />
-      Sessions
+      {!iconOnly && "Sessions"}
     </button>
   );
 }
@@ -304,9 +308,19 @@ export function WorkbenchPage({
   const submit = (text: string, fileIds?: string[]) => {
     if (!text.trim()) return;
     // A plan awaiting review owns the rail — new goals wait until it is run
-    // or discarded. REJECT (not return) so the composer keeps the draft.
-    if (supervisor.status === "reviewing") throw new Error("A plan is awaiting your review — run or discard it first");
-    if (startingRef.current) throw new Error("Submit already in progress");
+    // or discarded. REJECT (not return) so the composer keeps the draft —
+    // and surface the reason first: PromptInput swallows the rejection, so
+    // the `role="alert"` line under the composer is the only visible output.
+    if (supervisor.status === "reviewing") {
+      const msg = "A plan is awaiting your review — run or discard it first";
+      workbench.setSessionError(msg);
+      throw new Error(msg);
+    }
+    if (startingRef.current) {
+      const msg = "Submit already in progress";
+      workbench.setSessionError(msg);
+      throw new Error(msg);
+    }
     startingRef.current = true;
     const quote = workbench.followUp;
     const baseline = supervisor.planStartedAt;
@@ -399,7 +413,9 @@ export function WorkbenchPage({
       if (e.key !== "Escape") return;
       if (document.querySelector("[data-open-drawer]") != null) return;
       const el = e.target instanceof HTMLElement ? e.target : null;
-      if (el?.closest("[role=dialog]") != null) return;
+      // Any topmost overlay (avatar dropdown, popovers, dialogs…) owns the
+      // Esc — dismissing it must never arm the run stop.
+      if (overlayOwnsEscape()) return;
       const inEditable = el != null && el.closest("input, textarea, select, [contenteditable=true]") != null;
       if (inEditable && el?.closest("[data-chat-composer]") == null) return;
       if (mobileRail) {
@@ -454,7 +470,10 @@ export function WorkbenchPage({
   if (home) {
     return (
       <div className="bg-background flex h-full w-full flex-col">
-        <div className="flex items-center justify-end gap-1 px-4 py-2">{topBarExtra}</div>
+        <div className="flex items-center justify-end gap-1 px-4 py-2">
+          {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
+          {topBarExtra}
+        </div>
         <div className="flex flex-1 flex-col items-center justify-center gap-5 p-6 text-center">
           <div className="space-y-2">
             <p className="text-foreground inline-flex items-center gap-2 text-lg font-semibold">
@@ -533,12 +552,7 @@ export function WorkbenchPage({
               />
             </div>
           ) : (
-            <RecentRuns
-              open={!sessionsOpen}
-              reloadKey={recentKey}
-              onOpen={openRecent}
-              sessionsAction={onOpenSessions ? <SessionsButton onOpen={onOpenSessions} /> : null}
-            />
+            <RecentRuns open={!sessionsOpen} reloadKey={recentKey} onOpen={openRecent} />
           )}
         </div>
       </div>
@@ -657,6 +671,7 @@ export function WorkbenchPage({
             <span className="font-mono text-[10px] tracking-wider uppercase">Progress</span>
           </button>
           <span className="flex-1" />
+          {onOpenSessions && <SessionsButton iconOnly onOpen={onOpenSessions} />}
           {topBarExtra}
           <button
             type="button"
@@ -684,6 +699,7 @@ export function WorkbenchPage({
                   view={view}
                 />
               </div>
+              {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
               {topBarExtra}
             </div>
             <div className="min-h-0 flex-1">

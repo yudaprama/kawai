@@ -64,7 +64,10 @@ export function useKnowledgeFiles(enabled: boolean) {
   return {
     files,
     loaded,
+    loading: op.loading,
     unavailable,
+    /** Last `knowledge_list` failure — a settled fetch with no data must not read as empty. */
+    error: op.error,
     refresh: op.execute,
     setSessionId,
     markIndexing,

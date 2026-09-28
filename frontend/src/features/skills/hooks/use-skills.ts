@@ -77,6 +77,8 @@ export function useSkills(enabled: boolean) {
   return {
     skills,
     loaded: !listOp.loading || skills.length > 0,
+    /** `skill_list` failure — a settled load with no data must not read as an empty library. */
+    error: listOp.error,
     busy,
     refresh: listOp.execute,
     create,

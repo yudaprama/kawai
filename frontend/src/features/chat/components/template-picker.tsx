@@ -76,7 +76,7 @@ export function TemplatePicker({ onPick }: { onPick: (text: string) => void }) {
           <Icon name="search" className="text-muted-foreground size-3.5" />
           <input
             aria-label="Search templates"
-            className="placeholder:text-muted-foreground w-full bg-transparent text-xs outline-none"
+            className="placeholder:text-muted-foreground w-full bg-transparent text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search templates…"
             value={query}

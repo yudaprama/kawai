@@ -1,5 +1,7 @@
 /** Formatting + parsing helpers for step-report views. All user-facing
- *  numbers/dates render in id-ID via Intl — never raw JSON field values. */
+ *  numbers/dates render in en-US via Intl (English UI — DESIGN.md), never
+ *  raw JSON field values. Indonesian formatting is reserved for the QRIS
+ *  money flow. */
 
 export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -72,20 +74,20 @@ function repairJson(t: string): unknown {
   return t;
 }
 
-const numFmt = (opts?: Intl.NumberFormatOptions) => new Intl.NumberFormat("id-ID", opts);
+const numFmt = (opts?: Intl.NumberFormatOptions) => new Intl.NumberFormat("en-US", opts);
 
-/** "1.234,56" */
+/** "1,234.56" */
 export function fmtNumber(n: number, opts?: Intl.NumberFormatOptions): string {
   return numFmt({ maximumFractionDigits: 2, ...opts }).format(n);
 }
 
-/** "+2,3%" / "-1,05%" */
+/** "+2.34%" / "-1.05%" */
 export function fmtPct(n: number): string {
   const sign = n > 0 ? "+" : "";
   return `${sign}${numFmt({ minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(n)}%`;
 }
 
-/** Human bytes: "1,2 MB". */
+/** Human bytes: "1.2 MB". */
 export function fmtBytes(n: number): string {
   if (!Number.isFinite(n) || n < 0) return "—";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -108,7 +110,17 @@ export function fmtDate(v: unknown): string | null {
     d = Number.isFinite(n) && v.trim() !== "" ? new Date(n > 1e12 ? n : n * 1000) : new Date(v);
   }
   if (!d || Number.isNaN(d.getTime())) return null;
-  return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(d);
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(d);
+}
+
+/** The one timestamp formatter for English UI surfaces — "Sep 28, 2026,
+ *  2:05 PM". Replaces ad-hoc `Date#toLocaleString()`, whose output depends
+ *  on the user's machine locale. Invalid dates render as an em dash. */
+export function fmtTimestamp(v: Date | number | string): string {
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime())
+    ? "—"
+    : new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(d);
 }
 
 /** Pick the first present key from a record (variations across providers). */

@@ -50,7 +50,7 @@ export function RecordListView({ items }: { items: RecordItem[] }) {
   if (items.length === 0) return null;
   return (
     <div className="space-y-2">
-      <SectionLabel>{items.length} hasil ditemukan</SectionLabel>
+      <SectionLabel>{items.length} results found</SectionLabel>
       <ul className="space-y-2">
         {items.slice(0, 20).map((it, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: tool outputs may legitimately contain duplicate entries
