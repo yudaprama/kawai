@@ -18,10 +18,9 @@ import { QRCodeSVG } from "qrcode.react";
 import { CopyButton } from "./copy-button";
 import { HomeContent } from "./home-content";
 import { SendForm } from "./send-form";
-import { SetupForm } from "./setup-form";
 import { SmartDepositForm } from "./smart-deposit-form";
 
-type ModalType = "send" | "receive" | "swap" | "deposit" | "addAccount" | "createWallet" | "addToken" | null;
+type ModalType = "send" | "receive" | "swap" | "deposit" | "addToken" | null;
 
 export function WalletPage({ onBack }: { onBack: () => void }) {
   const { address, hasWallet, status, available, loading, refresh, create } = useWallet();
@@ -318,24 +317,6 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
           </div>
         </DialogContent>
       </Dialog>
-      <Dialog open={modal === "addAccount"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Account</DialogTitle>
-          </DialogHeader>
-          <p className="py-4 text-sm text-muted-foreground">
-            kawai uses a single device-scoped hot wallet. Multiple accounts are not supported yet.
-          </p>
-        </DialogContent>
-      </Dialog>
-      <SetupForm
-        open={modal === "createWallet"}
-        onOpenChange={(o) => !o && setModal(null)}
-        onSuccess={() => {
-          setModal(null);
-          void refresh();
-        }}
-      />
       <Dialog open={modal === "addToken"} onOpenChange={(o) => !o && setModal(null)}>
         <DialogContent>
           <DialogHeader>

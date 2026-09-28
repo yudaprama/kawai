@@ -32,15 +32,36 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       if (mode === "signin") {
         await call("auth_sign_in", { email, password });
       } else if (!codeSent) {
+        // Pre-check account existence before sending code
+        try {
+          await call("auth_check_account", { email });
+          // Account exists, suggest sign in instead
+          setError("An account with this email already exists.");
+          setSignUpFailed(true);
+          setLoading(false);
+          return;
+        } catch {
+          // Account doesn't exist, proceed to send code
+        }
         // Step 1: email a 6-digit code, then ask for it.
         await call("auth_send_code", { email });
         setCodeSent(true);
+        setSignUpFailed(false);
         setLoading(false);
         return;
       } else {
         // Step 2: verify the code, then create the account.
         await call("auth_verify_code", { email, code });
-        await call("auth_sign_up", { email, password });
+        try {
+          await call("auth_sign_up", { email, password });
+          setSignUpFailed(false);
+        } catch (signUpErr) {
+          // Keep code valid, offer "Sign in instead"
+          setSignUpFailed(true);
+          setError(signUpErr instanceof Error ? signUpErr.message : String(signUpErr));
+          setLoading(false);
+          return;
+        }
       }
       await refresh();
     } catch (err) {

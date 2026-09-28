@@ -607,7 +607,7 @@ function RunStatusStrip({
   }
 
   // Seeded execution window: settled-step tally + what's happening now.
-  const count = `${supervisor.steps.filter((s) => s.state === "completed" || s.state === "failed" || s.state === "skipped").length}/${supervisor.steps.length} steps`;
+  const count = `${settledCount(supervisor.steps)}/${supervisor.steps.length} steps`;
   const elapsed = supervisor.planStartedAt != null ? ` · ${fmtDuration(supervisor.planStartedAt)}` : "";
 
   if (supervisor.status === "stopping") {

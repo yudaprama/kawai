@@ -9,7 +9,7 @@ export function KnowledgeStatusBadge({ file }: { file: KnowledgeFileInfo }) {
   if (isTabularExt(file.ext)) {
     return (
       <span
-        className="text-muted-foreground/70 text-xs"
+        className="text-muted-foreground text-xs"
         title="Tabular data — queried structurally by the Analytics agent, not prose-indexed"
       >
         data
@@ -35,19 +35,19 @@ export function KnowledgeStatusBadge({ file }: { file: KnowledgeFileInfo }) {
     return file.chunks > 0 ? (
       <span className="text-muted-foreground text-xs">{file.chunks} chunks</span>
     ) : (
-      <span className="text-muted-foreground/70 text-xs" title="No extractable text found">
+      <span className="text-muted-foreground text-xs" title="No extractable text found">
         no text
       </span>
     );
   }
-  return <span className="text-muted-foreground/70 text-xs">not indexed</span>;
+  return <span className="text-muted-foreground text-xs">not indexed</span>;
 }
 
 export function KnowledgeSectionLabel({ label, count }: { label: string; count: number }) {
   return (
     <div className="flex items-baseline justify-between px-1 pb-1.5">
       <p className="font-mono text-[11px] tracking-wider text-muted-foreground uppercase">{label}</p>
-      <span className="font-mono text-[11px] text-muted-foreground/70">{count}</span>
+      <span className="font-mono text-[11px] text-muted-foreground">{count}</span>
     </div>
   );
 }

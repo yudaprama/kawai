@@ -138,7 +138,7 @@ export function WikiAssetPage({
                 <span className="flex flex-col items-center">
                   <FileIcon className="text-muted-foreground/40 mb-3 size-5" name="file" />
                   <span className="text-muted-foreground text-sm">Knowledge is unavailable</span>
-                  <span className="text-muted-foreground/70 mt-1 text-xs">
+                  <span className="text-muted-foreground mt-1 text-xs">
                     Document tools are not enabled in this build.
                   </span>
                 </span>

@@ -106,7 +106,7 @@ export function TemplatePicker({ onPick }: { onPick: (text: string) => void }) {
                   ) : null}
                 </span>
                 <span className="text-muted-foreground line-clamp-2 text-[11px]">{t.summary}</span>
-                <span className="text-muted-foreground/70 truncate text-[11px]">{t.id}</span>
+                <span className="text-muted-foreground truncate text-[11px]">{t.id}</span>
               </button>
             ))}
           </div>

@@ -54,7 +54,7 @@ export function QrisCard({ qrPayload, amountLabel }: QrisCardProps) {
   }, [qrPayload]);
 
   return (
-    <div className="relative w-[264px] shrink-0 overflow-hidden rounded-xl bg-white p-4 text-black shadow-sm">
+    <div className="relative w-[264px] shrink-0 overflow-hidden rounded-xl bg-white p-4 text-black shadow-sm border">
       {/* Red ribbon accents — left chevron + bottom-right corner, like the standee */}
       <div
         aria-hidden
@@ -76,7 +76,7 @@ export function QrisCard({ qrPayload, amountLabel }: QrisCardProps) {
       {/* Merchant identity — from the payload, not constants */}
       <div className="mt-3 text-center">
         <p className="text-lg leading-tight font-bold tracking-wide">{merchant.name}</p>
-        {merchant.nmid ? <p className="text-[11px] text-gray-600">NMID: {merchant.nmid}</p> : null}
+        {merchant.nmid ? <p className="text-[11px] text-muted-foreground">NMID: {merchant.nmid}</p> : null}
       </div>
 
       {/* The dynamic QR — wallet apps read the exact prefilled amount */}

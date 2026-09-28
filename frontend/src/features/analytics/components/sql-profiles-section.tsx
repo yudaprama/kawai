@@ -197,7 +197,7 @@ export function SqlProfilesSection() {
           <Spinner className="size-3" /> Loading…
         </div>
       ) : profiles.length === 0 ? (
-        <p className="text-muted-foreground/70 px-1 text-xs">
+        <p className="text-muted-foreground px-1 text-xs">
           No databases yet. Connect a .db file to let the agent analyze its tables.
         </p>
       ) : (

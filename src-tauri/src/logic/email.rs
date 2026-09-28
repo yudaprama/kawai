@@ -79,31 +79,6 @@ pub async fn send_sign_up_code(to: &str) -> Result<(), EmailError> {
     Ok(())
 }
 
-// ── Sign-up verification codes (client-side flow, desktop option A) ─────────
-
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
-
-/// email → (code, sent-at). In-memory only: restarting the app invalidates
-/// pending codes, which is acceptable for a sign-up flow.
-fn codes() -> &'static Mutex<HashMap<String, (String, Instant)>> {
-    static CODES: OnceLock<Mutex<HashMap<String, (String, Instant)>>> = OnceLock::new();
-    CODES.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-const CODE_TTL: Duration = Duration::from_secs(10 * 60);
-
-/// Email a 6-digit code to `to` and remember it for later [`verify_code`].
-pub async fn send_sign_up_code(to: &str) -> Result<(), String> {
-    let to = to.trim().to_lowercase();
-    let code = send_verification_email(&to).await?;
-    codes()
-        .lock()
-        .map_err(|_| "verification store unavailable".to_string())?
-        .insert(to, (code, Instant::now()));
-    Ok(())
-}
 
 /// Check the user's input against the pending code (case/space tolerant).
 /// A match consumes the code (single use). Codes expire after 10 minutes.

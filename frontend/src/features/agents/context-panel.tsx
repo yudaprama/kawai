@@ -109,7 +109,7 @@ export function ContextPanel({
             <div className="flex h-full flex-col items-center justify-center p-6 text-center">
               <FileIcon name="file" className="text-muted-foreground/40 mb-3 size-5" />
               <p className="text-muted-foreground text-sm">Knowledge is unavailable</p>
-              <p className="text-muted-foreground/70 mt-1 text-xs">Document tools are not enabled in this build.</p>
+              <p className="text-muted-foreground mt-1 text-xs">Document tools are not enabled in this build.</p>
             </div>
           ) : !knowledge.loaded ? (
             <div className="text-muted-foreground flex h-full items-center justify-center gap-2 text-sm">
@@ -152,12 +152,12 @@ export function ContextPanel({
                             />
                           ))}
                         </div>
-                        <p className="text-muted-foreground/70 mt-1.5 px-1 text-xs">
+                        <p className="text-muted-foreground mt-1.5 px-1 text-xs">
                           The agent can search these documents in this chat.
                         </p>
                       </>
                     ) : (
-                      <div className="text-muted-foreground/70 rounded-lg border border-dashed px-3 py-3 text-xs">
+                      <div className="text-muted-foreground rounded-lg border border-dashed px-3 py-3 text-xs">
                         No documents in this session yet — press <span className="font-medium">+</span> on a library
                         document below, or import new files; the agent can then search them in this chat.
                       </div>

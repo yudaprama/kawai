@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Icon } from "@/components/shared/icon";
-import { SessionRow } from "@/features/chat/components/session-row";
+ import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+ import { Icon } from "@/components/shared/icon";
+ import { SessionRow } from "@/features/chat/components/session-row";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -337,7 +338,7 @@ export function SessionHistoryDialog({
           ))}
 
           {q && displayGroups.length === 0 && displayArchived.length === 0 && (
-            <p className="text-muted-foreground/70 px-2 py-4 text-center text-xs">
+            <p className="text-muted-foreground px-2 py-4 text-center text-xs">
               No sessions match "{query.trim()}".
             </p>
           )}
@@ -347,7 +348,7 @@ export function SessionHistoryDialog({
             !q &&
             !sessionsLoading &&
             sessionsError == null && (
-              <p className="text-muted-foreground/70 px-2 py-4 text-center text-xs">
+              <p className="text-muted-foreground px-2 py-4 text-center text-xs">
                 No sessions yet. Start a conversation to create one.
               </p>
             )}

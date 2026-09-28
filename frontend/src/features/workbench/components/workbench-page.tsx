@@ -279,6 +279,7 @@ export function WorkbenchPage({
    *  a drawer: surface it immediately so planning/progress is reachable. */
   const enterRunView = useCallback((baseline: number | null) => {
     setHome(false);
+    setChipDraft(null);
     // Canvas policy (same as Run 1): drop the pinned view so the canvas
     // defaults to the newest run with doc "final" — the new run's prompt
     // shows in the header immediately, and the once-per-run auto-switch
