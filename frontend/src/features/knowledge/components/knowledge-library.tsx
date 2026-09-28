@@ -15,8 +15,7 @@ import { Icon } from "@/components/shared/icon";
 import { KnowledgeStatusBadge } from "@/features/knowledge/components/knowledge-file-row";
 import { KnowledgeFileSummary } from "@/features/knowledge/components/knowledge-file-summary";
 import { Button } from "@/components/ui/button";
-import { fmtDateUS }
-from "@/features/workbench/components/tool-views/format";
+import { fmtDateUS } from "@/features/workbench/components/tool-views/format";
 import type { KnowledgeFileInfo } from "@/lib/api";
 import { isTabularExt } from "@/lib/extensions";
 import { knowledgeFileToPreview } from "@/lib/preview-file";

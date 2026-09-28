@@ -2,8 +2,7 @@ import { FileIcon } from "@/components/shared/file-icon";
 import { Icon } from "@/components/shared/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { isTabularExt } from "@/lib/extensions";
-import { fmtDateUS }
-from "@/features/workbench/components/tool-views/format";
+import { fmtDateUS } from "@/features/workbench/components/tool-views/format";
 import type { KnowledgeFileInfo } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
 

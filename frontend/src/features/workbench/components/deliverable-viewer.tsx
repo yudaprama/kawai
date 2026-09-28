@@ -17,8 +17,7 @@ import {
   isDeliverableStep,
   type WorkbenchController,
 } from "@/features/workbench/hooks/use-workbench";
-import { fmtDateUS }
-from "@/features/workbench/components/tool-views/format";
+import { fmtDateUS } from "@/features/workbench/components/tool-views/format";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { fmtDuration, ReviewActions, settledCount } from "./progress-rail";
@@ -527,12 +526,16 @@ function RunStatusStrip({
   startedAt,
   unseeded,
   workbench,
+  discardArmed,
+  setDiscardArmed,
 }: {
   /** Current run's submit time — the elapsed clock source while unseeded
    *  (planStartedAt still belongs to the previous run then). */
   startedAt: number | null;
   unseeded: boolean;
   workbench: WorkbenchController;
+  discardArmed: boolean;
+  setDiscardArmed: (v: boolean) => void;
 }) {
   const { supervisor } = workbench;
 
@@ -672,6 +675,8 @@ export function DeliverableViewer({
   unseeded,
   workbench,
   onPickDoc,
+  discardArmed,
+  setDiscardArmed,
 }: {
   /** Pinned document: "final" | stepId. The page owns navigation policy —
    *  this component NEVER auto-jumps on its own. */
@@ -824,7 +829,13 @@ export function DeliverableViewer({
         {/* In-flight status strip: planning, execution, writer, approval gate,
             stop — never a blank pane between submit and the deliverable. */}
         {stripVisible && (
-          <RunStatusStrip startedAt={runRecord?.startedAt ?? null} unseeded={unseeded === true} workbench={workbench} />
+          <RunStatusStrip
+            startedAt={runRecord?.startedAt ?? null}
+            unseeded={unseeded === true}
+            workbench={workbench}
+            discardArmed={discardArmed}
+            setDiscardArmed={setDiscardArmed}
+          />
         )}
 
         {supervisor.status === "idle" && supervisor.planning == null && (

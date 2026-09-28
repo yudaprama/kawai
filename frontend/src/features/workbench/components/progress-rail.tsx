@@ -70,7 +70,15 @@ function PlanSummaryCard({ summary }: { summary: PlanSummaryInfo | null }) {
  *  and the canvas mirror both mount these, so both panes act on the same
  *  supervisor actions. Discard arms on the first click ("Confirm discard",
  *  3s window) so a misclick can't throw away a planner round. */
-export function ReviewActions({ supervisor, discardArmed, setDiscardArmed }: { supervisor: SupervisorController; discardArmed: boolean; setDiscardArmed: (v: boolean) => void }) {
+export function ReviewActions({
+  supervisor,
+  discardArmed,
+  setDiscardArmed,
+}: {
+  supervisor: SupervisorController;
+  discardArmed: boolean;
+  setDiscardArmed: (v: boolean) => void;
+}) {
   return (
     <div className="flex gap-2 pt-2">
       <Button className="flex-1" onClick={supervisor.approvePlan} size="sm">
@@ -552,7 +560,11 @@ export function ProgressRail({
                 )}
               </div>
             ))}
-          <ReviewActions supervisor={workbench.supervisor} discardArmed={discardArmed} setDiscardArmed={setDiscardArmed} />
+          <ReviewActions
+            supervisor={workbench.supervisor}
+            discardArmed={discardArmed}
+            setDiscardArmed={setDiscardArmed}
+          />
         </div>
       ) : (
         <div className="flex-1">

@@ -600,9 +600,7 @@ function PersonaPane() {
             {tiers.generating ? <Spinner className="size-3" /> : <Icon name="sparkles" className="size-3" />}
             {tiers.generating ? "Generating…" : "Generate persona"}
           </Button>
-          {tiers.persona && (
-            <span className="text-muted-foreground text-xs">updated {fmtDateUS(new Date())}</span>
-          )}
+          {tiers.persona && <span className="text-muted-foreground text-xs">updated {fmtDateUS(new Date())}</span>}
         </>
       }
     >
