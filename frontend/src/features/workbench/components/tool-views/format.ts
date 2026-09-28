@@ -125,9 +125,7 @@ export function fmtTimestamp(v: Date | number | string): string {
 /** Date-only formatter for English UI — "Sep 28, 2026". Fixed en-US locale. */
 export function fmtDateUS(v: Date | number | string): string {
   const d = v instanceof Date ? v : new Date(v);
-  return Number.isNaN(d.getTime())
-    ? "—"
-    : new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(d);
+  return Number.isNaN(d.getTime()) ? "—" : new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(d);
 }
 
 /** Number formatter for English UI — "1,234". Fixed en-US locale, no decimals. */

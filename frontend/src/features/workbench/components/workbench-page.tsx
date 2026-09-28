@@ -364,7 +364,7 @@ export function WorkbenchPage({
         },
       );
     },
-    [supervisor.status, supervisor.planStartedAt, workbench.runDesk, enterRunView],
+    [supervisor.status, supervisor.planStartedAt, workbench.runDesk, workbench.setSessionError, enterRunView],
   );
 
   /** YouTube Summary submit (PLAN-youtube-summary): one link in, the FIXED
@@ -390,7 +390,7 @@ export function WorkbenchPage({
         },
       );
     },
-    [supervisor.status, supervisor.planStartedAt, workbench.runYoutube, enterRunView],
+    [supervisor.status, supervisor.planStartedAt, workbench.runYoutube, workbench.setSessionError, enterRunView],
   );
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)
