@@ -442,7 +442,7 @@ export function PastRunCanvas({
           <div className="sticky top-0 z-10 -mx-6 border-b border-border/60 bg-background py-2">
             <AgentReportsSwitcher
               activeDoc={doc}
-              hasDeliverable={run.status === "completed" && run.outputFull != null}
+              hasDeliverable={run.status === "running" || (run.status === "completed" && run.outputFull != null)}
               onPickDoc={onPickDoc}
               reports={(run.steps ?? [])
                 .filter(

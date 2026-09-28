@@ -297,6 +297,7 @@ export function WorkbenchPage({
     if (supervisor.planning != null || runInFlight || supervisor.status === "reviewing") return;
     setView(null);
     autoSwitchedRun.current = null;
+    setChipDraft(null);
     setTemplate(null);
     setMobileRail(false);
     setHome(true);

@@ -99,7 +99,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
+
 import {
   Tooltip,
   TooltipContent,
@@ -755,7 +755,7 @@ export const PromptInputSubmit = ({
   let icon = <Icon name="corner-down-left" className="size-4" />;
 
   if (status === "submitted") {
-    icon = <Spinner />;
+    icon = <Icon name="square" className="size-4" />;
   } else if (status === "streaming") {
     icon = <Icon name="square" className="size-4" />;
   } else if (status === "error") {

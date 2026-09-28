@@ -15,14 +15,13 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [showPassword, setShowPassword] = useState(false);
-  const [signUpFailed, setSignUpFailed] = useState(false);
+
   const emailRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!userId) emailRef.current?.focus();
+  }, [userId]);
 
   if (userId) return <>{children}</>;
-
-  useEffect(() => {
-    emailRef.current?.focus();
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,7 +36,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           await call("auth_check_account", { email });
           // Account exists, suggest sign in instead
           setError("An account with this email already exists.");
-          setSignUpFailed(true);
+
           setLoading(false);
           return;
         } catch {
@@ -46,7 +45,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         // Step 1: email a 6-digit code, then ask for it.
         await call("auth_send_code", { email });
         setCodeSent(true);
-        setSignUpFailed(false);
         setLoading(false);
         return;
       } else {
@@ -54,10 +52,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         await call("auth_verify_code", { email, code });
         try {
           await call("auth_sign_up", { email, password });
-          setSignUpFailed(false);
         } catch (signUpErr) {
           // Keep code valid, offer "Sign in instead"
-          setSignUpFailed(true);
+
           setError(signUpErr instanceof Error ? signUpErr.message : String(signUpErr));
           setLoading(false);
           return;
