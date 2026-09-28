@@ -347,7 +347,10 @@ export function WorkbenchPage({
    *  viewer, and AGENT REPORTS render it unchanged. */
   const submitDesk = useCallback(
     (ticker: string, tradeDate: string | undefined, analysts: string[] | undefined) => {
-      if (supervisor.status === "reviewing") return;
+      if (supervisor.status === "reviewing") {
+        workbench.setSessionError("A plan is awaiting your review — run or discard it first");
+        return;
+      }
       if (startingRef.current) return;
       startingRef.current = true;
       const baseline = supervisor.planStartedAt;
@@ -370,7 +373,10 @@ export function WorkbenchPage({
    *  AGENT REPORTS render it unchanged. */
   const submitYoutube = useCallback(
     (url: string) => {
-      if (supervisor.status === "reviewing") return;
+      if (supervisor.status === "reviewing") {
+        workbench.setSessionError("A plan is awaiting your review — run or discard it first");
+        return;
+      }
       if (startingRef.current) return;
       startingRef.current = true;
       const baseline = supervisor.planStartedAt;
