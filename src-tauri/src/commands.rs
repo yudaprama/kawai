@@ -89,7 +89,7 @@ pub fn list_agents() -> Vec<crate::agent_registry::AgentInfo> {
 /// check the user's input locally (the auth server is never involved).
 #[tauri::command]
 pub async fn send_verification_email(to: String) -> Result<String, String> {
-    logic::email::send_verification_email(&to).await
+    logic::email::send_verification_email(&to).await.map_err(|e| e.to_string())
 }
 
 /// Public RPC: native MON balance for an EVM address on Monad (`monad`
@@ -141,40 +141,40 @@ pub async fn estimate_gas(rpc_url: Option<String>) -> Result<logic::monad::GasEs
 /// Load the device wallet's address, if one exists.
 #[tauri::command]
 pub async fn monad_wallet_address() -> Result<Option<logic::monad_wallet::WalletAddress>, String> {
-    logic::monad_wallet::address()
+    logic::monad_wallet::address().map_err(|e| e.to_string())
 }
 
 /// Device tx history — the local JSON log of fund-moving sends/deposits
 /// (newest first; missing log = empty list).
 #[tauri::command]
 pub async fn monad_wallet_history() -> Result<Vec<logic::monad_wallet::TxRecord>, String> {
-    logic::monad_wallet::history()
+    logic::monad_wallet::history().map_err(|e| e.to_string())
 }
 
 /// Create the device hot wallet (idempotent). Returns ONLY the address —
 /// the private key stays in the OS keychain inside the backend process.
 #[tauri::command]
 pub async fn monad_wallet_create() -> Result<logic::monad_wallet::WalletAddress, String> {
-    logic::monad_wallet::create()
+    logic::monad_wallet::create().map_err(|e| e.to_string())
 }
 
 /// EIP-191 personal-sign `message` with the device wallet's stored key.
 #[tauri::command]
 pub async fn monad_wallet_sign_message(message: String) -> Result<String, String> {
-    logic::monad_wallet::sign_message(&message).await
+    logic::monad_wallet::sign_message(&message).await.map_err(|e| e.to_string())
 }
 
 /// Permanently delete the stored key (address + funds unrecoverable locally).
 #[tauri::command]
 pub async fn monad_wallet_delete() -> Result<(), String> {
-    logic::monad_wallet::delete()
+    logic::monad_wallet::delete().map_err(|e| e.to_string())
 }
 
 /// Sign + broadcast a native MON transfer from the device hot wallet.
 /// `amount` is a decimal string — parsed in integer math in the Rust layer.
 #[tauri::command]
 pub async fn transfer_native(to: String, amount: String) -> Result<logic::monad_wallet::TxResult, String> {
-    logic::monad_wallet::transfer_native(&to, &amount).await
+    logic::monad_wallet::transfer_native(&to, &amount).await.map_err(|e| e.to_string())
 }
 
 /// Sign + broadcast an ERC-20 `transfer` from the device hot wallet.
@@ -186,19 +186,21 @@ pub async fn transfer_token(
     amount: String,
     decimals: u8,
 ) -> Result<logic::monad_wallet::TxResult, String> {
-    logic::monad_wallet::transfer_token(&token_address, &to, &amount, decimals).await
+    logic::monad_wallet::transfer_token(&token_address, &to, &amount, decimals)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Sign + broadcast a USDT transfer (hardcoded stablecoin, 6 decimals).
 #[tauri::command]
 pub async fn transfer_usdt(to: String, amount: String) -> Result<logic::monad_wallet::TxResult, String> {
-    logic::monad_wallet::transfer_usdt(&to, &amount).await
+    logic::monad_wallet::transfer_usdt(&to, &amount).await.map_err(|e| e.to_string())
 }
 
 /// Approve + deposit USDT into the payment vault. Returns the deposit tx.
 #[tauri::command]
 pub async fn deposit_to_vault(amount: String) -> Result<logic::monad_wallet::TxResult, String> {
-    logic::monad_wallet::deposit_to_vault(&amount).await
+    logic::monad_wallet::deposit_to_vault(&amount).await.map_err(|e| e.to_string())
 }
 
 /// Receipt probe for a previously-broadcast tx (`Ok(None)` = still pending).
@@ -206,7 +208,9 @@ pub async fn deposit_to_vault(amount: String) -> Result<logic::monad_wallet::TxR
 pub async fn get_transaction_receipt(
     tx_hash: String,
 ) -> Result<Option<logic::monad_wallet::ReceiptInfo>, String> {
-    logic::monad_wallet::transaction_receipt(&tx_hash).await
+    logic::monad_wallet::transaction_receipt(&tx_hash)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Streaming command. The `stream_id` lets the client request early
@@ -262,7 +266,7 @@ pub async fn auth_sign_up(
 /// Public RPC: email a 6-digit sign-up verification code to `email`.
 #[tauri::command]
 pub async fn auth_send_code(email: String) -> Result<(), String> {
-    logic::email::send_sign_up_code(&email).await
+    logic::email::send_sign_up_code(&email).await.map_err(|e| e.to_string())
 }
 
 /// Public RPC: check the sign-up code the user received by email.
@@ -1608,7 +1612,9 @@ pub async fn codegraph_explore(
     session: State<'_, Session>,
 ) -> Result<logic::codegraph::CodegraphExploreResult, String> {
     let user_id = session_user_id(&session)?;
-    logic::codegraph::codegraph_explore(&user_id, query, project_path).await
+    logic::codegraph::codegraph_explore(&user_id, query, project_path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1617,7 +1623,9 @@ pub async fn codegraph_status(
     session: State<'_, Session>,
 ) -> Result<logic::codegraph::CodegraphStatusResult, String> {
     let user_id = session_user_id(&session)?;
-    logic::codegraph::codegraph_status(&user_id, project_path).await
+    logic::codegraph::codegraph_status(&user_id, project_path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1631,7 +1639,9 @@ pub async fn codegraph_init(
     session: State<'_, Session>,
 ) -> Result<logic::codegraph::CodegraphStatusResult, String> {
     let user_id = session_user_id(&session)?;
-    logic::codegraph::codegraph_init(&user_id, project_path).await
+    logic::codegraph::codegraph_init(&user_id, project_path)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 

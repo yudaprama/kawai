@@ -31,7 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useMemories } from "@/features/memory/hooks/use-memories";
 import { useMemoryTiers } from "@/features/memory/hooks/use-memory-tiers";
-import { fmtTimestamp } from "@/features/workbench/components/tool-views/format";
+import { fmtDateUS, fmtTimestamp } from "@/features/workbench/components/tool-views/format";
 import { call, errText } from "@/lib/api";
 import { showErrorToast } from "@/lib/utils";
 import {
@@ -164,7 +164,7 @@ export function MemoryAssetPage({
                 </AssetItemHeader>
                 <AssetItemBadges>{s.archived && <AssetBadge>archived</AssetBadge>}</AssetItemBadges>
                 <AssetItemMeta>
-                  <span>{s.createdAt != null ? new Date(s.createdAt * 1000).toLocaleDateString() : ""}</span>
+                  <span>{s.createdAt != null ? fmtDateUS(s.createdAt * 1000) : ""}</span>
                   <AssetItemTime>{s.createdAt != null ? formatTime(s.createdAt) : ""}</AssetItemTime>
                 </AssetItemMeta>
               </>
@@ -601,7 +601,7 @@ function PersonaPane() {
             {tiers.generating ? "Generating…" : "Generate persona"}
           </Button>
           {tiers.persona && (
-            <span className="text-muted-foreground text-xs">updated {new Date().toLocaleDateString()}</span>
+            <span className="text-muted-foreground text-xs">updated {fmtDateUS(new Date())}</span>
           )}
         </>
       }

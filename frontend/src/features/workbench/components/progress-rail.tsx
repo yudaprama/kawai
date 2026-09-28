@@ -70,13 +70,7 @@ function PlanSummaryCard({ summary }: { summary: PlanSummaryInfo | null }) {
  *  and the canvas mirror both mount these, so both panes act on the same
  *  supervisor actions. Discard arms on the first click ("Confirm discard",
  *  3s window) so a misclick can't throw away a planner round. */
-export function ReviewActions({ supervisor }: { supervisor: SupervisorController }) {
-  const [discardArmed, setDiscardArmed] = useState(false);
-  useEffect(() => {
-    if (!discardArmed) return;
-    const t = setTimeout(() => setDiscardArmed(false), 3000);
-    return () => clearTimeout(t);
-  }, [discardArmed]);
+export function ReviewActions({ supervisor, discardArmed, setDiscardArmed }: { supervisor: SupervisorController; discardArmed: boolean; setDiscardArmed: (v: boolean) => void }) {
   return (
     <div className="flex gap-2 pt-2">
       <Button className="flex-1" onClick={supervisor.approvePlan} size="sm">
@@ -217,7 +211,7 @@ export function StepTree({
                     )}
                     {(step.inputs?.length ?? 0) > 0 && (
                       <div
-                        className="text-muted-foreground/80 flex flex-wrap gap-x-2 font-mono text-[10px]"
+                        className="text-muted-foreground flex flex-wrap gap-x-2 font-mono text-[10px]"
                         title="Dataflow bindings from earlier steps"
                       >
                         {step.inputs?.map((b) => (
@@ -411,10 +405,14 @@ export function ProgressRail({
   onOpenReport,
   onNewGoal,
   unseeded,
+  discardArmed,
+  setDiscardArmed,
 }: {
   workbench: ReturnType<typeof useWorkbench>;
   onOpenReport: (id: string) => void;
   onNewGoal: () => void;
+  discardArmed: boolean;
+  setDiscardArmed: (v: boolean) => void;
   /** True while a run is in flight but planStarted hasn't seeded the
    *  supervisor yet — the steps/goal/planStartedAt still BELONG to the
    *  previous run and must never render as the new run's progress. */
@@ -544,7 +542,7 @@ export function ProgressRail({
               <div className="text-foreground/80 pl-4 font-mono text-xs" key={s.id}>
                 · {s.task || s.tool || s.id}
                 {(s.inputs?.length ?? 0) > 0 && (
-                  <div className="text-muted-foreground/80 pl-4 text-[10px]">
+                  <div className="text-muted-foreground pl-4 text-[10px]">
                     {s.inputs?.map((b) => (
                       <div key={b.arg}>
                         {b.arg} ← {b.fromStep}.{b.output}
@@ -554,7 +552,7 @@ export function ProgressRail({
                 )}
               </div>
             ))}
-          <ReviewActions supervisor={workbench.supervisor} />
+          <ReviewActions supervisor={workbench.supervisor} discardArmed={discardArmed} setDiscardArmed={setDiscardArmed} />
         </div>
       ) : (
         <div className="flex-1">
@@ -575,18 +573,18 @@ export function ProgressRail({
                   : `preparing context…${planningElapsed}`}
               </div>
               {supervisor.planning?.searching && supervisor.planning.tools.length > 0 && (
-                <div className="text-muted-foreground/80 pl-5.5 text-xs">
+                <div className="text-muted-foreground pl-5.5 text-xs">
                   found tools: {supervisor.planning.tools.slice(0, 3).join(", ")}
                   {supervisor.planning.tools.length > 3 ? "…" : ""}
                 </div>
               )}
               {supervisor.planning?.searching && (supervisor.planning.queries?.length ?? 0) > 0 && (
-                <div className="text-muted-foreground/80 pl-5.5 truncate text-xs italic">
+                <div className="text-muted-foreground pl-5.5 truncate text-xs italic">
                   searching: “{supervisor.planning.queries[supervisor.planning.queries.length - 1]}”
                 </div>
               )}
               {supervisor.planning?.activity && (
-                <div className="text-muted-foreground/80 pl-5.5 line-clamp-2 max-h-8 overflow-hidden text-xs italic">
+                <div className="text-muted-foreground pl-5.5 line-clamp-2 max-h-8 overflow-hidden text-xs italic">
                   ⌁ {supervisor.planning.activity}
                 </div>
               )}
@@ -595,7 +593,7 @@ export function ProgressRail({
                   supervisor.planning.context.memories > 0 ||
                   supervisor.planning.context.skills > 0 ||
                   supervisor.planning.context.files > 0) && (
-                  <div className="text-muted-foreground/80 pl-5.5 text-xs">
+                  <div className="text-muted-foreground pl-5.5 text-xs">
                     context:{" "}
                     {[
                       supervisor.planning.context.persona ? "persona" : null,
@@ -610,7 +608,7 @@ export function ProgressRail({
                   </div>
                 )}
               {supervisor.planning != null && currentRun != null && (
-                <div className="text-muted-foreground/80 pl-5.5 text-xs tabular-nums">
+                <div className="text-muted-foreground pl-5.5 text-xs tabular-nums">
                   {fmtDuration(currentRun.startedAt)} elapsed
                 </div>
               )}

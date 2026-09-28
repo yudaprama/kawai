@@ -1,5 +1,5 @@
 import { Streamdown } from "@/lib/streamdown";
-import { isRecord } from "./format";
+import { fmtNumberUS, isRecord } from "./format";
 import { SectionLabel } from "./atoms";
 
 // ── markdown ────────────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ export function PdfPagesView({ data }: { data: Record<string, unknown> }) {
           <summary className="text-foreground cursor-pointer text-sm font-medium">
             Page {page}
             <span className="text-muted-foreground ml-2 font-mono text-[11px]">
-              {text.length.toLocaleString()} characters
+              {fmtNumberUS(text.length)} characters
             </span>
           </summary>
           <div className="mt-3 border-t pt-3">

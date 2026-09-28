@@ -2,6 +2,8 @@ import { FileIcon } from "@/components/shared/file-icon";
 import { Icon } from "@/components/shared/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { isTabularExt } from "@/lib/extensions";
+import { fmtDateUS }
+from "@/features/workbench/components/tool-views/format";
 import type { KnowledgeFileInfo } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
 
@@ -91,7 +93,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
         <p className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
           <span>{formatBytes(file.bytes)}</span>
           <span aria-hidden>·</span>
-          <span>{new Date(file.createdAt * 1000).toLocaleDateString()}</span>
+          <span>{fmtDateUS(file.createdAt * 1000)}</span>
           <span aria-hidden>·</span>
           <KnowledgeStatusBadge file={file} />
         </p>

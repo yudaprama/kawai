@@ -24,7 +24,7 @@ import { formatBytes } from "@/lib/utils";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 import { FilePreview } from "@/components/shared/file-preview";
 import { knowledgeFileToPreview } from "@/lib/preview-file";
-import { fmtTimestamp } from "@/features/workbench/components/tool-views/format";
+import { fmtDateUS, fmtTimestamp } from "@/features/workbench/components/tool-views/format";
 
 /**
  * Wiki asset page — WikiSourcesPanel structure (Tea asset-management UI) over
@@ -175,7 +175,7 @@ export function WikiAssetPage({
                 </AssetItemBadges>
                 <AssetItemMeta>
                   <span>{formatBytes(f.bytes)}</span>
-                  <AssetItemTime>{new Date(f.createdAt * 1000).toLocaleDateString()}</AssetItemTime>
+                  <AssetItemTime>{fmtDateUS(f.createdAt * 1000)}</AssetItemTime>
                 </AssetItemMeta>
               </>
             )}

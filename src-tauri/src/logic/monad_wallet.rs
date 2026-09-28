@@ -16,6 +16,31 @@
 //! the `monad` feature is off, a guidance-error stub serves instead
 //! (codegraph/tts pattern).
 
+/// Errors that can occur during Monad wallet operations. Shared by both the
+/// real implementation and the guidance stub so caller signatures are stable
+/// across feature combinations.
+#[derive(Debug, thiserror::Error)]
+pub enum MonadWalletError {
+    #[error("no wallet for this device — create one first")]
+    NoWallet,
+    #[error("keychain error: {0}")]
+    Keychain(String),
+    #[error("stored wallet key is corrupt: {0}")]
+    CorruptKey(String),
+    #[error("crypto operation failed: {0}")]
+    Crypto(String),
+    #[error("invalid amount: {0}")]
+    InvalidAmount(String),
+    #[error("monad chain error: {0}")]
+    Chain(String),
+    #[error("wallet history unreadable: {0}")]
+    HistoryUnreadable(String),
+    #[error("wallet history corrupt: {0}")]
+    HistoryCorrupt(String),
+    #[error("Monad support is not enabled in this build (missing 'monad' feature)")]
+    Unsupported,
+}
+
 #[cfg(feature = "monad")]
 pub use imp::*;
 
@@ -24,6 +49,7 @@ pub use stub::*;
 
 #[cfg(feature = "monad")]
 mod imp {
+    use super::MonadWalletError;
     use crate::keychain;
 
     pub use kawai_monad::{ReceiptInfo, TxResult};
@@ -41,13 +67,14 @@ mod imp {
     }
 
     /// Load the stored key's address, if the user has created a wallet.
-    pub fn address() -> Result<Option<WalletAddress>, String> {
-        let secret = keychain::load_for(&WALLET_ACCOUNT)?;
+    pub fn address() -> Result<Option<WalletAddress>, MonadWalletError> {
+        let secret = keychain::load_for(&WALLET_ACCOUNT)
+            .map_err(|e| MonadWalletError::Keychain(e.to_string()))?;
         match secret {
             None => Ok(None),
             Some(secret) => {
                 let addr = kawai_monad::wallet_from_secret(decode_secret(&secret)?.as_slice())
-                    .map_err(|e| format!("stored wallet key is corrupt: {e}"))?;
+                    .map_err(|e| MonadWalletError::CorruptKey(format!("stored wallet key is corrupt: {e}")))?;
                 Ok(Some(WalletAddress { address: addr }))
             }
         }
@@ -55,43 +82,51 @@ mod imp {
 
     /// Create the user's hot wallet. Idempotent: returns the existing address
     /// if a wallet is already stored (a second key is never generated over one).
-    pub fn create() -> Result<WalletAddress, String> {
+    pub fn create() -> Result<WalletAddress, MonadWalletError> {
         if let Some(existing) = address()? {
             return Ok(existing);
         }
-        let wallet = kawai_monad::generate_wallet()?;
-        keychain::store_for(&WALLET_ACCOUNT, &wallet.secret_hex)?;
+        let wallet =
+            kawai_monad::generate_wallet().map_err(|e| MonadWalletError::Crypto(e.to_string()))?;
+        keychain::store_for(&WALLET_ACCOUNT, &wallet.secret_hex)
+            .map_err(|e| MonadWalletError::Keychain(e.to_string()))?;
         Ok(WalletAddress { address: wallet.address })
     }
 
     /// Sign a message (EIP-191 personal-sign) with the user's stored key.
     /// Returns the `0x` + 65-byte hex signature (SIWE-compatible).
-    pub async fn sign_message(message: &str) -> Result<String, String> {
-        let secret = keychain::load_for(&WALLET_ACCOUNT)?
-            .ok_or_else(|| "no wallet for this user — create one first".to_string())?;
-        kawai_monad::sign_message(decode_secret(&secret)?.as_slice(), message).await
+    pub async fn sign_message(message: &str) -> Result<String, MonadWalletError> {
+        let secret = keychain::load_for(&WALLET_ACCOUNT)
+            .map_err(|e| MonadWalletError::Keychain(e.to_string()))?
+            .ok_or(MonadWalletError::NoWallet)?;
+        kawai_monad::sign_message(decode_secret(&secret)?.as_slice(), message)
+            .await
+            .map_err(|e| MonadWalletError::Crypto(e.to_string()))
     }
 
     /// Permanently delete the stored key. The address (and any funds) becomes
     /// unrecoverable from this device unless the key was exported elsewhere.
-    pub fn delete() -> Result<(), String> {
-        keychain::clear_for(&WALLET_ACCOUNT)
+    pub fn delete() -> Result<(), MonadWalletError> {
+        keychain::clear_for(&WALLET_ACCOUNT).map_err(|e| MonadWalletError::Keychain(e.to_string()))
     }
 
     /// Load the stored secret bytes (error if no wallet exists).
-    fn load_secret() -> Result<Vec<u8>, String> {
-        let secret = keychain::load_for(&WALLET_ACCOUNT)?
-            .ok_or_else(|| "no wallet for this user — create one first".to_string())?;
+    fn load_secret() -> Result<Vec<u8>, MonadWalletError> {
+        let secret = keychain::load_for(&WALLET_ACCOUNT)
+            .map_err(|e| MonadWalletError::Keychain(e.to_string()))?
+            .ok_or(MonadWalletError::NoWallet)?;
         decode_secret(&secret)
     }
 
     /// Sign + broadcast a native MON transfer from the device hot wallet.
     /// `amount` is a decimal string (e.g. "1.5") — parsed in integer math
     /// inside the crate, never as float.
-    pub async fn transfer_native(to: &str, amount: &str) -> Result<kawai_monad::TxResult, String> {
-        let raw = kawai_monad::parse_units(amount, 18)?;
+    pub async fn transfer_native(to: &str, amount: &str) -> Result<kawai_monad::TxResult, MonadWalletError> {
+        let raw = kawai_monad::parse_units(amount, 18).map_err(MonadWalletError::InvalidAmount)?;
         let secret = load_secret()?;
-        let tx = kawai_monad::transfer(Some(crate::logic::monad_contracts::rpc()), &secret, to, None, raw).await?;
+        let tx = kawai_monad::transfer(Some(crate::logic::monad_contracts::rpc()), &secret, to, None, raw)
+            .await
+            .map_err(MonadWalletError::Chain)?;
         record_tx("send", "MON", to, amount, None, &tx.tx_hash);
         Ok(tx)
     }
@@ -103,23 +138,25 @@ mod imp {
         to: &str,
         amount: &str,
         decimals: u8,
-    ) -> Result<kawai_monad::TxResult, String> {
-        let raw = kawai_monad::parse_units(amount, decimals)?;
+    ) -> Result<kawai_monad::TxResult, MonadWalletError> {
+        let raw = kawai_monad::parse_units(amount, decimals).map_err(MonadWalletError::InvalidAmount)?;
         let secret = load_secret()?;
-        let tx = kawai_monad::transfer(Some(crate::logic::monad_contracts::rpc()), &secret, to, Some(token), raw).await?;
+        let tx = kawai_monad::transfer(Some(crate::logic::monad_contracts::rpc()), &secret, to, Some(token), raw)
+            .await
+            .map_err(MonadWalletError::Chain)?;
         record_tx("send", token_symbol(token), to, amount, Some(token), &tx.tx_hash);
         Ok(tx)
     }
 
     /// Stablecoin transfer (active-network address, 6 decimals; testnet USDT
     /// / mainnet USDC — the record symbol is resolved by `transfer_token`).
-    pub async fn transfer_usdt(to: &str, amount: &str) -> Result<kawai_monad::TxResult, String> {
+    pub async fn transfer_usdt(to: &str, amount: &str) -> Result<kawai_monad::TxResult, MonadWalletError> {
         transfer_token(crate::logic::monad_contracts::stablecoin(), to, amount, 6).await
     }
 
     /// Deposit USDT into the payment vault (approve + `deposit(uint256)`).
-    pub async fn deposit_to_vault(amount: &str) -> Result<kawai_monad::TxResult, String> {
-        let raw = kawai_monad::parse_units(amount, 6)?;
+    pub async fn deposit_to_vault(amount: &str) -> Result<kawai_monad::TxResult, MonadWalletError> {
+        let raw = kawai_monad::parse_units(amount, 6).map_err(MonadWalletError::InvalidAmount)?;
         let secret = load_secret()?;
         let tx = kawai_monad::vault_deposit(
             Some(crate::logic::monad_contracts::rpc()),
@@ -128,7 +165,8 @@ mod imp {
             crate::logic::monad_contracts::stablecoin(),
             raw,
         )
-        .await?;
+        .await
+        .map_err(MonadWalletError::Chain)?;
         record_tx(
             "deposit",
             crate::logic::monad_contracts::stablecoin_symbol(),
@@ -141,8 +179,10 @@ mod imp {
     }
 
     /// Receipt probe for a previously-broadcast tx (`Ok(None)` = pending).
-    pub async fn transaction_receipt(tx_hash: &str) -> Result<Option<kawai_monad::ReceiptInfo>, String> {
-        kawai_monad::transaction_receipt(Some(crate::logic::monad_contracts::rpc()), tx_hash).await
+    pub async fn transaction_receipt(tx_hash: &str) -> Result<Option<kawai_monad::ReceiptInfo>, MonadWalletError> {
+        kawai_monad::transaction_receipt(Some(crate::logic::monad_contracts::rpc()), tx_hash)
+            .await
+            .map_err(MonadWalletError::Chain)
     }
 
     // ── Device tx history — local JSON log of fund-moving ops ───────────
@@ -248,25 +288,28 @@ mod imp {
     }
 
     /// Read the device tx history (newest first). Missing file = empty.
-    pub fn history() -> Result<Vec<TxRecord>, String> {
+    pub fn history() -> Result<Vec<TxRecord>, MonadWalletError> {
         let path = history_path();
         let raw = match std::fs::read_to_string(&path) {
             Ok(s) => s,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(e) => return Err(format!("wallet history unreadable: {e}")),
+            Err(e) => return Err(MonadWalletError::HistoryUnreadable(e.to_string())),
         };
-        serde_json::from_str(&raw).map_err(|e| format!("wallet history corrupt: {e}"))
+        serde_json::from_str(&raw).map_err(|e| MonadWalletError::HistoryCorrupt(e.to_string()))
     }
 
-    fn decode_secret(hex: &str) -> Result<Vec<u8>, String> {
+    fn decode_secret(hex: &str) -> Result<Vec<u8>, MonadWalletError> {
         if hex.len() != 64 {
-            return Err(format!("stored key has wrong length: {}", hex.len()));
+            return Err(MonadWalletError::CorruptKey(format!(
+                "stored key has wrong length: {}",
+                hex.len()
+            )));
         }
         (0..64)
             .step_by(2)
             .map(|i| {
                 u8::from_str_radix(&hex[i..i + 2], 16)
-                    .map_err(|e| format!("stored key is not hex: {e}"))
+                    .map_err(|e| MonadWalletError::CorruptKey(format!("stored key is not hex: {e}")))
             })
             .collect()
     }
@@ -288,6 +331,7 @@ mod imp {
 
 #[cfg(not(feature = "monad"))]
 mod stub {
+    use super::MonadWalletError;
     use serde::Serialize;
 
     /// Response shape mirror (fields identical to the real `WalletAddress`).
@@ -297,19 +341,17 @@ mod stub {
         pub address: String,
     }
 
-    const MSG: &str = "Monad support is not enabled in this build (missing 'monad' feature).";
-
-    pub fn address() -> Result<Option<WalletAddress>, String> {
-        Err(MSG.into())
+    pub fn address() -> Result<Option<WalletAddress>, MonadWalletError> {
+        Err(MonadWalletError::Unsupported)
     }
-    pub fn create() -> Result<WalletAddress, String> {
-        Err(MSG.into())
+    pub fn create() -> Result<WalletAddress, MonadWalletError> {
+        Err(MonadWalletError::Unsupported)
     }
-    pub async fn sign_message(_message: &str) -> Result<String, String> {
-        Err(MSG.into())
+    pub async fn sign_message(_message: &str) -> Result<String, MonadWalletError> {
+        Err(MonadWalletError::Unsupported)
     }
-    pub fn delete() -> Result<(), String> {
-        Err(MSG.into())
+    pub fn delete() -> Result<(), MonadWalletError> {
+        Err(MonadWalletError::Unsupported)
     }
 
     /// Response shape mirror (fields identical to the real `TxResult`).
@@ -332,25 +374,25 @@ mod stub {
         pub block_number: u64,
     }
 
-    pub async fn transfer_native(_to: &str, _amount: &str) -> Result<TxResult, String> {
-        Err(MSG.into())
+    pub async fn transfer_native(_to: &str, _amount: &str) -> Result<TxResult, MonadWalletError> {
+        Err(MonadWalletError::Unsupported)
     }
     pub async fn transfer_token(
         _token: &str,
         _to: &str,
         _amount: &str,
         _decimals: u8,
-    ) -> Result<TxResult, String> {
-        Err(MSG.into())
+    ) -> Result<TxResult, MonadWalletError> {
+        Err(MonadWalletError::Unsupported)
     }
-    pub async fn transfer_usdt(_to: &str, _amount: &str) -> Result<TxResult, String> {
-        Err(MSG.into())
+    pub async fn transfer_usdt(_to: &str, _amount: &str) -> Result<TxResult, MonadWalletError> {
+        Err(MonadWalletError::Unsupported)
     }
-    pub async fn deposit_to_vault(_amount: &str) -> Result<TxResult, String> {
-        Err(MSG.into())
+    pub async fn deposit_to_vault(_amount: &str) -> Result<TxResult, MonadWalletError> {
+        Err(MonadWalletError::Unsupported)
     }
-    pub async fn transaction_receipt(_tx_hash: &str) -> Result<Option<ReceiptInfo>, String> {
-        Err(MSG.into())
+    pub async fn transaction_receipt(_tx_hash: &str) -> Result<Option<ReceiptInfo>, MonadWalletError> {
+        Err(MonadWalletError::Unsupported)
     }
 
     /// Response shape mirror (fields identical to the real `TxRecord`).
@@ -366,7 +408,7 @@ mod stub {
         pub created_at_ms: i64,
     }
 
-    pub fn history() -> Result<Vec<TxRecord>, String> {
-        Err(MSG.into())
+    pub fn history() -> Result<Vec<TxRecord>, MonadWalletError> {
+        Err(MonadWalletError::Unsupported)
     }
 }

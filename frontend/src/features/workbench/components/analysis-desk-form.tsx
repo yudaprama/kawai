@@ -54,7 +54,7 @@ export function AnalysisDeskForm({ disabled, onSubmit }: AnalysisDeskFormProps) 
           placeholder="TICKER (e.g. AAPL)"
           disabled={disabled}
           spellCheck={false}
-          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-0 flex-1 rounded-lg border px-3 py-2 font-mono text-sm uppercase outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-0 flex-1 flex-wrap rounded-lg border px-3 py-2 font-mono text-sm uppercase outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50"
         />
         <input
           value={tradeDate}
@@ -65,7 +65,7 @@ export function AnalysisDeskForm({ disabled, onSubmit }: AnalysisDeskFormProps) 
           placeholder="as of (YYYY-MM-DD, optional)"
           disabled={disabled}
           spellCheck={false}
-          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 w-56 rounded-lg border px-3 py-2 font-mono text-xs outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 w-56 min-w-[10rem] rounded-lg border px-3 py-2 font-mono text-xs outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50"
         />
         <button
           type="button"

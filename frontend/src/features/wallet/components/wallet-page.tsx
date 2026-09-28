@@ -20,10 +20,10 @@ import { HomeContent } from "./home-content";
 import { SendForm } from "./send-form";
 import { SmartDepositForm } from "./smart-deposit-form";
 
-type ModalType = "send" | "receive" | "swap" | "deposit" | "addToken" | null;
+type ModalType = "send" | "receive" | "swap" | "deposit" | "addAccount" | "createWallet" | "addToken" | null;
 
 export function WalletPage({ onBack }: { onBack: () => void }) {
-  const { address, hasWallet, status, available, loading, refresh, create } = useWallet();
+  const { address, hasWallet, status, available, loading, create } = useWallet();
   const { currentNetwork, backendConfig } = useNetwork();
   const {
     onChainBalance,

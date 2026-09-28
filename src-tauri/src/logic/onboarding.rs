@@ -439,14 +439,14 @@ pub fn onboarding_run_stream(
 /// markdown for the compressor. Token resolves from the kawai vault inside
 /// the client (`is_configured` was checked by the caller).
 async fn scrape_linkedin(profile_url: &str) -> Result<String, OnboardingError> {
-    let client = apify::Apify::new().map_err(OnboardingError::Apify)?;
+    let client = apify::Apify::new().map_err(|e| OnboardingError::Apify(e.to_string()))?;
     let items = client
         .run_sync(&apify::RunRequest::new(
             LINKEDIN_ACTOR,
             serde_json::json!({ "profileUrls": [profile_url] }),
         ))
         .await
-        .map_err(OnboardingError::Apify)?;
+        .map_err(|e| OnboardingError::Apify(e.to_string()))?;
     let Some(first) = items.first() else {
         return Ok(String::new());
     };

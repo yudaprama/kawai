@@ -595,7 +595,7 @@ async fn send_verification_email_handler(
     logic::email::send_verification_email(&req.to)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 // ── Local email+password auth (public; same ops as the Tauri commands) ──────
@@ -658,7 +658,7 @@ async fn auth_send_code_handler(
     logic::email::send_sign_up_code(&req.email)
         .await
         .map(|_| StatusCode::NO_CONTENT.into_response())
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
 }
 
 #[derive(Deserialize)]
@@ -805,8 +805,8 @@ async fn estimate_gas_handler(
 
 // ── Device-scoped Monad hot wallet (public; same ops as the Tauri commands) ──
 
-fn wallet_err(e: String) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, e)
+fn wallet_err<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
+    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }
 
 #[derive(Deserialize, Default)]
@@ -1693,7 +1693,7 @@ async fn codegraph_explore_handler(
     logic::codegraph::codegraph_explore(&user_id, req.query, req.project_path)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e))
+        .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e.to_string()))
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1707,7 +1707,7 @@ async fn codegraph_status_handler(
     logic::codegraph::codegraph_status(&user_id, req.project_path)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e))
+        .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e.to_string()))
 }
 async fn codegraph_is_available_handler() -> Json<bool> {
     Json(logic::codegraph::codegraph_is_available().await)
@@ -1725,7 +1725,7 @@ async fn codegraph_init_handler(
     logic::codegraph::codegraph_init(&user_id, req.project_path)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e))
+        .map_err(|e| (StatusCode::NOT_IMPLEMENTED, e.to_string()))
 }
 
 // ── GraphRAG ops (feature "graph") ────────────────────────────────────────

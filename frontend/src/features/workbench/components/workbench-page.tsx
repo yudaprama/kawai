@@ -238,6 +238,7 @@ export function WorkbenchPage({
   };
   // Chip click → draft dropped into the input for editing (not auto-submit).
   const [chipDraft, setChipDraft] = useState<{ text: string; nonce: number } | null>(null);
+  const [discardArmed, setDiscardArmed] = useState(false);
   // Landing goal template (single-select, null = none). Research-flavored
   // picks disclose the Analysis Desk panel; the rest reframe the composer's
   // placeholder. Reset whenever the landing is re-entered fresh.
@@ -624,6 +625,8 @@ export function WorkbenchPage({
             workbench={workbench}
             onNewGoal={goHome}
             onOpenReport={openReport}
+            discardArmed={discardArmed}
+            setDiscardArmed={setDiscardArmed}
           />
         </div>
         <div className="border-border/60 border-t p-4">
@@ -732,6 +735,8 @@ export function WorkbenchPage({
                       onAsk={workbench.askAboutResult}
                       run={shown}
                       sessionId={workbench.sessionId}
+                      discardArmed={discardArmed}
+                      setDiscardArmed={setDiscardArmed}
                     />
                   );
                 }
@@ -747,6 +752,8 @@ export function WorkbenchPage({
                     onPickDoc={(doc) => {
                       if (activeRunId != null) userPick(activeRunId, doc);
                     }}
+                    discardArmed={discardArmed}
+                    setDiscardArmed={setDiscardArmed}
                   />
                 );
               })()}

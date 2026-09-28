@@ -17,6 +17,8 @@ import {
   isDeliverableStep,
   type WorkbenchController,
 } from "@/features/workbench/hooks/use-workbench";
+import { fmtDateUS }
+from "@/features/workbench/components/tool-views/format";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { fmtDuration, ReviewActions, settledCount } from "./progress-rail";
@@ -396,6 +398,8 @@ export function PastRunCanvas({
   onPickDoc?: (doc: string) => void;
   /** Ask-about-result for this run's step reports (its own planKey). */
   onAsk?: (stepId: string, question: string, planKeyOverride?: string) => Promise<string | null>;
+  discardArmed: boolean;
+  setDiscardArmed: (v: boolean) => void;
 }) {
   const isDeliverable = doc === "final";
   /** Header label: the step's task (agentName), or the tool — never the raw
@@ -418,7 +422,7 @@ export function PastRunCanvas({
           </h3>
           <div className="text-muted-foreground mt-1 flex items-center gap-3 font-mono text-sm">
             <span>
-              {new Date(run.startedAt).toLocaleString()}
+              {fmtDateUS(run.startedAt)}
               {run.stepsTotal != null && ` · ${run.stepsDone ?? 0}/${run.stepsTotal} steps`}
             </span>
             {onBuildOn != null && run.status === "completed" && run.outputFull != null && run.planKey != null && (
@@ -575,7 +579,7 @@ function RunStatusStrip({
           {review != null ? `${review.steps.length} steps planned` : "Plan written"} — run it here, or discard to plan
           again.
         </p>
-        <ReviewActions supervisor={supervisor} />
+        <ReviewActions supervisor={supervisor} discardArmed={discardArmed} setDiscardArmed={setDiscardArmed} />
       </div>
     );
   }
@@ -600,7 +604,7 @@ function RunStatusStrip({
           {startedAt != null && <span className="text-muted-foreground">· {fmtDuration(startedAt)}</span>}
         </div>
         {planning?.activity && (
-          <p className="text-muted-foreground/80 line-clamp-2 pl-5.5 font-mono text-xs italic">⌁ {planning.activity}</p>
+          <p className="text-muted-foreground line-clamp-2 pl-5.5 font-mono text-xs italic">⌁ {planning.activity}</p>
         )}
       </div>
     );
@@ -682,6 +686,8 @@ export function DeliverableViewer({
   /** Switch the canvas document (deliverable ↔ step reports) — wired by the
    *  page to its canvas-view navigation; without it the reports grid hides. */
   onPickDoc?: (doc: string) => void;
+  discardArmed: boolean;
+  setDiscardArmed: (v: boolean) => void;
 }) {
   const { supervisor } = workbench;
   // Header goal: the run record knows the submitted goal from the moment of
@@ -924,7 +930,7 @@ export function RunHistory({
               <div className="min-w-0 flex-1 text-left">
                 <div className="text-foreground truncate text-sm">{r.goal}</div>
                 <div className="text-muted-foreground font-mono text-[11px]">
-                  {new Date(r.startedAt).toLocaleString()}
+                  {fmtDateUS(r.startedAt)}
                   {r.stepsTotal != null && ` · ${r.stepsDone ?? 0}/${r.stepsTotal} steps`}
                   {/* Failed rows fall back to the plan-level error — restored
                       failed records have an empty outputPreview. */}

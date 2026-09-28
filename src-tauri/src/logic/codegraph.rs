@@ -8,6 +8,17 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Errors that can occur during CodeGraph operations.
+#[derive(Debug, thiserror::Error)]
+pub enum CodegraphError {
+    #[error("codegraph feature not enabled (build with --features codegraph)")]
+    FeatureDisabled,
+    #[error("codegraph sidecar not available (tried `{binary}`): {detail}")]
+    SidecarUnavailable { binary: String, detail: String },
+    #[error("codegraph explore failed: {0}")]
+    ExploreFailed(String),
+}
+
 // ---- Types (always compiled so wrappers stay stable) ------------------------
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -50,7 +61,7 @@ fn codegraph_bin() -> String {
 // this local copy is kept for sidecar_status fallback and tests.
 #[cfg(feature = "codegraph")]
 #[allow(dead_code)]
-async fn sidecar_explore(query: &str, project_path: Option<&str>) -> Result<String, String> {
+async fn sidecar_explore(query: &str, project_path: Option<&str>) -> Result<String, CodegraphError> {
     use tokio::process::Command;
     let bin = codegraph_bin();
     let mut cmd = Command::new(&bin);
@@ -61,10 +72,11 @@ async fn sidecar_explore(query: &str, project_path: Option<&str>) -> Result<Stri
         }
     }
     // Ensure we don't hang forever on a large repo.
-    let output = cmd.output().await.map_err(|e| {
-        format!(
-            "codegraph sidecar not available (tried `{bin}`): {e} — install via `npm i -g @colbymchenry/codegraph` or `curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh`"
-        )
+    let output = cmd.output().await.map_err(|e| CodegraphError::SidecarUnavailable {
+        binary: bin.clone(),
+        detail: format!(
+            "{e} — install via `npm i -g @colbymchenry/codegraph` or `curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh`"
+        ),
     })?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
@@ -78,7 +90,10 @@ async fn sidecar_explore(query: &str, project_path: Option<&str>) -> Result<Stri
             stderr.into_owned()
         };
         if combined.trim().is_empty() {
-            Err(format!("codegraph explore failed: exit {}", output.status))
+            Err(CodegraphError::ExploreFailed(format!(
+                "exit {}",
+                output.status
+            )))
         } else {
             Ok(combined)
         }
@@ -86,7 +101,9 @@ async fn sidecar_explore(query: &str, project_path: Option<&str>) -> Result<Stri
 }
 
 #[cfg(feature = "codegraph")]
-async fn sidecar_status(project_path: Option<&str>) -> Result<(Option<String>, String), String> {
+async fn sidecar_status(
+    project_path: Option<&str>,
+) -> Result<(Option<String>, String), CodegraphError> {
     use tokio::process::Command;
     let bin = codegraph_bin();
     let mut cmd = Command::new(&bin);
@@ -97,9 +114,13 @@ async fn sidecar_status(project_path: Option<&str>) -> Result<(Option<String>, S
         }
     }
     cmd.arg("--json");
-    let output = cmd.output().await.map_err(|e| {
-        format!("codegraph sidecar not available (tried `{bin}`): {e}")
-    })?;
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| CodegraphError::SidecarUnavailable {
+            binary: bin,
+            detail: e.to_string(),
+        })?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let version = sidecar_version().await;
     Ok((version, stdout))
@@ -129,7 +150,7 @@ pub async fn codegraph_explore(
     _user_id: &str,
     query: String,
     project_path: Option<String>,
-) -> Result<CodegraphExploreResult, String> {
+) -> Result<CodegraphExploreResult, CodegraphError> {
     #[cfg(feature = "codegraph")]
     {
         // Shared cache path — same implementation as the AgentTool.
@@ -151,7 +172,7 @@ pub async fn codegraph_explore(
     #[cfg(not(feature = "codegraph"))]
     {
         let _ = (query, project_path, _user_id);
-        Err("codegraph feature not enabled (build with --features codegraph)".to_string())
+        Err(CodegraphError::FeatureDisabled)
     }
 }
 
@@ -159,7 +180,7 @@ pub async fn codegraph_explore(
 pub async fn codegraph_status(
     _user_id: &str,
     project_path: Option<String>,
-) -> Result<CodegraphStatusResult, String> {
+) -> Result<CodegraphStatusResult, CodegraphError> {
     #[cfg(feature = "codegraph")]
     {
         let bin = codegraph_bin();
@@ -189,14 +210,14 @@ pub async fn codegraph_status(
                 available: true,
                 backend: "sidecar".to_string(),
                 version: sidecar_version().await,
-                message: e,
+                message: e.to_string(),
             }),
         }
     }
     #[cfg(not(feature = "codegraph"))]
     {
         let _ = (project_path, _user_id);
-        Err("codegraph feature not enabled (build with --features codegraph)".to_string())
+        Err(CodegraphError::FeatureDisabled)
     }
 }
 
@@ -218,7 +239,7 @@ pub async fn codegraph_is_available() -> bool {
 pub async fn codegraph_init(
     _user_id: &str,
     project_path: Option<String>,
-) -> Result<CodegraphStatusResult, String> {
+) -> Result<CodegraphStatusResult, CodegraphError> {
     #[cfg(feature = "codegraph")]
     {
         use tokio::process::Command;
@@ -232,8 +253,9 @@ pub async fn codegraph_init(
         }
         // `codegraph init` can take minutes on large repos — give it a generous timeout via the command itself.
         // We just await the full output; the frontend shows a spinner.
-        let output = cmd.output().await.map_err(|e| {
-            format!("codegraph not available (tried `{bin}`): {e} — install via npm i -g @colbymchenry/codegraph")
+        let output = cmd.output().await.map_err(|e| CodegraphError::SidecarUnavailable {
+            binary: bin.clone(),
+            detail: format!("{e} — install via npm i -g @colbymchenry/codegraph"),
         })?;
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
@@ -269,6 +291,6 @@ pub async fn codegraph_init(
     #[cfg(not(feature = "codegraph"))]
     {
         let _ = (project_path, _user_id);
-        Err("codegraph feature not enabled (build with --features codegraph)".to_string())
+        Err(CodegraphError::FeatureDisabled)
     }
 }

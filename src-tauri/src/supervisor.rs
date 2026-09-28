@@ -1092,8 +1092,31 @@ const CONFIRMATION_PROMPT_RULES: &str = "- Side-effect tools MUST set \"requires
   \n  tool's translator may only vary that binary's arguments, under a static\
   \n  policy that blocks inline code and second-program execution.";
 
-pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai_router::TaskPlan, String> {
+pub fn parse_supervisor_plan(raw: &str, registry: &ToolRegistry) -> Result<kawai_router::TaskPlan, SupervisorError> {
     parse_supervisor_plan_scoped(raw, registry, &[])
+}
+
+/// Errors surfaced by the supervisor's plan/registry/step-read paths.
+/// Transports render via `Display`; the plan-repair loop matches on the
+/// parse variants to decide corrective rounds.
+#[derive(Debug, thiserror::Error)]
+pub enum SupervisorError {
+    /// Planner/reviser output could not be parsed into a valid plan
+    /// (JSON extraction, schema validation, dataflow binding).
+    #[error("{0}")]
+    PlanParse(String),
+    /// A step names a tool forbidden in this planning phase.
+    #[error("step \"{step}\" uses forbidden tool \"{tool}\" in this planning phase")]
+    ForbiddenTool { step: String, tool: String },
+    /// No persisted output exists for the requested step.
+    #[error("no persisted output for step '{0}'")]
+    StepNotFound(String),
+    /// Persistence layer failure while reading step results.
+    #[error("supervisor step results read failed: {0}")]
+    Db(#[from] kawai_db::DbError),
+    /// No domain builder produced a toolset for the requested agent.
+    #[error("no supervisor toolset available for agent '{0}'")]
+    NoToolset(String),
 }
 
 /// Parse + validate a plan, additionally rejecting steps whose tool is in
@@ -1145,14 +1168,16 @@ pub fn parse_supervisor_plan_scoped(
     raw: &str,
     registry: &ToolRegistry,
     forbidden: &[&str],
-) -> Result<kawai_router::TaskPlan, String> {
-    let slice = kawai_router::extract_json_slice(raw).map_err(|e| e.to_string())?;
+) -> Result<kawai_router::TaskPlan, SupervisorError> {
+    let slice = kawai_router::extract_json_slice(raw)
+        .map_err(|e| SupervisorError::PlanParse(e.to_string()))?;
     let mut plan: kawai_router::TaskPlan = serde_json::from_str(slice)
-        .map_err(|e| format!("invalid plan JSON: {e}"))?;
+        .map_err(|e| SupervisorError::PlanParse(format!("invalid plan JSON: {e}")))?;
     // Explicit dataflow bindings ("inputs"): shape + target checks, and each
     // binding implies its dependency — the planner can never desynchronize
     // dependsOn from the dataflow it declared.
-    kawai_router::bind_dataflow(&mut plan).map_err(|e| e.to_string())?;
+    kawai_router::bind_dataflow(&mut plan)
+        .map_err(|e| SupervisorError::PlanParse(e.to_string()))?;
     audit_dataflow(&plan);
     // Clamp an LLM-written summary to the UI contract, then backfill the
     // deterministic fallback when the planner omitted it — the summary is
@@ -1201,15 +1226,17 @@ pub fn parse_supervisor_plan_scoped(
             .unwrap_or(step.agent_id.as_str())
             .to_ascii_lowercase();
         if forbidden.iter().any(|f| tool == *f) {
-            return Err(format!(
-                "step \"{}\" uses forbidden tool \"{tool}\" in this planning phase",
-                step.id
-            ));
+            return Err(SupervisorError::ForbiddenTool {
+                step: step.id.clone(),
+                tool: tool.clone(),
+            });
         }
     }
     registry.enforce_confirmation_policy(&mut plan);
     enforce_cli_run_confirmation_tiering(&mut plan);
-    registry.validate_plan(&plan).map_err(|e| e.to_string())?;
+    registry
+        .validate_plan(&plan)
+        .map_err(|e| SupervisorError::PlanParse(e.to_string()))?;
     Ok(plan)
 }
 

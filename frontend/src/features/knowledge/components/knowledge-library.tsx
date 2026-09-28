@@ -15,6 +15,8 @@ import { Icon } from "@/components/shared/icon";
 import { KnowledgeStatusBadge } from "@/features/knowledge/components/knowledge-file-row";
 import { KnowledgeFileSummary } from "@/features/knowledge/components/knowledge-file-summary";
 import { Button } from "@/components/ui/button";
+import { fmtDateUS }
+from "@/features/workbench/components/tool-views/format";
 import type { KnowledgeFileInfo } from "@/lib/api";
 import { isTabularExt } from "@/lib/extensions";
 import { knowledgeFileToPreview } from "@/lib/preview-file";
@@ -95,7 +97,7 @@ export function KnowledgeLibrary({
               </AssetItemBadges>
               <AssetItemMeta>
                 <span>{formatBytes(file.bytes)}</span>
-                <AssetItemTime>{new Date(file.createdAt * 1000).toLocaleDateString()}</AssetItemTime>
+                <AssetItemTime>{fmtDateUS(file.createdAt * 1000)}</AssetItemTime>
               </AssetItemMeta>
             </>
           )}
@@ -135,7 +137,7 @@ function LibraryDetail({
         <AssetItemBadges>
           <KnowledgeStatusBadge file={file} />
           <AssetBadge>{formatBytes(file.bytes)}</AssetBadge>
-          <AssetBadge>{new Date(file.createdAt * 1000).toLocaleString()}</AssetBadge>
+          <AssetBadge>{fmtDateUS(file.createdAt * 1000)}</AssetBadge>
         </AssetItemBadges>
         {file.status === "failed" && file.error && (
           <p className="text-destructive mt-2 text-xs" title={file.error}>
