@@ -4,18 +4,25 @@ Status: **SHIPPED** (this file documents the current architecture).
 
 ## Product contract
 
-One YouTube link in → five-section summary out, in the transcript's language:
+One YouTube link in → five-section summary out. Language: the device locale
+when it maps to the supported menu (`resolve_user_language` in
+`supervisor.rs` — same names as the deliverable viewer's translate picker),
+otherwise the transcript's language:
 
 ```
 1. TL;DR
 2. Key points
 3. Timestamps      (chronological `mm:ss — what happens`)
-4. Quotes          (verbatim, with timestamps)
+4. Quotes          (verbatim, with timestamps — ALWAYS in their original language)
 5. Action items
 ```
 
 No planning round, no review gate, no configuration. The section ORDER is
-fixed; only the headings' language follows the content. Entry: Workbench
+fixed. With a locale match, every report — map notes, composed summary, and
+the final deliverable, headings included — is written in the user's
+language; `language` rides every step's arguments from both wrappers
+(body field, `Accept-Language` fallback on web). English/unmapped locales
+keep the transcript-language behavior unchanged. Entry: Workbench
 landing → template chip `YouTube Summary` → URL form (progressive
 disclosure, same mechanism as the Analysis Desk panel).
 

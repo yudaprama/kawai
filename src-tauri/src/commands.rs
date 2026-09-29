@@ -1743,6 +1743,9 @@ pub async fn run_stock_research(
     trade_date: Option<String>,
     analysts: Option<Vec<String>>,
     domain: Option<String>,
+    /// Raw device locale tag (e.g. "id-ID") — resolved into the pipelines'
+    /// output language at this edge (see `supervisor::resolve_user_language`).
+    language: Option<String>,
     stream_id: String,
     on_event: Channel<crate::supervisor::SupervisorEvent>,
     registry: State<'_, StreamRegistry>,
@@ -1765,16 +1768,20 @@ pub async fn run_stock_research(
     let analyst_refs: Vec<String> = analysts.unwrap_or_default();
     let analyst_slices: Vec<&str> = analyst_refs.iter().map(String::as_str).collect();
     let domain_str = domain.unwrap_or_else(|| "stock".into());
+    let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
+        .unwrap_or_default();
     let plan = kawai_desk::build_desk_plan(
         &ticker,
         trade_date.as_deref().unwrap_or(""),
         &analyst_slices,
         &domain_str,
+        &language,
     );
     let user_goal = kawai_desk::desk_user_goal(
         &ticker,
         trade_date.as_deref().unwrap_or(""),
         &domain_str,
+        &language,
     );
     let tool_registry = crate::supervisor::build_desk_registry(
         &user_id,
@@ -1811,6 +1818,9 @@ pub async fn run_stock_research(
 pub async fn run_youtube_summary(
     session_id: i64,
     url: String,
+    /// Raw device locale tag (e.g. "id-ID") — resolved into the pipelines'
+    /// output language at this edge (see `supervisor::resolve_user_language`).
+    language: Option<String>,
     stream_id: String,
     on_event: Channel<crate::supervisor::SupervisorEvent>,
     registry: State<'_, StreamRegistry>,
@@ -1831,8 +1841,10 @@ pub async fn run_youtube_summary(
     }
 
     let video = kawai_youtube::fetch_video(&url).await?;
-    let plan = kawai_youtube::build_youtube_plan(&video)?;
-    let user_goal = kawai_youtube::youtube_user_goal(&video);
+    let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
+        .unwrap_or_default();
+    let plan = kawai_youtube::build_youtube_plan(&video, &language)?;
+    let user_goal = kawai_youtube::youtube_user_goal(&video, &language);
     let tool_registry = crate::supervisor::build_youtube_registry(
         &user_id,
         session_id,

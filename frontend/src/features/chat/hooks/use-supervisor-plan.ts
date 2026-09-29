@@ -494,6 +494,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           tradeDate: options.tradeDate ?? "",
           analysts: options.analysts ?? [],
           domain: options.domain ?? "stock",
+          // Device locale → pipeline output language (resolved server-side).
+          language: navigator.language,
         },
         sessionId,
         "run_stock_research",
@@ -514,6 +516,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         {
           sessionId,
           url: options.url,
+          // Device locale → pipeline output language (resolved server-side).
+          language: navigator.language,
         },
         sessionId,
         "run_youtube_summary",

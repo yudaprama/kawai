@@ -2437,6 +2437,8 @@ struct RunStockResearchRequest {
     analysts: Option<Vec<String>>,
     /// Asset class chosen by the user: "stock" (default) | "crypto".
     domain: Option<String>,
+    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
+    language: Option<String>,
     stream_id: String,
 }
 
@@ -2459,16 +2461,26 @@ async fn run_stock_research_handler(
     let analysts = req.analysts.unwrap_or_default();
     let analyst_slices: Vec<&str> = analysts.iter().map(String::as_str).collect();
     let domain_str = req.domain.unwrap_or_else(|| "stock".into());
+    // Output language: explicit body field first, then Accept-Language.
+    let language = crate::supervisor::resolve_user_language(
+        req.language.as_deref(),
+        headers
+            .get(header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok()),
+    )
+    .unwrap_or_default();
     let plan = kawai_desk::build_desk_plan(
         &req.ticker,
         req.trade_date.as_deref().unwrap_or(""),
         &analyst_slices,
         &domain_str,
+        &language,
     );
     let user_goal = kawai_desk::desk_user_goal(
         &req.ticker,
         req.trade_date.as_deref().unwrap_or(""),
         &domain_str,
+        &language,
     );
     let tool_registry = crate::supervisor::build_desk_registry(
         &user_id,
@@ -2502,6 +2514,8 @@ async fn run_stock_research_handler(
 struct RunYoutubeSummaryRequest {
     session_id: i64,
     url: String,
+    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
+    language: Option<String>,
     stream_id: String,
 }
 
@@ -2525,9 +2539,17 @@ async fn run_youtube_summary_handler(
     let video = kawai_youtube::fetch_video(&req.url)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let plan = kawai_youtube::build_youtube_plan(&video)
+    // Output language: explicit body field first, then Accept-Language.
+    let language = crate::supervisor::resolve_user_language(
+        req.language.as_deref(),
+        headers
+            .get(header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok()),
+    )
+    .unwrap_or_default();
+    let plan = kawai_youtube::build_youtube_plan(&video, &language)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let user_goal = kawai_youtube::youtube_user_goal(&video);
+    let user_goal = kawai_youtube::youtube_user_goal(&video, &language);
     let tool_registry = crate::supervisor::build_youtube_registry(
         &user_id,
         req.session_id,

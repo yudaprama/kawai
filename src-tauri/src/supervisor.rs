@@ -1842,6 +1842,57 @@ pub fn plan_key(plan: &kawai_router::TaskPlan) -> String {
     hex::encode(hash)
 }
 
+/// Resolve the output language for the FIXED pipelines (Analysis Desk,
+/// YouTube Summary) from the transport edge — same edge-resolution invariant
+/// as identity (AGENTS.md #8): the frontend never decides prompt semantics,
+/// it only reports the device locale.
+///
+/// `explicit` is the raw `navigator.language` tag the client sent (e.g.
+/// "id-ID"); `accept_language` is the raw `Accept-Language` header value
+/// (web fallback, e.g. "id-ID,id;q=0.9,en;q=0.8"). The primary subtag maps
+/// to a display name from the SAME fixed menu the deliverable viewer's
+/// translate picker carries (`TRANSLATE_LANGUAGES`), so a later translate of
+/// the deliverable names the language identically.
+///
+/// English and unknown subtags return `None` = the pipelines' default
+/// content-language behavior, byte-identical to pre-language runs. `zh`
+/// maps to Simplified Chinese (the menu carries no Traditional variant).
+pub fn resolve_user_language(
+    explicit: Option<&str>,
+    accept_language: Option<&str>,
+) -> Option<String> {
+    let tag = explicit
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            accept_language
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                // First entry wins; strip any q-weight ("id;q=0.9").
+                .and_then(|al| al.split(',').next())
+                .and_then(|tag| tag.split(';').next())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+        })?;
+    let subtag = tag.split(['-', '_']).next()?.to_ascii_lowercase();
+    let name = match subtag.as_str() {
+        "en" => return None,
+        "id" => "Bahasa Indonesia",
+        "ja" => "Japanese",
+        "ko" => "Korean",
+        "zh" => "Simplified Chinese",
+        "es" => "Spanish",
+        "fr" => "French",
+        "de" => "German",
+        "pt" => "Portuguese",
+        "ru" => "Russian",
+        "ar" => "Arabic",
+        "hi" => "Hindi",
+        _ => return None,
+    };
+    Some(name.to_string())
+}
+
 /// Full body of one persisted step result — the read path the wire preview
 /// (stepCompleted's 2000-char cap) deliberately does not serve. The latest
 /// row wins: upserts are keyed on (session, plan_key, tool, args_key), so a
@@ -4029,6 +4080,41 @@ pub fn execute_plan_stream_with_cancel(
         if let Ok(mut pending) = pending.lock() {
             pending.retain(|key, _| !key.starts_with(&prefix));
         }
+    }
+}
+
+/// Pure mapping tests — no feature gate, they must hold under every build.
+#[cfg(test)]
+mod user_language_tests {
+    use super::resolve_user_language as r;
+
+    #[test]
+    fn maps_primary_subtag_to_menu_names() {
+        assert_eq!(r(Some("id-ID"), None).as_deref(), Some("Bahasa Indonesia"));
+        assert_eq!(r(Some("ja"), None).as_deref(), Some("Japanese"));
+        assert_eq!(r(Some("pt-BR"), None).as_deref(), Some("Portuguese"));
+    }
+
+    #[test]
+    fn english_and_unknown_are_none() {
+        assert_eq!(r(Some("en-US"), None), None);
+        assert_eq!(r(Some("en"), None), None);
+        assert_eq!(r(Some("sv-SE"), None), None);
+        assert_eq!(r(Some(""), None), None);
+        assert_eq!(r(None, None), None);
+    }
+
+    #[test]
+    fn accept_language_fallback_takes_first_entry_without_q_weight() {
+        assert_eq!(
+            r(None, Some("id-ID,id;q=0.9,en;q=0.8")).as_deref(),
+            Some("Bahasa Indonesia")
+        );
+        // Explicit body field wins over the header.
+        assert_eq!(
+            r(Some("ja-JP"), Some("id-ID")).as_deref(),
+            Some("Japanese")
+        );
     }
 }
 
