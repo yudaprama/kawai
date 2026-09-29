@@ -10,7 +10,7 @@ import { logInfo } from "@/lib/logger";
 import { overlayOwnsEscape } from "@/lib/esc";
 import { toast } from "sonner";
 
-import { AnalysisDeskForm } from "./analysis-desk-form";
+import { StockResearchForm } from "./analysis-desk-form";
 import { DeliverableViewer, EMPTY_RUNS_HINT, PastRunCanvas, RunHistory, RunSwitcher } from "./deliverable-viewer";
 import type { CanvasView } from "./deliverable-viewer";
 import { ComposerQuoteBadge, FollowUpChips } from "./follow-up-composer";
@@ -45,14 +45,6 @@ function SessionsButton({ onOpen, iconOnly = false }: { onOpen: () => void; icon
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
-/** First-run quick starts — dropped into the composer as an editable draft
- *  (never auto-submitted). Shown on the landing only while the session has
- *  no runs yet. */
-const EXAMPLE_GOALS = [
-  "Research the current state of solid-state batteries and write a brief",
-  "Analyze BTC's price action this month and chart it",
-  "Draft a one-page project proposal for a customer portal",
-];
 
 export interface WorkbenchPageProps {
   /** Knowledge integration for the composer's @ menu + image drop. */
@@ -240,8 +232,7 @@ export function WorkbenchPage({
   const [chipDraft, setChipDraft] = useState<{ text: string; nonce: number } | null>(null);
   const [discardArmed, setDiscardArmed] = useState(false);
   // Landing goal template (single-select, null = none). Research-flavored
-  // picks disclose the Analysis Desk panel; the rest reframe the composer's
-  // placeholder. Reset whenever the landing is re-entered fresh.
+  // picks disclose the Stock Research panel; the rest reframe the composer's
   const [template, setTemplate] = useState<GoalTemplateId | null>(null);
   // Mobile progress drawer (below lg the sidebar IS a drawer — opened from
   // the run view's top bar, auto-opened when the plan needs the user).
@@ -341,12 +332,17 @@ export function WorkbenchPage({
     });
   };
 
-  /** Analysis Desk submit (PLAN-analysis-desk): the FIXED stock-research
+  /** Stock Research submit (PLAN-stock-research): the FIXED stock-research
    *  pipeline for one ticker. Same canvas handoff as a goal submit — the
    *  desk streams the same SupervisorEvent lifecycle, so the rail, deliverable
    *  viewer, and AGENT REPORTS render it unchanged. */
   const submitDesk = useCallback(
-    (ticker: string, tradeDate: string | undefined, analysts: string[] | undefined) => {
+    (
+      ticker: string,
+      tradeDate: string | undefined,
+      analysts: string[] | undefined,
+      domain: "stock" | "crypto" | "commodity" | "forex",
+    ) => {
       if (supervisor.status === "reviewing") {
         workbench.setSessionError("A plan is awaiting your review — run or discard it first");
         return;
@@ -354,15 +350,17 @@ export function WorkbenchPage({
       if (startingRef.current) return;
       startingRef.current = true;
       const baseline = supervisor.planStartedAt;
-      void workbench.runDesk(ticker, tradeDate, analysts, { onStart: () => enterRunView(baseline) }).then(
-        () => {
-          startingRef.current = false;
-        },
-        () => {
-          // Gates already toasted + sessionError'd (shown on the landing).
-          startingRef.current = false;
-        },
-      );
+      void workbench
+        .runDesk(ticker, tradeDate, analysts, domain, { onStart: () => enterRunView(baseline) })
+        .then(
+          () => {
+            startingRef.current = false;
+          },
+          () => {
+            // Gates already toasted + sessionError'd (shown on the landing).
+            startingRef.current = false;
+          },
+        );
     },
     [supervisor.status, supervisor.planStartedAt, workbench.runDesk, workbench.setSessionError, enterRunView],
   );
@@ -534,28 +532,22 @@ export function WorkbenchPage({
                 {workbench.sessionError}
               </p>
             )}
-            {workbench.runs.length === 0 && (
-              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                <span className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">Try</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {EXAMPLE_GOALS.map((g) => (
-                    <button
-                      className="border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground inline-flex items-center rounded-full border px-3 py-1 font-mono text-[11px] transition-colors"
-                      key={g}
-                      onClick={() => setChipDraft({ text: g, nonce: Date.now() })}
-                      title="Drop this goal into the composer to edit"
-                      type="button"
-                    >
-                      {g}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
             <GoalTemplates value={template} disabled={composerStatus === "submitted"} onChange={setTemplate} />
             {templateOpensDesk(template) && (
               <div className="mt-3">
-                <AnalysisDeskForm disabled={composerStatus === "submitted"} onSubmit={submitDesk} />
+                <StockResearchForm
+                  disabled={composerStatus === "submitted"}
+                  domain={
+                    template === "crypto"
+                      ? "crypto"
+                      : template === "commodity"
+                        ? "commodity"
+                        : template === "forex"
+                          ? "forex"
+                          : "stock"
+                  }
+                  onSubmit={submitDesk}
+                />
               </div>
             )}
             {templateOpensYoutube(template) && (

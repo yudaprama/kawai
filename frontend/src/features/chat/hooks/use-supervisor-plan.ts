@@ -34,6 +34,11 @@ interface RunDeskOptions {
   tradeDate?: string;
   /** Selected analysts (market|social|news|fundamentals); empty = all 4. */
   analysts?: string[];
+  /** Asset class chosen by the user via the landing template:
+   *  "stock" (default) | "crypto" | "commodity" | "forex". Drives the
+   *  backend's data sources and prompt variants — never guessed from the
+   *  ticker. */
+  domain?: "stock" | "crypto" | "commodity" | "forex";
 }
 
 interface RunYoutubeOptions {
@@ -268,7 +273,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   }, []);
 
   /** Shared stream body for EVERY supervisor client: the planner-driven
-   *  execute_supervisor_plan, the Analysis Desk's run_analysis_desk, and
+   *  execute_supervisor_plan, the Stock Research's run_stock_research, and
    *  the YouTube Summary's run_youtube_summary.
    *  Same SupervisorEvent pipeline, persistence, and terminal handling. */
   const startStream = useCallback(
@@ -474,7 +479,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [startStream],
   );
 
-  /** Analysis Desk (PLAN-analysis-desk): execute the FIXED stock-research
+  /** Stock Research (PLAN-stock-research): execute the FIXED stock-research
    *  pipeline — no planner, no review gate. Streams the same SupervisorEvent
    *  lifecycle as runPlan, so the Workbench rail/deliverable/reports render
    *  it unchanged. The caller has already persisted the user message and
@@ -488,9 +493,10 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           ticker: options.ticker,
           tradeDate: options.tradeDate ?? "",
           analysts: options.analysts ?? [],
+          domain: options.domain ?? "stock",
         },
         sessionId,
-        "run_analysis_desk",
+        "run_stock_research",
       );
     },
     [startStream],

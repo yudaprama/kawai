@@ -721,7 +721,7 @@ export function useWorkbench() {
     [attachedFiles, sessionId, supervisor, canFollowUp, quoteTarget, runs],
   );
 
-  /** Analysis Desk (PLAN-analysis-desk): run the FIXED stock-research
+  /** Stock Research (PLAN-stock-research): run the FIXED stock-research
    *  pipeline for one ticker. Same client mechanics as `run()` — balance
    *  gate (fail-closed), lazy session — but no planner, no review gate, no
    *  quote: the desk builds its own plan server-side and streams the same
@@ -731,6 +731,7 @@ export function useWorkbench() {
       ticker: string,
       tradeDate?: string,
       analysts?: string[],
+      domain?: "stock" | "crypto" | "commodity" | "forex",
       opts?: {
         /** Same contract as `run()`'s — fires once every gate passed, right
          *  before the run record appends; the page navigates from here. */
@@ -739,6 +740,7 @@ export function useWorkbench() {
     ) => {
       const sym = ticker.trim().toUpperCase();
       if (!sym) return;
+      const assetClass = domain ?? "stock";
       // A fresh attempt clears the previous gate failure.
       setSessionError(null);
       // Fase 0a tokens pre-check — the same fail-closed UX gate as run();
@@ -758,12 +760,12 @@ export function useWorkbench() {
         emitOpenTopup();
         throw new Error("Token habis — isi ulang lewat Top Up");
       }
-      // Sessions are lazy — created on the first desk run, same as run().
+      // Sessions are lazy — created on the first research run, same as run().
       let sid = sessionId;
       if (sid == null) {
         try {
           const s = await call<{ id: number }>("create_chat_session", {
-            title: `Desk: ${sym}${tradeDate ? ` · ${tradeDate}` : ""}`.slice(0, 80),
+            title: `${assetClass === "crypto" ? "Crypto" : assetClass === "commodity" ? "Commodity" : assetClass === "forex" ? "Forex" : "Stock"} Research: ${sym}${tradeDate ? ` · ${tradeDate}` : ""}`.slice(0, 80),
           });
           sid = s.id;
           setSessionId(s.id);
@@ -779,7 +781,7 @@ export function useWorkbench() {
       setQuoteTarget(null);
       setQuotedLastRun(false);
       setDeck(null); // a new run — its own deck (if any) replaces the hero
-      const goal = `Analyze ${sym}${tradeDate ? ` as of ${tradeDate}` : ""} — full research desk pipeline`;
+      const goal = `Analyze ${sym}${tradeDate ? ` as of ${tradeDate}` : ""} — full ${assetClass === "crypto" ? "crypto" : assetClass === "commodity" ? "commodity" : assetClass === "forex" ? "forex" : "stock"}-research pipeline`;
       setRuns((prev) => [
         ...prev,
         {
@@ -791,7 +793,7 @@ export function useWorkbench() {
       ]);
       opts?.onStart?.();
       void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runDesk({ ticker: sym, tradeDate, analysts }, sid);
+      supervisor.runDesk({ ticker: sym, tradeDate, analysts, domain: assetClass }, sid);
       void refreshTokenBalance();
     },
     [sessionId, supervisor],

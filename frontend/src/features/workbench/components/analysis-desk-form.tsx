@@ -10,21 +10,59 @@ const ANALYSTS: { id: string; label: string; hint: string }[] = [
   { id: "fundamentals", label: "Fundamentals", hint: "financials, earnings, insiders" },
 ];
 
-export interface AnalysisDeskFormProps {
+/** Per-domain copy + examples. `domain` is the USER's asset-class choice
+ *  (mirrors the backend's DOMAINS) — it routes the pipeline's data sources
+ *  and prompt variants; it is never guessed from the ticker. */
+export type DeskDomain = "stock" | "crypto" | "commodity" | "forex";
+
+const DOMAIN_COPY: Record<DeskDomain, { title: string; tickerPlaceholder: string; button: string }> = {
+  stock: {
+    title: "Stock Research",
+    tickerPlaceholder: "TICKER (e.g. AAPL)",
+    button: "Run research",
+  },
+  crypto: {
+    title: "Crypto Research",
+    tickerPlaceholder: "SYMBOL (e.g. BTC)",
+    button: "Run research",
+  },
+  commodity: {
+    title: "Commodity Research",
+    tickerPlaceholder: "COMMODITY (e.g. XAU, WTI)",
+    button: "Run research",
+  },
+  forex: {
+    title: "Forex Research",
+    tickerPlaceholder: "PAIR (e.g. EUR, EURUSD)",
+    button: "Run research",
+  },
+};
+
+export interface StockResearchFormProps {
   disabled?: boolean;
-  onSubmit: (ticker: string, tradeDate: string | undefined, analysts: string[] | undefined) => void;
+  /** Asset class for this desk run — set by the active landing template
+   *  (Stock / Crypto / Commodity Research). */
+  domain?: DeskDomain;
+  onSubmit: (
+    ticker: string,
+    tradeDate: string | undefined,
+    analysts: string[] | undefined,
+    domain: DeskDomain,
+  ) => void;
 }
 
-/** Analysis Desk (PLAN-analysis-desk) entry form on the Workbench landing.
- *  A ticker, an optional as-of date, and the analyst team — submit runs the
- *  FIXED research pipeline (analysts → debate → research manager → trader →
- *  risk debate → PM) through the supervisor scheduler. No planning round:
- *  the pipeline shape is the product. */
-export function AnalysisDeskForm({ disabled, onSubmit }: AnalysisDeskFormProps) {
+/** Stock/Crypto Research (PLAN-stock-research) entry form on the Workbench
+ *  landing. A ticker, an optional as-of date, and the analyst team — submit
+ *  runs the FIXED research pipeline (analysts → debate → research manager →
+ *  trader → risk debate → PM) through the supervisor scheduler. No planning
+ *  round: the pipeline shape is the product. The active template's domain
+ *  decides which data sources and prompt variants the pipeline uses. */
+export function StockResearchForm({ disabled, domain = "stock", onSubmit }: StockResearchFormProps) {
   const [ticker, setTicker] = useState("");
   const [tradeDate, setTradeDate] = useState("");
   const [selected, setSelected] = useState<string[]>(ANALYSTS.map((a) => a.id));
   const [open, setOpen] = useState(false);
+  const copy = DOMAIN_COPY[domain];
 
   const toggle = (id: string) =>
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -34,14 +72,14 @@ export function AnalysisDeskForm({ disabled, onSubmit }: AnalysisDeskFormProps) 
     if (!sym || selected.length === 0 || disabled) return;
     const date = tradeDate.trim() || undefined;
     const analysts = selected.length === ANALYSTS.length ? undefined : selected;
-    onSubmit(sym, date, analysts);
+    onSubmit(sym, date, analysts, domain);
   };
 
   return (
     <div className="border-border/60 w-full rounded-xl border p-4">
       <div className="mb-3 flex items-center gap-2">
         <Icon name="activity" className="text-primary size-4" />
-        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">Analysis Desk</span>
+        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">{copy.title}</span>
         <span className="text-muted-foreground font-mono text-[10px]">fixed research pipeline · no planning round</span>
       </div>
       <div className="flex gap-2">
@@ -51,7 +89,7 @@ export function AnalysisDeskForm({ disabled, onSubmit }: AnalysisDeskFormProps) 
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
-          placeholder="TICKER (e.g. AAPL)"
+          placeholder={copy.tickerPlaceholder}
           disabled={disabled}
           spellCheck={false}
           className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-0 flex-1 flex-wrap rounded-lg border px-3 py-2 font-mono text-sm uppercase outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50"
@@ -74,7 +112,7 @@ export function AnalysisDeskForm({ disabled, onSubmit }: AnalysisDeskFormProps) 
           className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-mono text-xs font-bold tracking-wider uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Icon name="zap" className="size-3.5" />
-          Run desk
+          {copy.button}
         </button>
       </div>
       <button

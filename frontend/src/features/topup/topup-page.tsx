@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { AssetShell } from "@/features/assets/components/asset-shell";
+import { cn } from "@/lib/utils";
 import { call, errText } from "@/lib/api";
 import { QrisCard } from "@/features/topup/qris-card";
 import { isLowTokenBalance, refreshTokenBalance, useTokenBalance } from "@/features/topup/use-token-balance";
@@ -64,6 +65,8 @@ const FAST_POLL_MS = 5_000;
 const BACKOFF_AFTER_MS = 5 * 60_000;
 const BACKOFF_POLL_MS = 30_000;
 const TERMINAL_STATUSES: readonly TopupStatus[] = ["credited", "rejected", "expired"];
+/** Second-ticking countdown only in the final 10 minutes; absolute deadline before that. */
+const EXPIRY_COUNTDOWN_FROM_MS = 10 * 60_000;
 
 function formatIdr(n: number): string {
   return `Rp${n.toLocaleString("id-ID")}`;
@@ -93,15 +96,36 @@ function formatWhen(unix: number): string {
   });
 }
 
-/** Live countdown to `expiresAt` — owns its own 1s ticker so the page (and
- *  the QR) don't re-render every second. */
-function Countdown({ expiresAt }: { expiresAt: number }) {
+/** QR validity line — absolute deadline while far out, countdown only in the
+ *  final 10 minutes. Owns its own 1s ticker so the page (and the QR) don't
+ *  re-render every second. */
+function Expiry({ expiresAt }: { expiresAt: number }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  return <span className="font-mono tabular-nums">{formatCountdown(Math.max(0, expiresAt * 1000 - now))}</span>;
+  const remaining = Math.max(0, expiresAt * 1000 - now);
+  if (remaining > EXPIRY_COUNTDOWN_FROM_MS) {
+    return (
+      <span className="text-muted-foreground">
+        QR berlaku hingga{" "}
+        <span className="font-mono tabular-nums">
+          {new Date(expiresAt * 1000).toLocaleString("id-ID", {
+            day: "2-digit",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span className="text-warning">
+      QR berakhir dalam <span className="font-mono tabular-nums">{formatCountdown(remaining)}</span>
+    </span>
+  );
 }
 
 export function TopupPage({ onBack }: { onBack: () => void }) {
@@ -150,6 +174,24 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
     loadPreview();
   }, [loadPreview]);
 
+  // ── Active-claim recovery ─────────────────────────────────────────────────
+  // A pending claim survives reload/remount (one row per email server-side):
+  // show its QR immediately instead of letting a fresh claim of a different
+  // nominal hit the claim path. Best-effort — on failure the picker works.
+  useEffect(() => {
+    let cancelled = false;
+    void call<TopupClaim | null>("topup_qris_active")
+      .then((data) => {
+        if (cancelled || data == null) return;
+        claimStartRef.current = Date.now();
+        setClaim(data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ── Amount picker (pay-as-you-go) ─────────────────────────────────────────
   const [amountInput, setAmountInput] = useState("");
 
@@ -170,6 +212,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
   const [claimError, setClaimError] = useState<string | null>(null);
   const [txStatus, setTxStatus] = useState<TopupStatusInfo | null>(null);
   const [checking, setChecking] = useState(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
   const claimStartRef = useRef(0);
 
   const resetClaim = useCallback(() => {
@@ -177,11 +220,14 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
     setClaimAmount(null);
     setTxStatus(null);
     setClaimError(null);
+    setLastCheckedAt(null);
   }, []);
 
-  /** Claim (idempotent server-side: one active pending row per email — an
-   *  existing pending claim returns unchanged regardless of the requested
-   *  base). On any failure the tx state is cleared back to the picker. */
+  /** Claim a QR bill. Server contract: idempotent for the SAME base (an
+   *  active pending row returns unchanged); a DIFFERENT base frees the old
+   *  pending claim and allocates a fresh one — the response always bills the
+   *  requested nominal. On any failure the tx state is cleared back to the
+   *  picker. */
   const claimNow = useCallback(async (amount: number) => {
     setClaiming(true);
     setClaimError(null);
@@ -204,14 +250,17 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
   const isTerminal = claim != null && TERMINAL_STATUSES.includes(effectiveStatus);
   /** Active (non-terminal) claim — rendered as a pending row in Riwayat. */
   const activeClaim = claim != null && !isTerminal ? claim : null;
-  /** Worker bills base + a unique 0–900 suffix so the bank mutation matches
-   *  this claim exactly (auto-confirm); 0 when the suffix happened to be 0. */
-  const uniqueCode = claim ? claim.idrAmount - (claimAmount ?? claim.idrAmount) : 0;
+  /** Verification adjustment: worker bills base + a 0–900 suffix so the bank
+   *  mutation matches this claim exactly (auto-confirm). Derived from the
+   *  CLAIM, never the typed amount — server idempotency can return an older
+   *  pending claim whose base differs from what the user just typed.
+   *  0 when the suffix happened to be 0. */
+  const claimBase = claim && preview ? claim.tokens / preview.tokensPerIdr : null;
+  const uniqueCode = claim && claimBase != null ? claim.idrAmount - claimBase : 0;
 
   /** One status read; credited re-reads the shared balance (the claim just
-   *  landed). Transient errors
-   *  keep the current view — polling and "Cek ulang" retry. A null body (no
-   *  such tx) clears the txId state. */
+   *  landed). Transient errors keep the current view — polling and "Periksa
+   *  pembayaran" retry. A null body (no such tx) clears the txId state. */
   const checkStatus = useCallback(async () => {
     if (!claim) return;
     setChecking(true);
@@ -228,12 +277,27 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
       // transient — keep the current state; manual check retries
     } finally {
       setChecking(false);
+      setLastCheckedAt(Date.now());
     }
   }, [claim, resetClaim]);
 
+  /** Cancel the pending claim (frees the unique nominal) and return to the
+   *  picker. If the claim already moved on (crediting/credited — worker 409),
+   *  refresh the status instead; the UI flips to the matching terminal view. */
+  const cancelClaim = useCallback(async () => {
+    if (!claim) return;
+    setClaimError(null);
+    try {
+      await call("topup_qris_cancel", { txId: claim.txId });
+      resetClaim();
+    } catch {
+      void checkStatus();
+    }
+  }, [claim, checkStatus, resetClaim]);
+
   // Status polling: 5s for the first 5 minutes after the claim, then 30s
-  // backoff; stops entirely on a terminal status. "Cek ulang" is the manual
-  // escape hatch at any time.
+  // backoff; stops entirely on a terminal status. "Periksa pembayaran" is
+  // the manual escape hatch at any time.
   useEffect(() => {
     if (!claim || TERMINAL_STATUSES.includes(effectiveStatus)) return;
     let cancelled = false;
@@ -345,53 +409,71 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                 <div className="min-w-0 flex-1 space-y-1.5">
                   <p className="text-muted-foreground text-xs">Total pembayaran</p>
                   <p className="text-xl font-semibold">{formatIdr(claim.idrAmount)}</p>
-                  {uniqueCode > 0 && (
-                    <div className="space-y-0.5 text-xs">
-                      <p className="flex justify-between gap-3">
-                        <span className="text-muted-foreground">Nominal top-up</span>
-                        <span className="font-medium">{formatIdr(claimAmount ?? claim.idrAmount)}</span>
-                      </p>
-                      <p className="flex justify-between gap-3">
-                        <span className="text-muted-foreground">Kode unik</span>
-                        <span className="font-medium">{formatIdr(uniqueCode)}</span>
-                      </p>
-                    </div>
-                  )}
                   <p className="text-xs">
-                    +{claim.tokens.toLocaleString("id-ID")} token
-                    {preview != null && <> · Rp1 = {preview.tokensPerIdr} token</>}
+                    Anda akan menerima <span className="font-medium">{claim.tokens.toLocaleString("id-ID")} token</span>
                   </p>
-                  <p className="text-muted-foreground text-xs">
-                    Bayar lewat aplikasi bank / e-wallet (QRIS) — nominal terisi otomatis saat scan
-                  </p>
+                  {uniqueCode > 0 && (
+                    <details className="group text-xs">
+                      <summary className="text-muted-foreground [&::-webkit-details-marker]:hidden flex cursor-pointer list-none items-center gap-1.5 select-none hover:text-foreground">
+                        <Icon name="info" className="size-3.5" />
+                        Mengapa nominalnya berbeda?
+                      </summary>
+                      <div className="border-border/60 mt-2 space-y-0.5 border-l pl-3">
+                        <p className="flex justify-between gap-3">
+                          <span className="text-muted-foreground">Nominal top-up</span>
+                          <span className="font-medium">{formatIdr(claim.idrAmount - uniqueCode)}</span>
+                        </p>
+                        <p className="flex justify-between gap-3">
+                          <span className="text-muted-foreground">Penyesuaian verifikasi</span>
+                          <span className="font-medium">{formatIdr(uniqueCode)}</span>
+                        </p>
+                        <p className="flex justify-between gap-3">
+                          <span className="text-muted-foreground">Total pembayaran</span>
+                          <span className="font-medium">{formatIdr(claim.idrAmount)}</span>
+                        </p>
+                        <p className="text-muted-foreground pt-1">
+                          Penyesuaian nominal membantu sistem mencocokkan pembayaran secara otomatis dan tidak menambah
+                          jumlah token.
+                        </p>
+                      </div>
+                    </details>
+                  )}
                   <p className="text-muted-foreground font-mono text-xs break-all">tx: {claim.txId}</p>
                   <p className="text-xs">
-                    <span className="text-muted-foreground">QR berlaku </span>
-                    <Countdown expiresAt={claim.expiresAt} />
-                    <span className="text-muted-foreground"> lagi</span>
+                    <Expiry expiresAt={claim.expiresAt} />
                   </p>
                 </div>
               </div>
               <div className="border-warning/30 space-y-1 rounded-md border p-3 text-xs">
-                <p>
-                  Bayar tepat {formatIdr(claim.idrAmount)} — nominal persis inilah yang mencocokkan pembayaran secara
-                  otomatis.
-                </p>
-                <p className="text-muted-foreground">
-                  Nominal berbeda tidak terdeteksi otomatis dan menunggu pemeriksaan manual (lebih lama).
-                </p>
+                <p>Bayar tepat {formatIdr(claim.idrAmount)} agar pembayaran terverifikasi otomatis.</p>
+                <p className="text-muted-foreground">Nominal berbeda mungkin memerlukan pemeriksaan manual.</p>
               </div>
-              <div className="flex items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-muted-foreground flex items-center gap-2 text-xs">
                   <Spinner className="size-3.5" />
-                  {effectiveStatus === "crediting"
-                    ? "Pembayaran diterima — sedang menambahkan token…"
-                    : "Menunggu pembayaran — status diperbarui otomatis"}
+                  {effectiveStatus === "crediting" ? (
+                    "Pembayaran diterima — sedang menambahkan token…"
+                  ) : (
+                    <>
+                      Menunggu pembayaran — diperiksa otomatis
+                      {lastCheckedAt != null && <> · terakhir {new Date(lastCheckedAt).toLocaleTimeString("id-ID")}</>}
+                    </>
+                  )}
                 </p>
-                <Button disabled={checking} onClick={() => void checkStatus()} size="sm" variant="outline">
-                  <Icon name="rotate-ccw" className="size-3.5" />
-                  Cek ulang
-                </Button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    disabled={effectiveStatus === "crediting"}
+                    onClick={() => void cancelClaim()}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    Ganti nominal
+                  </Button>
+                  <Button disabled={checking} onClick={() => void checkStatus()} size="sm" variant="outline">
+                    <Icon name="rotate-ccw" className="size-3.5" />
+                    Periksa pembayaran
+                  </Button>
+                </div>
               </div>
             </section>
           )
@@ -429,39 +511,40 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
                 <span className="text-muted-foreground text-sm">IDR</span>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                {[10000, 30000, 50000, 99000].map((preset) => (
-                  <button
-                    className="hover:bg-[var(--tea-color-bg-secondary-default)] rounded-md border px-3 py-1 text-xs transition-colors disabled:opacity-50"
-                    disabled={claiming}
-                    key={preset}
-                    onClick={() => setAmountInput(String(preset))}
-                    type="button"
-                  >
-                    {formatIdr(preset)}
-                  </button>
-                ))}
+                {[10000, 30000, 50000, 99000].map((preset) => {
+                  const selected = baseValid && base === preset;
+                  return (
+                    <button
+                      aria-pressed={selected}
+                      className={cn(
+                        "rounded-md border px-3 py-1 text-xs transition-colors disabled:opacity-50",
+                        selected
+                          ? "border-transparent bg-primary font-medium text-primary-foreground"
+                          : "hover:bg-[var(--tea-color-bg-secondary-default)]",
+                      )}
+                      disabled={claiming}
+                      key={preset}
+                      onClick={() => setAmountInput(String(preset))}
+                      type="button"
+                    >
+                      {formatIdr(preset)}
+                    </button>
+                  );
+                })}
               </div>
               {baseValid ? (
                 <div className="mt-3 space-y-1 text-xs">
                   <p className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">Token diterima</span>
-                    <span className="font-medium">
-                      +{(base * preview.tokensPerIdr).toLocaleString("id-ID")} token · Rp1 = {preview.tokensPerIdr}{" "}
-                      token
-                    </span>
-                  </p>
-                  <p className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">Nominal</span>
+                    <span className="text-muted-foreground">Nominal top-up</span>
                     <span className="font-medium">{formatIdr(base)}</span>
                   </p>
                   <p className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">Kode unik</span>
-                    <span className="font-medium">Rp0–Rp900 — ditentukan saat klaim</span>
+                    <span className="text-muted-foreground">Token diterima</span>
+                    <span className="font-medium">
+                      {(base * preview.tokensPerIdr).toLocaleString("id-ID")} token · Rp1 = {preview.tokensPerIdr} token
+                    </span>
                   </p>
-                  <p className="text-muted-foreground">
-                    Kode unik membuat pembayaran terdeteksi otomatis. Nominal final tampil di QR dan terisi sendiri saat
-                    scan.
-                  </p>
+                  <p className="text-muted-foreground">Total pembayaran akan ditampilkan setelah QR dibuat.</p>
                 </div>
               ) : (
                 <p className="text-muted-foreground mt-3 text-xs">
@@ -510,10 +593,10 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
               {activeClaim && (
                 <li className="flex items-center justify-between gap-3 border-b py-2 text-sm">
                   <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="font-mono font-medium text-success tabular-nums">
-                      +{activeClaim.tokens.toLocaleString("id-ID")} token
+                    <span className="text-warning font-mono font-medium tabular-nums">
+                      {activeClaim.tokens.toLocaleString("id-ID")} token
                     </span>
-                    <span className="truncate text-xs text-warning">
+                    <span className="text-muted-foreground truncate text-xs">
                       Top up QRIS — {effectiveStatus === "crediting" ? "diproses" : "menunggu pembayaran"}
                     </span>
                   </span>

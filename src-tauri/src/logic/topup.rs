@@ -143,14 +143,35 @@ pub async fn topup_qris_preview(token: &str) -> std::result::Result<Preview, Str
 
 /// `POST /topup/qris/claim` — claim a unique-nominal bill for `amount` (base,
 /// integer, `min_base`–`max_base`, kelipatan `base_step`). The worker adds a
-/// `000–900` suffix → `idr_amount`. Idempotent per email: an existing active
-/// pending row returns unchanged.
+/// `000–900` suffix → `idr_amount`. Idempotent per email for the SAME base
+/// (an active pending row returns unchanged); a DIFFERENT base frees the old
+/// pending claim (status `expired`, semantik expiry) and allocates a fresh
+/// one — the returned QR always bills the requested nominal.
 pub async fn topup_qris_claim(
     token: &str,
     amount: i64,
 ) -> std::result::Result<Claim, String> {
     let body = serde_json::json!({ "amount": amount });
     parsed(post(token, "/topup/qris/claim", body).await?)
+}
+
+/// `GET /topup/qris/active` — the owner's active pending claim (recovery on
+/// page mount), `None` when there is none. Same shape as [`Claim`].
+pub async fn topup_qris_active(token: &str) -> std::result::Result<Option<Claim>, String> {
+    let json = get(token, "/topup/qris/active").await?;
+    if json.is_null() {
+        return Ok(None);
+    }
+    parsed(json).map(Some)
+}
+
+/// `POST /topup/qris/cancel` — free the owner's pending claim (nominal
+/// kembali ke pool, status `expired`). Worker 409 `claim_no_longer_pending`
+/// when the claim already moved on (crediting/credited) arrives as `Err`.
+pub async fn topup_qris_cancel(token: &str, tx_id: &str) -> std::result::Result<(), String> {
+    let body = serde_json::json!({ "txId": tx_id });
+    post(token, "/topup/qris/cancel", body).await?;
+    Ok(())
 }
 
 /// `GET /topup/qris/status/:txId` — owner-scoped (404 for foreign tx ids);

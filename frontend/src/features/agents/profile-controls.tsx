@@ -68,19 +68,16 @@ export function ProfileControls({
         <DropdownMenuTrigger asChild>
           <Button
             aria-label="Assets and account"
-            className="ml-0.5 shrink-0 gap-1.5"
+            className="ml-0.5 shrink-0"
             size="icon"
             title={`Signed in as ${userId ?? "demo"}`}
             variant="ghost"
           >
-            <span className="bg-primary text-primary-foreground relative flex size-7 items-center justify-center rounded-full text-xs font-semibold">
+            <span className="bg-primary text-primary-foreground relative flex size-8 items-center justify-center rounded-full text-sm font-semibold">
               {(userId ?? "d").charAt(0).toUpperCase()}
               {assetView != null && (
                 <span className="bg-primary -top-0.5 -right-0.5 absolute size-2 rounded-full ring-2 ring-background" />
               )}
-            </span>
-            <span className="hidden lg:inline-flex items-center font-mono text-xs tracking-wider uppercase text-muted-foreground">
-              Assets
             </span>
           </Button>
         </DropdownMenuTrigger>

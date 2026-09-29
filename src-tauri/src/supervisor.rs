@@ -1804,7 +1804,7 @@ pub async fn narrow_registry_for_goal_with(
     if registry.len() <= min_tools {
         return None;
     }
-    let cfg = kawai_tool_catalog::RemoteConfig::from_env()?;
+    let _cfg = kawai_tool_catalog::RemoteConfig::from_env()?;
     let model = kawai_embedding::build_providers_from_env();
     let query_vec = model
         .embed_strings(vec![goal.to_string()])
@@ -1880,8 +1880,7 @@ pub async fn build_supervisor_registry(
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
 
-/// The Analysis Desk execution registry: the merged auto catalog narrowed
-/// for dispatch PLUS the one desk role tool. Desk steps are never visible to
+/// The Stock Research execution registry: the merged auto catalog narrowed
 /// the planner (never in the Turso tool catalog or `PLAN_CORE_TOOLS`) — this
 /// registry is the dispatch view only.
 #[cfg(feature = "litert")]

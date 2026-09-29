@@ -212,6 +212,8 @@ pub fn run() {
         commands::topup_qris_preview,
         commands::topup_qris_claim,
         commands::topup_qris_status,
+        commands::topup_qris_active,
+        commands::topup_qris_cancel,
         commands::topup_balance,
         commands::topup_history,
 
@@ -233,8 +235,7 @@ pub fn run() {
         #[cfg(feature = "litert")]
         commands::execute_supervisor_plan,
         #[cfg(feature = "litert")]
-        commands::run_analysis_desk,
-        #[cfg(feature = "litert")]
+        commands::run_stock_research,
         commands::run_youtube_summary,
         #[cfg(feature = "litert")]
         commands::respond_supervisor_confirmation,

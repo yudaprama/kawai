@@ -1102,6 +1102,25 @@ pub async fn topup_qris_status(
     logic::topup::topup_qris_status(&token, &tx_id).await
 }
 
+/// The owner's active pending QRIS claim, if any (recovery on page mount).
+#[tauri::command]
+pub async fn topup_qris_active(
+    session: State<'_, Session>,
+) -> Result<Option<logic::topup::Claim>, String> {
+    let token = session_bearer(&session)?;
+    logic::topup::topup_qris_active(&token).await
+}
+
+/// Cancel the owner's pending QRIS claim — frees the unique nominal.
+#[tauri::command]
+pub async fn topup_qris_cancel(
+    tx_id: String,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let token = session_bearer(&session)?;
+    logic::topup::topup_qris_cancel(&token, &tx_id).await
+}
+
 /// Current token balance (0 for an account that never topped up).
 #[tauri::command]
 pub async fn topup_balance(session: State<'_, Session>) -> Result<logic::topup::Balance, String> {
@@ -1712,17 +1731,18 @@ pub async fn execute_supervisor_plan(
     run_streaming(stream_id, on_event, &registry, stream, Some(token)).await
 }
 
-/// Analysis Desk (PLAN-analysis-desk): run the fixed stock-research pipeline
+/// Stock Research (PLAN-stock-research): run the fixed stock-research pipeline
 /// (selected analysts → bull/bear debate → research manager → trader → risk
 /// debate → risk manager → portfolio manager) and stream the same
 /// `SupervisorEvent` lifecycle the planner-driven runs emit.
 #[cfg(feature = "litert")]
 #[tauri::command]
-pub async fn run_analysis_desk(
+pub async fn run_stock_research(
     session_id: i64,
     ticker: String,
     trade_date: Option<String>,
     analysts: Option<Vec<String>>,
+    domain: Option<String>,
     stream_id: String,
     on_event: Channel<crate::supervisor::SupervisorEvent>,
     registry: State<'_, StreamRegistry>,
@@ -1744,14 +1764,17 @@ pub async fn run_analysis_desk(
 
     let analyst_refs: Vec<String> = analysts.unwrap_or_default();
     let analyst_slices: Vec<&str> = analyst_refs.iter().map(String::as_str).collect();
+    let domain_str = domain.unwrap_or_else(|| "stock".into());
     let plan = kawai_desk::build_desk_plan(
         &ticker,
         trade_date.as_deref().unwrap_or(""),
         &analyst_slices,
+        &domain_str,
     );
     let user_goal = kawai_desk::desk_user_goal(
         &ticker,
         trade_date.as_deref().unwrap_or(""),
+        &domain_str,
     );
     let tool_registry = crate::supervisor::build_desk_registry(
         &user_id,
@@ -1774,7 +1797,7 @@ pub async fn run_analysis_desk(
         Some(user_goal),
         Some(&bearer),
     );
-    tracing::info!(component = "desk", steps = step_count, user = %user_id, session = session_id, "running analysis desk");
+    tracing::info!(component = "stock-research", steps = step_count, user = %user_id, session = session_id, "running stock research");
     run_streaming(stream_id, on_event, &registry, stream, Some(token)).await
 }
 

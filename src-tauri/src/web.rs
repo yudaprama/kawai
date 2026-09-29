@@ -1888,6 +1888,33 @@ async fn topup_qris_status_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
+async fn topup_qris_active_handler(
+    headers: HeaderMap,
+) -> Result<Json<Option<logic::topup::Claim>>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::topup::topup_qris_active(&token)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TopupQrisCancelRequest {
+    tx_id: String,
+}
+
+async fn topup_qris_cancel_handler(
+    headers: HeaderMap,
+    Json(req): Json<TopupQrisCancelRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::topup::topup_qris_cancel(&token, &req.tx_id)
+        .await
+        .map(|_| Json(serde_json::json!({ "cancelled": true })))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+}
+
 async fn topup_balance_handler(
     headers: HeaderMap,
 ) -> Result<Json<logic::topup::Balance>, (StatusCode, String)> {
@@ -2072,6 +2099,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/topup_qris_preview", post(topup_qris_preview_handler))
         .route("/api/topup_qris_claim", post(topup_qris_claim_handler))
         .route("/api/topup_qris_status", post(topup_qris_status_handler))
+        .route("/api/topup_qris_active", post(topup_qris_active_handler))
+        .route("/api/topup_qris_cancel", post(topup_qris_cancel_handler))
         .route("/api/topup_balance", post(topup_balance_handler))
         .route("/api/topup_history", post(topup_history_handler))
         .route_layer(from_fn(auth_middleware));
@@ -2104,8 +2133,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         post(respond_supervisor_confirmation_handler),
     )
     .route("/api/plan_task", post(plan_task_handler))
-    .route("/api/run_analysis_desk", post(run_analysis_desk_handler))
-    .route("/api/run_youtube_summary", post(run_youtube_summary_handler))
+    .route("/api/run_stock_research", post(run_stock_research_handler))
     .route("/api/supervisor_step_output", post(supervisor_step_output_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
@@ -2397,25 +2425,26 @@ fn supervisor_sse_frame(
     SseFrame::default().event(name).data(data)
 }
 
-/// Analysis Desk (PLAN-analysis-desk): run the fixed stock-research pipeline
+/// Stock Research (PLAN-stock-research): run the fixed stock-research pipeline
 /// for one ticker and stream the same `SupervisorEvent` lifecycle.
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RunAnalysisDeskRequest {
+struct RunStockResearchRequest {
     session_id: i64,
     ticker: String,
     trade_date: Option<String>,
     analysts: Option<Vec<String>>,
+    /// Asset class chosen by the user: "stock" (default) | "crypto".
+    domain: Option<String>,
     stream_id: String,
 }
 
 #[cfg(feature = "litert")]
-async fn run_analysis_desk_handler(
-    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+async fn run_stock_research_handler(
     Extension(user_id): Extension<String>,
     headers: HeaderMap,
-    Json(req): Json<RunAnalysisDeskRequest>,
+    Json(req): Json<RunStockResearchRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, StatusCode> {
     // Billing bearer off the session cookie — the edge middleware already
     // validated it (AGENTS.md #8); fail closed here before the supervisor.
@@ -2429,14 +2458,17 @@ async fn run_analysis_desk_handler(
 
     let analysts = req.analysts.unwrap_or_default();
     let analyst_slices: Vec<&str> = analysts.iter().map(String::as_str).collect();
+    let domain_str = req.domain.unwrap_or_else(|| "stock".into());
     let plan = kawai_desk::build_desk_plan(
         &req.ticker,
         req.trade_date.as_deref().unwrap_or(""),
         &analyst_slices,
+        &domain_str,
     );
     let user_goal = kawai_desk::desk_user_goal(
         &req.ticker,
         req.trade_date.as_deref().unwrap_or(""),
+        &domain_str,
     );
     let tool_registry = crate::supervisor::build_desk_registry(
         &user_id,

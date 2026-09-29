@@ -31,11 +31,10 @@ screen — no rails, no distractions. One primary input: below the composer sit
 a hint about `@` file attachments, a **Try** row of example-goal chips
 (first session only — each drops an editable draft into the composer, never
 auto-submits), and the **Templates** chip row (single-select,
-click again to clear) — Research, Market Analysis, Coding, Data Analysis.
-Research-flavored picks disclose the **Analysis Desk** panel (the fixed
-stock-research pipeline: ticker, optional as-of date, analyst team, Run desk);
-Coding/Data Analysis only reframe the composer's placeholder. The desk is
-never visible uninvited. Below that: history — the in-session run history when
+click again to clear) — Stock Research, Coding, Data Analysis.
+Stock Research discloses the panel (the fixed stock-research pipeline:
+ticker, optional as-of date, analyst team, Run research); Coding/Data Analysis
+only reframe the composer's placeholder. The desk is never visible uninvited. Below that: history — the in-session run history when
 the current session has runs, otherwise the cross-session **Recent runs** strip
 (the newest plan record from every session with runs: goal or session title,
 relative time, step count, status icon; clicking one opens that session and

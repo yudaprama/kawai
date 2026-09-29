@@ -13,8 +13,9 @@ const LOAD_TIMEOUT_MS = 20_000;
  * Landing "Recent runs" — the cross-session journal strip: the newest plan
  * record from every session with runs. Row markup mirrors RunHistory
  * (bordered card, goal + meta line + status icon) so the two history surfaces
- * read as one system. An empty list or a first-load failure renders an
- * inline line (failure: with a Retry) instead of nothing.
+ * read as one system. A first-load failure renders an
+ * inline error line (with a Retry); an empty history renders nothing — the
+ * hero's goal composer is already the call to action.
  *
  * `reloadKey` bumps when a run just finished or the session dialog closed —
  * the list refetches so fresh records, renames, and deletes show up.
@@ -94,32 +95,25 @@ export function RecentRuns({
     );
   }
   // Nothing on screen: a failed fetch says WHY and offers a Retry, an empty
-  // result sets expectations — both beats a silent blank.
+  // history renders nothing at all — the landing hero already tells the user
+  // to state a goal, so the empty-state line is noise.
   if (runs.length === 0) {
+    if (!failed) return null;
     return (
       <div className="mx-auto w-full max-w-4xl p-6 text-left">
-        {failed ? (
-          <div className="flex items-center gap-3">
-            <p className="text-muted-foreground font-mono text-xs" role="alert">
-              Couldn&apos;t load recent runs.
-            </p>
-            <button
-              type="button"
-              onClick={() => setRetryKey((k) => k + 1)}
-              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md font-mono text-[10px] tracking-wider uppercase transition-colors hover:underline"
-            >
-              <Icon name="refresh-cw" className="size-3" />
-              Retry
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            <p className="text-foreground font-mono text-xs">No runs yet.</p>
-            <p className="text-muted-foreground font-mono text-xs">
-              State a goal above — completed runs land here, and reopening one shows its full deliverable.
-            </p>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <p className="text-muted-foreground font-mono text-xs" role="alert">
+            Couldn&apos;t load recent runs.
+          </p>
+          <button
+            type="button"
+            onClick={() => setRetryKey((k) => k + 1)}
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md font-mono text-[10px] tracking-wider uppercase transition-colors hover:underline"
+          >
+            <Icon name="refresh-cw" className="size-3" />
+            Retry
+          </button>
+        </div>
       </div>
     );
   }

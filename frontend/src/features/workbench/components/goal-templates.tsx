@@ -1,21 +1,21 @@
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
 
-export type GoalTemplateId = "research" | "market" | "coding" | "data" | "youtube";
-
+export type GoalTemplateId = "stock" | "crypto" | "commodity" | "forex" | "coding" | "data" | "youtube";
 const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
-  { id: "research", label: "Research" },
-  { id: "market", label: "Market Analysis" },
+  { id: "stock", label: "Stock Research" },
+  { id: "crypto", label: "Crypto Research" },
+  { id: "commodity", label: "Commodity Research" },
+  { id: "forex", label: "Forex Research" },
   { id: "coding", label: "Coding" },
   { id: "data", label: "Data Analysis" },
   { id: "youtube", label: "YouTube Summary" },
 ];
 
-/** Templates whose workflow includes the fixed-pipeline Analysis Desk — only
+/** Templates whose workflow includes the fixed-pipeline Stock Research — only
  *  these disclose the desk panel on the landing (progressive disclosure: the
  *  desk never sits uninvited under the goal composer). */
-const DESK_TEMPLATES: readonly GoalTemplateId[] = ["research", "market"];
-
+const DESK_TEMPLATES: readonly GoalTemplateId[] = ["stock", "crypto", "commodity", "forex"];
 export const templateOpensDesk = (t: GoalTemplateId | null): boolean => t != null && DESK_TEMPLATES.includes(t);
 
 /** Templates whose workflow is the fixed-pipeline YouTube Summary (a link in,
@@ -41,9 +41,6 @@ export interface GoalTemplatesProps {
   onChange: (t: GoalTemplateId | null) => void;
 }
 
-/** Landing template chips — single-select, click the active one to clear.
- *  Picking a research-flavored template discloses the Analysis Desk panel
- *  below the composer; the rest only reframe the composer's placeholder. */
 export function GoalTemplates({ value, disabled, onChange }: GoalTemplatesProps) {
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
