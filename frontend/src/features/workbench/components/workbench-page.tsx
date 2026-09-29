@@ -45,7 +45,6 @@ function SessionsButton({ onOpen, iconOnly = false }: { onOpen: () => void; icon
 
 // ── Page ────────────────────────────────────────────────────────────────────
 
-
 export interface WorkbenchPageProps {
   /** Knowledge integration for the composer's @ menu + image drop. */
   onImageToKnowledge: (dataUrl: string, name: string) => Promise<string[]>;
@@ -350,17 +349,15 @@ export function WorkbenchPage({
       if (startingRef.current) return;
       startingRef.current = true;
       const baseline = supervisor.planStartedAt;
-      void workbench
-        .runDesk(ticker, tradeDate, analysts, domain, { onStart: () => enterRunView(baseline) })
-        .then(
-          () => {
-            startingRef.current = false;
-          },
-          () => {
-            // Gates already toasted + sessionError'd (shown on the landing).
-            startingRef.current = false;
-          },
-        );
+      void workbench.runDesk(ticker, tradeDate, analysts, domain, { onStart: () => enterRunView(baseline) }).then(
+        () => {
+          startingRef.current = false;
+        },
+        () => {
+          // Gates already toasted + sessionError'd (shown on the landing).
+          startingRef.current = false;
+        },
+      );
     },
     [supervisor.status, supervisor.planStartedAt, workbench.runDesk, workbench.setSessionError, enterRunView],
   );

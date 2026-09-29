@@ -316,6 +316,59 @@ function Pane({ toolbar, children }: { toolbar: ReactNode; children: ReactNode }
   );
 }
 
+/** Shared list-pane chrome: Refresh (+ optional extra actions) and the count
+ *  label in the toolbar, then the loading / empty / list tricolumn both list
+ *  panes render. `list` is a prop (not children) so call sites keep their
+ *  exact list-body indentation. */
+function ListPane({
+  loading,
+  total,
+  singular,
+  plural,
+  note,
+  extra,
+  empty,
+  onRefresh,
+  list,
+}: {
+  loading: boolean;
+  total: number;
+  singular: string;
+  plural: string;
+  note: ReactNode;
+  extra?: ReactNode;
+  empty: string;
+  onRefresh: () => void;
+  list: ReactNode;
+}) {
+  return (
+    <Pane
+      toolbar={
+        <>
+          <Button disabled={loading} onClick={onRefresh} size="xs" variant="outline">
+            {loading ? <Spinner className="size-3" /> : <Icon name="search" className="size-3" />}
+            Refresh
+          </Button>
+          {extra}
+          <span className="text-muted-foreground ml-auto text-xs">
+            {total} {total === 1 ? singular : plural} {note}
+          </span>
+        </>
+      }
+    >
+      {loading && total === 0 ? (
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Spinner className="size-4" /> Loading…
+        </div>
+      ) : total === 0 ? (
+        <p className="text-muted-foreground text-sm">{empty}</p>
+      ) : (
+        list
+      )}
+    </Pane>
+  );
+}
+
 /** Experiences — one distilled row per completed supervisor run (read-only
  *  list + delete; written by the supervisor, consumed by the planner). */
 function ExperiencesPane() {
@@ -339,28 +392,15 @@ function ExperiencesPane() {
 
   const items = op.data ?? [];
   return (
-    <Pane
-      toolbar={
-        <>
-          <Button disabled={op.loading} onClick={() => void op.execute()} size="xs" variant="outline">
-            {op.loading ? <Spinner className="size-3" /> : <Icon name="search" className="size-3" />}
-            Refresh
-          </Button>
-          <span className="text-muted-foreground ml-auto text-xs">
-            {items.length} {items.length === 1 ? "experience" : "experiences"} · what each run learned
-          </span>
-        </>
-      }
-    >
-      {op.loading && items.length === 0 ? (
-        <div className="text-muted-foreground flex items-center gap-2 text-sm">
-          <Spinner className="size-4" /> Loading…
-        </div>
-      ) : items.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          No experiences yet — finish a run and the supervisor records what it did and learned here.
-        </p>
-      ) : (
+    <ListPane
+      empty="No experiences yet — finish a run and the supervisor records what it did and learned here."
+      loading={op.loading}
+      note="· what each run learned"
+      onRefresh={() => void op.execute()}
+      plural="experiences"
+      singular="experience"
+      total={items.length}
+      list={
         <ol className="flex flex-col gap-2">
           {items.map((e) => (
             <li className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3" key={e.id}>
@@ -404,8 +444,8 @@ function ExperiencesPane() {
             </li>
           ))}
         </ol>
-      )}
-    </Pane>
+      }
+    />
   );
 }
 
@@ -437,45 +477,33 @@ function ProfilePane() {
 
   const items = op.data ?? [];
   return (
-    <Pane
-      toolbar={
-        <>
-          <Button disabled={op.loading} onClick={() => void op.execute()} size="xs" variant="outline">
-            {op.loading ? <Spinner className="size-3" /> : <Icon name="search" className="size-3" />}
-            Refresh
-          </Button>
-          <Button
-            disabled={items.length === 0}
-            onClick={async () => {
-              if (!confirmReset) {
-                setConfirmReset(true);
-                return;
-              }
-              setConfirmReset(false);
-              await act(() => call("facet_reset_non_pinned"));
-            }}
-            size="xs"
-            title={confirmReset ? "Click again to confirm" : "Delete all non-pinned facets"}
-            variant="outline"
-          >
-            {confirmReset ? "Confirm reset" : "Reset non-pinned"}
-          </Button>
-          <span className="text-muted-foreground ml-auto text-xs">
-            {items.length} {items.length === 1 ? "facet" : "facets"} · injected as {"<profile>"}
-          </span>
-        </>
+    <ListPane
+      empty="No facets yet — run memory extraction (L1 tab) or onboarding, and the distiller folds profile facts into stable facets here."
+      extra={
+        <Button
+          disabled={items.length === 0}
+          onClick={async () => {
+            if (!confirmReset) {
+              setConfirmReset(true);
+              return;
+            }
+            setConfirmReset(false);
+            await act(() => call("facet_reset_non_pinned"));
+          }}
+          size="xs"
+          title={confirmReset ? "Click again to confirm" : "Delete all non-pinned facets"}
+          variant="outline"
+        >
+          {confirmReset ? "Confirm reset" : "Reset non-pinned"}
+        </Button>
       }
-    >
-      {op.loading && items.length === 0 ? (
-        <div className="text-muted-foreground flex items-center gap-2 text-sm">
-          <Spinner className="size-4" /> Loading…
-        </div>
-      ) : items.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          No facets yet — run memory extraction (L1 tab) or onboarding, and the distiller folds profile facts into
-          stable facets here.
-        </p>
-      ) : (
+      loading={op.loading}
+      note={"· injected as <profile>"}
+      onRefresh={() => void op.execute()}
+      plural="facets"
+      singular="facet"
+      total={items.length}
+      list={
         <ol className="flex flex-col gap-2">
           {items.map((f) => (
             <li className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3" key={f.key}>
@@ -520,8 +548,8 @@ function ProfilePane() {
             </li>
           ))}
         </ol>
-      )}
-    </Pane>
+      }
+    />
   );
 }
 

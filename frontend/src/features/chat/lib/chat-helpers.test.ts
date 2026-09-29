@@ -231,6 +231,26 @@ describe("sessionToMarkdown", () => {
     expect(md).not.toContain("(plan completed)");
   });
 
+  it("marks failed/skipped steps and falls back to a completed tail when output is missing", () => {
+    const record = JSON.stringify({
+      type: "supervisor-plan",
+      v: 1,
+      goal: "Ship it",
+      steps: [
+        { id: "a", tool: "web_search", state: "completed" },
+        { id: "b", tool: "data_query_nl", state: "failed" },
+        { id: "c", tool: "cli_run", state: "skipped" },
+        { id: "d", tool: "deep_write", state: "running" },
+      ],
+    });
+    const md = sessionToMarkdown("t", [{ id: 9, sessionId: 1, role: "assistant", content: record, createdAt: null }]);
+    expect(md).toContain("✓ a [web_search] — completed");
+    expect(md).toContain("✗ b [data_query_nl] — failed");
+    expect(md).toContain("→ c [cli_run] — skipped");
+    expect(md).toContain("· d [deep_write] — running");
+    expect(md).toContain("(plan completed)");
+  });
+
   it("strips tool markup and titles null sessions", () => {
     const md = sessionToMarkdown(null, [
       { id: 3, sessionId: 1, role: "assistant", content: "hi ```tool{secret}``` there", createdAt: null },

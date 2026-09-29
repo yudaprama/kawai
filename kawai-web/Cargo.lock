@@ -3449,6 +3449,7 @@ dependencies = [
  "kawai-db",
  "kawai-embedding",
  "kawai-paths",
+ "kawai-tool-catalog",
  "kawai-tools",
  "libsql",
  "remote-llm",

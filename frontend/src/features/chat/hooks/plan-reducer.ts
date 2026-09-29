@@ -6,13 +6,8 @@
  *  and ZERO side effects, so it can be unit-tested without a renderer.
  */
 
-import type {
-  SupervisorArtifact,
-  SupervisorEvent,
-  SupervisorPlanState,
-  SupervisorStep,
-  PlanSummaryInfo,
-} from "./supervisor-types";
+import { hydrateArtifacts } from "./supervisor-types";
+import type { SupervisorEvent, SupervisorPlanState, SupervisorStep, PlanSummaryInfo } from "./supervisor-types";
 
 export type {
   SupervisorEvent,
@@ -275,12 +270,7 @@ export function supervisorReducer(
           output: event.output,
           retriesUsed: event.retries_used,
           finishedAt: now,
-          artifacts: event.artifacts.map((a) => ({
-            kind: a.kind as SupervisorArtifact["kind"],
-            handle: a.handle,
-            filename: a.filename,
-            label: a.label,
-          })),
+          artifacts: hydrateArtifacts(event.artifacts),
         },
       );
       return { ...state, steps };
@@ -334,12 +324,7 @@ export function supervisorReducer(
         pendingConfirmation: null,
         revising: null,
         finalOutput: event.finalOutput ?? null,
-        artifacts: (event.artifacts ?? []).map((a) => ({
-          kind: a.kind as SupervisorArtifact["kind"],
-          handle: a.handle,
-          filename: a.filename,
-          label: a.label,
-        })),
+        artifacts: hydrateArtifacts(event.artifacts),
         planCompletedAt: now,
       };
     }

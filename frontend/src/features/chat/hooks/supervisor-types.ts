@@ -1,5 +1,6 @@
-/** Shared supervisor types — single source for both the reducer and the hook.
- *  No runtime code here, so no circular-import risk. */
+/** Shared supervisor types — single source for the reducer, the hook, and the
+ *  workbench's persisted-record reader. Import-free (types + pure helpers
+ *  only), so no circular-import risk. */
 
 export type SupervisorEvent =
   | {
@@ -236,4 +237,73 @@ export interface SupervisorPlanState {
    *  planCompleted / planFailed. Surfaces a "repairing plan" rail row so the
    *  LLM revise rounds don't read as a hung run. */
   revising: { attempt: number } | null;
+}
+
+// ── Persisted plan records (assistant-message JSON in chat history) ─────────
+
+/** Wire shape of one persisted plan step (from the JSON blob in chat history). */
+export interface PersistedPlanStep {
+  id: string;
+  tool: string;
+  state: string;
+  output?: string;
+  /** Planner's human task label (restored journals show it, not the tool). */
+  task?: string;
+  /** Dispatch order — lets a restored journal re-derive phases. */
+  dependsOn?: string[];
+  /** Dataflow bindings — restored so the rail shows the step's wiring. */
+  inputs?: { arg: string; fromStep: string; output: string }[];
+  /** Per-step artifacts (charts/files) — restored on reopen. */
+  artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
+  /** Failure message — restored so failed steps keep their why. */
+  error?: string;
+}
+
+/** Wire shape of a persisted plan record (assistant message JSON blob). */
+export interface PersistedPlanRecord {
+  type?: string;
+  goal?: string | null;
+  planKey?: string | null;
+  steps?: PersistedPlanStep[];
+  output?: string | null;
+  artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
+  error?: string;
+  /** Still in flight when last written — the run never reached a terminal
+   *  event (app quit / crash). Renders as an interrupted (failed) run. */
+  partial?: boolean;
+}
+
+/** Map a persisted artifact list into the live SupervisorArtifact shape.
+ *  JSON round-trips widened `kind` to string — cast back at the parse
+ *  boundary (same as plan-reducer's stepCompleted handler). */
+export function hydrateArtifacts(
+  list: { kind: string; handle?: string; filename?: string; label?: string }[] | undefined,
+): SupervisorArtifact[] {
+  return (list ?? []).map((a) => ({
+    kind: a.kind as SupervisorArtifact["kind"],
+    handle: a.handle,
+    filename: a.filename,
+    label: a.label,
+  }));
+}
+
+/** Normalize a persisted plan step into the live SupervisorStep shape.
+ *  Non-terminal states never survive a restore — the run they belonged to is
+ *  over, so `running`/`awaitingConfirmation` come back as `pending` (the
+ *  restored rail must match the live-run rail field for field, with no step
+ *  stuck "running" forever). */
+export function hydrateStep(s: PersistedPlanStep): SupervisorStep {
+  return {
+    stepId: s.id,
+    tool: s.tool,
+    task: s.task ?? s.tool,
+    state: (s.state === "completed" || s.state === "failed" || s.state === "skipped"
+      ? s.state
+      : "pending") as SupervisorStep["state"],
+    dependsOn: s.dependsOn ?? [],
+    inputs: s.inputs ?? [],
+    output: s.output,
+    artifacts: hydrateArtifacts(s.artifacts),
+    error: s.error,
+  };
 }

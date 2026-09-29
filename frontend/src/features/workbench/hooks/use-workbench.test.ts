@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { hydrateStep, type PersistedPlanStep } from "./use-workbench";
+import { hydrateStep, type PersistedPlanStep } from "../../chat/hooks/supervisor-types";
 
 describe("hydrateStep", () => {
   it("restores per-step artifacts and the failure message from the record", () => {

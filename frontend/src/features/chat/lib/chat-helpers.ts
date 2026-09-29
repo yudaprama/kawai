@@ -1,3 +1,4 @@
+import type { PersistedPlanRecord } from "@/features/chat/hooks/supervisor-types";
 import type { UIMessage } from "@/lib/ai-types";
 import type { ChatMessageInfo, ChatSessionInfo } from "@/lib/api";
 
@@ -24,18 +25,6 @@ export function historyToMessages(rows: ChatMessageInfo[]): UIMessage[] {
   });
 }
 
-/** Structured supervisor-plan record persisted by useSupervisorPlan. */
-interface PersistedPlanRecord {
-  type: "supervisor-plan";
-  v: number;
-  goal: string | null;
-  steps: { id: string; tool: string; state: string; output?: string }[];
-  output: string | null;
-  /** Still in flight when last written — the run never reached a terminal
-   *  event (app quit / crash). */
-  partial?: boolean;
-}
-
 function parsePersistedPlan(content: string): PersistedPlanRecord | null {
   if (!content.startsWith("{")) return null;
   try {
@@ -49,7 +38,7 @@ function parsePersistedPlan(content: string): PersistedPlanRecord | null {
 
 /** Render a persisted plan record as readable history text. */
 function planToText(plan: PersistedPlanRecord): string {
-  const lines = plan.steps.map((s) => {
+  const lines = (plan.steps ?? []).map((s) => {
     const mark = s.state === "completed" ? "✓" : s.state === "failed" ? "✗" : s.state === "skipped" ? "→" : "·";
     return `${mark} ${s.id} [${s.tool}] — ${s.state}`;
   });

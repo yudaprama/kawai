@@ -1671,6 +1671,71 @@ pub async fn codegraph_init(
 
 // ── Supervisor (router + litert) ────────────────────────────────────────────
 
+/// Identity + billing bearer + stream-registry handle that every supervisor
+/// streaming command carries from prologue to epilogue.
+#[cfg(feature = "litert")]
+struct SupervisorStreamCtx {
+    user_id: String,
+    bearer: String,
+    session_id: i64,
+    registry: StreamRegistry,
+}
+
+#[cfg(feature = "litert")]
+impl SupervisorStreamCtx {
+    /// Prologue shared by every supervisor streaming command: identity plus
+    /// billing bearer off the desktop session — both fail closed (AGENTS.md
+    /// #8) — then the session must exist.
+    async fn open(
+        session: &Session,
+        registry: &State<'_, StreamRegistry>,
+        session_id: i64,
+    ) -> Result<Self, String> {
+        let user_id = session_user_id(session)?;
+        let bearer = session_bearer(session)?;
+        if !kawai_db::session_exists(&user_id, session_id)
+            .await
+            .map_err(|e| e.to_string())?
+        {
+            return Err(format!("session {session_id} not found"));
+        }
+        Ok(Self {
+            user_id,
+            bearer,
+            session_id,
+            registry: Arc::clone(registry),
+        })
+    }
+
+    /// Epilogue shared by every supervisor streaming command: open the cancel
+    /// token, build the execution stream, and pump its events into the
+    /// channel. The run's `tracing::info!` stays at the call site — component
+    /// label and message are per-command.
+    async fn run(
+        &self,
+        plan: kawai_router::TaskPlan,
+        tool_registry: kawai_router::ToolRegistry,
+        user_goal: Option<String>,
+        stream_id: String,
+        on_event: Channel<crate::supervisor::SupervisorEvent>,
+        pending: &crate::supervisor::PendingConfirmations,
+    ) -> Result<(), String> {
+        let token = CancellationToken::new();
+        let stream = crate::supervisor::execute_plan_stream_with_cancel(
+            plan,
+            tool_registry,
+            token.clone(),
+            pending.clone(),
+            stream_id.clone(),
+            self.user_id.clone(),
+            self.session_id,
+            user_goal,
+            Some(&self.bearer),
+        );
+        run_streaming(stream_id, on_event, &self.registry, stream, Some(token)).await
+    }
+}
+
 /// Streaming supervisor execution: build the tool registry for the user's
 /// session, run the plan deterministically, and stream progress events.
 #[cfg(feature = "litert")]
@@ -1685,18 +1750,7 @@ pub async fn execute_supervisor_plan(
     session: State<'_, Session>,
     pending: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
-    let user_id = session_user_id(&session)?;
-    // Billing bearer (Fase 0a execution side) — resolved at the transport
-    // edge like the identity above (AGENTS.md #8), fail closed here.
-    let bearer = session_bearer(&session)?;
-    let registry = Arc::clone(&registry);
-
-    if !kawai_db::session_exists(&user_id, session_id)
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        return Err(format!("session {session_id} not found"));
-    }
+    let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
 
     let step_agent = plan
         .steps
@@ -1711,7 +1765,7 @@ pub async fn execute_supervisor_plan(
         _ => crate::supervisor::AUTO_AGENT_ID,
     };
     let tool_registry = crate::supervisor::build_supervisor_registry(
-        &user_id,
+        &ctx.user_id,
         session_id,
         agent_id,
         &crate::supervisor::plan_key(&plan),
@@ -1719,11 +1773,9 @@ pub async fn execute_supervisor_plan(
     .await
     .map_err(|e| e.to_string())?;
 
-    let step_count = plan.steps.len();
-    let token = CancellationToken::new();
-    let stream = crate::supervisor::execute_plan_stream_with_cancel(plan, tool_registry, token.clone(), pending.inner().clone(), stream_id.clone(), user_id.clone(), session_id, user_goal, Some(&bearer));
-    tracing::info!(component = "supervisor", steps = step_count, user = %user_id, session = session_id, "executing plan");
-    run_streaming(stream_id, on_event, &registry, stream, Some(token)).await
+    tracing::info!(component = "supervisor", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "executing plan");
+    ctx.run(plan, tool_registry, user_goal, stream_id, on_event, &pending)
+        .await
 }
 
 /// Stock Research (PLAN-stock-research): run the fixed stock-research pipeline
@@ -1738,8 +1790,8 @@ pub async fn run_stock_research(
     trade_date: Option<String>,
     analysts: Option<Vec<String>>,
     domain: Option<String>,
-    /// Raw device locale tag (e.g. "id-ID") — resolved into the pipelines'
-    /// output language at this edge (see `supervisor::resolve_user_language`).
+    // Raw device locale tag (e.g. "id-ID") — resolved into the pipelines'
+    // output language at this edge (see `supervisor::resolve_user_language`).
     language: Option<String>,
     stream_id: String,
     on_event: Channel<crate::supervisor::SupervisorEvent>,
@@ -1747,18 +1799,7 @@ pub async fn run_stock_research(
     session: State<'_, Session>,
     pending: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
-    let user_id = session_user_id(&session)?;
-    // Billing bearer — resolved at the transport edge (AGENTS.md #8),
-    // fail closed here before the supervisor runs.
-    let bearer = session_bearer(&session)?;
-    let registry = Arc::clone(&registry);
-
-    if !kawai_db::session_exists(&user_id, session_id)
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        return Err(format!("session {session_id} not found"));
-    }
+    let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
 
     let analyst_refs: Vec<String> = analysts.unwrap_or_default();
     let analyst_slices: Vec<&str> = analyst_refs.iter().map(String::as_str).collect();
@@ -1779,28 +1820,16 @@ pub async fn run_stock_research(
         &language,
     );
     let tool_registry = crate::supervisor::build_desk_registry(
-        &user_id,
+        &ctx.user_id,
         session_id,
         &crate::supervisor::plan_key(&plan),
     )
     .await
     .map_err(|e| e.to_string())?;
 
-    let step_count = plan.steps.len();
-    let token = CancellationToken::new();
-    let stream = crate::supervisor::execute_plan_stream_with_cancel(
-        plan,
-        tool_registry,
-        token.clone(),
-        pending.inner().clone(),
-        stream_id.clone(),
-        user_id.clone(),
-        session_id,
-        Some(user_goal),
-        Some(&bearer),
-    );
-    tracing::info!(component = "stock-research", steps = step_count, user = %user_id, session = session_id, "running stock research");
-    run_streaming(stream_id, on_event, &registry, stream, Some(token)).await
+    tracing::info!(component = "stock-research", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running stock research");
+    ctx.run(plan, tool_registry, Some(user_goal), stream_id, on_event, &pending)
+        .await
 }
 
 /// YouTube Summary (PLAN-youtube-summary): fetch the transcript, build the
@@ -1813,8 +1842,8 @@ pub async fn run_stock_research(
 pub async fn run_youtube_summary(
     session_id: i64,
     url: String,
-    /// Raw device locale tag (e.g. "id-ID") — resolved into the pipelines'
-    /// output language at this edge (see `supervisor::resolve_user_language`).
+    // Raw device locale tag (e.g. "id-ID") — resolved into the pipelines'
+    // output language at this edge (see `supervisor::resolve_user_language`).
     language: Option<String>,
     stream_id: String,
     on_event: Channel<crate::supervisor::SupervisorEvent>,
@@ -1822,18 +1851,7 @@ pub async fn run_youtube_summary(
     session: State<'_, Session>,
     pending: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
-    let user_id = session_user_id(&session)?;
-    // Billing bearer — resolved at the transport edge (AGENTS.md #8),
-    // fail closed here before the supervisor runs.
-    let bearer = session_bearer(&session)?;
-    let registry = Arc::clone(&registry);
-
-    if !kawai_db::session_exists(&user_id, session_id)
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        return Err(format!("session {session_id} not found"));
-    }
+    let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
 
     let video = kawai_youtube::fetch_video(&url).await?;
     let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
@@ -1841,28 +1859,16 @@ pub async fn run_youtube_summary(
     let plan = kawai_youtube::build_youtube_plan(&video, &language)?;
     let user_goal = kawai_youtube::youtube_user_goal(&video, &language);
     let tool_registry = crate::supervisor::build_youtube_registry(
-        &user_id,
+        &ctx.user_id,
         session_id,
         &crate::supervisor::plan_key(&plan),
     )
     .await
     .map_err(|e| e.to_string())?;
 
-    let step_count = plan.steps.len();
-    let token = CancellationToken::new();
-    let stream = crate::supervisor::execute_plan_stream_with_cancel(
-        plan,
-        tool_registry,
-        token.clone(),
-        pending.inner().clone(),
-        stream_id.clone(),
-        user_id.clone(),
-        session_id,
-        Some(user_goal),
-        Some(&bearer),
-    );
-    tracing::info!(component = "youtube", steps = step_count, user = %user_id, session = session_id, "running youtube summary");
-    run_streaming(stream_id, on_event, &registry, stream, Some(token)).await
+    tracing::info!(component = "youtube", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running youtube summary");
+    ctx.run(plan, tool_registry, Some(user_goal), stream_id, on_event, &pending)
+        .await
 }
 
 // ── TTS (piper-rs, feature "tts") ──────────────────────────────────────

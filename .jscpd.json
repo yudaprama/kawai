@@ -3,11 +3,17 @@
   "minTokens": 50,
   "ignore": [
     "**/lib/streamdown/**",
+    "**/components/ai-elements/**",
+    "**/components/ui/**",
+    "**/features/assets/components/asset/**",
+    "**/assets/*.svg",
     "**/*.test.ts",
     "**/*.test.tsx",
     "**/*.spec.ts",
     "**/AGENTS.md",
     "**/DESIGN.md",
-    "**/generated-tools/**/*.gen.rs"
+    "**/generated-tools/**/*.gen.rs",
+    "**/vendor/**",
+    "**/target/**"
   ]
 }

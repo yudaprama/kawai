@@ -6,7 +6,14 @@ import { call, callWithEvents, respondSupervisorConfirmation } from "@/lib/api";
 import { type StreamControl, streamOperation } from "@/lib/stream";
 import type { UIMessage, UIMessagePart } from "@/lib/ai-types";
 import { initialSupervisorState, parseReview, pruneReviewStep, supervisorReducer } from "./plan-reducer";
-import type { SupervisorArtifact, SupervisorEvent, SupervisorPlanState, SupervisorStep } from "./supervisor-types";
+import type {
+  PersistedPlanRecord,
+  PersistedPlanStep,
+  SupervisorEvent,
+  SupervisorPlanState,
+  SupervisorStep,
+} from "./supervisor-types";
+import { hydrateArtifacts, hydrateStep } from "./supervisor-types";
 
 // Re-export types so existing import paths (`@/features/chat/hooks/use-supervisor-plan`) keep working.
 export type {
@@ -99,23 +106,9 @@ export interface PersistedPlan {
   type: "supervisor-plan";
   v: 1;
   goal: string | null;
-  steps: {
-    id: string;
-    tool: string;
-    state: SupervisorStep["state"];
-    output?: string;
-    /** Planner's human task label (restored journals show it, not the tool). */
-    task?: string;
-    /** Dispatch order — lets a restored journal re-derive phases. */
-    dependsOn?: string[];
-    /** Dataflow bindings — restored so the rail shows the step's wiring. */
-    inputs?: { arg: string; fromStep: string; output: string }[];
-    /** Per-step artifacts (charts/files) — captured once here at terminal
-     *  write; the wire events that carried them are gone by reopen time. */
-    artifacts?: PersistedPlan["artifacts"];
-    /** Failure message — restored so failed steps keep their why. */
-    error?: string;
-  }[];
+  /** Each step's wire shape is the shared persisted-step contract (also what
+   *  the reader hydrates back into a live SupervisorStep). */
+  steps: PersistedPlanStep[];
   output: string | null;
   /** Execution-memo key — lets a restored journal fetch FULL step bodies
    *  from supervisor_step_results (not just the ≤2000-char embeds). Absent on
@@ -634,57 +627,18 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
    *  record's own planKey, or falls back to the session-scope step_output
    *  read for records without one. No-op mid-run. */
   const restorePersisted = useCallback(
-    (record: {
-      goal?: string | null;
-      steps?: {
-        id: string;
-        tool: string;
-        state: string;
-        output?: string;
-        task?: string;
-        dependsOn?: string[];
-        inputs?: { arg: string; fromStep: string; output: string }[];
-        artifacts?: PersistedPlan["artifacts"];
-        error?: string;
-      }[];
-      output?: string | null;
-      artifacts?: PersistedPlan["artifacts"];
-      error?: string;
-      partial?: boolean;
-    }) => {
+    (record: PersistedPlanRecord) => {
       if (streamCtrl.current) return;
-      // Hydrate EXACTLY like use-workbench's hydrateStep — same task names,
-      // same dependsOn-derived phases, and non-terminal states stay pending
-      // so a restored rail matches the live-run rail field for field.
-      const steps: SupervisorStep[] = (record.steps ?? []).map((s) => ({
-        stepId: s.id,
-        tool: s.tool,
-        task: s.task ?? s.tool,
-        dependsOn: s.dependsOn ?? [],
-        inputs: s.inputs ?? [],
-        state: (s.state === "completed" || s.state === "failed" || s.state === "skipped"
-          ? s.state
-          : "pending") as SupervisorStep["state"],
-        output: s.output,
-        artifacts: (s.artifacts ?? []).map((a) => ({
-          kind: a.kind as SupervisorArtifact["kind"],
-          handle: a.handle,
-          filename: a.filename,
-          label: a.label,
-        })),
-        error: s.error,
-      }));
+      // Hydrate through the shared contract — same task names, same
+      // dependsOn-derived phases, non-terminal states stay pending, so a
+      // restored rail matches the live-run rail field for field.
+      const steps = (record.steps ?? []).map(hydrateStep);
       patch({
         status: record.error || record.partial ? "failed" : "completed",
         goal: record.goal ?? null,
         steps,
         finalOutput: record.output ?? null,
-        artifacts: (record.artifacts ?? []).map((a) => ({
-          kind: a.kind as SupervisorArtifact["kind"],
-          handle: a.handle,
-          filename: a.filename,
-          label: a.label,
-        })),
+        artifacts: hydrateArtifacts(record.artifacts),
         error: record.error ?? (record.partial ? "Run interrupted before completion." : null),
         planCompletedAt: Date.now(),
       });

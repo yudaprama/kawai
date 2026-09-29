@@ -7,60 +7,9 @@ import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
 import type { SupervisorArtifact, SupervisorEvent, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { publishTokenBalance, refreshTokenBalance } from "@/features/topup/use-token-balance";
+import { hydrateStep, type PersistedPlanRecord } from "@/features/chat/hooks/supervisor-types";
 
 // ── Derived view models ─────────────────────────────────────────────────────
-
-/** Wire shape of one persisted plan step (from the JSON blob in chat history). */
-export interface PersistedPlanStep {
-  id: string;
-  tool: string;
-  state: string;
-  output?: string;
-  task?: string;
-  dependsOn?: string[];
-  /** Dataflow bindings — restored so the rail shows the step's wiring. */
-  inputs?: { arg: string; fromStep: string; output: string }[];
-  /** Per-step artifacts (charts/files) — restored on reopen. */
-  artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
-  /** Failure message — restored so failed steps keep their why. */
-  error?: string;
-}
-
-/** Wire shape of a persisted plan record (assistant message JSON blob). */
-export interface PersistedPlanRecord {
-  type?: string;
-  goal?: string | null;
-  planKey?: string | null;
-  steps?: PersistedPlanStep[];
-  output?: string | null;
-  artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
-  error?: string;
-  /** Still in flight when last written — the run never reached a terminal
-   *  event (app quit / crash). Renders as an interrupted (failed) run. */
-  partial?: boolean;
-}
-
-/** Normalize a persisted plan step into the live SupervisorStep shape. */
-export function hydrateStep(s: PersistedPlanStep) {
-  return {
-    stepId: s.id,
-    tool: s.tool,
-    task: s.task ?? s.tool,
-    state: s.state as SupervisorStep["state"],
-    dependsOn: s.dependsOn ?? [],
-    inputs: s.inputs ?? [],
-    output: s.output,
-    // JSON round-trips widened `kind` to string — cast back at the parse
-    // boundary (same as plan-reducer's stepCompleted handler).
-    artifacts: (s.artifacts ?? []).map((a) => ({
-      kind: a.kind as SupervisorArtifact["kind"],
-      handle: a.handle,
-      filename: a.filename,
-      label: a.label,
-    })),
-    error: s.error,
-  };
-}
 
 // ── Follow-up composer (PLAN-followup-composer.md) ──────────────────────
 
@@ -569,6 +518,78 @@ export function useWorkbench() {
     });
   }, [terminal, supervisor.planKey, supervisor.steps]);
 
+  /** Shared submit pre-flight for every workbench run: clears the previous
+   *  gate failure, then the Fase 0a balance gate (PLAN-qris-topup) — ONE
+   *  balance read per submit attempt. FAIL-CLOSED: zero tokens AND an
+   *  unreadable balance both block the run — an error means the worker cannot
+   *  bill it, so it must not silently proceed. It sits before every run-state
+   *  mutation so a blocked submit leaves the composer/badges untouched, and
+   *  it THROWS: the composer keeps its draft (PromptInput clears only on
+   *  resolution) and the page never leaves the landing; `setSessionError`
+   *  carries the reason under the composer. The authoritative gate is the
+   *  same read inside `supervisor::plan_task`; this one is UX only. Then the
+   *  lazy session create (sessions are created on the first run; workbench
+   *  runs live in their own session so chat history stays chat). Returns the
+   *  session id. */
+  const preflightRun = useCallback(
+    async (sessionTitle: string, failPrefix: string): Promise<number> => {
+      // A fresh attempt clears the previous gate failure.
+      setSessionError(null);
+      let tokens: number;
+      try {
+        ({ tokens } = await call<{ tokens: number }>("topup_balance"));
+      } catch (err) {
+        const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
+        toast(msg);
+        throw new Error(msg);
+      }
+      // The gate's read doubles as the shared chip's freshest PRE-debit
+      // value — it lands before `plan_task` debits, so the run below
+      // re-reads once it resolves.
+      publishTokenBalance(tokens);
+      if (tokens <= 0) {
+        const msg = "Token habis — isi ulang lewat Top Up";
+        toast(msg);
+        emitOpenTopup();
+        throw new Error(msg);
+      }
+      let sid = sessionId;
+      if (sid == null) {
+        try {
+          const s = await call<{ id: number }>("create_chat_session", { title: sessionTitle });
+          sid = s.id;
+          setSessionId(s.id);
+        } catch (err) {
+          const msg = `${failPrefix} — ${errText(err)}`;
+          setSessionError(msg);
+          throw new Error(msg);
+        }
+      }
+      return sid;
+    },
+    [sessionId],
+  );
+
+  /** All gates passed — consume the follow-up/quote arming, clear the deck
+   *  (a new run gets its own), and append the run record. Called AFTER every
+   *  gate so a blocked submit leaves the arming intact for the retry. */
+  const beginRun = useCallback((goal: string, quoted: boolean) => {
+    setFollowUp(false);
+    setQuoteTarget(null);
+    setQuotedLastRun(quoted);
+    setDeck(null); // a new run — its own deck (if any) replaces the hero
+    setRuns((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}`,
+        goal,
+        status: "running",
+        startedAt: Date.now(),
+        quoted,
+      },
+    ]);
+  }, []);
+
   const run = useCallback(
     async (
       goal: string,
@@ -593,8 +614,6 @@ export function useWorkbench() {
         setSessionError(msg);
         throw new Error(msg);
       }
-      // A fresh attempt clears the previous gate failure.
-      setSessionError(null);
       setLastUserText(trimmed);
       // Pin the explicit target BEFORE any await — the planner must quote
       // exactly what the user armed, not whatever completes later.
@@ -602,49 +621,8 @@ export function useWorkbench() {
       const targetUsable =
         target != null && target.status === "completed" && target.outputFull != null && target.planKey != null;
       const quote = opts?.quote === true || targetUsable;
-      // Fase 0a tokens pre-check (PLAN-qris-topup) — ONE balance read per
-      // submit attempt. FAIL-CLOSED: zero tokens AND an unreadable balance
-      // both block the run — an error means the worker cannot bill it, so it
-      // must not silently proceed (the old `catch {}` fail-open let every
-      // transport hiccup through, which is how runs slipped past a zero
-      // balance). Sits before every state mutation so a blocked submit leaves
-      // the composer/badges untouched, and it THROWS: the composer keeps its
-      // draft (PromptInput clears only on resolution) and the page never
-      // leaves the landing. The authoritative gate is the same read inside
-      // `supervisor::plan_task`; this one is UX only.
-      let tokens: number;
-      try {
-        ({ tokens } = await call<{ tokens: number }>("topup_balance"));
-      } catch (err) {
-        const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
-        toast(msg);
-        throw new Error(msg);
-      }
-      // The gate's read doubles as the shared chip's freshest PRE-debit
-      // value — it lands before `plan_task` debits, so the run below
-      // re-reads once it resolves.
-      publishTokenBalance(tokens);
-      if (tokens <= 0) {
-        toast("Token habis — isi ulang lewat Top Up");
-        emitOpenTopup();
-        throw new Error("Token habis — isi ulang lewat Top Up");
-      }
-      // Sessions are lazy — create on first desk run. Workbench runs live in
-      // their own session so chat history stays chat.
-      let sid = sessionId;
-      if (sid == null) {
-        try {
-          const s = await call<{ id: number }>("create_chat_session", {
-            title: `Desk: ${trimmed.slice(0, 72)}`,
-          });
-          sid = s.id;
-          setSessionId(s.id);
-        } catch (err) {
-          const msg = `Couldn't start the run — ${errText(err)}`;
-          setSessionError(msg);
-          throw new Error(msg);
-        }
-      }
+      // Balance gate + lazy session — the shared fail-closed pre-flight.
+      const sid = await preflightRun(`Desk: ${trimmed.slice(0, 72)}`, "Couldn't start the run");
       // Knowledge files attached via the composer's @ menu AND files
       // imported through the composer (auto-attach chips) scope this run's
       // knowledge_search to the desk session (same contract as chat).
@@ -662,24 +640,12 @@ export function useWorkbench() {
           throw new Error(msg);
         }
       }
-      // All gates passed — consume the follow-up/quote arming here, AFTER
-      // the gates, so a blocked submit leaves them intact for the retry.
-      setFollowUp(false);
-      setQuoteTarget(null);
-      setQuotedLastRun(quote);
-      // All referenced — consumed. Clear so the composer shows a clean slate.
+      // All gates passed — consume the follow-up/quote arming + append the
+      // run record here, AFTER the gates, so a blocked submit leaves them
+      // intact for the retry. All referenced files consumed — the composer
+      // shows a clean slate.
+      beginRun(trimmed, quote);
       setAttachedFiles([]);
-      setDeck(null); // a new run — its own deck (if any) replaces the hero
-      setRuns((prev) => [
-        ...prev,
-        {
-          id: `${Date.now()}`,
-          goal: trimmed,
-          status: "running",
-          startedAt: Date.now(),
-          quoted: quote,
-        },
-      ]);
       // The run is really starting — the page's navigation (landing → run
       // view) rides this callback, batched with the setRuns above.
       opts?.onStart?.();
@@ -718,7 +684,7 @@ export function useWorkbench() {
         void refreshTokenBalance();
       }
     },
-    [attachedFiles, sessionId, supervisor, canFollowUp, quoteTarget, runs],
+    [attachedFiles, supervisor, canFollowUp, quoteTarget, runs, preflightRun, beginRun],
   );
 
   /** Stock Research (PLAN-stock-research): run the FIXED stock-research
@@ -741,62 +707,24 @@ export function useWorkbench() {
       const sym = ticker.trim().toUpperCase();
       if (!sym) return;
       const assetClass = domain ?? "stock";
-      // A fresh attempt clears the previous gate failure.
-      setSessionError(null);
-      // Fase 0a tokens pre-check — the same fail-closed UX gate as run();
-      // the authoritative gate rides the backend op. A blocked submit THROWS
-      // so the form keeps its inputs and the page never leaves the landing.
-      let tokens: number;
-      try {
-        ({ tokens } = await call<{ tokens: number }>("topup_balance"));
-      } catch (err) {
-        const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
-        toast(msg);
-        throw new Error(msg);
-      }
-      publishTokenBalance(tokens);
-      if (tokens <= 0) {
-        toast("Token habis — isi ulang lewat Top Up");
-        emitOpenTopup();
-        throw new Error("Token habis — isi ulang lewat Top Up");
-      }
-      // Sessions are lazy — created on the first research run, same as run().
-      let sid = sessionId;
-      if (sid == null) {
-        try {
-          const s = await call<{ id: number }>("create_chat_session", {
-            title: `${assetClass === "crypto" ? "Crypto" : assetClass === "commodity" ? "Commodity" : assetClass === "forex" ? "Forex" : "Stock"} Research: ${sym}${tradeDate ? ` · ${tradeDate}` : ""}`.slice(0, 80),
-          });
-          sid = s.id;
-          setSessionId(s.id);
-        } catch (err) {
-          const msg = `Couldn't start the analysis — ${errText(err)}`;
-          setSessionError(msg);
-          throw new Error(msg);
-        }
-      }
+      // Balance gate + lazy session — the shared fail-closed pre-flight.
+      const sid = await preflightRun(
+        `${assetClass === "crypto" ? "Crypto" : assetClass === "commodity" ? "Commodity" : assetClass === "forex" ? "Forex" : "Stock"} Research: ${sym}${tradeDate ? ` · ${tradeDate}` : ""}`.slice(
+          0,
+          80,
+        ),
+        "Couldn't start the analysis",
+      );
       // All gates passed — consume the follow-up/quote arming after them so
       // a blocked submit leaves both intact for the retry.
-      setFollowUp(false);
-      setQuoteTarget(null);
-      setQuotedLastRun(false);
-      setDeck(null); // a new run — its own deck (if any) replaces the hero
       const goal = `Analyze ${sym}${tradeDate ? ` as of ${tradeDate}` : ""} — full ${assetClass === "crypto" ? "crypto" : assetClass === "commodity" ? "commodity" : assetClass === "forex" ? "forex" : "stock"}-research pipeline`;
-      setRuns((prev) => [
-        ...prev,
-        {
-          id: `${Date.now()}`,
-          goal,
-          status: "running",
-          startedAt: Date.now(),
-        },
-      ]);
+      beginRun(goal, false);
       opts?.onStart?.();
       void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
       supervisor.runDesk({ ticker: sym, tradeDate, analysts, domain: assetClass }, sid);
       void refreshTokenBalance();
     },
-    [sessionId, supervisor],
+    [supervisor, preflightRun, beginRun],
   );
 
   /** YouTube Summary (PLAN-youtube-summary): one link in, the FIXED
@@ -816,62 +744,18 @@ export function useWorkbench() {
     ) => {
       const link = url.trim();
       if (!link) return;
-      // A fresh attempt clears the previous gate failure.
-      setSessionError(null);
-      // Fase 0a tokens pre-check — the same fail-closed UX gate as run();
-      // the authoritative gate rides the backend op. A blocked submit THROWS
-      // so the form keeps its input and the page never leaves the landing.
-      let tokens: number;
-      try {
-        ({ tokens } = await call<{ tokens: number }>("topup_balance"));
-      } catch (err) {
-        const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
-        toast(msg);
-        throw new Error(msg);
-      }
-      publishTokenBalance(tokens);
-      if (tokens <= 0) {
-        toast("Token habis — isi ulang lewat Top Up");
-        emitOpenTopup();
-        throw new Error("Token habis — isi ulang lewat Top Up");
-      }
-      // Sessions are lazy — created on the first youtube run, same as run().
-      let sid = sessionId;
-      if (sid == null) {
-        try {
-          const s = await call<{ id: number }>("create_chat_session", {
-            title: `YouTube: ${link}`.slice(0, 80),
-          });
-          sid = s.id;
-          setSessionId(s.id);
-        } catch (err) {
-          const msg = `Couldn't start the summary — ${errText(err)}`;
-          setSessionError(msg);
-          throw new Error(msg);
-        }
-      }
+      // Balance gate + lazy session — the shared fail-closed pre-flight.
+      const sid = await preflightRun(`YouTube: ${link}`.slice(0, 80), "Couldn't start the summary");
       // All gates passed — consume the follow-up/quote arming after them so
       // a blocked submit leaves both intact for the retry.
-      setFollowUp(false);
-      setQuoteTarget(null);
-      setQuotedLastRun(false);
-      setDeck(null); // a new run — its own deck (if any) replaces the hero
       const goal = `YouTube summary — ${link}`.slice(0, 140);
-      setRuns((prev) => [
-        ...prev,
-        {
-          id: `${Date.now()}`,
-          goal,
-          status: "running",
-          startedAt: Date.now(),
-        },
-      ]);
+      beginRun(goal, false);
       opts?.onStart?.();
       void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
       supervisor.runYoutube({ url: link }, sid);
       void refreshTokenBalance();
     },
-    [sessionId, supervisor],
+    [supervisor, preflightRun, beginRun],
   );
 
   /** Open a past session in the workbench: clears the in-memory runs and

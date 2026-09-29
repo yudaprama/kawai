@@ -14,6 +14,7 @@
 //! the available names).
 
 pub mod deadline;
+pub mod golden;
 
 use std::collections::HashMap;
 use std::fmt;

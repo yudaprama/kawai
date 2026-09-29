@@ -20,6 +20,21 @@ use tower_http::services::ServeDir;
 const SESSION_COOKIE: &str = "kawai_session";
 const COOKIE_MAX_AGE: u32 = 30 * 24 * 60 * 60; // 30 days, seconds
 
+/// Uniform 500 mapping for a failed store/logic call: the message becomes
+/// the error body (the `e: String` error convention shared by `logic` fns,
+/// plus any other `Display` error the store layer surfaces).
+fn err500(msg: impl std::fmt::Display) -> (StatusCode, String) {
+    (StatusCode::INTERNAL_SERVER_ERROR, msg.to_string())
+}
+
+/// Request body of every op whose payload is exactly one stored-file id
+/// (onboarding import, data preview, office read/delete/export, graph index).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileIdRequest {
+    file_id: String,
+}
+
 #[derive(Deserialize)]
 struct GreetRequest {
     name: String,
@@ -324,15 +339,10 @@ async fn onboarding_reset_handler(
         .map_err(|e| (db_status(&e), e.to_string()))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OnboardingImportDocumentRequest {
-    file_id: String,
-}
 
 async fn onboarding_import_document_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<OnboardingImportDocumentRequest>,
+    Json(req): Json<FileIdRequest>,
 ) -> Result<Json<u32>, (StatusCode, String)> {
     logic::onboarding::onboarding_import_document(&user_id, &req.file_id)
         .await
@@ -515,7 +525,7 @@ async fn translate_deliverable_handler(
     logic::translate_deliverable(&user_id, req.session_id, &req.markdown, &req.language)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(err500)
 }
 
 /// Authenticated RPC: saved translations (language chips) for this exact
@@ -533,7 +543,7 @@ async fn deliverable_translations_handler(
     logic::deliverable_translations(&user_id, &req.markdown)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(err500)
 }
 
 async fn skill_list_handler(
@@ -595,7 +605,7 @@ async fn send_verification_email_handler(
     logic::email::send_verification_email(&req.to)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+        .map_err(err500)
 }
 
 // ── Local email+password auth (public; same ops as the Tauri commands) ──────
@@ -805,10 +815,6 @@ async fn estimate_gas_handler(
 
 // ── Device-scoped Monad hot wallet (public; same ops as the Tauri commands) ──
 
-fn wallet_err<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
-}
-
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct MonadSignMessageRequest {
@@ -816,11 +822,11 @@ struct MonadSignMessageRequest {
 }
 
 async fn monad_wallet_address_handler() -> Result<Json<Option<logic::monad_wallet::WalletAddress>>, (StatusCode, String)> {
-    logic::monad_wallet::address().map(Json).map_err(wallet_err)
+    logic::monad_wallet::address().map(Json).map_err(err500)
 }
 
 async fn monad_wallet_create_handler() -> Result<Json<logic::monad_wallet::WalletAddress>, (StatusCode, String)> {
-    logic::monad_wallet::create().map(Json).map_err(wallet_err)
+    logic::monad_wallet::create().map(Json).map_err(err500)
 }
 
 async fn monad_wallet_sign_message_handler(
@@ -829,11 +835,11 @@ async fn monad_wallet_sign_message_handler(
     logic::monad_wallet::sign_message(&req.message)
         .await
         .map(Json)
-        .map_err(wallet_err)
+        .map_err(err500)
 }
 
 async fn monad_wallet_delete_handler() -> Result<Json<()>, (StatusCode, String)> {
-    logic::monad_wallet::delete().map(Json).map_err(wallet_err)
+    logic::monad_wallet::delete().map(Json).map_err(err500)
 }
 
 // ── User fund-moving ops (signed on-device by the user's own keychain key) —
@@ -875,7 +881,7 @@ async fn transfer_native_handler(
     logic::monad_wallet::transfer_native(&req.to, &req.amount)
         .await
         .map(Json)
-        .map_err(wallet_err)
+        .map_err(err500)
 }
 
 async fn transfer_token_handler(
@@ -884,7 +890,7 @@ async fn transfer_token_handler(
     logic::monad_wallet::transfer_token(&req.token_address, &req.to, &req.amount, req.decimals)
         .await
         .map(Json)
-        .map_err(wallet_err)
+        .map_err(err500)
 }
 
 async fn transfer_usdt_handler(
@@ -893,7 +899,7 @@ async fn transfer_usdt_handler(
     logic::monad_wallet::transfer_usdt(&req.to, &req.amount)
         .await
         .map(Json)
-        .map_err(wallet_err)
+        .map_err(err500)
 }
 
 async fn deposit_to_vault_handler(
@@ -902,7 +908,7 @@ async fn deposit_to_vault_handler(
     logic::monad_wallet::deposit_to_vault(&req.amount)
         .await
         .map(Json)
-        .map_err(wallet_err)
+        .map_err(err500)
 }
 
 async fn get_transaction_receipt_handler(
@@ -911,13 +917,13 @@ async fn get_transaction_receipt_handler(
     logic::monad_wallet::transaction_receipt(&req.tx_hash)
         .await
         .map(Json)
-        .map_err(wallet_err)
+        .map_err(err500)
 }
 
 /// Device tx history (local JSON log) — activity read, behind auth on web
 /// like the receipt op; the Tauri command is sessionless (device-scoped).
 async fn monad_wallet_history_handler() -> Result<Json<Vec<logic::monad_wallet::TxRecord>>, (StatusCode, String)> {
-    logic::monad_wallet::history().map(Json).map_err(wallet_err)
+    logic::monad_wallet::history().map(Json).map_err(err500)
 }
 
 async fn generate_activity_handler(
@@ -1117,7 +1123,7 @@ async fn local_load_model_handler(
                 Ok(p) => p,
                 Err(_) => logic::ensure_model()
                     .await
-                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+                    .map_err(err500)?,
             }
         }
     };
@@ -1131,7 +1137,7 @@ async fn local_load_model_handler(
     )
     .await
     .map(Json)
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+    .map_err(err500)
 }
 
 /// Protected RPC: return the current on-device model status.
@@ -1185,7 +1191,7 @@ async fn local_llm_reset_handler(
     logic::local_llm::reset_conversation(&user_id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 /// Protected RPC: toggle thinking mode for subsequent on-device chats.
@@ -1212,7 +1218,7 @@ async fn local_llm_unload_handler(
     logic::local_llm::unload_model(&user_id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 // ── Office document ops (feature "office") ──────────────────────────────────
@@ -1252,7 +1258,7 @@ async fn knowledge_context_handler(
     logic::office::knowledge_context(&user_id, &req.file_ids)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1270,7 +1276,7 @@ async fn knowledge_search_handler(
     logic::rag::knowledge_search(user_id, req.session_id, req.query, req.mode)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1287,7 +1293,7 @@ async fn knowledge_forget_handler(
     logic::rag::forget_file(user_id, req.session_id, req.file_ids)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1303,7 +1309,7 @@ async fn list_session_files_handler(
     logic::rag::list_session_files(&user_id, req.session_id)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1320,7 +1326,7 @@ async fn office_index_file_handler(
     logic::rag::office_index_file(user_id, req.session_id, req.file_id)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1336,7 +1342,7 @@ async fn knowledge_list_handler(
     logic::rag::knowledge_list(&user_id, req.session_id)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1353,20 +1359,15 @@ async fn knowledge_add_to_session_handler(
     logic::rag::knowledge_add_to_session(&user_id, req.session_id, &req.file_ids)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 // ── SQL data-source profiles (analytics agent) ──────────────────────────────
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DataPreviewRequest {
-    file_id: String,
-}
 
 async fn data_preview_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<DataPreviewRequest>,
+    Json(req): Json<FileIdRequest>,
 ) -> Result<Json<logic::analytics::SchemaInfo>, (StatusCode, String)> {
     logic::analytics::data_preview(&user_id, &req.file_id)
         .await
@@ -1380,7 +1381,7 @@ async fn sql_profile_list_handler(
     logic::analytics::sql_profile_list(&user_id)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1413,7 +1414,7 @@ async fn sql_profile_delete_handler(
     logic::analytics::sql_profile_delete(&user_id, &req.name)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1429,7 +1430,7 @@ async fn sql_profile_test_handler(
     logic::analytics::sql_profile_test(&user_id, &req.name)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1449,29 +1450,24 @@ async fn knowledge_import_youtube_handler(
         .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OfficeDeleteFileRequest {
-    file_id: String,
-}
 
 async fn office_delete_file_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<OfficeDeleteFileRequest>,
+    Json(req): Json<FileIdRequest>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     logic::rag::office_delete_file(&user_id, &req.file_id)
         .await
         .map(|_| StatusCode::NO_CONTENT)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 async fn office_restore_backup_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<OfficeDeleteFileRequest>,
+    Json(req): Json<FileIdRequest>,
 ) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
     logic::office::store::restore_backup(&user_id, &req.file_id)
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 /// Re-theme a stored deck (.html) with another template pack in place — the
@@ -1503,7 +1499,7 @@ async fn office_list_files_handler(
 ) -> Result<Json<Vec<logic::office::OfficeFile>>, (StatusCode, String)> {
     logic::office::list_files(&user_id)
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1520,68 +1516,48 @@ async fn export_deliverable_handler(
     logic::office::export_deliverable(&user_id, &req.markdown, &req.filename)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OfficeReadDocumentRequest {
-    file_id: String,
-}
 
 async fn office_read_document_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<OfficeReadDocumentRequest>,
+    Json(req): Json<FileIdRequest>,
 ) -> Result<Json<logic::office::ReadDocumentResult>, (StatusCode, String)> {
     let markdown = logic::office::read_document(&user_id, &req.file_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(err500)?;
     Ok(Json(logic::office::ReadDocumentResult { markdown }))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OfficeExportDeckRequest {
-    file_id: String,
-}
 
 async fn office_export_deck_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<OfficeExportDeckRequest>,
+    Json(req): Json<FileIdRequest>,
 ) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
     let deck = logic::office::export_deck_pptx(&user_id, &req.file_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(err500)?;
     Ok(Json(deck))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OfficeExportDeckHtmlRequest {
-    file_id: String,
-}
 
 async fn office_export_deck_html_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<OfficeExportDeckHtmlRequest>,
+    Json(req): Json<FileIdRequest>,
 ) -> Result<Json<logic::office::OfficeFile>, (StatusCode, String)> {
     let file = logic::office::render_deck_html(&user_id, &req.file_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(err500)?;
     Ok(Json(file))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OfficeReadDeckRequest {
-    file_id: String,
-}
 
 async fn office_read_deck_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<OfficeReadDeckRequest>,
+    Json(req): Json<FileIdRequest>,
 ) -> Result<Json<logic::office::ReadDeckResult>, (StatusCode, String)> {
     let deck = logic::office::read_deck(&user_id, &req.file_id)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(err500)?;
     Ok(Json(deck))
 }
 
@@ -1603,7 +1579,7 @@ async fn office_export_file_handler(
                 path,
             )]))
         })
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 async fn office_capabilities_handler(
@@ -1626,7 +1602,7 @@ async fn office_export_document_handler(
 ) -> Result<Response, (StatusCode, String)> {
     let _ = &user_id;
     let bytes = logic::office::export_markdown(&req.markdown, &req.format)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(err500)?;
     let (content_type, ext) = match req.format.to_ascii_lowercase().as_str() {
         "xlsx" => (
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1650,28 +1626,23 @@ async fn office_export_document_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("response build: {e}")))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OfficeReadFileRequest {
-    file_id: String,
-}
 
 async fn office_read_file_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<OfficeReadFileRequest>,
+    Json(req): Json<FileIdRequest>,
 ) -> Result<Json<logic::office::ReadFileResult>, (StatusCode, String)> {
     logic::office::read_file_b64(&user_id, &req.file_id)
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 async fn tauri_open_file_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<OfficeReadFileRequest>,
+    Json(req): Json<FileIdRequest>,
 ) -> Result<Json<String>, (StatusCode, String)> {
     logic::office::file_path(&user_id, &req.file_id)
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 // ── CodeGraph bridge (feature `codegraph` → sidecar, `codegraph-native` → native) ─
@@ -1728,18 +1699,13 @@ async fn codegraph_init_handler(
 // ── GraphRAG ops (feature "graph") ────────────────────────────────────────
 // Always compiled so the router is static; inner dispatch is cfg-gated.
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GraphIndexFileRequest {
-    file_id: String,
-}
 async fn graph_index_file_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<GraphIndexFileRequest>,
+    Json(req): Json<FileIdRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let (n, e) = logic::graph::graph_index_file(user_id, req.file_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(err500)?;
     Ok(Json(serde_json::json!({"nodes": n, "edges": e})))
 }
 
@@ -1755,7 +1721,7 @@ async fn graph_index_text_handler(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let (n, e) = logic::graph::graph_index_text(&user_id, &req.file_id, &req.text)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(err500)?;
     Ok(Json(serde_json::json!({"nodes": n, "edges": e})))
 }
 
@@ -1773,7 +1739,7 @@ async fn graph_search_handler(
     let m = logic::graph::GraphSearchMode::parse(req.mode.as_deref());
     let hits = logic::graph::graph_search(user_id, req.query, Some(m), req.limit)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(err500)?;
     Ok(Json(
         serde_json::to_value(hits).unwrap_or(serde_json::Value::Array(vec![])),
     ))
@@ -1791,7 +1757,7 @@ async fn graph_list_handler(
     let lim = body.and_then(|Json(r)| r.limit);
     let (nodes, edges) = logic::graph::graph_list(&user_id, lim)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(err500)?;
     Ok(Json(serde_json::json!({"nodes": nodes, "edges": edges})))
 }
 
@@ -1807,7 +1773,7 @@ async fn graph_forget_handler(
     logic::graph::graph_forget(&user_id, req.file_ids)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 async fn graph_stats_handler(
@@ -1815,7 +1781,7 @@ async fn graph_stats_handler(
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let stats = logic::graph::graph_stats(&user_id)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+        .map_err(err500)?;
     Ok(Json(
         serde_json::to_value(stats).unwrap_or(serde_json::json!({})),
     ))
@@ -1848,7 +1814,7 @@ async fn topup_qris_preview_handler(
     logic::topup::topup_qris_preview(&token)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1865,7 +1831,7 @@ async fn topup_qris_claim_handler(
     logic::topup::topup_qris_claim(&token, req.amount)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1882,7 +1848,7 @@ async fn topup_qris_status_handler(
     logic::topup::topup_qris_status(&token, &req.tx_id)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 async fn topup_qris_active_handler(
@@ -1892,7 +1858,7 @@ async fn topup_qris_active_handler(
     logic::topup::topup_qris_active(&token)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 #[derive(Deserialize)]
@@ -1909,7 +1875,7 @@ async fn topup_qris_cancel_handler(
     logic::topup::topup_qris_cancel(&token, &req.tx_id)
         .await
         .map(|_| Json(serde_json::json!({ "cancelled": true })))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 async fn topup_balance_handler(
@@ -1919,7 +1885,7 @@ async fn topup_balance_handler(
     logic::topup::topup_balance(&token)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 /// Balance ledger history (no body — the op takes no args, like
@@ -1931,7 +1897,7 @@ async fn topup_history_handler(
     logic::topup::topup_history(&token)
         .await
         .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 /// Reads the `kawai_session` cookie (the signed-in email) and injects it as a
@@ -2238,6 +2204,23 @@ pub async fn serve(addr: &str, dist_dir: PathBuf) -> Result<(), String> {
         .map_err(|e| format!("serve kawai-web: {e}"))
 }
 
+/// Prologue shared by the supervisor handlers: this identity's session must
+/// exist — a missing session is 404, a failed lookup is 500. Handlers whose
+/// error type is a bare `StatusCode` drop the message at their `map_err`.
+#[cfg(feature = "litert")]
+async fn ensure_session(user_id: &str, session_id: i64) -> Result<(), (StatusCode, String)> {
+    if !kawai_db::session_exists(user_id, session_id)
+        .await
+        .map_err(err500)?
+    {
+        return Err((
+            StatusCode::NOT_FOUND,
+            format!("session {session_id} not found"),
+        ));
+    }
+    Ok(())
+}
+
 /// Authenticated RPC: full body of one persisted supervisor step result.
 #[cfg(feature = "litert")]
 #[derive(Deserialize)]
@@ -2253,12 +2236,7 @@ async fn supervisor_step_output_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<SupervisorStepOutputRequest>,
 ) -> Result<Json<String>, (StatusCode, String)> {
-    if !kawai_db::session_exists(&user_id, req.session_id)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    {
-        return Err((StatusCode::NOT_FOUND, format!("session {} not found", req.session_id)));
-    }
+    ensure_session(&user_id, req.session_id).await?;
     crate::supervisor::step_output(&user_id, req.session_id, &req.plan_key, &req.step_id)
         .await
         .map(Json)
@@ -2289,15 +2267,7 @@ async fn plan_task_handler(
     // outlive that file, so a file read would false-block a valid web session
     // (or, if treated as "no bearer", let a zero-balance goal run unbilled).
     let bearer = cookie_bearer(&headers)?;
-    if !kawai_db::session_exists(&user_id, req.session_id)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    {
-        return Err((
-            StatusCode::NOT_FOUND,
-            format!("session {} not found", req.session_id),
-        ));
-    }
+    ensure_session(&user_id, req.session_id).await?;
     let agent_id = req
         .agent_id
         .as_deref()
@@ -2327,7 +2297,7 @@ async fn plan_task_handler(
     })
         .await
         .map(|(plan, _usage)| Json(plan))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(err500)
 }
 
 /// Protected streaming: supervisor plan execution via SSE.
@@ -2359,12 +2329,9 @@ async fn execute_supervisor_plan_handler(
     // This handler's error type is a bare StatusCode (unlike plan_task's
     // (StatusCode, String) tuple), so drop the message.
     let bearer = cookie_bearer(&headers).map_err(|(status, _)| status)?;
-    if !kawai_db::session_exists(&user_id, req.session_id)
+    ensure_session(&user_id, req.session_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    {
-        return Err(StatusCode::NOT_FOUND);
-    }
+        .map_err(|(status, _)| status)?;
 
     let agent_id = req
         .agent_id
@@ -2379,17 +2346,16 @@ async fn execute_supervisor_plan_handler(
     .await
     .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 
-    let stream = crate::supervisor::execute_plan_stream_with_cancel(
-        req.plan, tool_registry,
-        tokio_util::sync::CancellationToken::new(), pending,
+    Ok(supervisor_sse(
+        req.plan,
+        tool_registry,
         req.stream_id,
         user_id,
         req.session_id,
         req.user_goal,
-        Some(&bearer),
-    );
-    let s = stream.map(|event| Ok::<_, Infallible>(supervisor_sse_frame(&event)));
-    Ok(Sse::new(s).keep_alive(KeepAlive::default()))
+        &bearer,
+        pending,
+    ))
 }
 
 /// Map one `SupervisorEvent` onto an SSE frame (event name = camelCase op
@@ -2421,6 +2387,35 @@ fn supervisor_sse_frame(
     SseFrame::default().event(name).data(data)
 }
 
+/// Epilogue shared by the supervisor SSE handlers: build the execution stream
+/// (fresh cancel token), map its events onto named SSE frames, and wrap the
+/// response with a keep-alive.
+#[cfg(feature = "litert")]
+fn supervisor_sse(
+    plan: kawai_router::TaskPlan,
+    tool_registry: kawai_router::ToolRegistry,
+    stream_id: String,
+    user_id: String,
+    session_id: i64,
+    user_goal: Option<String>,
+    bearer: &str,
+    pending: crate::supervisor::PendingConfirmations,
+) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
+    let stream = crate::supervisor::execute_plan_stream_with_cancel(
+        plan,
+        tool_registry,
+        tokio_util::sync::CancellationToken::new(),
+        pending,
+        stream_id,
+        user_id,
+        session_id,
+        user_goal,
+        Some(bearer),
+    );
+    let s = stream.map(|event| Ok::<_, Infallible>(supervisor_sse_frame(&event)));
+    Sse::new(s).keep_alive(KeepAlive::default())
+}
+
 /// Stock Research (PLAN-stock-research): run the fixed stock-research pipeline
 /// for one ticker and stream the same `SupervisorEvent` lifecycle.
 #[cfg(feature = "litert")]
@@ -2440,6 +2435,7 @@ struct RunStockResearchRequest {
 
 #[cfg(feature = "litert")]
 async fn run_stock_research_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Extension(user_id): Extension<String>,
     headers: HeaderMap,
     Json(req): Json<RunStockResearchRequest>,
@@ -2447,12 +2443,9 @@ async fn run_stock_research_handler(
     // Billing bearer off the session cookie — the edge middleware already
     // validated it (AGENTS.md #8); fail closed here before the supervisor.
     let bearer = cookie_bearer(&headers).map_err(|(status, _)| status)?;
-    if !kawai_db::session_exists(&user_id, req.session_id)
+    ensure_session(&user_id, req.session_id)
         .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    {
-        return Err(StatusCode::NOT_FOUND);
-    }
+        .map_err(|(status, _)| status)?;
 
     let analysts = req.analysts.unwrap_or_default();
     let analyst_slices: Vec<&str> = analysts.iter().map(String::as_str).collect();
@@ -2486,17 +2479,16 @@ async fn run_stock_research_handler(
     .await
     .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 
-    let stream = crate::supervisor::execute_plan_stream_with_cancel(
-        plan, tool_registry,
-        tokio_util::sync::CancellationToken::new(), pending,
+    Ok(supervisor_sse(
+        plan,
+        tool_registry,
         req.stream_id,
         user_id,
         req.session_id,
         Some(user_goal),
-        Some(&bearer),
-    );
-    let s = stream.map(|event| Ok::<_, Infallible>(supervisor_sse_frame(&event)));
-    Ok(Sse::new(s).keep_alive(KeepAlive::default()))
+        &bearer,
+        pending,
+    ))
 }
 
 /// YouTube Summary (PLAN-youtube-summary): fetch the transcript, build the
@@ -2525,12 +2517,7 @@ async fn run_youtube_summary_handler(
     // Billing bearer off the session cookie — the edge middleware already
     // validated it (AGENTS.md #8); fail closed here before the supervisor.
     let bearer = cookie_bearer(&headers)?;
-    if !kawai_db::session_exists(&user_id, req.session_id)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    {
-        return Err((StatusCode::NOT_FOUND, "session not found".to_string()));
-    }
+    ensure_session(&user_id, req.session_id).await?;
 
     let video = kawai_youtube::fetch_video(&req.url)
         .await
@@ -2554,17 +2541,16 @@ async fn run_youtube_summary_handler(
     .await
     .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
 
-    let stream = crate::supervisor::execute_plan_stream_with_cancel(
-        plan, tool_registry,
-        tokio_util::sync::CancellationToken::new(), pending,
+    Ok(supervisor_sse(
+        plan,
+        tool_registry,
         req.stream_id,
         user_id,
         req.session_id,
         Some(user_goal),
-        Some(&bearer),
-    );
-    let s = stream.map(|event| Ok::<_, Infallible>(supervisor_sse_frame(&event)));
-    Ok(Sse::new(s).keep_alive(KeepAlive::default()))
+        &bearer,
+        pending,
+    ))
 }
 
 #[cfg(feature = "litert")]
@@ -2651,7 +2637,7 @@ async fn ask_about_step_result_handler(
         &req.question,
     )
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(err500)?;
 
     let (tx, rx) = mpsc::unbounded_channel();
 

@@ -43,12 +43,7 @@ export interface StockResearchFormProps {
   /** Asset class for this desk run — set by the active landing template
    *  (Stock / Crypto / Commodity Research). */
   domain?: DeskDomain;
-  onSubmit: (
-    ticker: string,
-    tradeDate: string | undefined,
-    analysts: string[] | undefined,
-    domain: DeskDomain,
-  ) => void;
+  onSubmit: (ticker: string, tradeDate: string | undefined, analysts: string[] | undefined, domain: DeskDomain) => void;
 }
 
 /** Stock/Crypto Research (PLAN-stock-research) entry form on the Workbench

@@ -10,9 +10,10 @@ publish = false
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# `macros` only — the deadline module's task_local (shared step deadline read
-# by every internal-loop tool; the supervisor attaches it via `scope`).
-tokio = { version = "1", default-features = false, features = ["macros"] }
+# `macros` + `rt` — the deadline module's task_local (shared step deadline read
+# by every internal-loop tool; the supervisor attaches it via `scope`; the macro
+# itself is gated behind tokio's `rt` feature).
+tokio = { version = "1", default-features = false, features = ["macros", "rt"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
