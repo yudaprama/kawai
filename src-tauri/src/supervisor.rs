@@ -1892,7 +1892,24 @@ pub async fn build_desk_registry(
     let mut toolset = build_supervisor_toolset(user_id, session_id, AUTO_AGENT_ID)
         .await
         .ok_or_else(|| SupervisorError::NoToolset(AUTO_AGENT_ID.to_string()))?;
-    toolset.add_tool(kawai_desk::DeskRoleTool::default());
+    let desk_news = onboarding::adapter::webread_search_fn(user_id).map(|search| {
+        let search: kawai_desk::NewsSearchFn = Arc::new(move |query: String| {
+            let search = search.clone();
+            Box::pin(async move {
+                let hits = search(query).await?;
+                Ok(hits
+                    .into_iter()
+                    .map(|h| kawai_desk::NewsHit {
+                        url: h.url,
+                        title: h.title,
+                        snippet: h.snippet,
+                    })
+                    .collect())
+            })
+        });
+        search
+    });
+    toolset.add_tool(kawai_desk::DeskRoleTool::default().with_web_news(desk_news));
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
 
@@ -3204,8 +3221,8 @@ async fn synthesize_deck(
         let remote = attach_span_parent(run_span, &mut remote)?;
 
         // Optional planner guidance: an office_create_deck step in the plan
-        // may carry {filename, templateId, title} (outline intent) without
-        // slides — pass it through so the writer honors the planned shape.
+        // may carry {filename, title} (outline intent) without slides — pass
+        // it through so the writer honors the planned shape.
         let guidance: String = plan
             .steps
             .iter()
@@ -3295,9 +3312,7 @@ async fn synthesize_deck(
             };
             // The writer must not try to invoke tools itself; only the deck args pass.
             if let Some(obj) = args.as_object_mut() {
-                obj.retain(|k, _| {
-                    matches!(k.as_str(), "filename" | "templateId" | "title" | "slides")
-                });
+                obj.retain(|k, _| matches!(k.as_str(), "filename" | "title" | "slides"));
             }
             let step = kawai_router::TaskStep {
                 id: "__deck-synthesis".into(),

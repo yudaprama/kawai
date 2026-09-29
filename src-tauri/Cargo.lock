@@ -5906,6 +5906,7 @@ dependencies = [
  "finance",
  "kawai-router",
  "kawai-tools",
+ "news_media",
  "remote-llm",
  "serde",
  "serde_json",

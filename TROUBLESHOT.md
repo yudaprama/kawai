@@ -112,6 +112,7 @@ healthy row: `outcome=answer|tool` with `output_tokens` below the cap.
 | Replan burned by frozen-step mandate violations | mechanical now — drift is auto-restored, log line `[supervisor] revise round N: frozen-step drift auto-restored: <ids>`; if the repaired plan still fails, check (a) every same-defect sibling is Failed, not Skipped (fail-fast used to bury them outside `failures()`), (b) the binding error's `(result keys: …)` / `(declared: …)` hint names a key the reviser actually bound |
 | Deliverable is raw JSON | all providers failed synthesis; check `[remote]` per-candidate lines |
 | web_read/search `engine=none` | budgets, walls, or relevance gates — probe with `web_read_check` / `web_search_check` |
+| Crypto desk run reports no-data / stock-flavored sources | domain plumbing: step args carry `domain`, but `desk_role` social/news ignored it (stock sources only) and market keyed on Binance symbols only — non-Binance coins hit `-1121 Invalid symbol`. Fixed: CoinGecko fallback (`search_crypto` → `get_coin_detail`) + crypto Reddit subs; verify the fetched sources labeled CoinGecko/Reddit-crypto in the analyst output |
 
 Anything not here: work §1 step 4 and record what you find.
 
