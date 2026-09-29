@@ -177,6 +177,7 @@ Structured queries over tabular data files (csv/parquet/Excel) and SQL sources.
 | `data_schema` | `logic::analytics` | Discover columns, dtypes, sample rows, sheet names (for xlsx) |
 | `data_query` | `logic::analytics` | AST queries: filters → groupBy → aggregations → sort → limit |
 | `data_ta` | `logic::analytics` | Time-series TA over one file: 41 indicator kinds folded, final value per indicator returned (+ warm-up skips) |
+| `data_fetch` | `logic::analytics` | Binance public klines → typed csv in the office store, returns `fileId` (keyless, DoH) — chain entry for crypto TA |
 | `office_list_files` | `office::tools` | Shared with office agent — list stored files |
 | `data_tables` | `logic::analytics` | List tables from configured SQL sources *(only when SQL profiles exist)* |
 | `data_import` | `logic::analytics` | Snapshot a SQL table → csv in office store *(only when SQL profiles exist)* |

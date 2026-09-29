@@ -2984,7 +2984,11 @@ async fn revise_plan(
 fn synthesis_materials(plan: &kawai_router::TaskPlan, result: &kawai_router::ExecutionResult) -> String {
     const PER_STEP_CHARS: usize = 4_000;
     const TOTAL_CHARS: usize = 24_000;
-    let mut out = String::new();
+    // Structured outputs (kind-marked JSON: "ta", "chart", "data") ride
+    // FIRST: they are small and carry the exact numbers the answer needs —
+    // a long webread page must never starve them out of the budget. The
+    // sort is stable, so plan order is kept inside each group.
+    let mut blocks: Vec<(bool, String)> = Vec::new();
     for step in &plan.steps {
         let Some(r) = result.get(&step.id) else { continue };
         let tool = step.tool.clone().unwrap_or_else(|| step.agent_id.clone());
@@ -2993,12 +2997,24 @@ fn synthesis_materials(plan: &kawai_router::TaskPlan, result: &kawai_router::Exe
             kawai_router::StepStatus::Failed => ("failed", r.error.as_deref().unwrap_or("")),
             _ => continue, // skipped steps carry nothing answerable
         };
-        out.push_str(&format!(
-            "<step id=\"{}\" tool=\"{}\" status=\"{status}\">\n{}\n</step>\n",
-            step.id,
-            tool,
-            preview_chars(body, PER_STEP_CHARS),
+        let structured = serde_json::from_str::<serde_json::Value>(body.trim())
+            .ok()
+            .and_then(|v| v.get("kind").is_some())
+            .unwrap_or(false);
+        blocks.push((
+            structured,
+            format!(
+                "<step id=\"{}\" tool=\"{}\" status=\"{status}\">\n{}\n</step>\n",
+                step.id,
+                tool,
+                preview_chars(body, PER_STEP_CHARS),
+            ),
         ));
+    }
+    blocks.sort_by_key(|(structured, _)| !*structured);
+    let mut out = String::new();
+    for (_, block) in blocks {
+        out.push_str(&block);
         if out.chars().count() >= TOTAL_CHARS {
             break;
         }
@@ -3096,6 +3112,206 @@ fn strip_unknown_chart_tokens(text: &str, charts: &[RunChart]) -> String {
         .into_owned()
 }
 
+/// One `data_ta` step's parsed summary: the computed latest indicator values
+/// plus the metadata needed for price-relative signals.
+struct TaSummary {
+    source: String,
+    indicators: serde_json::Map<String, serde_json::Value>,
+    last_close: Option<f64>,
+}
+
+/// Deterministic scan of the run's step outputs for `data_ta` results
+/// (`kind:"ta"` — the same pattern as [`collect_run_charts`]). Feeds the
+/// indicator-summary table appended to the deliverable.
+fn collect_ta_summaries(result: &kawai_router::ExecutionResult) -> Vec<TaSummary> {
+    let mut out = Vec::new();
+    for r in &result.results {
+        if r.status != kawai_router::StepStatus::Completed {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(r.output.trim()) else {
+            continue;
+        };
+        if v.get("kind").and_then(|k| k.as_str()) != Some("ta") {
+            continue;
+        }
+        let Some(indicators) = v.get("indicators").and_then(|i| i.as_object()) else {
+            continue;
+        };
+        let meta = v.get("_meta");
+        let source = meta
+            .and_then(|m| m.get("source"))
+            .and_then(|s| s.as_str())
+            .unwrap_or("series")
+            .to_string();
+        let last_close = meta
+            .and_then(|m| m.get("lastClose"))
+            .and_then(|c| c.as_f64());
+        out.push(TaSummary {
+            source,
+            indicators: indicators.clone(),
+            last_close,
+        });
+    }
+    out
+}
+
+/// Threshold signal: `hi_label` at/above `hi`, `lo_label` at/below `lo`.
+fn ta_thr(n: f64, hi: f64, lo: f64, hi_label: &'static str, lo_label: &'static str) -> &'static str {
+    if n >= hi {
+        hi_label
+    } else if n <= lo {
+        lo_label
+    } else {
+        "Netral"
+    }
+}
+
+/// Sign signal at zero — standard momentum/oscillator reading.
+fn ta_sign(x: f64) -> &'static str {
+    if x > 0.0 {
+        "Bullish"
+    } else if x < 0.0 {
+        "Bearish"
+    } else {
+        "Netral"
+    }
+}
+
+/// Price-relative signal — needs the series' last close to decide.
+fn ta_price_vs(level: f64, last_close: Option<f64>) -> Option<&'static str> {
+    last_close.map(|c| if c > level { "Bullish" } else { "Bearish" })
+}
+
+/// Standard threshold signal for one indicator value, or `None` when the kind
+/// carries no conventional directional reading (volatility, raw volume, …).
+/// Aliases are matched by their alphabetic prefix (`rsi14` → `rsi`,
+/// `stoch_slow14_3` → `stoch_slow`), so explicit `alias` overrides still hit.
+fn ta_signal(base: &str, v: &serde_json::Value, last_close: Option<f64>) -> Option<&'static str> {
+    let num = || v.as_f64();
+    let field = |k: &str| v.get(k).and_then(|x| x.as_f64());
+    Some(match base {
+        "rsi" => ta_thr(num()?, 70.0, 30.0, "Overbought", "Oversold"),
+        "stoch" | "stoch_fast" | "stoch_slow" => {
+            ta_thr(num()?, 80.0, 20.0, "Overbought", "Oversold")
+        },
+        "mfi" => ta_thr(num()?, 80.0, 20.0, "Overbought", "Oversold"),
+        "cci" => ta_thr(num()?, 100.0, -100.0, "Overbought", "Oversold"),
+        "macd" | "ppo" | "kvo" => ta_sign(field("histogram")?),
+        "roc" | "cmo" => ta_sign(num()?),
+        "aroon" => ta_sign(field("up")? - field("down")?),
+        "dm" => ta_sign(field("pos")? - field("neg")?),
+        "ema" | "sma" | "wma" | "dema" | "hma" | "rma" | "vidya" | "ama" | "vwap" => {
+            return ta_price_vs(num()?, last_close)
+        },
+        "bb" | "kc" | "dc" => {
+            let close = last_close?;
+            if close > field("upper")? {
+                "Overbought"
+            } else if close < field("lower")? {
+                "Oversold"
+            } else {
+                "Netral"
+            }
+        },
+        "ichimoku" => {
+            let close = last_close?;
+            let a = field("senkou_span_a")?;
+            let b = field("senkou_span_b")?;
+            if close > a.max(b) {
+                "Bullish"
+            } else if close < a.min(b) {
+                "Bearish"
+            } else {
+                "Netral"
+            }
+        },
+        _ => return None,
+    })
+}
+
+/// Compact fixed-point formatting — integers plain, fractions ≤6 decimals
+/// with trailing zeros trimmed.
+fn ta_fmt_num(x: f64) -> String {
+    if !x.is_finite() {
+        return "—".into();
+    }
+    if (x - x.trunc()).abs() < 1e-9 && x.abs() < 1e15 {
+        return format!("{}", x as i64);
+    }
+    let s = format!("{x:.6}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+/// One indicator value rendered for the table's Nilai column: scalars plain,
+/// multi-field objects as compact `key value` pairs.
+fn ta_value_text(v: &serde_json::Value) -> String {
+    if let Some(n) = v.as_f64() {
+        return ta_fmt_num(n);
+    }
+    if let Some(o) = v.as_object() {
+        let parts: Vec<String> = o
+            .iter()
+            .map(|(k, x)| format!("{k} {}", x.as_f64().map(ta_fmt_num).unwrap_or_else(|| "—".into())))
+            .collect();
+        return parts.join(", ");
+    }
+    "—".into()
+}
+
+/// `rsi14` → `RSI (14)`, `macd12_26_9` → `MACD (12,26,9)`.
+fn ta_prettify_alias(alias: &str) -> String {
+    let alpha: String = alias.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+    let rest: String = alias.chars().skip(alpha.len()).collect();
+    let upper = alpha.to_uppercase();
+    if rest.is_empty() {
+        upper
+    } else {
+        format!("{upper} ({})", rest.replace('_', ","))
+    }
+}
+
+/// Deterministic indicator-summary table appended to the deliverable when the
+/// run computed technical indicators. Numbers come straight from the full
+/// step outputs — the writer's output cap never gates them, and the table
+/// survives even the raw-output fallback. Empty string when no TA step ran.
+fn indicator_summary_block(summaries: &[TaSummary]) -> String {
+    if summaries.is_empty() {
+        return String::new();
+    }
+    let multi = summaries.len() > 1;
+    let mut out =
+        String::from("\n\n## Ringkasan Indikator Teknikal\n\n| Indikator | Nilai | Sinyal |");
+    if multi {
+        out.push_str(" Sumber |");
+    }
+    out.push_str("\n|---|---|---|");
+    if multi {
+        out.push_str("---|");
+    }
+    out.push('\n');
+    for s in summaries {
+        for (alias, v) in &s.indicators {
+            let base: String = alias
+                .chars()
+                .take_while(|c| c.is_ascii_alphabetic() || *c == '_')
+                .collect();
+            let signal = ta_signal(&base, v, s.last_close).unwrap_or("—");
+            out.push_str(&format!(
+                "| {} | {} | {} |",
+                ta_prettify_alias(alias),
+                ta_value_text(v),
+                signal
+            ));
+            if multi {
+                out.push_str(&format!(" {} |", s.source));
+            }
+            out.push('\n');
+        }
+    }
+    out
+}
+
 /// Attach an optional telemetry span parent to a remote LLM handle.
 /// Returns `None` when `remote` is `None` (pool unavailable).
 #[cfg(not(test))]
@@ -3153,6 +3369,8 @@ async fn synthesize_final_answer(
             results: lead with the answer, keep it concise markdown, and preserve facts/numbers exactly. \
             Write in your own words — NEVER paste, quote, or attach the raw step output (full page \
             text, long extracts, or tool-result dumps in code fences) as the answer; distill it. \
+            When numbers dominate (indicator readings, metric comparisons), a compact markdown \
+            summary table is clearer than prose — use one. \
             When the materials carry a <charts> block, embed each chart the answer actually discusses \
             by writing its markdown image line EXACTLY as given (kawai-file:// form), each alone on its \
             own line. \
@@ -3902,6 +4120,19 @@ pub fn execute_plan_stream_with_cancel(
                         let written = synthesized
                             .map(|text| strip_unknown_chart_tokens(&text, &run_charts))
                             .or_else(|| raw_final.clone());
+                        // The indicator summary is appended DETERMINISTICALLY
+                        // from the full step outputs (deck deliverables keep
+                        // their own structure — no table there).
+                        let written = written.map(|text| {
+                            if deck_artifact.is_some() {
+                                text
+                            } else {
+                                format!(
+                                    "{text}{}",
+                                    indicator_summary_block(&collect_ta_summaries(&result))
+                                )
+                            }
+                        });
                         // Persist the deliverable alongside the tool-step
                         // results so later runs in this session can read it
                         // via `session_step_results` (the enhancement chain).
@@ -4781,5 +5012,118 @@ mod produces_contracts_tests {
         };
         let meta = super::tool_meta_from_definition(&def);
         assert_eq!(meta.produces, vec!["file".to_string()]);
+    }
+}
+
+#[cfg(test)]
+mod indicator_summary_tests {
+    use super::*;
+    use kawai_router::{StepStatus, TaskStep};
+
+    fn step(step_id: &str, output: &str) -> kawai_router::StepResult {
+        kawai_router::StepResult {
+            step_id: step_id.into(),
+            agent_id: "analytics".into(),
+            status: StepStatus::Completed,
+            output: output.into(),
+            artifacts: Vec::new(),
+            error: None,
+            error_kind: kawai_router::FailureKind::default(),
+            retries_used: 0,
+        }
+    }
+
+    fn failed_step(step_id: &str, output: &str) -> kawai_router::StepResult {
+        kawai_router::StepResult {
+            status: StepStatus::Failed,
+            ..step(step_id, output)
+        }
+    }
+
+    const TA_OUTPUT: &str = r#"{
+        "kind": "ta",
+        "indicators": {
+            "rsi14": 62.31,
+            "macd12_26_9": {"macd": 1.5, "signal": 0.9, "histogram": 0.6},
+            "ema9": 101.5,
+            "bb20_2": {"average": 100.0, "upper": 104.0, "lower": 96.0},
+            "atr14": 1.75
+        },
+        "_meta": {"rowsUsed": 120, "sortedBy": "timestamp", "lastClose": 103.2, "source": "btcusdt"}
+    }"#;
+
+    #[test]
+    fn ta_summaries_parse_kind_marker_and_skip_other_steps() {
+        let result = kawai_router::ExecutionResult {
+            results: vec![
+                step("page", "long page text, not json"),
+                step("ta1", TA_OUTPUT),
+                failed_step("failed_ta", r#"{"kind":"ta","indicators":{}}"#),
+            ],
+        };
+        let s = super::collect_ta_summaries(&result);
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].source, "btcusdt");
+        assert_eq!(s[0].last_close, Some(103.2));
+        assert_eq!(s[0].indicators.len(), 5);
+    }
+
+    #[test]
+    fn indicator_table_signals_match_standard_thresholds() {
+        let summaries = super::collect_ta_summaries(&kawai_router::ExecutionResult {
+            results: vec![step("ta1", TA_OUTPUT)],
+        });
+        let table = super::indicator_summary_block(&summaries);
+        assert!(table.contains("## Ringkasan Indikator Teknikal"));
+        assert!(table.contains("| RSI (14) | 62.31 | Netral |"));
+        assert!(table.contains("| MACD (12,26,9) | macd 1.5, signal 0.9, histogram 0.6 | Bullish |"));
+        // lastClose 103.2 above EMA9 101.5 → Bullish; inside the BB bands → Netral.
+        assert!(table.contains("| EMA (9) | 101.5 | Bullish |"));
+        assert!(table.contains("| BB (20,2) | average 100, upper 104, lower 96 | Netral |"));
+        // Volatility kinds carry no directional reading.
+        assert!(table.contains("| ATR (14) | 1.75 | — |"));
+        // Single source → no Sumber column.
+        assert!(!table.contains("Sumber"));
+    }
+
+    #[test]
+    fn indicator_table_empty_without_ta_steps() {
+        let result = kawai_router::ExecutionResult {
+            results: vec![step("page", "plain text")],
+        };
+        assert!(super::indicator_summary_block(&super::collect_ta_summaries(&result)).is_empty());
+    }
+
+    #[test]
+    fn synthesis_materials_rank_structured_outputs_first() {
+        let long_page = "x".repeat(5_000);
+        let plan = kawai_router::TaskPlan {
+            goal: "g".into(),
+            steps: vec![
+                TaskStep {
+                    id: "page".into(),
+                    agent_id: "webread".into(),
+                    ..Default::default()
+                },
+                TaskStep {
+                    id: "ta".into(),
+                    agent_id: "analytics".into(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let result = kawai_router::ExecutionResult {
+            results: vec![
+                step("page", &long_page),
+                step("ta", r#"{"kind":"ta","indicators":{"rsi14":71.0},"_meta":{}}"#),
+            ],
+        };
+        let materials = super::synthesis_materials(&plan, &result);
+        let ta_pos = materials.find("\"ta\"").expect("ta step present");
+        let page_pos = materials.find("webread").expect("page step present");
+        // The small kind-marked step outranks the 5k page regardless of plan order.
+        assert!(ta_pos < page_pos);
+        assert!(materials.contains("\"rsi14\":71.0"));
     }
 }

@@ -94,7 +94,8 @@ webread/knowledge.
 | `data_schema` | columns, dtypes, samples, sheet list (required before first `data_query`) |
 | `data_query` | structured filter→group→aggregate→sort→limit over a stored file |
 | `data_query_nl` | plain-English → structured query (LLM translated) |
-| `data_ta` | TA indicator folds (SMA/EMA/RSI/MACD/BBands), final values only |
+| `data_ta` | TA indicator folds (SMA/EMA/RSI/MACD/BBands), final values only; output marked `kind:"ta"` + `_meta.lastClose`/`_meta.source` |
+| `data_fetch` | Binance public klines → typed csv in the office store, returns `fileId` (keyless, DoH) — the chain entry for crypto TA |
 | `data_chart` | charton SVG render; saved into the office store as session-associated svg |
 | `office_list_files` | id discovery (same tool as office) |
 | `data_tables` | registered SQL source → typed parquet snapshot (only when `sql_profiles` non-empty) |
@@ -348,6 +349,7 @@ Analytics export & runtime notes:
 | Tool | Output shape | View |
 |---|---|---|
 | `data_export` | `{fileId, filename, format, rows, bytes}` | `FileCreatedView` — stored-file card, click opens the preview |
+| `data_fetch` | `{kind:"data", fileId, filename, symbol, interval, rows, bytes, columns, nextStep}` | `FileCreatedView` — stored-file card, click opens the preview |
 | `deep_write` / `draft_document` / `plan_task` / `plan_revise` / `artifact_recall` | loop-intercepted by the agent engine before dispatch (`subagents.rs`) — never produce step outputs; nothing to register | — |
 | `memory_search` / `memory_graph_search` / `session_step_results` | see Memory/knowledge above (already registered) | — |
 
