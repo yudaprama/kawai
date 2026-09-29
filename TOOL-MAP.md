@@ -79,7 +79,7 @@ no `draft_document`. Also gets `knowledge_search` + webread (when any engine) + 
 
 | Tool | Purpose |
 |---|---|
-| `office_create_deck` | template-seeded reveal.js deck (required `templateId`; `probe_deck` gate) |
+| `office_create_deck` | template-seeded reveal.js deck (SYSTEM-owned rotating pack; `probe_deck` gate); `office_apply_template` re-themes a stored deck in place |
 | `office_export_deck` | deck → `.pptx` (deterministic, no LLM) |
 | `office_list_files` / `office_read_document` / `office_document_info` | source reading |
 | `pdf_extract_text` / `pdf_info` | read-only PDF |

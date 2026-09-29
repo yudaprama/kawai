@@ -267,8 +267,8 @@ Mirror the PaddleOCR/model auto-download machinery:
 - Phase 2 probe: when a template seed was injected, the probe additionally
   checks template-compliance signals (token usage, required slide roles per
   the pack's manifest) — soft warnings, not rejections, until calibrated.
-- Frontend (optional, later): template picker on the deck asset page reading
-  the cached registry; new-deck flow defaults to picking a template first.
+- Frontend: deck preview's Template switcher (`office_apply_template`) —
+  post-generation re-theming over the cached registry.
 
 **Acceptance:**
 - Cold start offline: app boots fine, deck creation works from the bundled
@@ -297,22 +297,20 @@ React only displays.**
 
 The model's entire job is *writing content*. It:
 
-1. **Picks `templateId`** — required arg. Reads the bundled pack directives in
-   the tool description; asks the user when the request doesn't clearly match
-   a pack. It never invents ids.
-2. **Writes slide content** as `slides: [{title, bodyHtml}]`:
-   - semantic HTML (h3/p/ul/table/blockquote),
-   - the class vocabulary (`.card`, `.grid g2`, `.kicker`, `.big-number`, …),
-   - free CSS in `<style>` blocks or `style=` attributes — colors, gradients,
-     layout experiments — within the sanitized subset (no remote `url()`/`@import`),
-   - `<img data-file="<fileId>">` to embed stored charts/images.
-3. **Self-corrects** when the probe or the resolver rejects: error strings are
+1. **Writes slide content** — the template pack is assigned automatically
+   (`next_system_template_id` rotation; the user re-themes afterwards via
+   `office_apply_template`). It:
+   - emits structured layouts (`slides: [{layout, ...fields}]` or the
+     Slidev-style `markdown` alternative — it never writes HTML),
+2. **Self-corrects** when the probe or the resolver rejects: error strings are
    written to be actionable and are returned verbatim.
-4. **Honors the retry handshake** for catalogue packs: first call returns the
+3. **Honors the retry handshake** for catalogue packs: first call returns the
    pack's style directive + reference fixture; the model re-invokes with the
    same args, now applying the style.
 
-The model does **not**: choose templates (that's user + Rust via `office_bind_template`), render, scale, paginate, persist, validate, export,
+The model does **not**: choose templates (system-owned; the user re-themes
+via `office_apply_template`), render, scale, paginate, persist, validate,
+export,
 resolve file ids to data URLs, pick fonts, or touch the network. Every
 infrastructure concern is deliberately outside its reach — the historical
 failure mode (models re-implementing slide scaffolding per turn) is
@@ -324,7 +322,7 @@ Rust owns the entire pipeline around the content:
 
 | Stage | Rust component | Role |
 |---|---|---|
-| Template resolution | `templates.rs` | bundled packs (in-binary) → cached registry → one network fetch (`registry.json`, sha-of-schema check, atomic `.part`→rename cache in `kawai_paths::template_packs_dir()`); id unknown → error enumerating all valid ids. **User picks are structured**: `office_bind_template` stores the choice; `office_create_deck` consumes it and overrides the model's arg — user intent is deterministic, not LLM-mediated |
+| Template resolution | `templates.rs` | bundled packs (in-binary) → cached registry → one network fetch (`registry.json`, sha-of-schema check, atomic `.part`→rename cache in `kawai_paths::template_packs_dir()`); id unknown → error enumerating all valid ids. Selection is SYSTEM-owned: `office_create_deck` rotates across the bundled packs; the deck viewer re-themes a stored deck via `office_apply_template` — user intent is structured, not LLM-mediated |
 | Themes | `deck.rs::DECK_THEMES` + `theme_css()` | vendored open-design token blocks (MIT); design systems supply raw `themeCss` tokens that bypass the id table entirely |
 | Fonts | `deck.rs::font_face_css()` | OFL latin subsets (Inter 400/700, Playfair 700, JetBrains Mono 400) embedded as data:-URL `@font-face` — decks are offline-complete |
 | Rendering | `render_deck_with_theme_tokens()` | fixed reveal.js skeleton + vendored runtime (REVEAL_JS/REVEAL_CSS), theme `:root` tokens, `.deck-scope` layout CSS; the model's HTML is inserted into slide sections verbatim (post-sanitize) |
@@ -342,10 +340,9 @@ The frontend holds **zero deck logic**:
   (self-contained reveal.js document — the webview/iframe is the whole story),
 - shows the tool result / probe error text that the supervisor stream delivers
   (the model's self-correction loop is driven entirely by those strings),
-- template selection currently happens in chat (model offers cached packs);
-  the template **picker UI** and the Phase-5 slide bridge + thumbnail rail are
-  the only planned frontend additions — both cosmetic layers over a pipeline
-  that works without them.
+- the deck preview's Template switcher re-themes a stored deck post-generation
+  via `office_apply_template` (deterministic re-render; the Phase-5 slide
+  bridge + thumbnail rail remain the only planned frontend additions).
 
 ## Sequence diagram — `office_create_deck` end to end
 
@@ -355,21 +352,20 @@ Actor boundaries marked; loops are Rust-controlled (the LLM only responds).
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │  USER (chat)                                                                     │
 │  "buat pitch deck pakai design system Apple"                                     │
-│       atau: memilih pak di TemplatePicker (pilihan structured)                   │
+│       template dipilih otomatis; re-theme setelah jadi lewat deck viewer         │
 └──────────────┬──────────────────────────────────────────────────────────────────┘
                │
 ┌──────────────▼──────────────────────────────────────────────────────────────────┐
 │  REACT (frontend)  — display only, nol logika deck                               │
 │  • ChatComposer mengirim prompt (supervisor stream)                              │
-│  • TemplatePicker → office_list_templates → [Rust: baca bundled + cache saja]    │
-│  • Saat user memilih: office_bind_template → [Rust: simpan binding terstruktur]  │
+│  • DeckPreview: Template switcher → office_list_templates (bundled + cache)      │
+│    lalu office_apply_template → [Rust: re-render in place, tanpa LLM]            │
 │  • menampilkan stream events / error / hasil                                     │
 └──────────────┬──────────────────────────────────────────────────────────────────┘
-               │ prompt (binding sudah disimpan Rust, tidak di tangan model)
+               │ prompt (pilihan template tidak pernah di tangan model)
 ┌──────────────▼──────────────────────────────────────────────────────────────────┐
 │  RUST #1 — resolusi template (templates.rs)                                      │
-│  • Jika ada binding user → OVERRIDE args.template_id (model dilampaui)           │
-│  • Jika tidak ada binding → biarkan model menyimpulkan/menanyakan                │
+│  • template_id = next_system_template_id() — rotasi pak bundled, selalu menang   │
 │  1. bundled packs (in-binary) ──┐                                                │
 │  2. cache ~/.kawai/templates ───┤→ ResolvedPack {directive, themeCss/tokens,     │
 │  3. fetch registry.json (1×) ───┘                reference fixture}              │
@@ -379,10 +375,9 @@ Actor boundaries marked; loops are Rust-controlled (the LLM only responds).
                │ directive + fixture (+ deskripsi tool)
 ┌──────────────▼──────────────────────────────────────────────────────────────────┐
 │  LLM (cloud subagent) — CONTENT ONLY                                             │
-│  ✓ memilih templateId        ✗ render      ✗ persist      ✗ network             │
-│  ✓ menulis slides:           ✗ sanitasi    ✗ validasi     ✗ export               │
-│     [{title, bodyHtml}]      ✗ fonts       ✗ theme tokens ✗ file ids            │
-│    (semantic HTML + class vocab + <style> bebas + <img data-file>)               │
+│  ✗ memilih template         ✗ render      ✗ persist      ✗ network              │
+│  ✓ menulis slides:          ✗ sanitasi    ✗ validasi     ✗ export               │
+│     (layout terstruktur / markdown; konten murni, tanpa HTML)                    │
 └──────────────┬──────────────────────────────────────────────────────────────────┘
                │ slides[] (content murni)
 ┌──────────────▼──────────────────────────────────────────────────────────────────┐

@@ -72,9 +72,11 @@ multi-file imports.
   frontend runtime (markdown-primary decks: the stored `.md` file IS the
   source; legacy HTML decks: extracted + regenerated).
 - Template selection is **system-owned** (`next_system_template_id` rotates
-  across the bundled packs); a user template-picker binding overrides. The
-  model never chooses the template — example anchoring produced four
-  identical decks before this became mechanical.
+  across the bundled packs). The model never chooses the template — example
+  anchoring produced four identical decks before this became mechanical.
+  After generation the deck viewer's Template switcher re-themes the stored
+  deck in place via `office_apply_template` (deterministic re-render of the
+  source markdown — slides never change, no LLM).
 - Bundled template packs: consulting-clean, dark-pitch, minimal-editorial,
   slidev-light, gruvbox-dark — each with a style directive the deck writer
   follows. The 187-pack catalogue (registry.json, incl. catppuccin

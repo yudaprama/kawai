@@ -236,6 +236,7 @@ pub fn run() {
         commands::execute_supervisor_plan,
         #[cfg(feature = "litert")]
         commands::run_stock_research,
+        #[cfg(feature = "litert")]
         commands::run_youtube_summary,
         #[cfg(feature = "litert")]
         commands::respond_supervisor_confirmation,
@@ -257,8 +258,7 @@ pub fn run() {
         commands::office_list_files,
         commands::export_deliverable,
         commands::office_list_templates,
-        commands::office_bind_template,
-        commands::office_peek_template,
+        commands::office_apply_template,
         commands::office_read_document,
         commands::office_read_deck,
         commands::office_export_deck_html,

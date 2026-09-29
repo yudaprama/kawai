@@ -1,14 +1,12 @@
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
 
-export type GoalTemplateId = "stock" | "crypto" | "commodity" | "forex" | "coding" | "data" | "youtube";
+export type GoalTemplateId = "stock" | "crypto" | "commodity" | "forex" | "youtube";
 const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "stock", label: "Stock Research" },
   { id: "crypto", label: "Crypto Research" },
   { id: "commodity", label: "Commodity Research" },
   { id: "forex", label: "Forex Research" },
-  { id: "coding", label: "Coding" },
-  { id: "data", label: "Data Analysis" },
   { id: "youtube", label: "YouTube Summary" },
 ];
 
@@ -27,13 +25,7 @@ export const templateOpensYoutube = (t: GoalTemplateId | null): boolean => t != 
 
 /** Contextual composer framing per template. Desk templates keep the default
  *  goal placeholder — the desk panel is their framing. */
-const PLACEHOLDERS: Partial<Record<GoalTemplateId, string>> = {
-  coding: "Describe what to build — language, target, constraints…",
-  data: "Describe the data and the question to answer…",
-};
-
-export const placeholderForTemplate = (t: GoalTemplateId | null): string | undefined =>
-  t != null ? PLACEHOLDERS[t] : undefined;
+export const placeholderForTemplate = (_t: GoalTemplateId | null): string | undefined => undefined;
 
 export interface GoalTemplatesProps {
   value: GoalTemplateId | null;

@@ -102,7 +102,7 @@ view.
 Capsule input (max-w-2xl) with attachment chips on top. The composer is
 shared between the Workbench landing, the sidebar footer during a run, and any
 asset workspace that needs text input. Left tools: `@` file mention
-(knowledge search + import entry points), template picker, speech input.
+(knowledge search + import entry points), speech input.
 Right: submit; while a run is in flight it becomes stop. The textarea stays
 editable during a run — drafting the next goal is allowed, and a submit
 attempt rejects with the reason shown under the composer (the draft is kept).

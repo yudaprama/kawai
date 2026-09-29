@@ -66,7 +66,7 @@ frontend/
 │   │   │   ├── components/  # workbench-page (landing hero composer + 3-pane run view), recent-runs (cross-session recents strip) + tool-views/ (per-tool step-report renderers; registry maps tool name → human view, shape map in TOOL-MAP.md §11)
 │   │   │   └── hooks/       # use-workbench (run list, phases/agents view models, follow-up-composer state) wrapping use-supervisor-plan
 │   │   ├── chat/            # supervisor execution engine + chat library code (no chat surface — the Workbench replaced it)
-│   │   │   ├── components/  # chat-composer (used by the Workbench), session-history-dialog + session-row, template-picker
+│   │   │   ├── components/  # chat-composer (used by the Workbench), session-history-dialog + session-row
 │   │   │   ├── hooks/       # use-chat-model, use-chat-sessions, use-supervisor-chat, use-supervisor-plan
 │   │   │   ├── lib/         # chat-helpers (+test)
 │   │   │   └── index.ts    # public barrel export

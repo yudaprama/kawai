@@ -1252,24 +1252,19 @@ pub fn office_list_templates() -> Vec<logic::office::TemplateListing> {
     logic::office::list_templates()
 }
 
-/// Bind a user's explicit template choice — consumed on the next
-/// `office_create_deck` call (Rust overrides the model's arg).
+/// Authenticated RPC: re-theme a stored deck (.html) with another template
+/// pack in place — the deck viewer's template switcher. Deterministic: the
+/// slides never change, only the theme; no LLM call.
 #[tauri::command]
-pub fn office_bind_template(
+pub async fn office_apply_template(
+    file_id: String,
     template_id: String,
     session: State<'_, Session>,
-) -> Result<(), String> {
+) -> Result<logic::office::ApplyTemplateResult, String> {
     let user_id = session_user_id(&session)?;
-    logic::office::bind_template(&user_id, &template_id)
-}
-
-/// Peek the current (non-consumed) template binding for the UI's bound-state display.
-#[tauri::command]
-pub fn office_peek_template(
-    session: State<'_, Session>,
-) -> Result<Option<String>, String> {
-    let user_id = session_user_id(&session)?;
-    Ok(logic::office::peek_template_binding(&user_id))
+    logic::office::apply_template(&user_id, &file_id, &template_id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Authenticated RPC: read a stored document as markdown (in-process via office_oxide).

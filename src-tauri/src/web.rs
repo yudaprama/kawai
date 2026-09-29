@@ -1474,27 +1474,24 @@ async fn office_restore_backup_handler(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
 
-/// Bind a user's explicit template choice.
+/// Re-theme a stored deck (.html) with another template pack in place — the
+/// deck viewer's template switcher. Deterministic: slides never change, only
+/// the theme; no LLM call.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct BindTemplateRequest {
+struct ApplyTemplateRequest {
+    file_id: String,
     template_id: String,
 }
 
-async fn office_bind_template_handler(
+async fn office_apply_template_handler(
     Extension(user_id): Extension<String>,
-    Json(req): Json<BindTemplateRequest>,
-) -> Result<Json<bool>, (StatusCode, String)> {
-    logic::office::bind_template(&user_id, &req.template_id)
-        .map(|_| Json(true))
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))
-}
-
-/// Peek current template binding.
-async fn office_peek_template_handler(
-    Extension(user_id): Extension<String>,
-) -> Json<Option<String>> {
-    Json(logic::office::peek_template_binding(&user_id))
+    Json(req): Json<ApplyTemplateRequest>,
+) -> Result<Json<logic::office::ApplyTemplateResult>, (StatusCode, String)> {
+    logic::office::apply_template(&user_id, &req.file_id, &req.template_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
 }
 
 async fn office_list_templates_handler() -> Json<Vec<logic::office::TemplateListing>> {
@@ -2152,8 +2149,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/office_list_files", post(office_list_files_handler))
         .route("/api/export_deliverable", post(export_deliverable_handler))
         .route("/api/office_list_templates", post(office_list_templates_handler))
-        .route("/api/office_bind_template", post(office_bind_template_handler))
-        .route("/api/office_peek_template", post(office_peek_template_handler))
+        .route("/api/office_apply_template", post(office_apply_template_handler))
         .route(
             "/api/office_read_document",
             post(office_read_document_handler),

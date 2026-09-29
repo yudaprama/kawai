@@ -1,8 +1,10 @@
 import { Icon } from "@/components/shared/icon";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApp, nextTick, onMounted, reactive, ref, watch } from "vue/dist/vue.esm-bundler.js";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { call, errText, tauriOpenFile } from "@/lib/api";
 import { renderDeckInline } from "@/lib/deck-markdown";
 import { runningInTauri } from "@/platform";
@@ -27,6 +29,128 @@ interface ReadDeckResult {
   template?: string | null;
   themeCss?: string;
   markdown?: string;
+}
+
+interface TemplateInfo {
+  id: string;
+  name: string;
+  summary: string;
+  bundled: boolean;
+}
+
+/** Post-generation template switcher: lists packs from
+ *  `office_list_templates` (bundled starters + cached catalogue — never a
+ *  network call) and re-themes the stored deck in place via
+ *  `office_apply_template` (deterministic re-render of the deck's source
+ *  markdown — slides never change, no LLM call). The parent re-reads
+ *  `office_read_deck` afterwards so the preview wears the new theme. */
+function TemplateSwitcher({
+  fileId,
+  current,
+  onApplied,
+}: {
+  fileId: string;
+  current: string | null;
+  onApplied: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [templates, setTemplates] = useState<TemplateInfo[] | null>(null);
+  const [applying, setApplying] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fetched = useRef(false);
+
+  // Fetch on first popover open — subsequent opens reuse the cached list.
+  useEffect(() => {
+    if (!open || fetched.current) return;
+    fetched.current = true;
+    void call<TemplateInfo[]>("office_list_templates", undefined)
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    if (templates == null) return [];
+    const q = query.trim().toLowerCase();
+    const list = q
+      ? templates.filter(
+          (t) =>
+            t.id.toLowerCase().includes(q) || t.name.toLowerCase().includes(q) || t.summary.toLowerCase().includes(q),
+        )
+      : templates;
+    // Bundled starters first (offline-guaranteed), then catalogue packs.
+    return [...list].sort((a, b) => Number(b.bundled) - Number(a.bundled));
+  }, [templates, query]);
+
+  const apply = async (t: TemplateInfo) => {
+    if (applying != null) return;
+    if (t.id === current) {
+      setOpen(false);
+      return;
+    }
+    setApplying(t.id);
+    setError(null);
+    try {
+      await call<{ template: string; slides: number }>("office_apply_template", {
+        fileId,
+        templateId: t.id,
+      });
+      setOpen(false);
+      setQuery("");
+      onApplied();
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setApplying(null);
+    }
+  };
+
+  return (
+    <Popover
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setError(null);
+      }}
+      open={open}
+    >
+      <PopoverTrigger asChild>
+        <Button disabled={applying != null} size="sm" variant="outline">
+          <Icon className="size-3.5" name="layout-template" />
+          {applying != null ? "Applying…" : "Template"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 p-2">
+        <Input onChange={(e) => setQuery(e.target.value)} placeholder="Search templates…" value={query} />
+        <div className="mt-1 max-h-64 overflow-y-auto">
+          {templates == null ? (
+            <div className="text-muted-foreground p-2 text-xs">Loading templates…</div>
+          ) : filtered.length === 0 ? (
+            <div className="text-muted-foreground p-2 text-xs">No templates match.</div>
+          ) : (
+            filtered.map((t) => (
+              <button
+                className="flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left hover:bg-accent disabled:opacity-50"
+                disabled={applying != null}
+                key={t.id}
+                onClick={() => void apply(t)}
+                type="button"
+              >
+                <span className="flex w-full items-center gap-1.5 text-sm font-medium">
+                  {t.id === current && <Icon className="size-3.5 shrink-0" name="check" />}
+                  {t.name}
+                  {t.bundled ? null : (
+                    <span className="text-muted-foreground ml-auto font-mono text-[10px]">catalogue</span>
+                  )}
+                </span>
+                <span className="text-muted-foreground line-clamp-2 text-xs">{t.summary}</span>
+              </button>
+            ))
+          )}
+          {error != null && <div className="text-destructive p-2 font-mono text-[11px]">{error}</div>}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 // Fixed 960×540 (16:9) slide canvas, scaled to fit the host — every slide
@@ -358,11 +482,15 @@ export function DeckPreview({ fileId }: { fileId: string }) {
   const [error, setError] = useState<string | null>(null);
   // Present: fullscreen in-app (the runtime fills the viewport; Esc exits).
   const [presenting, setPresenting] = useState(false);
+  // Bumped after a template re-theme (office_apply_template) — re-reads the
+  // deck so the preview wears the new theme.
+  const [reloadKey, setReloadKey] = useState(0);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const presentRef = useRef<HTMLDivElement | null>(null);
   const presentCloseRef = useRef<HTMLButtonElement | null>(null);
   const presentDialogRef = useRef<HTMLDivElement | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadKey intentionally re-triggers the fetch after a template re-theme
   useEffect(() => {
     let cancelled = false;
     setData(null);
@@ -377,7 +505,7 @@ export function DeckPreview({ fileId }: { fileId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [fileId]);
+  }, [fileId, reloadKey]);
 
   // ── Vue island: markdown runtime ──
   useEffect(() => {
@@ -507,6 +635,11 @@ export function DeckPreview({ fileId }: { fileId: string }) {
         <div ref={hostRef} className="relative h-full w-full overflow-hidden" />
       </div>
       <div className="flex items-center justify-center gap-2">
+        <TemplateSwitcher
+          current={data.template ?? null}
+          fileId={fileId}
+          onApplied={() => setReloadKey((k) => k + 1)}
+        />
         <Button onClick={() => setPresenting(true)} size="sm" variant="outline">
           <Icon name="expand" className="size-3.5" /> Present
         </Button>
