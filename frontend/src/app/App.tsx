@@ -19,6 +19,7 @@ import { tauriWalletAdapter } from "@/features/wallet/lib/wallet-adapter";
 import { CodeAssetPage } from "@/features/codegraph/components/code-page";
 import { MemoryAssetPage } from "@/features/memory/components/memory-page";
 import { SkillsAssetPage } from "@/features/skills/components/skills-page";
+import { ConnectionsPage } from "@/features/connector/components/connections-page";
 import { WikiAssetPage } from "@/features/assets/pages/wiki-page";
 import { SqlSourcesAssetPage } from "@/features/assets/pages/sql-sources-page";
 import { WalletPage } from "@/features/wallet/components/wallet-page";
@@ -276,6 +277,8 @@ export default function App() {
       <SqlSourcesAssetPage onBack={() => setAssetView(null)} />
     ) : assetView === "skills" ? (
       <SkillsAssetPage onBack={() => setAssetView(null)} />
+    ) : assetView === "connections" ? (
+      <ConnectionsPage onBack={() => setAssetView(null)} />
     ) : assetView === "code" ? (
       <CodeAssetPage
         initialQuery={codeGraphSeed?.query}

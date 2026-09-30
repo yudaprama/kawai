@@ -175,7 +175,8 @@ first-wins into the supervisor's `auto` registry. Categories:
 | `news-media` | `get_news_sources`, `get_on_this_day` |
 | `religion` | `get_quran_surah`, `get_bible_verse`, `get_trivia_questions` |
 | `sports` | `get_competitions`, `get_competition_standings`, `get_team_info`, `get_match_detail`, `get_tv_schedule` |
-| `utility` | `composio_list_toolkits`, `composio_list_tools`, `composio_execute`, `composio_authorize`, `composio_list_connections` |
+| `composio` | `composio_list_toolkits`, `composio_list_tools`, `composio_execute`, `composio_authorize`, `composio_list_connections` |
+| `utility` | `draw_cards`, `get_chuck_norris_joke`, `search_star_wars_people`, `validate_email`, … |
 | `weather-geo` | `get_weather`, `get_weather_forecast`, `get_country_info`, `get_time_in_timezone` |
 | `wikipedia` | `search_wikipedia`-family lookups (`get_person_info`, etc.) |
 

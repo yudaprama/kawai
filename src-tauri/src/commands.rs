@@ -1138,6 +1138,45 @@ pub async fn topup_history(
     logic::topup::topup_history(&token).await
 }
 
+/// ── Connector (third-party OAuth via Composio) — 4 auth-required ops ───────
+/// Thin proxies to `logic::connector`; the user id comes from the session
+/// (edge-resolved), the frontend never sends it.
+
+#[tauri::command]
+pub async fn connector_list_connections(
+    session: State<'_, Session>,
+) -> Result<Vec<logic::connector::Connection>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::connector::list_connections(&user_id).await
+}
+
+#[tauri::command]
+pub async fn connector_connect(
+    toolkit: String,
+    session: State<'_, Session>,
+) -> Result<logic::connector::ConnectStart, String> {
+    let user_id = session_user_id(&session)?;
+    logic::connector::connect(&user_id, &toolkit).await
+}
+
+#[tauri::command]
+pub async fn connector_poll(
+    connection_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::connector::Connection, String> {
+    let user_id = session_user_id(&session)?;
+    logic::connector::poll(&user_id, &connection_id).await
+}
+
+#[tauri::command]
+pub async fn connector_disconnect(
+    connection_id: String,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::connector::disconnect(&user_id, &connection_id).await
+}
+
 /// Authenticated RPC: create and validate a deterministic supervisor plan.
 #[cfg(feature = "litert")]
 #[tauri::command]

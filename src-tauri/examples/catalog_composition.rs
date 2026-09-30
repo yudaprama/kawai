@@ -125,6 +125,7 @@ pub async fn merged_definitions() -> Result<Vec<ToolDefinition>, String> {
         ("religion", kawai_lib::agent_registry::religion_tools_for_supervisor(&context, remote_configured)),
         ("utility", kawai_lib::agent_registry::utility_tools_for_supervisor(&context, remote_configured)),
         ("coinmarketcap", kawai_lib::agent_registry::coinmarketcap_tools_for_supervisor(&context, remote_configured)),
+        ("composio", kawai_lib::agent_registry::composio_tools_for_supervisor(&context, remote_configured)),
     ]
     .into_iter()
     {

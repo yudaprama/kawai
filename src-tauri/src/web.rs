@@ -1900,6 +1900,67 @@ async fn topup_history_handler(
         .map_err(err500)
 }
 
+// ── Connector (third-party OAuth via Composio) ─────────────────────────────
+// Auth-required thin proxies sharing `logic::connector` with the Tauri
+// commands; the user id rides the auth middleware's Extension.
+
+async fn connector_list_connections_handler(
+    Extension(user_id): Extension<String>,
+) -> Result<Json<Vec<logic::connector::Connection>>, (StatusCode, String)> {
+    logic::connector::list_connections(&user_id)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectorConnectRequest {
+    toolkit: String,
+}
+
+async fn connector_connect_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<ConnectorConnectRequest>,
+) -> Result<Json<logic::connector::ConnectStart>, (StatusCode, String)> {
+    logic::connector::connect(&user_id, &req.toolkit)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectorPollRequest {
+    connection_id: String,
+}
+
+async fn connector_poll_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<ConnectorPollRequest>,
+) -> Result<Json<logic::connector::Connection>, (StatusCode, String)> {
+    logic::connector::poll(&user_id, &req.connection_id)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectorDisconnectRequest {
+    connection_id: String,
+}
+
+async fn connector_disconnect_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<ConnectorDisconnectRequest>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    logic::connector::disconnect(&user_id, &req.connection_id)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
 /// Reads the `kawai_session` cookie (the signed-in email) and injects it as a
 /// request extension. 401 on missing/foreign cookie. Uses
 /// `from_fn` (state `()`), so it composes with a `Router<()>`.
@@ -2066,6 +2127,12 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/topup_qris_cancel", post(topup_qris_cancel_handler))
         .route("/api/topup_balance", post(topup_balance_handler))
         .route("/api/topup_history", post(topup_history_handler))
+        // Connector (third-party OAuth via Composio) — same 4 ops as the
+        // Tauri commands (POST on both transports).
+        .route("/api/connector_list_connections", post(connector_list_connections_handler))
+        .route("/api/connector_connect", post(connector_connect_handler))
+        .route("/api/connector_poll", post(connector_poll_handler))
+        .route("/api/connector_disconnect", post(connector_disconnect_handler))
         .route_layer(from_fn(auth_middleware));
 
     #[cfg(feature = "litert")]

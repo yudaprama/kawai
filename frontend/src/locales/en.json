@@ -255,6 +255,7 @@
     "wiki": "Wiki",
     "code": "Code",
     "skills": "Skills",
+    "connections": "Connections",
     "memory": "Memory",
     "databases": "Databases",
     "wallet": "Wallet",
@@ -439,6 +440,50 @@
     "loadFailed": "Couldn't load this skill",
     "skillNamePlaceholder": "pdf-flow",
     "skillDescriptionPlaceholder": "What this skill does (shown in lists)"
+  },
+  "connections": {
+    "title": "Connections",
+    "subtitle": "app connections",
+    "intro": "Connect third-party apps so the assistant can act on your behalf.",
+    "yourConnections": "Your connections",
+    "browse": "Browse apps",
+    "searchPlaceholder": "Search apps…",
+    "emptySearch": "No apps match \"{{query}}\"",
+    "emptyCatalog": "All offered apps are connected",
+    "connect": "Connect",
+    "reconnect": "Reconnect",
+    "resume": "Resume",
+    "disconnect": "Disconnect",
+    "connected": "Connected",
+    "connecting": "Connecting…",
+    "reconnecting": "Reconnecting…",
+    "connectToContinue": "Connect {{label}} to continue",
+    "toastConnected": "{{label}} connected",
+    "toastDisconnected": "{{label}} disconnected",
+    "connectFailed": "Couldn't connect {{label}}",
+    "connectCancelled": "Connect cancelled — {{label}} is not connected",
+    "connectTimedOut": "Connect timed out — {{label}} is not connected",
+    "disconnectFailed": "Couldn't disconnect {{label}}",
+    "composer": {
+      "hint": "Connect the apps your assistant can use — one click, OAuth popup.",
+      "manageAll": "Manage all"
+    },
+    "category": {
+      "all": "All",
+      "google": "Google",
+      "microsoft": "Microsoft",
+      "communication": "Communication",
+      "productivity": "Productivity",
+      "crm": "CRM",
+      "dev": "Dev",
+      "design": "Design"
+    },
+    "status": {
+      "initializing": "Pending",
+      "failed": "Failed",
+      "expired": "Expired",
+      "notConnected": "Not connected"
+    }
   },
   "code": {
     "title": "Code",

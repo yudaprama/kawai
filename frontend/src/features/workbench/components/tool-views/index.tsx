@@ -39,6 +39,7 @@ import {
 
 import { isRecord, parseMaybeJson } from "./format";
 import { FallbackView } from "./fallback";
+import { ComposioConnectHint } from "@/features/connector/components/composio-connect-hint";
 import {
   binanceKlineSeries,
   renderBinanceBalances,
@@ -245,11 +246,24 @@ const registry: Record<string, StepView> = {
   codegraph_explore: (p, raw) => <CodeGraphView data={p} raw={raw} />,
   codegraph_status: (p) => (isRecord(p) ? <GenericHumanView data={p} raw={JSON.stringify(p)} /> : null),
 
-  // composio (tool discovery)
+  // composio (tool discovery + execute) — execute/authorize carry the
+  // "Connect X to continue" banner for not-yet-connected toolkits the step
+  // touched (discovery results only list already-connected apps, so the
+  // banner is a no-op there).
   composio_list_toolkits: (p, raw) => <GenericHumanView data={p} raw={raw} />,
   composio_list_tools: (p, raw) => <GenericHumanView data={p} raw={raw} />,
-  composio_execute: (p, raw) => <GenericHumanView data={p} raw={raw} />,
-  composio_authorize: (p, raw) => <GenericHumanView data={p} raw={raw} />,
+  composio_execute: (p, raw) => (
+    <>
+      <GenericHumanView data={p} raw={raw} />
+      <ComposioConnectHint data={p} raw={raw} />
+    </>
+  ),
+  composio_authorize: (p, raw) => (
+    <>
+      <GenericHumanView data={p} raw={raw} />
+      <ComposioConnectHint data={p} raw={raw} />
+    </>
+  ),
   composio_list_connections: (p, raw) => <GenericHumanView data={p} raw={raw} />,
 
   // calculation

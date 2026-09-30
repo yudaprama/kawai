@@ -394,6 +394,7 @@ async fn build_supervisor_toolset(
                 agent_registry::religion_tools_for_supervisor(&context, remote_configured),
                 agent_registry::utility_tools_for_supervisor(&context, remote_configured),
                 agent_registry::coinmarketcap_tools_for_supervisor(&context, remote_configured),
+                agent_registry::composio_tools_for_supervisor(&context, remote_configured),
             ] {
                 if let Some(mut tools) = tools {
                     set.merge(&mut tools);

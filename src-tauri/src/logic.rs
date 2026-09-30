@@ -417,6 +417,7 @@ async fn download_stream(
 // stable across the split.
 pub mod db;
 pub mod db_migrations;
+pub mod connector;
 #[cfg(feature = "litert")]
 pub use local_llm;
 /// Convenience re-export so wrappers can call `logic::local_model_status()`.

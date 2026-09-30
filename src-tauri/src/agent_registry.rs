@@ -399,6 +399,24 @@ generated_http_tools!(religion_tools_for_supervisor, religion);
 generated_http_tools!(utility_tools_for_supervisor, utility);
 generated_http_tools!(coinmarketcap_tools_for_supervisor, coinmarketcap);
 
+/// Composio: third-party toolkit discovery, OAuth authorize, and action
+/// execution (Gmail, GitHub, Notion, …) via the baked API key. Returns None
+/// when no key is configured — empty vault = off, no kill-switch env.
+#[cfg(feature = "litert")]
+pub fn composio_tools_for_supervisor(
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    let _ = (context, remote_configured);
+    if kawai_constants::composio::get_composio_api_key()
+        .trim()
+        .is_empty()
+    {
+        return None;
+    }
+    Some(composio::all_tools())
+}
+
 /// Stock/social finance tools: keyed stock providers (TwelveData/AlphaVantage/
 /// Tiingo, each with a keyless StockTwits fallback) plus the StockTwits-only
 /// social tools (sentiment/messages/trending). yfinance provides extended

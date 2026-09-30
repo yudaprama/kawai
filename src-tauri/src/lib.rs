@@ -216,6 +216,10 @@ pub fn run() {
         commands::topup_qris_cancel,
         commands::topup_balance,
         commands::topup_history,
+        commands::connector_list_connections,
+        commands::connector_connect,
+        commands::connector_poll,
+        commands::connector_disconnect,
 
         // ── litert (local LLM + supervisor) ────────────────────────────
         #[cfg(feature = "litert")]

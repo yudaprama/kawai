@@ -255,6 +255,7 @@
     "wiki": "Wiki",
     "code": "Kode",
     "skills": "Skill",
+    "connections": "Koneksi",
     "memory": "Memori",
     "databases": "Database",
     "wallet": "Dompet",
@@ -439,6 +440,50 @@
     "loadFailed": "Gagal memuat skill ini",
     "skillNamePlaceholder": "pdf-flow",
     "skillDescriptionPlaceholder": "Apa yang dilakukan skill ini (ditampilkan di daftar)"
+  },
+  "connections": {
+    "title": "Koneksi",
+    "subtitle": "koneksi aplikasi",
+    "intro": "Hubungkan aplikasi pihak ketiga agar asisten dapat bertindak atas namamu.",
+    "yourConnections": "Koneksi kamu",
+    "browse": "Jelajahi aplikasi",
+    "searchPlaceholder": "Cari aplikasi…",
+    "emptySearch": "Tidak ada aplikasi yang cocok dengan \"{{query}}\"",
+    "emptyCatalog": "Semua aplikasi yang ditawarkan sudah terhubung",
+    "connect": "Hubungkan",
+    "reconnect": "Hubungkan ulang",
+    "resume": "Lanjutkan",
+    "disconnect": "Putuskan",
+    "connected": "Terhubung",
+    "connecting": "Menghubungkan…",
+    "reconnecting": "Menghubungkan ulang…",
+    "connectToContinue": "Hubungkan {{label}} untuk melanjutkan",
+    "toastConnected": "{{label}} terhubung",
+    "toastDisconnected": "{{label}} diputus",
+    "connectFailed": "Gagal menghubungkan {{label}}",
+    "connectCancelled": "Koneksi dibatalkan — {{label}} tidak terhubung",
+    "connectTimedOut": "Koneksi kehabisan waktu — {{label}} tidak terhubung",
+    "disconnectFailed": "Gagal memutus {{label}}",
+    "composer": {
+      "hint": "Hubungkan aplikasi yang dapat digunakan asisten — satu klik, popup OAuth.",
+      "manageAll": "Kelola semua"
+    },
+    "category": {
+      "all": "Semua",
+      "google": "Google",
+      "microsoft": "Microsoft",
+      "communication": "Komunikasi",
+      "productivity": "Produktivitas",
+      "crm": "CRM",
+      "dev": "Dev",
+      "design": "Desain"
+    },
+    "status": {
+      "initializing": "Menunggu",
+      "failed": "Gagal",
+      "expired": "Kedaluwarsa",
+      "notConnected": "Tidak terhubung"
+    }
   },
   "code": {
     "title": "Kode",
