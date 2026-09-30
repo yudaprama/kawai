@@ -5907,12 +5907,14 @@ name = "kawai-desk"
 version = "0.1.0"
 dependencies = [
  "finance",
+ "futures-util",
  "kawai-router",
  "kawai-tools",
  "news_media",
  "remote-llm",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
 ]
 
