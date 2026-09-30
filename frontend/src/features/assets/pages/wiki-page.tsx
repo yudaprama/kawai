@@ -24,6 +24,7 @@ import { formatBytes } from "@/lib/utils";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 import { FilePreview } from "@/components/shared/file-preview";
 import { knowledgeFileToPreview } from "@/lib/preview-file";
+import { useI18n } from "@/hooks/use-i18n";
 import { fmtDateUS, fmtTimestamp } from "@/features/workbench/components/tool-views/format";
 
 /**
@@ -88,9 +89,10 @@ export function WikiAssetPage({
   }, [files, query]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const active = filtered.find((f) => f.id === selectedId) ?? files.find((f) => f.id === selectedId) ?? null;
+  const { t } = useI18n();
 
   return (
-    <AssetShell onBack={onBack} subtitle="knowledge base" title="Wiki">
+    <AssetShell onBack={onBack} subtitle="knowledge base" title={t("assetNav.wiki")}>
       <AssetPageHeader
         actions={
           <Button disabled={importing} onClick={onImport} size="sm">
@@ -99,7 +101,7 @@ export function WikiAssetPage({
           </Button>
         }
         subtitle={`${files.length} ${files.length === 1 ? "document" : "documents"} in the knowledge base`}
-        title="Wiki"
+        title={t("assetNav.wiki")}
       />
       <div className="mb-3 mt-3 flex shrink-0 items-center">
         <Input
@@ -149,7 +151,7 @@ export function WikiAssetPage({
                   </span>
                   {onRefresh != null && (
                     <Button onClick={onRefresh} size="xs" variant="outline">
-                      Retry
+                      {t("common.retry")}
                     </Button>
                   )}
                 </span>
@@ -207,6 +209,7 @@ function SourceDetail({
   onDelete: (file: KnowledgeFileInfo) => void;
 }) {
   const [tab, setTab] = useState("pages");
+  const { t } = useI18n();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-4 pt-3">
@@ -215,7 +218,7 @@ function SourceDetail({
             <>
               {file.status === "failed" && (
                 <Button onClick={() => onRetry(file)} size="xs" title="Retry indexing" variant="outline">
-                  Retry
+                  {t("common.retry")}
                 </Button>
               )}
               {inSession ? (
@@ -234,7 +237,7 @@ function SourceDetail({
                 title={confirmDelete ? "Click again to confirm — deletes the document everywhere" : "Delete document"}
                 variant="outline"
               >
-                {confirmDelete ? "Confirm" : "Delete"}
+                {confirmDelete ? t("common.confirm") : t("common.delete")}
               </Button>
             </>
           }

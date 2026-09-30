@@ -5,10 +5,15 @@ import { SentryErrorBoundary } from "@/components/error-boundary";
 import { AuthGate } from "@/features/auth/auth-gate";
 import { ContextGatheringStep } from "@/features/auth/context-gathering-step";
 import { OnboardingProvider } from "@/features/auth/onboarding-provider";
+import { getLocale } from "@/lib/i18n";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import App from "./app/App";
 import "./index.css";
+
+// Reflect the resolved locale (stored override → navigator → en) on <html>
+// so lang-dependent CSS/fonts/assistive tech behave correctly from first paint.
+document.documentElement.lang = getLocale();
 
 // Sentry is opt-in: init only when VITE_SENTRY_DSN is set (build-time env,
 // e.g. in .env.local or the release CI). Without a DSN the SDK stays inert —

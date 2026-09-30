@@ -8,6 +8,7 @@ import type { SupervisorArtifact, SupervisorEvent, SupervisorStep } from "@/feat
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { publishTokenBalance, refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { hydrateStep, type PersistedPlanRecord } from "@/features/chat/hooks/supervisor-types";
+import { getLocale, translate } from "@/lib/i18n";
 
 // ── Derived view models ─────────────────────────────────────────────────────
 
@@ -24,16 +25,36 @@ export interface FollowUpChip {
   prefix: string;
 }
 export const FOLLOW_UP_CHIPS: FollowUpChip[] = [
-  { icon: "✨", label: "Enhance", prefix: "Enhance the previous deliverable: " },
-  { icon: "➕", label: "Expand", prefix: "Expand the previous deliverable with more depth and examples: " },
+  {
+    icon: "✨",
+    label: translate(getLocale(), "workbench.followUp.chips.enhance"),
+    prefix: "Enhance the previous deliverable: ",
+  },
+  {
+    icon: "➕",
+    label: translate(getLocale(), "workbench.followUp.chips.expand"),
+    prefix: "Expand the previous deliverable with more depth and examples: ",
+  },
   {
     icon: "🎯",
-    label: "More actionable",
+    label: translate(getLocale(), "workbench.followUp.chips.moreActionable"),
     prefix: "Rewrite the previous deliverable to be more concrete and actionable: ",
   },
-  { icon: "✂️", label: "Shorter", prefix: "Condense the previous deliverable, keep the key findings: " },
-  { icon: "✍️", label: "Change tone", prefix: "Rewrite the previous deliverable in a different tone: " },
-  { icon: "🌐", label: "Translate", prefix: "Translate the previous deliverable to: " },
+  {
+    icon: "✂️",
+    label: translate(getLocale(), "workbench.followUp.chips.shorter"),
+    prefix: "Condense the previous deliverable, keep the key findings: ",
+  },
+  {
+    icon: "✍️",
+    label: translate(getLocale(), "workbench.followUp.chips.changeTone"),
+    prefix: "Rewrite the previous deliverable in a different tone: ",
+  },
+  {
+    icon: "🌐",
+    label: translate(getLocale(), "workbench.followUp.chips.translate"),
+    prefix: "Translate the previous deliverable to: ",
+  },
 ];
 
 /** The excerpt is LLM-generated content quoted verbatim into the planner's

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AssetShell } from "@/features/assets/components/asset-shell";
+import { useI18n } from "@/hooks/use-i18n";
 import { tauriBlockchainAdapter } from "../lib/blockchain-adapter";
 import type { NetworkInfo, WalletTransaction } from "../lib/types";
 import { DEFAULT_CHAIN_ID } from "../lib/types";
@@ -23,6 +24,7 @@ import { SmartDepositForm } from "./smart-deposit-form";
 type ModalType = "send" | "receive" | "swap" | "deposit" | "addAccount" | "createWallet" | "addToken" | null;
 
 export function WalletPage({ onBack }: { onBack: () => void }) {
+  const { t } = useI18n();
   const { address, hasWallet, status, available, loading, create } = useWallet();
   const { currentNetwork, backendConfig } = useNetwork();
   const {
@@ -148,13 +150,15 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
   // Not connected state — create a device wallet
   if (!hasWallet) {
     return (
-      <AssetShell title="KAWAI Wallet" subtitle={currentNetwork?.name ?? "Monad Testnet"} onBack={onBack}>
+      <AssetShell title={t("wallet.title")} subtitle={currentNetwork?.name ?? "Monad Testnet"} onBack={onBack}>
         <div className="mx-auto w-full max-w-lg space-y-6 py-8">
           <div className="text-center">
             <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10">
               <Icon name="wallet" className="size-6" />
             </div>
-            <h3 className="mt-3 font-semibold">{available ? "No wallet found" : "Wallet unavailable in this build"}</h3>
+            <h3 className="mt-3 font-semibold">
+              {available ? t("wallet.noWallet") : "Wallet unavailable in this build"}
+            </h3>
             <p className="text-sm text-muted-foreground">
               {available
                 ? "Create a hot wallet to manage your Monad assets."
@@ -174,7 +178,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
                 }
               }}
             >
-              {loading ? "Checking..." : creating ? "Creating..." : "Create Wallet"}
+              {loading ? "Checking..." : creating ? "Creating..." : t("wallet.createWallet")}
             </Button>
           )}
         </div>
@@ -184,7 +188,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
 
   return (
     <AssetShell
-      title="KAWAI Wallet"
+      title={t("wallet.title")}
       subtitle={
         address ? `${address.slice(0, 6)}...${address.slice(-4)} · ${currentNetwork?.name ?? ""}` : currentNetwork?.name
       }
@@ -193,9 +197,9 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
       <div className="flex min-h-0 flex-1 flex-col gap-4">
         <Tabs value={active} onValueChange={setActive}>
           <TabsList>
-            <TabsTrigger value="home">Home</TabsTrigger>
-            <TabsTrigger value="rewards">Rewards</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
+            <TabsTrigger value="home">{t("wallet.home")}</TabsTrigger>
+            <TabsTrigger value="rewards">{t("wallet.rewards")}</TabsTrigger>
+            <TabsTrigger value="settings">{t("common.settings")}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="home" className="mt-4">
@@ -230,18 +234,18 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
             <Card>
               <CardContent className="pt-6 space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Address</span>
+                  <span className="text-sm text-muted-foreground">{t("wallet.address")}</span>
                   <span className="font-mono text-xs flex items-center gap-2">
                     {address} <CopyButton text={address} />
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">Network</span>
+                  <span className="text-sm text-muted-foreground">{t("wallet.network")}</span>
                   <span className="text-sm">
                     {currentNetwork?.name} ({currentNetwork?.id})
                   </span>
                 </div>
-                {status && <div className="text-xs text-muted-foreground">Wallet address active on this device.</div>}
+                {status && <div className="text-xs text-muted-foreground">{t("wallet.walletAddressActive")}</div>}
               </CardContent>
             </Card>
           </TabsContent>
@@ -260,7 +264,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
           onInteractOutside={(e) => sending && e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>Smart Deposit</DialogTitle>
+            <DialogTitle>{t("wallet.smartDeposit")}</DialogTitle>
           </DialogHeader>
           <SmartDepositForm
             onDeposit={handleDeposit}
@@ -282,7 +286,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
           onInteractOutside={(e) => sending && e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>Send Assets</DialogTitle>
+            <DialogTitle>{t("wallet.sendAssets")}</DialogTitle>
           </DialogHeader>
           <SendForm onSend={handleSend} loading={sending} currentNetwork={currentNetwork} />
         </DialogContent>
@@ -290,7 +294,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
       <Dialog open={modal === "receive"} onOpenChange={(o) => !o && setModal(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Receive</DialogTitle>
+            <DialogTitle>{t("wallet.receive")}</DialogTitle>
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 py-2">
             <div className="rounded-xl bg-card p-3 border">
@@ -312,15 +316,15 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
         <DialogContent>
           <div className="flex flex-col items-center gap-3 py-8">
             <Icon name="repeat-2" className="size-10 text-muted-foreground" />
-            <p className="font-semibold">Coming Soon</p>
-            <p className="text-sm text-muted-foreground">Token swapping next update.</p>
+            <p className="font-semibold">{t("wallet.comingSoon")}</p>
+            <p className="text-sm text-muted-foreground">{t("wallet.tokenSwappingNext")}</p>
           </div>
         </DialogContent>
       </Dialog>
       <Dialog open={modal === "addToken"} onOpenChange={(o) => !o && setModal(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Token</DialogTitle>
+            <DialogTitle>{t("wallet.addToken")}</DialogTitle>
           </DialogHeader>
           <AddTokenInline currentNetwork={currentNetwork} onClose={() => setModal(null)} />
         </DialogContent>
@@ -330,6 +334,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
 }
 
 function AddTokenInline({ currentNetwork, onClose }: { currentNetwork: NetworkInfo | null; onClose: () => void }) {
+  const { t } = useI18n();
   const [addr, setAddr] = useState("");
   const [loading, setLoading] = useState(false);
   const onAdd = async () => {
@@ -349,7 +354,7 @@ function AddTokenInline({ currentNetwork, onClose }: { currentNetwork: NetworkIn
   return (
     <div className="space-y-3">
       <div className="space-y-2">
-        <Label>Token Contract Address</Label>
+        <Label>{t("wallet.tokenContractAddress")}</Label>
         <Input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="0x..." />
       </div>
       <Button className="w-full" onClick={onAdd} disabled={loading}>

@@ -6,6 +6,8 @@ import { MessageResponse } from "@/components/ai-elements/message";
 import { renderDataSchema } from "@/components/ai-elements/tool-renderers/data";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { useI18n } from "@/hooks/use-i18n";
+import type { TranslationKey, TranslationParams } from "@/lib/i18n";
 import { call, errText, tauriOpenFile } from "@/lib/api";
 import { isTabularExt } from "@/lib/extensions";
 import { type FileKind, fileExtension, fileKind, shikiLanguage } from "@/lib/file-types";
@@ -13,14 +15,17 @@ import { logWarn } from "@/lib/logger";
 import { type PreviewFile, useFilePreview } from "@/lib/preview-file";
 import { runningInTauri } from "@/platform";
 
-const FALLBACK_REASON: Partial<Record<FileKind, string>> = {
-  "video-fallback": "This video format can't be previewed.",
-  office: "Office documents can't be previewed — download to open them.",
-  "video-native": "This video couldn't be loaded.",
-  image: "This image couldn't be loaded.",
-  pdf: "This PDF couldn't be loaded.",
-  unknown: "Preview isn't available for this file type.",
-};
+function fallbackReason(t: (key: TranslationKey, params?: TranslationParams) => string, kind: FileKind): string {
+  const reasons: Record<string, TranslationKey> = {
+    "video-fallback": "preview.videoFallback",
+    office: "preview.office",
+    "video-native": "preview.videoLoadFailed",
+    image: "preview.imageLoadFailed",
+    pdf: "preview.pdfLoadFailed",
+    unknown: "preview.unavailable",
+  };
+  return t(reasons[kind] ?? "preview.unavailable");
+}
 
 /**
  * Dispatches to a renderer based on the file's kind (by extension). Images,
@@ -173,6 +178,7 @@ function HtmlPreview({ file }: { file: PreviewFile }) {
  * reuse the preview fetch).
  */
 function DesktopFileOpen({ file }: { file: PreviewFile }) {
+  const { t } = useI18n();
   const [error, setError] = useState<string | null>(null);
   const { data } = useFilePreview(file);
 
@@ -196,18 +202,18 @@ function DesktopFileOpen({ file }: { file: PreviewFile }) {
       </div>
       <div className="space-y-1">
         <p className="text-foreground text-sm font-medium">
-          {error ? "Couldn't open this file" : "Opened in your default app"}
+          {error ? t("preview.openFailed") : t("preview.openedInDefaultApp")}
         </p>
-        <p className="text-xs">{error ?? `${file.name} should now be open in another window.`}</p>
+        <p className="text-xs">{error ?? t("preview.openedElsewhere", { file: file.name })}</p>
       </div>
       <div className="flex gap-2">
         <Button variant="secondary" size="sm" onClick={open}>
-          <Icon name="external-link" className="size-4" /> Open again
+          <Icon name="external-link" className="size-4" /> {t("preview.openAgain")}
         </Button>
         {data?.dataUrl && (
           <Button asChild variant="secondary" size="sm">
             <a href={data.dataUrl} target="_blank" rel="noreferrer" download={file.name}>
-              <Icon name="download" className="size-4" /> Download
+              <Icon name="download" className="size-4" /> {t("common.download")}
             </a>
           </Button>
         )}
@@ -249,9 +255,10 @@ function TextPreview({ file, render }: { file: PreviewFile; render: "markdown" |
 }
 
 function PreviewLoading() {
+  const { t } = useI18n();
   return (
     <div className="text-muted-foreground flex flex-1 items-center justify-center gap-2 p-8 text-sm">
-      <Spinner className="size-4" /> Loading…
+      <Spinner className="size-4" /> {t("common.loading")}
     </div>
   );
 }
@@ -297,9 +304,10 @@ function DataPreviewPane({ file }: { file: PreviewFile }) {
 }
 
 function FallbackPreview({ file, kind }: { file: PreviewFile; kind: FileKind }) {
+  const { t } = useI18n();
   const { data } = useFilePreview(file);
   const href = data?.dataUrl;
-  const reason = FALLBACK_REASON[kind] ?? FALLBACK_REASON.unknown ?? "Preview isn't available for this file type.";
+  const reason = fallbackReason(t, kind);
 
   return (
     <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
@@ -307,18 +315,18 @@ function FallbackPreview({ file, kind }: { file: PreviewFile; kind: FileKind }) 
         <Icon name="file-warning" className="size-5" />
       </div>
       <div className="space-y-1">
-        <p className="text-foreground text-sm font-medium">Can't preview this file</p>
+        <p className="text-foreground text-sm font-medium">{t("preview.cantPreview")}</p>
         <p className="text-xs">{reason}</p>
       </div>
       {href ? (
         <Button asChild variant="secondary" size="sm">
           <a href={href} target="_blank" rel="noreferrer" download={file.name}>
-            <Icon name="download" className="size-4" /> Download
+            <Icon name="download" className="size-4" /> {t("common.download")}
           </a>
         </Button>
       ) : (
         <Button variant="secondary" size="sm" disabled aria-disabled="true">
-          <Icon name="download" className="size-4" /> Download
+          <Icon name="download" className="size-4" /> {t("common.download")}
         </Button>
       )}
     </div>

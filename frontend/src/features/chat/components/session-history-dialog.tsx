@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useSessionFilter } from "@/hooks/use-session-filter";
+import { useI18n } from "@/hooks/use-i18n";
 import { groupSessions, type SessionGroup } from "@/features/chat/lib/chat-helpers";
 import type { ChatSessionInfo } from "@/lib/api";
 
@@ -48,6 +49,7 @@ export function SessionHistoryDialog({
    *  the instant layer. */
   onSearchSessions: (q: string) => Promise<{ sessions: ChatSessionInfo[]; archivedSessions: ChatSessionInfo[] }>;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -220,20 +222,17 @@ export function SessionHistoryDialog({
       <DialogContent className="gap-0 p-0 sm:max-w-lg">
         <DialogHeader className="border-b px-4 py-3">
           <div className="flex items-center justify-between gap-2">
-            <DialogTitle>Sessions</DialogTitle>
+            <DialogTitle>{t("sessionSwitcher.title")}</DialogTitle>
             <Button
               aria-pressed={selectMode}
               onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
               size="xs"
               variant="ghost"
             >
-              {selectMode ? "Done" : "Select"}
+              {selectMode ? t("common.done") : t("sessionSwitcher.actions.select")}
             </Button>
           </div>
-          <DialogDescription className="sr-only">
-            Browse and manage your chat sessions. Arrow keys move, Enter opens the highlighted row. Use Select to
-            archive or delete several sessions at once.
-          </DialogDescription>
+          <DialogDescription className="sr-only">{t("sessionSwitcher.description")}</DialogDescription>
         </DialogHeader>
 
         {/* Search */}
@@ -250,13 +249,13 @@ export function SessionHistoryDialog({
               setActiveIndex(0);
             }}
             onKeyDown={onSearchKeyDown}
-            aria-label="Search sessions"
-            placeholder="Search sessions…"
+            aria-label={t("sessionSwitcher.searchPlaceholder")}
+            placeholder={t("sessionSwitcher.searchPlaceholder")}
             value={query}
           />
           {query && (
             <button
-              aria-label="Clear search"
+              aria-label={t("common.clearSearch")}
               className="text-muted-foreground hover:text-foreground absolute top-1/2 right-7 -translate-y-1/2"
               onClick={() => setQuery("")}
               type="button"
@@ -275,16 +274,16 @@ export function SessionHistoryDialog({
           {sessionsError != null && !sessionsLoading && (
             <div className="flex items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
               <p className="text-destructive min-w-0 text-xs" role="alert">
-                Couldn't load sessions — {sessionsError}
+                {t("sessionSwitcher.loadError", { error: sessionsError })}
               </p>
               <Button onClick={onRetrySessions} size="sm" variant="outline">
-                Retry
+                {t("common.retry")}
               </Button>
             </div>
           )}
           {!q && sessionsLoading && displayGroups.length === 0 && displayArchived.length === 0 && (
             <div aria-busy="true" className="space-y-3 px-2 py-3" role="status">
-              <span className="sr-only">Loading sessions…</span>
+              <span className="sr-only">{t("sessionSwitcher.loadingSessions")}</span>
               {[0, 1, 2].map((i) => (
                 <div className="flex items-center gap-2" key={i}>
                   <div className="min-w-0 flex-1 space-y-1.5">
@@ -298,7 +297,15 @@ export function SessionHistoryDialog({
           {displayGroups.map((group) => (
             <div key={group.label}>
               <p className="text-muted-foreground px-2 pb-1 font-mono text-[11px] tracking-wider uppercase">
-                {group.label}
+                {/* Buckets are keyed by their English period name (the local
+                    filter compares against it) — translate only at render. */}
+                {group.label === "Today"
+                  ? t("sessionSwitcher.groups.today")
+                  : group.label === "Yesterday"
+                    ? t("sessionSwitcher.groups.yesterday")
+                    : group.label === "Earlier"
+                      ? t("sessionSwitcher.groups.earlier")
+                      : group.label}
               </p>
               <div className="flex flex-col gap-0.5">
                 {group.sessions.map((session) => {
@@ -337,7 +344,9 @@ export function SessionHistoryDialog({
           ))}
 
           {q && displayGroups.length === 0 && displayArchived.length === 0 && (
-            <p className="text-muted-foreground px-2 py-4 text-center text-xs">No sessions match "{query.trim()}".</p>
+            <p className="text-muted-foreground px-2 py-4 text-center text-xs">
+              {t("sessionSwitcher.emptySearch", { query: query.trim() })}
+            </p>
           )}
 
           {displayGroups.length === 0 &&
@@ -345,9 +354,7 @@ export function SessionHistoryDialog({
             !q &&
             !sessionsLoading &&
             sessionsError == null && (
-              <p className="text-muted-foreground px-2 py-4 text-center text-xs">
-                No sessions yet. Start a conversation to create one.
-              </p>
+              <p className="text-muted-foreground px-2 py-4 text-center text-xs">{t("sessionSwitcher.emptyState")}</p>
             )}
 
           {displayArchived.length > 0 && (
@@ -361,7 +368,7 @@ export function SessionHistoryDialog({
                 }}
                 type="button"
               >
-                {archiveOpen ? "▼" : "▶"} Archived ({displayArchived.length})
+                {archiveOpen ? "▼" : "▶"} {t("sessionSwitcher.archive", { count: displayArchived.length })}
               </button>
               {archiveOpen && (
                 <div className="flex flex-col gap-0.5">
@@ -408,14 +415,14 @@ export function SessionHistoryDialog({
         {selectMode && (
           <div className="flex items-center justify-between gap-2 border-t px-4 py-2.5">
             <span className="text-muted-foreground text-xs">
-              {selected.size} selected
+              {t("sessionSwitcher.selectedCount", { count: selected.size })}
               {selected.size > 0 && selected.size < allVisibleCount && (
                 <button
                   className="text-foreground ml-1 underline underline-offset-2"
                   onClick={selectAllVisible}
                   type="button"
                 >
-                  All {allVisibleCount}
+                  {t("sessionSwitcher.selectAllVisible", { count: allVisibleCount })}
                 </button>
               )}
             </span>
@@ -426,7 +433,7 @@ export function SessionHistoryDialog({
                 size="xs"
                 variant="outline"
               >
-                Archive
+                {t("sessionSwitcher.actions.archiveSelected")}
               </Button>
               <Button
                 disabled={busy || selArchived.length === 0}
@@ -434,7 +441,7 @@ export function SessionHistoryDialog({
                 size="xs"
                 variant="outline"
               >
-                Restore
+                {t("sessionSwitcher.actions.restoreSelected")}
               </Button>
               <Button
                 className="text-destructive"
@@ -443,10 +450,10 @@ export function SessionHistoryDialog({
                 size="xs"
                 variant="ghost"
               >
-                Delete
+                {t("sessionSwitcher.actions.deleteSelected")}
               </Button>
               <Button onClick={exitSelect} size="xs" variant="ghost">
-                Cancel
+                {t("sessionSwitcher.actions.cancel")}
               </Button>
             </div>
           </div>

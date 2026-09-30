@@ -4,12 +4,13 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { call, errText } from "@/lib/api";
 import { useOnboardingContext } from "@/features/auth/onboarding-provider";
+import { useI18n } from "@/hooks/use-i18n";
 import type { OnboardingEvent } from "@/hooks/use-onboarding";
 
 const QUICK_QUESTIONS = [
-  { key: "name", question: "What's your name?" },
-  { key: "role", question: "What do you do? (role / focus)" },
-  { key: "goal", question: "What would you like Kawai to help with first?" },
+  { key: "name", questionKey: "onboarding.question.name" },
+  { key: "role", questionKey: "onboarding.question.role" },
+  { key: "goal", questionKey: "onboarding.question.goal" },
 ] as const;
 
 /**
@@ -20,6 +21,7 @@ const QUICK_QUESTIONS = [
  */
 export function ContextGatheringStep({ children }: { children: React.ReactNode }) {
   const onboarding = useOnboardingContext();
+  const { t } = useI18n();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [github, setGithub] = useState("");
   const [gmailOptIn, setGmailOptIn] = useState(false);
@@ -37,14 +39,14 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
         <main className="flex min-h-screen items-center justify-center bg-background p-6">
           <div className="w-full max-w-md space-y-4 text-center">
             <p className="text-muted-foreground text-sm">
-              Couldn't read onboarding state — {onboarding.error ?? "unknown error"}
+              {t("onboarding.statusReadFailed", { error: onboarding.error ?? "unknown error" })}
             </p>
             <div className="flex justify-center gap-2">
               <Button onClick={() => void onboarding.refresh()} size="sm" variant="outline">
-                Retry
+                {t("common.retry")}
               </Button>
               <Button onClick={() => setDismissed(true)} size="sm" variant="ghost">
-                Enter Kawai anyway
+                {t("onboarding.enterAnyway")}
               </Button>
             </div>
           </div>
@@ -82,8 +84,8 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
       const stored = await call<number>("onboarding_import_document", { fileId: imported.id });
       setDocResult(
         stored > 0
-          ? `✓ ${file.name} — ${stored} profile ${stored === 1 ? "fact" : "facts"} saved`
-          : `✓ ${file.name} imported, but nothing new was learned from it`,
+          ? t("onboarding.docFactsSaved", { file: file.name, count: stored })
+          : t("onboarding.docNothingNew", { file: file.name }),
       );
     } catch (err) {
       setDocResult(`✗ ${errText(err)}`);
@@ -94,8 +96,8 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
 
   const start = async () => {
     await onboarding.run({
-      questions: QUICK_QUESTIONS.map(({ question, key }) => ({
-        question,
+      questions: QUICK_QUESTIONS.map(({ questionKey, key }) => ({
+        question: t(questionKey),
         answer: (answers[key] ?? "").trim(),
       })).filter((qa) => qa.answer.length > 0),
       githubUsername: github.trim() || undefined,
@@ -107,19 +109,16 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
     <main className="flex min-h-screen items-center justify-center bg-background p-6">
       <div className="w-full max-w-lg space-y-6">
         <div className="space-y-1.5 text-center">
-          <h1 className="text-2xl font-semibold text-foreground">Make Kawai yours</h1>
-          <p className="text-muted-foreground text-sm">
-            Answer what you like — every field is optional. Kawai uses this to know who you are before your first goal.
-            You can always change it later in Memory.
-          </p>
+          <h1 className="text-2xl font-semibold text-foreground">{t("onboarding.title")}</h1>
+          <p className="text-muted-foreground text-sm">{t("onboarding.subtitle")}</p>
         </div>
 
         {!onboarding.running && onboarding.events.length === 0 ? (
           <div className="space-y-3 rounded-lg border p-4">
-            {QUICK_QUESTIONS.map(({ key, question }) => (
+            {QUICK_QUESTIONS.map(({ key, questionKey }) => (
               <div key={key} className="grid gap-1">
                 <label className="text-sm font-medium" htmlFor={`ob-${key}`}>
-                  {question}
+                  {t(questionKey)}
                 </label>
                 <Input
                   id={`ob-${key}`}
@@ -137,17 +136,14 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
                 type="checkbox"
               />
               <span>
-                Scan my Gmail notifications for identity context
-                <span className="text-muted-foreground">
-                  {" "}
-                  — read-only, only if a Gmail connection already exists; just the LinkedIn profile link is kept, email
-                  content is never stored.
-                </span>
+                {t("onboarding.gmailScan")}
+                <span className="text-muted-foreground"> {t("onboarding.gmailNote")}</span>
               </span>
             </label>
             <div className="grid gap-1">
               <p className="text-sm font-medium">
-                Resume / LinkedIn data export <span className="text-muted-foreground font-normal">(optional)</span>
+                {t("onboarding.resumeExportLabel")}{" "}
+                <span className="text-muted-foreground font-normal">{t("onboarding.optional")}</span>
               </p>
               <input
                 accept=".zip,.pdf,.html,.htm,.csv,.docx,.md,.txt"
@@ -162,16 +158,22 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
               />
               {importingDoc && (
                 <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                  <Spinner className="size-3" /> Extracting…
+                  <Spinner className="size-3" /> {t("onboarding.extracting")}
                 </span>
               )}
               {docResult && <span className="text-xs">{docResult}</span>}
             </div>
             <div className="grid gap-1">
               <label className="text-sm font-medium" htmlFor="ob-github">
-                Public GitHub username <span className="text-muted-foreground font-normal">(optional)</span>
+                {t("onboarding.githubLabel")}{" "}
+                <span className="text-muted-foreground font-normal">{t("onboarding.optional")}</span>
               </label>
-              <Input id="ob-github" onChange={(e) => setGithub(e.target.value)} placeholder="octocat" value={github} />
+              <Input
+                id="ob-github"
+                onChange={(e) => setGithub(e.target.value)}
+                placeholder={t("onboarding.githubPlaceholder")}
+                value={github}
+              />
             </div>
           </div>
         ) : (
@@ -181,23 +183,23 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
         <div className="flex items-center justify-center gap-2">
           {onboarding.running ? (
             <Button disabled size="sm">
-              <Spinner className="size-3" /> Working…
+              <Spinner className="size-3" /> {t("onboarding.working")}
             </Button>
           ) : (
             !onboarding.done && (
               <>
                 <Button onClick={() => void start()} size="sm">
-                  Continue
+                  {t("onboarding.continue")}
                 </Button>
                 <Button onClick={() => void onboarding.skip()} size="sm" variant="ghost">
-                  Skip for now
+                  {t("onboarding.skipForNow")}
                 </Button>
               </>
             )
           )}
           {(onboarding.done || onboarding.events.some((e) => e.type === "onboardingError")) && (
             <Button onClick={() => setDismissed(true)} size="sm" variant="outline">
-              Enter Kawai
+              {t("onboarding.enterKawai")}
             </Button>
           )}
         </div>
@@ -207,12 +209,13 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
 }
 
 function RunLog({ events, running }: { events: OnboardingEvent[]; running: boolean }) {
+  const { t } = useI18n();
   return (
     <ol className="space-y-1.5 rounded-lg border p-4 font-mono text-xs">
       {events.map((e, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: append-only event log, no stable IDs
         <li className="text-muted-foreground" key={`${e.type}-${i}`}>
-          {e.type === "sourceStarted" && <>→ gathering {e.source}…</>}
+          {e.type === "sourceStarted" && <>{t("onboarding.runLog.gathering", { source: e.source })}</>}
           {e.type === "sourceProgress" && (
             <>
               {" "}
@@ -220,13 +223,11 @@ function RunLog({ events, running }: { events: OnboardingEvent[]; running: boole
             </>
           )}
           {e.type === "sourceCompleted" && <>✓ {e.source}</>}
-          {e.type === "compressStarted" && <>→ distilling profile…</>}
+          {e.type === "compressStarted" && <>{t("onboarding.runLog.distilling")}</>}
           {e.type === "profileReady" && (
-            <>
-              ✓ {e.profile} profile · {e.people} people · {e.goals} goals
-            </>
+            <>{t("onboarding.runLog.profileReady", { profile: e.profile, people: e.people, goals: e.goals })}</>
           )}
-          {e.type === "onboardingFinished" && <>✓ done — {e.totalItems} memories saved</>}
+          {e.type === "onboardingFinished" && <>{t("onboarding.runLog.finished", { count: e.totalItems })}</>}
           {e.type === "onboardingError" && <span className="text-destructive">✗ {e.message}</span>}
         </li>
       ))}
@@ -242,13 +243,14 @@ function RunLog({ events, running }: { events: OnboardingEvent[]; running: boole
 /** Compact bottom-right progress card for a background onboarding run. */
 function BackgroundProgress() {
   const onboarding = useOnboardingContext();
+  const { t } = useI18n();
   const [showDone, setShowDone] = useState(false);
 
   useEffect(() => {
     if (!onboarding.done) return;
     setShowDone(true);
-    const t = setTimeout(() => setShowDone(false), 6000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setShowDone(false), 6000);
+    return () => clearTimeout(timer);
   }, [onboarding.done]);
 
   if (!onboarding.running && !showDone) return null;
@@ -259,25 +261,25 @@ function BackgroundProgress() {
     last?.type === "sourceProgress"
       ? last.note
       : last?.type === "sourceStarted"
-        ? `gathering ${last.source}…`
-        : "distilling profile…";
+        ? t("onboarding.progress.gathering", { source: last.source })
+        : t("onboarding.progress.distilling");
 
   return (
     <div className="fixed right-4 bottom-4 z-50 w-72 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3 shadow-lg">
       {onboarding.running ? (
         <>
           <p className="flex items-center gap-2 text-sm font-medium">
-            <Spinner className="size-3.5" /> Setting up your profile…
+            <Spinner className="size-3.5" /> {t("onboarding.progress.settingUp")}
           </p>
           <p className="text-muted-foreground mt-1 truncate text-xs" title={note}>
             {note}
           </p>
           <p className="text-muted-foreground mt-1 text-[11px]">
-            {completed} source{completed === 1 ? "" : "s"} done — you can keep using Kawai.
+            {t("onboarding.progress.sourcesDone", { count: completed })}
           </p>
         </>
       ) : (
-        <p className="text-sm font-medium">✓ Profile ready — you're all set.</p>
+        <p className="text-sm font-medium">{t("onboarding.progress.profileReady")}</p>
       )}
     </div>
   );

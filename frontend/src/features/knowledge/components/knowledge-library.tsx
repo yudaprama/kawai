@@ -20,6 +20,7 @@ import type { KnowledgeFileInfo } from "@/lib/api";
 import { isTabularExt } from "@/lib/extensions";
 import { knowledgeFileToPreview } from "@/lib/preview-file";
 import { formatBytes } from "@/lib/utils";
+import { useI18n } from "@/hooks/use-i18n";
 
 /**
  * The knowledge library as an asset manager (Tea-style, vendored primitives):
@@ -46,6 +47,7 @@ export function KnowledgeLibrary({
   onRetry: (file: KnowledgeFileInfo) => void;
   onDelete: (file: KnowledgeFileInfo) => void;
 }) {
+  const { t } = useI18n();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Keep a valid selection across refreshes/deletes; fall back to the first file.
   const active = files.find((f) => f.id === selectedId) ?? files[0] ?? null;
@@ -66,7 +68,7 @@ export function KnowledgeLibrary({
             sessionId={sessionId}
           />
         ) : (
-          <div className="_alp-detail-empty">Select a document to inspect it</div>
+          <div className="_alp-detail-empty">{t("knowledge.selectDocument")}</div>
         )
       }
       sidebar={
@@ -83,7 +85,7 @@ export function KnowledgeLibrary({
                 <AssetItemName title={file.originalName}>{file.originalName}</AssetItemName>
                 {inSession(file) && (
                   <Icon
-                    aria-label="In this session"
+                    aria-label={t("knowledge.inThisSession")}
                     className="size-3.5 shrink-0 text-[var(--tea-color-text-success-default)]"
                     name="check"
                   />
@@ -128,6 +130,7 @@ function LibraryDetail({
   onRetry: (file: KnowledgeFileInfo) => void;
   onDelete: (file: KnowledgeFileInfo) => void;
 }) {
+  const { t } = useI18n();
   const tabular = isTabularExt(file.ext);
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-4">
@@ -202,7 +205,7 @@ function LibraryDetail({
       </div>
       {file.raw && (
         <div className="bg-card flex max-h-[40%] min-h-0 flex-col overflow-hidden rounded-lg border">
-          <div className="border-b px-3 py-1.5 text-xs font-medium">Plain text (vision / extracted)</div>
+          <div className="border-b px-3 py-1.5 text-xs font-medium">{t("knowledge.plainText")}</div>
           <div className="min-h-0 flex-1 overflow-auto p-3">
             <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed">{file.raw}</pre>
           </div>

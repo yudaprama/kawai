@@ -14,6 +14,7 @@ import {
   type CodegraphStatusResult,
   errText,
 } from "@/lib/api";
+import { useI18n } from "@/hooks/use-i18n";
 
 function StatusBadge({ status }: { status: CodegraphStatusResult | null }) {
   if (!status) return null;
@@ -40,6 +41,7 @@ export function CodeAssetPage({
   initialQuery?: string;
   initialResult?: string;
 }) {
+  const { t } = useI18n();
   const [status, setStatus] = useState<CodegraphStatusResult | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -119,7 +121,7 @@ export function CodeAssetPage({
   const isFeatureOff = statusError?.includes("codegraph feature not enabled") || exploreError?.includes("not compiled");
 
   return (
-    <AssetShell onBack={onBack} subtitle="code graph" title="Code">
+    <AssetShell onBack={onBack} subtitle="code graph" title={t("assetNav.code")}>
       <AssetPageHeader
         actions={
           <div className="flex gap-2">
@@ -136,7 +138,7 @@ export function CodeAssetPage({
         subtitle={
           statusLoading ? "checking…" : status ? status.message.slice(0, 80) : (statusError ?? "code-aware search")
         }
-        title="Code Graph"
+        title={t("codegraph.codeGraph")}
       />
       <div className="mt-3 space-y-3">
         {/* Query bar — hot-path entry (cached 15m, single-flight) */}
@@ -209,7 +211,7 @@ export function CodeAssetPage({
                     )}
                   </div>
                 )}
-                title="Status"
+                title={t("codegraph.status")}
               />
               <div className="rounded-md border px-3 py-2 text-xs text-muted-foreground">
                 <div className="font-medium text-foreground">Hot-path notes</div>

@@ -10,14 +10,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { type AssetViewId, ASSET_NAV } from "@/features/assets/components/asset-nav";
 import { type Theme, useTheme } from "@/hooks/use-theme";
+import { useI18n } from "@/hooks/use-i18n";
+import type { Locale } from "@/lib/i18n";
 import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
 
 function ThemeItems() {
   const { theme, setTheme } = useTheme();
+  const { t } = useI18n();
   const options: { value: Theme; label: string; icon: string }[] = [
-    { value: "light", label: "Light", icon: "sun" },
-    { value: "dark", label: "Dark", icon: "moon" },
-    { value: "system", label: "System", icon: "monitor" },
+    { value: "light", label: t("common.light"), icon: "sun" },
+    { value: "dark", label: t("common.dark"), icon: "moon" },
+    { value: "system", label: t("common.system"), icon: "monitor" },
   ];
 
   return (
@@ -27,6 +30,31 @@ function ThemeItems() {
           <Icon name={opt.icon} className="text-muted-foreground size-4" />
           <span className="flex-1">{opt.label}</span>
           {theme === opt.value && <Icon name="check" className="size-4" />}
+        </DropdownMenuItem>
+      ))}
+    </>
+  );
+}
+
+/** Language switcher — same item pattern as the theme switcher (icon +
+ *  label + check on the active locale). */
+function LanguageItems() {
+  const { locale, setLocale, t } = useI18n();
+  const options: { value: Locale; label: string }[] = [
+    { value: "en", label: t("common.english") },
+    { value: "id", label: t("common.indonesian") },
+  ];
+
+  return (
+    <>
+      <DropdownMenuLabel className="font-mono text-xs tracking-wider uppercase text-muted-foreground">
+        {t("common.language")}
+      </DropdownMenuLabel>
+      {options.map((opt) => (
+        <DropdownMenuItem key={opt.value} onClick={() => setLocale(opt.value)} className="gap-2">
+          <Icon name="globe" className="text-muted-foreground size-4" />
+          <span className="flex-1">{opt.label}</span>
+          {locale === opt.value && <Icon name="check" className="size-4" />}
         </DropdownMenuItem>
       ))}
     </>
@@ -60,6 +88,7 @@ export function ProfileControls({
   const assets = ASSET_NAV.filter(
     (asset) => (asset.id !== "code" || codegraphAvailable) && (asset.id !== "wallet" || walletAvailable),
   );
+  const { t } = useI18n();
 
   return (
     <div className="flex shrink-0 items-center gap-1">
@@ -67,7 +96,7 @@ export function ProfileControls({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            aria-label="Assets and account"
+            aria-label={t("profileDropdown.assetsAndAccount")}
             className="ml-0.5 shrink-0"
             size="icon"
             title={`Signed in as ${userId ?? "demo"}`}
@@ -85,18 +114,18 @@ export function ProfileControls({
           <DropdownMenuLabel className="font-mono text-xs break-all">{userId ?? "demo"}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuLabel className="font-mono text-xs tracking-wider uppercase text-muted-foreground">
-            Assets
+            {t("profileDropdown.assets")}
           </DropdownMenuLabel>
           {assets.map((asset) => (
             <DropdownMenuItem
               key={asset.id}
               className="gap-2"
               onClick={() => onSelectAsset(asset.id)}
-              title={`${asset.label} · ${asset.subtitle}`}
+              title={`${t(asset.labelKey)} · ${asset.subtitle}`}
             >
               <Icon name={asset.icon} className="text-muted-foreground size-4" />
               <span className="flex flex-1 flex-col leading-tight">
-                <span className="text-sm font-medium">{asset.label}</span>
+                <span className="text-sm font-medium">{t(asset.labelKey)}</span>
                 <span className="text-muted-foreground text-xs">{asset.subtitle}</span>
               </span>
               {assetView === asset.id && <Icon name="check" className="size-4" />}
@@ -105,9 +134,11 @@ export function ProfileControls({
           <DropdownMenuSeparator />
           <ThemeItems />
           <DropdownMenuSeparator />
+          <LanguageItems />
+          <DropdownMenuSeparator />
           <DropdownMenuItem className="gap-2" onClick={onLogout}>
             <Icon name="log-out" className="text-muted-foreground size-4" />
-            Sign out
+            {t("profileDropdown.signOut")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

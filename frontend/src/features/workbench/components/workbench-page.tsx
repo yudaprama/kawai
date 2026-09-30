@@ -21,6 +21,7 @@ import { ProgressRail, RunHistoryRail } from "./progress-rail";
 import { YoutubeSummaryForm } from "./youtube-summary-form";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
+import { useI18n } from "@/hooks/use-i18n";
 
 // ── Sessions button ─────────────────────────────────────────────────────────
 
@@ -29,12 +30,13 @@ import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
  *  the mobile run strip — the landing recents strip no longer carries it,
  *  so it must not disappear once the session has runs. */
 function SessionsButton({ onOpen, iconOnly = false }: { onOpen: () => void; iconOnly?: boolean }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
       onClick={onOpen}
-      title="Browse past sessions (Cmd/Ctrl+K)"
-      aria-label="Open session history"
+      title={t("sessionSwitcher.browseSessionsHint")}
+      aria-label={t("sessionSwitcher.openHistory")}
       className="text-muted-foreground hover:bg-[var(--tea-color-bg-secondary-default)] hover:text-foreground inline-flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] tracking-wider uppercase transition-colors"
     >
       <Icon name="history" className="size-3.5" />
@@ -95,6 +97,7 @@ export function WorkbenchPage({
   attachFilesRef,
   topBarExtra,
 }: WorkbenchPageProps) {
+  const { t } = useI18n();
   const workbench = useWorkbench();
   const { supervisor } = workbench;
 
@@ -397,7 +400,7 @@ export function WorkbenchPage({
    *  owns the rail and would silently block the next submit. */
   const newSession = useCallback(() => {
     if (supervisor.planning != null) {
-      toast("Can't start a new session while a plan is being created", { id: "new-session-blocked" });
+      toast(t("workbench.composer.newSessionBlocked"), { id: "new-session-blocked" });
       return;
     }
     if (runInFlight) {
@@ -420,7 +423,7 @@ export function WorkbenchPage({
     setView(null);
     setMobileRail(false);
     setHome(true);
-  }, [supervisor.planning, supervisor.status, supervisor.cancelPlan, runInFlight, workbench.startNewSession]);
+  }, [supervisor.planning, supervisor.status, supervisor.cancelPlan, runInFlight, workbench.startNewSession, t]);
 
   // Esc: close the mobile progress drawer, else two-step-stop a running plan
   // (see escStopArmedAt). Mirrors
@@ -450,7 +453,7 @@ export function WorkbenchPage({
           supervisor.stop();
         } else {
           escStopArmedAt.current = now;
-          toast("Press Esc again to stop the run", { id: "esc-stop", duration: 2000 });
+          toast(t("workbench.composer.escStopArmed"), { id: "esc-stop", duration: 2000 });
         }
       } else {
         escStopArmedAt.current = 0;
@@ -458,7 +461,7 @@ export function WorkbenchPage({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [mobileRail, supervisor.status, supervisor.stop]);
+  }, [mobileRail, supervisor.status, supervisor.stop, t]);
 
   // Below lg the sidebar is a drawer — force it open when the plan needs the
   // user (confirmation gates, review) so the run can't stall invisibly.
@@ -578,7 +581,7 @@ export function WorkbenchPage({
       {mobileRail && (
         <button
           type="button"
-          aria-label="Close progress panel"
+          aria-label={t("workbench.progressRail.closeProgress")}
           className="fixed inset-0 z-40 bg-black/50 lg:hidden"
           onClick={() => setMobileRail(false)}
         />
@@ -592,7 +595,9 @@ export function WorkbenchPage({
       >
         {/* Drawer header (below lg): label + close affordance. */}
         <div className="border-border/60 flex items-center justify-between border-b px-3 py-2 lg:hidden">
-          <span className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">Progress</span>
+          <span className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
+            {t("workbench.progressRail.progressLabel")}
+          </span>
           <div className="flex items-center gap-1">
             {/* Balance stays visible mid-run on mobile — the submit gate is
                 unreachable from here without opening the nav drawer. */}
@@ -600,7 +605,7 @@ export function WorkbenchPage({
             <button
               type="button"
               aria-label="Close progress panel"
-              title="Close"
+              title={t("common.close")}
               onClick={() => setMobileRail(false)}
               className="text-muted-foreground hover:text-foreground rounded-lg p-1.5 transition-colors"
             >
@@ -666,8 +671,8 @@ export function WorkbenchPage({
           {onOpenNav && (
             <button
               type="button"
-              aria-label="Open navigation"
-              title="Navigation"
+              aria-label={t("workbench.progressRail.openNavigation")}
+              title={t("workbench.progressRail.navigation")}
               onClick={onOpenNav}
               className="text-muted-foreground hover:text-foreground rounded-lg p-1.5 transition-colors"
             >
@@ -676,7 +681,7 @@ export function WorkbenchPage({
           )}
           <button
             type="button"
-            aria-label="Open progress panel"
+            aria-label={t("workbench.progressRail.openProgress")}
             title="Progress"
             onClick={() => setMobileRail(true)}
             className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors"
@@ -689,8 +694,8 @@ export function WorkbenchPage({
           {topBarExtra}
           <button
             type="button"
-            aria-label="Back to goal composer"
-            title="New goal"
+            aria-label={t("workbench.progressRail.backToComposer")}
+            title={t("workbench.progressRail.newGoalButton")}
             disabled={supervisor.planning != null || runInFlight || supervisor.status === "reviewing"}
             onClick={goHome}
             className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors disabled:opacity-40"

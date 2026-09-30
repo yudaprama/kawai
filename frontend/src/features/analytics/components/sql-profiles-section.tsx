@@ -8,6 +8,7 @@ import { isRemoteSource, maskSource } from "@/features/analytics/lib/analytics";
 import { call, errText, type SqlProfileTest } from "@/lib/api";
 import { useOp } from "@/hooks/use-op";
 import { toast } from "sonner";
+import { useI18n } from "@/hooks/use-i18n";
 
 type SqlProfile = { name: string; source: string };
 
@@ -21,6 +22,7 @@ interface TestState {
 }
 
 export function SqlProfilesSection() {
+  const { t } = useI18n();
   const listOp = useOp<SqlProfile[]>("sql_profile_list", undefined, { onError: "log" });
   const profiles = listOp.data ?? [];
 
@@ -217,7 +219,7 @@ export function SqlProfilesSection() {
                     disabled={testing != null}
                     onClick={() => void runTest(p.name)}
                     size="icon-sm"
-                    title="Test connection"
+                    title={t("analytics.testConnection")}
                     variant="ghost"
                   >
                     {testing === p.name ? (
@@ -230,7 +232,7 @@ export function SqlProfilesSection() {
                     aria-label={`Edit profile ${p.name}`}
                     onClick={() => openEdit(p)}
                     size="icon-sm"
-                    title="Edit source"
+                    title={t("analytics.editSource")}
                     variant="ghost"
                   >
                     <Icon name="pencil" className="size-3.5" />

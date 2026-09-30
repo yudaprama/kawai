@@ -16,6 +16,7 @@ import { PromptInputAttachmentsDisplay } from "@/components/ai-elements/prompt-i
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useI18n } from "@/hooks/use-i18n";
 import type { ChatStatus } from "@/lib/ai-types";
 import { call, type KnowledgeFileInfo } from "@/lib/api";
 import { activeMentionRange } from "@/features/chat/lib/chat-helpers";
@@ -104,6 +105,7 @@ function ChatComposerInner({
   placeholder,
   disabled,
 }: ChatComposerProps) {
+  const { t } = useI18n();
   const controller = usePromptInputController();
   const [mentions, setMentions] = useState<KnowledgeFileInfo[]>([]);
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -219,12 +221,12 @@ function ChatComposerInner({
         e.preventDefault();
         controller.textInput.setInput(lastUserText);
         setRecallFlash(true);
-        toast("Last goal recalled", { duration: 1500 });
+        toast(t("toasts.lastGoalRecalled"), { duration: 1500 });
         setTimeout(() => setRecallFlash(false), 1500);
         return;
       }
     },
-    [activeMentionIndex, controller, filtered, lastUserText, mentionOpen, pickMention],
+    [activeMentionIndex, controller, filtered, lastUserText, mentionOpen, pickMention, t],
   );
 
   const handleSubmit = useCallback(
@@ -234,7 +236,7 @@ function ChatComposerInner({
       // attempt is still running) — and toast FIRST: PromptInput swallows
       // the rejection, so a bare throw would surface nothing.
       if (importProgress) {
-        toast.error("Submit already in progress");
+        toast.error(t("workbench.composer.submitInProgress"));
         throw new Error("Submit already in progress");
       }
       const imageFiles = message.files.filter(
@@ -269,7 +271,7 @@ function ChatComposerInner({
         // REJECT so PromptInput keeps the draft and the user can retry — and
         // toast FIRST (the rejection itself is swallowed by PromptInput).
         if (importFailed) {
-          toast.error("Attachment import failed — fix the image and submit again");
+          toast.error(t("workbench.composer.attachmentImportFailed"));
           throw new Error("Attachment import failed");
         }
         if (message.text.trim() || ids.length > 0) {
@@ -283,7 +285,7 @@ function ChatComposerInner({
         setImportProgress(null);
       }
     },
-    [importProgress, mentions, onImageToKnowledge, onSubmit],
+    [importProgress, mentions, onImageToKnowledge, onSubmit, t],
   );
 
   return (
@@ -301,7 +303,7 @@ function ChatComposerInner({
             >
               <span className="truncate">{m.originalName}</span>
               <button
-                aria-label={`Remove ${m.originalName}`}
+                aria-label={t("workbench.composer.removeFile", { name: m.originalName })}
                 className="hover:bg-background/40 hit-44 flex size-8 shrink-0 items-center justify-center rounded-full"
                 onClick={() => toggleMention(m)}
                 type="button"
@@ -319,9 +321,14 @@ function ChatComposerInner({
           disabled={disabled || importProgress !== null}
           placeholder={
             importProgress
-              ? `Importing images… ${importProgress.done}/${importProgress.total}`
+              ? t("workbench.composer.importingImages", {
+                  done: importProgress.done,
+                  total: importProgress.total,
+                })
               : (placeholder ??
-                (agentName === "Workbench" ? "What would you like Kawai to do?" : `Message ${agentName}…`))
+                (agentName === "Workbench"
+                  ? t("workbench.composer.placeholderWorkbench")
+                  : t("workbench.composer.placeholderChat", { agent: agentName })))
           }
           onChange={handleComposerChange}
           onKeyDown={handleTextareaKeyDown}
@@ -333,10 +340,10 @@ function ChatComposerInner({
           <Popover onOpenChange={setMentionOpen} open={mentionOpen}>
             <PopoverTrigger asChild={true}>
               <Button
-                aria-label="Mention a file"
+                aria-label={t("workbench.composer.mentionFile")}
                 className="hit-44 size-8 [&_svg]:size-4"
                 size="icon"
-                title="Mention a file (@)"
+                title={t("workbench.composer.mentionFileHint")}
                 variant="ghost"
               >
                 <Icon name="at-sign" />
@@ -346,14 +353,12 @@ function ChatComposerInner({
               {mentionFiles === null ? (
                 <div className="text-muted-foreground px-2 py-3 text-xs">
                   {mentionOp.loading
-                    ? "Loading files…"
-                    : `Couldn't load files — ${mentionOp.error ?? "unknown error"}. Reopen to retry.`}
+                    ? t("workbench.composer.loadingFiles")
+                    : t("workbench.composer.filesLoadError", { error: mentionOp.error ?? "unknown error" })}
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="text-muted-foreground px-2 py-3 text-xs">
-                  {remaining.length === 0
-                    ? "No more files — import one below."
-                    : "No files match. Keep typing or import below."}
+                  {remaining.length === 0 ? t("workbench.composer.noMoreFiles") : t("workbench.composer.noFilesMatch")}
                 </div>
               ) : (
                 <div className="max-h-56 overflow-y-auto">
@@ -375,25 +380,20 @@ function ChatComposerInner({
               {(onAddFiles || onAddLink) && (
                 <div className="mt-1 flex gap-1 border-t px-1 pt-1">
                   {onAddLink && (
-                    <Button
-                      onClick={onAddLink}
-                      size="xs"
-                      title="Ingest a YouTube video transcript into your knowledge base"
-                      variant="ghost"
-                    >
+                    <Button onClick={onAddLink} size="xs" title={t("workbench.composer.addLinkTitle")} variant="ghost">
                       <Icon name="video" className="size-3" />
-                      Add link
+                      {t("workbench.composer.addLink")}
                     </Button>
                   )}
                   {onAddFiles && (
                     <Button
                       onClick={onAddFiles}
                       size="xs"
-                      title="Import documents & images (.docx .xlsx .pptx .pdf .png .jpg …)"
+                      title={t("workbench.composer.addFilesTitle")}
                       variant="ghost"
                     >
                       <Icon name="plus" className="size-3" />
-                      Add files
+                      {t("workbench.composer.addFiles")}
                     </Button>
                   )}
                 </div>

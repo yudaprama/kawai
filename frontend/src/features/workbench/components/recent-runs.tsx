@@ -3,6 +3,7 @@ import { Icon } from "@/components/shared/icon";
 import { relativeTime } from "@/features/chat/lib/chat-helpers";
 import { type RecentRunInfo, call } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
+import { useI18n } from "@/hooks/use-i18n";
 
 /** Backend-read fuse: a stalled invoke must land in the error/Retry state,
  *  never skeleton forever (a deadlocked backend task never settles the
@@ -31,6 +32,7 @@ export function RecentRuns({
   reloadKey: number;
   onOpen: (run: RecentRunInfo) => void;
 }) {
+  const { t } = useI18n();
   const [runs, setRuns] = useState<RecentRunInfo[] | null>(null);
   // The fetch failed AND there is nothing on screen to show — surface the
   // error line + Retry instead of a silent blank. A failed REFETCH of a
@@ -80,7 +82,9 @@ export function RecentRuns({
     return (
       <div className="mx-auto w-full max-w-4xl space-y-2 p-6 text-left">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-muted-foreground font-mono text-xs tracking-wider uppercase">Recent runs</h3>
+          <h3 className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
+            {t("workbench.landing.recentRuns")}
+          </h3>
         </div>
         {[0, 1, 2].map((i) => (
           <div className="border-border/60 flex items-center justify-between gap-3 rounded-lg border p-3" key={i}>
@@ -139,7 +143,9 @@ export function RecentRuns({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <span className="text-primary font-mono text-[10px] group-hover:underline">Open</span>
+            <span className="text-primary font-mono text-[10px] group-hover:underline">
+              {t("workbench.landing.openReport")}
+            </span>
             {run.status === "completed" ? (
               <Icon name="check-circle-2" className="text-success size-4" />
             ) : (

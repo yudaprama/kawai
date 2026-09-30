@@ -1,4 +1,5 @@
 import { Icon } from "@/components/shared/icon";
+import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 import { type AssetViewId, ASSET_NAV } from "./asset-nav";
 
@@ -26,6 +27,7 @@ export function AssetNavList({
   orientation?: "horizontal" | "vertical";
   className?: string;
 }) {
+  const { t } = useI18n();
   return (
     <nav
       className={cn(
@@ -47,7 +49,7 @@ export function AssetNavList({
             )}
             key={asset.id}
             onClick={() => onSelectAsset(asset.id)}
-            title={`${asset.label} · ${asset.subtitle}`}
+            title={`${t(asset.labelKey)} · ${asset.subtitle}`}
             type="button"
           >
             <span
@@ -58,7 +60,7 @@ export function AssetNavList({
             >
               <Icon name={asset.icon} className="size-[15px]" />
             </span>
-            <span className="text-sm leading-tight font-medium whitespace-nowrap">{asset.label}</span>
+            <span className="text-sm leading-tight font-medium whitespace-nowrap">{t(asset.labelKey)}</span>
           </button>
         );
       })}

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { MermaidError } from "@/components/ai-elements/mermaid-error";
+import { useI18n } from "@/hooks/use-i18n";
 import type { MermaidOptions, StreamdownTranslations } from "@/lib/streamdown";
 import { cjk } from "@/lib/streamdown/plugins/cjk";
 import { code } from "@/lib/streamdown/plugins/code";
@@ -48,7 +49,8 @@ const defaultTranslations: StreamdownTranslations = {
 };
 
 export function useStreamdownTranslations(): StreamdownTranslations {
-  return useMemo(() => defaultTranslations, []);
+  const { t } = useI18n();
+  return useMemo(() => ({ ...defaultTranslations, close: t("common.close"), copied: t("common.copied") }), [t]);
 }
 
 export function useStreamdownConfig() {

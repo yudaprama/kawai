@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useI18n } from "@/hooks/use-i18n";
 import type { GasEstimate, NetworkInfo } from "../lib/types";
 
 type Props = {
@@ -18,6 +19,7 @@ const AMOUNT_RE = /^\d+(\.\d+)?$/;
 const QUICK_AMOUNTS = [10, 25, 50, 100];
 
 export function SmartDepositForm({ onDeposit, loading, currentNetwork, gasEstimate, nativeBalance }: Props) {
+  const { t } = useI18n();
   const [amount, setAmount] = useState("10");
   const [review, setReview] = useState(false);
   const sym = currentNetwork?.stablecoinShort || "USDT";
@@ -35,23 +37,23 @@ export function SmartDepositForm({ onDeposit, loading, currentNetwork, gasEstima
           <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Icon name="plus" className="size-6" />
           </div>
-          <p className="mt-2 font-semibold">Confirm Deposit</p>
+          <p className="mt-2 font-semibold">{t("wallet.confirmDeposit")}</p>
         </div>
         <div className="space-y-2 rounded-xl border bg-muted/50 p-4 text-sm">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Amount</span>
+            <span className="text-muted-foreground">{t("wallet.amount")}</span>
             <span className="font-semibold">
               {amount} {symLong}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Network</span>
+            <span className="text-muted-foreground">{t("wallet.network")}</span>
             <span>
               {name} ({id})
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Est. gas price</span>
+            <span className="text-muted-foreground">{t("wallet.estGasPrice")}</span>
             <span>{gasEstimate ? `~${gasEstimate.maxGasPriceGwei} gwei (paid in MON)` : "—"}</span>
           </div>
         </div>
@@ -62,7 +64,7 @@ export function SmartDepositForm({ onDeposit, loading, currentNetwork, gasEstima
         )}
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1" disabled={loading} onClick={() => setReview(false)}>
-            Back
+            {t("common.back")}
           </Button>
           <Button className="flex-1" disabled={loading} onClick={() => onDeposit(amount.trim())}>
             {loading ? "Processing..." : "Confirm & Deposit"}

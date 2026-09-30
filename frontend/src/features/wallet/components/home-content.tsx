@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useI18n } from "@/hooks/use-i18n";
 import type { GasEstimate, NetworkInfo, UserBalanceInfo } from "../lib/types";
-import { formatRelativeTime, getFaucetUrl, safeParseFloat } from "../lib/utils";
+import { getFaucetUrl, safeParseFloat } from "../lib/utils";
 import { NetworkIcon } from "./network-icon";
 import { StablecoinIcon } from "./stablecoin-icon";
 
@@ -48,6 +49,7 @@ export function HomeContent({
   currentBlock,
   balancesLoading,
 }: Props) {
+  const { t, fmtNumber, fmtRelative } = useI18n();
   const [showAll, setShowAll] = useState(false);
   const usdtValue = safeParseFloat(onChainBalance, 0);
   const nativeValue = safeParseFloat(nativeBalance, 0) * nativePrice;
@@ -75,12 +77,14 @@ export function HomeContent({
 
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-widest text-muted-foreground">Total Portfolio Value</p>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                {t("wallet.totalPortfolioValue")}
+              </p>
               <p className="mt-1 text-3xl font-bold">
                 {balancesLoading ? (
-                  <span className="text-muted-foreground text-lg">Loading...</span>
+                  <span className="text-muted-foreground text-lg">{t("common.loading")}</span>
                 ) : balanceVisible ? (
-                  `$${total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  `$${fmtNumber(total, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                 ) : (
                   "••••••"
                 )}
@@ -90,7 +94,7 @@ export function HomeContent({
               {currentNetwork && (
                 <div className="mt-3 space-y-2 text-sm text-muted-foreground">
                   <div className="flex items-center gap-2">
-                    <Icon name="coins" className="size-3.5" /> Wallet Balance:{" "}
+                    <Icon name="coins" className="size-3.5" /> {t("wallet.balance")}:{" "}
                     <span className="text-foreground font-medium">
                       {balanceVisible ? onChainBalance : "••••"} {currentNetwork.stablecoinSymbol}
                     </span>
@@ -104,7 +108,7 @@ export function HomeContent({
                         {balanceVisible ? trackedBalance.usdt_balance : "•••"} {currentNetwork.stablecoinSymbol}
                       </span>
                       {trackedBalance.trial_claimed && (
-                        <Badge className="bg-success text-success-foreground">Trial ✓</Badge>
+                        <Badge className="bg-success text-success-foreground">{t("wallet.trial")}</Badge>
                       )}
                     </div>
                   )}
@@ -132,7 +136,7 @@ export function HomeContent({
                   <TooltipContent>Max Tip {gasEstimate.maxTipGwei.toFixed(2)} Gwei</TooltipContent>
                 </Tooltip>
               )}
-              {currentBlock > 0 && <div>Block #{currentBlock.toLocaleString()}</div>}
+              {currentBlock > 0 && <div>Block #{fmtNumber(currentBlock)}</div>}
             </div>
           </div>
         </CardContent>
@@ -140,7 +144,7 @@ export function HomeContent({
 
       <div className="flex flex-wrap justify-center gap-3">
         {[
-          { label: "Deposit", icon: "plus", action: () => setModalType("deposit") },
+          { label: t("wallet.depositToVault"), icon: "plus", action: () => setModalType("deposit") },
           { label: "Send", icon: "send", action: () => setModalType("send") },
           { label: "Receive", icon: "arrow-down-to-line", action: () => setModalType("receive") },
           { label: "Swap", icon: "repeat-2", action: () => toast.info("Coming soon") },
@@ -175,7 +179,7 @@ export function HomeContent({
                 <NetworkIcon name={currentNetwork.icon || "ethereum"} size={32} />
                 <div>
                   <div className="font-semibold text-sm">{currentNetwork.nativeTokenSymbol}</div>
-                  <div className="text-xs text-muted-foreground">Native Token</div>
+                  <div className="text-xs text-muted-foreground">{t("wallet.nativeToken")}</div>
                 </div>
               </div>
               <div className="text-right">
@@ -208,7 +212,7 @@ export function HomeContent({
               </span>
               <div>
                 <div className="font-semibold text-sm">KAWAI</div>
-                <div className="text-xs text-muted-foreground">Kawai Token</div>
+                <div className="text-xs text-muted-foreground">{t("wallet.kawaiToken")}</div>
               </div>
             </div>
             <div className="text-right">
@@ -224,7 +228,7 @@ export function HomeContent({
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-sm">
-            <Icon name="history" className="size-4" /> Recent Activity
+            <Icon name="history" className="size-4" /> {t("wallet.txHistory")}
           </CardTitle>
           {transactions.length > 5 && (
             <Button variant="link" size="sm" onClick={() => setShowAll(true)}>
@@ -238,7 +242,7 @@ export function HomeContent({
               {transactions.slice(0, 5).map((tx) => (
                 <div key={tx.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
                   <Badge variant="secondary">{tx.txType}</Badge>
-                  <span className="text-xs text-muted-foreground">{formatRelativeTime(tx.createdAt)}</span>
+                  <span className="text-xs text-muted-foreground">{fmtRelative(new Date(tx.createdAt))}</span>
                   <span className="font-mono text-xs">
                     {tx.txHash ? `${tx.txHash.slice(0, 6)}...${tx.txHash.slice(-4)}` : "-"}
                   </span>
@@ -247,7 +251,7 @@ export function HomeContent({
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <p className="text-sm text-muted-foreground">No transactions yet</p>
+              <p className="text-sm text-muted-foreground">{t("wallet.noTransactions")}</p>
               {currentNetwork?.isTestnet && (
                 <Button size="sm" onClick={() => window.open(getFaucetUrl(currentNetwork?.id), "_blank")}>
                   Get Test Tokens (Faucet)
@@ -262,7 +266,7 @@ export function HomeContent({
         <DialogContent className="max-w-[700px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Icon name="history" className="size-4" /> Transaction History
+              <Icon name="history" className="size-4" /> {t("wallet.txHistory")}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-2 max-h-[60vh] overflow-auto">

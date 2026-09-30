@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { type ChatMessageInfo, type ChatSessionInfo, call, errText } from "@/lib/api";
+import { getLocale, translate } from "@/lib/i18n";
 import { groupSessions, historyToMessages, sessionToMarkdown } from "@/features/chat/lib/chat-helpers";
 import { logError, logWarn } from "@/lib/logger";
 import type { StreamControl } from "@/lib/stream";
@@ -168,14 +169,10 @@ export function useChatSessions({
       const timer = window.setTimeout(fire, DELETE_UNDO_MS);
       for (const id of ids) pendingDeletes.current.set(id, timer);
 
-      const label =
-        targets.length === 1
-          ? `Deleted "${targets[0].title || `Session #${targets[0].id}`}"`
-          : `Deleted ${targets.length} sessions`;
-      toast(label, {
+      toast(translate(getLocale(), "sessionSwitcher.deleteToast.message", { count: targets.length }), {
         duration: DELETE_UNDO_MS,
         action: {
-          label: "Undo",
+          label: translate(getLocale(), "sessionSwitcher.deleteToast.undo"),
           onClick: () => {
             // A different timer owns this id now — or the window elapsed and
             // the delete already committed.
@@ -303,7 +300,7 @@ export function useChatSessions({
           markdown: md,
           filename,
         });
-        toast.success(`Saved ${file.originalName}`);
+        toast.success(translate(getLocale(), "toasts.exported", { filename: file.originalName }));
         return file;
       } catch (err) {
         logError("export_deliverable", err);

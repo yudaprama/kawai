@@ -32,6 +32,7 @@ import { useSkills } from "@/features/skills/hooks/use-skills";
 import { fmtTimestamp } from "@/features/workbench/components/tool-views/format";
 import type { SkillInfo, SkillSummary } from "@/generated/api-types";
 import { AssetShell } from "@/features/assets/components/asset-shell";
+import { useI18n } from "@/hooks/use-i18n";
 
 /**
  * Skills asset page — SkillsPanel structure (Tea asset-management UI) over
@@ -40,6 +41,7 @@ import { AssetShell } from "@/features/assets/components/asset-shell";
  * counter bumps server-side on every update.
  */
 export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
+  const { t } = useI18n();
   const store = useSkills(true);
   const { skills, loaded, error } = store;
   const [detail, setDetail] = useState<SkillInfo | null>(null);
@@ -95,7 +97,7 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
   }, [confirmDeleteId]);
 
   return (
-    <AssetShell onBack={onBack} subtitle="agent skills" title="Skills">
+    <AssetShell onBack={onBack} subtitle={t("skills.agentSkills")} title={t("skills.title")}>
       <AssetPageHeader
         actions={
           <Button
@@ -115,7 +117,7 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
       <FilterBar
         filteredCount={filtered.length}
         onChange={setQuery}
-        placeholder="Filter skills…"
+        placeholder={t("skills.filterSkills")}
         totalCount={skills.length}
         value={query}
       />
@@ -145,7 +147,7 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
               onRetry={() => setDetailAttempt((n) => n + 1)}
             />
           ) : (
-            <div className="_alp-detail-empty">Select a skill to read its instructions</div>
+            <div className="_alp-detail-empty">{t("skills.selectSkill")}</div>
           )
         }
         sidebar={
@@ -177,7 +179,7 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
                 <AssetItemId>{s.id}</AssetItemId>
                 {s.description && <AssetItemDesc>{s.description}</AssetItemDesc>}
                 <AssetItemBadges>
-                  <AssetBadge title="Updated on every save">v{s.version}</AssetBadge>
+                  <AssetBadge title={t("skills.updatedOnSave")}>v{s.version}</AssetBadge>
                   <AssetItemTime>{fmtTimestamp(new Date(s.updatedAt * 1000))}</AssetItemTime>
                 </AssetItemBadges>
               </>

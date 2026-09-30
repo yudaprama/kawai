@@ -45,6 +45,7 @@ import {
 } from "@/lib/api";
 import { useOp } from "@/hooks/use-op";
 import { AssetShell } from "@/features/assets/components/asset-shell";
+import { useI18n } from "@/hooks/use-i18n";
 
 type MemoryTab = "l0" | "l1" | "l2" | "l3" | "exp" | "profile" | "graph";
 
@@ -77,6 +78,7 @@ export function MemoryAssetPage({
   onRetrySessions?: () => void;
   onBack: () => void;
 }) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<MemoryTab>("l0");
 
   const memories = useMemories(true);
@@ -106,15 +108,15 @@ export function MemoryAssetPage({
   const error = messagesOp.error;
 
   return (
-    <AssetShell onBack={onBack} subtitle="chat memory" title="Memory">
+    <AssetShell onBack={onBack} subtitle={t("memory.chatMemory")} title={t("memory.title")}>
       <AssetPageHeader
         subtitle={`${filtered.length} memory ${filtered.length === 1 ? "block" : "blocks"} · ${memories.memories.length} L1 ${memories.memories.length === 1 ? "memory" : "memories"}`}
-        title="Chat Memory"
+        title={t("memory.chatMemoryTitle")}
       />
       <FilterBar
         filteredCount={filtered.length}
         onChange={setQuery}
-        placeholder="Filter blocks…"
+        placeholder={t("memory.filterBlocks")}
         totalCount={sessions.length}
         value={query}
       />
@@ -131,7 +133,7 @@ export function MemoryAssetPage({
               onTabChange={setTab}
             />
           ) : (
-            <div className="_alp-detail-empty">Select a memory block to inspect its layers</div>
+            <div className="_alp-detail-empty">{t("memory.selectBlock")}</div>
           )
         }
         sidebar={
@@ -170,7 +172,7 @@ export function MemoryAssetPage({
               </>
             )}
             selectedId={active != null ? String(active.id) : null}
-            title="Blocks"
+            title={t("memory.blocks")}
           />
         }
         storageKey="kawai:memory:splitWidth"
@@ -197,6 +199,7 @@ function BlockDetail({
   tab: MemoryTab;
   onTabChange: (t: MemoryTab) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-4 pt-3">
@@ -212,9 +215,9 @@ function BlockDetail({
             <TabsTrigger value="l1">L1 · Memories</TabsTrigger>
             <TabsTrigger value="l2">L2 · Scenes</TabsTrigger>
             <TabsTrigger value="l3">L3 · Persona</TabsTrigger>
-            <TabsTrigger value="exp">Experiences</TabsTrigger>
-            <TabsTrigger value="profile">Profile</TabsTrigger>
-            <TabsTrigger value="graph">Graph</TabsTrigger>
+            <TabsTrigger value="exp">{t("memory.tabs.experiences")}</TabsTrigger>
+            <TabsTrigger value="profile">{t("memory.tabs.profile")}</TabsTrigger>
+            <TabsTrigger value="graph">{t("memory.graphTab")}</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent className="flex min-h-0 flex-1 flex-col" value="l0">
@@ -372,6 +375,7 @@ function ListPane({
 /** Experiences — one distilled row per completed supervisor run (read-only
  *  list + delete; written by the supervisor, consumed by the planner). */
 function ExperiencesPane() {
+  const { t } = useI18n();
   const op = useOp<ExperienceItem[]>("experience_list", {}, { onError: "toast" });
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -425,7 +429,7 @@ function ExperiencesPane() {
                   </p>
                 </div>
                 <button
-                  aria-label="Delete experience"
+                  aria-label={t("memory.deleteExperience")}
                   className={`rounded p-1 ${confirmDeleteId === e.id ? "text-destructive" : "text-muted-foreground hover:text-destructive"}`}
                   onClick={async () => {
                     if (confirmDeleteId !== e.id) {
@@ -651,6 +655,7 @@ function PersonaPane() {
 
 /** L1 — atomic memories. Global list; extraction pulls from the selected block. */
 function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories>; session: ChatSessionInfo }) {
+  const { t } = useI18n();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<MemoryItem | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -717,7 +722,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
                 });
               }
             }}
-            placeholder="Semantic search…"
+            placeholder={t("memory.semanticSearch")}
             value={searchQuery}
           />
           {searchResults != null ? (
@@ -727,8 +732,8 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
                 setSearchQuery("");
               }}
               size="xs"
-              aria-label="Clear search"
-              title="Clear search"
+              aria-label={t("common.clearSearch")}
+              title={t("common.clearSearch")}
               variant="ghost"
             >
               <Icon name="x" className="size-3" />
@@ -745,8 +750,8 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
                 });
               }}
               size="xs"
-              aria-label="Search by semantic similarity"
-              title="Search by semantic similarity"
+              aria-label={t("memory.searchSemantic")}
+              title={t("memory.searchSemantic")}
               variant="ghost"
             >
               {searching ? <Spinner className="size-3" /> : <Icon name="search" className="size-3" />}
@@ -800,7 +805,7 @@ function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories
                         setEditing(m);
                         setEditorOpen(true);
                       }}
-                      title="Edit memory"
+                      title={t("memory.editMemory")}
                       type="button"
                     >
                       <Icon name="pencil" className="size-3.5" />
@@ -854,6 +859,7 @@ function MemoryEditorDialog({
   onClose: () => void;
   onSave: (kind: MemoryItem["kind"], title: string, content: string) => void;
 }) {
+  const { t } = useI18n();
   const [kind, setKind] = useState<MemoryItem["kind"]>(initial?.kind ?? "fact");
   const [title, setTitle] = useState(initial?.title ?? "");
   const [content, setContent] = useState(initial?.content ?? "");
@@ -910,7 +916,7 @@ function MemoryEditorDialog({
         </div>
         <DialogFooter>
           <DialogClose asChild>
-            <Button variant="outline">Cancel</Button>
+            <Button variant="outline">{t("common.cancel")}</Button>
           </DialogClose>
           <Button disabled={!valid} onClick={() => onSave(kind, title, content)}>
             {initial ? "Save" : "Create"}

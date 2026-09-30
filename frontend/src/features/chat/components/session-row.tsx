@@ -1,6 +1,6 @@
 import { Icon } from "@/components/shared/icon";
 import { RenameInput } from "@/components/shared/rename-input";
-import { relativeTime } from "@/features/chat/lib/chat-helpers";
+import { useI18n } from "@/hooks/use-i18n";
 import type { ChatSessionInfo } from "@/lib/api";
 
 export function SessionRow({
@@ -53,12 +53,14 @@ export function SessionRow({
   onToggleSelect?: () => void;
   archivedStyle?: boolean;
 }) {
+  const { t, fmtRelative } = useI18n();
   if (renaming) {
     return (
       <RenameInput onChange={onChangeRename} onCancel={onCancelRename} onCommit={onCommitRename} value={renameValue} />
     );
   }
-  const label = session.title || `Session #${session.id}`;
+  const label = session.title || t("sessionSwitcher.untitled", { id: session.id });
+  const activityAt = session.updatedAt ?? session.createdAt;
   return (
     <div
       className={`group/session flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
@@ -98,18 +100,16 @@ export function SessionRow({
         {/* Meta line: activity time · run tally · last-run status · last goal
             (truncate tail-last so context sheds before facts). */}
         <span className="flex w-full min-w-0 items-center gap-1.5 pl-3.5 font-mono text-[10px] text-muted-foreground">
-          <span className="shrink-0">{relativeTime(session.updatedAt ?? session.createdAt)}</span>
+          <span className="shrink-0">{activityAt ? fmtRelative(activityAt * 1000) : ""}</span>
           {session.runCount > 0 && (
             <>
               <span className="shrink-0 opacity-40">·</span>
-              <span className="shrink-0">
-                {session.runCount} {session.runCount === 1 ? "run" : "runs"}
-              </span>
+              <span className="shrink-0">{t("sessionSwitcher.runCount", { count: session.runCount })}</span>
             </>
           )}
           {session.lastFailed && (
-            <span className="text-destructive shrink-0" title="The last run failed">
-              failed
+            <span className="text-destructive shrink-0" title={t("sessionSwitcher.lastRunFailedTitle")}>
+              {t("sessionSwitcher.lastRunFailed")}
             </span>
           )}
           {session.lastGoal && (
@@ -127,11 +127,11 @@ export function SessionRow({
         <div className="flex shrink-0 items-center gap-1 transition-opacity opacity-70 focus-within:opacity-100 group-hover/session:opacity-100 max-lg:opacity-100">
           {onExport && (
             <button
-              aria-label={`Export ${label} as Markdown`}
+              aria-label={`${t("sessionSwitcher.actions.export")}: ${label}`}
               className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
               disabled={busy || exporting}
               onClick={onExport}
-              title="Export session as Markdown"
+              title={t("sessionSwitcher.actions.export")}
               type="button"
             >
               <Icon
@@ -142,7 +142,7 @@ export function SessionRow({
           )}
           {!archivedStyle && (
             <button
-              aria-label={`Rename ${label}`}
+              aria-label={`${t("sessionSwitcher.actions.rename")} ${label}`}
               className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
               disabled={busy}
               onClick={onStartRename}
@@ -152,7 +152,9 @@ export function SessionRow({
             </button>
           )}
           <button
-            aria-label={`${archivedStyle ? "Restore" : "Archive"} ${label}`}
+            aria-label={`${
+              archivedStyle ? t("sessionSwitcher.actions.restore") : t("sessionSwitcher.actions.archive")
+            } ${label}`}
             className="rounded p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
             disabled={busy}
             onClick={onArchive}
@@ -165,11 +167,11 @@ export function SessionRow({
             )}
           </button>
           <button
-            aria-label={`Delete ${label}`}
+            aria-label={`${t("sessionSwitcher.actions.delete")} ${label}`}
             className="rounded p-0.5 text-muted-foreground hover:text-destructive disabled:opacity-30"
             disabled={busy}
             onClick={onDelete}
-            title="Delete session — Undo available for 5 seconds"
+            title={t("sessionSwitcher.actions.deleteHint")}
             type="button"
           >
             <Icon name="trash" className="size-3.5" />

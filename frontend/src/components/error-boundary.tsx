@@ -1,20 +1,22 @@
 import { ErrorBoundary as SentryReactErrorBoundary } from "@sentry/react";
 import { type ReactNode, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/hooks/use-i18n";
 import { call } from "@/lib/api";
 
 export function ErrorFallback({ error, onRetry }: { error: Error | null; onRetry: () => void }) {
+  const { t } = useI18n();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
       <div className="space-y-1">
-        <h2 className="text-lg font-semibold">Something went wrong</h2>
-        <p className="text-muted-foreground max-w-md text-sm">{error?.message || "An unexpected error occurred."}</p>
+        <h2 className="text-lg font-semibold">{t("errors.generic")}</h2>
+        <p className="text-muted-foreground max-w-md text-sm">{error?.message || t("errors.unexpected")}</p>
       </div>
       <div className="flex gap-2">
         <Button onClick={onRetry} variant="outline">
-          Try again
+          {t("common.retry")}
         </Button>
-        <Button onClick={() => window.location.reload()}>Reload app</Button>
+        <Button onClick={() => window.location.reload()}>{t("errors.reloadApp")}</Button>
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useI18n } from "@/hooks/use-i18n";
 import type { NetworkInfo } from "../lib/types";
 
 const ADDR_OK = /^0x[a-fA-F0-9]{40}$/;
@@ -24,6 +25,7 @@ type Props = {
 };
 
 export function SendForm({ onSend, loading, currentNetwork }: Props) {
+  const { t } = useI18n();
   const [asset, setAsset] = useState("usdt");
   const [customAddr, setCustomAddr] = useState("");
   const [to, setTo] = useState("");
@@ -92,7 +94,7 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
           <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Icon name="send" className="size-6" />
           </div>
-          <p className="mt-2 font-semibold">Confirm Transaction</p>
+          <p className="mt-2 font-semibold">{t("wallet.confirmTransaction")}</p>
         </div>
         <div className="rounded-xl border bg-muted/50 p-4 text-sm space-y-2">
           <div className="flex justify-between">
@@ -102,13 +104,13 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Amount</span>
+            <span className="text-muted-foreground">{t("wallet.amount")}</span>
             <span className="font-semibold">
               {confirm.amount} {labelFor(confirm.asset)}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Network</span>
+            <span className="text-muted-foreground">{t("wallet.network")}</span>
             <span>{currentNetwork?.name ?? "Monad"}</span>
           </div>
         </div>
@@ -119,7 +121,7 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
             disabled={loading || sendingLocal}
             onClick={() => setConfirm(null)}
           >
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button className="flex-1" disabled={loading || sendingLocal} onClick={() => void onConfirm()}>
             {loading || sendingLocal ? "Sending..." : "Confirm & Send"}
@@ -132,7 +134,7 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label>Asset</Label>
+        <Label>{t("wallet.asset")}</Label>
         <Select value={asset} onValueChange={setAsset}>
           <SelectTrigger>
             <SelectValue />
@@ -141,18 +143,18 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
             <SelectItem value="native">Native ({currentNetwork?.nativeTokenSymbol || "ETH"})</SelectItem>
             <SelectItem value="usdt">{currentNetwork?.stablecoinSymbol === "USDC" ? "USDC" : "USDT"}</SelectItem>
             <SelectItem value="kawai">KAWAI</SelectItem>
-            <SelectItem value="custom">Custom Token</SelectItem>
+            <SelectItem value="custom">{t("wallet.customToken")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
       {asset === "custom" && (
         <div className="space-y-2">
-          <Label>Token Contract Address</Label>
+          <Label>{t("wallet.tokenContractAddress")}</Label>
           <Input placeholder="0x..." value={customAddr} onChange={(e) => setCustomAddr(e.target.value)} />
         </div>
       )}
       <div className="space-y-2">
-        <Label>Recipient Address</Label>
+        <Label>{t("wallet.recipientAddress")}</Label>
         <Input
           placeholder="0x..."
           value={to}

@@ -1,9 +1,11 @@
+import type { TranslationKey } from "@/lib/i18n";
+
 /** Asset views openable from the rail's Assets section (center-pane workspace pages). */
 export type AssetViewId = "wiki" | "code" | "skills" | "memory" | "sources" | "wallet" | "topup";
 
 export interface AssetNavEntry {
   id: AssetViewId;
-  label: string;
+  labelKey: TranslationKey;
   subtitle: string;
   icon: string;
 }
@@ -12,11 +14,11 @@ export interface AssetNavEntry {
  *  entries open from the profile dropdown in the header; the mobile nav
  *  drawer lists them vertically. */
 export const ASSET_NAV: AssetNavEntry[] = [
-  { id: "wiki", label: "Wiki", subtitle: "knowledge base", icon: "book" },
-  { id: "wallet", label: "KAWAI Wallet", subtitle: "Monad assets", icon: "wallet" },
-  { id: "topup", label: "Top Up", subtitle: "app tokens", icon: "qr-code" },
-  { id: "code", label: "Code", subtitle: "code graph", icon: "code-xml" },
-  { id: "skills", label: "Skills", subtitle: "agent skills", icon: "wrench" },
-  { id: "memory", label: "Memory", subtitle: "chat memory", icon: "brain" },
-  { id: "sources", label: "Databases", subtitle: "SQL sources", icon: "database" },
+  { id: "wiki", labelKey: "assetNav.wiki", subtitle: "knowledge base", icon: "book" },
+  { id: "wallet", labelKey: "assetNav.wallet", subtitle: "Monad assets", icon: "wallet" },
+  { id: "topup", labelKey: "assetNav.topUp", subtitle: "app tokens", icon: "qr-code" },
+  { id: "code", labelKey: "assetNav.code", subtitle: "code graph", icon: "code-xml" },
+  { id: "skills", labelKey: "assetNav.skills", subtitle: "agent skills", icon: "wrench" },
+  { id: "memory", labelKey: "assetNav.memory", subtitle: "chat memory", icon: "brain" },
+  { id: "sources", labelKey: "assetNav.databases", subtitle: "SQL sources", icon: "database" },
 ];

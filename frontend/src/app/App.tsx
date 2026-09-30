@@ -27,9 +27,11 @@ import { TopupPage } from "@/features/topup/topup-page";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
 import { ShortcutsDialog } from "@/components/shared/shortcuts-dialog";
 import { Dialog, DialogContent, DialogOverlay, DialogPortal } from "@/components/ui/dialog";
+import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 
 export default function App() {
+  const { t } = useI18n();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [assetView, setAssetView] = useState<AssetViewId | null>(null);
@@ -222,7 +224,7 @@ export default function App() {
             {agentsError}
           </p>
           <Button size="sm" variant="outline" onClick={() => setAgentsAttempt((a) => a + 1)}>
-            Retry
+            {t("common.retry")}
           </Button>
         </div>
       </div>
@@ -232,7 +234,7 @@ export default function App() {
     return (
       <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center gap-2">
         <Icon name="loader-circle" className="text-primary size-4 animate-spin" />
-        <span className="text-muted-foreground font-mono text-xs">Loading workbench…</span>
+        <span className="text-muted-foreground font-mono text-xs">{t("common.loading")}</span>
       </div>
     );
   }
@@ -337,6 +339,7 @@ export default function App() {
         <DialogPortal>
           <DialogOverlay className="lg:hidden" />
           <DialogContent
+            aria-label={t("assetNav.mobileDrawerTitle")}
             className={cn(
               "fixed inset-y-0 left-0 z-50 w-[210px] max-w-[85vw] p-3 shadow-xl",
               "data-[state=open]:animate-in data-[state=open]:slide-in-from-left",

@@ -177,10 +177,16 @@ update them together.
 
 ## Copy language
 
-The UI is English. The QRIS money flow stays Indonesian by design — the Top
-Up page, the Saldo balance chip, and its balance toasts (IDR amounts, QRIS =
-Indonesian rails). Everything else — tool-view labels, errors, toasts — is
-English.
+The UI supports **English and Indonesian** via a language switcher in the
+profile dropdown (top-right avatar menu). The switcher calls `setLocale("en" | "id")`
+from `useI18n()`; the choice persists in `localStorage` (`kawai-locale`) and
+re-renders all `t()` calls via `useSyncExternalStore`. Locale detection order:
+stored override → `navigator.language` → `"en"` fallback.
+
+The QRIS money flow stays Indonesian by design — the Top Up page, the Saldo
+balance chip, and its balance toasts (IDR amounts, QRIS = Indonesian rails).
+Tool-view labels and backend tool descriptions stay English. Everything else —
+errors, toasts, dialogs, nav labels, form labels — follows the selected locale.
 
 ## Visual language
 
