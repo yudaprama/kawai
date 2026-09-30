@@ -5111,7 +5111,8 @@ mod indicator_summary_tests {
                     ..Default::default()
                 },
             ],
-            ..Default::default()
+            final_writer: None,
+            summary: None,
         };
         let result = kawai_router::ExecutionResult {
             results: vec![
