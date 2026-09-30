@@ -2999,7 +2999,7 @@ fn synthesis_materials(plan: &kawai_router::TaskPlan, result: &kawai_router::Exe
         };
         let structured = serde_json::from_str::<serde_json::Value>(body.trim())
             .ok()
-            .and_then(|v| v.get("kind").is_some())
+            .map(|v| v.get("kind").is_some())
             .unwrap_or(false);
         blocks.push((
             structured,
