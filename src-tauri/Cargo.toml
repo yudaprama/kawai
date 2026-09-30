@@ -27,7 +27,7 @@ tauri-plugin-fs = { version = "2", optional = true }
 # OS-native credential storage for the session JWT (Keychain/Keystore).
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"], optional = true }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 # Planner <environment> block: device timezone + local time (fresh per plan).
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tracing = "0.1"
@@ -280,6 +280,7 @@ lto = "thin"
 codegen-units = 1
 strip = true
 panic = "abort"
+debug = 0
 
 [profile.release.package.analytics]
 opt-level = "z"
