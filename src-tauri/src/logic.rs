@@ -479,6 +479,7 @@ pub mod tts;
 pub mod email;
 // Local email+password auth (user directory, vault-encoded passwords).
 pub mod local_auth;
+pub mod dyntoken;
 // QRIS top-up + token-balance worker proxies (PLAN-qris-topup.md Fase 3).
 // Pure reqwest — shared by the Tauri commands and the web routes.
 pub mod topup;

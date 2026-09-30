@@ -5726,6 +5726,7 @@ dependencies = [
  "kawai-constants",
  "kawai-db",
  "kawai-desk",
+ "kawai-dyntoken",
  "kawai-email",
  "kawai-embedding",
  "kawai-events",
@@ -5918,6 +5919,10 @@ dependencies = [
  "tokio",
  "tracing",
 ]
+
+[[package]]
+name = "kawai-dyntoken"
+version = "0.1.0"
 
 [[package]]
 name = "kawai-email"

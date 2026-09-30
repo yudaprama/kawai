@@ -104,6 +104,7 @@ dotenvy = "0.15"
 # Private repo — CI authenticates via the insteadOf git rewrite (release.yml).
 kawai-constants = { path = "../kawai-vault/constants" }
 kawai-vault = { path = "../kawai-vault/kawai-vault" }
+kawai-dyntoken = { path = "../kawai-vault/dyntoken" }
 sha2 = "0.10"
 hex = "0.4"
 # Office tool store imports (drag-drop/web base64 blobs) + TTS audio payloads.
