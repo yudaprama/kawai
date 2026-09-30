@@ -1,38 +1,86 @@
-//! Dyntoken shim — seal/verify server-defined key-tokens for the signed-in
-//! user, using the `(vault_key, vault_secret)` pair the worker returns at
-//! sign-in (persisted by `local_auth::persist_vault_keys`).
+//! Dyntoken shim — app-level gate for the LLM gateway. One global
+//! `(key, secret)` pair, defined by kawai-server (`DYNTOKEN_SECRET`
+//! derivation, no user involved) and fetched once from
+//! `GET /dyntoken/keys`, cached at `<data_root>/vault.keys`.
 //!
 //! Semantics (kawai-dyntoken): a token is valid ⟔ decode reproduces exactly
-//! the server-defined `vault_key` AND `|now − embedded_ts| ≤ 5 s`
-//! (`MAX_SKEW_SECS`). The token is deterministic — the same
-//! `(secret, key, timestamp)` always seals to the same string, so both sides
-//! can regenerate it without storage.
+//! the defined `key` AND `|now − embedded_ts| ≤ 5 s` (`MAX_SKEW_SECS`). The
+//! token is deterministic — the same `(secret, key, timestamp)` always seals
+//! to the same string.
 //!
-//! Pure helpers (no tauri/axum types) — wrappers for the real consumer op are
-//! added when a feature actually ships this.
+//! Pure helpers (no tauri/axum types) — wrappers for the real consumer op
+//! are added when the LLM gateway feature actually ships.
 
-use crate::logic::local_auth::stored_vault_keys;
+use kawai_dyntoken::Error as DyntokenError;
 
-/// Seal a dyntoken for `user_email` at unix `timestamp`: encodes the
-/// server-defined key with the server-defined secret. Errors when the user
-/// has no stored pair (never signed in on this device, or signed in against
-/// a worker predating `DYNTOKEN_SECRET`).
-pub fn seal_for_user(user_email: &str, timestamp: u64) -> Result<String, String> {
-    let (key, secret) = stored_vault_keys(user_email)
-        .ok_or_else(|| "no vault key/secret stored — sign in first".to_string())?;
+/// Fetch-and-cache the app-level `(key, secret)` from the worker. Missing
+/// local file → fetch → persist (0600). Returns `(key, secret)` hex strings.
+async fn ensure_keys() -> Result<(String, String), String> {
+    if let Some(pair) = stored_keys() {
+        return Ok(pair);
+    }
+    let url = format!("{}/dyntoken/keys", crate::logic::local_auth::worker_base_url());
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("worker unreachable: {e}"))?;
+    if resp.status().as_u16() != 200 {
+        return Err(format!("dyntoken/keys → HTTP {}", resp.status().as_u16()));
+    }
+    let json: serde_json::Value = resp.json().await.map_err(|e| format!("bad json: {e}"))?;
+    let key = json["vault_key"]
+        .as_str()
+        .ok_or("malformed dyntoken/keys response")?
+        .to_string();
+    let secret = json["vault_secret"]
+        .as_str()
+        .ok_or("malformed dyntoken/keys response")?
+        .to_string();
+    let path = kawai_paths::vault_keys();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::write(&path, format!("{key}\n{secret}\n")) {
+        Ok(()) => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+            }
+        }
+        Err(e) => eprintln!("[dyntoken] failed to cache keys {}: {e}", path.display()),
+    }
+    Ok((key, secret))
+}
+
+/// Read the cached app-level `(key, secret)` pair, if present.
+fn stored_keys() -> Option<(String, String)> {
+    let raw = std::fs::read_to_string(kawai_paths::vault_keys()).ok()?;
+    let mut lines = raw
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty());
+    let key = lines.next()?;
+    let secret = lines.next()?;
+    Some((key, secret))
+}
+
+/// Seal a dyntoken for the LLM gateway at unix `timestamp` (usually "now").
+pub async fn seal(timestamp: u64) -> Result<String, String> {
+    let (key, secret) = ensure_keys().await?;
     kawai_dyntoken::seal_key(secret.as_bytes(), key.as_bytes(), timestamp)
         .map_err(|e| format!("seal failed: {e}"))
 }
 
-/// Verify a dyntoken for `user_email` against the stored server-defined key:
-/// integrity + `|now − ts| ≤ 5 s` + constant-time key match.
-/// `Ok(true)` = valid, `Ok(false)` = well-formed but the decoded key differs,
-/// `Err(_)` = tampered / wrong secret / stale timestamp / no stored pair.
-pub fn verify_for_user(user_email: &str, token: &str, now_secs: u64) -> Result<bool, String> {
-    let (key, secret) = stored_vault_keys(user_email)
-        .ok_or_else(|| "no vault key/secret stored — sign in first".to_string())?;
+/// Verify a dyntoken from the LLM gateway side: integrity +
+/// `|now − ts| ≤ 5 s` + constant-time key match against the stored pair.
+/// `Ok(true)` = valid, `Ok(false)` = well-formed but the key differs,
+/// `Err(_)` = tampered / stale / no cached pair.
+pub async fn verify(token: &str, now_secs: u64) -> Result<bool, String> {
+    let (key, secret) = ensure_keys().await?;
     kawai_dyntoken::verify_key(secret.as_bytes(), token, key.as_bytes(), now_secs)
-        .map_err(|e| format!("verify failed: {e}"))
+        .map_err(|e: DyntokenError| format!("verify failed: {e}"))
 }
 
 #[cfg(test)]
@@ -40,50 +88,36 @@ mod tests {
     use super::*;
     use kawai_paths::set_data_root;
 
-    fn test_user(tag: &str) -> String {
+    fn test_root() {
         let root = std::env::temp_dir().join(format!(
             "kawai-dyntoken-test-{}",
             std::process::id()
         ));
         set_data_root(root);
-        format!("dyntoken-test-{tag}@example.com")
     }
 
-    fn write_pair(email: &str, key: &str, secret: &str) {
-        let dir = kawai_paths::user_data_dir(email);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(kawai_paths::vault_keys(email), format!("{key}\n{secret}\n")).unwrap();
-    }
-
-    #[test]
-    fn seal_verify_roundtrip_with_stored_pair() {
-        let email = test_user("roundtrip");
-        let key = format!("{:064}", 0xAAAA);
-        let secret = format!("{:064}", 0xBBBB);
-        write_pair(&email, &key, &secret);
-        let ts = 1_800_000_000;
-
-        let tok = seal_for_user(&email, ts).unwrap();
-        assert!(verify_for_user(&email, &tok, ts).unwrap());
-        assert!(verify_for_user(&email, &tok, ts + kawai_dyntoken::MAX_SKEW_SECS).unwrap());
-        // 6 s late → rejected
-        assert!(verify_for_user(&email, &tok, ts + kawai_dyntoken::MAX_SKEW_SECS + 1).is_err());
+    fn write_pair(key: &str, secret: &str) {
+        let path = kawai_paths::vault_keys();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, format!("{key}\n{secret}\n")).unwrap();
     }
 
     #[test]
-    fn mismatched_key_fails_verification() {
-        let email = test_user("mismatch");
-        write_pair(&email, &format!("{:064}", 0xAAAA), &format!("{:064}", 0xBBBB));
-        let ts = 1_800_000_000;
-        let tok = seal_for_user(&email, ts).unwrap();
-        // A different stored key → decoded key no longer matches → Ok(false).
-        let other = format!("other-{}", &"0".repeat(58));
-        write_pair(&email, &other, &format!("{:064}", 0xBBBB));
-        assert_eq!(verify_for_user(&email, &tok, ts).unwrap(), false);
+    fn stored_keys_roundtrip() {
+        test_root();
+        write_pair(&format!("{:064}", 0xAAAA), &format!("{:064}", 0xBBBB));
+        let (key, secret) = stored_keys().unwrap();
+        assert_eq!(key, format!("{:064}", 0xAAAA));
+        assert_eq!(secret, format!("{:064}", 0xBBBB));
     }
 
     #[test]
-    fn seal_without_pair_errors() {
-        let email = test_user("nopair");
+    fn stored_keys_missing_returns_none() {
+        test_root();
+        let path = kawai_paths::vault_keys();
+        if path.exists() {
+            std::fs::remove_file(&path).unwrap();
+        }
+        assert!(stored_keys().is_none());
     }
 }

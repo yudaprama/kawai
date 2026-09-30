@@ -122,35 +122,6 @@ pub fn stored_token(user_email: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Persist the server-defined dyntoken key/secret (0600, per-user dir).
-/// Format: two lines — `key`, then `secret` (both 64-char hex).
-fn persist_vault_keys(user_email: &str, key: &str, secret: &str) {
-    let dir = kawai_paths::user_data_dir(user_email);
-    if std::fs::create_dir_all(&dir).is_ok() {
-        let path = kawai_paths::vault_keys(user_email);
-        match std::fs::write(&path, format!("{key}\n{secret}\n")) {
-            Ok(()) => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-                }
-            }
-            Err(e) => eprintln!("[auth] failed to write vault keys {}: {e}", path.display()),
-        }
-    }
-}
-
-/// Read the stored server-defined dyntoken `(key, secret)` for a signed-in
-/// user, if any. Consumed by dyntoken seal/open client-side.
-pub fn stored_vault_keys(user_email: &str) -> Option<(String, String)> {
-    let raw = std::fs::read_to_string(kawai_paths::vault_keys(user_email)).ok()?;
-    let mut lines = raw.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty());
-    let key = lines.next()?;
-    let secret = lines.next()?;
-    Some((key, secret))
-}
-
 /// Restore a previous session from the persisted token: reads the
 /// last-session pointer (`<data_root>/last_session`), loads that user's
 /// token, and checks the embedded `sub`/`exp` claims client-side (decode
@@ -237,16 +208,6 @@ async fn post_auth_and_persist(
     let token = json["token"].as_str().unwrap_or_default().to_string();
     if !token.is_empty() {
         persist_token(email, &token);
-    }
-    // Persist the server-defined dyntoken key/secret (hex, returned on every
-    // successful login) for `kawai-dyntoken::{seal_key, open_key}` client-side.
-    if let (Some(vk), Some(vs)) = (
-        json["vault_key"].as_str(),
-        json["vault_secret"].as_str(),
-    ) {
-        if !vk.is_empty() && !vs.is_empty() {
-            persist_vault_keys(email, vk, vs);
-        }
     }
     Ok(UserRecord {
         email: email.to_string(),
