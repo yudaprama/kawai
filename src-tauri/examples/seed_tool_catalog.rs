@@ -1,4 +1,4 @@
-//! Seed the remote Turso tool catalog with the supervisor's merged tool
+//! Seed the LOCAL tool-catalog sqld with the supervisor's merged tool
 //! definitions (same composition the planner sees in `auto` mode).
 //!
 //! Idempotent and incremental: re-running with a wider feature set adds the
@@ -18,16 +18,15 @@
 //!                             every feature that the runtime registry can
 //!                             include MUST be on here, or its tools silently
 //!                             drop out of the catalog)
-//!   KAWAI_TURSO_DB_URL       (from .env; env overrides the baked read-only
-//!                             constants — only needed if the DB differs)
-//!   KAWAI_TURSO_WRITE_TOKEN  (full-access token — NEVER baked; generate with
-//!                             `turso db tokens create kawai-tool-catalog`)
+//!   KAWAI_TURSO_DB_URL       (from .env; points at the LOCAL tool-catalog
+//!                             sqld — http://127.0.0.1:8084; env overrides the
+//!                             baked constants)
+//!   KAWAI_TURSO_WRITE_TOKEN  (legacy name — the local sqld runs without auth,
+//!                             so any non-empty value satisfies the check)
 //!
-//! Usage: runs locally (write token via `KAWAI_TURSO_WRITE_TOKEN` in `.env`)
-//!   on the user's explicit request — it is a heavy build. `.github/workflows/ci.yml`
-//!   drift-gates every CI and auto-seeds additively on drift; for `--prune`
-//!   (renames/deletions) run locally or dispatch that workflow manually
-//!   (Actions → ci → Run workflow) with the `prune` input checked.
+//! Usage: runs locally on the user's explicit request — it is a heavy build.
+//!   Prerequisite: the tool-catalog sqld is up (see scripts/sqld/run-local.sh
+//!   pattern; HTTP 127.0.0.1:8084).
 
 #[path = "catalog_composition.rs"]
 mod composition;
@@ -61,7 +60,7 @@ async fn run() -> Result<(), String> {
     let write_token = std::env::var("KAWAI_TURSO_WRITE_TOKEN")
         .ok()
         .filter(|v| !v.trim().is_empty())
-        .ok_or("KAWAI_TURSO_WRITE_TOKEN not set — generate a full-access token:\n  turso db tokens create kawai-tool-catalog")?;
+        .unwrap_or_else(|| "local-sqld-no-auth".to_string());
 
     let definitions = composition::merged_definitions().await?;
     let names: Vec<String> = definitions.iter().map(|d| d.name.clone()).collect();
@@ -140,7 +139,7 @@ async fn run() -> Result<(), String> {
     }
 
     println!(
-        "[seed] DONE. Verify on the remote:\n  turso db shell kawai-tool-catalog \"SELECT COUNT(*) FROM tool_catalog\""
+        "[seed] DONE. Verify:\n  curl -s http://127.0.0.1:8084/v2/pipeline -H 'content-type: application/json' -d '{\"requests\":[{\"type\":\"execute\",\"stmt\":{\"sql\":\"SELECT COUNT(*) FROM tool_catalog\"}}]}'"
     );
     Ok(())
 }

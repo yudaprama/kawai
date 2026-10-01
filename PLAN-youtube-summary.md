@@ -72,7 +72,7 @@ Invariants this plan respects (learned the hard way on the desk plan):
   previous run's `supervisor_step_results` memo.
 - `plan.goal` is the pipeline's own framing; the writer answers
   `userGoal` (the five-section request), never `plan.goal`.
-- Stage tools are NEVER in the Turso tool catalog or `PLAN_CORE_TOOLS` —
+- Stage tools are NEVER in the tool catalog or `PLAN_CORE_TOOLS` —
   they exist only in `build_youtube_registry` (the dispatch view).
 
 ## Constants (`crates/engines/youtube/src/lib.rs`)

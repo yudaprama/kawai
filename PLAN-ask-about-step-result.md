@@ -58,7 +58,7 @@ Frontend: render answer in modal / side panel below the step report
 **File**: `src-tauri/src/supervisor.rs` (SHIPPED)
 
 - `supervisor_toolset_with_explainer(user_id, session_id)`: the merged `auto` supervisor catalog + `ExplainStepResultTool` (`toolset.add_tool`).
-- The explainer is deliberately NOT planner-visible (never in the Turso catalog / `PLAN_CORE_TOOLS`) — this builder is its only ride.
+- The explainer is deliberately NOT planner-visible (never in the tool catalog / `PLAN_CORE_TOOLS`) — this builder is its only ride.
 - `build_registry_from_toolset` widened to `pub(crate)` for `logic.rs`.
 
 ---

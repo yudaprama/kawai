@@ -13,7 +13,7 @@ into the planner prompt. The planner runs a **bounded search loop**:
 Round 0    LLM sees: goal + <user-context> (persona/memories/skills)
            + core tool whitelist + protocol. No catalog.
 Round 0..2 LLM replies {"action":"search","queries":[≤3]} → executed against
-           the Turso tool catalog (embedded replica; hybrid vector+BM25+RRF),
+           the tool catalog (local sqld, embedded replica; hybrid vector+BM25+RRF),
            results appended to materials (12k char cap, dedup across rounds).
 Final      LLM replies {"goal","steps":[…]} → parse_supervisor_plan validates
            against the FULL ToolRegistry: structure, dispatch keys,
@@ -32,7 +32,7 @@ Backends   Remote pool (default) · `KAWAI_PLANNER_LLM=local` → on-device
            Gemma via LiteRT (dev/test seam; each round is a fresh one-shot).
 ```
 
-Supporting pieces: `kawai-tool-catalog` (Turso embedded-replica store, seeded
+Supporting pieces: `kawai-tool-catalog` (local-sqld embedded-replica store, seeded
 via `src-tauri/examples/seed_tool_catalog.rs`), `ToolRegistry::narrowed`
 (advisory subset, used by checks), probes `tool_search_probe`,
 `tool_catalog_narrow_check`, `plan_loop_probe`.

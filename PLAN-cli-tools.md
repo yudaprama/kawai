@@ -10,7 +10,7 @@ capable CLIs (`ffmpeg`, `jq`, `pandoc`, `gh`, …) the agent can neither see
 nor run. The set of installed CLIs is **per-device state** — it differs for
 every user — so none of the existing global machinery fits:
 
-- **The Turso tool catalog is the wrong layer.** It is global, client
+- **The shared tool catalog is the wrong layer.** It is global, client
   read-only, and seeded once from the dev machine; it cannot represent
   "this device has `ffmpeg`, that one doesn't", and seeding device-specific
   rows would poison the shared curation.
@@ -21,7 +21,7 @@ every user — so none of the existing global machinery fits:
 
 ## Design
 
-Two pieces, both fully local (works offline; zero Turso contact):
+Two pieces, both fully local (works offline; zero catalog contact):
 
 ### 1. Inventory scan (per-device, cached per process)
 
@@ -105,7 +105,7 @@ agent toolset via `agent_registry::add_runtime_tools` (cross-cutting, like
 
 - `PLAN_CORE_TOOLS` += `cli_run` — core tools render from the LOCAL registry
   (`registry.catalog_lines_for`), so the planner always sees the tool's
-  schema without a Turso search.
+  schema without a catalog search.
 - A bounded `<cli-tools>` block (`kawai_cli::prompt_block()`) rides the
   planner system prompt listing the installed commands. When the persistent
   device catalog is ready the block renders wider (6k cap) and pathless;
@@ -113,18 +113,18 @@ agent toolset via `agent_registry::add_runtime_tools` (cross-cutting, like
   the ~4k cap (described CLIs sort first, tail counted, never hidden
   silently).
 - The **device cli-catalog** (`crates/toolsets/cli/src/catalog.rs`) mirrors
-  the Turso tool catalog's mechanism on a plain local libSQL file
+  the tool catalog's mechanism on a plain local libSQL file
   (`kawai_paths::cli_catalog_db`): `cli_catalog(name, description, path,
   embedding FLOAT32(dims))` + an FTS5/BM25 mirror, hybrid cosine+BM25 fused
   via RRF with the relative-cosine gate. Embeddings come ONLY from the
-  on-device EmbeddingGemma 300M engine (same fixed space as the Turso
+  on-device EmbeddingGemma 300M engine (same fixed space as the catalog
   catalog's seeding) — builds without that engine (mobile/web) get no
   catalog and stay on the fallback block. The background build (Tauri setup
   / web main via `kawai_cli::ensure_catalog_init`) scans, reconciles (upsert
   changed, prune removed, re-embed only what changed), and publishes once
   per process.
 - Planner search rounds (`supervisor.rs::run_tool_search`) hit BOTH stores:
-  the Turso tool catalog for agent tools and `kawai_cli::search_installed`
+  the tool catalog for agent tools and `kawai_cli::search_installed`
   for installed CLIs (top-4 per query, rendered as `- <name> — <desc>
   (installed CLI — run it via \`cli_run\`)`).
 - Planner guidance mirrors the `data_query_nl` bullet: default to `intent`
@@ -145,7 +145,7 @@ agent toolset via `agent_registry::add_runtime_tools` (cross-cutting, like
 | `crates/toolsets/analytics-tools` | re-exports `kawai_tools::deadline` (paths unchanged) |
 | `agent_registry.rs` | `add_runtime_tools` adds `cli_run` when inventory non-empty |
 | `supervisor.rs` | `PLAN_CORE_TOOLS` += `cli_run`; `plan_loop_system_prompt` takes the `<cli-tools>` block; `run_tool_search` also hits the cli-catalog |
-| `catalog_composition.rs` | `PER_DEVICE_TOOLS = ["cli_run"]` excluded from the Turso seed/drift composition |
+| `catalog_composition.rs` | `PER_DEVICE_TOOLS = ["cli_run"]` excluded from the seed/drift composition |
 | docs | AGENTS.md toolsets tree + a Shipped bullet |
 
 ## Verification

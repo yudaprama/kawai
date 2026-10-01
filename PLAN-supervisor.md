@@ -201,7 +201,7 @@ non-blocking — forward ke channel) dan diterjemahkan `supervisor.rs` menjadi
 | ConfirmationHandler + PendingConfirmations | Gate sebelum side-effect |
 | TurnMemory + session_artifacts | Log proses loop subagent; `artifact_recall` paging di dalam subagent (bukan jalur scheduler) |
 | Remote LLM pool | Subagent remote + planner |
-| Tool catalog (Turso, crates/foundation/tool-catalog) | Discovery tool planner (drift-gated di CI) |
+| Tool catalog (local sqld, crates/foundation/tool-catalog) | Discovery tool planner (drift check lokal) |
 
 ## Current state
 

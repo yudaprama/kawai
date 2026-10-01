@@ -1,12 +1,12 @@
-//! CI drift gate: the remote Turso tool catalog must contain EXACTLY the
-//! supervisor's merged toolset (same composition the planner's `auto` mode
-//! validates against). Fails when the catalog is missing a tool (planner can
-//! never discover it) or carries an extra/stale one (planner emits steps that
-//! fail plan validation).
+//! Drift gate: the tool-catalog sqld (LOCAL, http://127.0.0.1:8084) must
+//! contain EXACTLY the supervisor's merged toolset (same composition the
+//! planner's `auto` mode validates against). Fails when the catalog is missing
+//! a tool (planner can never discover it) or carries an extra/stale one
+//! (planner emits steps that fail plan validation).
 //!
 //! Read-only end to end: credentials resolve via `RemoteConfig::from_env()` —
-//! env override first, then the baked read-only constants in
-//! `kawai-vault/constants` — so no CI secret is needed.
+//! env override first, then the baked constants in `kawai-vault/constants`
+//! (both point at the local sqld, which runs without auth).
 //!
 //! Toolset composition lives in `catalog_composition.rs` (shared with
 //! `seed_tool_catalog.rs` — exactly one copy).
@@ -56,7 +56,7 @@ async fn run() -> Result<(), String> {
     let stale: Vec<&String> = remote.iter().filter(|n| !local.contains(*n)).collect();
 
     println!(
-        "[drift_check] local merged toolset: {} tools; remote catalog: {} tools",
+        "[drift_check] local merged toolset: {} tools; catalog: {} tools",
         local.len(),
         remote.len()
     );
