@@ -58,7 +58,7 @@ async fn post_json(path: &str, body: serde_json::Value) -> std::result::Result<(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("auth server unreachable: {e}"))?;
+        .map_err(|_| "auth server unreachable".to_string())?;
     let status = resp.status().as_u16();
     let text = resp.text().await.unwrap_or_default();
     let json: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
@@ -188,7 +188,7 @@ pub async fn worker_post(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("worker unreachable: {e}"))?;
+        .map_err(|_| "worker unreachable".to_string())?;
     let status = resp.status().as_u16();
     let json: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
     Ok((status, json))

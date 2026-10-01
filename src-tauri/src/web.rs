@@ -1961,6 +1961,13 @@ async fn connector_disconnect_handler(
         .map_err(err500)
 }
 
+/// Web no-op: the browser opens the OAuth redirect itself (window/popup), so
+/// there is nothing to open server-side. Exists purely so the frontend's
+/// `call("connector_open_url", …)` never errors on the web transport.
+async fn connector_open_url_handler() -> Json<()> {
+    Json(())
+}
+
 /// Reads the `kawai_session` cookie (the signed-in email) and injects it as a
 /// request extension. 401 on missing/foreign cookie. Uses
 /// `from_fn` (state `()`), so it composes with a `Router<()>`.
@@ -2133,6 +2140,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/connector_connect", post(connector_connect_handler))
         .route("/api/connector_poll", post(connector_poll_handler))
         .route("/api/connector_disconnect", post(connector_disconnect_handler))
+        .route("/api/connector_open_url", post(connector_open_url_handler))
         .route_layer(from_fn(auth_middleware));
 
     #[cfg(feature = "litert")]

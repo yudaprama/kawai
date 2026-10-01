@@ -71,7 +71,7 @@ async fn run() -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "tool catalog drifted: {} missing, {} stale. Fix: dispatch .github/workflows/ci.yml manually (Actions → ci → Run workflow) with the `prune` input checked — seeding is CI-only (AGENTS.md RESOURCE rule)",
+        "tool catalog drifted: {} missing, {} stale. Fix: run `seed_tool_catalog` locally with KAWAI_TURSO_WRITE_TOKEN (add `--prune` for the stale entries), or dispatch .github/workflows/ci.yml manually (Actions → ci → Run workflow) with the `prune` input checked",
         missing.len(),
         stale.len()
     ))

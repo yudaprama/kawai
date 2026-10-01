@@ -64,8 +64,8 @@ pub async fn list_connections(_user_id: &str) -> Result<Vec<Connection>, String>
         .items
         .into_iter()
         .map(|a| Connection {
-            id: a.id,
-            app: a.toolkit,
+            id: a.id.clone(),
+            app: a.toolkit_slug().to_string(),
             status: a.status,
             created_at: a.created_at,
         })
@@ -76,12 +76,57 @@ pub async fn list_connections(_user_id: &str) -> Result<Vec<Connection>, String>
 /// redirect URL the user must visit plus the connection id to poll.
 pub async fn connect(_user_id: &str, toolkit: &str) -> Result<ConnectStart, String> {
     let client = client()?;
+    let config = auth_config_for(toolkit)
+        .ok_or_else(|| format!("tidak ada auth config baked untuk '{toolkit}'"))?;
+    // Alias must be unique per Composio entity — a retried/abandoned connect
+    // for the same toolkit would otherwise 400 ("Alias ... is already in use").
+    // Nothing matches on alias (toolkit_slug does that), so it only has to be
+    // recognizable for debugging.
+    let alias = format!("{toolkit}-{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default());
+    // Sweep this user's abandoned connect attempts for the same toolkit
+    // (INITIALIZING never completes on its own) — keeps the connections list
+    // clean and cannot touch ACTIVE grants. Best-effort.
+    if let Ok(accounts) = client.list_connected_accounts().await {
+        for a in &accounts.items {
+            if a.user_id.as_deref() == Some(_user_id)
+                && a.toolkit_slug().eq_ignore_ascii_case(toolkit)
+                && a.status.eq_ignore_ascii_case("INITIALIZING")
+            {
+                let _ = client.delete_connected_account(&a.id).await;
+            }
+        }
+    }
     let resp = client
-        .create_auth_link(toolkit, auth_config_for(toolkit))
+        .create_link_session(&config, _user_id, &alias)
         .await
         .map_err(|e| e.to_string())?;
+    // `connected_account_id` is often still empty right after kickoff — resolve
+    // it by picking the newest INITIALIZING account for this toolkit so the
+    // frontend has a stable poll key.
+    let connection_id = match resp.connected_account_id {
+        Some(id) if !id.is_empty() => id,
+        _ => {
+            let accounts = client
+                .list_connected_accounts()
+                .await
+                .map_err(|e| e.to_string())?;
+            accounts
+                .items
+                .into_iter()
+                .find(|a| {
+                    a.user_id.as_deref() == Some(_user_id)
+                        && a.toolkit_slug().eq_ignore_ascii_case(toolkit)
+                        && a.status.eq_ignore_ascii_case("INITIALIZING")
+                })
+                .map(|a| a.id)
+                .unwrap_or_default()
+        }
+    };
     Ok(ConnectStart {
-        connection_id: resp.connected_account_id.unwrap_or_default(),
+        connection_id,
         redirect_url: Some(resp.redirect_url),
     })
 }
@@ -94,8 +139,8 @@ pub async fn poll(_user_id: &str, connection_id: &str) -> Result<Connection, Str
         .await
         .map_err(|e| e.to_string())?;
     Ok(Connection {
-        id: a.id,
-        app: a.toolkit,
+        id: a.id.clone(),
+        app: a.toolkit_slug().to_string(),
         status: a.status,
         created_at: a.created_at,
     })

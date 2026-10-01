@@ -95,12 +95,17 @@ export function useConnectorConnect() {
 
   const onConnect = useCallback(
     async (toolkit: string, label: string): Promise<Connection | undefined> => {
-      const popup = window.open("about:blank", "connector-oauth", "width=560,height=720");
+      // Tauri desktop: `window.open` cannot host the provider's OAuth page —
+      // open the OS default browser via the backend opener instead. Web keeps
+      // the synchronous popup flow (browsers block popups opened after an await).
+      const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+      const popup = isTauri ? null : window.open("about:blank", "connector-oauth", "width=560,height=720");
       setPendingToolkit(toolkit);
       try {
         const started = await call<ConnectResult>("connector_connect", { toolkit });
         if (started.redirectUrl) {
           if (popup) popup.location.href = started.redirectUrl;
+          else if (isTauri) await call("connector_open_url", { url: started.redirectUrl }).catch(() => {});
           else window.open(started.redirectUrl, "_blank", "noopener");
         }
 

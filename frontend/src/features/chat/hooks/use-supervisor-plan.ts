@@ -646,6 +646,19 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [patch],
   );
 
+  const reset = useCallback(() => {
+    setState(initialSupervisorState());
+    setMessages([]);
+    streamCtrl.current = null;
+    streamIdRef.current = "";
+    goalRef.current = null;
+    userGoalRef.current = null;
+    stepsRef.current = [];
+    stoppingRef.current = false;
+    lastPlanRef.current = null;
+    planKeyRef.current = null;
+  }, []);
+
   return {
     ...state,
     messages,
@@ -659,6 +672,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     cancelPlan,
     removeStep,
     restorePersisted,
+    reset,
     approve: () => respond(true),
     reject: () => respond(false),
     stop,

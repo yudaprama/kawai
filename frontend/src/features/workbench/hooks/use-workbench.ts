@@ -893,7 +893,9 @@ export function useWorkbench() {
     setQuoteTarget(null);
     setDynamicChips([]);
     setAttachedFiles([]);
-  }, []);
+    // Reset supervisor to idle so the form is enabled for the new session
+    supervisor.reset();
+  }, [supervisor]);
 
   return {
     supervisor,

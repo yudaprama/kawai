@@ -539,7 +539,7 @@ async fn gmail_self_url() -> Result<Option<String>, OnboardingError> {
     let account = accounts
         .items
         .iter()
-        .find(|a| a.toolkit.eq_ignore_ascii_case("gmail") && a.status.eq_ignore_ascii_case("ACTIVE"))
+        .find(|a| a.toolkit_slug().eq_ignore_ascii_case("gmail") && a.status.eq_ignore_ascii_case("ACTIVE"))
         .ok_or_else(|| OnboardingError::Composio("no active Gmail connection".into()))?;
 
     let resp = client

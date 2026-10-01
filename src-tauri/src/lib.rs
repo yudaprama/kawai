@@ -220,6 +220,7 @@ pub fn run() {
         commands::connector_connect,
         commands::connector_poll,
         commands::connector_disconnect,
+        commands::connector_open_url,
 
         // ── litert (local LLM + supervisor) ────────────────────────────
         #[cfg(feature = "litert")]

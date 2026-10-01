@@ -197,10 +197,11 @@ Full inventory: `grep -rhoE 'const NAME: &'"'"'static str = "[a-z_0-9]+"' crates
 ## 9. Seeder & drift gate
 
 - **Seed** (insert + update, idempotent upsert; `--prune` menghapus baris basi):
-  `src-tauri/examples/seed_tool_catalog.rs` — **CI-only** (aturan RESOURCE di AGENTS.md; jangan
-  pernah dijalankan di mesin dev). Seed jalan di `.github/workflows/ci.yml` (drift gate → auto-seed
-  aditif tiap CI); untuk `--prune` (rename/hapus tool), dispatch workflow itu manual
-  (Actions → ci → Run workflow) dengan input `prune` — write token = repo secret `KAWAI_TURSO_WRITE_TOKEN`.
+  `src-tauri/examples/seed_tool_catalog.rs` — bisa dijalankan lokal (butuh
+  `KAWAI_TURSO_WRITE_TOKEN` di `.env`; proses berat — jalan hanya atas permintaan
+  eksplisit user). CI juga drift-gate tiap run (auto-seed aditif); untuk
+  `--prune` (rename/hapus tool), jalankan lokal atau dispatch workflow
+  (Actions → ci → Run workflow) dengan input `prune`.
 - **Drift check** (read-only, tanpa secret — kredensial dari baked constants):
   `src-tauri/examples/tool_catalog_drift_check.rs` — wajib lulus di CI (gate tool-catalog coverage).
 - Kedua example berbagi satu komposisi toolset: `src-tauri/examples/catalog_composition.rs` (jangan duplikasi logika di sana).

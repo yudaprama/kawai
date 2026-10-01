@@ -24,7 +24,7 @@ async fn get(token: &str, path: &str) -> std::result::Result<serde_json::Value, 
         .bearer_auth(token)
         .send()
         .await
-        .map_err(|e| format!("worker unreachable: {e}"))?;
+        .map_err(|_| "worker unreachable".to_string())?;
     read_body(resp).await
 }
 
@@ -42,7 +42,7 @@ async fn post(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("worker unreachable: {e}"))?;
+        .map_err(|_| "worker unreachable".to_string())?;
     read_body(resp).await
 }
 

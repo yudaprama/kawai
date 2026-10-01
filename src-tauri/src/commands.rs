@@ -1177,6 +1177,24 @@ pub async fn connector_disconnect(
     logic::connector::disconnect(&user_id, &connection_id).await
 }
 
+/// Authenticated: open the OAuth redirect URL in the OS default browser
+/// (desktop has no real `window.open` popup — the provider page must open
+/// externally while the app keeps polling the connection status).
+#[tauri::command]
+pub fn connector_open_url(
+    app: tauri::AppHandle,
+    url: String,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let _ = session_user_id(&session)?;
+    if !url.starts_with("https://") {
+        return Err("refused non-https url".to_string());
+    }
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|e| format!("open url: {e}"))
+}
+
 /// Authenticated RPC: create and validate a deterministic supervisor plan.
 #[cfg(feature = "litert")]
 #[tauri::command]

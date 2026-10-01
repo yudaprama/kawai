@@ -24,7 +24,7 @@ async fn ensure_keys() -> Result<(String, String), String> {
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("worker unreachable: {e}"))?;
+        .map_err(|_| "auth server unreachable".to_string())?;
     if resp.status().as_u16() != 200 {
         return Err(format!("dyntoken/keys → HTTP {}", resp.status().as_u16()));
     }
