@@ -6,7 +6,7 @@ import { isTabularExt } from "@/lib/extensions";
 import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
 import type { SupervisorArtifact, SupervisorEvent, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { emitOpenTopup } from "@/features/topup/open-topup";
-import { publishTokenBalance, refreshTokenBalance } from "@/features/topup/use-token-balance";
+import { peekFreshTokenBalance, publishTokenBalance, refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { hydrateStep, type PersistedPlanRecord } from "@/features/chat/hooks/supervisor-types";
 import { getLocale, translate } from "@/lib/i18n";
 
@@ -556,13 +556,23 @@ export function useWorkbench() {
     async (sessionTitle: string, failPrefix: string): Promise<number> => {
       // A fresh attempt clears the previous gate failure.
       setSessionError(null);
+
+      // Fast path: the rail chip / Top Up page already holds a fresh balance —
+      // skip the 337ms gate read entirely. Cold cache falls through to the
+      // read (fail-closed); the server-side gate in `plan_task` stays the
+      // enforcement either way.
+      const cached = peekFreshTokenBalance();
       let tokens: number;
-      try {
-        ({ tokens } = await call<{ tokens: number }>("topup_balance"));
-      } catch (err) {
-        const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
-        toast(msg);
-        throw new Error(msg);
+      if (cached != null) {
+        tokens = cached;
+      } else {
+        try {
+          ({ tokens } = await call<{ tokens: number }>("topup_balance"));
+        } catch (err) {
+          const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
+          toast(msg);
+          throw new Error(msg);
+        }
       }
       // The gate's read doubles as the shared chip's freshest PRE-debit
       // value — it lands before `plan_task` debits, so the run below

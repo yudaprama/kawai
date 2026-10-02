@@ -246,7 +246,7 @@ pub fn onboarding_run_stream(
         let mut gmail_linkedin_url: Option<String> = None;
         if sources.gmail {
             yield OnboardingEvent::SourceStarted { source: SOURCE_GMAIL.into() };
-            match gmail_self_url().await {
+            match gmail_self_url(&user_id).await {
                 Ok(Some(url)) => {
                     yield OnboardingEvent::SourceProgress {
                         source: SOURCE_GMAIL.into(),
@@ -263,7 +263,7 @@ pub fn onboarding_run_stream(
                 Err(e) => {
                     yield OnboardingEvent::SourceProgress {
                         source: SOURCE_GMAIL.into(),
-                        note: format!("gmail unavailable: {e} — connect via composio_authorize"),
+                        note: format!("gmail unavailable: {e} — connect Gmail on the Connectors page"),
                     };
                 }
             }
@@ -526,7 +526,7 @@ pub async fn onboarding_import_document(user_id: &str, file_id: &str) -> Result<
 /// survives — message bodies and all other matches are discarded in-memory.
 /// `Ok(None)` = connected but nothing found; `Err` = no vault key / no
 /// active Gmail connection / fetch failure (all best-effort skip reasons).
-async fn gmail_self_url() -> Result<Option<String>, OnboardingError> {
+async fn gmail_self_url(user_id: &str) -> Result<Option<String>, OnboardingError> {
     let api_key = kawai_constants::composio::get_composio_api_key();
     if api_key.trim().is_empty() {
         return Err(OnboardingError::Composio("no Composio key".into()));
@@ -547,6 +547,7 @@ async fn gmail_self_url() -> Result<Option<String>, OnboardingError> {
             "GMAIL_FETCH_EMAILS",
             serde_json::json!({ "query": "from:linkedin.com", "maxResults": 10 }),
             Some(account.id.clone()),
+            Some(user_id),
         )
         .await
         .map_err(|e| OnboardingError::Composio(format!("fetch emails: {e}")))?;

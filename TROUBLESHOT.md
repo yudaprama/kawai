@@ -1,7 +1,10 @@
 # TROUBLESHOOT — how to debug the agent pipeline
 
 Method for diagnosing agent / tool-calling / hybrid-cloud failures. Examples
-assume the default macOS data dir; identity = the login email.
+assume the default macOS data dir; identity = the login email (lowercased).
+The per-user dir is the hex encoding of the email (`sanitize_user_dir` in
+`crates/foundation/paths` — `[A-Za-z0-9_-]` passes through, anything else
+hex-encodes, so every real email lands as hex).
 
 ## 1. Method (follow in order — never skip ahead)
 
@@ -35,7 +38,9 @@ assume the default macOS data dir; identity = the login email.
 ## 2. Evidence sources
 
 ```sh
-DB="$HOME/Library/Application Support/pro.kawai.app/demo/kawai.db"
+DB="$HOME/Library/Application Support/pro.kawai.app/6469656c7a7a7a383940676d61696c2e636f6d/kawai.db"
+# dielzzz89@gmail.com hex-encoded. For another email:
+# python3 -c "print(''.join(f'{b:02x}' for b in '<email>'.lower().encode()))"
 LOG="$HOME/Library/Logs/kawai/app.log"     # symlink: ./app.log at repo root
 
 sqlite3 "$DB" "SELECT id, role, length(content), substr(replace(content,char(10),' '),1,120), created_at FROM messages ORDER BY id DESC LIMIT 10;"
@@ -109,6 +114,8 @@ healthy row: `outcome=answer|tool` with `output_tokens` below the cap.
 | `data_chart` plan rejected: `missing required property 'x'` / `sortBy: expected "string", got array` | planner shapes vs chart schema — x now defaults to the sole groupBy column and sortBy accepts name / {column,descending} / list (2026-09 OCR backtest session burned every revise round on these) |
 | `avg`/`sum` over percent text reads wrong ("95,5" → 955) | decimal-comma coercion in `agg_expr` (`engines/analytics/src/engine.rs`): thousands comma = exactly 3 digits after; otherwise decimal comma → dot |
 | `composio_execute` 404 `Tool_ToolNotFound` for a slug the model invented | `composio_list_tools` returned the global catalog, not the toolkit — the Composio v3 API ignores `toolkit=`/`toolkits=` query filters; only `search=` filters (client now searches by toolkit slug + retains matching `toolkit.slug`). If it recurs, check the executed slug exists: `curl -s "https://backend.composio.dev/api/v3/tools?search=GMAIL&limit=100" -H "x-api-key: $KEY"` |
+| `composio_list_tools` returns `[]` though the toolkit has actions (model then invents bindings/slugs) | a free-text `search` used to REPLACE the toolkit term in the API query, and a strict filter emptied the rest; the client now always queries `search=<toolkit>`, token-ranks the free-text client-side, and falls back to the full toolkit list on zero hits (`crates/toolsets/composio/src/client.rs`). Recurs → `cargo run -p composio --example list_tools_probe -- <toolkit> "<search>"` |
+| `composio_execute` 400 code 1811 `ActionExecute_ConnectedAccountEntityIdRequired` ("User ID is required with connected account") | the execute call reached Composio without an owning `user_id` — the client now prefers the bound kawai login email and falls back to the connected account's recorded `user_id` (`crates/toolsets/composio/src/lib.rs`); if it recurs, check `supervisor_toolset(user_id)` was built with a non-empty email and that `execute_tool` sends `user_id`/`connected_account_id` |
 | PlanFailed after revise rounds | read logged `raw:` — repeated same failure = fix the prompt, not the validator |
 | Replan burned by frozen-step mandate violations | mechanical now — drift is auto-restored, log line `[supervisor] revise round N: frozen-step drift auto-restored: <ids>`; if the repaired plan still fails, check (a) every same-defect sibling is Failed, not Skipped (fail-fast used to bury them outside `failures()`), (b) the binding error's `(result keys: …)` / `(declared: …)` hint names a key the reviser actually bound |
 | Deliverable is raw JSON | all providers failed synthesis; check `[remote]` per-candidate lines |

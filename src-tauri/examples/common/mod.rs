@@ -26,6 +26,7 @@ pub fn run_async(name: &str, f: impl std::future::Future<Output = Result<(), Str
 /// Build a merged supervisor toolset from the standard domain builders
 /// (office, presentation, binance, analytics) with a stub SQL profile.
 /// Returns the toolset definitions.
+#[cfg(feature = "litert")]
 pub async fn build_merged_definitions() -> Result<Vec<kawai_tools::ToolDefinition>, String> {
     let remote_configured = remote_llm::RemoteLlm::from_env().is_some();
     let sql_profiles = kawai_analytics::effective_profiles("seed").await;
@@ -55,6 +56,7 @@ pub async fn build_merged_definitions() -> Result<Vec<kawai_tools::ToolDefinitio
 
 /// Build a merged supervisor toolset and convert it into a `ToolRegistry`
 /// with a stub dispatch (all tools register as `Pure`, none actually execute).
+#[cfg(feature = "litert")]
 pub async fn build_stub_registry() -> Result<kawai_router::ToolRegistry, String> {
     use kawai_router::{ToolCall, ToolDispatch, ToolKind, ToolMeta, ToolRegistry};
 

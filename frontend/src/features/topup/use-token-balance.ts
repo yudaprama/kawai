@@ -86,6 +86,17 @@ export function refreshTokenBalance(): Promise<number | null> {
 }
 
 /**
+ * Fresh cached balance without a network read — lets the submit gate skip its
+ * RPC when the chip/page already read recently. `null` = no fresh value, do
+ * the read. The server-side gate inside `plan_task` stays authoritative, so a
+ * stale-positive cache degrades to a server rejection, never unbilled usage.
+ */
+export function peekFreshTokenBalance(maxAgeMs: number = FOCUS_REFRESH_MS): number | null {
+  if (snapshot.tokens == null || Date.now() - lastReadAt > maxAgeMs) return null;
+  return snapshot.tokens;
+}
+
+/**
  * Publish a balance the caller ALREADY read — the goal-submit gate's
  * pre-check doubles as the store's freshest pre-debit value for free.
  */

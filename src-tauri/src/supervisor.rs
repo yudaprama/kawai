@@ -2062,6 +2062,15 @@ pub(crate) async fn build_registry_from_toolset(
                 });
             }
             let args = kawai_router::canonical_json(&args_value);
+            // Evidence for post-run diagnosis: which resolved arguments the
+            // step actually executed with (invented slugs / wrong args were
+            // previously invisible — neither the plan record nor stepStarted
+            // persists arguments).
+            eprintln!(
+                "[supervisor] dispatch step={} tool={name} args={}",
+                call.step.id,
+                preview_chars(&args, 200)
+            );
             let started = std::time::Instant::now();
             // Cooperative deadline: tools with internal retry loops (the NL
             // data tools) read this and return a structured "budget ran out"

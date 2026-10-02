@@ -414,7 +414,7 @@ pub fn composio_tools_for_supervisor(
     {
         return None;
     }
-    Some(composio::all_tools())
+    Some(composio::supervisor_toolset(context.user_id))
 }
 
 /// Stock/social finance tools: keyed stock providers (TwelveData/AlphaVantage/

@@ -139,6 +139,7 @@ async fn run() -> Result<(), String> {
     }
 
     println!(
+        "{}",
         "[seed] DONE. Verify:\n  curl -s http://127.0.0.1:8084/v2/pipeline -H 'content-type: application/json' -d '{\"requests\":[{\"type\":\"execute\",\"stmt\":{\"sql\":\"SELECT COUNT(*) FROM tool_catalog\"}}]}'"
     );
     Ok(())
