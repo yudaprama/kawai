@@ -4,25 +4,27 @@
   "bundle": {
     "macOS": {
       "files": {
-        "../cognee-litert-lm/native/liblitert-lm.dylib": "Frameworks/liblitert-lm.dylib",
-        "../cognee-litert-lm/native/libGemmaModelConstraintProvider.dylib": "Frameworks/libGemmaModelConstraintProvider.dylib",
-        "../cognee-litert-lm/native/libLiteRt.dylib": "Frameworks/libLiteRt.dylib",
-        "../cognee-litert-lm/native/libLiteRtMetalAccelerator.dylib": "Frameworks/libLiteRtMetalAccelerator.dylib",
-        "../cognee-litert-lm/native/libLiteRtTopKMetalSampler.dylib": "Frameworks/libLiteRtTopKMetalSampler.dylib"
+        "Frameworks/liblitert-lm.dylib": "../cognee-litert-lm/native/liblitert-lm.dylib",
+        "Frameworks/libGemmaModelConstraintProvider.dylib": "../cognee-litert-lm/native/libGemmaModelConstraintProvider.dylib",
+        "Frameworks/libLiteRt.dylib": "../cognee-litert-lm/native/libLiteRt.dylib",
+        "Frameworks/libLiteRtMetalAccelerator.dylib": "../cognee-litert-lm/native/libLiteRtMetalAccelerator.dylib",
+        "Frameworks/libLiteRtTopKMetalSampler.dylib": "../cognee-litert-lm/native/libLiteRtTopKMetalSampler.dylib"
       }
     },
     "linux": {
-      "files": {
-        "../cognee-litert-lm/native/liblitert-lm.so": "lib/liblitert-lm.so",
-        "../cognee-litert-lm/native/libGemmaModelConstraintProvider.so": "lib/libGemmaModelConstraintProvider.so",
-        "../cognee-litert-lm/native/libLiteRt.so": "lib/libLiteRt.so"
-      }
-    },
-    "windows": {
-      "files": {
-        "../cognee-litert-lm/native/litert-lm.dll": "litert-lm.dll",
-        "../cognee-litert-lm/native/libGemmaModelConstraintProvider.dll": "libGemmaModelConstraintProvider.dll",
-        "../cognee-litert-lm/native/libLiteRt.dll": "libLiteRt.dll"
+      "deb": {
+        "files": {
+          "/usr/lib/liblitert-lm.so": "../cognee-litert-lm/native/liblitert-lm.so",
+          "/usr/lib/libGemmaModelConstraintProvider.so": "../cognee-litert-lm/native/libGemmaModelConstraintProvider.so",
+          "/usr/lib/libLiteRt.so": "../cognee-litert-lm/native/libLiteRt.so"
+        }
+      },
+      "appimage": {
+        "files": {
+          "/usr/lib/liblitert-lm.so": "../cognee-litert-lm/native/liblitert-lm.so",
+          "/usr/lib/libGemmaModelConstraintProvider.so": "../cognee-litert-lm/native/libGemmaModelConstraintProvider.so",
+          "/usr/lib/libLiteRt.so": "../cognee-litert-lm/native/libLiteRt.so"
+        }
       }
     }
   }

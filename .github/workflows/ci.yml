@@ -8,7 +8,8 @@ name: ci
 # windows-smoke.yml — it needs a 3h+ cold compile, so it cannot survive the
 # push cadence of cancel-in-progress and runs nightly/dispatched instead).
 #
-# release.yml (app bundles) stays separate; this workflow gates merges.
+# release.yml (app bundles) is gated on this workflow's conclusion via
+# workflow_run — a green run on main is what starts a release.
 # NOTE: every push to main (including the release bot's bump commits) runs
 # here too — the bazel cache makes that cheap after the first run.
 #

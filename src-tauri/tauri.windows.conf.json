@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "../cognee-litert-lm/native/litert-lm.dll": "litert-lm.dll",
+      "../cognee-litert-lm/native/libGemmaModelConstraintProvider.dll": "libGemmaModelConstraintProvider.dll",
+      "../cognee-litert-lm/native/libLiteRt.dll": "libLiteRt.dll"
+    }
+  }
+}

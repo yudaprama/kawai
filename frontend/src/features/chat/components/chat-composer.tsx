@@ -245,9 +245,10 @@ function ChatComposerInner({
       );
       setImportProgress(imageFiles.length > 0 ? { done: 0, total: imageFiles.length } : null);
       try {
-        // Revalidate mentions against the current library so deleted files are not
-        // sent as stale IDs. Imports run concurrently for responsive multi-paste.
-        const currentFiles = await call<KnowledgeFileInfo[]>("knowledge_list").catch(() => []);
+        // Mentions are the only reason to hit the library here — the common
+        // no-mention submit skips the round-trip entirely (was ~1 RPC of
+        // perceived Enter lag before any processing indicator).
+        const currentFiles = mentions.length > 0 ? await call<KnowledgeFileInfo[]>("knowledge_list").catch(() => []) : [];
         const ids = mentions.filter((m) => currentFiles.some((f) => f.id === m.id)).map((m) => m.id);
         let completed = 0;
         const imports = await Promise.allSettled(

@@ -25,8 +25,8 @@
 //!                             so any non-empty value satisfies the check)
 //!
 //! Usage: runs locally on the user's explicit request — it is a heavy build.
-//!   Prerequisite: the tool-catalog sqld is up (see scripts/sqld/run-local.sh
-//!   pattern; HTTP 127.0.0.1:8084).
+//!   Prerequisite: the tool-catalog sqld is up (scripts/sqld/run-local.sh
+//!   toolcatalog start; HTTP 127.0.0.1:8084).
 
 #[path = "catalog_composition.rs"]
 mod composition;

@@ -116,6 +116,7 @@ pub async fn connect(_user_id: &str, toolkit: &str) -> Result<ConnectStart, Stri
             accounts
                 .items
                 .into_iter()
+                .rev()
                 .find(|a| {
                     a.user_id.as_deref() == Some(_user_id)
                         && a.toolkit_slug().eq_ignore_ascii_case(toolkit)

@@ -1,8 +1,15 @@
 name: release
 
 on:
-  push:
+  # Gated on `ci`: this fires only after a ci run on main concludes green
+  # (same workflow_run pattern as windows-smoke). The payload carries the
+  # triggering run's head SHA, which the bump job checks out and inspects.
+  # workflow_dispatch = manual escape hatch (e.g. re-run a failed release).
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,24 +21,48 @@ concurrency:
 jobs:
   bump:
     runs-on: ubuntu-latest
-    # Recursion guard: the bot lands its bump commit with a PAT, which DOES
-    # trigger this workflow again — without this check every release would
-    # cascade into bumping forever.
-    if: ${{ github.event.head_commit == null || !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    # Gate: only after `ci` finished green on a push to main. A cancelled or
+    # failed ci (or a ci that came from pull_request/workflow_dispatch rather
+    # than a push) never reaches the bundlers.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.conclusion == 'success')
     outputs:
       version: ${{ steps.bump.outputs.version }}
-      skipped: ${{ steps.bump.outputs.skipped }}
+      skipped: ${{ steps.bump.outputs.skipped || steps.guard.outputs.skipped }}
       sha: ${{ steps.bump.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           # Full history so the version bump commit from a previous run is
-          # visible; token so we can push the bump back to main.
+          # visible; token so we can push the bump back to main. The ref pins
+          # the commit that was actually smoked (the bump is rebased onto the
+          # tip of main below if main moved in the meantime).
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      # Recursion guard: the bot lands its bump commit with a PAT, which DOES
+      # trigger `ci` again — and a green ci re-enters THIS workflow. Skipping
+      # on the bump commit's own subject breaks the loop. (workflow_run has no
+      # head_commit payload, so the subject is read from the checked-out
+      # commit; the job-level gate above can't do this.)
+      - name: Recursion guard (release-bot bump commit)
+        id: guard
+        run: |
+          set -euo pipefail
+          MSG="$(git log -1 --format=%s)"
+          if [[ "$MSG" == "chore(release):"* ]]; then
+            echo "Release-bot bump commit — nothing to release."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Bump patch version
         id: bump
+        if: steps.guard.outputs.skipped == 'false'
         run: |
           set -euo pipefail
           # Version lives in src-tauri/tauri.conf.json; Cargo.toml picks it up
@@ -430,9 +461,13 @@ jobs:
       # without the litert feature (optional deps still resolve) — the dirs
       # must exist. local-llm path-deps crates tools, so that
       # manifest needs crates present too. Shallow, non-recursive:
-      # only crate manifests, not C sources.
+      # only crate manifests, not C sources. The one exception is crates'
+      # own nested submodule vendor/binance-connector-rust (binance-sdk, a
+      # path dep cargo must resolve) — recurse into that single submodule.
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault, manifest only)
-        run: git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr whatlang-rs
+        run: |
+          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr whatlang-rs
+          git -C crates submodule update --init vendor/binance-connector-rust
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

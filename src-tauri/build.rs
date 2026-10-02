@@ -16,9 +16,12 @@ fn main() {
             "macos" => {
                 println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
             }
-            // Linux: lib/ next to the executable (tauri-litert.json places libs there)
+            // Linux: tauri-litert.json installs the .so files into /usr/lib
+            // (deb and AppImage alike) while the binary lives in usr/bin —
+            // from the binary the libs are one level up ($ORIGIN/lib would
+            // resolve to usr/bin/lib, which does not exist).
             "linux" => {
-                println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/lib");
+                println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib");
             }
             // Windows: no ELF rpath; DLL is co-located via Tauri bundling.
             _ => {}
