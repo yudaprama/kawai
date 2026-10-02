@@ -54,6 +54,11 @@ export function YoutubeSummaryForm({ disabled, onSubmit }: YoutubeSummaryFormPro
           Summarize
         </button>
       </div>
+      {url.trim() && !looksLikeYoutube && (
+        <p className="text-destructive mt-2 font-mono text-[10px]" role="alert">
+          That doesn&apos;t look like a YouTube link — expected youtube.com or youtu.be.
+        </p>
+      )}
       <p className="text-muted-foreground mt-3 font-mono text-[10px] leading-relaxed">
         TL;DR · key points · timestamps · quotes · action items — in the video&apos;s language.
       </p>

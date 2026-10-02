@@ -8,6 +8,8 @@
 import { Icon } from "@/components/shared/icon";
 import { useEffect, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+
 import { renderStepReport } from "@/features/workbench/components/tool-views";
 
 import { AskAboutResult } from "./ask-about-result";
@@ -29,9 +31,11 @@ import { AskAboutResult } from "./ask-about-result";
  *  @param planKey   Optional, passed through to the fetcher.
  *  @param needsFetch  true when the full body must be fetched (always for
  *                     history; for live, when preview ≥ 2000 chars).
- *  @returns `{ output, loading }` — output is the full body or the
- *            caller's preview (when fetch wasn't needed). loading is true
- *            while the fetch is in flight. */
+ *  @returns `{ output, loading, failed, retry }` — output is the full body or
+ *            the caller's preview (when fetch wasn't needed). loading is true
+ *            while the fetch is in flight; failed marks a rejected/empty
+ *            fetch (preview stays visible); retry clears the entry so the
+ *            effect refetches. */
 export function useStepReport({
   cacheKey,
   stepId,
@@ -44,7 +48,7 @@ export function useStepReport({
   fetcher: (stepId: string, planKey?: string) => Promise<string | null>;
   planKey?: string;
   needsFetch: boolean;
-}): { output: string | null; loading: boolean } {
+}): { output: string | null; loading: boolean; failed: boolean; retry: () => void } {
   const [bodies, setBodies] = useState<Record<string, string | "loading" | "failed">>({});
   const inflight = useRef<Set<string>>(new Set());
 
@@ -73,11 +77,21 @@ export function useStepReport({
       });
   }, [body, stepId, needsFetch, fetcher, planKey]);
 
-  // `failed` is terminal: keep the preview visible and stop showing an
-  // infinite spinner when the persisted full-report lookup is unavailable.
+  // `failed` is terminal for auto-fetch (no spinner loop) but recoverable by
+  // hand: `retry()` drops the cached entry so the effect refetches.
   const loading = body === "loading" || (body == null && needsFetch);
   const output = body != null && body !== "loading" && body !== "failed" ? body : null;
-  return { output, loading };
+  const failed = body === "failed";
+  const retry = () => {
+    if (stepId == null) return;
+    setBodies((prev) => {
+      if (!(stepId in prev)) return prev;
+      const next = { ...prev };
+      delete next[stepId];
+      return next;
+    });
+  };
+  return { output, loading, failed, retry };
 }
 
 // ── StepReportBody ──────────────────────────────────────────────────────────
@@ -108,7 +122,7 @@ export function StepReportBody({
    *  report (PLAN-ask-about-step-result.md). */
   onAsk?: (stepId: string, question: string) => Promise<string | null>;
 }) {
-  const { output, loading } = useStepReport({
+  const { output, loading, failed, retry } = useStepReport({
     cacheKey: cacheKey ?? "step-report",
     stepId,
     fetcher,
@@ -118,6 +132,16 @@ export function StepReportBody({
   const body = output ?? previewOutput;
   return (
     <div className="bg-card rounded-lg border p-4">
+      {failed && (
+        <div className="border-destructive/30 mb-2 flex items-center justify-between gap-2 rounded-md border bg-destructive/5 px-3 py-2">
+          <p className="text-destructive text-xs" role="alert">
+            Full report couldn&apos;t load — showing the 2k preview.
+          </p>
+          <Button onClick={retry} size="xs" variant="outline">
+            Retry
+          </Button>
+        </div>
+      )}
       {loading && (
         <p className="text-muted-foreground mb-2 flex items-center gap-2 text-xs">
           <Icon name="loader-circle" className="text-primary size-3.5 animate-spin" />

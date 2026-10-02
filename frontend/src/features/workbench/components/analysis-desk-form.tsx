@@ -77,7 +77,7 @@ export function StockResearchForm({ disabled, domain = "stock", onSubmit }: Stoc
         <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">{copy.title}</span>
         <span className="text-muted-foreground font-mono text-[10px]">fixed research pipeline · no planning round</span>
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <input
           value={ticker}
           onChange={(e) => setTicker(e.target.value.toUpperCase())}
@@ -87,7 +87,7 @@ export function StockResearchForm({ disabled, domain = "stock", onSubmit }: Stoc
           placeholder={copy.tickerPlaceholder}
           disabled={disabled}
           spellCheck={false}
-          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-0 flex-1 flex-wrap rounded-lg border px-3 py-2 font-mono text-sm uppercase outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-[12rem] flex-1 basis-full rounded-lg border px-3 py-2 font-mono text-sm uppercase outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50 sm:basis-auto"
         />
         <input
           value={tradeDate}
@@ -95,10 +95,10 @@ export function StockResearchForm({ disabled, domain = "stock", onSubmit }: Stoc
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
-          placeholder="as of (YYYY-MM-DD, optional)"
+          type="date"
           disabled={disabled}
           spellCheck={false}
-          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 w-56 min-w-[10rem] rounded-lg border px-3 py-2 font-mono text-xs outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 w-full min-w-[10rem] rounded-lg border px-3 py-2 font-mono text-xs outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50 sm:w-56"
         />
         <button
           type="button"

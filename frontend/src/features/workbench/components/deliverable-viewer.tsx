@@ -79,6 +79,7 @@ export function RunSwitcher({
           const goalLabel = r.goal.length > 28 ? `${r.goal.slice(0, 27).trimEnd()}…` : r.goal;
           return (
             <button
+              aria-pressed={sel}
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors ${
                 sel
                   ? "border-primary bg-primary/10 text-foreground"
@@ -329,9 +330,14 @@ function DeliverableBody({
         </Button>
         {shownLanguage != null && (
           <>
-            <span className="text-muted-foreground font-mono text-[11px]">Showing {shownLanguage}</span>
+            {/* Live region: the swap to the translated body is otherwise
+                silent for screen readers (the toolbar is where it's announced
+                — the body swap happens below the fold on long documents). */}
+            <span aria-live="polite" className="text-muted-foreground font-mono text-[11px]">
+              Showing {shownLanguage}
+            </span>
             <button
-              className="text-muted-foreground hover:text-primary font-mono text-[11px] hover:underline"
+              className="hit-44 text-muted-foreground hover:text-primary font-mono text-[11px] hover:underline"
               onClick={() => setTranslated(null)}
               title="Back to the original deliverable"
               type="button"
@@ -348,7 +354,7 @@ function DeliverableBody({
               .map((t) => (
                 <button
                   key={t.language}
-                  className="border-border text-muted-foreground hover:text-primary rounded-full border px-2 py-0.5 text-[11px] hover:border-current disabled:opacity-50"
+                  className="hit-44 border-border text-muted-foreground hover:text-primary rounded-full border px-2 py-0.5 text-[11px] hover:border-current disabled:opacity-50"
                   disabled={translating}
                   onClick={() => void runTranslate(t.language)}
                   title={`Show the saved ${translateLabel(t.language)} translation`}
@@ -359,10 +365,17 @@ function DeliverableBody({
               ))}
           </span>
         )}
-        {error != null && <span className="text-destructive font-mono text-xs">Translate failed: {error}</span>}
+        {error != null && (
+          <span aria-live="polite" className="text-destructive font-mono text-xs" role="alert">
+            Translate failed: {error}
+          </span>
+        )}
       </div>
 
-      <div className="border-primary/30 bg-card rounded-lg border p-6">
+      <div
+        aria-busy={translating}
+        className={`border-primary/30 bg-card rounded-lg border p-6 ${translating ? "opacity-60 transition-opacity" : ""}`}
+      >
         <MarkdownWithCharts>{shown}</MarkdownWithCharts>
       </div>
 
@@ -408,8 +421,24 @@ export function PastRunCanvas({
   const goalLabel = run.goal.length > 48 ? `${run.goal.slice(0, 47).trimEnd()}…` : run.goal;
   const deliverableBody = run.outputFull ?? (run.outputPreview ? `${run.outputPreview}…` : null);
   const stepTool = run.steps?.find((s) => s.stepId === doc)?.tool ?? "";
+  // Scroll memory (per run — the container key is the run id): same doc
+  // round-trip keeps the reading position, an unvisited doc opens at the top.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollTops = useRef<Map<string, number>>(new Map());
+  const prevDocRef = useRef<string | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el == null) return;
+    const prevDoc = prevDocRef.current;
+    if (prevDoc !== doc) {
+      if (prevDoc != null) scrollTops.current.set(prevDoc, el.scrollTop);
+      el.scrollTop = scrollTops.current.get(doc) ?? 0;
+      prevDocRef.current = doc;
+    }
+  }, [doc]);
+  const [errorCopied, setErrorCopied] = useState(false);
   return (
-    <div className="h-full overflow-y-auto" key={`${run.id}:${doc}`}>
+    <div className="h-full overflow-y-auto" key={run.id} ref={scrollRef}>
       <div className="mx-auto max-w-4xl space-y-6 p-6">
         <div>
           <h3 className="text-foreground inline-flex items-center gap-2 text-xl font-semibold">
@@ -471,6 +500,22 @@ export function PastRunCanvas({
             <div className="border-destructive/40 bg-card rounded-lg border p-6">
               <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Run failed</div>
               <p className="text-muted-foreground mt-2 font-mono text-xs leading-relaxed break-words">{run.error}</p>
+              {/* A past run can't resume — the copy gives the error a path
+                  out of the app (bug report) instead of a dead end. */}
+              <Button
+                className="mt-3"
+                onClick={() => {
+                  void navigator.clipboard.writeText(run.error ?? "").then(
+                    () => setErrorCopied(true),
+                    () => {},
+                  );
+                }}
+                size="sm"
+                variant="outline"
+              >
+                <Icon name={errorCopied ? "check" : "copy"} className="size-3" />
+                {errorCopied ? "Copied" : "Copy error"}
+              </Button>
             </div>
           ) : deliverableBody ? (
             <DeliverableBody
@@ -675,6 +720,7 @@ export function DeliverableViewer({
   unseeded,
   workbench,
   onPickDoc,
+  onNewGoal,
   discardArmed,
   setDiscardArmed,
 }: {
@@ -691,6 +737,9 @@ export function DeliverableViewer({
   /** Switch the canvas document (deliverable ↔ step reports) — wired by the
    *  page to its canvas-view navigation; without it the reports grid hides. */
   onPickDoc?: (doc: string) => void;
+  /** Back to the landing composer ("New goal") — offered on the failed-run
+   *  card so recovery lives where the failure is read. */
+  onNewGoal?: () => void;
   discardArmed: boolean;
   setDiscardArmed: (v: boolean) => void;
 }) {
@@ -716,6 +765,23 @@ export function DeliverableViewer({
     [unseeded, supervisor.steps],
   );
   const effective = doc;
+  // Scroll memory (per run — the container key is the run only): switching
+  // docs saves the old doc's scrollTop and restores the new doc's last
+  // position (0 for a doc never visited). Reading a long deliverable
+  // survives a peek at a step report and back.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollTops = useRef<Map<string, number>>(new Map());
+  const prevDocRef = useRef<string | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el == null) return;
+    const prevDoc = prevDocRef.current;
+    if (prevDoc !== effective) {
+      if (prevDoc != null) scrollTops.current.set(prevDoc, el.scrollTop);
+      el.scrollTop = scrollTops.current.get(effective) ?? 0;
+      prevDocRef.current = effective;
+    }
+  }, [effective]);
   // Step source: supervisor state for the run it currently holds; the run
   // RECORD (≤2000-char embeds + its own planKey) otherwise — a reopened
   // session's newest run renders here too, and the supervisor may be empty
@@ -776,7 +842,7 @@ export function DeliverableViewer({
             : "Running";
 
   return (
-    <div className="h-full overflow-y-auto" key={`${runIndex}:${effective}`}>
+    <div className="h-full overflow-y-auto" key={runIndex} ref={scrollRef}>
       <div aria-live="polite" className="sr-only" role="status">
         {phaseAnnouncement}
       </div>
@@ -844,14 +910,29 @@ export function DeliverableViewer({
           </div>
         )}
 
-        {/* Failure visibility: a failed run says WHY on the canvas — the
-            final view otherwise rendered nothing but the step counter. */}
+        {/* Failure visibility: a failed run says WHY on the canvas — and the
+            recovery actions are reachable where the failure is read, not
+            only in the rail (mirrors the rail's failed-state buttons). */}
         {effective === "final" && !unseeded && supervisor.status === "failed" && supervisor.finalOutput == null && (
           <div className="border-destructive/40 bg-card rounded-lg border p-6">
             <div className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">Run failed</div>
             <p className="text-muted-foreground mt-2 font-mono text-xs leading-relaxed break-words">
               {supervisor.error ?? "The run ended before a deliverable was written."}
             </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {supervisor.steps.some((s) => s.state === "completed") && (
+                <Button onClick={workbench.supervisor.resume} size="sm" variant="outline">
+                  <Icon name="play" className="size-3" />
+                  Resume
+                </Button>
+              )}
+              {onNewGoal != null && (
+                <Button onClick={onNewGoal} size="sm" variant="outline">
+                  <Icon name="plus" className="size-3" />
+                  New goal
+                </Button>
+              )}
+            </div>
           </div>
         )}
 

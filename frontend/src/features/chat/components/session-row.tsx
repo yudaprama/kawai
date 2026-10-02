@@ -61,6 +61,11 @@ export function SessionRow({
   }
   const label = session.title || t("sessionSwitcher.untitled", { id: session.id });
   const activityAt = session.updatedAt ?? session.createdAt;
+  // One attribute set per mode — an element can't be both a pressed button
+  // (select mode) and a listbox option (normal mode).
+  const modeProps = selectMode
+    ? ({ "aria-pressed": selected } as const)
+    : ({ role: "option", "aria-selected": highlighted ?? false, id: `session-option-${session.id}` } as const);
   return (
     <div
       className={`group/session flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
@@ -72,13 +77,13 @@ export function SessionRow({
       }`}
     >
       <button
-        aria-pressed={selectMode ? selected : undefined}
         className={`flex min-w-0 flex-1 flex-col gap-0.5 text-left disabled:opacity-50 ${archivedStyle ? "text-muted-foreground" : ""} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
         disabled={busy}
         onMouseEnter={onHighlight}
         onFocus={onHighlight}
         onClick={selectMode ? onToggleSelect : onSelect}
         type="button"
+        {...modeProps}
       >
         <span className="flex w-full min-w-0 items-center gap-2">
           {selectMode ? (

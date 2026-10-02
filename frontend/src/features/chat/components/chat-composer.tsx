@@ -318,6 +318,13 @@ function ChatComposerInner({
       <PromptInputBody>
         <PromptInputAttachmentsDisplay className="px-2 pt-1" />
         <PromptInputTextarea
+          aria-activedescendant={
+            mentionOpen && filtered[activeMentionIndex] != null
+              ? `mention-option-${filtered[activeMentionIndex].id}`
+              : undefined
+          }
+          aria-controls={mentionOpen ? "mention-listbox" : undefined}
+          aria-expanded={mentionOpen}
           data-chat-composer=""
           disabled={disabled || importProgress !== null}
           placeholder={
@@ -362,14 +369,22 @@ function ChatComposerInner({
                   {remaining.length === 0 ? t("workbench.composer.noMoreFiles") : t("workbench.composer.noFilesMatch")}
                 </div>
               ) : (
-                <div className="max-h-56 overflow-y-auto">
+                <div
+                  aria-label={t("workbench.composer.mentionFile")}
+                  className="max-h-56 overflow-y-auto"
+                  id="mention-listbox"
+                  role="listbox"
+                >
                   {filtered.map((f) => (
                     <button
+                      aria-selected={filtered.indexOf(f) === activeMentionIndex}
                       className={`hover:bg-accent flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left ${
                         filtered.indexOf(f) === activeMentionIndex ? "bg-accent" : ""
                       }`}
+                      id={`mention-option-${f.id}`}
                       key={f.id}
                       onClick={() => pickMention(f)}
+                      role="option"
                       type="button"
                     >
                       <FileIcon name={f.originalName} />

@@ -63,7 +63,7 @@ export function ComposerQuoteBadge({ workbench }: { workbench: ReturnType<typeof
       </span>
       <button
         aria-label="Do not include the deliverable"
-        className="hover:text-foreground shrink-0"
+        className="hit-44 hover:text-foreground flex shrink-0 items-center justify-center"
         onClick={() => {
           workbench.setFollowUp(false);
           workbench.setQuoteTarget(null);

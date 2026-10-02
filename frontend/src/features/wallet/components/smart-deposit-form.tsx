@@ -57,17 +57,13 @@ export function SmartDepositForm({ onDeposit, loading, currentNetwork, gasEstima
             <span>{gasEstimate ? `~${gasEstimate.maxGasPriceGwei} gwei (paid in MON)` : "—"}</span>
           </div>
         </div>
-        {needsGas && (
-          <p className="text-xs text-warning">
-            This wallet has no MON — network fees are paid in MON, so the deposit will fail without it.
-          </p>
-        )}
+        {needsGas && <p className="text-xs text-warning">{t("wallet.noGasWarning")}</p>}
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1" disabled={loading} onClick={() => setReview(false)}>
             {t("common.back")}
           </Button>
           <Button className="flex-1" disabled={loading} onClick={() => onDeposit(amount.trim())}>
-            {loading ? "Processing..." : "Confirm & Deposit"}
+            {loading ? t("wallet.processing") : t("wallet.confirmDepositCta")}
           </Button>
         </div>
       </div>
@@ -76,14 +72,12 @@ export function SmartDepositForm({ onDeposit, loading, currentNetwork, gasEstima
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        Deposit {symLong} into your kawai balance on the {name} network.
-      </p>
+      <p className="text-sm text-muted-foreground">{t("wallet.depositIntro", { symbol: symLong, network: name })}</p>
       <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm">
-        <p className="font-semibold">Only deposit {symLong} on Monad Network!</p>
-        <p className="text-muted-foreground mt-1">Bridge from other networks first if needed.</p>
+        <p className="font-semibold">{t("wallet.depositWarningTitle", { symbol: symLong })}</p>
+        <p className="text-muted-foreground mt-1">{t("wallet.depositWarningBody")}</p>
         <p className="text-xs text-muted-foreground mt-2">
-          Network: <strong>{name}</strong> (Chain ID: {id})
+          {t("wallet.network")}: <strong>{name}</strong> (Chain ID: {id})
         </p>
         <Button
           variant="link"
@@ -91,11 +85,11 @@ export function SmartDepositForm({ onDeposit, loading, currentNetwork, gasEstima
           className="h-auto p-0 mt-1"
           onClick={() => window.open("https://getkawai.com/docs/user-guide/deposit-from-exchange", "_blank")}
         >
-          Learn how to bridge <Icon name="external-link" className="ml-1 size-3" />
+          {t("wallet.bridgeGuide")} <Icon name="external-link" className="ml-1 size-3" />
         </Button>
       </div>
       <div className="space-y-2">
-        <Label>Amount ({sym})</Label>
+        <Label>{t("wallet.amountWithSymbol", { symbol: sym })}</Label>
         <Input
           inputMode="decimal"
           value={amount}

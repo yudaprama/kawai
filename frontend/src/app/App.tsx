@@ -219,7 +219,7 @@ export default function App() {
       <div className="bg-background text-foreground flex h-dvh w-full items-center justify-center p-6">
         <div className="bg-card border-border w-full max-w-sm space-y-3 rounded-lg border p-6 text-center">
           <p className="text-destructive font-mono text-xs font-bold tracking-wider uppercase">
-            Couldn&apos;t start the workbench
+            {t("errors.startWorkbench")}
           </p>
           <p className="text-muted-foreground font-mono text-xs leading-snug break-words" role="alert">
             {agentsError}

@@ -752,6 +752,7 @@ export function WorkbenchPage({
                     onPickDoc={(doc) => {
                       if (activeRunId != null) userPick(activeRunId, doc);
                     }}
+                    onNewGoal={goHome}
                     discardArmed={discardArmed}
                     setDiscardArmed={setDiscardArmed}
                   />

@@ -69,6 +69,12 @@ function detectLocale(): Locale {
 
 let currentLocale: Locale = detectLocale();
 
+// Mirror setLocale's document lang at first load — an id-locale user must
+// not start with <html lang="en"> from index.html.
+if (typeof document !== "undefined") {
+  document.documentElement.lang = currentLocale;
+}
+
 export function getLocale(): Locale {
   return currentLocale;
 }

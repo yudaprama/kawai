@@ -26,6 +26,9 @@ type Props = {
     t: "send" | "receive" | "swap" | "deposit" | "addAccount" | "createWallet" | "addToken" | null,
   ) => void;
   transactions: { id: string; txType: string; amount: string; symbol?: string; txHash: string; createdAt: string }[];
+  /** Failed history read — renders a retry row instead of the empty state. */
+  historyError: string | null;
+  onRetryHistory: () => void;
   currentNetwork: NetworkInfo | null;
   gasEstimate: GasEstimate | null;
   currentBlock: number;
@@ -44,6 +47,8 @@ export function HomeContent({
   setBalanceVisible,
   setModalType,
   transactions,
+  historyError,
+  onRetryHistory,
   currentNetwork,
   gasEstimate,
   currentBlock,
@@ -102,7 +107,7 @@ export function HomeContent({
                   {trackedBalance && (
                     <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-1.5">
                       <Badge variant="secondary" className="bg-success text-success-foreground">
-                        AI Balance
+                        {t("wallet.aiBalance")}
                       </Badge>
                       <span className="text-foreground">
                         {balanceVisible ? trackedBalance.usdt_balance : "•••"} {currentNetwork.stablecoinSymbol}
@@ -113,11 +118,11 @@ export function HomeContent({
                     </div>
                   )}
                   <div className="flex items-center gap-2">
-                    <Icon name="gift" className="size-3.5" /> KAWAI Rewards:{" "}
+                    <Icon name="gift" className="size-3.5" /> {t("wallet.kawaiRewards")}{" "}
                     <span className="text-foreground font-medium">{balanceVisible ? kawaiBalance : "•••"} KAWAI</span>
                     {trackedBalance?.has_referrer && (
                       <Badge variant="secondary" className="bg-purple-600/10 text-purple-600 border-purple-600/30">
-                        +5% Referral
+                        {t("wallet.referralBadge")}
                       </Badge>
                     )}
                   </div>
@@ -145,9 +150,9 @@ export function HomeContent({
       <div className="flex flex-wrap justify-center gap-3">
         {[
           { label: t("wallet.depositToVault"), icon: "plus", action: () => setModalType("deposit") },
-          { label: "Send", icon: "send", action: () => setModalType("send") },
-          { label: "Receive", icon: "arrow-down-to-line", action: () => setModalType("receive") },
-          { label: "Swap", icon: "repeat-2", action: () => toast.info("Coming soon") },
+          { label: t("wallet.send"), icon: "send", action: () => setModalType("send") },
+          { label: t("wallet.receive"), icon: "arrow-down-to-line", action: () => setModalType("receive") },
+          { label: t("wallet.swap"), icon: "repeat-2", action: () => toast.info(t("wallet.comingSoon")) },
         ].map((a) => (
           <button
             type="button"
@@ -169,7 +174,7 @@ export function HomeContent({
             <Icon name="coins" className="size-4" /> Tokens
           </CardTitle>
           <Button variant="ghost" size="sm" onClick={() => setModalType("addToken")}>
-            <Icon name="plus" className="size-4" /> Add Token
+            <Icon name="plus" className="size-4" /> {t("wallet.addToken")}
           </Button>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -232,12 +237,21 @@ export function HomeContent({
           </CardTitle>
           {transactions.length > 5 && (
             <Button variant="link" size="sm" onClick={() => setShowAll(true)}>
-              View All ({transactions.length})
+              {t("wallet.viewAll", { count: transactions.length })}
             </Button>
           )}
         </CardHeader>
         <CardContent>
-          {transactions.length ? (
+          {historyError != null ? (
+            <div className="flex items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+              <p className="text-destructive min-w-0 text-xs" role="alert">
+                {t("wallet.txHistoryError", { error: historyError })}
+              </p>
+              <Button onClick={onRetryHistory} size="sm" variant="outline">
+                {t("common.retry")}
+              </Button>
+            </div>
+          ) : transactions.length ? (
             <div className="space-y-2">
               {transactions.slice(0, 5).map((tx) => (
                 <div key={tx.id} className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
@@ -254,7 +268,7 @@ export function HomeContent({
               <p className="text-sm text-muted-foreground">{t("wallet.noTransactions")}</p>
               {currentNetwork?.isTestnet && (
                 <Button size="sm" onClick={() => window.open(getFaucetUrl(currentNetwork?.id), "_blank")}>
-                  Get Test Tokens (Faucet)
+                  {t("wallet.faucetCta")}
                 </Button>
               )}
             </div>

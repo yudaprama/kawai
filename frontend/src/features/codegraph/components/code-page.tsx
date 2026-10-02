@@ -167,8 +167,12 @@ export function CodeAssetPage({
                 <span>Result (verbatim source + call paths + blast radius)</span>
                 {exploreLoading && <span className="animate-pulse">exploring…</span>}
               </div>
-              {exploreError && !result && (
-                <div className="rounded bg-destructive/10 px-3 py-2 text-xs text-destructive">{exploreError}</div>
+              {/* A failed explore after a successful one must still surface —
+                  the stale result below stays, but the failure is visible. */}
+              {exploreError && (
+                <div className="mb-2 rounded bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert">
+                  {exploreError}
+                </div>
               )}
               {result ? (
                 <pre className="max-h-[55dvh] overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs leading-relaxed">

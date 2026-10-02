@@ -107,7 +107,7 @@ export function RecentRuns({
       <div className="mx-auto w-full max-w-4xl p-6 text-left">
         <div className="flex items-center gap-3">
           <p className="text-muted-foreground font-mono text-xs" role="alert">
-            Couldn&apos;t load recent runs.
+            {t("workbench.landing.recentRunsError")}
           </p>
           <button
             type="button"
@@ -115,7 +115,7 @@ export function RecentRuns({
             className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md font-mono text-[10px] tracking-wider uppercase transition-colors hover:underline"
           >
             <Icon name="refresh-cw" className="size-3" />
-            Retry
+            {t("common.retry")}
           </button>
         </div>
       </div>
@@ -124,7 +124,9 @@ export function RecentRuns({
   return (
     <div className="mx-auto w-full max-w-4xl space-y-2 p-6 text-left">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-muted-foreground font-mono text-xs tracking-wider uppercase">Recent runs</h3>
+        <h3 className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
+          {t("workbench.landing.recentRuns")}
+        </h3>
       </div>
       {runs.map((run) => (
         <button
@@ -148,6 +150,8 @@ export function RecentRuns({
             </span>
             {run.status === "completed" ? (
               <Icon name="check-circle-2" className="text-success size-4" />
+            ) : run.status === "running" ? (
+              <Icon name="loader-circle" className="text-primary size-4 animate-spin" />
             ) : (
               <Icon name="circle-x" className="text-destructive size-4" />
             )}

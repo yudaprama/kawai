@@ -6,6 +6,7 @@ import { ProfileControls } from "@/features/agents/profile-controls";
 import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 import { AssetChromeContext } from "./asset-chrome";
+import { AssetNavList } from "./asset-nav-list";
 
 /**
  * Shell for the center-pane asset workspace pages: back-to-workbench affordance +
@@ -54,8 +55,21 @@ export function AssetShell({
           <h2 className="truncate text-sm font-semibold">{title}</h2>
           {subtitle && <p className="text-muted-foreground truncate text-xs leading-tight">{subtitle}</p>}
         </div>
+        {/* Persistent asset switcher (lg+): jumping between assets without a
+            round trip through the profile dropdown. Below lg the nav drawer
+            carries the same entries. */}
+        {chrome && !isMobile && (
+          <div className="ml-auto hidden min-w-0 lg:block">
+            <AssetNavList
+              assetView={chrome.assetView}
+              codegraphAvailable={chrome.codegraphAvailable}
+              walletAvailable={chrome.walletAvailable}
+              onSelectAsset={chrome.onSelectAsset}
+            />
+          </div>
+        )}
         {chrome && (
-          <div className="ml-auto">
+          <div className={cn(!isMobile && "shrink-0")}>
             <ProfileControls
               assetView={chrome.assetView}
               codegraphAvailable={chrome.codegraphAvailable}

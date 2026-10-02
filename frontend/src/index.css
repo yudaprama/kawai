@@ -279,10 +279,14 @@
   /* Explicit keyboard-focus ring for raw controls (features/**, shared/**).
    Component primitives bring their own focus-visible rings and utilities
    like outline-none still win (utilities layer > base), so this only
-   guarantees a visible ring where nothing else defines one. */
+   guarantees a visible ring where nothing else defines one. The
+   background-colored box-shadow fills the outline-offset gap — a dual-tone
+   ring that stays visible when --ring matches the surface (white ring on a
+   white card in dark mode, black ring on a primary-filled button). */
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+    box-shadow: 0 0 0 2px var(--background);
   }
 
   body {

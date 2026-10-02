@@ -48,8 +48,10 @@ view.
   Memory, Databases, Wallet, Top Up — every asset view replaces the center
   pane; Esc or Back returns to the Workbench. They open from the profile
   dropdown (Workbench top bars: landing, mobile run strip, run switcher row)
-  and from an asset workspace's own header — the same account cluster, so
-  moving between assets never needs a round trip. Below `lg` a hamburger
+  and from an asset workspace's own header, which carries the same account
+  cluster plus a persistent `AssetNavList` strip (lg+, feature-gated, active
+  entry marked with `aria-current`) — so moving between assets never needs a
+  round trip and never requires the dropdown. Below `lg` a hamburger
   opens a full-screen overlay drawer listing them vertically (dark backdrop,
   Esc/tap-out to close).
 - **ProgressRail (left, 72px wide, lg+).** Visible during a run. Shows the
@@ -79,9 +81,11 @@ view.
   strip — a Deliverable chip plus one per completed/failed step) switches
   the canvas between this run's documents and stays reachable while reading
   a long deliverable; the rail's "see report" links stay as a second path.
-  Switching documents scrolls the canvas back to the top. Sticking to the
-  bottom: the Export row when a run is completed — Copy (markdown to the
-  clipboard), PDF, DOCX — on the live canvas and on past-run deliverables
+  Switching to a document never visited opens it at the top; returning to a
+  document restores its last reading position (per-run scroll memory).
+  Sticking to the bottom: the Export row when a run is completed — Copy
+  (markdown to the clipboard), PDF, DOCX — on the live canvas and on
+  past-run deliverables
   alike; success renders the saved filename as a button that opens the file
   in the preview dialog, failure shows an inline error message.
 - **Sidebar (left, 384px wide, lg+).** Upper region (scrolls): ProgressRail

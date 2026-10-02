@@ -46,18 +46,25 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
   const [balanceVisible, setBalanceVisible] = useState(true);
   // Device-side tx history — monad_wallet_history (local JSON log, newest first).
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const loadHistory = useCallback(async () => {
-    const records = await tauriBlockchainAdapter.getTransactionHistory();
-    setTransactions(
-      records.map((r) => ({
-        id: r.txHash,
-        txType: r.kind === "deposit" ? "Deposit" : "Send",
-        amount: r.amount,
-        symbol: r.symbol,
-        txHash: r.txHash,
-        createdAt: new Date(r.createdAtMs).toISOString(),
-      })),
-    );
+    setHistoryError(null);
+    try {
+      const records = await tauriBlockchainAdapter.getTransactionHistory();
+      setTransactions(
+        records.map((r) => ({
+          id: r.txHash,
+          txType: r.kind === "deposit" ? "Deposit" : "Send",
+          amount: r.amount,
+          symbol: r.symbol,
+          txHash: r.txHash,
+          createdAt: new Date(r.createdAtMs).toISOString(),
+        })),
+      );
+    } catch (e: unknown) {
+      // A failed read must not read as an empty wallet.
+      setHistoryError(e instanceof Error ? e.message : String(e));
+    }
   }, []);
   useEffect(() => {
     void loadHistory();
@@ -65,15 +72,15 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
 
   const [sending, setSending] = useState(false);
 
-  // Map raw chain/RPC errors to plain-language messages.
+  // Map raw chain/RPC errors to plain-language messages; unknown errors pass
+  // through raw (chain text is already user-meaningful).
   const describeTxError = (raw: string): string => {
     const m = raw.toLowerCase();
-    if (m.includes("insufficient funds")) return "Not enough native MON to pay network fees.";
-    if (m.includes("insufficient")) return "Insufficient token balance for this amount.";
-    if (m.includes("reject") || m.includes("denied")) return "The transaction was rejected.";
-    if (m.includes("revert")) return "The contract rejected the transaction (reverted).";
-    if (m.includes("timeout") || m.includes("deadline"))
-      return "The network took too long to respond. Check the history list before retrying.";
+    if (m.includes("insufficient funds")) return t("wallet.errNoFeeFunds");
+    if (m.includes("insufficient")) return t("wallet.errInsufficient");
+    if (m.includes("reject") || m.includes("denied")) return t("wallet.errRejected");
+    if (m.includes("revert")) return t("wallet.errReverted");
+    if (m.includes("timeout") || m.includes("deadline")) return t("wallet.errTimeout");
     return raw;
   };
 
@@ -86,8 +93,8 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
         try {
           const res = await tauriBlockchainAdapter.getTransactionReceipt(txHash);
           if (res) {
-            if (res.success) toast.success("Deposit confirmed on-chain");
-            else toast.error("Deposit transaction failed on-chain");
+            if (res.success) toast.success(t("wallet.depositConfirmed"));
+            else toast.error(t("wallet.depositFailed"));
             void reloadBalances();
             void loadHistory();
             return;
@@ -96,10 +103,10 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
           // transient RPC error — keep polling
         }
       }
-      toast.info("Deposit is still pending — check the history list for its status.");
+      toast.info(t("wallet.depositPending"));
       void loadHistory();
     },
-    [reloadBalances, loadHistory],
+    [reloadBalances, loadHistory, t],
   );
 
   const handleDeposit = async (amount: string) => {
@@ -107,7 +114,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
     try {
       // Rust does approve + deposit(uint256); returns the deposit tx hash
       const tx = await tauriBlockchainAdapter.depositToVault(amount);
-      toast.success(`Deposit sent — ${tx.txHash.slice(0, 10)}...`);
+      toast.success(t("wallet.depositSent", { hash: tx.txHash.slice(0, 10) }));
       setModal(null);
       void pollDepositReceipt(tx.txHash);
     } catch (e: unknown) {
@@ -136,7 +143,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
       } else {
         throw new Error("Unsupported asset");
       }
-      toast.success(`Sent — tx ${tx.txHash.slice(0, 10)}...`);
+      toast.success(t("wallet.sentToast", { hash: tx.txHash.slice(0, 10) }));
       void reloadBalances();
       void loadHistory();
       setModal(null);
@@ -156,13 +163,9 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
             <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10">
               <Icon name="wallet" className="size-6" />
             </div>
-            <h3 className="mt-3 font-semibold">
-              {available ? t("wallet.noWallet") : "Wallet unavailable in this build"}
-            </h3>
+            <h3 className="mt-3 font-semibold">{available ? t("wallet.noWallet") : t("wallet.unavailableTitle")}</h3>
             <p className="text-sm text-muted-foreground">
-              {available
-                ? "Create a hot wallet to manage your Monad assets."
-                : "This build was compiled without the Monad feature. Rebuild with `--features monad`."}
+              {available ? t("wallet.createHotWalletDesc") : t("wallet.unavailableDesc")}
             </p>
           </div>
           {available && (
@@ -178,7 +181,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
                 }
               }}
             >
-              {loading ? "Checking..." : creating ? "Creating..." : t("wallet.createWallet")}
+              {loading ? t("wallet.checking") : creating ? t("wallet.creating") : t("wallet.createWallet")}
             </Button>
           )}
         </div>
@@ -215,6 +218,8 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
               setBalanceVisible={setBalanceVisible}
               setModalType={setModal}
               transactions={transactions}
+              historyError={historyError}
+              onRetryHistory={() => void loadHistory()}
               currentNetwork={currentNetwork}
               gasEstimate={gasEstimate}
               currentBlock={currentBlock}
@@ -225,7 +230,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
           <TabsContent value="rewards" className="mt-4">
             <Card>
               <CardContent className="pt-6 text-center text-sm text-muted-foreground">
-                Rewards coming soon — not enabled yet
+                {t("wallet.rewardsComingSoon")}
               </CardContent>
             </Card>
           </TabsContent>
@@ -307,7 +312,10 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
               <CopyButton text={address} />
             </div>
             <p className="text-xs text-muted-foreground">
-              Send only {currentNetwork?.stablecoinSymbol} on {currentNetwork?.name}
+              {t("wallet.receiveOnlyOn", {
+                symbol: currentNetwork?.stablecoinSymbol ?? "",
+                network: currentNetwork?.name ?? "",
+              })}
             </p>
           </div>
         </DialogContent>
@@ -338,12 +346,12 @@ function AddTokenInline({ currentNetwork, onClose }: { currentNetwork: NetworkIn
   const [addr, setAddr] = useState("");
   const [loading, setLoading] = useState(false);
   const onAdd = async () => {
-    if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) return toast.error("Invalid address");
+    if (!/^0x[a-fA-F0-9]{40}$/.test(addr)) return toast.error(t("wallet.invalidAddress"));
     setLoading(true);
     try {
       const info = await tauriBlockchainAdapter.getTokenInfo(addr, currentNetwork?.id ?? DEFAULT_CHAIN_ID);
-      if (!info) throw new Error("Token not found");
-      toast.success(`Found ${info.symbol} (${info.decimals} decimals)`);
+      if (!info) throw new Error(t("wallet.tokenNotFound"));
+      toast.success(t("wallet.tokenFound", { symbol: info.symbol, decimals: info.decimals }));
       onClose();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));

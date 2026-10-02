@@ -12,9 +12,6 @@ const ADDR_OK = /^0x[a-fA-F0-9]{40}$/;
 // decimal string validation — the amount stays a string all the way to
 // Rust, where parse_units does the integer math
 const AMOUNT_OK = /^\d*(\.\d+)?$/;
-const TO_ERR = "Enter a valid recipient address: 0x followed by 40 hex characters.";
-const AMOUNT_ERR = "Enter an amount greater than zero.";
-const TOKEN_ERR = "Enter a valid token contract address.";
 
 type Props = {
   // wallet-page's handleSend is async (Promise<void>); await it so this form
@@ -26,6 +23,9 @@ type Props = {
 
 export function SendForm({ onSend, loading, currentNetwork }: Props) {
   const { t } = useI18n();
+  const toErrText = t("wallet.errRecipientAddress");
+  const amountErrText = t("wallet.errAmount");
+  const tokenErrText = t("wallet.errTokenAddress");
   const [asset, setAsset] = useState("usdt");
   const [customAddr, setCustomAddr] = useState("");
   const [to, setTo] = useState("");
@@ -51,18 +51,18 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
   const customOk = asset !== "custom" || ADDR_OK.test(customAddr);
   /** Honest-disabled Review button: the reason stays visible inline. */
   const reviewDisabled = !toOk || !amountOk || !customOk;
-  const reviewReason = !toOk ? TO_ERR : !amountOk ? AMOUNT_ERR : !customOk ? TOKEN_ERR : null;
+  const reviewReason = !toOk ? toErrText : !amountOk ? amountErrText : !customOk ? tokenErrText : null;
 
   const onReview = () => {
     if (!toOk) {
-      setToErr(TO_ERR);
-      return toast.error("Invalid recipient address");
+      setToErr(toErrText);
+      return toast.error(t("wallet.invalidRecipient"));
     }
     if (!amountOk) {
-      setAmountErr(AMOUNT_ERR);
-      return toast.error("Invalid amount");
+      setAmountErr(amountErrText);
+      return toast.error(t("wallet.invalidAmount"));
     }
-    if (!customOk) return toast.error("Invalid token address");
+    if (!customOk) return toast.error(t("wallet.invalidTokenAddress"));
     setConfirm({ to, amount: amount.trim(), asset, customAddr: asset === "custom" ? customAddr : undefined });
   };
 
@@ -98,7 +98,7 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
         </div>
         <div className="rounded-xl border bg-muted/50 p-4 text-sm space-y-2">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">To</span>
+            <span className="text-muted-foreground">{t("wallet.to")}</span>
             <span className="font-mono text-xs">
               {confirm.to.slice(0, 10)}...{confirm.to.slice(-8)}
             </span>
@@ -124,7 +124,7 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
             {t("common.cancel")}
           </Button>
           <Button className="flex-1" disabled={loading || sendingLocal} onClick={() => void onConfirm()}>
-            {loading || sendingLocal ? "Sending..." : "Confirm & Send"}
+            {loading || sendingLocal ? t("wallet.sending") : t("wallet.confirmSend")}
           </Button>
         </div>
       </div>
@@ -140,7 +140,9 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="native">Native ({currentNetwork?.nativeTokenSymbol || "ETH"})</SelectItem>
+            <SelectItem value="native">
+              {t("wallet.nativeAsset", { symbol: currentNetwork?.nativeTokenSymbol || "ETH" })}
+            </SelectItem>
             <SelectItem value="usdt">{currentNetwork?.stablecoinSymbol === "USDC" ? "USDC" : "USDT"}</SelectItem>
             <SelectItem value="kawai">KAWAI</SelectItem>
             <SelectItem value="custom">{t("wallet.customToken")}</SelectItem>
@@ -162,12 +164,12 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
             setTo(e.target.value);
             if (toErr) setToErr(null);
           }}
-          onBlur={() => setToErr(to.length > 0 && !ADDR_OK.test(to) ? TO_ERR : null)}
+          onBlur={() => setToErr(to.length > 0 && !ADDR_OK.test(to) ? toErrText : null)}
         />
         {toErr && <p className="text-destructive text-xs">{toErr}</p>}
       </div>
       <div className="space-y-2">
-        <Label>Amount</Label>
+        <Label>{t("wallet.amountLabel")}</Label>
         <Input
           type="number"
           min={0}
@@ -180,14 +182,16 @@ export function SendForm({ onSend, loading, currentNetwork }: Props) {
           }}
           onBlur={() =>
             setAmountErr(
-              amount.trim().length > 0 && !(AMOUNT_OK.test(amount.trim()) && !!parseFloat(amount)) ? AMOUNT_ERR : null,
+              amount.trim().length > 0 && !(AMOUNT_OK.test(amount.trim()) && !!parseFloat(amount))
+                ? amountErrText
+                : null,
             )
           }
         />
         {amountErr && <p className="text-destructive text-xs">{amountErr}</p>}
       </div>
       <Button className="w-full" disabled={reviewDisabled} onClick={onReview}>
-        Review Transaction
+        {t("wallet.reviewTransaction")}
       </Button>
       {reviewDisabled && <p className="text-destructive text-xs">{reviewReason}</p>}
     </div>

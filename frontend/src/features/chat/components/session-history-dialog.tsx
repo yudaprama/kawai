@@ -294,54 +294,61 @@ export function SessionHistoryDialog({
               ))}
             </div>
           )}
-          {displayGroups.map((group) => (
-            <div key={group.label}>
-              <p className="text-muted-foreground px-2 pb-1 font-mono text-[11px] tracking-wider uppercase">
-                {/* Buckets are keyed by their English period name (the local
-                    filter compares against it) — translate only at render. */}
-                {group.label === "Today"
-                  ? t("sessionSwitcher.groups.today")
-                  : group.label === "Yesterday"
-                    ? t("sessionSwitcher.groups.yesterday")
-                    : group.label === "Earlier"
-                      ? t("sessionSwitcher.groups.earlier")
-                      : group.label}
-              </p>
-              <div className="flex flex-col gap-0.5">
-                {group.sessions.map((session) => {
-                  const idx = ++counter;
-                  return (
-                    <div className="group flex items-center gap-2" data-session-index={idx} key={session.id}>
-                      <SessionRow
-                        highlighted={idx === clampedIndex}
-                        session={session}
-                        active={activeSessionId === session.id}
-                        busy={busy}
-                        renaming={renamingId === session.id}
-                        renameValue={renameValue}
-                        onChangeRename={setRenameValue}
-                        onSelect={() => {
-                          onSelectSession(session.id);
-                          onOpenChange(false);
-                        }}
-                        onHighlight={() => setActiveIndex(idx)}
-                        onStartRename={() => startRename(session)}
-                        onCommitRename={commitRename}
-                        onCancelRename={() => setRenamingId(null)}
-                        onArchive={() => onArchiveSessions([session.id], true)}
-                        onDelete={() => onDeleteSessions([session.id])}
-                        onExport={() => void doExport(session)}
-                        exporting={exportingId === session.id}
-                        selectMode={selectMode}
-                        selected={selected.has(session.id)}
-                        onToggleSelect={() => toggleSelect(session.id)}
-                      />
-                    </div>
-                  );
-                })}
+          {displayGroups.map((group) => {
+            const groupLabel =
+              group.label === "Today"
+                ? t("sessionSwitcher.groups.today")
+                : group.label === "Yesterday"
+                  ? t("sessionSwitcher.groups.yesterday")
+                  : group.label === "Earlier"
+                    ? t("sessionSwitcher.groups.earlier")
+                    : group.label;
+            return (
+              <div key={group.label}>
+                <p className="text-muted-foreground px-2 pb-1 font-mono text-[11px] tracking-wider uppercase">
+                  {/* Buckets are keyed by their English period name (the local
+                      filter compares against it) — translate only at render. */}
+                  {groupLabel}
+                </p>
+                {/* Listbox semantics: each row's main button is a real-focus
+                    option, so aria-selected (not aria-activedescendant)
+                    carries the keyboard cursor to screen readers. */}
+                <div aria-label={groupLabel} className="flex flex-col gap-0.5" role="listbox">
+                  {group.sessions.map((session) => {
+                    const idx = ++counter;
+                    return (
+                      <div className="group flex items-center gap-2" data-session-index={idx} key={session.id}>
+                        <SessionRow
+                          highlighted={idx === clampedIndex}
+                          session={session}
+                          active={activeSessionId === session.id}
+                          busy={busy}
+                          renaming={renamingId === session.id}
+                          renameValue={renameValue}
+                          onChangeRename={setRenameValue}
+                          onSelect={() => {
+                            onSelectSession(session.id);
+                            onOpenChange(false);
+                          }}
+                          onHighlight={() => setActiveIndex(idx)}
+                          onStartRename={() => startRename(session)}
+                          onCommitRename={commitRename}
+                          onCancelRename={() => setRenamingId(null)}
+                          onArchive={() => onArchiveSessions([session.id], true)}
+                          onDelete={() => onDeleteSessions([session.id])}
+                          onExport={() => void doExport(session)}
+                          exporting={exportingId === session.id}
+                          selectMode={selectMode}
+                          selected={selected.has(session.id)}
+                          onToggleSelect={() => toggleSelect(session.id)}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {q && displayGroups.length === 0 && displayArchived.length === 0 && (
             <p className="text-muted-foreground px-2 py-4 text-center text-xs">
@@ -368,10 +375,15 @@ export function SessionHistoryDialog({
                 }}
                 type="button"
               >
-                {archiveOpen ? "▼" : "▶"} {t("sessionSwitcher.archive", { count: displayArchived.length })}
+                {t("sessionSwitcher.archive", { count: displayArchived.length })}
+                <Icon aria-hidden name={archiveOpen ? "chevron-down" : "chevron-right"} className="size-3" />
               </button>
               {archiveOpen && (
-                <div className="flex flex-col gap-0.5">
+                <div
+                  aria-label={t("sessionSwitcher.archive", { count: displayArchived.length })}
+                  className="flex flex-col gap-0.5"
+                  role="listbox"
+                >
                   {displayArchived.map((session) => {
                     const idx = ++counter;
                     return (

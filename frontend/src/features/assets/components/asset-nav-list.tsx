@@ -48,6 +48,7 @@ export function AssetNavList({
               active ? "bg-primary text-primary-foreground" : "hover:bg-[var(--tea-color-bg-secondary-default)]",
             )}
             key={asset.id}
+            aria-current={active ? "page" : undefined}
             onClick={() => onSelectAsset(asset.id)}
             title={`${t(asset.labelKey)} · ${asset.subtitle}`}
             type="button"

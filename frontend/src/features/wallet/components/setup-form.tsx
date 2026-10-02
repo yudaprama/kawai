@@ -38,13 +38,10 @@ export function SetupForm({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("wallet.createWallet")}</DialogTitle>
-          <DialogDescription>
-            A hot wallet will be generated and stored securely in this device's keychain. It cannot be recovered on
-            another device.
-          </DialogDescription>
+          <DialogDescription>{t("wallet.setupDescription")}</DialogDescription>
         </DialogHeader>
         <Button className="w-full" onClick={handle} disabled={loading}>
-          {loading ? "Creating..." : t("wallet.createWallet")}
+          {loading ? t("wallet.creating") : t("wallet.createWallet")}
         </Button>
       </DialogContent>
     </Dialog>

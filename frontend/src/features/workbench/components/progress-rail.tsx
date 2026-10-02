@@ -195,7 +195,7 @@ export function StepTree({
                       )}
                       {reportable(step, live) && (
                         <button
-                          className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                          className="hit-44 text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
                           onClick={() => onOpenReport(step.stepId)}
                           type="button"
                         >
@@ -250,7 +250,7 @@ export function StepTree({
             )}
             {reportable(deliverableStep, live) && (
               <button
-                className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                className="hit-44 text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
                 onClick={() => onOpenReport("final")}
                 type="button"
               >

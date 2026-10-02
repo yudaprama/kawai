@@ -11,14 +11,29 @@ import { emitOpenPreview } from "@/lib/preview-bridge";
  */
 const IMAGE_TOKEN = /!\[([^\]\n]*)\]\(kawai-file:\/\/([^)\s]+)\)/g;
 
-/** One resolved chart: store bytes inline, click opens the file preview. */
+/** One resolved chart: store bytes inline, click opens the file preview.
+ *  Missing/unresolvable charts render an explicit placeholder — never a
+ *  silent hole in the deliverable. */
 function ChartFigure({ fileId, alt }: { fileId: string; alt: string }) {
   const name = alt ? `${alt}.svg` : `chart-${fileId}.svg`;
   const { data, isLoading, error } = useFilePreview({ id: fileId, name });
   const [errored, setErrored] = useState(false);
-  // Loading and unresolvable states stay silent — a missing chart must not
-  // render as a broken block inside the deliverable.
-  if (isLoading || error || errored || !data?.dataUrl) return null;
+  if (isLoading) {
+    return (
+      <div
+        aria-busy="true"
+        className="bg-muted/50 h-48 w-full animate-pulse rounded-md border border-dashed"
+        role="status"
+      />
+    );
+  }
+  if (error || errored || !data?.dataUrl) {
+    return (
+      <div className="text-muted-foreground flex h-24 w-full items-center justify-center rounded-md border border-dashed text-xs">
+        {alt ? `${alt} — chart unavailable` : "Chart unavailable"}
+      </div>
+    );
+  }
   return (
     <button
       className="bg-card block w-full cursor-zoom-in rounded-md border p-2"

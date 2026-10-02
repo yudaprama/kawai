@@ -108,11 +108,11 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
             size="sm"
           >
             <Icon name="plus" className="size-3.5" />
-            New skill
+            {t("skills.newSkill")}
           </Button>
         }
-        subtitle={`${skills.length} ${skills.length === 1 ? "skill" : "skills"} in the library`}
-        title="Skills"
+        subtitle={t("skills.libraryCount", { count: skills.length })}
+        title={t("skills.title")}
       />
       <FilterBar
         filteredCount={filtered.length}
@@ -157,14 +157,14 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
               error != null ? (
                 <span className="flex flex-col items-center gap-2">
                   <span className="text-muted-foreground" role="alert">
-                    Couldn&apos;t load skills — {error}
+                    {t("skills.loadError", { error })}
                   </span>
                   <Button onClick={() => void store.refresh()} size="xs" variant="outline">
-                    Retry
+                    {t("common.retry")}
                   </Button>
                 </span>
               ) : (
-                "No skills yet — create one with “New skill”."
+                t("skills.emptyState")
               )
             }
             getItemId={(s) => s.id}
@@ -185,7 +185,7 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
               </>
             )}
             selectedId={active?.id ?? null}
-            title="Skills"
+            title={t("skills.title")}
           />
         }
         storageKey="kawai:skills:splitWidth"
@@ -232,6 +232,7 @@ function SkillDetail({
   /** Re-fetches this skill's body. */
   onRetry: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-start gap-2.5 border-b px-4 py-3">
@@ -239,30 +240,30 @@ function SkillDetail({
           <h3 className="truncate text-sm font-semibold">{summary.name}</h3>
           <AssetItemId>{summary.id}</AssetItemId>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-            <AssetBadge title="Updated on every save">v{detail?.version ?? summary.version}</AssetBadge>
+            <AssetBadge title={t("skills.updatedOnSave")}>v{detail?.version ?? summary.version}</AssetBadge>
             <span className="text-muted-foreground">
-              updated {fmtTimestamp(new Date((detail?.updatedAt ?? summary.updatedAt) * 1000))}
+              {t("skills.updatedAt", { time: fmtTimestamp(new Date((detail?.updatedAt ?? summary.updatedAt) * 1000)) })}
             </span>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <Button disabled={detail == null} onClick={onEdit} size="xs" variant="outline">
             <Icon name="pencil" className="size-3" />
-            Edit
+            {t("skills.edit")}
           </Button>
           <Button
             className={confirmDelete ? "" : "text-destructive hover:text-destructive"}
             onClick={onDelete}
             size="xs"
-            title={confirmDelete ? "Click again to confirm — deletes the skill" : "Delete skill"}
+            title={confirmDelete ? t("skills.deleteConfirmTitle") : t("skills.deleteTitle")}
             variant="outline"
           >
             {confirmDelete ? (
-              "Confirm"
+              t("common.confirm")
             ) : (
               <>
                 <Icon name="trash" className="size-3" />
-                Delete
+                {t("common.delete")}
               </>
             )}
           </Button>
@@ -271,7 +272,7 @@ function SkillDetail({
       <div className="streamdown min-h-0 flex-1 overflow-auto p-4">
         {loading ? (
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            <Spinner className="size-4" /> Loading…
+            <Spinner className="size-4" /> {t("common.loading")}
           </div>
         ) : detail ? (
           <MessageResponse mode="static">{detail.content}</MessageResponse>
@@ -280,15 +281,15 @@ function SkillDetail({
             <div className="bg-muted flex size-12 items-center justify-center rounded-lg">
               <Icon name="wrench" className="size-5" />
             </div>
-            <p className="text-foreground text-sm font-medium">Couldn&apos;t load this skill</p>
+            <p className="text-foreground text-sm font-medium">{t("skills.loadFailed")}</p>
             <Button onClick={onRetry} size="xs" variant="outline">
-              Retry
+              {t("common.retry")}
             </Button>
           </div>
         ) : (
           /* Selection just changed and the fetch effect hasn't run yet. */
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            <Spinner className="size-4" /> Loading…
+            <Spinner className="size-4" /> {t("common.loading")}
           </div>
         )}
       </div>
@@ -307,6 +308,7 @@ function SkillEditorDialog({
   onClose: () => void;
   onSave: (name: string, description: string, content: string) => void;
 }) {
+  const { t } = useI18n();
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [content, setContent] = useState(initial?.content ?? "");
@@ -316,38 +318,41 @@ function SkillEditorDialog({
     <Dialog onOpenChange={(open) => !open && onClose()} open>
       <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{initial ? `Edit “${initial.name}”` : "New skill"}</DialogTitle>
-          <DialogDescription>
-            A skill is a reusable markdown instruction set (SKILL.md). Save bumps the version.
-          </DialogDescription>
+          <DialogTitle>{initial ? t("skills.editTitle", { name: initial.name }) : t("skills.newSkill")}</DialogTitle>
+          <DialogDescription>{t("skills.editorDescription")}</DialogDescription>
         </DialogHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
           <div className="grid gap-1.5">
             <label className="text-sm font-medium" htmlFor="skill-name">
-              Name
+              {t("skills.nameLabel")}
             </label>
-            <Input id="skill-name" onChange={(e) => setName(e.target.value)} placeholder="pdf-flow" value={name} />
+            <Input
+              id="skill-name"
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("skills.skillNamePlaceholder")}
+              value={name}
+            />
           </div>
           <div className="grid gap-1.5">
             <label className="text-sm font-medium" htmlFor="skill-desc">
-              Description
+              {t("skills.descriptionLabel")}
             </label>
             <Input
               id="skill-desc"
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What this skill does (shown in lists)"
+              placeholder={t("skills.skillDescriptionPlaceholder")}
               value={description}
             />
           </div>
           <div className="grid min-h-0 flex-1 gap-1.5">
             <label className="text-sm font-medium" htmlFor="skill-content">
-              SKILL.md body
+              {t("skills.bodyLabel")}
             </label>
             <Textarea
               className="min-h-[220px] font-mono text-xs"
               id="skill-content"
               onChange={(e) => setContent(e.target.value)}
-              placeholder={"# Instructions\n\nWrite the agent guidance here (markdown)."}
+              placeholder={t("skills.bodyPlaceholder")}
               value={content}
             />
           </div>
@@ -355,11 +360,11 @@ function SkillEditorDialog({
         <DialogFooter>
           <DialogClose asChild>
             <Button disabled={busy} variant="outline">
-              Cancel
+              {t("common.cancel")}
             </Button>
           </DialogClose>
           <Button disabled={busy || !valid} onClick={() => onSave(name, description, content)}>
-            {busy ? <Spinner className="size-3" /> : initial ? "Save" : "Create"}
+            {busy ? <Spinner className="size-3" /> : initial ? t("common.save") : t("skills.create")}
           </Button>
         </DialogFooter>
       </DialogContent>
