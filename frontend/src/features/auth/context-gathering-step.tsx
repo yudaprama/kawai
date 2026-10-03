@@ -224,9 +224,8 @@ function RunLog({ events, running }: { events: OnboardingEvent[]; running: boole
           )}
           {e.type === "sourceCompleted" && <>✓ {e.source}</>}
           {e.type === "compressStarted" && <>{t("onboarding.runLog.distilling")}</>}
-          {e.type === "profileReady" && (
-            <>{t("onboarding.runLog.profileReady", { profile: e.profile, people: e.people, goals: e.goals })}</>
-          )}
+          {e.type === "profileReady" &&
+            t("onboarding.runLog.profileReady", { profile: e.profile, people: e.people, goals: e.goals })}
           {e.type === "onboardingFinished" && <>{t("onboarding.runLog.finished", { count: e.totalItems })}</>}
           {e.type === "onboardingError" && <span className="text-destructive">✗ {e.message}</span>}
         </li>

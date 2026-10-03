@@ -826,6 +826,13 @@ via the always-available `session_step_results` tool. If the goal depends on det
         task.push_str(&prior);
     }
     let mut materials = String::new();
+    // Composio actions prefetched at plan time (toolkits the goal names) —
+    // feeds both the `<composio-actions>` materials block and the post-parse
+    // slug validation. `None` = no prefetch; the runtime 404 guidance stays
+    // the safety net.
+    let mut composio_index: Option<
+        std::collections::HashMap<String, Vec<composio::ToolInfo>>,
+    > = None;
     let mut seen: std::collections::HashSet<String> = core_tools.iter().cloned().collect();
     let mut usage = remote_llm::RemoteUsage::default();
     let mut searches_used = 0usize;
@@ -940,6 +947,36 @@ via the always-available `session_step_results` tool. If the goal depends on det
             if v.get("steps").is_some() && v.get("goal").is_some() {
                 match parse_supervisor_plan_scoped(&raw, registry, PLANNER_FORBIDDEN_TOOLS) {
                     Ok(plan) => {
+                        // Plan-time slug gate: a composio_execute step whose
+                        // action slug is not in the prefetched toolkit list is
+                        // rejected NOW (cheap corrective round, no wasted
+                        // execution) instead of 404ing at runtime.
+                        let mut gate_rejection: Option<String> =
+                            composio_slug_rejection(&plan, composio_index.as_ref());
+                        // …and a composio_list_tools step for an already-
+                        // prefetched toolkit is a wasted round-trip: the
+                        // complete list is in the planner's context.
+                        if gate_rejection.is_none() {
+                            gate_rejection = composio_discovery_rejection(
+                                &plan,
+                                composio_index.as_ref(),
+                            );
+                        }
+                        if let Some(rejection) = gate_rejection {
+                            eprintln!(
+                                "[plan_task] plan rejected (composio gate): {rejection}"
+                            );
+                            if repairs_used < 2 {
+                                repairs_used += 1;
+                                materials.push_str(&format!(
+                                    "\n<plan-rejected>\n{rejection}\nRespond ONLY with the \
+                                     corrected plan JSON, copying the slug EXACTLY from the \
+                                     <composio-actions> block above.</plan-rejected>\n"
+                                ));
+                                continue;
+                            }
+                            return Err(format!("plan validation failed: {rejection}"));
+                        }
                         // Usage is debited server-side: the local recap
                         // cron reads token counters from Grafana telemetry
                         // (`user.id` attribution) and posts deltas to the
@@ -1027,8 +1064,33 @@ via the always-available `session_step_results` tool. If the goal depends on det
                         run_tool_search(catalog.as_deref(), &embedder, &registry, &queries, &mut seen).await;
                     on_progress(SupervisorEvent::PlanningToolSearch {
                         queries: queries.clone(),
-                        tools: found,
+                        tools: found.clone(),
                     });
+                    // The goal touches Composio: prefetch real action slugs
+                    // for the toolkits it names so the planner never has to
+                    // guess one (invented slugs cost a 404 + repair round).
+                    if found
+                        .iter()
+                        .any(|t| t == "composio_execute" || t == "composio_list_tools")
+                    {
+                        match composio_prefetch(goal).await {
+                            Some((prefetch_block, index)) => {
+                                eprintln!(
+                                    "[plan_task] composio prefetch: {} toolkit(s) [{}] injected",
+                                    index.len(),
+                                    {
+                                        let mut names: Vec<String> =
+                                            index.keys().cloned().collect();
+                                        names.sort();
+                                        names.join(", ")
+                                    }
+                                );
+                                materials.push_str(&prefetch_block);
+                                composio_index = Some(index);
+                            }
+                            None => {}
+                        }
+                    }
                     materials.push_str(&block);
                     continue;
                 }
@@ -1627,6 +1689,88 @@ FULL tool catalog (schemas included — copy required properties exactly):
         catalog,
         confirmation_rules = CONFIRMATION_PROMPT_RULES,
     )
+}
+
+/// Plan-time Composio action prefetch — real slugs in front of the planner
+/// (`composio::plan_index`). Best-effort on every failure: no API key, no
+/// toolkit explicitly named in the goal, or a failed fetch simply yields
+/// `None` and the runtime discovery path stays the safety net.
+async fn composio_prefetch(
+    goal: &str,
+) -> Option<(
+    String,
+    std::collections::HashMap<String, Vec<composio::ToolInfo>>,
+)> {
+    let key = kawai_constants::composio::get_composio_api_key();
+    if key.trim().is_empty() {
+        return None;
+    }
+    let toolkits = composio::plan_index::toolkits_in_text(goal);
+    if toolkits.is_empty() {
+        return None;
+    }
+    let client = composio::ComposioClient::new(key);
+    let index = composio::plan_index::fetch_toolkits(&client, &toolkits).await;
+    if index.is_empty() {
+        return None;
+    }
+    Some((
+        composio::plan_index::render_materials_block(&index),
+        index,
+    ))
+}
+
+/// Reject a plan whose `composio_execute` steps name a slug outside the
+/// prefetched toolkit lists. Only prefetched toolkits constrain — an absent
+/// toolkit means no prefetch happened, and the runtime 404 guidance applies.
+fn composio_slug_rejection(
+    plan: &kawai_router::TaskPlan,
+    index: Option<&std::collections::HashMap<String, Vec<composio::ToolInfo>>>,
+) -> Option<String> {
+    let index = index?;
+    for step in &plan.steps {
+        let Some(tool) = step.tool.as_deref() else {
+            continue;
+        };
+        if tool != "composio_execute" {
+            continue;
+        }
+        let Some(slug) = step.arguments.get("tool").and_then(|t| t.as_str()) else {
+            continue;
+        };
+        let toolkit = slug.split('_').next().unwrap_or("").to_ascii_lowercase();
+        if toolkit.is_empty() {
+            continue;
+        }
+        if let Err(msg) = composio::plan_index::validate_slug(&toolkit, slug, index) {
+            return Some(format!("step \"{}\": {msg}", step.id));
+        }
+    }
+    None
+}
+
+/// Reject a `composio_list_tools` step whose toolkit is already covered by
+/// the prefetched index — the `<composio-actions>` block in the planner's
+/// context already lists those actions, so a discovery step is a wasted
+/// round-trip (observed live: the planner still planned one because the
+/// composio_execute description says "discover first"). Uncovered toolkits
+/// are legitimate discovery and pass.
+fn composio_discovery_rejection(
+    plan: &kawai_router::TaskPlan,
+    index: Option<&std::collections::HashMap<String, Vec<composio::ToolInfo>>>,
+) -> Option<String> {
+    let index = index?;
+    for step in &plan.steps {
+        let Some(tool) = step.tool.as_deref() else {
+            continue;
+        };
+        let toolkit_arg = step.arguments.get("toolkit").and_then(|t| t.as_str());
+        if let Err(msg) = composio::plan_index::validate_no_discovery_step(tool, toolkit_arg, index)
+        {
+            return Some(format!("step \"{}\": {msg}", step.id));
+        }
+    }
+    None
 }
 
 /// Execute one search round: embed the queries, hit the Turso catalog AND
@@ -2988,11 +3132,102 @@ async fn revise_plan(
     unreachable!("revise loop exhausted without returning")
 }
 
+/// Long strings are clipped before fitting — headers/subjects/snippets
+/// survive, fat HTML bodies don't.
+const SYNTHESIS_STRING_CAP: usize = 240;
+/// JSON bodies get a larger share: compaction keeps whole array elements,
+/// so more room = more complete items (a 5-email Gmail result fits whole).
+const COMPACT_STEP_CHARS: usize = 12_000;
+/// Cap for non-JSON bodies (plain head-truncation).
+const SYNTHESIS_PER_STEP_CHARS: usize = 4_000;
+
+fn clip_strings(v: &mut serde_json::Value, cap: usize) {
+    match v {
+        serde_json::Value::String(s) => {
+            if s.chars().count() > cap {
+                let clipped: String = s.chars().take(cap).collect();
+                *s = format!("{clipped}…");
+            }
+        }
+        serde_json::Value::Array(items) => items.iter_mut().for_each(|i| clip_strings(i, cap)),
+        serde_json::Value::Object(map) => map.values_mut().for_each(|v| clip_strings(v, cap)),
+        _ => {}
+    }
+}
+
+/// Render within `budget` chars. Arrays keep WHOLE elements in order and
+/// replace the rest with an "… N more items omitted" marker (valid JSON);
+/// head-truncating the serialized body used to cut mid-element, so the
+/// writer saw only the first email of a 5-email result (1-of-5 bug).
+fn render_bounded(v: &serde_json::Value, budget: usize, cap: usize) -> String {
+    let full = serde_json::to_string(v).unwrap_or_default();
+    if full.chars().count() <= budget {
+        return full;
+    }
+    match v {
+        serde_json::Value::Array(items) => {
+            let reserve = 64; // room for the omission marker
+            let mut taken: Vec<String> = Vec::new();
+            let mut used = 2usize;
+            for item in items {
+                let s = serde_json::to_string(item).unwrap_or_default();
+                let cost = s.chars().count() + usize::from(!taken.is_empty());
+                if used + cost > budget.saturating_sub(reserve) {
+                    break;
+                }
+                used += cost;
+                taken.push(s);
+            }
+            if taken.is_empty() {
+                return truncate_chars(&full, budget);
+            }
+            let omitted = items.len() - taken.len();
+            if omitted > 0 {
+                taken.push(format!("\"… {omitted} more items omitted\""));
+            }
+            format!("[{}]", taken.join(","))
+        }
+        serde_json::Value::Object(map) => {
+            let reserve = 64;
+            let mut parts: Vec<String> = Vec::new();
+            let mut used = 2usize;
+            for (k, val) in map {
+                let remaining = budget.saturating_sub(used + reserve);
+                if remaining < 32 {
+                    break;
+                }
+                let rendered = render_bounded(val, remaining, cap);
+                let cost = rendered.chars().count()
+                    + k.chars().count()
+                    + 4
+                    + usize::from(!parts.is_empty());
+                if used + cost > budget.saturating_sub(reserve) {
+                    break;
+                }
+                used += cost;
+                parts.push(format!("{k}:{rendered}"));
+            }
+            if parts.is_empty() {
+                return truncate_chars(&full, budget);
+            }
+            format!("{{{}}}", parts.join(","))
+        }
+        _ => truncate_chars(&full, budget),
+    }
+}
+
+/// `Some(compacted)` for JSON bodies, `None` otherwise (caller falls back
+/// to plain head-truncation).
+fn compact_step_output(body: &str, budget: usize, cap: usize) -> Option<String> {
+    let mut v: serde_json::Value = serde_json::from_str(body.trim()).ok()?;
+    clip_strings(&mut v, cap);
+    Some(render_bounded(&v, budget, cap))
+}
+
 /// Per-step result digest for the synthesis call: tool + status + a bounded
 /// output preview per step, overall-capped so the materials stay within the
 /// providers' budgets.
 fn synthesis_materials(plan: &kawai_router::TaskPlan, result: &kawai_router::ExecutionResult) -> String {
-    const PER_STEP_CHARS: usize = 4_000;
     const TOTAL_CHARS: usize = 24_000;
     // Structured outputs (kind-marked JSON: "ta", "chart", "data") ride
     // FIRST: they are small and carry the exact numbers the answer needs —
@@ -3011,13 +3246,13 @@ fn synthesis_materials(plan: &kawai_router::TaskPlan, result: &kawai_router::Exe
             .ok()
             .map(|v| v.get("kind").is_some())
             .unwrap_or(false);
+        let preview = compact_step_output(body, COMPACT_STEP_CHARS, SYNTHESIS_STRING_CAP)
+            .unwrap_or_else(|| preview_chars(body, SYNTHESIS_PER_STEP_CHARS).to_string());
         blocks.push((
             structured,
             format!(
                 "<step id=\"{}\" tool=\"{}\" status=\"{status}\">\n{}\n</step>\n",
-                step.id,
-                tool,
-                preview_chars(body, PER_STEP_CHARS),
+                step.id, tool, preview,
             ),
         ));
     }
@@ -4364,6 +4599,57 @@ mod tests {
 
     use super::*;
     use kawai_router::{StepStatus, TaskStep};
+
+    /// Regression for the 1-of-5 deliverable bug: a fat JSON array
+    /// (5 Gmail-sized messages) must compact to whole elements with an
+    /// omission marker — never a mid-element cut that leaves the writer
+    /// seeing only message #1.
+    #[test]
+    fn compact_step_output_keeps_whole_array_elements() {
+        let fat_item = |i: usize| {
+            serde_json::json!({
+                "messageId": format!("id{i}"),
+                "payload": { "headers": [
+                    {"name": "From", "value": "LinkedIn <notifications@linkedin.com>"},
+                    {"name": "Subject", "value": format!("Subject {i}")},
+                ]},
+                "messageText": "x".repeat(2_000),
+            })
+        };
+        let body = serde_json::json!({
+            "messages": (0..5).map(fat_item).collect::<Vec<_>>(),
+            "resultSizeEstimate": 201,
+        })
+        .to_string();
+
+        let out = compact_step_output(&body, 3_000, 240).expect("json body compacts");
+        // All five items survive with their identifying fields…
+        for i in 0..5 {
+            assert!(out.contains(&format!("\"Subject {i}\"")), "item {i} lost");
+        }
+        // …no omission marker needed at this budget…
+        assert!(!out.contains("more items omitted"));
+        // …and within budget.
+        assert!(out.chars().count() <= 3_000);
+
+        // A tighter budget drops whole items with an explicit marker, never
+        // a partial element.
+        let tight = compact_step_output(&body, 1_200, 240).expect("json body compacts");
+        assert!(tight.contains("more items omitted"));
+        assert!(tight.starts_with('{'));
+        // every listed item is complete (balanced quotes on the id field)
+        assert!(tight.contains("\"id0\""));
+    }
+
+    #[test]
+    fn compact_step_output_clips_long_strings_and_falls_back_on_non_json() {
+        let body = serde_json::json!({ "messageText": "y".repeat(5_000) }).to_string();
+        let out = compact_step_output(&body, 1_000, 240).expect("json body compacts");
+        assert!(out.contains('…'));
+        assert!(out.chars().count() <= 1_000);
+
+        assert!(compact_step_output("plain text, not json", 100, 240).is_none());
+    }
 
     #[test]
     fn audit_dataflow_counts_legacy_refs_and_collisions() {

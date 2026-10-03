@@ -248,7 +248,8 @@ function ChatComposerInner({
         // Mentions are the only reason to hit the library here — the common
         // no-mention submit skips the round-trip entirely (was ~1 RPC of
         // perceived Enter lag before any processing indicator).
-        const currentFiles = mentions.length > 0 ? await call<KnowledgeFileInfo[]>("knowledge_list").catch(() => []) : [];
+        const currentFiles =
+          mentions.length > 0 ? await call<KnowledgeFileInfo[]>("knowledge_list").catch(() => []) : [];
         const ids = mentions.filter((m) => currentFiles.some((f) => f.id === m.id)).map((m) => m.id);
         let completed = 0;
         const imports = await Promise.allSettled(
