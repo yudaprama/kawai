@@ -947,6 +947,40 @@ via the always-available `session_step_results` tool. If the goal depends on det
             if v.get("steps").is_some() && v.get("goal").is_some() {
                 match parse_supervisor_plan_scoped(&raw, registry, PLANNER_FORBIDDEN_TOOLS) {
                     Ok(plan) => {
+                        // Lazy prefetch: the planner can write composio steps
+                        // WITHOUT a search round — tool names leak in via the
+                        // <experiences> block (observed live: a run planned
+                        // composio_list_tools + composio_execute with zero
+                        // searches, so the prefetch hook in the search branch
+                        // never fired and the gates had no index). If the plan
+                        // touches composio and we hold no index, fetch one NOW
+                        // so the gates below still apply.
+                        if composio_index.is_none()
+                            && plan.steps.iter().any(|s| {
+                                matches!(
+                                    s.tool.as_deref(),
+                                    Some("composio_execute") | Some("composio_list_tools")
+                                )
+                            })
+                        {
+                            match composio_prefetch(goal).await {
+                                Some((prefetch_block, index)) => {
+                                    eprintln!(
+                                        "[plan_task] composio prefetch (lazy): {} toolkit(s) [{}] injected",
+                                        index.len(),
+                                        {
+                                            let mut names: Vec<String> =
+                                                index.keys().cloned().collect();
+                                            names.sort();
+                                            names.join(", ")
+                                        }
+                                    );
+                                    materials.push_str(&prefetch_block);
+                                    composio_index = Some(index);
+                                }
+                                None => {}
+                            }
+                        }
                         // Plan-time slug gate: a composio_execute step whose
                         // action slug is not in the prefetched toolkit list is
                         // rejected NOW (cheap corrective round, no wasted
