@@ -163,6 +163,8 @@ export interface GenParams {
   ecosystem: string;
   /** Recipe engine; omit for the default sdcpp engine. */
   engine?: "wan" | "seedream" | "grok";
+  /** Generation workflow; omit = `txt2img` (backend default). */
+  workflow?: string;
   prompt: string;
   negativePrompt?: string;
   width: number;
@@ -216,4 +218,47 @@ export function estimateBuzz(params: { width: number; height: number; steps?: nu
   const steps = params.steps !== undefined && params.steps > 0 ? params.steps : 30;
   const quantity = params.quantity ?? 1;
   return 8 * ((params.width * params.height) / (1024 * 1024)) * (steps / 25) * quantity;
+}
+
+/**
+ * Workflow registry — frontend mirror of `civitai::registry` (image-only).
+ * `txt2img` runs everywhere; `img2img` needs a source image, which only the
+ * sdcpp `createImage` shape takes. Single source of truth for the panel's
+ * workflow ↔ ecosystem coherence (civitai's `selectorCoherence`).
+ */
+export interface WorkflowConfig {
+  id: string;
+  label: string;
+  ecosystems: string[];
+}
+
+const SDCPP_IDS = ECOSYSTEMS.filter((e) => !e.engine).map((e) => e.id);
+
+export const WORKFLOWS: WorkflowConfig[] = [
+  { id: "txt2img", label: "Teks → Gambar", ecosystems: ECOSYSTEMS.map((e) => e.id) },
+  { id: "img2img", label: "Gambar → Gambar", ecosystems: SDCPP_IDS },
+];
+
+export const DEFAULT_WORKFLOW = "txt2img";
+
+export function ecosystemsForWorkflow(workflowId: string): string[] {
+  return WORKFLOWS.find((w) => w.id === workflowId)?.ecosystems ?? [];
+}
+
+export function defaultEcosystemForWorkflow(workflowId: string): string {
+  return ecosystemsForWorkflow(workflowId)[0] ?? ECOSYSTEMS[0].id;
+}
+
+export function isWorkflowAvailable(workflowId: string, ecosystemId: string): boolean {
+  return ecosystemsForWorkflow(workflowId).includes(ecosystemId);
+}
+
+/** Ecosystem unchanged when it serves the workflow, else the default. */
+export function resolveCompatibleEcosystem(workflowId: string, ecosystemId: string): string {
+  return isWorkflowAvailable(workflowId, ecosystemId) ? ecosystemId : defaultEcosystemForWorkflow(workflowId);
+}
+
+/** Workflow an ecosystem lands on when the current one can't serve it. */
+export function targetWorkflowForEcosystem(ecosystemId: string): string {
+  return WORKFLOWS.find((w) => w.ecosystems.includes(ecosystemId))?.id ?? DEFAULT_WORKFLOW;
 }

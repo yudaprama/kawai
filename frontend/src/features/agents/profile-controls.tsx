@@ -26,7 +26,7 @@ function ThemeItems() {
   return (
     <>
       {options.map((opt) => (
-        <DropdownMenuItem key={opt.value} onClick={() => setTheme(opt.value)} className="gap-2">
+        <DropdownMenuItem key={opt.value} onClick={() => setTheme(opt.value)} className="gap-2 cursor-pointer">
           <Icon name={opt.icon} className="text-muted-foreground size-4" />
           <span className="flex-1">{opt.label}</span>
           {theme === opt.value && <Icon name="check" className="size-4" />}
@@ -51,7 +51,7 @@ function LanguageItems() {
         {t("common.language")}
       </DropdownMenuLabel>
       {options.map((opt) => (
-        <DropdownMenuItem key={opt.value} onClick={() => setLocale(opt.value)} className="gap-2">
+        <DropdownMenuItem key={opt.value} onClick={() => setLocale(opt.value)} className="gap-2 cursor-pointer">
           <Icon name="globe" className="text-muted-foreground size-4" />
           <span className="flex-1">{opt.label}</span>
           {locale === opt.value && <Icon name="check" className="size-4" />}
@@ -97,7 +97,7 @@ export function ProfileControls({
         <DropdownMenuTrigger asChild>
           <Button
             aria-label={t("profileDropdown.assetsAndAccount")}
-            className="ml-0.5 shrink-0"
+            className="ml-0.5 shrink-0 cursor-pointer"
             size="icon"
             title={`Signed in as ${userId ?? "demo"}`}
             variant="ghost"
@@ -119,7 +119,7 @@ export function ProfileControls({
           {assets.map((asset) => (
             <DropdownMenuItem
               key={asset.id}
-              className="gap-2"
+              className="gap-2 cursor-pointer"
               onClick={() => onSelectAsset(asset.id)}
               title={`${t(asset.labelKey)} · ${asset.subtitle}`}
             >
@@ -136,7 +136,7 @@ export function ProfileControls({
           <DropdownMenuSeparator />
           <LanguageItems />
           <DropdownMenuSeparator />
-          <DropdownMenuItem className="gap-2" onClick={onLogout}>
+          <DropdownMenuItem className="gap-2 cursor-pointer" onClick={onLogout}>
             <Icon name="log-out" className="text-muted-foreground size-4" />
             {t("profileDropdown.signOut")}
           </DropdownMenuItem>

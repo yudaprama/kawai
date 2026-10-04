@@ -19,8 +19,13 @@ import {
   type SavedImage,
   type SearchModelPage,
   type SearchModelRow,
+  DEFAULT_WORKFLOW,
   ECOSYSTEMS,
+  WORKFLOWS,
   estimateBuzz,
+  isWorkflowAvailable,
+  resolveCompatibleEcosystem,
+  targetWorkflowForEcosystem,
 } from "./ecosystems";
 
 /**
@@ -599,6 +604,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
 
   const [ecoId, setEcoId] = useState(ECOSYSTEMS[0].id);
   const eco = ECOSYSTEMS.find((e) => e.id === ecoId) ?? ECOSYSTEMS[0];
+  const [workflowId, setWorkflowId] = useState(DEFAULT_WORKFLOW);
   const [sizeIdx, setSizeIdx] = useState(0);
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
@@ -655,6 +661,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     return {
       ecosystem: eco.id,
       engine: eco.engine,
+      workflow: workflowId,
       prompt: prompt.trim(),
       width: size.width,
       height: size.height,
@@ -666,7 +673,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       loras: cleanedLoras.length > 0 ? cleanedLoras : undefined,
       diffuserModel: selectedModel?.airUrn,
     };
-  }, [eco, size, prompt, negativePrompt, quantity, cfgScale, steps, seed, loras, selectedModel]);
+  }, [eco, workflowId, size, prompt, negativePrompt, quantity, cfgScale, steps, seed, loras, selectedModel]);
 
   // Elapsed ticker while a run is in flight.
   useEffect(() => {
@@ -678,8 +685,13 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   }, [running]);
 
   // Ecosystem switch invalidates the custom checkpoint (AIR URNs are
-  // ecosystem-scoped).
+  // ecosystem-scoped). Coherence (civitai's selectorCoherence): a write that
+  // would leave workflow/ecosystem incompatible retargets the other selector
+  // in the same gesture — the ecosystem gesture wins.
   function switchEcosystem(id: string) {
+    if (!isWorkflowAvailable(workflowId, id)) {
+      setWorkflowId(targetWorkflowForEcosystem(id));
+    }
     setEcoId(id);
     setSizeIdx(0);
     setSelectedModel(null);
@@ -687,6 +699,15 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     if (next) {
       setCfgScale(String(next.defaultCfgScale));
       setSteps(String(next.defaultSteps));
+    }
+  }
+
+  function switchWorkflow(id: string) {
+    setWorkflowId(id);
+    const compatible = resolveCompatibleEcosystem(id, ecoId);
+    if (compatible !== ecoId) {
+      switchEcosystem(compatible);
+      return;
     }
   }
 
@@ -739,6 +760,27 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
+      {/* Workflow — txt2img runs everywhere, img2img sdcpp-only (registry).
+          Switching retargets the ecosystem when incompatible (coherence). */}
+      <div className="flex gap-1.5">
+        {WORKFLOWS.map((w) => (
+          <button
+            aria-pressed={workflowId === w.id}
+            className="flex-1 rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors"
+            key={w.id}
+            onClick={() => switchWorkflow(w.id)}
+            style={{
+              backgroundColor: workflowId === w.id ? C.hover : C.input,
+              borderColor: workflowId === w.id ? C.blue : C.border,
+              color: workflowId === w.id ? C.heading : C.muted,
+            }}
+            type="button"
+          >
+            {w.label}
+          </button>
+        ))}
+      </div>
+
       {/* Ecosystem chips — the quick family switch */}
       <div className="flex flex-col gap-1.5">
         <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
@@ -755,6 +797,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
                 backgroundColor: ecoId === e.id ? C.hover : C.input,
                 borderColor: ecoId === e.id ? C.blue : C.border,
                 color: ecoId === e.id ? C.heading : C.muted,
+                opacity: isWorkflowAvailable(workflowId, e.id) ? 1 : 0.45,
               }}
               type="button"
             >

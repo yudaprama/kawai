@@ -112,7 +112,9 @@ pub async fn civitai_model_covers() -> Result<Vec<ModelCover>, String> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchModelsArgs {
-    /// Target generation ecosystem — the constructed AIR URN carries it.
+    /// Target generation ecosystem — the constructed AIR URN carries it,
+    /// and rows whose v1 `baseModel` maps to a DIFFERENT known family are
+    /// dropped (both sides unclassified = kept, the orchestrator decides).
     pub ecosystem: String,
     #[serde(default)]
     pub query: Option<String>,
@@ -196,6 +198,7 @@ pub async fn civitai_search_models(args: SearchModelsArgs) -> Result<SearchModel
     )
     .await?;
     let next_cursor = page.next_cursor();
+    let eco_family = civitai::registry::ecosystem_family(&args.ecosystem);
     let rows = page
         .items
         .into_iter()
@@ -243,6 +246,18 @@ pub async fn civitai_search_models(args: SearchModelsArgs) -> Result<SearchModel
                 description,
                 example_urls,
             })
+        })
+        // Model follows ecosystem: drop rows whose base model maps to a
+        // different KNOWN family (either side unclassified = kept — the
+        // orchestrator, not a prefix table, has the last word).
+        .filter(|row| match (
+            eco_family,
+            row.base_model
+                .as_deref()
+                .and_then(civitai::registry::base_model_family),
+        ) {
+            (Some(a), Some(b)) => a == b,
+            _ => true,
         })
         .collect();
     Ok(SearchModelPage {
