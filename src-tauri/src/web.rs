@@ -1900,6 +1900,61 @@ async fn topup_history_handler(
         .map_err(err500)
 }
 
+/// Redeem a single-use voucher code for tokens (Top Up page card).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TopupVoucherRedeemRequest {
+    code: String,
+}
+
+async fn topup_voucher_redeem_handler(
+    headers: HeaderMap,
+    Json(req): Json<TopupVoucherRedeemRequest>,
+) -> Result<Json<logic::topup::VoucherRedeem>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::topup::topup_voucher_redeem(&token, &req.code)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+// ── Civitai image generation (Generator panel) ─────────────────────────────
+// Auth-required thin proxies sharing `logic::civitai` with the Tauri
+// commands. The API key is vault-baked; generate binds the middleware's
+// user id (Buzz spend + office store writes).
+
+async fn civitai_api_key_status_handler(
+) -> Json<logic::civitai::ApiKeyStatus> {
+    Json(logic::civitai::civitai_api_key_status())
+}
+
+async fn civitai_model_covers_handler(
+) -> Result<Json<Vec<logic::civitai::ModelCover>>, (StatusCode, String)> {
+    logic::civitai::civitai_model_covers()
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+async fn civitai_search_models_handler(
+    Json(args): Json<logic::civitai::SearchModelsArgs>,
+) -> Result<Json<logic::civitai::SearchModelPage>, (StatusCode, String)> {
+    logic::civitai::civitai_search_models(args)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+async fn civitai_generate_handler(
+    Extension(user_id): Extension<String>,
+    Json(params): Json<civitai::ImageGenParams>,
+) -> Result<Json<Vec<logic::civitai::SavedImage>>, (StatusCode, String)> {
+    logic::civitai::civitai_generate(&user_id, params)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
 // ── Connector (third-party OAuth via Composio) ─────────────────────────────
 // Auth-required thin proxies sharing `logic::connector` with the Tauri
 // commands; the user id rides the auth middleware's Extension.
@@ -2126,7 +2181,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/memory_persona_generate", post(memory_persona_generate_handler))
         .route("/api/memory_persona_get", post(memory_persona_get_handler))
         // QRIS top-up (PLAN-qris-topup.md Fase 3) — op name = path segment,
-        // the same 5 ops as the Tauri commands (POST on both transports).
+        // the same 7 ops as the Tauri commands (POST on both transports).
         .route("/api/topup_qris_preview", post(topup_qris_preview_handler))
         .route("/api/topup_qris_claim", post(topup_qris_claim_handler))
         .route("/api/topup_qris_status", post(topup_qris_status_handler))
@@ -2134,6 +2189,17 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/topup_qris_cancel", post(topup_qris_cancel_handler))
         .route("/api/topup_balance", post(topup_balance_handler))
         .route("/api/topup_history", post(topup_history_handler))
+
+        // Voucher top-up (kode sekali-pakai) — single redeem op (POST on
+        // both transports); admin ops CLI-only.
+        .route("/api/topup_voucher_redeem", post(topup_voucher_redeem_handler))
+        // Civitai image generation (Generator panel) — same 2 ops as the
+        // Tauri commands (POST on both transports); the API key is
+        // vault-baked, no key management surface.
+        .route("/api/civitai_api_key_status", post(civitai_api_key_status_handler))
+        .route("/api/civitai_model_covers", post(civitai_model_covers_handler))
+        .route("/api/civitai_search_models", post(civitai_search_models_handler))
+        .route("/api/civitai_generate", post(civitai_generate_handler))
         // Connector (third-party OAuth via Composio) — same 4 ops as the
         // Tauri commands (POST on both transports).
         .route("/api/connector_list_connections", post(connector_list_connections_handler))

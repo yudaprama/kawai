@@ -170,6 +170,7 @@ fn add_runtime_tools(
 /// filename without any export step. Copying is fire-and-forget (the path is
 /// deterministic; the first command runs seconds later); any failure is
 /// non-fatal — the tool just keeps the process CWD.
+#[cfg(feature = "litert")]
 fn session_cli_workspace(user_id: &str, session_id: i64) -> Option<std::path::PathBuf> {
     let dir = kawai_paths::user_data_dir(user_id)
         .join("cli_workspace")
@@ -196,6 +197,7 @@ fn session_cli_workspace(user_id: &str, session_id: i64) -> Option<std::path::Pa
     Some(dir)
 }
 
+#[cfg(feature = "litert")]
 async fn materialize_session_files(user_id: String, session_id: i64, dir: std::path::PathBuf) {
     let Ok(conn) = crate::logic::db_connection(&user_id).await else {
         eprintln!("[cli_workspace] db_connection failed");

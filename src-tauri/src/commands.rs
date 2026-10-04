@@ -1138,6 +1138,66 @@ pub async fn topup_history(
     logic::topup::topup_history(&token).await
 }
 
+/// Redeem a single-use voucher code for tokens (Top Up page card).
+#[tauri::command]
+pub async fn topup_voucher_redeem(
+    session: State<'_, Session>,
+    code: String,
+) -> Result<logic::topup::VoucherRedeem, String> {
+    let token = session_bearer(&session)?;
+    logic::topup::topup_voucher_redeem(&token, &code).await
+}
+
+/// ── Civitai image generation (Generator panel) ─────────────────────────────
+/// The API key is product-baked (`kawai-vault/constants::civitai::get_civitai`)
+/// — no user-facing key management. `civitai_generate` spends Buzz and lands
+/// the images in the user's office store. `params` is the shared
+/// `civitai::ImageGenParams` (camelCase JSON on both transports).
+
+#[tauri::command]
+pub fn civitai_api_key_status() -> logic::civitai::ApiKeyStatus {
+    logic::civitai::civitai_api_key_status()
+}
+
+/// Cover art per panel ecosystem (v1 top-checkpoint card images, 1h cache).
+#[tauri::command]
+pub async fn civitai_model_covers() -> Result<Vec<logic::civitai::ModelCover>, String> {
+    logic::civitai::civitai_model_covers().await
+}
+
+/// Resource-browser search behind the model-picker modal (v1 read, covers +
+/// constructed AIR URNs for diffuser/LoRA wiring). FLAT params — Tauri maps
+/// the frontend's camelCase keys onto them (a struct param would require an
+/// `{ args: … }` wrapper the web transport doesn't send).
+#[tauri::command]
+pub async fn civitai_search_models(
+    ecosystem: String,
+    query: Option<String>,
+    model_type: Option<String>,
+    sort: Option<String>,
+    limit: Option<i64>,
+    cursor: Option<String>,
+) -> Result<logic::civitai::SearchModelPage, String> {
+    logic::civitai::civitai_search_models(logic::civitai::SearchModelsArgs {
+        ecosystem,
+        query,
+        model_type,
+        sort,
+        limit,
+        cursor,
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn civitai_generate(
+    session: State<'_, Session>,
+    params: civitai::ImageGenParams,
+) -> Result<Vec<logic::civitai::SavedImage>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::civitai::civitai_generate(&user_id, params).await
+}
+
 /// ── Connector (third-party OAuth via Composio) — 4 auth-required ops ───────
 /// Thin proxies to `logic::connector`; the user id comes from the session
 /// (edge-resolved), the frontend never sends it.

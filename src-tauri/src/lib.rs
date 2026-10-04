@@ -216,6 +216,16 @@ pub fn run() {
         commands::topup_qris_cancel,
         commands::topup_balance,
         commands::topup_history,
+
+        // Voucher top-up (kode sekali-pakai) — single redeem op; admin ops
+        // CLI-only.
+        commands::topup_voucher_redeem,
+        // Civitai image generation (Generator panel) — key is vault-baked,
+        // generate is user-bound (Buzz spend + office store writes).
+        commands::civitai_api_key_status,
+        commands::civitai_model_covers,
+        commands::civitai_search_models,
+        commands::civitai_generate,
         commands::connector_list_connections,
         commands::connector_connect,
         commands::connector_poll,

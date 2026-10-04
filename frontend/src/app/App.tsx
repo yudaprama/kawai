@@ -25,6 +25,7 @@ import { SqlSourcesAssetPage } from "@/features/assets/pages/sql-sources-page";
 import { WalletPage } from "@/features/wallet/components/wallet-page";
 import { OPEN_TOPUP_EVENT } from "@/features/topup/open-topup";
 import { TopupPage } from "@/features/topup/topup-page";
+import { GeneratorPage } from "@/features/generator/generator-page";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
 import { ShortcutsDialog } from "@/components/shared/shortcuts-dialog";
 import { Dialog, DialogContent, DialogOverlay, DialogPortal } from "@/components/ui/dialog";
@@ -292,6 +293,8 @@ export default function App() {
       <WalletPage onBack={() => setAssetView(null)} />
     ) : assetView === "topup" ? (
       <TopupPage onBack={() => setAssetView(null)} />
+    ) : assetView === "generator" ? (
+      <GeneratorPage onBack={() => setAssetView(null)} />
     ) : null;
 
   return (

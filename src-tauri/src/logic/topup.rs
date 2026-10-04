@@ -116,13 +116,22 @@ const HISTORY_LIMIT: u64 = 50;
 pub struct HistoryEntry {
     /// Ledger primary key — the stable row key for the UI list.
     pub id: i64,
-    /// Signed token delta — kredit positif (`qris`, `admin_adjustment`),
+    /// Signed token delta — kredit positif (`qris`, `voucher`, `admin_adjustment`),
     /// pemakaian negatif (`usage`).
     pub amount: i64,
-    /// `qris | usage | admin_adjustment`.
+    /// `qris | voucher | usage | admin_adjustment`.
     pub reason: String,
     /// Unix seconds.
     pub created_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoucherRedeem {
+    /// Kredit dari kode ini.
+    pub tokens: i64,
+    /// Saldo total sesudah kredit.
+    pub balance: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -198,6 +207,16 @@ pub async fn topup_balance(token: &str) -> std::result::Result<Balance, String> 
 /// blocked top-up.
 pub async fn topup_history(token: &str) -> std::result::Result<History, String> {
     parsed(get(token, &format!("/billing/history?limit={HISTORY_LIMIT}")).await?)
+}
+
+/// `POST /topup/voucher/redeem` — tukar kode voucher sekali-pakai jadi token.
+/// Worker 400 `invalid_code_format`, 404 `voucher_not_found`, 409
+/// `voucher_expired` / `voucher_revoked` / `voucher_already_redeemed`
+/// arrive as `Err` with the worker's `{error}` text — the UI renders it
+/// verbatim.
+pub async fn topup_voucher_redeem(token: &str, code: &str) -> std::result::Result<VoucherRedeem, String> {
+    let body = serde_json::json!({ "code": code });
+    parsed(post(token, "/topup/voucher/redeem", body).await?)
 }
 
 /// `POST /billing/debit` — Fase 0b honor-system usage debit. Worker 409

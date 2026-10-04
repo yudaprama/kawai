@@ -483,6 +483,11 @@ pub mod dyntoken;
 // QRIS top-up + token-balance worker proxies (PLAN-qris-topup.md Fase 3).
 // Pure reqwest — shared by the Tauri commands and the web routes.
 pub mod topup;
+// Civitai image generation (Generator panel) — submit/estimate/poll/save
+// over the Orchestration API. Pure reqwest — shared by both transports;
+// the user's own API key comes from the desktop keychain or
+// KAWAI_CIVITAI_API_KEY (web/dev).
+pub mod civitai;
 // Monad EVM chain client (`monad` feature): public RPC reads — native
 // balance, chain status, ERC-20 balance/info, gas price. Pure alloy HTTP
 // provider; RPC URL via `KAWAI_MONAD_RPC_URL` (default: Monad mainnet). The

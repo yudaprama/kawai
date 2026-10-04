@@ -414,14 +414,13 @@ pub fn onboarding_run_stream(
             compressed.goals.len() as u32,
         );
 
-        let mut stored = 0u32;
-        match persist_compressed(&user_id, &compressed, "questions", true).await {
-            Ok(n) => stored = n,
+        let stored = match persist_compressed(&user_id, &compressed, "questions", true).await {
+            Ok(n) => n,
             Err(e) => {
                 yield OnboardingEvent::OnboardingError { message: format!("persistence failed: {e}") };
                 return;
             }
-        }
+        };
 
         yield OnboardingEvent::ProfileReady { profile: counts.0, people: counts.1, goals: counts.2 };
         // Facet distill rides the onboarding persist (best-effort — a

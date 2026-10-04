@@ -11,6 +11,7 @@
  *   - the submit gate publishes the value it already read (pre-debit);
  *   - `use-workbench` re-reads right after `plan_task` resolves (post-debit);
  *   - the Top Up page re-reads when a claim turns `credited`;
+ *   - the Top Up page re-reads right after a voucher is redeemed;
  *   - window focus re-reads at most once per `FOCUS_REFRESH_MS`.
  *
  * This store is DISPLAY-ONLY. The authoritative gates are the client pre-check

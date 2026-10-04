@@ -43,12 +43,17 @@ export interface TopupStatusInfo {
   creditedAt?: number | null;
 }
 
+export interface VoucherRedeem {
+  tokens: number;
+  balance: number;
+}
+
 export interface HistoryEntry {
   /** Ledger primary key — the stable row key for the list. */
   id: number;
   /** Signed: kredit positif, pemakaian negatif. */
   amount: number;
-  /** `qris | usage | admin_adjustment`. */
+  /** Ledger category supplied by the worker. */
   reason: string;
   /** Unix seconds. */
   createdAt: number;
@@ -85,6 +90,7 @@ const REASON_LABEL: Record<string, string> = {
   qris: "Top up QRIS",
   usage: "Pemakaian run",
   admin_adjustment: "Penyesuaian admin",
+  voucher: "Voucher",
 };
 
 function formatWhen(unix: number): string {
@@ -327,6 +333,34 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
     return () => clearTimeout(t);
   }, [claim, isTerminal, checkStatus]);
 
+  // ── Voucher (kode sekali-pakai → token) ──────────────────────────────────
+  const [voucherInput, setVoucherInput] = useState("");
+  const [redeeming, setRedeeming] = useState(false);
+  const [voucherResult, setVoucherResult] = useState<VoucherRedeem | null>(null);
+  const [voucherError, setVoucherError] = useState<string | null>(null);
+
+  /** Kode dinormalisasi: trim + uppercase (worker memvalidasi format). */
+  const voucherCode = voucherInput.trim().toUpperCase();
+
+  const redeemVoucher = useCallback(async () => {
+    if (voucherCode === "" || redeeming) return;
+    setRedeeming(true);
+    setVoucherError(null);
+    setVoucherResult(null);
+    try {
+      const data = await call<VoucherRedeem>("topup_voucher_redeem", { code: voucherCode });
+      setVoucherResult(data);
+      setVoucherInput("");
+      void refreshTokenBalance();
+      loadHistory();
+    } catch (err) {
+      setVoucherResult(null);
+      setVoucherError(errText(err));
+    } finally {
+      setRedeeming(false);
+    }
+  }, [voucherCode, redeeming, loadHistory]);
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <AssetShell title="Top Up" subtitle="QRIS · app tokens" onBack={onBack}>
@@ -344,6 +378,55 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
             )}
           </CardContent>
         </Card>
+
+        {/* Voucher card — terletak setelah saldo, di luar claim ternary. */}
+        <section className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-medium">Voucher</h3>
+            <span className="text-muted-foreground text-xs">Kode sekali-pakai</span>
+          </div>
+          <div className="space-y-3">
+            <Input
+              placeholder="Masukkan kode voucher"
+              value={voucherInput}
+              onChange={(e) => setVoucherInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  void redeemVoucher();
+                }
+              }}
+              disabled={redeeming}
+              className="font-mono uppercase tracking-wider"
+            />
+            <Button onClick={redeemVoucher} disabled={redeeming || voucherCode === ""} className="w-full">
+              {redeeming ? (
+                <>
+                  <Spinner className="mr-2 size-4 animate-spin" />
+                  Menebus...
+                </>
+              ) : (
+                "Tebus voucher"
+              )}
+            </Button>
+            {voucherResult && (
+              <div className="rounded-md border border-success/20 bg-success/5 p-3 text-xs">
+                <p className="font-medium text-success">Berhasil!</p>
+                <p className="text-muted-foreground">
+                  +{voucherResult.tokens.toLocaleString("id-ID")} token dimasukkan
+                </p>
+                <p className="text-muted-foreground">
+                  Saldo sekarang: {voucherResult.balance.toLocaleString("id-ID")} token
+                </p>
+              </div>
+            )}
+            {voucherError && (
+              <div className="border-warning/30 space-y-1 rounded-md border p-3 text-xs">
+                <p className="text-warning font-medium">Gagal</p>
+                <p className="text-muted-foreground font-mono break-words">{voucherError}</p>
+              </div>
+            )}
+          </div>
+        </section>
 
         {claim ? (
           isTerminal ? (

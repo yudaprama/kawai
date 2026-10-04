@@ -75,6 +75,9 @@ kawai-analytics = { path = "../crates/toolsets/analytics-tools" }
 # Per-device CLI inventory + the cli_run executor tool (PLAN-cli-tools.md).
 kawai-cli = { path = "../crates/toolsets/cli" }
 kawai-email = { path = "../crates/integrations/email" }
+# Civitai Orchestration client — image generation (Generator panel + future
+# supervisor tool). Pure reqwest, ungated.
+civitai = { path = "../crates/integrations/civitai" }
 # Local email+password auth — email-as-identity user directory + Session type.
 # Polars-backed data analysis engine; used by the analytics tools + `sql_remote_check` example.
 analytics = { path = "../crates/engines/analytics" }
