@@ -22,31 +22,14 @@ import {
   DEFAULT_WORKFLOW,
   ECOSYSTEMS,
   WORKFLOWS,
+  ecosystemsForWorkflow,
   estimateBuzz,
   isWorkflowAvailable,
   resolveCompatibleEcosystem,
   targetWorkflowForEcosystem,
 } from "./ecosystems";
-
-/**
- * The civitai generation panel's exact Mantine-dark palette (their
- * tailwind.config.js `dark` + `yellow` scales) — the panel is ALWAYS dark,
- * an island of the civitai look inside whatever theme kawai runs.
- */
-const C = {
-  surface: "#1A1B1E", // dark-7 — panel bg
-  deep: "#141517", // dark-8 — results pane bg
-  input: "#25262B", // dark-6 — controls bg
-  hover: "#2C2E33", // dark-5 — hover bg
-  border: "#373A40", // dark-4 — borders
-  text: "#C1C2C5", // dark-0 — body text
-  muted: "#8c8fa3", // dark-2 — secondary text
-  faint: "#5C5F66", // dark-3 — disabled text
-  heading: "#f8f9fa", // gray-0 — headings
-  buzz: "#FFD43B", // yellow-4 — Buzz currency color
-  blue: "#4263EB", // generate button
-  blueHover: "#3B5BDB",
-} as const;
+import { C } from "./palette";
+import { AdvancedSection } from "./advanced-section";
 
 interface HistoryEntry {
   fileId: string;
@@ -78,6 +61,8 @@ interface SelectedModel {
 
 const HISTORY_KEY = "kawai-generator-results-v1";
 const MAX_HISTORY = 50;
+/** Civitai's additional-resources slot cap mirrored in the panel header. */
+const MAX_LORAS = 9;
 
 function loadHistory(): HistoryEntry[] {
   try {
@@ -150,12 +135,15 @@ function AspectChip({
   height,
   label,
   onClick,
+  sub,
   width,
 }: {
   active: boolean;
   height: number;
   label: string;
   onClick: () => void;
+  /** Resolution line under the ratio (civitai's chip layout). */
+  sub: string;
   width: number;
 }) {
   const scale = 22 / Math.max(width, height);
@@ -182,6 +170,9 @@ function AspectChip({
         />
       </div>
       <span className="text-[10px] leading-none font-medium">{label}</span>
+      <span className="text-[9px] leading-none" style={{ color: C.faint }}>
+        {sub}
+      </span>
     </button>
   );
 }
@@ -364,6 +355,8 @@ function ModelBrowser({
   selectedModel,
   type,
   onTypeChange,
+  addedLoraAirs,
+  loraCount,
 }: {
   eco: (typeof ECOSYSTEMS)[number];
   onAddLora: (row: SearchModelRow) => void;
@@ -371,6 +364,9 @@ function ModelBrowser({
   selectedModel: SelectedModel | null;
   type: "Checkpoint" | "LORA";
   onTypeChange: (type: "Checkpoint" | "LORA") => void;
+  /** AIR URNs already in the LoRA stack — re-clicking one is a no-op. */
+  addedLoraAirs: Set<string>;
+  loraCount: number;
 }) {
   const { t } = useI18n();
   const cols = useColumnCount();
@@ -450,6 +446,14 @@ function ModelBrowser({
 
   function handleSelect(row: SearchModelRow) {
     if (type === "LORA") {
+      if (addedLoraAirs.has(row.airUrn)) {
+        toast.info(t("generator.loraAlreadyAdded", { name: row.name }));
+        return;
+      }
+      if (loraCount >= MAX_LORAS) {
+        toast.error(t("generator.loraLimitReached"));
+        return;
+      }
       onAddLora(row);
       toast.success(t("generator.loraAdded", { name: row.name }));
       return;
@@ -565,7 +569,9 @@ function ModelBrowser({
                         key={row.modelId}
                         onSelect={handleSelect}
                         row={row}
-                        selected={type === "Checkpoint" && selectedModel?.airUrn === row.airUrn}
+                        selected={
+                          type === "Checkpoint" ? selectedModel?.airUrn === row.airUrn : addedLoraAirs.has(row.airUrn)
+                        }
                       />
                     ))}
                   </div>
@@ -605,6 +611,22 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   const [ecoId, setEcoId] = useState(ECOSYSTEMS[0].id);
   const eco = ECOSYSTEMS.find((e) => e.id === ecoId) ?? ECOSYSTEMS[0];
   const [workflowId, setWorkflowId] = useState(DEFAULT_WORKFLOW);
+  const [wfOpen, setWfOpen] = useState(false);
+  const [ecoOpen, setEcoOpen] = useState(false);
+  const workflow = WORKFLOWS.find((w) => w.id === workflowId) ?? WORKFLOWS[0];
+  /** Data URL of the uploaded source image (image-input workflows). */
+  const [sourceImage, setSourceImage] = useState<string | null>(null);
+  /** Natural dimensions of the loaded source image — img2img derives its
+   *  output size from them (civitai's aspectRatio-depends-on-images rule),
+   *  rounded to %16 and clamped to the recipe bounds. */
+  const [sourceDims, setSourceDims] = useState<{ width: number; height: number } | null>(null);
+  /** createVariant denoise strength, 0–1. */
+  const [strength, setStrength] = useState("0.7");
+  /** Upscale passes for the upscale-backed workflows (1–3). */
+  const [upscaleRepeats, setUpscaleRepeats] = useState(1);
+  /** Hires-fix input mode — civitai renders one hires workflow with a
+   *  Text-to-Image / Image-to-Image segmented control on top. */
+  const [hiresMode, setHiresMode] = useState<"text" | "image">("text");
   const [sizeIdx, setSizeIdx] = useState(0);
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
@@ -642,19 +664,51 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   }, []);
 
   const size = eco.sizes[sizeIdx] ?? eco.sizes[0];
+  // Per-workflow form shape (civitai's per-workflow graphs): the upscale
+  // workflow renders generation-free (image + passes only — no prompt,
+  // ecosystem, model, LoRA, sampling); img2img renders image-first and
+  // derives its output size from the source image.
+  const isUpscale = workflowId === "img2img:upscale";
+  const isImg2Img = workflowId === "img2img";
+  /** Hires-fix running in its Image-to-Image mode (source image required,
+   *  denoise slider shown — the generate leg is createVariant). */
+  const hiresImg = workflowId === "txt2img:hires-fix" && hiresMode === "image";
+  const needsSource = workflow.input === "image" || hiresImg;
+  const genSize =
+    (isImg2Img || hiresImg) && sourceDims
+      ? {
+          width: Math.min(2048, Math.max(64, Math.round(sourceDims.width / 16) * 16)),
+          height: Math.min(2048, Math.max(64, Math.round(sourceDims.height / 16) * 16)),
+        }
+      : size;
   const parsedSteps = Number(steps);
-  const estimate = useMemo(
-    () =>
-      estimateBuzz({
-        width: size.width,
-        height: size.height,
-        steps: Number.isFinite(parsedSteps) ? parsedSteps : undefined,
-        quantity,
-      }),
-    [size, parsedSteps, quantity],
-  );
+  // Buzz pricing is a per-pixel/per-step generation formula — the upscale
+  // recipe exposes no cost fields, so no estimate is shown there.
+  const estimate = useMemo(() => {
+    if (isUpscale) return 0;
+    return estimateBuzz({
+      width: genSize.width,
+      height: genSize.height,
+      steps: Number.isFinite(parsedSteps) ? parsedSteps : undefined,
+      quantity,
+    });
+  }, [isUpscale, genSize, parsedSteps, quantity]);
 
   const buildParams = useCallback((): GenParams => {
+    // The upscale workflow carries no generation fields at all (its recipe
+    // takes only image + repeats) — send a minimal body.
+    if (isUpscale) {
+      return {
+        ecosystem: eco.id,
+        engine: eco.engine,
+        workflow: workflowId,
+        prompt: "",
+        sourceImage: sourceImage ?? undefined,
+        upscaleRepeats,
+        width: genSize.width,
+        height: genSize.height,
+      };
+    }
     const cleanedLoras = loras
       .map((l) => ({ air: l.air.trim(), strength: Number(l.strength) || 1 }))
       .filter((l) => l.air.length > 0);
@@ -663,8 +717,11 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       engine: eco.engine,
       workflow: workflowId,
       prompt: prompt.trim(),
-      width: size.width,
-      height: size.height,
+      sourceImage: needsSource ? (sourceImage ?? undefined) : undefined,
+      strength: isImg2Img || hiresImg ? Number(strength) : undefined,
+      upscaleRepeats: workflowId === "txt2img:hires-fix" ? upscaleRepeats : undefined,
+      width: genSize.width,
+      height: genSize.height,
       quantity,
       negativePrompt: negativePrompt.trim() || undefined,
       cfgScale: Number(cfgScale),
@@ -673,7 +730,26 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       loras: cleanedLoras.length > 0 ? cleanedLoras : undefined,
       diffuserModel: selectedModel?.airUrn,
     };
-  }, [eco, workflowId, size, prompt, negativePrompt, quantity, cfgScale, steps, seed, loras, selectedModel]);
+  }, [
+    eco,
+    hiresImg,
+    isImg2Img,
+    isUpscale,
+    needsSource,
+    workflowId,
+    genSize,
+    prompt,
+    negativePrompt,
+    quantity,
+    cfgScale,
+    steps,
+    seed,
+    loras,
+    selectedModel,
+    sourceImage,
+    strength,
+    upscaleRepeats,
+  ]);
 
   // Elapsed ticker while a run is in flight.
   useEffect(() => {
@@ -714,7 +790,11 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   async function handleGenerate() {
     if (running) return;
     const params = buildParams();
-    if (params.prompt.length === 0) {
+    if (needsSource && !params.sourceImage) {
+      toast.error(t("generator.sourceImageRequired"));
+      return;
+    }
+    if (workflowId !== "img2img:upscale" && params.prompt.length === 0) {
       toast.error(t("generator.promptRequired"));
       return;
     }
@@ -740,11 +820,144 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   }
 
   const sizeRatio = gcd(size.width, size.height);
-  const canGenerate = configured === true && prompt.trim().length > 0 && !running;
+  const canGenerate =
+    configured === true &&
+    !running &&
+    (needsSource ? sourceImage != null : true) &&
+    (workflowId === "img2img:upscale" || prompt.trim().length > 0);
   const inputStyle = { backgroundColor: C.input, borderColor: C.border, color: C.text } as const;
+
+  /** AIR URNs already in the stack — keeps ModelBrowser clicks idempotent. */
+  const addedLoraAirs = useMemo(() => new Set(loras.map((l) => l.air)), [loras]);
+
+  /** civitai's ecosystem picker tabs, stacked for a dropdown: the current
+   *  workflow's own ecosystem list first ("Workflow Compatible"), the rest
+   *  under "All" — picking one of those retargets the workflow through
+   *  `switchEcosystem` (selectorCoherence). Empty second group = every
+   *  ecosystem serves the workflow (civitai's `hasIncompatibleItems`). */
+  const ecoSections = useMemo(() => {
+    const compatible = new Set(ecosystemsForWorkflow(workflowId));
+    const groups = [
+      {
+        id: "compatible",
+        label: t("generator.ecosystemCompatible"),
+        ecos: ECOSYSTEMS.filter((e) => compatible.has(e.id)),
+      },
+    ];
+    const others = ECOSYSTEMS.filter((e) => !compatible.has(e.id));
+    if (others.length > 0) {
+      groups.push({ id: "all", label: t("generator.ecosystemAll"), ecos: others });
+    }
+    return groups;
+  }, [workflowId, t]);
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
+      {/* Top bar — civitai's [media tabs …… Eco | <ecosystem>] strip. The
+          panel is image-only, so the media tabs render as a static island. */}
+      {!isUpscale && (
+        <div
+          className="flex items-center justify-between gap-2 rounded-[10px] border p-1.5"
+          style={{ backgroundColor: C.surface, borderColor: C.border }}
+        >
+          <div className="flex items-center gap-1 rounded-[8px] border p-1" style={{ borderColor: C.border }}>
+            {["image", "video", "music", "box"].map((n, i) => (
+              <span
+                className="flex h-7 w-9 items-center justify-center rounded-[6px]"
+                key={n}
+                style={{
+                  backgroundColor: i === 0 ? C.hover : undefined,
+                  color: i === 0 ? C.blue : C.faint,
+                }}
+              >
+                <Icon name={n} />
+              </span>
+            ))}
+          </div>
+          <div className="relative">
+            <button
+              aria-expanded={ecoOpen}
+              aria-haspopup="listbox"
+              className="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
+              onClick={() => setEcoOpen((v) => !v)}
+              style={{ color: C.heading }}
+              type="button"
+            >
+              <span style={{ color: C.muted }}>Eco</span>
+              <span className="h-4 w-px" style={{ backgroundColor: C.border }} />
+              {eco.label}
+              <span
+                className="flex items-center transition-transform"
+                style={{ transform: ecoOpen ? "rotate(180deg)" : undefined, color: C.muted }}
+              >
+                <Icon name="chevron-down" />
+              </span>
+            </button>
+            {ecoOpen && (
+              <div
+                className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-[10px] border shadow-xl"
+                role="listbox"
+                style={{ backgroundColor: C.hover, borderColor: C.border }}
+              >
+                {ecoSections.map((section) => (
+                  <div className="border-t first:border-t-0" key={section.id} style={{ borderColor: C.border }}>
+                    <div
+                      className="px-3 pt-2.5 pb-1 text-[10px] font-semibold tracking-wider uppercase"
+                      style={{ color: C.faint }}
+                    >
+                      {section.label}
+                    </div>
+                    {section.ecos.map((e) => {
+                      const selected = e.id === ecoId;
+                      const available = isWorkflowAvailable(workflowId, e.id);
+                      const targetLabel = available
+                        ? undefined
+                        : (WORKFLOWS.find((w) => w.id === targetWorkflowForEcosystem(e.id))?.label ??
+                          t("generator.workflow"));
+                      return (
+                        <button
+                          aria-selected={selected}
+                          className="flex w-full items-center gap-2 p-2.5 text-left transition-colors hover:brightness-125"
+                          key={e.id}
+                          onClick={() => {
+                            setEcoOpen(false);
+                            if (!selected) switchEcosystem(e.id);
+                          }}
+                          role="option"
+                          style={{
+                            backgroundColor: selected ? `${C.blue}22` : undefined,
+                            opacity: available ? 1 : 0.6,
+                          }}
+                          title={targetLabel ? t("generator.willSwitchTo", { workflow: targetLabel }) : undefined}
+                          type="button"
+                        >
+                          <ModelTile cover={covers[e.id]?.url} eco={e} size={20} />
+                          <span
+                            className="flex-1 truncate text-sm font-medium"
+                            style={{ color: selected ? C.blue : C.heading }}
+                          >
+                            {e.label}
+                          </span>
+                          {selected ? (
+                            <span className="shrink-0" style={{ color: C.blue }}>
+                              <Icon name="check" />
+                            </span>
+                          ) : !available ? (
+                            <span className="shrink-0" style={{ color: C.muted }}>
+                              <Icon className="size-3.5" name="arrow-right" />
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {ecoOpen && <div aria-hidden className="fixed inset-0 z-20" onClick={() => setEcoOpen(false)} />}
       {configured === false && (
         <div
           className="flex items-start gap-2 rounded-[8px] border p-2.5 text-xs leading-relaxed"
@@ -760,176 +973,402 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      {/* Workflow — txt2img runs everywhere, img2img sdcpp-only (registry).
-          Switching retargets the ecosystem when incompatible (coherence). */}
-      <div className="flex gap-1.5">
-        {WORKFLOWS.map((w) => (
-          <button
-            aria-pressed={workflowId === w.id}
-            className="flex-1 rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors"
-            key={w.id}
-            onClick={() => switchWorkflow(w.id)}
-            style={{
-              backgroundColor: workflowId === w.id ? C.hover : C.input,
-              borderColor: workflowId === w.id ? C.blue : C.border,
-              color: workflowId === w.id ? C.heading : C.muted,
-            }}
-            type="button"
+      {/* Workflow — civitai's selected-workflow card: big bold title +
+          description, opening the workflow menu (label + description rows,
+          check on the active entry, entries the ecosystem can't serve
+          dimmed — still selectable, coherence retargets the ecosystem). */}
+      <div className="relative">
+        <button
+          aria-expanded={wfOpen}
+          aria-haspopup="listbox"
+          className="flex w-full items-center gap-2 rounded-[12px] border p-4 text-left transition-colors hover:brightness-110"
+          onClick={() => setWfOpen((v) => !v)}
+          style={{ backgroundColor: C.input, borderColor: wfOpen ? C.blue : C.border }}
+          type="button"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xl font-bold" style={{ color: C.heading }}>
+              {workflow.label}
+            </div>
+            <div className="truncate text-sm" style={{ color: C.muted }}>
+              {workflow.description}
+            </div>
+          </div>
+          <span
+            className="mr-1 flex shrink-0 items-center transition-transform"
+            style={{ transform: wfOpen ? "rotate(180deg)" : undefined, color: C.muted }}
           >
-            {w.label}
-          </button>
-        ))}
+            <Icon name="chevron-down" />
+          </span>
+        </button>
+        {wfOpen && (
+          <div
+            className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-[10px] border shadow-xl"
+            role="listbox"
+            style={{ backgroundColor: C.hover, borderColor: C.border }}
+          >
+            {WORKFLOWS.map((w) => {
+              const compatible = isWorkflowAvailable(w.id, ecoId);
+              const selected = w.id === workflowId;
+              return (
+                <button
+                  aria-selected={selected}
+                  className="flex w-full items-start gap-2 p-2.5 text-left transition-colors hover:brightness-125"
+                  key={w.id}
+                  onClick={() => {
+                    setWfOpen(false);
+                    if (!selected) switchWorkflow(w.id);
+                  }}
+                  role="option"
+                  style={{
+                    backgroundColor: selected ? `${C.blue}22` : undefined,
+                    opacity: compatible ? 1 : 0.45,
+                  }}
+                  type="button"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold" style={{ color: selected ? C.blue : C.heading }}>
+                      {w.label}
+                    </div>
+                    <div className="truncate text-xs" style={{ color: C.muted }}>
+                      {w.description}
+                    </div>
+                  </div>
+                  {selected && (
+                    <span className="mt-1 shrink-0" style={{ color: C.blue }}>
+                      <Icon name="check" />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+            {/* click-away backdrop */}
+          </div>
+        )}
       </div>
+      {wfOpen && <div aria-hidden className="fixed inset-0 z-20" onClick={() => setWfOpen(false)} />}
 
-      {/* Ecosystem chips — the quick family switch */}
-      <div className="flex flex-col gap-1.5">
-        <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
-          {t("generator.ecosystem")}
-        </Label>
-        <div className="flex flex-wrap gap-1.5">
-          {ECOSYSTEMS.map((e) => (
+      {/* Hires-fix input mode — civitai's Text to Image | Image to Image
+          segmented control inside the workflow */}
+      {workflowId === "txt2img:hires-fix" && (
+        <div className="flex gap-1.5">
+          {(
+            [
+              ["text", "generator.textToImage"],
+              ["image", "generator.imageToImage"],
+            ] as const
+          ).map(([mode, key]) => (
             <button
-              aria-pressed={ecoId === e.id}
-              className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
-              key={e.id}
-              onClick={() => switchEcosystem(e.id)}
+              aria-pressed={hiresMode === mode}
+              className="flex-1 rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors"
+              key={mode}
+              onClick={() => setHiresMode(mode)}
               style={{
-                backgroundColor: ecoId === e.id ? C.hover : C.input,
-                borderColor: ecoId === e.id ? C.blue : C.border,
-                color: ecoId === e.id ? C.heading : C.muted,
-                opacity: isWorkflowAvailable(workflowId, e.id) ? 1 : 0.45,
+                backgroundColor: hiresMode === mode ? C.hover : C.input,
+                borderColor: hiresMode === mode ? C.blue : C.border,
+                color: hiresMode === mode ? C.blue : C.muted,
               }}
               type="button"
             >
-              <ModelTile cover={covers[e.id]?.url} eco={e} size={16} />
-              {e.label}
+              {t(key)}
             </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Model — clicking opens the browser in the results pane */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-baseline justify-between">
-          <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
-            {t("generator.model")}
-          </Label>
-          {selectedModel ? (
-            <button
-              className="text-[11px] underline-offset-2 hover:underline"
-              onClick={() => setSelectedModel(null)}
-              style={{ color: C.blue }}
-              type="button"
-            >
-              {t("generator.useDefault", { model: eco.label })}
-            </button>
-          ) : null}
-        </div>
-        <button
-          className="flex w-full items-center gap-2.5 rounded-[8px] border p-2 text-left transition-colors hover:brightness-110"
-          onClick={() => {
-            setPickerType("Checkpoint");
-            setPaneTab("model");
-          }}
-          style={{ backgroundColor: C.input, borderColor: C.border }}
-          type="button"
-        >
-          <ModelTile cover={selectedModel?.coverUrl ?? covers[eco.id]?.url} eco={eco} size={40} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-sm font-semibold" style={{ color: C.heading }}>
-                {selectedModel?.name ?? covers[eco.id]?.modelName ?? eco.label}
-              </span>
-              <span
-                className="shrink-0 rounded border px-1 py-px text-[9px] uppercase"
-                style={{ borderColor: C.border, color: selectedModel ? C.buzz : C.faint }}
-              >
-                {selectedModel ? t("generator.customBadge") : t("generator.defaultBadge")}
-              </span>
-            </div>
-            <div className="truncate text-xs" style={{ color: C.muted }}>
-              {selectedModel ? `${eco.label} · ${t("generator.customBadge")}` : `${eco.label} · ${eco.note}`}
-            </div>
-          </div>
-          <Icon className="mr-1 size-4 shrink-0" name="chevrons-up-down" />
-        </button>
-      </div>
-
-      {/* Active LoRA chips — always visible, even with Advanced collapsed */}
-      {loras.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {loras.map((lora) => (
-            <span
-              className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
-              key={lora.id}
-              style={{ backgroundColor: C.input, borderColor: C.blue, color: C.text }}
-            >
-              <Icon className="size-3" name="zap" />
-              <span className="max-w-40 truncate">{lora.name ?? lora.air}</span>
-              <button
-                aria-label={t("generator.removeLora")}
-                className="hover:text-white"
-                onClick={() => setLoras((prev) => prev.filter((l) => l.id !== lora.id))}
-                style={{ color: C.muted }}
-                type="button"
-              >
-                <Icon className="size-3" name="x" />
-              </button>
-            </span>
           ))}
         </div>
       )}
 
-      {/* Prompt */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-baseline justify-between">
-          <Label className="text-[13px] font-medium" htmlFor="generator-prompt" style={{ color: C.muted }}>
-            {t("generator.prompt")}
+      {/* Source image — required by image-input workflows (and hires-fix in
+          its Image-to-Image mode); strength slider rides the variant legs,
+          upscale passes ride the upscale-backed ones. */}
+      {needsSource && (
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
+            {t("generator.sourceImage")}
           </Label>
-          <span className="text-[10px]" style={{ color: C.faint }}>
-            {prompt.length}/10000
-          </span>
+          {sourceImage ? (
+            <div
+              className="flex items-center gap-2 rounded-[8px] border p-2"
+              style={{ backgroundColor: C.input, borderColor: C.border }}
+            >
+              <img alt="" className="size-12 rounded-[6px] object-cover" src={sourceImage} />
+              <button
+                className="text-[11px] underline-offset-2 hover:underline"
+                onClick={() => {
+                  setSourceImage(null);
+                  setSourceDims(null);
+                }}
+                style={{ color: C.blue }}
+                type="button"
+              >
+                {t("generator.removeImage")}
+              </button>
+            </div>
+          ) : (
+            <label
+              className="flex cursor-pointer items-center justify-center gap-2 rounded-[8px] border border-dashed p-4 text-xs transition-colors hover:brightness-125"
+              style={{ borderColor: C.border, color: C.muted }}
+            >
+              <Icon className="size-4" name="image" />
+              {t("generator.chooseImage")}
+              <input
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    if (typeof reader.result !== "string") return;
+                    setSourceImage(reader.result);
+                    // civitai rule: an img2img variant's output size follows
+                    // the source image (aspectRatio depends on images).
+                    const img = new Image();
+                    img.onload = () => setSourceDims({ width: img.naturalWidth, height: img.naturalHeight });
+                    img.src = reader.result;
+                  };
+                  reader.readAsDataURL(file);
+                  e.target.value = "";
+                }}
+                type="file"
+              />
+            </label>
+          )}
         </div>
-        <Textarea
-          className="min-h-24 resize-none rounded-[8px] text-sm focus-visible:ring-0"
-          id="generator-prompt"
-          maxLength={10000}
-          onChange={(e) => setPrompt(e.target.value)}
-          onFocus={(e) => (e.currentTarget.style.borderColor = C.blue)}
-          onBlur={(e) => (e.currentTarget.style.borderColor = C.border)}
-          placeholder={t("generator.promptPlaceholder")}
-          style={inputStyle}
-          value={prompt}
-        />
-      </div>
+      )}
+      {(isImg2Img || hiresImg) && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-baseline justify-between">
+            <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
+              {t("generator.strength")}
+            </Label>
+            <span className="text-[10px]" style={{ color: C.faint }}>
+              {Number(strength).toFixed(2)}
+            </span>
+          </div>
+          <input
+            className="w-full accent-[var(--color-text)]"
+            max={1}
+            min={0}
+            onChange={(e) => setStrength(e.target.value)}
+            step={0.05}
+            type="range"
+            value={strength}
+          />
+        </div>
+      )}
+      {(workflowId === "txt2img:hires-fix" || workflowId === "img2img:upscale") && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-baseline justify-between">
+            <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
+              {t("generator.upscaleRepeats")}
+            </Label>
+            <span className="text-[10px]" style={{ color: C.faint }}>
+              {t("generator.upscaleRepeatsHint")}
+            </span>
+          </div>
+          <div className="flex gap-1.5">
+            {[1, 2, 3].map((n) => (
+              <button
+                aria-pressed={upscaleRepeats === n}
+                className="flex-1 rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors"
+                key={n}
+                onClick={() => setUpscaleRepeats(n)}
+                style={{
+                  backgroundColor: upscaleRepeats === n ? C.hover : C.input,
+                  borderColor: upscaleRepeats === n ? C.blue : C.border,
+                  color: upscaleRepeats === n ? C.heading : C.muted,
+                }}
+                type="button"
+              >
+                {n}×
+              </button>
+            ))}
+          </div>
+          {workflowId === "txt2img:hires-fix" && (
+            <span className="text-[10px]" style={{ color: C.faint }}>
+              {t("generator.hiresHint")}
+            </span>
+          )}
+        </div>
+      )}
 
-      {/* Aspect ratio chips */}
-      <div className="flex flex-col gap-1.5">
-        <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
-          {t("generator.size")}
-        </Label>
-        <div className="flex flex-wrap gap-1.5">
-          {eco.sizes.map((s, i) => {
-            const ratio = gcd(s.width, s.height);
-            return (
+      {/* Model — clicking opens the browser in the results pane */}
+      {!isUpscale && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-baseline justify-between">
+            <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
+              {t("generator.model")}
+            </Label>
+            {selectedModel ? (
+              <button
+                className="text-[11px] underline-offset-2 hover:underline"
+                onClick={() => setSelectedModel(null)}
+                style={{ color: C.blue }}
+                type="button"
+              >
+                {t("generator.useDefault", { model: eco.label })}
+              </button>
+            ) : null}
+          </div>
+          <button
+            className="flex w-full items-center gap-2.5 rounded-[8px] border p-2 text-left transition-colors hover:brightness-110"
+            onClick={() => {
+              setPickerType("Checkpoint");
+              setPaneTab("model");
+            }}
+            style={{ backgroundColor: C.input, borderColor: C.border }}
+            type="button"
+          >
+            <ModelTile cover={selectedModel?.coverUrl ?? covers[eco.id]?.url} eco={eco} size={40} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-sm font-semibold" style={{ color: C.heading }}>
+                  {selectedModel?.name ?? covers[eco.id]?.modelName ?? eco.label}
+                </span>
+                <span
+                  className="shrink-0 rounded border px-1 py-px text-[9px] uppercase"
+                  style={{ borderColor: C.border, color: selectedModel ? C.buzz : C.faint }}
+                >
+                  {selectedModel ? t("generator.customBadge") : t("generator.defaultBadge")}
+                </span>
+              </div>
+              <div className="truncate text-xs" style={{ color: C.muted }}>
+                {selectedModel ? `${eco.label} · ${t("generator.customBadge")}` : `${eco.label} · ${eco.note}`}
+              </div>
+            </div>
+            <Icon className="mr-1 size-4 shrink-0" name="chevrons-up-down" />
+          </button>
+        </div>
+      )}
+
+      {/* Additional Resources — civitai's LoRA section: always visible,
+          counter against its 9-slot cap, Add opens the model browser */}
+      {!isUpscale && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
+                {t("generator.additionalResources")}
+              </Label>
+              <span className="rounded border px-1 py-px text-[9px]" style={{ borderColor: C.border, color: C.faint }}>
+                {loras.length}/{MAX_LORAS}
+              </span>
+            </div>
+            <button
+              className="flex items-center gap-1 text-[11px] underline-offset-2 hover:underline"
+              onClick={() => {
+                setPickerType("LORA");
+                setPaneTab("model");
+              }}
+              style={{ color: C.blue }}
+              type="button"
+            >
+              <Icon className="size-3" name="plus" /> {t("generator.addLora")}
+            </button>
+          </div>
+          {loras.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {loras.map((lora) => (
+                <span
+                  className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                  key={lora.id}
+                  style={{ backgroundColor: C.input, borderColor: C.blue, color: C.text }}
+                >
+                  <Icon className="size-3" name="zap" />
+                  <span className="max-w-40 truncate">{lora.name ?? lora.air}</span>
+                  <button
+                    aria-label={t("generator.removeLora")}
+                    className="hover:text-white"
+                    onClick={() => setLoras((prev) => prev.filter((l) => l.id !== lora.id))}
+                    style={{ color: C.muted }}
+                    type="button"
+                  >
+                    <Icon className="size-3" name="x" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Prompt — civitai's "Prompt ⓘ *": plain empty textarea, required
+          marker, no counter */}
+      {!isUpscale && (
+        <div className="flex flex-col gap-1.5">
+          <Label
+            className="flex items-center gap-1 text-[13px] font-medium"
+            htmlFor="generator-prompt"
+            style={{ color: C.muted }}
+          >
+            {t("generator.prompt")}
+            <span style={{ color: "#e03131" }} title="required">
+              *
+            </span>
+          </Label>
+          <Textarea
+            className="min-h-24 resize-none rounded-[8px] text-sm focus-visible:ring-0"
+            id="generator-prompt"
+            maxLength={10000}
+            onChange={(e) => setPrompt(e.target.value)}
+            onFocus={(e) => (e.currentTarget.style.borderColor = C.blue)}
+            onBlur={(e) => (e.currentTarget.style.borderColor = C.border)}
+            style={inputStyle}
+            value={prompt}
+          />
+        </div>
+      )}
+
+      {/* Negative Prompt — civitai renders it directly under Prompt, not
+          buried in Advanced */}
+      {!isUpscale && (
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-[13px] font-medium" htmlFor="generator-negative" style={{ color: C.muted }}>
+            {t("generator.negativePrompt")}
+          </Label>
+          <Textarea
+            className="min-h-16 resize-none rounded-[8px] focus-visible:ring-0"
+            id="generator-negative"
+            maxLength={10000}
+            onChange={(e) => setNegativePrompt(e.target.value)}
+            onFocus={(e) => (e.currentTarget.style.borderColor = C.blue)}
+            onBlur={(e) => (e.currentTarget.style.borderColor = C.border)}
+            style={inputStyle}
+            value={negativePrompt}
+          />
+        </div>
+      )}
+
+      {/* Aspect ratio chips — hidden for upscale (output dims follow the
+          source); img2img defaults them from the source image */}
+      {!isUpscale && (
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
+            {t("generator.size")}
+          </Label>
+          <div className="flex flex-wrap gap-1.5">
+            {eco.sizes.map((s, i) => (
               <AspectChip
                 active={sizeIdx === i}
                 height={s.height}
                 key={`${s.width}x${s.height}`}
-                label={`${Math.round(s.width / ratio)}:${Math.round(s.height / ratio)}`}
+                label={s.label}
                 onClick={() => setSizeIdx(i)}
+                sub={`${s.width}×${s.height}`}
                 width={s.width}
               />
-            );
-          })}
+            ))}
+          </div>
+          <p className="text-[11px]" style={{ color: C.muted }}>
+            {isImg2Img && sourceDims
+              ? `${genSize.width}×${genSize.height}px · ${t("generator.followsSource")}`
+              : `${size.width}×${size.height}px`}
+          </p>
         </div>
-        <p className="text-[11px]" style={{ color: C.muted }}>
-          {size.width}×{size.height}px
-        </p>
-      </div>
+      )}
 
-      {/* Quantity + seed */}
-      <div className="grid grid-cols-2 gap-2">
+      {/* Quantity — meaningless for the upscale recipe (seed
+          rides the Advanced section, civitai's layout) */}
+      {!isUpscale && (
         <div className="flex flex-col gap-1.5">
           <Label className="text-[13px] font-medium" htmlFor="generator-quantity" style={{ color: C.muted }}>
             {t("generator.quantity")}
@@ -945,131 +1384,26 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
             value={quantity}
           />
         </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-[13px] font-medium" htmlFor="generator-seed" style={{ color: C.muted }}>
-            {t("generator.seed")}
-          </Label>
-          <Input
-            className="h-8 rounded-[8px] focus-visible:ring-0"
-            id="generator-seed"
-            onChange={(e) => setSeed(e.target.value)}
-            placeholder={t("generator.seedPlaceholder")}
-            style={inputStyle}
-            value={seed}
-          />
-        </div>
-      </div>
+      )}
 
       {/* Advanced */}
-      <Collapsible onOpenChange={setAdvancedOpen} open={advancedOpen}>
-        <CollapsibleTrigger className="flex items-center gap-1 text-[13px] font-medium" style={{ color: C.muted }}>
-          <Icon className="size-4" name="chevron-down" /> {t("generator.advanced")}
-        </CollapsibleTrigger>
-        <CollapsibleContent className="flex flex-col gap-3 pt-2">
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[13px] font-medium" htmlFor="generator-negative" style={{ color: C.muted }}>
-              {t("generator.negativePrompt")}
-            </Label>
-            <Textarea
-              className="min-h-16 resize-none rounded-[8px] focus-visible:ring-0"
-              id="generator-negative"
-              maxLength={10000}
-              onChange={(e) => setNegativePrompt(e.target.value)}
-              onFocus={(e) => (e.currentTarget.style.borderColor = C.blue)}
-              onBlur={(e) => (e.currentTarget.style.borderColor = C.border)}
-              style={inputStyle}
-              value={negativePrompt}
+      {!isUpscale && (
+        <Collapsible onOpenChange={setAdvancedOpen} open={advancedOpen}>
+          <CollapsibleTrigger className="flex items-center gap-1 text-[13px] font-medium" style={{ color: C.muted }}>
+            <Icon className="size-4" name="chevron-down" /> {t("generator.advanced")}
+          </CollapsibleTrigger>
+          <CollapsibleContent className="flex flex-col gap-3 pt-2">
+            <AdvancedSection
+              cfgScale={cfgScale}
+              seed={seed}
+              steps={steps}
+              onCfgScale={setCfgScale}
+              onSeed={setSeed}
+              onSteps={setSteps}
             />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-[13px] font-medium" htmlFor="generator-cfg" style={{ color: C.muted }}>
-                {t("generator.cfgScale")}
-              </Label>
-              <Input
-                className="h-8 rounded-[8px] focus-visible:ring-0"
-                id="generator-cfg"
-                max={30}
-                min={0}
-                onChange={(e) => setCfgScale(e.target.value)}
-                step="0.5"
-                style={inputStyle}
-                type="number"
-                value={cfgScale}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-[13px] font-medium" htmlFor="generator-steps" style={{ color: C.muted }}>
-                {t("generator.steps")}
-              </Label>
-              <Input
-                className="h-8 rounded-[8px] focus-visible:ring-0"
-                id="generator-steps"
-                max={150}
-                min={1}
-                onChange={(e) => setSteps(e.target.value)}
-                style={inputStyle}
-                type="number"
-                value={steps}
-              />
-            </div>
-          </div>
-          {/* LoRA stack — browser (named) or manual AIR URN paste */}
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
-              {t("generator.loras")}
-            </Label>
-            {loras.map((lora) => (
-              <div className="flex items-center gap-2" key={lora.id}>
-                <Input
-                  className="h-8 flex-1 rounded-[8px] text-xs focus-visible:ring-0"
-                  onChange={(e) =>
-                    setLoras((prev) => prev.map((l) => (l.id === lora.id ? { ...l, air: e.target.value } : l)))
-                  }
-                  placeholder="urn:air:anima:lora:civitai:123456@789012"
-                  style={inputStyle}
-                  value={lora.name ?? lora.air}
-                />
-                <Input
-                  className="h-8 w-16 rounded-[8px] text-xs focus-visible:ring-0"
-                  max={4}
-                  min={0}
-                  onChange={(e) =>
-                    setLoras((prev) => prev.map((l) => (l.id === lora.id ? { ...l, strength: e.target.value } : l)))
-                  }
-                  step="0.1"
-                  style={inputStyle}
-                  type="number"
-                  value={lora.strength}
-                />
-                <Button
-                  aria-label={t("generator.removeLora")}
-                  className="size-8 hover:brightness-125"
-                  onClick={() => setLoras((prev) => prev.filter((l) => l.id !== lora.id))}
-                  size="icon"
-                  style={{ backgroundColor: C.input, color: C.muted }}
-                  variant="ghost"
-                >
-                  <Icon className="size-4" name="x" />
-                </Button>
-              </div>
-            ))}
-            <Button
-              className="h-8 self-start rounded-[8px] text-xs"
-              disabled={running}
-              onClick={() => {
-                setPickerType("LORA");
-                setPaneTab("model");
-              }}
-              size="sm"
-              style={{ backgroundColor: C.input, borderColor: C.border, color: C.text }}
-              variant="outline"
-            >
-              <Icon className="size-3.5" name="plus" /> {t("generator.addLora")}
-            </Button>
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
     </div>
   );
 
@@ -1085,16 +1419,18 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           {/* Footer — civitai's [Buzz pill][Generate] arrangement */}
           <div className="border-t p-3" style={{ borderColor: C.border }}>
             <div className="flex items-stretch gap-2">
-              <div
-                className="flex h-10 shrink-0 items-center gap-1 rounded-[8px] border px-2.5"
-                style={{ backgroundColor: C.input, borderColor: C.border }}
-                title={t("generator.estimate")}
-              >
-                <Icon className="size-3.5 text-[#FFD43B]" name="zap" />
-                <span className="text-[13px] font-semibold" style={{ color: C.buzz }}>
-                  ≈{estimate.toFixed(1)}
-                </span>
-              </div>
+              {!isUpscale && (
+                <div
+                  className="flex h-10 shrink-0 items-center gap-1 rounded-[8px] border px-2.5"
+                  style={{ backgroundColor: C.input, borderColor: C.border }}
+                  title={t("generator.estimate")}
+                >
+                  <Icon className="size-3.5 text-[#FFD43B]" name="zap" />
+                  <span className="text-[13px] font-semibold" style={{ color: C.buzz }}>
+                    ≈{estimate.toFixed(1)}
+                  </span>
+                </div>
+              )}
               <Button
                 className="h-10 flex-1 rounded-[8px] text-[15px] font-semibold text-white hover:brightness-110"
                 disabled={!canGenerate}
@@ -1111,13 +1447,15 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
                 )}
               </Button>
             </div>
-            <p className="mt-1.5 text-center text-[10px]" style={{ color: C.faint }}>
-              {t("generator.estimateNote", {
-                width: size.width,
-                height: size.height,
-                ratio: `${Math.round(size.width / sizeRatio)}:${Math.round(size.height / sizeRatio)}`,
-              })}
-            </p>
+            {!isUpscale && (
+              <p className="mt-1.5 text-center text-[10px]" style={{ color: C.faint }}>
+                {t("generator.estimateNote", {
+                  width: genSize.width,
+                  height: genSize.height,
+                  ratio: `${Math.round(genSize.width / sizeRatio)}:${Math.round(genSize.height / sizeRatio)}`,
+                })}
+              </p>
+            )}
           </div>
         </section>
 
@@ -1140,16 +1478,20 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
                 <ModelBrowser
                   eco={eco}
                   onAddLora={(row) => {
-                    setLoras((prev) => [
-                      ...prev,
-                      { id: crypto.randomUUID(), air: row.airUrn, strength: "1", name: row.name },
-                    ]);
+                    setLoras((prev) => {
+                      // Defensive: ModelBrowser already blocks re-adds, but
+                      // guard the state update itself against races.
+                      if (prev.some((l) => l.air === row.airUrn) || prev.length >= MAX_LORAS) return prev;
+                      return [...prev, { id: crypto.randomUUID(), air: row.airUrn, strength: "1", name: row.name }];
+                    });
                     setAdvancedOpen(true);
                   }}
                   onSelectModel={setSelectedModel}
                   onTypeChange={setPickerType}
                   selectedModel={selectedModel}
                   type={pickerType}
+                  addedLoraAirs={addedLoraAirs}
+                  loraCount={loras.length}
                 />
               </div>
             ) : (

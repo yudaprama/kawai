@@ -6,6 +6,12 @@
  * the sdcpp engine's ecosystem discriminator mapping + per-ecosystem
  * Create-input defaults). Ecosystem ids are EXACT wire values; defaults are
  * the spec's, so the panel never sends values outside the documented range.
+ *
+ * The two Z-Image entries carry civitai's own form defaults instead
+ * (`form-graph/generation/image/zimage.graph.ts` + `data-graph/generation/
+ * z-image-graph.ts`): Turbo cfg 1 / steps 9, Base cfg 4 / steps 20, both on
+ * the shared 1024² 1:1 bucket (Base's custom-size ceiling is 4 MP, Turbo's
+ * ~1 MP) — the panel's SIZE_PRESETS chips stay well inside those ceilings.
  */
 export interface EcosystemConfig {
   /** Exact orchestrator ecosystem id (discriminator mapping key).
@@ -27,18 +33,18 @@ export interface EcosystemConfig {
   sizes: Array<{ label: string; width: number; height: number }>;
 }
 
-/** Aspect presets anchored on a square base — 1:1, 16:9, 9:16, 3:4, 4:3,
- *  all near ~1 MP for the base size (the docs' well-behaved-dimension
- *  guidance). */
-const LANDSCAPE = (base: number) => {
-  const wide = Math.round((base * 16) / 9);
-  const tall = Math.round((base * 9) / 16);
+/** Aspect presets in civitai's chip language — clean ratio labels with the
+ *  exact resolution each expands to (both sides %16, the recipe's
+ *  well-behaved-dimension rule). Anchored on the ecosystem's base size. */
+const SIZE_PRESETS = (base: number) => {
+  const wide = Math.round((base * 16) / 9 / 16) * 16;
+  const tall = Math.round((base * 3) / 2 / 16) * 16;
   return [
-    { label: `${base}×${base}`, width: base, height: base },
-    { label: `${wide}×${tall}`, width: wide, height: tall },
-    { label: `${tall}×${wide}`, width: tall, height: wide },
-    { label: `${Math.round((base * 3) / 4)}×${base}`, width: Math.round((base * 3) / 4), height: base },
-    { label: `${base}×${Math.round((base * 3) / 4)}`, width: base, height: Math.round((base * 3) / 4) },
+    { label: "1:1", width: base, height: base },
+    { label: "3:2", width: tall, height: base },
+    { label: "2:3", width: base, height: tall },
+    { label: "16:9", width: wide, height: base },
+    { label: "9:16", width: base, height: wide },
   ];
 };
 
@@ -52,7 +58,7 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
     defaultHeight: 1024,
     defaultCfgScale: 4,
     defaultSteps: 30,
-    sizes: LANDSCAPE(1024),
+    sizes: SIZE_PRESETS(1024),
   },
   {
     id: "sdxl",
@@ -63,7 +69,7 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
     defaultHeight: 512,
     defaultCfgScale: 4,
     defaultSteps: 30,
-    sizes: LANDSCAPE(512),
+    sizes: SIZE_PRESETS(512),
   },
   {
     id: "flux1",
@@ -74,7 +80,7 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
     defaultHeight: 1024,
     defaultCfgScale: 4,
     defaultSteps: 30,
-    sizes: LANDSCAPE(1024),
+    sizes: SIZE_PRESETS(1024),
   },
   {
     id: "flux2Klein",
@@ -85,7 +91,7 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
     defaultHeight: 1024,
     defaultCfgScale: 4,
     defaultSteps: 30,
-    sizes: LANDSCAPE(1024),
+    sizes: SIZE_PRESETS(1024),
   },
   {
     id: "sd1",
@@ -96,7 +102,7 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
     defaultHeight: 512,
     defaultCfgScale: 4,
     defaultSteps: 30,
-    sizes: LANDSCAPE(512),
+    sizes: SIZE_PRESETS(512),
   },
   {
     id: "flux2Dev",
@@ -107,7 +113,7 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
     defaultHeight: 1024,
     defaultCfgScale: 4,
     defaultSteps: 30,
-    sizes: LANDSCAPE(1024),
+    sizes: SIZE_PRESETS(1024),
   },
   {
     id: "qwen",
@@ -118,7 +124,29 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
     defaultHeight: 1024,
     defaultCfgScale: 4,
     defaultSteps: 30,
-    sizes: LANDSCAPE(1024),
+    sizes: SIZE_PRESETS(1024),
+  },
+  {
+    id: "zImageTurbo",
+    label: "Z-Image Turbo",
+    gradient: "from-lime-500 to-emerald-600",
+    note: "Alibaba Z-Image Turbo — civitai default cfg 1, steps 9",
+    defaultWidth: 1024,
+    defaultHeight: 1024,
+    defaultCfgScale: 1,
+    defaultSteps: 9,
+    sizes: SIZE_PRESETS(1024),
+  },
+  {
+    id: "zImageBase",
+    label: "Z-Image Base",
+    gradient: "from-yellow-500 to-lime-600",
+    note: "Z-Image Base — civitai default cfg 4, steps 20",
+    defaultWidth: 1024,
+    defaultHeight: 1024,
+    defaultCfgScale: 4,
+    defaultSteps: 20,
+    sizes: SIZE_PRESETS(1024),
   },
   {
     id: "wan",
@@ -130,7 +158,7 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
     defaultHeight: 1024,
     defaultCfgScale: 3.5,
     defaultSteps: 30,
-    sizes: LANDSCAPE(1024),
+    sizes: SIZE_PRESETS(1024),
   },
   {
     id: "seedream",
@@ -142,7 +170,7 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
     defaultHeight: 1024,
     defaultCfgScale: 2.5,
     defaultSteps: 30,
-    sizes: LANDSCAPE(1024),
+    sizes: SIZE_PRESETS(1024),
   },
   {
     id: "grok",
@@ -154,7 +182,7 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
     defaultHeight: 1024,
     defaultCfgScale: 4,
     defaultSteps: 30,
-    sizes: LANDSCAPE(1024),
+    sizes: SIZE_PRESETS(1024),
   },
 ];
 
@@ -165,6 +193,14 @@ export interface GenParams {
   engine?: "wan" | "seedream" | "grok";
   /** Generation workflow; omit = `txt2img` (backend default). */
   workflow?: string;
+  /** Source image (URL / data URL / base64) for image-input workflows
+   *  (`img2img`, `img2img:upscale`) — passed to the recipe verbatim. */
+  sourceImage?: string;
+  /** Denoise strength for `img2img` (`createVariant`), 0–1; default 0.7. */
+  strength?: number;
+  /** Upscale passes (1–3, each doubles resolution) for the upscale-backed
+   *  workflows (`txt2img:hires-fix`, `img2img:upscale`); default 1. */
+  upscaleRepeats?: number;
   prompt: string;
   negativePrompt?: string;
   width: number;
@@ -221,22 +257,74 @@ export function estimateBuzz(params: { width: number; height: number; steps?: nu
 }
 
 /**
- * Workflow registry — frontend mirror of `civitai::registry` (image-only).
- * `txt2img` runs everywhere; `img2img` needs a source image, which only the
- * sdcpp `createImage` shape takes. Single source of truth for the panel's
- * workflow ↔ ecosystem coherence (civitai's `selectorCoherence`).
+ * Workflow registry — the panel's workflow ↔ ecosystem coherence, keyed
+ * off civitai's own `workflowConfigs` (`src/shared/data-graph/generation/
+ * config/workflows.ts`), where EVERY workflow carries its own
+ * `ecosystemIds`:
+ * - `txt2img` → `TXT2IMG_IDS` (every image ecosystem);
+ * - `txt2img:hires-fix` / `img2img` → `SD_FAMILY_IDS` (SD1, SDXL, Pony,
+ *   Illustrious, NoobAI — projected onto this panel's ecosystem set);
+ * - `img2img:upscale` → standalone on civitai (its own Upscaler
+ *   ecosystem); the consumer recipe is engine-agnostic, so it reuses the
+ *   full image set (the panel hides the Eco selector for it anyway).
+ *
+ * Lists are clamped to what the consumer API can actually serve — the
+ * backend `civitai::registry` is the capability superset that validates
+ * every generate call (its `SDCPP`/engine rules still apply underneath).
+ * Single source of truth for `selectorCoherence`-style retargeting.
  */
 export interface WorkflowConfig {
   id: string;
   label: string;
+  /** One-line description shown under the label in the dropdown
+   *  (civitai's `workflowConfigs[].description`). */
+  description: string;
+  /** `"image"` = the workflow consumes a source image (upload required). */
+  input: "text" | "image";
+  /** The ONLY ecosystems listed for this workflow (civitai's
+   *  `getEcosystemsForWorkflow`). */
   ecosystems: string[];
 }
 
-const SDCPP_IDS = ECOSYSTEMS.filter((e) => !e.engine).map((e) => e.id);
+const ALL_IDS = ECOSYSTEMS.map((e) => e.id);
+/** Civitai's `SD_FAMILY_IDS` = [SD1, SDXL, Pony, Illustrious, NoobAI],
+ *  projected onto this panel's ecosystem set (same order → the default
+ *  ecosystem for a SD-family workflow is `sd1`, civitai's `ecosystemIds[0]`). */
+const SD_FAMILY_IDS = ["sd1", "sdxl"];
 
+/**
+ * The civitai dropdown's image set, consumer-API edition. Face fix has no
+ * consumer-API backing at all (only detection), so it is not offered.
+ */
 export const WORKFLOWS: WorkflowConfig[] = [
-  { id: "txt2img", label: "Teks → Gambar", ecosystems: ECOSYSTEMS.map((e) => e.id) },
-  { id: "img2img", label: "Gambar → Gambar", ecosystems: SDCPP_IDS },
+  {
+    id: "txt2img",
+    label: "Create Image",
+    description: "Generate an AI image from text",
+    input: "text",
+    ecosystems: ALL_IDS,
+  },
+  {
+    id: "txt2img:hires-fix",
+    label: "Create + Hires Fix",
+    description: "Generate with upscaling for higher detail",
+    input: "text",
+    ecosystems: SD_FAMILY_IDS,
+  },
+  {
+    id: "img2img",
+    label: "Image Variations",
+    description: "Generate a variation of an existing image",
+    input: "image",
+    ecosystems: SD_FAMILY_IDS,
+  },
+  {
+    id: "img2img:upscale",
+    label: "Upscale",
+    description: "Increase image resolution",
+    input: "image",
+    ecosystems: ALL_IDS,
+  },
 ];
 
 export const DEFAULT_WORKFLOW = "txt2img";
