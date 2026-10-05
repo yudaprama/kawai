@@ -304,9 +304,11 @@ fn blob_view(b: &Blob) -> Option<&Blob> {
 }
 
 /// Generate images and persist them into the user's office store. The
-/// recipe call is synchronous (10–25s at spec defaults; minutes for large
-/// batches) and SPENDS Buzz — the panel's Generate click is the consent.
-/// Each call creates NEW files (import semantics).
+/// recipe call SPENDS Buzz — the panel's Generate click is the consent —
+/// and blocks until the job is terminal: the `civitai` client long-polls
+/// `?wait=90`, then polls the workflow until it turns terminal (spec
+/// defaults finish in 10–25s; large batches run minutes, hence the 180s
+/// poll deadline). Each call creates NEW files (import semantics).
 pub async fn civitai_generate(
     user_id: &str,
     params: ImageGenParams,
@@ -376,8 +378,10 @@ fn uuidish() -> String {
 
 // ── Video generation (workflows API) ───────────────────────────────────────
 //
-// Video runs through the ASYNC workflow surface, not the synchronous recipe:
-// submit spends Buzz and returns a workflowId; the panel polls
+// Video runs through the workflow surface, not a recipe: the image path
+// hides its own polling behind the recipe call, while video hands the
+// workflowId back to the panel. submit spends Buzz and returns a
+// workflowId; the panel polls
 // `civitai_video_status` (server-side long-poll) until a terminal state,
 // then `civitai_video_fetch` downloads the signed mp4 ONCE into the office
 // store. Restart-safe by design — the workflowId lives client-side, and
