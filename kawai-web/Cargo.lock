@@ -1044,6 +1044,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "civitai"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "reqwest 0.13.4",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3305,6 +3315,7 @@ dependencies = [
  "base64 0.22.1",
  "browser",
  "chrono",
+ "civitai",
  "coinmarketcap",
  "composio",
  "dotenvy",

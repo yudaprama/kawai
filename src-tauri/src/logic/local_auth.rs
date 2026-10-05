@@ -101,15 +101,8 @@ fn persist_token(user_email: &str, token: &str) {
     let dir = kawai_paths::user_data_dir(user_email);
     if std::fs::create_dir_all(&dir).is_ok() {
         let path = kawai_paths::auth_token(user_email);
-        match std::fs::write(&path, token) {
-            Ok(()) => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-                }
-            }
-            Err(e) => eprintln!("[auth] failed to write auth token {}: {e}", path.display()),
+        if let Err(e) = kawai_paths::write_private_file(&path, token) {
+            eprintln!("[auth] failed to write auth token {}: {e}", path.display());
         }
     }
 }

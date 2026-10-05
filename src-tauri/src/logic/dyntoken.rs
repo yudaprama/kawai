@@ -38,18 +38,8 @@ async fn ensure_keys() -> Result<(String, String), String> {
         .ok_or("malformed dyntoken/keys response")?
         .to_string();
     let path = kawai_paths::vault_keys();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    match std::fs::write(&path, format!("{key}\n{secret}\n")) {
-        Ok(()) => {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-            }
-        }
-        Err(e) => eprintln!("[dyntoken] failed to cache keys {}: {e}", path.display()),
+    if let Err(e) = kawai_paths::write_private_file(&path, &format!("{key}\n{secret}\n")) {
+        eprintln!("[dyntoken] failed to cache keys {}: {e}", path.display());
     }
     Ok((key, secret))
 }

@@ -3308,22 +3308,29 @@ struct RunChart {
     mark: String,
 }
 
+/// Completed step outputs that parse as JSON with `kind == wanted`, in plan
+/// order. Shared scaffold for the deliverable collectors
+/// ([`collect_run_charts`], [`collect_ta_summaries`]).
+fn completed_kind_outputs(
+    result: &kawai_router::ExecutionResult,
+    kind: &str,
+) -> Vec<serde_json::Value> {
+    result
+        .results
+        .iter()
+        .filter(|r| r.status == kawai_router::StepStatus::Completed)
+        .filter_map(|r| serde_json::from_str::<serde_json::Value>(r.output.trim()).ok())
+        .filter(|v| v.get("kind").and_then(|k| k.as_str()) == Some(kind))
+        .collect()
+}
+
 /// Deterministic scan of the run's step outputs for chart artifacts. The
 /// deliverable writer may embed these via `![caption](kawai-file://<id>)`;
 /// any other id it writes is stripped by [`strip_unknown_chart_tokens`].
 fn collect_run_charts(result: &kawai_router::ExecutionResult) -> Vec<RunChart> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for r in &result.results {
-        if r.status != kawai_router::StepStatus::Completed {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(r.output.trim()) else {
-            continue;
-        };
-        if v.get("kind").and_then(|k| k.as_str()) != Some("chart") {
-            continue;
-        }
+    for v in completed_kind_outputs(result, "chart") {
         let Some(file_id) = v.get("fileId").and_then(|f| f.as_str()) else {
             continue;
         };
@@ -3404,16 +3411,7 @@ struct TaSummary {
 /// indicator-summary table appended to the deliverable.
 fn collect_ta_summaries(result: &kawai_router::ExecutionResult) -> Vec<TaSummary> {
     let mut out = Vec::new();
-    for r in &result.results {
-        if r.status != kawai_router::StepStatus::Completed {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(r.output.trim()) else {
-            continue;
-        };
-        if v.get("kind").and_then(|k| k.as_str()) != Some("ta") {
-            continue;
-        }
+    for v in completed_kind_outputs(result, "ta") {
         let Some(indicators) = v.get("indicators").and_then(|i| i.as_object()) else {
             continue;
         };

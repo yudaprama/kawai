@@ -1,6 +1,10 @@
 {
   "minLines": 5,
+  "formats": ["rust"],
   "minTokens": 50,
+  "reporters": ["console-full", "html", "json"],
+  "output": "./jscpd-report-rust",
+  "threshold": 2,
   "ignore": [
     "**/lib/streamdown/**",
     "**/components/ai-elements/**",
@@ -14,6 +18,10 @@
     "**/DESIGN.md",
     "**/generated-tools/**/*.gen.rs",
     "**/vendor/**",
-    "**/target/**"
+    "**/target/**",
+    "**/node_modules/**",
+    "**/*_pb.rs",
+    "**/*.pb.rs",
+    "**/*.gen.rs"
   ]
 }
