@@ -6,6 +6,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { Slider, SliderRange, SliderThumb, SliderTrack } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/shared/icon";
@@ -24,11 +25,11 @@ import {
   WORKFLOWS,
   ecosystemsForWorkflow,
   estimateBuzz,
+  isSdFamily,
   isWorkflowAvailable,
   resolveCompatibleEcosystem,
   targetWorkflowForEcosystem,
 } from "./ecosystems";
-import { C } from "./palette";
 import { AdvancedSection } from "./advanced-section";
 
 interface HistoryEntry {
@@ -101,6 +102,25 @@ function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b);
 }
 
+/** Segmented-control vocabulary — the muted track + active-pill treatment the
+ *  app's ui/tabs triggers use, spelled out for these raw button groups. */
+const SEGMENTED_LIST = "inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-muted p-0.5";
+
+function segmentClass(active: boolean): string {
+  return cn(
+    "flex h-7 items-center rounded-md px-3 text-xs font-medium transition-colors",
+    active ? "bg-background text-foreground shadow-sm dark:bg-input/30" : "text-muted-foreground hover:text-foreground",
+  );
+}
+
+/** Standalone choice buttons (no shared track) — bordered, active in primary. */
+function choiceClass(active: boolean): string {
+  return cn(
+    "flex-1 rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors",
+    active ? "border-primary bg-secondary text-primary" : "bg-secondary text-muted-foreground hover:text-foreground",
+  );
+}
+
 /** Text segmented control — the results pane's Hasil|Model switch. */
 function PaneTabs({ value, onChange }: { value: "hasil" | "model"; onChange: (v: "hasil" | "model") => void }) {
   const { t } = useI18n();
@@ -109,18 +129,9 @@ function PaneTabs({ value, onChange }: { value: "hasil" | "model"; onChange: (v:
     { id: "model" as const, label: t("generator.model") },
   ];
   return (
-    <div className="inline-flex shrink-0 items-center rounded-[8px] p-0.5" style={{ backgroundColor: C.input }}>
+    <div className={SEGMENTED_LIST}>
       {tabs.map((tab) => (
-        <button
-          className="flex h-7 items-center rounded-[6px] px-3 text-xs font-medium transition-colors"
-          key={tab.id}
-          onClick={() => onChange(tab.id)}
-          style={{
-            backgroundColor: value === tab.id ? C.border : "transparent",
-            color: value === tab.id ? C.heading : C.muted,
-          }}
-          type="button"
-        >
+        <button className={segmentClass(value === tab.id)} key={tab.id} onClick={() => onChange(tab.id)} type="button">
           {tab.label}
         </button>
       ))}
@@ -150,29 +161,24 @@ function AspectChip({
   return (
     <button
       aria-pressed={active}
-      className="flex w-[70px] flex-col items-center gap-1.5 rounded-[8px] border p-2 transition-colors"
+      className={cn(
+        "flex w-[70px] flex-col items-center gap-1.5 rounded-[8px] border bg-secondary p-2 transition-colors",
+        active ? "border-primary text-foreground" : "text-muted-foreground hover:text-foreground",
+      )}
       onClick={onClick}
-      style={{
-        backgroundColor: C.input,
-        borderColor: active ? C.blue : C.border,
-        color: active ? C.heading : C.muted,
-      }}
       type="button"
     >
       <div className="flex h-6 items-center justify-center">
         <div
-          className="rounded-[3px]"
+          className={cn("rounded-[3px]", active ? "bg-primary" : "bg-muted-foreground")}
           style={{
             height: Math.max(6, height * scale),
             width: Math.max(6, width * scale),
-            backgroundColor: active ? C.blue : C.muted,
           }}
         />
       </div>
       <span className="text-[10px] leading-none font-medium">{label}</span>
-      <span className="text-[9px] leading-none" style={{ color: C.faint }}>
-        {sub}
-      </span>
+      <span className="text-muted-foreground/70 text-[9px] leading-none">{sub}</span>
     </button>
   );
 }
@@ -199,10 +205,7 @@ function ResultCard({ entry }: { entry: HistoryEntry }) {
   const { t } = useI18n();
   const { data, isLoading } = useFilePreview({ id: entry.fileId, name: entry.name });
   return (
-    <div
-      className="group relative overflow-hidden rounded-[8px] border"
-      style={{ backgroundColor: C.input, borderColor: C.border }}
-    >
+    <div className="group relative overflow-hidden rounded-[8px] border bg-secondary">
       <button
         className="block w-full cursor-zoom-in"
         onClick={() => emitOpenPreview(entry.fileId, entry.name)}
@@ -262,14 +265,12 @@ function BrowserCard({
 
   return (
     <div
-      className="group overflow-hidden rounded-[10px] border text-left transition-colors hover:brightness-110"
-      style={{
-        backgroundColor: C.input,
-        borderColor: selected ? C.blue : C.border,
-        boxShadow: selected ? `0 0 0 1px ${C.blue}` : undefined,
-      }}
+      className={cn(
+        "group overflow-hidden rounded-[10px] border bg-secondary text-left transition-colors hover:brightness-110",
+        selected && "border-primary ring-1 ring-primary",
+      )}
     >
-      <div className="relative w-full overflow-hidden" style={{ backgroundColor: C.deep }}>
+      <div className="relative w-full overflow-hidden bg-background">
         <button className="block w-full cursor-pointer" onClick={() => onSelect(row)} type="button">
           {gallery[at] ? (
             <img alt={row.name} className="block h-auto w-full" loading="lazy" src={gallery[at]} />
@@ -302,11 +303,7 @@ function BrowserCard({
             </Button>
             <div className="pointer-events-none absolute inset-x-0 bottom-1.5 z-10 flex justify-center gap-1">
               {gallery.map((url, i) => (
-                <span
-                  className="size-1.5 rounded-full"
-                  key={url}
-                  style={{ backgroundColor: i === at ? C.buzz : "rgba(255,255,255,0.4)" }}
-                />
+                <span className={cn("size-1.5 rounded-full", i === at ? "bg-primary" : "bg-foreground/40")} key={url} />
               ))}
             </div>
           </>
@@ -314,28 +311,19 @@ function BrowserCard({
       </div>
       <div className="flex flex-col gap-1 p-2.5">
         <div className="flex items-start justify-between gap-2">
-          <span className="line-clamp-1 text-[13px] font-semibold" style={{ color: C.heading }}>
-            {row.name}
-          </span>
+          <span className="text-foreground line-clamp-1 text-[13px] font-semibold">{row.name}</span>
           {selected && <Icon className="mt-0.5 size-3.5 shrink-0" name="check" />}
         </div>
-        <span className="text-[11px]" style={{ color: C.muted }}>
+        <span className="text-muted-foreground text-[11px]">
           {row.creator ?? "—"}
           {row.downloads !== null && <span> · {compactCount(row.downloads)} ⬇</span>}
-          {row.thumbsUp !== null && <span style={{ color: C.buzz }}> · {compactCount(row.thumbsUp)} ❤</span>}
+          {row.thumbsUp !== null && <span className="text-warning"> · {compactCount(row.thumbsUp)} ❤</span>}
         </span>
         {row.description && (
-          <span className="line-clamp-2 text-[11px] leading-snug" style={{ color: C.faint }}>
-            {row.description}
-          </span>
+          <span className="text-muted-foreground/70 line-clamp-2 text-[11px] leading-snug">{row.description}</span>
         )}
         {row.baseModel && (
-          <span
-            className="w-fit rounded border px-1 py-px text-[10px]"
-            style={{ borderColor: C.border, color: C.faint }}
-          >
-            {row.baseModel}
-          </span>
+          <span className="text-muted-foreground/70 w-fit rounded border px-1 py-px text-[10px]">{row.baseModel}</span>
         )}
       </div>
     </div>
@@ -474,57 +462,30 @@ function ModelBrowser({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Filters: search + type tabs + sort */}
-      <div className="flex flex-wrap items-center gap-2 border-b p-3" style={{ borderColor: C.border }}>
+      <div className="flex flex-wrap items-center gap-2 border-b p-3">
         <div className="relative min-w-[180px] flex-1">
           <Icon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2" name="search" />
           <Input
-            className="h-8 rounded-[8px] pr-3 text-sm focus-visible:ring-0"
+            className="h-8 rounded-[8px] pr-3 pl-8 text-sm"
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("generator.searchPlaceholder")}
-            style={{
-              backgroundColor: C.input,
-              borderColor: C.border,
-              color: C.text,
-              paddingLeft: 32,
-            }}
             value={query}
           />
         </div>
-        <div className="inline-flex items-center rounded-[8px] p-0.5" style={{ backgroundColor: C.input }}>
+        <div className={SEGMENTED_LIST}>
           {(["Checkpoint", "LORA"] as const).map((tt) => (
-            <button
-              className="flex h-7 items-center rounded-[6px] px-2.5 text-xs font-medium transition-colors"
-              key={tt}
-              onClick={() => onTypeChange(tt)}
-              style={{
-                backgroundColor: type === tt ? C.border : "transparent",
-                color: type === tt ? C.heading : C.muted,
-              }}
-              type="button"
-            >
+            <button className={segmentClass(type === tt)} key={tt} onClick={() => onTypeChange(tt)} type="button">
               {tt === "Checkpoint" ? t("generator.typeCheckpoint") : t("generator.typeLora")}
             </button>
           ))}
         </div>
         <Select onValueChange={setSort} value={sort}>
-          <SelectTrigger
-            className="h-8 w-[170px] rounded-[8px] text-xs"
-            style={{ backgroundColor: C.input, borderColor: C.border, color: C.text }}
-          >
+          <SelectTrigger className="h-8 w-[170px] rounded-[8px] text-xs">
             {sortOptions.find((o) => o.value === sort)?.label}
           </SelectTrigger>
-          <SelectContent
-            className="z-[60] rounded-[8px] border"
-            position="popper"
-            style={{ backgroundColor: C.input, borderColor: C.border }}
-          >
+          <SelectContent className="z-[60] rounded-[8px]" position="popper">
             {sortOptions.map((o) => (
-              <SelectItem
-                className="rounded-[6px] focus:bg-[#2C2E33] focus:text-white"
-                key={o.value}
-                style={{ color: C.text }}
-                value={o.value}
-              >
+              <SelectItem key={o.value} value={o.value}>
                 {o.label}
               </SelectItem>
             ))}
@@ -539,15 +500,12 @@ function ModelBrowser({
             <Spinner className="size-6" />
           </div>
         ) : error ? (
-          <div
-            className="mx-auto flex h-40 max-w-md flex-col items-center justify-center gap-2 rounded-[8px] border p-4 text-center"
-            style={{ borderColor: C.border, color: C.muted }}
-          >
+          <div className="border-muted-foreground/70 mx-auto flex h-40 max-w-md flex-col items-center justify-center gap-2 rounded-[8px] border p-4 text-center">
             <Icon className="size-8 stroke-1" name="alert-triangle" />
             <p className="text-xs break-words">{error}</p>
           </div>
         ) : rows.length === 0 ? (
-          <div className="flex h-40 flex-col items-center justify-center gap-2" style={{ color: C.muted }}>
+          <div className="text-muted-foreground flex h-40 flex-col items-center justify-center gap-2">
             <Icon className="size-12 stroke-1" name="inbox" />
             <p className="text-sm">{t("generator.noResults")}</p>
           </div>
@@ -591,10 +549,11 @@ function ModelBrowser({
 }
 
 /**
- * Generator — Civitai image generation styled as a faithful copy of the
- * civitai generation panel (their exact dark palette, Mantine-dark control
- * treatment, cover-art model picker, Buzz footer). The model BROWSER lives
- * in the wide results pane (tab Hasil|Model) so full model info fits.
+ * Generator — Civitai image generation laid out like the civitai generation
+ * panel (control treatment, cover-art model picker, Buzz footer), themed
+ * through kawai's global token layer so it follows the app's light/dark
+ * theme like every other asset page. The model BROWSER lives in the wide
+ * results pane (tab Hasil|Model) so full model info fits.
  * Direct-op path (no supervisor); the op is synchronous and spends Buzz —
  * the Generate click is the consent. Results land in the office store and
  * embed anywhere `kawai-file://` tokens render. The API key is vault-baked.
@@ -634,6 +593,12 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   const [seed, setSeed] = useState("");
   const [cfgScale, setCfgScale] = useState(String(ECOSYSTEMS[0].defaultCfgScale));
   const [steps, setSteps] = useState(String(ECOSYSTEMS[0].defaultSteps));
+  /** sdcpp sampler display name — SD-family only (the wire
+   *  carries sampleMethod/schedule only for Sd1/Sdxl);
+   *  "Euler" is the orchestrator's own default. */
+  const [sampler, setSampler] = useState("Euler");
+  /** CLIP layers to skip — SD-family only, 1–3 (spec default 2). */
+  const [clipSkip, setClipSkip] = useState("2");
   const [loras, setLoras] = useState<LoraEntry[]>([]);
 
   const [running, setRunning] = useState(false);
@@ -712,6 +677,10 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     const cleanedLoras = loras
       .map((l) => ({ air: l.air.trim(), strength: Number(l.strength) || 1 }))
       .filter((l) => l.air.length > 0);
+    // Empty/invalid CLIP-skip input falls back to the spec
+    // default (None = 2) instead of failing the generate call.
+    const parsedClipSkip = Number(clipSkip);
+    const clipSkipValue = parsedClipSkip >= 1 && parsedClipSkip <= 3 ? parsedClipSkip : undefined;
     return {
       ecosystem: eco.id,
       engine: eco.engine,
@@ -727,6 +696,8 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       cfgScale: Number(cfgScale),
       steps: Number(steps),
       seed: seed.trim() ? Number(seed) : undefined,
+      sampler: isSdFamily(eco.id) ? sampler : undefined,
+      clipSkip: isSdFamily(eco.id) ? clipSkipValue : undefined,
       loras: cleanedLoras.length > 0 ? cleanedLoras : undefined,
       diffuserModel: selectedModel?.airUrn,
     };
@@ -744,6 +715,8 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     cfgScale,
     steps,
     seed,
+    sampler,
+    clipSkip,
     loras,
     selectedModel,
     sourceImage,
@@ -825,7 +798,6 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     !running &&
     (needsSource ? sourceImage != null : true) &&
     (workflowId === "img2img:upscale" || prompt.trim().length > 0);
-  const inputStyle = { backgroundColor: C.input, borderColor: C.border, color: C.text } as const;
 
   /** AIR URNs already in the stack — keeps ModelBrowser clicks idempotent. */
   const addedLoraAirs = useMemo(() => new Set(loras.map((l) => l.air)), [loras]);
@@ -856,19 +828,15 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       {/* Top bar — civitai's [media tabs …… Eco | <ecosystem>] strip. The
           panel is image-only, so the media tabs render as a static island. */}
       {!isUpscale && (
-        <div
-          className="flex items-center justify-between gap-2 rounded-[10px] border p-1.5"
-          style={{ backgroundColor: C.surface, borderColor: C.border }}
-        >
-          <div className="flex items-center gap-1 rounded-[8px] border p-1" style={{ borderColor: C.border }}>
+        <div className="flex items-center justify-between gap-2 rounded-[10px] border p-1.5">
+          <div className="flex items-center gap-1 rounded-[8px] border p-1">
             {["image", "video", "music", "box"].map((n, i) => (
               <span
-                className="flex h-7 w-9 items-center justify-center rounded-[6px]"
+                className={cn(
+                  "flex h-7 w-9 items-center justify-center rounded-[6px]",
+                  i === 0 ? "bg-accent text-primary" : "text-muted-foreground/70",
+                )}
                 key={n}
-                style={{
-                  backgroundColor: i === 0 ? C.hover : undefined,
-                  color: i === 0 ? C.blue : C.faint,
-                }}
               >
                 <Icon name={n} />
               </span>
@@ -880,31 +848,25 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
               aria-haspopup="listbox"
               className="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
               onClick={() => setEcoOpen((v) => !v)}
-              style={{ color: C.heading }}
               type="button"
             >
-              <span style={{ color: C.muted }}>Eco</span>
-              <span className="h-4 w-px" style={{ backgroundColor: C.border }} />
+              <span className="text-muted-foreground">Eco</span>
+              <span className="bg-border h-4 w-px" />
               {eco.label}
               <span
-                className="flex items-center transition-transform"
-                style={{ transform: ecoOpen ? "rotate(180deg)" : undefined, color: C.muted }}
+                className={cn("text-muted-foreground flex items-center transition-transform", ecoOpen && "rotate-180")}
               >
                 <Icon name="chevron-down" />
               </span>
             </button>
             {ecoOpen && (
               <div
-                className="absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-[10px] border shadow-xl"
+                className="bg-popover absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-[10px] border shadow-xl"
                 role="listbox"
-                style={{ backgroundColor: C.hover, borderColor: C.border }}
               >
                 {ecoSections.map((section) => (
-                  <div className="border-t first:border-t-0" key={section.id} style={{ borderColor: C.border }}>
-                    <div
-                      className="px-3 pt-2.5 pb-1 text-[10px] font-semibold tracking-wider uppercase"
-                      style={{ color: C.faint }}
-                    >
+                  <div className="border-t first:border-t-0" key={section.id}>
+                    <div className="text-muted-foreground/70 px-3 pt-2.5 pb-1 text-[10px] font-semibold tracking-wider uppercase">
                       {section.label}
                     </div>
                     {section.ecos.map((e) => {
@@ -917,33 +879,35 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
                       return (
                         <button
                           aria-selected={selected}
-                          className="flex w-full items-center gap-2 p-2.5 text-left transition-colors hover:brightness-125"
+                          className={cn(
+                            "flex w-full items-center gap-2 p-2.5 text-left transition-colors hover:bg-accent",
+                            selected && "bg-accent",
+                          )}
                           key={e.id}
                           onClick={() => {
                             setEcoOpen(false);
                             if (!selected) switchEcosystem(e.id);
                           }}
                           role="option"
-                          style={{
-                            backgroundColor: selected ? `${C.blue}22` : undefined,
-                            opacity: available ? 1 : 0.6,
-                          }}
+                          style={{ opacity: available ? 1 : 0.6 }}
                           title={targetLabel ? t("generator.willSwitchTo", { workflow: targetLabel }) : undefined}
                           type="button"
                         >
                           <ModelTile cover={covers[e.id]?.url} eco={e} size={20} />
                           <span
-                            className="flex-1 truncate text-sm font-medium"
-                            style={{ color: selected ? C.blue : C.heading }}
+                            className={cn(
+                              "flex-1 truncate text-sm font-medium",
+                              selected && "text-primary font-semibold",
+                            )}
                           >
                             {e.label}
                           </span>
                           {selected ? (
-                            <span className="shrink-0" style={{ color: C.blue }}>
+                            <span className="text-primary shrink-0">
                               <Icon name="check" />
                             </span>
                           ) : !available ? (
-                            <span className="shrink-0" style={{ color: C.muted }}>
+                            <span className="text-muted-foreground shrink-0">
                               <Icon className="size-3.5" name="arrow-right" />
                             </span>
                           ) : null}
@@ -959,16 +923,13 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       )}
       {ecoOpen && <div aria-hidden className="fixed inset-0 z-20" onClick={() => setEcoOpen(false)} />}
       {configured === false && (
-        <div
-          className="flex items-start gap-2 rounded-[8px] border p-2.5 text-xs leading-relaxed"
-          style={{ backgroundColor: C.input, borderColor: C.border, color: C.muted }}
-        >
+        <div className="bg-secondary text-muted-foreground flex items-start gap-2 rounded-[8px] border p-2.5 text-xs leading-relaxed">
           <Icon className="mt-0.5 size-4 shrink-0" name="info" />
           <span>{t("generator.keyMissingBody")}</span>
         </div>
       )}
       {configured === null && (
-        <div className="flex items-center gap-2 text-sm" style={{ color: C.muted }}>
+        <div className="text-muted-foreground flex items-center gap-2 text-sm">
           <Spinner className="size-4" /> {t("generator.checkingKey")}
         </div>
       )}
@@ -981,31 +942,30 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
         <button
           aria-expanded={wfOpen}
           aria-haspopup="listbox"
-          className="flex w-full items-center gap-2 rounded-[12px] border p-4 text-left transition-colors hover:brightness-110"
+          className={cn(
+            "flex w-full items-center gap-2 rounded-[12px] border bg-secondary p-4 text-left transition-colors hover:brightness-110",
+            wfOpen && "border-primary",
+          )}
           onClick={() => setWfOpen((v) => !v)}
-          style={{ backgroundColor: C.input, borderColor: wfOpen ? C.blue : C.border }}
           type="button"
         >
           <div className="min-w-0 flex-1">
-            <div className="truncate text-xl font-bold" style={{ color: C.heading }}>
-              {workflow.label}
-            </div>
-            <div className="truncate text-sm" style={{ color: C.muted }}>
-              {workflow.description}
-            </div>
+            <div className="text-foreground truncate text-xl font-bold">{workflow.label}</div>
+            <div className="text-muted-foreground truncate text-sm">{workflow.description}</div>
           </div>
           <span
-            className="mr-1 flex shrink-0 items-center transition-transform"
-            style={{ transform: wfOpen ? "rotate(180deg)" : undefined, color: C.muted }}
+            className={cn(
+              "text-muted-foreground mr-1 flex shrink-0 items-center transition-transform",
+              wfOpen && "rotate-180",
+            )}
           >
             <Icon name="chevron-down" />
           </span>
         </button>
         {wfOpen && (
           <div
-            className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-[10px] border shadow-xl"
+            className="bg-popover absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-[10px] border shadow-xl"
             role="listbox"
-            style={{ backgroundColor: C.hover, borderColor: C.border }}
           >
             {WORKFLOWS.map((w) => {
               const compatible = isWorkflowAvailable(w.id, ecoId);
@@ -1013,29 +973,25 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
               return (
                 <button
                   aria-selected={selected}
-                  className="flex w-full items-start gap-2 p-2.5 text-left transition-colors hover:brightness-125"
+                  className={cn(
+                    "flex w-full items-start gap-2 p-2.5 text-left transition-colors hover:bg-accent",
+                    selected && "bg-accent",
+                  )}
                   key={w.id}
                   onClick={() => {
                     setWfOpen(false);
                     if (!selected) switchWorkflow(w.id);
                   }}
                   role="option"
-                  style={{
-                    backgroundColor: selected ? `${C.blue}22` : undefined,
-                    opacity: compatible ? 1 : 0.45,
-                  }}
+                  style={{ opacity: compatible ? 1 : 0.45 }}
                   type="button"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold" style={{ color: selected ? C.blue : C.heading }}>
-                      {w.label}
-                    </div>
-                    <div className="truncate text-xs" style={{ color: C.muted }}>
-                      {w.description}
-                    </div>
+                    <div className={cn("text-sm font-semibold", selected && "text-primary")}>{w.label}</div>
+                    <div className="text-muted-foreground truncate text-xs">{w.description}</div>
                   </div>
                   {selected && (
-                    <span className="mt-1 shrink-0" style={{ color: C.blue }}>
+                    <span className="text-primary mt-1 shrink-0">
                       <Icon name="check" />
                     </span>
                   )}
@@ -1060,14 +1016,9 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           ).map(([mode, key]) => (
             <button
               aria-pressed={hiresMode === mode}
-              className="flex-1 rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors"
+              className={choiceClass(hiresMode === mode)}
               key={mode}
               onClick={() => setHiresMode(mode)}
-              style={{
-                backgroundColor: hiresMode === mode ? C.hover : C.input,
-                borderColor: hiresMode === mode ? C.blue : C.border,
-                color: hiresMode === mode ? C.blue : C.muted,
-              }}
               type="button"
             >
               {t(key)}
@@ -1081,32 +1032,23 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           upscale passes ride the upscale-backed ones. */}
       {needsSource && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
-            {t("generator.sourceImage")}
-          </Label>
+          <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.sourceImage")}</Label>
           {sourceImage ? (
-            <div
-              className="flex items-center gap-2 rounded-[8px] border p-2"
-              style={{ backgroundColor: C.input, borderColor: C.border }}
-            >
+            <div className="flex items-center gap-2 rounded-[8px] border bg-secondary p-2">
               <img alt="" className="size-12 rounded-[6px] object-cover" src={sourceImage} />
               <button
-                className="text-[11px] underline-offset-2 hover:underline"
+                className="text-primary text-[11px] underline-offset-2 hover:underline"
                 onClick={() => {
                   setSourceImage(null);
                   setSourceDims(null);
                 }}
-                style={{ color: C.blue }}
                 type="button"
               >
                 {t("generator.removeImage")}
               </button>
             </div>
           ) : (
-            <label
-              className="flex cursor-pointer items-center justify-center gap-2 rounded-[8px] border border-dashed p-4 text-xs transition-colors hover:brightness-125"
-              style={{ borderColor: C.border, color: C.muted }}
-            >
+            <label className="text-muted-foreground flex cursor-pointer items-center justify-center gap-2 rounded-[8px] border border-dashed p-4 text-xs transition-colors hover:brightness-125">
               <Icon className="size-4" name="image" />
               {t("generator.chooseImage")}
               <input
@@ -1137,46 +1079,36 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       {(isImg2Img || hiresImg) && (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between">
-            <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
-              {t("generator.strength")}
-            </Label>
-            <span className="text-[10px]" style={{ color: C.faint }}>
-              {Number(strength).toFixed(2)}
-            </span>
+            <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.strength")}</Label>
+            <span className="text-muted-foreground/70 text-[10px]">{Number(strength).toFixed(2)}</span>
           </div>
-          <input
-            className="w-full accent-[var(--color-text)]"
+          <Slider
+            value={[Number(strength)]}
             max={1}
             min={0}
-            onChange={(e) => setStrength(e.target.value)}
             step={0.05}
-            type="range"
-            value={strength}
-          />
+            onValueChange={(v) => setStrength(String(v[0]))}
+          >
+            <SliderTrack>
+              <SliderRange />
+            </SliderTrack>
+            <SliderThumb aria-label={t("generator.strength")} />
+          </Slider>
         </div>
       )}
       {(workflowId === "txt2img:hires-fix" || workflowId === "img2img:upscale") && (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between">
-            <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
-              {t("generator.upscaleRepeats")}
-            </Label>
-            <span className="text-[10px]" style={{ color: C.faint }}>
-              {t("generator.upscaleRepeatsHint")}
-            </span>
+            <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.upscaleRepeats")}</Label>
+            <span className="text-muted-foreground/70 text-[10px]">{t("generator.upscaleRepeatsHint")}</span>
           </div>
           <div className="flex gap-1.5">
             {[1, 2, 3].map((n) => (
               <button
                 aria-pressed={upscaleRepeats === n}
-                className="flex-1 rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors"
+                className={choiceClass(upscaleRepeats === n)}
                 key={n}
                 onClick={() => setUpscaleRepeats(n)}
-                style={{
-                  backgroundColor: upscaleRepeats === n ? C.hover : C.input,
-                  borderColor: upscaleRepeats === n ? C.blue : C.border,
-                  color: upscaleRepeats === n ? C.heading : C.muted,
-                }}
                 type="button"
               >
                 {n}×
@@ -1184,9 +1116,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
             ))}
           </div>
           {workflowId === "txt2img:hires-fix" && (
-            <span className="text-[10px]" style={{ color: C.faint }}>
-              {t("generator.hiresHint")}
-            </span>
+            <span className="text-muted-foreground/70 text-[10px]">{t("generator.hiresHint")}</span>
           )}
         </div>
       )}
@@ -1195,14 +1125,11 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       {!isUpscale && (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between">
-            <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
-              {t("generator.model")}
-            </Label>
+            <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.model")}</Label>
             {selectedModel ? (
               <button
-                className="text-[11px] underline-offset-2 hover:underline"
+                className="text-primary text-[11px] underline-offset-2 hover:underline"
                 onClick={() => setSelectedModel(null)}
-                style={{ color: C.blue }}
                 type="button"
               >
                 {t("generator.useDefault", { model: eco.label })}
@@ -1210,28 +1137,29 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
             ) : null}
           </div>
           <button
-            className="flex w-full items-center gap-2.5 rounded-[8px] border p-2 text-left transition-colors hover:brightness-110"
+            className="flex w-full items-center gap-2.5 rounded-[8px] border bg-secondary p-2 text-left transition-colors hover:brightness-110"
             onClick={() => {
               setPickerType("Checkpoint");
               setPaneTab("model");
             }}
-            style={{ backgroundColor: C.input, borderColor: C.border }}
             type="button"
           >
             <ModelTile cover={selectedModel?.coverUrl ?? covers[eco.id]?.url} eco={eco} size={40} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <span className="truncate text-sm font-semibold" style={{ color: C.heading }}>
+                <span className="text-foreground truncate text-sm font-semibold">
                   {selectedModel?.name ?? covers[eco.id]?.modelName ?? eco.label}
                 </span>
                 <span
-                  className="shrink-0 rounded border px-1 py-px text-[9px] uppercase"
-                  style={{ borderColor: C.border, color: selectedModel ? C.buzz : C.faint }}
+                  className={cn(
+                    "shrink-0 rounded border px-1 py-px text-[9px] uppercase",
+                    selectedModel ? "text-warning" : "text-muted-foreground/70",
+                  )}
                 >
                   {selectedModel ? t("generator.customBadge") : t("generator.defaultBadge")}
                 </span>
               </div>
-              <div className="truncate text-xs" style={{ color: C.muted }}>
+              <div className="text-muted-foreground truncate text-xs">
                 {selectedModel ? `${eco.label} · ${t("generator.customBadge")}` : `${eco.label} · ${eco.note}`}
               </div>
             </div>
@@ -1246,20 +1174,19 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
+              <Label className="text-muted-foreground text-[13px] font-medium">
                 {t("generator.additionalResources")}
               </Label>
-              <span className="rounded border px-1 py-px text-[9px]" style={{ borderColor: C.border, color: C.faint }}>
+              <span className="text-muted-foreground/70 rounded border px-1 py-px text-[9px]">
                 {loras.length}/{MAX_LORAS}
               </span>
             </div>
             <button
-              className="flex items-center gap-1 text-[11px] underline-offset-2 hover:underline"
+              className="text-primary flex items-center gap-1 text-[11px] underline-offset-2 hover:underline"
               onClick={() => {
                 setPickerType("LORA");
                 setPaneTab("model");
               }}
-              style={{ color: C.blue }}
               type="button"
             >
               <Icon className="size-3" name="plus" /> {t("generator.addLora")}
@@ -1269,17 +1196,15 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
             <div className="flex flex-wrap gap-1.5">
               {loras.map((lora) => (
                 <span
-                  className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                  className="flex items-center gap-1 rounded-full border border-primary bg-secondary px-2 py-0.5 text-[11px]"
                   key={lora.id}
-                  style={{ backgroundColor: C.input, borderColor: C.blue, color: C.text }}
                 >
                   <Icon className="size-3" name="zap" />
                   <span className="max-w-40 truncate">{lora.name ?? lora.air}</span>
                   <button
                     aria-label={t("generator.removeLora")}
-                    className="hover:text-white"
+                    className="text-muted-foreground hover:text-foreground"
                     onClick={() => setLoras((prev) => prev.filter((l) => l.id !== lora.id))}
-                    style={{ color: C.muted }}
                     type="button"
                   >
                     <Icon className="size-3" name="x" />
@@ -1296,23 +1221,19 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       {!isUpscale && (
         <div className="flex flex-col gap-1.5">
           <Label
-            className="flex items-center gap-1 text-[13px] font-medium"
+            className="text-muted-foreground flex items-center gap-1 text-[13px] font-medium"
             htmlFor="generator-prompt"
-            style={{ color: C.muted }}
           >
             {t("generator.prompt")}
-            <span style={{ color: "#e03131" }} title="required">
+            <span className="text-destructive" title="required">
               *
             </span>
           </Label>
           <Textarea
-            className="min-h-24 resize-none rounded-[8px] text-sm focus-visible:ring-0"
+            className="min-h-24 resize-none rounded-[8px] text-sm"
             id="generator-prompt"
             maxLength={10000}
             onChange={(e) => setPrompt(e.target.value)}
-            onFocus={(e) => (e.currentTarget.style.borderColor = C.blue)}
-            onBlur={(e) => (e.currentTarget.style.borderColor = C.border)}
-            style={inputStyle}
             value={prompt}
           />
         </div>
@@ -1322,17 +1243,14 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           buried in Advanced */}
       {!isUpscale && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-[13px] font-medium" htmlFor="generator-negative" style={{ color: C.muted }}>
+          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="generator-negative">
             {t("generator.negativePrompt")}
           </Label>
           <Textarea
-            className="min-h-16 resize-none rounded-[8px] focus-visible:ring-0"
+            className="min-h-16 resize-none rounded-[8px]"
             id="generator-negative"
             maxLength={10000}
             onChange={(e) => setNegativePrompt(e.target.value)}
-            onFocus={(e) => (e.currentTarget.style.borderColor = C.blue)}
-            onBlur={(e) => (e.currentTarget.style.borderColor = C.border)}
-            style={inputStyle}
             value={negativePrompt}
           />
         </div>
@@ -1342,9 +1260,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           source); img2img defaults them from the source image */}
       {!isUpscale && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
-            {t("generator.size")}
-          </Label>
+          <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.size")}</Label>
           <div className="flex flex-wrap gap-1.5">
             {eco.sizes.map((s, i) => (
               <AspectChip
@@ -1358,7 +1274,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
               />
             ))}
           </div>
-          <p className="text-[11px]" style={{ color: C.muted }}>
+          <p className="text-muted-foreground text-[11px]">
             {isImg2Img && sourceDims
               ? `${genSize.width}×${genSize.height}px · ${t("generator.followsSource")}`
               : `${size.width}×${size.height}px`}
@@ -1370,16 +1286,15 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           rides the Advanced section, civitai's layout) */}
       {!isUpscale && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-[13px] font-medium" htmlFor="generator-quantity" style={{ color: C.muted }}>
+          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="generator-quantity">
             {t("generator.quantity")}
           </Label>
           <Input
-            className="h-8 rounded-[8px] focus-visible:ring-0"
+            className="h-8 rounded-[8px]"
             id="generator-quantity"
             max={12}
             min={1}
             onChange={(e) => setQuantity(Math.max(1, Math.min(12, Number(e.target.value) || 1)))}
-            style={inputStyle}
             type="number"
             value={quantity}
           />
@@ -1389,7 +1304,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       {/* Advanced */}
       {!isUpscale && (
         <Collapsible onOpenChange={setAdvancedOpen} open={advancedOpen}>
-          <CollapsibleTrigger className="flex items-center gap-1 text-[13px] font-medium" style={{ color: C.muted }}>
+          <CollapsibleTrigger className="text-muted-foreground flex items-center gap-1 text-[13px] font-medium">
             <Icon className="size-4" name="chevron-down" /> {t("generator.advanced")}
           </CollapsibleTrigger>
           <CollapsibleContent className="flex flex-col gap-3 pt-2">
@@ -1397,9 +1312,14 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
               cfgScale={cfgScale}
               seed={seed}
               steps={steps}
+              sampler={sampler}
+              clipSkip={clipSkip}
+              sdFamily={isSdFamily(eco.id)}
               onCfgScale={setCfgScale}
               onSeed={setSeed}
               onSteps={setSteps}
+              onSampler={setSampler}
+              onClipSkip={setClipSkip}
             />
           </CollapsibleContent>
         </Collapsible>
@@ -1410,32 +1330,26 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   return (
     <AssetShell subtitle={t("generator.subtitle")} title={t("generator.title")} onBack={onBack}>
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* ── Form column — the civitai generation panel, always dark ── */}
-        <section
-          className="flex w-full shrink-0 flex-col border-b lg:w-[400px] lg:border-r lg:border-b-0"
-          style={{ backgroundColor: C.surface, borderColor: C.border }}
-        >
+        {/* ── Form column — the generation panel ── */}
+        <section className="bg-card flex w-full shrink-0 flex-col border-b lg:w-[400px] lg:border-r lg:border-b-0">
           <div className="min-h-0 flex-1 overflow-y-auto">{form}</div>
           {/* Footer — civitai's [Buzz pill][Generate] arrangement */}
-          <div className="border-t p-3" style={{ borderColor: C.border }}>
+          <div className="border-t p-3">
             <div className="flex items-stretch gap-2">
               {!isUpscale && (
                 <div
-                  className="flex h-10 shrink-0 items-center gap-1 rounded-[8px] border px-2.5"
-                  style={{ backgroundColor: C.input, borderColor: C.border }}
+                  className="flex h-10 shrink-0 items-center gap-1 rounded-[8px] border bg-secondary px-2.5"
                   title={t("generator.estimate")}
                 >
-                  <Icon className="size-3.5 text-[#FFD43B]" name="zap" />
-                  <span className="text-[13px] font-semibold" style={{ color: C.buzz }}>
-                    ≈{estimate.toFixed(1)}
-                  </span>
+                  <Icon className="text-warning size-3.5" name="zap" />
+                  <span className="text-warning text-[13px] font-semibold">≈{estimate.toFixed(1)}</span>
                 </div>
               )}
               <Button
-                className="h-10 flex-1 rounded-[8px] text-[15px] font-semibold text-white hover:brightness-110"
+                className="h-10 flex-1 rounded-[8px] text-[15px] font-semibold"
                 disabled={!canGenerate}
                 onClick={() => void handleGenerate()}
-                style={{ backgroundColor: running ? C.blueHover : C.blue }}
+                size="lg"
               >
                 {running ? (
                   <span className="flex items-center gap-2">
@@ -1448,7 +1362,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
               </Button>
             </div>
             {!isUpscale && (
-              <p className="mt-1.5 text-center text-[10px]" style={{ color: C.faint }}>
+              <p className="text-muted-foreground/70 mt-1.5 text-center text-[10px]">
                 {t("generator.estimateNote", {
                   width: genSize.width,
                   height: genSize.height,
@@ -1460,13 +1374,10 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
         </section>
 
         {/* ── Results pane — Hasil | Model browser ── */}
-        <section
-          className="flex min-h-0 min-w-0 flex-1 flex-col border-t lg:border-t-0"
-          style={{ backgroundColor: C.deep, borderColor: C.border }}
-        >
-          <div className="flex items-center justify-between gap-2 border-b px-3 py-2" style={{ borderColor: C.border }}>
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col border-t lg:border-t-0">
+          <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
             <PaneTabs onChange={setPaneTab} value={paneTab} />
-            <span className="truncate text-[11px]" style={{ color: C.muted }}>
+            <span className="text-muted-foreground truncate text-[11px]">
               {paneTab === "hasil"
                 ? t("generator.resultsCount", { count: results.length })
                 : `${size.width}×${size.height} · ${eco.label}`}
@@ -1474,7 +1385,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">
             {paneTab === "model" ? (
-              <div className="flex h-full flex-col" style={{ backgroundColor: C.surface }}>
+              <div className="bg-card flex h-full flex-col">
                 <ModelBrowser
                   eco={eco}
                   onAddLora={(row) => {
@@ -1497,14 +1408,9 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
             ) : (
               <div className="h-full overflow-y-auto p-3">
                 {results.length === 0 ? (
-                  <div
-                    className="flex h-full flex-col items-center justify-center gap-2 text-center"
-                    style={{ color: C.muted }}
-                  >
+                  <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-center">
                     <Icon className="size-16 stroke-1" name="inbox" />
-                    <p className="text-sm font-medium" style={{ color: C.text }}>
-                      {t("generator.noResults")}
-                    </p>
+                    <p className="text-foreground text-sm font-medium">{t("generator.noResults")}</p>
                     <p className="max-w-56 text-xs">{t("generator.noResultsHint")}</p>
                   </div>
                 ) : (

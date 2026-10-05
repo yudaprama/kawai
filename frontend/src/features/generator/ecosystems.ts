@@ -186,6 +186,12 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
   },
 ];
 
+/** civitai's generation-form sampler list (their `samplers`
+ *  const, shared/constants/generation.constants.ts) — the
+ *  sdcpp sampler dropdown. The backend maps each display
+ *  name to a `sampleMethod` + `schedule` wire pair. */
+export const SAMPLERS = ["Euler a", "Euler", "Heun", "LMS", "DDIM", "DPM++ 2M Karras", "DPM2"] as const;
+
 /** Frontend mirror of the backend's `civitai::ImageGenParams` (camelCase). */
 export interface GenParams {
   ecosystem: string;
@@ -212,6 +218,13 @@ export interface GenParams {
   loras?: Array<{ air: string; strength: number }>;
   /** Checkpoint override (AIR URN) when the user picks a specific model. */
   diffuserModel?: string;
+  /** sdcpp sampler display name (civitai's `samplers` list) —
+   *  SD-family ecosystems only; translated to `sampleMethod`
+   *  + `schedule` on the wire. */
+  sampler?: string;
+  /** Skip N CLIP layers (1–3, SD-family ecosystems only;
+   *  the spec's SD graph defaults to 2). */
+  clipSkip?: number;
 }
 
 export interface SavedImage {
@@ -291,6 +304,13 @@ const ALL_IDS = ECOSYSTEMS.map((e) => e.id);
  *  projected onto this panel's ecosystem set (same order → the default
  *  ecosystem for a SD-family workflow is `sd1`, civitai's `ecosystemIds[0]`). */
 const SD_FAMILY_IDS = ["sd1", "sdxl"];
+
+/** SD-family ecosystems — the only ones whose sdcpp input
+ *  schema the spec confirms carries `sampleMethod`/`schedule`
+ *  /`clipSkip` (Sd1/SdxlCreateImageGenInput). */
+export function isSdFamily(ecosystemId: string): boolean {
+  return SD_FAMILY_IDS.includes(ecosystemId);
+}
 
 /**
  * The civitai dropdown's image set, consumer-API edition. Face fix has no

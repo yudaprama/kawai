@@ -2,16 +2,19 @@ import { useI18n } from "@/hooks/use-i18n";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider, SliderRange, SliderThumb, SliderTrack } from "@/components/ui/slider";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { C } from "./palette";
+import { SAMPLERS } from "./ecosystems";
 
 /**
  * The Generator panel's Advanced fields, ported from civitai's
- * `generation_v2` Advanced accordion (their Mantine `SliderInput`
- * and `SeedInput`) onto kawai's Radix primitives. Only the fields
- * the imageGen recipe wire carries — cfgScale, steps and seed.
- * civitai's sampler / clipSkip / vae / controlNets have no field
- * in `civitai::ImageGenParams`, so porting them would be dead UI.
+ * `generation_v2` Advanced accordion (their Mantine `SliderInput`,
+ * `SeedInput` and `SelectInput`) onto kawai's Radix primitives.
+ * Fields the imageGen recipe wire carries: cfgScale, steps, seed,
+ * and — SD-family ecosystems only (the spec's sdcpp input schema
+ * carries them for Sd1/Sdxl) — sampler and clipSkip. civitai's
+ * vae / controlNets have no field in `civitai::ImageGenParams`
+ * yet, so porting them would be dead UI.
  */
 
 /** civitai's seed bounds (shared/constants/generation.constants.ts):
@@ -45,7 +48,7 @@ function SliderField({ id, label, value, min, max, step = 1, presets, onChange }
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-2">
-        <Label className="text-[13px] font-medium" htmlFor={id} style={{ color: C.muted }}>
+        <Label className="text-muted-foreground text-[13px] font-medium" htmlFor={id}>
           {label}
         </Label>
         <div className="flex flex-wrap items-center gap-1">
@@ -56,11 +59,12 @@ function SliderField({ id, label, value, min, max, step = 1, presets, onChange }
                 key={preset.value}
                 type="button"
                 onClick={() => onChange(String(preset.value))}
-                className={cn("rounded px-2 py-0.5 text-xs transition-colors", !active && "hover:opacity-80")}
-                style={{
-                  backgroundColor: active ? C.blue : C.hover,
-                  color: active ? "#FFFFFF" : C.text,
-                }}
+                className={cn(
+                  "rounded px-2 py-0.5 text-xs transition-colors",
+                  active
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground",
+                )}
               >
                 {preset.label}
               </button>
@@ -77,17 +81,13 @@ function SliderField({ id, label, value, min, max, step = 1, presets, onChange }
           step={step}
           onValueChange={(v) => onChange(String(v[0]))}
         >
-          <SliderTrack style={{ backgroundColor: C.border }}>
-            <SliderRange style={{ backgroundColor: C.blue }} />
+          <SliderTrack>
+            <SliderRange />
           </SliderTrack>
-          <SliderThumb
-            aria-label={label}
-            className="border-2 bg-[#4263EB] shadow-none"
-            style={{ borderColor: "rgba(255, 255, 255, 0.7)" }}
-          />
+          <SliderThumb aria-label={label} />
         </Slider>
         <Input
-          className="h-8 w-[64px] flex-none rounded-[8px] focus-visible:ring-0"
+          className="h-8 w-[64px] flex-none rounded-[8px]"
           id={id}
           type="number"
           min={min}
@@ -95,7 +95,6 @@ function SliderField({ id, label, value, min, max, step = 1, presets, onChange }
           step={step}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          style={{ backgroundColor: C.input, borderColor: C.border, color: C.text }}
         />
       </div>
     </div>
@@ -121,26 +120,18 @@ function SeedField({ seed, onChange }: SeedFieldProps) {
   ] as const;
   return (
     <div className="flex flex-col gap-1.5">
-      <Label className="text-[13px] font-medium" style={{ color: C.muted }}>
-        {t("generator.seed")}
-      </Label>
+      <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.seed")}</Label>
       <div className="flex items-center gap-2">
-        <div
-          role="radiogroup"
-          className="flex flex-1 rounded-md p-0.5"
-          style={{ backgroundColor: C.input, border: `1px solid ${C.border}` }}
-        >
+        <div role="radiogroup" className="bg-muted flex flex-1 rounded-md border p-0.5">
           {options.map((option) => (
             <label
               key={option.id}
               className={cn(
                 "flex flex-1 cursor-pointer items-center justify-center rounded-[6px] px-2 py-1 text-xs font-medium transition-colors",
-                !option.active && "hover:opacity-80",
+                option.active
+                  ? "bg-background text-foreground shadow-sm dark:bg-input/30"
+                  : "text-muted-foreground hover:text-foreground",
               )}
-              style={{
-                backgroundColor: option.active ? C.hover : "transparent",
-                color: option.active ? C.heading : C.muted,
-              }}
             >
               <input
                 type="radio"
@@ -161,7 +152,7 @@ function SeedField({ seed, onChange }: SeedFieldProps) {
           ))}
         </div>
         <Input
-          className="h-8 w-[96px] flex-none rounded-[8px] focus-visible:ring-0"
+          className="h-8 w-[96px] flex-none rounded-[8px]"
           id="generator-seed"
           type="number"
           min={0}
@@ -169,9 +160,63 @@ function SeedField({ seed, onChange }: SeedFieldProps) {
           placeholder={t("generator.seedPlaceholder")}
           value={seed}
           onChange={(e) => onChange(e.target.value)}
-          style={{ backgroundColor: C.input, borderColor: C.border, color: C.text }}
         />
       </div>
+    </div>
+  );
+}
+
+interface SamplerFieldProps {
+  /** civitai sampler display name from `SAMPLERS`. */
+  value: string;
+  presets: Array<{ label: string; value: string }>;
+  onChange: (value: string) => void;
+}
+
+/** Sampler select + preset chips (civitai's SelectInput). The
+ *  value is a civitai sampler display name; the backend maps it
+ *  to the sdcpp `sampleMethod` + `schedule` wire pair. */
+function SamplerField({ value, presets, onChange }: SamplerFieldProps) {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-[13px] font-medium" htmlFor="generator-sampler">
+          {t("generator.sampler")}
+        </Label>
+        <div className="flex flex-wrap items-center gap-1">
+          {presets.map((preset) => {
+            const active = value === preset.value;
+            return (
+              <button
+                key={preset.value}
+                type="button"
+                onClick={() => onChange(preset.value)}
+                className={cn(
+                  "rounded px-2 py-0.5 text-xs transition-colors",
+                  active
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <Select onValueChange={onChange} value={value}>
+        <SelectTrigger className="h-8 w-full text-xs" id="generator-sampler">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="z-[60]" position="popper">
+          {SAMPLERS.map((name) => (
+            <SelectItem key={name} value={name}>
+              {name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -180,12 +225,32 @@ export interface AdvancedSectionProps {
   cfgScale: string;
   steps: string;
   seed: string;
+  sampler: string;
+  clipSkip: string;
+  /** SD-family ecosystems only — the spec's sdcpp input
+   *  schema carries sampleMethod/schedule/clipSkip for
+   *  Sd1/Sdxl, so both fields are hidden elsewhere. */
+  sdFamily: boolean;
   onCfgScale: (value: string) => void;
   onSteps: (value: string) => void;
   onSeed: (value: string) => void;
+  onSampler: (value: string) => void;
+  onClipSkip: (value: string) => void;
 }
 
-export function AdvancedSection({ cfgScale, steps, seed, onCfgScale, onSteps, onSeed }: AdvancedSectionProps) {
+export function AdvancedSection({
+  cfgScale,
+  steps,
+  seed,
+  sampler,
+  clipSkip,
+  sdFamily,
+  onCfgScale,
+  onSteps,
+  onSeed,
+  onSampler,
+  onClipSkip,
+}: AdvancedSectionProps) {
   const { t } = useI18n();
   // civitai's SD-graph preset chips (stable-diffusion-graph.ts):
   // cfg 4/7/10, steps 20/30/40 — all inside kawai's wider
@@ -199,6 +264,12 @@ export function AdvancedSection({ cfgScale, steps, seed, onCfgScale, onSteps, on
     { label: t("generator.presetFast"), value: 20 },
     { label: t("generator.presetBalanced"), value: 30 },
     { label: t("generator.presetHigh"), value: 40 },
+  ];
+  // civitai's sampler preset chips (common.ts defaultSamplerPresets):
+  // Fast = Euler a, Popular = DPM++ 2M Karras.
+  const samplerPresets = [
+    { label: t("generator.presetFast"), value: "Euler a" },
+    { label: t("generator.presetPopular"), value: "DPM++ 2M Karras" },
   ];
   return (
     <div className="flex flex-col gap-3">
@@ -222,6 +293,21 @@ export function AdvancedSection({ cfgScale, steps, seed, onCfgScale, onSteps, on
         onChange={onSteps}
       />
       <SeedField seed={seed} onChange={onSeed} />
+      {sdFamily && (
+        <>
+          <SamplerField value={sampler} presets={samplerPresets} onChange={onSampler} />
+          <SliderField
+            id="generator-clip-skip"
+            label={t("generator.clipSkip")}
+            value={clipSkip}
+            min={1}
+            max={3}
+            step={1}
+            presets={[]}
+            onChange={onClipSkip}
+          />
+        </>
+      )}
     </div>
   );
 }
