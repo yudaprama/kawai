@@ -35,16 +35,22 @@ export interface EcosystemConfig {
 
 /** Aspect presets in civitai's chip language — clean ratio labels with the
  *  exact resolution each expands to (both sides %16, the recipe's
- *  well-behaved-dimension rule). Anchored on the ecosystem's base size. */
+ *  well-behaved-dimension rule). Anchored on the ecosystem's base size:
+ *  area stays ≈ base² and the ratio stays honest (floor to %16 so a
+ *  rounded-up long edge can't drift the ratio — 16:9 lands on the
+ *  standard 1344×768 bucket at base 1024, not 1824×1024). */
 const SIZE_PRESETS = (base: number) => {
-  const wide = Math.round((base * 16) / 9 / 16) * 16;
-  const tall = Math.round((base * 3) / 2 / 16) * 16;
+  const floor16 = (v: number) => Math.max(64, Math.floor(v / 16) * 16);
+  const r16 = (rw: number, rh: number) => ({
+    width: floor16(base * Math.sqrt(rw / rh)),
+    height: floor16(base * Math.sqrt(rh / rw)),
+  });
   return [
     { label: "1:1", width: base, height: base },
-    { label: "3:2", width: tall, height: base },
-    { label: "2:3", width: base, height: tall },
-    { label: "16:9", width: wide, height: base },
-    { label: "9:16", width: base, height: wide },
+    { label: "3:2", ...r16(3, 2) },
+    { label: "2:3", ...r16(2, 3) },
+    { label: "16:9", ...r16(16, 9) },
+    { label: "9:16", ...r16(9, 16) },
   ];
 };
 

@@ -315,6 +315,14 @@ body,
   height: 100%;
 }
 
+/* The app is pane-bound (h-dvh, every page scrolls inside its own panes).
+   `clip` (not `hidden`) makes the VIEWPORT a non-scroll box, so nothing —
+   including native scroll-into-view passes — can shift the document. */
+html {
+  overflow: clip;
+  overscroll-behavior: none;
+}
+
 body {
   min-height: 100dvh;
 }

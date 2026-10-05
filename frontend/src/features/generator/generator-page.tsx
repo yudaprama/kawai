@@ -162,7 +162,7 @@ function AspectChip({
     <button
       aria-pressed={active}
       className={cn(
-        "flex w-[70px] flex-col items-center gap-1.5 rounded-[8px] border bg-secondary p-2 transition-colors",
+        "flex min-w-0 flex-1 flex-col items-center gap-1.5 rounded-[8px] border bg-secondary p-2 transition-colors",
         active ? "border-primary text-foreground" : "text-muted-foreground hover:text-foreground",
       )}
       onClick={onClick}
@@ -565,6 +565,27 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   const [covers, setCovers] = useState<Record<string, ModelCover>>({});
   const [pickerType, setPickerType] = useState<"Checkpoint" | "LORA">("Checkpoint");
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const shellBodyRef = useRef<HTMLDivElement>(null);
+  /** The AssetShell body div is a page scroller below lg (the narrow layout
+   *  stacks the results pane under the form), but on lg+ the generator is
+   *  fully pane-bound and must never scroll it — wheel chaining or reveal
+   *  scrolling would otherwise shift the whole shell. `clip` is not a scroll
+   *  container, so nothing can move it. */
+  useEffect(() => {
+    const body = shellBodyRef.current?.parentElement;
+    if (!body) return;
+    const mql = window.matchMedia("(min-width: 1024px)");
+    const prev = body.style.overflow;
+    const apply = () => {
+      body.style.overflow = mql.matches ? "clip" : "";
+    };
+    apply();
+    mql.addEventListener("change", apply);
+    return () => {
+      mql.removeEventListener("change", apply);
+      body.style.overflow = prev;
+    };
+  }, []);
   const [selectedModel, setSelectedModel] = useState<SelectedModel | null>(null);
 
   const [ecoId, setEcoId] = useState(ECOSYSTEMS[0].id);
@@ -1329,12 +1350,22 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
 
   return (
     <AssetShell subtitle={t("generator.subtitle")} title={t("generator.title")} onBack={onBack}>
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+      <div ref={shellBodyRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* ── Form column — the generation panel ── */}
         <section className="bg-card flex w-full shrink-0 flex-col border-b lg:w-[400px] lg:border-r lg:border-b-0">
-          <div className="min-h-0 flex-1 overflow-y-auto">{form}</div>
-          {/* Footer — civitai's [Buzz pill][Generate] arrangement */}
-          <div className="border-t p-3">
+          {/* pb-24 keeps the last fields scrollable clear of the fixed
+              Generate bar below lg (the bar is out of flow there).
+              lg:overscroll-contain stops wheel-over-this-pane from chaining
+              into the page scroller on desktop. */}
+          <div className="min-h-0 flex-1 overflow-y-auto pb-24 overscroll-auto lg:overscroll-contain lg:pb-0">
+            {form}
+          </div>
+          {/* Footer — civitai's [Buzz pill][Generate] arrangement. Fixed to
+              the viewport bottom below lg: the narrow layout scrolls the page
+              (the form column grows with Advanced open), so the bar must not
+              live in flow. Static on lg — the column fits the pane and
+              scrolls internally, keeping the bar at its end. */}
+          <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-card p-3 lg:static lg:inset-auto">
             <div className="flex items-stretch gap-2">
               {!isUpscale && (
                 <div
@@ -1373,8 +1404,10 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           </div>
         </section>
 
-        {/* ── Results pane — Hasil | Model browser ── */}
-        <section className="flex min-h-0 min-w-0 flex-1 flex-col border-t lg:border-t-0">
+        {/* ── Results pane — Hasil | Model browser. min-h below lg keeps it
+            reachable by page scroll when the form column overflows the pane
+            (Advanced open) — flex-1 alone collapses it to 0px there. */}
+        <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col border-t lg:min-h-0 lg:border-t-0">
           <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
             <PaneTabs onChange={setPaneTab} value={paneTab} />
             <span className="text-muted-foreground truncate text-[11px]">
@@ -1385,7 +1418,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">
             {paneTab === "model" ? (
-              <div className="bg-card flex h-full flex-col">
+              <div className="bg-card flex h-full flex-col pb-24 lg:pb-0">
                 <ModelBrowser
                   eco={eco}
                   onAddLora={(row) => {
@@ -1406,7 +1439,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
                 />
               </div>
             ) : (
-              <div className="h-full overflow-y-auto p-3">
+              <div className="h-full overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
                 {results.length === 0 ? (
                   <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-center">
                     <Icon className="size-16 stroke-1" name="inbox" />

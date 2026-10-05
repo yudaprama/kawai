@@ -38,7 +38,7 @@ export function AssetShell({
   }, []);
 
   return (
-    <main className="bg-background flex min-w-0 flex-1 flex-col overflow-hidden">
+    <main className="bg-background flex min-w-0 flex-1 flex-col overflow-clip">
       <div className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
         <Button
           aria-label={t("assetNav.backToWorkbench")}

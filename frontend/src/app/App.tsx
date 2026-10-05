@@ -298,7 +298,7 @@ export default function App() {
     ) : null;
 
   return (
-    <div className="bg-background text-foreground flex h-dvh w-full overflow-hidden">
+    <div className="bg-background text-foreground flex h-dvh w-full overflow-clip">
       {assetWorkspace ? (
         <AssetChromeContext.Provider
           value={{
