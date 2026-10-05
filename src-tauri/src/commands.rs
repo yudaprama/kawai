@@ -1198,6 +1198,45 @@ pub async fn civitai_generate(
     logic::civitai::civitai_generate(&user_id, params).await
 }
 
+/// ── Civitai VIDEO generation (workflows API) — 4 auth-required ops ────────
+/// Submit spends Buzz (whatif cost is the pre-flight); status long-polls the
+/// workflow; fetch downloads the signed mp4 once into the office store.
+
+#[tauri::command]
+pub async fn civitai_video_cost(
+    req: logic::civitai::VideoGenRequest,
+) -> Result<logic::civitai::VideoCostView, String> {
+    logic::civitai::civitai_video_cost(req).await
+}
+
+#[tauri::command]
+pub async fn civitai_video_submit(
+    session: State<'_, Session>,
+    req: logic::civitai::VideoGenRequest,
+) -> Result<logic::civitai::VideoSubmitView, String> {
+    let user_id = session_user_id(&session)?;
+    logic::civitai::civitai_video_submit(&user_id, req).await
+}
+
+#[tauri::command]
+pub async fn civitai_video_status(
+    workflow_id: String,
+    wait_secs: Option<u64>,
+) -> Result<logic::civitai::VideoStatusView, String> {
+    logic::civitai::civitai_video_status(workflow_id, wait_secs).await
+}
+
+#[tauri::command]
+pub async fn civitai_video_fetch(
+    session: State<'_, Session>,
+    workflow_id: String,
+    video_url: String,
+    thumbnail_url: Option<String>,
+) -> Result<logic::civitai::SavedVideo, String> {
+    let user_id = session_user_id(&session)?;
+    logic::civitai::civitai_video_fetch(&user_id, workflow_id, video_url, thumbnail_url).await
+}
+
 /// ── Connector (third-party OAuth via Composio) — 4 auth-required ops ───────
 /// Thin proxies to `logic::connector`; the user id comes from the session
 /// (edge-resolved), the frontend never sends it.

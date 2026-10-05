@@ -31,6 +31,7 @@ import {
   targetWorkflowForEcosystem,
 } from "./ecosystems";
 import { AdvancedSection } from "./advanced-section";
+import { VideoGenerator } from "./video-generator";
 
 interface HistoryEntry {
   fileId: string;
@@ -560,6 +561,8 @@ function ModelBrowser({
  */
 export function GeneratorPage({ onBack }: { onBack: () => void }) {
   const { t } = useI18n();
+  /** Civitai's media lane — video renders its own panel (video-generator). */
+  const [media, setMedia] = useState<"image" | "video">("image");
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [paneTab, setPaneTab] = useState<"hasil" | "model">("hasil");
   const [covers, setCovers] = useState<Record<string, ModelCover>>({});
@@ -851,14 +854,23 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       {!isUpscale && (
         <div className="flex items-center justify-between gap-2 rounded-[10px] border p-1.5">
           <div className="flex items-center gap-1 rounded-[8px] border p-1">
-            {["image", "video", "music", "box"].map((n, i) => (
-              <span
-                className={cn(
-                  "flex h-7 w-9 items-center justify-center rounded-[6px]",
-                  i === 0 ? "bg-accent text-primary" : "text-muted-foreground/70",
-                )}
-                key={n}
-              >
+            <button
+              className="flex h-7 w-9 items-center justify-center rounded-[6px] bg-accent text-primary"
+              title="Image"
+              type="button"
+            >
+              <Icon name="image" />
+            </button>
+            <button
+              className="text-muted-foreground/70 flex h-7 w-9 cursor-pointer items-center justify-center rounded-[6px] transition-colors hover:text-foreground"
+              onClick={() => setMedia("video")}
+              title="Video"
+              type="button"
+            >
+              <Icon name="video" />
+            </button>
+            {["music", "box"].map((n) => (
+              <span className="text-muted-foreground/70 flex h-7 w-9 items-center justify-center rounded-[6px]" key={n}>
                 <Icon name={n} />
               </span>
             ))}
@@ -1347,6 +1359,13 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       )}
     </div>
   );
+
+  // Video lane — a fully separate panel (own form, own results storage).
+  // Placed after every hook so the image panel's state keeps working when
+  // the user switches back.
+  if (media === "video") {
+    return <VideoGenerator onBack={onBack} onSwitchToImage={() => setMedia("image")} />;
+  }
 
   return (
     <AssetShell subtitle={t("generator.subtitle")} title={t("generator.title")} onBack={onBack}>

@@ -828,5 +828,31 @@
     "noExplore": "No explore yet — type a symbol or question above.",
     "hotPathNotes": "Hot-path notes",
     "status": "Status"
+  },
+  "videoGenerator": {
+    "subtitle": "Civitai video generation",
+    "workflow": "Workflow",
+    "txt2vid": "Text → Video",
+    "img2vid": "Image → Video",
+    "sourceImage": "Source frame",
+    "pickImage": "Pick a frame (JPEG/PNG/WebP)",
+    "clearImage": "Remove frame",
+    "sourceTooLarge": "Frame exceeds 8MB",
+    "duration": "Duration ({{seconds}}s)",
+    "resolution": "Resolution",
+    "aspect": "Aspect ratio",
+    "audio": "Generate audio",
+    "costNote": "Buzz is charged at submit — the ≈ value is the free whatif estimate",
+    "submitting": "Submitting…",
+    "inProgress": "Rendering…",
+    "queued": "Waiting in queue…",
+    "processing": "Rendering video…",
+    "succeeded": "Finishing…",
+    "position": "Queue position {{position}}",
+    "done": "Video saved to results",
+    "failedToast": "Video generation failed",
+    "results": "Results",
+    "noResults": "No videos yet",
+    "noResultsHint": "Describe a scene and hit Generate — clips take a few minutes"
   }
 }

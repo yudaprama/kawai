@@ -828,5 +828,31 @@
     "noExplore": "Belum ada eksplorasi — ketik simbol atau pertanyaan di atas.",
     "hotPathNotes": "Catatan hot-path",
     "status": "Status"
+  },
+  "videoGenerator": {
+    "subtitle": "Generasi video Civitai",
+    "workflow": "Workflow",
+    "txt2vid": "Teks → Video",
+    "img2vid": "Gambar → Video",
+    "sourceImage": "Frame sumber",
+    "pickImage": "Pilih frame (JPEG/PNG/WebP)",
+    "clearImage": "Hapus frame",
+    "sourceTooLarge": "Frame melebihi 8MB",
+    "duration": "Durasi ({{seconds}}d)",
+    "resolution": "Resolusi",
+    "aspect": "Rasio aspek",
+    "audio": "Hasilkan audio",
+    "costNote": "Buzz dipotong saat submit — nilai ≈ adalah estimasi whatif gratis",
+    "submitting": "Mengirim…",
+    "inProgress": "Merender…",
+    "queued": "Menunggu antrean…",
+    "processing": "Merender video…",
+    "succeeded": "Menyelesaikan…",
+    "position": "Posisi antrean {{position}}",
+    "done": "Video tersimpan ke hasil",
+    "failedToast": "Generasi video gagal",
+    "results": "Hasil",
+    "noResults": "Belum ada video",
+    "noResultsHint": "Tulis adegan lalu tekan Generate — klip butuh beberapa menit"
   }
 }

@@ -1955,6 +1955,65 @@ async fn civitai_generate_handler(
         .map_err(err500)
 }
 
+// ── Civitai VIDEO generation (workflows API) ───────────────────────────────
+// Same four ops as the Tauri commands; status/fetch are user-bound where
+// they touch the office store, cost/submit only spend the baked account.
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CivitaiVideoStatusRequest {
+    workflow_id: String,
+    #[serde(default)]
+    wait_secs: Option<u64>,
+}
+
+async fn civitai_video_cost_handler(
+    Json(req): Json<logic::civitai::VideoGenRequest>,
+) -> Result<Json<logic::civitai::VideoCostView>, (StatusCode, String)> {
+    logic::civitai::civitai_video_cost(req)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+async fn civitai_video_submit_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<logic::civitai::VideoGenRequest>,
+) -> Result<Json<logic::civitai::VideoSubmitView>, (StatusCode, String)> {
+    logic::civitai::civitai_video_submit(&user_id, req)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+async fn civitai_video_status_handler(
+    Json(req): Json<CivitaiVideoStatusRequest>,
+) -> Result<Json<logic::civitai::VideoStatusView>, (StatusCode, String)> {
+    logic::civitai::civitai_video_status(req.workflow_id, req.wait_secs)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CivitaiVideoFetchRequest {
+    workflow_id: String,
+    video_url: String,
+    #[serde(default)]
+    thumbnail_url: Option<String>,
+}
+
+async fn civitai_video_fetch_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<CivitaiVideoFetchRequest>,
+) -> Result<Json<logic::civitai::SavedVideo>, (StatusCode, String)> {
+    logic::civitai::civitai_video_fetch(&user_id, req.workflow_id, req.video_url, req.thumbnail_url)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
 // ── Connector (third-party OAuth via Composio) ─────────────────────────────
 // Auth-required thin proxies sharing `logic::connector` with the Tauri
 // commands; the user id rides the auth middleware's Extension.
@@ -2200,6 +2259,10 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/civitai_model_covers", post(civitai_model_covers_handler))
         .route("/api/civitai_search_models", post(civitai_search_models_handler))
         .route("/api/civitai_generate", post(civitai_generate_handler))
+        .route("/api/civitai_video_cost", post(civitai_video_cost_handler))
+        .route("/api/civitai_video_submit", post(civitai_video_submit_handler))
+        .route("/api/civitai_video_status", post(civitai_video_status_handler))
+        .route("/api/civitai_video_fetch", post(civitai_video_fetch_handler))
         // Connector (third-party OAuth via Composio) — same 4 ops as the
         // Tauri commands (POST on both transports).
         .route("/api/connector_list_connections", post(connector_list_connections_handler))

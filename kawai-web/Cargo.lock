@@ -1047,6 +1047,7 @@ dependencies = [
 name = "civitai"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "log",
  "reqwest 0.13.4",
  "serde",
