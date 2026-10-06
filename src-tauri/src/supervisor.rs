@@ -3377,10 +3377,24 @@ fn charts_material_block(charts: &[RunChart]) -> String {
     out
 }
 
-/// Remove image tokens whose id is not one of this run's charts — the writer
-/// occasionally parrots a malformed id, and a broken image must never reach
-/// the deliverable. The caption text is kept.
-fn strip_unknown_chart_tokens(text: &str, charts: &[RunChart]) -> String {
+/// Remove image tokens whose id is not one of this run's charts AND does not
+/// resolve in the user's office store — the writer occasionally parrots a
+/// malformed id, and a broken embed must never reach the deliverable. The
+/// caption text is kept. Store-resolving ids keep their token so non-chart
+/// media (a Generator video the user referenced by id) renders inline.
+fn strip_unknown_chart_tokens(text: &str, charts: &[RunChart], user_id: &str) -> String {
+    strip_chart_tokens_with(text, charts, &|id| {
+        kawai_office::store::resolve(user_id, id).is_ok()
+    })
+}
+
+/// Pure core of [`strip_unknown_chart_tokens`] — `is_known` answers whether
+/// an id may survive (run charts OR anything resolvable in the user's store).
+fn strip_chart_tokens_with(
+    text: &str,
+    charts: &[RunChart],
+    is_known: &dyn Fn(&str) -> bool,
+) -> String {
     static TOKEN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::Regex::new(r"!\[([^\]\n]*)\]\(kawai-file://([^)\s]+)\)").expect("chart token regex")
     });
@@ -3389,7 +3403,7 @@ fn strip_unknown_chart_tokens(text: &str, charts: &[RunChart]) -> String {
     TOKEN
         .replace_all(text, |caps: &regex::Captures| {
             let id = caps.get(2).map(|g| g.as_str()).unwrap_or_default();
-            if valid.contains(id) {
+            if valid.contains(id) || is_known(id) {
                 caps.get(0).expect("whole match").as_str().to_string()
             } else {
                 caps.get(1).map(|g| g.as_str()).unwrap_or_default().to_string()
@@ -4395,7 +4409,7 @@ pub fn execute_plan_stream_with_cancel(
                             eprintln!("[supervisor] synthesis unavailable — falling back to raw final output");
                         }
                         let written = synthesized
-                            .map(|text| strip_unknown_chart_tokens(&text, &run_charts))
+                            .map(|text| strip_unknown_chart_tokens(&text, &run_charts, &user_id))
                             .or_else(|| raw_final.clone());
                         // The indicator summary is appended DETERMINISTICALLY
                         // from the full step outputs (deck deliverables keep
@@ -5455,4 +5469,27 @@ mod indicator_summary_tests {
         assert!(ta_pos < page_pos);
         assert!(materials.contains("\"rsi14\":71.0"));
     }
+}
+
+#[test]
+fn chart_tokens_survive_run_charts_and_store_ids() {
+    let charts = vec![RunChart {
+        file_id: "chart-1".into(),
+        label: "Harga".into(),
+        mark: "bar".into(),
+    }];
+    let text = "lead\n\n![Harga](kawai-file://chart-1)\n\n![Klip](kawai-file://video-9)\n\n![hantu](kawai-file://nope)";
+    let out = strip_chart_tokens_with(text, &charts, &|id| id == "video-9");
+    assert!(out.contains("![Harga](kawai-file://chart-1)"), "run chart token survives");
+    assert!(out.contains("![Klip](kawai-file://video-9)"), "store-resolving token survives");
+    assert!(!out.contains("kawai-file://nope"), "unknown id stripped");
+    assert!(out.contains("hantu"), "caption text kept");
+}
+
+#[test]
+fn chart_tokens_strip_when_nothing_resolves() {
+    let charts: Vec<RunChart> = Vec::new();
+    let text = "a ![x](kawai-file://gone) b";
+    let out = strip_chart_tokens_with(text, &charts, &|_| false);
+    assert_eq!(out, "a x b");
 }

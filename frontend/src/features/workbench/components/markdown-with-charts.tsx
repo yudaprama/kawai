@@ -4,10 +4,11 @@ import { useFilePreview } from "@/lib/preview-file";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 
 /**
- * Chart/image token the deliverable writer may embed:
- * `![caption](kawai-file://<fileId>)`. Resolved against the office store
- * (svg renders directly; the token form matches what export_deliverable
- * rasterizes into pdf/docx).
+ * Media token the deliverable writer may embed:
+ * `![caption](kawai-file://<fileId>)`. Resolved against the office store —
+ * images render inline (svg chart figures), `video/*` files render as a
+ * native `<video>` player; the token form matches what export_deliverable
+ * rasterizes into pdf/docx (videos stay viewer-only there).
  */
 const IMAGE_TOKEN = /!\[([^\]\n]*)\]\(kawai-file:\/\/([^)\s]+)\)/g;
 
@@ -30,8 +31,19 @@ function ChartFigure({ fileId, alt }: { fileId: string; alt: string }) {
   if (error || errored || !data?.dataUrl) {
     return (
       <div className="text-muted-foreground flex h-24 w-full items-center justify-center rounded-md border border-dashed text-xs">
-        {alt ? `${alt} — chart unavailable` : "Chart unavailable"}
+        {alt ? `${alt} — media unavailable` : "Media unavailable"}
       </div>
+    );
+  }
+  // Video files (e.g. a Generator clip referenced by id) play inline.
+  if (data.mime.startsWith("video/")) {
+    return (
+      <figure className="overflow-hidden rounded-md border">
+        <video className="aspect-video w-full bg-black object-contain" controls playsInline src={data.dataUrl}>
+          <track kind="captions" />
+        </video>
+        {alt && <figcaption className="text-muted-foreground p-2 text-xs">{alt}</figcaption>}
+      </figure>
     );
   }
   return (

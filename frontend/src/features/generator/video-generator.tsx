@@ -191,6 +191,12 @@ function MediaIsland({
 
 /** One saved video result: <video> card with poster, click opens preview. */
 function VideoResultCard({ entry }: { entry: VideoResultEntry }) {
+  const { t } = useI18n();
+  const copyToken = () => {
+    const token = `![${entry.prompt.slice(0, 48) || entry.name}](kawai-file://${entry.fileId})`;
+    void navigator.clipboard.writeText(token);
+    toast.success(t("generator.copied"));
+  };
   const main = useFilePreview({ id: entry.fileId, name: entry.name });
   const thumb = useFilePreview(
     entry.thumbnailFileId ? { id: entry.thumbnailFileId, name: `${entry.name}-thumb.jpg` } : { id: "", name: "" },
@@ -220,8 +226,18 @@ function VideoResultCard({ entry }: { entry: VideoResultEntry }) {
           </video>
         )}
       </button>
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
         <span className="line-clamp-1 text-[11px] text-white/90">{entry.prompt || entry.name}</span>
+        <Button
+          aria-label={t("generator.copyToken")}
+          className="size-6 shrink-0 hover:bg-white/20"
+          onClick={copyToken}
+          size="icon"
+          title={t("generator.copyToken")}
+          variant="ghost"
+        >
+          <Icon className="size-3.5 text-white" name="copy" />
+        </Button>
       </div>
     </div>
   );
@@ -445,6 +461,7 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
     frames,
     hasAudio,
     hasNegative,
+    isEdit,
     isImageWorkflow,
     modelKey,
     movement,
@@ -453,6 +470,7 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
     promptEnhancer,
     resolutions,
     resolution,
+    sourceVideo,
     seed,
     steps,
     style,
@@ -814,6 +832,7 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
           </Label>
           <div className={cn("grid gap-2", frameSlots > 1 && "grid-cols-2")}>
             {Array.from({ length: frameSlots }, (_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: slot positions are fixed by the workflow (first/last), never reordered
               <FrameSlot
                 key={`slot-${i}`}
                 caption={

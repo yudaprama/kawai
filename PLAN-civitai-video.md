@@ -149,6 +149,16 @@ Tidak membelanjakan Buzz. `live_whatif` memuat baterai fase 2 (13 probe
 engine + 19 sweep aspect untuk flux3/grok/vidu/hunyuan). `live_generate.rs`
 tetap satu-satunya smoke berbayar (image).
 
+### Hook deliverable (fase 5 — selesai)
+
+`![caption](kawai-file://<id>)` dengan id yang resolve di office store user
+kini selamat dari `strip_unknown_chart_tokens` (bukan cuma chart run —
+wrapper menerima `user_id`, pure core `strip_chart_tokens_with` untuk test)
+dan dirender viewer deliverable (`markdown-with-charts.tsx`) sebagai
+`<video controls>` inline untuk mime `video/*`; svg/gambar tetap inline, id
+hantu tetap distrip dengan caption dipertahankan. Panel video punya tombol
+copy-token supaya klip bisa direferensikan lewat goal.
+
 ### Sisa (belum, sengaja)
 
 Probe live fase 2–4 (flux3/grok/vidu/hunyuan/ltx + edit-video — jaringan ke
