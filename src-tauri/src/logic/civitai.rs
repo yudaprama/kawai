@@ -403,6 +403,9 @@ pub struct VideoGenRequest {
     /// Source frames, ordered: img2vid = [first, (last)]; ref2vid = refs.
     #[serde(default)]
     pub images: Vec<String>,
+    /// Source video for `vid2vid:edit` (grok v1.0) — data URL / base64 / URL.
+    #[serde(default)]
+    pub video: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
@@ -443,6 +446,7 @@ impl VideoGenRequest {
             prompt: self.prompt.clone().unwrap_or_default(),
             negative_prompt: self.negative_prompt.clone(),
             images: self.images.clone(),
+            video: self.video.clone(),
             model: self.model.clone(),
             mode: self.mode.clone(),
             fast_mode: self.fast_mode,
@@ -521,6 +525,9 @@ pub struct VideoStatusView {
     pub queue_position: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video: Option<VideoBlobView>,
+    /// LTX-style batched jobs: extra clips beyond the primary video.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub additional: Vec<VideoBlobView>,
     pub error: Option<String>,
 }
 
@@ -549,6 +556,16 @@ pub async fn civitai_video_status(
             width: wf.width,
             height: wf.height,
         }),
+        additional: wf
+            .additional
+            .into_iter()
+            .map(|m| VideoBlobView {
+                video_url: m.url,
+                thumbnail_url: m.thumbnail_url,
+                width: m.width,
+                height: m.height,
+            })
+            .collect(),
         error: wf.error,
         status,
     })
@@ -561,6 +578,9 @@ pub struct SavedVideo {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thumbnail_file_id: Option<String>,
+    /// LTX-style batched jobs: the extra clips, imported after the primary.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub additional: Vec<SavedVideo>,
 }
 
 /// Cancel a queued/running workflow (`PUT` `{status:"canceled"}` — civitai's
@@ -585,6 +605,7 @@ pub async fn civitai_video_fetch(
     workflow_id: String,
     video_url: String,
     thumbnail_url: Option<String>,
+    additional_urls: Vec<String>,
 ) -> Result<SavedVideo, String> {
     let _ = require_key()?; // same baked identity; the URL itself carries the signature
     let workflow_id = workflow_id.trim().to_string();
@@ -640,9 +661,63 @@ pub async fn civitai_video_fetch(
             Err(e) => eprintln!("civitai: thumbnail unduh gagal: {e}"),
         }
     }
+    // Batched jobs (LTX): import the extra clips after the primary. A failed
+    // extra clip is logged, not fatal — the primary result still lands.
+    let mut additional = Vec::new();
+    for (i, url) in additional_urls.iter().enumerate() {
+        if url.trim().is_empty() {
+            continue;
+        }
+        match import_video_file(user_id, &workflow_id, url, i + 2).await {
+            Ok(saved) => additional.push(saved),
+            Err(e) => eprintln!("civitai: klip tambahan {} gagal: {e}", i + 2),
+        }
+    }
     Ok(SavedVideo {
         file_id: file.id,
         name,
         thumbnail_file_id,
+        additional,
+    })
+}
+
+/// Download one video URL into the store (shared by primary + batch clips).
+async fn import_video_file(
+    user_id: &str,
+    workflow_id: &str,
+    video_url: &str,
+    ordinal: usize,
+) -> Result<SavedVideo, String> {
+    let bytes = civitai::download_bytes(video_url.trim())
+        .await
+        .map_err(|e| format!("unduh video gagal: {e}"))?;
+    let ext = match video_url.split('?').next().and_then(|p| {
+        p.rsplit('.')
+            .next()
+            .map(|e| e.to_ascii_lowercase())
+    }) {
+        Some(e) if e == "webm" || e == "mov" || e == "m4v" => e,
+        _ => "mp4".to_string(),
+    };
+    let idish: String = workflow_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(12)
+        .collect();
+    let name = format!("civitai-video-{idish}-{ordinal}.{}", uuidish());
+    let file = kawai_office::store::import_as(
+        user_id,
+        &name,
+        &bytes,
+        kawai_office::store::ArtifactKind::Video,
+        "civitai",
+        None,
+    )
+    .map_err(|e| format!("gagal menyimpan {name}: {e}"))?;
+    Ok(SavedVideo {
+        file_id: file.id,
+        name,
+        thumbnail_file_id: None,
+        additional: Vec::new(),
     })
 }

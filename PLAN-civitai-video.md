@@ -5,7 +5,12 @@
 Generator panel menerima lane **video**: teks→video, gambar→video (1–2 slot
 frame), dan referensi→video lewat Civitai Orchestration **workflows API** —
 bukan `recipes/*`. Fase 2 menambah empat engine (flux3/grok/vidu/hunyuan),
-slot frame kedua (first/last), `img2vid:ref2vid`, dan cancel workflow. Kunci vault yang sama
+slot frame kedua (first/last), `img2vid:ref2vid`, dan cancel workflow.
+Fase 3 menambah **LTX** (2.3/2.5, Dev/Distilled) dan **multi-klip**
+(`output.additionalVideos` diimpor sebagai klip terpisah). Fase 4 menambah
+**vid2vid:edit** (grok v1.0 — upload video sumber MP4/WebM ≤64MB ke
+consumer blob, sniffer mime `ftyp`/EBML; `analyzedDuration` tidak dikirim —
+kawai tidak mem-probe durasi video lokal). Kunci vault yang sama
 (`kawai-vault/constants::civitai::get_civitai`) membukti kemampuan submit/poll
 di kedua jalur (bearer API key adalah subject kelas satu di orchestrator,
 `generation-surface.ts:21-22`). Implementasi: klien `crates/integrations/civitai`
@@ -23,8 +28,9 @@ di kedua jalur (bearer API key adalah subject kelas satu di orchestrator,
 
 Hasil sukses: `steps[].output.video = {url, thumbnailUrl?, width?, height?}` —
 URL blob **signed dan expired** → wajib diunduh segera (`civitai_video_fetch`).
-Multi-klip (LTX batch) menumpuk di `output.additionalVideos` — belum dipakai
-(quantity pin 1).
+Multi-klip (LTX batch) menumpuk di `output.additionalVideos` — diimpor
+setelah klip utama (`civitai_video_fetch` menerima `additionalUrls`; klip
+gagal dicatat di stderr, tidak fatal).
 
 ### Registry (`registry.rs` video section ↔ `video-ecosystems.ts`)
 
@@ -43,9 +49,10 @@ spend, jadi enum salah = error cost, bukan pembelian).
 | kling | `kling` / `kling-v3` (model `v3`) | v1.6/v2/v2.5-turbo/v3 | legacy enum 5/10; v3 slider 5–15 | — | v3: 2 (`sourceImage`+`endImage`) | v3 ≤7 (`operation:"reference-to-video"` + `images`) | audio v3; negative legacy; enhancer legacy |
 | wan | `wan` | v2.5 (`provider:"fal"`) | enum 5/10 | 480p/720p/1080p | 1 | — | pin `frameRate:24` |
 | flux3 | `flux` (`version:"v3.0"`) | — | slider 4–20 | 720p/1080p (draft pin 720p) | 2 (operation dari jumlah frame: `imageToVideo`/`firstLastFrameToVideo`) | — | aspect `auto` saat ada frame; `draft` bool |
-| grok | `grok` (`version:"v1.5"`) | v1.5 | slider 6–15 | 480p/720p/1080p | 1 | ≤7 (`operation:"referenceToVideo"` + aspect) | operasi camelCase |
+| grok | `grok` (`version:"v1.5"`, edit: `v1.0`) | v1.5; v1.0 = lane edit | slider 6–15 | v1.5: 480p/720p/1080p; **v1.0: 480p/720p** | 1 | v1.5 ≤7 (`referenceToVideo` + aspect) | operasi camelCase; **v1.0 = `edit-video`** (`videoUrl`, tanpa aspect — video menentukan) |
 | vidu | `vidu` (q1) / `vidu-q3` (q3) | q1/q3 | **q1 tanpa durasi**; q3 slider 1–16 | q3: 360p/540p/720p/1080p | q1: 2 (`sourceImage`+`endSourceImage`); q3: `images` array | ≤7 (`images`) | q1: style/movementAmplitude/enhancer; q3: `enableAudio`+`turbo` |
 | hunyuan | `hunyuan` | — | enum 3/5 | piksel @480p (tabel `HUNYUAN_DIMS_480P`) | — (txt2vid saja) | — | `cfgScale` 1–10, `steps` 10–30 |
+| ltx | `ltx2.3` / `ltx2.5` | v2.3/v2.3-distilled/v2.5/v2.5-distilled | slider 3–20 (**1080p cap 15**) | piksel (tabel `LTX_DIMS_720P/1080P`, identik antar versi) | 2 (`firstFrame`+`lastFrame` — img2vid SELALU `firstLastFrameToVideo`) | — | satu-satunya engine dengan `generateAudio` default **ON**; distilled pin `guidanceScale:1`+`steps:8`; `22b-dev` default cfg 3/steps 30 |
 
 **Sora absen dengan sengaja**: orchestrator live menjawab 400 `"Sora has
 been retired by OpenAI… Use another videoGen engine such as veo3, kling-v3
@@ -144,10 +151,10 @@ tetap satu-satunya smoke berbayar (image).
 
 ### Sisa (belum, sengaja)
 
-Probe live fase 2 (flux3/grok/vidu/hunyuan — jaringan ke civitai sedang
-diblokir saat implementasi; jalankan `live_whatif` begitu terbuka),
-`vid2vid:edit` (upload video ≤64MB), LTX (tabel piksel + Distilled/Sulphur),
-MiniMax-comfy (controlVideo), multi-klip (`additionalVideos`), dan hook
-deliverable (mp4 tidak bisa di-embed markdown/pdf/docx — tetap di panel +
-asset viewer). Generasi sungguhan pertama dari panel tetap verifikasi
-end-to-end terakhir (membelanjakan Buzz).
+Probe live fase 2–4 (flux3/grok/vidu/hunyuan/ltx + edit-video — jaringan ke
+civitai sedang diblokir saat implementasi; jalankan `live_whatif` begitu
+terbuka), MiniMax-comfy (controlVideo), Sulphur 2 (`diffusionModel` AIR),
+LTX prompt enhancer (chained step), Wan 2.7 edit (jalur fal + slot audio),
+dan hook deliverable (mp4 tidak bisa di-embed markdown/pdf/docx — tetap di
+panel + asset viewer). Generasi sungguhan pertama dari panel tetap
+verifikasi end-to-end terakhir (membelanjakan Buzz).

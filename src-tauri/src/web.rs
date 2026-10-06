@@ -2002,16 +2002,24 @@ struct CivitaiVideoFetchRequest {
     video_url: String,
     #[serde(default)]
     thumbnail_url: Option<String>,
+    #[serde(default)]
+    additional_urls: Vec<String>,
 }
 
 async fn civitai_video_fetch_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<CivitaiVideoFetchRequest>,
 ) -> Result<Json<logic::civitai::SavedVideo>, (StatusCode, String)> {
-    logic::civitai::civitai_video_fetch(&user_id, req.workflow_id, req.video_url, req.thumbnail_url)
-        .await
-        .map(Json)
-        .map_err(err500)
+    logic::civitai::civitai_video_fetch(
+        &user_id,
+        req.workflow_id,
+        req.video_url,
+        req.thumbnail_url,
+        req.additional_urls,
+    )
+    .await
+    .map(Json)
+    .map_err(err500)
 }
 
 #[derive(Deserialize)]

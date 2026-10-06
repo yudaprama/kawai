@@ -27,6 +27,7 @@ import {
   videoHasAudio,
   videoHasNegative,
   videoHasPromptEnhancer,
+  videoHasEdit,
   videoMaxFrames,
   videoRefMax,
   videoResolutions,
@@ -41,6 +42,8 @@ interface VideoGenRequest {
   negativePrompt?: string;
   /** Ordered: img2vid = [first, (last)]; ref2vid = references. */
   images: string[];
+  /** Source video for the edit lane (grok v1.0). */
+  video?: string;
   model?: string;
   mode?: string;
   fastMode?: boolean;
@@ -64,11 +67,20 @@ interface VideoCostView {
   warnings: string[];
 }
 
+interface VideoBlobView {
+  videoUrl: string;
+  thumbnailUrl?: string;
+  width?: number;
+  height?: number;
+}
+
 interface VideoStatusView {
   workflowId: string;
   status: string;
   queuePosition: number | null;
-  video?: { videoUrl: string; thumbnailUrl?: string; width?: number; height?: number };
+  video?: VideoBlobView;
+  /** LTX-style batched jobs: extra clips beyond the primary. */
+  additional: VideoBlobView[];
   error?: string;
 }
 
@@ -76,6 +88,7 @@ interface SavedVideo {
   fileId: string;
   name: string;
   thumbnailFileId?: string;
+  additional?: Array<{ fileId: string; name: string }>;
 }
 
 interface VideoResultEntry {
@@ -311,6 +324,8 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
   const [negativePrompt, setNegativePrompt] = useState("");
   /** Source frames, ordered — semantics per workflow (img2vid slots or refs). */
   const [frames, setFrames] = useState<string[]>([]);
+  /** Source video (edit lane, grok v1.0). */
+  const [sourceVideo, setSourceVideo] = useState<string | null>(null);
   const [duration, setDuration] = useState<number>(6);
   const [resolution, setResolution] = useState<string>("");
   const [aspect, setAspect] = useState<string>("16:9");
@@ -355,7 +370,8 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
     setResolution(res[0] ?? "");
     const asp = videoAspects(id, model);
     setAspect(asp.includes("16:9") ? "16:9" : (asp[0] ?? ""));
-    setAudio(false);
+    // LTX is the one engine whose audio defaults ON.
+    setAudio(id === "ltx");
     setDraft(false);
     setStyle("");
     setMovement("");
@@ -377,18 +393,20 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
   const hasAudio = videoHasAudio(ecoId, modelKey);
   const hasNegative = videoHasNegative(ecoId, modelKey);
   const promptEnhancer = videoHasPromptEnhancer(ecoId, modelKey);
-  const isImageWorkflow = workflow !== "txt2vid";
+  const isEdit = videoHasEdit(ecoId, modelKey) && workflow === "vid2vid:edit";
+  const isImageWorkflow = workflow === "img2vid" || workflow === "img2vid:ref2vid";
   const isRef2Vid = workflow === "img2vid:ref2vid";
   const maxFrames = videoMaxFrames(ecoId, modelKey);
   const refMax = videoRefMax(ecoId, modelKey);
   const resolutions = videoResolutions(ecoId, modelKey);
   const aspects = videoAspects(ecoId, modelKey);
   const durationHidden = videoDurationOmitted(ecoId, modelKey);
-  const promptEffective = isImageWorkflow || prompt.trim().length > 0;
+  const promptEffective = isEdit || isImageWorkflow || prompt.trim().length > 0;
   /** Slot count the current workflow renders: img2vid = maxFrames
    *  (first required, last optional), ref2vid grows with an add-slot. */
   const frameSlots = isRef2Vid ? Math.max(1, frames.length) : maxFrames;
   const framesFilled = frames.filter(Boolean).length;
+  const videoReady = !isEdit || sourceVideo != null;
   const framesReady = !isImageWorkflow || framesFilled >= 1;
   const canAddFrameSlot = isImageWorkflow && frames.length < (isRef2Vid ? refMax : maxFrames);
 
@@ -398,7 +416,8 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
       workflow,
       prompt: prompt.trim(),
       negativePrompt: hasNegative && negativePrompt.trim() ? negativePrompt.trim() : undefined,
-      images: isImageWorkflow ? frames.filter(Boolean) : [],
+      images: workflow === "img2vid" || workflow === "img2vid:ref2vid" ? frames.filter(Boolean) : [],
+      video: isEdit && sourceVideo ? sourceVideo : undefined,
       model: modelKey || undefined,
       duration: durationHidden ? undefined : duration,
       resolution: resolutions.length > 0 ? resolution || resolutions[0] : undefined,
@@ -501,17 +520,27 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
               workflowId: job.workflowId,
               videoUrl: st.video.videoUrl,
               thumbnailUrl: st.video.thumbnailUrl,
+              additionalUrls: (st.additional ?? []).map((c) => c.videoUrl),
             });
             if (cancelled || !aliveRef.current) return;
-            const entry: VideoResultEntry = {
-              fileId: saved.fileId,
-              name: saved.name,
-              thumbnailFileId: saved.thumbnailFileId,
-              prompt: job.prompt,
-              at: Date.now(),
-            };
+            const at = Date.now();
+            const clips: VideoResultEntry[] = [
+              {
+                fileId: saved.fileId,
+                name: saved.name,
+                thumbnailFileId: saved.thumbnailFileId,
+                prompt: job.prompt,
+                at,
+              },
+              ...(saved.additional ?? []).map((c) => ({
+                fileId: c.fileId,
+                name: c.name,
+                prompt: job.prompt,
+                at,
+              })),
+            ];
             setResults((prev) => {
-              const next = [entry, ...prev].slice(0, MAX_RESULTS);
+              const next = [...clips, ...prev].slice(0, MAX_RESULTS);
               localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
               return next;
             });
@@ -546,6 +575,24 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
     };
   }, [job, t]);
 
+  function setSourceVideoSlot(file: File | undefined) {
+    if (!file) return;
+    const okType = file.type === "video/mp4" || file.type === "video/webm";
+    if (!okType) {
+      toast.error(t("videoGenerator.videoType"));
+      return;
+    }
+    if (file.size > 64 * 1024 * 1024) {
+      toast.error(t("videoGenerator.sourceTooLarge"));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") setSourceVideo(reader.result);
+    };
+    reader.readAsDataURL(file);
+  }
+
   function setFrameSlot(index: number, file: File | undefined) {
     if (!file) return;
     if (file.size > 8 * 1024 * 1024) {
@@ -566,7 +613,7 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
     reader.readAsDataURL(file);
   }
 
-  const canSubmit = configured === true && !submitting && !job && promptEffective && framesReady;
+  const canSubmit = configured === true && !submitting && !job && promptEffective && framesReady && videoReady;
 
   async function handleGenerate() {
     if (!canSubmit || !promptEffective) return;
@@ -653,6 +700,9 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
               ["txt2vid", t("videoGenerator.txt2vid")],
               ["img2vid", t("videoGenerator.img2vid")],
               ["img2vid:ref2vid", t("videoGenerator.ref2vid")],
+              ...(videoHasEdit(ecoId, modelKey)
+                ? ([["vid2vid:edit", t("videoGenerator.edit2vid")]] as Array<[VideoWorkflowId, string]>)
+                : []),
             ] as Array<[VideoWorkflowId, string]>
           )
             .filter(([id]) => eco.workflows.includes(id))
@@ -719,6 +769,40 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
             onChange={(e) => setNegativePrompt(e.target.value)}
             value={negativePrompt}
           />
+        </div>
+      )}
+
+      {/* Source video — edit lane. */}
+      {isEdit && (
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.sourceVideo")}</Label>
+          {sourceVideo ? (
+            <div className="relative overflow-hidden rounded-[8px] border">
+              <video className="aspect-video w-full bg-black object-contain" controls playsInline src={sourceVideo}>
+                <track kind="captions" />
+              </video>
+              <Button
+                aria-label={t("videoGenerator.clearImage")}
+                className="absolute top-1.5 right-1.5 size-6"
+                onClick={() => setSourceVideo(null)}
+                size="icon"
+                variant="secondary"
+              >
+                <Icon className="size-3.5" name="x" />
+              </Button>
+            </div>
+          ) : (
+            <label className="text-muted-foreground flex aspect-video cursor-pointer flex-col items-center justify-center gap-1 rounded-[8px] border border-dashed text-xs transition-colors hover:text-foreground">
+              <Icon className="size-5" name="video" />
+              {t("videoGenerator.pickVideo")}
+              <input
+                accept="video/mp4,video/webm"
+                className="hidden"
+                onChange={(e) => setSourceVideoSlot(e.target.files?.[0])}
+                type="file"
+              />
+            </label>
+          )}
         </div>
       )}
 

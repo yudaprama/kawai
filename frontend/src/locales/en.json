@@ -868,6 +868,10 @@
     "draft": "Draft quality",
     "promptEnhancer": "Prompt enhancer",
     "cancel": "Cancel",
-    "canceled": "Generation canceled"
+    "canceled": "Generation canceled",
+    "edit2vid": "Video → Edit",
+    "sourceVideo": "Source video (MP4/WebM, ≤64MB)",
+    "pickVideo": "Pick a video",
+    "videoType": "Only MP4 or WebM"
   }
 }

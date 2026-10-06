@@ -868,6 +868,10 @@
     "draft": "Kualitas draft",
     "promptEnhancer": "Pengaya prompt",
     "cancel": "Batalkan",
-    "canceled": "Generasi dibatalkan"
+    "canceled": "Generasi dibatalkan",
+    "edit2vid": "Video → Edit",
+    "sourceVideo": "Video sumber (MP4/WebM, ≤64MB)",
+    "pickVideo": "Pilih video",
+    "videoType": "Hanya MP4 atau WebM"
   }
 }

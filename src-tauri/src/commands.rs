@@ -1237,9 +1237,17 @@ pub async fn civitai_video_fetch(
     workflow_id: String,
     video_url: String,
     thumbnail_url: Option<String>,
+    additional_urls: Option<Vec<String>>,
 ) -> Result<logic::civitai::SavedVideo, String> {
     let user_id = session_user_id(&session)?;
-    logic::civitai::civitai_video_fetch(&user_id, workflow_id, video_url, thumbnail_url).await
+    logic::civitai::civitai_video_fetch(
+        &user_id,
+        workflow_id,
+        video_url,
+        thumbnail_url,
+        additional_urls.unwrap_or_default(),
+    )
+    .await
 }
 
 /// ── Connector (third-party OAuth via Composio) — 4 auth-required ops ───────

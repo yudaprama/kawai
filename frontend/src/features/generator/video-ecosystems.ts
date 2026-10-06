@@ -14,7 +14,7 @@
  * plus Distilled/Sulphur model variants.
  */
 
-export type VideoWorkflowId = "txt2vid" | "img2vid" | "img2vid:ref2vid";
+export type VideoWorkflowId = "txt2vid" | "img2vid" | "img2vid:ref2vid" | "vid2vid:edit";
 
 export interface VideoEcosystemConfig {
   /** Registry key (Rust `VideoEcosystem.key`). */
@@ -202,8 +202,11 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     id: "grok",
     label: "Grok Imagine",
     engine: "grok",
-    models: [{ key: "v1.5", label: "V1.5" }],
-    workflows: ["txt2vid", "img2vid", "img2vid:ref2vid"],
+    models: [
+      { key: "v1.5", label: "V1.5" },
+      { key: "v1.0", label: "V1.0 Edit" },
+    ],
+    workflows: ["txt2vid", "img2vid", "img2vid:ref2vid", "vid2vid:edit"],
     durationMin: 6,
     durationMax: 15,
     resolutions: ["480p", "720p", "1080p"],
@@ -242,6 +245,34 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     promptEnhancer: true,
     gradient: "from-lime-500 to-green-600",
     note: "Q1 style/movement — Q3 resolusi 360p–1080p (live-pending)",
+  },
+  {
+    id: "ltx",
+    label: "LTX Video",
+    engine: "ltx2.3",
+    models: [
+      { key: "v2.3", label: "2.3 Dev" },
+      { key: "v2.3-distilled", label: "2.3 Distilled" },
+      { key: "v2.5", label: "2.5 Dev" },
+      { key: "v2.5-distilled", label: "2.5 Distilled" },
+    ],
+    workflows: ["txt2vid", "img2vid"],
+    durationMin: 3,
+    durationMax: 20,
+    resolutions: ["720p", "1080p"],
+    aspectRatios: ["16:9", "3:2", "1:1", "2:3", "9:16"],
+    audio: true,
+    negativePrompt: true,
+    maxFrames: 2,
+    refMax: 0,
+    styles: [],
+    movements: [],
+    stepsRange: { min: 10, max: 60, default: 30 },
+    cfgRange: { min: 1, max: 10, default: 3 },
+    draft: false,
+    promptEnhancer: false,
+    gradient: "from-fuchsia-500 to-pink-600",
+    note: "Comfy lane — img2vid = first/last frame, distilled = cepat (live-pending)",
   },
   {
     id: "hunyuan",
@@ -292,7 +323,14 @@ export function videoRefMax(ecoId: string, modelKey: string): number {
 export function videoResolutions(ecoId: string, modelKey: string): string[] {
   // vidu q1 takes no resolution field (Rust caps).
   if (ecoId === "vidu" && modelKey !== "q3") return [];
+  // grok v1.0 edit lane serves 480p/720p only (Rust caps).
+  if (ecoId === "grok" && modelKey === "v1.0") return ["480p", "720p"];
   return videoEcosystem(ecoId).resolutions;
+}
+
+/** The edit-video workflow applies (grok v1.0 lane only). */
+export function videoHasEdit(ecoId: string, modelKey: string): boolean {
+  return ecoId === "grok" && modelKey === "v1.0";
 }
 
 export function videoAspects(ecoId: string, modelKey: string): string[] {
@@ -307,9 +345,11 @@ export function videoDurationChoices(ecoId: string, modelKey: string): number[] 
   return eco.durationChoices ?? null;
 }
 
-export function videoDurationRange(ecoId: string, modelKey: string): { min: number; max: number } {
+export function videoDurationRange(ecoId: string, modelKey: string, resolution?: string): { min: number; max: number } {
   if (isKlingV3(ecoId, modelKey)) return { min: 5, max: 15 };
   const eco = videoEcosystem(ecoId);
+  // LTX caps duration per resolution (720p → 20s, 1080p → 15s).
+  if (ecoId === "ltx") return { min: 3, max: resolution === "1080p" ? 15 : 20 };
   return { min: eco.durationMin, max: eco.durationMax };
 }
 
