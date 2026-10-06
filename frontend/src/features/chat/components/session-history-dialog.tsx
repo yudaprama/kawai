@@ -217,6 +217,42 @@ export function SessionHistoryDialog({
   // counter would collapse every closure onto the final value).
   let counter = -1;
 
+  // One row renderer for the active and archived lists: archived rows are
+  // read-only (no rename state or start/cancel) and carry the muted style;
+  // every other prop is shared.
+  const renderRow = (session: Parameters<typeof SessionRow>[0]["session"], archived: boolean) => {
+    const idx = ++counter;
+    return (
+      <div className="group flex items-center gap-2" data-session-index={idx} key={session.id}>
+        <SessionRow
+          active={!archived && activeSessionId === session.id}
+          archivedStyle={archived}
+          busy={busy}
+          exporting={exportingId === session.id}
+          highlighted={idx === clampedIndex}
+          onArchive={() => onArchiveSessions([session.id], !archived)}
+          onChangeRename={archived ? () => {} : setRenameValue}
+          onCommitRename={commitRename}
+          onCancelRename={archived ? () => {} : () => setRenamingId(null)}
+          onDelete={() => onDeleteSessions([session.id])}
+          onExport={() => void doExport(session)}
+          onHighlight={() => setActiveIndex(idx)}
+          onSelect={() => {
+            onSelectSession(session.id);
+            onOpenChange(false);
+          }}
+          onStartRename={archived ? () => {} : () => startRename(session)}
+          onToggleSelect={() => toggleSelect(session.id)}
+          renameValue={archived ? "" : renameValue}
+          renaming={archived ? false : renamingId === session.id}
+          selectMode={selectMode}
+          selected={selected.has(session.id)}
+          session={session}
+        />
+      </div>
+    );
+  };
+
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="gap-0 p-0 sm:max-w-lg">
@@ -314,37 +350,7 @@ export function SessionHistoryDialog({
                     option, so aria-selected (not aria-activedescendant)
                     carries the keyboard cursor to screen readers. */}
                 <div aria-label={groupLabel} className="flex flex-col gap-0.5" role="listbox">
-                  {group.sessions.map((session) => {
-                    const idx = ++counter;
-                    return (
-                      <div className="group flex items-center gap-2" data-session-index={idx} key={session.id}>
-                        <SessionRow
-                          highlighted={idx === clampedIndex}
-                          session={session}
-                          active={activeSessionId === session.id}
-                          busy={busy}
-                          renaming={renamingId === session.id}
-                          renameValue={renameValue}
-                          onChangeRename={setRenameValue}
-                          onSelect={() => {
-                            onSelectSession(session.id);
-                            onOpenChange(false);
-                          }}
-                          onHighlight={() => setActiveIndex(idx)}
-                          onStartRename={() => startRename(session)}
-                          onCommitRename={commitRename}
-                          onCancelRename={() => setRenamingId(null)}
-                          onArchive={() => onArchiveSessions([session.id], true)}
-                          onDelete={() => onDeleteSessions([session.id])}
-                          onExport={() => void doExport(session)}
-                          exporting={exportingId === session.id}
-                          selectMode={selectMode}
-                          selected={selected.has(session.id)}
-                          onToggleSelect={() => toggleSelect(session.id)}
-                        />
-                      </div>
-                    );
-                  })}
+                  {group.sessions.map((session) => renderRow(session, false))}
                 </div>
               </div>
             );
@@ -384,38 +390,7 @@ export function SessionHistoryDialog({
                   className="flex flex-col gap-0.5"
                   role="listbox"
                 >
-                  {displayArchived.map((session) => {
-                    const idx = ++counter;
-                    return (
-                      <div className="group flex items-center gap-2" data-session-index={idx} key={session.id}>
-                        <SessionRow
-                          highlighted={idx === clampedIndex}
-                          key={session.id}
-                          session={session}
-                          busy={busy}
-                          renaming={false}
-                          renameValue=""
-                          onChangeRename={() => {}}
-                          onSelect={() => {
-                            onSelectSession(session.id);
-                            onOpenChange(false);
-                          }}
-                          onHighlight={() => setActiveIndex(idx)}
-                          onStartRename={() => {}}
-                          onCommitRename={commitRename}
-                          onCancelRename={() => {}}
-                          onArchive={() => onArchiveSessions([session.id], false)}
-                          onDelete={() => onDeleteSessions([session.id])}
-                          onExport={() => void doExport(session)}
-                          exporting={exportingId === session.id}
-                          selectMode={selectMode}
-                          selected={selected.has(session.id)}
-                          onToggleSelect={() => toggleSelect(session.id)}
-                          archivedStyle
-                        />
-                      </div>
-                    );
-                  })}
+                  {displayArchived.map((session) => renderRow(session, true))}
                 </div>
               )}
             </div>

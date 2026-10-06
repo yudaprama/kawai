@@ -2,19 +2,24 @@
  *  workbench's persisted-record reader. Import-free (types + pure helpers
  *  only), so no circular-import risk. */
 
+/** One planned step as it appears on the wire — the `planStarted` and
+ *  `planRevised` payloads carry the identical shape, so the contract lives
+ *  here exactly once. */
+export type PlanStepInfo = {
+  id: string;
+  tool: string;
+  task: string;
+  dependsOn: string[];
+  /** Explicit dataflow bindings (display-shaped). */
+  inputs?: { arg: string; fromStep: string; output: string }[];
+};
+
 export type SupervisorEvent =
   | {
       type: "planStarted";
       goal: string;
       stepCount: number;
-      steps: {
-        id: string;
-        tool: string;
-        task: string;
-        dependsOn: string[];
-        /** Explicit dataflow bindings (display-shaped). */
-        inputs?: { arg: string; fromStep: string; output: string }[];
-      }[];
+      steps: PlanStepInfo[];
       /** Hash of the executed plan — read key for supervisor_step_output. */
       planKey: string;
       summary: PlanSummaryInfo;
@@ -81,13 +86,7 @@ export type SupervisorEvent =
       type: "planRevised";
       attempt: number;
       stepCount: number;
-      steps: {
-        id: string;
-        tool: string;
-        task: string;
-        dependsOn: string[];
-        inputs?: { arg: string; fromStep: string; output: string }[];
-      }[];
+      steps: PlanStepInfo[];
       /** Key of the REVISED plan — replaces the planStarted key. */
       planKey: string;
       summary: PlanSummaryInfo;

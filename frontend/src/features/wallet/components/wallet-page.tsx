@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Icon } from "@/components/shared/icon";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,42 @@ import { SendForm } from "./send-form";
 import { SmartDepositForm } from "./smart-deposit-form";
 
 type ModalType = "send" | "receive" | "swap" | "deposit" | "addAccount" | "createWallet" | "addToken" | null;
+
+/** Wallet modal that refuses dismissal (outside-click / Esc) while a
+ *  transaction is in flight (`locked`) — a dropped dialog mid-broadcast
+ *  would hide the pending state from the user. */
+function LockedDialog({
+  open,
+  locked,
+  title,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  locked: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o && !locked) onClose();
+      }}
+    >
+      <DialogContent
+        onEscapeKeyDown={(e) => locked && e.preventDefault()}
+        onInteractOutside={(e) => locked && e.preventDefault()}
+      >
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        {children}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export function WalletPage({ onBack }: { onBack: () => void }) {
   const { t } = useI18n();
@@ -258,44 +294,28 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Modals — locked (no outside-click / Esc) while a tx is in flight */}
-      <Dialog
+      <LockedDialog
         open={modal === "deposit"}
-        onOpenChange={(o) => {
-          if (!o && !sending) setModal(null);
-        }}
+        locked={sending}
+        title={t("wallet.smartDeposit")}
+        onClose={() => setModal(null)}
       >
-        <DialogContent
-          onEscapeKeyDown={(e) => sending && e.preventDefault()}
-          onInteractOutside={(e) => sending && e.preventDefault()}
-        >
-          <DialogHeader>
-            <DialogTitle>{t("wallet.smartDeposit")}</DialogTitle>
-          </DialogHeader>
-          <SmartDepositForm
-            onDeposit={handleDeposit}
-            loading={sending}
-            currentNetwork={currentNetwork}
-            gasEstimate={gasEstimate}
-            nativeBalance={nativeBalance}
-          />
-        </DialogContent>
-      </Dialog>
-      <Dialog
+        <SmartDepositForm
+          onDeposit={handleDeposit}
+          loading={sending}
+          currentNetwork={currentNetwork}
+          gasEstimate={gasEstimate}
+          nativeBalance={nativeBalance}
+        />
+      </LockedDialog>
+      <LockedDialog
         open={modal === "send"}
-        onOpenChange={(o) => {
-          if (!o && !sending) setModal(null);
-        }}
+        locked={sending}
+        title={t("wallet.sendAssets")}
+        onClose={() => setModal(null)}
       >
-        <DialogContent
-          onEscapeKeyDown={(e) => sending && e.preventDefault()}
-          onInteractOutside={(e) => sending && e.preventDefault()}
-        >
-          <DialogHeader>
-            <DialogTitle>{t("wallet.sendAssets")}</DialogTitle>
-          </DialogHeader>
-          <SendForm onSend={handleSend} loading={sending} currentNetwork={currentNetwork} />
-        </DialogContent>
-      </Dialog>
+        <SendForm onSend={handleSend} loading={sending} currentNetwork={currentNetwork} />
+      </LockedDialog>
       <Dialog open={modal === "receive"} onOpenChange={(o) => !o && setModal(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>

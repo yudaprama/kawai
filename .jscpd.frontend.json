@@ -1,0 +1,23 @@
+{
+  "formats": ["typescript", "tsx"],
+  "minLines": 5,
+  "minTokens": 50,
+  "reporters": ["console-full", "html", "json"],
+  "output": "./jscpd-report-frontend",
+  "threshold": 2,
+  "ignore": [
+    "**/lib/streamdown/**",
+    "**/components/ai-elements/**",
+    "**/components/ui/**",
+    "**/features/assets/components/asset/**",
+    "**/assets/*.svg",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/AGENTS.md",
+    "**/DESIGN.md",
+    "**/vendor/**",
+    "**/target/**",
+    "**/node_modules/**"
+  ]
+}

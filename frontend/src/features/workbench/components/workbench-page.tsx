@@ -334,6 +334,32 @@ export function WorkbenchPage({
     });
   };
 
+  /** Shared gate + lifecycle for the fixed-pipeline submits (desk / YouTube):
+   *  reject while a plan is under review, single-flight via `startingRef`,
+   *  hand off to the run view on start, and always clear the flight flag
+   *  afterwards (success or failure — gates already toasted + sessionError'd
+   *  on the landing). */
+  const beginPipelineRun = useCallback(
+    (start: (onStart: () => void) => Promise<unknown>) => {
+      if (supervisor.status === "reviewing") {
+        workbench.setSessionError("A plan is awaiting your review — run or discard it first");
+        return;
+      }
+      if (startingRef.current) return;
+      startingRef.current = true;
+      const baseline = supervisor.planStartedAt;
+      void start(() => enterRunView(baseline)).then(
+        () => {
+          startingRef.current = false;
+        },
+        () => {
+          startingRef.current = false;
+        },
+      );
+    },
+    [supervisor.status, supervisor.planStartedAt, workbench.setSessionError, enterRunView],
+  );
+
   /** Stock Research submit (PLAN-stock-research): the FIXED stock-research
    *  pipeline for one ticker. Same canvas handoff as a goal submit — the
    *  desk streams the same SupervisorEvent lifecycle, so the rail, deliverable
@@ -345,24 +371,9 @@ export function WorkbenchPage({
       analysts: string[] | undefined,
       domain: "stock" | "crypto" | "commodity" | "forex",
     ) => {
-      if (supervisor.status === "reviewing") {
-        workbench.setSessionError("A plan is awaiting your review — run or discard it first");
-        return;
-      }
-      if (startingRef.current) return;
-      startingRef.current = true;
-      const baseline = supervisor.planStartedAt;
-      void workbench.runDesk(ticker, tradeDate, analysts, domain, { onStart: () => enterRunView(baseline) }).then(
-        () => {
-          startingRef.current = false;
-        },
-        () => {
-          // Gates already toasted + sessionError'd (shown on the landing).
-          startingRef.current = false;
-        },
-      );
+      beginPipelineRun((onStart) => workbench.runDesk(ticker, tradeDate, analysts, domain, { onStart }));
     },
-    [supervisor.status, supervisor.planStartedAt, workbench.runDesk, workbench.setSessionError, enterRunView],
+    [beginPipelineRun, workbench.runDesk],
   );
 
   /** YouTube Summary submit (PLAN-youtube-summary): one link in, the FIXED
@@ -371,24 +382,9 @@ export function WorkbenchPage({
    *  AGENT REPORTS render it unchanged. */
   const submitYoutube = useCallback(
     (url: string) => {
-      if (supervisor.status === "reviewing") {
-        workbench.setSessionError("A plan is awaiting your review — run or discard it first");
-        return;
-      }
-      if (startingRef.current) return;
-      startingRef.current = true;
-      const baseline = supervisor.planStartedAt;
-      void workbench.runYoutube(url, { onStart: () => enterRunView(baseline) }).then(
-        () => {
-          startingRef.current = false;
-        },
-        () => {
-          // Gates already toasted + sessionError'd (shown on the landing).
-          startingRef.current = false;
-        },
-      );
+      beginPipelineRun((onStart) => workbench.runYoutube(url, { onStart }));
     },
-    [supervisor.status, supervisor.planStartedAt, workbench.runYoutube, workbench.setSessionError, enterRunView],
+    [beginPipelineRun, workbench.runYoutube],
   );
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)

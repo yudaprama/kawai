@@ -2,8 +2,10 @@
 
 ## Generator video Civitai (video lane)
 
-Generator panel menerima lane **video**: teks→video dan gambar→video lewat Civitai
-Orchestration **workflows API** — bukan `recipes/*`. Kunci vault yang sama
+Generator panel menerima lane **video**: teks→video, gambar→video (1–2 slot
+frame), dan referensi→video lewat Civitai Orchestration **workflows API** —
+bukan `recipes/*`. Fase 2 menambah empat engine (flux3/grok/vidu/hunyuan),
+slot frame kedua (first/last), `img2vid:ref2vid`, dan cancel workflow. Kunci vault yang sama
 (`kawai-vault/constants::civitai::get_civitai`) membukti kemampuan submit/poll
 di kedua jalur (bearer API key adalah subject kelas satu di orchestrator,
 `generation-surface.ts:21-22`). Implementasi: klien `crates/integrations/civitai`
@@ -16,6 +18,7 @@ di kedua jalur (bearer API key adalah subject kelas satu di orchestrator,
 | `/v2/consumer/workflows?whatif=true` | POST | `{steps:[{$type:"videoGen",input:{engine,…}}],upgradeMode:"manual"}` | `{cost:{base,total},ready,warnings,transactions,modelSubstitutions?}` | **Gratis** — tidak persist, tidak charge; membangun step NYATA di server, jadi 200 = seluruh bentuk input valid |
 | `/v2/consumer/workflows` | POST | body sama | `{id,status}` | **Buzz dipotong saat submit**; 429 boleh retry, 5xx/timeout TIDAK (bisa sudah tercharge) |
 | `/v2/consumer/workflows/{id}?wait=N` | GET | — | workflow penuh; **202** + snapshot bila hold habis dan masih jalan | long-poll; status lowercase di wire (`succeeded`/`failed` teramati live; `unassigned/preparing/scheduled/processing` dari konstanta civitai) |
+| `/v2/consumer/workflows/{id}` | PUT | `{status:"canceled"}` | workflow ter-update | cancel — bentuk `clientUpdateWorkflow` milik `cancelWorkflow` civitai (`workflows.ts:652`) |
 | `/v2/consumer/blobs` | POST | `{contentType}` (bearer) | `{uploadUrl}` | presign; lalu POST bytes ke `uploadUrl` dengan `Content-Type` → `{url,…}` — URL inilah yang dikirim di step input |
 
 Hasil sukses: `steps[].output.video = {url, thumbnailUrl?, width?, height?}` —
@@ -23,22 +26,39 @@ URL blob **signed dan expired** → wajib diunduh segera (`civitai_video_fetch`)
 Multi-klip (LTX batch) menumpuk di `output.additionalVideos` — belum dipakai
 (quantity pin 1).
 
-### Registry phase-1 (`registry.rs` video section ↔ `video-ecosystems.ts`)
+### Registry (`registry.rs` video section ↔ `video-ecosystems.ts`)
 
-| Ecosystem | Engine (wire) | Model | Durasi | Resolusi | Aspect | Audio | Negative |
+Fase 1 — enum divalidasi **live** lewat whatif (26 kombinasi aspect + 5
+bentuk engine, 200 semua, 2026-10-05). Fase 2 — ditranskrip dari handler
+orkestrator civitai (`ecosystems/*.handler.ts`), status **live-pending**
+(jaringan ke civitai sedang diblokir saat implementasi — probe dijalankan
+begitu terjangkau; whatif pre-flight panel memvalidasi tiap pick sebelum
+spend, jadi enum salah = error cost, bukan pembelian).
+
+| Ecosystem | Engine (wire) | Model | Durasi | Resolusi | Slot frame | Ref2vid | Catatan |
 |---|---|---|---|---|---|---|---|
-| minimax (default) | `minimax-h3` | — | slider 4–15 | `2K` (pin) | 21:9/16:9/4:3/1:1/3:4/9:16 | — | — |
-| seedance | `seedance` | v2/v2-fast/v2-mini/v2.5 | slider 4–15 | 480p/720p | 21:9/16:9/4:3/1:1/3:4/9:16 | ✓ | — |
-| veo3 | `veo3` | — (`fastMode`) | enum 4/6/8 | — | 16:9/9:16/1:1 | ✓ | ✓ |
-| kling | `kling` / `kling-v3` (model `v3`) | v1.6/v2/v2.5-turbo/v3 | legacy enum 5/10; v3 slider 5–15 | — | 16:9/9:16/1:1 | v3 saja | legacy saja |
-| wan | `wan` | v2.5 (`provider:"fal"`) | enum 5/10 | 480p/720p/1080p | 16:9/9:16/1:1/4:3/3:4 | — | ✓ |
+| minimax (default) | `minimax-h3` | — | slider 4–15 | `2K` (pin) | 2 (first/last) | ≤9 (`referenceImages`) | aspect `adaptive` saat ada frame |
+| seedance | `seedance` | v2/v2-fast/v2-mini/v2.5 | slider 4–15 | 480p/720p | 1 | ≤9 (`images`) | aspect di txt2vid+ref2vid |
+| veo3 | `veo3` | — (`fastMode`) | enum 4/6/8 | — | 1 | ≤3 (`images` + placeholder prompt `[@imageN]`) | pin `version:"3.1"`, enhancer `true` |
+| kling | `kling` / `kling-v3` (model `v3`) | v1.6/v2/v2.5-turbo/v3 | legacy enum 5/10; v3 slider 5–15 | — | v3: 2 (`sourceImage`+`endImage`) | v3 ≤7 (`operation:"reference-to-video"` + `images`) | audio v3; negative legacy; enhancer legacy |
+| wan | `wan` | v2.5 (`provider:"fal"`) | enum 5/10 | 480p/720p/1080p | 1 | — | pin `frameRate:24` |
+| flux3 | `flux` (`version:"v3.0"`) | — | slider 4–20 | 720p/1080p (draft pin 720p) | 2 (operation dari jumlah frame: `imageToVideo`/`firstLastFrameToVideo`) | — | aspect `auto` saat ada frame; `draft` bool |
+| grok | `grok` (`version:"v1.5"`) | v1.5 | slider 6–15 | 480p/720p/1080p | 1 | ≤7 (`operation:"referenceToVideo"` + aspect) | operasi camelCase |
+| vidu | `vidu` (q1) / `vidu-q3` (q3) | q1/q3 | **q1 tanpa durasi**; q3 slider 1–16 | q3: 360p/540p/720p/1080p | q1: 2 (`sourceImage`+`endSourceImage`); q3: `images` array | ≤7 (`images`) | q1: style/movementAmplitude/enhancer; q3: `enableAudio`+`turbo` |
+| hunyuan | `hunyuan` | — | enum 3/5 | piksel @480p (tabel `HUNYUAN_DIMS_480P`) | — (txt2vid saja) | — | `cfgScale` 1–10, `steps` 10–30 |
 
-Semua nilai enum divalidasi **live** lewat whatif (26 kombinasi aspect + 5
-bentuk engine, 200 semua, 2026-10-05) — tabel ini adalah kontrak wire yang
-bisa dijalankan. **Sora absen dengan sengaja**: orchestrator live menjawab
-400 `"Sora has been retired by OpenAI… Use another videoGen engine such as
-veo3, kling-v3 or wan instead"`. Pin wajib: veo3 `version:"3.1"` +
-`enablePromptEnhancer:true`; wan `frameRate:24`; semua engine `quantity:1`.
+**Sora absen dengan sengaja**: orchestrator live menjawab 400 `"Sora has
+been retired by OpenAI… Use another videoGen engine such as veo3, kling-v3
+or wan instead"`. **LTX ditunda (fase 3)**: wire-nya mengambil width/height
+PIKSEL per-resolusi + varian Distilled/Sulphur — port terberat, permintaan
+panel paling rendah. Semua engine `quantity:1`.
+
+**Deviasi sadar dari UI civitai**: `img2vid:first-last` TIDAK menjadi
+workflow id terpisah — first/last adalah slot kedua opsional pada
+`img2vid`, karena wire-nya identik (vidu q1/kling v3/minimax/flux3 semua
+menangani 2 frame di jalur `img2vid` yang sama; flux3 bahkan memilih
+operation dari jumlah frame). Hanya `img2vid:ref2vid` yang butuh id baru
+(field/operation berbeda).
 
 Harga live per whatif (5s kecuali disebut): seedance v2-mini **490**, wan v2.5
 **500**, kling legacy **600**, veo3 fast **1000**, minimax **1020** (6s),
@@ -60,7 +80,10 @@ pill ≈ di panel adalah whatif sungguhan, bukan formula.
    `unassigned/preparing/scheduled → queued`, `processing`, terminal
    `succeeded/failed/expired/canceled`; memgawa `queuePosition` (objek
    `{position,support}` di wire) dan `error` gabungan step.
-4. **`civitai_video_fetch`** — unduh mp4 sekali (ekstensi dari URL; default
+4. **`civitai_video_cancel`** — `PUT {status:"canceled"}` dari kartu progres;
+   panel berhenti mem-poll setelah memanggilnya (best-effort — workflow
+   terminal mengabaikannya).
+5. **`civitai_video_fetch`** — unduh mp4 sekali (ekstensi dari URL; default
    mp4) → `store::import_as(ArtifactKind::Video,"civitai")` + poster
    thumbnail (best-effort, `ArtifactKind::Image`). Idempotensi = tugas
    caller: fetch dipanggil TEPAT sekali per workflow setelah `succeeded`
@@ -115,16 +138,16 @@ cargo run -p civitai --example live_whatif          # auth + 5 engine + 26 aspec
 cargo run -p civitai --example live_video_whatif    # jalur API publik: validate → input_json → whatif
 ```
 
-Tidak membelanjakan Buzz. `live_generate.rs` tetap satu-satunya smoke
-berbayar (image).
+Tidak membelanjakan Buzz. `live_whatif` memuat baterai fase 2 (13 probe
+engine + 19 sweep aspect untuk flux3/grok/vidu/hunyuan). `live_generate.rs`
+tetap satu-satunya smoke berbayar (image).
 
 ### Sisa (belum, sengaja)
 
-`img2vid:first-last` (slot dua frame), `img2vid:ref2vid` (multi-referensi),
-`vid2vid:edit` (upload video ≤64MB), ecosystem lanjutan (LTX/Vidu/Grok/
-Flux3Video/Hunyuan/MiniMax-comfy), cancel workflow (`DELETE`), multi-klip
-(`additionalVideos`), dan hook deliverable (mp4 tidak bisa di-embed
-markdown/pdf/docx — tetap di panel + asset viewer). Fase 1 = fondasi:
-cost → submit → poll → fetch yang sudah terbukti live sampai whatif;
-generasi sungguhan pertama dari panel adalah verifikasi end-to-end
-terakhir (membelanjakan Buzz).
+Probe live fase 2 (flux3/grok/vidu/hunyuan — jaringan ke civitai sedang
+diblokir saat implementasi; jalankan `live_whatif` begitu terbuka),
+`vid2vid:edit` (upload video ≤64MB), LTX (tabel piksel + Distilled/Sulphur),
+MiniMax-comfy (controlVideo), multi-klip (`additionalVideos`), dan hook
+deliverable (mp4 tidak bisa di-embed markdown/pdf/docx — tetap di panel +
+asset viewer). Generasi sungguhan pertama dari panel tetap verifikasi
+end-to-end terakhir (membelanjakan Buzz).

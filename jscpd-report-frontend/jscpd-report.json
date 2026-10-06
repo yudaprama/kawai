@@ -1,0 +1,117 @@
+{
+  "duplicates": [
+    {
+      "firstFile": {
+        "end": 18,
+        "endLoc": {
+          "column": 8,
+          "line": 18,
+          "position": 990
+        },
+        "name": "features/generator/generator-page.tsx",
+        "start": 8,
+        "startLoc": {
+          "column": 89,
+          "line": 8,
+          "position": 509
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 11,
+      "secondFile": {
+        "end": 16,
+        "endLoc": {
+          "column": 8,
+          "line": 16,
+          "position": 800
+        },
+        "name": "features/generator/video-generator.tsx",
+        "start": 6,
+        "startLoc": {
+          "column": 45,
+          "line": 6,
+          "position": 319
+        }
+      },
+      "tokens": 74
+    },
+    {
+      "firstFile": {
+        "end": 28,
+        "endLoc": {
+          "column": 8,
+          "line": 28,
+          "position": 982
+        },
+        "name": "features/memory/components/memory-page.tsx",
+        "start": 14,
+        "startLoc": {
+          "column": 47,
+          "line": 14,
+          "position": 585
+        }
+      },
+      "format": "tsx",
+      "fragment": "",
+      "lines": 15,
+      "secondFile": {
+        "end": 29,
+        "endLoc": {
+          "column": 8,
+          "line": 29,
+          "position": 956
+        },
+        "name": "features/skills/components/skills-page.tsx",
+        "start": 15,
+        "startLoc": {
+          "column": 67,
+          "line": 15,
+          "position": 559
+        }
+      },
+      "tokens": 51
+    }
+  ],
+  "statistics": {
+    "detectionDate": "2026-10-05T23:28:17.140Z",
+    "formats": {
+      "tsx": {
+        "clones": 2,
+        "duplicatedLines": 24,
+        "duplicatedTokens": 125,
+        "lines": 19102,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.1256412941053293,
+        "percentageTokens": 0.10166651755577426,
+        "sources": 80,
+        "tokens": 122951
+      },
+      "typescript": {
+        "clones": 0,
+        "duplicatedLines": 0,
+        "duplicatedTokens": 0,
+        "lines": 8886,
+        "newClones": 0,
+        "newDuplicatedLines": 0,
+        "percentage": 0.0,
+        "percentageTokens": 0.0,
+        "sources": 71,
+        "tokens": 48483
+      }
+    },
+    "total": {
+      "clones": 2,
+      "duplicatedLines": 24,
+      "duplicatedTokens": 125,
+      "lines": 27988,
+      "newClones": 0,
+      "newDuplicatedLines": 0,
+      "percentage": 0.08575103615835358,
+      "percentageTokens": 0.07291435771200579,
+      "sources": 151,
+      "tokens": 171434
+    }
+  }
+}

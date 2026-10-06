@@ -387,6 +387,27 @@ function DeliverableBody({
 /** Canvas content for a PAST run: its deliverable or one of its step reports
  *  (fetched on demand from supervisor_step_results via the run's planKey).
  *  Same shape as the active-run canvas: header, document, doc switcher. */
+/** Per-container scroll memory keyed by `key`: switching keys saves the old
+ *  container's scrollTop and restores the new key's last position (0 for a
+ *  key never visited). Reading a long deliverable survives a peek at a step
+ *  report and back. Returns the ref to attach to the scrolling container. */
+function useScrollMemory(key: string) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollTops = useRef<Map<string, number>>(new Map());
+  const prevKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el == null) return;
+    const prevKey = prevKeyRef.current;
+    if (prevKey !== key) {
+      if (prevKey != null) scrollTops.current.set(prevKey, el.scrollTop);
+      el.scrollTop = scrollTops.current.get(key) ?? 0;
+      prevKeyRef.current = key;
+    }
+  }, [key]);
+  return scrollRef;
+}
+
 export function PastRunCanvas({
   loadFullOutput,
   run,
@@ -423,19 +444,7 @@ export function PastRunCanvas({
   const stepTool = run.steps?.find((s) => s.stepId === doc)?.tool ?? "";
   // Scroll memory (per run — the container key is the run id): same doc
   // round-trip keeps the reading position, an unvisited doc opens at the top.
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const scrollTops = useRef<Map<string, number>>(new Map());
-  const prevDocRef = useRef<string | null>(null);
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el == null) return;
-    const prevDoc = prevDocRef.current;
-    if (prevDoc !== doc) {
-      if (prevDoc != null) scrollTops.current.set(prevDoc, el.scrollTop);
-      el.scrollTop = scrollTops.current.get(doc) ?? 0;
-      prevDocRef.current = doc;
-    }
-  }, [doc]);
+  const scrollRef = useScrollMemory(doc);
   const [errorCopied, setErrorCopied] = useState(false);
   return (
     <div className="h-full overflow-y-auto" key={run.id} ref={scrollRef}>
@@ -765,23 +774,10 @@ export function DeliverableViewer({
     [unseeded, supervisor.steps],
   );
   const effective = doc;
-  // Scroll memory (per run — the container key is the run only): switching
-  // docs saves the old doc's scrollTop and restores the new doc's last
-  // position (0 for a doc never visited). Reading a long deliverable
-  // survives a peek at a step report and back.
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const scrollTops = useRef<Map<string, number>>(new Map());
-  const prevDocRef = useRef<string | null>(null);
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el == null) return;
-    const prevDoc = prevDocRef.current;
-    if (prevDoc !== effective) {
-      if (prevDoc != null) scrollTops.current.set(prevDoc, el.scrollTop);
-      el.scrollTop = scrollTops.current.get(effective) ?? 0;
-      prevDocRef.current = effective;
-    }
-  }, [effective]);
+  // Scroll memory (per run): switching docs saves the old scrollTop and
+  // restores the new doc's last position — a long deliverable survives a
+  // peek at a step report and back.
+  const scrollRef = useScrollMemory(effective);
   // Step source: supervisor state for the run it currently holds; the run
   // RECORD (≤2000-char embeds + its own planKey) otherwise — a reopened
   // session's newest run renders here too, and the supervisor may be empty

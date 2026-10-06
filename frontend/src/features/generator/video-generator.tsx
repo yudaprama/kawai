@@ -4,6 +4,7 @@ import { AssetShell } from "@/features/assets/components/asset-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Slider, SliderRange, SliderThumb, SliderTrack } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,12 +19,19 @@ import {
   VIDEO_ECOSYSTEMS,
   type VideoEcosystemConfig,
   type VideoWorkflowId,
+  videoAspects,
   videoDurationChoices,
+  videoDurationOmitted,
   videoDurationRange,
   videoEcosystem,
   videoHasAudio,
   videoHasNegative,
+  videoHasPromptEnhancer,
+  videoMaxFrames,
+  videoRefMax,
+  videoResolutions,
 } from "./video-ecosystems";
+import { EcoOptionButton, KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
 
 /** Civitai videoGen request the Rust ops accept (camelCase, flattened). */
 interface VideoGenRequest {
@@ -31,8 +39,8 @@ interface VideoGenRequest {
   workflow: VideoWorkflowId;
   prompt: string;
   negativePrompt?: string;
-  sourceImage?: string;
-  endImage?: string;
+  /** Ordered: img2vid = [first, (last)]; ref2vid = references. */
+  images: string[];
   model?: string;
   mode?: string;
   fastMode?: boolean;
@@ -42,6 +50,10 @@ interface VideoGenRequest {
   generateAudio?: boolean;
   enablePromptEnhancer?: boolean;
   cfgScale?: number;
+  steps?: number;
+  draft?: boolean;
+  style?: string;
+  movementAmplitude?: string;
   seed?: number;
   quantity?: number;
 }
@@ -158,7 +170,7 @@ function MediaIsland({
             <Icon name="chevron-down" />
           </span>
         </button>
-        {children}
+        {ecoOpen && children}
       </div>
     </div>
   );
@@ -203,7 +215,17 @@ function VideoResultCard({ entry }: { entry: VideoResultEntry }) {
 }
 
 /** In-flight progress card pinned above the results grid. */
-function JobCard({ job, status, elapsed }: { job: ActiveJob; status: VideoStatusView | null; elapsed: number }) {
+function JobCard({
+  job,
+  status,
+  elapsed,
+  onCancel,
+}: {
+  job: ActiveJob;
+  status: VideoStatusView | null;
+  elapsed: number;
+  onCancel: () => void;
+}) {
   const { t } = useI18n();
   const statusKey =
     status?.status === "processing"
@@ -228,26 +250,78 @@ function JobCard({ job, status, elapsed }: { job: ActiveJob; status: VideoStatus
         </p>
       )}
       {status?.error && <p className="text-destructive text-xs">{status.error}</p>}
-      <p className="text-muted-foreground/60 truncate font-mono text-[10px]">{job.workflowId}</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-muted-foreground/60 truncate font-mono text-[10px]">{job.workflowId}</p>
+        <Button className="h-7 shrink-0 rounded-[6px] px-2 text-xs" onClick={onCancel} size="sm" variant="secondary">
+          {t("videoGenerator.cancel")}
+        </Button>
+      </div>
     </div>
+  );
+}
+
+/** One frame slot: pick chip when empty, thumbnail + clear when set. */
+function FrameSlot({
+  caption,
+  dataUrl,
+  onPick,
+  onClear,
+}: {
+  caption: string;
+  dataUrl: string;
+  onPick: (file: File | undefined) => void;
+  onClear: () => void;
+}) {
+  return dataUrl ? (
+    <div className="relative overflow-hidden rounded-[8px] border">
+      <img alt={caption} className="aspect-video w-full bg-black object-cover" src={dataUrl} />
+      <span className="bg-black/60 absolute bottom-1 left-1 rounded px-1 text-[10px] text-white">{caption}</span>
+      <Button
+        aria-label={caption}
+        className="absolute top-1 right-1 size-6"
+        onClick={onClear}
+        size="icon"
+        variant="secondary"
+      >
+        <Icon className="size-3.5" name="x" />
+      </Button>
+    </div>
+  ) : (
+    <label className="text-muted-foreground flex aspect-video cursor-pointer flex-col items-center justify-center gap-1 rounded-[8px] border border-dashed text-xs transition-colors hover:text-foreground">
+      <Icon className="size-5" name="image-plus" />
+      {caption}
+      <input
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => onPick(e.target.files?.[0])}
+        type="file"
+      />
+    </label>
   );
 }
 
 export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void; onSwitchToImage: () => void }) {
   const { t } = useI18n();
-  const [configured, setConfigured] = useState<boolean | null>(null);
+  const configured = useCivitaiKeyStatus();
   const [ecoId, setEcoId] = useState(DEFAULT_VIDEO_ECOSYSTEM);
   const eco: VideoEcosystemConfig = videoEcosystem(ecoId);
   const [modelKey, setModelKey] = useState("");
   const [workflow, setWorkflow] = useState<VideoWorkflowId>("txt2vid");
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
-  const [sourceImage, setSourceImage] = useState<string | null>(null);
+  /** Source frames, ordered — semantics per workflow (img2vid slots or refs). */
+  const [frames, setFrames] = useState<string[]>([]);
   const [duration, setDuration] = useState<number>(6);
   const [resolution, setResolution] = useState<string>("");
   const [aspect, setAspect] = useState<string>("16:9");
   const [audio, setAudio] = useState(false);
   const [seed, setSeed] = useState("");
+  const [enhancer, setEnhancer] = useState(true);
+  const [cfgScale, setCfgScale] = useState("");
+  const [steps, setSteps] = useState("");
+  const [draft, setDraft] = useState(false);
+  const [style, setStyle] = useState("");
+  const [movement, setMovement] = useState("");
   const [ecoOpen, setEcoOpen] = useState(false);
   const [cost, setCost] = useState<VideoCostView | null>(null);
   const [costError, setCostError] = useState(false);
@@ -257,40 +331,66 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
   const [elapsed, setElapsed] = useState(0);
   const [results, setResults] = useState<VideoResultEntry[]>(() => loadJson<VideoResultEntry[]>(RESULTS_KEY, []));
   const aliveRef = useRef(true);
-  useEffect(() => {
-    aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    call<{ configured: boolean }>("civitai_api_key_status")
-      .then((s) => setConfigured(s.configured))
-      .catch(() => setConfigured(false));
-  }, []);
+  useAliveEffect(aliveRef);
 
   // Ecosystem/model switches reset every dependent selection to the new
   // ecosystem's first valid value (duration/resolution/aspect are wire
   // enums — a stale pick would fail the whatif).
   const durationChoices = videoDurationChoices(ecoId, modelKey);
   const durationRange = videoDurationRange(ecoId, modelKey);
+  /** (Re)initialize every model/workflow-dependent pick. Duration lands on
+   *  the choices midpoint (or slider middle); resolution/aspect on the
+   *  first valid value; frames trimmed to the new caps. */
+  const reinitPicks = (id: string, model: string) => {
+    const range = videoDurationRange(id, model);
+    const choices = videoDurationChoices(id, model);
+    setDuration(
+      videoDurationOmitted(id, model)
+        ? 0
+        : choices
+          ? choices[Math.floor(choices.length / 2)]
+          : Math.round((range.min + range.max) / 2),
+    );
+    const res = videoResolutions(id, model);
+    setResolution(res[0] ?? "");
+    const asp = videoAspects(id, model);
+    setAspect(asp.includes("16:9") ? "16:9" : (asp[0] ?? ""));
+    setAudio(false);
+    setDraft(false);
+    setStyle("");
+    setMovement("");
+    setCfgScale("");
+    setSteps("");
+    setEnhancer(true);
+    setFrames((prev) => prev.slice(0, videoMaxFrames(id, model)));
+  };
   const switchEcosystem = (id: string) => {
     setEcoId(id);
-    setModelKey("");
-    const next = videoEcosystem(id);
-    const range = videoDurationRange(id, "");
-    const choices = videoDurationChoices(id, "");
-    setDuration(choices ? choices[Math.floor(choices.length / 2)] : Math.round((range.min + range.max) / 2));
-    setResolution(next.resolutions[0] ?? "");
-    setAspect(next.aspectRatios.includes("16:9") ? "16:9" : (next.aspectRatios[0] ?? ""));
-    setAudio(false);
+    setModelKey(id === "kling" ? "" : (videoEcosystem(id).models[0]?.key ?? ""));
+    reinitPicks(id, id === "kling" ? "" : (videoEcosystem(id).models[0]?.key ?? ""));
+  };
+  const switchModel = (key: string) => {
+    setModelKey(key);
+    reinitPicks(ecoId, key);
   };
 
   const hasAudio = videoHasAudio(ecoId, modelKey);
   const hasNegative = videoHasNegative(ecoId, modelKey);
-  const isImg2Vid = workflow === "img2vid";
-  const promptEffective = isImg2Vid || prompt.trim().length > 0;
+  const promptEnhancer = videoHasPromptEnhancer(ecoId, modelKey);
+  const isImageWorkflow = workflow !== "txt2vid";
+  const isRef2Vid = workflow === "img2vid:ref2vid";
+  const maxFrames = videoMaxFrames(ecoId, modelKey);
+  const refMax = videoRefMax(ecoId, modelKey);
+  const resolutions = videoResolutions(ecoId, modelKey);
+  const aspects = videoAspects(ecoId, modelKey);
+  const durationHidden = videoDurationOmitted(ecoId, modelKey);
+  const promptEffective = isImageWorkflow || prompt.trim().length > 0;
+  /** Slot count the current workflow renders: img2vid = maxFrames
+   *  (first required, last optional), ref2vid grows with an add-slot. */
+  const frameSlots = isRef2Vid ? Math.max(1, frames.length) : maxFrames;
+  const framesFilled = frames.filter(Boolean).length;
+  const framesReady = !isImageWorkflow || framesFilled >= 1;
+  const canAddFrameSlot = isImageWorkflow && frames.length < (isRef2Vid ? refMax : maxFrames);
 
   const buildRequest = useCallback((): VideoGenRequest => {
     return {
@@ -298,31 +398,46 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
       workflow,
       prompt: prompt.trim(),
       negativePrompt: hasNegative && negativePrompt.trim() ? negativePrompt.trim() : undefined,
-      sourceImage: isImg2Vid ? (sourceImage ?? undefined) : undefined,
+      images: isImageWorkflow ? frames.filter(Boolean) : [],
       model: modelKey || undefined,
-      duration,
-      resolution: eco.resolutions.length > 0 ? resolution || eco.resolutions[0] : undefined,
-      aspectRatio: !isImg2Vid ? aspect : undefined,
+      duration: durationHidden ? undefined : duration,
+      resolution: resolutions.length > 0 ? resolution || resolutions[0] : undefined,
+      aspectRatio: workflow === "txt2vid" ? aspect : undefined,
       generateAudio: hasAudio ? audio : undefined,
+      enablePromptEnhancer: promptEnhancer ? enhancer : undefined,
+      cfgScale: eco.cfgRange && cfgScale.trim() ? Number(cfgScale) : undefined,
+      steps: eco.stepsRange && steps.trim() ? Number(steps) : undefined,
+      draft: eco.draft && draft ? true : undefined,
+      style: style.trim() || undefined,
+      movementAmplitude: movement.trim() || undefined,
       seed: seed.trim() ? Number(seed) : undefined,
       quantity: 1,
     };
   }, [
     audio,
     aspect,
+    cfgScale,
+    draft,
     duration,
+    durationHidden,
     eco,
     ecoId,
+    enhancer,
+    frames,
     hasAudio,
     hasNegative,
-    isImg2Vid,
+    isImageWorkflow,
     modelKey,
+    movement,
     negativePrompt,
     prompt,
+    promptEnhancer,
+    resolutions,
     resolution,
     seed,
+    steps,
+    style,
     workflow,
-    sourceImage,
   ]);
 
   /** Identity-stable request snapshot — the whatif effect re-runs only when
@@ -431,19 +546,27 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
     };
   }, [job, t]);
 
-  function pickSource(file: File | undefined) {
+  function setFrameSlot(index: number, file: File | undefined) {
     if (!file) return;
     if (file.size > 8 * 1024 * 1024) {
       toast.error(t("videoGenerator.sourceTooLarge"));
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => setSourceImage(typeof reader.result === "string" ? reader.result : null);
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") return;
+      setFrames((prev) => {
+        const next = [...prev];
+        while (next.length <= index) next.push("");
+        next[index] = result;
+        return next;
+      });
+    };
     reader.readAsDataURL(file);
   }
 
-  const canSubmit =
-    configured === true && !submitting && !job && promptEffective && (isImg2Vid ? sourceImage != null : true);
+  const canSubmit = configured === true && !submitting && !job && promptEffective && framesReady;
 
   async function handleGenerate() {
     if (!canSubmit || !promptEffective) return;
@@ -475,19 +598,13 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
       {VIDEO_ECOSYSTEMS.map((e) => {
         const selected = e.id === ecoId;
         return (
-          <button
-            aria-selected={selected}
-            className={cn(
-              "flex w-full items-center gap-2 p-2.5 text-left transition-colors hover:bg-accent",
-              selected && "bg-accent",
-            )}
+          <EcoOptionButton
             key={e.id}
-            onClick={() => {
+            onPick={() => {
               setEcoOpen(false);
               if (!selected) switchEcosystem(e.id);
             }}
-            role="option"
-            type="button"
+            selected={selected}
           >
             <div
               className={cn(
@@ -508,7 +625,7 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
                 <Icon name="check" />
               </span>
             )}
-          </button>
+          </EcoOptionButton>
         );
       })}
     </div>
@@ -525,36 +642,34 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
         {ecoPicker}
       </MediaIsland>
       {ecoOpen && <div aria-hidden className="fixed inset-0 z-20" onClick={() => setEcoOpen(false)} />}
-      {configured === false && (
-        <div className="bg-secondary text-muted-foreground flex items-start gap-2 rounded-[8px] border p-2.5 text-xs leading-relaxed">
-          <Icon className="mt-0.5 size-4 shrink-0" name="info" />
-          <span>{t("generator.keyMissingBody")}</span>
-        </div>
-      )}
-      {configured === null && (
-        <div className="text-muted-foreground flex items-center gap-2 text-sm">
-          <Spinner className="size-4" /> {t("generator.checkingKey")}
-        </div>
-      )}
+      <KeyStatusNotices configured={configured} />
 
       {/* Workflow — txt2vid / img2vid segmented chips. */}
       <div className="flex flex-col gap-1.5">
         <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.workflow")}</Label>
         <div className="flex gap-2">
-          <button
-            className={cn(choiceClassShared(workflow === "txt2vid"), "flex-1")}
-            onClick={() => setWorkflow("txt2vid")}
-            type="button"
-          >
-            {t("videoGenerator.txt2vid")}
-          </button>
-          <button
-            className={cn(choiceClassShared(workflow === "img2vid"), "flex-1")}
-            onClick={() => setWorkflow("img2vid")}
-            type="button"
-          >
-            {t("videoGenerator.img2vid")}
-          </button>
+          {(
+            [
+              ["txt2vid", t("videoGenerator.txt2vid")],
+              ["img2vid", t("videoGenerator.img2vid")],
+              ["img2vid:ref2vid", t("videoGenerator.ref2vid")],
+            ] as Array<[VideoWorkflowId, string]>
+          )
+            .filter(([id]) => eco.workflows.includes(id))
+            .map(([id, label]) => (
+              <button
+                className={cn(choiceClassShared(workflow === id), "flex-1")}
+                key={id}
+                onClick={() => {
+                  setWorkflow(id);
+                  // Trim frames to the new workflow's cap (refs start fresh).
+                  setFrames((prev) => (id === "img2vid:ref2vid" ? prev : prev.slice(0, 2)));
+                }}
+                type="button"
+              >
+                {label}
+              </button>
+            ))}
         </div>
       </div>
 
@@ -567,7 +682,7 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
               <button
                 className={cn(choiceClassShared(modelKey === m.key), "px-3")}
                 key={m.key || "default"}
-                onClick={() => setModelKey(m.key)}
+                onClick={() => switchModel(m.key)}
                 type="button"
               >
                 {m.label}
@@ -607,79 +722,94 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
         </div>
       )}
 
-      {/* Source frame — img2vid. */}
-      {isImg2Vid && (
+      {/* Frame slots — img2vid (first required, last optional) or refs. */}
+      {isImageWorkflow && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.sourceImage")}</Label>
-          {sourceImage ? (
-            <div className="relative overflow-hidden rounded-[8px] border">
-              <img alt="" className="max-h-40 w-full object-cover" src={sourceImage} />
-              <Button
-                aria-label={t("videoGenerator.clearImage")}
-                className="absolute top-1.5 right-1.5 size-6"
-                onClick={() => setSourceImage(null)}
-                size="icon"
-                variant="secondary"
-              >
-                <Icon className="size-3.5" name="x" />
-              </Button>
-            </div>
-          ) : (
-            <label className="text-muted-foreground flex h-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-[8px] border border-dashed text-xs transition-colors hover:text-foreground">
-              <Icon className="size-5" name="image-plus" />
-              {t("videoGenerator.pickImage")}
-              <input
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={(e) => pickSource(e.target.files?.[0])}
-                type="file"
+          <Label className="text-muted-foreground text-[13px] font-medium">
+            {isRef2Vid ? t("videoGenerator.refFrames", { max: refMax }) : t("videoGenerator.frameSlots")}
+          </Label>
+          <div className={cn("grid gap-2", frameSlots > 1 && "grid-cols-2")}>
+            {Array.from({ length: frameSlots }, (_, i) => (
+              <FrameSlot
+                key={`slot-${i}`}
+                caption={
+                  isRef2Vid
+                    ? t("videoGenerator.refN", { n: i + 1 })
+                    : i === 0
+                      ? t("videoGenerator.firstFrame")
+                      : t("videoGenerator.lastFrame")
+                }
+                dataUrl={frames[i] ?? ""}
+                onClear={() =>
+                  setFrames((prev) => {
+                    const next = [...prev];
+                    next[i] = "";
+                    // Drop trailing empties so dead slots never render.
+                    while (next.length > 1 && next[next.length - 1] === "") next.pop();
+                    return next;
+                  })
+                }
+                onPick={(file) => setFrameSlot(i, file)}
               />
-            </label>
+            ))}
+          </div>
+          {isRef2Vid && canAddFrameSlot && (
+            <Button
+              className="h-8 rounded-[8px] text-xs"
+              onClick={() => setFrames((prev) => [...prev, ""])}
+              size="sm"
+              variant="secondary"
+            >
+              <Icon className="mr-1 size-3.5" name="plus" /> {t("videoGenerator.addRef")}
+            </Button>
           )}
         </div>
       )}
 
-      {/* Duration — discrete chips or a slider (kling v3). */}
-      <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="video-duration">
-          {t("videoGenerator.duration", { seconds: duration })}
-        </Label>
-        {durationChoices ? (
-          <div className="flex gap-1.5">
-            {durationChoices.map((d) => (
-              <button
-                className={cn(choiceClassShared(duration === d), "flex-1")}
-                key={d}
-                onClick={() => setDuration(d)}
-                type="button"
-              >
-                {d}s
-              </button>
-            ))}
-          </div>
-        ) : (
-          <Slider
-            id="video-duration"
-            max={durationRange.max}
-            min={durationRange.min}
-            onValueChange={(v) => setDuration(v[0])}
-            step={1}
-            value={[duration]}
-          >
-            <SliderTrack>
-              <SliderRange />
-            </SliderTrack>
-            <SliderThumb aria-label={t("videoGenerator.duration", { seconds: duration })} />
-          </Slider>
-        )}
-      </div>
+      {/* Duration — discrete chips or a slider; hidden when the engine
+          takes no duration (vidu q1). */}
+      {!durationHidden && (
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="video-duration">
+            {t("videoGenerator.duration", { seconds: duration })}
+          </Label>
+          {durationChoices ? (
+            <div className="flex gap-1.5">
+              {durationChoices.map((d) => (
+                <button
+                  className={cn(choiceClassShared(duration === d), "flex-1")}
+                  key={d}
+                  onClick={() => setDuration(d)}
+                  type="button"
+                >
+                  {d}s
+                </button>
+              ))}
+            </div>
+          ) : (
+            <Slider
+              id="video-duration"
+              max={durationRange.max}
+              min={durationRange.min}
+              onValueChange={(v) => setDuration(v[0])}
+              step={1}
+              value={[duration]}
+            >
+              <SliderTrack>
+                <SliderRange />
+              </SliderTrack>
+              <SliderThumb aria-label={t("videoGenerator.duration", { seconds: duration })} />
+            </Slider>
+          )}
+        </div>
+      )}
 
-      {/* Resolution — engines that take one (seedance/wan/minimax-pinned). */}
-      {eco.resolutions.length > 1 && (
+      {/* Resolution — engines that take one (per-model lists). */}
+      {resolutions.length > 1 && (
         <div className="flex flex-col gap-1.5">
           <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.resolution")}</Label>
           <div className="flex gap-1.5">
-            {eco.resolutions.map((r) => (
+            {resolutions.map((r) => (
               <button
                 className={cn(choiceClassShared(resolution === r), "flex-1")}
                 key={r}
@@ -693,12 +823,12 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
         </div>
       )}
 
-      {/* Aspect — txt2vid only (img2vid adapts to the frame). */}
-      {!isImg2Vid && (
+      {/* Aspect — text-driven workflows only (frames dictate it). */}
+      {workflow === "txt2vid" && (
         <div className="flex flex-col gap-1.5">
           <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.aspect")}</Label>
           <div className="flex flex-wrap gap-1.5">
-            {eco.aspectRatios.map((a) => (
+            {aspects.map((a) => (
               <button
                 className={cn(choiceClassShared(aspect === a), "px-2.5")}
                 key={a}
@@ -717,6 +847,104 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <input checked={audio} onChange={(e) => setAudio(e.target.checked)} type="checkbox" />
           {t("videoGenerator.audio")}
+        </label>
+      )}
+
+      {/* Style + movement (vidu q1). */}
+      {(eco.styles.length > 0 || eco.movements.length > 0) && modelKey !== "q3" && (
+        <div className="grid grid-cols-2 gap-2">
+          {eco.styles.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.style")}</Label>
+              <div className="flex gap-1.5">
+                {eco.styles.map((st) => (
+                  <button
+                    className={cn(choiceClassShared(style === st), "flex-1 px-2")}
+                    key={st}
+                    onClick={() => setStyle(style === st ? "" : st)}
+                    type="button"
+                  >
+                    {st === "anime" ? t("videoGenerator.style_anime") : t("videoGenerator.style_general")}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {eco.movements.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.movement")}</Label>
+              <Select value={movement || "auto"} onValueChange={setMovement}>
+                <SelectTrigger className="h-8 rounded-[8px]">
+                  <span>{movement || "auto"}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  {eco.movements.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Hunyuan CFG + steps sliders (registry ranges). */}
+      {eco.cfgRange && (
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="video-cfg">
+            {t("generator.cfgScale")}
+          </Label>
+          <Slider
+            id="video-cfg"
+            max={eco.cfgRange.max}
+            min={eco.cfgRange.min}
+            onValueChange={(v) => setCfgScale(String(v[0]))}
+            step={1}
+            value={[Number(cfgScale) || eco.cfgRange.default]}
+          >
+            <SliderTrack>
+              <SliderRange />
+            </SliderTrack>
+            <SliderThumb aria-label={t("generator.cfgScale")} />
+          </Slider>
+        </div>
+      )}
+      {eco.stepsRange && (
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="video-steps">
+            {t("generator.steps")}
+          </Label>
+          <Slider
+            id="video-steps"
+            max={eco.stepsRange.max}
+            min={eco.stepsRange.min}
+            onValueChange={(v) => setSteps(String(v[0]))}
+            step={5}
+            value={[Number(steps) || eco.stepsRange.default]}
+          >
+            <SliderTrack>
+              <SliderRange />
+            </SliderTrack>
+            <SliderThumb aria-label={t("generator.steps")} />
+          </Slider>
+        </div>
+      )}
+
+      {/* Draft tier (flux3 pins 720p; vidu q3 turbo). */}
+      {eco.draft && (
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input checked={draft} onChange={(e) => setDraft(e.target.checked)} type="checkbox" />
+          {t("videoGenerator.draft")}
+        </label>
+      )}
+
+      {/* Prompt enhancer (kling legacy, vidu q1 — defaults ON). */}
+      {promptEnhancer && (
+        <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <input checked={enhancer} onChange={(e) => setEnhancer(e.target.checked)} type="checkbox" />
+          {t("videoGenerator.promptEnhancer")}
         </label>
       )}
 
@@ -791,7 +1019,21 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 lg:overscroll-contain">
             {job && (
               <div className="mb-3">
-                <JobCard job={job} status={status} elapsed={elapsed} />
+                <JobCard
+                  elapsed={elapsed}
+                  job={job}
+                  onCancel={() => {
+                    const workflowId = job.workflowId;
+                    void call("civitai_video_cancel", { workflowId })
+                      .catch(() => undefined)
+                      .finally(() => {
+                        localStorage.removeItem(JOB_KEY);
+                        setJob(null);
+                        toast.success(t("videoGenerator.canceled"));
+                      });
+                  }}
+                  status={status}
+                />
               </div>
             )}
             {results.length === 0 && !job ? (

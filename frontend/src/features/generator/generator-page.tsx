@@ -31,6 +31,7 @@ import {
   targetWorkflowForEcosystem,
 } from "./ecosystems";
 import { AdvancedSection } from "./advanced-section";
+import { EcoOptionButton, KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
 import { VideoGenerator } from "./video-generator";
 
 interface HistoryEntry {
@@ -563,7 +564,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   const { t } = useI18n();
   /** Civitai's media lane — video renders its own panel (video-generator). */
   const [media, setMedia] = useState<"image" | "video">("image");
-  const [configured, setConfigured] = useState<boolean | null>(null);
+  const configured = useCivitaiKeyStatus();
   const [paneTab, setPaneTab] = useState<"hasil" | "model">("hasil");
   const [covers, setCovers] = useState<Record<string, ModelCover>>({});
   const [pickerType, setPickerType] = useState<"Checkpoint" | "LORA">("Checkpoint");
@@ -631,18 +632,10 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   const resultsRef = useRef(results);
   resultsRef.current = results;
   const aliveRef = useRef(true);
-  useEffect(() => {
-    aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-    };
-  }, []);
+  useAliveEffect(aliveRef);
 
-  // Key status + cover art (vault key presence check; covers = v1 reads).
+  // Cover art (v1 reads) — alive-gated so an unmount mid-fetch is safe.
   useEffect(() => {
-    call<{ configured: boolean }>("civitai_api_key_status")
-      .then((s) => setConfigured(s.configured))
-      .catch(() => setConfigured(false));
     call<ModelCover[]>("civitai_model_covers")
       .then((list) => {
         const map: Record<string, ModelCover> = {};
@@ -910,21 +903,15 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
                         : (WORKFLOWS.find((w) => w.id === targetWorkflowForEcosystem(e.id))?.label ??
                           t("generator.workflow"));
                       return (
-                        <button
-                          aria-selected={selected}
-                          className={cn(
-                            "flex w-full items-center gap-2 p-2.5 text-left transition-colors hover:bg-accent",
-                            selected && "bg-accent",
-                          )}
+                        <EcoOptionButton
                           key={e.id}
-                          onClick={() => {
+                          onPick={() => {
                             setEcoOpen(false);
                             if (!selected) switchEcosystem(e.id);
                           }}
-                          role="option"
+                          selected={selected}
                           style={{ opacity: available ? 1 : 0.6 }}
                           title={targetLabel ? t("generator.willSwitchTo", { workflow: targetLabel }) : undefined}
-                          type="button"
                         >
                           <ModelTile cover={covers[e.id]?.url} eco={e} size={20} />
                           <span
@@ -944,7 +931,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
                               <Icon className="size-3.5" name="arrow-right" />
                             </span>
                           ) : null}
-                        </button>
+                        </EcoOptionButton>
                       );
                     })}
                   </div>
@@ -955,17 +942,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
         </div>
       )}
       {ecoOpen && <div aria-hidden className="fixed inset-0 z-20" onClick={() => setEcoOpen(false)} />}
-      {configured === false && (
-        <div className="bg-secondary text-muted-foreground flex items-start gap-2 rounded-[8px] border p-2.5 text-xs leading-relaxed">
-          <Icon className="mt-0.5 size-4 shrink-0" name="info" />
-          <span>{t("generator.keyMissingBody")}</span>
-        </div>
-      )}
-      {configured === null && (
-        <div className="text-muted-foreground flex items-center gap-2 text-sm">
-          <Spinner className="size-4" /> {t("generator.checkingKey")}
-        </div>
-      )}
+      <KeyStatusNotices configured={configured} />
 
       {/* Workflow — civitai's selected-workflow card: big bold title +
           description, opening the workflow menu (label + description rows,

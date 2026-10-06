@@ -12,6 +12,18 @@ function short(hash: string): string {
   return hash.length > 16 ? `${hash.slice(0, 10)}…${hash.slice(-6)}` : hash;
 }
 
+/** Drop entries whose value is null — a missing field renders as no row. */
+const present = (entries: Array<[string, React.ReactNode | null]>): Array<[string, React.ReactNode]> =>
+  entries.filter(([, v]) => v != null) as Array<[string, React.ReactNode]>;
+
+/** The shared "RPC" row every network-scoped view shows. */
+const rpcEntry = (data: Record<string, unknown>): [string, React.ReactNode] => [
+  "RPC",
+  <span key="rpc" className="font-mono text-xs">
+    {pick<string>(data, "rpcUrl") ?? "—"}
+  </span>,
+];
+
 function ChainTag({ data }: { data: Record<string, unknown> }) {
   const chain = pick<string>(data, "chain");
   if (!chain) return null;
@@ -38,25 +50,23 @@ export function MonadWalletStatusView({ data }: { data: Record<string, unknown> 
           <span className="text-muted-foreground text-sm">MON</span>
         </div>
         <KeyValueView
-          entries={
+          entries={present([
             [
-              [
-                "Address",
-                address ? (
-                  <span key="addr" className="font-mono text-xs">
-                    {short(address)}
-                  </span>
-                ) : null,
-              ],
-              [
-                "Balance (wei)",
-                <span key="wei" className="font-mono text-xs">
-                  {pick<string>(data, "balanceWei")}
-                </span>,
-              ],
-              ["Block", blockNum != null ? fmtNumber(blockNum) : null],
-            ].filter(([, v]) => v != null) as Array<[string, React.ReactNode]>
-          }
+              "Address",
+              address ? (
+                <span key="addr" className="font-mono text-xs">
+                  {short(address)}
+                </span>
+              ) : null,
+            ],
+            [
+              "Balance (wei)",
+              <span key="wei" className="font-mono text-xs">
+                {pick<string>(data, "balanceWei")}
+              </span>,
+            ],
+            ["Block", blockNum != null ? fmtNumber(blockNum) : null],
+          ])}
         />
       </div>
       {tokens.length > 0 && (
@@ -90,27 +100,25 @@ export function MonadTokenBalanceView({ data }: { data: Record<string, unknown> 
         {token && <span className="text-muted-foreground font-mono text-xs">{short(token)}</span>}
       </div>
       <KeyValueView
-        entries={
+        entries={present([
+          ...(spender
+            ? ([
+                [
+                  "Spender",
+                  <span key="spender" className="font-mono text-xs">
+                    {short(spender)}
+                  </span>,
+                ],
+              ] as Array<[string, React.ReactNode]>)
+            : []),
+          ["Desimal", pick(data, "decimals") != null ? String(toNum(pick(data, "decimals"))) : null],
           [
-            ...(spender
-              ? ([
-                  [
-                    "Spender",
-                    <span key="spender" className="font-mono text-xs">
-                      {short(spender)}
-                    </span>,
-                  ],
-                ] as Array<[string, React.ReactNode]>)
-              : []),
-            ["Desimal", pick(data, "decimals") != null ? String(toNum(pick(data, "decimals"))) : null],
-            [
-              "Raw",
-              <span key="raw" className="font-mono text-xs">
-                {pick<string>(data, "raw") ?? "—"}
-              </span>,
-            ],
-          ].filter(([, v]) => v != null) as Array<[string, React.ReactNode]>
-        }
+            "Raw",
+            <span key="raw" className="font-mono text-xs">
+              {pick<string>(data, "raw") ?? "—"}
+            </span>,
+          ],
+        ])}
       />
     </div>
   );
@@ -147,18 +155,11 @@ export function MonadChainStatusView({ data }: { data: Record<string, unknown> }
         <ChainTag data={data} />
       </div>
       <KeyValueView
-        entries={
-          [
-            ["Chain ID", chainId != null ? String(chainId) : null],
-            ["Latest block", block != null ? fmtNumber(block) : null],
-            [
-              "RPC",
-              <span key="rpc" className="font-mono text-xs">
-                {pick<string>(data, "rpcUrl") ?? "—"}
-              </span>,
-            ],
-          ].filter(([, v]) => v != null) as Array<[string, React.ReactNode]>
-        }
+        entries={present([
+          ["Chain ID", chainId != null ? String(chainId) : null],
+          ["Latest block", block != null ? fmtNumber(block) : null],
+          rpcEntry(data),
+        ])}
       />
     </div>
   );
@@ -190,21 +191,19 @@ export function MonadTxReceiptView({ data }: { data: Record<string, unknown> }) 
         </span>
       </div>
       <KeyValueView
-        entries={
-          [
-            ["Block", block != null ? fmtNumber(block) : null],
-            ...(explorer
-              ? ([
-                  [
-                    "Explorer",
-                    <a key="explorer" className="text-xs underline" href={explorer} target="_blank" rel="noreferrer">
-                      View transaction ↗
-                    </a>,
-                  ],
-                ] as Array<[string, React.ReactNode]>)
-              : []),
-          ].filter(([, v]) => v != null) as Array<[string, React.ReactNode]>
-        }
+        entries={present([
+          ["Block", block != null ? fmtNumber(block) : null],
+          ...(explorer
+            ? ([
+                [
+                  "Explorer",
+                  <a key="explorer" className="text-xs underline" href={explorer} target="_blank" rel="noreferrer">
+                    View transaction ↗
+                  </a>,
+                ],
+              ] as Array<[string, React.ReactNode]>)
+            : []),
+        ])}
       />
     </div>
   );
@@ -272,23 +271,16 @@ export function MonadTokenInfoView({ data }: { data: Record<string, unknown> }) 
         <ChainTag data={data} />
       </div>
       <KeyValueView
-        entries={
+        entries={present([
           [
-            [
-              "Address",
-              <span key="addr" className="font-mono text-xs">
-                {address ?? "—"}
-              </span>,
-            ],
-            ["Desimal", pick(data, "decimals") != null ? String(toNum(pick(data, "decimals"))) : null],
-            [
-              "RPC",
-              <span key="rpc" className="font-mono text-xs">
-                {pick<string>(data, "rpcUrl") ?? "—"}
-              </span>,
-            ],
-          ].filter(([, v]) => v != null) as Array<[string, React.ReactNode]>
-        }
+            "Address",
+            <span key="addr" className="font-mono text-xs">
+              {address ?? "—"}
+            </span>,
+          ],
+          ["Desimal", pick(data, "decimals") != null ? String(toNum(pick(data, "decimals"))) : null],
+          rpcEntry(data),
+        ])}
       />
     </div>
   );

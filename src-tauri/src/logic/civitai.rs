@@ -400,10 +400,9 @@ pub struct VideoGenRequest {
     pub prompt: Option<String>,
     #[serde(default)]
     pub negative_prompt: Option<String>,
+    /// Source frames, ordered: img2vid = [first, (last)]; ref2vid = refs.
     #[serde(default)]
-    pub source_image: Option<String>,
-    #[serde(default)]
-    pub end_image: Option<String>,
+    pub images: Vec<String>,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
@@ -423,6 +422,14 @@ pub struct VideoGenRequest {
     #[serde(default)]
     pub cfg_scale: Option<f64>,
     #[serde(default)]
+    pub steps: Option<i64>,
+    #[serde(default)]
+    pub draft: Option<bool>,
+    #[serde(default)]
+    pub style: Option<String>,
+    #[serde(default)]
+    pub movement_amplitude: Option<String>,
+    #[serde(default)]
     pub seed: Option<i64>,
     #[serde(default)]
     pub quantity: Option<i64>,
@@ -435,8 +442,7 @@ impl VideoGenRequest {
             workflow: self.workflow.clone(),
             prompt: self.prompt.clone().unwrap_or_default(),
             negative_prompt: self.negative_prompt.clone(),
-            source_image: self.source_image.clone(),
-            end_image: self.end_image.clone(),
+            images: self.images.clone(),
             model: self.model.clone(),
             mode: self.mode.clone(),
             fast_mode: self.fast_mode,
@@ -446,6 +452,10 @@ impl VideoGenRequest {
             generate_audio: self.generate_audio,
             enable_prompt_enhancer: self.enable_prompt_enhancer,
             cfg_scale: self.cfg_scale,
+            steps: self.steps,
+            draft: self.draft,
+            style: self.style.clone(),
+            movement_amplitude: self.movement_amplitude.clone(),
             seed: self.seed,
             quantity: self.quantity,
         }
@@ -551,6 +561,18 @@ pub struct SavedVideo {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thumbnail_file_id: Option<String>,
+}
+
+/// Cancel a queued/running workflow (`PUT` `{status:"canceled"}` — civitai's
+/// own client shape). Best-effort from the panel: the job card's cancel
+/// button calls this, then stops polling; the workflow settles `canceled`.
+pub async fn civitai_video_cancel(workflow_id: String) -> Result<(), String> {
+    let workflow_id = workflow_id.trim().to_string();
+    if workflow_id.is_empty() {
+        return Err("workflowId kosong".into());
+    }
+    let key = require_key()?;
+    civitai::cancel_video_workflow(&key, &workflow_id).await
 }
 
 /// Download the finished video (SIGNED, EXPIRING URL — fetch once) into the

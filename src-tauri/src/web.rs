@@ -2014,6 +2014,21 @@ async fn civitai_video_fetch_handler(
         .map_err(err500)
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CivitaiVideoCancelRequest {
+    workflow_id: String,
+}
+
+async fn civitai_video_cancel_handler(
+    Json(req): Json<CivitaiVideoCancelRequest>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    logic::civitai::civitai_video_cancel(req.workflow_id)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
 // ── Connector (third-party OAuth via Composio) ─────────────────────────────
 // Auth-required thin proxies sharing `logic::connector` with the Tauri
 // commands; the user id rides the auth middleware's Extension.
@@ -2262,6 +2277,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/civitai_video_cost", post(civitai_video_cost_handler))
         .route("/api/civitai_video_submit", post(civitai_video_submit_handler))
         .route("/api/civitai_video_status", post(civitai_video_status_handler))
+        .route("/api/civitai_video_cancel", post(civitai_video_cancel_handler))
         .route("/api/civitai_video_fetch", post(civitai_video_fetch_handler))
         // Connector (third-party OAuth via Composio) — same 4 ops as the
         // Tauri commands (POST on both transports).

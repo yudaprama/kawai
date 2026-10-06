@@ -229,6 +229,7 @@ pub fn run() {
         commands::civitai_video_cost,
         commands::civitai_video_submit,
         commands::civitai_video_status,
+        commands::civitai_video_cancel,
         commands::civitai_video_fetch,
         commands::connector_list_connections,
         commands::connector_connect,

@@ -853,6 +853,21 @@
     "failedToast": "Generasi video gagal",
     "results": "Hasil",
     "noResults": "Belum ada video",
-    "noResultsHint": "Tulis adegan lalu tekan Generate — klip butuh beberapa menit"
+    "noResultsHint": "Tulis adegan lalu tekan Generate — klip butuh beberapa menit",
+    "ref2vid": "Referensi → Video",
+    "frameSlots": "Frame",
+    "firstFrame": "Frame pertama",
+    "lastFrame": "Frame terakhir (opsional)",
+    "refFrames": "Referensi (maks {{max}})",
+    "refN": "Ref {{n}}",
+    "addRef": "Tambah referensi",
+    "style": "Gaya",
+    "style_general": "Umum",
+    "style_anime": "Anime",
+    "movement": "Gerakan",
+    "draft": "Kualitas draft",
+    "promptEnhancer": "Pengaya prompt",
+    "cancel": "Batalkan",
+    "canceled": "Generasi dibatalkan"
   }
 }

@@ -22,6 +22,14 @@ import { knowledgeFileToPreview } from "@/lib/preview-file";
 import { formatBytes } from "@/lib/utils";
 import { useI18n } from "@/hooks/use-i18n";
 
+/** The file mutations both the library and its detail pane receive. */
+type KnowledgeActions = {
+  onAdd: (file: KnowledgeFileInfo) => void;
+  onRemove: (file: KnowledgeFileInfo) => void;
+  onRetry: (file: KnowledgeFileInfo) => void;
+  onDelete: (file: KnowledgeFileInfo) => void;
+};
+
 /**
  * The knowledge library as an asset manager (Tea-style, vendored primitives):
  * file list on the left, selected file detail with inline preview on the
@@ -42,11 +50,7 @@ export function KnowledgeLibrary({
   loaded: boolean;
   sessionId: number | null;
   confirmDeleteId: string | null;
-  onAdd: (file: KnowledgeFileInfo) => void;
-  onRemove: (file: KnowledgeFileInfo) => void;
-  onRetry: (file: KnowledgeFileInfo) => void;
-  onDelete: (file: KnowledgeFileInfo) => void;
-}) {
+} & KnowledgeActions) {
   const { t } = useI18n();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Keep a valid selection across refreshes/deletes; fall back to the first file.
@@ -125,11 +129,7 @@ function LibraryDetail({
   inSession: boolean;
   sessionId: number | null;
   confirmDelete: boolean;
-  onAdd: (file: KnowledgeFileInfo) => void;
-  onRemove: (file: KnowledgeFileInfo) => void;
-  onRetry: (file: KnowledgeFileInfo) => void;
-  onDelete: (file: KnowledgeFileInfo) => void;
-}) {
+} & KnowledgeActions) {
   const { t } = useI18n();
   const tabular = isTabularExt(file.ext);
   return (

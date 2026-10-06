@@ -26,17 +26,21 @@ function parseTlv(payload: string): Record<string, string> {
   return out;
 }
 
-/** Tag 51 is QRIS's merchant slot — nested TLV: 00 issuer, 02 NMID, 03 UKE. */
-function extractNmid(tag51: string | undefined): string | null {
+/** Tag 51 is QRIS's merchant slot — nested TLV: 00 issuer, 02 NMID, 03 UKE.
+ *  One walker; the two readers differ only in the tag they select. */
+function extractTag51(tag51: string | undefined, want: string): string | null {
   if (!tag51) return null;
   for (let i = 0; i + 4 <= tag51.length; ) {
     const tag = tag51.slice(i, i + 2);
     const len = Number(tag51.slice(i + 2, i + 4));
-    if (tag === "02") return tag51.slice(i + 4, i + 4 + len) || null;
+    if (tag === want) return tag51.slice(i + 4, i + 4 + len) || null;
     i += 4 + len;
   }
   return null;
 }
+
+const extractNmid = (tag51: string | undefined) => extractTag51(tag51, "02");
+const extractIssuer = (tag51: string | undefined) => extractTag51(tag51, "00");
 
 /** Convert an SVG element to a PNG blob (for QR code download). */
 async function svgToPngBlob(svg: SVGSVGElement, scale = 3): Promise<Blob> {
@@ -157,15 +161,4 @@ export function QrisCard({ qrPayload, amountLabel }: QrisCardProps) {
       </Button>
     </div>
   );
-}
-
-function extractIssuer(tag51: string | undefined): string | null {
-  if (!tag51) return null;
-  for (let i = 0; i + 4 <= tag51.length; ) {
-    const tag = tag51.slice(i, i + 2);
-    const len = Number(tag51.slice(i + 2, i + 4));
-    if (tag === "00") return tag51.slice(i + 4, i + 4 + len) || null;
-    i += 4 + len;
-  }
-  return null;
 }

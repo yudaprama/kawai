@@ -1227,6 +1227,11 @@ pub async fn civitai_video_status(
 }
 
 #[tauri::command]
+pub async fn civitai_video_cancel(workflow_id: String) -> Result<(), String> {
+    logic::civitai::civitai_video_cancel(workflow_id).await
+}
+
+#[tauri::command]
 pub async fn civitai_video_fetch(
     session: State<'_, Session>,
     workflow_id: String,

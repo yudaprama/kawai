@@ -853,6 +853,21 @@
     "failedToast": "Video generation failed",
     "results": "Results",
     "noResults": "No videos yet",
-    "noResultsHint": "Describe a scene and hit Generate — clips take a few minutes"
+    "noResultsHint": "Describe a scene and hit Generate — clips take a few minutes",
+    "ref2vid": "Refs → Video",
+    "frameSlots": "Frames",
+    "firstFrame": "First frame",
+    "lastFrame": "Last frame (optional)",
+    "refFrames": "References (max {{max}})",
+    "refN": "Ref {{n}}",
+    "addRef": "Add reference",
+    "style": "Style",
+    "style_general": "General",
+    "style_anime": "Anime",
+    "movement": "Movement",
+    "draft": "Draft quality",
+    "promptEnhancer": "Prompt enhancer",
+    "cancel": "Cancel",
+    "canceled": "Generation canceled"
   }
 }
