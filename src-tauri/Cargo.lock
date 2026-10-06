@@ -2320,6 +2320,7 @@ name = "civitai"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "kawai-http-client",
  "log",
  "reqwest 0.13.5",
  "serde",
