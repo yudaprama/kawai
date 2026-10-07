@@ -77,6 +77,22 @@ pub async fn verify(token: &str, now_secs: u64) -> Result<bool, String> {
 mod tests {
     use super::*;
     use kawai_paths::set_data_root;
+    use std::sync::{Mutex, MutexGuard};
+
+    /// `vault.keys` resolves through `kawai_paths`, whose data root is a
+    /// process-global `OnceLock` — the first `set_data_root` in the test
+    /// binary wins and every later call is a no-op (same contract as
+    /// `logic.rs`). So these tests cannot pick their own roots: they share
+    /// one `vault.keys` and must not run concurrently. The lock is what
+    /// makes the "missing" assertion safe — without it the roundtrip test's
+    /// write landed between the delete and the assert.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    fn serial() -> MutexGuard<'static, ()> {
+        // A poisoned lock only means some other test panicked; the state it
+        // guards (one file on disk) is reset by each test that takes it.
+        SERIAL.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     fn test_root() {
         let root = std::env::temp_dir().join(format!(
@@ -94,6 +110,7 @@ mod tests {
 
     #[test]
     fn stored_keys_roundtrip() {
+        let _guard = serial();
         test_root();
         write_pair(&format!("{:064}", 0xAAAA), &format!("{:064}", 0xBBBB));
         let (key, secret) = stored_keys().unwrap();
@@ -103,6 +120,7 @@ mod tests {
 
     #[test]
     fn stored_keys_missing_returns_none() {
+        let _guard = serial();
         test_root();
         let path = kawai_paths::vault_keys();
         if path.exists() {

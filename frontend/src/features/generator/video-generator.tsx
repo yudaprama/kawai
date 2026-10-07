@@ -490,7 +490,6 @@ export function VideoGenerator({
     hasAudio,
     hasNegative,
     isEdit,
-    isImageWorkflow,
     modelKey,
     movement,
     negativePrompt,
@@ -938,8 +937,8 @@ export function VideoGenerator({
           </Label>
           <div className={cn("grid gap-2", frameSlots > 1 && "grid-cols-2")}>
             {Array.from({ length: frameSlots }, (_, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: slot positions are fixed by the workflow (first/last), never reordered
               <FrameSlot
+                // biome-ignore lint/suspicious/noArrayIndexKey: slot positions are fixed by the workflow (first/last), never reordered
                 key={`slot-${i}`}
                 caption={
                   isRef2Vid
