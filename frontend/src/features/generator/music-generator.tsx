@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
@@ -10,7 +9,7 @@ import { Slider, SliderRange, SliderThumb, SliderTrack } from "@/components/ui/s
 import { Spinner } from "@/components/ui/spinner";
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
-import { call, errText } from "@/lib/api";
+import { call } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { useFilePreview } from "@/lib/preview-file";
 import { useI18n } from "@/hooks/use-i18n";
@@ -28,10 +27,17 @@ import {
   type MusicOperation,
   type MusicScoreMode,
 } from "./music-ecosystems";
-import { KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
-import { GenerateFooter, publishMediaDebit } from "./generate-footer";
-import type { PickerGroup } from "./picker-menu";
-import type { TranslationKey } from "@/lib/i18n";
+import {
+  KeyStatusNotices,
+  laneStatusKey,
+  type LaneResultEntry,
+  type LaneStatusView,
+  readFileAsDataUrl,
+  useCivitaiKeyStatus,
+  useEcoGroups,
+  useWorkflowLane,
+} from "./civitai-shared";
+import { GenerateFooter } from "./generate-footer";
 import {
   ChoiceChip,
   detailLine,
@@ -68,20 +74,8 @@ interface MusicGenRequest {
   seed?: number;
 }
 
-interface MusicCostView {
-  totalBuzz: number;
-  /** App-token debit at submit (server-side ceil conversion). */
-  totalTokens: number;
-  ready: boolean;
-  warnings: string[];
-}
-
-interface MusicStatusView {
-  workflowId: string;
-  status: string;
-  queuePosition: number | null;
+interface MusicStatusView extends LaneStatusView {
   audioUrl?: string;
-  error?: string;
 }
 
 interface SavedAudio {
@@ -89,15 +83,8 @@ interface SavedAudio {
   name: string;
 }
 
-interface MusicResultEntry {
-  fileId: string;
-  name: string;
-  prompt: string;
+interface MusicResultEntry extends LaneResultEntry<ReusableMusicReq> {
   ecosystem: MusicEcosystemId;
-  at: number;
-  /** Generating settings for the card's "Load these settings" action.
-   *  Absent on entries logged before snapshots existed. */
-  req?: ReusableMusicReq;
 }
 
 /** The `MusicGenRequest` behind a result, minus the uploaded cover art — a
@@ -110,44 +97,14 @@ function stripMusicReq(req: MusicGenRequest): ReusableMusicReq {
   return coverImage ? { ...rest, hadCover: true } : rest;
 }
 
-/** In-flight workflow, persisted so a restart resumes polling. */
-interface ActiveJob {
-  workflowId: string;
-  prompt: string;
-  at: number;
-  /** The submitting request's scalar settings, carried through to the saved
-   *  track so its card can load them back into the form. Absent on a job
-   *  persisted by an older build. */
-  req?: ReusableMusicReq;
-}
-
-const RESULTS_KEY = "civitai-music-results";
-const JOB_KEY = "civitai-music-job";
-const MAX_RESULTS = 24;
-const STATUS_WAIT_SECS = 15;
-/** Terminal-but-not-success states (lowercase wire vocabulary). */
-const TERMINAL_FAILED: Record<string, true> = { failed: true, expired: true, canceled: true };
+const RESULTS_KEY = "kawai-generator-music-results-v1";
+const JOB_KEY = "kawai-generator-music-job-v1";
 
 interface ModelCover {
   ecosystem: string;
   label: string;
   url: string | null;
   modelName: string | null;
-}
-
-function loadJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function delay(ms: number): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, ms);
-  return promise;
 }
 
 /** One saved music result: <audio> card, click opens preview. */
@@ -238,20 +195,10 @@ export function MusicGenerator({
   const [seed, setSeed] = useState("");
   // Civitai's SeedInput: Random (backend draws one) | Custom (numeric entry).
   const [seedMode, setSeedMode] = useState<"random" | "custom">("random");
-  const [ecoOpen, setEcoOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // Stepper input draft — free typing without the controlled-value clobbering
   // intermediate states like "0." (sonilo sfx steps by 0.5); committed on blur.
   const [durText, setDurText] = useState<string | null>(null);
-  const [cost, setCost] = useState<MusicCostView | null>(null);
-  const [costError, setCostError] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [job, setJob] = useState<ActiveJob | null>(() => loadJson<ActiveJob | null>(JOB_KEY, null));
-  const [status, setStatus] = useState<MusicStatusView | null>(null);
-  const [elapsed, setElapsed] = useState(0);
-  const [results, setResults] = useState<MusicResultEntry[]>(() => loadJson<MusicResultEntry[]>(RESULTS_KEY, []));
-  const aliveRef = useRef(true);
-  useAliveEffect(aliveRef);
 
   const isSonilo = ecoId === "sonilo";
   const isAce = ecoId === "ace";
@@ -364,114 +311,46 @@ export function MusicGenerator({
         ? hasCaption
         : hasCaption && hasLyrics;
 
-  /** Identity-stable request snapshot — the whatif effect re-runs only when
-   *  the FORM actually changes, not on unrelated renders. */
-  const costRequest = useMemo(buildRequest, [buildRequest]);
+  const lane = useWorkflowLane<MusicGenRequest, ReusableMusicReq, MusicStatusView, SavedAudio, MusicResultEntry>({
+    configured,
+    formEffective,
+    // Music refuses to submit on a failed quote — its engines have no
+    // partial-price fallback the way the video/3D lanes do.
+    gateOnCostError: true,
+    keys: { job: JOB_KEY, results: RESULTS_KEY },
+    ops: {
+      cost: "civitai_music_cost",
+      status: "civitai_music_status",
+      submit: "civitai_music_submit",
+      fetch: "civitai_music_fetch",
+    },
+    labels: { done: "musicGenerator.done", failed: "musicGenerator.failedToast" },
+    stuckMs: 30 * 60 * 1000,
+    buildRequest,
+    strip: stripMusicReq,
+    promptLabel: () => prompt.trim() || caption.trim(),
+    succeeded: (st) => st.status === "succeeded" && st.audioUrl != null,
+    // Fetch exactly once — the signed URL expires after download.
+    fetchSaved: (st, workflowId) => call<SavedAudio>("civitai_music_fetch", { workflowId, audioUrl: st.audioUrl }),
+    toEntries: (saved, job) => [
+      {
+        fileId: saved.fileId,
+        name: saved.name,
+        prompt: job.prompt,
+        ecosystem: job.req?.ecosystem ?? DEFAULT_MUSIC_ECOSYSTEM,
+        at: Date.now(),
+        req: job.req,
+      },
+    ],
+  });
+  const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
+  const {
+    groups: ecoGroups,
+    open: ecoOpen,
+    setOpen: setEcoOpen,
+  } = useEcoGroups(MUSIC_ECOSYSTEMS, ecoId, switchEcosystem);
 
-  // Free whatif cost check — debounced; a failure here means submit would
-  // fail too, so the footer surfaces it instead of the buzz number.
-  useEffect(() => {
-    if (configured !== true || !formEffective) {
-      setCost(null);
-      setCostError(false);
-      return;
-    }
-    let cancelled = false;
-    setCostError(false);
-    const timer = setTimeout(() => {
-      call<MusicCostView>("civitai_music_cost", { req: costRequest })
-        .then((c) => {
-          if (!cancelled && aliveRef.current) {
-            setCost(c);
-            setCostError(false);
-          }
-        })
-        .catch(() => {
-          if (!cancelled && aliveRef.current) {
-            setCost(null);
-            setCostError(true);
-          }
-        });
-    }, 700);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [costRequest, configured, formEffective]);
-
-  // Elapsed ticker while a job is in flight.
-  useEffect(() => {
-    if (!job) return;
-    setElapsed(Math.floor((Date.now() - job.at) / 1000));
-    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - job.at) / 1000)), 1000);
-    return () => clearInterval(timer);
-  }, [job]);
-
-  // Poll loop — long-poll (waitSecs) keeps it near-live without hammering.
-  useEffect(() => {
-    if (!job) return;
-    let cancelled = false;
-    void (async () => {
-      while (!cancelled) {
-        try {
-          const st = await call<MusicStatusView>("civitai_music_status", {
-            workflowId: job.workflowId,
-            waitSecs: STATUS_WAIT_SECS,
-          });
-          if (cancelled || !aliveRef.current) return;
-          setStatus(st);
-          if (st.status === "succeeded" && st.audioUrl) {
-            // Fetch exactly once — the signed URL expires after download.
-            const saved = await call<SavedAudio>("civitai_music_fetch", {
-              workflowId: job.workflowId,
-              audioUrl: st.audioUrl,
-            });
-            if (cancelled || !aliveRef.current) return;
-            const entry: MusicResultEntry = {
-              fileId: saved.fileId,
-              name: saved.name,
-              prompt: job.prompt,
-              ecosystem: ecoId,
-              at: Date.now(),
-              req: job.req,
-            };
-            setResults((prev) => {
-              const next = [entry, ...prev].slice(0, MAX_RESULTS);
-              localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
-              return next;
-            });
-            localStorage.removeItem(JOB_KEY);
-            setJob(null);
-            setStatus(null);
-            toast.success(t("musicGenerator.done"));
-            return;
-          }
-          if (TERMINAL_FAILED[st.status]) {
-            localStorage.removeItem(JOB_KEY);
-            setJob(null);
-            toast.error(`${t("musicGenerator.failedToast")}: ${st.error ?? st.status}`);
-            return;
-          }
-        } catch (e) {
-          // Transport hiccup — brief pause and keep polling; the workflow
-          // keeps running server-side and the job survives restarts.
-          if (cancelled || !aliveRef.current) return;
-          if (Date.now() - job.at > 30 * 60 * 1000) {
-            localStorage.removeItem(JOB_KEY);
-            setJob(null);
-            toast.error(`${t("musicGenerator.failedToast")}: ${errText(e)}`);
-            return;
-          }
-          await delay(4000);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [job, t, ecoId]);
-
-  function pickCover(file: File | undefined) {
+  async function pickCover(file: File | undefined) {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       toast.error(t("musicGenerator.coverType"));
@@ -481,49 +360,7 @@ export function MusicGenerator({
       toast.error(t("musicGenerator.coverTooLarge"));
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") setCoverImage(reader.result);
-    };
-    reader.readAsDataURL(file);
-  }
-
-  const canSubmit = configured === true && !submitting && !job && formEffective && !costError;
-
-  async function handleGenerate() {
-    if (!canSubmit) return;
-    setSubmitting(true);
-    try {
-      // Client pre-check (display-grade): skip the submit when the balance
-      // obviously can't cover the quoted cost. An unreadable balance falls
-      // through — the server-side debit inside the submit op is the
-      // authoritative fail-closed gate.
-      const required = cost?.totalTokens;
-      if (required !== undefined) {
-        const balance = await refreshTokenBalance();
-        if (balance !== null && balance < required) {
-          toast.error(t("generator.insufficientBalance", { tokens: required.toLocaleString("id-ID") }));
-          setSubmitting(false);
-          return;
-        }
-      }
-      const submitted = buildRequest();
-      const view = await call<{ workflowId: string }>("civitai_music_submit", { req: submitted });
-      publishMediaDebit(cost?.totalTokens ?? 0);
-      const nextJob: ActiveJob = {
-        workflowId: view.workflowId,
-        prompt: prompt.trim() || caption.trim(),
-        at: Date.now(),
-        req: stripMusicReq(submitted),
-      };
-      localStorage.setItem(JOB_KEY, JSON.stringify(nextJob));
-      setStatus(null);
-      setJob(nextJob);
-    } catch (e) {
-      toast.error(`${t("musicGenerator.failedToast")}: ${errText(e)}`);
-    } finally {
-      if (aliveRef.current) setSubmitting(false);
-    }
+    setCoverImage(await readFileAsDataUrl(file));
   }
 
   /** Load a result's generating settings back into the form. The ecosystem
@@ -564,59 +401,6 @@ export function MusicGenerator({
     toast.success(t("generator.settingsReused"));
     if (r.hadCover) toast.info(t("generator.sourceNotRestored"));
   }
-
-  /** Drop a track from the panel's log — the stored file itself stays in the
-   *  office store, so deliverables keep resolving its token. */
-  function removeEntry(entry: MusicResultEntry) {
-    setResults((prev) => {
-      const next = prev.filter((e) => e.fileId !== entry.fileId);
-      localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
-      return next;
-    });
-    toast(t("generator.resultRemoved"), {
-      action: {
-        label: t("common.undo"),
-        onClick: () => {
-          setResults((prev) => {
-            if (prev.some((e) => e.fileId === entry.fileId)) return prev;
-            const next = [entry, ...prev].slice(0, MAX_RESULTS);
-            localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
-            return next;
-          });
-        },
-      },
-    });
-  }
-
-  /** The ecosystem menu: every engine with its one-line note. */
-  const ecoGroups = useMemo<PickerGroup[]>(
-    () => [
-      {
-        id: "ecosystems",
-        items: MUSIC_ECOSYSTEMS.map((e) => ({
-          id: e.id,
-          label: e.label,
-          note: e.note,
-          selected: e.id === ecoId,
-          onSelect: () => {
-            setEcoOpen(false);
-            if (e.id !== ecoId) switchEcosystem(e.id);
-          },
-          tile: (
-            <div
-              className={cn(
-                "flex size-8 shrink-0 items-center justify-center rounded-[6px] bg-gradient-to-br text-sm font-bold text-white",
-                e.gradient,
-              )}
-            >
-              {e.label.charAt(0)}
-            </div>
-          ),
-        })),
-      },
-    ],
-    [ecoId, switchEcosystem],
-  );
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
@@ -1077,18 +861,18 @@ export function MusicGenerator({
     <GeneratorLayout
       footer={
         <GenerateFooter
-          canSubmit={canSubmit}
+          canSubmit={lane.canSubmit}
           inFlight={job != null}
-          inFlightLabel={t("videoGenerator.inProgress")}
-          note={t("videoGenerator.costNote")}
-          onSubmit={() => void handleGenerate()}
+          inFlightLabel={t("musicGenerator.inProgress")}
+          note={t("musicGenerator.costNote")}
+          onSubmit={() => void submit()}
           quote={cost?.totalTokens ?? null}
           quoteState={
             costError ? "failed" : cost ? "quoted" : formEffective && configured === true ? "pending" : "idle"
           }
           ready={cost?.ready ?? true}
           submitting={submitting}
-          submittingLabel={t("videoGenerator.submitting")}
+          submittingLabel={t("musicGenerator.submitting")}
           submitLabel={t("generator.generate")}
           warnings={cost?.warnings ?? []}
         />
@@ -1097,7 +881,7 @@ export function MusicGenerator({
       header={
         <ResultsPaneHeader
           meta={t("generator.resultsCount", { count: results.length })}
-          title={t("videoGenerator.results")}
+          title={t("musicGenerator.results")}
         />
       }
       subtitle={t("musicGenerator.subtitle")}
@@ -1111,19 +895,9 @@ export function MusicGenerator({
               cancelLabel={t("musicGenerator.cancel")}
               elapsed={elapsed}
               error={status?.error}
-              onCancel={() => {
-                const workflowId = job.workflowId;
-                // Cancel reuses the video op — same workflow bus.
-                void call("civitai_video_cancel", { workflowId })
-                  .catch(() => undefined)
-                  .finally(() => {
-                    localStorage.removeItem(JOB_KEY);
-                    setJob(null);
-                    toast.success(t("videoGenerator.canceled"));
-                  });
-              }}
+              onCancel={cancel}
               queuePosition={status?.queuePosition}
-              statusLabel={t(musicStatusKey(status))}
+              statusLabel={t(laneStatusKey("musicGenerator", status))}
               workflowId={job.workflowId}
             />
           </div>
@@ -1145,13 +919,4 @@ export function MusicGenerator({
       </div>
     </GeneratorLayout>
   );
-}
-
-/** The status pill's copy — see the video lane's equivalent. */
-function musicStatusKey(status: MusicStatusView | null): TranslationKey {
-  return status?.status === "processing"
-    ? "musicGenerator.processing"
-    : status?.status === "succeeded"
-      ? "musicGenerator.succeeded"
-      : "musicGenerator.queued";
 }

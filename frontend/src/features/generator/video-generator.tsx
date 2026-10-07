@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { refreshTokenBalance } from "@/features/topup/use-token-balance";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
-import { call, errText } from "@/lib/api";
+import { call } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { useFilePreview } from "@/lib/preview-file";
 import { useI18n } from "@/hooks/use-i18n";
@@ -32,11 +32,18 @@ import {
   videoRefMax,
   videoResolutions,
 } from "./video-ecosystems";
-import { KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
-import { GenerateFooter, publishMediaDebit } from "./generate-footer";
-import type { PickerGroup } from "./picker-menu";
+import {
+  KeyStatusNotices,
+  type LaneResultEntry,
+  laneStatusKey,
+  type LaneStatusView,
+  readFileAsDataUrl,
+  useCivitaiKeyStatus,
+  useEcoGroups,
+  useWorkflowLane,
+} from "./civitai-shared";
+import { GenerateFooter } from "./generate-footer";
 import { ResultActions, mediaToken } from "./result-actions";
-import type { TranslationKey } from "@/lib/i18n";
 import {
   ChoiceChip,
   detailLine,
@@ -77,14 +84,6 @@ interface VideoGenRequest {
   quantity?: number;
 }
 
-interface VideoCostView {
-  totalBuzz: number;
-  /** App-token debit at submit (server-side ceil conversion). */
-  totalTokens: number;
-  ready: boolean;
-  warnings: string[];
-}
-
 interface VideoBlobView {
   videoUrl: string;
   thumbnailUrl?: string;
@@ -92,14 +91,10 @@ interface VideoBlobView {
   height?: number;
 }
 
-interface VideoStatusView {
-  workflowId: string;
-  status: string;
-  queuePosition: number | null;
+interface VideoStatusView extends LaneStatusView {
   video?: VideoBlobView;
   /** LTX-style batched jobs: extra clips beyond the primary. */
   additional: VideoBlobView[];
-  error?: string;
 }
 
 interface SavedVideo {
@@ -109,15 +104,8 @@ interface SavedVideo {
   additional?: Array<{ fileId: string; name: string }>;
 }
 
-interface VideoResultEntry {
-  fileId: string;
-  name: string;
+interface VideoResultEntry extends LaneResultEntry<ReusableVideoReq> {
   thumbnailFileId?: string;
-  prompt: string;
-  at: number;
-  /** Generating settings for the card's "Load these settings" action.
-   *  Absent on entries logged before snapshots existed. */
-  req?: ReusableVideoReq;
 }
 
 /** The `VideoGenRequest` behind a result, minus the uploaded media — a base64
@@ -130,38 +118,8 @@ function stripVideoReq(req: VideoGenRequest): ReusableVideoReq {
   return images.length > 0 || video ? { ...rest, hadMedia: true } : rest;
 }
 
-/** In-flight workflow, persisted so a restart resumes polling. */
-interface ActiveJob {
-  workflowId: string;
-  prompt: string;
-  at: number;
-  /** The submitting request's scalar settings, carried through to the saved
-   *  clips so each result card can load them back into the form. Absent on a
-   *  job persisted by an older build. */
-  req?: ReusableVideoReq;
-}
-
 const RESULTS_KEY = "kawai-generator-video-results-v1";
 const JOB_KEY = "kawai-generator-video-job-v1";
-const MAX_RESULTS = 30;
-const STATUS_WAIT_SECS = 15;
-/** Terminal-but-not-success states (lowercase wire vocabulary). */
-const TERMINAL_FAILED: Record<string, true> = { failed: true, expired: true, canceled: true };
-
-function loadJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function delay(ms: number): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, ms);
-  return promise;
-}
 
 /** One saved video result: poster tile with a play badge — the mp4 itself is
  *  only read when the card is clicked (the preview overlay plays it). A grid
@@ -291,16 +249,6 @@ export function VideoGenerator({
   const [draft, setDraft] = useState(false);
   const [style, setStyle] = useState("");
   const [movement, setMovement] = useState("");
-  const [ecoOpen, setEcoOpen] = useState(false);
-  const [cost, setCost] = useState<VideoCostView | null>(null);
-  const [costError, setCostError] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [job, setJob] = useState<ActiveJob | null>(() => loadJson<ActiveJob | null>(JOB_KEY, null));
-  const [status, setStatus] = useState<VideoStatusView | null>(null);
-  const [elapsed, setElapsed] = useState(0);
-  const [results, setResults] = useState<VideoResultEntry[]>(() => loadJson<VideoResultEntry[]>(RESULTS_KEY, []));
-  const aliveRef = useRef(true);
-  useAliveEffect(aliveRef);
 
   // Ecosystem/model switches reset every dependent selection to the new
   // ecosystem's first valid value (duration/resolution/aspect are wire
@@ -420,128 +368,60 @@ export function VideoGenerator({
     workflow,
   ]);
 
-  /** Identity-stable request snapshot — the whatif effect re-runs only when
-   *  the FORM actually changes, not on unrelated renders. */
-  const costRequest = useMemo(buildRequest, [buildRequest]);
+  const lane = useWorkflowLane<VideoGenRequest, ReusableVideoReq, VideoStatusView, SavedVideo, VideoResultEntry>({
+    configured,
+    formEffective: promptEffective && videoReady && framesReady,
+    keys: { job: JOB_KEY, results: RESULTS_KEY },
+    ops: {
+      cost: "civitai_video_cost",
+      status: "civitai_video_status",
+      submit: "civitai_video_submit",
+      fetch: "civitai_video_fetch",
+    },
+    labels: { done: "videoGenerator.done", failed: "videoGenerator.failedToast" },
+    stuckMs: 30 * 60 * 1000,
+    buildRequest,
+    strip: stripVideoReq,
+    promptLabel: () => prompt.trim(),
+    succeeded: (st) => st.status === "succeeded" && st.video != null,
+    fetchSaved: (st, workflowId) =>
+      call<SavedVideo>("civitai_video_fetch", {
+        workflowId,
+        videoUrl: st.video?.videoUrl,
+        thumbnailUrl: st.video?.thumbnailUrl,
+        additionalUrls: (st.additional ?? []).map((c) => c.videoUrl),
+      }),
+    toEntries: (saved, job) => {
+      const at = Date.now();
+      return [
+        {
+          fileId: saved.fileId,
+          name: saved.name,
+          thumbnailFileId: saved.thumbnailFileId,
+          prompt: job.prompt,
+          at,
+          req: job.req,
+        },
+        ...(saved.additional ?? []).map((c) => ({
+          fileId: c.fileId,
+          name: c.name,
+          prompt: job.prompt,
+          at,
+          req: job.req,
+        })),
+      ];
+    },
+  });
+  const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
+  const {
+    groups: ecoGroups,
+    open: ecoOpen,
+    setOpen: setEcoOpen,
+  } = useEcoGroups(VIDEO_ECOSYSTEMS, ecoId, switchEcosystem);
 
-  // Free whatif cost check — debounced; a failure here means submit would
-  // fail too, so the footer surfaces it instead of the buzz number.
-  useEffect(() => {
-    if (configured !== true || !promptEffective) {
-      setCost(null);
-      setCostError(false);
-      return;
-    }
-    let cancelled = false;
-    setCostError(false);
-    const timer = setTimeout(() => {
-      call<VideoCostView>("civitai_video_cost", { req: costRequest })
-        .then((c) => {
-          if (!cancelled && aliveRef.current) {
-            setCost(c);
-            setCostError(false);
-          }
-        })
-        .catch(() => {
-          if (!cancelled && aliveRef.current) {
-            setCost(null);
-            setCostError(true);
-          }
-        });
-    }, 700);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [costRequest, configured, promptEffective]);
-
-  // Elapsed ticker while a job is in flight.
-  useEffect(() => {
-    if (!job) return;
-    setElapsed(Math.floor((Date.now() - job.at) / 1000));
-    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - job.at) / 1000)), 1000);
-    return () => clearInterval(timer);
-  }, [job]);
-
-  // Poll loop — long-poll (waitSecs) keeps it near-live without hammering.
-  useEffect(() => {
-    if (!job) return;
-    let cancelled = false;
-    void (async () => {
-      while (!cancelled) {
-        try {
-          const st = await call<VideoStatusView>("civitai_video_status", {
-            workflowId: job.workflowId,
-            waitSecs: STATUS_WAIT_SECS,
-          });
-          if (cancelled || !aliveRef.current) return;
-          setStatus(st);
-          if (st.status === "succeeded" && st.video) {
-            const saved = await call<SavedVideo>("civitai_video_fetch", {
-              workflowId: job.workflowId,
-              videoUrl: st.video.videoUrl,
-              thumbnailUrl: st.video.thumbnailUrl,
-              additionalUrls: (st.additional ?? []).map((c) => c.videoUrl),
-            });
-            if (cancelled || !aliveRef.current) return;
-            const at = Date.now();
-            const clips: VideoResultEntry[] = [
-              {
-                fileId: saved.fileId,
-                name: saved.name,
-                thumbnailFileId: saved.thumbnailFileId,
-                prompt: job.prompt,
-                at,
-                req: job.req,
-              },
-              ...(saved.additional ?? []).map((c) => ({
-                fileId: c.fileId,
-                name: c.name,
-                prompt: job.prompt,
-                at,
-                req: job.req,
-              })),
-            ];
-            setResults((prev) => {
-              const next = [...clips, ...prev].slice(0, MAX_RESULTS);
-              localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
-              return next;
-            });
-            localStorage.removeItem(JOB_KEY);
-            setJob(null);
-            setStatus(null);
-            toast.success(t("videoGenerator.done"));
-            return;
-          }
-          if (TERMINAL_FAILED[st.status]) {
-            localStorage.removeItem(JOB_KEY);
-            setJob(null);
-            toast.error(`${t("videoGenerator.failedToast")}: ${st.error ?? st.status}`);
-            return;
-          }
-        } catch (e) {
-          // Transport hiccup — brief pause and keep polling; the workflow
-          // keeps running server-side and the job survives restarts.
-          if (cancelled || !aliveRef.current) return;
-          if (Date.now() - job.at > 30 * 60 * 1000) {
-            localStorage.removeItem(JOB_KEY);
-            setJob(null);
-            toast.error(`${t("videoGenerator.failedToast")}: ${errText(e)}`);
-            return;
-          }
-          await delay(4000);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [job, t]);
-
-  function setSourceVideoSlot(file: File | undefined) {
+  async function setSourceVideoSlot(file: File | undefined) {
     if (!file) return;
-    const okType = file.type === "video/mp4" || file.type === "video/webm";
-    if (!okType) {
+    if (file.type !== "video/mp4" && file.type !== "video/webm") {
       toast.error(t("videoGenerator.videoType"));
       return;
     }
@@ -549,69 +429,23 @@ export function VideoGenerator({
       toast.error(t("videoGenerator.sourceTooLarge"));
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") setSourceVideo(reader.result);
-    };
-    reader.readAsDataURL(file);
+    setSourceVideo(await readFileAsDataUrl(file));
   }
 
-  function setFrameSlot(index: number, file: File | undefined) {
+  async function setFrameSlot(index: number, file: File | undefined) {
     if (!file) return;
     if (file.size > 8 * 1024 * 1024) {
       toast.error(t("videoGenerator.sourceTooLarge"));
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") return;
-      setFrames((prev) => {
-        const next = [...prev];
-        while (next.length <= index) next.push("");
-        next[index] = result;
-        return next;
-      });
-    };
-    reader.readAsDataURL(file);
-  }
-
-  const canSubmit = configured === true && !submitting && !job && promptEffective && framesReady && videoReady;
-
-  async function handleGenerate() {
-    if (!canSubmit || !promptEffective) return;
-    setSubmitting(true);
-    try {
-      // Client pre-check (display-grade): skip the submit when the balance
-      // obviously can't cover the quoted cost. An unreadable balance falls
-      // through — the server-side debit inside the submit op is the
-      // authoritative fail-closed gate.
-      const required = cost?.totalTokens;
-      if (required !== undefined) {
-        const balance = await refreshTokenBalance();
-        if (balance !== null && balance < required) {
-          toast.error(t("generator.insufficientBalance", { tokens: required.toLocaleString("id-ID") }));
-          setSubmitting(false);
-          return;
-        }
-      }
-      const submitted = buildRequest();
-      const view = await call<{ workflowId: string }>("civitai_video_submit", { req: submitted });
-      publishMediaDebit(cost?.totalTokens ?? 0);
-      const nextJob: ActiveJob = {
-        workflowId: view.workflowId,
-        prompt: prompt.trim(),
-        at: Date.now(),
-        req: stripVideoReq(submitted),
-      };
-      localStorage.setItem(JOB_KEY, JSON.stringify(nextJob));
-      setStatus(null);
-      setJob(nextJob);
-    } catch (e) {
-      toast.error(`${t("videoGenerator.failedToast")}: ${errText(e)}`);
-    } finally {
-      if (aliveRef.current) setSubmitting(false);
-    }
+    const dataUrl = await readFileAsDataUrl(file);
+    if (dataUrl == null) return;
+    setFrames((prev) => {
+      const next = [...prev];
+      while (next.length <= index) next.push("");
+      next[index] = dataUrl;
+      return next;
+    });
   }
 
   /** Load a result's generating settings back into the form. `reinitPicks`
@@ -652,59 +486,6 @@ export function VideoGenerator({
     toast.success(t("generator.settingsReused"));
     if (r.hadMedia) toast.info(t("generator.sourceNotRestored"));
   }
-
-  /** Drop a clip from the panel's log — the stored file itself stays in the
-   *  office store, so deliverables keep resolving its token. */
-  function removeEntry(entry: VideoResultEntry) {
-    setResults((prev) => {
-      const next = prev.filter((e) => e.fileId !== entry.fileId);
-      localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
-      return next;
-    });
-    toast(t("generator.resultRemoved"), {
-      action: {
-        label: t("common.undo"),
-        onClick: () => {
-          setResults((prev) => {
-            if (prev.some((e) => e.fileId === entry.fileId)) return prev;
-            const next = [entry, ...prev].slice(0, MAX_RESULTS);
-            localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
-            return next;
-          });
-        },
-      },
-    });
-  }
-
-  /** The ecosystem menu: every engine with its one-line note. */
-  const ecoGroups = useMemo<PickerGroup[]>(
-    () => [
-      {
-        id: "ecosystems",
-        items: VIDEO_ECOSYSTEMS.map((e) => ({
-          id: e.id,
-          label: e.label,
-          note: e.note,
-          selected: e.id === ecoId,
-          onSelect: () => {
-            setEcoOpen(false);
-            if (e.id !== ecoId) switchEcosystem(e.id);
-          },
-          tile: (
-            <div
-              className={cn(
-                "flex size-8 shrink-0 items-center justify-center rounded-[6px] bg-gradient-to-br text-sm font-bold text-white",
-                e.gradient,
-              )}
-            >
-              {e.label.charAt(0)}
-            </div>
-          ),
-        })),
-      },
-    ],
-    [ecoId, switchEcosystem],
-  );
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
@@ -1062,11 +843,11 @@ export function VideoGenerator({
     <GeneratorLayout
       footer={
         <GenerateFooter
-          canSubmit={canSubmit}
+          canSubmit={lane.canSubmit}
           inFlight={job != null}
           inFlightLabel={t("videoGenerator.inProgress")}
           note={t("videoGenerator.costNote")}
-          onSubmit={() => void handleGenerate()}
+          onSubmit={() => void submit()}
           quote={cost?.totalTokens ?? null}
           quoteState={
             costError ? "failed" : cost ? "quoted" : promptEffective && configured === true ? "pending" : "idle"
@@ -1096,18 +877,9 @@ export function VideoGenerator({
               cancelLabel={t("videoGenerator.cancel")}
               elapsed={elapsed}
               error={status?.error}
-              onCancel={() => {
-                const workflowId = job.workflowId;
-                void call("civitai_video_cancel", { workflowId })
-                  .catch(() => undefined)
-                  .finally(() => {
-                    localStorage.removeItem(JOB_KEY);
-                    setJob(null);
-                    toast.success(t("videoGenerator.canceled"));
-                  });
-              }}
+              onCancel={cancel}
               queuePosition={status?.queuePosition}
-              statusLabel={t(videoStatusKey(status))}
+              statusLabel={t(laneStatusKey("videoGenerator", status))}
               workflowId={job.workflowId}
             />
           </div>
@@ -1129,14 +901,4 @@ export function VideoGenerator({
       </div>
     </GeneratorLayout>
   );
-}
-
-/** The status pill's copy — terminal-but-not-yet-fetched reads as "succeeded"
- *  because the download is the last leg of the poll loop. */
-function videoStatusKey(status: VideoStatusView | null): TranslationKey {
-  return status?.status === "processing"
-    ? "videoGenerator.processing"
-    : status?.status === "succeeded"
-      ? "videoGenerator.succeeded"
-      : "videoGenerator.queued";
 }

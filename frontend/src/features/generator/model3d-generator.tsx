@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -8,8 +7,7 @@ import { Slider, SliderRange, SliderThumb, SliderTrack } from "@/components/ui/s
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/shared/icon";
-import { cn } from "@/lib/utils";
-import { call, errText } from "@/lib/api";
+import { call } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { useFilePreview } from "@/lib/preview-file";
 import { useI18n } from "@/hooks/use-i18n";
@@ -25,12 +23,19 @@ import {
   type Model3dProcess,
   model3dEcosystem,
 } from "./model3d-ecosystems";
-import { KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
-import { GenerateFooter, publishMediaDebit } from "./generate-footer";
-import type { PickerGroup } from "./picker-menu";
+import {
+  KeyStatusNotices,
+  laneStatusKey,
+  type LaneResultEntry,
+  type LaneStatusView,
+  readFileAsDataUrl,
+  useCivitaiKeyStatus,
+  useEcoGroups,
+  useWorkflowLane,
+} from "./civitai-shared";
+import { GenerateFooter } from "./generate-footer";
 import { ResultActions, mediaToken } from "./result-actions";
 import { FrameSlot } from "./video-generator";
-import type { TranslationKey } from "@/lib/i18n";
 import {
   ChoiceChip,
   detailLine,
@@ -76,27 +81,16 @@ interface Model3dGenRequest {
   withPreview?: boolean;
 }
 
-interface Model3dCostView {
-  totalBuzz: number;
-  totalTokens: number;
-  ready: boolean;
-  warnings: string[];
-}
-
 interface Model3dBlobView {
   url: string;
   format?: string;
 }
 
-interface Model3dStatusView {
-  workflowId: string;
-  status: string;
-  queuePosition: number | null;
+interface Model3dStatusView extends LaneStatusView {
   model?: Model3dBlobView;
   fbx?: Model3dBlobView;
   previewUrl?: string;
   extras: Array<Model3dBlobView & { variant: string }>;
-  error?: string;
 }
 
 interface SavedModel3d {
@@ -107,56 +101,22 @@ interface SavedModel3d {
   additional?: Array<{ fileId: string; name: string; variant: string }>;
 }
 
-interface Model3dResultEntry {
-  fileId: string;
-  name: string;
+interface Model3dResultEntry extends LaneResultEntry<ReusableModel3dReq> {
   previewFileId?: string;
-  prompt: string;
-  at: number;
-  /** Generating settings for the card's "Load these settings" action.
-   *  Absent on entries logged before snapshots existed. The source image is
-   *  never kept (a data URL has no business in localStorage) — `hadMedia`
-   *  records that the run consumed one. */
-  req?: Omit<Model3dGenRequest, "image"> & { hadMedia?: boolean };
 }
 
-/** In-flight workflow, persisted so a restart resumes polling. */
-interface ActiveJob {
-  workflowId: string;
-  prompt: string;
-  at: number;
-  req?: Omit<Model3dGenRequest, "image">;
+/** The `Model3dGenRequest` behind a result, minus the source image — a
+ *  base64 data URL has no business in localStorage, and the slot is re-picked
+ *  by hand anyway. `hadMedia` records that the run consumed one. */
+type ReusableModel3dReq = Omit<Model3dGenRequest, "image"> & { hadMedia?: boolean };
+
+function stripReq(req: Model3dGenRequest): ReusableModel3dReq {
+  const { image, ...rest } = req;
+  return image ? { ...rest, hadMedia: true } : rest;
 }
 
 const RESULTS_KEY = "kawai-generator-model3d-results-v1";
 const JOB_KEY = "kawai-generator-model3d-job-v1";
-const MAX_RESULTS = 30;
-const STATUS_WAIT_SECS = 15;
-/** Terminal-but-not-success states (lowercase wire vocabulary). */
-const TERMINAL_FAILED: Record<string, true> = { failed: true, expired: true, canceled: true };
-
-function loadJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function delay(ms: number): Promise<void> {
-  const { promise, resolve } = Promise.withResolvers<void>();
-  setTimeout(resolve, ms);
-  return promise;
-}
-
-/** The `Model3dGenRequest` behind a result, minus the uploaded media — a
- *  base64 image has no business in localStorage, and the slot is re-picked
- *  by hand anyway. `hadMedia` records that the run consumed one. */
-function stripReq(req: Model3dGenRequest): Omit<Model3dGenRequest, "image"> & { hadMedia?: boolean } {
-  const { image, ...rest } = req;
-  return image ? { ...rest, hadMedia: true } : rest;
-}
 
 /** One saved 3D result: the model3DPreview render as the tile — the GLB
  *  itself has no in-app viewer (deliberate: no three.js dependency), so the
@@ -250,16 +210,6 @@ export function Model3dGenerator({
   const [octree, setOctree] = useState(HUNYUAN_OCTREE.default);
   const [seed, setSeed] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [ecoOpen, setEcoOpen] = useState(false);
-  const [cost, setCost] = useState<Model3dCostView | null>(null);
-  const [costError, setCostError] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [job, setJob] = useState<ActiveJob | null>(() => loadJson<ActiveJob | null>(JOB_KEY, null));
-  const [status, setStatus] = useState<Model3dStatusView | null>(null);
-  const [elapsed, setElapsed] = useState(0);
-  const [results, setResults] = useState<Model3dResultEntry[]>(() => loadJson<Model3dResultEntry[]>(RESULTS_KEY, []));
-  const aliveRef = useRef(true);
-  useAliveEffect(aliveRef);
 
   const isMeshy = ecoId === "meshy";
   const isTripo = ecoId === "tripo";
@@ -389,168 +339,67 @@ export function Model3dGenerator({
     tripoTexture,
   ]);
 
-  /** Identity-stable request snapshot — the whatif effect re-runs only when
-   *  the FORM actually changes, not on unrelated renders. */
-  const costRequest = useMemo(buildRequest, [buildRequest]);
-
   const formReady = isTxt ? prompt.trim().length > 0 : image != null;
 
-  // Free whatif cost check — debounced; a failure here means submit would
-  // fail too, so the footer surfaces it instead of the buzz number.
-  useEffect(() => {
-    if (configured !== true || !formReady) {
-      setCost(null);
-      setCostError(false);
-      return;
-    }
-    let cancelled = false;
-    setCostError(false);
-    const timer = setTimeout(() => {
-      call<Model3dCostView>("civitai_model3d_cost", { req: costRequest })
-        .then((c) => {
-          if (!cancelled && aliveRef.current) {
-            setCost(c);
-            setCostError(false);
-          }
-        })
-        .catch(() => {
-          if (!cancelled && aliveRef.current) {
-            setCost(null);
-            setCostError(true);
-          }
-        });
-    }, 700);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [costRequest, configured, formReady]);
+  const lane = useWorkflowLane<
+    Model3dGenRequest,
+    ReusableModel3dReq,
+    Model3dStatusView,
+    SavedModel3d,
+    Model3dResultEntry
+  >({
+    configured,
+    formEffective: formReady,
+    keys: { job: JOB_KEY, results: RESULTS_KEY },
+    ops: {
+      cost: "civitai_model3d_cost",
+      status: "civitai_model3d_status",
+      submit: "civitai_model3d_submit",
+      fetch: "civitai_model3d_fetch",
+    },
+    labels: { done: "model3dGenerator.done", failed: "model3dGenerator.failedToast" },
+    // 3D renders are slow — a meshy full run can take 10+ minutes, so give a
+    // transport hiccup an hour of retries before declaring it stuck.
+    stuckMs: 60 * 60 * 1000,
+    buildRequest,
+    strip: stripReq,
+    promptLabel: () => prompt.trim(),
+    succeeded: (st) => st.status === "succeeded" && st.model != null,
+    fetchSaved: (st, workflowId) =>
+      call<SavedModel3d>("civitai_model3d_fetch", {
+        workflowId,
+        modelUrl: st.model?.url,
+        modelFormat: st.model?.format,
+        fbxUrl: st.fbx?.url,
+        fbxFormat: st.fbx?.format,
+        previewUrl: st.previewUrl,
+        extraUrls: st.extras ?? [],
+      }),
+    toEntries: (saved, job) => [
+      {
+        fileId: saved.fileId,
+        name: saved.name,
+        previewFileId: saved.previewFileId,
+        prompt: job.prompt,
+        at: Date.now(),
+        req: job.req,
+      },
+    ],
+  });
+  const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
+  const {
+    groups: ecoGroups,
+    open: ecoOpen,
+    setOpen: setEcoOpen,
+  } = useEcoGroups(MODEL3D_ECOSYSTEMS, ecoId, switchEcosystem);
 
-  // Elapsed ticker while a job is in flight.
-  useEffect(() => {
-    if (!job) return;
-    setElapsed(Math.floor((Date.now() - job.at) / 1000));
-    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - job.at) / 1000)), 1000);
-    return () => clearInterval(timer);
-  }, [job]);
-
-  // Poll loop — long-poll (waitSecs) keeps it near-live without hammering.
-  useEffect(() => {
-    if (!job) return;
-    let cancelled = false;
-    void (async () => {
-      while (!cancelled) {
-        try {
-          const st = await call<Model3dStatusView>("civitai_model3d_status", {
-            workflowId: job.workflowId,
-            waitSecs: STATUS_WAIT_SECS,
-          });
-          if (cancelled || !aliveRef.current) return;
-          setStatus(st);
-          if (st.status === "succeeded" && st.model) {
-            const saved = await call<SavedModel3d>("civitai_model3d_fetch", {
-              workflowId: job.workflowId,
-              modelUrl: st.model.url,
-              modelFormat: st.model.format,
-              fbxUrl: st.fbx?.url,
-              fbxFormat: st.fbx?.format,
-              previewUrl: st.previewUrl,
-              extraUrls: st.extras ?? [],
-            });
-            if (cancelled || !aliveRef.current) return;
-            const entry: Model3dResultEntry = {
-              fileId: saved.fileId,
-              name: saved.name,
-              previewFileId: saved.previewFileId,
-              prompt: job.prompt,
-              at: Date.now(),
-              req: job.req,
-            };
-            setResults((prev) => {
-              const next = [entry, ...prev].slice(0, MAX_RESULTS);
-              localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
-              return next;
-            });
-            localStorage.removeItem(JOB_KEY);
-            setJob(null);
-            setStatus(null);
-            toast.success(t("model3dGenerator.done"));
-            return;
-          }
-          if (TERMINAL_FAILED[st.status]) {
-            localStorage.removeItem(JOB_KEY);
-            setJob(null);
-            toast.error(`${t("model3dGenerator.failedToast")}: ${st.error ?? st.status}`);
-            return;
-          }
-        } catch (e) {
-          // Transport hiccup — brief pause and keep polling; the workflow
-          // keeps running server-side and the job survives restarts.
-          if (cancelled || !aliveRef.current) return;
-          if (Date.now() - job.at > 60 * 60 * 1000) {
-            localStorage.removeItem(JOB_KEY);
-            setJob(null);
-            toast.error(`${t("model3dGenerator.failedToast")}: ${errText(e)}`);
-            return;
-          }
-          await delay(4000);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [job, t]);
-
-  function pickImage(file: File | undefined) {
+  async function pickImage(file: File | undefined) {
     if (!file) return;
     if (file.size > 8 * 1024 * 1024) {
       toast.error(t("model3dGenerator.sourceTooLarge"));
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") setImage(reader.result);
-    };
-    reader.readAsDataURL(file);
-  }
-
-  const canSubmit = configured === true && !submitting && !job && formReady;
-
-  async function handleGenerate() {
-    if (!canSubmit || !formReady) return;
-    setSubmitting(true);
-    try {
-      // Client pre-check (display-grade): skip the submit when the balance
-      // obviously can't cover the quoted cost. An unreadable balance falls
-      // through — the server-side debit inside the submit op is the
-      // authoritative fail-closed gate.
-      const required = cost?.totalTokens;
-      if (required !== undefined) {
-        const balance = await refreshTokenBalance();
-        if (balance !== null && balance < required) {
-          toast.error(t("generator.insufficientBalance", { tokens: required.toLocaleString("id-ID") }));
-          setSubmitting(false);
-          return;
-        }
-      }
-      const submitted = buildRequest();
-      const view = await call<{ workflowId: string }>("civitai_model3d_submit", { req: submitted });
-      publishMediaDebit(cost?.totalTokens ?? 0);
-      const nextJob: ActiveJob = {
-        workflowId: view.workflowId,
-        prompt: prompt.trim(),
-        at: Date.now(),
-        req: stripReq(submitted),
-      };
-      localStorage.setItem(JOB_KEY, JSON.stringify(nextJob));
-      setStatus(null);
-      setJob(nextJob);
-    } catch (e) {
-      toast.error(`${t("model3dGenerator.failedToast")}: ${errText(e)}`);
-    } finally {
-      if (aliveRef.current) setSubmitting(false);
-    }
+    setImage(await readFileAsDataUrl(file));
   }
 
   /** Load a result's generating settings back into the form. The source
@@ -596,59 +445,6 @@ export function Model3dGenerator({
     toast.success(t("generator.settingsReused"));
     if (r.hadMedia) toast.info(t("generator.sourceNotRestored"));
   }
-
-  /** Drop an entry from the panel's log — the stored file itself stays in
-   *  the office store, so deliverables keep resolving its token. */
-  function removeEntry(entry: Model3dResultEntry) {
-    setResults((prev) => {
-      const next = prev.filter((e) => e.fileId !== entry.fileId);
-      localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
-      return next;
-    });
-    toast(t("generator.resultRemoved"), {
-      action: {
-        label: t("common.undo"),
-        onClick: () => {
-          setResults((prev) => {
-            if (prev.some((e) => e.fileId === entry.fileId)) return prev;
-            const next = [entry, ...prev].slice(0, MAX_RESULTS);
-            localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
-            return next;
-          });
-        },
-      },
-    });
-  }
-
-  /** The ecosystem menu: every engine with its one-line note. */
-  const ecoGroups = useMemo<PickerGroup[]>(
-    () => [
-      {
-        id: "ecosystems",
-        items: MODEL3D_ECOSYSTEMS.map((e) => ({
-          id: e.id,
-          label: e.label,
-          note: e.note,
-          selected: e.id === ecoId,
-          onSelect: () => {
-            setEcoOpen(false);
-            if (e.id !== ecoId) switchEcosystem(e.id);
-          },
-          tile: (
-            <div
-              className={cn(
-                "flex size-8 shrink-0 items-center justify-center rounded-[6px] bg-gradient-to-br text-sm font-bold text-white",
-                e.gradient,
-              )}
-            >
-              {e.label.charAt(0)}
-            </div>
-          ),
-        })),
-      },
-    ],
-    [ecoId, switchEcosystem],
-  );
 
   const advanced = (
     <div className="flex flex-col gap-3">
@@ -1002,11 +798,11 @@ export function Model3dGenerator({
     <GeneratorLayout
       footer={
         <GenerateFooter
-          canSubmit={canSubmit}
+          canSubmit={lane.canSubmit}
           inFlight={job != null}
           inFlightLabel={t("model3dGenerator.inProgress")}
           note={t("model3dGenerator.costNote")}
-          onSubmit={() => void handleGenerate()}
+          onSubmit={() => void submit()}
           quote={cost?.totalTokens ?? null}
           quoteState={costError ? "failed" : cost ? "quoted" : formReady && configured === true ? "pending" : "idle"}
           ready={cost?.ready ?? true}
@@ -1034,19 +830,9 @@ export function Model3dGenerator({
               cancelLabel={t("model3dGenerator.cancel")}
               elapsed={elapsed}
               error={status?.error}
-              onCancel={() => {
-                // Cancel reuses the video op — same workflow bus.
-                const workflowId = job.workflowId;
-                void call("civitai_video_cancel", { workflowId })
-                  .catch(() => undefined)
-                  .finally(() => {
-                    localStorage.removeItem(JOB_KEY);
-                    setJob(null);
-                    toast.success(t("videoGenerator.canceled"));
-                  });
-              }}
+              onCancel={cancel}
               queuePosition={status?.queuePosition}
-              statusLabel={t(model3dStatusKey(status))}
+              statusLabel={t(laneStatusKey("model3dGenerator", status))}
               workflowId={job.workflowId}
             />
           </div>
@@ -1068,13 +854,4 @@ export function Model3dGenerator({
       </div>
     </GeneratorLayout>
   );
-}
-
-/** The status pill's copy — see the video lane's equivalent. */
-function model3dStatusKey(status: Model3dStatusView | null): TranslationKey {
-  return status?.status === "processing"
-    ? "model3dGenerator.processing"
-    : status?.status === "succeeded"
-      ? "model3dGenerator.succeeded"
-      : "model3dGenerator.queued";
 }
