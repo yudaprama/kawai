@@ -33,8 +33,12 @@ import {
   targetWorkflowForEcosystem,
 } from "./ecosystems";
 import { AdvancedSection } from "./advanced-section";
-import { EcoOptionButton, KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
+import { KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
+import { GenerateFooter, publishMediaDebit } from "./generate-footer";
 import { MusicGenerator } from "./music-generator";
+import { Model3dGenerator } from "./model3d-generator";
+import { Masonry } from "./masonry";
+import { type PickerGroup, type PickerItem, PickerMenu } from "./picker-menu";
 import { ResultActions, mediaToken } from "./result-actions";
 import { VideoGenerator } from "./video-generator";
 
@@ -107,13 +111,14 @@ function loadHistory(): HistoryEntry[] {
   }
 }
 
-/** 1 / 2 / 3 columns by viewport (pane tracks the app window). */
-function useColumnCount(): number {
-  const [cols, setCols] = useState(3);
+/** N columns by viewport width — `max` is the count at lg and up, half of it
+ *  in the middle band, one on a phone. */
+function useColumnCount(max: number): number {
+  const [cols, setCols] = useState(max);
   useEffect(() => {
     const narrow = window.matchMedia("(max-width: 639px)");
     const medium = window.matchMedia("(max-width: 1023px)");
-    const update = () => setCols(narrow.matches ? 1 : medium.matches ? 2 : 3);
+    const update = () => setCols(narrow.matches ? 1 : medium.matches ? Math.max(1, Math.ceil(max / 2)) : max);
     update();
     narrow.addEventListener("change", update);
     medium.addEventListener("change", update);
@@ -121,7 +126,7 @@ function useColumnCount(): number {
       narrow.removeEventListener("change", update);
       medium.removeEventListener("change", update);
     };
-  }, []);
+  }, [max]);
   return cols;
 }
 
@@ -232,32 +237,49 @@ function ModelTile({ cover, eco, size }: { cover?: string | null; eco: (typeof E
   );
 }
 
-/** One saved result: cover thumbnail, hover actions, click opens preview. */
+/** One saved result: full-frame thumbnail, hover actions, click opens preview.
+ *
+ * The tile keeps the image's own aspect — four of the five size presets are
+ * non-square, so a square crop threw most generations away. The reserved box
+ * comes from the run's own dimensions when the snapshot has them (no layout
+ * shift as the tile loads); legacy entries fall back to a square. */
 function ResultCard({ entry, onRemove, onReuse }: { entry: HistoryEntry; onRemove: () => void; onReuse: () => void }) {
-  const { data, isLoading } = useFilePreview({ id: entry.fileId, name: entry.name });
+  // The tile renders the 512px preview JPEG, never the original — a 4K PNG
+  // would be megabytes of base64 per card. Click-to-preview reads the full
+  // file through the overlay.
+  const { data, isLoading } = useFilePreview({ id: entry.fileId, name: entry.name, thumb: true });
+  const dims = entry.params;
   return (
-    <div className="group relative overflow-hidden rounded-[8px] border bg-secondary">
+    <div
+      className={cn(
+        "group relative overflow-hidden rounded-[8px] border bg-secondary",
+        // No snapshot (a pre-existing entry) — the children are h-full, so the
+        // box still needs a height. Square is the old behaviour.
+        !dims && "aspect-square",
+      )}
+      style={dims ? { aspectRatio: `${dims.width} / ${dims.height}` } : undefined}
+    >
       <button
-        className="block w-full cursor-zoom-in"
+        className="block h-full w-full cursor-zoom-in"
         onClick={() => emitOpenPreview(entry.fileId, entry.name)}
         title={entry.prompt}
         type="button"
       >
         {isLoading ? (
-          <div className="flex aspect-square items-center justify-center">
+          <div className="flex h-full w-full items-center justify-center">
             <Spinner className="size-5" />
           </div>
         ) : (
           <img
             alt={entry.prompt}
-            className="aspect-square w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
+            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
             src={data?.dataUrl}
           />
         )}
       </button>
       <ResultActions
-        downloadHref={data?.dataUrl}
-        downloadName={entry.name}
+        fileId={entry.fileId}
+        fileName={entry.name}
         label={entry.prompt || entry.name}
         onRemove={onRemove}
         onReuse={onReuse}
@@ -379,7 +401,7 @@ function ModelBrowser({
   loraCount: number;
 }) {
   const { t } = useI18n();
-  const cols = useColumnCount();
+  const cols = useColumnCount(3);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState("Highest Rated");
@@ -532,33 +554,19 @@ function ModelBrowser({
             <p className="text-sm">{t("generator.noResults")}</p>
           </div>
         ) : (
-          (() => {
-            // True masonry: round-robin distribution into N flowing columns —
-            // cards keep natural heights, no row-sync gaps.
-            const columns: SearchModelRow[][] = Array.from({ length: cols }, () => []);
-            rows.forEach((row, i) => {
-              columns[i % cols].push(row);
-            });
-            return (
-              <div className="flex items-start gap-2">
-                {columns.map((col, ci) => (
-                  <div className="flex min-w-0 flex-1 flex-col gap-2" key={`col-${col[0]?.modelId ?? `empty-${ci}`}`}>
-                    {col.map((row) => (
-                      <BrowserCard
-                        eco={eco}
-                        key={row.modelId}
-                        onSelect={handleSelect}
-                        row={row}
-                        selected={
-                          type === "Checkpoint" ? selectedModel?.airUrn === row.airUrn : addedLoraAirs.has(row.airUrn)
-                        }
-                      />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            );
-          })()
+          <Masonry
+            cols={cols}
+            items={rows}
+            keyOf={(row) => String(row.modelId)}
+            render={(row) => (
+              <BrowserCard
+                eco={eco}
+                onSelect={handleSelect}
+                row={row}
+                selected={type === "Checkpoint" ? selectedModel?.airUrn === row.airUrn : addedLoraAirs.has(row.airUrn)}
+              />
+            )}
+          />
         )}
         {loadingMore && (
           <div className="flex justify-center py-3">
@@ -583,7 +591,7 @@ function ModelBrowser({
 export function GeneratorPage({ onBack }: { onBack: () => void }) {
   const { t } = useI18n();
   /** Civitai's media lane — video/music render their own panels. */
-  const [media, setMedia] = useState<"image" | "video" | "music">("image");
+  const [media, setMedia] = useState<"image" | "video" | "music" | "model3d">("image");
   const configured = useCivitaiKeyStatus();
   const [paneTab, setPaneTab] = useState<"hasil" | "model">("hasil");
   const [covers, setCovers] = useState<Record<string, ModelCover>>({});
@@ -684,17 +692,22 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
         }
       : size;
   const parsedSteps = Number(steps);
-  // Buzz pricing is a per-pixel/per-step generation formula — the upscale
-  // recipe exposes no cost fields, so no estimate is shown there.
-  const estimate = useMemo(() => {
-    if (isUpscale) return 0;
-    return estimateBuzz({
-      width: genSize.width,
-      height: genSize.height,
-      steps: Number.isFinite(parsedSteps) ? parsedSteps : undefined,
-      quantity,
-    });
-  }, [isUpscale, genSize, parsedSteps, quantity]);
+  // Buzz pricing is a per-pixel/per-step generation formula plus the upscale
+  // passes the imageUpscaler recipe bills separately — `estimateBuzz` mirrors
+  // the backend's estimate exactly so the quote can't under-report.
+  const estimate = useMemo(
+    () =>
+      estimateBuzz({
+        width: genSize.width,
+        height: genSize.height,
+        steps: Number.isFinite(parsedSteps) ? parsedSteps : undefined,
+        quantity,
+        workflow: workflowId,
+        upscaleRepeats,
+      }),
+    [genSize, parsedSteps, quantity, workflowId, upscaleRepeats],
+  );
+  const quotedTokens = Math.ceil(estimate * TOKENS_PER_BUZZ);
 
   const buildParams = useCallback((): GenParams => {
     // The upscale workflow carries no generation fields at all (its recipe
@@ -774,28 +787,33 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   // ecosystem-scoped). Coherence (civitai's selectorCoherence): a write that
   // would leave workflow/ecosystem incompatible retargets the other selector
   // in the same gesture — the ecosystem gesture wins.
-  function switchEcosystem(id: string) {
-    if (!isWorkflowAvailable(workflowId, id)) {
-      setWorkflowId(targetWorkflowForEcosystem(id));
-    }
-    setEcoId(id);
-    setSizeIdx(0);
-    setSelectedModel(null);
-    const next = ECOSYSTEMS.find((e) => e.id === id);
-    if (next) {
-      setCfgScale(String(next.defaultCfgScale));
-      setSteps(String(next.defaultSteps));
-    }
-  }
+  const switchEcosystem = useCallback(
+    (id: string) => {
+      if (!isWorkflowAvailable(workflowId, id)) {
+        setWorkflowId(targetWorkflowForEcosystem(id));
+      }
+      setEcoId(id);
+      setSizeIdx(0);
+      setSelectedModel(null);
+      const next = ECOSYSTEMS.find((e) => e.id === id);
+      if (next) {
+        setCfgScale(String(next.defaultCfgScale));
+        setSteps(String(next.defaultSteps));
+      }
+    },
+    [workflowId],
+  );
 
-  function switchWorkflow(id: string) {
-    setWorkflowId(id);
-    const compatible = resolveCompatibleEcosystem(id, ecoId);
-    if (compatible !== ecoId) {
-      switchEcosystem(compatible);
-      return;
-    }
-  }
+  const switchWorkflow = useCallback(
+    (id: string) => {
+      setWorkflowId(id);
+      const compatible = resolveCompatibleEcosystem(id, ecoId);
+      if (compatible !== ecoId) {
+        switchEcosystem(compatible);
+      }
+    },
+    [ecoId, switchEcosystem],
+  );
 
   async function handleGenerate() {
     if (running) return;
@@ -815,7 +833,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       // to app tokens vs the shared balance. An unreadable balance falls
       // through — the server-side debit inside the op is the authoritative
       // fail-closed gate.
-      const required = Math.ceil(estimate * TOKENS_PER_BUZZ);
+      const required = quotedTokens;
       const balance = await refreshTokenBalance();
       if (balance !== null && balance < required) {
         toast.error(t("generator.insufficientBalance", { tokens: required.toLocaleString("id-ID") }));
@@ -823,6 +841,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
         return;
       }
       const saved = await call<SavedImage[]>("civitai_generate", { params });
+      publishMediaDebit(quotedTokens);
       const snapshot = stripParams(params, selectedModel?.name);
       const entries: HistoryEntry[] = saved.map((f) => ({
         fileId: f.fileId,
@@ -914,14 +933,17 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   /** AIR URNs already in the stack — keeps ModelBrowser clicks idempotent. */
   const addedLoraAirs = useMemo(() => new Set(loras.map((l) => l.air)), [loras]);
 
-  /** civitai's ecosystem picker tabs, stacked for a dropdown: the current
-   *  workflow's own ecosystem list first ("Workflow Compatible"), the rest
-   *  under "All" — picking one of those retargets the workflow through
-   *  `switchEcosystem` (selectorCoherence). Empty second group = every
+  /** Results masonry density — four across on a wide window, like the old grid. */
+  const resultCols = useColumnCount(4);
+
+  /** civitai's ecosystem picker groups: the current workflow's own ecosystem
+   *  list first ("Workflow Compatible"), the rest under "All" — picking one of
+   *  those retargets the workflow through `switchEcosystem`
+   *  (selectorCoherence) and is marked as such. No second group = every
    *  ecosystem serves the workflow (civitai's `hasIncompatibleItems`). */
-  const ecoSections = useMemo(() => {
+  const ecoPickerGroups = useMemo<PickerGroup[]>(() => {
     const compatible = new Set(ecosystemsForWorkflow(workflowId));
-    const groups = [
+    const sections = [
       {
         id: "compatible",
         label: t("generator.ecosystemCompatible"),
@@ -930,10 +952,54 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     ];
     const others = ECOSYSTEMS.filter((e) => !compatible.has(e.id));
     if (others.length > 0) {
-      groups.push({ id: "all", label: t("generator.ecosystemAll"), ecos: others });
+      sections.push({ id: "all", label: t("generator.ecosystemAll"), ecos: others });
     }
-    return groups;
-  }, [workflowId, t]);
+    return sections.map((section) => ({
+      id: section.id,
+      label: section.label,
+      items: section.ecos.map((e) => {
+        const available = isWorkflowAvailable(workflowId, e.id);
+        const target = WORKFLOWS.find((w) => w.id === targetWorkflowForEcosystem(e.id))?.label;
+        return {
+          id: e.id,
+          label: e.label,
+          selected: e.id === ecoId,
+          onSelect: () => {
+            setEcoOpen(false);
+            if (e.id !== ecoId) switchEcosystem(e.id);
+          },
+          tile: <ModelTile cover={covers[e.id]?.url} eco={e} size={20} />,
+          retargets: !available,
+          title:
+            available || !target
+              ? undefined
+              : t("generator.willSwitchTo", { workflow: target ?? t("generator.workflow") }),
+        };
+      }),
+    }));
+  }, [covers, ecoId, switchEcosystem, t, workflowId]);
+
+  /** The workflow card's menu: every workflow, entries the current ecosystem
+   *  can't serve dimmed but still selectable (coherence retargets the eco). */
+  const workflowPickerItems = useMemo<PickerItem[]>(
+    () =>
+      WORKFLOWS.map((w) => {
+        const compatible = isWorkflowAvailable(w.id, ecoId);
+        return {
+          id: w.id,
+          label: w.label,
+          note: w.description,
+          selected: w.id === workflowId,
+          onSelect: () => {
+            setWfOpen(false);
+            if (w.id !== workflowId) switchWorkflow(w.id);
+          },
+          retargets: !compatible,
+          title: compatible ? undefined : t("generator.willSwitchTo", { workflow: eco.label }),
+        };
+      }),
+    [eco.label, ecoId, switchWorkflow, t, workflowId],
+  );
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
@@ -965,155 +1031,74 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
             >
               <Icon name="music" />
             </button>
-            <span className="text-muted-foreground/70 flex h-7 w-9 items-center justify-center rounded-[6px]">
-              <Icon name="box" />
-            </span>
-          </div>
-          <div className="relative">
             <button
-              aria-expanded={ecoOpen}
-              aria-haspopup="listbox"
-              className="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
-              onClick={() => setEcoOpen((v) => !v)}
+              className="text-muted-foreground/70 flex h-7 w-9 cursor-pointer items-center justify-center rounded-[6px] transition-colors hover:text-foreground"
+              onClick={() => setMedia("model3d")}
+              title="3D"
               type="button"
             >
-              <span className="text-muted-foreground">Eco</span>
-              <span className="bg-border h-4 w-px" />
-              {eco.label}
-              <span
-                className={cn("text-muted-foreground flex items-center transition-transform", ecoOpen && "rotate-180")}
-              >
-                <Icon name="chevron-down" />
-              </span>
+              <Icon name="box" />
             </button>
-            {ecoOpen && (
-              <div
-                className="bg-popover absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-[10px] border shadow-xl"
-                role="listbox"
-              >
-                {ecoSections.map((section) => (
-                  <div className="border-t first:border-t-0" key={section.id}>
-                    <div className="text-muted-foreground/70 px-3 pt-2.5 pb-1 text-[10px] font-semibold tracking-wider uppercase">
-                      {section.label}
-                    </div>
-                    {section.ecos.map((e) => {
-                      const selected = e.id === ecoId;
-                      const available = isWorkflowAvailable(workflowId, e.id);
-                      const targetLabel = available
-                        ? undefined
-                        : (WORKFLOWS.find((w) => w.id === targetWorkflowForEcosystem(e.id))?.label ??
-                          t("generator.workflow"));
-                      return (
-                        <EcoOptionButton
-                          key={e.id}
-                          onPick={() => {
-                            setEcoOpen(false);
-                            if (!selected) switchEcosystem(e.id);
-                          }}
-                          selected={selected}
-                          style={{ opacity: available ? 1 : 0.6 }}
-                          title={targetLabel ? t("generator.willSwitchTo", { workflow: targetLabel }) : undefined}
-                        >
-                          <ModelTile cover={covers[e.id]?.url} eco={e} size={20} />
-                          <span
-                            className={cn(
-                              "flex-1 truncate text-sm font-medium",
-                              selected && "text-primary font-semibold",
-                            )}
-                          >
-                            {e.label}
-                          </span>
-                          {selected ? (
-                            <span className="text-primary shrink-0">
-                              <Icon name="check" />
-                            </span>
-                          ) : !available ? (
-                            <span className="text-muted-foreground shrink-0">
-                              <Icon className="size-3.5" name="arrow-right" />
-                            </span>
-                          ) : null}
-                        </EcoOptionButton>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
+          <PickerMenu
+            align="end"
+            ariaLabel={t("generator.ecosystem")}
+            groups={ecoPickerGroups}
+            onOpenChange={setEcoOpen}
+            open={ecoOpen}
+            trigger={
+              <>
+                <span className="text-muted-foreground">Eco</span>
+                <span className="bg-border h-4 w-px" />
+                {eco.label}
+                <span
+                  className={cn(
+                    "text-muted-foreground flex items-center transition-transform",
+                    ecoOpen && "rotate-180",
+                  )}
+                >
+                  <Icon name="chevron-down" />
+                </span>
+              </>
+            }
+            triggerClassName="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
+          />
         </div>
       )}
-      {ecoOpen && <div aria-hidden className="fixed inset-0 z-20" onClick={() => setEcoOpen(false)} />}
       <KeyStatusNotices configured={configured} />
 
       {/* Workflow — civitai's selected-workflow card: big bold title +
           description, opening the workflow menu (label + description rows,
           check on the active entry, entries the ecosystem can't serve
           dimmed — still selectable, coherence retargets the ecosystem). */}
-      <div className="relative">
-        <button
-          aria-expanded={wfOpen}
-          aria-haspopup="listbox"
-          className={cn(
-            "flex w-full items-center gap-2 rounded-[12px] border bg-secondary p-4 text-left transition-colors hover:brightness-110",
-            wfOpen && "border-primary",
-          )}
-          onClick={() => setWfOpen((v) => !v)}
-          type="button"
-        >
-          <div className="min-w-0 flex-1">
-            <div className="text-foreground truncate text-xl font-bold">{workflow.label}</div>
-            <div className="text-muted-foreground truncate text-sm">{workflow.description}</div>
-          </div>
-          <span
-            className={cn(
-              "text-muted-foreground mr-1 flex shrink-0 items-center transition-transform",
-              wfOpen && "rotate-180",
-            )}
-          >
-            <Icon name="chevron-down" />
-          </span>
-        </button>
-        {wfOpen && (
-          <div
-            className="bg-popover absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-[10px] border shadow-xl"
-            role="listbox"
-          >
-            {WORKFLOWS.map((w) => {
-              const compatible = isWorkflowAvailable(w.id, ecoId);
-              const selected = w.id === workflowId;
-              return (
-                <button
-                  aria-selected={selected}
-                  className={cn(
-                    "flex w-full items-start gap-2 p-2.5 text-left transition-colors hover:bg-accent",
-                    selected && "bg-accent",
-                  )}
-                  key={w.id}
-                  onClick={() => {
-                    setWfOpen(false);
-                    if (!selected) switchWorkflow(w.id);
-                  }}
-                  role="option"
-                  style={{ opacity: compatible ? 1 : 0.45 }}
-                  type="button"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className={cn("text-sm font-semibold", selected && "text-primary")}>{w.label}</div>
-                    <div className="text-muted-foreground truncate text-xs">{w.description}</div>
-                  </div>
-                  {selected && (
-                    <span className="text-primary mt-1 shrink-0">
-                      <Icon name="check" />
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-            {/* click-away backdrop */}
-          </div>
+      <PickerMenu
+        align="start"
+        ariaLabel={t("generator.workflow")}
+        groups={[{ id: "workflows", items: workflowPickerItems }]}
+        onOpenChange={setWfOpen}
+        open={wfOpen}
+        trigger={
+          <>
+            <div className="min-w-0 flex-1 text-left">
+              <div className="text-foreground truncate text-xl font-bold">{workflow.label}</div>
+              <div className="text-muted-foreground truncate text-sm">{workflow.description}</div>
+            </div>
+            <span
+              className={cn(
+                "text-muted-foreground mr-1 flex shrink-0 items-center transition-transform",
+                wfOpen && "rotate-180",
+              )}
+            >
+              <Icon name="chevron-down" />
+            </span>
+          </>
+        }
+        triggerClassName={cn(
+          "flex w-full items-center gap-2 rounded-[12px] border bg-secondary p-4 transition-colors hover:brightness-110",
+          wfOpen && "border-primary",
         )}
-      </div>
-      {wfOpen && <div aria-hidden className="fixed inset-0 z-20" onClick={() => setWfOpen(false)} />}
+        triggerWidth
+      />
 
       {/* Hires-fix input mode — civitai's Text to Image | Image to Image
           segmented control inside the workflow */}
@@ -1448,6 +1433,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
         onBack={onBack}
         onSwitchToImage={() => setMedia("image")}
         onSwitchToMusic={() => setMedia("music")}
+        onSwitchTo3d={() => setMedia("model3d")}
       />
     );
   }
@@ -1457,6 +1443,17 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
         onBack={onBack}
         onSwitchToImage={() => setMedia("image")}
         onSwitchToVideo={() => setMedia("video")}
+        onSwitchTo3d={() => setMedia("model3d")}
+      />
+    );
+  }
+  if (media === "model3d") {
+    return (
+      <Model3dGenerator
+        onBack={onBack}
+        onSwitchToImage={() => setMedia("image")}
+        onSwitchToVideo={() => setMedia("video")}
+        onSwitchToMusic={() => setMedia("music")}
       />
     );
   }
@@ -1478,45 +1475,20 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
               (the form column grows with Advanced open), so the bar must not
               live in flow. Static on lg — the column fits the pane and
               scrolls internally, keeping the bar at its end. */}
-          <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-card p-3 lg:static lg:inset-auto">
-            <div className="flex items-stretch gap-2">
-              {!isUpscale && (
-                <div
-                  className="flex h-10 shrink-0 items-center gap-1 rounded-[8px] border bg-secondary px-2.5"
-                  title={t("generator.estimate")}
-                >
-                  <Icon className="text-warning size-3.5" name="zap" />
-                  <span className="text-warning text-[13px] font-semibold">
-                    ≈{Math.ceil(estimate * TOKENS_PER_BUZZ).toLocaleString("id-ID")}
-                  </span>
-                </div>
-              )}
-              <Button
-                className="h-10 flex-1 rounded-[8px] text-[15px] font-semibold"
-                disabled={!canGenerate}
-                onClick={() => void handleGenerate()}
-                size="lg"
-              >
-                {running ? (
-                  <span className="flex items-center gap-2">
-                    <Spinner className="size-4" />
-                    {t("generator.generatingElapsed", { seconds: elapsed })}
-                  </span>
-                ) : (
-                  t("generator.generate")
-                )}
-              </Button>
-            </div>
-            {!isUpscale && (
-              <p className="text-muted-foreground/70 mt-1.5 text-center text-[10px]">
-                {t("generator.estimateNote", {
-                  width: genSize.width,
-                  height: genSize.height,
-                  ratio: `${Math.round(genSize.width / sizeRatio)}:${Math.round(genSize.height / sizeRatio)}`,
-                })}
-              </p>
-            )}
-          </div>
+          <GenerateFooter
+            canSubmit={canGenerate}
+            note={t("generator.estimateNote", {
+              width: genSize.width,
+              height: genSize.height,
+              ratio: `${Math.round(genSize.width / sizeRatio)}:${Math.round(genSize.height / sizeRatio)}`,
+            })}
+            onSubmit={() => void handleGenerate()}
+            quote={quotedTokens}
+            quoteState={prompt.trim().length > 0 || workflowId === "img2img:upscale" ? "quoted" : "idle"}
+            submitting={running}
+            submittingLabel={t("generator.generatingElapsed", { seconds: elapsed })}
+            submitLabel={t("generator.generate")}
+          />
         </section>
 
         {/* ── Results pane — Hasil | Model browser. min-h below lg keeps it
@@ -1562,16 +1534,14 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
                     <p className="max-w-56 text-xs">{t("generator.noResultsHint")}</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-                    {results.map((entry) => (
-                      <ResultCard
-                        entry={entry}
-                        key={entry.fileId}
-                        onRemove={() => removeEntry(entry)}
-                        onReuse={() => reuseEntry(entry)}
-                      />
-                    ))}
-                  </div>
+                  <Masonry
+                    cols={resultCols}
+                    items={results}
+                    keyOf={(entry) => entry.fileId}
+                    render={(entry) => (
+                      <ResultCard entry={entry} onRemove={() => removeEntry(entry)} onReuse={() => reuseEntry(entry)} />
+                    )}
+                  />
                 )}
               </div>
             )}

@@ -263,13 +263,6 @@ export interface SearchModelPage {
 }
 
 /**
- * Buzz cost estimate — the imageGen recipes' documented pricing shape:
- * `total = 8 × (W×H / 1024²) × (steps / 25) × quantity` (anchored on
- * 1024² / 25 steps). The API exposes no free pricing mode (whatif is
- * silently ignored — verified live), so this client-side approximation is
- * what the panel shows; defaults (steps 30) match the spec.
- */
-/**
  * App-token twin of the Rust debit constant (`logic/civitai.rs::
  * TOKENS_PER_BUZZ`) — keep the two in sync. 1 Buzz = $0,001 × FX 20.000 =
  * Rp 20 → 2.000 tokens; ×1,2 margin → 2.400. The backend is authoritative
@@ -277,10 +270,36 @@ export interface SearchModelPage {
  */
 export const TOKENS_PER_BUZZ = 2_400;
 
-export function estimateBuzz(params: { width: number; height: number; steps?: number; quantity?: number }): number {
+/**
+ * Buzz cost estimate — the imageGen recipes' documented pricing shape:
+ * `unit = 8 × (W×H / 1024²) × (steps / 25) × quantity` (anchored on
+ * 1024² / 25 steps). The API exposes no free pricing mode (whatif is
+ * silently ignored — verified live), so this client-side approximation is
+ * what the panel shows; defaults (steps 30) match the spec.
+ *
+ * Mirrors `logic::civitai::image_buzz_estimate` including the upscale passes:
+ * a pass doubles the resolution, so it is priced at the doubled dims (4× the
+ * unit) — `txt2img:hires-fix` bills generation + passes and `img2img:upscale`
+ * bills passes ONLY. Quoting generation alone would slip both workflows past
+ * the client pre-check and land on the server's fail-closed gate after the
+ * user already waited out the submit.
+ */
+export function estimateBuzz(params: {
+  width: number;
+  height: number;
+  steps?: number;
+  quantity?: number;
+  workflow?: string;
+  upscaleRepeats?: number;
+}): number {
   const steps = params.steps !== undefined && params.steps > 0 ? params.steps : 30;
   const quantity = params.quantity ?? 1;
-  return 8 * ((params.width * params.height) / (1024 * 1024)) * (steps / 25) * quantity;
+  const unit = 8 * ((params.width * params.height) / (1024 * 1024)) * (steps / 25) * quantity;
+  const workflow = params.workflow ?? "txt2img";
+  const generation = workflow === "img2img:upscale" ? 0 : unit;
+  const passes =
+    workflow === "txt2img:hires-fix" || workflow === "img2img:upscale" ? (params.upscaleRepeats ?? 1) * 4 * unit : 0;
+  return generation + passes;
 }
 
 /**

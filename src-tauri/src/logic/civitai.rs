@@ -1228,6 +1228,470 @@ pub async fn civitai_music_fetch(
     })
 }
 
+// ── Civitai 3D MODEL generation (polyGen — workflows API) ──────────────────
+//
+// Same op shapes as the video/music lanes; cancel reuses
+// `civitai_video_cancel` (workflow-generic PUT, same as music).
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Model3dGenRequest {
+    pub ecosystem: String,
+    /// meshy: "textTo3D" (default when a prompt is set) | "imageTo3D".
+    #[serde(default)]
+    pub process: Option<String>,
+    /// meshy textTo3D prompt / hunyuan3D optional texture hint.
+    #[serde(default)]
+    pub prompt: Option<String>,
+    /// Source image (URL / data URL / base64) for imageTo3D.
+    #[serde(default)]
+    pub image: Option<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub enable_prompt_expansion: Option<bool>,
+    #[serde(default)]
+    pub target_polycount: Option<i64>,
+    #[serde(default)]
+    pub topology: Option<String>,
+    #[serde(default)]
+    pub symmetry_mode: Option<String>,
+    #[serde(default)]
+    pub should_texture: Option<bool>,
+    #[serde(default)]
+    pub should_remesh: Option<bool>,
+    #[serde(default)]
+    pub enable_pbr: Option<bool>,
+    #[serde(default)]
+    pub texture_prompt: Option<String>,
+    #[serde(default)]
+    pub enable_rigging: Option<bool>,
+    #[serde(default)]
+    pub enable_animation: Option<bool>,
+    /// tripo: "no" | "standard" | "HD".
+    #[serde(default)]
+    pub texture: Option<String>,
+    #[serde(default)]
+    pub quad: Option<bool>,
+    #[serde(default)]
+    pub auto_size: Option<bool>,
+    #[serde(default)]
+    pub face_limit: Option<i64>,
+    #[serde(default)]
+    pub texture_alignment: Option<String>,
+    #[serde(default)]
+    pub orientation: Option<String>,
+    #[serde(default)]
+    pub texture_seed: Option<i64>,
+    /// hunyuan3D: "v2" | "v2.1" | "v2-mini".
+    #[serde(default)]
+    pub model_version: Option<String>,
+    #[serde(default)]
+    pub steps: Option<i64>,
+    #[serde(default)]
+    pub cfg_scale: Option<f64>,
+    #[serde(default)]
+    pub octree_resolution: Option<i64>,
+    #[serde(default)]
+    pub seed: Option<i64>,
+    /// Chain the model3DPreview PNG render (default true).
+    #[serde(default)]
+    pub with_preview: Option<bool>,
+}
+
+impl Model3dGenRequest {
+    fn to_params(&self) -> civitai::Model3dGenParams {
+        civitai::Model3dGenParams {
+            ecosystem: self.ecosystem.clone(),
+            process: self.process.clone(),
+            prompt: self.prompt.clone(),
+            image: self.image.clone(),
+            mode: self.mode.clone(),
+            enable_prompt_expansion: self.enable_prompt_expansion,
+            target_polycount: self.target_polycount,
+            topology: self.topology.clone(),
+            symmetry_mode: self.symmetry_mode.clone(),
+            should_texture: self.should_texture,
+            should_remesh: self.should_remesh,
+            enable_pbr: self.enable_pbr,
+            texture_prompt: self.texture_prompt.clone(),
+            enable_rigging: self.enable_rigging,
+            enable_animation: self.enable_animation,
+            texture: self.texture.clone(),
+            quad: self.quad,
+            auto_size: self.auto_size,
+            face_limit: self.face_limit,
+            texture_alignment: self.texture_alignment.clone(),
+            orientation: self.orientation.clone(),
+            texture_seed: self.texture_seed,
+            model_version: self.model_version.clone(),
+            steps: self.steps,
+            cfg_scale: self.cfg_scale,
+            octree_resolution: self.octree_resolution,
+            seed: self.seed,
+            with_preview: self.with_preview,
+        }
+    }
+}
+
+/// Free cost estimate (whatif — no persist, no charge). A failure here means
+/// submit would fail too: surface it as the error.
+pub async fn civitai_model3d_cost(req: Model3dGenRequest) -> Result<VideoCostView, String> {
+    let key = require_key()?;
+    let (est, _) = civitai::whatif_model3d_gen(&key, &req.to_params()).await?;
+    Ok(VideoCostView {
+        total_buzz: est.total_buzz,
+        total_tokens: buzz_to_tokens(est.total_buzz),
+        ready: est.ready,
+        warnings: est.warnings,
+    })
+}
+
+/// Submit the polyGen workflow. SPENDS Buzz — the panel's Generate click
+/// (with the whatif cost displayed) is the consent. The token debit rides
+/// the same whatif price and happens BEFORE the submit, fail-closed like
+/// the video lane. The whatif's preview-step verdict drives the submitted
+/// shape, so submit can never include a step the price check rejected.
+pub async fn civitai_model3d_submit(
+    _user_id: &str,
+    bearer: &str,
+    req: Model3dGenRequest,
+) -> Result<VideoSubmitView, String> {
+    let key = require_key()?;
+    let params = req.to_params();
+    let (est, with_preview) = civitai::whatif_model3d_gen(&key, &params).await?;
+    debit_media_tokens(bearer, buzz_to_tokens(est.total_buzz)).await?;
+    let submitted = civitai::submit_model3d_gen(&key, &params, with_preview).await?;
+    Ok(VideoSubmitView {
+        workflow_id: submitted.id,
+    })
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Model3dBlobView {
+    pub url: String,
+    /// "glb" / "fbx" when the output names the format.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Model3dVariantView {
+    /// "fbx" | "rigged" | "riggedFbx" | "animated" | "animatedFbx" |
+    /// "walking" | "walkingFbx" | "walkingArmature" | "running" | …
+    pub variant: String,
+    #[serde(flatten)]
+    pub blob: Model3dBlobView,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Model3dStatusView {
+    pub workflow_id: String,
+    /// Normalized: `queued` | `processing` | `succeeded` | `failed` |
+    /// `expired` | `canceled` (anything else passes through lowercased).
+    pub status: String,
+    pub queue_position: Option<i64>,
+    /// Primary GLB.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<Model3dBlobView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fbx: Option<Model3dBlobView>,
+    /// The chained model3DPreview render when present, else the polyGen
+    /// auto-thumbnail — the result card's poster either way.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_url: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub extras: Vec<Model3dVariantView>,
+    pub error: Option<String>,
+}
+
+/// Poll one 3D workflow (server-side long-poll — the call holds up to
+/// `wait_secs`, default 15, before replying with the current snapshot).
+pub async fn civitai_model3d_status(
+    workflow_id: String,
+    wait_secs: Option<u64>,
+) -> Result<Model3dStatusView, String> {
+    if workflow_id.trim().is_empty() {
+        return Err("workflowId kosong".into());
+    }
+    let key = require_key()?;
+    let wf = civitai::model3d_workflow_status(&key, workflow_id.trim(), wait_secs.unwrap_or(15))
+        .await?;
+    let status = match wf.status.as_str() {
+        "unassigned" | "preparing" | "scheduled" => "queued".to_string(),
+        other => other.to_string(),
+    };
+    Ok(Model3dStatusView {
+        workflow_id: wf.id,
+        queue_position: wf.queue_position,
+        model: wf.model.map(|b| Model3dBlobView {
+            url: b.url,
+            format: b.format,
+        }),
+        fbx: wf.fbx.map(|b| Model3dBlobView {
+            url: b.url,
+            format: b.format,
+        }),
+        preview_url: wf.preview.or(wf.thumbnail),
+        extras: wf
+            .extras
+            .into_iter()
+            .map(|v| Model3dVariantView {
+                variant: v.variant,
+                blob: Model3dBlobView {
+                    url: v.blob.url,
+                    format: v.blob.format,
+                },
+            })
+            .collect(),
+        error: wf.error,
+        status,
+    })
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedModel3d {
+    /// Primary GLB.
+    pub file_id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fbx_file_id: Option<String>,
+    /// model3DPreview render / polyGen auto-thumbnail, stored as an image.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_file_id: Option<String>,
+    /// Rigged / animated twins + the basicAnimations set, best-effort.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub additional: Vec<SavedModel3dFile>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedModel3dFile {
+    pub file_id: String,
+    pub name: String,
+    pub variant: String,
+}
+
+/// Blob url → stored extension. Trusts the engine-declared format ("glb"/
+/// "fbx"), falls back to the URL's extension, defaults glb.
+fn model3d_ext(format: Option<&str>, url: &str) -> String {
+    if let Some(f) = format.map(str::trim).filter(|f| !f.is_empty()) {
+        let f = f.trim_start_matches('.').to_ascii_lowercase();
+        if matches!(f.as_str(), "glb" | "gltf" | "fbx" | "obj" | "stl") {
+            return f;
+        }
+    }
+    match url
+        .split('?')
+        .next()
+        .and_then(|p| p.rsplit('.').next().map(|e| e.to_ascii_lowercase()))
+    {
+        Some(e) if matches!(e.as_str(), "glb" | "gltf" | "fbx" | "obj" | "stl") => e,
+        _ => "glb".to_string(),
+    }
+}
+
+/// Download one model blob into the office store as `ArtifactKind::Model3d`.
+async fn import_model3d_file(
+    user_id: &str,
+    workflow_id: &str,
+    url: &str,
+    format: Option<&str>,
+    stem: &str,
+) -> Result<(String, String), String> {
+    let bytes = civitai::download_bytes(url.trim())
+        .await
+        .map_err(|e| format!("unduh model gagal: {e}"))?;
+    let ext = model3d_ext(format, url);
+    let idish: String = workflow_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(12)
+        .collect();
+    let name = format!("civitai-3d-{idish}-{stem}.{}.{}", uuidish(), ext);
+    let file = kawai_office::store::import_as(
+        user_id,
+        &name,
+        &bytes,
+        kawai_office::store::ArtifactKind::Model3d,
+        "civitai",
+        None,
+    )
+    .map_err(|e| format!("gagal menyimpan {name}: {e}"))?;
+    Ok((file.id, name))
+}
+
+/// Download the finished 3D model (SIGNED, EXPIRING URL — fetch once) into
+/// the office store: primary GLB + FBX twin + the preview PNG + the rigged /
+/// animated extras (best-effort). Idempotence is the CALLER's job: poll
+/// status, and call fetch exactly once per workflow.
+pub async fn civitai_model3d_fetch(
+    user_id: &str,
+    workflow_id: String,
+    model_url: String,
+    model_format: Option<String>,
+    fbx_url: Option<String>,
+    fbx_format: Option<String>,
+    preview_url: Option<String>,
+    extra_urls: Vec<Model3dVariantView>,
+) -> Result<SavedModel3d, String> {
+    let _ = require_key()?; // same baked identity; the URL itself carries the signature
+    let workflow_id = workflow_id.trim().to_string();
+    if workflow_id.is_empty() || model_url.trim().is_empty() {
+        return Err("workflowId dan modelUrl wajib diisi".into());
+    }
+    let (file_id, name) =
+        import_model3d_file(user_id, &workflow_id, model_url.trim(), model_format.as_deref(), "primary")
+            .await?;
+    let fbx_file_id = match fbx_url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+        Some(url) => match import_model3d_file(user_id, &workflow_id, url, fbx_format.as_deref(), "fbx").await {
+            Ok((id, _)) => Some(id),
+            Err(e) => {
+                eprintln!("civitai: fbx unduh gagal: {e}");
+                None
+            }
+        },
+        None => None,
+    };
+    let preview_file_id = match preview_url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+        Some(url) => match civitai::download_bytes(url).await {
+            Ok(bytes) => {
+                let idish: String = workflow_id
+                    .chars()
+                    .filter(|c| c.is_ascii_alphanumeric())
+                    .take(12)
+                    .collect();
+                let tname = format!("civitai-3d-{idish}-preview.{}.png", uuidish());
+                match kawai_office::store::import_as(
+                    user_id,
+                    &tname,
+                    &bytes,
+                    kawai_office::store::ArtifactKind::Image,
+                    "civitai",
+                    None,
+                ) {
+                    Ok(file) => Some(file.id),
+                    Err(e) => {
+                        eprintln!("civitai: preview simpan gagal: {e}");
+                        None
+                    }
+                }
+            }
+            // Preview is best-effort — the result card falls back to a
+            // generic 3D tile when the render is missing.
+            Err(e) => {
+                eprintln!("civitai: preview unduh gagal: {e}");
+                None
+            }
+        },
+        None => None,
+    };
+    // Rigged / animated twins + basicAnimations: import after the primary;
+    // a failed extra is logged, not fatal.
+    let mut additional = Vec::new();
+    for extra in extra_urls {
+        if extra.blob.url.trim().is_empty() {
+            continue;
+        }
+        match import_model3d_file(
+            user_id,
+            &workflow_id,
+            extra.blob.url.trim(),
+            extra.blob.format.as_deref(),
+            &variant_stem(&extra.variant),
+        )
+        .await
+        {
+            Ok((id, name)) => additional.push(SavedModel3dFile {
+                file_id: id,
+                name,
+                variant: extra.variant,
+            }),
+            Err(e) => eprintln!("civitai: varian {} gagal: {e}", extra.variant),
+        }
+    }
+    Ok(SavedModel3d {
+        file_id,
+        name,
+        fbx_file_id,
+        preview_file_id,
+        additional,
+    })
+}
+
+/// File-stem-safe variant tag (parser variants are already `[A-Za-z]`; this
+/// is belt-and-suspenders against future wire values).
+fn variant_stem(variant: &str) -> String {
+    variant
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+#[cfg(test)]
+mod model3d_tests {
+    use super::*;
+
+    /// The panel's flat camelCase request maps 1:1 onto the crate's params
+    /// (offline — validate/whatif never touch the vault on the shape path).
+    #[test]
+    fn model3d_request_maps_to_params() {
+        let req = Model3dGenRequest {
+            ecosystem: "meshy".into(),
+            process: Some("textTo3D".into()),
+            prompt: Some("a dragon statue".into()),
+            image: None,
+            mode: None,
+            enable_prompt_expansion: None,
+            target_polycount: Some(50_000),
+            topology: Some("quad".into()),
+            symmetry_mode: None,
+            should_texture: None,
+            should_remesh: None,
+            enable_pbr: Some(true),
+            texture_prompt: None,
+            enable_rigging: None,
+            enable_animation: Some(true),
+            texture: None,
+            quad: None,
+            auto_size: None,
+            face_limit: None,
+            texture_alignment: None,
+            orientation: None,
+            texture_seed: None,
+            model_version: None,
+            steps: None,
+            cfg_scale: None,
+            octree_resolution: None,
+            seed: Some(42),
+            with_preview: None,
+        };
+        let params = req.to_params();
+        assert_eq!(params.ecosystem, "meshy");
+        assert_eq!(params.process.as_deref(), Some("textTo3D"));
+        assert_eq!(params.target_polycount, Some(50_000));
+        assert_eq!(params.enable_animation, Some(true));
+        assert_eq!(params.seed, Some(42));
+        params.validate().expect("meshy txt shape validates");
+    }
+
+    /// Extension derivation trusts the engine-declared format, falls back
+    /// to the URL path, defaults glb.
+    #[test]
+    fn model3d_ext_precedence() {
+        assert_eq!(model3d_ext(Some("glb"), "https://x/y.fbx?sig=1"), "glb");
+        assert_eq!(model3d_ext(Some("FBX"), "https://x/y"), "fbx");
+        assert_eq!(model3d_ext(Some(".fbx"), "https://x/y"), "fbx");
+        assert_eq!(model3d_ext(None, "https://x/y.FBX?sig=1"), "fbx");
+        assert_eq!(model3d_ext(None, "https://x/blob"), "glb");
+        assert_eq!(model3d_ext(Some("weird"), "https://x/blob"), "glb");
+    }
+}
+
 #[cfg(test)]
 mod music_tests {
     use super::*;

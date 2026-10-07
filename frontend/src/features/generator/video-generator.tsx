@@ -33,7 +33,9 @@ import {
   videoRefMax,
   videoResolutions,
 } from "./video-ecosystems";
-import { EcoOptionButton, KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
+import { KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
+import { GenerateFooter, publishMediaDebit } from "./generate-footer";
+import { type PickerGroup, PickerMenu } from "./picker-menu";
 import { ResultActions, mediaToken } from "./result-actions";
 
 /** Civitai videoGen request the Rust ops accept (camelCase, flattened). */
@@ -161,20 +163,23 @@ function segmentClass(active: boolean): string {
 /** Civitai's [media tabs …… Eco | <ecosystem>] strip — video lane active;
  *  the image tab hands control back to the image panel. */
 function MediaIsland({
+  ecoGroups,
   ecoLabel,
   ecoOpen,
-  onEcoClick,
+  onEcoOpenChange,
   onSwitchToImage,
   onSwitchToMusic,
-  children,
+  onSwitchTo3d,
 }: {
+  ecoGroups: PickerGroup[];
   ecoLabel: string;
   ecoOpen: boolean;
-  onEcoClick: () => void;
+  onEcoOpenChange: (open: boolean) => void;
   onSwitchToImage: () => void;
   onSwitchToMusic: () => void;
-  children: React.ReactNode;
+  onSwitchTo3d: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="flex items-center justify-between gap-2 rounded-[10px] border p-1.5">
       <div className={SEGMENTED_LIST}>
@@ -187,32 +192,36 @@ function MediaIsland({
         <button className={segmentClass(false)} onClick={onSwitchToMusic} title="Music" type="button">
           <Icon className="size-4" name="music" />
         </button>
-        <span className={cn(segmentClass(false), "pointer-events-none opacity-40")} title="3D">
+        <button className={segmentClass(false)} onClick={onSwitchTo3d} title="3D" type="button">
           <Icon className="size-4" name="box" />
-        </span>
-      </div>
-      <div className="relative">
-        <button
-          aria-expanded={ecoOpen}
-          aria-haspopup="listbox"
-          className="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
-          onClick={onEcoClick}
-          type="button"
-        >
-          <span className="text-muted-foreground">Eco</span>
-          <span className="bg-border h-4 w-px" />
-          {ecoLabel}
-          <span className={cn("text-muted-foreground flex items-center transition-transform", ecoOpen && "rotate-180")}>
-            <Icon name="chevron-down" />
-          </span>
         </button>
-        {ecoOpen && children}
       </div>
+      <PickerMenu
+        ariaLabel={t("videoGenerator.ecosystem")}
+        groups={ecoGroups}
+        onOpenChange={onEcoOpenChange}
+        open={ecoOpen}
+        trigger={
+          <>
+            <span className="text-muted-foreground">Eco</span>
+            <span className="bg-border h-4 w-px" />
+            {ecoLabel}
+            <span
+              className={cn("text-muted-foreground flex items-center transition-transform", ecoOpen && "rotate-180")}
+            >
+              <Icon name="chevron-down" />
+            </span>
+          </>
+        }
+        triggerClassName="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
+      />
     </div>
   );
 }
 
-/** One saved video result: <video> card with poster, click opens preview. */
+/** One saved video result: poster tile with a play badge — the mp4 itself is
+ *  only read when the card is clicked (the preview overlay plays it). A grid
+ *  of 30 tiles used to pull every clip's full bytes into memory. */
 function VideoResultCard({
   entry,
   onRemove,
@@ -222,38 +231,36 @@ function VideoResultCard({
   onRemove: () => void;
   onReuse: () => void;
 }) {
-  const main = useFilePreview({ id: entry.fileId, name: entry.name });
+  const { t } = useI18n();
   const thumb = useFilePreview(
     entry.thumbnailFileId ? { id: entry.thumbnailFileId, name: `${entry.name}-thumb.jpg` } : { id: "", name: "" },
   );
   return (
     <div className="group relative overflow-hidden rounded-[8px] border bg-secondary">
       <button
-        className="block w-full"
+        className="block w-full cursor-zoom-in"
         onClick={() => emitOpenPreview(entry.fileId, entry.name)}
         title={entry.prompt}
         type="button"
       >
-        {main.isLoading ? (
-          <div className="flex aspect-video items-center justify-center">
-            <Spinner className="size-5" />
-          </div>
-        ) : (
-          <video
-            className="aspect-video w-full bg-black object-contain"
-            controls
-            playsInline
-            poster={thumb.data?.dataUrl}
-            preload="metadata"
-            src={main.data?.dataUrl}
-          >
-            <track kind="captions" />
-          </video>
-        )}
+        <div className="relative flex aspect-video w-full items-center justify-center bg-black">
+          {thumb.isLoading ? (
+            <Spinner className="size-5 text-white" />
+          ) : thumb.data?.dataUrl ? (
+            <img alt={entry.prompt} className="h-full w-full object-cover" src={thumb.data.dataUrl} />
+          ) : (
+            <span className="text-muted-foreground text-xs">{t("videoGenerator.posterMissing")}</span>
+          )}
+          <span className="absolute inset-0 flex items-center justify-center">
+            <span className="flex size-10 items-center justify-center rounded-full bg-black/60 text-white/90">
+              <Icon className="size-5" name="play" />
+            </span>
+          </span>
+        </div>
       </button>
       <ResultActions
-        downloadHref={main.data?.dataUrl}
-        downloadName={entry.name}
+        fileId={entry.fileId}
+        fileName={entry.name}
         label={entry.prompt || entry.name}
         onRemove={onRemove}
         onReuse={onReuse}
@@ -309,8 +316,9 @@ function JobCard({
   );
 }
 
-/** One frame slot: pick chip when empty, thumbnail + clear when set. */
-function FrameSlot({
+/** One frame slot: pick chip when empty, thumbnail + clear when set.
+ *  Shared with the 3D lane's source-image slot. */
+export function FrameSlot({
   caption,
   dataUrl,
   onPick,
@@ -353,10 +361,12 @@ export function VideoGenerator({
   onBack,
   onSwitchToImage,
   onSwitchToMusic,
+  onSwitchTo3d,
 }: {
   onBack: () => void;
   onSwitchToImage: () => void;
   onSwitchToMusic: () => void;
+  onSwitchTo3d: () => void;
 }) {
   const { t } = useI18n();
   const configured = useCivitaiKeyStatus();
@@ -400,7 +410,7 @@ export function VideoGenerator({
   /** (Re)initialize every model/workflow-dependent pick. Duration lands on
    *  the choices midpoint (or slider middle); resolution/aspect on the
    *  first valid value; frames trimmed to the new caps. */
-  const reinitPicks = (id: string, model: string) => {
+  const reinitPicks = useCallback((id: string, model: string) => {
     const range = videoDurationRange(id, model);
     const choices = videoDurationChoices(id, model);
     setDuration(
@@ -423,16 +433,22 @@ export function VideoGenerator({
     setSteps("");
     setEnhancer(true);
     setFrames((prev) => prev.slice(0, videoMaxFrames(id, model)));
-  };
-  const switchEcosystem = (id: string) => {
-    setEcoId(id);
-    setModelKey(id === "kling" ? "" : (videoEcosystem(id).models[0]?.key ?? ""));
-    reinitPicks(id, id === "kling" ? "" : (videoEcosystem(id).models[0]?.key ?? ""));
-  };
-  const switchModel = (key: string) => {
-    setModelKey(key);
-    reinitPicks(ecoId, key);
-  };
+  }, []);
+  const switchEcosystem = useCallback(
+    (id: string) => {
+      setEcoId(id);
+      setModelKey(id === "kling" ? "" : (videoEcosystem(id).models[0]?.key ?? ""));
+      reinitPicks(id, id === "kling" ? "" : (videoEcosystem(id).models[0]?.key ?? ""));
+    },
+    [reinitPicks],
+  );
+  const switchModel = useCallback(
+    (key: string) => {
+      setModelKey(key);
+      reinitPicks(ecoId, key);
+    },
+    [ecoId, reinitPicks],
+  );
 
   const hasAudio = videoHasAudio(ecoId, modelKey);
   const hasNegative = videoHasNegative(ecoId, modelKey);
@@ -681,6 +697,7 @@ export function VideoGenerator({
       }
       const submitted = buildRequest();
       const view = await call<{ workflowId: string }>("civitai_video_submit", { req: submitted });
+      publishMediaDebit(cost?.totalTokens ?? 0);
       const nextJob: ActiveJob = {
         workflowId: view.workflowId,
         prompt: prompt.trim(),
@@ -759,22 +776,21 @@ export function VideoGenerator({
     });
   }
 
-  const ecoPicker = (
-    <div
-      className="bg-popover absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-[10px] border shadow-xl"
-      role="listbox"
-    >
-      {VIDEO_ECOSYSTEMS.map((e) => {
-        const selected = e.id === ecoId;
-        return (
-          <EcoOptionButton
-            key={e.id}
-            onPick={() => {
-              setEcoOpen(false);
-              if (!selected) switchEcosystem(e.id);
-            }}
-            selected={selected}
-          >
+  /** The ecosystem menu: every engine with its one-line note. */
+  const ecoGroups = useMemo<PickerGroup[]>(
+    () => [
+      {
+        id: "ecosystems",
+        items: VIDEO_ECOSYSTEMS.map((e) => ({
+          id: e.id,
+          label: e.label,
+          note: e.note,
+          selected: e.id === ecoId,
+          onSelect: () => {
+            setEcoOpen(false);
+            if (e.id !== ecoId) switchEcosystem(e.id);
+          },
+          tile: (
             <div
               className={cn(
                 "flex size-8 shrink-0 items-center justify-center rounded-[6px] bg-gradient-to-br text-sm font-bold text-white",
@@ -783,35 +799,24 @@ export function VideoGenerator({
             >
               {e.label.charAt(0)}
             </div>
-            <span className="min-w-0 flex-1">
-              <span className={cn("block truncate text-sm font-medium", selected && "text-primary font-semibold")}>
-                {e.label}
-              </span>
-              <span className="text-muted-foreground block truncate text-[11px]">{e.note}</span>
-            </span>
-            {selected && (
-              <span className="text-primary shrink-0">
-                <Icon name="check" />
-              </span>
-            )}
-          </EcoOptionButton>
-        );
-      })}
-    </div>
+          ),
+        })),
+      },
+    ],
+    [ecoId, switchEcosystem],
   );
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
       <MediaIsland
+        ecoGroups={ecoGroups}
         ecoLabel={eco.label}
         ecoOpen={ecoOpen}
-        onEcoClick={() => setEcoOpen((v) => !v)}
+        onEcoOpenChange={setEcoOpen}
         onSwitchToImage={onSwitchToImage}
         onSwitchToMusic={onSwitchToMusic}
-      >
-        {ecoPicker}
-      </MediaIsland>
-      {ecoOpen && <div aria-hidden className="fixed inset-0 z-20" onClick={() => setEcoOpen(false)} />}
+        onSwitchTo3d={onSwitchTo3d}
+      />
       <KeyStatusNotices configured={configured} />
 
       {/* Workflow — txt2vid / img2vid segmented chips. */}
@@ -1180,45 +1185,22 @@ export function VideoGenerator({
           <div className="min-h-0 flex-1 overflow-y-auto pb-24 overscroll-auto lg:overscroll-contain lg:pb-0">
             {form}
           </div>
-          <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-card p-3 lg:static lg:inset-auto">
-            <div className="flex items-stretch gap-2">
-              <div
-                className="flex h-10 shrink-0 items-center gap-1 rounded-[8px] border bg-secondary px-2.5"
-                title={t("videoGenerator.costNote")}
-              >
-                {costError ? (
-                  <Icon className="text-destructive size-4" name="info" />
-                ) : cost ? (
-                  <>
-                    <Icon className="text-warning size-3.5" name="zap" />
-                    <span className="text-warning text-[13px] font-semibold">
-                      ≈{cost.totalTokens.toLocaleString("id-ID")}
-                    </span>
-                  </>
-                ) : (
-                  <Spinner className="size-3.5" />
-                )}
-              </div>
-              <Button
-                className="h-10 flex-1 rounded-[8px] text-[15px] font-semibold"
-                disabled={!canSubmit}
-                onClick={() => void handleGenerate()}
-                size="lg"
-              >
-                {submitting ? (
-                  <span className="flex items-center gap-2">
-                    <Spinner className="size-4" />
-                    {t("videoGenerator.submitting")}
-                  </span>
-                ) : job ? (
-                  t("videoGenerator.inProgress")
-                ) : (
-                  t("generator.generate")
-                )}
-              </Button>
-            </div>
-            <p className="text-muted-foreground/70 mt-1.5 text-center text-[10px]">{t("videoGenerator.costNote")}</p>
-          </div>
+          <GenerateFooter
+            canSubmit={canSubmit}
+            inFlight={job != null}
+            inFlightLabel={t("videoGenerator.inProgress")}
+            note={t("videoGenerator.costNote")}
+            onSubmit={() => void handleGenerate()}
+            quote={cost?.totalTokens ?? null}
+            quoteState={
+              costError ? "failed" : cost ? "quoted" : promptEffective && configured === true ? "pending" : "idle"
+            }
+            ready={cost?.ready ?? true}
+            submitting={submitting}
+            submittingLabel={t("videoGenerator.submitting")}
+            submitLabel={t("generator.generate")}
+            warnings={cost?.warnings ?? []}
+          />
         </section>
 
         <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col border-t lg:min-h-0 lg:border-t-0">

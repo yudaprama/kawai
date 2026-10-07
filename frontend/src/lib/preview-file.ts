@@ -9,6 +9,9 @@ export interface PreviewFile {
   name: string;
   /** Byte size, when known — shown in the preview header. */
   size?: number;
+  /** Load the downscaled preview JPEG instead of the full file. Grid tiles
+   *  set this; the click-to-preview overlay never does. */
+  thumb?: boolean;
 }
 
 /** Adapts a knowledge panel row to the preview model. */
@@ -38,44 +41,74 @@ function toPreviewData(res: { mime: string; dataBase64: string }): FilePreviewDa
 
 /**
  * Resolves the raw bytes for a preview file via the office store read command
- * (`office_read_file`). Returns a `data:` URL for media embeds and a decoded
- * `text` for text/markdown rendering.
+ * (`office_read_file`, or `office_read_thumbnail` for grid tiles). Returns a
+ * `data:` URL for media embeds and a decoded `text` for text/markdown
+ * rendering.
  *
- * One network fetch per `file.id` per session: results are cached at module
+ * One network fetch per cache key per session: results are cached at module
  * level and concurrent callers share a single in-flight promise. This keeps
  * the preview stable under React StrictMode's double-mounted effects and
  * remounts (reopen the same file → instant, no loading flash).
+ *
+ * The cache is a bounded LRU, not a plain map: a generator gallery mounting
+ * dozens of tiles would otherwise pin every full file it ever opened in memory
+ * for the life of the window.
  */
-const previewCache = new Map<string, { mime: string; dataBase64: string }>();
-const previewInflight = new Map<string, Promise<{ mime: string; dataBase64: string }>>();
+const PREVIEW_CACHE_MAX = 64;
+type CachedBytes = { mime: string; dataBase64: string };
+/** Insertion order doubles as recency: a re-read moves the key to the end. */
+const previewCache = new Map<string, CachedBytes>();
+const previewInflight = new Map<string, Promise<CachedBytes>>();
 
-function fetchPreviewBytes(fileId: string): Promise<{ mime: string; dataBase64: string }> {
-  const hit = previewCache.get(fileId);
+/** Thumbnail and full read of the same document must never share an entry. */
+function cacheKey(file: PreviewFile): string {
+  return `${file.id}:${file.thumb ? "t" : "f"}`;
+}
+
+function cacheRead(key: string): CachedBytes | undefined {
+  const hit = previewCache.get(key);
+  if (!hit) return undefined;
+  previewCache.delete(key);
+  previewCache.set(key, hit);
+  return hit;
+}
+
+function cacheWrite(key: string, value: CachedBytes): void {
+  previewCache.set(key, value);
+  while (previewCache.size > PREVIEW_CACHE_MAX) {
+    const oldest = previewCache.keys().next();
+    if (oldest.done) break;
+    previewCache.delete(oldest.value);
+  }
+}
+
+function fetchPreviewBytes(key: string, fileId: string, thumb: boolean | undefined): Promise<CachedBytes> {
+  const hit = cacheRead(key);
   if (hit) return Promise.resolve(hit);
-  const inflight = previewInflight.get(fileId);
+  const inflight = previewInflight.get(key);
   if (inflight) return inflight;
-  const p = call<{ mime: string; dataBase64: string }>("office_read_file", { fileId })
+  const op = thumb ? "office_read_thumbnail" : "office_read_file";
+  const p = call<CachedBytes>(op, { fileId })
     .then((res) => {
-      previewCache.set(fileId, res);
+      cacheWrite(key, res);
       return res;
     })
     .finally(() => {
-      previewInflight.delete(fileId);
+      previewInflight.delete(key);
     });
-  previewInflight.set(fileId, p);
+  previewInflight.set(key, p);
   return p;
 }
 
 export function useFilePreview(file: PreviewFile) {
-  const [data, setData] = useState<{ mime: string; dataBase64: string } | undefined>(
-    // warm start: a cached file renders instantly on mount
-    () => previewCache.get(file.id),
-  );
-  const [isLoading, setIsLoading] = useState(() => !previewCache.has(file.id));
+  const key = cacheKey(file);
+  const { id: fileId, thumb } = file;
+  const [data, setData] = useState<CachedBytes | undefined>(() => cacheRead(key));
+  const [isLoading, setIsLoading] = useState(() => cacheRead(key) === undefined);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const cached = previewCache.get(file.id);
+    const cached = cacheRead(key);
     if (cached) {
       setData(cached);
       setIsLoading(false);
@@ -85,7 +118,7 @@ export function useFilePreview(file: PreviewFile) {
     let cancelled = false;
     setIsLoading(true);
     setError(null);
-    fetchPreviewBytes(file.id)
+    fetchPreviewBytes(key, fileId, thumb)
       .then((res) => {
         if (!cancelled) setData(res);
       })
@@ -98,7 +131,7 @@ export function useFilePreview(file: PreviewFile) {
     return () => {
       cancelled = true;
     };
-  }, [file.id]);
+  }, [key, fileId, thumb]);
 
   const preview = data != null ? toPreviewData(data) : undefined;
   return { data: preview, isLoading, error };

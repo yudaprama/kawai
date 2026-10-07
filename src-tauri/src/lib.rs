@@ -235,6 +235,10 @@ pub fn run() {
         commands::civitai_music_submit,
         commands::civitai_music_status,
         commands::civitai_music_fetch,
+        commands::civitai_model3d_cost,
+        commands::civitai_model3d_submit,
+        commands::civitai_model3d_status,
+        commands::civitai_model3d_fetch,
         commands::connector_list_connections,
         commands::connector_connect,
         commands::connector_poll,
@@ -300,6 +304,7 @@ pub fn run() {
         commands::office_delete_file,
         commands::office_restore_backup,
         commands::office_read_file,
+        commands::office_read_thumbnail,
         commands::office_export_document,
         commands::tauri_open_file,
 

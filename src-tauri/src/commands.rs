@@ -1292,6 +1292,60 @@ pub async fn civitai_music_fetch(
     logic::civitai::civitai_music_fetch(&user_id, workflow_id, audio_url).await
 }
 
+/// ── Civitai 3D MODEL generation (polyGen — workflows API) — 4
+/// auth-required ops. Same shape as the video/music lanes; cancel reuses
+/// `civitai_video_cancel` (workflow-generic PUT on the workflow id).
+
+#[tauri::command]
+pub async fn civitai_model3d_cost(
+    req: logic::civitai::Model3dGenRequest,
+) -> Result<logic::civitai::VideoCostView, String> {
+    logic::civitai::civitai_model3d_cost(req).await
+}
+
+#[tauri::command]
+pub async fn civitai_model3d_submit(
+    session: State<'_, Session>,
+    req: logic::civitai::Model3dGenRequest,
+) -> Result<logic::civitai::VideoSubmitView, String> {
+    let user_id = session_user_id(&session)?;
+    let token = session_bearer(&session)?;
+    logic::civitai::civitai_model3d_submit(&user_id, &token, req).await
+}
+
+#[tauri::command]
+pub async fn civitai_model3d_status(
+    workflow_id: String,
+    wait_secs: Option<u64>,
+) -> Result<logic::civitai::Model3dStatusView, String> {
+    logic::civitai::civitai_model3d_status(workflow_id, wait_secs).await
+}
+
+#[tauri::command]
+pub async fn civitai_model3d_fetch(
+    session: State<'_, Session>,
+    workflow_id: String,
+    model_url: String,
+    model_format: Option<String>,
+    fbx_url: Option<String>,
+    fbx_format: Option<String>,
+    preview_url: Option<String>,
+    extra_urls: Option<Vec<logic::civitai::Model3dVariantView>>,
+) -> Result<logic::civitai::SavedModel3d, String> {
+    let user_id = session_user_id(&session)?;
+    logic::civitai::civitai_model3d_fetch(
+        &user_id,
+        workflow_id,
+        model_url,
+        model_format,
+        fbx_url,
+        fbx_format,
+        preview_url,
+        extra_urls.unwrap_or_default(),
+    )
+    .await
+}
+
 /// ── Connector (third-party OAuth via Composio) — 4 auth-required ops ───────
 /// Thin proxies to `logic::connector`; the user id comes from the session
 /// (edge-resolved), the frontend never sends it.
@@ -1744,6 +1798,20 @@ pub fn office_read_file(
 ) -> Result<logic::office::ReadFileResult, String> {
     let user_id = session_user_id(&session)?;
     logic::office::read_file_b64(&user_id, &file_id)
+}
+
+/// Authenticated RPC: read a stored IMAGE as a downscaled JPEG preview. Result
+/// grids render one tile per file, and the full bytes of a 4K PNG would be
+/// megabytes of base64 per tile; the encoded thumbnail is cached beside the
+/// original. Same response shape as `office_read_file` — documents that aren't
+/// thumbnailable error so the caller falls back to the full read.
+#[tauri::command]
+pub fn office_read_thumbnail(
+    file_id: String,
+    session: State<'_, Session>,
+) -> Result<logic::office::ReadFileResult, String> {
+    let user_id = session_user_id(&session)?;
+    logic::office::read_thumbnail_b64(&user_id, &file_id)
 }
 
 /// Authenticated RPC: open a stored file in the OS default viewer. The backend

@@ -1,9 +1,8 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 import { Icon } from "@/components/shared/icon";
 import { Spinner } from "@/components/ui/spinner";
 import { call } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import { useI18n } from "@/hooks/use-i18n";
 
 /** Install the mount/unmount flip on an `alive` ref created by the CALLER:
@@ -50,38 +49,4 @@ export function KeyStatusNotices({ configured }: { configured: boolean | null })
     );
   }
   return null;
-}
-
-/** One ecosystem option row shell for the picker dropdown: the button
- *  attributes + pick semantics are shared, the tile and labels differ per
- *  lane (image: cover tile + availability dimming; video: gradient avatar). */
-export function EcoOptionButton({
-  selected,
-  onPick,
-  title,
-  style,
-  children,
-}: {
-  selected: boolean;
-  onPick: () => void;
-  title?: string;
-  style?: CSSProperties;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      aria-selected={selected}
-      className={cn(
-        "flex w-full items-center gap-2 p-2.5 text-left transition-colors hover:bg-accent",
-        selected && "bg-accent",
-      )}
-      onClick={onPick}
-      role="option"
-      style={style}
-      title={title}
-      type="button"
-    >
-      {children}
-    </button>
-  );
 }

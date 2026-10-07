@@ -29,7 +29,9 @@ import {
   type MusicOperation,
   type MusicScoreMode,
 } from "./music-ecosystems";
-import { EcoOptionButton, KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
+import { KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
+import { GenerateFooter, publishMediaDebit } from "./generate-footer";
+import { type PickerGroup, PickerMenu } from "./picker-menu";
 import { ResultActions, mediaToken } from "./result-actions";
 
 /** Civitai musicGen request the Rust ops accept (camelCase, only
@@ -149,20 +151,23 @@ function segmentClass(active: boolean): string {
 /** Civitai's [media tabs …… Eco | <ecosystem>] strip — music lane active;
  *  the video/image tabs hand control back to their panels. */
 function MediaIsland({
+  ecoGroups,
   ecoLabel,
   ecoOpen,
-  onEcoClick,
+  onEcoOpenChange,
   onSwitchToVideo,
   onSwitchToImage,
-  children,
+  onSwitchTo3d,
 }: {
+  ecoGroups: PickerGroup[];
   ecoLabel: string;
   ecoOpen: boolean;
-  onEcoClick: () => void;
+  onEcoOpenChange: (open: boolean) => void;
   onSwitchToVideo: () => void;
   onSwitchToImage: () => void;
-  children: React.ReactNode;
+  onSwitchTo3d: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="flex items-center justify-between gap-2 rounded-[10px] border p-1.5">
       <div className={SEGMENTED_LIST}>
@@ -175,27 +180,29 @@ function MediaIsland({
         <span className={cn(segmentClass(true), "pointer-events-none")} title="Music">
           <Icon className="size-4" name="music" />
         </span>
-        <span className={cn(segmentClass(false), "pointer-events-none opacity-40")} title="3D">
+        <button className={segmentClass(false)} onClick={onSwitchTo3d} title="3D" type="button">
           <Icon className="size-4" name="box" />
-        </span>
-      </div>
-      <div className="relative">
-        <button
-          aria-expanded={ecoOpen}
-          aria-haspopup="listbox"
-          className="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
-          onClick={onEcoClick}
-          type="button"
-        >
-          <span className="text-muted-foreground">Eco</span>
-          <span className="bg-border h-4 w-px" />
-          {ecoLabel}
-          <span className={cn("text-muted-foreground flex items-center transition-transform", ecoOpen && "rotate-180")}>
-            <Icon name="chevron-down" />
-          </span>
         </button>
-        {ecoOpen && children}
       </div>
+      <PickerMenu
+        ariaLabel={t("videoGenerator.ecosystem")}
+        groups={ecoGroups}
+        onOpenChange={onEcoOpenChange}
+        open={ecoOpen}
+        trigger={
+          <>
+            <span className="text-muted-foreground">Eco</span>
+            <span className="bg-border h-4 w-px" />
+            {ecoLabel}
+            <span
+              className={cn("text-muted-foreground flex items-center transition-transform", ecoOpen && "rotate-180")}
+            >
+              <Icon name="chevron-down" />
+            </span>
+          </>
+        }
+        triggerClassName="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
+      />
     </div>
   );
 }
@@ -230,8 +237,8 @@ function MusicResultCard({
         )}
       </button>
       <ResultActions
-        downloadHref={main.data?.dataUrl}
-        downloadName={entry.name}
+        fileId={entry.fileId}
+        fileName={entry.name}
         label={entry.prompt || entry.name}
         onRemove={onRemove}
         onReuse={onReuse}
@@ -299,10 +306,12 @@ export function MusicGenerator({
   onBack,
   onSwitchToVideo,
   onSwitchToImage,
+  onSwitchTo3d,
 }: {
   onBack: () => void;
   onSwitchToVideo: () => void;
   onSwitchToImage: () => void;
+  onSwitchTo3d: () => void;
 }) {
   const { t } = useI18n();
   const configured = useCivitaiKeyStatus();
@@ -364,7 +373,7 @@ export function MusicGenerator({
 
   // Ecosystem/operation switches reset every dependent pick to the new
   // engine's first valid value (a stale pick would fail the whatif).
-  const switchEcosystem = (id: MusicEcosystemId) => {
+  const switchEcosystem = useCallback((id: MusicEcosystemId) => {
     setEcoId(id);
     setMode(musicEcosystem(id).modes[0]);
     setOperation("music");
@@ -381,7 +390,7 @@ export function MusicGenerator({
     setCfgScale("");
     setVariant("xl-turbo");
     setCoverImage(null);
-  };
+  }, []);
   const switchOperation = (op: MusicOperation) => {
     setOperation(op);
     setDuration(musicDurationRange(ecoId, op).default);
@@ -611,6 +620,7 @@ export function MusicGenerator({
       }
       const submitted = buildRequest();
       const view = await call<{ workflowId: string }>("civitai_music_submit", { req: submitted });
+      publishMediaDebit(cost?.totalTokens ?? 0);
       const nextJob: ActiveJob = {
         workflowId: view.workflowId,
         prompt: prompt.trim() || caption.trim(),
@@ -689,22 +699,21 @@ export function MusicGenerator({
     });
   }
 
-  const ecoPicker = (
-    <div
-      className="bg-popover absolute right-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-[10px] border shadow-xl"
-      role="listbox"
-    >
-      {MUSIC_ECOSYSTEMS.map((e) => {
-        const selected = e.id === ecoId;
-        return (
-          <EcoOptionButton
-            key={e.id}
-            onPick={() => {
-              setEcoOpen(false);
-              if (!selected) switchEcosystem(e.id);
-            }}
-            selected={selected}
-          >
+  /** The ecosystem menu: every engine with its one-line note. */
+  const ecoGroups = useMemo<PickerGroup[]>(
+    () => [
+      {
+        id: "ecosystems",
+        items: MUSIC_ECOSYSTEMS.map((e) => ({
+          id: e.id,
+          label: e.label,
+          note: e.note,
+          selected: e.id === ecoId,
+          onSelect: () => {
+            setEcoOpen(false);
+            if (e.id !== ecoId) switchEcosystem(e.id);
+          },
+          tile: (
             <div
               className={cn(
                 "flex size-8 shrink-0 items-center justify-center rounded-[6px] bg-gradient-to-br text-sm font-bold text-white",
@@ -713,35 +722,24 @@ export function MusicGenerator({
             >
               {e.label.charAt(0)}
             </div>
-            <span className="min-w-0 flex-1">
-              <span className={cn("block truncate text-sm font-medium", selected && "text-primary font-semibold")}>
-                {e.label}
-              </span>
-              <span className="text-muted-foreground block truncate text-[11px]">{e.note}</span>
-            </span>
-            {selected && (
-              <span className="text-primary shrink-0">
-                <Icon name="check" />
-              </span>
-            )}
-          </EcoOptionButton>
-        );
-      })}
-    </div>
+          ),
+        })),
+      },
+    ],
+    [ecoId, switchEcosystem],
   );
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
       <MediaIsland
+        ecoGroups={ecoGroups}
         ecoLabel={eco.label}
         ecoOpen={ecoOpen}
-        onEcoClick={() => setEcoOpen((v) => !v)}
+        onEcoOpenChange={setEcoOpen}
         onSwitchToImage={onSwitchToImage}
         onSwitchToVideo={onSwitchToVideo}
-      >
-        {ecoPicker}
-      </MediaIsland>
-      {ecoOpen && <div aria-hidden className="fixed inset-0 z-20" onClick={() => setEcoOpen(false)} />}
+        onSwitchTo3d={onSwitchTo3d}
+      />
       <KeyStatusNotices configured={configured} />
 
       {/* Model — civitai's resource row: card art + model name (the audio
@@ -1209,45 +1207,22 @@ export function MusicGenerator({
           <div className="min-h-0 flex-1 overflow-y-auto pb-24 overscroll-auto lg:overscroll-contain lg:pb-0">
             {form}
           </div>
-          <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-card p-3 lg:static lg:inset-auto">
-            <div className="flex items-stretch gap-2">
-              <div
-                className="flex h-10 shrink-0 items-center gap-1 rounded-[8px] border bg-secondary px-2.5"
-                title={t("videoGenerator.costNote")}
-              >
-                {costError ? (
-                  <span className="text-destructive text-[11px] leading-tight">{t("musicGenerator.costFailed")}</span>
-                ) : cost ? (
-                  <>
-                    <Icon className="text-warning size-3.5" name="zap" />
-                    <span className="text-warning text-[13px] font-semibold">
-                      ≈{cost.totalTokens.toLocaleString("id-ID")}
-                    </span>
-                  </>
-                ) : (
-                  <Spinner className="size-3.5" />
-                )}
-              </div>
-              <Button
-                className="h-10 flex-1 rounded-[8px] text-[15px] font-semibold"
-                disabled={!canSubmit}
-                onClick={() => void handleGenerate()}
-                size="lg"
-              >
-                {submitting ? (
-                  <span className="flex items-center gap-2">
-                    <Spinner className="size-4" />
-                    {t("videoGenerator.submitting")}
-                  </span>
-                ) : job ? (
-                  t("videoGenerator.inProgress")
-                ) : (
-                  t("generator.generate")
-                )}
-              </Button>
-            </div>
-            <p className="text-muted-foreground/70 mt-1.5 text-center text-[10px]">{t("videoGenerator.costNote")}</p>
-          </div>
+          <GenerateFooter
+            canSubmit={canSubmit}
+            inFlight={job != null}
+            inFlightLabel={t("videoGenerator.inProgress")}
+            note={t("videoGenerator.costNote")}
+            onSubmit={() => void handleGenerate()}
+            quote={cost?.totalTokens ?? null}
+            quoteState={
+              costError ? "failed" : cost ? "quoted" : formEffective && configured === true ? "pending" : "idle"
+            }
+            ready={cost?.ready ?? true}
+            submitting={submitting}
+            submittingLabel={t("videoGenerator.submitting")}
+            submitLabel={t("generator.generate")}
+            warnings={cost?.warnings ?? []}
+          />
         </section>
 
         <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col border-t lg:min-h-0 lg:border-t-0">

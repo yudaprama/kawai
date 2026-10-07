@@ -1636,6 +1636,17 @@ async fn office_read_file_handler(
         .map_err(err500)
 }
 
+/// Web twin of `office_read_thumbnail` — the downscaled JPEG preview a result
+/// grid renders per tile instead of the document's full bytes.
+async fn office_read_thumbnail_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<FileIdRequest>,
+) -> Result<Json<logic::office::ReadFileResult>, (StatusCode, String)> {
+    logic::office::read_thumbnail_b64(&user_id, &req.file_id)
+        .map(Json)
+        .map_err(err500)
+}
+
 async fn tauri_open_file_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<FileIdRequest>,
@@ -2100,6 +2111,83 @@ async fn civitai_music_fetch_handler(
         .map_err(err500)
 }
 
+// ── Civitai 3D MODEL generation (polyGen) — same 4-op shape ────────────────
+// Cancel reuses `civitai_video_cancel` — workflow-generic, same as music.
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CivitaiModel3dStatusRequest {
+    workflow_id: String,
+    #[serde(default)]
+    wait_secs: Option<u64>,
+}
+
+async fn civitai_model3d_cost_handler(
+    Json(req): Json<logic::civitai::Model3dGenRequest>,
+) -> Result<Json<logic::civitai::VideoCostView>, (StatusCode, String)> {
+    logic::civitai::civitai_model3d_cost(req)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+async fn civitai_model3d_submit_handler(
+    Extension(user_id): Extension<String>,
+    headers: HeaderMap,
+    Json(req): Json<logic::civitai::Model3dGenRequest>,
+) -> Result<Json<logic::civitai::VideoSubmitView>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::civitai::civitai_model3d_submit(&user_id, &token, req)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+async fn civitai_model3d_status_handler(
+    Json(req): Json<CivitaiModel3dStatusRequest>,
+) -> Result<Json<logic::civitai::Model3dStatusView>, (StatusCode, String)> {
+    logic::civitai::civitai_model3d_status(req.workflow_id, req.wait_secs)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CivitaiModel3dFetchRequest {
+    workflow_id: String,
+    model_url: String,
+    #[serde(default)]
+    model_format: Option<String>,
+    #[serde(default)]
+    fbx_url: Option<String>,
+    #[serde(default)]
+    fbx_format: Option<String>,
+    #[serde(default)]
+    preview_url: Option<String>,
+    #[serde(default)]
+    extra_urls: Vec<logic::civitai::Model3dVariantView>,
+}
+
+async fn civitai_model3d_fetch_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<CivitaiModel3dFetchRequest>,
+) -> Result<Json<logic::civitai::SavedModel3d>, (StatusCode, String)> {
+    logic::civitai::civitai_model3d_fetch(
+        &user_id,
+        req.workflow_id,
+        req.model_url,
+        req.model_format,
+        req.fbx_url,
+        req.fbx_format,
+        req.preview_url,
+        req.extra_urls,
+    )
+    .await
+    .map(Json)
+    .map_err(err500)
+}
+
 // ── Connector (third-party OAuth via Composio) ─────────────────────────────
 // Auth-required thin proxies sharing `logic::connector` with the Tauri
 // commands; the user id rides the auth middleware's Extension.
@@ -2354,6 +2442,10 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/civitai_music_submit", post(civitai_music_submit_handler))
         .route("/api/civitai_music_status", post(civitai_music_status_handler))
         .route("/api/civitai_music_fetch", post(civitai_music_fetch_handler))
+        .route("/api/civitai_model3d_cost", post(civitai_model3d_cost_handler))
+        .route("/api/civitai_model3d_submit", post(civitai_model3d_submit_handler))
+        .route("/api/civitai_model3d_status", post(civitai_model3d_status_handler))
+        .route("/api/civitai_model3d_fetch", post(civitai_model3d_fetch_handler))
         // Connector (third-party OAuth via Composio) — same 4 ops as the
         // Tauri commands (POST on both transports).
         .route("/api/connector_list_connections", post(connector_list_connections_handler))
@@ -2443,6 +2535,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
             post(office_export_document_handler),
         )
         .route("/api/office_read_file", post(office_read_file_handler))
+        .route("/api/office_read_thumbnail", post(office_read_thumbnail_handler))
         .route("/api/tauri_open_file", post(tauri_open_file_handler))
         .route(
             "/api/office_capabilities",
