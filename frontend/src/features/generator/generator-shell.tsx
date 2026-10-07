@@ -12,19 +12,15 @@ import { cn } from "@/lib/utils";
 import { type PickerGroup, PickerMenu } from "./picker-menu";
 
 /**
- * The chrome every media lane shares: the [media tabs ··· Eco | eco] island,
- * the form column + results pane split, the results header, the empty state
- * and the in-flight job card.
+ * The chrome every media lane shares: the lane's ecosystem picker, the form
+ * column + results pane split, the results header, the empty state and the
+ * in-flight job card.
  *
  * These were four hand-rolled copies (one per lane) that drifted: the image
- * lane painted the media island with a different active-tab treatment, the
+ * lane painted the mode switcher with a different active-tab treatment, the
  * four results headers had three different markups, and only three lanes had
  * a job card at all. One definition here means a fix lands in all four.
  */
-
-/** The four civitai media lanes, in tab order. */
-export const MEDIA_LANES = ["image", "video", "music", "model3d"] as const;
-export type MediaLane = (typeof MEDIA_LANES)[number];
 
 /** Segmented-control vocabulary — the muted track + active-pill treatment the
  *  app's ui/tabs triggers use, spelled out for these raw button groups. */
@@ -104,70 +100,29 @@ export function ToggleRow({
   );
 }
 
-/** Lane icon + its i18n label, in `MEDIA_LANES` order. */
-const LANE_ICON: Record<MediaLane, string> = {
-  image: "image",
-  video: "video",
-  music: "music",
-  model3d: "box",
-};
-
 /**
- * Civitai's [media tabs …… Eco | <ecosystem>] strip — the lane switcher plus
- * that lane's ecosystem picker. The ACTIVE lane renders as a non-interactive
- * pill (`aria-current`) so the four lanes can never disagree about which one
- * is selected, and every tab carries a translated label instead of a
- * hardcoded English `title`.
+ * The lane's `Eco | <ecosystem>` picker — the one control that stays in the
+ * form. Lane switching moved to the app's global mode bar (`app/mode-bar.tsx`),
+ * so this is now purely "which engine family am I generating with"; its label
+ * and groups are lane-specific, which is why it is not shared chrome.
  */
-export function MediaIsland({
-  active,
+export function EcoPicker({
   ecoAriaLabel,
   ecoGroups,
   ecoLabel,
   ecoOpen,
   onEcoOpenChange,
-  onSwitch,
 }: {
-  active: MediaLane;
   /** Lane-specific aria-label for the ecosystem picker. */
   ecoAriaLabel: string;
   ecoGroups: PickerGroup[];
   ecoLabel: string;
   ecoOpen: boolean;
   onEcoOpenChange: (open: boolean) => void;
-  onSwitch: (lane: MediaLane) => void;
 }) {
   const { t } = useI18n();
-  const laneLabel = (lane: MediaLane) => t(`generator.lane_${lane}`);
   return (
-    <div className="flex items-center justify-between gap-2 rounded-[10px] border p-1.5">
-      {/* Each tab carries its own aria-label; the track is presentational. */}
-      <div className={SEGMENTED_LIST}>
-        {MEDIA_LANES.map((lane) =>
-          lane === active ? (
-            <span
-              aria-current="page"
-              className={cn(segmentClass(true), "pointer-events-none")}
-              key={lane}
-              title={laneLabel(lane)}
-            >
-              <Icon className="size-4" name={LANE_ICON[lane]} />
-              <span className="sr-only">{laneLabel(lane)}</span>
-            </span>
-          ) : (
-            <button
-              aria-label={laneLabel(lane)}
-              className={segmentClass(false)}
-              key={lane}
-              onClick={() => onSwitch(lane)}
-              title={laneLabel(lane)}
-              type="button"
-            >
-              <Icon className="size-4" name={LANE_ICON[lane]} />
-            </button>
-          ),
-        )}
-      </div>
+    <div className="flex items-center justify-end rounded-[10px] border p-1.5">
       <PickerMenu
         align="end"
         ariaLabel={ecoAriaLabel}
@@ -197,15 +152,15 @@ export function MediaIsland({
  * beside a results pane. Below `lg` the two stack and the page scrolls, so the
  * footer leaves the flow and pins to the viewport bottom (the `pb-24` on both
  * scroll regions keeps the last row clear of it).
+ *
+ * It renders a bare shell: the mode bar above already names the lane and
+ * carries the way back, so a page header here would only restate them.
  */
 export function GeneratorLayout({
   children,
   footer,
   form,
   header,
-  subtitle,
-  title,
-  onBack,
 }: {
   children: ReactNode;
   /** The lane's `GenerateFooter` (or null while the key check is pending). */
@@ -213,9 +168,6 @@ export function GeneratorLayout({
   form: ReactNode;
   /** Results-pane header contents — usually `ResultsPaneHeader`. */
   header: ReactNode;
-  subtitle: string;
-  title: string;
-  onBack: () => void;
 }) {
   const shellBodyRef = useRef<HTMLDivElement>(null);
   // The AssetShell body div is a page scroller below lg (the narrow layout
@@ -239,7 +191,7 @@ export function GeneratorLayout({
     };
   }, []);
   return (
-    <AssetShell subtitle={subtitle} title={title} onBack={onBack}>
+    <AssetShell bare>
       <div ref={shellBodyRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* ── Form column — the generation panel ── */}
         <section className="flex w-full shrink-0 flex-col border-b lg:w-[400px] lg:border-r lg:border-b-0">

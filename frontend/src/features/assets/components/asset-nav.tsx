@@ -1,16 +1,11 @@
 import type { TranslationKey } from "@/lib/i18n";
 
-/** Asset views openable from the rail's Assets section (center-pane workspace pages). */
-export type AssetViewId =
-  | "wiki"
-  | "code"
-  | "skills"
-  | "memory"
-  | "sources"
-  | "wallet"
-  | "topup"
-  | "connections"
-  | "generator";
+/** Asset views openable from the account cluster (center-pane workspace
+ *  pages). Media GENERATION is deliberately absent: those four lanes are
+ *  modes in the global bar (`app/modes.ts`), reachable from every screen, so
+ *  listing "Generator" here would give one destination a second, staler name
+ *  ("civitai image gen") competing with the mode label beside it. */
+export type AssetViewId = "wiki" | "code" | "skills" | "memory" | "sources" | "wallet" | "topup" | "connections";
 
 export interface AssetNavEntry {
   id: AssetViewId;
@@ -20,7 +15,7 @@ export interface AssetNavEntry {
 }
 
 /** The app's asset nav — presentation only, owned by the frontend. All
- *  entries open from the profile dropdown in the header; the mobile nav
+ *  entries open from the avatar dropdown in the header; the mobile nav
  *  drawer lists them vertically. */
 export const ASSET_NAV: AssetNavEntry[] = [
   { id: "wiki", labelKey: "assetNav.wiki", subtitle: "knowledge base", icon: "book" },
@@ -31,5 +26,4 @@ export const ASSET_NAV: AssetNavEntry[] = [
   { id: "memory", labelKey: "assetNav.memory", subtitle: "chat memory", icon: "brain" },
   { id: "sources", labelKey: "assetNav.databases", subtitle: "SQL sources", icon: "database" },
   { id: "connections", labelKey: "assetNav.connections", subtitle: "app connections", icon: "plug-zap" },
-  { id: "generator", labelKey: "assetNav.generator", subtitle: "civitai image gen", icon: "image" },
 ];

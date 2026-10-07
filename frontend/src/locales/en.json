@@ -261,10 +261,18 @@
     "databases": "Databases",
     "wallet": "Wallet",
     "topUp": "Top Up",
-    "generator": "Generator",
     "backToWorkbench": "Back to Workbench",
     "mobileDrawerTitle": "Assets",
-    "workbench": "Workbench"
+    "workbench": "Workbench",
+    "assets": "Assets"
+  },
+  "modeBar": {
+    "modes": "Modes",
+    "text": "Text",
+    "image": "Image",
+    "video": "Video",
+    "audio": "Audio",
+    "model3d": "3D Model"
   },
   "profileDropdown": {
     "saldoChip": "Saldo: {{balance}}",
@@ -276,17 +284,10 @@
     "assetsAndAccount": "Assets and account"
   },
   "generator": {
-    "title": "Generator",
-    "subtitle": "Civitai image generation",
     "checkingKey": "Checking Civitai key…",
     "keyMissingTitle": "Civitai key not configured",
     "keyMissingBody": "The Civitai API key is not set in the app vault (kawai-vault/constants). Generation is disabled until it is provisioned.",
     "model": "Model",
-    "lane_image": "Image",
-    "lane_video": "Video",
-    "lane_music": "Music",
-    "lane_model3d": "3D",
-    "mediaLanes": "Media type",
     "ecoShort": "Eco",
     "queuePosition": "Queue position {{position}}",
     "prompt": "Prompt",
@@ -327,6 +328,8 @@
     "copied": "Markdown token copied",
     "resultsCount": "Results ({{count}})",
     "noResultsHint": "Fill the form and hit Generate — images appear here.",
+    "templatesHint": "Start from a community template — click an image to load its prompt and settings into the form.",
+    "templateApplied": "Template loaded into the form",
     "estimateNote": "≈ {{width}}×{{height}} ({{ratio}}) · price is an estimate, debited from the token balance at submit (the equivalent Buzz is paid on the Civitai account)",
     "insufficientBalance": "Insufficient balance: ≈{{tokens}} tokens required — top up on the Top Up page",
     "pickModel": "Pick a model",
@@ -863,7 +866,6 @@
     "status": "Status"
   },
   "videoGenerator": {
-    "subtitle": "Civitai video generation",
     "workflow": "Workflow",
     "txt2vid": "Text → Video",
     "img2vid": "Image → Video",
@@ -914,7 +916,6 @@
     "ecosystem": "Ecosystem"
   },
   "musicGenerator": {
-    "subtitle": "Civitai music generation",
     "mode": "Mode",
     "simple": "Simple",
     "custom": "Custom",
@@ -966,7 +967,6 @@
     "cancel": "Cancel"
   },
   "model3dGenerator": {
-    "subtitle": "Civitai 3D model generation",
     "ecosystem": "Ecosystem",
     "process": "Process",
     "txt2_3d": "Text → 3D",

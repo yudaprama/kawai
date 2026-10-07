@@ -44,16 +44,23 @@ view.
 
 ## Panes
 
-- **Asset destinations (profile dropdown + drawer).** Wiki, Code, Skills,
+- **Mode bar (global, 48px, every surface).** Brand, the five modes, then the
+  account cluster (Saldo chip + avatar dropdown). Modes are the app's
+  top-level axis: `Text` IS the Workbench (goal composer + deliverable), and
+  `Image · Video · Audio · 3D Model` are the generation lanes. The active mode
+  renders inert with `aria-current`; the rest are buttons carrying a translated
+  label. An ASSET page is a different axis, so it lights no mode. The bar owns
+  the account cluster outright — the Workbench and asset pages do not render
+  their own copy, which is why the two can never drift apart.
+- **Asset destinations (avatar dropdown + drawer).** Wiki, Code, Skills,
   Memory, Databases, Wallet, Top Up — every asset view replaces the center
-  pane; Esc or Back returns to the Workbench. They open from the profile
-  dropdown (Workbench top bars: landing, mobile run strip, run switcher row)
-  and from an asset workspace's own header, which carries the same account
-  cluster plus a persistent `AssetNavList` strip (lg+, feature-gated, active
-  entry marked with `aria-current`) — so moving between assets never needs a
-  round trip and never requires the dropdown. Below `lg` a hamburger
-  opens a full-screen overlay drawer listing them vertically (dark backdrop,
-  Esc/tap-out to close).
+  pane; Esc or Back returns to the Workbench (the Text mode). They open from
+  the avatar dropdown in the mode bar and from an asset workspace's own header,
+  which carries a persistent icon-only `AssetNavList` rail (lg+, feature-gated,
+  active entry marked with `aria-current`, label in the tooltip and accessible
+  name) — eight labelled chips never fit a 48px row, and the mode bar already
+  spends that budget. Below `lg` a hamburger opens an overlay drawer listing
+  them vertically with labels (dark backdrop, Esc/tap-out to close).
 - **ProgressRail (left, 72px wide, lg+).** Visible during a run. Shows the
   status header (mapped from supervisor state — Planning, Running, Complete,
   Failed, etc.), duration, a determinate progress bar (settled steps over the
@@ -103,15 +110,24 @@ view.
 
 ## Generator (media lanes)
 
-One page, four civitai media lanes — image, video, music, 3D — behind a
-shared shell (`features/generator/generator-shell.tsx`). The lane switcher
-(`[image · video · music · 3D] …… Eco | <ecosystem>`) sits atop the form
-column; the active lane renders inert with `aria-current`, the others are
-buttons. Every lane renders the same `GeneratorLayout`: a 400px form column
-with its action footer, beside a results pane. Below `lg` the two stack and
-the page scrolls, so the Generate footer pins to the viewport bottom.
+Four civitai media lanes — image, video, music, 3D — behind a shared shell
+(`features/generator/generator-shell.tsx`). Lane switching lives in the global
+mode bar (`app/mode-bar.tsx`), not in the form, so "what can I make here" is
+answered from the same row on every screen; the bar's `audio` mode is the music
+lane, which also generates sound effects. Exactly one lane mounts at a time:
+each keeps its form state and its own results storage, and an in-flight job
+survives a switch because it is recorded in localStorage and its poll loop
+resumes from that record on remount.
 
-- **Form column — prompt first.** The lane switcher, then the workflow/engine
+Every lane renders the same `GeneratorLayout`: a 400px form column with its
+action footer, beside a results pane. Below `lg` the two stack and the page
+scrolls, so the Generate footer pins to the viewport bottom. The lane renders
+a *bare* shell — no page header, no back button: the mode bar directly above
+already names the lane and holds the way back, so a header would only restate
+them.
+
+- **Form column — prompt first.** The `Eco | <ecosystem>` picker (the lane's
+  only mode-specific control left in the form), then the workflow/engine
   pick, then the **prompt**, then the rest. The prompt is the one required
   field and the reason the user opened the panel; it used to render eighth,
   below the model and LoRA pickers, where a 400px column pushed it out of

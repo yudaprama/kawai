@@ -42,10 +42,9 @@ import {
   ChoiceChip,
   detailLine,
   EmptyResults,
+  EcoPicker,
   GeneratorLayout,
   JobCard,
-  type MediaLane,
-  MediaIsland,
   resultMeta,
   ResultsPaneHeader,
 } from "./generator-shell";
@@ -152,13 +151,7 @@ function MusicResultCard({
   );
 }
 
-export function MusicGenerator({
-  onBack,
-  onSwitchLane,
-}: {
-  onBack: () => void;
-  onSwitchLane: (lane: MediaLane) => void;
-}) {
+export function MusicGenerator() {
   const { t } = useI18n();
   const configured = useCivitaiKeyStatus();
   const [ecoId, setEcoId] = useState<MusicEcosystemId>(DEFAULT_MUSIC_ECOSYSTEM);
@@ -404,14 +397,12 @@ export function MusicGenerator({
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
-      <MediaIsland
-        active="music"
+      <EcoPicker
         ecoAriaLabel={t("videoGenerator.ecosystem")}
         ecoGroups={ecoGroups}
         ecoLabel={eco.label}
         ecoOpen={ecoOpen}
         onEcoOpenChange={setEcoOpen}
-        onSwitch={onSwitchLane}
       />
       <KeyStatusNotices configured={configured} />
 
@@ -884,9 +875,6 @@ export function MusicGenerator({
           title={t("musicGenerator.results")}
         />
       }
-      subtitle={t("musicGenerator.subtitle")}
-      title={t("generator.title")}
-      onBack={onBack}
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 lg:overscroll-contain">
         {job && (

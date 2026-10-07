@@ -1189,6 +1189,15 @@ pub async fn civitai_search_models(
     .await
 }
 
+/// Empty-state template presets for the image lane (public v1 read like
+/// covers — top checkpoint's showcase, meta-carrying images only).
+#[tauri::command]
+pub async fn civitai_template_gallery(
+    ecosystem: String,
+) -> Result<Vec<logic::civitai::TemplatePreset>, String> {
+    logic::civitai::civitai_template_gallery(logic::civitai::TemplateGalleryArgs { ecosystem }).await
+}
+
 #[tauri::command]
 pub async fn civitai_generate(
     session: State<'_, Session>,

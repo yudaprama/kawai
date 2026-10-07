@@ -12,7 +12,6 @@ import { type AgentInfo, call, codegraphIsAvailable, tauriOpenFile, errText } fr
 import { logWarn } from "@/lib/logger";
 import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
 import { runningInTauri } from "@/platform";
-import { ProfileControls } from "@/features/agents/profile-controls";
 import { AssetNavList } from "@/features/assets/components/asset-nav-list";
 import type { AssetViewId } from "@/features/assets/components/asset-nav";
 import { tauriWalletAdapter } from "@/features/wallet/lib/wallet-adapter";
@@ -26,6 +25,8 @@ import { WalletPage } from "@/features/wallet/components/wallet-page";
 import { OPEN_TOPUP_EVENT } from "@/features/topup/open-topup";
 import { TopupPage } from "@/features/topup/topup-page";
 import { GeneratorPage } from "@/features/generator/generator-page";
+import { ModeBar } from "@/app/mode-bar";
+import { type AppMode, isMediaMode } from "@/app/modes";
 import { SessionHistoryDialog } from "@/features/chat/components/session-history-dialog";
 import { ShortcutsDialog } from "@/components/shared/shortcuts-dialog";
 import { Dialog, DialogContent, DialogOverlay, DialogPortal } from "@/components/ui/dialog";
@@ -36,7 +37,13 @@ export default function App() {
   const { t } = useI18n();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [assetView, setAssetView] = useState<AssetViewId | null>(null);
+  // Two orthogonal axes. `mode` is the top-level surface the mode bar owns —
+  // `text` IS the Workbench, the other four are the generation lanes. `view`
+  // is an ASSET page, a deeper layer opened from the account cluster; it wins
+  // the center pane while set, and the bar then shows no active mode (an asset
+  // is not a mode — lighting up "Text" there would claim the Workbench shows).
+  const [mode, setMode] = useState<AppMode>("text");
+  const [view, setView] = useState<AssetViewId | null>(null);
   const [codeGraphSeed, setCodeGraphSeed] = useState<{ query: string; result: string } | null>(null);
   // The backend compiles Monad support behind the opt-in `monad` feature; probe
   // once so the wallet nav entry only appears in builds that have it.
@@ -135,22 +142,32 @@ export default function App() {
   }, [ka.setPreviewFile, ka.knowledge.files]);
 
   // Top Up navigation — the Fase 0a token gate at goal submit opens the Top
-  // Up asset page (App owns assetView; same window-event bridge as previews).
+  // Up asset page (App owns `view`; same window-event bridge as previews).
   useEffect(() => {
     const onOpen = () => {
-      setAssetView("topup");
+      setView("topup");
       setMobileDrawer(null);
     };
     window.addEventListener(OPEN_TOPUP_EVENT, onOpen);
     return () => window.removeEventListener(OPEN_TOPUP_EVENT, onOpen);
   }, []);
 
-  // App-level "New" (rail button + Cmd/Ctrl+N): close any asset view, then
-  // reset both shells — the chat hook (knowledge/session-dialog binding) and
-  // the WORKBENCH's own reset (fresh session back at the landing hero).
-  // No-op mid-run: the workbench handler guards an in-flight plan.
+  /** Mode-bar pick: leave any asset page and land on the chosen mode. Media
+   *  lanes are not assets — they are modes — so this also clears `view`. */
+  const selectMode = (next: AppMode) => {
+    setMode(next);
+    setView(null);
+    setMobileDrawer(null);
+  };
+
+  // App-level "New" (rail button + Cmd/Ctrl+N): return to the Text mode, close
+  // any asset view, then reset both shells — the chat hook (knowledge/
+  // session-dialog binding) and the WORKBENCH's own reset (fresh session back
+  // at the landing hero). No-op mid-run: the workbench handler guards an
+  // in-flight plan.
   const handleNew = () => {
-    setAssetView(null);
+    setMode("text");
+    setView(null);
     setMobileDrawer(null);
     void chat.newChat();
     workbenchNewRef.current?.();
@@ -192,20 +209,23 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mobileDrawer, busy]);
 
-  // Esc leaves the asset workspace back to chat (view-only switch, safe while
-  // streaming — the stream keeps folding into chat state in the background).
+  // Esc leaves any non-Text surface — an asset page or a generation lane —
+  // back to the Workbench (view-only switch, safe while streaming: the run
+  // keeps folding into workbench state in the background). On the Workbench
+  // App stands down; that page owns Esc there (two-step run stop).
   useEffect(() => {
-    if (assetView == null) return;
+    if (view == null && mode === "text") return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        // A dialog/menu/popup in front owns Esc; the asset pane must stand down.
+        // A dialog/menu/popup in front owns Esc; the pane must stand down.
         if (overlayOwnsEscape()) return;
-        setAssetView(null);
+        setMode("text");
+        setView(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [assetView]);
+  }, [mode, view]);
 
   const touchStartX = useRef(0);
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -241,14 +261,17 @@ export default function App() {
     );
   }
 
-  // Asset workspace — replaces the chat center pane while an asset view is
-  // open (Wiki = knowledge base, Databases = SQL sources, Memory = raw
-  // conversations; Skills/Code have no backend tier yet and state that
-  // plainly). Data comes from the same app state the chat uses, so switching
-  // views never re-fetches or resets chat. Tool results do NOT live here —
-  // they render on the canvas (see CanvasPanel).
+  // Asset workspace — replaces the center pane while an asset is open (Wiki =
+  // knowledge base, Databases = SQL sources, Memory = raw conversations).
+  // Data comes from the same app state the workbench uses, so switching never
+  // re-fetches or resets a run. Media GENERATION is not an asset — it is a
+  // mode, so it renders from `mode` below, not from this switch.
+  const backToText = () => {
+    setMode("text");
+    setView(null);
+  };
   const assetWorkspace =
-    assetView === "wiki" ? (
+    view === "wiki" ? (
       <WikiAssetPage
         confirmDeleteId={ka.confirmDeleteId}
         error={ka.knowledge.error}
@@ -260,83 +283,87 @@ export default function App() {
         sessionId={chat.sessionId}
         unavailable={ka.knowledge.unavailable}
         onAdd={ka.addToSession}
-        onBack={() => setAssetView(null)}
+        onBack={backToText}
         onDelete={ka.deleteFile}
         onImport={() => void ka.addKnowledgeFiles()}
         onRemove={ka.removeFromSession}
         onRetry={ka.retryIndex}
       />
-    ) : assetView === "memory" ? (
+    ) : view === "memory" ? (
       <MemoryAssetPage
         onRetrySessions={() => void chat.refreshSessions()}
         sessions={[...chat.sessions, ...chat.archivedSessions]}
         sessionsError={chat.sessionsError}
         sessionsLoading={chat.sessionsLoading}
-        onBack={() => setAssetView(null)}
+        onBack={backToText}
       />
-    ) : assetView === "sources" ? (
-      <SqlSourcesAssetPage onBack={() => setAssetView(null)} />
-    ) : assetView === "skills" ? (
-      <SkillsAssetPage onBack={() => setAssetView(null)} />
-    ) : assetView === "connections" ? (
-      <ConnectionsPage onBack={() => setAssetView(null)} />
-    ) : assetView === "code" ? (
+    ) : view === "sources" ? (
+      <SqlSourcesAssetPage onBack={backToText} />
+    ) : view === "skills" ? (
+      <SkillsAssetPage onBack={backToText} />
+    ) : view === "connections" ? (
+      <ConnectionsPage onBack={backToText} />
+    ) : view === "code" ? (
       <CodeAssetPage
         initialQuery={codeGraphSeed?.query}
         initialResult={codeGraphSeed?.result}
         onBack={() => {
           setCodeGraphSeed(null);
-          setAssetView(null);
+          backToText();
         }}
       />
-    ) : assetView === "wallet" ? (
-      <WalletPage onBack={() => setAssetView(null)} />
-    ) : assetView === "topup" ? (
-      <TopupPage onBack={() => setAssetView(null)} />
-    ) : assetView === "generator" ? (
-      <GeneratorPage onBack={() => setAssetView(null)} />
+    ) : view === "wallet" ? (
+      <WalletPage onBack={backToText} />
+    ) : view === "topup" ? (
+      <TopupPage onBack={backToText} />
     ) : null;
 
+  const assetChrome = {
+    assetView: view,
+    walletAvailable,
+    codegraphAvailable,
+    onSelectAsset: (id: AssetViewId) => {
+      setView(id);
+      setMobileDrawer(null);
+    },
+  };
+
   return (
-    <div className="bg-background text-foreground flex h-dvh w-full overflow-clip">
-      {assetWorkspace ? (
-        <AssetChromeContext.Provider
-          value={{
-            assetView,
-            userId: chat.userId,
-            walletAvailable,
-            codegraphAvailable,
-            onSelectAsset: setAssetView,
-            onLogout: () => void chat.logout(),
-          }}
-        >
-          {assetWorkspace}
-        </AssetChromeContext.Provider>
-      ) : (
-        <WorkbenchPage
-          onAddFiles={ka.addKnowledgeFiles}
-          onAddLink={ka.addKnowledgeLink}
-          onImageToKnowledge={ka.imageToKnowledge}
-          onOpenNav={() => setMobileDrawer("agents")}
-          onOpenSessions={() => setSessionsOpen(true)}
-          sessionsOpen={sessionsOpen}
-          sessionSelectorRef={workbenchSelectRef}
-          newSessionRef={workbenchNewRef}
-          attachFilesRef={workbenchAttachRef}
-          topBarExtra={
-            <ProfileControls
-              assetView={assetView}
-              codegraphAvailable={codegraphAvailable}
-              userId={chat.userId}
-              walletAvailable={walletAvailable}
-              onLogout={() => void chat.logout()}
-              onSelectAsset={(id) => {
-                setAssetView(id);
-              }}
-            />
-          }
-        />
-      )}
+    <div className="bg-background text-foreground flex h-dvh w-full flex-col overflow-clip">
+      <ModeBar
+        active={view == null ? mode : null}
+        assetView={view}
+        codegraphAvailable={codegraphAvailable}
+        onLogout={() => void chat.logout()}
+        onSelect={selectMode}
+        onSelectAsset={(id) => {
+          setView(id);
+          setMobileDrawer(null);
+        }}
+        userId={chat.userId}
+        walletAvailable={walletAvailable}
+      />
+      <div className="flex min-h-0 min-w-0 flex-1">
+        {assetWorkspace ? (
+          <AssetChromeContext.Provider value={assetChrome}>{assetWorkspace}</AssetChromeContext.Provider>
+        ) : isMediaMode(mode) ? (
+          // Lanes come and go with the bar, so the shell re-mounts per lane —
+          // every lane restores its results + in-flight job from localStorage.
+          <GeneratorPage key={mode} lane={mode} />
+        ) : (
+          <WorkbenchPage
+            onAddFiles={ka.addKnowledgeFiles}
+            onAddLink={ka.addKnowledgeLink}
+            onImageToKnowledge={ka.imageToKnowledge}
+            onOpenNav={() => setMobileDrawer("agents")}
+            onOpenSessions={() => setSessionsOpen(true)}
+            sessionsOpen={sessionsOpen}
+            sessionSelectorRef={workbenchSelectRef}
+            newSessionRef={workbenchNewRef}
+            attachFilesRef={workbenchAttachRef}
+          />
+        )}
+      </div>
       {/* Mobile drawer — the nav list under 1024px (the profile dropdown is
           desktop-side; the drawer gives small screens the same entries).
           Uses Dialog primitive for proper focus management, focus trapping,
@@ -355,16 +382,7 @@ export default function App() {
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
-            <AssetNavList
-              assetView={assetView}
-              codegraphAvailable={codegraphAvailable}
-              orientation="vertical"
-              walletAvailable={walletAvailable}
-              onSelectAsset={(id) => {
-                setAssetView(id);
-                setMobileDrawer(null);
-              }}
-            />
+            <AssetNavList {...assetChrome} orientation="vertical" />
           </DialogContent>
         </DialogPortal>
       </Dialog>

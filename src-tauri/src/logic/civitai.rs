@@ -223,6 +223,270 @@ pub async fn civitai_model_covers() -> Result<Vec<ModelCover>, String> {
     Ok(covers)
 }
 
+// ── Template gallery (empty-state presets) ─────────────────────────────────
+
+/// One community image preset for the image lane's empty state. Clicking it
+/// fills the form with the image's generation config AND its resources —
+/// the checkpoint (diffuser override) + LoRA stack, each resolved by hash
+/// to civitai's canonical AIR URN and family-gated to the selected
+/// ecosystem. The gallery is still not a reproduction: the seed is left
+/// random and the builtin diffuser renders when no compatible checkpoint
+/// resolved.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplatePreset {
+    /// Worker-proxied CDN URL — the webview renders it directly.
+    pub url: String,
+    pub width: i64,
+    pub height: i64,
+    pub prompt: String,
+    pub negative_prompt: Option<String>,
+    pub steps: Option<i64>,
+    pub cfg_scale: Option<f64>,
+    /// Civitai sampler display name — meaningful on SD-family ecosystems
+    /// only; the frontend applies it conditionally.
+    pub sampler: Option<String>,
+    /// Checkpoint name from meta, when carried — display caption only.
+    pub model_name: Option<String>,
+    /// The image's checkpoint as a diffuser override, when its family
+    /// matches the selected ecosystem — None otherwise (the builtin
+    /// diffuser renders).
+    pub checkpoint: Option<TemplateResource>,
+    /// The image's LoRA stack (≤4), family-gated the same way.
+    pub loras: Vec<TemplateResource>,
+}
+
+/// One auto-added model reference: a resolved `meta.resources` hash.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateResource {
+    pub name: String,
+    /// Civitai's canonical AIR URN, verbatim from the by-hash endpoint.
+    pub air_urn: String,
+    /// LoRA strength (meta `weight`); checkpoint entries carry none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strength: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateGalleryArgs {
+    pub ecosystem: String,
+}
+
+/// Panel ecosystem → v1 checkpoint search term (the gallery shows the
+/// top-rated checkpoint's showcase for the family; a miss degrades to an
+/// empty gallery and the frontend falls back to the plain empty state).
+const TEMPLATE_QUERIES: [(&str, &str); 12] = [
+    ("anima", "anime"),
+    ("sdxl", "sdxl"),
+    ("flux1", "flux"),
+    ("flux2Klein", "flux klein"),
+    ("flux2Dev", "flux dev"),
+    ("sd1", "dreamshaper"),
+    ("qwen", "qwen image"),
+    ("zImageTurbo", "z image"),
+    ("zImageBase", "z image"),
+    ("wan", "wan"),
+    ("seedream", "seedream"),
+    ("grok", "grok"),
+];
+
+/// Per-ecosystem 1h cache — the empty state hits this on every panel mount
+/// and every eco switch, same shape as `COVER_CACHE`.
+static TEMPLATE_CACHE: LazyLock<Mutex<std::collections::HashMap<String, (Instant, Vec<TemplatePreset>)>>> =
+    LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+const TEMPLATE_TTL: Duration = Duration::from_secs(3600);
+
+/// Upper bound on copied prompt/negative text — a template fills the form,
+/// it must not dump a 10k-char A11-detailer blob into the textarea.
+const TEMPLATE_TEXT_CAP: usize = 4000;
+/// Per-image LoRA cap (the form's own cap is 9 — templates stay lean).
+const TEMPLATE_LORAS_CAP: usize = 4;
+/// Hard cap on by-hash calls per gallery refresh — resolution is sequential
+/// (no futures dep) and civitai's v1 is rate-limited; a bigger unique-hash
+/// set silently skips its leftovers until the next cache expiry.
+const TEMPLATE_RESOLVE_BUDGET: usize = 12;
+
+fn cap_text(value: Option<String>) -> Option<String> {
+    let trimmed = value?.trim().to_string();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(truncate_chars(&trimmed, TEMPLATE_TEXT_CAP))
+}
+
+/// A by-hash resolution kept across refreshes — hashes repeat heavily
+/// (community images cluster on the same checkpoint/LoRAs), so the cache is
+/// the thing that keeps the sequential calls bounded in practice.
+type ResolvedResource = Option<(String, String, Option<String>)>;
+static RESOURCE_CACHE: LazyLock<
+    Mutex<std::collections::HashMap<String, (Instant, ResolvedResource)>>,
+> = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+const RESOURCE_TTL: Duration = Duration::from_secs(24 * 3600);
+
+/// `(air_urn, name, base_model)` for one resources hash — `None` when
+/// civitai carries no version for it. Display name comes from the meta
+/// resources entry (the by-hash response carries none).
+async fn resolve_resource(
+    key: &str,
+    hash: &str,
+    name: &str,
+    budget: &mut usize,
+) -> Result<ResolvedResource, String> {
+    if let Some((at, resolved)) = RESOURCE_CACHE.lock().ok().and_then(|m| m.get(hash).cloned()) {
+        if at.elapsed() < RESOURCE_TTL {
+            return Ok(resolved);
+        }
+    }
+    if *budget == 0 {
+        // Cache miss but the refresh's call budget is spent — report
+        // "unknown" WITHOUT caching, so a later refresh resolves it.
+        return Ok(None);
+    }
+    *budget -= 1;
+    let resolved = civitai::model_version_by_hash(key, hash)
+        .await?
+        .map(|v| (v.air.unwrap_or_default(), name.to_string(), v.base_model))
+        .filter(|(air, _, _)| !air.is_empty());
+    if let Ok(mut cache) = RESOURCE_CACHE.lock() {
+        cache.insert(hash.to_string(), (Instant::now(), resolved.clone()));
+    }
+    Ok(resolved)
+}
+
+pub async fn civitai_template_gallery(args: TemplateGalleryArgs) -> Result<Vec<TemplatePreset>, String> {
+    let ecosystem = args.ecosystem.trim().to_string();
+    if ecosystem.is_empty() {
+        return Ok(Vec::new());
+    }
+    if let Some((at, presets)) = TEMPLATE_CACHE
+        .lock()
+        .ok()
+        .and_then(|m| m.get(&ecosystem).cloned())
+    {
+        if at.elapsed() < TEMPLATE_TTL {
+            return Ok(presets);
+        }
+    }
+
+    let key = require_key()?;
+    let query = TEMPLATE_QUERIES
+        .iter()
+        .find(|(id, _)| *id == ecosystem)
+        .map(|(_, q)| *q)
+        .unwrap_or(ecosystem.as_str());
+
+    // Top-rated checkpoint for the family → its first version's showcase
+    // feed, reactions-ranked, meta-carrying images only (authors who
+    // stripped their generation data are useless as templates).
+    let version_id = civitai::search_models(&key, query, &["Checkpoint"], 3, Some("Highest Rated"), None)
+        .await
+        .ok()
+        .and_then(|page| page.items.into_iter().find_map(|m| m.model_versions.and_then(|v| v.first().map(|first| first.id))));
+    let Some(version_id) = version_id else {
+        if let Ok(mut cache) = TEMPLATE_CACHE.lock() {
+            cache.insert(ecosystem, (Instant::now(), Vec::new()));
+        }
+        return Ok(Vec::new());
+    };
+
+    let hits = civitai::search_images(&key, version_id, 40, "Most Reactions", "AllTime").await?;
+    // Family gate for auto-attached checkpoint/LoRAs: the AIR may only ride
+    // the request when its base-model family equals the ecosystem's own —
+    // a cross-family diffuser override would 400 at the orchestrator. The
+    // unclassified ecosystems (anima, flux2/zImage, the engines) have no
+    // confident mapping, so nothing auto-attaches there — their builtin
+    // diffuser is the point of picking them anyway.
+    let eco_family = civitai::registry::ecosystem_family(&ecosystem);
+    let family_of = |base: &Option<String>| -> Option<&'static str> {
+        eco_family.and_then(|eco| base.as_deref().and_then(civitai::registry::base_model_family).and_then(|f| (f == eco).then_some(f)))
+    };
+    let mut resolve_budget = TEMPLATE_RESOLVE_BUDGET;
+    let mut raw: Vec<(civitai::V1ImageHit, civitai::V1ImageMeta)> = Vec::new();
+    for hit in hits {
+        // SFW double-guard: `nsfw=None` on the wire plus this client-side
+        // level filter (the flag maps to a browsing level, not the enum).
+        if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
+            continue;
+        }
+        let Some(meta) = hit.meta.clone() else { continue };
+        if raw.len() < 12 {
+            raw.push((hit, meta));
+        } else {
+            break;
+        }
+    }
+
+    let mut presets: Vec<TemplatePreset> = Vec::with_capacity(raw.len());
+    for (hit, meta) in raw {
+        let Some(prompt) = cap_text(meta.prompt.clone()) else { continue };
+        let Some(url) = hit.url.clone().filter(|u| !u.is_empty()) else { continue };
+
+        // Resources: resolve hashes → AIR, gate each by family.
+        let mut checkpoint: Option<TemplateResource> = None;
+        let mut loras: Vec<TemplateResource> = Vec::new();
+        for entry in meta.resources.iter().flatten() {
+            let Some(hash) = entry.hash.as_deref().filter(|h| !h.trim().is_empty()) else { continue };
+            let kind = entry.kind.as_deref().unwrap_or("");
+            if kind != "model" && kind != "lora" {
+                continue; // VAE / embeddings / TI — nothing the form carries
+            }
+            if kind == "lora" && loras.len() >= TEMPLATE_LORAS_CAP {
+                continue;
+            }
+            if checkpoint.is_some() && kind != "lora" {
+                continue; // one checkpoint per template
+            }
+            let name = entry
+                .name
+                .clone()
+                .filter(|n| !n.trim().is_empty())
+                .unwrap_or_else(|| hash.to_string());
+            let Ok(Some((air, name, base))) = resolve_resource(&key, hash, &name, &mut resolve_budget).await
+            else {
+                continue;
+            };
+            if family_of(&base).is_none() {
+                continue;
+            }
+            let resource = TemplateResource {
+                name,
+                air_urn: air,
+                strength: if kind == "lora" {
+                    Some(entry.weight.unwrap_or(1.0).clamp(0.0, 4.0))
+                } else {
+                    None
+                },
+            };
+            if kind == "lora" {
+                loras.push(resource);
+            } else {
+                checkpoint = Some(resource);
+            }
+        }
+
+        presets.push(TemplatePreset {
+            url,
+            width: hit.width.unwrap_or(1024).max(64),
+            height: hit.height.unwrap_or(1024).max(64),
+            prompt,
+            negative_prompt: cap_text(meta.negative_prompt),
+            steps: meta.steps,
+            cfg_scale: meta.cfg_scale,
+            sampler: meta.sampler,
+            model_name: meta.model,
+            checkpoint,
+            loras,
+        });
+    }
+
+    if let Ok(mut cache) = TEMPLATE_CACHE.lock() {
+        cache.insert(ecosystem.clone(), (Instant::now(), presets.clone()));
+    }
+    Ok(presets)
+}
+
 // ── Resource browser (the civitai model-picker modal) ──────────────────────
 
 #[derive(Debug, Deserialize)]

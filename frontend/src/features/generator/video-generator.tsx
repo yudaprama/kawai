@@ -47,11 +47,10 @@ import { ResultActions, mediaToken } from "./result-actions";
 import {
   ChoiceChip,
   detailLine,
+  EcoPicker,
   EmptyResults,
   GeneratorLayout,
   JobCard,
-  type MediaLane,
-  MediaIsland,
   resultMeta,
   ResultsPaneHeader,
   ToggleRow,
@@ -219,13 +218,7 @@ export function FrameSlot({
   );
 }
 
-export function VideoGenerator({
-  onBack,
-  onSwitchLane,
-}: {
-  onBack: () => void;
-  onSwitchLane: (lane: MediaLane) => void;
-}) {
+export function VideoGenerator() {
   const { t } = useI18n();
   const configured = useCivitaiKeyStatus();
   const [ecoId, setEcoId] = useState(DEFAULT_VIDEO_ECOSYSTEM);
@@ -489,14 +482,12 @@ export function VideoGenerator({
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
-      <MediaIsland
-        active="video"
+      <EcoPicker
         ecoAriaLabel={t("videoGenerator.ecosystem")}
         ecoGroups={ecoGroups}
         ecoLabel={eco.label}
         ecoOpen={ecoOpen}
         onEcoOpenChange={setEcoOpen}
-        onSwitch={onSwitchLane}
       />
       <KeyStatusNotices configured={configured} />
 
@@ -866,9 +857,6 @@ export function VideoGenerator({
           title={t("videoGenerator.results")}
         />
       }
-      subtitle={t("videoGenerator.subtitle")}
-      title={t("generator.title")}
-      onBack={onBack}
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 lg:overscroll-contain">
         {job && (

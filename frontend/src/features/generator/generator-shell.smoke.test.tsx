@@ -1,60 +1,44 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ChoiceChip, MediaIsland, NumberStepper, ResultsPaneHeader, ToggleRow, choiceClass } from "./generator-shell";
+import { ChoiceChip, EcoPicker, NumberStepper, ResultsPaneHeader, ToggleRow, choiceClass } from "./generator-shell";
 
 /**
  * Render-level smoke for the shared lane chrome. The refactor replaced four
  * hand-rolled copies of these with one definition, so the properties worth
- * pinning are the ones that had drifted: the active lane must announce itself
- * (`aria-current`), every chip must announce its pressed state, the lane
- * switcher must not hardcode English, and the toggle must use the app's
- * switch primitive rather than a native checkbox.
+ * pinning are the ones that had drifted: the ecosystem picker must stay
+ * labelled and wired to its lane's own copy, every chip must announce its
+ * pressed state, and the toggle must use the app's switch primitive rather
+ * than a bare native checkbox.
+ *
+ * Lane switching is deliberately absent — it moved to the global mode bar
+ * (`app/mode-bar.test.tsx`), which owns the switcher now.
  */
 
-describe("MediaIsland", () => {
-  // Every lane must be reachable and named regardless of which one is active.
-  // The active lane renders as a non-interactive `<span>` carrying
-  // `aria-current` plus sr-only text; the inactive ones are real buttons with
-  // an aria-label. So assert presence across both forms, not one spelling.
-  const island = (active: "image" | "video" | "music" | "model3d", ecoLabel = "Kling") =>
+describe("EcoPicker", () => {
+  const picker = (ecoLabel: string) =>
     renderToStaticMarkup(
-      <MediaIsland
-        active={active}
+      <EcoPicker
         ecoAriaLabel="Ecosystem"
         ecoGroups={[]}
         ecoLabel={ecoLabel}
         ecoOpen={false}
         onEcoOpenChange={() => {}}
-        onSwitch={() => {}}
       />,
     );
 
-  it("marks exactly the active lane with aria-current and renders it inert", () => {
-    const html = island("video");
-    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
-    expect(html).toContain("pointer-events-none");
-  });
-
-  it("names all four lanes so none can go missing from the switcher", () => {
-    const html = island("model3d");
-    for (const lane of ["Image", "Video", "Music", "3D"]) {
-      expect(html).toContain(lane);
-    }
-  });
-
-  it("names the inactive lanes with an aria-label and a localized title", () => {
-    const html = island("video");
-    // The 3D lane is inactive here, so it must be an actionable button.
-    expect(html).toContain('aria-label="3D"');
-    expect(html).toContain('title="3D"');
-    expect(html).toContain('aria-label="Image"');
-  });
-
   it("keeps the ecosystem picker labelled and wired to the lane's own copy", () => {
-    const html = island("image", "SDXL");
+    const html = picker("SDXL");
     expect(html).toContain('aria-label="Ecosystem"');
     expect(html).toContain("SDXL");
+  });
+
+  it("carries no lane switcher — no lane name and no current-page claim leaks into the form", () => {
+    const html = picker("Kling");
+    for (const lane of ["Image", "Video", "Music", "3D"]) {
+      expect(html).not.toContain(lane);
+    }
+    expect(html).not.toContain('aria-current="page"');
   });
 });
 

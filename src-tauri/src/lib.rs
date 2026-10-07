@@ -224,6 +224,7 @@ pub fn run() {
         // generate is user-bound (Buzz spend + office store writes).
         commands::civitai_api_key_status,
         commands::civitai_model_covers,
+        commands::civitai_template_gallery,
         commands::civitai_search_models,
         commands::civitai_generate,
         commands::civitai_video_cost,

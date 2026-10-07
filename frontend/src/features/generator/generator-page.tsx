@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/shared/icon";
+import type { MediaMode } from "@/app/modes";
 import { cn } from "@/lib/utils";
 import { call, errText } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
@@ -43,14 +44,14 @@ import { type PickerGroup, type PickerItem, PickerMenu } from "./picker-menu";
 import { ResultActions, mediaToken } from "./result-actions";
 import {
   ChoiceChip,
+  EcoPicker,
   EmptyResults,
   GeneratorLayout,
-  MediaIsland,
   NumberStepper,
   ResultsPaneHeader,
   resultMeta,
-  SEGMENTED_LIST,
   segmentClass,
+  SEGMENTED_LIST,
 } from "./generator-shell";
 import { VideoGenerator } from "./video-generator";
 
@@ -92,6 +93,24 @@ interface ModelCover {
   label: string;
   url: string | null;
   modelName: string | null;
+}
+
+/** One `civitai_template_gallery` preset — a community image WITH its
+ *  generation meta and its resources (checkpoint + LoRAs resolved by hash
+ *  to civitai's canonical AIR, family-gated to the ecosystem server-side).
+ *  Inspiration, not reproduction: no seed. */
+interface TemplatePreset {
+  url: string;
+  width: number;
+  height: number;
+  prompt: string;
+  negativePrompt: string | null;
+  steps: number | null;
+  cfgScale: number | null;
+  sampler: string | null;
+  modelName: string | null;
+  checkpoint: { name: string; airUrn: string } | null;
+  loras: Array<{ name: string; airUrn: string; strength?: number }>;
 }
 
 interface LoraEntry {
@@ -620,20 +639,17 @@ function ModelBrowser({
 }
 
 /**
- * Generator — Civitai image generation laid out like the civitai generation
+ * Image lane — Civitai image generation laid out like the civitai generation
  * panel (control treatment, cover-art model picker, Buzz footer), themed
  * through kawai's global token layer so it follows the app's light/dark
- * theme like every other asset page. The model BROWSER opens as a modal over
- * the results pane, so it has room for full model info without hiding the
- * user's generated media.
+ * theme. The model BROWSER opens as a modal over the results pane, so it has
+ * room for full model info without hiding the user's generated media.
  * Direct-op path (no supervisor); the op is synchronous and spends Buzz —
  * the Generate click is the consent. Results land in the office store and
  * embed anywhere `kawai-file://` tokens render. The API key is vault-baked.
  */
-export function GeneratorPage({ onBack }: { onBack: () => void }) {
+function ImageGenerator() {
   const { t } = useI18n();
-  /** Civitai's media lane — video/music render their own panels. */
-  const [media, setMedia] = useState<"image" | "video" | "music" | "model3d">("image");
   const configured = useCivitaiKeyStatus();
   /** The model browser overlays the results pane as a modal, so it no longer
    *  needs a pane tab — picking a model leaves the user's media in place. */
@@ -929,6 +945,50 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     if (p.hadSourceImage) toast.info(t("generator.sourceNotRestored"));
   }
 
+  /** Load a community template into the form. Templates are txt2img — the
+   *  workflow switches back if the user was on an image-input one. The
+   *  seed stays random and the builtin diffuser renders the result (the
+   *  source checkpoint's AIR is not carried by civitai's meta). */
+  function applyTemplate(p: TemplatePreset) {
+    setWorkflowId(DEFAULT_WORKFLOW);
+    setPrompt(p.prompt);
+    const negative = (p.negativePrompt ?? "").trim();
+    setNegativePrompt(negative);
+    // The negative prompt is folded away by default — reveal it when the
+    // template actually carries one, same contract as reuseEntry.
+    setNegativeOpen(negative.length > 0);
+    if (p.cfgScale != null) setCfgScale(String(p.cfgScale));
+    if (p.steps != null) setSteps(String(p.steps));
+    if (isSdFamily(eco.id) && p.sampler) setSampler(p.sampler);
+    // The template's dims rarely match a chip exactly — pick the chip with
+    // the closest aspect ratio so the composition intent survives.
+    const ratio = p.width / Math.max(1, p.height);
+    let best = 0;
+    let bestDiff = Number.POSITIVE_INFINITY;
+    eco.sizes.forEach((s, i) => {
+      const diff = Math.abs(s.width / s.height - ratio);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = i;
+      }
+    });
+    setSizeIdx(best);
+    // The template's own stack rides along: checkpoint as the diffuser
+    // override + its LoRAs (family-gated server-side, so everything here is
+    // generatable in this ecosystem). Replace, not merge — same contract as
+    // reuseEntry, the form then reflects the template exactly.
+    setSelectedModel(p.checkpoint ? { name: p.checkpoint.name, airUrn: p.checkpoint.airUrn, coverUrl: null } : null);
+    setLoras(
+      p.loras.slice(0, MAX_LORAS).map((l) => ({
+        id: crypto.randomUUID(),
+        air: l.airUrn,
+        strength: String(l.strength ?? 1),
+        name: l.name,
+      })),
+    );
+    toast.success(t("generator.templateApplied"));
+  }
+
   /** Drop a result from the panel's log — the stored file itself stays in
    *  the office store, so deliverables keep resolving its token. */
   function removeEntry(entry: HistoryEntry) {
@@ -1043,15 +1103,13 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
-      {/* Top bar — the shared [media tabs ··· Eco | eco] island. */}
-      <MediaIsland
-        active="image"
+      {/* Engine family for this lane — the mode bar owns lane switching. */}
+      <EcoPicker
         ecoAriaLabel={t("generator.ecosystem")}
         ecoGroups={ecoPickerGroups}
         ecoLabel={eco.label}
         ecoOpen={ecoOpen}
         onEcoOpenChange={setEcoOpen}
-        onSwitch={setMedia}
       />
       <KeyStatusNotices configured={configured} />
 
@@ -1413,17 +1471,6 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     </div>
   );
 
-  // Video / music / 3D are fully separate panels (own form, own results
-  // storage). Placed after every hook so the image panel's state keeps
-  // working when the user switches back. Each lane hands control back
-  // through the shared lane switcher.
-  if (media !== "image") {
-    const laneProps = { onBack, onSwitchLane: setMedia };
-    if (media === "video") return <VideoGenerator {...laneProps} />;
-    if (media === "music") return <MusicGenerator {...laneProps} />;
-    return <Model3dGenerator {...laneProps} />;
-  }
-
   return (
     <GeneratorLayout
       footer={
@@ -1450,13 +1497,10 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           title={t("generator.results")}
         />
       }
-      subtitle={t("generator.subtitle")}
-      title={t("generator.title")}
-      onBack={onBack}
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
         {results.length === 0 && !running ? (
-          <EmptyResults description={t("generator.noResultsHint")} title={t("generator.noResults")} />
+          <TemplateGallery ecosystem={eco.id} cols={resultCols} onApply={applyTemplate} />
         ) : (
           <Masonry
             cols={resultCols}
@@ -1497,5 +1541,88 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
         />
       </Dialog>
     </GeneratorLayout>
+  );
+}
+
+/**
+ * The media surface the mode bar opens. The four lanes are fully separate
+ * panels (own form state, own results storage) and exactly one mounts at a
+ * time — a lane's in-flight job survives a switch because it lives in
+ * localStorage and its poll loop resumes from that record on remount.
+ */
+export function GeneratorPage({ lane }: { lane: MediaMode }) {
+  if (lane === "video") return <VideoGenerator />;
+  if (lane === "audio") return <MusicGenerator />;
+  if (lane === "model3d") return <Model3dGenerator />;
+  return <ImageGenerator />;
+}
+
+/**
+ * The image lane's empty state: the top checkpoint's community showcase for
+ * the selected ecosystem, meta-carrying images only. Clicking a preset
+ * fills the form (prompt/negative/steps/cfg/sampler + nearest aspect chip)
+ * — the click-to-fill contract of the results grid's "Load these settings",
+ * sourced from civitai instead of the user's own history. A failed or
+ * empty gallery degrades to the plain empty state.
+ */
+function TemplateGallery({
+  ecosystem,
+  cols,
+  onApply,
+}: {
+  ecosystem: string;
+  cols: number;
+  onApply: (preset: TemplatePreset) => void;
+}) {
+  const { t } = useI18n();
+  const [presets, setPresets] = useState<TemplatePreset[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setPresets(null);
+    call<TemplatePreset[]>("civitai_template_gallery", { ecosystem })
+      .then((list) => {
+        if (alive) setPresets(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (alive) setPresets([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [ecosystem]);
+
+  if (presets === null) {
+    return (
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+        {(["a", "b", "c", "d", "e", "f", "g", "h"] as const).map((k) => (
+          <Skeleton key={k} className="aspect-[3/4] w-full rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+  if (presets.length === 0) {
+    return <EmptyResults description={t("generator.noResultsHint")} title={t("generator.noResults")} />;
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-muted-foreground text-xs">{t("generator.templatesHint")}</p>
+      <Masonry
+        cols={cols}
+        items={presets}
+        keyOf={(p) => p.url}
+        render={(p) => (
+          <button
+            type="button"
+            onClick={() => onApply(p)}
+            title={p.modelName ? `${p.modelName} — ${p.prompt}` : p.prompt}
+            className="group relative block w-full cursor-pointer overflow-hidden rounded-lg border border-transparent transition-colors hover:border-ring"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={p.url} alt="" loading="lazy" className="w-full" />
+          </button>
+        )}
+      />
+    </div>
   );
 }

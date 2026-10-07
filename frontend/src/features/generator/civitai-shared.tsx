@@ -77,7 +77,7 @@ export function useCivitaiKeyStatus(): boolean | null {
   return configured;
 }
 
-/** Inline notices under the media island: key-missing body (`false`) or the
+/** Inline notices under the lane's eco picker: key-missing body (`false`) or the
  *  checking spinner (`null`); nothing once configured. */
 export function KeyStatusNotices({ configured }: { configured: boolean | null }) {
   const { t } = useI18n();
@@ -410,7 +410,7 @@ export function useWorkflowLane<
 
 /** The ecosystem menu every lane renders: each engine with its one-line note
  *  and a gradient letter tile. Returns the groups plus the open flag the
- *  `MediaIsland` dropdown is controlled by. */
+ *  `EcoPicker` dropdown is controlled by. */
 export function useEcoGroups<E extends { id: string; label: string; note?: string; gradient: string }>(
   ecosystems: E[],
   ecoId: string,

@@ -75,10 +75,6 @@ export interface WorkbenchPageProps {
   attachFilesRef?: React.MutableRefObject<
     ((files: { id: string; originalName: string; ext: string }[]) => void) | null
   >;
-  /** App-owned account cluster (Saldo chip + theme + profile dropdown with
-   *  the asset destinations) — rendered into the landing top bar, the mobile
-   *  run strip, and the run switcher row. */
-  topBarExtra?: React.ReactNode;
 }
 
 /** The kawai Workbench — the work-centric primary surface (PLAN-workbench.md).
@@ -95,7 +91,6 @@ export function WorkbenchPage({
   sessionSelectorRef,
   newSessionRef,
   attachFilesRef,
-  topBarExtra,
 }: WorkbenchPageProps) {
   const { t } = useI18n();
   const workbench = useWorkbench();
@@ -489,7 +484,6 @@ export function WorkbenchPage({
       <div className="bg-background flex h-full w-full flex-col">
         <div className="flex items-center justify-end gap-1 px-4 py-2">
           {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
-          {topBarExtra}
         </div>
         <div className="flex flex-1 flex-col items-center justify-center gap-5 p-6 text-center">
           <div className="space-y-2">
@@ -687,7 +681,6 @@ export function WorkbenchPage({
           </button>
           <span className="flex-1" />
           {onOpenSessions && <SessionsButton iconOnly onOpen={onOpenSessions} />}
-          {topBarExtra}
           <button
             type="button"
             aria-label={t("workbench.progressRail.backToComposer")}
@@ -715,7 +708,6 @@ export function WorkbenchPage({
                 />
               </div>
               {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
-              {topBarExtra}
             </div>
             <div className="min-h-0 flex-1">
               {(() => {

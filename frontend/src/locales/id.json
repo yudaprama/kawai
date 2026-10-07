@@ -261,10 +261,18 @@
     "databases": "Database",
     "wallet": "Dompet",
     "topUp": "Isi Saldo",
-    "generator": "Generator",
     "backToWorkbench": "Kembali ke Workbench",
     "mobileDrawerTitle": "Aset",
-    "workbench": "Workbench"
+    "workbench": "Workbench",
+    "assets": "Aset"
+  },
+  "modeBar": {
+    "modes": "Mode",
+    "text": "Teks",
+    "image": "Gambar",
+    "video": "Video",
+    "audio": "Audio",
+    "model3d": "Model 3D"
   },
   "profileDropdown": {
     "saldoChip": "Saldo: {{balance}}",
@@ -276,17 +284,10 @@
     "assetsAndAccount": "Aset dan akun"
   },
   "generator": {
-    "title": "Generator",
-    "subtitle": "Generate gambar Civitai",
     "checkingKey": "Memeriksa API key Civitai…",
     "keyMissingTitle": "API key Civitai belum terpasang",
     "keyMissingBody": "API key Civitai belum dikonfigurasi di vault aplikasi (kawai-vault/constants). Generate dinonaktifkan sampai key tersedia.",
     "model": "Model",
-    "lane_image": "Gambar",
-    "lane_video": "Video",
-    "lane_music": "Musik",
-    "lane_model3d": "3D",
-    "mediaLanes": "Jenis media",
     "ecoShort": "Eco",
     "queuePosition": "Posisi antrean {{position}}",
     "prompt": "Prompt",
@@ -327,6 +328,8 @@
     "copied": "Token markdown tersalin",
     "resultsCount": "Hasil ({{count}})",
     "noResultsHint": "Isi form lalu klik Generate — gambarnya muncul di sini.",
+    "templatesHint": "Mulai dari template komunitas — klik gambar untuk mengisi prompt dan pengaturannya ke form.",
+    "templateApplied": "Template dimuat ke form",
     "estimateNote": "≈ {{width}}×{{height}} ({{ratio}}) · harga perkiraan, ditagih dari saldo token saat submit (Buzz setara dibayar di akun Civitai)",
     "insufficientBalance": "Saldo tidak cukup: ≈{{tokens}} token diperlukan — isi ulang lewat halaman Top Up",
     "pickModel": "Pilih model",
@@ -863,7 +866,6 @@
     "status": "Status"
   },
   "videoGenerator": {
-    "subtitle": "Generasi video Civitai",
     "workflow": "Workflow",
     "txt2vid": "Teks → Video",
     "img2vid": "Gambar → Video",
@@ -914,7 +916,6 @@
     "ecosystem": "Ekosistem"
   },
   "musicGenerator": {
-    "subtitle": "Generasi musik Civitai",
     "mode": "Mode",
     "simple": "Sederhana",
     "custom": "Kustom",
@@ -966,7 +967,6 @@
     "cancel": "Batalkan"
   },
   "model3dGenerator": {
-    "subtitle": "Generasi model 3D Civitai",
     "ecosystem": "Ekosistem",
     "process": "Proses",
     "txt2_3d": "Teks → 3D",

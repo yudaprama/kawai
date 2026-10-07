@@ -39,11 +39,10 @@ import { FrameSlot } from "./video-generator";
 import {
   ChoiceChip,
   detailLine,
+  EcoPicker,
   EmptyResults,
   GeneratorLayout,
   JobCard,
-  type MediaLane,
-  MediaIsland,
   resultMeta,
   ResultsPaneHeader,
   ToggleRow,
@@ -173,13 +172,7 @@ function Model3dResultCard({
   );
 }
 
-export function Model3dGenerator({
-  onBack,
-  onSwitchLane,
-}: {
-  onBack: () => void;
-  onSwitchLane: (lane: MediaLane) => void;
-}) {
+export function Model3dGenerator() {
   const { t } = useI18n();
   const configured = useCivitaiKeyStatus();
   const [ecoId, setEcoId] = useState<Model3dEcosystemConfig["id"]>(DEFAULT_MODEL3D_ECOSYSTEM);
@@ -666,14 +659,12 @@ export function Model3dGenerator({
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
-      <MediaIsland
-        active="model3d"
+      <EcoPicker
         ecoAriaLabel={t("model3dGenerator.ecosystem")}
         ecoGroups={ecoGroups}
         ecoLabel={eco.label}
         ecoOpen={ecoOpen}
         onEcoOpenChange={setEcoOpen}
-        onSwitch={onSwitchLane}
       />
       <KeyStatusNotices configured={configured} />
 
@@ -819,9 +810,6 @@ export function Model3dGenerator({
           title={t("generator.results")}
         />
       }
-      subtitle={t("model3dGenerator.subtitle")}
-      title={t("generator.title")}
-      onBack={onBack}
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
         {job && (

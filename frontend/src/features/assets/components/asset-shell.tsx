@@ -2,28 +2,34 @@ import { Icon } from "@/components/shared/icon";
 import { useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { ProfileControls } from "@/features/agents/profile-controls";
 import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 import { AssetChromeContext } from "./asset-chrome";
 import { AssetNavList } from "./asset-nav-list";
 
 /**
- * Shell for the center-pane asset workspace pages: back-to-workbench affordance +
- * page title + the account cluster (asset switcher, balance chip, theme,
- * sign-out — the same ProfileControls the Workbench top bar carries), then the
- * page body fills the remaining height (children own their scrolling — the
- * asset split layout scrolls internally).
+ * Shell for the center-pane workspace pages: an optional header (back
+ * affordance + page title + an icon-only asset rail on lg+), then the page body
+ * filling the remaining height (children own their scrolling — the asset split
+ * layout scrolls internally). The account cluster lives one row up, in the
+ * global mode bar, so it is identical here, on the Workbench, and in a lane.
+ *
+ * `bare` drops that header row. The media lanes use it: the mode bar directly
+ * above already names the lane, one click on `Text` goes back, and Esc does
+ * the same — so a page header there would only restate what is on screen.
  */
 export function AssetShell({
+  bare = false,
   title,
   subtitle,
   onBack,
   children,
 }: {
-  title: string;
+  /** Render no header row at all (see `bare`). Title/rail are meaningless then. */
+  bare?: boolean;
+  title?: string;
   subtitle?: string;
-  onBack: () => void;
+  onBack?: () => void;
   children: ReactNode;
 }) {
   const chrome = useContext(AssetChromeContext);
@@ -39,48 +45,43 @@ export function AssetShell({
 
   return (
     <main className="bg-background flex min-w-0 flex-1 flex-col overflow-clip">
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
-        <Button
-          aria-label={t("assetNav.backToWorkbench")}
-          onClick={onBack}
-          size={isMobile ? "sm" : "icon"}
-          variant={isMobile ? "outline" : "ghost"}
-          className={cn("flex-shrink-0", isMobile && "min-w-[88px] justify-start gap-2 text-xs font-medium")}
-          title={`${t("assetNav.backToWorkbench")} (Esc)`}
-        >
-          <Icon name="arrow-left" className="size-4" />
-          {isMobile && <span>{t("assetNav.workbench")}</span>}
-        </Button>
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold">{title}</h2>
-          {subtitle && <p className="text-muted-foreground truncate text-xs leading-tight">{subtitle}</p>}
+      {!bare && (
+        <div className="flex h-12 shrink-0 items-center gap-3 border-b px-4">
+          {onBack && (
+            <Button
+              aria-label={t("assetNav.backToWorkbench")}
+              onClick={onBack}
+              size={isMobile ? "sm" : "icon"}
+              variant={isMobile ? "outline" : "ghost"}
+              className={cn("flex-shrink-0", isMobile && "min-w-[88px] justify-start gap-2 text-xs font-medium")}
+              title={`${t("assetNav.backToWorkbench")} (Esc)`}
+            >
+              <Icon name="arrow-left" className="size-4" />
+              {isMobile && <span>{t("assetNav.workbench")}</span>}
+            </Button>
+          )}
+          <div className="min-w-0">
+            {title && <h2 className="truncate text-sm font-semibold">{title}</h2>}
+            {subtitle && <p className="text-muted-foreground truncate text-xs leading-tight">{subtitle}</p>}
+          </div>
+          {/* Persistent asset switcher (lg+): jumping between assets without a
+              round trip through the avatar dropdown. Icon-only — eight
+              labelled chips never fit a 48px row, and the mode bar above
+              already spends the horizontal budget on the five modes. Below lg
+              the nav drawer carries the same entries with labels. */}
+          {chrome && !isMobile && (
+            <div className="ml-auto hidden min-w-0 lg:block">
+              <AssetNavList
+                assetView={chrome.assetView}
+                codegraphAvailable={chrome.codegraphAvailable}
+                walletAvailable={chrome.walletAvailable}
+                onSelectAsset={chrome.onSelectAsset}
+                showLabels={false}
+              />
+            </div>
+          )}
         </div>
-        {/* Persistent asset switcher (lg+): jumping between assets without a
-            round trip through the profile dropdown. Below lg the nav drawer
-            carries the same entries. */}
-        {chrome && !isMobile && (
-          <div className="ml-auto hidden min-w-0 lg:block">
-            <AssetNavList
-              assetView={chrome.assetView}
-              codegraphAvailable={chrome.codegraphAvailable}
-              walletAvailable={chrome.walletAvailable}
-              onSelectAsset={chrome.onSelectAsset}
-            />
-          </div>
-        )}
-        {chrome && (
-          <div className={cn(!isMobile && "shrink-0")}>
-            <ProfileControls
-              assetView={chrome.assetView}
-              codegraphAvailable={chrome.codegraphAvailable}
-              userId={chrome.userId}
-              walletAvailable={chrome.walletAvailable}
-              onLogout={chrome.onLogout}
-              onSelectAsset={chrome.onSelectAsset}
-            />
-          </div>
-        )}
-      </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">{children}</div>
     </main>
   );
