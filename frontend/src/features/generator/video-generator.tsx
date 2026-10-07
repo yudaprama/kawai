@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AssetShell } from "@/features/assets/components/asset-shell";
 import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,8 +34,21 @@ import {
 } from "./video-ecosystems";
 import { KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
 import { GenerateFooter, publishMediaDebit } from "./generate-footer";
-import { type PickerGroup, PickerMenu } from "./picker-menu";
+import type { PickerGroup } from "./picker-menu";
 import { ResultActions, mediaToken } from "./result-actions";
+import type { TranslationKey } from "@/lib/i18n";
+import {
+  ChoiceChip,
+  detailLine,
+  EmptyResults,
+  GeneratorLayout,
+  JobCard,
+  type MediaLane,
+  MediaIsland,
+  resultMeta,
+  ResultsPaneHeader,
+  ToggleRow,
+} from "./generator-shell";
 
 /** Civitai videoGen request the Rust ops accept (camelCase, flattened). */
 interface VideoGenRequest {
@@ -151,74 +163,6 @@ function delay(ms: number): Promise<void> {
   return promise;
 }
 
-const SEGMENTED_LIST = "inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-muted p-0.5";
-
-function segmentClass(active: boolean): string {
-  return cn(
-    "flex h-7 items-center rounded-md px-3 text-xs font-medium transition-colors",
-    active ? "bg-background text-foreground shadow-sm dark:bg-input/30" : "text-muted-foreground hover:text-foreground",
-  );
-}
-
-/** Civitai's [media tabs …… Eco | <ecosystem>] strip — video lane active;
- *  the image tab hands control back to the image panel. */
-function MediaIsland({
-  ecoGroups,
-  ecoLabel,
-  ecoOpen,
-  onEcoOpenChange,
-  onSwitchToImage,
-  onSwitchToMusic,
-  onSwitchTo3d,
-}: {
-  ecoGroups: PickerGroup[];
-  ecoLabel: string;
-  ecoOpen: boolean;
-  onEcoOpenChange: (open: boolean) => void;
-  onSwitchToImage: () => void;
-  onSwitchToMusic: () => void;
-  onSwitchTo3d: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="flex items-center justify-between gap-2 rounded-[10px] border p-1.5">
-      <div className={SEGMENTED_LIST}>
-        <button className={segmentClass(false)} onClick={onSwitchToImage} title="Image" type="button">
-          <Icon className="size-4" name="image" />
-        </button>
-        <span className={cn(segmentClass(true), "pointer-events-none")} title="Video">
-          <Icon className="size-4" name="video" />
-        </span>
-        <button className={segmentClass(false)} onClick={onSwitchToMusic} title="Music" type="button">
-          <Icon className="size-4" name="music" />
-        </button>
-        <button className={segmentClass(false)} onClick={onSwitchTo3d} title="3D" type="button">
-          <Icon className="size-4" name="box" />
-        </button>
-      </div>
-      <PickerMenu
-        ariaLabel={t("videoGenerator.ecosystem")}
-        groups={ecoGroups}
-        onOpenChange={onEcoOpenChange}
-        open={ecoOpen}
-        trigger={
-          <>
-            <span className="text-muted-foreground">Eco</span>
-            <span className="bg-border h-4 w-px" />
-            {ecoLabel}
-            <span
-              className={cn("text-muted-foreground flex items-center transition-transform", ecoOpen && "rotate-180")}
-            >
-              <Icon name="chevron-down" />
-            </span>
-          </>
-        }
-        triggerClassName="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
-      />
-    </div>
-  );
-}
-
 /** One saved video result: poster tile with a play badge — the mp4 itself is
  *  only read when the card is clicked (the preview overlay plays it). A grid
  *  of 30 tiles used to pull every clip's full bytes into memory. */
@@ -262,6 +206,7 @@ function VideoResultCard({
         fileId={entry.fileId}
         fileName={entry.name}
         label={entry.prompt || entry.name}
+        meta={resultMeta(entry.at, videoDetail(entry.req))}
         onRemove={onRemove}
         onReuse={onReuse}
         token={mediaToken(entry.prompt, entry.fileId, entry.name)}
@@ -270,50 +215,9 @@ function VideoResultCard({
   );
 }
 
-/** In-flight progress card pinned above the results grid. */
-function JobCard({
-  job,
-  status,
-  elapsed,
-  onCancel,
-}: {
-  job: ActiveJob;
-  status: VideoStatusView | null;
-  elapsed: number;
-  onCancel: () => void;
-}) {
-  const { t } = useI18n();
-  const statusKey =
-    status?.status === "processing"
-      ? "videoGenerator.processing"
-      : status?.status === "succeeded"
-        ? "videoGenerator.succeeded"
-        : "videoGenerator.queued";
-  const minutes = Math.floor(elapsed / 60);
-  const seconds = elapsed % 60;
-  return (
-    <div className="flex flex-col gap-1.5 rounded-[10px] border border-primary/40 bg-secondary/60 p-3">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <Spinner className="size-4" />
-        {t(statusKey)}
-        <span className="text-muted-foreground ml-auto font-mono text-xs tabular-nums">
-          {minutes}:{String(seconds).padStart(2, "0")}
-        </span>
-      </div>
-      {status?.queuePosition != null && status.queuePosition > 0 && (
-        <p className="text-muted-foreground text-xs">
-          {t("videoGenerator.position", { position: status.queuePosition })}
-        </p>
-      )}
-      {status?.error && <p className="text-destructive text-xs">{status.error}</p>}
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-muted-foreground/60 truncate font-mono text-[10px]">{job.workflowId}</p>
-        <Button className="h-7 shrink-0 rounded-[6px] px-2 text-xs" onClick={onCancel} size="sm" variant="secondary">
-          {t("videoGenerator.cancel")}
-        </Button>
-      </div>
-    </div>
-  );
+/** The detail line under a video card: what the run actually asked for. */
+function videoDetail(req: ReusableVideoReq | undefined): string | undefined {
+  return detailLine(req?.duration ? `${req.duration}s` : undefined, req?.resolution, req?.aspectRatio, req?.model);
 }
 
 /** One frame slot: pick chip when empty, thumbnail + clear when set.
@@ -359,14 +263,10 @@ export function FrameSlot({
 
 export function VideoGenerator({
   onBack,
-  onSwitchToImage,
-  onSwitchToMusic,
-  onSwitchTo3d,
+  onSwitchLane,
 }: {
   onBack: () => void;
-  onSwitchToImage: () => void;
-  onSwitchToMusic: () => void;
-  onSwitchTo3d: () => void;
+  onSwitchLane: (lane: MediaLane) => void;
 }) {
   const { t } = useI18n();
   const configured = useCivitaiKeyStatus();
@@ -809,13 +709,13 @@ export function VideoGenerator({
   const form = (
     <div className="flex flex-col gap-3 p-3">
       <MediaIsland
+        active="video"
+        ecoAriaLabel={t("videoGenerator.ecosystem")}
         ecoGroups={ecoGroups}
         ecoLabel={eco.label}
         ecoOpen={ecoOpen}
         onEcoOpenChange={setEcoOpen}
-        onSwitchToImage={onSwitchToImage}
-        onSwitchToMusic={onSwitchToMusic}
-        onSwitchTo3d={onSwitchTo3d}
+        onSwitch={onSwitchLane}
       />
       <KeyStatusNotices configured={configured} />
 
@@ -835,42 +735,24 @@ export function VideoGenerator({
           )
             .filter(([id]) => eco.workflows.includes(id))
             .map(([id, label]) => (
-              <button
-                className={cn(choiceClassShared(workflow === id), "flex-1")}
+              <ChoiceChip
+                active={workflow === id}
+                className="flex-1"
                 key={id}
                 onClick={() => {
                   setWorkflow(id);
                   // Trim frames to the new workflow's cap (refs start fresh).
                   setFrames((prev) => (id === "img2vid:ref2vid" ? prev : prev.slice(0, 2)));
                 }}
-                type="button"
               >
                 {label}
-              </button>
+              </ChoiceChip>
             ))}
         </div>
       </div>
 
-      {/* Model chips — ecosystems with more than the default pick. */}
-      {eco.models.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.model")}</Label>
-          <div className="flex flex-wrap gap-1.5">
-            {eco.models.map((m) => (
-              <button
-                className={cn(choiceClassShared(modelKey === m.key), "px-3")}
-                key={m.key || "default"}
-                onClick={() => switchModel(m.key)}
-                type="button"
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Prompt */}
+      {/* Prompt — directly under the workflow pick, before the model chips:
+          it is the field the user came here to fill. */}
       <div className="flex flex-col gap-1.5">
         <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="video-prompt">
           {t("generator.prompt")}
@@ -885,16 +767,42 @@ export function VideoGenerator({
         />
       </div>
 
-      {/* Negative prompt (kling legacy, veo3, wan). */}
+      {/* Model chips — ecosystems with more than the default pick. */}
+      {eco.models.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.model")}</Label>
+          <div className="flex flex-wrap gap-1.5">
+            {eco.models.map((m) => (
+              <ChoiceChip
+                active={modelKey === m.key}
+                className="px-3"
+                key={m.key || "default"}
+                onClick={() => switchModel(m.key)}
+              >
+                {m.label}
+              </ChoiceChip>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Negative prompt (kling legacy, veo3, wan). Same outcome-phrased label
+          as the image lane — "Exclude from video" reads without knowing the
+          model parameter. */}
       {hasNegative && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="video-negative">
-            {t("generator.negativePrompt")}
+          <Label
+            className="flex items-center gap-1 text-[13px] font-medium text-muted-foreground"
+            htmlFor="video-negative"
+          >
+            {t("videoGenerator.negativePromptTitle")}
+            <span className="text-xs text-muted-foreground/70">· {t("videoGenerator.negativePromptOptional")}</span>
           </Label>
           <Input
             className="h-8 rounded-[8px]"
             id="video-negative"
             onChange={(e) => setNegativePrompt(e.target.value)}
+            placeholder={t("videoGenerator.negativePromptPlaceholder")}
             value={negativePrompt}
           />
         </div>
@@ -989,14 +897,9 @@ export function VideoGenerator({
           {durationChoices ? (
             <div className="flex gap-1.5">
               {durationChoices.map((d) => (
-                <button
-                  className={cn(choiceClassShared(duration === d), "flex-1")}
-                  key={d}
-                  onClick={() => setDuration(d)}
-                  type="button"
-                >
+                <ChoiceChip active={duration === d} className="flex-1" key={d} onClick={() => setDuration(d)}>
                   {d}s
-                </button>
+                </ChoiceChip>
               ))}
             </div>
           ) : (
@@ -1023,14 +926,9 @@ export function VideoGenerator({
           <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.resolution")}</Label>
           <div className="flex gap-1.5">
             {resolutions.map((r) => (
-              <button
-                className={cn(choiceClassShared(resolution === r), "flex-1")}
-                key={r}
-                onClick={() => setResolution(r)}
-                type="button"
-              >
+              <ChoiceChip active={resolution === r} className="flex-1" key={r} onClick={() => setResolution(r)}>
                 {r}
-              </button>
+              </ChoiceChip>
             ))}
           </div>
         </div>
@@ -1042,26 +940,16 @@ export function VideoGenerator({
           <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.aspect")}</Label>
           <div className="flex flex-wrap gap-1.5">
             {aspects.map((a) => (
-              <button
-                className={cn(choiceClassShared(aspect === a), "px-2.5")}
-                key={a}
-                onClick={() => setAspect(a)}
-                type="button"
-              >
+              <ChoiceChip active={aspect === a} key={a} onClick={() => setAspect(a)}>
                 {a}
-              </button>
+              </ChoiceChip>
             ))}
           </div>
         </div>
       )}
 
       {/* Audio toggle (veo3/seedance/kling-v3). */}
-      {hasAudio && (
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <input checked={audio} onChange={(e) => setAudio(e.target.checked)} type="checkbox" />
-          {t("videoGenerator.audio")}
-        </label>
-      )}
+      {hasAudio && <ToggleRow checked={audio} label={t("videoGenerator.audio")} onCheckedChange={setAudio} />}
 
       {/* Style + movement (vidu q1). */}
       {(eco.styles.length > 0 || eco.movements.length > 0) && modelKey !== "q3" && (
@@ -1071,14 +959,14 @@ export function VideoGenerator({
               <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.style")}</Label>
               <div className="flex gap-1.5">
                 {eco.styles.map((st) => (
-                  <button
-                    className={cn(choiceClassShared(style === st), "flex-1 px-2")}
+                  <ChoiceChip
+                    active={style === st}
+                    className="flex-1 px-2"
                     key={st}
                     onClick={() => setStyle(style === st ? "" : st)}
-                    type="button"
                   >
                     {st === "anime" ? t("videoGenerator.style_anime") : t("videoGenerator.style_general")}
-                  </button>
+                  </ChoiceChip>
                 ))}
               </div>
             </div>
@@ -1146,19 +1034,11 @@ export function VideoGenerator({
       )}
 
       {/* Draft tier (flux3 pins 720p; vidu q3 turbo). */}
-      {eco.draft && (
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <input checked={draft} onChange={(e) => setDraft(e.target.checked)} type="checkbox" />
-          {t("videoGenerator.draft")}
-        </label>
-      )}
+      {eco.draft && <ToggleRow checked={draft} label={t("videoGenerator.draft")} onCheckedChange={setDraft} />}
 
       {/* Prompt enhancer (kling legacy, vidu q1 — defaults ON). */}
       {promptEnhancer && (
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <input checked={enhancer} onChange={(e) => setEnhancer(e.target.checked)} type="checkbox" />
-          {t("videoGenerator.promptEnhancer")}
-        </label>
+        <ToggleRow checked={enhancer} label={t("videoGenerator.promptEnhancer")} onCheckedChange={setEnhancer} />
       )}
 
       {/* Seed */}
@@ -1179,84 +1059,84 @@ export function VideoGenerator({
   );
 
   return (
-    <AssetShell subtitle={t("videoGenerator.subtitle")} title={t("generator.title")} onBack={onBack}>
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <section className="bg-card flex w-full shrink-0 flex-col border-b lg:w-[400px] lg:border-r lg:border-b-0">
-          <div className="min-h-0 flex-1 overflow-y-auto pb-24 overscroll-auto lg:overscroll-contain lg:pb-0">
-            {form}
+    <GeneratorLayout
+      footer={
+        <GenerateFooter
+          canSubmit={canSubmit}
+          inFlight={job != null}
+          inFlightLabel={t("videoGenerator.inProgress")}
+          note={t("videoGenerator.costNote")}
+          onSubmit={() => void handleGenerate()}
+          quote={cost?.totalTokens ?? null}
+          quoteState={
+            costError ? "failed" : cost ? "quoted" : promptEffective && configured === true ? "pending" : "idle"
+          }
+          ready={cost?.ready ?? true}
+          submitting={submitting}
+          submittingLabel={t("videoGenerator.submitting")}
+          submitLabel={t("generator.generate")}
+          warnings={cost?.warnings ?? []}
+        />
+      }
+      form={form}
+      header={
+        <ResultsPaneHeader
+          meta={t("generator.resultsCount", { count: results.length })}
+          title={t("videoGenerator.results")}
+        />
+      }
+      subtitle={t("videoGenerator.subtitle")}
+      title={t("generator.title")}
+      onBack={onBack}
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 lg:overscroll-contain">
+        {job && (
+          <div className="mb-3">
+            <JobCard
+              cancelLabel={t("videoGenerator.cancel")}
+              elapsed={elapsed}
+              error={status?.error}
+              onCancel={() => {
+                const workflowId = job.workflowId;
+                void call("civitai_video_cancel", { workflowId })
+                  .catch(() => undefined)
+                  .finally(() => {
+                    localStorage.removeItem(JOB_KEY);
+                    setJob(null);
+                    toast.success(t("videoGenerator.canceled"));
+                  });
+              }}
+              queuePosition={status?.queuePosition}
+              statusLabel={t(videoStatusKey(status))}
+              workflowId={job.workflowId}
+            />
           </div>
-          <GenerateFooter
-            canSubmit={canSubmit}
-            inFlight={job != null}
-            inFlightLabel={t("videoGenerator.inProgress")}
-            note={t("videoGenerator.costNote")}
-            onSubmit={() => void handleGenerate()}
-            quote={cost?.totalTokens ?? null}
-            quoteState={
-              costError ? "failed" : cost ? "quoted" : promptEffective && configured === true ? "pending" : "idle"
-            }
-            ready={cost?.ready ?? true}
-            submitting={submitting}
-            submittingLabel={t("videoGenerator.submitting")}
-            submitLabel={t("generator.generate")}
-            warnings={cost?.warnings ?? []}
-          />
-        </section>
-
-        <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col border-t lg:min-h-0 lg:border-t-0">
-          <div className="text-muted-foreground flex items-center justify-between gap-2 border-b px-3 py-2 text-[11px]">
-            <span className="text-foreground text-xs font-semibold">{t("videoGenerator.results")}</span>
-            <span>{t("generator.resultsCount", { count: results.length })}</span>
+        )}
+        {results.length === 0 && !job ? (
+          <EmptyResults description={t("videoGenerator.noResultsHint")} title={t("videoGenerator.noResults")} />
+        ) : (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {results.map((entry) => (
+              <VideoResultCard
+                entry={entry}
+                key={entry.fileId}
+                onRemove={() => removeEntry(entry)}
+                onReuse={() => reuseEntry(entry)}
+              />
+            ))}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 lg:overscroll-contain">
-            {job && (
-              <div className="mb-3">
-                <JobCard
-                  elapsed={elapsed}
-                  job={job}
-                  onCancel={() => {
-                    const workflowId = job.workflowId;
-                    void call("civitai_video_cancel", { workflowId })
-                      .catch(() => undefined)
-                      .finally(() => {
-                        localStorage.removeItem(JOB_KEY);
-                        setJob(null);
-                        toast.success(t("videoGenerator.canceled"));
-                      });
-                  }}
-                  status={status}
-                />
-              </div>
-            )}
-            {results.length === 0 && !job ? (
-              <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-center">
-                <Icon className="size-16 stroke-1" name="inbox" />
-                <p className="text-foreground text-sm font-medium">{t("videoGenerator.noResults")}</p>
-                <p className="max-w-56 text-xs">{t("videoGenerator.noResultsHint")}</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {results.map((entry) => (
-                  <VideoResultCard
-                    entry={entry}
-                    key={entry.fileId}
-                    onRemove={() => removeEntry(entry)}
-                    onReuse={() => reuseEntry(entry)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
+        )}
       </div>
-    </AssetShell>
+    </GeneratorLayout>
   );
 }
 
-/** Standalone choice chip — shared visual language with the image panel. */
-function choiceClassShared(active: boolean): string {
-  return cn(
-    "rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors",
-    active ? "border-primary bg-secondary text-primary" : "bg-secondary text-muted-foreground hover:text-foreground",
-  );
+/** The status pill's copy — terminal-but-not-yet-fetched reads as "succeeded"
+ *  because the download is the last leg of the poll loop. */
+function videoStatusKey(status: VideoStatusView | null): TranslationKey {
+  return status?.status === "processing"
+    ? "videoGenerator.processing"
+    : status?.status === "succeeded"
+      ? "videoGenerator.succeeded"
+      : "videoGenerator.queued";
 }

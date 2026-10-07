@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AssetShell } from "@/features/assets/components/asset-shell";
 import { refreshTokenBalance } from "@/features/topup/use-token-balance";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -29,9 +27,22 @@ import {
 } from "./model3d-ecosystems";
 import { KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
 import { GenerateFooter, publishMediaDebit } from "./generate-footer";
-import { type PickerGroup, PickerMenu } from "./picker-menu";
+import type { PickerGroup } from "./picker-menu";
 import { ResultActions, mediaToken } from "./result-actions";
 import { FrameSlot } from "./video-generator";
+import type { TranslationKey } from "@/lib/i18n";
+import {
+  ChoiceChip,
+  detailLine,
+  EmptyResults,
+  GeneratorLayout,
+  JobCard,
+  type MediaLane,
+  MediaIsland,
+  resultMeta,
+  ResultsPaneHeader,
+  ToggleRow,
+} from "./generator-shell";
 
 /** Civitai polyGen request the Rust ops accept (camelCase, flattened). */
 interface Model3dGenRequest {
@@ -139,89 +150,12 @@ function delay(ms: number): Promise<void> {
   return promise;
 }
 
-const SEGMENTED_LIST = "inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-muted p-0.5";
-
-function segmentClass(active: boolean): string {
-  return cn(
-    "flex h-7 items-center rounded-md px-3 text-xs font-medium transition-colors",
-    active ? "bg-background text-foreground shadow-sm dark:bg-input/30" : "text-muted-foreground hover:text-foreground",
-  );
-}
-
 /** The `Model3dGenRequest` behind a result, minus the uploaded media — a
  *  base64 image has no business in localStorage, and the slot is re-picked
  *  by hand anyway. `hadMedia` records that the run consumed one. */
 function stripReq(req: Model3dGenRequest): Omit<Model3dGenRequest, "image"> & { hadMedia?: boolean } {
   const { image, ...rest } = req;
   return image ? { ...rest, hadMedia: true } : rest;
-}
-
-function choiceClass(active: boolean): string {
-  return cn(
-    "h-8 rounded-[8px] border text-xs font-medium transition-colors",
-    active
-      ? "border-primary/60 bg-primary/10 text-primary"
-      : "bg-secondary text-muted-foreground hover:text-foreground",
-  );
-}
-
-/** Civitai's [media tabs …… Eco | <ecosystem>] strip — 3D lane active; the
- *  other tabs hand control back to their panels. */
-function MediaIsland({
-  ecoGroups,
-  ecoLabel,
-  ecoOpen,
-  onEcoOpenChange,
-  onSwitchToImage,
-  onSwitchToVideo,
-  onSwitchToMusic,
-}: {
-  ecoGroups: PickerGroup[];
-  ecoLabel: string;
-  ecoOpen: boolean;
-  onEcoOpenChange: (open: boolean) => void;
-  onSwitchToImage: () => void;
-  onSwitchToVideo: () => void;
-  onSwitchToMusic: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="flex items-center justify-between gap-2 rounded-[10px] border p-1.5">
-      <div className={SEGMENTED_LIST}>
-        <button className={segmentClass(false)} onClick={onSwitchToImage} title="Image" type="button">
-          <Icon className="size-4" name="image" />
-        </button>
-        <button className={segmentClass(false)} onClick={onSwitchToVideo} title="Video" type="button">
-          <Icon className="size-4" name="video" />
-        </button>
-        <button className={segmentClass(false)} onClick={onSwitchToMusic} title="Music" type="button">
-          <Icon className="size-4" name="music" />
-        </button>
-        <span className={cn(segmentClass(true), "pointer-events-none")} title="3D">
-          <Icon className="size-4" name="box" />
-        </span>
-      </div>
-      <PickerMenu
-        ariaLabel={t("model3dGenerator.ecosystem")}
-        groups={ecoGroups}
-        onOpenChange={onEcoOpenChange}
-        open={ecoOpen}
-        trigger={
-          <>
-            <span className="text-muted-foreground">Eco</span>
-            <span className="bg-border h-4 w-px" />
-            {ecoLabel}
-            <span
-              className={cn("text-muted-foreground flex items-center transition-transform", ecoOpen && "rotate-180")}
-            >
-              <Icon name="chevron-down" />
-            </span>
-          </>
-        }
-        triggerClassName="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
-      />
-    </div>
-  );
 }
 
 /** One saved 3D result: the model3DPreview render as the tile — the GLB
@@ -270,6 +204,7 @@ function Model3dResultCard({
         fileId={entry.fileId}
         fileName={entry.name}
         label={entry.prompt || entry.name}
+        meta={resultMeta(entry.at, detailLine(entry.req?.modelVersion, entry.req?.mode))}
         onRemove={onRemove}
         onReuse={onReuse}
         token={mediaToken(entry.prompt, entry.fileId, entry.name)}
@@ -278,84 +213,12 @@ function Model3dResultCard({
   );
 }
 
-/** In-flight progress card pinned above the results grid. */
-function JobCard({
-  job,
-  status,
-  elapsed,
-  onCancel,
-}: {
-  job: ActiveJob;
-  status: Model3dStatusView | null;
-  elapsed: number;
-  onCancel: () => void;
-}) {
-  const { t } = useI18n();
-  const statusKey =
-    status?.status === "processing"
-      ? "model3dGenerator.processing"
-      : status?.status === "succeeded"
-        ? "model3dGenerator.succeeded"
-        : "model3dGenerator.queued";
-  const minutes = Math.floor(elapsed / 60);
-  const seconds = elapsed % 60;
-  return (
-    <div className="flex flex-col gap-1.5 rounded-[10px] border border-primary/40 bg-secondary/60 p-3">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <Spinner className="size-4" />
-        {t(statusKey)}
-        <span className="text-muted-foreground ml-auto font-mono text-xs tabular-nums">
-          {minutes}:{String(seconds).padStart(2, "0")}
-        </span>
-      </div>
-      {status?.queuePosition != null && status.queuePosition > 0 && (
-        <p className="text-muted-foreground text-xs">
-          {t("model3dGenerator.position", { position: status.queuePosition })}
-        </p>
-      )}
-      {status?.error && <p className="text-destructive text-xs">{status.error}</p>}
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-muted-foreground/60 truncate font-mono text-[10px]">{job.workflowId}</p>
-        <Button className="h-7 shrink-0 rounded-[6px] px-2 text-xs" onClick={onCancel} size="sm" variant="secondary">
-          {t("model3dGenerator.cancel")}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function ToggleRow({
-  label,
-  onCheckedChange,
-  checked,
-}: {
-  label: string;
-  onCheckedChange: (v: boolean) => void;
-  checked: boolean;
-}) {
-  return (
-    <label className="flex cursor-pointer items-center justify-between gap-2 text-[13px]">
-      <span className="text-muted-foreground font-medium">{label}</span>
-      <input
-        checked={checked}
-        className="accent-primary size-4"
-        onChange={(e) => onCheckedChange(e.target.checked)}
-        type="checkbox"
-      />
-    </label>
-  );
-}
-
 export function Model3dGenerator({
   onBack,
-  onSwitchToImage,
-  onSwitchToVideo,
-  onSwitchToMusic,
+  onSwitchLane,
 }: {
   onBack: () => void;
-  onSwitchToImage: () => void;
-  onSwitchToVideo: () => void;
-  onSwitchToMusic: () => void;
+  onSwitchLane: (lane: MediaLane) => void;
 }) {
   const { t } = useI18n();
   const configured = useCivitaiKeyStatus();
@@ -813,14 +676,9 @@ export function Model3dGenerator({
             <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.topology")}</Label>
             <div className="flex gap-1.5">
               {(["triangle", "quad"] as const).map((top) => (
-                <button
-                  className={cn(choiceClass(topology === top), "flex-1")}
-                  key={top}
-                  onClick={() => setTopology(top)}
-                  type="button"
-                >
+                <ChoiceChip active={topology === top} className="flex-1" key={top} onClick={() => setTopology(top)}>
                   {t(`model3dGenerator.topology_${top}`)}
-                </button>
+                </ChoiceChip>
               ))}
             </div>
           </div>
@@ -828,14 +686,9 @@ export function Model3dGenerator({
             <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.symmetry")}</Label>
             <div className="flex gap-1.5">
               {(["auto", "on", "off"] as const).map((s) => (
-                <button
-                  className={cn(choiceClass(symmetry === s), "flex-1")}
-                  key={s}
-                  onClick={() => setSymmetry(s)}
-                  type="button"
-                >
+                <ChoiceChip active={symmetry === s} className="flex-1" key={s} onClick={() => setSymmetry(s)}>
                   {t(`model3dGenerator.symmetry_${s}`)}
-                </button>
+                </ChoiceChip>
               ))}
             </div>
           </div>
@@ -887,14 +740,14 @@ export function Model3dGenerator({
             </Label>
             <div className="flex gap-1.5">
               {(["original_image", "geometry"] as const).map((a) => (
-                <button
-                  className={cn(choiceClass(textureAlignment === a), "flex-1")}
+                <ChoiceChip
+                  active={textureAlignment === a}
+                  className="flex-1"
                   key={a}
                   onClick={() => setTextureAlignment(a)}
-                  type="button"
                 >
                   {t(`model3dGenerator.align_${a}`)}
-                </button>
+                </ChoiceChip>
               ))}
             </div>
           </div>
@@ -902,14 +755,9 @@ export function Model3dGenerator({
             <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.orientation")}</Label>
             <div className="flex gap-1.5">
               {(["default", "align_image"] as const).map((o) => (
-                <button
-                  className={cn(choiceClass(orientation === o), "flex-1")}
-                  key={o}
-                  onClick={() => setOrientation(o)}
-                  type="button"
-                >
+                <ChoiceChip active={orientation === o} className="flex-1" key={o} onClick={() => setOrientation(o)}>
                   {t(`model3dGenerator.orient_${o}`)}
-                </button>
+                </ChoiceChip>
               ))}
             </div>
           </div>
@@ -1023,13 +871,13 @@ export function Model3dGenerator({
   const form = (
     <div className="flex flex-col gap-3 p-3">
       <MediaIsland
+        active="model3d"
+        ecoAriaLabel={t("model3dGenerator.ecosystem")}
         ecoGroups={ecoGroups}
         ecoLabel={eco.label}
         ecoOpen={ecoOpen}
         onEcoOpenChange={setEcoOpen}
-        onSwitchToImage={onSwitchToImage}
-        onSwitchToVideo={onSwitchToVideo}
-        onSwitchToMusic={onSwitchToMusic}
+        onSwitch={onSwitchLane}
       />
       <KeyStatusNotices configured={configured} />
 
@@ -1039,17 +887,17 @@ export function Model3dGenerator({
           <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.process")}</Label>
           <div className="flex gap-2">
             {eco.processes.map((p) => (
-              <button
-                className={cn(choiceClass(process === p), "flex-1")}
+              <ChoiceChip
+                active={process === p}
+                className="flex-1"
                 key={p}
                 onClick={() => {
                   setProcess(p);
                   setImage(null);
                 }}
-                type="button"
               >
                 {t(p === "textTo3D" ? "model3dGenerator.txt2_3d" : "model3dGenerator.img2_3d")}
-              </button>
+              </ChoiceChip>
             ))}
           </div>
         </div>
@@ -1061,14 +909,14 @@ export function Model3dGenerator({
           <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.model")}</Label>
           <div className="flex flex-wrap gap-1.5">
             {eco.models.map((m) => (
-              <button
-                className={cn(choiceClass(modelVersion === m.key), "px-3")}
+              <ChoiceChip
+                active={modelVersion === m.key}
+                className="px-3"
                 key={m.key}
                 onClick={() => setModelVersion(m.key)}
-                type="button"
               >
                 {m.label}
-              </button>
+              </ChoiceChip>
             ))}
           </div>
         </div>
@@ -1112,14 +960,9 @@ export function Model3dGenerator({
           <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.mode")}</Label>
           <div className="flex gap-1.5">
             {(["preview", "full"] as const).map((m) => (
-              <button
-                className={cn(choiceClass(mode === m), "flex-1")}
-                key={m}
-                onClick={() => setMode(m)}
-                type="button"
-              >
+              <ChoiceChip active={mode === m} className="flex-1" key={m} onClick={() => setMode(m)}>
                 {t(`model3dGenerator.mode_${m}`)}
-              </button>
+              </ChoiceChip>
             ))}
           </div>
           <ToggleRow
@@ -1136,14 +979,9 @@ export function Model3dGenerator({
           <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.texture")}</Label>
           <div className="flex gap-1.5">
             {(["no", "standard", "HD"] as const).map((tx) => (
-              <button
-                className={cn(choiceClass(tripoTexture === tx), "flex-1")}
-                key={tx}
-                onClick={() => setTripoTexture(tx)}
-                type="button"
-              >
+              <ChoiceChip active={tripoTexture === tx} className="flex-1" key={tx} onClick={() => setTripoTexture(tx)}>
                 {t(`model3dGenerator.texture_${tx}`)}
-              </button>
+              </ChoiceChip>
             ))}
           </div>
         </div>
@@ -1161,71 +999,82 @@ export function Model3dGenerator({
   );
 
   return (
-    <AssetShell subtitle={t("model3dGenerator.subtitle")} title={t("generator.title")} onBack={onBack}>
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* ── Form column — the generation panel ── */}
-        <section className="bg-card flex w-full shrink-0 flex-col border-b lg:w-[400px] lg:border-r lg:border-b-0">
-          <div className="min-h-0 flex-1 overflow-y-auto pb-24 overscroll-auto lg:overscroll-contain lg:pb-0">
-            {form}
+    <GeneratorLayout
+      footer={
+        <GenerateFooter
+          canSubmit={canSubmit}
+          inFlight={job != null}
+          inFlightLabel={t("model3dGenerator.inProgress")}
+          note={t("model3dGenerator.costNote")}
+          onSubmit={() => void handleGenerate()}
+          quote={cost?.totalTokens ?? null}
+          quoteState={costError ? "failed" : cost ? "quoted" : formReady && configured === true ? "pending" : "idle"}
+          ready={cost?.ready ?? true}
+          submitting={submitting}
+          submittingLabel={t("generator.generatingElapsed", { seconds: elapsed })}
+          submitLabel={t("generator.generate")}
+          warnings={cost?.warnings ?? []}
+        />
+      }
+      form={form}
+      header={
+        <ResultsPaneHeader
+          meta={t("generator.resultsCount", { count: results.length })}
+          title={t("generator.results")}
+        />
+      }
+      subtitle={t("model3dGenerator.subtitle")}
+      title={t("generator.title")}
+      onBack={onBack}
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
+        {job && (
+          <div className="mb-3">
+            <JobCard
+              cancelLabel={t("model3dGenerator.cancel")}
+              elapsed={elapsed}
+              error={status?.error}
+              onCancel={() => {
+                // Cancel reuses the video op — same workflow bus.
+                const workflowId = job.workflowId;
+                void call("civitai_video_cancel", { workflowId })
+                  .catch(() => undefined)
+                  .finally(() => {
+                    localStorage.removeItem(JOB_KEY);
+                    setJob(null);
+                    toast.success(t("videoGenerator.canceled"));
+                  });
+              }}
+              queuePosition={status?.queuePosition}
+              statusLabel={t(model3dStatusKey(status))}
+              workflowId={job.workflowId}
+            />
           </div>
-          <GenerateFooter
-            canSubmit={canSubmit}
-            inFlight={job != null}
-            inFlightLabel={t("model3dGenerator.inProgress")}
-            note={t("model3dGenerator.costNote")}
-            onSubmit={() => void handleGenerate()}
-            quote={cost?.totalTokens ?? null}
-            quoteState={costError ? "failed" : cost ? "quoted" : formReady && configured === true ? "pending" : "idle"}
-            ready={cost?.ready ?? true}
-            submitting={submitting}
-            submittingLabel={t("generator.generatingElapsed", { seconds: elapsed })}
-            submitLabel={t("generator.generate")}
-            warnings={cost?.warnings ?? []}
-          />
-        </section>
-
-        {/* ── Results pane ── */}
-        <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col border-t lg:min-h-0 lg:border-t-0">
-          <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-            <span className="text-sm font-semibold">{t("generator.results")}</span>
-            <span className="text-muted-foreground truncate text-[11px]">
-              {t("generator.resultsCount", { count: results.length })}
-            </span>
+        )}
+        {results.length === 0 && !job ? (
+          <EmptyResults description={t("model3dGenerator.noResultsHint")} title={t("model3dGenerator.noResults")} />
+        ) : (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+            {results.map((entry) => (
+              <Model3dResultCard
+                entry={entry}
+                key={entry.fileId}
+                onRemove={() => removeEntry(entry)}
+                onReuse={() => reuseEntry(entry)}
+              />
+            ))}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
-            {job && (
-              <div className="mb-3">
-                {
-                  <JobCard
-                    elapsed={elapsed}
-                    job={job}
-                    status={status}
-                    onCancel={() => void call("civitai_video_cancel", { workflowId: job.workflowId })}
-                  />
-                }
-              </div>
-            )}
-            {results.length === 0 ? (
-              <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-center">
-                <Icon className="size-16 stroke-1" name="inbox" />
-                <p className="text-foreground text-sm font-medium">{t("model3dGenerator.noResults")}</p>
-                <p className="max-w-56 text-xs">{t("model3dGenerator.noResultsHint")}</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-                {results.map((entry) => (
-                  <Model3dResultCard
-                    entry={entry}
-                    key={entry.fileId}
-                    onRemove={() => removeEntry(entry)}
-                    onReuse={() => reuseEntry(entry)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
+        )}
       </div>
-    </AssetShell>
+    </GeneratorLayout>
   );
+}
+
+/** The status pill's copy — see the video lane's equivalent. */
+function model3dStatusKey(status: Model3dStatusView | null): TranslationKey {
+  return status?.status === "processing"
+    ? "model3dGenerator.processing"
+    : status?.status === "succeeded"
+      ? "model3dGenerator.succeeded"
+      : "model3dGenerator.queued";
 }

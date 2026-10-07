@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AssetShell } from "@/features/assets/components/asset-shell";
 import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -31,7 +30,19 @@ import {
 } from "./music-ecosystems";
 import { KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
 import { GenerateFooter, publishMediaDebit } from "./generate-footer";
-import { type PickerGroup, PickerMenu } from "./picker-menu";
+import type { PickerGroup } from "./picker-menu";
+import type { TranslationKey } from "@/lib/i18n";
+import {
+  ChoiceChip,
+  detailLine,
+  EmptyResults,
+  GeneratorLayout,
+  JobCard,
+  type MediaLane,
+  MediaIsland,
+  resultMeta,
+  ResultsPaneHeader,
+} from "./generator-shell";
 import { ResultActions, mediaToken } from "./result-actions";
 
 /** Civitai musicGen request the Rust ops accept (camelCase, only
@@ -139,74 +150,6 @@ function delay(ms: number): Promise<void> {
   return promise;
 }
 
-const SEGMENTED_LIST = "inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-muted p-0.5";
-
-function segmentClass(active: boolean): string {
-  return cn(
-    "flex h-7 items-center rounded-md px-3 text-xs font-medium transition-colors",
-    active ? "bg-background text-foreground shadow-sm dark:bg-input/30" : "text-muted-foreground hover:text-foreground",
-  );
-}
-
-/** Civitai's [media tabs …… Eco | <ecosystem>] strip — music lane active;
- *  the video/image tabs hand control back to their panels. */
-function MediaIsland({
-  ecoGroups,
-  ecoLabel,
-  ecoOpen,
-  onEcoOpenChange,
-  onSwitchToVideo,
-  onSwitchToImage,
-  onSwitchTo3d,
-}: {
-  ecoGroups: PickerGroup[];
-  ecoLabel: string;
-  ecoOpen: boolean;
-  onEcoOpenChange: (open: boolean) => void;
-  onSwitchToVideo: () => void;
-  onSwitchToImage: () => void;
-  onSwitchTo3d: () => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="flex items-center justify-between gap-2 rounded-[10px] border p-1.5">
-      <div className={SEGMENTED_LIST}>
-        <button className={segmentClass(false)} onClick={onSwitchToImage} title="Image" type="button">
-          <Icon className="size-4" name="image" />
-        </button>
-        <button className={segmentClass(false)} onClick={onSwitchToVideo} title="Video" type="button">
-          <Icon className="size-4" name="video" />
-        </button>
-        <span className={cn(segmentClass(true), "pointer-events-none")} title="Music">
-          <Icon className="size-4" name="music" />
-        </span>
-        <button className={segmentClass(false)} onClick={onSwitchTo3d} title="3D" type="button">
-          <Icon className="size-4" name="box" />
-        </button>
-      </div>
-      <PickerMenu
-        ariaLabel={t("videoGenerator.ecosystem")}
-        groups={ecoGroups}
-        onOpenChange={onEcoOpenChange}
-        open={ecoOpen}
-        trigger={
-          <>
-            <span className="text-muted-foreground">Eco</span>
-            <span className="bg-border h-4 w-px" />
-            {ecoLabel}
-            <span
-              className={cn("text-muted-foreground flex items-center transition-transform", ecoOpen && "rotate-180")}
-            >
-              <Icon name="chevron-down" />
-            </span>
-          </>
-        }
-        triggerClassName="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
-      />
-    </div>
-  );
-}
-
 /** One saved music result: <audio> card, click opens preview. */
 function MusicResultCard({
   entry,
@@ -240,6 +183,10 @@ function MusicResultCard({
         fileId={entry.fileId}
         fileName={entry.name}
         label={entry.prompt || entry.name}
+        meta={resultMeta(
+          entry.at,
+          detailLine(entry.req?.duration ? `${entry.req.duration}s` : undefined, entry.req?.mode),
+        )}
         onRemove={onRemove}
         onReuse={onReuse}
         token={mediaToken(entry.prompt, entry.fileId, entry.name)}
@@ -248,70 +195,12 @@ function MusicResultCard({
   );
 }
 
-/** In-flight progress card pinned above the results grid. */
-function JobCard({
-  job,
-  status,
-  elapsed,
-  onCancel,
-}: {
-  job: ActiveJob;
-  status: MusicStatusView | null;
-  elapsed: number;
-  onCancel: () => void;
-}) {
-  const { t } = useI18n();
-  const statusKey =
-    status?.status === "processing"
-      ? "musicGenerator.processing"
-      : status?.status === "succeeded"
-        ? "musicGenerator.succeeded"
-        : "musicGenerator.queued";
-  const minutes = Math.floor(elapsed / 60);
-  const seconds = elapsed % 60;
-  return (
-    <div className="flex flex-col gap-1.5 rounded-[10px] border border-primary/40 bg-secondary/60 p-3">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <Spinner className="size-4" />
-        {t(statusKey)}
-        <span className="text-muted-foreground ml-auto font-mono text-xs tabular-nums">
-          {minutes}:{String(seconds).padStart(2, "0")}
-        </span>
-      </div>
-      {status?.queuePosition != null && status.queuePosition > 0 && (
-        <p className="text-muted-foreground text-xs">
-          {t("musicGenerator.position", { position: status.queuePosition })}
-        </p>
-      )}
-      {status?.error && <p className="text-destructive text-xs">{status.error}</p>}
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-muted-foreground/60 truncate font-mono text-[10px]">{job.workflowId}</p>
-        <Button className="h-7 shrink-0 rounded-[6px] px-2 text-xs" onClick={onCancel} size="sm" variant="secondary">
-          {t("musicGenerator.cancel")}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** Standalone choice chip — shared visual language with the image panel. */
-function choiceClassShared(active: boolean): string {
-  return cn(
-    "rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors",
-    active ? "border-primary bg-secondary text-primary" : "bg-secondary text-muted-foreground hover:text-foreground",
-  );
-}
-
 export function MusicGenerator({
   onBack,
-  onSwitchToVideo,
-  onSwitchToImage,
-  onSwitchTo3d,
+  onSwitchLane,
 }: {
   onBack: () => void;
-  onSwitchToVideo: () => void;
-  onSwitchToImage: () => void;
-  onSwitchTo3d: () => void;
+  onSwitchLane: (lane: MediaLane) => void;
 }) {
   const { t } = useI18n();
   const configured = useCivitaiKeyStatus();
@@ -732,13 +621,13 @@ export function MusicGenerator({
   const form = (
     <div className="flex flex-col gap-3 p-3">
       <MediaIsland
+        active="music"
+        ecoAriaLabel={t("videoGenerator.ecosystem")}
         ecoGroups={ecoGroups}
         ecoLabel={eco.label}
         ecoOpen={ecoOpen}
         onEcoOpenChange={setEcoOpen}
-        onSwitchToImage={onSwitchToImage}
-        onSwitchToVideo={onSwitchToVideo}
-        onSwitchTo3d={onSwitchTo3d}
+        onSwitch={onSwitchLane}
       />
       <KeyStatusNotices configured={configured} />
 
@@ -773,8 +662,8 @@ export function MusicGenerator({
         {isAce && (
           <div className="flex flex-wrap gap-1.5">
             {ACE_VARIANTS.map((v) => (
-              <button
-                className={cn(choiceClassShared(variant === v.key))}
+              <ChoiceChip
+                active={variant === v.key}
                 key={v.key}
                 onClick={() => {
                   if (variant === v.key) return;
@@ -782,10 +671,9 @@ export function MusicGenerator({
                   setSteps("");
                   setCfgScale("");
                 }}
-                type="button"
               >
                 {v.label}
-              </button>
+              </ChoiceChip>
             ))}
           </div>
         )}
@@ -836,14 +724,9 @@ export function MusicGenerator({
           <Label className="text-muted-foreground text-[13px] font-medium">{t("musicGenerator.mode")}</Label>
           <div className="flex gap-2">
             {(["simple", "custom"] as MusicMode[]).map((m) => (
-              <button
-                className={cn(choiceClassShared(mode === m), "flex-1")}
-                key={m}
-                onClick={() => switchMode(m)}
-                type="button"
-              >
+              <ChoiceChip active={mode === m} className="flex-1" key={m} onClick={() => switchMode(m)}>
                 {m === "simple" ? t("musicGenerator.simple") : t("musicGenerator.custom")}
-              </button>
+              </ChoiceChip>
             ))}
           </div>
         </div>
@@ -855,14 +738,9 @@ export function MusicGenerator({
           <Label className="text-muted-foreground text-[13px] font-medium">{t("musicGenerator.generate")}</Label>
           <div className="flex gap-2">
             {(["music", "soundEffect"] as MusicOperation[]).map((op) => (
-              <button
-                className={cn(choiceClassShared(operation === op), "flex-1")}
-                key={op}
-                onClick={() => switchOperation(op)}
-                type="button"
-              >
+              <ChoiceChip active={operation === op} className="flex-1" key={op} onClick={() => switchOperation(op)}>
                 {op === "music" ? t("musicGenerator.music") : t("musicGenerator.soundEffect")}
-              </button>
+              </ChoiceChip>
             ))}
           </div>
         </div>
@@ -944,14 +822,9 @@ export function MusicGenerator({
             </div>
             <div className="flex gap-2">
               {(["full", "melody", "off"] as MusicScoreMode[]).map((m) => (
-                <button
-                  className={cn(choiceClassShared(scoreMode === m), "flex-1")}
-                  key={m}
-                  onClick={() => setScoreMode(m)}
-                  type="button"
-                >
+                <ChoiceChip active={scoreMode === m} className="flex-1" key={m} onClick={() => setScoreMode(m)}>
                   {t(`musicGenerator.score_${m}`)}
-                </button>
+                </ChoiceChip>
               ))}
             </div>
           </div>
@@ -1167,20 +1040,20 @@ export function MusicGenerator({
                 </Label>
                 <div className="flex items-center gap-2">
                   <div className="flex shrink-0 rounded-[8px] border p-0.5">
-                    <button
-                      className={cn(choiceClassShared(seedMode === "random"), "px-2.5 py-1")}
+                    <ChoiceChip
+                      active={seedMode === "random"}
+                      className="px-2.5 py-1"
                       onClick={() => setSeedMode("random")}
-                      type="button"
                     >
                       {t("generator.seedRandom")}
-                    </button>
-                    <button
-                      className={cn(choiceClassShared(seedMode === "custom"), "px-2.5 py-1")}
+                    </ChoiceChip>
+                    <ChoiceChip
+                      active={seedMode === "custom"}
+                      className="px-2.5 py-1"
                       onClick={() => setSeedMode("custom")}
-                      type="button"
                     >
                       {t("musicGenerator.custom")}
-                    </button>
+                    </ChoiceChip>
                   </div>
                   <Input
                     className="h-8 flex-1 rounded-[8px]"
@@ -1201,77 +1074,84 @@ export function MusicGenerator({
   );
 
   return (
-    <AssetShell subtitle={t("musicGenerator.subtitle")} title={t("generator.title")} onBack={onBack}>
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <section className="bg-card flex w-full shrink-0 flex-col border-b lg:w-[400px] lg:border-r lg:border-b-0">
-          <div className="min-h-0 flex-1 overflow-y-auto pb-24 overscroll-auto lg:overscroll-contain lg:pb-0">
-            {form}
+    <GeneratorLayout
+      footer={
+        <GenerateFooter
+          canSubmit={canSubmit}
+          inFlight={job != null}
+          inFlightLabel={t("videoGenerator.inProgress")}
+          note={t("videoGenerator.costNote")}
+          onSubmit={() => void handleGenerate()}
+          quote={cost?.totalTokens ?? null}
+          quoteState={
+            costError ? "failed" : cost ? "quoted" : formEffective && configured === true ? "pending" : "idle"
+          }
+          ready={cost?.ready ?? true}
+          submitting={submitting}
+          submittingLabel={t("videoGenerator.submitting")}
+          submitLabel={t("generator.generate")}
+          warnings={cost?.warnings ?? []}
+        />
+      }
+      form={form}
+      header={
+        <ResultsPaneHeader
+          meta={t("generator.resultsCount", { count: results.length })}
+          title={t("videoGenerator.results")}
+        />
+      }
+      subtitle={t("musicGenerator.subtitle")}
+      title={t("generator.title")}
+      onBack={onBack}
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 lg:overscroll-contain">
+        {job && (
+          <div className="mb-3">
+            <JobCard
+              cancelLabel={t("musicGenerator.cancel")}
+              elapsed={elapsed}
+              error={status?.error}
+              onCancel={() => {
+                const workflowId = job.workflowId;
+                // Cancel reuses the video op — same workflow bus.
+                void call("civitai_video_cancel", { workflowId })
+                  .catch(() => undefined)
+                  .finally(() => {
+                    localStorage.removeItem(JOB_KEY);
+                    setJob(null);
+                    toast.success(t("videoGenerator.canceled"));
+                  });
+              }}
+              queuePosition={status?.queuePosition}
+              statusLabel={t(musicStatusKey(status))}
+              workflowId={job.workflowId}
+            />
           </div>
-          <GenerateFooter
-            canSubmit={canSubmit}
-            inFlight={job != null}
-            inFlightLabel={t("videoGenerator.inProgress")}
-            note={t("videoGenerator.costNote")}
-            onSubmit={() => void handleGenerate()}
-            quote={cost?.totalTokens ?? null}
-            quoteState={
-              costError ? "failed" : cost ? "quoted" : formEffective && configured === true ? "pending" : "idle"
-            }
-            ready={cost?.ready ?? true}
-            submitting={submitting}
-            submittingLabel={t("videoGenerator.submitting")}
-            submitLabel={t("generator.generate")}
-            warnings={cost?.warnings ?? []}
-          />
-        </section>
-
-        <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col border-t lg:min-h-0 lg:border-t-0">
-          <div className="text-muted-foreground flex items-center justify-between gap-2 border-b px-3 py-2 text-[11px]">
-            <span className="text-foreground text-xs font-semibold">{t("videoGenerator.results")}</span>
-            <span>{t("generator.resultsCount", { count: results.length })}</span>
+        )}
+        {results.length === 0 && !job ? (
+          <EmptyResults description={t("musicGenerator.noResultsHint")} title={t("musicGenerator.noResults")} />
+        ) : (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {results.map((entry) => (
+              <MusicResultCard
+                entry={entry}
+                key={entry.fileId}
+                onRemove={() => removeEntry(entry)}
+                onReuse={() => reuseEntry(entry)}
+              />
+            ))}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 lg:overscroll-contain">
-            {job && (
-              <div className="mb-3">
-                <JobCard
-                  elapsed={elapsed}
-                  job={job}
-                  onCancel={() => {
-                    const workflowId = job.workflowId;
-                    // Cancel reuses the video op — same workflow bus.
-                    void call("civitai_video_cancel", { workflowId })
-                      .catch(() => undefined)
-                      .finally(() => {
-                        localStorage.removeItem(JOB_KEY);
-                        setJob(null);
-                        toast.success(t("videoGenerator.canceled"));
-                      });
-                  }}
-                  status={status}
-                />
-              </div>
-            )}
-            {results.length === 0 && !job ? (
-              <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-center">
-                <Icon className="size-16 stroke-1" name="inbox" />
-                <p className="text-foreground text-sm font-medium">{t("musicGenerator.noResults")}</p>
-                <p className="max-w-56 text-xs">{t("musicGenerator.noResultsHint")}</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {results.map((entry) => (
-                  <MusicResultCard
-                    entry={entry}
-                    key={entry.fileId}
-                    onRemove={() => removeEntry(entry)}
-                    onReuse={() => reuseEntry(entry)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
+        )}
       </div>
-    </AssetShell>
+    </GeneratorLayout>
   );
+}
+
+/** The status pill's copy — see the video lane's equivalent. */
+function musicStatusKey(status: MusicStatusView | null): TranslationKey {
+  return status?.status === "processing"
+    ? "musicGenerator.processing"
+    : status?.status === "succeeded"
+      ? "musicGenerator.succeeded"
+      : "musicGenerator.queued";
 }

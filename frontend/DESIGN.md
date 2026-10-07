@@ -101,6 +101,54 @@ view.
   failures, each with a colored badge (Plan, Tool, Done, Failed) and
   wall-clock offset from plan start. Footer (pinned): the goal composer.
 
+## Generator (media lanes)
+
+One page, four civitai media lanes — image, video, music, 3D — behind a
+shared shell (`features/generator/generator-shell.tsx`). The lane switcher
+(`[image · video · music · 3D] …… Eco | <ecosystem>`) sits atop the form
+column; the active lane renders inert with `aria-current`, the others are
+buttons. Every lane renders the same `GeneratorLayout`: a 400px form column
+with its action footer, beside a results pane. Below `lg` the two stack and
+the page scrolls, so the Generate footer pins to the viewport bottom.
+
+- **Form column — prompt first.** The lane switcher, then the workflow/engine
+  pick, then the **prompt**, then the rest. The prompt is the one required
+  field and the reason the user opened the panel; it used to render eighth,
+  below the model and LoRA pickers, where a 400px column pushed it out of
+  view. Model/LoRA chips, aspect-ratio chips, quantity and `Advanced` follow.
+  Picker ordering is the one exception — a lane's mode or model-version
+  switch decides *which* prompt fields exist, so it must precede the prompt.
+- **Controls.** Single-select choices are `ChoiceChip`s (carrying
+  `aria-pressed`); on/off rows are `ToggleRow`s on the app's `ui/switch`;
+  bounded counts are `NumberStepper`s, whose − / + buttons disable at the
+  bounds so the range is visible rather than only enforced on typing.
+- **Negative prompt.** Folded into a collapsible under the prompt, marked with
+  a filled dot when it holds a value. Reusing a saved result's settings opens
+  it if that run carried one, so a restored negative prompt is never hidden.
+- **Action footer.** Cost quote, Generate, and the token balance. A disabled
+  Generate always states *why* (missing key, missing source image, empty
+  prompt) rather than greying out silently; an insufficient balance replaces
+  the note with the shortfall and a Top Up link.
+- **Results pane.** The generated media, newest first, in a masonry. Each
+  card shows the prompt and a detail line — a relative timestamp plus what the
+  lane knows about the run (dimensions for images; duration/resolution/model
+  for video; duration/mode for music; model/mode for 3D). Unknown fields are
+  dropped rather than rendered blank.
+- **Card actions.** Copy the `kawai-file://` token, download, reuse settings
+  and remove live in a bottom bar that reveals on hover/focus. Because a
+  touch device has no hover — and tapping a card opens the preview, never the
+  bar — the same four actions are *also* in a persistent overflow menu pinned
+  to the card's top-right, always visible. Every action is reachable by
+  pointer and by keyboard regardless of input mode.
+- **Model browser (image lane).** A modal over the results pane, opened from
+  the Model chip or **Add LoRA** — it never replaces the results, so picking
+  a checkpoint or stacking LoRAs leaves the user's media in place. Loading
+  shows skeleton cards; a failed search offers Retry.
+- **In-flight work.** Video, music and 3D pin a job card above the results
+  (status, elapsed clock, queue position, server error, Cancel); the job
+  survives a restart. The image lane's op is synchronous, so its progress
+  rides the Generate button.
+
 ## Composer
 
 Capsule input (max-w-2xl) with attachment chips on top. The composer is

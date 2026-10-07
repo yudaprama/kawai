@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AssetShell } from "@/features/assets/components/asset-shell";
 import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Slider, SliderRange, SliderThumb, SliderTrack } from "@/components/ui/slider";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/shared/icon";
@@ -40,6 +41,17 @@ import { Model3dGenerator } from "./model3d-generator";
 import { Masonry } from "./masonry";
 import { type PickerGroup, type PickerItem, PickerMenu } from "./picker-menu";
 import { ResultActions, mediaToken } from "./result-actions";
+import {
+  ChoiceChip,
+  EmptyResults,
+  GeneratorLayout,
+  MediaIsland,
+  NumberStepper,
+  ResultsPaneHeader,
+  resultMeta,
+  SEGMENTED_LIST,
+  segmentClass,
+} from "./generator-shell";
 import { VideoGenerator } from "./video-generator";
 
 /** The `GenParams` that produced a result, minus the prompt (the entry carries
@@ -101,6 +113,15 @@ const MAX_HISTORY = 50;
 /** Civitai's additional-resources slot cap mirrored in the panel header. */
 const MAX_LORAS = 9;
 
+/**
+ * Sent when the user leaves the negative-prompt field empty — a first-time user
+ * should not have to know the term to get clean output. Anything the user types
+ * replaces it wholesale (never merged), so the field stays the single source of
+ * truth for the request. Image lane only: the video lane's negative prompt
+ * rides a different ecosystem capability set and stays fully user-driven.
+ */
+const DEFAULT_NEGATIVE_PROMPT = "blurry, low quality, text, watermark, extra fingers";
+
 function loadHistory(): HistoryEntry[] {
   try {
     const raw = localStorage.getItem(HISTORY_KEY);
@@ -137,43 +158,6 @@ function compactCount(n: number | null): string {
 
 function gcd(a: number, b: number): number {
   return b === 0 ? a : gcd(b, a % b);
-}
-
-/** Segmented-control vocabulary — the muted track + active-pill treatment the
- *  app's ui/tabs triggers use, spelled out for these raw button groups. */
-const SEGMENTED_LIST = "inline-flex shrink-0 items-center gap-0.5 rounded-lg bg-muted p-0.5";
-
-function segmentClass(active: boolean): string {
-  return cn(
-    "flex h-7 items-center rounded-md px-3 text-xs font-medium transition-colors",
-    active ? "bg-background text-foreground shadow-sm dark:bg-input/30" : "text-muted-foreground hover:text-foreground",
-  );
-}
-
-/** Standalone choice buttons (no shared track) — bordered, active in primary. */
-function choiceClass(active: boolean): string {
-  return cn(
-    "flex-1 rounded-[8px] border px-2.5 py-1.5 text-xs font-medium transition-colors",
-    active ? "border-primary bg-secondary text-primary" : "bg-secondary text-muted-foreground hover:text-foreground",
-  );
-}
-
-/** Text segmented control — the results pane's Hasil|Model switch. */
-function PaneTabs({ value, onChange }: { value: "hasil" | "model"; onChange: (v: "hasil" | "model") => void }) {
-  const { t } = useI18n();
-  const tabs = [
-    { id: "hasil" as const, label: t("generator.results") },
-    { id: "model" as const, label: t("generator.model") },
-  ];
-  return (
-    <div className={SEGMENTED_LIST}>
-      {tabs.map((tab) => (
-        <button className={segmentClass(value === tab.id)} key={tab.id} onClick={() => onChange(tab.id)} type="button">
-          {tab.label}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 /** Aspect-ratio chip with a proportionally drawn rectangle — the civitai
@@ -215,7 +199,7 @@ function AspectChip({
         />
       </div>
       <span className="text-[10px] leading-none font-medium">{label}</span>
-      <span className="text-muted-foreground/70 text-[9px] leading-none">{sub}</span>
+      <span className="text-muted-foreground/70 text-[10px] leading-none">{sub}</span>
     </button>
   );
 }
@@ -281,6 +265,7 @@ function ResultCard({ entry, onRemove, onReuse }: { entry: HistoryEntry; onRemov
         fileId={entry.fileId}
         fileName={entry.name}
         label={entry.prompt || entry.name}
+        meta={resultMeta(entry.at, dims ? `${dims.width}×${dims.height}` : undefined)}
         onRemove={onRemove}
         onReuse={onReuse}
         token={mediaToken(entry.prompt, entry.fileId, entry.name)}
@@ -289,7 +274,7 @@ function ResultCard({ entry, onRemove, onReuse }: { entry: HistoryEntry; onRemov
   );
 }
 
-/** Rich resource card for the in-pane browser — civitai's model-card look:
+/** Rich resource card for the model browser — civitai's model-card look:
  *  image CAROUSEL (cover + showcase examples), name, creator, stats, base
  *  model, description snippet. */
 function BrowserCard({
@@ -375,9 +360,11 @@ function BrowserCard({
 }
 
 /**
- * The in-pane model browser (where the civitai picker modal's content lives
- * now — the RESULTS pane gives it room for full model info). Same fetch +
- * selection behavior: Checkpoint click selects the diffuser override, LoRA
+ * The model browser, rendered as a modal over the results pane. It used to
+ * REPLACE the results pane (a Hasil|Model tab switch), so picking a model or
+ * a LoRA made the user's generated media vanish. As a dialog the results stay
+ * mounted and visible behind it, and the browser keeps the room it needs for
+ * full model cards. Checkpoint click selects the diffuser override, LoRA
  * click adds to the stack.
  */
 function ModelBrowser({
@@ -385,6 +372,7 @@ function ModelBrowser({
   onAddLora,
   onSelectModel,
   selectedModel,
+  title,
   type,
   onTypeChange,
   addedLoraAirs,
@@ -394,6 +382,8 @@ function ModelBrowser({
   onAddLora: (row: SearchModelRow) => void;
   onSelectModel: (model: SelectedModel | null) => void;
   selectedModel: SelectedModel | null;
+  /** Dialog heading — names what the current `type` tab is browsing. */
+  title: string;
   type: "Checkpoint" | "LORA";
   onTypeChange: (type: "Checkpoint" | "LORA") => void;
   /** AIR URNs already in the LoRA stack — re-clicking one is a no-op. */
@@ -416,37 +406,46 @@ function ModelBrowser({
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Page 1 (replace) — every filter change restarts the feed.
-  useEffect(() => {
-    let cancelled = false;
+  // The in-flight request's cancel flag, so a Retry supersedes the attempt
+  // that produced the error and the effect's cleanup cancels it.
+  const inFlight = useRef({ cancelled: false });
+
+  // Page 1 (replace) — every filter change restarts the feed. Retry re-invokes
+  // this directly, so the error state is never a dead end.
+  const fetchFirstPage = useCallback(async () => {
+    inFlight.current.cancelled = true;
+    const signal = { cancelled: false };
+    inFlight.current = signal;
     setLoading(true);
     setError(null);
     setRows([]);
     setNextCursor(null);
-    call<SearchModelPage>("civitai_search_models", {
-      ecosystem: eco.id,
-      query: debouncedQuery || undefined,
-      modelType: type,
-      sort,
-      limit: 24,
-    })
-      .then((page) => {
-        if (!cancelled) setRows(page.rows);
-        if (!cancelled) setNextCursor(page.nextCursor);
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setRows([]);
-          setError(errText(e));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+    try {
+      const page = await call<SearchModelPage>("civitai_search_models", {
+        ecosystem: eco.id,
+        query: debouncedQuery || undefined,
+        modelType: type,
+        sort,
+        limit: 24,
       });
+      if (signal.cancelled) return;
+      setRows(page.rows);
+      setNextCursor(page.nextCursor);
+    } catch (e) {
+      if (signal.cancelled) return;
+      setRows([]);
+      setError(errText(e));
+    } finally {
+      if (!signal.cancelled) setLoading(false);
+    }
+  }, [debouncedQuery, eco.id, sort, type]);
+
+  useEffect(() => {
+    void fetchFirstPage();
     return () => {
-      cancelled = true;
+      inFlight.current.cancelled = true;
     };
-  }, [eco.id, type, debouncedQuery, sort]);
+  }, [fetchFirstPage]);
 
   const loadMore = useCallback(() => {
     if (loadingMore || nextCursor === null) return;
@@ -504,77 +503,119 @@ function ModelBrowser({
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      {/* Filters: search + type tabs + sort */}
-      <div className="flex flex-wrap items-center gap-2 border-b p-3">
-        <div className="relative min-w-[180px] flex-1">
-          <Icon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2" name="search" />
-          <Input
-            className="h-8 rounded-[8px] pr-3 pl-8 text-sm"
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("generator.searchPlaceholder")}
-            value={query}
-          />
-        </div>
-        <div className={SEGMENTED_LIST}>
-          {(["Checkpoint", "LORA"] as const).map((tt) => (
-            <button className={segmentClass(type === tt)} key={tt} onClick={() => onTypeChange(tt)} type="button">
-              {tt === "Checkpoint" ? t("generator.typeCheckpoint") : t("generator.typeLora")}
-            </button>
-          ))}
-        </div>
-        <Select onValueChange={setSort} value={sort}>
-          <SelectTrigger className="h-8 w-[170px] rounded-[8px] text-xs">
-            {sortOptions.find((o) => o.value === sort)?.label}
-          </SelectTrigger>
-          <SelectContent className="z-[60] rounded-[8px]" position="popper">
-            {sortOptions.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
+    <DialogContent
+      className="flex h-[min(80vh,44rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
+      onOpenAutoFocus={(e) => e.preventDefault()}
+    >
+      <DialogHeader className="shrink-0 space-y-0 border-b px-4 py-3">
+        <DialogTitle className="text-sm">{title}</DialogTitle>
+        <DialogDescription className="text-xs">
+          {type === "LORA"
+            ? t("generator.browserLoraHint", { count: loraCount, max: MAX_LORAS })
+            : selectedModel
+              ? t("generator.browserSelected", { name: selectedModel.name })
+              : t("generator.browserDefault")}
+        </DialogDescription>
+      </DialogHeader>
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* Filters: search + type tabs + sort */}
+        <div className="flex flex-wrap items-center gap-2 border-b p-3">
+          <div className="relative min-w-[180px] flex-1">
+            <Icon className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2" name="search" />
+            <Input
+              className="h-8 rounded-[8px] pr-3 pl-8 text-sm"
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("generator.searchPlaceholder")}
+              value={query}
+            />
+          </div>
+          <div className={SEGMENTED_LIST}>
+            {(["Checkpoint", "LORA"] as const).map((tt) => (
+              <button
+                aria-pressed={type === tt}
+                className={segmentClass(type === tt)}
+                key={tt}
+                onClick={() => onTypeChange(tt)}
+                type="button"
+              >
+                {tt === "Checkpoint" ? t("generator.typeCheckpoint") : t("generator.typeLora")}
+              </button>
             ))}
-          </SelectContent>
-        </Select>
-      </div>
+          </div>
+          <Select onValueChange={setSort} value={sort}>
+            <SelectTrigger className="h-8 w-[170px] rounded-[8px] text-xs">
+              {sortOptions.find((o) => o.value === sort)?.label}
+            </SelectTrigger>
+            <SelectContent className="z-[60] rounded-[8px]" position="popper">
+              {sortOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-      {/* Grid */}
-      <div className="min-h-0 flex-1 overflow-y-auto p-3" onScroll={handleScroll}>
-        {loading ? (
-          <div className="flex h-40 items-center justify-center">
-            <Spinner className="size-6" />
-          </div>
-        ) : error ? (
-          <div className="border-muted-foreground/70 mx-auto flex h-40 max-w-md flex-col items-center justify-center gap-2 rounded-[8px] border p-4 text-center">
-            <Icon className="size-8 stroke-1" name="alert-triangle" />
-            <p className="text-xs break-words">{error}</p>
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="text-muted-foreground flex h-40 flex-col items-center justify-center gap-2">
-            <Icon className="size-12 stroke-1" name="inbox" />
-            <p className="text-sm">{t("generator.noResults")}</p>
-          </div>
-        ) : (
-          <Masonry
-            cols={cols}
-            items={rows}
-            keyOf={(row) => String(row.modelId)}
-            render={(row) => (
-              <BrowserCard
-                eco={eco}
-                onSelect={handleSelect}
-                row={row}
-                selected={type === "Checkpoint" ? selectedModel?.airUrn === row.airUrn : addedLoraAirs.has(row.airUrn)}
-              />
-            )}
-          />
-        )}
-        {loadingMore && (
-          <div className="flex justify-center py-3">
-            <Spinner className="size-5" />
-          </div>
-        )}
+        {/* Grid */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3" onScroll={handleScroll}>
+          {loading ? (
+            // Skeleton rows, not one centered spinner: the grid's shape is the
+            // whole point of this browser, so reserve it while the page loads.
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {Array.from({ length: 6 }, (_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length placeholder set, never reordered
+                <div className="overflow-hidden rounded-[10px] border" key={i}>
+                  <Skeleton className="aspect-[4/3] w-full rounded-none" />
+                  <div className="flex flex-col gap-1.5 p-2.5">
+                    <Skeleton className="h-3 w-3/4" />
+                    <Skeleton className="h-2.5 w-1/2" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : error ? (
+            <div className="border-muted-foreground/70 mx-auto flex h-40 max-w-md flex-col items-center justify-center gap-2 rounded-[8px] border p-4 text-center">
+              <Icon className="size-8 stroke-1" name="alert-triangle" />
+              <p className="text-xs break-words">{error}</p>
+              <Button
+                className="mt-1 h-7 rounded-[6px] px-2 text-xs"
+                onClick={() => void fetchFirstPage()}
+                size="sm"
+                variant="secondary"
+              >
+                {t("generator.retry")}
+              </Button>
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="text-muted-foreground flex h-40 flex-col items-center justify-center gap-2">
+              <Icon className="size-12 stroke-1" name="inbox" />
+              <p className="text-sm">{t("generator.noResults")}</p>
+            </div>
+          ) : (
+            <Masonry
+              cols={cols}
+              items={rows}
+              keyOf={(row) => String(row.modelId)}
+              render={(row) => (
+                <BrowserCard
+                  eco={eco}
+                  onSelect={handleSelect}
+                  row={row}
+                  selected={
+                    type === "Checkpoint" ? selectedModel?.airUrn === row.airUrn : addedLoraAirs.has(row.airUrn)
+                  }
+                />
+              )}
+            />
+          )}
+          {loadingMore && (
+            <div className="flex justify-center py-3">
+              <Spinner className="size-5" />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </DialogContent>
   );
 }
 
@@ -582,8 +623,9 @@ function ModelBrowser({
  * Generator — Civitai image generation laid out like the civitai generation
  * panel (control treatment, cover-art model picker, Buzz footer), themed
  * through kawai's global token layer so it follows the app's light/dark
- * theme like every other asset page. The model BROWSER lives in the wide
- * results pane (tab Hasil|Model) so full model info fits.
+ * theme like every other asset page. The model BROWSER opens as a modal over
+ * the results pane, so it has room for full model info without hiding the
+ * user's generated media.
  * Direct-op path (no supervisor); the op is synchronous and spends Buzz —
  * the Generate click is the consent. Results land in the office store and
  * embed anywhere `kawai-file://` tokens render. The API key is vault-baked.
@@ -593,31 +635,12 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   /** Civitai's media lane — video/music render their own panels. */
   const [media, setMedia] = useState<"image" | "video" | "music" | "model3d">("image");
   const configured = useCivitaiKeyStatus();
-  const [paneTab, setPaneTab] = useState<"hasil" | "model">("hasil");
+  /** The model browser overlays the results pane as a modal, so it no longer
+   *  needs a pane tab — picking a model leaves the user's media in place. */
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [covers, setCovers] = useState<Record<string, ModelCover>>({});
   const [pickerType, setPickerType] = useState<"Checkpoint" | "LORA">("Checkpoint");
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const shellBodyRef = useRef<HTMLDivElement>(null);
-  /** The AssetShell body div is a page scroller below lg (the narrow layout
-   *  stacks the results pane under the form), but on lg+ the generator is
-   *  fully pane-bound and must never scroll it — wheel chaining or reveal
-   *  scrolling would otherwise shift the whole shell. `clip` is not a scroll
-   *  container, so nothing can move it. */
-  useEffect(() => {
-    const body = shellBodyRef.current?.parentElement;
-    if (!body) return;
-    const mql = window.matchMedia("(min-width: 1024px)");
-    const prev = body.style.overflow;
-    const apply = () => {
-      body.style.overflow = mql.matches ? "clip" : "";
-    };
-    apply();
-    mql.addEventListener("change", apply);
-    return () => {
-      mql.removeEventListener("change", apply);
-      body.style.overflow = prev;
-    };
-  }, []);
   const [selectedModel, setSelectedModel] = useState<SelectedModel | null>(null);
 
   const [ecoId, setEcoId] = useState(ECOSYSTEMS[0].id);
@@ -684,6 +707,10 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
    *  denoise slider shown — the generate leg is createVariant). */
   const hiresImg = workflowId === "txt2img:hires-fix" && hiresMode === "image";
   const needsSource = workflow.input === "image" || hiresImg;
+  /** The negative prompt is folded away until asked for; `reuseEntry` opens it
+   *  when the restored run actually carried a value, so a reused negative
+   *  prompt is never silently hidden. */
+  const [negativeOpen, setNegativeOpen] = useState(false);
   const genSize =
     (isImg2Img || hiresImg) && sourceDims
       ? {
@@ -742,7 +769,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       width: genSize.width,
       height: genSize.height,
       quantity,
-      negativePrompt: negativePrompt.trim() || undefined,
+      negativePrompt: negativePrompt.trim() || DEFAULT_NEGATIVE_PROMPT,
       cfgScale: Number(cfgScale),
       steps: Number(steps),
       seed: seed.trim() ? Number(seed) : undefined,
@@ -827,7 +854,6 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       return;
     }
     setRunning(true);
-    setPaneTab("hasil");
     try {
       // Client pre-check (display-grade): the docs-formula estimate converted
       // to app tokens vs the shared balance. An unreadable balance falls
@@ -877,6 +903,9 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     setEcoId(nextEco.id);
     setPrompt(entry.prompt);
     setNegativePrompt(p.negativePrompt ?? "");
+    // The negative prompt is folded away by default — reveal it when the
+    // restored run actually carried one, so reuse never hides a setting.
+    setNegativeOpen((p.negativePrompt ?? "").trim().length > 0);
     setQuantity(Math.max(1, Math.min(12, p.quantity ?? 1)));
     setCfgScale(String(p.cfgScale ?? nextEco.defaultCfgScale));
     setSteps(String(p.steps ?? nextEco.defaultSteps));
@@ -929,6 +958,17 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     !running &&
     (needsSource ? sourceImage != null : true) &&
     (workflowId === "img2img:upscale" || prompt.trim().length > 0);
+  /** Why Generate is disabled — stated under the footer so a greyed button
+   *  is never a dead end. Mirrors `canGenerate`'s order; null when ready. */
+  const imageBlockedReason = canGenerate
+    ? null
+    : configured !== true
+      ? t("generator.keyMissingBody")
+      : needsSource && !sourceImage
+        ? t("generator.sourceImageRequired")
+        : workflowId !== "img2img:upscale" && prompt.trim().length === 0
+          ? t("generator.promptRequired")
+          : null;
 
   /** AIR URNs already in the stack — keeps ModelBrowser clicks idempotent. */
   const addedLoraAirs = useMemo(() => new Set(loras.map((l) => l.air)), [loras]);
@@ -1003,68 +1043,16 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
 
   const form = (
     <div className="flex flex-col gap-3 p-3">
-      {/* Top bar — civitai's [media tabs …… Eco | <ecosystem>] strip. The
-          panel is image-only, so the media tabs render as a static island. */}
-      {!isUpscale && (
-        <div className="flex items-center justify-between gap-2 rounded-[10px] border p-1.5">
-          <div className="flex items-center gap-1 rounded-[8px] border p-1">
-            <button
-              className="flex h-7 w-9 items-center justify-center rounded-[6px] bg-accent text-primary"
-              title="Image"
-              type="button"
-            >
-              <Icon name="image" />
-            </button>
-            <button
-              className="text-muted-foreground/70 flex h-7 w-9 cursor-pointer items-center justify-center rounded-[6px] transition-colors hover:text-foreground"
-              onClick={() => setMedia("video")}
-              title="Video"
-              type="button"
-            >
-              <Icon name="video" />
-            </button>
-            <button
-              className="text-muted-foreground/70 flex h-7 w-9 cursor-pointer items-center justify-center rounded-[6px] transition-colors hover:text-foreground"
-              onClick={() => setMedia("music")}
-              title="Music"
-              type="button"
-            >
-              <Icon name="music" />
-            </button>
-            <button
-              className="text-muted-foreground/70 flex h-7 w-9 cursor-pointer items-center justify-center rounded-[6px] transition-colors hover:text-foreground"
-              onClick={() => setMedia("model3d")}
-              title="3D"
-              type="button"
-            >
-              <Icon name="box" />
-            </button>
-          </div>
-          <PickerMenu
-            align="end"
-            ariaLabel={t("generator.ecosystem")}
-            groups={ecoPickerGroups}
-            onOpenChange={setEcoOpen}
-            open={ecoOpen}
-            trigger={
-              <>
-                <span className="text-muted-foreground">Eco</span>
-                <span className="bg-border h-4 w-px" />
-                {eco.label}
-                <span
-                  className={cn(
-                    "text-muted-foreground flex items-center transition-transform",
-                    ecoOpen && "rotate-180",
-                  )}
-                >
-                  <Icon name="chevron-down" />
-                </span>
-              </>
-            }
-            triggerClassName="flex items-center gap-2 rounded-[8px] px-3 py-2 text-sm font-semibold transition-colors hover:brightness-125"
-          />
-        </div>
-      )}
+      {/* Top bar — the shared [media tabs ··· Eco | eco] island. */}
+      <MediaIsland
+        active="image"
+        ecoAriaLabel={t("generator.ecosystem")}
+        ecoGroups={ecoPickerGroups}
+        ecoLabel={eco.label}
+        ecoOpen={ecoOpen}
+        onEcoOpenChange={setEcoOpen}
+        onSwitch={setMedia}
+      />
       <KeyStatusNotices configured={configured} />
 
       {/* Workflow — civitai's selected-workflow card: big bold title +
@@ -1110,16 +1098,62 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
               ["image", "generator.imageToImage"],
             ] as const
           ).map(([mode, key]) => (
-            <button
-              aria-pressed={hiresMode === mode}
-              className={choiceClass(hiresMode === mode)}
-              key={mode}
-              onClick={() => setHiresMode(mode)}
-              type="button"
-            >
+            <ChoiceChip active={hiresMode === mode} className="flex-1" key={mode} onClick={() => setHiresMode(mode)}>
               {t(key)}
-            </button>
+            </ChoiceChip>
           ))}
+        </div>
+      )}
+      {/* The prompt sits directly under the workflow card — it is the one
+          required field, and it used to render eighth, below the model and
+          LoRA pickers, where a 400px column pushed it out of view. */}
+      {!isUpscale && (
+        <div className="flex flex-col gap-1.5">
+          <Label
+            className="text-muted-foreground flex items-center gap-1 text-[13px] font-medium"
+            htmlFor="generator-prompt"
+          >
+            {t("generator.prompt")}
+            <span className="text-destructive" title="required">
+              *
+            </span>
+          </Label>
+          <Textarea
+            className="min-h-24 resize-none rounded-[8px] text-sm"
+            id="generator-prompt"
+            maxLength={10000}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={t("generator.promptPlaceholder")}
+            value={prompt}
+          />
+          {/* Negative prompt — folded away by default. It is optional, rarely
+              used, and its own full-height textarea used to push Size,
+              Quantity and Advanced off a 400px screen. The trigger carries a
+              filled-state marker so a set value is never hidden. The label is
+              phrased as the outcome ("Exclude from image") rather than the
+              model parameter, so a first-time user can tell what the field is
+              for without knowing the term. */}
+          <Collapsible onOpenChange={setNegativeOpen} open={negativeOpen}>
+            <CollapsibleTrigger className="group mt-1 flex items-center gap-1 text-[13px] font-medium text-muted-foreground">
+              <Icon className="size-4 transition-transform group-data-[state=open]:rotate-180" name="chevron-down" />{" "}
+              {t("generator.negativePromptTitle")}
+              <span className="text-muted-foreground/70 text-xs">· {t("generator.negativePromptOptional")}</span>
+              {negativePrompt.trim().length > 0 && (
+                <span className="bg-primary size-1.5 shrink-0 rounded-full" title={t("generator.negativePromptSet")} />
+              )}
+            </CollapsibleTrigger>
+            <CollapsibleContent className="flex flex-col gap-1.5 pt-1.5">
+              <p className="text-muted-foreground text-xs">{t("generator.negativePromptHint")}</p>
+              <Textarea
+                className="min-h-16 resize-none rounded-[8px]"
+                id="generator-negative"
+                maxLength={10000}
+                onChange={(e) => setNegativePrompt(e.target.value)}
+                placeholder={t("generator.negativePromptPlaceholder")}
+                value={negativePrompt}
+              />
+            </CollapsibleContent>
+          </Collapsible>
         </div>
       )}
 
@@ -1200,15 +1234,9 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           </div>
           <div className="flex gap-1.5">
             {[1, 2, 3].map((n) => (
-              <button
-                aria-pressed={upscaleRepeats === n}
-                className={choiceClass(upscaleRepeats === n)}
-                key={n}
-                onClick={() => setUpscaleRepeats(n)}
-                type="button"
-              >
+              <ChoiceChip active={upscaleRepeats === n} className="flex-1" key={n} onClick={() => setUpscaleRepeats(n)}>
                 {n}×
-              </button>
+              </ChoiceChip>
             ))}
           </div>
           {workflowId === "txt2img:hires-fix" && (
@@ -1236,7 +1264,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
             className="flex w-full items-center gap-2.5 rounded-[8px] border bg-secondary p-2 text-left transition-colors hover:brightness-110"
             onClick={() => {
               setPickerType("Checkpoint");
-              setPaneTab("model");
+              setBrowserOpen(true);
             }}
             type="button"
           >
@@ -1248,7 +1276,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
                 </span>
                 <span
                   className={cn(
-                    "shrink-0 rounded border px-1 py-px text-[9px] uppercase",
+                    "shrink-0 rounded border px-1 py-px text-[10px] uppercase",
                     selectedModel ? "text-warning" : "text-muted-foreground/70",
                   )}
                 >
@@ -1273,7 +1301,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
               <Label className="text-muted-foreground text-[13px] font-medium">
                 {t("generator.additionalResources")}
               </Label>
-              <span className="text-muted-foreground/70 rounded border px-1 py-px text-[9px]">
+              <span className="text-muted-foreground/70 rounded border px-1 py-px text-[10px]">
                 {loras.length}/{MAX_LORAS}
               </span>
             </div>
@@ -1281,7 +1309,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
               className="text-primary flex items-center gap-1 text-[11px] underline-offset-2 hover:underline"
               onClick={() => {
                 setPickerType("LORA");
-                setPaneTab("model");
+                setBrowserOpen(true);
               }}
               type="button"
             >
@@ -1309,46 +1337,6 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
               ))}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Prompt — civitai's "Prompt ⓘ *": plain empty textarea, required
-          marker, no counter */}
-      {!isUpscale && (
-        <div className="flex flex-col gap-1.5">
-          <Label
-            className="text-muted-foreground flex items-center gap-1 text-[13px] font-medium"
-            htmlFor="generator-prompt"
-          >
-            {t("generator.prompt")}
-            <span className="text-destructive" title="required">
-              *
-            </span>
-          </Label>
-          <Textarea
-            className="min-h-24 resize-none rounded-[8px] text-sm"
-            id="generator-prompt"
-            maxLength={10000}
-            onChange={(e) => setPrompt(e.target.value)}
-            value={prompt}
-          />
-        </div>
-      )}
-
-      {/* Negative Prompt — civitai renders it directly under Prompt, not
-          buried in Advanced */}
-      {!isUpscale && (
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="generator-negative">
-            {t("generator.negativePrompt")}
-          </Label>
-          <Textarea
-            className="min-h-16 resize-none rounded-[8px]"
-            id="generator-negative"
-            maxLength={10000}
-            onChange={(e) => setNegativePrompt(e.target.value)}
-            value={negativePrompt}
-          />
         </div>
       )}
 
@@ -1385,15 +1373,16 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
           <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="generator-quantity">
             {t("generator.quantity")}
           </Label>
-          <Input
-            className="h-8 rounded-[8px]"
+          <NumberStepper
+            decrementLabel={t("generator.quantityDecrease")}
             id="generator-quantity"
+            incrementLabel={t("generator.quantityIncrease")}
             max={12}
             min={1}
-            onChange={(e) => setQuantity(Math.max(1, Math.min(12, Number(e.target.value) || 1)))}
-            type="number"
+            onChange={setQuantity}
             value={quantity}
           />
+          <p className="text-muted-foreground/70 text-[10px]">{t("generator.quantityHint", { max: 12 })}</p>
         </div>
       )}
 
@@ -1424,130 +1413,89 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     </div>
   );
 
-  // Video lane — a fully separate panel (own form, own results storage).
-  // Placed after every hook so the image panel's state keeps working when
-  // the user switches back.
-  if (media === "video") {
-    return (
-      <VideoGenerator
-        onBack={onBack}
-        onSwitchToImage={() => setMedia("image")}
-        onSwitchToMusic={() => setMedia("music")}
-        onSwitchTo3d={() => setMedia("model3d")}
-      />
-    );
-  }
-  if (media === "music") {
-    return (
-      <MusicGenerator
-        onBack={onBack}
-        onSwitchToImage={() => setMedia("image")}
-        onSwitchToVideo={() => setMedia("video")}
-        onSwitchTo3d={() => setMedia("model3d")}
-      />
-    );
-  }
-  if (media === "model3d") {
-    return (
-      <Model3dGenerator
-        onBack={onBack}
-        onSwitchToImage={() => setMedia("image")}
-        onSwitchToVideo={() => setMedia("video")}
-        onSwitchToMusic={() => setMedia("music")}
-      />
-    );
+  // Video / music / 3D are fully separate panels (own form, own results
+  // storage). Placed after every hook so the image panel's state keeps
+  // working when the user switches back. Each lane hands control back
+  // through the shared lane switcher.
+  if (media !== "image") {
+    const laneProps = { onBack, onSwitchLane: setMedia };
+    if (media === "video") return <VideoGenerator {...laneProps} />;
+    if (media === "music") return <MusicGenerator {...laneProps} />;
+    return <Model3dGenerator {...laneProps} />;
   }
 
   return (
-    <AssetShell subtitle={t("generator.subtitle")} title={t("generator.title")} onBack={onBack}>
-      <div ref={shellBodyRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* ── Form column — the generation panel ── */}
-        <section className="bg-card flex w-full shrink-0 flex-col border-b lg:w-[400px] lg:border-r lg:border-b-0">
-          {/* pb-24 keeps the last fields scrollable clear of the fixed
-              Generate bar below lg (the bar is out of flow there).
-              lg:overscroll-contain stops wheel-over-this-pane from chaining
-              into the page scroller on desktop. */}
-          <div className="min-h-0 flex-1 overflow-y-auto pb-24 overscroll-auto lg:overscroll-contain lg:pb-0">
-            {form}
-          </div>
-          {/* Footer — civitai's [Buzz pill][Generate] arrangement. Fixed to
-              the viewport bottom below lg: the narrow layout scrolls the page
-              (the form column grows with Advanced open), so the bar must not
-              live in flow. Static on lg — the column fits the pane and
-              scrolls internally, keeping the bar at its end. */}
-          <GenerateFooter
-            canSubmit={canGenerate}
-            note={t("generator.estimateNote", {
-              width: genSize.width,
-              height: genSize.height,
-              ratio: `${Math.round(genSize.width / sizeRatio)}:${Math.round(genSize.height / sizeRatio)}`,
-            })}
-            onSubmit={() => void handleGenerate()}
-            quote={quotedTokens}
-            quoteState={prompt.trim().length > 0 || workflowId === "img2img:upscale" ? "quoted" : "idle"}
-            submitting={running}
-            submittingLabel={t("generator.generatingElapsed", { seconds: elapsed })}
-            submitLabel={t("generator.generate")}
-          />
-        </section>
-
-        {/* ── Results pane — Hasil | Model browser. min-h below lg keeps it
-            reachable by page scroll when the form column overflows the pane
-            (Advanced open) — flex-1 alone collapses it to 0px there. */}
-        <section className="flex min-h-[60vh] min-w-0 flex-1 flex-col border-t lg:min-h-0 lg:border-t-0">
-          <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-            <PaneTabs onChange={setPaneTab} value={paneTab} />
-            <span className="text-muted-foreground truncate text-[11px]">
-              {paneTab === "hasil"
-                ? t("generator.resultsCount", { count: results.length })
-                : `${size.width}×${size.height} · ${eco.label}`}
-            </span>
-          </div>
-          <div className="min-h-0 flex-1 overflow-hidden">
-            {paneTab === "model" ? (
-              <div className="bg-card flex h-full flex-col pb-24 lg:pb-0">
-                <ModelBrowser
-                  eco={eco}
-                  onAddLora={(row) => {
-                    setLoras((prev) => {
-                      // Defensive: ModelBrowser already blocks re-adds, but
-                      // guard the state update itself against races.
-                      if (prev.some((l) => l.air === row.airUrn) || prev.length >= MAX_LORAS) return prev;
-                      return [...prev, { id: crypto.randomUUID(), air: row.airUrn, strength: "1", name: row.name }];
-                    });
-                    setAdvancedOpen(true);
-                  }}
-                  onSelectModel={setSelectedModel}
-                  onTypeChange={setPickerType}
-                  selectedModel={selectedModel}
-                  type={pickerType}
-                  addedLoraAirs={addedLoraAirs}
-                  loraCount={loras.length}
-                />
-              </div>
-            ) : (
-              <div className="h-full overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
-                {results.length === 0 ? (
-                  <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-2 text-center">
-                    <Icon className="size-16 stroke-1" name="inbox" />
-                    <p className="text-foreground text-sm font-medium">{t("generator.noResults")}</p>
-                    <p className="max-w-56 text-xs">{t("generator.noResultsHint")}</p>
-                  </div>
-                ) : (
-                  <Masonry
-                    cols={resultCols}
-                    items={results}
-                    keyOf={(entry) => entry.fileId}
-                    render={(entry) => (
-                      <ResultCard entry={entry} onRemove={() => removeEntry(entry)} onReuse={() => reuseEntry(entry)} />
-                    )}
-                  />
-                )}
-              </div>
+    <GeneratorLayout
+      footer={
+        <GenerateFooter
+          canSubmit={canGenerate}
+          disabledReason={imageBlockedReason}
+          note={t("generator.estimateNote", {
+            width: genSize.width,
+            height: genSize.height,
+            ratio: `${Math.round(genSize.width / sizeRatio)}:${Math.round(genSize.height / sizeRatio)}`,
+          })}
+          onSubmit={() => void handleGenerate()}
+          quote={quotedTokens}
+          quoteState={prompt.trim().length > 0 || workflowId === "img2img:upscale" ? "quoted" : "idle"}
+          submitting={running}
+          submittingLabel={t("generator.generatingElapsed", { seconds: elapsed })}
+          submitLabel={t("generator.generate")}
+        />
+      }
+      form={form}
+      header={
+        <ResultsPaneHeader
+          meta={t("generator.resultsCount", { count: results.length })}
+          title={t("generator.results")}
+        />
+      }
+      subtitle={t("generator.subtitle")}
+      title={t("generator.title")}
+      onBack={onBack}
+    >
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
+        {results.length === 0 && !running ? (
+          <EmptyResults description={t("generator.noResultsHint")} title={t("generator.noResults")} />
+        ) : (
+          <Masonry
+            cols={resultCols}
+            items={results}
+            keyOf={(entry) => entry.fileId}
+            render={(entry) => (
+              <ResultCard entry={entry} onRemove={() => removeEntry(entry)} onReuse={() => reuseEntry(entry)} />
             )}
-          </div>
-        </section>
+          />
+        )}
       </div>
-    </AssetShell>
+      {/* The browser overlays the results instead of replacing them — picking
+          a model or LoRA no longer makes the user's media disappear. */}
+      <Dialog onOpenChange={setBrowserOpen} open={browserOpen}>
+        <ModelBrowser
+          eco={eco}
+          onAddLora={(row) => {
+            setLoras((prev) => {
+              // Defensive: ModelBrowser already blocks re-adds, but
+              // guard the state update itself against races.
+              if (prev.some((l) => l.air === row.airUrn) || prev.length >= MAX_LORAS) return prev;
+              return [...prev, { id: crypto.randomUUID(), air: row.airUrn, strength: "1", name: row.name }];
+            });
+            setAdvancedOpen(true);
+          }}
+          onSelectModel={(model) => {
+            setSelectedModel(model);
+            // A checkpoint is a single pick — done, so close and return the
+            // user to their results. LoRAs stack, so that tab stays open.
+            if (pickerType === "Checkpoint") setBrowserOpen(false);
+          }}
+          onTypeChange={setPickerType}
+          selectedModel={selectedModel}
+          title={pickerType === "LORA" ? t("generator.typeLora") : t("generator.browseModels")}
+          type={pickerType}
+          addedLoraAirs={addedLoraAirs}
+          loraCount={loras.length}
+        />
+      </Dialog>
+    </GeneratorLayout>
   );
 }

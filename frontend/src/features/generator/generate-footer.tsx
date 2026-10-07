@@ -35,6 +35,7 @@ export function publishMediaDebit(debitedTokens: number): void {
  */
 export function GenerateFooter({
   canSubmit,
+  disabledReason,
   inFlight = false,
   inFlightLabel,
   note,
@@ -48,6 +49,9 @@ export function GenerateFooter({
   warnings = [],
 }: {
   canSubmit: boolean;
+  /** Why the button is disabled — stated under the footer so a greyed
+   *  Generate is never a dead end. Null when the form is submittable. */
+  disabledReason?: string | null;
   /** A workflow is rendering server-side — the form stays editable. */
   inFlight?: boolean;
   /** Button label while `inFlight`; falls back to `submitLabel`. */
@@ -75,6 +79,9 @@ export function GenerateFooter({
   // evidence of a shortfall; the server-side debit is what refuses.
   const blocked = short || quoteState === "failed";
   const submitDisabled = !canSubmit || submitting || blocked;
+  // A disabled button with no stated reason is a dead end — say which field
+  // is missing instead of leaving the user guessing.
+  const shownReason = blocked ? null : !canSubmit || submitting ? disabledReason : null;
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-card p-3 lg:static lg:inset-auto">
@@ -131,6 +138,8 @@ export function GenerateFooter({
             {t("topUp.title")}
           </button>
         </div>
+      ) : shownReason ? (
+        <p className="text-muted-foreground mt-1.5 line-clamp-2 text-center text-[11px]">{shownReason}</p>
       ) : (
         <p className="text-muted-foreground/70 mt-1.5 text-center text-[10px]">{note}</p>
       )}
