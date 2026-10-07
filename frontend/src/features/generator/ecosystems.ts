@@ -269,6 +269,14 @@ export interface SearchModelPage {
  * silently ignored — verified live), so this client-side approximation is
  * what the panel shows; defaults (steps 30) match the spec.
  */
+/**
+ * App-token twin of the Rust debit constant (`logic/civitai.rs::
+ * TOKENS_PER_BUZZ`) — keep the two in sync. 1 Buzz = $0,001 × FX 20.000 =
+ * Rp 20 → 2.000 tokens; ×1,2 margin → 2.400. The backend is authoritative
+ * (ceil over the same conversion at submit); this only feeds the ≈ pill.
+ */
+export const TOKENS_PER_BUZZ = 2_400;
+
 export function estimateBuzz(params: { width: number; height: number; steps?: number; quantity?: number }): number {
   const steps = params.steps !== undefined && params.steps > 0 ? params.steps : 30;
   const quantity = params.quantity ?? 1;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssetShell } from "@/features/assets/components/asset-shell";
+import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,7 @@ import {
   DEFAULT_WORKFLOW,
   ECOSYSTEMS,
   WORKFLOWS,
+  TOKENS_PER_BUZZ,
   ecosystemsForWorkflow,
   estimateBuzz,
   isSdFamily,
@@ -32,13 +34,41 @@ import {
 } from "./ecosystems";
 import { AdvancedSection } from "./advanced-section";
 import { EcoOptionButton, KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
+import { MusicGenerator } from "./music-generator";
+import { ResultActions, mediaToken } from "./result-actions";
 import { VideoGenerator } from "./video-generator";
+
+/** The `GenParams` that produced a result, minus the prompt (the entry carries
+ *  it already) and the uploaded source image — a base64 data URL has no
+ *  business in localStorage, and the form re-asks for it anyway.
+ *  `hadSourceImage` records that the run consumed one. */
+interface ReusableParams extends Omit<GenParams, "sourceImage" | "prompt"> {
+  /** Checkpoint display name — `GenParams` only carries its AIR URN. */
+  modelName?: string;
+  /** The run consumed a source image (never persisted). */
+  hadSourceImage?: boolean;
+}
+
+/** Persist-ready snapshot: scalar settings only, display name kept so the
+ *  model chip restores a readable label instead of a raw URN. */
+function stripParams(params: GenParams, modelName: string | undefined): ReusableParams {
+  const { sourceImage, prompt: _prompt, ...rest } = params;
+  return {
+    ...rest,
+    ...(modelName ? { modelName } : {}),
+    ...(sourceImage ? { hadSourceImage: true } : {}),
+  };
+}
 
 interface HistoryEntry {
   fileId: string;
   name: string;
   prompt: string;
   at: number;
+  /** Generating settings, for the card's "Load these settings" action.
+   *  Absent on entries logged before snapshots existed — those restore the
+   *  prompt only. */
+  params?: ReusableParams;
 }
 
 interface ModelCover {
@@ -203,8 +233,7 @@ function ModelTile({ cover, eco, size }: { cover?: string | null; eco: (typeof E
 }
 
 /** One saved result: cover thumbnail, hover actions, click opens preview. */
-function ResultCard({ entry }: { entry: HistoryEntry }) {
-  const { t } = useI18n();
+function ResultCard({ entry, onRemove, onReuse }: { entry: HistoryEntry; onRemove: () => void; onReuse: () => void }) {
   const { data, isLoading } = useFilePreview({ id: entry.fileId, name: entry.name });
   return (
     <div className="group relative overflow-hidden rounded-[8px] border bg-secondary">
@@ -226,23 +255,14 @@ function ResultCard({ entry }: { entry: HistoryEntry }) {
           />
         )}
       </button>
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
-        <span className="line-clamp-1 text-[11px] text-white/90">{entry.prompt || entry.name}</span>
-        <Button
-          aria-label={t("generator.copyToken")}
-          className="size-6 shrink-0 hover:bg-white/20"
-          onClick={() => {
-            const token = `![${entry.prompt.slice(0, 48) || entry.name}](kawai-file://${entry.fileId})`;
-            void navigator.clipboard.writeText(token);
-            toast.success(t("generator.copied"));
-          }}
-          size="icon"
-          title={t("generator.copyToken")}
-          variant="ghost"
-        >
-          <Icon className="size-3.5 text-white" name="copy" />
-        </Button>
-      </div>
+      <ResultActions
+        downloadHref={data?.dataUrl}
+        downloadName={entry.name}
+        label={entry.prompt || entry.name}
+        onRemove={onRemove}
+        onReuse={onReuse}
+        token={mediaToken(entry.prompt, entry.fileId, entry.name)}
+      />
     </div>
   );
 }
@@ -562,8 +582,8 @@ function ModelBrowser({
  */
 export function GeneratorPage({ onBack }: { onBack: () => void }) {
   const { t } = useI18n();
-  /** Civitai's media lane — video renders its own panel (video-generator). */
-  const [media, setMedia] = useState<"image" | "video">("image");
+  /** Civitai's media lane — video/music render their own panels. */
+  const [media, setMedia] = useState<"image" | "video" | "music">("image");
   const configured = useCivitaiKeyStatus();
   const [paneTab, setPaneTab] = useState<"hasil" | "model">("hasil");
   const [covers, setCovers] = useState<Record<string, ModelCover>>({});
@@ -791,12 +811,25 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     setRunning(true);
     setPaneTab("hasil");
     try {
+      // Client pre-check (display-grade): the docs-formula estimate converted
+      // to app tokens vs the shared balance. An unreadable balance falls
+      // through — the server-side debit inside the op is the authoritative
+      // fail-closed gate.
+      const required = Math.ceil(estimate * TOKENS_PER_BUZZ);
+      const balance = await refreshTokenBalance();
+      if (balance !== null && balance < required) {
+        toast.error(t("generator.insufficientBalance", { tokens: required.toLocaleString("id-ID") }));
+        setRunning(false);
+        return;
+      }
       const saved = await call<SavedImage[]>("civitai_generate", { params });
+      const snapshot = stripParams(params, selectedModel?.name);
       const entries: HistoryEntry[] = saved.map((f) => ({
         fileId: f.fileId,
         name: f.name,
         prompt: params.prompt,
         at: Date.now(),
+        params: snapshot,
       }));
       const next = [...entries, ...resultsRef.current].slice(0, MAX_HISTORY);
       setResults(next);
@@ -807,6 +840,68 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
     } finally {
       if (aliveRef.current) setRunning(false);
     }
+  }
+
+  /** Load a result's generating settings back into the form — the iteration
+   *  loop (generate → tweak → generate) without re-picking every control.
+   *  The source image is never persisted, so image-input workflows need it
+   *  re-asked; the form's own gate says so. */
+  function reuseEntry(entry: HistoryEntry) {
+    const p = entry.params;
+    if (!p) {
+      setPrompt(entry.prompt);
+      toast.success(t("generator.settingsReusedPromptOnly"));
+      return;
+    }
+    const nextEco = ECOSYSTEMS.find((e) => e.id === p.ecosystem) ?? ECOSYSTEMS[0];
+    setWorkflowId(WORKFLOWS.find((w) => w.id === p.workflow)?.id ?? DEFAULT_WORKFLOW);
+    setEcoId(nextEco.id);
+    setPrompt(entry.prompt);
+    setNegativePrompt(p.negativePrompt ?? "");
+    setQuantity(Math.max(1, Math.min(12, p.quantity ?? 1)));
+    setCfgScale(String(p.cfgScale ?? nextEco.defaultCfgScale));
+    setSteps(String(p.steps ?? nextEco.defaultSteps));
+    setSeed(p.seed != null ? String(p.seed) : "");
+    setSampler(p.sampler ?? "Euler");
+    setClipSkip(p.clipSkip != null ? String(p.clipSkip) : "2");
+    if (p.strength != null) setStrength(String(p.strength));
+    setUpscaleRepeats(p.upscaleRepeats ?? 1);
+    setLoras((p.loras ?? []).map((l) => ({ id: crypto.randomUUID(), air: l.air, strength: String(l.strength) })));
+    setSelectedModel(
+      p.diffuserModel ? { name: p.modelName ?? p.diffuserModel, airUrn: p.diffuserModel, coverUrl: null } : null,
+    );
+    // The size chip is the same list the form renders — match on the exact
+    // dimensions so the restored pick keeps its label.
+    const sizeIdx = nextEco.sizes.findIndex((s) => s.width === p.width && s.height === p.height);
+    setSizeIdx(sizeIdx >= 0 ? sizeIdx : 0);
+    setHiresMode("text");
+    setSourceImage(null);
+    setSourceDims(null);
+    toast.success(t("generator.settingsReused"));
+    if (p.hadSourceImage) toast.info(t("generator.sourceNotRestored"));
+  }
+
+  /** Drop a result from the panel's log — the stored file itself stays in
+   *  the office store, so deliverables keep resolving its token. */
+  function removeEntry(entry: HistoryEntry) {
+    setResults((prev) => {
+      const next = prev.filter((e) => e.fileId !== entry.fileId);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+    toast(t("generator.resultRemoved"), {
+      action: {
+        label: t("common.undo"),
+        onClick: () => {
+          setResults((prev) => {
+            if (prev.some((e) => e.fileId === entry.fileId)) return prev;
+            const next = [entry, ...prev].slice(0, MAX_HISTORY);
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+            return next;
+          });
+        },
+      },
+    });
   }
 
   const sizeRatio = gcd(size.width, size.height);
@@ -862,11 +957,17 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
             >
               <Icon name="video" />
             </button>
-            {["music", "box"].map((n) => (
-              <span className="text-muted-foreground/70 flex h-7 w-9 items-center justify-center rounded-[6px]" key={n}>
-                <Icon name={n} />
-              </span>
-            ))}
+            <button
+              className="text-muted-foreground/70 flex h-7 w-9 cursor-pointer items-center justify-center rounded-[6px] transition-colors hover:text-foreground"
+              onClick={() => setMedia("music")}
+              title="Music"
+              type="button"
+            >
+              <Icon name="music" />
+            </button>
+            <span className="text-muted-foreground/70 flex h-7 w-9 items-center justify-center rounded-[6px]">
+              <Icon name="box" />
+            </span>
           </div>
           <div className="relative">
             <button
@@ -1158,7 +1259,7 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
                 <span className="text-foreground truncate text-sm font-semibold">
-                  {selectedModel?.name ?? covers[eco.id]?.modelName ?? eco.label}
+                  {selectedModel?.name ?? eco.label}
                 </span>
                 <span
                   className={cn(
@@ -1314,8 +1415,9 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
       {/* Advanced */}
       {!isUpscale && (
         <Collapsible onOpenChange={setAdvancedOpen} open={advancedOpen}>
-          <CollapsibleTrigger className="text-muted-foreground flex items-center gap-1 text-[13px] font-medium">
-            <Icon className="size-4" name="chevron-down" /> {t("generator.advanced")}
+          <CollapsibleTrigger className="group text-muted-foreground flex items-center gap-1 text-[13px] font-medium">
+            <Icon className="size-4 transition-transform group-data-[state=open]:rotate-180" name="chevron-down" />{" "}
+            {t("generator.advanced")}
           </CollapsibleTrigger>
           <CollapsibleContent className="flex flex-col gap-3 pt-2">
             <AdvancedSection
@@ -1341,7 +1443,22 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
   // Placed after every hook so the image panel's state keeps working when
   // the user switches back.
   if (media === "video") {
-    return <VideoGenerator onBack={onBack} onSwitchToImage={() => setMedia("image")} />;
+    return (
+      <VideoGenerator
+        onBack={onBack}
+        onSwitchToImage={() => setMedia("image")}
+        onSwitchToMusic={() => setMedia("music")}
+      />
+    );
+  }
+  if (media === "music") {
+    return (
+      <MusicGenerator
+        onBack={onBack}
+        onSwitchToImage={() => setMedia("image")}
+        onSwitchToVideo={() => setMedia("video")}
+      />
+    );
   }
 
   return (
@@ -1369,7 +1486,9 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
                   title={t("generator.estimate")}
                 >
                   <Icon className="text-warning size-3.5" name="zap" />
-                  <span className="text-warning text-[13px] font-semibold">≈{estimate.toFixed(1)}</span>
+                  <span className="text-warning text-[13px] font-semibold">
+                    ≈{Math.ceil(estimate * TOKENS_PER_BUZZ).toLocaleString("id-ID")}
+                  </span>
                 </div>
               )}
               <Button
@@ -1445,7 +1564,12 @@ export function GeneratorPage({ onBack }: { onBack: () => void }) {
                 ) : (
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                     {results.map((entry) => (
-                      <ResultCard entry={entry} key={entry.fileId} />
+                      <ResultCard
+                        entry={entry}
+                        key={entry.fileId}
+                        onRemove={() => removeEntry(entry)}
+                        onReuse={() => reuseEntry(entry)}
+                      />
                     ))}
                   </div>
                 )}

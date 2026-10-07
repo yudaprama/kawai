@@ -1947,9 +1947,11 @@ async fn civitai_search_models_handler(
 
 async fn civitai_generate_handler(
     Extension(user_id): Extension<String>,
+    headers: HeaderMap,
     Json(params): Json<civitai::ImageGenParams>,
 ) -> Result<Json<Vec<logic::civitai::SavedImage>>, (StatusCode, String)> {
-    logic::civitai::civitai_generate(&user_id, params)
+    let token = cookie_bearer(&headers)?;
+    logic::civitai::civitai_generate(&user_id, &token, params)
         .await
         .map(Json)
         .map_err(err500)
@@ -1978,9 +1980,11 @@ async fn civitai_video_cost_handler(
 
 async fn civitai_video_submit_handler(
     Extension(user_id): Extension<String>,
+    headers: HeaderMap,
     Json(req): Json<logic::civitai::VideoGenRequest>,
 ) -> Result<Json<logic::civitai::VideoSubmitView>, (StatusCode, String)> {
-    logic::civitai::civitai_video_submit(&user_id, req)
+    let token = cookie_bearer(&headers)?;
+    logic::civitai::civitai_video_submit(&user_id, &token, req)
         .await
         .map(Json)
         .map_err(err500)
@@ -2032,6 +2036,65 @@ async fn civitai_video_cancel_handler(
     Json(req): Json<CivitaiVideoCancelRequest>,
 ) -> Result<Json<()>, (StatusCode, String)> {
     logic::civitai::civitai_video_cancel(req.workflow_id)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+// ── Civitai MUSIC generation (txt2music) — same 4-op shape ─────────────────
+// Cancel reuses `civitai_video_cancel` — it is workflow-generic (a PUT on
+// the workflow id), the engine does not matter.
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CivitaiMusicStatusRequest {
+    workflow_id: String,
+    #[serde(default)]
+    wait_secs: Option<u64>,
+}
+
+async fn civitai_music_cost_handler(
+    Json(req): Json<logic::civitai::MusicGenRequest>,
+) -> Result<Json<logic::civitai::VideoCostView>, (StatusCode, String)> {
+    logic::civitai::civitai_music_cost(req)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+async fn civitai_music_submit_handler(
+    Extension(user_id): Extension<String>,
+    headers: HeaderMap,
+    Json(req): Json<logic::civitai::MusicGenRequest>,
+) -> Result<Json<logic::civitai::MusicSubmitView>, (StatusCode, String)> {
+    let token = cookie_bearer(&headers)?;
+    logic::civitai::civitai_music_submit(&user_id, &token, req)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+async fn civitai_music_status_handler(
+    Json(req): Json<CivitaiMusicStatusRequest>,
+) -> Result<Json<logic::civitai::MusicStatusView>, (StatusCode, String)> {
+    logic::civitai::civitai_music_status(req.workflow_id, req.wait_secs)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CivitaiMusicFetchRequest {
+    workflow_id: String,
+    audio_url: String,
+}
+
+async fn civitai_music_fetch_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<CivitaiMusicFetchRequest>,
+) -> Result<Json<logic::civitai::SavedAudio>, (StatusCode, String)> {
+    logic::civitai::civitai_music_fetch(&user_id, req.workflow_id, req.audio_url)
         .await
         .map(Json)
         .map_err(err500)
@@ -2287,6 +2350,10 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/civitai_video_status", post(civitai_video_status_handler))
         .route("/api/civitai_video_cancel", post(civitai_video_cancel_handler))
         .route("/api/civitai_video_fetch", post(civitai_video_fetch_handler))
+        .route("/api/civitai_music_cost", post(civitai_music_cost_handler))
+        .route("/api/civitai_music_submit", post(civitai_music_submit_handler))
+        .route("/api/civitai_music_status", post(civitai_music_status_handler))
+        .route("/api/civitai_music_fetch", post(civitai_music_fetch_handler))
         // Connector (third-party OAuth via Composio) — same 4 ops as the
         // Tauri commands (POST on both transports).
         .route("/api/connector_list_connections", post(connector_list_connections_handler))

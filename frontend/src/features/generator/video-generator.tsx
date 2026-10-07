@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssetShell } from "@/features/assets/components/asset-shell";
+import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +34,7 @@ import {
   videoResolutions,
 } from "./video-ecosystems";
 import { EcoOptionButton, KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
+import { ResultActions, mediaToken } from "./result-actions";
 
 /** Civitai videoGen request the Rust ops accept (camelCase, flattened). */
 interface VideoGenRequest {
@@ -63,6 +65,8 @@ interface VideoGenRequest {
 
 interface VideoCostView {
   totalBuzz: number;
+  /** App-token debit at submit (server-side ceil conversion). */
+  totalTokens: number;
   ready: boolean;
   warnings: string[];
 }
@@ -97,6 +101,19 @@ interface VideoResultEntry {
   thumbnailFileId?: string;
   prompt: string;
   at: number;
+  /** Generating settings for the card's "Load these settings" action.
+   *  Absent on entries logged before snapshots existed. */
+  req?: ReusableVideoReq;
+}
+
+/** The `VideoGenRequest` behind a result, minus the uploaded media — a base64
+ *  frame or mp4 has no business in localStorage, and the slot is re-picked by
+ *  hand anyway. `hadMedia` records that the run consumed one. */
+type ReusableVideoReq = Omit<VideoGenRequest, "images" | "video"> & { hadMedia?: boolean };
+
+function stripVideoReq(req: VideoGenRequest): ReusableVideoReq {
+  const { images, video, ...rest } = req;
+  return images.length > 0 || video ? { ...rest, hadMedia: true } : rest;
 }
 
 /** In-flight workflow, persisted so a restart resumes polling. */
@@ -104,6 +121,10 @@ interface ActiveJob {
   workflowId: string;
   prompt: string;
   at: number;
+  /** The submitting request's scalar settings, carried through to the saved
+   *  clips so each result card can load them back into the form. Absent on a
+   *  job persisted by an older build. */
+  req?: ReusableVideoReq;
 }
 
 const RESULTS_KEY = "kawai-generator-video-results-v1";
@@ -144,12 +165,14 @@ function MediaIsland({
   ecoOpen,
   onEcoClick,
   onSwitchToImage,
+  onSwitchToMusic,
   children,
 }: {
   ecoLabel: string;
   ecoOpen: boolean;
   onEcoClick: () => void;
   onSwitchToImage: () => void;
+  onSwitchToMusic: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -161,9 +184,9 @@ function MediaIsland({
         <span className={cn(segmentClass(true), "pointer-events-none")} title="Video">
           <Icon className="size-4" name="video" />
         </span>
-        <span className={cn(segmentClass(false), "pointer-events-none opacity-40")} title="Music">
+        <button className={segmentClass(false)} onClick={onSwitchToMusic} title="Music" type="button">
           <Icon className="size-4" name="music" />
-        </span>
+        </button>
         <span className={cn(segmentClass(false), "pointer-events-none opacity-40")} title="3D">
           <Icon className="size-4" name="box" />
         </span>
@@ -190,13 +213,15 @@ function MediaIsland({
 }
 
 /** One saved video result: <video> card with poster, click opens preview. */
-function VideoResultCard({ entry }: { entry: VideoResultEntry }) {
-  const { t } = useI18n();
-  const copyToken = () => {
-    const token = `![${entry.prompt.slice(0, 48) || entry.name}](kawai-file://${entry.fileId})`;
-    void navigator.clipboard.writeText(token);
-    toast.success(t("generator.copied"));
-  };
+function VideoResultCard({
+  entry,
+  onRemove,
+  onReuse,
+}: {
+  entry: VideoResultEntry;
+  onRemove: () => void;
+  onReuse: () => void;
+}) {
   const main = useFilePreview({ id: entry.fileId, name: entry.name });
   const thumb = useFilePreview(
     entry.thumbnailFileId ? { id: entry.thumbnailFileId, name: `${entry.name}-thumb.jpg` } : { id: "", name: "" },
@@ -226,19 +251,14 @@ function VideoResultCard({ entry }: { entry: VideoResultEntry }) {
           </video>
         )}
       </button>
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100">
-        <span className="line-clamp-1 text-[11px] text-white/90">{entry.prompt || entry.name}</span>
-        <Button
-          aria-label={t("generator.copyToken")}
-          className="size-6 shrink-0 hover:bg-white/20"
-          onClick={copyToken}
-          size="icon"
-          title={t("generator.copyToken")}
-          variant="ghost"
-        >
-          <Icon className="size-3.5 text-white" name="copy" />
-        </Button>
-      </div>
+      <ResultActions
+        downloadHref={main.data?.dataUrl}
+        downloadName={entry.name}
+        label={entry.prompt || entry.name}
+        onRemove={onRemove}
+        onReuse={onReuse}
+        token={mediaToken(entry.prompt, entry.fileId, entry.name)}
+      />
     </div>
   );
 }
@@ -329,7 +349,15 @@ function FrameSlot({
   );
 }
 
-export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void; onSwitchToImage: () => void }) {
+export function VideoGenerator({
+  onBack,
+  onSwitchToImage,
+  onSwitchToMusic,
+}: {
+  onBack: () => void;
+  onSwitchToImage: () => void;
+  onSwitchToMusic: () => void;
+}) {
   const { t } = useI18n();
   const configured = useCivitaiKeyStatus();
   const [ecoId, setEcoId] = useState(DEFAULT_VIDEO_ECOSYSTEM);
@@ -549,12 +577,14 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
                 thumbnailFileId: saved.thumbnailFileId,
                 prompt: job.prompt,
                 at,
+                req: job.req,
               },
               ...(saved.additional ?? []).map((c) => ({
                 fileId: c.fileId,
                 name: c.name,
                 prompt: job.prompt,
                 at,
+                req: job.req,
               })),
             ];
             setResults((prev) => {
@@ -637,13 +667,26 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
     if (!canSubmit || !promptEffective) return;
     setSubmitting(true);
     try {
-      const view = await call<{ workflowId: string }>("civitai_video_submit", {
-        req: buildRequest(),
-      });
+      // Client pre-check (display-grade): skip the submit when the balance
+      // obviously can't cover the quoted cost. An unreadable balance falls
+      // through — the server-side debit inside the submit op is the
+      // authoritative fail-closed gate.
+      const required = cost?.totalTokens;
+      if (required !== undefined) {
+        const balance = await refreshTokenBalance();
+        if (balance !== null && balance < required) {
+          toast.error(t("generator.insufficientBalance", { tokens: required.toLocaleString("id-ID") }));
+          setSubmitting(false);
+          return;
+        }
+      }
+      const submitted = buildRequest();
+      const view = await call<{ workflowId: string }>("civitai_video_submit", { req: submitted });
       const nextJob: ActiveJob = {
         workflowId: view.workflowId,
         prompt: prompt.trim(),
         at: Date.now(),
+        req: stripVideoReq(submitted),
       };
       localStorage.setItem(JOB_KEY, JSON.stringify(nextJob));
       setStatus(null);
@@ -653,6 +696,68 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
     } finally {
       if (aliveRef.current) setSubmitting(false);
     }
+  }
+
+  /** Load a result's generating settings back into the form. `reinitPicks`
+   *  runs first — it resets every model/workflow-dependent pick, so the
+   *  persisted values must land after it. Uploaded frames are never kept
+   *  with the result, so image-input workflows re-ask for them. */
+  function reuseEntry(entry: VideoResultEntry) {
+    const r = entry.req;
+    if (!r) {
+      setPrompt(entry.prompt);
+      toast.success(t("generator.settingsReusedPromptOnly"));
+      return;
+    }
+    const nextEco = videoEcosystem(r.ecosystem).id === r.ecosystem ? r.ecosystem : DEFAULT_VIDEO_ECOSYSTEM;
+    const nextModel = r.model ?? (nextEco === "kling" ? "" : (videoEcosystem(nextEco).models[0]?.key ?? ""));
+    setEcoId(nextEco);
+    setModelKey(nextModel);
+    reinitPicks(nextEco, nextModel);
+    setWorkflow(r.workflow);
+    setPrompt(r.prompt);
+    setNegativePrompt(r.negativePrompt ?? "");
+    setFrames([]);
+    setSourceVideo(null);
+    if (r.duration != null && !videoDurationOmitted(nextEco, nextModel)) {
+      const range = videoDurationRange(nextEco, nextModel, r.resolution);
+      setDuration(Math.min(range.max, Math.max(range.min, r.duration)));
+    }
+    if (r.resolution && videoResolutions(nextEco, nextModel).includes(r.resolution)) setResolution(r.resolution);
+    if (r.aspectRatio && videoAspects(nextEco, nextModel).includes(r.aspectRatio)) setAspect(r.aspectRatio);
+    if (r.generateAudio != null) setAudio(r.generateAudio);
+    if (r.enablePromptEnhancer != null) setEnhancer(r.enablePromptEnhancer);
+    if (r.draft != null) setDraft(r.draft);
+    if (r.cfgScale != null) setCfgScale(String(r.cfgScale));
+    if (r.steps != null) setSteps(String(r.steps));
+    if (r.style) setStyle(r.style);
+    if (r.movementAmplitude) setMovement(r.movementAmplitude);
+    setSeed(r.seed != null ? String(r.seed) : "");
+    toast.success(t("generator.settingsReused"));
+    if (r.hadMedia) toast.info(t("generator.sourceNotRestored"));
+  }
+
+  /** Drop a clip from the panel's log — the stored file itself stays in the
+   *  office store, so deliverables keep resolving its token. */
+  function removeEntry(entry: VideoResultEntry) {
+    setResults((prev) => {
+      const next = prev.filter((e) => e.fileId !== entry.fileId);
+      localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
+      return next;
+    });
+    toast(t("generator.resultRemoved"), {
+      action: {
+        label: t("common.undo"),
+        onClick: () => {
+          setResults((prev) => {
+            if (prev.some((e) => e.fileId === entry.fileId)) return prev;
+            const next = [entry, ...prev].slice(0, MAX_RESULTS);
+            localStorage.setItem(RESULTS_KEY, JSON.stringify(next));
+            return next;
+          });
+        },
+      },
+    });
   }
 
   const ecoPicker = (
@@ -703,6 +808,7 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
         ecoOpen={ecoOpen}
         onEcoClick={() => setEcoOpen((v) => !v)}
         onSwitchToImage={onSwitchToImage}
+        onSwitchToMusic={onSwitchToMusic}
       >
         {ecoPicker}
       </MediaIsland>
@@ -1086,7 +1192,9 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
                 ) : cost ? (
                   <>
                     <Icon className="text-warning size-3.5" name="zap" />
-                    <span className="text-warning text-[13px] font-semibold">≈{Math.round(cost.totalBuzz)}</span>
+                    <span className="text-warning text-[13px] font-semibold">
+                      ≈{cost.totalTokens.toLocaleString("id-ID")}
+                    </span>
                   </>
                 ) : (
                   <Spinner className="size-3.5" />
@@ -1148,7 +1256,12 @@ export function VideoGenerator({ onBack, onSwitchToImage }: { onBack: () => void
             ) : (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {results.map((entry) => (
-                  <VideoResultCard entry={entry} key={entry.fileId} />
+                  <VideoResultCard
+                    entry={entry}
+                    key={entry.fileId}
+                    onRemove={() => removeEntry(entry)}
+                    onReuse={() => reuseEntry(entry)}
+                  />
                 ))}
               </div>
             )}

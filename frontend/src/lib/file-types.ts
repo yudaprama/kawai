@@ -11,6 +11,7 @@ export type FileKind =
   | "image"
   | "video-native"
   | "video-fallback"
+  | "audio-native"
   | "pdf"
   | "html"
   | "text"
@@ -25,6 +26,11 @@ export const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "s
 const VIDEO_NATIVE_EXTENSIONS = new Set(["mp4", "webm", "m4v", "ogg", "ogv"]);
 
 const VIDEO_FALLBACK_EXTENSIONS = new Set(["mkv", "avi", "mov", "wmv", "flv", "mpeg", "mpg", "3gp"]);
+
+// Browser-native playable audio (HTML5 <audio>) — Generator tracks and other
+// stored audio. `ogg` stays in the video set (ambiguous container; <video>
+// plays it too).
+const AUDIO_NATIVE_EXTENSIONS = new Set(["mp3", "wav", "m4a", "aac", "flac", "oga"]);
 
 const OFFICE_EXTENSIONS = new Set(["doc", "docx", "xls", "xlsx", "ppt", "pptx"]);
 
@@ -99,6 +105,7 @@ export function fileKind(name: string): FileKind {
   if (IMAGE_EXTENSIONS.has(ext)) return "image";
   if (VIDEO_NATIVE_EXTENSIONS.has(ext)) return "video-native";
   if (VIDEO_FALLBACK_EXTENSIONS.has(ext)) return "video-fallback";
+  if (AUDIO_NATIVE_EXTENSIONS.has(ext)) return "audio-native";
   if (OFFICE_EXTENSIONS.has(ext)) return "office";
   if (HTML_EXTENSIONS.has(ext)) return "html";
   if (MARKDOWN_EXTENSIONS.has(ext)) return "markdown";

@@ -226,3 +226,14 @@ pub async fn billing_debit(token: &str, amount: u64) -> std::result::Result<Bala
     let body = serde_json::json!({ "amount": amount });
     parsed(post(token, "/billing/debit", body).await?)
 }
+
+/// Idempotent media debit. The caller owns a fresh stable ref for the submit
+/// attempt, so a transport retry cannot charge the same generation twice.
+pub async fn billing_debit_ref(
+    token: &str,
+    amount: u64,
+    reference: &str,
+) -> std::result::Result<Balance, String> {
+    let body = serde_json::json!({ "amount": amount, "ref": reference });
+    parsed(post(token, "/billing/debit", body).await?)
+}

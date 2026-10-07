@@ -89,6 +89,7 @@ function formatCountdown(ms: number): string {
 const REASON_LABEL: Record<string, string> = {
   qris: "Top up QRIS",
   usage: "Pemakaian run",
+  media: "Generasi media",
   admin_adjustment: "Penyesuaian admin",
   voucher: "Voucher",
 };

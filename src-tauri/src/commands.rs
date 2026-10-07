@@ -1195,7 +1195,8 @@ pub async fn civitai_generate(
     params: civitai::ImageGenParams,
 ) -> Result<Vec<logic::civitai::SavedImage>, String> {
     let user_id = session_user_id(&session)?;
-    logic::civitai::civitai_generate(&user_id, params).await
+    let token = session_bearer(&session)?;
+    logic::civitai::civitai_generate(&user_id, &token, params).await
 }
 
 /// ── Civitai VIDEO generation (workflows API) — 4 auth-required ops ────────
@@ -1215,7 +1216,8 @@ pub async fn civitai_video_submit(
     req: logic::civitai::VideoGenRequest,
 ) -> Result<logic::civitai::VideoSubmitView, String> {
     let user_id = session_user_id(&session)?;
-    logic::civitai::civitai_video_submit(&user_id, req).await
+    let token = session_bearer(&session)?;
+    logic::civitai::civitai_video_submit(&user_id, &token, req).await
 }
 
 #[tauri::command]
@@ -1248,6 +1250,46 @@ pub async fn civitai_video_fetch(
         additional_urls.unwrap_or_default(),
     )
     .await
+}
+
+/// ── Civitai MUSIC generation (txt2music — workflows API) — 4 auth-required
+/// ops. Same shape as the video lane; cancel reuses `civitai_video_cancel`
+/// (workflow-generic PUT on the workflow id). Simple mode drafts
+/// caption/lyrics server-side via the remote-llm pool.
+
+#[tauri::command]
+pub async fn civitai_music_cost(
+    req: logic::civitai::MusicGenRequest,
+) -> Result<logic::civitai::VideoCostView, String> {
+    logic::civitai::civitai_music_cost(req).await
+}
+
+#[tauri::command]
+pub async fn civitai_music_submit(
+    session: State<'_, Session>,
+    req: logic::civitai::MusicGenRequest,
+) -> Result<logic::civitai::MusicSubmitView, String> {
+    let user_id = session_user_id(&session)?;
+    let token = session_bearer(&session)?;
+    logic::civitai::civitai_music_submit(&user_id, &token, req).await
+}
+
+#[tauri::command]
+pub async fn civitai_music_status(
+    workflow_id: String,
+    wait_secs: Option<u64>,
+) -> Result<logic::civitai::MusicStatusView, String> {
+    logic::civitai::civitai_music_status(workflow_id, wait_secs).await
+}
+
+#[tauri::command]
+pub async fn civitai_music_fetch(
+    session: State<'_, Session>,
+    workflow_id: String,
+    audio_url: String,
+) -> Result<logic::civitai::SavedAudio, String> {
+    let user_id = session_user_id(&session)?;
+    logic::civitai::civitai_music_fetch(&user_id, workflow_id, audio_url).await
 }
 
 /// ── Connector (third-party OAuth via Composio) — 4 auth-required ops ───────

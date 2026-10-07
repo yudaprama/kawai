@@ -7,7 +7,8 @@ import { emitOpenPreview } from "@/lib/preview-bridge";
  * Media token the deliverable writer may embed:
  * `![caption](kawai-file://<fileId>)`. Resolved against the office store —
  * images render inline (svg chart figures), `video/*` files render as a
- * native `<video>` player; the token form matches what export_deliverable
+ * native `<video>` player, `audio/*` files as a native `<audio>` player;
+ * the token form matches what export_deliverable
  * rasterizes into pdf/docx (videos stay viewer-only there).
  */
 const IMAGE_TOKEN = /!\[([^\]\n]*)\]\(kawai-file:\/\/([^)\s]+)\)/g;
@@ -43,6 +44,17 @@ function ChartFigure({ fileId, alt }: { fileId: string; alt: string }) {
           <track kind="captions" />
         </video>
         {alt && <figcaption className="text-muted-foreground p-2 text-xs">{alt}</figcaption>}
+      </figure>
+    );
+  }
+  // Audio files (e.g. a Generator track referenced by id) play inline.
+  if (data.mime.startsWith("audio/")) {
+    return (
+      <figure className="overflow-hidden rounded-md border p-2">
+        <audio className="w-full" controls src={data.dataUrl}>
+          <track kind="captions" />
+        </audio>
+        {alt && <figcaption className="text-muted-foreground pt-1 text-xs">{alt}</figcaption>}
       </figure>
     );
   }

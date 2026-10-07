@@ -20,6 +20,7 @@ function fallbackReason(t: (key: TranslationKey, params?: TranslationParams) => 
     "video-fallback": "preview.videoFallback",
     office: "preview.office",
     "video-native": "preview.videoLoadFailed",
+    "audio-native": "preview.audioLoadFailed",
     image: "preview.imageLoadFailed",
     pdf: "preview.pdfLoadFailed",
     unknown: "preview.unavailable",
@@ -43,6 +44,8 @@ export function FilePreview({ file }: { file: PreviewFile }) {
       return <ImagePreview file={file} />;
     case "video-native":
       return <VideoPreview file={file} />;
+    case "audio-native":
+      return <AudioPreview file={file} />;
     case "pdf":
       return <PdfPreview file={file} />;
     case "html":
@@ -117,6 +120,18 @@ function VideoPreview({ file }: { file: PreviewFile }) {
         >
           <track kind="captions" />
         </video>
+      )}
+    </MediaPreview>
+  );
+}
+
+function AudioPreview({ file }: { file: PreviewFile }) {
+  return (
+    <MediaPreview file={file} fallbackKind="audio-native">
+      {({ dataUrl, onError }) => (
+        <audio src={dataUrl} controls aria-label={file.name} onError={onError} className="w-full max-w-xl rounded-lg">
+          <track kind="captions" />
+        </audio>
       )}
     </MediaPreview>
   );
