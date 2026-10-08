@@ -44,6 +44,7 @@ import {
   binanceKlineSeries,
   renderBinanceBalances,
   renderBinanceDepth,
+  renderBinanceFuturesPositions,
   renderBinanceOpenOrders,
   renderBinanceTa,
 } from "@/components/ai-elements/tool-renderers/finance";
@@ -276,6 +277,7 @@ const registry: Record<string, StepView> = {
   crypto_ta_analyze: (p) => renderBinanceTa(p),
   crypto_balances: (p) => renderBinanceBalances(p),
   crypto_open_orders: (p) => renderBinanceOpenOrders(p),
+  binance_futures_positions: (p) => renderBinanceFuturesPositions(p),
   // binance stocks — bid/ask quote + symbol metadata (records, no dedicated view yet)
   stock_quote: (p) => (isRecord(p) ? genericKv(p) : null),
   stock_info: (p) => (isRecord(p) ? genericKv(p) : null),

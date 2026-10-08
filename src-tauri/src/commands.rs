@@ -562,6 +562,34 @@ pub async fn deliverable_translations(
         .map_err(|e| e.to_string())
 }
 
+/// Authenticated RPC: Generator panel history (all Civitai lanes), newest
+/// first — the results strip's source of truth.
+#[tauri::command]
+pub async fn generation_history(
+    lane: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    session: State<'_, Session>,
+) -> Result<Vec<logic::generation_jobs::GenerationJob>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::generation_history(&user_id, lane, limit, offset)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: remove one history row — failed/abandoned running job
+/// or the panel's "remove from history" (office-store files are NOT touched).
+#[tauri::command]
+pub async fn generation_job_delete(
+    job_id: String,
+    session: State<'_, Session>,
+) -> Result<bool, String> {
+    let user_id = session_user_id(&session)?;
+    logic::generation_job_delete(&user_id, &job_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Authenticated RPC: fetch one skill including its body; None → null.
 #[tauri::command]
 pub async fn skill_get(

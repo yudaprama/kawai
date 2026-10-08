@@ -79,6 +79,9 @@ import type {
   SqlProfile,
   SqlProfileTest,
   UserInfo,
+  ProfileFacet,
+  ExperienceItem,
+  OnboardingStatus,
 } from "@/generated/api-types";
 
 export type {
@@ -99,6 +102,9 @@ export type {
   SqlProfile,
   SqlProfileTest,
   UserInfo,
+  ProfileFacet,
+  ExperienceItem,
+  OnboardingStatus,
 };
 
 /** Frontend-only — role is stricter than backend (only "user"|"assistant", not generic "system") */
@@ -116,32 +122,6 @@ export interface KnowledgeContext {
   files: OfficeFileInfo[];
 }
 export const MEMORY_KINDS = ["preference", "rule", "event", "fact", "goal"] as const;
-
-/** Agent experience — one distilled row per completed supervisor run
- *  (PLAN-personal-context §2.2). Not in generated types yet; mirrors the
- *  Rust `ExperienceItem` (camelCase serde). */
-export interface ExperienceItem {
-  id: string;
-  agentId: string;
-  sessionId: number;
-  taskSummary: string;
-  lesson: string;
-  toolSequence: string[];
-  outcome: "success" | "partial" | "failed";
-  tags: string[];
-  createdAt: number;
-}
-
-/** Profile facet — one stable, classified fact about the user
- *  (PLAN-personal-context §2.6). Mirrors the Rust `ProfileFacet`. */
-export interface ProfileFacet {
-  key: string;
-  class: "identity" | "style" | "tooling" | "goal";
-  value: string;
-  stability: number;
-  userState: "active" | "pinned" | "dropped";
-  updatedAt: number;
-}
 
 // ---- Frontend-local overrides for generated types ----
 

@@ -1603,8 +1603,10 @@ dependencies = [
  "coinmarketcap",
  "kawai-agent-contract",
  "kawai-constants",
+ "kawai-db",
  "kawai-http-client",
  "kawai-tools",
+ "libsql",
  "serde",
  "serde_json",
  "ta",
@@ -5701,6 +5703,7 @@ dependencies = [
  "kawai-agent",
  "kawai-agent-contract",
  "kawai-analytics",
+ "kawai-api-types",
  "kawai-auth",
  "kawai-cli",
  "kawai-constants",
@@ -5778,6 +5781,7 @@ dependencies = [
  "graph",
  "kawai-agent-contract",
  "kawai-analytics",
+ "kawai-api-types",
  "kawai-db",
  "kawai-embedding",
  "kawai-events",
@@ -5793,7 +5797,6 @@ dependencies = [
  "remote-llm",
  "serde",
  "serde_json",
- "specta",
  "text-splitter",
  "tokio",
  "url",
@@ -5830,6 +5833,15 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+]
+
+[[package]]
+name = "kawai-api-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "specta",
+ "specta-typescript",
 ]
 
 [[package]]
@@ -5991,6 +6003,7 @@ name = "kawai-memory"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "kawai-api-types",
  "kawai-db",
  "kawai-embedding",
  "kawai-tools",

@@ -39,13 +39,13 @@ source: string } |
 /**  Mid-source progress note (e.g. "found 2 profile candidates"). */
 { type: "sourceProgress"; source: string; note: string } | 
 /**  One source finished; `items_found` = memory items it produced. */
-{ type: "sourceCompleted"; source: string; items_found: number } | 
+{ type: "sourceCompleted"; source: string; itemsFound: number } | 
 /**  The cloud compression pass started. */
 { type: "compressStarted" } | 
 /**  Compression finished — per-namespace counts of what was parsed. */
 { type: "profileReady"; profile: number; people: number; goals: number } | 
 /**  All sources processed (skipped ones report zero); state marked done. */
-{ type: "onboardingFinished"; total_items: number } | { type: "onboardingError"; message: string };
+{ type: "onboardingFinished"; totalItems: number } | { type: "onboardingError"; message: string };
 
 /**  One `inputs` binding of a plan step, display-shaped. */
 export type PlanInputBinding = {

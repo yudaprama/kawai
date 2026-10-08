@@ -123,6 +123,82 @@ the reason.
 | `crypto_ta_analyze` | indicator suite over klines |
 | `crypto_balances` / `crypto_open_orders` | read-only account tools — signed via the baked kawai-vault read-only pair (never trade permission) |
 | `stock_quote` / `stock_info` | Binance Stocks US-equity bid/ask quote + symbol metadata — same baked kawai-vault pair |
+| `binance_futures_positions` | open futures positions + their open orders incl. stop-losses / take-profits, mirrored into `binance_futures_positions` / `binance_futures_open_orders` — BOTH markets: USDⓈ-M (`fapi`) AND COIN-M (`dapi`) — see §5.1 |
+
+### 5.1 `binance_futures_positions` — the local futures mirror
+
+The one Binance tool that WRITES. Signed reads on both market families —
+`/fapi/v3/positionRisk` + `/fapi/v1/openOrders` (USDⓈ-M, USDT-settled) and
+`/dapi/v1/positionRisk` + `/dapi/v1/openOrders` (COIN-M, coin-settled) —
+mirror the OPEN set into two per-user SQLite tables,
+`binance_futures_positions` (migrations 0022 + 0025) and
+`binance_futures_open_orders`, then report both. Every row carries a
+`margin` tag (`USDM` | `COINM`).
+
+- **Why the local copy.** The live APIs only ever answer "what is open right
+  now". Without a mirror, every question about a position's mark/entry drift
+  is unanswerable the moment the next sync overwrites it — and the agent has
+  no other way to see futures exposure at all (spot tools do not carry it).
+- **Exact mirror, not append-only.** Each sync stamps the rows it wrote with
+  the current unix second and deletes every row carrying an older stamp, so a
+  position or order closed on the exchange disappears locally with no
+  tombstone table. Both tables are written in ONE transaction: a failed write
+  can never leave a half-pruned set behind.
+- **Rerun semantics.** A rerun NEVER reuses the DB to skip the exchange —
+  every sync re-fetches the full open set (4 signed reads) because the mirror
+  answers "what is open RIGHT NOW"; reusing stale rows to save calls would
+  produce wrong answers, which defeats the mirror's purpose. Reuse happens at
+  the ROW level instead: the upsert updates still-open rows in place (same
+  PK, no duplicates) and overwrites their values with fresh data. Reruns are
+  idempotent (verified live: identical counts, zero duplicate rows). Edge
+  case, accepted: the stamp is second-granular, so two syncs inside the same
+  unix second leave rows from the first sync un-pruned until the next sync —
+  delayed pruning by at most one cycle, never corruption.
+- **Rate budget (per-process): 6 syncs/min.** Each sync spends 4 signed
+  exchange reads (2 markets × position + orders), and the mirror re-fetches
+  the FULL open set by design — so a stuck agent retry loop would burn reads
+  without bound. Same sliding-window shape as the codegraph tool's limiter;
+  attempts are counted (a failed sync spends the reads too), the check runs
+  BEFORE the fetches, and a poisoned lock fails CLOSED. The budget lives on
+  `sync_mirror`, so the stop-loss advisory tool is bounded by the same pool —
+  and deterministic callers (examples, cron-style binaries) inherit it for
+  free. The rejection is guidance, not a dead end: the local mirror stays
+  readable and the next window flows.
+- **Positions are keyed `(margin, symbol, positionSide)`** — hedge mode
+  reports LONG and SHORT for one symbol, one-way mode reports BOTH.
+  Zero-`positionAmt` rows are dropped: `positionRisk` answers with every
+  tradable symbol, and only the non-zero ones are positions.
+- **Orders are keyed `(margin, orderId)`** — exchange-assigned and stable
+  across amends, unlike the (symbol, side, price) triple, which collides when
+  two orders rest at the same level. The `margin` half of the key is
+  load-bearing: dapi and fapi order ids are independent counters and DO
+  collide numerically. `positionSide` is carried so an order joins to its
+  position.
+- **Stop-losses and take-profits are the reason the orders table exists.**
+  They are not fields on a position — they are resting `STOP_MARKET` /
+  `TAKE_PROFIT_MARKET` orders, so "what is my protection?" is unanswerable
+  from `positionRisk` alone. `orderType` alone still does not say whether a
+  LIMIT adds risk or cuts it, so each row stores a derived `intent`
+  (`classify_intent`): `ENTRY` (same side as the position, not
+  reduce-only), `STOP_LOSS`, `TAKE_PROFIT`, `EXIT` (opposite side or
+  reduce-only), `CLOSE` (closePosition).
+- **COIN-M specifics** (`dapi`, coin-settled): the dapi position model has no
+  `notional` / `isolatedWallet` / `adl` / `marginAsset` — the first three are
+  stored as 0, and `marginAsset` is derived from the symbol prefix
+  (`BTCUSD_PERP` → BTC). PnL is denominated in the settlement coin, NOT
+  USDT: `totalUnrealizedPnl` in the report stays USDⓈ-M-only (summing across
+  units is meaningless), and COIN-M PnL lands in
+  `coinmUnrealizedPnlByAsset` ({BTC: …, ETH: …}). Migration 0025 rebuilt the
+  two tables around the `margin` column — safe because they are exact
+  mirrors, fully rewritten by the next sync.
+- **Storage is the existing per-user DB**, not a second SQLite file:
+  `kawai_db::db_connection(user_id)` is what a toolset crate already uses
+  (`crates/toolsets/analytics-tools`), it inherits the migration runner and
+  the structural per-user isolation (no `user_id` column), and the sqld
+  multi-device roadmap targets that file — a new database would be orphaned
+  by both.
+- **`user_id` is bound at toolset build** from `AgentContext`, never supplied
+  by the model, so a sync can only ever write into the caller's own database.
 
 ## 5b. Monad (`builtin.monad`) — `crates/toolsets/monad-tools` (feature `monad`)
 

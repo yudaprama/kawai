@@ -2215,6 +2215,47 @@ async fn civitai_model3d_fetch_handler(
     .map_err(err500)
 }
 
+// ── Generation history (Generator panel, all Civitai lanes) ────────────────
+// Auth-required thin proxies sharing `logic::generation_history` /
+// `logic::generation_job_delete` with the Tauri commands.
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerationHistoryRequest {
+    #[serde(default)]
+    lane: Option<String>,
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    offset: Option<i64>,
+}
+
+async fn generation_history_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<GenerationHistoryRequest>,
+) -> Result<Json<Vec<logic::generation_jobs::GenerationJob>>, (StatusCode, String)> {
+    logic::generation_history(&user_id, req.lane, req.limit, req.offset)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerationJobDeleteRequest {
+    job_id: String,
+}
+
+async fn generation_job_delete_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<GenerationJobDeleteRequest>,
+) -> Result<Json<bool>, (StatusCode, String)> {
+    logic::generation_job_delete(&user_id, &req.job_id)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
 // ── Connector (third-party OAuth via Composio) ─────────────────────────────
 // Auth-required thin proxies sharing `logic::connector` with the Tauri
 // commands; the user id rides the auth middleware's Extension.
@@ -2476,6 +2517,10 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/civitai_model3d_submit", post(civitai_model3d_submit_handler))
         .route("/api/civitai_model3d_status", post(civitai_model3d_status_handler))
         .route("/api/civitai_model3d_fetch", post(civitai_model3d_fetch_handler))
+        // Generation history (Generator panel) — source of truth for the
+        // results strip on every transport.
+        .route("/api/generation_history", post(generation_history_handler))
+        .route("/api/generation_job_delete", post(generation_job_delete_handler))
         // Connector (third-party OAuth via Composio) — same 4 ops as the
         // Tauri commands (POST on both transports).
         .route("/api/connector_list_connections", post(connector_list_connections_handler))

@@ -1238,33 +1238,7 @@ pub struct SearchModelsArgs {
     pub cursor: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchModelPage {
-    pub rows: Vec<SearchModelRow>,
-    /// None = no more pages.
-    pub next_cursor: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchModelRow {
-    pub model_id: i64,
-    pub version_id: i64,
-    pub name: String,
-    pub creator: Option<String>,
-    pub downloads: Option<i64>,
-    pub thumbs_up: Option<i64>,
-    pub base_model: Option<String>,
-    pub cover_url: Option<String>,
-    /// HTML description stripped to plain text, capped for the grid card.
-    pub description: Option<String>,
-    /// Up to 3 showcase images BESIDES the cover — the example strip.
-    pub example_urls: Vec<String>,
-    /// `urn:air:{ecosystem}:{checkpoint|lora}:civitai:{model}@{version}` —
-    /// constructed; list payloads do not carry AIR URNs.
-    pub air_urn: String,
-}
+pub use kawai_api_types::{SearchModelPage, SearchModelRow};
 
 /// Crude HTML→text (tag stripping + whitespace collapse) — descriptions are
 /// display-only snippets, never rendered as HTML.
@@ -1481,7 +1455,60 @@ pub async fn civitai_generate(
     if !failed_downloads.is_empty() {
         eprintln!("civitai: {} unduhan gagal", failed_downloads.join("; "));
     }
+    record_generation_history(
+        user_id,
+        "image",
+        None,
+        &params.ecosystem,
+        params.workflow.as_deref(),
+        &params,
+        Some(image_buzz_estimate(&params) as i64),
+        saved
+            .iter()
+            .map(|s| kawai_db::generation_jobs::GenerationJobFile::new(s.file_id.clone(), s.name.clone()))
+            .collect(),
+    )
+    .await;
     Ok(saved)
+}
+
+/// Best-effort history write — the generation already succeeded and is paid
+/// for; a history-record failure must never fail the op (stderr only).
+/// Image lane has no workflow id, so the row is completed immediately here;
+/// the fetch lanes use `generation_job_complete_by_workflow` instead.
+async fn record_generation_history(
+    user_id: &str,
+    lane: &str,
+    workflow_id: Option<&str>,
+    ecosystem: &str,
+    workflow: Option<&str>,
+    request: &impl serde::Serialize,
+    buzz_cost: Option<i64>,
+    files: Vec<kawai_db::generation_jobs::GenerationJobFile>,
+) {
+    let params_json = match serde_json::to_value(request) {
+        Ok(v) => kawai_db::generation_jobs::strip_media_fields(v),
+        Err(e) => {
+            eprintln!("civitai: history params serialize gagal: {e}");
+            return;
+        }
+    };
+    match kawai_db::generation_jobs::generation_job_insert(
+        user_id, lane, workflow_id, ecosystem, workflow, &params_json, buzz_cost,
+    )
+    .await
+    {
+        Ok(job_id) => {
+            if workflow_id.is_none() {
+                if let Err(e) =
+                    kawai_db::generation_jobs::generation_job_complete(user_id, &job_id, &files).await
+                {
+                    eprintln!("civitai: history complete gagal: {e}");
+                }
+            }
+        }
+        Err(e) => eprintln!("civitai: history insert gagal: {e}"),
+    }
 }
 
 /// Short per-run discriminator for file names (timestamp-based; the office
@@ -1508,7 +1535,7 @@ fn uuidish() -> String {
 
 /// Panel request shape — camelCase from both transports, mapped onto the
 /// client's `VideoGenParams`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoGenRequest {
     pub ecosystem: String,
@@ -1612,6 +1639,9 @@ pub async fn civitai_video_cost(req: VideoGenRequest) -> Result<VideoCostView, S
 #[serde(rename_all = "camelCase")]
 pub struct VideoSubmitView {
     pub workflow_id: String,
+    /// History row id (`generation_jobs`) — the panel abandons it via
+    /// `generation_job_delete` when the job fails/cancels.
+    pub job_id: String,
 }
 
 /// Submit the videoGen workflow. SPENDS Buzz — the panel's Generate click
@@ -1632,8 +1662,28 @@ pub async fn civitai_video_submit(
     require_balance_covering(bearer, tokens).await?;
     let submitted = civitai::submit_video_gen(&key, &params).await?;
     kawai_telemetry::record_media_usage(Some(user_id), tokens, "video");
+    let job_id = match kawai_db::generation_jobs::generation_job_insert(
+        user_id,
+        "video",
+        Some(&submitted.id),
+        &req.ecosystem,
+        req.workflow.as_deref(),
+        &kawai_db::generation_jobs::strip_media_fields(
+            serde_json::to_value(&req).unwrap_or_else(|_| serde_json::json!({})),
+        ),
+        Some(est.total_buzz as i64),
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("civitai: history insert gagal: {e}");
+            String::new()
+        }
+    };
     Ok(VideoSubmitView {
         workflow_id: submitted.id,
+        job_id,
     })
 }
 
@@ -1772,6 +1822,7 @@ pub async fn civitai_video_fetch(
     )
     .map_err(|e| format!("gagal menyimpan {name}: {e}"))?;
     let mut thumbnail_file_id = None;
+    let mut thumb_name: Option<String> = None;
     if let Some(thumb) = thumbnail_url.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         match civitai::download_bytes(thumb).await {
             Ok(bytes) => {
@@ -1785,6 +1836,7 @@ pub async fn civitai_video_fetch(
                     None,
                 ) {
                     thumbnail_file_id = Some(file.id);
+                    thumb_name = Some(tname);
                 }
             }
             // Poster is best-effort — the <video> element renders its own
@@ -1803,6 +1855,37 @@ pub async fn civitai_video_fetch(
             Ok(saved) => additional.push(saved),
             Err(e) => eprintln!("civitai: klip tambahan {} gagal: {e}", i + 2),
         }
+    }
+    // History: mark the submit-time `running` row succeeded with the stored
+    // files (primary + poster + batch clips). Best-effort — the artifacts
+    // are already in the store; a history failure must not fail the fetch.
+    let mut history_files = vec![kawai_db::generation_jobs::GenerationJobFile::new(
+        file.id.clone(),
+        name.clone(),
+    )];
+    if let Some(t) = &thumbnail_file_id {
+        history_files.push(kawai_db::generation_jobs::GenerationJobFile::thumb(
+            t.clone(),
+            thumb_name.clone().unwrap_or_default(),
+        ));
+    }
+    for extra in &additional {
+        history_files.push(kawai_db::generation_jobs::GenerationJobFile::new(
+            extra.file_id.clone(),
+            extra.name.clone(),
+        ));
+        if let Some(t) = &extra.thumbnail_file_id {
+            history_files.push(kawai_db::generation_jobs::GenerationJobFile::thumb(t.clone(), String::new()));
+        }
+    }
+    if let Err(e) = kawai_db::generation_jobs::generation_job_complete_by_workflow(
+        user_id,
+        &workflow_id,
+        &history_files,
+    )
+    .await
+    {
+        eprintln!("civitai: history complete gagal: {e}");
     }
     Ok(SavedVideo {
         file_id: file.id,
@@ -1867,7 +1950,7 @@ async fn import_video_file(
 // (`music-concept.ts`, prompts quoted verbatim) — then submits custom-mode
 // steps, so the orchestrator runs one step fewer.
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MusicGenRequest {
     pub ecosystem: String,
@@ -2104,6 +2187,8 @@ pub async fn civitai_music_cost(req: MusicGenRequest) -> Result<VideoCostView, S
 #[serde(rename_all = "camelCase")]
 pub struct MusicSubmitView {
     pub workflow_id: String,
+    /// History row id (`generation_jobs`) — see `VideoSubmitView::job_id`.
+    pub job_id: String,
 }
 
 /// Submit the music workflow. SPENDS Buzz — the panel's Generate click
@@ -2122,8 +2207,28 @@ pub async fn civitai_music_submit(
     require_balance_covering(bearer, tokens).await?;
     let submitted = civitai::submit_music_gen(&key, &params).await?;
     kawai_telemetry::record_media_usage(Some(user_id), tokens, "music");
+    let job_id = match kawai_db::generation_jobs::generation_job_insert(
+        user_id,
+        "music",
+        Some(&submitted.id),
+        &req.ecosystem,
+        req.operation.as_deref().or(req.mode.as_deref()),
+        &kawai_db::generation_jobs::strip_media_fields(
+            serde_json::to_value(&req).unwrap_or_else(|_| serde_json::json!({})),
+        ),
+        Some(est.total_buzz as i64),
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("civitai: history insert gagal: {e}");
+            String::new()
+        }
+    };
     Ok(MusicSubmitView {
         workflow_id: submitted.id,
+        job_id,
     })
 }
 
@@ -2220,6 +2325,15 @@ pub async fn civitai_music_fetch(
         None,
     )
     .map_err(|e| format!("gagal menyimpan {name}: {e}"))?;
+    if let Err(e) = kawai_db::generation_jobs::generation_job_complete_by_workflow(
+        user_id,
+        &workflow_id,
+        &[kawai_db::generation_jobs::GenerationJobFile::new(file.id.clone(), name.clone())],
+    )
+    .await
+    {
+        eprintln!("civitai: history complete gagal: {e}");
+    }
     Ok(SavedAudio {
         file_id: file.id,
         name,
@@ -2231,7 +2345,7 @@ pub async fn civitai_music_fetch(
 // Same op shapes as the video/music lanes; cancel reuses
 // `civitai_video_cancel` (workflow-generic PUT, same as music).
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Model3dGenRequest {
     pub ecosystem: String,
@@ -2362,8 +2476,28 @@ pub async fn civitai_model3d_submit(
     require_balance_covering(bearer, tokens).await?;
     let submitted = civitai::submit_model3d_gen(&key, &params, with_preview).await?;
     kawai_telemetry::record_media_usage(Some(user_id), tokens, "model3d");
+    let job_id = match kawai_db::generation_jobs::generation_job_insert(
+        user_id,
+        "model3d",
+        Some(&submitted.id),
+        &req.ecosystem,
+        req.process.as_deref(),
+        &kawai_db::generation_jobs::strip_media_fields(
+            serde_json::to_value(&req).unwrap_or_else(|_| serde_json::json!({})),
+        ),
+        Some(est.total_buzz as i64),
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("civitai: history insert gagal: {e}");
+            String::new()
+        }
+    };
     Ok(VideoSubmitView {
         workflow_id: submitted.id,
+        job_id,
     })
 }
 
@@ -2547,9 +2681,14 @@ pub async fn civitai_model3d_fetch(
     let (file_id, name) =
         import_model3d_file(user_id, &workflow_id, model_url.trim(), model_format.as_deref(), "primary")
             .await?;
+    let mut fbx_name: Option<String> = None;
+    let mut preview_name: Option<String> = None;
     let fbx_file_id = match fbx_url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
         Some(url) => match import_model3d_file(user_id, &workflow_id, url, fbx_format.as_deref(), "fbx").await {
-            Ok((id, _)) => Some(id),
+            Ok((id, fname)) => {
+                fbx_name = Some(fname);
+                Some(id)
+            }
             Err(e) => {
                 eprintln!("civitai: fbx unduh gagal: {e}");
                 None
@@ -2557,7 +2696,7 @@ pub async fn civitai_model3d_fetch(
         },
         None => None,
     };
-    let preview_file_id = match preview_url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
+    let preview_file_id: Option<String> = match preview_url.as_deref().map(str::trim).filter(|u| !u.is_empty()) {
         Some(url) => match civitai::download_bytes(url).await {
             Ok(bytes) => {
                 let idish: String = workflow_id
@@ -2574,7 +2713,10 @@ pub async fn civitai_model3d_fetch(
                     "civitai",
                     None,
                 ) {
-                    Ok(file) => Some(file.id),
+                    Ok(file) => {
+                        preview_name = Some(tname);
+                        Some(file.id)
+                    }
                     Err(e) => {
                         eprintln!("civitai: preview simpan gagal: {e}");
                         None
@@ -2613,6 +2755,37 @@ pub async fn civitai_model3d_fetch(
             }),
             Err(e) => eprintln!("civitai: varian {} gagal: {e}", extra.variant),
         }
+    }
+    let mut history_files = vec![kawai_db::generation_jobs::GenerationJobFile::new(
+        file_id.clone(),
+        name.clone(),
+    )];
+    if let Some(f) = &fbx_file_id {
+        history_files.push(kawai_db::generation_jobs::GenerationJobFile::new(
+            f.clone(),
+            fbx_name.clone().unwrap_or_default(),
+        ));
+    }
+    if let Some(p) = &preview_file_id {
+        history_files.push(kawai_db::generation_jobs::GenerationJobFile::thumb(
+            p.clone(),
+            preview_name.clone().unwrap_or_default(),
+        ));
+    }
+    for extra in &additional {
+        history_files.push(kawai_db::generation_jobs::GenerationJobFile::new(
+            extra.file_id.clone(),
+            extra.name.clone(),
+        ));
+    }
+    if let Err(e) = kawai_db::generation_jobs::generation_job_complete_by_workflow(
+        user_id,
+        &workflow_id,
+        &history_files,
+    )
+    .await
+    {
+        eprintln!("civitai: history complete gagal: {e}");
     }
     Ok(SavedModel3d {
         file_id,

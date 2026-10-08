@@ -242,6 +242,8 @@ pub fn run() {
         commands::civitai_model3d_submit,
         commands::civitai_model3d_status,
         commands::civitai_model3d_fetch,
+        commands::generation_history,
+        commands::generation_job_delete,
         commands::connector_list_connections,
         commands::connector_connect,
         commands::connector_poll,

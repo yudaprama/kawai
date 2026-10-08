@@ -51,6 +51,26 @@ export type ConsolidationReport = {
 	created: MemoryItem[],
 };
 
+/**  A stored agent experience (PLAN-personal-context §2.2). */
+export type ExperienceItem = {
+	id: string,
+	agentId: string,
+	sessionId: number,
+	taskSummary: string,
+	/**
+	 *  One-lesson takeaway ("what worked / what to do differently"); empty
+	 *  when no cloud provider was available at write time.
+	 */
+	lesson: string,
+	/**  JSON array of tool names, execution order. */
+	toolSequence: string[],
+	/**  `success` | `partial` | `failed`. */
+	outcome: string,
+	/**  JSON array of free-form tags (used for goal-overlap ranking). */
+	tags: string[],
+	createdAt: number,
+};
+
 export type GraphEdgeExport = {
 	from: string,
 	to: string,
@@ -126,6 +146,24 @@ export type OfficeFileInfo = {
 	createdAt: number,
 };
 
+/**  Current onboarding state, read back by the UI gate. */
+export type OnboardingStatus = {
+	completed: boolean,
+	sources: string[],
+};
+
+/**  One stored profile facet (PLAN-personal-context §2.6). */
+export type ProfileFacet = {
+	/**  Namespaced key, e.g. `identity/role`, `goal/2026-h1`. */
+	key: string,
+	class: string,
+	value: string,
+	stability: number | null,
+	/**  `active` | `pinned` | `dropped`. */
+	userState: string,
+	updatedAt: number,
+};
+
 export type RagHit = {
 	source: string,
 	locator: string,
@@ -156,6 +194,34 @@ export type SceneHit = {
 	title: string,
 	summary: string,
 	memories: MemoryItem[],
+};
+
+/**  One page of Civitai model search results. */
+export type SearchModelPage = {
+	rows: SearchModelRow[],
+	/**  None = no more pages. */
+	nextCursor: string | null,
+};
+
+/**  One row of the Civitai in-pane model browser grid. */
+export type SearchModelRow = {
+	modelId: number,
+	versionId: number,
+	name: string,
+	creator: string | null,
+	downloads: number | null,
+	thumbsUp: number | null,
+	baseModel: string | null,
+	coverUrl: string | null,
+	/**  HTML description stripped to plain text, capped for the grid card. */
+	description: string | null,
+	/**  Up to 3 showcase images BESIDES the cover — the example strip. */
+	exampleUrls: string[],
+	/**
+	 *  `urn:air:{ecosystem}:{checkpoint|lora}:civitai:{model}@{version}` —
+	 *  constructed; list payloads do not carry AIR URNs.
+	 */
+	airUrn: string,
 };
 
 export type SkillInfo = {

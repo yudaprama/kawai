@@ -65,6 +65,7 @@ kawai-paths = { path = "../crates/foundation/paths" }
 kawai-skills = { path = "../crates/foundation/skills" }
 kawai-memory = { path = "../crates/foundation/memory" }
 kawai-events = { path = "../crates/foundation/events" }
+kawai-api-types = { path = "../crates/foundation/api-types" }
 apify = { path = "../crates/integrations/apify" }
 composio = { path = "../crates/toolsets/composio" }
 onboarding = { path = "../crates/engines/onboarding", features = ["webread-backend"] }
@@ -244,6 +245,10 @@ required-features = ["litert"]
 
 [[example]]
 name = "binance_smoke"
+required-features = ["binance"]
+
+[[example]]
+name = "binance_futures_probe"
 required-features = ["binance"]
 
 [[example]]

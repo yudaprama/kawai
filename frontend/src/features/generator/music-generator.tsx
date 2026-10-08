@@ -31,6 +31,7 @@ import {
 } from "./music-ecosystems";
 import {
   KeyStatusNotices,
+  type GenerationJobRow,
   laneStatusKey,
   type LaneResultEntry,
   type LaneStatusView,
@@ -97,8 +98,30 @@ function stripMusicReq(req: MusicGenRequest): ReusableMusicReq {
   return coverImage ? { ...rest, hadCover: true } : rest;
 }
 
-const RESULTS_KEY = "kawai-generator-music-results-v1";
 const JOB_KEY = "kawai-generator-music-job-v1";
+
+/** History row → result entry (one track per run). */
+function musicEntriesFromJob(row: GenerationJobRow): MusicResultEntry[] {
+  let req: ReusableMusicReq = {} as ReusableMusicReq;
+  try {
+    req = JSON.parse(row.paramsJson || "{}") as ReusableMusicReq;
+  } catch {
+    // A row with an unparseable snapshot still lists its audio.
+  }
+  const primary = row.files.find((f) => !f.thumb);
+  if (!primary) return [];
+  return [
+    {
+      fileId: primary.id,
+      name: primary.name,
+      jobId: row.id,
+      prompt: (req.prompt ?? req.caption ?? "").trim(),
+      ecosystem: (req.ecosystem ?? DEFAULT_MUSIC_ECOSYSTEM) as MusicEcosystemId,
+      at: row.createdAt * 1000,
+      req,
+    },
+  ];
+}
 
 interface ModelCover {
   ecosystem: string;
@@ -419,7 +442,9 @@ export function MusicGenerator() {
     // Music refuses to submit on a failed quote — its engines have no
     // partial-price fallback the way the video/3D lanes do.
     gateOnCostError: true,
-    keys: { job: JOB_KEY, results: RESULTS_KEY },
+    lane: "music",
+    keys: { job: JOB_KEY },
+    fromJob: musicEntriesFromJob,
     ops: {
       cost: "civitai_music_cost",
       status: "civitai_music_status",
@@ -434,16 +459,6 @@ export function MusicGenerator() {
     succeeded: (st) => st.status === "succeeded" && st.audioUrl != null,
     // Fetch exactly once — the signed URL expires after download.
     fetchSaved: (st, workflowId) => call<SavedAudio>("civitai_music_fetch", { workflowId, audioUrl: st.audioUrl }),
-    toEntries: (saved, job) => [
-      {
-        fileId: saved.fileId,
-        name: saved.name,
-        prompt: job.prompt,
-        ecosystem: job.req?.ecosystem ?? DEFAULT_MUSIC_ECOSYSTEM,
-        at: Date.now(),
-        req: job.req,
-      },
-    ],
   });
   const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
   const {

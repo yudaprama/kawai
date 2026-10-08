@@ -250,6 +250,32 @@ pub async fn deliverable_translations(
     Ok(rows)
 }
 
+/// Generator panel history (all Civitai lanes), newest first — the results
+/// strip's source of truth (replaced the frontend localStorage log).
+pub async fn generation_history(
+    user_id: &str,
+    lane: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> Result<Vec<kawai_db::generation_jobs::GenerationJob>, kawai_db::DbError> {
+    kawai_db::generation_jobs::list_generation_jobs(
+        user_id,
+        lane.as_deref(),
+        limit.unwrap_or(50),
+        offset.unwrap_or(0),
+    )
+    .await
+}
+
+/// Remove one history row (failed/abandoned running job, or the panel's
+/// "remove from history"). The office-store files are NOT touched.
+pub async fn generation_job_delete(
+    user_id: &str,
+    job_id: &str,
+) -> Result<bool, kawai_db::DbError> {
+    kawai_db::generation_jobs::generation_job_delete(user_id, job_id).await
+}
+
 /// Resolve the on-device model path from standard development and bundled locations.
 ///   3. `~/.kawai/models/gemma-4-E4B-it.litertlm` (user home)
 pub fn resolve_model_path() -> Result<String, LogicError> {

@@ -13,7 +13,7 @@ use onboarding::compress::{
 use onboarding::github;
 use onboarding::linkedin::{discover, CONFIDENCE_HIGH};
 use onboarding::IdentitySignals;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use kawai_db::{db_connection, unix_now, DbError};
 
@@ -84,13 +84,7 @@ pub struct OnboardingSources {
     pub gmail: bool,
 }
 
-/// Current onboarding state, read back by the UI gate.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OnboardingStatus {
-    pub completed: bool,
-    pub sources: Vec<String>,
-}
+pub use kawai_api_types::OnboardingStatus;
 
 // ── kv state ────────────────────────────────────────────────────────────────
 

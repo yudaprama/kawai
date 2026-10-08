@@ -3,22 +3,13 @@ import { call, errText } from "@/lib/api";
 import { streamOperation } from "@/lib/stream";
 import { showErrorToast } from "@/lib/utils";
 import { useOp } from "@/hooks/use-op";
+import type { OnboardingStatus } from "@/generated/api-types";
+import type { OnboardingEvent } from "@/generated/events";
 
-/** Mirrors the Rust `OnboardingStatus` (camelCase serde). */
-export interface OnboardingStatus {
-  completed: boolean;
-  sources: string[];
-}
-
-/** Mirrors `kawai_events::OnboardingEvent` (camelCase serde tag = "type"). */
-export type OnboardingEvent =
-  | { type: "sourceStarted"; source: string }
-  | { type: "sourceProgress"; source: string; note: string }
-  | { type: "sourceCompleted"; source: string; itemsFound: number }
-  | { type: "compressStarted" }
-  | { type: "profileReady"; profile: number; people: number; goals: number }
-  | { type: "onboardingFinished"; totalItems: number }
-  | { type: "onboardingError"; message: string };
+/** Wire status + event union — generated from `kawai_api_types::OnboardingStatus`
+ *  and `kawai_events::OnboardingEvent` by `bun run generate:events`; never
+ *  hand-edited. Re-exported so existing import paths keep working. */
+export type { OnboardingStatus, OnboardingEvent };
 
 export interface QuickAnswerInput {
   question: string;
@@ -62,13 +53,30 @@ export function useOnboarding() {
             // generic `finished`/`error` shortcut never fires for them, so
             // the terminal state transitions happen HERE. Without this the
             // spinner runs forever after the backend completes.
-            if (e.type === "onboardingFinished") {
-              setRunning(false);
-              setDone(true);
-              void statusOp.execute();
-            } else if (e.type === "onboardingError") {
-              setRunning(false);
-              showErrorToast(e.message);
+            switch (e.type) {
+              case "onboardingFinished":
+                setRunning(false);
+                setDone(true);
+                void statusOp.execute();
+                break;
+              case "onboardingError":
+                setRunning(false);
+                showErrorToast(e.message);
+                break;
+              // Progress-tier variants are logged (above) but change no state.
+              case "sourceStarted":
+              case "sourceProgress":
+              case "sourceCompleted":
+              case "compressStarted":
+              case "profileReady":
+                break;
+              default: {
+                // Exhaustiveness guard: an unhandled variant must be
+                // classified above — this fails `tsc` instead of dropping it.
+                const _unhandled: never = e;
+                void _unhandled;
+                break;
+              }
             }
           },
           onDone: () => {

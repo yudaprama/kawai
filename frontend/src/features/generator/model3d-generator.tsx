@@ -26,6 +26,7 @@ import {
 } from "./model3d-ecosystems";
 import {
   KeyStatusNotices,
+  type GenerationJobRow,
   laneStatusKey,
   type LaneResultEntry,
   type LaneStatusView,
@@ -114,8 +115,32 @@ function stripReq(req: Model3dGenRequest): ReusableModel3dReq {
   return image ? { ...rest, hadMedia: true } : rest;
 }
 
-const RESULTS_KEY = "kawai-generator-model3d-results-v1";
 const JOB_KEY = "kawai-generator-model3d-job-v1";
+
+/** History row → result entry (one mesh per run; the thumb-flagged file is
+ *  the model3DPreview render that illustrates the card). */
+function model3dEntriesFromJob(row: GenerationJobRow): Model3dResultEntry[] {
+  let req: ReusableModel3dReq = {} as ReusableModel3dReq;
+  try {
+    req = JSON.parse(row.paramsJson || "{}") as ReusableModel3dReq;
+  } catch {
+    // A row with an unparseable snapshot still lists its mesh.
+  }
+  const primary = row.files.find((f) => !f.thumb);
+  if (!primary) return [];
+  const preview = row.files.find((f) => f.thumb);
+  return [
+    {
+      fileId: primary.id,
+      name: primary.name,
+      jobId: row.id,
+      previewFileId: preview?.id,
+      prompt: (req.prompt ?? "").trim(),
+      at: row.createdAt * 1000,
+      req,
+    },
+  ];
+}
 
 /** One saved 3D result: the model3DPreview render as the tile — the GLB
  *  itself has no in-app viewer (deliberate: no three.js dependency), so the
@@ -382,7 +407,9 @@ export function Model3dGenerator() {
   >({
     configured,
     formEffective: formReady,
-    keys: { job: JOB_KEY, results: RESULTS_KEY },
+    lane: "model3d",
+    keys: { job: JOB_KEY },
+    fromJob: model3dEntriesFromJob,
     ops: {
       cost: "civitai_model3d_cost",
       status: "civitai_model3d_status",
@@ -407,16 +434,6 @@ export function Model3dGenerator() {
         previewUrl: st.previewUrl,
         extraUrls: st.extras ?? [],
       }),
-    toEntries: (saved, job) => [
-      {
-        fileId: saved.fileId,
-        name: saved.name,
-        previewFileId: saved.previewFileId,
-        prompt: job.prompt,
-        at: Date.now(),
-        req: job.req,
-      },
-    ],
   });
   const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
   const {

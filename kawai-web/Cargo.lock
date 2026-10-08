@@ -3533,6 +3533,7 @@ dependencies = [
 name = "kawai-events"
 version = "0.1.0"
 dependencies = [
+ "kawai-router",
  "serde",
  "serde_json",
  "specta",
@@ -3625,6 +3626,19 @@ dependencies = [
 [[package]]
 name = "kawai-paths"
 version = "0.1.0"
+
+[[package]]
+name = "kawai-router"
+version = "0.1.0"
+dependencies = [
+ "futures-core",
+ "serde",
+ "serde_json",
+ "specta",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-util",
+]
 
 [[package]]
 name = "kawai-skills"

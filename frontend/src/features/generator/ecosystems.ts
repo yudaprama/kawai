@@ -13,6 +13,8 @@
  * the shared 1024² 1:1 bucket (Base's custom-size ceiling is 4 MP, Turbo's
  * ~1 MP) — the panel's SIZE_PRESETS chips stay well inside those ceilings.
  */
+import type { SearchModelPage, SearchModelRow } from "@/generated/api-types";
+
 export interface EcosystemConfig {
   /** Exact orchestrator ecosystem id (discriminator mapping key).
    *  Ignored for non-sdcpp engines (see `engine`). */
@@ -233,33 +235,15 @@ export interface GenParams {
   clipSkip?: number;
 }
 
+/** Search result rows for the in-pane model browser — generated from
+ *  `kawai_api_types::SearchModelRow/Page` by `bun run generate:events`;
+ *  never hand-edited. Re-exported so existing import paths keep working. */
+export type { SearchModelPage, SearchModelRow };
+
+/** Stored generation result — the panel's localStorage job/results rows. */
 export interface SavedImage {
   fileId: string;
   name: string;
-}
-
-/** Frontend mirror of `logic::civitai::SearchModelRow` — one row of the
- *  in-pane model browser grid. */
-export interface SearchModelRow {
-  modelId: number;
-  versionId: number;
-  name: string;
-  creator: string | null;
-  downloads: number | null;
-  thumbsUp: number | null;
-  baseModel: string | null;
-  coverUrl: string | null;
-  description: string | null;
-  /** Up to 3 showcase images besides the cover. */
-  exampleUrls: string[];
-  /** `urn:air:{ecosystem}:{checkpoint|lora}:civitai:{model}@{version}` */
-  airUrn: string;
-}
-
-/** Frontend mirror of `logic::civitai::SearchModelPage`. */
-export interface SearchModelPage {
-  rows: SearchModelRow[];
-  nextCursor: string | null;
 }
 
 /**

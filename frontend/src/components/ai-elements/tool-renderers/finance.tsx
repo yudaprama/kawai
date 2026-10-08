@@ -194,6 +194,106 @@ export function renderBinanceOpenOrders(output: unknown): ReactNode {
   return cards(items);
 }
 
+/**
+ * Binance agent futures positions + open orders →
+ * { synced, totalUnrealizedPnl, positions: [...],
+ *   openOrders: [{ orderId, symbol, side, type, intent, origQty, price,
+ *                 stopPrice, reduceOnly, ... }] }.
+ *
+ * Two lists: positions (signed size + side carry the direction, so a short
+ * reads as SHORT with a negative amount), then the resting orders grouped by
+ * the server-side `intent` — stop-losses and take-profits are the ones the
+ * user is actually looking for, so they lead.
+ */
+export function renderBinanceFuturesPositions(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || !Array.isArray(d.positions)) return null;
+  const positions: CardItem[] = d.positions
+    .filter(isRecord)
+    .map((p) => {
+      const side = str(p.positionSide)?.toUpperCase();
+      const amt = num(p.positionAmt);
+      const entry = num(p.entryPrice);
+      const mark = num(p.markPrice);
+      const pnl = num(p.unRealizedProfit);
+      const liq = num(p.liquidationPrice);
+      const notional = num(p.notional);
+      const market = str(p.margin)?.toUpperCase();
+      const tag = market === "COINM" ? "COIN-M" : market === "USDM" ? undefined : market;
+      return {
+        title: [str(p.symbol), side].filter(Boolean).join(" ") || "Position",
+        subtitle: amt !== null ? `${fmtNum(amt)} @ ${entry !== null ? fmtNum(entry) : "—"}` : undefined,
+        meta: [
+          ...(tag ? [tag] : []),
+          ...(mark !== null ? [`mark ${fmtNum(mark)}`] : []),
+          ...(pnl !== null ? [`PnL ${fmtNum(pnl)}`] : []),
+          ...(liq !== null && liq > 0 ? [`liq ${fmtNum(liq)}`] : []),
+          ...(notional !== null && notional !== 0 ? [`${fmtNum(notional)} notional`] : []),
+        ].join(" · "),
+      };
+    });
+
+  const orders: CardItem[] = (Array.isArray(d.openOrders) ? d.openOrders : [])
+    .filter(isRecord)
+    .map((o) => {
+      const intent = str(o.intent)?.toUpperCase();
+      const kind = str(o.type)?.replace(/_/g, " ");
+      const qty = num(o.origQty);
+      const price = num(o.price);
+      const stop = num(o.stopPrice);
+      // Stop/TP orders carry their level in stopPrice; a plain limit uses price.
+      const level = stop !== null && stop > 0 ? stop : price;
+      return {
+        title: [str(o.symbol), intent ?? kind].filter(Boolean).join(" ") || "Order",
+        subtitle:
+          qty !== null ? `${fmtNum(qty)} @ ${level !== null && level > 0 ? fmtNum(level) : "market"}` : undefined,
+        meta: [
+          ...(str(o.margin)?.toUpperCase() === "COINM" ? ["COIN-M"] : []),
+          ...(kind !== undefined ? [kind] : []),
+          str(o.side)?.toUpperCase(),
+          ...(o.reduceOnly === true ? ["reduce-only"] : []),
+          ...(o.closePosition === true ? ["close-position"] : []),
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    });
+
+  if (!positions.length && !orders.length) {
+    return (
+      <TextCard>
+        <Footnote>No open Binance futures positions or orders.</Footnote>
+      </TextCard>
+    );
+  }
+  const total = num(d.totalUnrealizedPnl);
+  // COIN-M PnL is denominated in the settlement coin, so it is NEVER summed
+  // into the USDT total — each asset renders as its own line.
+  const coinm = isRecord(d.coinmUnrealizedPnlByAsset) ? d.coinmUnrealizedPnlByAsset : {};
+  const coinmLines = Object.entries(coinm).filter(
+    ([, v]) => typeof v === "number" && v !== 0,
+  );
+  return (
+    <>
+      {cards(positions)}
+      {orders.length ? (
+        <>
+          <div className="not-prose pt-2 text-muted-foreground text-xs font-medium uppercase">
+            Open orders
+          </div>
+          {cards(orders)}
+        </>
+      ) : null}
+      {total !== null ? <Footnote>Total unrealized PnL (USDⓈ-M) {fmtNum(total)}</Footnote> : null}
+      {coinmLines.map(([asset, v]) => (
+        <Footnote key={asset}>
+          COIN-M unrealized PnL ({asset}) {fmtNum(v as number)}
+        </Footnote>
+      ))}
+    </>
+  );
+}
+
 /** Binance agent klines → { candles: [[openTime, o, h, l, c, v], ...] }. */
 export function binanceKlineSeries(output: unknown): Series | null {
   const d = parse(output);

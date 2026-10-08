@@ -36,6 +36,7 @@ import {
 } from "./video-ecosystems";
 import {
   KeyStatusNotices,
+  type GenerationJobRow,
   type LaneResultEntry,
   laneStatusKey,
   type LaneStatusView,
@@ -119,8 +120,30 @@ function stripVideoReq(req: VideoGenRequest): ReusableVideoReq {
   return images.length > 0 || video ? { ...rest, hadMedia: true } : rest;
 }
 
-const RESULTS_KEY = "kawai-generator-video-results-v1";
 const JOB_KEY = "kawai-generator-video-job-v1";
+
+/** History row → result entries. Files flagged `thumb` are poster renders —
+ *  paired with the entry before them instead of listed as cards. */
+function videoEntriesFromJob(row: GenerationJobRow): VideoResultEntry[] {
+  let req = {} as ReusableVideoReq;
+  try {
+    req = JSON.parse(row.paramsJson || "{}") as ReusableVideoReq;
+  } catch {
+    // A row with an unparseable snapshot still lists its media.
+  }
+  const thumbs = row.files.filter((f) => f.thumb);
+  return row.files
+    .filter((f) => !f.thumb)
+    .map((f, i) => ({
+      fileId: f.id,
+      name: f.name,
+      jobId: row.id,
+      thumbnailFileId: thumbs[i]?.id,
+      prompt: (req.prompt ?? "").trim(),
+      at: row.createdAt * 1000,
+      req,
+    }));
+}
 
 /** One `civitai_video_template_gallery` preset — a community clip WITH the
  *  generation settings civitai recorded for it. Inspiration, not reproduction:
@@ -559,7 +582,9 @@ export function VideoGenerator() {
   const lane = useWorkflowLane<VideoGenRequest, ReusableVideoReq, VideoStatusView, SavedVideo, VideoResultEntry>({
     configured,
     formEffective: promptEffective && videoReady && framesReady,
-    keys: { job: JOB_KEY, results: RESULTS_KEY },
+    lane: "video",
+    keys: { job: JOB_KEY },
+    fromJob: videoEntriesFromJob,
     ops: {
       cost: "civitai_video_cost",
       status: "civitai_video_status",
@@ -579,26 +604,6 @@ export function VideoGenerator() {
         thumbnailUrl: st.video?.thumbnailUrl,
         additionalUrls: (st.additional ?? []).map((c) => c.videoUrl),
       }),
-    toEntries: (saved, job) => {
-      const at = Date.now();
-      return [
-        {
-          fileId: saved.fileId,
-          name: saved.name,
-          thumbnailFileId: saved.thumbnailFileId,
-          prompt: job.prompt,
-          at,
-          req: job.req,
-        },
-        ...(saved.additional ?? []).map((c) => ({
-          fileId: c.fileId,
-          name: c.name,
-          prompt: job.prompt,
-          at,
-          req: job.req,
-        })),
-      ];
-    },
   });
   const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
   const {

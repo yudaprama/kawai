@@ -35,7 +35,13 @@ import {
   targetWorkflowForEcosystem,
 } from "./ecosystems";
 import { AdvancedSection } from "./advanced-section";
-import { KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai-shared";
+import {
+  fetchGenerationHistory,
+  type GenerationJobRow,
+  KeyStatusNotices,
+  useAliveEffect,
+  useCivitaiKeyStatus,
+} from "./civitai-shared";
 import { GenerateFooter, publishMediaDebit } from "./generate-footer";
 import { MusicGenerator } from "./music-generator";
 import { Model3dGenerator } from "./model3d-generator";
@@ -66,20 +72,12 @@ interface ReusableParams extends Omit<GenParams, "sourceImage" | "prompt"> {
   hadSourceImage?: boolean;
 }
 
-/** Persist-ready snapshot: scalar settings only, display name kept so the
- *  model chip restores a readable label instead of a raw URN. */
-function stripParams(params: GenParams, modelName: string | undefined): ReusableParams {
-  const { sourceImage, prompt: _prompt, ...rest } = params;
-  return {
-    ...rest,
-    ...(modelName ? { modelName } : {}),
-    ...(sourceImage ? { hadSourceImage: true } : {}),
-  };
-}
-
 interface HistoryEntry {
   fileId: string;
   name: string;
+  /** The history row (generation_jobs) this image belongs to — removing one
+   *  card of a multi-image run removes the whole run. */
+  jobId: string;
   prompt: string;
   at: number;
   /** Generating settings, for the card's "Load these settings" action.
@@ -129,8 +127,29 @@ interface SelectedModel {
   coverUrl: string | null;
 }
 
-const HISTORY_KEY = "kawai-generator-results-v1";
 const MAX_HISTORY = 50;
+
+/** History row → result entries (one row per run; quantity>1 yields several
+ *  cards sharing the row id). `paramsJson` is the submitted `GenParams` minus
+ *  the uploaded source image — the form re-asks for it anyway. */
+function imageEntriesFromJob(row: GenerationJobRow): HistoryEntry[] {
+  let parsed: Partial<GenParams> = {};
+  try {
+    parsed = JSON.parse(row.paramsJson || "{}") as Partial<GenParams>;
+  } catch {
+    // A row with an unparseable snapshot still lists its images.
+  }
+  const { prompt: _prompt, sourceImage: _sourceImage, ...rest } = parsed;
+  return row.files.map((f) => ({
+    fileId: f.id,
+    name: f.name,
+    jobId: row.id,
+    prompt: typeof parsed.prompt === "string" ? parsed.prompt : "",
+    at: row.createdAt * 1000,
+    params: rest as ReusableParams,
+  }));
+}
+
 /** Civitai's additional-resources slot cap mirrored in the panel header. */
 const MAX_LORAS = 9;
 
@@ -142,16 +161,6 @@ const MAX_LORAS = 9;
  * rides a different ecosystem capability set and stays fully user-driven.
  */
 const DEFAULT_NEGATIVE_PROMPT = "blurry, low quality, text, watermark, extra fingers";
-
-function loadHistory(): HistoryEntry[] {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? (parsed as HistoryEntry[]) : [];
-  } catch {
-    return [];
-  }
-}
 
 function compactCount(n: number | null): string {
   if (n === null) return "";
@@ -684,11 +693,24 @@ function ImageGenerator() {
 
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [results, setResults] = useState<HistoryEntry[]>(loadHistory);
+  const [results, setResults] = useState<HistoryEntry[]>([]);
   const resultsRef = useRef(results);
   resultsRef.current = results;
   const aliveRef = useRef(true);
   useAliveEffect(aliveRef);
+
+  /** History lives in the backend `generation_jobs` table (per-user SQLite) —
+   *  reload from the `generation_history` op on mount and after each run. */
+  const refreshResults = useCallback(() => {
+    fetchGenerationHistory("image", MAX_HISTORY)
+      .then((rows) => {
+        if (aliveRef.current) setResults(rows.flatMap(imageEntriesFromJob));
+      })
+      .catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    refreshResults();
+  }, [refreshResults]);
 
   // Cover art (v1 reads) — alive-gated so an unmount mid-fetch is safe.
   useEffect(() => {
@@ -874,17 +896,9 @@ function ImageGenerator() {
       }
       const saved = await call<SavedImage[]>("civitai_generate", { params });
       publishMediaDebit(quotedTokens);
-      const snapshot = stripParams(params, selectedModel?.name);
-      const entries: HistoryEntry[] = saved.map((f) => ({
-        fileId: f.fileId,
-        name: f.name,
-        prompt: params.prompt,
-        at: Date.now(),
-        params: snapshot,
-      }));
-      const next = [...entries, ...resultsRef.current].slice(0, MAX_HISTORY);
-      setResults(next);
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      // The op recorded the run in `generation_jobs` — reload instead of
+      // maintaining a client-side log.
+      refreshResults();
       toast.success(t("generator.done", { count: saved.length }));
     } catch (e) {
       toast.error(`${t("generator.failed")}: ${errText(e)}`);
@@ -983,26 +997,26 @@ function ImageGenerator() {
     toast.success(t("generator.templateApplied"));
   }
 
-  /** Drop a result from the panel's log — the stored file itself stays in
-   *  the office store, so deliverables keep resolving its token. */
+  /** Drop a run from the panel's history — the stored files themselves stay
+   *  in the office store, so deliverables keep resolving their tokens. One
+   *  row can back several cards (quantity>1): the DB row is the unit, so
+   *  removing one card removes the whole run. The delete is DEFERRED to the
+   *  undo window — undo just reloads; expiry deletes the row. */
   function removeEntry(entry: HistoryEntry) {
-    setResults((prev) => {
-      const next = prev.filter((e) => e.fileId !== entry.fileId);
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-      return next;
-    });
+    setResults((prev) => prev.filter((e) => e.jobId !== entry.jobId));
+    let deleted = false;
+    const drop = () => {
+      if (deleted) return;
+      deleted = true;
+      void call("generation_job_delete", { jobId: entry.jobId }).catch(() => undefined);
+    };
     toast(t("generator.resultRemoved"), {
       action: {
         label: t("common.undo"),
-        onClick: () => {
-          setResults((prev) => {
-            if (prev.some((e) => e.fileId === entry.fileId)) return prev;
-            const next = [entry, ...prev].slice(0, MAX_HISTORY);
-            localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-            return next;
-          });
-        },
+        onClick: refreshResults,
       },
+      onDismiss: drop,
+      onAutoClose: drop,
     });
   }
 

@@ -17,8 +17,42 @@ export const TERMINAL_FAILED: Record<string, true> = { failed: true, expired: tr
  *  without hammering the consumer API. */
 export const STATUS_WAIT_SECS = 15;
 
-/** Results kept per lane (newest first) in the panel's localStorage log. */
+/** Results kept per lane (newest first). Source of truth is the backend
+ *  `generation_jobs` table (migration 0023) read through the
+ *  `generation_history` op — the localStorage log this replaced was
+ *  per-webview, capped by storage limits, and lost on storage wipe. */
 export const MAX_RESULTS = 30;
+
+/** One stored artifact of a generation job — office-store pointer + name. */
+export interface GenerationJobFile {
+  id: string;
+  name: string;
+  /** Poster/preview render — paired with the entry before it instead of
+   *  listed as its own card. */
+  thumb?: boolean;
+}
+
+/** One `generation_jobs` row as `generation_history` returns it. */
+export interface GenerationJobRow {
+  id: string;
+  lane: string;
+  workflowId: string | null;
+  ecosystem: string;
+  workflow: string | null;
+  /** The request that produced the artifacts, minus heavy source media —
+   *  each lane parses it back into its own reusable-settings snapshot. */
+  paramsJson: string;
+  buzzCost: number | null;
+  status: string;
+  files: GenerationJobFile[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Lane-scoped history read (newest first). */
+export function fetchGenerationHistory(lane: string, limit = MAX_RESULTS): Promise<GenerationJobRow[]> {
+  return call<GenerationJobRow[]>("generation_history", { lane, limit, offset: 0 });
+}
 
 /** Debounce before the free-whatif quote fires, so typing a prompt does not
  *  emit one pricing call per keystroke. */
@@ -120,6 +154,10 @@ export interface LaneStatusView {
 /** An in-flight workflow, persisted so a restart resumes polling. */
 export interface LaneJob<Snapshot = unknown> {
   workflowId: string;
+  /** History row id (`generation_jobs`) — abandoned via
+   *  `generation_job_delete` when the job fails or is canceled. Absent on a
+   *  job persisted by an older build. */
+  jobId?: string;
   prompt: string;
   at: number;
   /** The submitting request's scalar settings, carried through to the saved
@@ -133,6 +171,9 @@ export interface LaneJob<Snapshot = unknown> {
 export interface LaneResultEntry<Snapshot = unknown> {
   fileId: string;
   name: string;
+  /** The history row this artifact belongs to — one run can produce several
+   *  files (batch clips, quantity>1), and removing one card removes the row. */
+  jobId: string;
   prompt: string;
   at: number;
   req?: Snapshot;
@@ -156,7 +197,15 @@ export interface WorkflowLaneOptions<Req, Snapshot, Status extends LaneStatusVie
   /** Music additionally refuses to submit on a failed quote. */
   gateOnCostError?: boolean;
   ops: LaneOps;
-  keys: { results: string; job: string };
+  /** The lane's history id — which slice of `generation_jobs` this panel
+   *  reads (`video` | `music` | `model3d`). */
+  lane: string;
+  /** Only the in-flight job persists client-side (poll resume across a
+   *  restart); the finished-artifact log lives in the backend DB. */
+  keys: { job: string };
+  /** Maps one history row onto this lane's result entries (parse
+   *  `paramsJson` into the lane's reusable snapshot, extract the prompt). */
+  fromJob: (row: GenerationJobRow) => Entry[];
   /** Give up on a job whose transport keeps failing after this long. */
   stuckMs: number;
   buildRequest: () => Req;
@@ -167,7 +216,6 @@ export interface WorkflowLaneOptions<Req, Snapshot, Status extends LaneStatusVie
   /** The status is terminal-successful AND carries its payload. */
   succeeded: (st: Status) => boolean;
   fetchSaved: (st: Status, workflowId: string) => Promise<Saved>;
-  toEntries: (saved: Saved, job: LaneJob<Snapshot>) => Entry[];
   /** Toast copy for this lane's outcomes. */
   labels: { done: TranslationKey; failed: TranslationKey };
 }
@@ -207,14 +255,15 @@ export function useWorkflowLane<
   formEffective,
   gateOnCostError = false,
   ops,
+  lane,
   keys,
+  fromJob,
   stuckMs,
   buildRequest,
   strip,
   promptLabel,
   succeeded,
   fetchSaved,
-  toEntries,
   labels,
 }: WorkflowLaneOptions<Req, Snapshot, Status, Saved, Entry>): WorkflowLane<Snapshot, Status, Entry> {
   const { t } = useI18n();
@@ -224,15 +273,35 @@ export function useWorkflowLane<
   const [job, setJob] = useState<LaneJob<Snapshot> | null>(() => loadJson<LaneJob<Snapshot> | null>(keys.job, null));
   const [status, setStatus] = useState<Status | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [results, setResults] = useState<Entry[]>(() => loadJson<Entry[]>(keys.results, []));
+  const [results, setResults] = useState<Entry[]>([]);
   const aliveRef = useRef(true);
   useAliveEffect(aliveRef);
 
   /** The lane's per-run callbacks close over form state, so a fresh identity
    *  every render would tear down the poll loop. Park them in a ref: the loop
    *  reads the latest without ever restarting for a form change. */
-  const pollRef = useRef({ succeeded, fetchSaved, toEntries });
-  pollRef.current = { succeeded, fetchSaved, toEntries };
+  const pollRef = useRef({ succeeded, fetchSaved });
+  pollRef.current = { succeeded, fetchSaved };
+  const fromJobRef = useRef(fromJob);
+  fromJobRef.current = fromJob;
+
+  /** Reload the lane's history from the backend (mount, post-success, undo). */
+  const refreshResults = useCallback(() => {
+    fetchGenerationHistory(lane)
+      .then((rows) => {
+        if (aliveRef.current) setResults(rows.flatMap((r) => fromJobRef.current(r)));
+      })
+      .catch(() => undefined);
+  }, [lane]);
+  useEffect(() => {
+    refreshResults();
+  }, [refreshResults]);
+
+  /** Delete a job's history row — failed/canceled runs never enter the strip
+   *  (the toast already told the user; only paid-success runs are history). */
+  const abandonJob = useCallback((jobId?: string) => {
+    if (jobId) void call("generation_job_delete", { jobId }).catch(() => undefined);
+  }, []);
 
   /** Identity-stable request snapshot — the whatif effect re-runs only when
    *  the FORM actually changes, not on unrelated renders. */
@@ -289,14 +358,11 @@ export function useWorkflowLane<
           if (cancelled || !aliveRef.current) return;
           setStatus(st);
           if (pollRef.current.succeeded(st)) {
-            const saved = await pollRef.current.fetchSaved(st, workflowId);
+            await pollRef.current.fetchSaved(st, workflowId);
             if (cancelled || !aliveRef.current) return;
-            const entries = pollRef.current.toEntries(saved, job);
-            setResults((prev) => {
-              const next = [...entries, ...prev].slice(0, MAX_RESULTS);
-              localStorage.setItem(keys.results, JSON.stringify(next));
-              return next;
-            });
+            // The fetch op already marked the history row `succeeded` —
+            // reload it instead of maintaining a client-side log.
+            refreshResults();
             localStorage.removeItem(keys.job);
             setJob(null);
             setStatus(null);
@@ -304,6 +370,7 @@ export function useWorkflowLane<
             return;
           }
           if (TERMINAL_FAILED[st.status]) {
+            abandonJob(job.jobId);
             localStorage.removeItem(keys.job);
             setJob(null);
             toast.error(`${t(labels.failed)}: ${st.error ?? st.status}`);
@@ -314,6 +381,7 @@ export function useWorkflowLane<
           // keeps running server-side and the job survives restarts.
           if (cancelled || !aliveRef.current) return;
           if (Date.now() - job.at > stuckMs) {
+            abandonJob(job.jobId);
             localStorage.removeItem(keys.job);
             setJob(null);
             toast.error(`${t(labels.failed)}: ${errText(e)}`);
@@ -326,7 +394,7 @@ export function useWorkflowLane<
     return () => {
       cancelled = true;
     };
-  }, [job, keys.job, keys.results, labels.done, labels.failed, ops.status, stuckMs, t]);
+  }, [job, keys.job, labels.done, labels.failed, ops.status, refreshResults, stuckMs, t, abandonJob]);
 
   const canSubmit = configured === true && !submitting && !job && formEffective && !(gateOnCostError && costError);
 
@@ -348,10 +416,11 @@ export function useWorkflowLane<
         }
       }
       const sent = buildRequest();
-      const view = await call<{ workflowId: string }>(ops.submit, { req: sent });
+      const view = await call<{ workflowId: string; jobId?: string }>(ops.submit, { req: sent });
       publishMediaDebit(cost?.totalTokens ?? 0);
       const nextJob: LaneJob<Snapshot> = {
         workflowId: view.workflowId,
+        jobId: view.jobId,
         prompt: promptLabel(),
         at: Date.now(),
         req: strip(sent),
@@ -366,43 +435,46 @@ export function useWorkflowLane<
     }
   }, [buildRequest, canSubmit, cost, keys.job, labels.failed, ops.submit, promptLabel, strip, t]);
 
-  /** Cancel reuses the video op — every media lane rides one workflow bus. */
+  /** Cancel reuses the video op — every media lane rides one workflow bus.
+   *  The history row goes with it: a canceled spend is not history. */
   const cancel = useCallback(() => {
     if (!job) return;
     const { workflowId } = job;
+    const jobId = job.jobId;
     void call("civitai_video_cancel", { workflowId })
       .catch(() => undefined)
       .finally(() => {
+        abandonJob(jobId);
         localStorage.removeItem(keys.job);
         setJob(null);
         toast.success(t("videoGenerator.canceled"));
       });
-  }, [job, keys.job, t]);
+  }, [job, keys.job, abandonJob, t]);
 
-  /** Drop an entry from the panel's log — the stored file itself stays in the
-   *  office store, so deliverables keep resolving its token. */
+  /** Drop a run from the panel's history — the stored files themselves stay
+   *  in the office store, so deliverables keep resolving their tokens. One
+   *  row can back several cards (batch clips, quantity>1): the DB row is the
+   *  unit, so removing one card removes the whole run. The delete is
+   *  DEFERRED to the undo window — undo just reloads; expiry deletes the row. */
   const removeEntry = useCallback(
     (entry: Entry) => {
-      setResults((prev) => {
-        const next = prev.filter((e) => e.fileId !== entry.fileId);
-        localStorage.setItem(keys.results, JSON.stringify(next));
-        return next;
-      });
+      setResults((prev) => prev.filter((e) => e.jobId !== entry.jobId));
+      let deleted = false;
+      const drop = () => {
+        if (deleted) return;
+        deleted = true;
+        void call("generation_job_delete", { jobId: entry.jobId }).catch(() => undefined);
+      };
       toast(t("generator.resultRemoved"), {
         action: {
           label: t("common.undo"),
-          onClick: () => {
-            setResults((prev) => {
-              if (prev.some((e) => e.fileId === entry.fileId)) return prev;
-              const next = [entry, ...prev].slice(0, MAX_RESULTS);
-              localStorage.setItem(keys.results, JSON.stringify(next));
-              return next;
-            });
-          },
+          onClick: refreshResults,
         },
+        onDismiss: drop,
+        onAutoClose: drop,
       });
     },
-    [keys.results, t],
+    [refreshResults, t],
   );
 
   return { canSubmit, cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting };
