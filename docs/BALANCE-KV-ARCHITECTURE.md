@@ -77,9 +77,9 @@ app (user login — Bearer Ed25519 session token)
   ├── GET  /topup/qris/preview ───────────→ konstanta QRIS_PAYLOAD + rentang (MIN/MAX_BASE, BASE_STEP, TOKENS_PER_IDR)
   ├── POST /topup/qris/claim {amount} ────→ D1 qris_topups (idempotent/email)
   ├── GET  /topup/qris/status/:txId ──────→ qris_topups (owner-scope)
-  └── POST /billing/debit {amount} ───────→ UPDATE tokens = tokens - ?
-                                              WHERE email = ? AND tokens >= ?
-                                              (guard atomic → 409 bila kurang)
+  └── GET  /billing/history ──────────────→ D1 balance_ledger (terbaru dulu;
+                                              debit kini lewat recap
+                                              POST /internal/recap)
 
   use-workbench.run()    → pre-check token ≤ 0 → blokir + buka halaman Top Up
                            (baca dipublikasikan ke shared store saldo;
@@ -145,7 +145,6 @@ migration runner terpisah.
 | POST | `/topup/qris/claim` | klaim nominal unik (idempotent: klaim saat masih pending → row sama) |
 | GET | `/topup/qris/status/:txId` | status klaim (owner-scope; 404 untuk tx bukan miliknya) |
 | GET | `/topup/balance` | saldo token pemanggil (0 bila belum pernah top-up) |
-| POST | `/billing/debit` | debit usage (guard atomic → 409 `insufficient_balance`) + baris ledger `usage` negatif |
 | GET | `/billing/history` | riwayat ledger pemilik (terbaru dulu, `?limit=` default 50 / maks 200) |
 | GET | `/topup/qris/pending` | daftar klaim pending (admin) |
 | POST | `/topup/qris/confirm` | kredit klaim (admin, idempotent) |

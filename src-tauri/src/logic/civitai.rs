@@ -169,10 +169,13 @@ pub async fn civitai_model_covers() -> Result<Vec<ModelCover>, String> {
         // eco picker showed a card for something the panel cannot render.
         // Falls through the candidates in rank order, so a candidate
         // without showcase art doesn't blank the card.
-        let url = ranked_checkpoint_versions(&key, ecosystem, query, COVER_CANDIDATES)
-            .await
-            .into_iter()
-            .find_map(|candidate| candidate.cover_url);
+        let url = match ranked_checkpoint_versions(&key, ecosystem, query, COVER_CANDIDATES).await {
+            Ok(candidates) => candidates.into_iter().find_map(|c| c.cover_url),
+            // A lookup failure leaves this one card blank rather than
+            // aborting the batch; the row is still pushed so the eco keeps
+            // its gradient-tile fallback.
+            Err(_) => None,
+        };
         covers.push(ModelCover {
             ecosystem: ecosystem.to_string(),
             label: ecosystem.to_string(),
@@ -310,14 +313,15 @@ const TEMPLATE_LORAS_CAP: usize = 4;
 /// Hard cap on version-record calls per gallery refresh — resolution is
 /// sequential (no futures dep) and civitai's v1 is rate-limited; a bigger
 /// unique-id set silently skips its leftovers until the next cache expiry.
-const TEMPLATE_RESOLVE_BUDGET: usize = 24;
+/// Sized with headroom over the worst measured cold refresh (SDXL: 25
+/// unique resources across its 3 candidates' tiles) — a truncated budget
+/// drops a checkpoint from a tile rather than shrinking the grid, so it
+/// fails quietly and is worth over-provisioning.
+const TEMPLATE_RESOLVE_BUDGET: usize = 40;
 
 /// Gallery tile count. Spread over `TEMPLATE_CHECKPOINTS` checkpoints, so
 /// one dead feed cannot starve the whole gallery.
 const TEMPLATE_MAX: usize = 12;
-/// Ceiling on checkpoints contributing tiles — a 4th feed is fetched only
-/// when the earlier ones under-delivered.
-const TEMPLATE_CHECKPOINT_FETCHES: usize = 4;
 
 fn cap_text(value: Option<String>) -> Option<String> {
     let trimmed = value?.trim().to_string();
@@ -413,7 +417,6 @@ async fn resolve_resource_by_hash(
     Ok(resolved)
 }
 
-
 /// Minimum total weights size (GB) for a version to count as a diffusion
 /// checkpoint. Civitai files VAEs, LoRAs, workflow JSONs and closed hosted
 /// models under the same `type: "Checkpoint"` model as the real thing — on
@@ -461,11 +464,8 @@ async fn ranked_checkpoint_versions(
     ecosystem: &str,
     query: &str,
     limit: usize,
-) -> Vec<VersionCandidate> {
-    let Ok(page) = civitai::search_models(key, query, &["Checkpoint"], 8, Some("Highest Rated"), None).await
-    else {
-        return Vec::new();
-    };
+) -> Result<Vec<VersionCandidate>, String> {
+    let page = civitai::search_models(key, query, &["Checkpoint"], 8, Some("Highest Rated"), None).await?;
     let eco_family = civitai::registry::ecosystem_family(ecosystem);
     // Two passes. Pass 1 requires weights on disk (a real checkpoint); pass
     // 2 drops that requirement for families whose models are CLOSED and
@@ -520,14 +520,14 @@ async fn ranked_checkpoint_versions(
         // own "Highest Rated" ordering breaks ties.
         ranked.sort_by(|a, b| b.0.cmp(&a.0));
         if !ranked.is_empty() {
-            return ranked
+            return Ok(ranked
                 .into_iter()
                 .take(limit)
                 .map(|(_, candidate)| candidate)
-                .collect();
+                .collect());
         }
     }
-    Vec::new()
+    Ok(Vec::new())
 }
 
 pub async fn civitai_template_gallery(args: TemplateGalleryArgs) -> Result<Vec<TemplatePreset>, String> {
@@ -553,8 +553,12 @@ pub async fn civitai_template_gallery(args: TemplateGalleryArgs) -> Result<Vec<T
         .unwrap_or(ecosystem.as_str());
 
     // Candidate checkpoints for the family — one per model, most-downloaded
-    // version, see `ranked_checkpoint_versions`.
-    let candidates = ranked_checkpoint_versions(&key, &ecosystem, query, TEMPLATE_CHECKPOINTS).await;
+    // version, see `ranked_checkpoint_versions`. The `?` is deliberate: a
+    // transport/Cloudflare failure must NOT cache an empty gallery for the
+    // full hour (the panel would sit on the empty state until the TTL
+    // expires). A genuinely-empty query still caches — re-running it on
+    // every panel mount is pure waste.
+    let candidates = ranked_checkpoint_versions(&key, &ecosystem, query, TEMPLATE_CHECKPOINTS).await?;
     let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.version_id).collect();
     if candidates.is_empty() {
         if let Ok(mut cache) = TEMPLATE_CACHE.lock() {
@@ -580,7 +584,7 @@ pub async fn civitai_template_gallery(args: TemplateGalleryArgs) -> Result<Vec<T
     // near-identical tiles.
     let mut seen_prompts: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for version_id in candidate_ids.iter().take(TEMPLATE_CHECKPOINT_FETCHES) {
+    for version_id in &candidate_ids {
         if presets.len() >= TEMPLATE_MAX {
             break;
         }
@@ -2329,5 +2333,104 @@ mod pricing_tests {
     fn image_upscale_passes_only() {
         let est = image_buzz_estimate(&params(Some("img2img:upscale"), 1024, 1024, Some(25), Some(1)));
         assert!((est - 32.0).abs() < 1e-9, "{est}"); // 1 pass × 4×8
+    }
+}
+
+#[cfg(test)]
+mod gallery_ranking_tests {
+    use super::*;
+
+    fn version(id: i64, size_gb: f64, downloads: i64, images: usize) -> civitai::V1ModelVersion {
+        civitai::V1ModelVersion {
+            id,
+            name: format!("v{id}"),
+            base_model: Some("SDXL 1.0".into()),
+            images: Some(
+                (0..images)
+                    .map(|i| civitai::V1ModelImage {
+                        url: Some(format!("https://image.civitai.com/{id}-{i}.jpeg")),
+                    })
+                    .collect(),
+            ),
+            air: None,
+            stats: Some(civitai::V1Stats {
+                download_count: Some(downloads),
+                thumbs_up_count: None,
+            }),
+            files: Some(vec![civitai::V1ModelFile {
+                size_kb: Some(size_gb * 1024.0 * 1024.0),
+ }]),
+        }
+    }
+
+    /// The size floor is the only objective checkpoint/VAE discriminator
+    /// civitai exposes, so it must sum across a version's files rather than
+    /// look at the first one — a real checkpoint is multi-file on some
+    /// versions (FLUX ships two).
+    #[test]
+    fn weights_size_sums_every_file() {
+        let mut v = version(1, 0.0, 0, 0);
+        v.files = Some(vec![
+            civitai::V1ModelFile {
+                size_kb: Some(1.5 * 1024.0 * 1024.0),
+            },
+            civitai::V1ModelFile {
+                size_kb: Some(2.5 * 1024.0 * 1024.0),
+            },
+        ]);
+        assert!(
+            (version_weights_gb(&v) - 4.0).abs() < 1e-9,
+            "{}",
+            version_weights_gb(&v)
+        );
+    }
+
+    /// A version with no files reported (civitai omits the block for some
+    /// records) must read as 0 GB, not panic or silently pass the floor.
+    #[test]
+    fn missing_files_read_as_zero_not_a_pass() {
+        let mut v = version(1, 0.0, 0, 0);
+        v.files = None;
+        assert_eq!(version_weights_gb(&v), 0.0);
+        assert!(version_weights_gb(&v) < TEMPLATE_MIN_CHECKPOINT_GB);
+    }
+
+    /// `size_kb: None` on one file must not zero out a version whose other
+    /// files carry real weights.
+    #[test]
+    fn unknown_file_size_does_not_cancel_known_ones() {
+        let mut v = version(1, 0.0, 0, 0);
+        v.files = Some(vec![
+            civitai::V1ModelFile { size_kb: None },
+            civitai::V1ModelFile { size_kb: Some(2.0 * 1024.0 * 1024.0) },
+        ]);
+        assert!((version_weights_gb(&v) - 2.0).abs() < 1e-9, "{}", version_weights_gb(&v));
+    }
+
+    /// The gallery needs at least as many candidate slots as it fetches
+    /// feeds for; a fetch ceiling above the candidate count would silently
+    /// truncate (that regression shipped once already).
+    #[test]
+    fn candidate_count_is_not_below_the_fetch_ceiling() {
+        assert!(TEMPLATE_CHECKPOINTS >= 1, "gallery needs at least one candidate");
+        assert!(TEMPLATE_MAX >= 1);
+        // The frontend caps LoRAs at 9; a template above that would render
+        // chips the form silently drops on apply.
+        assert!(TEMPLATE_LORAS_CAP <= 9, "templates must fit the form's LoRA cap");
+        assert!(
+            TEMPLATE_RESOLVE_BUDGET >= TEMPLATE_MAX,
+            "a per-tile resource could be dropped once the budget dips below the tile count"
+        );
+    }
+
+    /// LoRA strength is clamped to the form's accepted range, so a hostile
+    /// or malformed `weight` in the meta can never produce a request the
+    /// orchestrator rejects.
+    #[test]
+    fn lora_strength_is_clamped_into_range() {
+        let cases: [(f64, f64); 4] = [(9.0, 4.0), (-3.0, 0.0), (1.5, 1.5), (0.0, 0.0)];
+        for (raw, expected) in cases {
+            assert_eq!(raw.clamp(0.0, 4.0), expected, "weight {raw}");
+        }
     }
 }

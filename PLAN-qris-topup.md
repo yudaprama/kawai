@@ -15,7 +15,7 @@
 | D4 | **2-build status quo dipertahankan** | Bukti di repo: `release.yml` membangun main `--features litert,tts,binance` (tanpa `monad`) + variant `kawai-mono` (`…,monad`); `src-tauri/Cargo.toml` `default = ["desktop"]`; web `--features web,tts` (tanpa monad). Token app universal → QRIS top-up **tidak menambah build**. |
 | D5 | **Tukar token app→token on-chain tidak dibangun** (larang in-app) | Kalau token app bisa dibeli Rupiah lalu ditukar token on-chain di dalam app, regulator kembali melihat "penjualan token untuk Rupiah" → kembali ke masalah D3. Token app hanya untuk pemakaian layanan. |
 | D6 | QRIS **hanya menerima pembayar Indonesia, Rupiah** | QRIS = rail domestik; pembayar sudah di yurisdiksi Indonesia. Pertanyaan lisensi melekat pada **produk yang dijual** (D3), bukan pada rail. |
-| **D7** | **Ledger token pindah ke D1** (`kawai-auth`, binding `DB`) — auth + uang + klaim QRIS satu database | Identitas sudah di worker D1 (Ed25519, email) — `wrangler.toml` D1 `kawai-auth`. Jalur Supabase di repo ini sudah dicutover: `commands.rs::bill_turn` dihapus, debit usage kini `POST /billing/debit` (D1), admin top-up lewat `POST /admin/balance/credit` — satu-satunya penulis Supabase lama (`scripts/topup.ts` psql) ikut ditulis ulang. D1 = SQLite ACID single-primary — alasan doc lama memilih Supabase adalah ACID vs **KV**, bukan vs D1. Konsekuensi: confirm = **satu `DB.batch()` transaksional**, `email` = PK (tanpa bridge email→UUID), nol EF, nol secret baru. Revisi keputusan `[LOCK]` §1.1 `docs/BALANCE-KV-ARCHITECTURE.md` (same-commit). |
+| **D7** | **Ledger token pindah ke D1** (`kawai-auth`, binding `DB`) — auth + uang + klaim QRIS satu database | Identitas sudah di worker D1 (Ed25519, email) — `wrangler.toml` D1 `kawai-auth`. Jalur Supabase di repo ini sudah dicutover: `commands.rs::bill_turn` dihapus, debit usage kini lewat recap `POST /internal/recap` (D1), admin top-up lewat `POST /admin/balance/credit` — satu-satunya penulis Supabase lama (`scripts/topup.ts` psql) ikut ditulis ulang. D1 = SQLite ACID single-primary — alasan doc lama memilih Supabase adalah ACID vs **KV**, bukan vs D1. Konsekuensi: confirm = **satu `DB.batch()` transaksional**, `email` = PK (tanpa bridge email→UUID), nol EF, nol secret baru. Revisi keputusan `[LOCK]` §1.1 `docs/BALANCE-KV-ARCHITECTURE.md` (same-commit). |
 
 Referensi:
 
@@ -96,7 +96,7 @@ Idempotency lapis (konfirmasi = transfer uang):
 **Masalah:** token yang dijual **tidak punya pembeli** — `bill_turn` stub `Skipped`, `gateTurn` tidak ada, `bill_usage` tanpa pemanggil. Menjual top-up untuk ledger yang tak pernah didebit = menjual sesuatu yang tak bisa dipakai.
 
 - **0a — Pre-check (wajib, murah):** UI baca `topup_balance`; submit goal diblokir bila token 0 ("Token habis — isi ulang lewat Top Up"), dan fail-closed juga bila worker tak terjangkau (baca gagal → toast "Saldo tidak terbaca", submit ditahan) — gate server `supervisor::plan_task` tetap otoritatif.
-- **0b — Debit:** debit saldo kini sepenuhnya oleh recap (§15) — tidak ada lagi panggilan debit dari klien. Worker `POST /billing/debit` tetap tersedia sebagai API worker (D1 atomic guard `UPDATE user_balances SET tokens = tokens - ? WHERE email=? AND tokens >= ?` → `changes==0` → 409 `insufficient_balance`; baris ledger `reason='usage'` amount negatif), tapi tidak dipanggil klien mana pun. Riwayat menjelaskan saldo yang berkurang lewat `GET /billing/history` (baris recap tampil sebagai `usage` biasa). Panggilan per-turn di composition root **sudah digantikan recap** (§15): `billing_debit` tak lagi dipanggil `supervisor.rs` — gate klien tinggal baca `tokens > 0`. Jalur media Civitai ikut recap yang sama: metered via counter `kawai_media_token_usage_total` di titik submit (gate read-only `tokens >= harga` fail-closed — gate gagal → `Err` dan submit batal), tanpa debit langsung. Stub `commands.rs::bill_turn` tetap **dihapus** (nol pemanggil).
+- **0b — Debit:** debit saldo kini sepenuhnya oleh recap (§15) — tidak ada lagi panggilan debit dari klien. Worker `POST /billing/debit` **dihapus dari source worker** (efektif setelah deploy berikutnya): binary lama yang masih men-debit langsung akan gagal fail-closed setelah deploy itu. Riwayat menjelaskan saldo yang berkurang lewat `GET /billing/history` (baris recap tampil sebagai `usage` biasa). Panggilan per-turn di composition root **sudah digantikan recap** (§15): `billing_debit` tak lagi dipanggil `supervisor.rs` — gate klien tinggal baca `tokens > 0`. Jalur media Civitai ikut recap yang sama: metered via counter `kawai_media_token_usage_total` di titik submit (gate read-only `tokens >= harga` fail-closed — gate gagal → `Err` dan submit batal), tanpa debit langsung. Stub `commands.rs::bill_turn` tetap **dihapus** (nol pemanggil).
 
 Efek samping pembersihan (clean cutover, saat Fase 0): jalur Supabase di `crates/foundation/billing` (fungsi JWT `bill_usage`/`get_my_balance`, `BillOpts`) diganti worker-proxy / dihapus dari panggilan — jangan biarkan dua jalur debit. **Tanpa GO Fase 0: shipping QRIS ditahan.**
 
@@ -155,7 +155,6 @@ Endpoint (semua lewat `authenticate()` yang sudah ada; admin = `ADMIN_EMAIL`):
 | GET | `/topup/balance` | — | `{ tokens }` → `SELECT tokens FROM user_balances WHERE email=?` (0 bila belum ada) |
 | GET | `/topup/qris/pending` | admin | daftar `pending` (email, nominal, waktu) untuk matching mutasi bank |
 | POST | `/topup/qris/confirm` | admin, `{ txId }` | alur CAS + batch (§2) → `{ status, tokens }` |
-| POST | `/billing/debit` *(Fase 0b)* | `{ amount }` | atomic guard D1 → 409 `insufficient_balance` bila kurang; guard lolos → baris ledger `reason='usage'` **negatif** (`ref` NULL) |
 | GET | `/billing/history` | `?limit=` (default 50, maks 200) | `{ entries: [{ id, amount, reason, createdAt }] }` — ledger pemilik, terbaru dulu |
 
 `/transfer`, Paddle, auth, KV **tidak disentuh**.
@@ -292,7 +291,7 @@ E2E uang nyata (setelah deploy): klaim → bayar nominal kecil sungguhan → `bu
 
 ## 15. Recap billing (Variant A) — cron lokal `crates/ops/recap`
 
-Recap menggantikan debit klien pada cutover: **migrasi counter token dari Grafana Cloud menjadi tagihan**, sehingga pemakaian yang tak teratribusi ke `plan_task` (subagent, writer/revise, agent tanpa `user_id` di jalur klien) ikut tercatat struktural. Debit klien (`POST /billing/debit` di `supervisor::plan_task`) tetap berjalan sampai cutover — keduanya tidak pernah aktif bersamaan (anti dobel-charge).
+Recap menggantikan debit klien pada cutover: **migrasi counter token dari Grafana Cloud menjadi tagihan**, sehingga pemakaian yang tak teratribusi ke `plan_task` (subagent, writer/revise, agent tanpa `user_id` di jalur klien) ikut tercatat struktural. Debit klien per-turn tidak pernah aktif bersamaan dengan recap — recap menggantikannya sekaligus pada cutover (anti dobel-charge).
 
 ### Arsitektur
 
@@ -327,7 +326,7 @@ kawai-recap (Rust, lokal, default dry-run)                kawai-server/worker (D
 
 Flag: `--once` (satu siklus; tanpa itu loop 5 menit) · `--apply` (tulis; default dry-run) · `--rebase` (geser cursor tanpa tagih, wajib bersama `--apply`) · `--since <unix>` (paksa awal window, dry-run saja).
 
-**Status: LIVE.** Keempat langkah sudah dijalankan — secret terdeploy, worker live, bootstrap + rebase selesai, panggilan `billing_debit` di `supervisor.rs` dihapus (gate klien tinggal baca `tokens > 0`), dan loop `--apply` berjalan lokal (LaunchAgent `com.kawai.recap` → `~/.local/bin/kawai-recap --apply`). Media Civitai kini ikut jalur recap yang sama (counter `kawai_media_token_usage_total`, gate read-only `tokens >= harga` di submit) — endpoint `/billing/debit` tidak lagi dipanggil klien mana pun.
+**Status: LIVE.** Keempat langkah sudah dijalankan — secret terdeploy, worker live, bootstrap + rebase selesai, panggilan `billing_debit` di `supervisor.rs` dihapus (gate klien tinggal baca `tokens > 0`), dan loop `--apply` berjalan lokal (LaunchAgent `com.kawai.recap` → `~/.local/bin/kawai-recap --apply`). Media Civitai kini ikut jalur recap yang sama (counter `kawai_media_token_usage_total`, gate read-only `tokens >= harga` di submit) — endpoint `/billing/debit` dihapus dari source worker (efektif setelah deploy berikutnya).
 
 ### Verifikasi
 
