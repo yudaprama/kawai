@@ -970,6 +970,11 @@
     "failedToast": "Music generation failed",
     "noResults": "No music yet",
     "noResultsHint": "Write a prompt and hit Generate — songs take a few minutes",
+    "presetsHint": "Music prompts from Civitai — click one to load it into the form.",
+    "presetsEmpty": "No community music prompts on this engine yet — start from a suggestion below.",
+    "presetsUnavailable": "Civitai didn't answer. Start from a suggestion below.",
+    "startersTitle": "Or start from a suggestion",
+    "presetApplied": "Prompt loaded into the form",
     "cancel": "Cancel"
   },
   "model3dGenerator": {
@@ -1026,6 +1031,9 @@
     "cancel": "Cancel",
     "posterMissing": "No preview",
     "noResults": "No 3D models yet",
-    "noResultsHint": "Describe an object or pick an image and hit Generate — meshes take a few minutes"
+    "noResultsHint": "Describe an object or pick an image and hit Generate — meshes take a few minutes",
+    "startersTitle": "Or start from a suggestion",
+    "startersNeedsImage": "This engine turns a source image into 3D — it has no prompt field, so drop in an image to begin.",
+    "starterApplied": "Prompt loaded into the form"
   }
 }

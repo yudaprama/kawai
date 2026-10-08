@@ -1028,6 +1028,192 @@ fn closest_video_aspect(ecosystem: &str, width: i64, height: i64) -> Option<Stri
         .map(|(o, _)| o.to_string())
 }
 
+// ── Music lane: community prompt presets ────────────────────────────────────
+
+/// A community music prompt, reduced to what the music form can restore.
+///
+/// Civitai has no audio feed: a music post is an ordinary image/video post
+/// that REFERENCES a music model (cover art / music video), so the `url` is
+/// always a civitai CDN media link and never an `.mp3`. The prompt is the
+/// only replayable payload — and on the music models it is genuinely good
+/// (civitai writers post structured `bpm / key / scale / genre / Vocal Style`
+/// prompts), which is exactly what a user would never write themselves.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicTemplatePreset {
+    /// Cover art (a video poster when the post is a clip, else the image).
+    pub thumbnail: String,
+    pub caption: String,
+    pub steps: Option<i64>,
+    pub cfg_scale: Option<f64>,
+    pub sampler: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MusicTemplateGalleryArgs {
+    pub ecosystem: String,
+}
+
+static MUSIC_TEMPLATE_CACHE: LazyLock<Mutex<std::collections::HashMap<String, (Instant, Vec<MusicTemplatePreset>)>>> =
+    LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+/// Trim a community prompt to the engine's ceiling, INCLUDING the ellipsis.
+///
+/// `truncate_chars` appends `…`, so calling it with the ceiling itself
+/// returns ceiling + 1 characters — one over the limit the music form
+/// enforces (`prompt.length <= promptMax`), which leaves the form invalid and
+/// the click looking like it did nothing. Reserve the ellipsis here rather
+/// than at each call site.
+fn cap_music_prompt(text: &str, max: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+    truncate_chars(text, max - 1)
+}
+
+/// Per-engine `caption`/`prompt` ceiling (mirrors `promptMax` in
+/// `music-ecosystems.ts`): 2000 chars, except ACE at 1000.
+fn prompt_max_for(ecosystem: &str) -> usize {
+    if ecosystem == "ace" {
+        MUSIC_PROMPT_MAX_ACE
+    } else {
+        MUSIC_PROMPT_MAX_DEFAULT
+    }
+}
+const MUSIC_PROMPT_MAX_DEFAULT: usize = 2000;
+const MUSIC_PROMPT_MAX_ACE: usize = 1000;
+
+/// Tile cap for the music lane — matches the other galleries.
+const MUSIC_TEMPLATE_MAX: usize = 12;
+/// Rows read per pinned model version.
+const MUSIC_TEMPLATE_LIMIT: i64 = 60;
+
+/// Does this prompt describe a MUSIC generation?
+///
+/// Load-bearing, not cosmetic: querying `modelVersionId=<music model>`
+/// returns every post that REFERENCES the model, and most of those are
+/// music videos and image posts whose prompt is a scene description
+/// ("<Subject 1> is the elf girl from <Picture 1>", "entire video keeps the
+/// exact art style…"). Feeding one of those to a music model produces
+/// nonsense, so they are counted and dropped — measured over the four pinned
+/// models: 24 music prompts against 7 video ones.
+///
+/// This is a keyword heuristic, not an API field (civitai exposes none), so
+/// it is deliberately one-sided: an ambiguous prompt is REJECTED rather than
+/// guessed at. A missed preset is a smaller failure than a wrong one.
+fn looks_like_music_prompt(prompt: &str) -> bool {
+    const MUSIC: [&str; 20] = [
+        "bpm", "tempo", "key of", "scale is", "major", "minor", "lyric", "verse",
+        "chorus", "melody", "instrumental", "vocal style", "bass line", "drum",
+        "genre", "global metadata", "harmony", "backing vocal", "vocal fx",
+        "song",
+    ];
+    const VIDEO: [&str; 9] = [
+        "<picture", "<subject", "subject_definitions", "shot ", "camera", "frame",
+        "enters the scene", "exact art style", "motion",
+    ];
+    let haystack = prompt.to_lowercase();
+    let music = MUSIC.iter().filter(|k| haystack.contains(*k)).count();
+    let video = VIDEO.iter().filter(|k| haystack.contains(*k)).count();
+    music > video
+}
+
+/// Community music prompts for one panel ecosystem.
+///
+/// `Result` for the same reason as the image/video galleries: a transport
+/// failure must not cache an empty grid for an hour. An ecosystem with no
+/// community prompts (measured: Sonilo has zero) caches an EMPTY list — that
+/// is a real answer, not a failure, and the panel's curated starters cover it.
+pub async fn civitai_music_template_gallery(
+    args: MusicTemplateGalleryArgs,
+) -> Result<Vec<MusicTemplatePreset>, String> {
+    let ecosystem = args.ecosystem.trim().to_string();
+    if ecosystem.is_empty() {
+        return Ok(Vec::new());
+    }
+    if let Some((at, presets)) = MUSIC_TEMPLATE_CACHE
+        .lock()
+        .ok()
+        .and_then(|m| m.get(&ecosystem).cloned())
+    {
+        if at.elapsed() < TEMPLATE_TTL {
+            return Ok(presets);
+        }
+    }
+
+    let Some((_, version_id, _, _)) = MUSIC_MODEL_VERSIONS
+        .iter()
+        .find(|(key, ..)| *key == ecosystem)
+    else {
+        return Ok(Vec::new());
+    };
+    let key = require_key()?;
+
+    let hits = civitai::search_images(
+        &key,
+        *version_id,
+        MUSIC_TEMPLATE_LIMIT,
+        "Most Reactions",
+        "AllTime",
+    )
+    .await?;
+
+    let mut presets: Vec<MusicTemplatePreset> = Vec::with_capacity(MUSIC_TEMPLATE_MAX);
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for hit in hits {
+        if presets.len() >= MUSIC_TEMPLATE_MAX {
+            break;
+        }
+        if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
+            continue;
+        }
+        let Some(meta) = hit.meta.clone() else { continue };
+        // The form validates `length <= promptMax` per engine (2000 for
+        // minimax/yue2/sonilo, 1000 for ace), and an over-length prompt
+        // leaves the form INVALID — the click looks like it did nothing.
+        // Measured: 9 of 52 community prompts exceed their engine's ceiling,
+        // so trim here rather than ship a tile that cannot be generated.
+        let Some(raw_prompt) = meta.prompt.clone() else { continue };
+        let trimmed = raw_prompt.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        // Classify on the WHOLE prompt, before trimming — the markers sit at
+        // the tail of civitai's structured briefs ("Vocal Style:", "Harmony…"),
+        // so truncating first can drop the evidence the filter needs.
+        if !looks_like_music_prompt(trimmed) {
+            continue;
+        }
+        let caption = cap_music_prompt(trimmed, prompt_max_for(&ecosystem));
+        if !seen.insert(caption.to_lowercase()) {
+            continue;
+        }
+        // A clip post's poster is the right thumbnail; an image post IS the art.
+        let thumbnail = hit
+            .thumbnail
+            .as_ref()
+            .and_then(|t| t.url.clone())
+            .or_else(|| hit.url.clone())
+            .unwrap_or_default();
+        if thumbnail.is_empty() {
+            continue;
+        }
+        presets.push(MusicTemplatePreset {
+            thumbnail,
+            caption,
+            steps: meta.steps,
+            cfg_scale: meta.cfg_scale,
+            sampler: meta.sampler,
+        });
+    }
+
+    if let Ok(mut cache) = MUSIC_TEMPLATE_CACHE.lock() {
+        cache.insert(ecosystem.clone(), (Instant::now(), presets.clone()));
+    }
+    Ok(presets)
+}
+
 // ── Resource browser (the civitai model-picker modal) ──────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -2749,6 +2935,63 @@ mod gallery_ranking_tests {
         );
         // An engine with no declared chips yields nothing rather than a guess.
         assert_eq!(video_aspect_for("unknown", Some("16:9"), 1920, 1080), None);
+    }
+
+    /// Civitai has no audio feed — a music post is an ordinary post that
+    /// REFERENCES a music model, so most of what comes back is a music
+    /// VIDEO whose prompt is a scene description. Feeding one of those to a
+    /// music model produces nonsense, so the classifier is load-bearing.
+    /// Measured over the four pinned models: 24 music vs 7 video prompts.
+    #[test]
+    fn music_prompt_classifier_separates_music_from_video_scenes() {
+        // A real civitai music prompt (verbatim shape from a minimax-music3 post).
+        assert!(looks_like_music_prompt(
+            "Global Metadata\nBasic Attributes: bpm is 110. key is A minor, scale is natural minor. \
+             Synthwave / Dream Pop.\n\nGlobal Emotional Progression: Starts sparse and cold.\n\nVocal Style: ..."
+        ));
+        // Real prompts that quote a music model inside a video post — these are
+        // exactly what flooded the modelVersionId query and must be dropped.
+        assert!(!looks_like_music_prompt(
+            "entire video keeps the exact art style, characters and composition of <Picture 1>. \
+             A female guitarist with long hair stands on a stage under dramatic light, the camera \
+             slowly pushes in while the shot holds on her face."
+        ));
+        assert!(!looks_like_music_prompt(
+            "subject_definitions:\n<Subject 1> is the elf girl from <Picture 1>: long silver-white hair \
+             in twin high pigtails, pointed ears. Camera orbits 180 degrees, a single continuous take."
+        ));
+    }
+
+    /// A preset longer than the engine's `promptMax` leaves the music form
+    /// INVALID (`hasPrompt` requires `length <= promptMax`), so the click
+    /// looks like it did nothing — the same symptom as a field the mode
+    /// never reads. 9 of 52 community prompts exceed their engine ceiling,
+    /// so the cap is per-engine, not one global number.
+    #[test]
+    fn music_prompt_cap_is_per_engine_and_enforced() {
+        assert_eq!(prompt_max_for("ace"), 1000);
+        for eco in ["minimax-music3", "yue2", "sonilo"] {
+            assert_eq!(prompt_max_for(eco), 2000, "{eco}");
+        }
+        // A 3605-char civitai brief must come back inside the ceiling.
+        let long = "bpm is 110. ".repeat(300);
+        let capped = cap_music_prompt(&long, prompt_max_for("minimax-music3"));
+        // The ellipsis must be INSIDE the budget, not appended past it.
+        assert_eq!(capped.chars().count(), 2000, "{}", capped.chars().count());
+        assert!(capped.ends_with('…'));
+        // A short one is untouched.
+        assert_eq!(truncate_chars("a calm piano piece", 2000), "a calm piano piece");
+    }
+
+    /// The classifier must fail closed: a prompt with no music and no video
+    /// markers is not confidently music, so it is rejected rather than guessed
+    /// at — a missed tile beats a wrong one.
+    #[test]
+    fn music_prompt_classifier_rejects_the_ambiguous() {
+        assert!(!looks_like_music_prompt("a quiet room, late afternoon, window open"));
+        assert!(!looks_like_music_prompt(""));
+        // Empty / whitespace never reaches the form.
+        assert!(cap_text(Some("   ".to_string())).is_none());
     }
 
     /// The fresh window must never be the ONLY window: a checkpoint nobody

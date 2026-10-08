@@ -1,103 +1,14 @@
 /** Shared supervisor types — single source for the reducer, the hook, and the
- *  workbench's persisted-record reader. Import-free (types + pure helpers
- *  only), so no circular-import risk. */
+ *  workbench's persisted-record reader. Types + pure helpers only; the wire
+ *  event union and its payload types are GENERATED from the Rust side and
+ *  re-exported below (the generated module imports nothing, so there is no
+ *  circular-import risk). */
 
-/** One planned step as it appears on the wire — the `planStarted` and
- *  `planRevised` payloads carry the identical shape, so the contract lives
- *  here exactly once. */
-export type PlanStepInfo = {
-  id: string;
-  tool: string;
-  task: string;
-  dependsOn: string[];
-  /** Explicit dataflow bindings (display-shaped). */
-  inputs?: { arg: string; fromStep: string; output: string }[];
-};
-
-export type SupervisorEvent =
-  | {
-      type: "planStarted";
-      goal: string;
-      stepCount: number;
-      steps: PlanStepInfo[];
-      /** Hash of the executed plan — read key for supervisor_step_output. */
-      planKey: string;
-      summary: PlanSummaryInfo;
-    }
-  | { type: "stepStarted"; stepId: string; tool: string }
-  | {
-      type: "confirmationRequested";
-      streamId: string;
-      stepId: string;
-      task: string;
-      description: string;
-    }
-  | {
-      type: "stepCompleted";
-      stepId: string;
-      output: string;
-      artifacts: { kind: string; handle?: string; filename?: string; label?: string }[];
-      /** Retries the scheduler spent before this step completed. */
-      retries_used: number;
-    }
-  | {
-      type: "stepFailed";
-      stepId: string;
-      error: string;
-      /** Failure class from the scheduler: timeout | confirmation | cancelled | tool */
-      kind: string;
-    }
-  | { type: "stepSkipped"; stepId: string; reason: string }
-  | {
-      /** Emitted once when `plan_task` starts — instant acknowledgment. */
-      type: "planningStarted";
-    }
-  | {
-      /** Emitted per planner LLM round while `plan_task` runs — twice per
-       *  round: on open (provider empty) and on completion. */
-      type: "planningRound";
-      round: number;
-      provider: string;
-      searching: boolean;
-    }
-  | {
-      /** Tool names a planning search round surfaced for the first time. */
-      type: "planningToolSearch";
-      queries: string[];
-      tools: string[];
-    }
-  | {
-      /** Throttled trailing slice of the planner LLM's reasoning — live
-       *  motion inside a round (one round can stream for minutes). */
-      type: "planningActivity";
-      text: string;
-    }
-  | {
-      /** Personal context loaded into the planner call — surfaced so the UI
-       *  can show what personalizes this run. */
-      type: "planningContext";
-      persona: boolean;
-      memories: number;
-      skills: number;
-      files: number;
-    }
-  | { type: "planRevising"; failedStepIds: string[]; attempt: number }
-  | {
-      type: "planRevised";
-      attempt: number;
-      stepCount: number;
-      steps: PlanStepInfo[];
-      /** Key of the REVISED plan — replaces the planStarted key. */
-      planKey: string;
-      summary: PlanSummaryInfo;
-    }
-  | {
-      type: "planCompleted";
-      finalOutput?: string;
-      /** Deliverable artifacts (deck hero, stored files) produced by the run. */
-      artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
-    }
-  | { type: "planFailed"; error: string };
+/** Wire event union + plan-step payload — generated from
+ *  `kawai_events::SupervisorEvent` by `bun run generate:events`; never
+ *  hand-edited. Re-exported so existing import paths keep working. */
+export type { PlanStepInfo, SupervisorEvent } from "@/generated/events";
+import type { PlanSummary } from "@/generated/events";
 
 export type SupervisorStatus =
   | "idle"
@@ -272,18 +183,26 @@ export interface PersistedPlanRecord {
   partial?: boolean;
 }
 
-/** Map a persisted artifact list into the live SupervisorArtifact shape.
- *  JSON round-trips widened `kind` to string — cast back at the parse
- *  boundary (same as plan-reducer's stepCompleted handler). */
+/** Map a wire/persisted artifact list into the live SupervisorArtifact
+ *  shape: JSON round-trips widen `kind` to string (cast back at the
+ *  boundary), and the wire carries `string | null` where the UI shape uses
+ *  `undefined` for absent fields. Normalize both here. */
 export function hydrateArtifacts(
-  list: { kind: string; handle?: string; filename?: string; label?: string }[] | undefined,
+  list: { kind: string; handle?: string | null; filename?: string | null; label?: string | null }[] | undefined,
 ): SupervisorArtifact[] {
   return (list ?? []).map((a) => ({
     kind: a.kind as SupervisorArtifact["kind"],
-    handle: a.handle,
-    filename: a.filename,
-    label: a.label,
+    handle: a.handle ?? undefined,
+    filename: a.filename ?? undefined,
+    label: a.label ?? undefined,
   }));
+}
+
+/** Wire `PlanSummary` → the state's shape. The generator types serde
+ *  `default` fields as optional; the serializer always emits them, so the
+ *  state normalizes to concrete arrays. */
+export function hydrateSummary(s: PlanSummary): PlanSummaryInfo {
+  return { overview: s.overview, actions: s.actions ?? [], outputs: s.outputs ?? [] };
 }
 
 /** Normalize a persisted plan step into the live SupervisorStep shape.

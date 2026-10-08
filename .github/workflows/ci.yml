@@ -75,6 +75,13 @@ jobs:
           # dir, so the next run recompiles from cold (the 120/150-min loop).
           cache-on-failure: true
 
+      # Generated TS must match the Rust types — fails when a Rust-side
+      # event/DTO change wasn't followed by `bun run generate:events`.
+      - name: Generated bindings drift gate
+        run: |
+          bun run generate:events
+          git diff --exit-code frontend/src/generated/
+
       # True kawai-web deploy gate: web feature without desktop/tauri (matches
       # kawai-web/Cargo.toml's default-features=false, features=[web]).
       # The per-feature checks (codegraph, tts) are subsumed by linux-check's

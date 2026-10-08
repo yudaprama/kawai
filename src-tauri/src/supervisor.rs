@@ -10,50 +10,12 @@ use std::sync::{Arc, Mutex};
 use futures_core::Stream;
 use futures_util::StreamExt;
 use kawai_router::{ToolCall, ToolDispatch, ToolKind, ToolMeta, ToolRegistry};
-use serde::Serialize;
+use kawai_events::{ArtifactInfo, PlanInputBinding, PlanStepInfo, SupervisorEvent};
 
 use crate::agent_registry;
 
 // ── Events ──────────────────────────────────────────────────────────────────
 
-/// Plan structure for one step, sent with `planStarted` so the frontend can
-/// render the full plan (tools, tasks, dependencies) before any step runs.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanStepInfo {
-    pub id: String,
-    pub tool: String,
-    pub task: String,
-    pub depends_on: Vec<String>,
-    /// Explicit dataflow bindings — rendered in the plan review / progress
-    /// UI as "arg ← step.output" so the wiring a step consumes is visible.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub inputs: Vec<PlanInputBinding>,
-}
-
-/// One `inputs` binding of a plan step, display-shaped.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlanInputBinding {
-    pub arg: String,
-    pub from_step: String,
-    pub output: String,
-}
-
-/// Artifact emitted by a completed step, carried on `stepCompleted` so the
-/// frontend can render files/structured results instead of a text summary.
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArtifactInfo {
-    /// `text` | `file` | `structured` | `handle`
-    pub kind: String,
-    pub handle: Option<String>,
-    pub filename: Option<String>,
-    /// Human-readable one-liner for the progress UI — the frontend never
-    /// renders raw handles or a generic "structured result" (see
-    /// PLAN-supervisor-ui-ux.md R5).
-    pub label: Option<String>,
-}
 
 fn artifact_infos(output: &str) -> Vec<ArtifactInfo> {
     tool_output_artifacts(output)
@@ -184,123 +146,6 @@ fn plan_step_infos(plan: &kawai_router::TaskPlan) -> Vec<PlanStepInfo> {
         .collect()
 }
 
-/// Progress events emitted by the supervisor as it executes a plan.
-/// `rename_all` renames VARIANTS; `rename_all_fields` (serde 1.0.185+) is
-/// required to also camelCase the struct-variant FIELDS — without it the
-/// wire format was snake_case (step_id, final_output) while the frontend
-/// reads camelCase, silently dropping every multi-word field.
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
-pub enum SupervisorEvent {
-    PlanStarted {
-        goal: String,
-        step_count: usize,
-        steps: Vec<PlanStepInfo>,
-        /// Hash of the executed plan — the read key for persisted step results
-        /// (`supervisor_step_output` op). Changes when the plan is revised.
-        plan_key: String,
-        /// User-facing "what will the agent do / produce" — LLM-written or
-        /// backfilled deterministically from the steps (see
-        /// `ensure_plan_summary`). Drives the Plan Summary card in the rail.
-        summary: kawai_router::PlanSummary,
-    },
-    StepStarted {
-        step_id: String,
-        tool: String,
-    },
-    ConfirmationRequested {
-        stream_id: String,
-        step_id: String,
-        task: String,
-        description: String,
-    },
-    StepCompleted {
-        step_id: String,
-        output: String,
-        artifacts: Vec<ArtifactInfo>,
-        /// Retries the scheduler spent on this step (0 = first attempt
-        /// succeeded) — drives the retry indicator in the progress UI.
-        retries_used: usize,
-    },
-    StepFailed {
-        step_id: String,
-        error: String,
-        /// Failure class for UI/telemetry: `timeout` | `confirmation` |
-        /// `cancelled` | `tool`.
-        kind: &'static str,
-    },
-    StepSkipped {
-        step_id: String,
-        reason: String,
-    },
-    /// A step failed and the supervisor is asking the planner to revise the
-    /// remaining plan (failure-triggered replan; budget-capped).
-    PlanRevising {
-        failed_step_ids: Vec<String>,
-        attempt: u32,
-    },
-    /// The planner produced a revised plan; execution restarts on it. Step
-    /// ids are new — the frontend re-seeds its plan state from `steps`.
-    PlanRevised {
-        attempt: u32,
-        step_count: usize,
-        steps: Vec<PlanStepInfo>,
-        /// Key of the REVISED plan — replaces the planStarted key for all
-        /// subsequent `supervisor_step_output` reads.
-        plan_key: String,
-        /// Refreshed summary for the revised plan (same contract as
-        /// `planStarted.summary`).
-        summary: kawai_router::PlanSummary,
-    },
-    /// Emitted once at `plan_task` entry — the instant acknowledgment that
-    /// planning began (context building + the first LLM round can stay
-    /// silent for tens of seconds after this).
-    PlanningStarted {},
-    /// Emitted per planner LLM round while `plan_task` runs — the only live
-    /// signal the UI gets during the otherwise-silent planning phase. Fired
-    /// TWICE per round: once when the round opens (`provider` empty — the
-    /// request is still in flight), once when a provider completes it.
-    PlanningRound {
-        /// 1-based planner call number.
-        round: u32,
-        /// Provider label that served the round (pool telemetry).
-        provider: String,
-        /// True while the round requested tool-catalog searches (vs emitting
-        /// the final plan).
-        searching: bool,
-    },
-    /// Tool names a planning search round surfaced for the first time.
-    PlanningToolSearch {
-        queries: Vec<String>,
-        tools: Vec<String>,
-    },
-    /// Throttled trailing slice of the planner LLM's reasoning stream — live
-    /// motion inside a round (one round can stream for minutes with no other
-    /// event, which read as a frozen UI).
-    PlanningActivity {
-        text: String,
-    },
-    /// Personal context loaded into the planner call — surfaced so the UI can
-    /// show what personalizes this run instead of a bare spinner. Emitted
-    /// right after the context fan-out completes.
-    PlanningContext {
-        persona: bool,
-        memories: u32,
-        skills: u32,
-        files: u32,
-    },
-    PlanCompleted {
-        final_output: Option<String>,
-        /// Deliverable artifacts produced by the run — most importantly the
-        /// deck when `finalWriter: "deck_writer"` (the viewer renders the
-        /// deck file as the deliverable hero). File artifacts from the steps
-        /// ride along so the UI can surface them without re-parsing outputs.
-        artifacts: Vec<ArtifactInfo>,
-    },
-    PlanFailed {
-        error: String,
-    },
-}
 
 // ── Registry builder ────────────────────────────────────────────────────────
 

@@ -225,6 +225,7 @@ pub fn run() {
         commands::civitai_api_key_status,
         commands::civitai_model_covers,
         commands::civitai_template_gallery,
+        commands::civitai_music_template_gallery,
         commands::civitai_video_template_gallery,
         commands::civitai_search_models,
         commands::civitai_generate,

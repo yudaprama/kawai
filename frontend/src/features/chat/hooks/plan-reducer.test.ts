@@ -88,14 +88,14 @@ describe("supervisorReducer — happy path", () => {
 
     s = supervisorReducer(
       s,
-      { type: "stepCompleted", stepId: "a", output: "result", artifacts: [], retries_used: 0 },
+      { type: "stepCompleted", stepId: "a", output: "result", artifacts: [], retriesUsed: 0 },
       { now: NOW + 200 },
     );
     expect(s.steps[0].state).toBe("completed");
     expect(s.steps[0].output).toBe("result");
     expect(s.steps[0].finishedAt).toBe(NOW + 200);
 
-    s = supervisorReducer(s, { type: "planCompleted", finalOutput: "done" }, { now: NOW + 300 });
+    s = supervisorReducer(s, { type: "planCompleted", finalOutput: "done", artifacts: [] }, { now: NOW + 300 });
     expect(s.status).toBe("completed");
     expect(s.finalOutput).toBe("done");
     expect(s.planCompletedAt).toBe(NOW + 300);
@@ -140,7 +140,7 @@ describe("supervisorReducer — replan", () => {
     s = supervisorReducer(s, { type: "stepStarted", stepId: "a", tool: "web_read" }, { now: NOW + 100 });
     s = supervisorReducer(
       s,
-      { type: "stepCompleted", stepId: "a", output: "ok", artifacts: [], retries_used: 0 },
+      { type: "stepCompleted", stepId: "a", output: "ok", artifacts: [], retriesUsed: 0 },
       { now: NOW + 200 },
     );
     s = supervisorReducer(s, { type: "stepFailed", stepId: "b", error: "boom", kind: "tool" }, { now: NOW + 300 });
@@ -311,14 +311,14 @@ describe("supervisorReducer — edge cases", () => {
     let s = makePlan([step("a")]);
     s = requestConfirmation(s);
     expect(s.pendingConfirmation).not.toBeNull();
-    s = supervisorReducer(s, { type: "planCompleted" }, { now: NOW + 200 });
+    s = supervisorReducer(s, { type: "planCompleted", finalOutput: null, artifacts: [] }, { now: NOW + 200 });
     expect(s.pendingConfirmation).toBeNull();
     expect(s.status).toBe("completed");
   });
 
   it("planCompleted without finalOutput sets null", () => {
     let s = makePlan([]);
-    s = supervisorReducer(s, { type: "planCompleted" }, { now: NOW + 100 });
+    s = supervisorReducer(s, { type: "planCompleted", finalOutput: null, artifacts: [] }, { now: NOW + 100 });
     expect(s.finalOutput).toBeNull();
   });
 
@@ -353,7 +353,7 @@ describe("supervisorReducer — step with artifacts", () => {
         stepId: "a",
         output: "done",
         artifacts: [{ kind: "file", handle: "h1", filename: "report.pdf", label: "Report" }],
-        retries_used: 2,
+        retriesUsed: 2,
       },
       { now: NOW + 100 },
     );
@@ -481,12 +481,12 @@ describe("supervisorReducer — multi-step execution ordering", () => {
     // Complete in reverse order
     s = supervisorReducer(
       s,
-      { type: "stepCompleted", stepId: "c", output: "c-out", artifacts: [], retries_used: 0 },
+      { type: "stepCompleted", stepId: "c", output: "c-out", artifacts: [], retriesUsed: 0 },
       { now: NOW + 200 },
     );
     s = supervisorReducer(
       s,
-      { type: "stepCompleted", stepId: "a", output: "a-out", artifacts: [], retries_used: 0 },
+      { type: "stepCompleted", stepId: "a", output: "a-out", artifacts: [], retriesUsed: 0 },
       { now: NOW + 300 },
     );
     expect(s.steps[0].state).toBe("completed");
@@ -495,10 +495,10 @@ describe("supervisorReducer — multi-step execution ordering", () => {
 
     s = supervisorReducer(
       s,
-      { type: "stepCompleted", stepId: "b", output: "b-out", artifacts: [], retries_used: 0 },
+      { type: "stepCompleted", stepId: "b", output: "b-out", artifacts: [], retriesUsed: 0 },
       { now: NOW + 400 },
     );
-    s = supervisorReducer(s, { type: "planCompleted", finalOutput: "all done" }, { now: NOW + 500 });
+    s = supervisorReducer(s, { type: "planCompleted", finalOutput: "all done", artifacts: [] }, { now: NOW + 500 });
     expect(s.status).toBe("completed");
     expect(s.steps.every((st) => st.state === "completed")).toBe(true);
   });

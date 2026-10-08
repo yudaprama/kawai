@@ -6,7 +6,7 @@
  *  and ZERO side effects, so it can be unit-tested without a renderer.
  */
 
-import { hydrateArtifacts } from "./supervisor-types";
+import { hydrateArtifacts, hydrateSummary } from "./supervisor-types";
 import type { SupervisorEvent, SupervisorPlanState, SupervisorStep, PlanSummaryInfo } from "./supervisor-types";
 
 export type {
@@ -230,7 +230,7 @@ export function supervisorReducer(
       return {
         ...state,
         goal: event.goal,
-        summary: event.summary,
+        summary: hydrateSummary(event.summary),
         steps,
         planStartedAt: now,
         planCompletedAt: null,
@@ -268,7 +268,7 @@ export function supervisorReducer(
         {
           state: "completed",
           output: event.output,
-          retriesUsed: event.retries_used,
+          retriesUsed: event.retriesUsed,
           finishedAt: now,
           artifacts: hydrateArtifacts(event.artifacts),
         },
@@ -309,7 +309,7 @@ export function supervisorReducer(
         status: "running",
         steps,
         error: null,
-        summary: event.summary,
+        summary: hydrateSummary(event.summary),
         planVersion: priorVersion + 1,
         planKey: event.planKey,
         priorVersions,
@@ -410,9 +410,14 @@ export function supervisorReducer(
         },
       };
     }
-    // planRevising already handled; fallback identity
-    default:
+    // Exhaustiveness guard: every `SupervisorEvent` variant must be handled
+    // above. `event` narrows to `never` here, so an unhandled variant fails
+    // `tsc` instead of being silently dropped at runtime.
+    default: {
+      const _unhandled: never = event;
+      void _unhandled;
       return state;
+    }
   }
 }
 

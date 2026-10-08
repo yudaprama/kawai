@@ -11,6 +11,7 @@ import { call } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { useFilePreview } from "@/lib/preview-file";
 import { useI18n } from "@/hooks/use-i18n";
+import { MODEL3D_NO_PROMPT, MODEL3D_STARTERS, type Model3dStarter } from "./model3d-starters";
 import {
   DEFAULT_MODEL3D_ECOSYSTEM,
   HUNYUAN_CFG,
@@ -40,7 +41,6 @@ import {
   ChoiceChip,
   detailLine,
   EcoPicker,
-  EmptyResults,
   GeneratorLayout,
   JobCard,
   resultMeta,
@@ -168,6 +168,45 @@ function Model3dResultCard({
         onReuse={onReuse}
         token={mediaToken(entry.prompt, entry.fileId, entry.name)}
       />
+    </div>
+  );
+}
+
+/**
+ * The 3D lane's empty state: curated prompt starters, shown per engine.
+ *
+ * There is no community 3D feed to read — Civitai's 3D models are ComfyUI
+ * workflows whose ~21 posts yield four with meta, all of them the author's
+ * own `type: "image"` texture renders, not mesh generations (measured
+ * 2026-10-08). So the starters are the only thing this state can offer.
+ *
+ * Engines whose form has no prompt field (`promptMax: 0` — tripo, trellis2,
+ * pixal3d, all image-to-3D only) get an honest note instead of cards that
+ * could not do anything.
+ */
+function Model3dStarterList({ ecosystem, onApply }: { ecosystem: string; onApply: (starter: Model3dStarter) => void }) {
+  const { t } = useI18n();
+  if (MODEL3D_NO_PROMPT.includes(ecosystem)) {
+    return <p className="text-muted-foreground text-xs">{t("model3dGenerator.startersNeedsImage")}</p>;
+  }
+  const starters = MODEL3D_STARTERS[ecosystem] ?? [];
+  if (starters.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.startersTitle")}</span>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {starters.map((starter) => (
+          <button
+            className="border-muted-foreground/70 hover:border-ring flex cursor-pointer flex-col items-start gap-0.5 rounded-lg border bg-secondary/40 p-2.5 text-left transition-colors"
+            key={starter.id}
+            onClick={() => onApply(starter)}
+            type="button"
+          >
+            <span className="text-[13px] font-semibold">{starter.label}</span>
+            <span className="text-muted-foreground text-[11px] leading-snug">{starter.note}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -785,6 +824,17 @@ export function Model3dGenerator() {
     </div>
   );
 
+  /** Load a curated starter. A Hunyuan3D starter carries a texture hint
+   *  rather than a subject prompt, so it fills the texture field instead. */
+  function applyModel3dStarter(starter: Model3dStarter) {
+    if (starter.texturePrompt) {
+      setTexturePrompt(starter.texturePrompt);
+    } else {
+      setPrompt(starter.prompt);
+    }
+    toast.success(t("model3dGenerator.starterApplied"));
+  }
+
   return (
     <GeneratorLayout
       footer={
@@ -826,7 +876,7 @@ export function Model3dGenerator() {
           </div>
         )}
         {results.length === 0 && !job ? (
-          <EmptyResults description={t("model3dGenerator.noResultsHint")} title={t("model3dGenerator.noResults")} />
+          <Model3dStarterList ecosystem={ecoId} onApply={applyModel3dStarter} />
         ) : (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
             {results.map((entry) => (

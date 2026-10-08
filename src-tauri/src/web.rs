@@ -1956,6 +1956,15 @@ async fn civitai_video_template_gallery_handler(
         .map_err(err500)
 }
 
+async fn civitai_music_template_gallery_handler(
+    Json(args): Json<logic::civitai::MusicTemplateGalleryArgs>,
+) -> Result<Json<Vec<logic::civitai::MusicTemplatePreset>>, (StatusCode, String)> {
+    logic::civitai::civitai_music_template_gallery(args)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
 async fn civitai_template_gallery_handler(
     Json(args): Json<logic::civitai::TemplateGalleryArgs>,
 ) -> Result<Json<Vec<logic::civitai::TemplatePreset>>, (StatusCode, String)> {
@@ -2450,6 +2459,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/civitai_api_key_status", post(civitai_api_key_status_handler))
         .route("/api/civitai_model_covers", post(civitai_model_covers_handler))
         .route("/api/civitai_template_gallery", post(civitai_template_gallery_handler))
+        .route("/api/civitai_music_template_gallery", post(civitai_music_template_gallery_handler))
         .route("/api/civitai_video_template_gallery", post(civitai_video_template_gallery_handler))
         .route("/api/civitai_search_models", post(civitai_search_models_handler))
         .route("/api/civitai_generate", post(civitai_generate_handler))
@@ -2699,7 +2709,7 @@ async fn plan_task_handler(
         Some(&bearer),
         &registry,
         |event| {
-        if let crate::supervisor::SupervisorEvent::PlanningRound { round, provider, searching } = event {
+        if let kawai_events::SupervisorEvent::PlanningRound { round, provider, searching } = event {
             tracing::info!(component = "supervisor", transport = "web", round, provider = %provider, searching, "planning round served");
         }
     })
@@ -2770,26 +2780,26 @@ async fn execute_supervisor_plan_handler(
 /// event name, data = the serde JSON body).
 #[cfg(feature = "litert")]
 fn supervisor_sse_frame(
-    event: &crate::supervisor::SupervisorEvent,
+    event: &kawai_events::SupervisorEvent,
 ) -> SseFrame {
     let name = match &event {
-        crate::supervisor::SupervisorEvent::PlanStarted { .. } => "planStarted",
-        crate::supervisor::SupervisorEvent::PlanRevising { .. } => "planRevising",
-        crate::supervisor::SupervisorEvent::PlanRevised { .. } => "planRevised",
-        crate::supervisor::SupervisorEvent::StepStarted { .. } => "stepStarted",
-        crate::supervisor::SupervisorEvent::StepCompleted { .. } => "stepCompleted",
-        crate::supervisor::SupervisorEvent::StepFailed { .. } => "stepFailed",
-        crate::supervisor::SupervisorEvent::StepSkipped { .. } => "stepSkipped",
-        crate::supervisor::SupervisorEvent::ConfirmationRequested { .. } => {
+        kawai_events::SupervisorEvent::PlanStarted { .. } => "planStarted",
+        kawai_events::SupervisorEvent::PlanRevising { .. } => "planRevising",
+        kawai_events::SupervisorEvent::PlanRevised { .. } => "planRevised",
+        kawai_events::SupervisorEvent::StepStarted { .. } => "stepStarted",
+        kawai_events::SupervisorEvent::StepCompleted { .. } => "stepCompleted",
+        kawai_events::SupervisorEvent::StepFailed { .. } => "stepFailed",
+        kawai_events::SupervisorEvent::StepSkipped { .. } => "stepSkipped",
+        kawai_events::SupervisorEvent::ConfirmationRequested { .. } => {
             "confirmationRequested"
         }
-        crate::supervisor::SupervisorEvent::PlanCompleted { .. } => "planCompleted",
-        crate::supervisor::SupervisorEvent::PlanFailed { .. } => "planFailed",
-        crate::supervisor::SupervisorEvent::PlanningStarted { .. } => "planningStarted",
-        crate::supervisor::SupervisorEvent::PlanningRound { .. } => "planningRound",
-        crate::supervisor::SupervisorEvent::PlanningToolSearch { .. } => "planningToolSearch",
-        crate::supervisor::SupervisorEvent::PlanningActivity { .. } => "planningActivity",
-        crate::supervisor::SupervisorEvent::PlanningContext { .. } => "planningContext",
+        kawai_events::SupervisorEvent::PlanCompleted { .. } => "planCompleted",
+        kawai_events::SupervisorEvent::PlanFailed { .. } => "planFailed",
+        kawai_events::SupervisorEvent::PlanningStarted { .. } => "planningStarted",
+        kawai_events::SupervisorEvent::PlanningRound { .. } => "planningRound",
+        kawai_events::SupervisorEvent::PlanningToolSearch { .. } => "planningToolSearch",
+        kawai_events::SupervisorEvent::PlanningActivity { .. } => "planningActivity",
+        kawai_events::SupervisorEvent::PlanningContext { .. } => "planningContext",
     };
     let data = serde_json::to_string(&event).unwrap_or_default();
     SseFrame::default().event(name).data(data)

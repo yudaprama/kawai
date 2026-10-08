@@ -527,7 +527,7 @@ pub async fn ask_about_step_result(
     plan_key: &str,
     step_id: &str,
     question: &str,
-) -> Result<impl Stream<Item = crate::supervisor::SupervisorEvent> + Send, crate::supervisor::SupervisorError> {
+) -> Result<impl Stream<Item = kawai_events::SupervisorEvent> + Send, crate::supervisor::SupervisorError> {
     use crate::supervisor::{SupervisorError, build_registry_from_toolset, execute_plan_stream_with_cancel, supervisor_toolset_with_explainer};
     use kawai_agent::ExplainStepResultArgs;
     use kawai_router::{TaskPlan, TaskStep};

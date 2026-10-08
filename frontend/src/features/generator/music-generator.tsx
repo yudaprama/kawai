@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider, SliderRange, SliderThumb, SliderTrack } from "@/components/ui/slider";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,7 @@ import { call } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { useFilePreview } from "@/lib/preview-file";
 import { useI18n } from "@/hooks/use-i18n";
+import { MUSIC_STARTERS, type MusicStarter } from "./music-starters";
 import {
   ACE_VARIANTS,
   DEFAULT_MUSIC_ECOSYSTEM,
@@ -41,7 +43,6 @@ import { GenerateFooter } from "./generate-footer";
 import {
   ChoiceChip,
   detailLine,
-  EmptyResults,
   EcoPicker,
   GeneratorLayout,
   JobCard,
@@ -147,6 +148,114 @@ function MusicResultCard({
         onReuse={onReuse}
         token={mediaToken(entry.prompt, entry.fileId, entry.name)}
       />
+    </div>
+  );
+}
+
+/** One `civitai_music_template_gallery` preset — a community music prompt
+ *  with the cover art civitai posted alongside it. */
+interface MusicTemplatePreset {
+  thumbnail: string;
+  caption: string;
+  steps: number | null;
+  cfgScale: number | null;
+  sampler: string | null;
+}
+
+/**
+ * The music lane's empty state: community prompts from civitai when the
+ * engine has any, plus the local curated starters — which always render.
+ *
+ * The two are complementary, not redundant. Civitai's music pool is thin
+ * and lopsided (24 genuine prompts across 4 engines; Sonilo has none), so
+ * a gallery-only empty state leaves that engine looking broken. The
+ * starters are cheap, cover every engine unconditionally, and teach the
+ * structured `caption` shape a user would otherwise never guess. A failed
+ * lookup is reported as its own state instead of quietly rendering the
+ * starters as if there were no community clips.
+ */
+function MusicTemplateGallery({
+  ecosystem,
+  onApplyCommunity,
+  onApplyStarter,
+}: {
+  ecosystem: string;
+  onApplyCommunity: (preset: MusicTemplatePreset) => void;
+  onApplyStarter: (starter: MusicStarter) => void;
+}) {
+  const { t } = useI18n();
+  const [presets, setPresets] = useState<MusicTemplatePreset[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setPresets(null);
+    setFailed(false);
+    call<MusicTemplatePreset[]>("civitai_music_template_gallery", { ecosystem })
+      .then((list) => {
+        if (alive) setPresets(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setFailed(true);
+        setPresets([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [ecosystem]);
+
+  const starters = MUSIC_STARTERS[ecosystem] ?? [];
+  return (
+    <div className="flex flex-col gap-4">
+      {presets === null ? (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {(["a", "b", "c", "d", "e", "f"] as const).map((k) => (
+            <Skeleton className="aspect-square w-full rounded-lg" key={k} />
+          ))}
+        </div>
+      ) : presets.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-muted-foreground text-xs">{t("musicGenerator.presetsHint")}</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {presets.map((preset) => (
+              <button
+                className="border-muted-foreground/70 hover:border-ring flex cursor-pointer flex-col items-start gap-0.5 overflow-hidden rounded-lg border text-left transition-colors"
+                key={preset.caption.slice(0, 80)}
+                onClick={() => onApplyCommunity(preset)}
+                title={preset.caption}
+                type="button"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img alt="" className="aspect-square w-full object-cover" loading="lazy" src={preset.thumbnail} />
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-xs">
+          {failed ? t("musicGenerator.presetsUnavailable") : t("musicGenerator.presetsEmpty")}
+        </p>
+      )}
+
+      {starters.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <span className="text-muted-foreground text-[13px] font-medium">{t("musicGenerator.startersTitle")}</span>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {starters.map((starter) => (
+              <button
+                className="border-muted-foreground/70 hover:border-ring flex cursor-pointer flex-col items-start gap-0.5 rounded-lg border bg-secondary/40 p-2.5 text-left transition-colors"
+                key={starter.id}
+                onClick={() => onApplyStarter(starter)}
+                type="button"
+              >
+                <span className="text-[13px] font-semibold">{starter.label}</span>
+                <span className="text-muted-foreground text-[11px] leading-snug">{starter.note}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -848,6 +957,48 @@ export function MusicGenerator() {
     </div>
   );
 
+  /** Where a preset's text must land depends on the lane's mode. The form
+   *  opens in `simple`, which renders — and submits — a single `prompt`
+   *  box; `custom` renders the per-engine `caption` (+ lyrics) fields. A
+   *  preset is a ready-made prompt either way, so it goes into the field
+   *  the CURRENT mode actually reads, and the toast names which one.
+   *  Writing only `caption` left the visible box empty, which is why a click
+   *  appeared to do nothing. */
+  function applyPresetText(text: string, lyricsText: string) {
+    if (isSonilo) {
+      // Sonilo has a single prompt field in either mode.
+      setPrompt(text);
+      setLyrics("");
+      toast.success(t("musicGenerator.presetApplied"));
+      return;
+    }
+    if (isCustom) {
+      setCaption(text);
+      setLyrics(lyricsText);
+    } else {
+      setPrompt(text);
+      setLyrics("");
+    }
+    toast.success(t("musicGenerator.presetApplied"));
+  }
+
+  /** Load a community music prompt. Steps/cfg are applied only where the
+   *  engine exposes them (ACE owns cfg; YuE2/MiniMax the steps) — in simple
+   *  mode the draft path derives them upstream, so sending them would be
+   *  ignored anyway. */
+  function applyMusicTemplate(preset: MusicTemplatePreset) {
+    applyPresetText(preset.caption, "");
+    if (isCustom) {
+      if (preset.steps != null) setSteps(String(preset.steps));
+      if (preset.cfgScale != null) setCfgScale(String(preset.cfgScale));
+    }
+  }
+
+  /** Load a curated starter. A starter with lyrics fills both fields. */
+  function applyMusicStarter(starter: MusicStarter) {
+    applyPresetText(starter.caption, starter.lyrics ?? "");
+  }
+
   return (
     <GeneratorLayout
       footer={
@@ -891,7 +1042,11 @@ export function MusicGenerator() {
           </div>
         )}
         {results.length === 0 && !job ? (
-          <EmptyResults description={t("musicGenerator.noResultsHint")} title={t("musicGenerator.noResults")} />
+          <MusicTemplateGallery
+            ecosystem={ecoId}
+            onApplyCommunity={applyMusicTemplate}
+            onApplyStarter={applyMusicStarter}
+          />
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {results.map((entry) => (

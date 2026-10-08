@@ -329,7 +329,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                 // The reducer doesn't change steps on planCompleted, so stepsRef is still accurate.
                 persistPlanSnapshot(sessionId, goalRef.current, stepsRef.current, {
                   output: ev.finalOutput ?? null,
-                  artifacts: ev.artifacts,
+                  artifacts: hydrateArtifacts(ev.artifacts),
                 });
                 parts = parts.map((p) =>
                   p.type === "text" && p.state === "streaming" ? { ...p, state: "done" as const } : p,
@@ -338,7 +338,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
                   parts = [...parts, { type: "text", text: ev.finalOutput, state: "done" as const }];
                 }
                 syncAssistant();
-                callbacks?.onPlanCompleted?.(goalRef.current, ev.finalOutput ?? null, ev.artifacts);
+                callbacks?.onPlanCompleted?.(goalRef.current, ev.finalOutput ?? null, hydrateArtifacts(ev.artifacts));
                 void call("generate_session_title", { sessionId })
                   .catch(() => {})
                   .finally(() => callbacks?.onTitleGenerated?.());

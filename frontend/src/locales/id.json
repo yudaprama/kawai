@@ -970,6 +970,11 @@
     "failedToast": "Generasi musik gagal",
     "noResults": "Belum ada musik",
     "noResultsHint": "Tulis prompt lalu tekan Generate — lagu butuh beberapa menit",
+    "presetsHint": "Prompt musik dari Civitai — klik satu untuk memuatnya ke form.",
+    "presetsEmpty": "Belum ada prompt musik komunitas di engine ini — mulai dari saran di bawah.",
+    "presetsUnavailable": "Civitai tidak menjawab. Mulai dari saran di bawah.",
+    "startersTitle": "Atau mulai dari saran",
+    "presetApplied": "Prompt dimuat ke form",
     "cancel": "Batalkan"
   },
   "model3dGenerator": {
@@ -1026,6 +1031,9 @@
     "cancel": "Batal",
     "posterMissing": "Tanpa pratinjau",
     "noResults": "Belum ada model 3D",
-    "noResultsHint": "Deskripsikan objek atau pilih gambar lalu tekan Generate — mesh butuh beberapa menit"
+    "noResultsHint": "Deskripsikan objek atau pilih gambar lalu tekan Generate — mesh butuh beberapa menit",
+    "startersTitle": "Atau mulai dari saran",
+    "startersNeedsImage": "Engine ini mengubah gambar sumber menjadi 3D — tidak punya field prompt, jadi cukup masukkan gambar.",
+    "starterApplied": "Prompt dimuat ke form"
   }
 }

@@ -1199,6 +1199,13 @@ pub async fn civitai_video_template_gallery(
 }
 
 #[tauri::command]
+pub async fn civitai_music_template_gallery(
+    ecosystem: String,
+) -> Result<Vec<logic::civitai::MusicTemplatePreset>, String> {
+    logic::civitai::civitai_music_template_gallery(logic::civitai::MusicTemplateGalleryArgs { ecosystem }).await
+}
+
+#[tauri::command]
 pub async fn civitai_template_gallery(
     ecosystem: String,
 ) -> Result<Vec<logic::civitai::TemplatePreset>, String> {
@@ -1426,7 +1433,7 @@ pub async fn plan_task(
     goal: String,
     session_id: i64,
     agent_id: String,
-    on_event: tauri::ipc::Channel<crate::supervisor::SupervisorEvent>,
+    on_event: tauri::ipc::Channel<kawai_events::SupervisorEvent>,
         session: State<'_, Session>,
 ) -> Result<kawai_router::TaskPlan, String> {
     let user_id = session_user_id(&session)?;
@@ -2012,7 +2019,7 @@ impl SupervisorStreamCtx {
         tool_registry: kawai_router::ToolRegistry,
         user_goal: Option<String>,
         stream_id: String,
-        on_event: Channel<crate::supervisor::SupervisorEvent>,
+        on_event: Channel<kawai_events::SupervisorEvent>,
         pending: &crate::supervisor::PendingConfirmations,
     ) -> Result<(), String> {
         let token = CancellationToken::new();
@@ -2040,7 +2047,7 @@ pub async fn execute_supervisor_plan(
     session_id: i64,
     user_goal: Option<String>,
         stream_id: String,
-    on_event: Channel<crate::supervisor::SupervisorEvent>,
+    on_event: Channel<kawai_events::SupervisorEvent>,
     registry: State<'_, StreamRegistry>,
     session: State<'_, Session>,
     pending: State<'_, crate::supervisor::PendingConfirmations>,
@@ -2089,7 +2096,7 @@ pub async fn run_stock_research(
     // output language at this edge (see `supervisor::resolve_user_language`).
     language: Option<String>,
     stream_id: String,
-    on_event: Channel<crate::supervisor::SupervisorEvent>,
+    on_event: Channel<kawai_events::SupervisorEvent>,
     registry: State<'_, StreamRegistry>,
     session: State<'_, Session>,
     pending: State<'_, crate::supervisor::PendingConfirmations>,
@@ -2141,7 +2148,7 @@ pub async fn run_youtube_summary(
     // output language at this edge (see `supervisor::resolve_user_language`).
     language: Option<String>,
     stream_id: String,
-    on_event: Channel<crate::supervisor::SupervisorEvent>,
+    on_event: Channel<kawai_events::SupervisorEvent>,
     registry: State<'_, StreamRegistry>,
     session: State<'_, Session>,
     pending: State<'_, crate::supervisor::PendingConfirmations>,
@@ -2206,7 +2213,7 @@ pub async fn ask_about_step_result(
     step_id: String,
     question: String,
     stream_id: String,
-    on_event: Channel<crate::supervisor::SupervisorEvent>,
+    on_event: Channel<kawai_events::SupervisorEvent>,
     registry: State<'_, StreamRegistry>,
     session: State<'_, Session>,
 ) -> Result<(), String> {
