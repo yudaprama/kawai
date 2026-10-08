@@ -1947,6 +1947,15 @@ async fn civitai_model_covers_handler(
         .map_err(err500)
 }
 
+async fn civitai_video_template_gallery_handler(
+    Json(args): Json<logic::civitai::VideoTemplateGalleryArgs>,
+) -> Result<Json<Vec<logic::civitai::VideoTemplatePreset>>, (StatusCode, String)> {
+    logic::civitai::civitai_video_template_gallery(args)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
 async fn civitai_template_gallery_handler(
     Json(args): Json<logic::civitai::TemplateGalleryArgs>,
 ) -> Result<Json<Vec<logic::civitai::TemplatePreset>>, (StatusCode, String)> {
@@ -2441,6 +2450,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/civitai_api_key_status", post(civitai_api_key_status_handler))
         .route("/api/civitai_model_covers", post(civitai_model_covers_handler))
         .route("/api/civitai_template_gallery", post(civitai_template_gallery_handler))
+        .route("/api/civitai_video_template_gallery", post(civitai_video_template_gallery_handler))
         .route("/api/civitai_search_models", post(civitai_search_models_handler))
         .route("/api/civitai_generate", post(civitai_generate_handler))
         .route("/api/civitai_video_cost", post(civitai_video_cost_handler))

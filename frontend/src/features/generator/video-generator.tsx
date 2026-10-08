@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Slider, SliderRange, SliderThumb, SliderTrack } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,7 @@ import { call } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { useFilePreview } from "@/lib/preview-file";
 import { useI18n } from "@/hooks/use-i18n";
+import { Masonry, useColumnCount } from "./masonry";
 import {
   DEFAULT_VIDEO_ECOSYSTEM,
   VIDEO_ECOSYSTEMS,
@@ -120,9 +122,202 @@ function stripVideoReq(req: VideoGenRequest): ReusableVideoReq {
 const RESULTS_KEY = "kawai-generator-video-results-v1";
 const JOB_KEY = "kawai-generator-video-job-v1";
 
+/** One `civitai_video_template_gallery` preset — a community clip WITH the
+ *  generation settings civitai recorded for it. Inspiration, not reproduction:
+ *  the seed is left to the form. */
+interface VideoTemplatePreset {
+  url: string;
+  thumbnail: string;
+  width: number;
+  height: number;
+  prompt: string;
+  ecosystem: string;
+  model: string | null;
+  duration: number | null;
+  aspect: string | null;
+  steps: number | null;
+  cfgScale: number | null;
+  draft: boolean | null;
+  aspectLabel: string;
+}
+
+/**
+ * Community txt2vid clips for the selected engine, shown in place of the
+ * empty state. Replaces the old "Nothing generated yet" panel: browsing what
+ * other people actually made is the point of a gallery, and the previous
+ * layout stacked preset chips ON TOP of that empty-state copy, which read as
+ * a contradiction ("no results" next to "here are results").
+ *
+ * Skeletons while loading; a genuine empty state when the engine has no
+ * community txt2vid clips yet (coverage is uneven — several engines have
+ * none) — that one says so plainly instead of blaming the user's history.
+ */
+function VideoTemplateGallery({
+  ecosystem,
+  onApply,
+}: {
+  ecosystem: string;
+  onApply: (preset: VideoTemplatePreset) => void;
+}) {
+  const { t } = useI18n();
+  // Community clips are NOT uniform (704x960, 864x480, 832x1504 all on one
+  // page), so the grid is a masonry: a row-synced grid forces one height and
+  // crops the rest, which is what made every tile look square.
+  const cols = useColumnCount(3);
+  const [presets, setPresets] = useState<VideoTemplatePreset[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setPresets(null);
+    setFailed(false);
+    call<VideoTemplatePreset[]>("civitai_video_template_gallery", { ecosystem })
+      .then((list) => {
+        if (alive) setPresets(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setFailed(true);
+        setPresets([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [ecosystem]);
+
+  if (presets === null) {
+    return (
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {(["a", "b", "c", "d", "e", "f"] as const).map((k) => (
+          <Skeleton className="aspect-video w-full rounded-lg" key={k} />
+        ))}
+      </div>
+    );
+  }
+
+  if (presets.length === 0) {
+    return (
+      <EmptyResults
+        description={failed ? t("videoGenerator.presetsUnavailable") : t("videoGenerator.presetsEmpty")}
+        title={failed ? t("videoGenerator.presetsErrorTitle") : t("videoGenerator.presetsEmptyTitle")}
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-muted-foreground text-xs">{t("videoGenerator.presetsHint")}</p>
+      <Masonry
+        cols={cols}
+        items={presets}
+        keyOf={(preset) => preset.url}
+        render={(preset) => <AutoplayTile index={presets.indexOf(preset)} onApply={onApply} preset={preset} />}
+      />
+    </div>
+  );
+}
+
+/** How many gallery clips may decode video at once. */
+const AUTOPLAY_CONCURRENCY = 4;
+
+/**
+ * One gallery tile, playing its clip in place the way civitai's own feed
+ * does. Autoplay only works muted, so the clips are silent by design —
+ * civitai's community feed mutes for the same reason.
+ *
+ * The clips are NOT cheap: measured 1.2–15.6 MB each (mean ~5.5 MB), and
+ * every byte rides the worker proxy on an ISP-filtered network. Twelve
+ * looping tiles is ~12 MB/s of proxy bandwidth for a panel that is idle most
+ * of the time, so playback is gated three ways:
+ *
+ *   1. `preload="none"` — nothing is fetched until the tile is scrolled near.
+ *   2. An IntersectionObserver — a tile only plays while it is actually on
+ *      screen (civitai does the same), and `rootMargin` leaves a screen of
+ *      slack so scrolling starts playback before the tile arrives.
+ *   3. A concurrency cap — only the first `AUTOPLAY_CONCURRENCY` visible
+ *      tiles play. Browsers already cap concurrent video decoders, but
+ *      failing open (queueing silently) leaves tiles stuck on a spinner.
+ *
+ * The poster stays as the element background, so a tile that never plays —
+ * capped out, still buffering, or blocked by an autoplay policy — shows the
+ * frame instead of a black box.
+ */
+function AutoplayTile({
+  index,
+  onApply,
+  preset,
+}: {
+  index: number;
+  onApply: (preset: VideoTemplatePreset) => void;
+  preset: VideoTemplatePreset;
+}) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const [visible, setVisible] = useState(false);
+  // Position in DOM order, used for the concurrency cap.
+  const play = visible && index < AUTOPLAY_CONCURRENCY;
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const observer = new IntersectionObserver((entries) => setVisible(entries.some((e) => e.isIntersecting)), {
+      rootMargin: "200px",
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    if (play) {
+      void node.play().catch(() => {
+        // Autoplay policy or a decode failure — the poster remains.
+      });
+    } else {
+      node.pause();
+    }
+  }, [play]);
+
+  return (
+    // The ratio lives on the BUTTON, never on the media elements. `<video>`
+    // and `<img>` are replaced elements: they carry an intrinsic ratio (a
+    // `<video>` defaults to 2:1 before metadata loads) that wins over a CSS
+    // `aspect-ratio` on the element itself, which is what made every tile
+    // render at the same height regardless of the clip. Sizing the container
+    // and letting both children fill it with `object-cover` is deterministic.
+    <button
+      className="group border-muted-foreground/70 hover:border-ring relative block w-full cursor-pointer overflow-hidden rounded-lg border text-left transition-colors"
+      onClick={() => onApply(preset)}
+      style={{ aspectRatio: `${preset.width} / ${preset.height}` }}
+      title={preset.prompt}
+      type="button"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" src={preset.thumbnail} />
+      <video
+        aria-hidden="true"
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity ${play ? "opacity-100" : "opacity-0"}`}
+        loop
+        muted
+        playsInline
+        poster={preset.thumbnail}
+        preload="none"
+        ref={ref}
+        tabIndex={-1}
+      >
+        <source src={preset.url} type="video/mp4" />
+      </video>
+      <span className="text-muted-foreground absolute top-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+        {preset.duration ? `${preset.duration}s` : preset.aspectLabel}
+      </span>
+    </button>
+  );
+}
+
 /** One saved video result: poster tile with a play badge — the mp4 itself is
  *  only read when the card is clicked (the preview overlay plays it). A grid
  *  of 30 tiles used to pull every clip's full bytes into memory. */
+
 function VideoResultCard({
   entry,
   onRemove,
@@ -439,6 +634,36 @@ export function VideoGenerator() {
       next[index] = dataUrl;
       return next;
     });
+  }
+
+  /** Load a curated preset into the form. Like `reuseEntry`, `reinitPicks`
+   *  runs FIRST because it resets every engine-dependent pick — the preset's
+   *  own values must land after it. Presets are txt2vid only, so any
+   *  uploaded frame/clip is dropped rather than silently ignored. */
+  /** Load a community clip's settings back into the form. `reinitPicks` runs
+   *  FIRST — it resets every engine-dependent pick, so the clip's own values
+   *  must land after it. Clips are txt2vid only, so any uploaded frame or
+   *  source video is dropped rather than silently ignored. Resolution is NOT
+   *  restored: the clip's pixel size is not the engine's quality tier
+   *  ("1080p"), so copying it across would be meaningless. */
+  function applyVideoPreset(preset: VideoTemplatePreset) {
+    const model = preset.model ?? "";
+    setEcoId(preset.ecosystem);
+    setModelKey(model);
+    reinitPicks(preset.ecosystem, model);
+    setWorkflow("txt2vid");
+    setPrompt(preset.prompt);
+    setFrames([]);
+    setSourceVideo(null);
+    if (preset.duration != null && !videoDurationOmitted(preset.ecosystem, model)) {
+      const range = videoDurationRange(preset.ecosystem, model);
+      setDuration(Math.min(range.max, Math.max(range.min, preset.duration)));
+    }
+    if (preset.aspect) setAspect(preset.aspect);
+    if (preset.draft != null) setDraft(preset.draft);
+    if (preset.steps != null) setSteps(String(preset.steps));
+    if (preset.cfgScale != null) setCfgScale(String(preset.cfgScale));
+    toast.success(t("videoGenerator.presetApplied"));
   }
 
   /** Load a result's generating settings back into the form. `reinitPicks`
@@ -873,7 +1098,7 @@ export function VideoGenerator() {
           </div>
         )}
         {results.length === 0 && !job ? (
-          <EmptyResults description={t("videoGenerator.noResultsHint")} title={t("videoGenerator.noResults")} />
+          <VideoTemplateGallery ecosystem={ecoId} onApply={applyVideoPreset} />
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {results.map((entry) => (

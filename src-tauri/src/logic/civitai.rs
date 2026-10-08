@@ -298,6 +298,9 @@ const TEMPLATE_FEED_LIMIT: i64 = 20;
 /// rank over a month keeps genuine variety and recency.
 const TEMPLATE_FEED_SORT: &str = "Most Reactions";
 const TEMPLATE_FEED_PERIOD: &str = "Month";
+/// Used only when the fresh window returns nothing — a checkpoint with no
+/// posts this month has no rows at all, not a thin page.
+const TEMPLATE_FEED_PERIOD_FALLBACK: &str = "AllTime";
 
 /// Per-ecosystem 1h cache — the empty state hits this on every panel mount
 /// and every eco switch, same shape as `COVER_CACHE`.
@@ -588,7 +591,15 @@ pub async fn civitai_template_gallery(args: TemplateGalleryArgs) -> Result<Vec<T
         if presets.len() >= TEMPLATE_MAX {
             break;
         }
-        let hits = match civitai::search_images(
+        // Try the fresh window first, then fall back to all-time for a
+        // checkpoint with no recent activity. The period is NOT a global
+        // choice: a `Month` window returns ZERO rows for any checkpoint that
+        // nobody has posted to this month, and quiet community checkpoints
+        // are exactly the ones the download ranking surfaces. Measured on
+        // the anime family (the panel's default ecosystem): the three
+        // ranked candidates return 0 / 1 / 0 rows for `Month` and 20 / 20 /
+        // 20 for `AllTime` — a hard `Month` empties the whole gallery.
+        let mut hits = civitai::search_images(
             &key,
             *version_id,
             TEMPLATE_FEED_LIMIT,
@@ -596,12 +607,18 @@ pub async fn civitai_template_gallery(args: TemplateGalleryArgs) -> Result<Vec<T
             TEMPLATE_FEED_PERIOD,
         )
         .await
-        {
-            Ok(hits) => hits,
-            // One dead feed must not sink the gallery — the remaining
-            // checkpoints can still fill it.
-            Err(_) => continue,
-        };
+        .unwrap_or_default();
+        if hits.is_empty() {
+            hits = civitai::search_images(
+                &key,
+                *version_id,
+                TEMPLATE_FEED_LIMIT,
+                TEMPLATE_FEED_SORT,
+                TEMPLATE_FEED_PERIOD_FALLBACK,
+            )
+            .await
+            .unwrap_or_default();
+        }
 
         for hit in hits {
             if presets.len() >= TEMPLATE_MAX {
@@ -728,6 +745,287 @@ pub async fn civitai_template_gallery(args: TemplateGalleryArgs) -> Result<Vec<T
         cache.insert(ecosystem.clone(), (Instant::now(), presets.clone()));
     }
     Ok(presets)
+}
+
+// ── Video lane: community txt2vid presets ───────────────────────────────────
+
+/// Civitai's video `meta.ecosystem` → the panel's video ecosystem key.
+/// Measured over the paged `type=video` feed (2026-10-08): 1048 posts, 161
+/// native civitai-generated, 31 `txt2vid` across MiniMaxH3 (22), Flux3Video
+/// (2), Kling (2), Grok (2), Veo3 (1), WanVideo27 (1), HappyHorse (1) —
+/// seven of the panel's ten engines have community presets. Unknown civitai
+/// ecosystems map to None and are dropped.
+const VIDEO_ECOSYSTEM_ALIASES: [(&str, &str); 7] = [
+    ("minimaxh3", "minimax"),
+    ("minimax-h3", "minimax"),
+    ("flux3video", "flux3"),
+    ("kling", "kling"),
+    ("grok", "grok"),
+    ("veo3", "veo3"),
+    ("wanvideo27", "wan"),
+];
+
+fn video_ecosystem_for(civitai_ecosystem: &str) -> Option<&'static str> {
+    let needle = civitai_ecosystem.trim().to_lowercase();
+    VIDEO_ECOSYSTEM_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == needle)
+        .map(|(_, panel)| *panel)
+}
+
+/// Tile count for the video lane's empty state.
+const VIDEO_TEMPLATE_MAX: usize = 12;
+/// Feed pages read per window. Video is ~1.8% of the feed and the panel's
+/// engine coverage is uneven, so several pages are needed before one engine's
+/// quota fills.
+const VIDEO_TEMPLATE_PAGES: usize = 4;
+const VIDEO_TEMPLATE_PAGE_LIMIT: i64 = 100;
+
+/// Feed windows tried in order until the tile quota fills. This is NOT a
+/// cosmetic choice — the txt2vid pool sits in a narrow slice of the feed and
+/// each window surfaces a different part of it. Measured over 4 paged pages
+/// per window (2026-10-08, 400 posts each):
+///
+/// | window | txt2vid presets found |
+/// |---|---|
+/// | `Most Reactions` / `AllTime` | **0** |
+/// | `Most Reactions` / `Month`  | 48 |
+/// | `Newest` / `AllTime`         | 20 |
+///
+/// `Most Reactions` over all time ranks the highest-engaged clips ever
+/// posted, which on this feed is old `img2vid` — unusable as a txt2vid
+/// preset. Taking that window alone empties the whole gallery, so the
+/// windows are unioned.
+const VIDEO_TEMPLATE_WINDOWS: [(&str, &str); 3] = [
+    ("Most Reactions", "Month"),
+    ("Newest", "AllTime"),
+    ("Newest", "Month"),
+];
+
+/// A community txt2vid clip, reduced to the form fields it can restore.
+/// Deliberately NOT a `TemplatePreset` alias: video has no checkpoint/LoRA
+/// stack to carry (the models are pinned by the engine), and its resolution
+/// is a quality tier ("1080p"), not the clip's pixel dimensions — carrying
+/// those over would be meaningless, so only the aspect is derived.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoTemplatePreset {
+    pub url: String,
+    /// Poster frame (animated WebP/JPEG) — the clip only loads on click.
+    pub thumbnail: String,
+    pub width: i64,
+    pub height: i64,
+    pub prompt: String,
+    /// Panel ecosystem key this clip's settings belong to.
+    pub ecosystem: String,
+    pub model: Option<String>,
+    pub duration: Option<i64>,
+    pub aspect: Option<String>,
+    pub steps: Option<i64>,
+    pub cfg_scale: Option<f64>,
+    pub draft: Option<bool>,
+    /// Aspect to show on the tile (nearest declared ratio for the width).
+    pub aspect_label: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoTemplateGalleryArgs {
+    pub ecosystem: String,
+}
+
+static VIDEO_TEMPLATE_CACHE: LazyLock<Mutex<std::collections::HashMap<String, (Instant, Vec<VideoTemplatePreset>)>>> =
+    LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+
+/// Community txt2vid presets for one panel ecosystem, read from civitai's
+/// public video feed. Only clips civitai itself generated carry the
+/// generation metadata (`meta.engine`), and only `workflow: "txt2vid"` ones
+/// can be replayed without source media — the img2vid families dominate the
+/// feed and are unusable here. `Result` for the same reason as the image
+/// gallery: a transport failure must not cache an empty grid for an hour.
+pub async fn civitai_video_template_gallery(
+    args: VideoTemplateGalleryArgs,
+) -> Result<Vec<VideoTemplatePreset>, String> {
+    let ecosystem = args.ecosystem.trim().to_string();
+    if ecosystem.is_empty() {
+        return Ok(Vec::new());
+    }
+    if let Some((at, presets)) = VIDEO_TEMPLATE_CACHE
+        .lock()
+        .ok()
+        .and_then(|m| m.get(&ecosystem).cloned())
+    {
+        if at.elapsed() < TEMPLATE_TTL {
+            return Ok(presets);
+        }
+    }
+
+    let key = require_key()?;
+    let mut presets: Vec<VideoTemplatePreset> = Vec::with_capacity(VIDEO_TEMPLATE_MAX);
+    let mut seen_prompts: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (sort, period) in VIDEO_TEMPLATE_WINDOWS {
+        if presets.len() >= VIDEO_TEMPLATE_MAX {
+            break;
+        }
+        let mut cursor: Option<String> = None;
+        for page in 0..VIDEO_TEMPLATE_PAGES {
+            if presets.len() >= VIDEO_TEMPLATE_MAX {
+                break;
+            }
+            let response = match civitai::search_video_feed(
+                &key,
+                VIDEO_TEMPLATE_PAGE_LIMIT,
+                sort,
+                period,
+                cursor.as_deref(),
+            )
+            .await
+            {
+                Ok(response) => response,
+                Err(_) if page == 0 && sort == VIDEO_TEMPLATE_WINDOWS[0].0 => {
+                    return Err("gagal menghubungi Civitai".into())
+                }
+                // A later page or window failing just means a shorter gallery.
+                Err(_) => break,
+            };
+            cursor = response.next_cursor.clone();
+
+        for hit in response.items {
+            if presets.len() >= VIDEO_TEMPLATE_MAX {
+                break;
+            }
+            if hit.r#type.as_deref() != Some("video") {
+                continue;
+            }
+            if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
+                continue;
+            }
+            let Some(meta) = hit.meta.clone() else { continue };
+            // `engine` marks a clip civitai generated; `workflow` must be
+            // txt2vid for the form to replay it without source media.
+            if meta.engine.is_none() || meta.workflow.as_deref() != Some("txt2vid") {
+                continue;
+            }
+            let Some(panel_eco) = meta.ecosystem.as_deref().and_then(video_ecosystem_for) else {
+                continue;
+            };
+            if panel_eco != ecosystem {
+                continue;
+            }
+            let Some(prompt) = cap_text(meta.prompt.clone()) else { continue };
+            if !seen_prompts.insert(prompt.to_lowercase()) {
+                continue;
+            }
+            let Some(url) = hit.url.clone().filter(|u| !u.is_empty()) else { continue };
+            let width = meta.width.or(hit.width).unwrap_or(1024).max(64);
+            let height = meta.height.or(hit.height).unwrap_or(1024).max(64);
+
+            presets.push(VideoTemplatePreset {
+                thumbnail: hit
+                    .thumbnail
+                    .and_then(|t| t.url)
+                    .unwrap_or_else(|| url.clone()),
+                url,
+                width,
+                height,
+                prompt,
+                ecosystem: panel_eco.to_string(),
+                model: None,
+                duration: meta.duration,
+                aspect: video_aspect_for(
+                    panel_eco,
+                    meta.aspect_ratio
+                        .as_ref()
+                        .and_then(|ar| ar.value.as_deref()),
+                    width,
+                    height,
+                ),
+                steps: meta.steps,
+                cfg_scale: meta.cfg_scale,
+                draft: meta.draft,
+                aspect_label: String::new(),
+            });
+        }
+            if cursor.is_none() {
+                break;
+            }
+        }
+    }
+
+    // Fill the label server-side so the panel does not need the aspect table
+    // to name a ratio it may not support.
+    for preset in &mut presets {
+        preset.aspect_label = preset
+            .aspect
+            .clone()
+            .unwrap_or_else(|| format!("{width}x{height}", width = preset.width, height = preset.height));
+    }
+
+    if let Ok(mut cache) = VIDEO_TEMPLATE_CACHE.lock() {
+        cache.insert(ecosystem.clone(), (Instant::now(), presets.clone()));
+    }
+    Ok(presets)
+}
+
+/// The aspect ratio to put in the form for a community clip.
+///
+/// Civitai records its OWN label (`meta.aspectRatio.value`, e.g. `"3:4"`), so
+/// that is preferred — clip pixel dimensions are NOT uniform (704x960,
+/// 704x1280, 864x480, 832x1504, 1440x2160 all appear on one page), and
+/// re-deriving a label from them can land on the wrong bucket. The label is
+/// only used when the panel's engine actually declares it; otherwise, and
+/// when civitai sent none, fall back to the nearest declared ratio for the
+/// clip's shape.
+fn video_aspect_for(
+    ecosystem: &str,
+    civitai_label: Option<&str>,
+    width: i64,
+    height: i64,
+) -> Option<String> {
+    if let Some(label) = civitai_label.filter(|l| video_declares_aspect(ecosystem, l)) {
+        return Some(label.to_string());
+    }
+    closest_video_aspect(ecosystem, width, height)
+}
+
+/// Whether the panel's engine for `ecosystem` offers this exact ratio chip.
+fn video_declares_aspect(ecosystem: &str, label: &str) -> bool {
+    video_aspect_options(ecosystem).contains(&label)
+}
+
+/// The ratio chips the panel's engine for `ecosystem` renders, mirroring
+/// `VIDEO_ASPECTS_*` in the Rust video registry.
+fn video_aspect_options(ecosystem: &str) -> &'static [&'static str] {
+    match ecosystem {
+        "minimax" | "seedance" | "flux3" => &["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+        "veo3" | "kling" => &["16:9", "9:16", "1:1"],
+        "wan" => &["16:9", "9:16", "1:1", "4:3", "3:4"],
+        "grok" => &["16:9", "9:16", "1:1"],
+        "vidu" | "hunyuan" | "ltx" => &["16:9", "1:1", "9:16"],
+        _ => &[],
+    }
+}
+
+/// Nearest aspect ratio the panel's engine declares for this clip's shape.
+/// A video engine takes a ratio from a fixed list, so an exact 13:19 clip
+/// has to land on the closest offered one.
+fn closest_video_aspect(ecosystem: &str, width: i64, height: i64) -> Option<String> {
+    let options = video_aspect_options(ecosystem);
+    if options.is_empty() {
+        return None;
+    }
+    let ratio = width as f64 / height.max(1) as f64;
+    let parse = |s: &str| {
+        s.split_once(':').and_then(|(a, b)| {
+            let (a, b) = (a.parse::<f64>().ok()?, b.parse::<f64>().ok()?);
+            Some(a / b)
+        })
+    };
+    options
+        .iter()
+        .map(|o| (*o, (parse(o).unwrap_or(ratio) - ratio).abs()))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(o, _)| o.to_string())
 }
 
 // ── Resource browser (the civitai model-picker modal) ──────────────────────
@@ -2421,6 +2719,47 @@ mod gallery_ranking_tests {
             TEMPLATE_RESOLVE_BUDGET >= TEMPLATE_MAX,
             "a per-tile resource could be dropped once the budget dips below the tile count"
         );
+    }
+
+    /// Civitai records its own aspect label on video meta, and clip pixel
+    /// dimensions are NOT uniform (704x960, 704x1280, 864x480, 832x1504 and
+    /// 1440x2160 all land on one reaction page). Preferring the recorded
+    /// label over a re-derived one is the whole point — `704x960` is 0.733,
+    /// which would snap to `3:4` only by luck, while a `13:19` clip would
+    /// snap to the wrong chip entirely.
+    #[test]
+    fn recorded_aspect_label_beats_the_derived_one() {
+        // minmax declares the full six-chip list.
+        assert_eq!(
+            video_aspect_for("minimax", Some("3:4"), 704, 960).as_deref(),
+            Some("3:4")
+        );
+        // veo3 declares only three — a label it does not offer must fall back
+        // to the nearest declared ratio for the same shape.
+        assert_eq!(video_declares_aspect("veo3", "3:4"), false);
+        assert_eq!(video_declares_aspect("veo3", "16:9"), true);
+        assert_eq!(
+            video_aspect_for("veo3", Some("3:4"), 704, 960).as_deref(),
+            Some("9:16")
+        );
+        // No label at all: derive from the shape.
+        assert_eq!(
+            video_aspect_for("minimax", None, 1920, 1080).as_deref(),
+            Some("16:9")
+        );
+        // An engine with no declared chips yields nothing rather than a guess.
+        assert_eq!(video_aspect_for("unknown", Some("16:9"), 1920, 1080), None);
+    }
+
+    /// The fresh window must never be the ONLY window: a checkpoint nobody
+    /// posted to this month returns zero rows for `Month` (not a thin page),
+    /// and the download ranking surfaces exactly those quiet checkpoints.
+    /// A hard `Month` emptied the anime family — the panel's default
+    /// ecosystem — completely.
+    #[test]
+    fn fresh_feed_window_has_an_alltime_fallback() {
+        assert_ne!(TEMPLATE_FEED_PERIOD, TEMPLATE_FEED_PERIOD_FALLBACK);
+        assert_eq!(TEMPLATE_FEED_PERIOD_FALLBACK, "AllTime");
     }
 
     /// LoRA strength is clamped to the form's accepted range, so a hostile

@@ -290,6 +290,12 @@ export const VIDEO_ECOSYSTEMS: VideoEcosystemConfig[] = [
     maxFrames: 1,
     refMax: 0,
     styles: [],
+    // Mirrors the Rust registry's `steps_range: Some((10, 30))` /
+    // `cfg_range: Some((1, 10, 6))`. These two were missing here, and since
+    // the form renders its cfg/steps sliders only when the fields exist,
+    // Hunyuan showed no controls at all despite the note promising them.
+    stepsRange: { min: 10, max: 30, default: 30 },
+    cfgRange: { min: 1, max: 10, default: 6 },
     movements: [],
     draft: false,
     promptEnhancer: false,

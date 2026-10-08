@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, type ReactNode, useEffect, useState } from "react";
 
 /**
  * Round-robin masonry: items flow into `cols` columns in order, so each card
@@ -32,4 +32,24 @@ export function Masonry<T>({
       ))}
     </div>
   );
+}
+
+/** N columns by viewport width — `max` is the count at lg and up, half of it
+ *  in the middle band, one on a phone. Shared by the image and video lanes:
+ *  both size their galleries with `Masonry`. */
+export function useColumnCount(max: number): number {
+  const [cols, setCols] = useState(max);
+  useEffect(() => {
+    const narrow = window.matchMedia("(max-width: 639px)");
+    const medium = window.matchMedia("(max-width: 1023px)");
+    const update = () => setCols(narrow.matches ? 1 : medium.matches ? Math.max(1, Math.ceil(max / 2)) : max);
+    update();
+    narrow.addEventListener("change", update);
+    medium.addEventListener("change", update);
+    return () => {
+      narrow.removeEventListener("change", update);
+      medium.removeEventListener("change", update);
+    };
+  }, [max]);
+  return cols;
 }

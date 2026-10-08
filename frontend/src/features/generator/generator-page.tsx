@@ -39,7 +39,7 @@ import { KeyStatusNotices, useAliveEffect, useCivitaiKeyStatus } from "./civitai
 import { GenerateFooter, publishMediaDebit } from "./generate-footer";
 import { MusicGenerator } from "./music-generator";
 import { Model3dGenerator } from "./model3d-generator";
-import { Masonry } from "./masonry";
+import { Masonry, useColumnCount } from "./masonry";
 import { type PickerGroup, type PickerItem, PickerMenu } from "./picker-menu";
 import { ResultActions, mediaToken } from "./result-actions";
 import {
@@ -96,9 +96,11 @@ interface ModelCover {
 }
 
 /** One `civitai_template_gallery` preset — a community image WITH its
- *  generation meta and its resources (checkpoint + LoRAs resolved by hash
- *  to civitai's canonical AIR, family-gated to the ecosystem server-side).
- *  Inspiration, not reproduction: no seed. */
+ *  generation meta and its resources (checkpoint + LoRAs resolved to
+ *  civitai's canonical AIR server-side, family-gated to the ecosystem).
+ *  Inspiration, not reproduction: no seed. `width`/`height` are the
+ *  image's own generation size, which is usually NOT one of the form's
+ *  ~1 MP aspect chips — `applyTemplate` keeps it as a size override. */
 interface TemplatePreset {
   url: string;
   width: number;
@@ -149,25 +151,6 @@ function loadHistory(): HistoryEntry[] {
   } catch {
     return [];
   }
-}
-
-/** N columns by viewport width — `max` is the count at lg and up, half of it
- *  in the middle band, one on a phone. */
-function useColumnCount(max: number): number {
-  const [cols, setCols] = useState(max);
-  useEffect(() => {
-    const narrow = window.matchMedia("(max-width: 639px)");
-    const medium = window.matchMedia("(max-width: 1023px)");
-    const update = () => setCols(narrow.matches ? 1 : medium.matches ? Math.max(1, Math.ceil(max / 2)) : max);
-    update();
-    narrow.addEventListener("change", update);
-    medium.addEventListener("change", update);
-    return () => {
-      narrow.removeEventListener("change", update);
-      medium.removeEventListener("change", update);
-    };
-  }, [max]);
-  return cols;
 }
 
 function compactCount(n: number | null): string {
