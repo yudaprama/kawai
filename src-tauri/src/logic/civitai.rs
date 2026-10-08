@@ -19,7 +19,6 @@
 //! computed client-side (the API has no free pricing mode — verified live).
 
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -68,26 +67,19 @@ fn image_buzz_estimate(params: &ImageGenParams) -> f64 {
     generation + passes
 }
 
-/// Per-process discriminator so two debits inside the same millisecond (the
-/// `uuidish()` resolution) never collide on the worker's unique ledger ref.
-static DEBIT_SEQ: AtomicU64 = AtomicU64::new(0);
-
-/// Debit the token price off the user's worker balance — FAIL-CLOSED: media
-/// spends real Buzz at civitai, so an unreachable worker must block the
-/// submit (unlike the LLM turn's fail-open policy). 409
-/// `insufficient_balance` arrives as a friendly top-up message.
-async fn debit_media_tokens(bearer: &str, tokens: u64) -> Result<(), String> {
-    let reference = format!(
-        "civitai:{}-{}",
-        uuidish(),
-        DEBIT_SEQ.fetch_add(1, Ordering::Relaxed)
-    );
-    match super::topup::billing_debit_ref(bearer, tokens, &reference).await {
-        Ok(_) => Ok(()),
-        Err(e) if e.contains("insufficient_balance") => Err(format!(
-            "Saldo tidak cukup: {tokens} token diperlukan — isi ulang lewat halaman Top Up"
+/// Read-only balance gate. The debit itself rides the recap path
+/// (metering → `/internal/recap`, same as LLM usage) — this check is the
+/// submit's only billing involvement. FAIL-CLOSED like the old direct
+/// debit: media spends real Buzz at civitai, so an unreachable worker must
+/// block the submit.
+async fn require_balance_covering(bearer: &str, tokens: u64) -> Result<(), String> {
+    match super::topup::topup_balance(bearer).await {
+        Ok(b) if b.tokens >= tokens as i64 => Ok(()),
+        Ok(b) => Err(format!(
+            "Saldo tidak cukup: {tokens} token diperlukan (saldo {}) — isi ulang lewat halaman Top Up",
+            b.tokens
         )),
-        Err(e) => Err(format!("debit saldo gagal: {e}")),
+        Err(e) => Err(format!("saldo tidak terbaca — submit diblokir: {e}")),
     }
 }
 
@@ -124,7 +116,8 @@ pub struct ModelCover {
 /// Top-checkpoint cover art per panel ecosystem (the thing that makes the
 /// picker look like civitai's). Public v1 read; cached in-process for 1h —
 /// the picker hits this on every panel mount. Cover art rides the LIST
-/// payload (`modelVersions[0].images`) — no per-model image calls.
+/// payload (`modelVersions[].images` on the ranked candidate version) — no
+/// per-model image calls.
 static COVER_CACHE: LazyLock<Mutex<Option<(Instant, Vec<ModelCover>)>>> =
     LazyLock::new(|| Mutex::new(None));
 const COVER_TTL: Duration = Duration::from_secs(3600);
@@ -135,6 +128,11 @@ const COVER_QUERIES: [(&str, &str); 4] = [
     ("flux1", "flux"),
     ("flux2Klein", "flux klein"),
 ];
+
+/// Checkpoint candidates examined per ecosystem for the eco picker's card
+/// art. More than one so a candidate whose version carries no showcase image
+/// falls through to the next instead of blanking the card.
+const COVER_CANDIDATES: usize = 3;
 
 /// The music lane's PINNED models — civitai's audio ecosystems are all
 /// `modelLocked`, so the card art comes from the version record, not a
@@ -163,34 +161,24 @@ pub async fn civitai_model_covers() -> Result<Vec<ModelCover>, String> {
     let key = kawai_constants::civitai::get_civitai();
     let mut covers = Vec::with_capacity(COVER_QUERIES.len() + MUSIC_MODEL_VERSIONS.len());
     for (ecosystem, query) in COVER_QUERIES {
-        let cover = civitai::search_models(&key, query, &["Checkpoint"], 3, Some("Highest Rated"), None)
+        // Same ranking the gallery uses (`ranked_checkpoint_versions`): one
+        // version per model by download count, ≥1 GB weights, family-gated.
+        // The previous rule took `modelVersions[0]` of the first model with
+        // any art, which surfaced weightless hosted models (Seedream,
+        // 0.01 GB — no checkpoint to speak of) and VAE branches, so the
+        // eco picker showed a card for something the panel cannot render.
+        // Falls through the candidates in rank order, so a candidate
+        // without showcase art doesn't blank the card.
+        let url = ranked_checkpoint_versions(&key, ecosystem, query, COVER_CANDIDATES)
             .await
-            .ok()
-            .and_then(|page| {
-                page.items.into_iter().find_map(|m| {
-                    let url = m
-                        .model_versions
-                        .as_ref()?
-                        .first()?
-                        .images
-                        .as_ref()?
-                        .first()?
-                        .url
-                        .clone()?;
-                    Some(ModelCover {
-                        ecosystem: ecosystem.to_string(),
-                        label: ecosystem.to_string(),
-                        url: Some(url),
-                        model_name: None,
-                    })
-                })
-            });
-        covers.push(cover.unwrap_or(ModelCover {
+            .into_iter()
+            .find_map(|candidate| candidate.cover_url);
+        covers.push(ModelCover {
             ecosystem: ecosystem.to_string(),
             label: ecosystem.to_string(),
-            url: None,
+            url,
             model_name: None,
-        }));
+        });
     }
     // Music lane: PINNED models — civitai's audio ecosystems are all
     // `modelLocked`, so the card art comes from the version record, not a
@@ -274,9 +262,9 @@ pub struct TemplateGalleryArgs {
     pub ecosystem: String,
 }
 
-/// Panel ecosystem → v1 checkpoint search term (the gallery shows the
-/// top-rated checkpoint's showcase for the family; a miss degrades to an
-/// empty gallery and the frontend falls back to the plain empty state).
+/// Panel ecosystem → v1 checkpoint search term. The gallery draws from the
+/// highest-rated community checkpoints of the family (see
+/// `gallery_candidates`), not from civitai's official base model page.
 const TEMPLATE_QUERIES: [(&str, &str); 12] = [
     ("anima", "anime"),
     ("sdxl", "sdxl"),
@@ -292,6 +280,22 @@ const TEMPLATE_QUERIES: [(&str, &str); 12] = [
     ("grok", "grok"),
 ];
 
+/// Checkpoints pulled per ecosystem, ranked by download count across the
+/// search page's models. Spreading the gallery over several community
+/// checkpoints (rather than every tile from one model) is what makes it
+/// read like the site: one model alone returns the same author/sampler/
+/// composition over and over.
+const TEMPLATE_CHECKPOINTS: usize = 3;
+/// Image feed rows requested per checkpoint (the SFW + meta-carrying +
+/// prompt-uniqueness filters cut this down further).
+const TEMPLATE_FEED_LIMIT: i64 = 20;
+/// Feed sort. `Most Reactions` over a `Month` window beats `Newest`, which
+/// on a busy version is one author's consecutive test uploads (measured:
+/// 40/40 rows on SDXL base were the same prompt repeated); the reaction
+/// rank over a month keeps genuine variety and recency.
+const TEMPLATE_FEED_SORT: &str = "Most Reactions";
+const TEMPLATE_FEED_PERIOD: &str = "Month";
+
 /// Per-ecosystem 1h cache — the empty state hits this on every panel mount
 /// and every eco switch, same shape as `COVER_CACHE`.
 static TEMPLATE_CACHE: LazyLock<Mutex<std::collections::HashMap<String, (Instant, Vec<TemplatePreset>)>>> =
@@ -303,10 +307,17 @@ const TEMPLATE_TTL: Duration = Duration::from_secs(3600);
 const TEMPLATE_TEXT_CAP: usize = 4000;
 /// Per-image LoRA cap (the form's own cap is 9 — templates stay lean).
 const TEMPLATE_LORAS_CAP: usize = 4;
-/// Hard cap on by-hash calls per gallery refresh — resolution is sequential
-/// (no futures dep) and civitai's v1 is rate-limited; a bigger unique-hash
-/// set silently skips its leftovers until the next cache expiry.
-const TEMPLATE_RESOLVE_BUDGET: usize = 12;
+/// Hard cap on version-record calls per gallery refresh — resolution is
+/// sequential (no futures dep) and civitai's v1 is rate-limited; a bigger
+/// unique-id set silently skips its leftovers until the next cache expiry.
+const TEMPLATE_RESOLVE_BUDGET: usize = 24;
+
+/// Gallery tile count. Spread over `TEMPLATE_CHECKPOINTS` checkpoints, so
+/// one dead feed cannot starve the whole gallery.
+const TEMPLATE_MAX: usize = 12;
+/// Ceiling on checkpoints contributing tiles — a 4th feed is fetched only
+/// when the earlier ones under-delivered.
+const TEMPLATE_CHECKPOINT_FETCHES: usize = 4;
 
 fn cap_text(value: Option<String>) -> Option<String> {
     let trimmed = value?.trim().to_string();
@@ -316,28 +327,45 @@ fn cap_text(value: Option<String>) -> Option<String> {
     Some(truncate_chars(&trimmed, TEMPLATE_TEXT_CAP))
 }
 
-/// A by-hash resolution kept across refreshes — hashes repeat heavily
-/// (community images cluster on the same checkpoint/LoRAs), so the cache is
-/// the thing that keeps the sequential calls bounded in practice.
+/// A resolved version record kept across refreshes: `(air_urn, name,
+/// base_model)`. Community images cluster on the same checkpoints and
+/// LoRAs, so the cache is what keeps the sequential calls bounded.
 type ResolvedResource = Option<(String, String, Option<String>)>;
 static RESOURCE_CACHE: LazyLock<
     Mutex<std::collections::HashMap<String, (Instant, ResolvedResource)>>,
 > = LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
 const RESOURCE_TTL: Duration = Duration::from_secs(24 * 3600);
 
-/// `(air_urn, name, base_model)` for one resources hash — `None` when
-/// civitai carries no version for it. Display name comes from the meta
-/// resources entry (the by-hash response carries none).
-async fn resolve_resource(
+fn cached_resource(cache_key: &str) -> Option<ResolvedResource> {
+    RESOURCE_CACHE
+        .lock()
+        .ok()
+        .and_then(|m| m.get(cache_key).cloned())
+        .filter(|(at, _)| at.elapsed() < RESOURCE_TTL)
+        .map(|(_, resolved)| resolved)
+}
+
+fn store_resource(cache_key: &str, resolved: &ResolvedResource) {
+    if let Ok(mut cache) = RESOURCE_CACHE.lock() {
+        cache.insert(cache_key.to_string(), (Instant::now(), resolved.clone()));
+    }
+}
+
+/// Resolve a resource by civitai version id (`meta.civitaiResources[]`).
+/// The by-id record is the primary path: it carries the canonical AIR, the
+/// owning model's name and the base model, so a template's checkpoint and
+/// LoRAs attach without any hash lookup. Display name prefers civitai's
+/// own `modelVersionName`, then the record's model name, then the version
+/// name — the meta usually carries none.
+async fn resolve_resource_by_id(
     key: &str,
-    hash: &str,
-    name: &str,
+    version_id: i64,
+    meta_name: Option<&str>,
     budget: &mut usize,
 ) -> Result<ResolvedResource, String> {
-    if let Some((at, resolved)) = RESOURCE_CACHE.lock().ok().and_then(|m| m.get(hash).cloned()) {
-        if at.elapsed() < RESOURCE_TTL {
-            return Ok(resolved);
-        }
+    let cache_key = format!("id:{version_id}");
+    if let Some(hit) = cached_resource(&cache_key) {
+        return Ok(hit);
     }
     if *budget == 0 {
         // Cache miss but the refresh's call budget is spent — report
@@ -345,14 +373,161 @@ async fn resolve_resource(
         return Ok(None);
     }
     *budget -= 1;
+    let resolved = civitai::model_version_by_id(key, version_id)
+        .await?
+        .map(|v| {
+            let name = meta_name
+                .map(str::to_string)
+                .or_else(|| v.model.and_then(|m| m.name))
+                .or(v.name)
+                .unwrap_or_else(|| version_id.to_string());
+            (v.air.unwrap_or_default(), name, v.base_model)
+        })
+        .filter(|(air, _, _)| !air.is_empty());
+    store_resource(&cache_key, &resolved);
+    Ok(resolved)
+}
+
+/// Resolve a resource by AutoV2 hash (the legacy `meta.resources[]` path).
+/// Kept for writers that predate `civitaiResources`; the by-hash response
+/// carries no name, so the meta entry's is used.
+async fn resolve_resource_by_hash(
+    key: &str,
+    hash: &str,
+    name: &str,
+    budget: &mut usize,
+) -> Result<ResolvedResource, String> {
+    let cache_key = format!("hash:{hash}");
+    if let Some(hit) = cached_resource(&cache_key) {
+        return Ok(hit);
+    }
+    if *budget == 0 {
+        return Ok(None);
+    }
+    *budget -= 1;
     let resolved = civitai::model_version_by_hash(key, hash)
         .await?
         .map(|v| (v.air.unwrap_or_default(), name.to_string(), v.base_model))
         .filter(|(air, _, _)| !air.is_empty());
-    if let Ok(mut cache) = RESOURCE_CACHE.lock() {
-        cache.insert(hash.to_string(), (Instant::now(), resolved.clone()));
-    }
+    store_resource(&cache_key, &resolved);
     Ok(resolved)
+}
+
+
+/// Minimum total weights size (GB) for a version to count as a diffusion
+/// checkpoint. Civitai files VAEs, LoRAs, workflow JSONs and closed hosted
+/// models under the same `type: "Checkpoint"` model as the real thing — on
+/// the Qwen query the most-downloaded "version" of the official model is a
+/// 0.24 GB VAE, which as a `diffuserModel` is not a checkpoint at all.
+/// Measured across the eight family queries: every version under 1 GB is a
+/// VAE / workflow JSON / weightless hosted model, and every real
+/// checkpoint clears it with room to spare (smallest seen: 1.10 GB).
+const TEMPLATE_MIN_CHECKPOINT_GB: f64 = 1.0;
+
+fn version_weights_gb(version: &civitai::V1ModelVersion) -> f64 {
+    version
+        .files
+        .iter()
+        .flatten()
+        .filter_map(|f| f.size_kb)
+        .sum::<f64>()
+        / 1024.0
+        / 1024.0
+}
+
+/// One ranked candidate version: its id plus the showcase art the eco
+/// picker renders on its card.
+struct VersionCandidate {
+    version_id: i64,
+    cover_url: Option<String>,
+}
+
+/// The model-version ids a family query ranks highest, best first. ONE
+/// version per model, chosen by download count — `modelVersions[0]` is
+/// civitai's ordering, not its most-used one, and ranking raw version
+/// downloads hands every slot to whichever single model is most popular
+/// (on the SDXL query that is the official base checkpoint, an order of
+/// magnitude ahead of the rest). Rows whose base model maps to a DIFFERENT
+/// known family are dropped (either side unclassified = kept, the
+/// orchestrator decides).
+///
+/// A version must also clear `TEMPLATE_MIN_CHECKPOINT_GB`, so a VAE / LoRA
+/// / workflow JSON that out-downloads the real checkpoint cannot win the
+/// ranking — it is neither generatable (gallery) nor representative of the
+/// family (card art). The floor is relaxed for families with NO weights on
+/// disk at all (closed hosted models); see the two-pass loop below.
+async fn ranked_checkpoint_versions(
+    key: &str,
+    ecosystem: &str,
+    query: &str,
+    limit: usize,
+) -> Vec<VersionCandidate> {
+    let Ok(page) = civitai::search_models(key, query, &["Checkpoint"], 8, Some("Highest Rated"), None).await
+    else {
+        return Vec::new();
+    };
+    let eco_family = civitai::registry::ecosystem_family(ecosystem);
+    // Two passes. Pass 1 requires weights on disk (a real checkpoint); pass
+    // 2 drops that requirement for families whose models are CLOSED and
+    // hosted — Seedream and Grok ship no downloadable weights at all, yet
+    // the orchestrator renders them fine, so a size floor alone would empty
+    // their gallery and blank their eco card. Pass 1 catches the artifacts
+    // it exists for (a VAE branch or a workflow JSON that out-downloads the
+    // checkpoint); pass 2 keeps those families working.
+    for require_weights in [true, false] {
+        let mut ranked: Vec<(i64, VersionCandidate)> = Vec::new();
+        for model in &page.items {
+            let Some(versions) = model.model_versions.as_ref() else { continue };
+            let best = versions
+                .iter()
+                .filter(|version| {
+                    (!require_weights || version_weights_gb(version) >= TEMPLATE_MIN_CHECKPOINT_GB)
+                        && !matches!(
+                            (
+                                eco_family,
+                                version
+                                    .base_model
+                                    .as_deref()
+                                    .and_then(civitai::registry::base_model_family),
+                            ),
+                            (Some(a), Some(b)) if a != b
+                        )
+                })
+                .map(|version| {
+                    let cover_url = version
+                        .images
+                        .as_ref()
+                        .and_then(|images| images.first())
+                        .and_then(|image| image.url.clone());
+                    (
+                        version
+                            .stats
+                            .as_ref()
+                            .and_then(|s| s.download_count)
+                            .unwrap_or(0),
+                        VersionCandidate {
+                            version_id: version.id,
+                            cover_url,
+                        },
+                    )
+                })
+                .max_by_key(|(downloads, _)| *downloads);
+            if let Some(entry) = best {
+                ranked.push(entry);
+            }
+        }
+        // Stable within equal download counts (sort is stable), so civitai's
+        // own "Highest Rated" ordering breaks ties.
+        ranked.sort_by(|a, b| b.0.cmp(&a.0));
+        if !ranked.is_empty() {
+            return ranked
+                .into_iter()
+                .take(limit)
+                .map(|(_, candidate)| candidate)
+                .collect();
+        }
+    }
+    Vec::new()
 }
 
 pub async fn civitai_template_gallery(args: TemplateGalleryArgs) -> Result<Vec<TemplatePreset>, String> {
@@ -377,21 +552,17 @@ pub async fn civitai_template_gallery(args: TemplateGalleryArgs) -> Result<Vec<T
         .map(|(_, q)| *q)
         .unwrap_or(ecosystem.as_str());
 
-    // Top-rated checkpoint for the family → its first version's showcase
-    // feed, reactions-ranked, meta-carrying images only (authors who
-    // stripped their generation data are useless as templates).
-    let version_id = civitai::search_models(&key, query, &["Checkpoint"], 3, Some("Highest Rated"), None)
-        .await
-        .ok()
-        .and_then(|page| page.items.into_iter().find_map(|m| m.model_versions.and_then(|v| v.first().map(|first| first.id))));
-    let Some(version_id) = version_id else {
+    // Candidate checkpoints for the family — one per model, most-downloaded
+    // version, see `ranked_checkpoint_versions`.
+    let candidates = ranked_checkpoint_versions(&key, &ecosystem, query, TEMPLATE_CHECKPOINTS).await;
+    let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.version_id).collect();
+    if candidates.is_empty() {
         if let Ok(mut cache) = TEMPLATE_CACHE.lock() {
             cache.insert(ecosystem, (Instant::now(), Vec::new()));
         }
         return Ok(Vec::new());
-    };
+    }
 
-    let hits = civitai::search_images(&key, version_id, 40, "Most Reactions", "AllTime").await?;
     // Family gate for auto-attached checkpoint/LoRAs: the AIR may only ride
     // the request when its base-model family equals the ecosystem's own —
     // a cross-family diffuser override would 400 at the orchestrator. The
@@ -403,82 +574,150 @@ pub async fn civitai_template_gallery(args: TemplateGalleryArgs) -> Result<Vec<T
         eco_family.and_then(|eco| base.as_deref().and_then(civitai::registry::base_model_family).and_then(|f| (f == eco).then_some(f)))
     };
     let mut resolve_budget = TEMPLATE_RESOLVE_BUDGET;
-    let mut raw: Vec<(civitai::V1ImageHit, civitai::V1ImageMeta)> = Vec::new();
-    for hit in hits {
-        // SFW double-guard: `nsfw=None` on the wire plus this client-side
-        // level filter (the flag maps to a browsing level, not the enum).
-        if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
-            continue;
-        }
-        let Some(meta) = hit.meta.clone() else { continue };
-        if raw.len() < 12 {
-            raw.push((hit, meta));
-        } else {
+    let mut presets: Vec<TemplatePreset> = Vec::with_capacity(TEMPLATE_MAX);
+    // Prompt dedup across the whole gallery: one author's consecutive
+    // uploads (or a re-run of one prompt) otherwise fills the grid with
+    // near-identical tiles.
+    let mut seen_prompts: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for version_id in candidate_ids.iter().take(TEMPLATE_CHECKPOINT_FETCHES) {
+        if presets.len() >= TEMPLATE_MAX {
             break;
         }
-    }
+        let hits = match civitai::search_images(
+            &key,
+            *version_id,
+            TEMPLATE_FEED_LIMIT,
+            TEMPLATE_FEED_SORT,
+            TEMPLATE_FEED_PERIOD,
+        )
+        .await
+        {
+            Ok(hits) => hits,
+            // One dead feed must not sink the gallery — the remaining
+            // checkpoints can still fill it.
+            Err(_) => continue,
+        };
 
-    let mut presets: Vec<TemplatePreset> = Vec::with_capacity(raw.len());
-    for (hit, meta) in raw {
-        let Some(prompt) = cap_text(meta.prompt.clone()) else { continue };
-        let Some(url) = hit.url.clone().filter(|u| !u.is_empty()) else { continue };
+        for hit in hits {
+            if presets.len() >= TEMPLATE_MAX {
+                break;
+            }
+            // SFW double-guard: `nsfw=None` on the wire plus this client-side
+            // level filter (the flag maps to a browsing level, not the enum).
+            if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
+                continue;
+            }
+            // Authors who stripped their generation data are useless as
+            // templates.
+            let Some(meta) = hit.meta.clone() else { continue };
+            let Some(prompt) = cap_text(meta.prompt.clone()) else { continue };
+            let Some(url) = hit.url.clone().filter(|u| !u.is_empty()) else { continue };
+            if !seen_prompts.insert(prompt.to_lowercase()) {
+                continue;
+            }
 
-        // Resources: resolve hashes → AIR, gate each by family.
-        let mut checkpoint: Option<TemplateResource> = None;
-        let mut loras: Vec<TemplateResource> = Vec::new();
-        for entry in meta.resources.iter().flatten() {
-            let Some(hash) = entry.hash.as_deref().filter(|h| !h.trim().is_empty()) else { continue };
-            let kind = entry.kind.as_deref().unwrap_or("");
-            if kind != "model" && kind != "lora" {
-                continue; // VAE / embeddings / TI — nothing the form carries
-            }
-            if kind == "lora" && loras.len() >= TEMPLATE_LORAS_CAP {
-                continue;
-            }
-            if checkpoint.is_some() && kind != "lora" {
-                continue; // one checkpoint per template
-            }
-            let name = entry
-                .name
-                .clone()
-                .filter(|n| !n.trim().is_empty())
-                .unwrap_or_else(|| hash.to_string());
-            let Ok(Some((air, name, base))) = resolve_resource(&key, hash, &name, &mut resolve_budget).await
-            else {
-                continue;
+            // Resources: `civitaiResources` (version ids, the populated
+            // list) first, `resources` (hashes) as the legacy fallback.
+            let mut checkpoint: Option<TemplateResource> = None;
+            let mut loras: Vec<TemplateResource> = Vec::new();
+            let attach = |kind_is_lora: bool,
+                             resolved: Option<(String, String, Option<String>)>,
+                             weight: Option<f64>|
+                             -> Option<TemplateResource> {
+                let (air, name, base) = resolved?;
+                if family_of(&base).is_none() {
+                    return None;
+                }
+                Some(TemplateResource {
+                    name,
+                    air_urn: air,
+                    strength: kind_is_lora.then(|| weight.unwrap_or(1.0).clamp(0.0, 4.0)),
+                })
             };
-            if family_of(&base).is_none() {
-                continue;
+
+            for entry in meta.civitai_resources.iter().flatten() {
+                let Some(version) = entry.model_version_id else { continue };
+                let kind = entry.kind.as_deref().unwrap_or("");
+                let is_lora = kind == "lora";
+                // checkpoint / vae / embed — only the checkpoint rides along,
+                // and only one of them.
+                if !is_lora && checkpoint.is_some() {
+                    continue;
+                }
+                if is_lora && loras.len() >= TEMPLATE_LORAS_CAP {
+                    continue;
+                }
+                let resolved = resolve_resource_by_id(
+                    &key,
+                    version,
+                    entry.model_version_name.as_deref(),
+                    &mut resolve_budget,
+                )
+                .await
+                .ok()
+                .flatten();
+                if let Some(resource) = attach(is_lora, resolved, entry.weight) {
+                    if is_lora {
+                        loras.push(resource);
+                    } else {
+                        checkpoint = Some(resource);
+                    }
+                }
             }
-            let resource = TemplateResource {
-                name,
-                air_urn: air,
-                strength: if kind == "lora" {
-                    Some(entry.weight.unwrap_or(1.0).clamp(0.0, 4.0))
-                } else {
-                    None
-                },
-            };
-            if kind == "lora" {
-                loras.push(resource);
-            } else {
-                checkpoint = Some(resource);
+            // Writers predating `civitaiResources` only fill the hash list.
+            for entry in meta.resources.iter().flatten() {
+                if checkpoint.is_some() && loras.len() >= TEMPLATE_LORAS_CAP {
+                    break;
+                }
+                let Some(hash) = entry.hash.as_deref().filter(|h| !h.trim().is_empty()) else { continue };
+                let kind = entry.kind.as_deref().unwrap_or("");
+                let is_lora = kind == "lora";
+                if !is_lora && checkpoint.is_some() {
+                    continue; // one checkpoint per template
+                }
+                if is_lora && loras.len() >= TEMPLATE_LORAS_CAP {
+                    continue;
+                }
+                let name = entry
+                    .name
+                    .clone()
+                    .filter(|n| !n.trim().is_empty())
+                    .unwrap_or_else(|| hash.to_string());
+                let resolved = resolve_resource_by_hash(&key, hash, &name, &mut resolve_budget)
+                    .await
+                    .ok()
+                    .flatten();
+                if let Some(resource) = attach(is_lora, resolved, entry.weight) {
+                    if is_lora {
+                        loras.push(resource);
+                    } else {
+                        checkpoint = Some(resource);
+                    }
+                }
             }
+
+            // The image row's own width/height are null on most v1 hits; the
+            // generation size lives in the meta object.
+            presets.push(TemplatePreset {
+                url,
+                width: meta.width.or(hit.width).unwrap_or(1024).max(64),
+                height: meta.height.or(hit.height).unwrap_or(1024).max(64),
+                prompt,
+                negative_prompt: cap_text(meta.negative_prompt),
+                steps: meta.steps,
+                cfg_scale: meta.cfg_scale,
+                sampler: meta.sampler,
+                // Prefer the resolved checkpoint's model name — civitai's
+                // meta `Model` field is present on a small minority of hits.
+                model_name: checkpoint
+                    .as_ref()
+                    .map(|c| c.name.clone())
+                    .or(meta.model),
+                checkpoint,
+                loras,
+            });
         }
-
-        presets.push(TemplatePreset {
-            url,
-            width: hit.width.unwrap_or(1024).max(64),
-            height: hit.height.unwrap_or(1024).max(64),
-            prompt,
-            negative_prompt: cap_text(meta.negative_prompt),
-            steps: meta.steps,
-            cfg_scale: meta.cfg_scale,
-            sampler: meta.sampler,
-            model_name: meta.model,
-            checkpoint,
-            loras,
-        });
     }
 
     if let Ok(mut cache) = TEMPLATE_CACHE.lock() {
@@ -698,11 +937,14 @@ pub async fn civitai_generate(
     params: ImageGenParams,
 ) -> Result<Vec<SavedImage>, String> {
     // Validate BEFORE any money moves — a rejected shape must never cost the
-    // user a debit (the submit path re-validates; this is the gate).
+    // user anything (the submit path re-validates; this is the gate).
     params.validate()?;
-    debit_media_tokens(bearer, buzz_to_tokens(image_buzz_estimate(&params))).await?;
+    let tokens = buzz_to_tokens(image_buzz_estimate(&params));
+    require_balance_covering(bearer, tokens).await?;
     let key = require_key()?;
     let result = civitai::submit_image_gen(&key, &params).await?;
+    // Cost committed — Buzz is charged at submit — so meter it for the recap.
+    kawai_telemetry::record_media_usage(Some(user_id), tokens, "image");
     if result.images.is_empty() {
         return Err(result
             .errors
@@ -891,15 +1133,17 @@ pub struct VideoSubmitView {
 /// never after the Buzz is gone. Returns the workflowId the panel stores
 /// and polls.
 pub async fn civitai_video_submit(
-    _user_id: &str,
+    user_id: &str,
     bearer: &str,
     req: VideoGenRequest,
 ) -> Result<VideoSubmitView, String> {
     let key = require_key()?;
     let params = req.to_params();
     let est = civitai::whatif_video_gen(&key, &params).await?;
-    debit_media_tokens(bearer, buzz_to_tokens(est.total_buzz)).await?;
+    let tokens = buzz_to_tokens(est.total_buzz);
+    require_balance_covering(bearer, tokens).await?;
     let submitted = civitai::submit_video_gen(&key, &params).await?;
+    kawai_telemetry::record_media_usage(Some(user_id), tokens, "video");
     Ok(VideoSubmitView {
         workflow_id: submitted.id,
     })
@@ -1379,15 +1623,17 @@ pub struct MusicSubmitView {
 /// after the whatif pre-flight validates the whole input shape, BEFORE the
 /// submit — fail-closed, like the video lane.
 pub async fn civitai_music_submit(
-    _user_id: &str,
+    user_id: &str,
     bearer: &str,
     req: MusicGenRequest,
 ) -> Result<MusicSubmitView, String> {
     let key = require_key()?;
     let params = finalize_request(&req).await?;
     let est = civitai::whatif_music_gen(&key, &params).await?;
-    debit_media_tokens(bearer, buzz_to_tokens(est.total_buzz)).await?;
+    let tokens = buzz_to_tokens(est.total_buzz);
+    require_balance_covering(bearer, tokens).await?;
     let submitted = civitai::submit_music_gen(&key, &params).await?;
+    kawai_telemetry::record_media_usage(Some(user_id), tokens, "music");
     Ok(MusicSubmitView {
         workflow_id: submitted.id,
     })
@@ -1617,15 +1863,17 @@ pub async fn civitai_model3d_cost(req: Model3dGenRequest) -> Result<VideoCostVie
 /// the video lane. The whatif's preview-step verdict drives the submitted
 /// shape, so submit can never include a step the price check rejected.
 pub async fn civitai_model3d_submit(
-    _user_id: &str,
+    user_id: &str,
     bearer: &str,
     req: Model3dGenRequest,
 ) -> Result<VideoSubmitView, String> {
     let key = require_key()?;
     let params = req.to_params();
     let (est, with_preview) = civitai::whatif_model3d_gen(&key, &params).await?;
-    debit_media_tokens(bearer, buzz_to_tokens(est.total_buzz)).await?;
+    let tokens = buzz_to_tokens(est.total_buzz);
+    require_balance_covering(bearer, tokens).await?;
     let submitted = civitai::submit_model3d_gen(&key, &params, with_preview).await?;
+    kawai_telemetry::record_media_usage(Some(user_id), tokens, "model3d");
     Ok(VideoSubmitView {
         workflow_id: submitted.id,
     })

@@ -679,6 +679,12 @@ function ImageGenerator() {
    *  Text-to-Image / Image-to-Image segmented control on top. */
   const [hiresMode, setHiresMode] = useState<"text" | "image">("text");
   const [sizeIdx, setSizeIdx] = useState(0);
+  /** A template's own dimensions, overriding the aspect chips. The chips
+   *  are ~1 MP buckets; a community image's real size (often portrait or a
+   *  4:5 crop) is not on the list, and snapping to the nearest chip both
+   *  changed the composition and dropped the resolution. Cleared by any
+   *  chip click, ecosystem switch, or history reuse. */
+  const [templateSize, setTemplateSize] = useState<{ width: number; height: number } | null>(null);
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
   const [quantity, setQuantity] = useState(1);
@@ -712,7 +718,7 @@ function ImageGenerator() {
       .catch(() => undefined);
   }, []);
 
-  const size = eco.sizes[sizeIdx] ?? eco.sizes[0];
+  const size = templateSize ?? eco.sizes[sizeIdx] ?? eco.sizes[0];
   // Per-workflow form shape (civitai's per-workflow graphs): the upscale
   // workflow renders generation-free (image + passes only — no prompt,
   // ecosystem, model, LoRA, sampling); img2img renders image-first and
@@ -837,6 +843,7 @@ function ImageGenerator() {
       }
       setEcoId(id);
       setSizeIdx(0);
+      setTemplateSize(null);
       setSelectedModel(null);
       const next = ECOSYSTEMS.find((e) => e.id === id);
       if (next) {
@@ -938,6 +945,7 @@ function ImageGenerator() {
     // dimensions so the restored pick keeps its label.
     const sizeIdx = nextEco.sizes.findIndex((s) => s.width === p.width && s.height === p.height);
     setSizeIdx(sizeIdx >= 0 ? sizeIdx : 0);
+    setTemplateSize(null);
     setHiresMode("text");
     setSourceImage(null);
     setSourceDims(null);
@@ -947,8 +955,9 @@ function ImageGenerator() {
 
   /** Load a community template into the form. Templates are txt2img — the
    *  workflow switches back if the user was on an image-input one. The
-   *  seed stays random and the builtin diffuser renders the result (the
-   *  source checkpoint's AIR is not carried by civitai's meta). */
+   *  seed stays random; the template's own checkpoint + LoRA stack ride
+   *  along (resolved server-side from `meta.civitaiResources`), so the
+   *  generation is the source model's, not the builtin diffuser's. */
   function applyTemplate(p: TemplatePreset) {
     setWorkflowId(DEFAULT_WORKFLOW);
     setPrompt(p.prompt);
@@ -960,19 +969,21 @@ function ImageGenerator() {
     if (p.cfgScale != null) setCfgScale(String(p.cfgScale));
     if (p.steps != null) setSteps(String(p.steps));
     if (isSdFamily(eco.id) && p.sampler) setSampler(p.sampler);
-    // The template's dims rarely match a chip exactly — pick the chip with
-    // the closest aspect ratio so the composition intent survives.
-    const ratio = p.width / Math.max(1, p.height);
-    let best = 0;
-    let bestDiff = Number.POSITIVE_INFINITY;
-    eco.sizes.forEach((s, i) => {
-      const diff = Math.abs(s.width / s.height - ratio);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        best = i;
-      }
-    });
-    setSizeIdx(best);
+    // The image's real dimensions, not the nearest aspect chip: the chips
+    // are ~1 MP buckets, so snapping both changed the composition and threw
+    // away resolution (an 832×1216 SDXL portrait became 416×624). Clamped to
+    // the recipe's rules (%16, 64–2048) exactly like the img2img source path.
+    const dims = {
+      width: Math.min(2048, Math.max(64, Math.round(p.width / 16) * 16)),
+      height: Math.min(2048, Math.max(64, Math.round(p.height / 16) * 16)),
+    };
+    const exact = eco.sizes.findIndex((s) => s.width === dims.width && s.height === dims.height);
+    if (exact >= 0) {
+      setSizeIdx(exact);
+      setTemplateSize(null);
+    } else {
+      setTemplateSize(dims);
+    }
     // The template's own stack rides along: checkpoint as the diffuser
     // override + its LoRAs (family-gated server-side, so everything here is
     // generatable in this ecosystem). Replace, not merge — same contract as
@@ -1406,11 +1417,14 @@ function ImageGenerator() {
           <div className="flex flex-wrap gap-1.5">
             {eco.sizes.map((s, i) => (
               <AspectChip
-                active={sizeIdx === i}
+                active={sizeIdx === i && !templateSize}
                 height={s.height}
                 key={`${s.width}x${s.height}`}
                 label={s.label}
-                onClick={() => setSizeIdx(i)}
+                onClick={() => {
+                  setSizeIdx(i);
+                  setTemplateSize(null);
+                }}
                 sub={`${s.width}×${s.height}`}
                 width={s.width}
               />

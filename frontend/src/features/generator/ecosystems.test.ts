@@ -1,7 +1,10 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
   ECOSYSTEMS,
+  TOKENS_PER_BUZZ,
   WORKFLOWS,
   estimateBuzz,
   ecosystemsForWorkflow,
@@ -158,5 +161,24 @@ describe("workflow/ecosystem coherence", () => {
       expect(ecosystemsForWorkflow(w.id).length).toBeGreaterThan(0);
       expect(w.description.length).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * The backend constant is authoritative (the fail-closed debit at submit
+ * ceils over it in `logic::civitai.rs`); the panel's ≈ pill only displays.
+ * If the twins drift, the pill quotes a debit the backend disagrees with —
+ * either blocking a Generate the balance would have covered or sailing past
+ * it into the 409. This reads the Rust source so a rename or value change
+ * on either side fails here instead of lying to users.
+ */
+describe("TOKENS_PER_BUZZ parity with the Rust debit", () => {
+  it("matches logic::civitai::TOKENS_PER_BUZZ", () => {
+    const rust = readFileSync(new URL("../../../../src-tauri/src/logic/civitai.rs", import.meta.url), "utf8");
+    const match = rust.match(/pub const TOKENS_PER_BUZZ: u64 = ([\d_]+);/);
+    if (!match) {
+      throw new Error("TOKENS_PER_BUZZ declaration not found in civitai.rs — rename or move?");
+    }
+    expect(TOKENS_PER_BUZZ).toBe(Number(match[1].replaceAll("_", "")));
   });
 });
