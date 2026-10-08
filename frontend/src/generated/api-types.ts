@@ -83,6 +83,78 @@ export type GraphNodeExport = {
 	content: string | null,
 };
 
+/**
+ *  One sdcpp-family image generation request. v1 supports the ecosystems
+ *  that share the sdcpp input shape: anima, sdxl, flux1, flux2Dev,
+ *  flux2Klein, zImageBase, zImageTurbo, sd1 (the engine's own discriminator
+ *  mapping in the OpenAPI spec). `workflow` selects the generation workflow
+ *  (`txt2img` default, `img2img` sdcpp-only) — see `registry`.
+ */
+export type ImageGenParams = {
+	/**  sdcpp ecosystem id, e.g. `anima` (lowercase, exact). */
+	ecosystem: string,
+	/**
+	 *  Engine family: `sdcpp` (default) | `wan` | `seedream` | `grok`.
+	 *  Determines the wire shape the recipe endpoint receives.
+	 */
+	engine?: string | null,
+	/**
+	 *  Generation workflow: `txt2img` (default) | `txt2img:hires-fix` |
+	 *  `img2img` | `img2img:upscale`. `None` = `txt2img` (wire-compatible
+	 *  with the pre-workflow panel).
+	 */
+	workflow?: string | null,
+	prompt: string,
+	/**
+	 *  Source image for image-input workflows (`img2img`,
+	 *  `img2img:upscale`): a URL, a data URL or raw base64 — passed to the
+	 *  recipe verbatim (the spec's `source-image` format).
+	 */
+	sourceImage?: string | null,
+	/**
+	 *  Denoise strength for `img2img` (`createVariant`), 0.0–1.0; None =
+	 *  the spec default 0.7.
+	 */
+	strength?: number | null,
+	/**
+	 *  Upscale passes for `txt2img:hires-fix` / `img2img:upscale` — each
+	 *  repeat doubles the resolution (spec 1–3, default 1).
+	 */
+	upscaleRepeats?: number | null,
+	negativePrompt?: string | null,
+	width: number | null,
+	height: number | null,
+	/**  Defaults to the ecosystem's spec default when None (anima: 4). */
+	cfgScale?: number | null,
+	/**  Defaults to the ecosystem's spec default when None (anima: 30). */
+	steps?: number | null,
+	quantity?: number | null,
+	/**  None = random. */
+	seed?: number | null,
+	/**  LoRA stack (AIR URN → strength 0.0–4.0, spec default 1.0). */
+	loras?: LoraSpec[],
+	/**
+	 *  Checkpoint override (AIR URN) when the user picks a specific model;
+	 *  None = the ecosystem's built-in diffuser (the docs' recommended
+	 *  default).
+	 */
+	diffuserModel?: string | null,
+	/**
+	 *  sdcpp sampler display name (civitai's `samplers` list),
+	 *  translated to `sampleMethod` + `schedule` on the wire.
+	 *  SD-family ecosystems (sd1, sdxl) only — the spec's sdcpp
+	 *  input schema (Sd1/SdxlCreateImageGenInput) carries these
+	 *  fields for the SD family; the other ecosystems' workers
+	 *  are unverified for them.
+	 */
+	sampler?: string | null,
+	/**
+	 *  Skip N CLIP layers (SD-family ecosystems only, 1–3; the
+	 *  spec's SD graph defaults to 2).
+	 */
+	clipSkip?: number | null,
+};
+
 export type KnowledgeFileInfo = {
 	id: string,
 	originalName: string,
@@ -114,6 +186,12 @@ export type LocalModelStatus = {
 	fallback: string,
 };
 
+export type LoraSpec = {
+	/**  AIR URN, e.g. `urn:air:anima:lora:civitai:123456@789012`. */
+	air: string,
+	strength?: number | null,
+};
+
 export type MemoryGraphExport = {
 	nodes: GraphNodeExport[],
 	edges: GraphEdgeExport[],
@@ -138,12 +216,154 @@ export type MemoryItem = {
 	origin: string,
 };
 
+/**
+ *  One 3D generation request. One flat struct across the five engines —
+ *  per-ecosystem fields validate against the registry and only the
+ *  supported subset is serialized into the step input.
+ */
+export type Model3dGenParams = {
+	ecosystem: string,
+	/**
+	 *  meshy: "textTo3D" (default when a prompt is set) | "imageTo3D".
+	 *  Ignored by the img2-3D-only engines.
+	 */
+	process?: string | null,
+	/**  meshy textTo3D prompt (≤600) / hunyuan3D optional texture hint (≤600). */
+	prompt?: string | null,
+	/**
+	 *  Source image for every imageTo3D process (URL / data URL / base64) —
+	 *  resolved to a consumer blob at submit, like video source frames.
+	 */
+	image?: string | null,
+	/**  meshy textTo3D: "preview" | "full" (default "full"). */
+	mode?: string | null,
+	/**  meshy textTo3D only. */
+	enablePromptExpansion?: boolean | null,
+	/**  meshy: 100–300_000, default 30_000. */
+	targetPolycount?: number | null,
+	/**  meshy: "triangle" (default) | "quad". */
+	topology?: string | null,
+	/**  meshy: "auto" (default) | "on" | "off". */
+	symmetryMode?: string | null,
+	/**  meshy imageTo3D / comfy engines: texture the mesh (default true). */
+	shouldTexture?: boolean | null,
+	/**  meshy / comfy engines: remesh pass (default true). */
+	shouldRemesh?: boolean | null,
+	/**  Every engine: PBR materials (default false). */
+	enablePbr?: boolean | null,
+	/**  meshy: texture style hint (≤600). */
+	texturePrompt?: string | null,
+	/**  meshy: rig the mesh for animation (coerced on when animate). */
+	enableRigging?: boolean | null,
+	/**  meshy: bake the walking/running basicAnimations set. */
+	enableAnimation?: boolean | null,
+	/**  tripo: "no" | "standard" (default) | "HD". */
+	texture?: string | null,
+	/**  tripo: quad output (default false). */
+	quad?: boolean | null,
+	/**  tripo: normalize output scale (default false). */
+	autoSize?: boolean | null,
+	/**  tripo: 1_000–500_000 faces. */
+	faceLimit?: number | null,
+	/**  tripo: "original_image" (default) | "geometry". */
+	textureAlignment?: string | null,
+	/**  tripo: "default" | "align_image". */
+	orientation?: string | null,
+	/**  tripo: separate texture seed. */
+	textureSeed?: number | null,
+	/**  hunyuan3D: "v2" | "v2.1" (default) | "v2-mini". */
+	modelVersion?: string | null,
+	/**  hunyuan3D: 1–100, default 30. */
+	steps?: number | null,
+	/**  hunyuan3D: 0.0–20.0, default 5.0. */
+	cfgScale?: number | null,
+	/**  hunyuan3D: 64–512, default 256. */
+	octreeResolution?: number | null,
+	/**  32-bit signed int everywhere it is accepted; omitted = engine default. */
+	seed?: number | null,
+	/**
+	 *  Chain the `model3DPreview` PNG render after the polyGen step
+	 *  (default true — it IS the result card's thumbnail).
+	 */
+	withPreview?: boolean | null,
+};
+
+/**
+ *  One music generation request. One flat struct across the four engines —
+ *  per-ecosystem fields validate against the registry and only the supported
+ *  subset is serialized into the step input. In `simple` mode the caller
+ *  (logic layer) has already drafted caption/lyrics/etc. from `prompt` —
+ *  this struct always carries the final content.
+ */
+export type MusicGenParams = {
+	ecosystem: string,
+	/**
+	 *  "simple" (drafted upstream) | "custom" — informational; validation
+	 *  only checks that the required content fields are present.
+	 */
+	mode?: string | null,
+	/**  Sonilo only: "music" (default) | "soundEffect". */
+	operation?: string | null,
+	/**  MiniMax Music 3 / ACE: structured description (≤2000 / ≤1000 chars). */
+	caption?: string | null,
+	/**
+	 *  YuE2 aliases `caption` as its `style` field (civitai's
+	 *  musicDescription). Required for YuE2 too.
+	 */
+	lyrics?: string | null,
+	/**  YuE2 only: ABC notation score (used when score_mode != "off"). */
+	abc?: string | null,
+	/**  YuE2 only: "full" (default) | "melody" | "off". */
+	scoreMode?: string | null,
+	/**  YuE2 (1–100, default 32) / ACE (variant-dependent). */
+	steps?: number | null,
+	/**  ACE only: 40–200, default 120. */
+	bpm?: number | null,
+	/**  ACE only: musical key (free text, e.g. "C major"). */
+	key?: string | null,
+	/**  ACE only: 0.0–1.0, default 0.5. */
+	instrumentalWeight?: number | null,
+	/**  ACE only: 0.0–1.0, default 0.5. */
+	vocalWeight?: number | null,
+	/**  ACE only: 0.5–10, variant-dependent default (turbo 1 / base 4). */
+	cfgScale?: number | null,
+	/**
+	 *  ACE only: variant key ("xl-turbo" default | "turbo" | "xl-sft" |
+	 *  "xl-base" | "base").
+	 */
+	model?: string | null,
+	/**
+	 *  ACE only: cover image (URL / data URL / base64) — resolved to a
+	 *  consumer blob at submit, like video source frames.
+	 */
+	coverImage?: string | null,
+	/**
+	 *  Seconds. Integer engines (minimax/yue2/ace) serialize the truncated
+	 *  value; Sonilo keeps the fraction (soundEffect step 0.5).
+	 */
+	duration?: number | null,
+	seed?: number | null,
+};
+
 export type OfficeFileInfo = {
 	id: string,
 	originalName: string,
 	ext: string,
 	bytes: number,
 	createdAt: number,
+};
+
+/**  What the user opted into for an onboarding run. */
+export type OnboardingSources = {
+	questions?: QuickAnswer[],
+	/**  Optional public GitHub username — identity discovery seed. */
+	githubUsername?: string | null,
+	/**
+	 *  Opt-in Gmail scan (read-only, metadata + ≤10 `from:linkedin.com`
+	 *  bodies for self-URL extraction — bodies are never persisted). Only
+	 *  runs when a Composio Gmail connection already exists.
+	 */
+	gmail?: boolean,
 };
 
 /**  Current onboarding state, read back by the UI gate. */
@@ -162,6 +382,12 @@ export type ProfileFacet = {
 	/**  `active` | `pinned` | `dropped`. */
 	userState: string,
 	updatedAt: number,
+};
+
+/**  One answer to an onboarding quick question, as supplied by the UI. */
+export type QuickAnswer = {
+	question: string,
+	answer: string,
 };
 
 export type RagHit = {
@@ -224,6 +450,24 @@ export type SearchModelRow = {
 	airUrn: string,
 };
 
+/**  Arguments for `civitai_search_models` (the model-picker modal). */
+export type SearchModelsArgs = {
+	/**
+	 *  Target generation ecosystem — the constructed AIR URN carries it,
+	 *  and rows whose v1 `baseModel` maps to a DIFFERENT known family are
+	 *  dropped (both sides unclassified = kept, the orchestrator decides).
+	 */
+	ecosystem: string,
+	query?: string | null,
+	/**  `"Checkpoint"` (default) or `"LORA"`. */
+	modelType?: string | null,
+	/**  v1 sort: `"Highest Rated"` (default) | `"Most Downloaded"` | `"Newest"`. */
+	sort?: string | null,
+	limit?: number | null,
+	/**  Keyset cursor from the previous page (`nextCursor`) — None = page 1. */
+	cursor?: string | null,
+};
+
 export type SkillInfo = {
 	id: string,
 	name: string,
@@ -258,4 +502,73 @@ export type SqlProfileTest = {
 
 export type UserInfo = {
 	userId: string,
+};
+
+/**
+ *  A video generation request. One flat struct across the nine engines —
+ *  per-ecosystem fields validate against the registry and only the supported
+ *  subset is serialized into the step input.
+ */
+export type VideoGenParams = {
+	/**
+	 *  Registry key: `seedance` | `veo3` | `kling` | `minimax` | `wan` |
+	 *  `flux3` | `grok` | `vidu` | `hunyuan`.
+	 */
+	ecosystem: string,
+	/**
+	 *  `txt2vid` (default) | `img2vid` (1–2 frame slots per the caps) |
+	 *  `img2vid:ref2vid` (reference images).
+	 */
+	workflow?: string | null,
+	prompt: string,
+	/**  Supported by veo3, wan, kling legacy (registry `negative_prompt`). */
+	negativePrompt?: string | null,
+	/**
+	 *  Source frames, ORDERED — semantics per workflow: `img2vid` = [first,
+	 *  (last)] up to the caps' `max_frames`; `img2vid:ref2vid` = references
+	 *  up to `ref_max`. Uploaded to consumer blobs before submit (the
+	 *  orchestrator rejects arbitrary external URLs — verified: 500).
+	 */
+	images?: string[],
+	/**
+	 *  Source video for `vid2vid:edit` (grok v1.0) — a URL, a data URL or
+	 *  raw base64. Uploaded to a consumer blob like frames.
+	 */
+	video?: string | null,
+	/**
+	 *  Model key per registry (seedance versions; kling `v1.6`/`v2`/
+	 *  `v2.5-turbo`/`v3`; wan `v2.5`; vidu `q1`/`q3`; grok `v1.5`/`v1.0`).
+	 *  None/empty = the ecosystem default.
+	 */
+	model?: string | null,
+	/**  Kling legacy / vidu q1 quality tier: `standard` | `professional`. */
+	mode?: string | null,
+	/**  Veo 3 fast mode (default true — civitai's default pick). */
+	fastMode?: boolean | null,
+	/**
+	 *  Seconds — validated against the ecosystem/model duration rule
+	 *  (ignored for engines that take no duration, e.g. vidu q1).
+	 */
+	duration?: number | null,
+	resolution?: string | null,
+	/**
+	 *  Aspect ratio (image-driven workflows derive it from the frame —
+	 *  omitted on the wire there).
+	 */
+	aspectRatio?: string | null,
+	generateAudio?: boolean | null,
+	/**  Kling legacy / vidu q1 prompt enhancer (wire default: true). */
+	enablePromptEnhancer?: boolean | null,
+	/**  Hunyuan CFG (registry `cfg_range`). */
+	cfgScale?: number | null,
+	/**  Hunyuan diffusion steps (registry `steps_range`). */
+	steps?: number | null,
+	/**  Draft quality tier (flux3 pins 720p; vidu q3 sends `turbo`). */
+	draft?: boolean | null,
+	/**  Vidu q1 prompt style (`general` | `anime`). */
+	style?: string | null,
+	/**  Vidu q1 movement amplitude (`auto`/`small`/`medium`/`large`). */
+	movementAmplitude?: string | null,
+	seed?: number | null,
+	quantity?: number | null,
 };

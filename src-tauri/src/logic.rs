@@ -499,6 +499,12 @@ pub mod onboarding;
 // CodeGraph bridge — phase0 sidecar (`codegraph` feature) + phase1 native
 // (`codegraph-native` implies `codegraph`; kernel rlib wired when available).
 pub mod codegraph;
+// Per-user Binance API key management (Settings → Binance API): storage in
+// the user's local DB (`binance_api_credentials`, migration 0027) with the
+// baked kawai-vault pair as fallback. Always compiled (stable surface for
+// the always-registered commands); without the `binance` feature it serves
+// guidance-error stubs (codegraph/tts pattern).
+pub mod binance_credentials;
 // TTS via piper-rs (neural Piper ONNX models). Feature-gated internally;
 // always compiled so the command stays registered in generate_handler!.
 pub mod tts;

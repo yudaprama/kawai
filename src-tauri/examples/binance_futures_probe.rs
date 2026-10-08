@@ -2,7 +2,9 @@
 // live Binance USDⓈ-M API (signed, read-only) and assert the local mirrors
 // match what the tool reported. NOT part of the CI smoke gate — signed futures
 // routes are not reachable from hosting regions.
-use binance::{FuturesPositionsArgs, FuturesPositionsTool};
+use binance::{
+    FuturesPositionsArgs, FuturesPositionsTool, FuturesRiskAuditArgs, FuturesRiskAuditTool,
+};
 use kawai_tools::AgentTool;
 use serde_json::Value;
 
@@ -157,9 +159,61 @@ async fn main() {
         .unwrap();
     let r = rows.next().await.unwrap().unwrap();
     let (p2, o2): (i64, i64) = (r.get::<i64>(0).unwrap(), r.get::<i64>(1).unwrap());
+    // Drain + drop the statement: an unfinished iterator holds a read lock
+    // that blocks the NEXT writer's COMMIT (rollback-journal mode).
+    while rows.next().await.unwrap().is_some() {}
+    drop(rows);
     assert_eq!(p2 as usize, positions.len(), "re-sync must not duplicate positions");
     assert_eq!(o2 as usize, orders.len(), "re-sync must not duplicate orders");
     println!("[probe] idempotent re-sync: {p2} positions / {o2} orders");
+
+    // ── Risk audit: one deterministic call over the fresh mirror. ──
+    // Rate budget is per-process: two syncs already ran, the audit's third
+    // fits the 6/min window.
+    let audit_tool = FuturesRiskAuditTool(user.to_string());
+    let audit_raw = match audit_tool.call(FuturesRiskAuditArgs::default()).await {
+        Ok(text) => text,
+        Err(e) => {
+            println!("[probe] audit call failed: {e}");
+            std::process::exit(3);
+        }
+    };
+    let audit: Value = serde_json::from_str(&audit_raw).expect("audit output must be JSON");
+    let sum = &audit["summary"];
+    println!(
+        "[probe] audit: usdm={} graded={} naked={} nakedNotional={} tp={}",
+        sum["usdmPositions"],
+        sum["graded"],
+        sum["naked"],
+        sum["nakedNotional"],
+        sum["withTakeProfit"],
+    );
+    println!("[probe] audit verdicts: {}", sum["slVerdicts"]);
+    let audited_positions = audit["positions"].as_array().expect("audit positions");
+    assert!(
+        !audited_positions.is_empty(),
+        "audit must cover the open positions"
+    );
+    assert_eq!(
+        sum["usdmPositions"].as_u64().unwrap() as usize,
+        positions
+            .iter()
+            .filter(|p| p["margin"].as_str() == Some("USDM"))
+            .count(),
+        "audit must see the same USDⓈ-M set the sync mirrored"
+    );
+    for p in audited_positions.iter().take(5) {
+        let advice = &p["advice"];
+        println!(
+            "[probe]   {} {} SL={} verdict={} R:R={} graded={}",
+            p["symbol"].as_str().unwrap_or("?"),
+            p["positionSide"].as_str().unwrap_or("?"),
+            p["stopLoss"]["present"],
+            advice["verdict"].as_str().unwrap_or(p["error"].as_str().unwrap_or("-")),
+            p["riskReward"],
+            p["graded"],
+        );
+    }
 
     std::fs::remove_dir_all(&dir).ok();
     println!("[probe] PASS");

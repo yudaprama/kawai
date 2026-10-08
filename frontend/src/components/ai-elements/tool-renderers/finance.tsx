@@ -464,3 +464,86 @@ export function renderBinanceTa(output: unknown): ReactNode {
     </TextCard>
   );
 }
+
+// ── binance_futures_risk_audit ─────────────────────────────────────────────
+
+/**
+ * binance_futures_risk_audit →
+ * { summary: { usdmPositions, graded, skippedByCap, withStopLoss, naked,
+ *              nakedNotional, withTakeProfit, slVerdicts, coinmPositions },
+ *   coinmUnrealizedPnlByAsset, positions: [{ symbol, verdict, stopLoss,
+ *   takeProfit, riskReward, graded, … }] }.
+ *
+ * The summary grid leads (naked positions is THE number), then one card per
+ * graded position with its verdict leading the meta line, then the COIN-M footnote —
+ * which is present-but-not-audited, a distinct state from absent.
+ */
+export function renderBinanceFuturesRiskAudit(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || !isRecord(d.summary)) return null;
+  const s = d.summary;
+  const nakedNotional = num(s.nakedNotional);
+  const skipped = num(s.skippedByCap);
+  const summary: Metric[] = [
+    {
+      label: "Naked (no SL)",
+      value: fmtNum(num(s.naked) ?? 0),
+      ...(nakedNotional ? { sub: `${fmtNum(nakedNotional)} notional` } : {}),
+    },
+    { label: "With SL", value: fmtNum(num(s.withStopLoss) ?? 0) },
+    { label: "With TP", value: fmtNum(num(s.withTakeProfit) ?? 0) },
+    {
+      label: "Graded",
+      value: `${fmtNum(num(s.graded) ?? 0)}/${fmtNum(num(s.usdmPositions) ?? 0)}`,
+      ...(skipped ? { sub: `${fmtNum(skipped)} skipped (cap)` } : {}),
+    },
+  ];
+
+  const rows: CardItem[] = (Array.isArray(d.positions) ? d.positions : [])
+    .filter(isRecord)
+    .map((p) => {
+      const adviceRec = isRecord(p.advice) ? p.advice : {};
+      const verdict = str(adviceRec.verdict) ?? (p.error !== undefined ? "error" : "ungraded");
+      const sl = isRecord(p.stopLoss) ? p.stopLoss : {};
+      const tp = isRecord(p.takeProfit) ? p.takeProfit : {};
+      const slDist = num(sl.distancePct);
+      const rr = num(p.riskReward);
+      const slPrice = num(sl.price);
+      const tpCount = num(tp.resting);
+      return {
+        title: [str(p.symbol), str(p.positionSide)].filter(Boolean).join(" ") || "Position",
+        subtitle: `PnL ${fmtNum(num(p.unRealizedProfit) ?? 0)}`,
+        meta: [
+          verdict.toUpperCase(),
+          ...(sl.present === true && slPrice !== null && slDist !== null
+            ? [`SL ${fmtNum(slPrice)} (-${fmtNum(slDist)}%)`]
+            : ["SL MISSING"]),
+          ...(tp.present === true && tpCount !== null ? [`TP ×${fmtNum(tpCount)}`] : ["no TP"]),
+          ...(rr !== null ? [`R:R ${fmtNum(rr)}`] : []),
+        ].join(" · "),
+      };
+    });
+
+  const coinm = isRecord(d.coinmUnrealizedPnlByAsset) ? d.coinmUnrealizedPnlByAsset : {};
+  const coinmCount = num(s.coinmPositions) ?? 0;
+  const coinmLines = Object.entries(coinm).filter(([, v]) => typeof v === "number" && v !== 0);
+
+  return (
+    <TextCard>
+      <MetricGrid items={summary} />
+      {rows.length ? cards(rows) : <Footnote>No open USDⓈ-M positions.</Footnote>}
+      {coinmCount > 0 && (
+        <Footnote>
+          {coinmCount} COIN-M position{coinmCount > 1 ? "s" : ""} counted, not klines-audited
+          {coinmLines.length > 0
+            ? " — PnL: " +
+              coinmLines.map(([a, v]) => `${a} ${fmtNum(v as number)}`).join(", ")
+            : ""}
+        </Footnote>
+      )}
+      {num(s.skippedByCap) ? (
+        <Footnote>raise `limit` to grade the skipped positions</Footnote>
+      ) : null}
+    </TextCard>
+  );
+}

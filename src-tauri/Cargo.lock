@@ -2327,6 +2327,7 @@ dependencies = [
  "reqwest 0.13.5",
  "serde",
  "serde_json",
+ "specta",
  "tokio",
 ]
 

@@ -13,7 +13,7 @@
  * the shared 1024² 1:1 bucket (Base's custom-size ceiling is 4 MP, Turbo's
  * ~1 MP) — the panel's SIZE_PRESETS chips stay well inside those ceilings.
  */
-import type { SearchModelPage, SearchModelRow } from "@/generated/api-types";
+import type { ImageGenParams, SearchModelPage, SearchModelsArgs, SearchModelRow } from "@/generated/api-types";
 
 export interface EcosystemConfig {
   /** Exact orchestrator ecosystem id (discriminator mapping key).
@@ -200,45 +200,24 @@ export const ECOSYSTEMS: EcosystemConfig[] = [
  *  name to a `sampleMethod` + `schedule` wire pair. */
 export const SAMPLERS = ["Euler a", "Euler", "Heun", "LMS", "DDIM", "DPM++ 2M Karras", "DPM2"] as const;
 
-/** Frontend mirror of the backend's `civitai::ImageGenParams` (camelCase). */
-export interface GenParams {
-  ecosystem: string;
+/** The `civitai::ImageGenParams` wire contract — generated from
+ *  the Rust struct (specta in-place derive in the civitai client
+ *  crate) by `bun run generate:events`; never hand-edited.
+ *
+ *  Narrowing (the literal unions below) is the deliberate
+ *  frontend-side guard the generated `string` lacks: the form only
+ *  ever offers these engine/workflow values, so a typo fails at
+ *  compile time instead of as a server 400. */
+export type GenParams = ImageGenParams & {
   /** Recipe engine; omit for the default sdcpp engine. */
-  engine?: "wan" | "seedream" | "grok";
-  /** Generation workflow; omit = `txt2img` (backend default). */
-  workflow?: string;
-  /** Source image (URL / data URL / base64) for image-input workflows
-   *  (`img2img`, `img2img:upscale`) — passed to the recipe verbatim. */
-  sourceImage?: string;
-  /** Denoise strength for `img2img` (`createVariant`), 0–1; default 0.7. */
-  strength?: number;
-  /** Upscale passes (1–3, each doubles resolution) for the upscale-backed
-   *  workflows (`txt2img:hires-fix`, `img2img:upscale`); default 1. */
-  upscaleRepeats?: number;
-  prompt: string;
-  negativePrompt?: string;
-  width: number;
-  height: number;
-  cfgScale?: number;
-  steps?: number;
-  quantity?: number;
-  seed?: number;
-  loras?: Array<{ air: string; strength: number }>;
-  /** Checkpoint override (AIR URN) when the user picks a specific model. */
-  diffuserModel?: string;
-  /** sdcpp sampler display name (civitai's `samplers` list) —
-   *  SD-family ecosystems only; translated to `sampleMethod`
-   *  + `schedule` on the wire. */
-  sampler?: string;
-  /** Skip N CLIP layers (1–3, SD-family ecosystems only;
-   *  the spec's SD graph defaults to 2). */
-  clipSkip?: number;
-}
+  engine?: "wan" | "seedream" | "grok" | null;
+};
+export type { ImageGenParams };
 
-/** Search result rows for the in-pane model browser — generated from
- *  `kawai_api_types::SearchModelRow/Page` by `bun run generate:events`;
+/** Search arguments + result rows for the in-pane model browser —
+ *  generated from `kawai_api_types::*` by `bun run generate:events`;
  *  never hand-edited. Re-exported so existing import paths keep working. */
-export type { SearchModelPage, SearchModelRow };
+export type { SearchModelPage, SearchModelsArgs, SearchModelRow };
 
 /** Stored generation result — the panel's localStorage job/results rows. */
 export interface SavedImage {

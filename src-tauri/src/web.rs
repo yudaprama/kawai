@@ -2629,6 +2629,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/codegraph_explore", post(codegraph_explore_handler))
         .route("/api/codegraph_status", post(codegraph_status_handler))
         .route("/api/codegraph_is_available", post(codegraph_is_available_handler))
+        .route("/api/binance_credentials_set", post(binance_credentials_set_handler))
+        .route("/api/binance_credentials_status", post(binance_credentials_status_handler))
+        .route("/api/binance_credentials_delete", post(binance_credentials_delete_handler))
         .route("/api/codegraph_init", post(codegraph_init_handler));
 
     // GraphRAG: always registered (handler is no-op when feature off) so the
@@ -3115,4 +3118,40 @@ async fn ask_about_step_result_handler(
     });
 
     Ok(Sse::new(UnboundedReceiverStream::new(rx)))
+}
+
+// ── Binance API credentials (Settings → Binance API) ───────────────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BinanceCredentialsRequest {
+    api_key: String,
+    api_secret: String,
+}
+async fn binance_credentials_set_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<BinanceCredentialsRequest>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    logic::binance_credentials::binance_credentials_set(&user_id, &req.api_key, &req.api_secret)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+async fn binance_credentials_status_handler(
+    Extension(user_id): Extension<String>,
+) -> Json<logic::binance_credentials::BinanceCredentialStatus> {
+    Json(logic::binance_credentials::binance_credentials_status(&user_id).await.unwrap_or(
+        logic::binance_credentials::BinanceCredentialStatus {
+            source: "none".into(),
+            key_preview: None,
+        },
+    ))
+}
+async fn binance_credentials_delete_handler(
+    Extension(user_id): Extension<String>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    logic::binance_credentials::binance_credentials_delete(&user_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
 }

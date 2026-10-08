@@ -1216,29 +1216,7 @@ pub async fn civitai_music_template_gallery(
 
 // ── Resource browser (the civitai model-picker modal) ──────────────────────
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchModelsArgs {
-    /// Target generation ecosystem — the constructed AIR URN carries it,
-    /// and rows whose v1 `baseModel` maps to a DIFFERENT known family are
-    /// dropped (both sides unclassified = kept, the orchestrator decides).
-    pub ecosystem: String,
-    #[serde(default)]
-    pub query: Option<String>,
-    /// `"Checkpoint"` (default) or `"LORA"`.
-    #[serde(default)]
-    pub model_type: Option<String>,
-    /// v1 sort: `"Highest Rated"` (default) | `"Most Downloaded"` | `"Newest"`.
-    #[serde(default)]
-    pub sort: Option<String>,
-    #[serde(default)]
-    pub limit: Option<i64>,
-    /// Keyset cursor from the previous page (`nextCursor`) — None = page 1.
-    #[serde(default)]
-    pub cursor: Option<String>,
-}
-
-pub use kawai_api_types::{SearchModelPage, SearchModelRow};
+pub use kawai_api_types::{SearchModelPage, SearchModelsArgs, SearchModelRow};
 
 /// Crude HTML→text (tag stripping + whitespace collapse) — descriptions are
 /// display-only snippets, never rendered as HTML.

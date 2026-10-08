@@ -3,25 +3,16 @@ import { call, errText } from "@/lib/api";
 import { streamOperation } from "@/lib/stream";
 import { showErrorToast } from "@/lib/utils";
 import { useOp } from "@/hooks/use-op";
-import type { OnboardingStatus } from "@/generated/api-types";
+import type { OnboardingSources, OnboardingStatus } from "@/generated/api-types";
 import type { OnboardingEvent } from "@/generated/events";
 
-/** Wire status + event union — generated from `kawai_api_types::OnboardingStatus`
- *  and `kawai_events::OnboardingEvent` by `bun run generate:events`; never
- *  hand-edited. Re-exported so existing import paths keep working. */
+/** Wire status, event union, and run arguments — generated from
+ *  `kawai_api_types::*` and `kawai_events::OnboardingEvent` by
+ *  `bun run generate:events`; never hand-edited. Re-exported so
+ *  existing import paths keep working. */
 export type { OnboardingStatus, OnboardingEvent };
-
-export interface QuickAnswerInput {
-  question: string;
-  answer: string;
-}
-
-export interface OnboardingSourcesInput {
-  questions: QuickAnswerInput[];
-  githubUsername?: string;
-  /** Opt-in Gmail scan (read-only, Composio connection required). */
-  gmail?: boolean;
-}
+export type OnboardingSourcesInput = OnboardingSources;
+export type { OnboardingSources };
 
 /**
  * Onboarding gate state + run control (PLAN-personal-context §2.3).

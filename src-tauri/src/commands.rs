@@ -2252,3 +2252,34 @@ pub async fn ask_about_step_result(
             .map_err(|e| e.to_string())?;
     run_streaming(stream_id, on_event, &registry, stream, None).await
 }
+
+// ── Binance API credentials (Settings → Binance API) ───────────────────────
+// Per-user keys live in the user's local SQLite; the secret never crosses
+// this boundary — status returns the source + masked key preview only.
+
+#[tauri::command]
+pub async fn binance_credentials_set(
+    api_key: String,
+    api_secret: String,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::binance_credentials::binance_credentials_set(&user_id, &api_key, &api_secret)
+        .await
+}
+
+#[tauri::command]
+pub async fn binance_credentials_status(
+    session: State<'_, Session>,
+) -> Result<logic::binance_credentials::BinanceCredentialStatus, String> {
+    let user_id = session_user_id(&session)?;
+    logic::binance_credentials::binance_credentials_status(&user_id).await
+}
+
+#[tauri::command]
+pub async fn binance_credentials_delete(
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::binance_credentials::binance_credentials_delete(&user_id).await
+}

@@ -13,7 +13,6 @@ use onboarding::compress::{
 use onboarding::github;
 use onboarding::linkedin::{discover, CONFIDENCE_HIGH};
 use onboarding::IdentitySignals;
-use serde::Deserialize;
 
 use kawai_db::{db_connection, unix_now, DbError};
 
@@ -60,31 +59,7 @@ pub const LINKEDIN_ACTOR: &str = "dev_fusion~linkedin-profile-scraper";
 const KV_COMPLETED: &str = "completed";
 const KV_SOURCES: &str = "sources";
 
-/// Answers to the quick questions, as supplied by the UI.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct QuickAnswer {
-    pub question: String,
-    pub answer: String,
-}
-
-/// What the user opted into for this run.
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct OnboardingSources {
-    #[serde(default)]
-    pub questions: Vec<QuickAnswer>,
-    /// Optional public GitHub username — identity discovery seed.
-    #[serde(default)]
-    pub github_username: Option<String>,
-    /// Opt-in Gmail scan (read-only, metadata + ≤10 `from:linkedin.com`
-    /// bodies for self-URL extraction — bodies are never persisted). Only
-    /// runs when a Composio Gmail connection already exists.
-    #[serde(default)]
-    pub gmail: bool,
-}
-
-pub use kawai_api_types::OnboardingStatus;
+pub use kawai_api_types::{OnboardingSources, OnboardingStatus, QuickAnswer};
 
 // ── kv state ────────────────────────────────────────────────────────────────
 

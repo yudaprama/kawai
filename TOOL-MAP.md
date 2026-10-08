@@ -103,9 +103,15 @@ webread/knowledge.
 
 ## 5. Binance (`builtin.binance`) — `crates/toolsets/binance` (feature `binance`)
 
-Keyless public spot market data + in-process TA. Credentialed US-stock reads
-(`stock_quote` / `stock_info`) ride the same capability probe as the account
-tools. Also gets webread + runtime tools (`supports_draft_document: false`).
+Keyless public spot market data + in-process TA. Signed reads (spot account,
+US-stocks, futures) resolve credentials PER USER: the user's own keys from
+Settings → Binance API (stored in their local DB, migration 0027) with the
+product-baked kawai-vault pair as fallback; a user with neither gets a
+guidance error naming Settings, and the tools register unconditionally (an
+invisible tool can't tell the user what to do — a guidance error can). Also
+gets webread + runtime tools (`supports_draft_document: false`). The
+advisory tools (stop-loss / take-profit / audit klines) ride a KEYLESS fapi
+client — only the mirror sync needs credentials at all.
 
 `crypto_price` is tiered — Binance REST first, then a CoinMarketCap quotes
 tier (vault Pro key, same pattern as web_search's tiers) when Binance is
@@ -124,6 +130,8 @@ the reason.
 | `crypto_balances` / `crypto_open_orders` | read-only account tools — signed via the baked kawai-vault read-only pair (never trade permission) |
 | `stock_quote` / `stock_info` | Binance Stocks US-equity bid/ask quote + symbol metadata — same baked kawai-vault pair |
 | `binance_futures_positions` | open futures positions + their open orders incl. stop-losses / take-profits, mirrored into `binance_futures_positions` / `binance_futures_open_orders` — BOTH markets: USDⓈ-M (`fapi`) AND COIN-M (`dapi`) — see §5.1 |
+| `crypto_futures_stop_loss` / `crypto_futures_take_profit` | per-position advisory stop (CE/Donchian/Keltner + ratchet vs the advice history table) and R-multiple TP ladder, graded against the resting orders |
+| `binance_futures_risk_audit` | ONE-call portfolio risk review: sync → grade the biggest USDⓈ-M positions with the SAME stop policy → TP coverage → summary (naked positions, naked notional, R:R) — see §5.2 |
 
 ### 5.1 `binance_futures_positions` — the local futures mirror
 
@@ -199,6 +207,37 @@ mirror the OPEN set into two per-user SQLite tables,
   by both.
 - **`user_id` is bound at toolset build** from `AgentContext`, never supplied
   by the model, so a sync can only ever write into the caller's own database.
+
+### 5.2 `binance_futures_risk_audit` — the one-call risk review
+
+The workflow wrapper over everything in §5.1 + the advisory tools: sync the
+mirror, grade the biggest USDⓈ-M positions with the SAME stop policy
+(`stop_advice` + the advice-history ratchet — one policy, not a second
+opinion), check take-profit coverage from the resting `TAKE_PROFIT` intents,
+and roll up a portfolio summary. Deterministic end-to-end: the LLM (or a cron
+binary — it is a plain Rust call) makes ONE call and gets the whole risk
+picture, so there is no multi-tool choreography to get wrong.
+
+- **Coverage is direction-aware.** A resting stop on the wrong side of the
+  mark (already crossed) is a ghost order that protects nothing — it does not
+  count as coverage, and neither does a stop closer than 0.2% to the mark
+  (at-market is a fill waiting to happen). R:R = TP distance / SL distance
+  from the mark, using the NEAREST resting TP; `null` when either leg is
+  missing, never a faked number.
+- **Top-N by notional, honestly.** A klines fold per position is a real
+  cost, so the audit grades `limit` (default 25, max 50) LARGEST exposures
+  first and says exactly how many it skipped; skipped positions are still
+  COUNTED in the coverage summary from the resting orders alone. One
+  position's klines failure degrades to an error row — it never aborts the
+  audit.
+- **COIN-M is counted, not audited.** The dapi kline endpoint is not wired in
+  this toolset; COIN-M positions appear in the summary and their coin PnL in
+  `coinmUnrealizedPnlByAsset`, explicitly labeled not-audited — a half-audit
+  that pretends to be whole would be worse than one that says what it
+  skipped.
+- **Advice history is shared** with the stop-loss/take-profit tools (same
+  `binance_futures_advice` table, `kind = 'stop_loss'`), so the monotonic
+  ratchet carries across entry points.
 
 ## 5b. Monad (`builtin.monad`) — `crates/toolsets/monad-tools` (feature `monad`)
 
