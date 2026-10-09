@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatStatus, UIMessage } from "@/lib/ai-types";
-import type { ChatSessionInfo } from "@/lib/api";
+import type { ChatSession } from "@/lib/api";
 import { useAuth } from "@/features/auth/use-auth";
 import { useChatModel } from "./use-chat-model";
 import { useChatSessions } from "./use-chat-sessions";
@@ -27,8 +27,8 @@ export interface SupervisorChatState {
   historyError: string | null;
   /** A tool waiting for explicit user confirmation (data_import card). */
   confirmation: SupervisorConfirmation | null;
-  sessions: ChatSessionInfo[];
-  archivedSessions: ChatSessionInfo[];
+  sessions: ChatSession[];
+  archivedSessions: ChatSession[];
   /** Session list lifecycle — the switcher shows a skeleton during the first
    *  fetch and a retry row on failure, never a false "No sessions yet". */
   sessionsLoading: boolean;

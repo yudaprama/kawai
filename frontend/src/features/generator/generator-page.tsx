@@ -95,11 +95,14 @@ interface ModelCover {
 
 /** One `civitai_template_gallery` preset — a community image WITH its
  *  generation meta and its resources (checkpoint + LoRAs resolved to
- *  civitai's canonical AIR server-side, family-gated to the ecosystem).
- *  Inspiration, not reproduction: no seed. `width`/`height` are the
- *  image's own generation size, which is usually NOT one of the form's
- *  ~1 MP aspect chips — `applyTemplate` keeps it as a size override. */
+ *  civitai's canonical AIR server-side, family-gated to the preset's own
+ *  ecosystem — the gallery is unfiltered, so each tile carries where it
+ *  came from). Inspiration, not reproduction: no seed. `width`/`height`
+ *  are the image's own generation size, which is usually NOT one of the
+ *  form's ~1 MP aspect chips — `applyTemplate` keeps it as a size
+ *  override. */
 interface TemplatePreset {
+  ecosystem: string;
   url: string;
   width: number;
   height: number;
@@ -954,9 +957,16 @@ function ImageGenerator() {
    *  workflow switches back if the user was on an image-input one. The
    *  seed stays random; the template's own checkpoint + LoRA stack ride
    *  along (resolved server-side from `meta.civitaiResources`), so the
-   *  generation is the source model's, not the builtin diffuser's. */
+   *  generation is the source model's, not the builtin diffuser's. The
+   *  gallery is NOT filtered by the selected ecosystem, so a preset from
+   *  another family first switches the panel to ITS ecosystem — its
+   *  checkpoint + LoRAs are family-gated there, and cfg/steps follow the
+   *  new ecosystem's defaults when the preset carries none. */
   function applyTemplate(p: TemplatePreset) {
+    const nextEco = ECOSYSTEMS.find((e) => e.id === p.ecosystem) ?? eco;
+    const switching = nextEco.id !== eco.id;
     setWorkflowId(DEFAULT_WORKFLOW);
+    if (switching) setEcoId(nextEco.id);
     setPrompt(p.prompt);
     const negative = (p.negativePrompt ?? "").trim();
     setNegativePrompt(negative);
@@ -964,8 +974,10 @@ function ImageGenerator() {
     // template actually carries one, same contract as reuseEntry.
     setNegativeOpen(negative.length > 0);
     if (p.cfgScale != null) setCfgScale(String(p.cfgScale));
+    else if (switching) setCfgScale(String(nextEco.defaultCfgScale));
     if (p.steps != null) setSteps(String(p.steps));
-    if (isSdFamily(eco.id) && p.sampler) setSampler(p.sampler);
+    else if (switching) setSteps(String(nextEco.defaultSteps));
+    if (isSdFamily(nextEco.id) && p.sampler) setSampler(p.sampler);
     // The image's real dimensions, not the nearest aspect chip: the chips
     // are ~1 MP buckets, so snapping both changed the composition and threw
     // away resolution (an 832×1216 SDXL portrait became 416×624). Clamped to
@@ -974,7 +986,7 @@ function ImageGenerator() {
       width: Math.min(2048, Math.max(64, Math.round(p.width / 16) * 16)),
       height: Math.min(2048, Math.max(64, Math.round(p.height / 16) * 16)),
     };
-    const exact = eco.sizes.findIndex((s) => s.width === dims.width && s.height === dims.height);
+    const exact = nextEco.sizes.findIndex((s) => s.width === dims.width && s.height === dims.height);
     if (exact >= 0) {
       setSizeIdx(exact);
       setTemplateSize(null);
@@ -1511,7 +1523,7 @@ function ImageGenerator() {
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
         {results.length === 0 && !running ? (
-          <TemplateGallery ecosystem={eco.id} cols={resultCols} onApply={applyTemplate} />
+          <TemplateGallery cols={resultCols} onApply={applyTemplate} />
         ) : (
           <Masonry
             cols={resultCols}
@@ -1569,29 +1581,21 @@ export function GeneratorPage({ lane }: { lane: MediaMode }) {
 }
 
 /**
- * The image lane's empty state: the top checkpoint's community showcase for
- * the selected ecosystem, meta-carrying images only. Clicking a preset
- * fills the form (prompt/negative/steps/cfg/sampler + nearest aspect chip)
- * — the click-to-fill contract of the results grid's "Load these settings",
- * sourced from civitai instead of the user's own history. A failed or
- * empty gallery degrades to the plain empty state.
+ * The image lane's empty state: community showcase images from ALL
+ * ecosystems (unfiltered — each tile belongs to the ecosystem it was drawn
+ * from), meta-carrying images only. Clicking a preset fills the form
+ * (prompt/negative/steps/cfg/sampler + size) and switches the panel to the
+ * preset's ecosystem. A failed or empty gallery degrades to the plain
+ * empty state.
  */
-function TemplateGallery({
-  ecosystem,
-  cols,
-  onApply,
-}: {
-  ecosystem: string;
-  cols: number;
-  onApply: (preset: TemplatePreset) => void;
-}) {
+function TemplateGallery({ cols, onApply }: { cols: number; onApply: (preset: TemplatePreset) => void }) {
   const { t } = useI18n();
   const [presets, setPresets] = useState<TemplatePreset[] | null>(null);
 
   useEffect(() => {
     let alive = true;
     setPresets(null);
-    call<TemplatePreset[]>("civitai_template_gallery", { ecosystem })
+    call<TemplatePreset[]>("civitai_template_gallery")
       .then((list) => {
         if (alive) setPresets(Array.isArray(list) ? list : []);
       })
@@ -1601,7 +1605,7 @@ function TemplateGallery({
     return () => {
       alive = false;
     };
-  }, [ecosystem]);
+  }, []);
 
   if (presets === null) {
     return (

@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { errText, call, callWithEvents, type KnowledgeFileInfo } from "@/lib/api";
+import {
+  errText,
+  call,
+  callWithEvents,
+  type ChatMessage,
+  type ChatSession,
+  type KnowledgeFileInfo,
+  type TopupBalance,
+} from "@/lib/api";
 import { isTabularExt } from "@/lib/extensions";
 import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
 import type { SupervisorArtifact, SupervisorEvent, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
@@ -399,13 +407,10 @@ export function useWorkbench() {
     let cancelled = false;
     void (async () => {
       try {
-        const rows = await call<{ id: number; role: string; content: string; createdAt: number | null }[]>(
-          "list_chat_messages",
-          {
-            sessionId,
-            archived: false,
-          },
-        );
+        const rows = await call<ChatMessage[]>("list_chat_messages", {
+          sessionId,
+          archived: false,
+        });
         if (cancelled) return;
         const found: { rowId: number; createdAt: number; record: PersistedPlanRecord }[] = [];
         for (const row of rows) {
@@ -567,7 +572,7 @@ export function useWorkbench() {
         tokens = cached;
       } else {
         try {
-          ({ tokens } = await call<{ tokens: number }>("topup_balance"));
+          ({ tokens } = await call<TopupBalance>("topup_balance"));
         } catch (err) {
           const msg = `Saldo tidak terbaca — coba lagi (${errText(err)})`;
           toast(msg);
@@ -587,7 +592,7 @@ export function useWorkbench() {
       let sid = sessionId;
       if (sid == null) {
         try {
-          const s = await call<{ id: number }>("create_chat_session", { title: sessionTitle });
+          const s = await call<ChatSession>("create_chat_session", { title: sessionTitle });
           sid = s.id;
           setSessionId(s.id);
         } catch (err) {

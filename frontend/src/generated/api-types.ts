@@ -8,18 +8,32 @@ export type AgentInfo = {
 	tools: boolean,
 };
 
-export type ChatMessageInfo = {
+/**  `office_apply_template` — the deck was re-themed in place. */
+export type ApplyTemplateResult = {
+	template: string,
+	slides: number,
+};
+
+/**
+ *  One stored chat message — the wire type for `list_chat_messages` and
+ *  `append_chat_message`.
+ */
+export type ChatMessage = {
 	id: number,
 	sessionId: number,
 	role: string,
 	content: string,
-	createdAt: number | null,
+	createdAt: number,
 };
 
-export type ChatSessionInfo = {
+/**
+ *  One chat session row. The wire type for `create_chat_session` and
+ *  `list_chat_sessions` — defined here and re-exported by `kawai_db`.
+ */
+export type ChatSession = {
 	id: number,
-	title: string | null,
-	createdAt: number | null,
+	title: string,
+	createdAt: number,
 	/**  Last message append — switcher ordering and period grouping key. */
 	updatedAt: number | null,
 	archived: boolean,
@@ -29,6 +43,21 @@ export type ChatSessionInfo = {
 	lastGoal: string | null,
 	/**  The session's newest plan record terminated with a non-empty `error`. */
 	lastFailed: boolean,
+};
+
+/**  `civitai_api_key_status` — whether the baked Civitai key is present. */
+export type CivitaiApiKeyStatus = {
+	configured: boolean,
+};
+
+/**
+ *  The submit response shared by every Civitai lane (videoGen, musicGen,
+ *  polyGen): the workflow to poll plus the `generation_jobs` row the panel
+ *  abandons via `generation_job_delete` if the job fails or is cancelled.
+ */
+export type CivitaiSubmitView = {
+	workflowId: string,
+	jobId: string,
 };
 
 export type CodegraphExploreResult = {
@@ -155,19 +184,34 @@ export type ImageGenParams = {
 	clipSkip?: number | null,
 };
 
+/**  Lifecycle of one file's RAG index, as shown by the knowledge panel. */
+export type IndexStatus = 
+/**  Never indexed (imported before RAG existed, or indexing never ran). */
+"not_indexed" | 
+/**  Extraction/chunking/embedding in progress. */
+"indexing" | 
+/**  Indexed (possibly with zero chunks — empty/unextractable documents). */
+"ready" | 
+/**  The last indexing attempt failed (`error` carries the cause). */
+"failed";
+
+/**
+ *  One knowledge-panel row: office store metadata + index state + whether the
+ *  active session can search this file.
+ */
 export type KnowledgeFileInfo = {
 	id: string,
 	originalName: string,
 	ext: string,
 	bytes: number,
 	createdAt: number,
-	status: string,
+	status: IndexStatus,
 	chunks: number,
 	error: string | null,
 	inSession: boolean,
 	/**
-	 *  Full plain text (vision description or document text) for the Assets UI.
-	 *  `None` when not yet indexed or for tabular files (never indexed).
+	 *  Full plain text (vision description or document text) — for the Assets
+	 *  panel to show without re-reading the file. `None` when not indexed.
 	 */
 	raw: string | null,
 };
@@ -214,6 +258,22 @@ export type MemoryItem = {
 	accessCount: number,
 	lastAccessedAt: number | null,
 	origin: string,
+	/**
+	 *  Topical family (`profile` | `people` | `goals` | `episodic` |
+	 *  `general`). Orthogonal to `kind`.
+	 */
+	namespace: string,
+	/**
+	 *  Pinned rows sort first in prompt blocks and ignore the newest-first
+	 *  cutoff.
+	 */
+	pinned: boolean,
+	/**
+	 *  Provenance: `chat` | `gmail` | `linkedin` | `document` | `questions`
+	 *  | `manual`. Surfaced in the Memory UI; facet distill down-weights
+	 *  unconfirmed external sources.
+	 */
+	source: string,
 };
 
 /**
@@ -345,7 +405,14 @@ export type MusicGenParams = {
 	seed?: number | null,
 };
 
-export type OfficeFileInfo = {
+/**
+ *  Frontend-facing projection of an office-store file — the stored
+ *  document metadata the UI renders (name, extension, size, created).
+ * 
+ *  Narrower than the wire type on purpose: the provenance manifest the
+ *  store also returns is not consumed by any UI surface.
+ */
+export type OfficeFileSummary = {
 	id: string,
 	originalName: string,
 	ext: string,
@@ -390,17 +457,36 @@ export type QuickAnswer = {
 	answer: string,
 };
 
+/**
+ *  A retrieved chunk with its provenance, for citation in the UI/LLM context.
+ *  `file_id` lets the model act on a hit directly (e.g. office_read_document)
+ *  without a name→id lookup round-trip.
+ */
 export type RagHit = {
 	source: string,
 	locator: string,
 	content: string,
+	fileId: string,
+};
+
+/**
+ *  `office_read_file` / `office_read_thumbnail` — the stored file's bytes,
+ *  base64-encoded for the frontend to preview.
+ */
+export type ReadFileResult = {
+	id: string,
+	originalName: string,
+	ext: string,
+	bytes: number,
+	mime: string,
+	dataBase64: string,
 };
 
 /**
  *  One recent supervisor run across sessions — the landing hero's
  *  cross-session recents list.
  */
-export type RecentRunInfo = {
+export type RecentRun = {
 	/**  `messages.id` — maps to the restored run id (`restored-<row_id>`). */
 	rowId: number,
 	sessionId: number,
@@ -498,6 +584,11 @@ export type SqlProfileTest = {
 	tables: number,
 	sample: string[],
 	error: string | null,
+};
+
+/**  `topup_balance` — the user's app-token balance. */
+export type TopupBalance = {
+	tokens: number,
 };
 
 export type UserInfo = {

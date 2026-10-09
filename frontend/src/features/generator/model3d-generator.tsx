@@ -64,7 +64,8 @@ interface Model3dStatusView extends LaneStatusView {
   model?: Model3dBlobView;
   fbx?: Model3dBlobView;
   previewUrl?: string;
-  extras: Array<Model3dBlobView & { variant: string }>;
+  /** OMITTED when empty (`skip_serializing_if = "Vec::is_empty"`). */
+  extras?: Array<Model3dBlobView & { variant: string }>;
 }
 
 interface SavedModel3d {

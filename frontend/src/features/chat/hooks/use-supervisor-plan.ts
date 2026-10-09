@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 
 import { refreshTokenBalance } from "@/features/topup/use-token-balance";
-import { call, callWithEvents, respondSupervisorConfirmation } from "@/lib/api";
+import { call, callWithEvents, respondSupervisorConfirmation, type ChatMessage } from "@/lib/api";
 import { type StreamControl, streamOperation } from "@/lib/stream";
 import type { UIMessage, UIMessagePart } from "@/lib/ai-types";
 import { initialSupervisorState, parseReview, pruneReviewStep, supervisorReducer } from "./plan-reducer";
@@ -177,7 +177,7 @@ function writePlanRecord(sessionId: number, record: PersistedPlan): void {
     .then(async () => {
       if (record.partial) {
         if (partialRowRef.current == null) {
-          const row = await call<{ id: number }>("append_chat_message", {
+          const row = await call<ChatMessage>("append_chat_message", {
             sessionId,
             role: "assistant",
             content,

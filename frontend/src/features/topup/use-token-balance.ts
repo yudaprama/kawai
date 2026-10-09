@@ -20,7 +20,7 @@
  */
 import { useEffect, useSyncExternalStore } from "react";
 
-import { call } from "@/lib/api";
+import { call, type TopupBalance } from "@/lib/api";
 
 /**
  * Low-balance warning threshold = 10% of the SMALLEST possible top-up —
@@ -69,7 +69,7 @@ function subscribe(onStoreChange: () => void): () => void {
 export function refreshTokenBalance(): Promise<number | null> {
   if (inflight) return inflight;
   publish({ pending: true });
-  inflight = call<{ tokens: number }>("topup_balance")
+  inflight = call<TopupBalance>("topup_balance")
     .then(({ tokens }) => {
       lastReadAt = Date.now();
       publish({ tokens, pending: false });

@@ -102,11 +102,9 @@ pub struct Status {
     pub credited_at: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Balance {
-    pub tokens: i64,
-}
+// Wire DTO: defined once in `kawai_api_types` (the single source the TS
+// generator reads) and re-exported here, matching the sibling logic modules.
+pub use kawai_api_types::TopupBalance as Balance;
 
 /// Riwayat ledger — halaman batas section Riwayat (source-hardcoded, no env).
 const HISTORY_LIMIT: u64 = 50;

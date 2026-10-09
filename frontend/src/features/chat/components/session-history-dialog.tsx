@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { useSessionFilter } from "@/hooks/use-session-filter";
 import { useI18n } from "@/hooks/use-i18n";
 import { groupSessions, type SessionGroup } from "@/features/chat/lib/chat-helpers";
-import type { ChatSessionInfo } from "@/lib/api";
+import type { ChatSession } from "@/lib/api";
 
 export function SessionHistoryDialog({
   open,
@@ -29,7 +29,7 @@ export function SessionHistoryDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   groupedSessions: SessionGroup[];
-  archivedSessions: ChatSessionInfo[];
+  archivedSessions: ChatSession[];
   activeSessionId: number | null;
   busy: boolean;
   /** Session list lifecycle: skeleton on the first fetch, a retry row on
@@ -43,11 +43,11 @@ export function SessionHistoryDialog({
   onArchiveSessions: (ids: number[], archived: boolean) => void;
   /** Export a transcript to a stored .md file; resolves null on failure (the
    *  hook toasted) — the dialog closes only on success. */
-  onExportSession: (session: ChatSessionInfo) => Promise<{ id: string; originalName: string; bytes: number } | null>;
+  onExportSession: (session: ChatSession) => Promise<{ id: string; originalName: string; bytes: number } | null>;
   /** Server-side content search (title + message bodies), split active/archived
    *  like `list_chat_sessions`; debounced 250ms, the local title filter stays
    *  the instant layer. */
-  onSearchSessions: (q: string) => Promise<{ sessions: ChatSessionInfo[]; archivedSessions: ChatSessionInfo[] }>;
+  onSearchSessions: (q: string) => Promise<{ sessions: ChatSession[]; archivedSessions: ChatSession[] }>;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
@@ -57,8 +57,8 @@ export function SessionHistoryDialog({
   const [activeIndex, setActiveIndex] = useState(0);
   const [serverMatches, setServerMatches] = useState<{
     q: string;
-    sessions: ChatSessionInfo[];
-    archivedSessions: ChatSessionInfo[];
+    sessions: ChatSession[];
+    archivedSessions: ChatSession[];
   } | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
@@ -170,7 +170,7 @@ export function SessionHistoryDialog({
     exitSelect();
   };
 
-  const doExport = async (session: ChatSessionInfo) => {
+  const doExport = async (session: ChatSession) => {
     if (exportingId != null) return;
     setExportingId(session.id);
     try {
@@ -203,7 +203,7 @@ export function SessionHistoryDialog({
     }
   };
 
-  const startRename = (session: ChatSessionInfo) => {
+  const startRename = (session: ChatSession) => {
     setRenamingId(session.id);
     setRenameValue(session.title ?? "");
   };

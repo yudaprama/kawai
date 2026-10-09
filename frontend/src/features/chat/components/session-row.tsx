@@ -1,7 +1,7 @@
 import { Icon } from "@/components/shared/icon";
 import { RenameInput } from "@/components/shared/rename-input";
 import { useI18n } from "@/hooks/use-i18n";
-import type { ChatSessionInfo } from "@/lib/api";
+import type { ChatSession } from "@/lib/api";
 
 export function SessionRow({
   session,
@@ -25,7 +25,7 @@ export function SessionRow({
   onToggleSelect,
   archivedStyle,
 }: {
-  session: ChatSessionInfo;
+  session: ChatSession;
   active?: boolean;
   /** Keyboard-active row in the switcher — same emphasis as hover. */
   highlighted?: boolean;

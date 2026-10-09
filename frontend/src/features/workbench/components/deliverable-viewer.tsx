@@ -7,7 +7,7 @@ import { FileIcon } from "@/components/shared/file-icon";
 import { MarkdownWithCharts } from "@/features/workbench/components/markdown-with-charts";
 import { DeckPreview } from "@/features/workbench/components/deck-preview";
 import { slugify } from "@/lib/utils";
-import { call, errText } from "@/lib/api";
+import { call, errText, type OfficeFileSummary } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { AgentReportsSwitcher, StepReportBody } from "@/features/workbench/components/shared-canvas";
 import {
@@ -142,7 +142,7 @@ function DeliverableExport({ goal, markdown }: { goal: string; markdown: string 
     setExportError(null);
     const slug = slugify(goal, "deliverable");
     try {
-      const file = await call<{ id: string; originalName: string }>("export_deliverable", {
+      const file = await call<OfficeFileSummary>("export_deliverable", {
         markdown,
         filename: `${slug}.${format}`,
       });

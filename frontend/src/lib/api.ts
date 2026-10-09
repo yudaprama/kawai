@@ -63,19 +63,27 @@ export function respondSupervisorConfirmation(streamId: string, stepId: string, 
 
 import type {
   AgentInfo,
-  ChatSessionInfo,
+  ChatMessage,
+  ChatSession,
   CodegraphExploreResult,
+  ReadFileResult,
+  ApplyTemplateResult,
+  TopupBalance,
+  CivitaiApiKeyStatus,
+  CivitaiSubmitView,
+  ConsolidationReport,
   CodegraphStatusResult,
   KnowledgeFileInfo,
   LocalModelInfo,
   LocalModelStatus,
   MemoryGraphExport,
   MemoryItem,
-  OfficeFileInfo,
+  OfficeFileSummary,
   RagHit,
-  RecentRunInfo,
+  RecentRun,
   SceneHit,
   SkillInfo,
+  SkillSummary,
   SqlProfile,
   SqlProfileTest,
   UserInfo,
@@ -86,19 +94,27 @@ import type {
 
 export type {
   AgentInfo,
-  ChatSessionInfo,
+  ChatMessage,
+  ChatSession,
   CodegraphExploreResult,
+  ReadFileResult,
+  ApplyTemplateResult,
+  TopupBalance,
+  CivitaiApiKeyStatus,
+  CivitaiSubmitView,
+  ConsolidationReport,
   CodegraphStatusResult,
   KnowledgeFileInfo,
   LocalModelInfo,
   LocalModelStatus,
   MemoryGraphExport,
   MemoryItem,
-  OfficeFileInfo,
+  OfficeFileSummary,
   RagHit,
-  RecentRunInfo,
+  RecentRun,
   SceneHit,
   SkillInfo,
+  SkillSummary,
   SqlProfile,
   SqlProfileTest,
   UserInfo,
@@ -107,33 +123,7 @@ export type {
   OnboardingStatus,
 };
 
-/** Frontend-only — role is stricter than backend (only "user"|"assistant", not generic "system") */
-export type ChatMessageInfo = {
-  id: number;
-  sessionId: number;
-  role: "user" | "assistant";
-  content: string;
-  createdAt: number | null;
-};
-
-export type KnowledgeIndexStatus = "not_indexed" | "indexing" | "ready" | "failed";
-export interface KnowledgeContext {
-  context: string;
-  files: OfficeFileInfo[];
-}
 export const MEMORY_KINDS = ["preference", "rule", "event", "fact", "goal"] as const;
-
-// ---- Frontend-local overrides for generated types ----
-
-/** Frontend never sends null timestamps; backend returns them as i64 from DB. */
-export interface SkillSummary {
-  id: string;
-  name: string;
-  description: string;
-  version: number;
-  createdAt: number;
-  updatedAt: number;
-}
 
 export function codegraphExplore(query: string, projectPath?: string): Promise<CodegraphExploreResult> {
   return call<CodegraphExploreResult>("codegraph_explore", { query, projectPath: projectPath ?? null });

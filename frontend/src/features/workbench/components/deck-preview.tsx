@@ -5,7 +5,7 @@ import { createApp, nextTick, onMounted, reactive, ref, watch } from "vue/dist/v
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { call, errText, tauriOpenFile } from "@/lib/api";
+import { call, errText, tauriOpenFile, type ApplyTemplateResult, type OfficeFileSummary } from "@/lib/api";
 import { renderDeckInline } from "@/lib/deck-markdown";
 import { runningInTauri } from "@/platform";
 
@@ -91,7 +91,7 @@ function TemplateSwitcher({
     setApplying(t.id);
     setError(null);
     try {
-      await call<{ template: string; slides: number }>("office_apply_template", {
+      await call<ApplyTemplateResult>("office_apply_template", {
         fileId,
         templateId: t.id,
       });
@@ -598,7 +598,7 @@ export function DeckPreview({ fileId }: { fileId: string }) {
   const [pptxExported, setPptxExported] = useState<string | null>(null);
   const openPptxExport = useCallback(async () => {
     try {
-      const f = await call<{ id: string; originalName: string }>("office_export_deck", { fileId });
+      const f = await call<OfficeFileSummary>("office_export_deck", { fileId });
       setPptxExported(f.originalName);
       // Desktop: open the exported .pptx in the OS default viewer. Web has
       // no opener op — the status text still points at Documents.

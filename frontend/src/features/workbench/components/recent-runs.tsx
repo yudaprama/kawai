@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "@/components/shared/icon";
 import { relativeTime } from "@/features/chat/lib/chat-helpers";
-import { type RecentRunInfo, call } from "@/lib/api";
+import { type RecentRun, call } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
 import { useI18n } from "@/hooks/use-i18n";
 
@@ -30,10 +30,10 @@ export function RecentRuns({
   open: boolean;
   /** Bumped by the owner to force a refetch. */
   reloadKey: number;
-  onOpen: (run: RecentRunInfo) => void;
+  onOpen: (run: RecentRun) => void;
 }) {
   const { t } = useI18n();
-  const [runs, setRuns] = useState<RecentRunInfo[] | null>(null);
+  const [runs, setRuns] = useState<RecentRun[] | null>(null);
   // The fetch failed AND there is nothing on screen to show — surface the
   // error line + Retry instead of a silent blank. A failed REFETCH of a
   // non-empty list keeps the rows already visible (never blanks them).
@@ -54,7 +54,7 @@ export function RecentRuns({
       new Promise<never>((_, reject) => {
         timer = window.setTimeout(() => reject(new Error("list_recent_runs timed out")), LOAD_TIMEOUT_MS);
       });
-    void Promise.race([call<RecentRunInfo[]>("list_recent_runs", {}), stale()])
+    void Promise.race([call<RecentRun[]>("list_recent_runs", {}), stale()])
       .then((rows) => {
         if (!cancelled) {
           // Defensive: a non-array body must not re-poison `runs` (null

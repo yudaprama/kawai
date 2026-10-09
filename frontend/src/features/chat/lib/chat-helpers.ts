@@ -1,25 +1,28 @@
 import type { PersistedPlanRecord } from "@/features/chat/hooks/supervisor-types";
 import type { UIMessage } from "@/lib/ai-types";
-import type { ChatMessageInfo, ChatSessionInfo } from "@/lib/api";
+import type { ChatMessage, ChatSession } from "@/lib/api";
 
 export interface SessionGroup {
   label: string;
-  sessions: ChatSessionInfo[];
+  sessions: ChatSession[];
 }
 
-export function historyToMessages(rows: ChatMessageInfo[]): UIMessage[] {
+export function historyToMessages(rows: ChatMessage[]): UIMessage[] {
   return rows.map((row) => {
     const plan = parsePersistedPlan(row.content);
     if (plan) {
       return {
         id: `db-${row.id}`,
-        role: row.role,
+        // `messages.role` is free text on the column, but the only writers are
+        // the backend's append paths and they store "user" | "assistant".
+        // Narrow explicitly (no cast) so an unexpected value degrades to "user".
+        role: row.role === "assistant" ? "assistant" : "user",
         parts: [{ type: "text", text: planToText(plan), state: "done" }],
       };
     }
     return {
       id: `db-${row.id}`,
-      role: row.role,
+      role: row.role === "assistant" ? "assistant" : "user",
       parts: [{ type: "text", text: row.content, state: "done" }],
     };
   });
@@ -121,7 +124,7 @@ export function activeMentionRange(value: string, caret: number): { query: strin
 /** Bucket sessions into Today / Yesterday / Earlier by last activity,
  *  preserving list order; empty buckets drop out. Shared by the sessions hook
  *  and the switcher (server-side search results group through this too). */
-export function groupSessions(sessions: ChatSessionInfo[]): SessionGroup[] {
+export function groupSessions(sessions: ChatSession[]): SessionGroup[] {
   if (sessions.length === 0) return [];
   return (["Today", "Yesterday", "Earlier"] as const)
     .map((label) => ({
@@ -135,7 +138,7 @@ export function groupSessions(sessions: ChatSessionInfo[]): SessionGroup[] {
  *  per message (plan records render through the same `planToText` the history
  *  view uses; plain text strips tool markup). Times and the export stamp are
  *  UTC; `exportedAt` (ms) is injectable so tests stay deterministic. */
-export function sessionToMarkdown(title: string | null, rows: ChatMessageInfo[], exportedAt = Date.now()): string {
+export function sessionToMarkdown(title: string, rows: ChatMessage[], exportedAt = Date.now()): string {
   const stamp = (d: Date) =>
     `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")} ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
   const lines: string[] = [
@@ -148,7 +151,7 @@ export function sessionToMarkdown(title: string | null, rows: ChatMessageInfo[],
     const plan = parsePersistedPlan(row.content);
     const body = plan ? planToText(plan) : stripToolMarkup(row.content);
     const who = row.role === "user" ? "You" : "Assistant";
-    const at = row.createdAt ? ` · ${stamp(new Date(row.createdAt * 1000))}` : "";
+    const at = ` · ${stamp(new Date(row.createdAt * 1000))}`;
     lines.push(`## ${who}${at}`, "", body, "");
   }
   return lines.join("\n");

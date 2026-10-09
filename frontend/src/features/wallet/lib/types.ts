@@ -83,11 +83,13 @@ export type WalletTransaction = {
   status?: string;
 };
 
+/** `get_token_info` → the raw response (`logic/monad::TokenInfo`) is handed
+ *  through verbatim, so this mirrors the wire: there is no `name` field. */
 export type TokenInfo = {
   address: string;
-  name: string;
   symbol: string;
   decimals: number;
+  rpcUrl: string;
 };
 
 export const DEFAULT_CHAIN_ID = 10143; // Monad testnet — fallback

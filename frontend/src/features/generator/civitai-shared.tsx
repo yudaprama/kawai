@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { Icon } from "@/components/shared/icon";
 import { Spinner } from "@/components/ui/spinner";
-import { call, errText } from "@/lib/api";
+import { call, errText, type CivitaiApiKeyStatus, type CivitaiSubmitView } from "@/lib/api";
 import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 import type { TranslationKey } from "@/lib/i18n";
@@ -104,7 +104,7 @@ export function readFileAsDataUrl(file: File): Promise<string | null> {
 export function useCivitaiKeyStatus(): boolean | null {
   const [configured, setConfigured] = useState<boolean | null>(null);
   useEffect(() => {
-    call<{ configured: boolean }>("civitai_api_key_status")
+    call<CivitaiApiKeyStatus>("civitai_api_key_status")
       .then((s) => setConfigured(s.configured))
       .catch(() => setConfigured(false));
   }, []);
@@ -148,7 +148,9 @@ export interface LaneStatusView {
   workflowId: string;
   status: string;
   queuePosition: number | null;
-  error?: string;
+  /** Always present on the wire (`error: Option<String>` has no
+   *  `skip_serializing_if`), so it arrives as `null`, not absent. */
+  error?: string | null;
 }
 
 /** An in-flight workflow, persisted so a restart resumes polling. */
@@ -416,7 +418,7 @@ export function useWorkflowLane<
         }
       }
       const sent = buildRequest();
-      const view = await call<{ workflowId: string; jobId?: string }>(ops.submit, { req: sent });
+      const view = await call<CivitaiSubmitView>(ops.submit, { req: sent });
       publishMediaDebit(cost?.totalTokens ?? 0);
       const nextJob: LaneJob<Snapshot> = {
         workflowId: view.workflowId,

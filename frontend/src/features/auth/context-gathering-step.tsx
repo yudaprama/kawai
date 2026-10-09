@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { call, errText } from "@/lib/api";
+import { call, errText, type OfficeFileSummary } from "@/lib/api";
 import { useOnboardingContext } from "@/features/auth/onboarding-provider";
 import { useI18n } from "@/hooks/use-i18n";
 import type { OnboardingEvent } from "@/hooks/use-onboarding";
@@ -77,7 +77,7 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
         reader.onerror = () => reject(new Error("failed to read file"));
         reader.readAsDataURL(file);
       });
-      const imported = await call<{ id: string }>("office_import_file", {
+      const imported = await call<OfficeFileSummary>("office_import_file", {
         name: file.name,
         dataBase64,
       });

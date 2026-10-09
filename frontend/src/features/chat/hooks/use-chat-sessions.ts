@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { type ChatMessageInfo, type ChatSessionInfo, call, errText } from "@/lib/api";
+import { type ChatMessage, type ChatSession, type OfficeFileSummary, call, errText } from "@/lib/api";
 import { getLocale, translate } from "@/lib/i18n";
 import { groupSessions, historyToMessages, sessionToMarkdown } from "@/features/chat/lib/chat-helpers";
 import { logError, logWarn } from "@/lib/logger";
@@ -13,7 +13,7 @@ import type { SupervisorChatState } from "./use-supervisor-chat";
 const DELETE_UNDO_MS = 5000;
 
 /** Backend list order (list_chat_sessions): activity desc, then id desc. */
-const byActivityDesc = (a: ChatSessionInfo, b: ChatSessionInfo) =>
+const byActivityDesc = (a: ChatSession, b: ChatSession) =>
   (b.updatedAt ?? b.createdAt ?? 0) - (a.updatedAt ?? a.createdAt ?? 0) || b.id - a.id;
 
 export function useChatSessions({
@@ -51,8 +51,8 @@ export function useChatSessions({
     patch({ sessionsLoading: true, sessionsError: null });
     try {
       const [sessions, archivedSessions] = await Promise.all([
-        call<ChatSessionInfo[]>("list_chat_sessions", { archived: false }),
-        call<ChatSessionInfo[]>("list_chat_sessions", { archived: true }),
+        call<ChatSession[]>("list_chat_sessions", { archived: false }),
+        call<ChatSession[]>("list_chat_sessions", { archived: true }),
       ]);
       patch({ sessions, archivedSessions, sessionsLoading: false });
     } catch (err) {
@@ -80,7 +80,7 @@ export function useChatSessions({
     async (titleHint = "New chat"): Promise<number | null> => {
       if (sessionIdRef.current != null) return sessionIdRef.current;
       try {
-        const s = await call<ChatSessionInfo>("create_chat_session", {
+        const s = await call<ChatSession>("create_chat_session", {
           title: titleHint.slice(0, 80) || "New chat",
         });
         sessionIdRef.current = s.id;
@@ -104,7 +104,7 @@ export function useChatSessions({
   const loadMessages = useCallback(
     async (sessionId: number) => {
       try {
-        const rows = await call<ChatMessageInfo[]>("list_chat_messages", {
+        const rows = await call<ChatMessage[]>("list_chat_messages", {
           sessionId,
         });
         patch({ messages: historyToMessages(rows), historyError: null });
@@ -192,12 +192,12 @@ export function useChatSessions({
     async (sessionId: number, title: string) => {
       const trimmed = title.trim();
       if (!trimmed) return;
-      const prior = state.sessions.find((s) => s.id === sessionId)?.title ?? null;
+      const prior = state.sessions.find((s) => s.id === sessionId)?.title;
       patch({
         sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, title: trimmed } : s)),
       });
       try {
-        const updated = await call<ChatSessionInfo>("rename_chat_session", {
+        const updated = await call<ChatSession>("rename_chat_session", {
           sessionId,
           title: trimmed,
         });
@@ -208,7 +208,7 @@ export function useChatSessions({
         logError("rename_chat_session", err);
         showErrorToast(`Couldn't rename the session — ${errText(err)}`);
         patch({
-          sessions: state.sessions.map((s) => (s.id === sessionId ? { ...s, title: prior } : s)),
+          sessions: state.sessions.map((s) => (s.id === sessionId && prior !== undefined ? { ...s, title: prior } : s)),
         });
       }
     },
@@ -245,10 +245,10 @@ export function useChatSessions({
         : priorArchived.filter((s) => !idSet.has(s.id));
       patch({ sessions: optimisticSessions, archivedSessions: optimisticArchived });
 
-      let updated: ChatSessionInfo[];
+      let updated: ChatSession[];
       try {
         updated = await Promise.all(
-          ids.map((sessionId) => call<ChatSessionInfo>("set_chat_session_archived", { sessionId, archived })),
+          ids.map((sessionId) => call<ChatSession>("set_chat_session_archived", { sessionId, archived })),
         );
       } catch (err) {
         logError("set_chat_session_archived", err);
@@ -282,8 +282,8 @@ export function useChatSessions({
   const searchSessions = useCallback(async (query: string) => {
     const q = query.trim();
     const [sessions, archivedSessions] = await Promise.all([
-      call<ChatSessionInfo[]>("list_chat_sessions", { archived: false, ...(q ? { query: q } : {}) }),
-      call<ChatSessionInfo[]>("list_chat_sessions", { archived: true, ...(q ? { query: q } : {}) }),
+      call<ChatSession[]>("list_chat_sessions", { archived: false, ...(q ? { query: q } : {}) }),
+      call<ChatSession[]>("list_chat_sessions", { archived: true, ...(q ? { query: q } : {}) }),
     ]);
     return { sessions, archivedSessions };
   }, []);
@@ -291,12 +291,12 @@ export function useChatSessions({
   /** Export a session transcript to a stored `.md` file (previewable record;
    *  the hook toasts on failure and resolves null). */
   const exportSession = useCallback(
-    async (session: ChatSessionInfo): Promise<{ id: string; originalName: string; bytes: number } | null> => {
+    async (session: ChatSession): Promise<{ id: string; originalName: string; bytes: number } | null> => {
       try {
-        const rows = await call<ChatMessageInfo[]>("list_chat_messages", { sessionId: session.id });
+        const rows = await call<ChatMessage[]>("list_chat_messages", { sessionId: session.id });
         const md = sessionToMarkdown(session.title, rows);
         const filename = `${slugify(session.title ?? "", `session-${session.id}`)}.md`;
-        const file = await call<{ id: string; originalName: string; bytes: number }>("export_deliverable", {
+        const file = await call<OfficeFileSummary>("export_deliverable", {
           markdown: md,
           filename,
         });

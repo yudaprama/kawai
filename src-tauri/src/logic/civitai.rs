@@ -85,11 +85,13 @@ async fn require_balance_covering(bearer: &str, tokens: u64) -> Result<(), Strin
 
 // ── Wire types (camelCase both directions, like logic::topup) ──────────────
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApiKeyStatus {
-    pub configured: bool,
-}
+// Wire DTOs: defined once in `kawai_api_types` (the single source the TS
+// generator reads) and re-exported here. Every lane (videoGen / musicGen /
+// polyGen) answers with the same submit shape, so one type serves all three;
+// the aliases keep the per-lane call sites readable.
+pub use kawai_api_types::CivitaiApiKeyStatus as ApiKeyStatus;
+pub use kawai_api_types::CivitaiSubmitView as VideoSubmitView;
+pub use kawai_api_types::CivitaiSubmitView as MusicSubmitView;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -219,13 +221,18 @@ pub async fn civitai_model_covers() -> Result<Vec<ModelCover>, String> {
 /// One community image preset for the image lane's empty state. Clicking it
 /// fills the form with the image's generation config AND its resources —
 /// the checkpoint (diffuser override) + LoRA stack, each resolved by hash
-/// to civitai's canonical AIR URN and family-gated to the selected
-/// ecosystem. The gallery is still not a reproduction: the seed is left
-/// random and the builtin diffuser renders when no compatible checkpoint
-/// resolved.
+/// to civitai's canonical AIR URN and family-gated to the PRESET'S OWN
+/// ecosystem (the gallery is not filtered by the panel's selection, so the
+/// preset carries where it came from and the panel switches on apply). The
+/// gallery is still not a reproduction: the seed is left random and the
+/// builtin diffuser renders when no compatible checkpoint resolved.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TemplatePreset {
+    /// Panel ecosystem this preset was drawn from — its checkpoint + LoRA
+    /// stack are family-gated to this ecosystem, so applying the preset
+    /// anywhere else would silently drop the resources.
+    pub ecosystem: String,
     /// Worker-proxied CDN URL — the webview renders it directly.
     pub url: String,
     pub width: i64,
@@ -257,12 +264,6 @@ pub struct TemplateResource {
     /// LoRA strength (meta `weight`); checkpoint entries carry none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strength: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplateGalleryArgs {
-    pub ecosystem: String,
 }
 
 /// Panel ecosystem → v1 checkpoint search term. The gallery draws from the
@@ -302,10 +303,11 @@ const TEMPLATE_FEED_PERIOD: &str = "Month";
 /// posts this month has no rows at all, not a thin page.
 const TEMPLATE_FEED_PERIOD_FALLBACK: &str = "AllTime";
 
-/// Per-ecosystem 1h cache — the empty state hits this on every panel mount
-/// and every eco switch, same shape as `COVER_CACHE`.
-static TEMPLATE_CACHE: LazyLock<Mutex<std::collections::HashMap<String, (Instant, Vec<TemplatePreset>)>>> =
-    LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+/// Global 1h cache — the empty state hits this on every panel mount (the
+/// gallery is unfiltered, so eco switches no longer refetch; same shape as
+/// `COVER_CACHE`).
+static TEMPLATE_CACHE: LazyLock<Mutex<Option<(Instant, Vec<TemplatePreset>)>>> =
+    LazyLock::new(|| Mutex::new(None));
 const TEMPLATE_TTL: Duration = Duration::from_secs(3600);
 
 /// Upper bound on copied prompt/negative text — a template fills the form,
@@ -316,15 +318,19 @@ const TEMPLATE_LORAS_CAP: usize = 4;
 /// Hard cap on version-record calls per gallery refresh — resolution is
 /// sequential (no futures dep) and civitai's v1 is rate-limited; a bigger
 /// unique-id set silently skips its leftovers until the next cache expiry.
-/// Sized with headroom over the worst measured cold refresh (SDXL: 25
-/// unique resources across its 3 candidates' tiles) — a truncated budget
-/// drops a checkpoint from a tile rather than shrinking the grid, so it
-/// fails quietly and is worth over-provisioning.
-const TEMPLATE_RESOLVE_BUDGET: usize = 40;
+/// Sized for the UNFILTERED gallery: 24 tiles across 12 families, where
+/// community images cluster on each family's top checkpoints (a tile's
+/// checkpoint is 1 resolve; its LoRAs add the rest — the measured worst
+/// per-tile cost was ~2 resolves). A truncated budget drops a checkpoint
+/// from a tile rather than shrinking the grid, so it fails quietly and is
+/// worth over-provisioning.
+const TEMPLATE_RESOLVE_BUDGET: usize = 64;
 
-/// Gallery tile count. Spread over `TEMPLATE_CHECKPOINTS` checkpoints, so
-/// one dead feed cannot starve the whole gallery.
-const TEMPLATE_MAX: usize = 12;
+/// Gallery tile count. The gallery mixes ALL panel ecosystems, capped at
+/// `TEMPLATE_PER_FAMILY` tiles per family so no single community can fill
+/// the grid (families with no posts leave room the others fill).
+const TEMPLATE_MAX: usize = 24;
+const TEMPLATE_PER_FAMILY: usize = 2;
 
 fn cap_text(value: Option<String>) -> Option<String> {
     let trimmed = value?.trim().to_string();
@@ -533,216 +539,220 @@ async fn ranked_checkpoint_versions(
     Ok(Vec::new())
 }
 
-pub async fn civitai_template_gallery(args: TemplateGalleryArgs) -> Result<Vec<TemplatePreset>, String> {
-    let ecosystem = args.ecosystem.trim().to_string();
-    if ecosystem.is_empty() {
-        return Ok(Vec::new());
-    }
-    if let Some((at, presets)) = TEMPLATE_CACHE
-        .lock()
-        .ok()
-        .and_then(|m| m.get(&ecosystem).cloned())
-    {
+/// Community image presets for the image lane's empty state, drawn from ALL
+/// panel ecosystems (no ecosystem filter — each family contributes up to
+/// `TEMPLATE_PER_FAMILY` tiles) and cached as one list.
+///
+/// Error policy: a family whose ranking or feed fails is SKIPPED so one
+/// dead family cannot starve the gallery, but if NO family answered at all
+/// the call errors — a transport/Cloudflare outage must NOT cache an empty
+/// gallery for the full hour (the panel would sit on the empty state until
+/// the TTL expires). A genuinely-empty day still caches — re-running it on
+/// every panel mount is pure waste.
+pub async fn civitai_template_gallery() -> Result<Vec<TemplatePreset>, String> {
+    if let Some((at, presets)) = TEMPLATE_CACHE.lock().ok().and_then(|c| c.clone()) {
         if at.elapsed() < TEMPLATE_TTL {
             return Ok(presets);
         }
     }
 
     let key = require_key()?;
-    let query = TEMPLATE_QUERIES
-        .iter()
-        .find(|(id, _)| *id == ecosystem)
-        .map(|(_, q)| *q)
-        .unwrap_or(ecosystem.as_str());
-
-    // Candidate checkpoints for the family — one per model, most-downloaded
-    // version, see `ranked_checkpoint_versions`. The `?` is deliberate: a
-    // transport/Cloudflare failure must NOT cache an empty gallery for the
-    // full hour (the panel would sit on the empty state until the TTL
-    // expires). A genuinely-empty query still caches — re-running it on
-    // every panel mount is pure waste.
-    let candidates = ranked_checkpoint_versions(&key, &ecosystem, query, TEMPLATE_CHECKPOINTS).await?;
-    let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.version_id).collect();
-    if candidates.is_empty() {
-        if let Ok(mut cache) = TEMPLATE_CACHE.lock() {
-            cache.insert(ecosystem, (Instant::now(), Vec::new()));
-        }
-        return Ok(Vec::new());
-    }
-
-    // Family gate for auto-attached checkpoint/LoRAs: the AIR may only ride
-    // the request when its base-model family equals the ecosystem's own —
-    // a cross-family diffuser override would 400 at the orchestrator. The
-    // unclassified ecosystems (anima, flux2/zImage, the engines) have no
-    // confident mapping, so nothing auto-attaches there — their builtin
-    // diffuser is the point of picking them anyway.
-    let eco_family = civitai::registry::ecosystem_family(&ecosystem);
-    let family_of = |base: &Option<String>| -> Option<&'static str> {
-        eco_family.and_then(|eco| base.as_deref().and_then(civitai::registry::base_model_family).and_then(|f| (f == eco).then_some(f)))
-    };
-    let mut resolve_budget = TEMPLATE_RESOLVE_BUDGET;
     let mut presets: Vec<TemplatePreset> = Vec::with_capacity(TEMPLATE_MAX);
     // Prompt dedup across the whole gallery: one author's consecutive
     // uploads (or a re-run of one prompt) otherwise fills the grid with
     // near-identical tiles.
     let mut seen_prompts: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut resolve_budget = TEMPLATE_RESOLVE_BUDGET;
+    let mut families_polled = 0usize;
 
-    for version_id in &candidate_ids {
+    for (eco_id, query) in TEMPLATE_QUERIES {
         if presets.len() >= TEMPLATE_MAX {
             break;
         }
-        // Try the fresh window first, then fall back to all-time for a
-        // checkpoint with no recent activity. The period is NOT a global
-        // choice: a `Month` window returns ZERO rows for any checkpoint that
-        // nobody has posted to this month, and quiet community checkpoints
-        // are exactly the ones the download ranking surfaces. Measured on
-        // the anime family (the panel's default ecosystem): the three
-        // ranked candidates return 0 / 1 / 0 rows for `Month` and 20 / 20 /
-        // 20 for `AllTime` — a hard `Month` empties the whole gallery.
-        let mut hits = civitai::search_images(
-            &key,
-            *version_id,
-            TEMPLATE_FEED_LIMIT,
-            TEMPLATE_FEED_SORT,
-            TEMPLATE_FEED_PERIOD,
-        )
-        .await
-        .unwrap_or_default();
-        if hits.is_empty() {
-            hits = civitai::search_images(
+        // Family gate for auto-attached checkpoint/LoRAs: the AIR may only
+        // ride the request when its base-model family equals the PRESET'S
+        // OWN ecosystem — a cross-family diffuser override would 400 at the
+        // orchestrator, and the panel switches to this ecosystem on apply.
+        // The unclassified ecosystems (anima, flux2/zImage, the engines)
+        // have no confident mapping, so nothing auto-attaches there — their
+        // builtin diffuser is the point of picking them anyway.
+        let eco_family = civitai::registry::ecosystem_family(eco_id);
+        let family_of = |base: &Option<String>| -> Option<&'static str> {
+            eco_family.and_then(|eco| base.as_deref().and_then(civitai::registry::base_model_family).and_then(|f| (f == eco).then_some(f)))
+        };
+        // Candidate checkpoints for the family — one per model, most-downloaded
+        // version, see `ranked_checkpoint_versions`. Extra candidates only
+        // serve when an earlier one yielded no usable rows.
+        let Ok(candidates) = ranked_checkpoint_versions(&key, eco_id, query, TEMPLATE_CHECKPOINTS).await else {
+            continue;
+        };
+        families_polled += 1;
+
+        let mut family_tiles = 0usize;
+        for VersionCandidate { version_id, .. } in candidates {
+            if family_tiles >= TEMPLATE_PER_FAMILY || presets.len() >= TEMPLATE_MAX {
+                break;
+            }
+            // Try the fresh window first, then fall back to all-time for a
+            // checkpoint with no recent activity. The period is NOT a global
+            // choice: a `Month` window returns ZERO rows for any checkpoint
+            // that nobody has posted to this month, and quiet community
+            // checkpoints are exactly the ones the download ranking
+            // surfaces. Measured on the anime family (the panel's default
+            // ecosystem): the three ranked candidates return 0 / 1 / 0 rows
+            // for `Month` and 20 / 20 / 20 for `AllTime` — a hard `Month`
+            // empties the whole gallery.
+            let mut hits = civitai::search_images(
                 &key,
-                *version_id,
+                version_id,
                 TEMPLATE_FEED_LIMIT,
                 TEMPLATE_FEED_SORT,
-                TEMPLATE_FEED_PERIOD_FALLBACK,
+                TEMPLATE_FEED_PERIOD,
             )
             .await
             .unwrap_or_default();
-        }
-
-        for hit in hits {
-            if presets.len() >= TEMPLATE_MAX {
-                break;
-            }
-            // SFW double-guard: `nsfw=None` on the wire plus this client-side
-            // level filter (the flag maps to a browsing level, not the enum).
-            if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
-                continue;
-            }
-            // Authors who stripped their generation data are useless as
-            // templates.
-            let Some(meta) = hit.meta.clone() else { continue };
-            let Some(prompt) = cap_text(meta.prompt.clone()) else { continue };
-            let Some(url) = hit.url.clone().filter(|u| !u.is_empty()) else { continue };
-            if !seen_prompts.insert(prompt.to_lowercase()) {
-                continue;
-            }
-
-            // Resources: `civitaiResources` (version ids, the populated
-            // list) first, `resources` (hashes) as the legacy fallback.
-            let mut checkpoint: Option<TemplateResource> = None;
-            let mut loras: Vec<TemplateResource> = Vec::new();
-            let attach = |kind_is_lora: bool,
-                             resolved: Option<(String, String, Option<String>)>,
-                             weight: Option<f64>|
-                             -> Option<TemplateResource> {
-                let (air, name, base) = resolved?;
-                if family_of(&base).is_none() {
-                    return None;
-                }
-                Some(TemplateResource {
-                    name,
-                    air_urn: air,
-                    strength: kind_is_lora.then(|| weight.unwrap_or(1.0).clamp(0.0, 4.0)),
-                })
-            };
-
-            for entry in meta.civitai_resources.iter().flatten() {
-                let Some(version) = entry.model_version_id else { continue };
-                let kind = entry.kind.as_deref().unwrap_or("");
-                let is_lora = kind == "lora";
-                // checkpoint / vae / embed — only the checkpoint rides along,
-                // and only one of them.
-                if !is_lora && checkpoint.is_some() {
-                    continue;
-                }
-                if is_lora && loras.len() >= TEMPLATE_LORAS_CAP {
-                    continue;
-                }
-                let resolved = resolve_resource_by_id(
+            if hits.is_empty() {
+                hits = civitai::search_images(
                     &key,
-                    version,
-                    entry.model_version_name.as_deref(),
-                    &mut resolve_budget,
+                    version_id,
+                    TEMPLATE_FEED_LIMIT,
+                    TEMPLATE_FEED_SORT,
+                    TEMPLATE_FEED_PERIOD_FALLBACK,
                 )
                 .await
-                .ok()
-                .flatten();
-                if let Some(resource) = attach(is_lora, resolved, entry.weight) {
-                    if is_lora {
-                        loras.push(resource);
-                    } else {
-                        checkpoint = Some(resource);
-                    }
-                }
+                .unwrap_or_default();
             }
-            // Writers predating `civitaiResources` only fill the hash list.
-            for entry in meta.resources.iter().flatten() {
-                if checkpoint.is_some() && loras.len() >= TEMPLATE_LORAS_CAP {
+
+            for hit in hits {
+                if family_tiles >= TEMPLATE_PER_FAMILY || presets.len() >= TEMPLATE_MAX {
                     break;
                 }
-                let Some(hash) = entry.hash.as_deref().filter(|h| !h.trim().is_empty()) else { continue };
-                let kind = entry.kind.as_deref().unwrap_or("");
-                let is_lora = kind == "lora";
-                if !is_lora && checkpoint.is_some() {
-                    continue; // one checkpoint per template
-                }
-                if is_lora && loras.len() >= TEMPLATE_LORAS_CAP {
+                // SFW double-guard: `nsfw=None` on the wire plus this client-side
+                // level filter (the flag maps to a browsing level, not the enum).
+                if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
                     continue;
                 }
-                let name = entry
-                    .name
-                    .clone()
-                    .filter(|n| !n.trim().is_empty())
-                    .unwrap_or_else(|| hash.to_string());
-                let resolved = resolve_resource_by_hash(&key, hash, &name, &mut resolve_budget)
+                // Authors who stripped their generation data are useless as
+                // templates.
+                let Some(meta) = hit.meta.clone() else { continue };
+                let Some(prompt) = cap_text(meta.prompt.clone()) else { continue };
+                let Some(url) = hit.url.clone().filter(|u| !u.is_empty()) else { continue };
+                if !seen_prompts.insert(prompt.to_lowercase()) {
+                    continue;
+                }
+
+                // Resources: `civitaiResources` (version ids, the populated
+                // list) first, `resources` (hashes) as the legacy fallback.
+                let mut checkpoint: Option<TemplateResource> = None;
+                let mut loras: Vec<TemplateResource> = Vec::new();
+                let attach = |kind_is_lora: bool,
+                                 resolved: Option<(String, String, Option<String>)>,
+                                 weight: Option<f64>|
+                                 -> Option<TemplateResource> {
+                    let (air, name, base) = resolved?;
+                    if family_of(&base).is_none() {
+                        return None;
+                    }
+                    Some(TemplateResource {
+                        name,
+                        air_urn: air,
+                        strength: kind_is_lora.then(|| weight.unwrap_or(1.0).clamp(0.0, 4.0)),
+                    })
+                };
+
+                for entry in meta.civitai_resources.iter().flatten() {
+                    let Some(version) = entry.model_version_id else { continue };
+                    let kind = entry.kind.as_deref().unwrap_or("");
+                    let is_lora = kind == "lora";
+                    // checkpoint / vae / embed — only the checkpoint rides along,
+                    // and only one of them.
+                    if !is_lora && checkpoint.is_some() {
+                        continue;
+                    }
+                    if is_lora && loras.len() >= TEMPLATE_LORAS_CAP {
+                        continue;
+                    }
+                    let resolved = resolve_resource_by_id(
+                        &key,
+                        version,
+                        entry.model_version_name.as_deref(),
+                        &mut resolve_budget,
+                    )
                     .await
                     .ok()
                     .flatten();
-                if let Some(resource) = attach(is_lora, resolved, entry.weight) {
-                    if is_lora {
-                        loras.push(resource);
-                    } else {
-                        checkpoint = Some(resource);
+                    if let Some(resource) = attach(is_lora, resolved, entry.weight) {
+                        if is_lora {
+                            loras.push(resource);
+                        } else {
+                            checkpoint = Some(resource);
+                        }
                     }
                 }
-            }
+                // Writers predating `civitaiResources` only fill the hash list.
+                for entry in meta.resources.iter().flatten() {
+                    if checkpoint.is_some() && loras.len() >= TEMPLATE_LORAS_CAP {
+                        break;
+                    }
+                    let Some(hash) = entry.hash.as_deref().filter(|h| !h.trim().is_empty()) else { continue };
+                    let kind = entry.kind.as_deref().unwrap_or("");
+                    let is_lora = kind == "lora";
+                    if !is_lora && checkpoint.is_some() {
+                        continue; // one checkpoint per template
+                    }
+                    if is_lora && loras.len() >= TEMPLATE_LORAS_CAP {
+                        continue;
+                    }
+                    let name = entry
+                        .name
+                        .clone()
+                        .filter(|n| !n.trim().is_empty())
+                        .unwrap_or_else(|| hash.to_string());
+                    let resolved = resolve_resource_by_hash(&key, hash, &name, &mut resolve_budget)
+                        .await
+                        .ok()
+                        .flatten();
+                    if let Some(resource) = attach(is_lora, resolved, entry.weight) {
+                        if is_lora {
+                            loras.push(resource);
+                        } else {
+                            checkpoint = Some(resource);
+                        }
+                    }
+                }
 
-            // The image row's own width/height are null on most v1 hits; the
-            // generation size lives in the meta object.
-            presets.push(TemplatePreset {
-                url,
-                width: meta.width.or(hit.width).unwrap_or(1024).max(64),
-                height: meta.height.or(hit.height).unwrap_or(1024).max(64),
-                prompt,
-                negative_prompt: cap_text(meta.negative_prompt),
-                steps: meta.steps,
-                cfg_scale: meta.cfg_scale,
-                sampler: meta.sampler,
-                // Prefer the resolved checkpoint's model name — civitai's
-                // meta `Model` field is present on a small minority of hits.
-                model_name: checkpoint
-                    .as_ref()
-                    .map(|c| c.name.clone())
-                    .or(meta.model),
-                checkpoint,
-                loras,
-            });
+                // The image row's own width/height are null on most v1 hits; the
+                // generation size lives in the meta object.
+                presets.push(TemplatePreset {
+                    ecosystem: eco_id.to_string(),
+                    url,
+                    width: meta.width.or(hit.width).unwrap_or(1024).max(64),
+                    height: meta.height.or(hit.height).unwrap_or(1024).max(64),
+                    prompt,
+                    negative_prompt: cap_text(meta.negative_prompt),
+                    steps: meta.steps,
+                    cfg_scale: meta.cfg_scale,
+                    sampler: meta.sampler,
+                    // Prefer the resolved checkpoint's model name — civitai's
+                    // meta `Model` field is present on a small minority of hits.
+                    model_name: checkpoint
+                        .as_ref()
+                        .map(|c| c.name.clone())
+                        .or(meta.model),
+                    checkpoint,
+                    loras,
+                });
+                family_tiles += 1;
+            }
         }
     }
 
+    if families_polled == 0 {
+        return Err("gagal menghubungi Civitai".into());
+    }
+
     if let Ok(mut cache) = TEMPLATE_CACHE.lock() {
-        cache.insert(ecosystem.clone(), (Instant::now(), presets.clone()));
+        *cache = Some((Instant::now(), presets.clone()));
     }
     Ok(presets)
 }
@@ -828,33 +838,19 @@ pub struct VideoTemplatePreset {
     pub aspect_label: String,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VideoTemplateGalleryArgs {
-    pub ecosystem: String,
-}
+static VIDEO_TEMPLATE_CACHE: LazyLock<Mutex<Option<(Instant, Vec<VideoTemplatePreset>)>>> =
+    LazyLock::new(|| Mutex::new(None));
 
-static VIDEO_TEMPLATE_CACHE: LazyLock<Mutex<std::collections::HashMap<String, (Instant, Vec<VideoTemplatePreset>)>>> =
-    LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
-
-/// Community txt2vid presets for one panel ecosystem, read from civitai's
-/// public video feed. Only clips civitai itself generated carry the
+/// Community txt2vid presets for the video lane's empty state, read from
+/// civitai's public video feed across ALL panel engines (no ecosystem
+/// filter — every clip carries the engine it belongs to and the panel
+/// switches to it on apply). Only clips civitai itself generated carry the
 /// generation metadata (`meta.engine`), and only `workflow: "txt2vid"` ones
 /// can be replayed without source media — the img2vid families dominate the
 /// feed and are unusable here. `Result` for the same reason as the image
 /// gallery: a transport failure must not cache an empty grid for an hour.
-pub async fn civitai_video_template_gallery(
-    args: VideoTemplateGalleryArgs,
-) -> Result<Vec<VideoTemplatePreset>, String> {
-    let ecosystem = args.ecosystem.trim().to_string();
-    if ecosystem.is_empty() {
-        return Ok(Vec::new());
-    }
-    if let Some((at, presets)) = VIDEO_TEMPLATE_CACHE
-        .lock()
-        .ok()
-        .and_then(|m| m.get(&ecosystem).cloned())
-    {
+pub async fn civitai_video_template_gallery() -> Result<Vec<VideoTemplatePreset>, String> {
+    if let Some((at, presets)) = VIDEO_TEMPLATE_CACHE.lock().ok().and_then(|c| c.clone()) {
         if at.elapsed() < TEMPLATE_TTL {
             return Ok(presets);
         }
@@ -909,9 +905,6 @@ pub async fn civitai_video_template_gallery(
             let Some(panel_eco) = meta.ecosystem.as_deref().and_then(video_ecosystem_for) else {
                 continue;
             };
-            if panel_eco != ecosystem {
-                continue;
-            }
             let Some(prompt) = cap_text(meta.prompt.clone()) else { continue };
             if !seen_prompts.insert(prompt.to_lowercase()) {
                 continue;
@@ -962,7 +955,7 @@ pub async fn civitai_video_template_gallery(
     }
 
     if let Ok(mut cache) = VIDEO_TEMPLATE_CACHE.lock() {
-        cache.insert(ecosystem.clone(), (Instant::now(), presets.clone()));
+        *cache = Some((Instant::now(), presets.clone()));
     }
     Ok(presets)
 }
@@ -1041,6 +1034,10 @@ fn closest_video_aspect(ecosystem: &str, width: i64, height: i64) -> Option<Stri
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MusicTemplatePreset {
+    /// Pinned model version (panel ecosystem key) this prompt was written
+    /// for — the gallery pools all four engines, and the panel switches to
+    /// this engine on apply.
+    pub ecosystem: String,
     /// Cover art (a video poster when the post is a clip, else the image).
     pub thumbnail: String,
     pub caption: String,
@@ -1049,14 +1046,8 @@ pub struct MusicTemplatePreset {
     pub sampler: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MusicTemplateGalleryArgs {
-    pub ecosystem: String,
-}
-
-static MUSIC_TEMPLATE_CACHE: LazyLock<Mutex<std::collections::HashMap<String, (Instant, Vec<MusicTemplatePreset>)>>> =
-    LazyLock::new(|| Mutex::new(std::collections::HashMap::new()));
+static MUSIC_TEMPLATE_CACHE: LazyLock<Mutex<Option<(Instant, Vec<MusicTemplatePreset>)>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 /// Trim a community prompt to the engine's ceiling, INCLUDING the ellipsis.
 ///
@@ -1119,97 +1110,102 @@ fn looks_like_music_prompt(prompt: &str) -> bool {
     music > video
 }
 
-/// Community music prompts for one panel ecosystem.
+/// Community music prompts for the music lane's empty state, pooled from
+/// ALL four pinned model versions (no ecosystem filter — each preset
+/// carries the engine it was written for and the panel switches to it on
+/// apply).
 ///
 /// `Result` for the same reason as the image/video galleries: a transport
-/// failure must not cache an empty grid for an hour. An ecosystem with no
-/// community prompts (measured: Sonilo has zero) caches an EMPTY list — that
-/// is a real answer, not a failure, and the panel's curated starters cover it.
-pub async fn civitai_music_template_gallery(
-    args: MusicTemplateGalleryArgs,
-) -> Result<Vec<MusicTemplatePreset>, String> {
-    let ecosystem = args.ecosystem.trim().to_string();
-    if ecosystem.is_empty() {
-        return Ok(Vec::new());
-    }
-    if let Some((at, presets)) = MUSIC_TEMPLATE_CACHE
-        .lock()
-        .ok()
-        .and_then(|m| m.get(&ecosystem).cloned())
-    {
+/// failure must not cache an empty grid for an hour. If EVERY pinned model
+/// fails to answer, the call errors; a model that answers but carries no
+/// genuine music prompts (measured: Sonilo has zero) simply contributes
+/// nothing — that is a real answer, and the panel's curated starters cover it.
+pub async fn civitai_music_template_gallery() -> Result<Vec<MusicTemplatePreset>, String> {
+    if let Some((at, presets)) = MUSIC_TEMPLATE_CACHE.lock().ok().and_then(|c| c.clone()) {
         if at.elapsed() < TEMPLATE_TTL {
             return Ok(presets);
         }
     }
 
-    let Some((_, version_id, _, _)) = MUSIC_MODEL_VERSIONS
-        .iter()
-        .find(|(key, ..)| *key == ecosystem)
-    else {
-        return Ok(Vec::new());
-    };
     let key = require_key()?;
-
-    let hits = civitai::search_images(
-        &key,
-        *version_id,
-        MUSIC_TEMPLATE_LIMIT,
-        "Most Reactions",
-        "AllTime",
-    )
-    .await?;
-
     let mut presets: Vec<MusicTemplatePreset> = Vec::with_capacity(MUSIC_TEMPLATE_MAX);
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for hit in hits {
+    let mut models_polled = 0usize;
+
+    for (eco_key, version_id, _, _) in MUSIC_MODEL_VERSIONS {
         if presets.len() >= MUSIC_TEMPLATE_MAX {
             break;
         }
-        if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
+        // A model whose feed fails is skipped so one dead model cannot
+        // starve the gallery; total silence errors (nothing gets cached).
+        let Ok(hits) = civitai::search_images(
+            &key,
+            version_id,
+            MUSIC_TEMPLATE_LIMIT,
+            "Most Reactions",
+            "AllTime",
+        )
+        .await
+        else {
             continue;
+        };
+        models_polled += 1;
+
+        for hit in hits {
+            if presets.len() >= MUSIC_TEMPLATE_MAX {
+                break;
+            }
+            if hit.nsfw_level.as_deref().unwrap_or("None") != "None" {
+                continue;
+            }
+            let Some(meta) = hit.meta.clone() else { continue };
+            // The form validates `length <= promptMax` per engine (2000 for
+            // minimax/yue2/sonilo, 1000 for ace), and an over-length prompt
+            // leaves the form INVALID — the click looks like it did nothing.
+            // Measured: 9 of 52 community prompts exceed their engine's ceiling,
+            // so trim here rather than ship a tile that cannot be generated.
+            let Some(raw_prompt) = meta.prompt.clone() else { continue };
+            let trimmed = raw_prompt.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            // Classify on the WHOLE prompt, before trimming — the markers sit at
+            // the tail of civitai's structured briefs ("Vocal Style:", "Harmony…"),
+            // so truncating first can drop the evidence the filter needs.
+            if !looks_like_music_prompt(trimmed) {
+                continue;
+            }
+            let caption = cap_music_prompt(trimmed, prompt_max_for(eco_key));
+            if !seen.insert(caption.to_lowercase()) {
+                continue;
+            }
+            // A clip post's poster is the right thumbnail; an image post IS the art.
+            let thumbnail = hit
+                .thumbnail
+                .as_ref()
+                .and_then(|t| t.url.clone())
+                .or_else(|| hit.url.clone())
+                .unwrap_or_default();
+            if thumbnail.is_empty() {
+                continue;
+            }
+            presets.push(MusicTemplatePreset {
+                ecosystem: eco_key.to_string(),
+                thumbnail,
+                caption,
+                steps: meta.steps,
+                cfg_scale: meta.cfg_scale,
+                sampler: meta.sampler,
+            });
         }
-        let Some(meta) = hit.meta.clone() else { continue };
-        // The form validates `length <= promptMax` per engine (2000 for
-        // minimax/yue2/sonilo, 1000 for ace), and an over-length prompt
-        // leaves the form INVALID — the click looks like it did nothing.
-        // Measured: 9 of 52 community prompts exceed their engine's ceiling,
-        // so trim here rather than ship a tile that cannot be generated.
-        let Some(raw_prompt) = meta.prompt.clone() else { continue };
-        let trimmed = raw_prompt.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        // Classify on the WHOLE prompt, before trimming — the markers sit at
-        // the tail of civitai's structured briefs ("Vocal Style:", "Harmony…"),
-        // so truncating first can drop the evidence the filter needs.
-        if !looks_like_music_prompt(trimmed) {
-            continue;
-        }
-        let caption = cap_music_prompt(trimmed, prompt_max_for(&ecosystem));
-        if !seen.insert(caption.to_lowercase()) {
-            continue;
-        }
-        // A clip post's poster is the right thumbnail; an image post IS the art.
-        let thumbnail = hit
-            .thumbnail
-            .as_ref()
-            .and_then(|t| t.url.clone())
-            .or_else(|| hit.url.clone())
-            .unwrap_or_default();
-        if thumbnail.is_empty() {
-            continue;
-        }
-        presets.push(MusicTemplatePreset {
-            thumbnail,
-            caption,
-            steps: meta.steps,
-            cfg_scale: meta.cfg_scale,
-            sampler: meta.sampler,
-        });
+    }
+
+    if models_polled == 0 {
+        return Err("gagal menghubungi Civitai".into());
     }
 
     if let Ok(mut cache) = MUSIC_TEMPLATE_CACHE.lock() {
-        cache.insert(ecosystem.clone(), (Instant::now(), presets.clone()));
+        *cache = Some((Instant::now(), presets.clone()));
     }
     Ok(presets)
 }
@@ -1611,15 +1607,6 @@ pub async fn civitai_video_cost(req: VideoGenRequest) -> Result<VideoCostView, S
         ready: est.ready,
         warnings: est.warnings,
     })
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VideoSubmitView {
-    pub workflow_id: String,
-    /// History row id (`generation_jobs`) — the panel abandons it via
-    /// `generation_job_delete` when the job fails/cancels.
-    pub job_id: String,
 }
 
 /// Submit the videoGen workflow. SPENDS Buzz — the panel's Generate click
@@ -2159,14 +2146,6 @@ pub async fn civitai_music_cost(req: MusicGenRequest) -> Result<VideoCostView, S
         ready: est.ready,
         warnings: est.warnings,
     })
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MusicSubmitView {
-    pub workflow_id: String,
-    /// History row id (`generation_jobs`) — see `VideoSubmitView::job_id`.
-    pub job_id: String,
 }
 
 /// Submit the music workflow. SPENDS Buzz — the panel's Generate click

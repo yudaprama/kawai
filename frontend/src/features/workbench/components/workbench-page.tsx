@@ -2,7 +2,7 @@ import { Icon } from "@/components/shared/icon";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ChatComposer } from "@/features/chat/components/chat-composer";
-import type { RecentRunInfo } from "@/lib/api";
+import type { RecentRun } from "@/lib/api";
 import { RecentRuns } from "@/features/workbench/components/recent-runs";
 import { isDeliverableStep, useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
@@ -211,7 +211,7 @@ export function WorkbenchPage({
   /** Open a recent run from the landing strip: point the session at it and
    *  queue the report pick for when its records restore. */
   const openRecent = useCallback(
-    (run: RecentRunInfo) => {
+    (run: RecentRun) => {
       pendingPickRow.current = run.rowId;
       setHome(false);
       workbench.selectSession(run.sessionId);

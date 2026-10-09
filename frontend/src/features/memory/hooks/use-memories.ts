@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { type MemoryItem, call, errText } from "@/lib/api";
+import { type ConsolidationReport, type MemoryItem, call, errText } from "@/lib/api";
 import { showErrorToast } from "@/lib/utils";
 import { useOp } from "@/hooks/use-op";
 
@@ -27,7 +27,7 @@ export function useMemories(enabled: boolean) {
   const consolidate = useCallback(async (): Promise<number> => {
     setConsolidating(true);
     try {
-      const report = await call<{ mergedGroups: number; removed: number }>("memory_consolidate", {});
+      const report = await call<ConsolidationReport>("memory_consolidate", {});
       if (report.removed > 0) await listOp.execute();
       return report.removed;
     } catch (err) {

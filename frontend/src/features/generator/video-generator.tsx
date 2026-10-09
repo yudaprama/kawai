@@ -78,8 +78,9 @@ interface VideoBlobView {
 
 interface VideoStatusView extends LaneStatusView {
   video?: VideoBlobView;
-  /** LTX-style batched jobs: extra clips beyond the primary. */
-  additional: VideoBlobView[];
+  /** LTX-style batched jobs: extra clips beyond the primary. OMITTED when
+   *  empty (`skip_serializing_if = "Vec::is_empty"`), hence optional. */
+  additional?: VideoBlobView[];
 }
 
 interface SavedVideo {
@@ -148,23 +149,18 @@ interface VideoTemplatePreset {
 }
 
 /**
- * Community txt2vid clips for the selected engine, shown in place of the
- * empty state. Replaces the old "Nothing generated yet" panel: browsing what
- * other people actually made is the point of a gallery, and the previous
- * layout stacked preset chips ON TOP of that empty-state copy, which read as
- * a contradiction ("no results" next to "here are results").
+ * Community txt2vid clips across ALL engines (unfiltered — each tile
+ * carries the engine it belongs to), shown in place of the empty state.
+ * Replaces the old "Nothing generated yet" panel: browsing what other
+ * people actually made is the point of a gallery, and the previous layout
+ * stacked preset chips ON TOP of that empty-state copy, which read as a
+ * contradiction ("no results" next to "here are results").
  *
- * Skeletons while loading; a genuine empty state when the engine has no
- * community txt2vid clips yet (coverage is uneven — several engines have
- * none) — that one says so plainly instead of blaming the user's history.
+ * Skeletons while loading; a genuine empty state when no engine has
+ * community txt2vid clips yet — that one says so plainly instead of
+ * blaming the user's history.
  */
-function VideoTemplateGallery({
-  ecosystem,
-  onApply,
-}: {
-  ecosystem: string;
-  onApply: (preset: VideoTemplatePreset) => void;
-}) {
+function VideoTemplateGallery({ onApply }: { onApply: (preset: VideoTemplatePreset) => void }) {
   const { t } = useI18n();
   // Community clips are NOT uniform (704x960, 864x480, 832x1504 all on one
   // page), so the grid is a masonry: a row-synced grid forces one height and
@@ -177,7 +173,7 @@ function VideoTemplateGallery({
     let alive = true;
     setPresets(null);
     setFailed(false);
-    call<VideoTemplatePreset[]>("civitai_video_template_gallery", { ecosystem })
+    call<VideoTemplatePreset[]>("civitai_video_template_gallery")
       .then((list) => {
         if (alive) setPresets(Array.isArray(list) ? list : []);
       })
@@ -189,7 +185,7 @@ function VideoTemplateGallery({
     return () => {
       alive = false;
     };
-  }, [ecosystem]);
+  }, []);
 
   if (presets === null) {
     return (
@@ -1086,7 +1082,7 @@ export function VideoGenerator() {
           </div>
         )}
         {results.length === 0 && !job ? (
-          <VideoTemplateGallery ecosystem={ecoId} onApply={applyVideoPreset} />
+          <VideoTemplateGallery onApply={applyVideoPreset} />
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {results.map((entry) => (

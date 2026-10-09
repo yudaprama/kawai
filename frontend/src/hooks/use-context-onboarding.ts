@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import type { ContextOnboarding } from "@/features/agents/registry";
-import type { AgentInfo, KnowledgeFileInfo } from "@/lib/api";
+import type { AgentInfo, KnowledgeFileInfo, SqlProfile } from "@/lib/api";
 import { useOp } from "@/hooks/use-op";
 import { isTabularExt } from "@/lib/extensions";
 
@@ -24,7 +24,7 @@ export function useContextOnboarding(args: {
 
   const relevant = useMemo(() => Boolean(agent?.tools) && agent?.id === "builtin.analytics", [agent]);
 
-  const profilesOp = useOp<{ name: string }[]>("sql_profile_list", undefined, {
+  const profilesOp = useOp<SqlProfile[]>("sql_profile_list", undefined, {
     enabled: relevant && !inSession,
     onError: "silent",
   });

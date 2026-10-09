@@ -9,7 +9,7 @@ import {
   stripToolMarkup,
   toFriendlyError,
 } from "@/features/chat/lib/chat-helpers";
-import type { ChatSessionInfo } from "@/lib/api";
+import type { ChatSession } from "@/lib/api";
 
 describe("stripToolMarkup", () => {
   it("keeps plain prose untouched", () => {
@@ -139,7 +139,7 @@ describe("toFriendlyError", () => {
 
 describe("historyToMessages", () => {
   it("maps DB rows to done text parts with stable ids", () => {
-    const msgs = historyToMessages([{ id: 7, sessionId: 1, role: "user", content: "hi", createdAt: null }]);
+    const msgs = historyToMessages([{ id: 7, sessionId: 1, role: "user", content: "hi", createdAt: 1_800_000_000 }]);
     expect(msgs).toEqual([
       {
         id: "db-7",
@@ -151,10 +151,10 @@ describe("historyToMessages", () => {
 });
 
 describe("groupSessions", () => {
-  const sess = (id: number, updatedAt: number | null): ChatSessionInfo => ({
+  const sess = (id: number, updatedAt: number | null): ChatSession => ({
     id,
     title: `s${id}`,
-    createdAt: updatedAt,
+    createdAt: 1_800_000_000,
     updatedAt,
     archived: false,
     archivedAt: null,
@@ -188,14 +188,14 @@ describe("sessionToMarkdown", () => {
       " My Session  ",
       [
         { id: 1, sessionId: 1, role: "user", content: "question", createdAt: 1_800_000_000 },
-        { id: 2, sessionId: 1, role: "assistant", content: "answer", createdAt: null },
+        { id: 2, sessionId: 1, role: "assistant", content: "answer", createdAt: 1_800_000_000 },
       ],
       Date.UTC(2026, 8, 23, 10, 30),
     );
     expect(md).toMatch(/^# My Session$/m);
     expect(md).toMatch(/^_Exported 2026-09-23 10:30 UTC_$/m);
     expect(md).toMatch(/^## You · \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m);
-    expect(md).toMatch(/^## Assistant$/m);
+    expect(md).toMatch(/^## Assistant · \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/m);
     expect(md).toContain("question");
     expect(md).toContain("answer");
   });
@@ -208,7 +208,9 @@ describe("sessionToMarkdown", () => {
       steps: [{ id: "a", tool: "web_search", state: "completed" }],
       output: "DONE",
     });
-    const md = sessionToMarkdown("t", [{ id: 7, sessionId: 1, role: "assistant", content: record, createdAt: null }]);
+    const md = sessionToMarkdown("t", [
+      { id: 7, sessionId: 1, role: "assistant", content: record, createdAt: 1_800_000_000 },
+    ]);
     expect(md).toContain("Ship it");
     expect(md).toContain("DONE");
     expect(md).not.toContain("supervisor-plan");
@@ -226,7 +228,9 @@ describe("sessionToMarkdown", () => {
       output: null,
       partial: true,
     });
-    const md = sessionToMarkdown("t", [{ id: 8, sessionId: 1, role: "assistant", content: record, createdAt: null }]);
+    const md = sessionToMarkdown("t", [
+      { id: 8, sessionId: 1, role: "assistant", content: record, createdAt: 1_800_000_000 },
+    ]);
     expect(md).toContain("(run interrupted before completion)");
     expect(md).not.toContain("(plan completed)");
   });
@@ -243,7 +247,9 @@ describe("sessionToMarkdown", () => {
         { id: "d", tool: "deep_write", state: "running" },
       ],
     });
-    const md = sessionToMarkdown("t", [{ id: 9, sessionId: 1, role: "assistant", content: record, createdAt: null }]);
+    const md = sessionToMarkdown("t", [
+      { id: 9, sessionId: 1, role: "assistant", content: record, createdAt: 1_800_000_000 },
+    ]);
     expect(md).toContain("✓ a [web_search] — completed");
     expect(md).toContain("✗ b [data_query_nl] — failed");
     expect(md).toContain("→ c [cli_run] — skipped");
@@ -251,9 +257,9 @@ describe("sessionToMarkdown", () => {
     expect(md).toContain("(plan completed)");
   });
 
-  it("strips tool markup and titles null sessions", () => {
-    const md = sessionToMarkdown(null, [
-      { id: 3, sessionId: 1, role: "assistant", content: "hi ```tool{secret}``` there", createdAt: null },
+  it("strips tool markup and titles blank sessions", () => {
+    const md = sessionToMarkdown("   ", [
+      { id: 3, sessionId: 1, role: "assistant", content: "hi ```tool{secret}``` there", createdAt: 1_800_000_000 },
     ]);
     expect(md).toMatch(/^# Untitled session$/m);
     expect(md).not.toContain("secret");

@@ -1948,27 +1948,24 @@ async fn civitai_model_covers_handler(
 }
 
 async fn civitai_video_template_gallery_handler(
-    Json(args): Json<logic::civitai::VideoTemplateGalleryArgs>,
 ) -> Result<Json<Vec<logic::civitai::VideoTemplatePreset>>, (StatusCode, String)> {
-    logic::civitai::civitai_video_template_gallery(args)
+    logic::civitai::civitai_video_template_gallery()
         .await
         .map(Json)
         .map_err(err500)
 }
 
 async fn civitai_music_template_gallery_handler(
-    Json(args): Json<logic::civitai::MusicTemplateGalleryArgs>,
 ) -> Result<Json<Vec<logic::civitai::MusicTemplatePreset>>, (StatusCode, String)> {
-    logic::civitai::civitai_music_template_gallery(args)
+    logic::civitai::civitai_music_template_gallery()
         .await
         .map(Json)
         .map_err(err500)
 }
 
 async fn civitai_template_gallery_handler(
-    Json(args): Json<logic::civitai::TemplateGalleryArgs>,
 ) -> Result<Json<Vec<logic::civitai::TemplatePreset>>, (StatusCode, String)> {
-    logic::civitai::civitai_template_gallery(args)
+    logic::civitai::civitai_template_gallery()
         .await
         .map(Json)
         .map_err(err500)

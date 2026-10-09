@@ -5,12 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { isRemoteSource, maskSource } from "@/features/analytics/lib/analytics";
-import { call, errText, type SqlProfileTest } from "@/lib/api";
+import { call, errText, type SqlProfile, type SqlProfileTest } from "@/lib/api";
 import { useOp } from "@/hooks/use-op";
 import { toast } from "sonner";
 import { useI18n } from "@/hooks/use-i18n";
-
-type SqlProfile = { name: string; source: string };
 
 /** Mirror of the backend's name rule: lowercase [a-z0-9_-], 1–32 chars. */
 const NAME_OK = /^[a-z0-9_-]{1,32}$/;

@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import type { SessionGroup } from "@/features/chat/lib/chat-helpers";
-import type { ChatSessionInfo } from "@/lib/api";
+import type { ChatSession } from "@/lib/api";
 
-export function useSessionFilter(groupedSessions: SessionGroup[], archivedSessions: ChatSessionInfo[], query: string) {
+export function useSessionFilter(groupedSessions: SessionGroup[], archivedSessions: ChatSession[], query: string) {
   return useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q)

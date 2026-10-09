@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useKnowledgeFiles } from "@/features/knowledge/hooks/use-knowledge-files";
-import { call, errText, type KnowledgeFileInfo, type OfficeFileInfo } from "@/lib/api";
+import { call, errText, type KnowledgeFileInfo, type OfficeFileSummary } from "@/lib/api";
 import { dataUrlToFile, fileToBase64 } from "@/lib/base64";
 import { ADD_FILE_ACCEPT } from "@/lib/extensions";
 import type { KnowledgeSource } from "@/features/knowledge/lib/knowledge";
@@ -58,13 +58,13 @@ export function useKnowledgeActions(chat: {
       const settled = await Promise.allSettled(
         items.map(async (item) => {
           if (item.sourcePath) {
-            return call<OfficeFileInfo>("office_import_file", {
+            return call<OfficeFileSummary>("office_import_file", {
               sourcePath: item.sourcePath,
             });
           }
           if (item.file) {
             const dataBase64 = await fileToBase64(item.file);
-            return call<OfficeFileInfo>("office_import_file", {
+            return call<OfficeFileSummary>("office_import_file", {
               dataBase64,
               name: item.name,
             });
@@ -72,7 +72,7 @@ export function useKnowledgeActions(chat: {
           throw new Error("nothing to import");
         }),
       );
-      const imported: OfficeFileInfo[] = [];
+      const imported: OfficeFileSummary[] = [];
       const failed: { name: string; error: string }[] = [];
       for (const [i, res] of settled.entries()) {
         if (res.status === "fulfilled" && res.value?.id) {
@@ -299,7 +299,7 @@ export function useKnowledgeActions(chat: {
   // for editing). It only closes on success, where the toast confirms.
   // Returns the imported file on success (so callers can auto-attach it as a
   // composer chip), null otherwise.
-  const submitKnowledgeLink = useCallback(async (): Promise<OfficeFileInfo | null> => {
+  const submitKnowledgeLink = useCallback(async (): Promise<OfficeFileSummary | null> => {
     const url = linkUrl.trim();
     if (!url) return null;
     if (!isYouTubeUrl(url)) {
@@ -309,7 +309,7 @@ export function useKnowledgeActions(chat: {
     setLinkError(null);
     setLinking(true);
     try {
-      const info = await call<OfficeFileInfo>("knowledge_import_youtube", {
+      const info = await call<OfficeFileSummary>("knowledge_import_youtube", {
         url,
         sessionId: chat.sessionId,
       });

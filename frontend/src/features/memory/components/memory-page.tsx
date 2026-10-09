@@ -36,8 +36,8 @@ import { call, errText } from "@/lib/api";
 import { showErrorToast } from "@/lib/utils";
 import {
   MEMORY_KINDS,
-  type ChatMessageInfo,
-  type ChatSessionInfo,
+  type ChatMessage,
+  type ChatSession,
   type ExperienceItem,
   type MemoryGraphExport,
   type MemoryItem,
@@ -69,7 +69,7 @@ export function MemoryAssetPage({
   onRetrySessions,
   onBack,
 }: {
-  sessions: ChatSessionInfo[];
+  sessions: ChatSession[];
   /** In-flight `list_chat_sessions` read (App's chat state). */
   sessionsLoading?: boolean;
   /** Last sessions read failure — replaces the empty state, never a false "No memory blocks yet". */
@@ -89,16 +89,13 @@ export function MemoryAssetPage({
 
   const sorted = useMemo(() => [...sessions].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)), [sessions]);
 
-  const filterFn = useCallback(
-    (s: ChatSessionInfo, q: string) => (s.title ?? "untitled").toLowerCase().includes(q),
-    [],
-  );
-  const { query, setQuery, setSelectedId, filtered, active, activeId } = useAssetPage<ChatSessionInfo, number>({
+  const filterFn = useCallback((s: ChatSession, q: string) => (s.title ?? "untitled").toLowerCase().includes(q), []);
+  const { query, setQuery, setSelectedId, filtered, active, activeId } = useAssetPage<ChatSession, number>({
     items: sorted,
     filterFn,
   });
 
-  const messagesOp = useOp<ChatMessageInfo[]>(
+  const messagesOp = useOp<ChatMessage[]>(
     "list_chat_messages",
     activeId != null ? { sessionId: activeId } : undefined,
     { enabled: activeId != null, onError: "log" },
@@ -191,8 +188,8 @@ function BlockDetail({
   tab,
   onTabChange,
 }: {
-  session: ChatSessionInfo;
-  messages: ChatMessageInfo[] | null;
+  session: ChatSession;
+  messages: ChatMessage[] | null;
   loading: boolean;
   error: string | null;
   memories: ReturnType<typeof useMemories>;
@@ -654,7 +651,7 @@ function PersonaPane() {
 }
 
 /** L1 — atomic memories. Global list; extraction pulls from the selected block. */
-function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories>; session: ChatSessionInfo }) {
+function L1Pane({ memories, session }: { memories: ReturnType<typeof useMemories>; session: ChatSession }) {
   const { t } = useI18n();
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<MemoryItem | null>(null);
@@ -933,7 +930,7 @@ function Transcript({
   loading,
   error,
 }: {
-  messages: ChatMessageInfo[] | null;
+  messages: ChatMessage[] | null;
   loading: boolean;
   error: string | null;
 }) {

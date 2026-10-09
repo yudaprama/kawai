@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { useI18n } from "@/hooks/use-i18n";
-import { call, errText } from "@/lib/api";
+import { call, errText, type ReadFileResult } from "@/lib/api";
 
 /**
  * The `kawai-file://` markdown token every deliverable viewer resolves — one
@@ -71,7 +71,7 @@ export function ResultActions({
     if (downloading) return;
     setDownloading(true);
     try {
-      const res = await call<{ mime: string; dataBase64: string }>("office_read_file", { fileId });
+      const res = await call<ReadFileResult>("office_read_file", { fileId });
       const anchor = document.createElement("a");
       anchor.href = `data:${res.mime};base64,${res.dataBase64}`;
       anchor.download = fileName;
