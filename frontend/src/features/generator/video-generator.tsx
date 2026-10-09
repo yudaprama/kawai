@@ -58,33 +58,16 @@ import {
   ResultsPaneHeader,
   ToggleRow,
 } from "./generator-shell";
+import type { VideoGenParams } from "@/generated/api-types";
 
-/** Civitai videoGen request the Rust ops accept (camelCase, flattened). */
-interface VideoGenRequest {
-  ecosystem: string;
+/** Civitai videoGen request — the generated wire contract
+ *  (`civitai::VideoGenParams`, specta in-place derive) narrowed with
+ *  the form's workflow literal union: a typo fails tsc, not a server
+ *  400. Frames stay required (both lanes always send at least one). */
+type VideoGenRequest = VideoGenParams & {
   workflow: VideoWorkflowId;
-  prompt: string;
-  negativePrompt?: string;
-  /** Ordered: img2vid = [first, (last)]; ref2vid = references. */
   images: string[];
-  /** Source video for the edit lane (grok v1.0). */
-  video?: string;
-  model?: string;
-  mode?: string;
-  fastMode?: boolean;
-  duration?: number;
-  resolution?: string;
-  aspectRatio?: string;
-  generateAudio?: boolean;
-  enablePromptEnhancer?: boolean;
-  cfgScale?: number;
-  steps?: number;
-  draft?: boolean;
-  style?: string;
-  movementAmplitude?: string;
-  seed?: number;
-  quantity?: number;
-}
+};
 
 interface VideoBlobView {
   videoUrl: string;
@@ -693,8 +676,8 @@ export function VideoGenerator() {
     setFrames([]);
     setSourceVideo(null);
     if (r.duration != null && !videoDurationOmitted(nextEco, nextModel)) {
-      const range = videoDurationRange(nextEco, nextModel, r.resolution);
-      setDuration(Math.min(range.max, Math.max(range.min, r.duration)));
+      const range = videoDurationRange(nextEco, nextModel, r.resolution ?? undefined);
+      setDuration(Math.min(range.max, Math.max(range.min, r.duration ?? 0)));
     }
     if (r.resolution && videoResolutions(nextEco, nextModel).includes(r.resolution)) setResolution(r.resolution);
     if (r.aspectRatio && videoAspects(nextEco, nextModel).includes(r.aspectRatio)) setAspect(r.aspectRatio);

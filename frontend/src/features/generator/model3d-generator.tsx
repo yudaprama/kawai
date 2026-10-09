@@ -48,38 +48,12 @@ import {
   ResultsPaneHeader,
   ToggleRow,
 } from "./generator-shell";
+import type { Model3dGenParams } from "@/generated/api-types";
 
-/** Civitai polyGen request the Rust ops accept (camelCase, flattened). */
-interface Model3dGenRequest {
-  ecosystem: string;
-  process?: string;
-  prompt?: string;
-  image?: string;
-  mode?: string;
-  enablePromptExpansion?: boolean;
-  targetPolycount?: number;
-  topology?: string;
-  symmetryMode?: string;
-  shouldTexture?: boolean;
-  shouldRemesh?: boolean;
-  enablePbr?: boolean;
-  texturePrompt?: string;
-  enableRigging?: boolean;
-  enableAnimation?: boolean;
-  texture?: string;
-  quad?: boolean;
-  autoSize?: boolean;
-  faceLimit?: number;
-  textureAlignment?: string;
-  orientation?: string;
-  textureSeed?: number;
-  modelVersion?: string;
-  steps?: number;
-  cfgScale?: number;
-  octreeResolution?: number;
-  seed?: number;
-  withPreview?: boolean;
-}
+/** Civitai polyGen request — the generated wire contract
+ *  (`civitai::Model3dGenParams`, specta in-place derive) verbatim: the
+ *  form sends no literal unions, so the generated shape IS the type. */
+type Model3dGenRequest = Model3dGenParams;
 
 interface Model3dBlobView {
   url: string;

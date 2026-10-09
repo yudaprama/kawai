@@ -51,29 +51,21 @@ import {
   ResultsPaneHeader,
 } from "./generator-shell";
 import { ResultActions, mediaToken } from "./result-actions";
+import type { MusicGenParams } from "@/generated/api-types";
 
-/** Civitai musicGen request the Rust ops accept (camelCase, only
- *  engine-relevant fields set). */
-interface MusicGenRequest {
+/** Civitai musicGen request — the generated wire contract
+ *  (`civitai::MusicGenParams`, specta in-place derive) narrowed with
+ *  the form's literal unions. `prompt` is a frontend-only hint the
+ *  Rust struct does not carry (serde drops it; the backend drafts
+ *  caption/lyrics from it before building the real request). */
+type MusicGenRequest = MusicGenParams & {
   ecosystem: MusicEcosystemId;
   mode?: MusicMode;
   operation?: MusicOperation;
   prompt?: string;
-  caption?: string;
-  lyrics?: string;
-  abc?: string;
   scoreMode?: MusicScoreMode;
-  steps?: number;
-  bpm?: number;
-  key?: string;
-  instrumentalWeight?: number;
-  vocalWeight?: number;
-  cfgScale?: number;
   model?: MusicAceVariant;
-  coverImage?: string;
-  duration?: number;
-  seed?: number;
-}
+};
 
 interface MusicStatusView extends LaneStatusView {
   audioUrl?: string;
