@@ -2632,6 +2632,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/binance_credentials_set", post(binance_credentials_set_handler))
         .route("/api/binance_credentials_status", post(binance_credentials_status_handler))
         .route("/api/binance_credentials_delete", post(binance_credentials_delete_handler))
+        .route("/api/risk_guard_status", post(risk_guard_status_handler))
+        .route("/api/risk_guard_set", post(risk_guard_set_handler))
         .route("/api/codegraph_init", post(codegraph_init_handler));
 
     // GraphRAG: always registered (handler is no-op when feature off) so the
@@ -3151,6 +3153,30 @@ async fn binance_credentials_delete_handler(
     Extension(user_id): Extension<String>,
 ) -> Result<Json<()>, (StatusCode, String)> {
     logic::binance_credentials::binance_credentials_delete(&user_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+
+// ── Risk guard toggle (Settings → Binance API) ─────────────────────────────
+
+async fn risk_guard_status_handler(
+    Extension(user_id): Extension<String>,
+) -> Json<logic::risk_guard::RiskGuardStatus> {
+    Json(logic::risk_guard::risk_guard_get(&user_id).await.unwrap_or(
+        logic::risk_guard::RiskGuardStatus { enabled: false },
+    ))
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RiskGuardSetRequest {
+    enabled: bool,
+}
+async fn risk_guard_set_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<RiskGuardSetRequest>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    logic::risk_guard::risk_guard_set(&user_id, req.enabled)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Spinner } from "@/components/ui/spinner";
 import { useI18n } from "@/hooks/use-i18n";
 import { call, errText } from "@/lib/api";
@@ -15,6 +16,11 @@ import type { TranslationKey } from "@/lib/i18n";
 interface BinanceCredentialStatus {
   source: "user" | "baked" | "none";
   keyPreview: string | null;
+}
+
+/** Risk-guard toggle state from `risk_guard_status`. */
+interface RiskGuardStatus {
+  enabled: boolean;
 }
 
 const SOURCE_LABEL: Record<BinanceCredentialStatus["source"], TranslationKey> = {
@@ -35,6 +41,7 @@ const SOURCE_TONE: Record<BinanceCredentialStatus["source"], string> = {
 export function BinanceApiPage({ onBack }: { onBack: () => void }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<BinanceCredentialStatus | null>(null);
+  const [guard, setGuard] = useState<RiskGuardStatus | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
   const [busy, setBusy] = useState(false);
@@ -44,6 +51,7 @@ export function BinanceApiPage({ onBack }: { onBack: () => void }) {
   const refresh = useCallback(async () => {
     try {
       setStatus(await call<BinanceCredentialStatus>("binance_credentials_status"));
+      setGuard(await call<RiskGuardStatus>("risk_guard_status"));
     } catch (e) {
       setError(errText(e));
     }
@@ -87,6 +95,19 @@ export function BinanceApiPage({ onBack }: { onBack: () => void }) {
 
   const canSave = apiKey.trim().length > 0 && apiSecret.trim().length > 0 && !busy;
 
+  const toggleGuard = async (enabled: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await call("risk_guard_set", { enabled });
+      setGuard({ enabled });
+    } catch (e) {
+      setError(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <AssetShell title={t("binanceApi.title")} subtitle={t("binanceApi.subtitle")} onBack={onBack}>
       <AssetPageHeader title={t("binanceApi.title")} subtitle={t("binanceApi.subtitle")} />
@@ -124,6 +145,17 @@ export function BinanceApiPage({ onBack }: { onBack: () => void }) {
 
           {error && <p className="text-destructive text-xs">{error}</p>}
           {notice && <p className="text-xs text-emerald-600 dark:text-emerald-400">{notice}</p>}
+
+          <div className="flex items-center justify-between rounded-md border bg-muted/30 p-3">
+            <div className="space-y-0.5">
+              <div className="text-sm font-medium">Risk guard</div>
+              <p className="text-muted-foreground text-xs">
+                Periksa posisi futures tiap 15 menit selama app terbuka — peringatan di log saat ada posisi tanpa
+                stop-loss.
+              </p>
+            </div>
+            <Switch checked={guard?.enabled ?? false} disabled={busy} onCheckedChange={(v) => void toggleGuard(v)} />
+          </div>
 
           <div className="flex gap-2">
             <Button size="sm" disabled={!canSave} onClick={() => void save()}>

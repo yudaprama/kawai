@@ -1053,6 +1053,7 @@ dependencies = [
  "reqwest 0.13.4",
  "serde",
  "serde_json",
+ "specta",
  "tokio",
 ]
 
@@ -3335,6 +3336,7 @@ dependencies = [
  "kawai-agent",
  "kawai-agent-contract",
  "kawai-analytics",
+ "kawai-api-types",
  "kawai-auth",
  "kawai-cli",
  "kawai-constants",
@@ -3397,6 +3399,7 @@ dependencies = [
  "graph",
  "kawai-agent-contract",
  "kawai-analytics",
+ "kawai-api-types",
  "kawai-db",
  "kawai-embedding",
  "kawai-events",
@@ -3411,7 +3414,6 @@ dependencies = [
  "remote-llm",
  "serde",
  "serde_json",
- "specta",
  "text-splitter",
  "tokio",
  "url",
@@ -3445,6 +3447,15 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "kawai-api-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "specta",
+ "specta-typescript",
 ]
 
 [[package]]
@@ -3587,6 +3598,7 @@ name = "kawai-memory"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "kawai-api-types",
  "kawai-db",
  "kawai-embedding",
  "kawai-tools",

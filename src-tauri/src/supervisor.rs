@@ -1670,7 +1670,7 @@ async fn run_tool_search(
     // embedding space. A silent fallback to another model (the local LiteRT
     // embedder, same 768-dim) is a different space — cosine becomes noise
     // and the search returns junk (planner sessions 41–42).
-    let vecs = match embedder.embed_primary(queries.to_vec()).await {
+    let vecs = match embedder.embed_primary(kawai_embedding::EmbedRole::Query, queries.to_vec()).await {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!(component = "supervisor", error = %e, "catalog embedding failed");
@@ -1831,7 +1831,7 @@ pub async fn narrow_registry_for_goal_with(
     let _cfg = kawai_tool_catalog::RemoteConfig::from_env()?;
     let model = kawai_embedding::build_providers_from_env();
     let query_vec = model
-        .embed_strings(vec![goal.to_string()])
+        .embed_strings(kawai_embedding::EmbedRole::Query, vec![goal.to_string()])
         .await
         .ok()?
         .into_iter()

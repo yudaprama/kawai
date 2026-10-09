@@ -46,7 +46,7 @@ async fn run() -> Result<(), String> {
             .ok_or("KAWAI_TURSO_* missing")?;
         let model = kawai_embedding::build_providers_from_env();
         let qvec = model
-            .embed_strings(vec![goal.to_string()])
+            .embed_strings(kawai_embedding::EmbedRole::Query, vec![goal.to_string()])
             .await
             .map_err(|e| format!("embed: {e}"))?
             .into_iter()

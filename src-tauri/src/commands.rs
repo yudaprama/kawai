@@ -2283,3 +2283,20 @@ pub async fn binance_credentials_delete(
     let user_id = session_user_id(&session)?;
     logic::binance_credentials::binance_credentials_delete(&user_id).await
 }
+
+#[tauri::command]
+pub async fn risk_guard_status(
+    session: State<'_, Session>,
+) -> Result<logic::risk_guard::RiskGuardStatus, String> {
+    let user_id = session_user_id(&session)?;
+    logic::risk_guard::risk_guard_get(&user_id).await
+}
+
+#[tauri::command]
+pub async fn risk_guard_set(
+    enabled: bool,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::risk_guard::risk_guard_set(&user_id, enabled).await
+}

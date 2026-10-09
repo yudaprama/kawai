@@ -53,7 +53,7 @@ async fn run() -> Result<(), String> {
     for query in &queries {
         println!("\n════ QUERY: {query}");
         let vecs = model
-            .embed_strings(vec![query.clone()])
+            .embed_strings(kawai_embedding::EmbedRole::Query, vec![query.clone()])
             .await
             .map_err(|e| format!("embed: {e}"))?;
         let Some(qvec) = vecs.into_iter().next() else {

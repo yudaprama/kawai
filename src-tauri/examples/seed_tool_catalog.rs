@@ -84,7 +84,7 @@ async fn run() -> Result<(), String> {
         .collect();
     println!("[seed] embedding {} tools…", texts.len());
     let embeddings = model
-        .embed_strings(texts)
+        .embed_strings(kawai_embedding::EmbedRole::Document, texts)
         .await
         .map_err(|e| format!("embed: {e}"))?;
     if embeddings.len() != definitions.len() {

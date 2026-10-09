@@ -505,6 +505,10 @@ pub mod codegraph;
 // the always-registered commands); without the `binance` feature it serves
 // guidance-error stubs (codegraph/tts pattern).
 pub mod binance_credentials;
+// In-process futures risk guard (feature `binance`): 15-minute timer over
+// the active user's toggle; the cron binary covers closed periods with the
+// same cycle function. Always compiled; no-op without the feature.
+pub mod risk_guard;
 // TTS via piper-rs (neural Piper ONNX models). Feature-gated internally;
 // always compiled so the command stays registered in generate_handler!.
 pub mod tts;

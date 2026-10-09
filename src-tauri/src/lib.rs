@@ -97,6 +97,16 @@ pub fn run() {
                 // without the on-device embedder): scan → reconcile → embed
                 // lands before the first plan_task instead of racing it.
                 kawai_cli::ensure_catalog_init();
+                // In-process futures risk guard: 15-minute timer that audits
+                // the active user's positions when the toggle is ON
+                // (Settings → Binance API). The setup hook runs OUTSIDE any
+                // tokio reactor, so the spawn MUST go through
+                // tauri::async_runtime (a bare `tokio::spawn` here panics and
+                // aborts the app). Desktop-only: the cron binary
+                // (kawai-riskguard) is the headless scheduler for closed
+                // periods, sharing the same cycle function.
+                #[cfg(feature = "binance")]
+                tauri::async_runtime::spawn(logic::risk_guard::run_loop());
             }
             // Tier-0 web read engine: hidden webview owned by the shell.
             // kawai-web never registers one (Cloudflare-only there).
@@ -185,6 +195,8 @@ pub fn run() {
         commands::binance_credentials_set,
         commands::binance_credentials_status,
         commands::binance_credentials_delete,
+        commands::risk_guard_status,
+        commands::risk_guard_set,
         commands::codegraph_is_available,
         commands::codegraph_init,
         commands::check_monad_balance,
