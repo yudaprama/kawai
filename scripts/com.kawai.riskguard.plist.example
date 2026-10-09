@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- com.kawai.riskguard — TEMPLATE, belum terpasang. Pasang manual bila diinginkan:
+
+     1. Build + install biner:
+        cd crates && cargo build -p kawai-riskguard && \
+        cp target/debug/kawai-riskguard ~/.local/bin/kawai-riskguard
+     2. Salin template (perbaiki /Users/yuda bila perlu):
+        cp scripts/com.kawai.riskguard.plist.example ~/Library/LaunchAgents/com.kawai.riskguard.plist
+     3. launchctl load ~/Library/LaunchAgents/com.kawai.riskguard.plist
+     4. Pantau: tail -f /Users/yuda/ai-orchestration/kawai/.riskguard.log
+
+     Loop bawaan 15 menit; ubah argumen di ProgramArguments (--limit, --interval-secs).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.kawai.riskguard</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/yuda/.local/bin/kawai-riskguard</string>
+    <string>--limit</string>
+    <string>15</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/yuda/ai-orchestration/kawai</string>
+
+  <!-- Start at login/boot, restart if it exits -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/yuda/ai-orchestration/kawai/.riskguard.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/yuda/ai-orchestration/kawai/.riskguard.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+</dict>
+</plist>

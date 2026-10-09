@@ -86,7 +86,7 @@ Per-user `logic::db_connection(user_id)` → `~/Library/Application Support/pro.
 | # | Crate | Role | Input → Output | `libSQL` Tables | Feature |
 |---|---|---|---|---|---|
 | **1** | `crates/integrations/ragloader` | Upstream parser — `docx/xlsx/pptx→office_oxide`, `pdf→pdf_oxide`, `md→MarkdownSplitter`, images→`DescriberChain` | `Path` → `Vec<Chunk>` | — (stateless) | `office` |
-| **2** | `kawai-embedding` | Multi-provider embedder — `OpenAI 1024` / `Nvidia` / `Gemini` / `LitertProvider EmbeddingGemma 768d` | `Vec<String>` → `Vec<Vec<f64>>` | — | `kawai-embedding` |
+| **2** | `kawai-embedding` | Multi-provider embedder — `OpenAI 1024` / `Nvidia` / `Gemini` / `LitertProvider EmbeddingGemma 2 768d` | `Vec<String>` → `Vec<Vec<f64>>` | — | `kawai-embedding` |
 | **3** | `kawai-knowledge` `schema`+`ingest` | Classic RAG — schema DDL, chunk → embed → insert (1500/200) | `Path` → indexed chunks | `rag_chunks` / `_embeddings` / `_map` + `rag_chunks_fts` + `rag_files` + `session_files` | `kawai-knowledge/office` (via `office`) |
 | **4** | `kawai-knowledge` `search`+`tools` | Retrieval — vector + BM25 + RRF (`k=60`) + `KnowledgeSearchTool` (`kawai_tools::AgentTool`) | `query, mode` → `Vec<RagHit>` | — | `kawai-knowledge/office` |
 | **5** | `kawai-knowledge` `session` | Session-scoped file management — association, list, add, forget, import, delete | — | `session_files` | `kawai-knowledge/office` |
@@ -120,7 +120,7 @@ One principle first: all knowledge runs **in-process inside a single SQLite file
 | Keyword | **FTS5** (built into SQLite) + `bm25()` | `rag_chunks_fts` + trigger mirror | Virtual table + triggers created at runtime on first index (`ensure_fts`). Query tokens are OR-ed so free-form input cannot trigger FTS syntax errors. |
 | Hybrid fusion | **Hand-rolled RRF in Rust** (k=60) | `crates/engines/knowledge/src/search.rs` (`rrf_fuse`) | Not a DB-engine feature — vector and BM25 rankings are merged in application code. |
 | Chunking | **`text-splitter` 0.27** — `MarkdownSplitter`, char-based | RAG 1500/200; graph 1200/150 | Markdown-aware: chunks follow headings, never cut through structure. |
-| Embedding | **`kawai-embedding`** multi-provider, selected via env | OpenAI (1024d) / NVIDIA / Gemini / **LiteRT EmbeddingGemma 768d on-device** | The local (LiteRT) provider makes the pipeline fully offline-capable. The provider's dimension determines the table schema: switching to a different-dims provider = mandatory re-index (§9 #4). |
+| Embedding | **`kawai-embedding`** multi-provider, selected via env | OpenAI (1024d) / NVIDIA / Gemini / **LiteRT EmbeddingGemma 2 768d on-device** | The local (LiteRT) provider makes the pipeline fully offline-capable. The provider's dimension determines the table schema: switching to a different-dims provider = mandatory re-index (§9 #4). Swapping the model at the SAME dimension is still a vector-space break (cosine degrades silently) — migration `0028_reset_embedding_vectors` handles that case. |
 | Document parsing | **`ragloader`** → office_oxide (docx/xlsx/pptx, pure Rust, submodule), **pdf_oxide** (git dep, pure Rust), YouTube transcript, DescriberChain (vision for images) | `crates/integrations/ragloader` | All in-process — no office server, no external CLI. |
 | Entity extraction (graph) | **`regex` crate** only | `graph/types.rs` `extract_entities` | No LLM/NLP — this is GraphRAG's current quality ceiling (TitleCase phrases only, see §4). |
 | Runtime | **tokio** async; agent tools = `kawai_tools::AgentTool` | All crates | SQLite connection opened per operation (`db_connection(user_id)`); idempotent migrations run on every connection. |
@@ -163,7 +163,7 @@ Notes: RRF `k=60` is the rank-smoothing constant, **not** the result count — e
 | Dimension | Kawai | Tencent | Notes |
 |---|---|---|---|
 | Chunking | `MarkdownSplitter` 1500/200, Graph 1200/150 | Wiki `chunker.ts` 12K/400 (trigger 28K) | ~8× granularity gap |
-| Embedding | `OpenAI 1024` / `Nvidia` / `Gemini` / `EmbeddingGemma 768d` | Any OpenAI-compatible + `embeddinggemma-300m-q8_0` | Same 300M model, different provider wiring |
+| Embedding | `OpenAI 1024` / `Nvidia` / `Gemini` / `EmbeddingGemma 2 768d` | Any OpenAI-compatible + `embeddinggemma-2-740m.litertlm` | Same 740M model, different provider wiring |
 | Vector store | libSQL `FLOAT32(dims)` + `libsql_vector_idx` | Prod TCVDB; standalone `vec0` | Same hybrid logic, different engine |
 | Keyword search | FTS5 `rag_chunks_fts` + `bm25() ASC` | FTS5 + BM25 | Identical pattern |
 | Hybrid ranking | RRF `k=60` (rag) + weighted 3-arm RRF `0.2/0.5/0.3` (graph, RPC-only) | RRF `k=60`, `candidateK=limit×3` | Same constant; no rag+graph fusion in kawai |

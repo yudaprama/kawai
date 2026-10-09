@@ -1,37 +1,43 @@
 # Implementation Plan — Multimodal knowledge indexing (LiteRT-LM embedding engine)
 
-Status: **TEXT EMBEDDING SHIPPED via LiteRT (2026-08-26); MEDIA INDEXING still
-backlog — blocked on upstream model release** (see §0).
+Status: **TEXT EMBEDDING SHIPPED via LiteRT (2026-08-26), migrated to
+EmbeddingGemma 2 (2026-10-09); MEDIA INDEXING unblocked — the model trigger
+landed, see §0.**
 
-## What shipped (2026-08-26) — local text embedding on LiteRT
+## What shipped — local text embedding on LiteRT
 
-The desktop/web local embedding fallback runs **EmbeddingGemma 300M through
-LiteRT directly** (`kawai-embedding::LitertProvider` →
-`cognee_litert_lm::TfliteEmbedder`, feature `litert`). Key facts:
+The desktop/web local embedding fallback runs **EmbeddingGemma 2 740M through
+LiteRT-LM** (`kawai-embedding::LitertProvider` →
+`cognee_litert_lm::LitertEmbedder`, feature `litert`). Key facts:
 
-- Model: `embeddinggemma-300M_seq512_mixed-precision.tflite` +
-  `sentencepiece.model` from the ungated HF repo
-  `ghanashyamvtatti/embeddinggemma-300m-litert` (auto-downloaded to
-  `~/.kawai/models/`, with `.part` resume support).
-- Signature: `text_batch i32[1,512] → encodings f32[1,768]` (BOS-prefixed,
-  0-padded input; output already mean-pooled + L2-normalized).
-- Runner: standalone C API in the vendored fork
-  (`c/tflite_embed.{h,cc}`, exported from `//c:litert-lm`; Rust wrapper
-  `src/tflite_embed.rs`) — NOT LiteRT-LM's EmbeddingEngine.
-- Dimension: **768** — the pool-wide dimension (`kawai-embedding::DEFAULT_DIM`).
+- Model: `embeddinggemma-2-740m.litertlm` from the official ungated HF repo
+  `litert-community/embeddinggemma-2-740m-litert-lm` (auto-downloaded to
+  `~/.kawai/models/`, with `.part` resume support). One file: the tokenizer
+  ships inside the bundle, so there is no second SentencePiece download.
+- Dimension: **768** — the pool-wide dimension (`kawai-embedding::DEFAULT_DIM`),
+  which is also the native output of EG2 (MRL-truncatable to 512/256/128).
   All providers share one 768-d space: OpenRouter `text-embedding-3-small`,
   NVIDIA `llama-3_2-nemoretriever-300m-embed-v1`, and Gemini `embedding-001`
   request 768 server-side (Matryoshka `dimensions` / `outputDimensionality`,
-  client-side truncate as safety net); the local LiteRT runner is native 768.
-  The `TenantAwareEmbedder` dimension-mismatch guard remains a structural
-  safety net — a provider reporting any other dim is skipped, never mixed in.
-- Why not the EmbeddingEngine C API: it requires a split
-  `tf_lite_embedder` (per-token lookup) + `tf_lite_text_encoder`
-  (embeddings+mask consumer) `.litertlm` bundle. Google has never published
-  such a bundle; every community conversion fails to load (verified
-  empirically: missing tokenizer / whole-graph-as-embedder shape mismatch /
-  mislabeled content). The published whole-sequence tflites are incompatible
-  with both required sections.
+  client-side truncate as safety net).
+- Runner: LiteRT-LM's `EmbeddingEngine` (the `//c:litert-lm` C API), driven in
+  batch via `compute_embedding_batch`. Text signature families
+  `encoder_{128…8192}`; outputs arrive L2-normalized with `normalize` on.
+- Swapping the embedder is a vector-space break even at the same dimension, so
+  the change shipped with `db` migration `0028_reset_embedding_vectors`, which
+  drops the stale rag / graph / memory vectors and clears the index status.
+
+### What changed on 2026-10-09 (the EG1 → EG2 cutover)
+
+Before: EmbeddingGemma 300M via the standalone whole-graph `.tflite` runner
+(`c/tflite_embed.{h,cc}` + a separate `sentencepiece.model`), because
+`EmbeddingEngine` requires a split `tf_lite_embedder` (per-token lookup) +
+`tf_lite_text_encoder` `.litertlm` bundle and no such bundle existed. Google's
+2026-09-29 `litert-community/embeddinggemma-2-*` release publishes exactly
+that, so the provider now uses the real embedding engine and the standalone
+runner is no longer on the text path. The C API also moved to 1.0.0 (every
+call returns `LiteRtLmStatusCode` and writes results through out-params);
+`cognee-litert-lm`'s FFI layer was ported to match.
 
 ## Remaining backlog — media indexing
 
@@ -45,17 +51,19 @@ Everything below is designed to be **dimension-agnostic** (dim is read from
 the model at runtime). The hard blocker is a model file that carries a vision
 encoder:
 
-- [ ] A vision-capable embedding file loadable by LiteRT (either an official
-      split `.litertlm` bundle with vision sections, or a published
-      whole-graph multimodal tflite that can ride the same standalone-runner
-      pattern as the text model above).
+- [x] A vision-capable embedding file loadable by LiteRT — shipped:
+      `litert-community/embeddinggemma-2-740m-litert-lm` (full multimodal:
+      text + vision 170M + audio 300M, `vision_tokens_per_image` 70–1120,
+      audio soft tokens 12). The same bundle backs text today, so W1 can load
+      one model rather than two.
 
 Findings locked in during research (2026-08-19):
 
 - LiteRT-LM does NOT hardcode the embedding dim anywhere — the executor reads
   tensor shapes at load (`embedding_litert_compiled_model_executor.cc:93-119`),
   the C test only asserts `dim > 0`. Runtime size is the source of truth.
-- EmbeddingGemma v1 native dim = 768 (MRL-truncatable to 512/256/128).
+- EmbeddingGemma 2 native dim = 768 (MRL-truncatable to 512/256/128) — the
+  same `DEFAULT_DIM` the text path already uses, so media vectors can share it.
 - The multimodal token scheme is real and validated in-tree
   (`embedding_engine_impl_test.cc:873-890`): image → `[start_of_image, -1×N,
   end_of_image]`, audio analog; negative placeholder ids are replaced by

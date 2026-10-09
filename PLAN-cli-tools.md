@@ -117,7 +117,7 @@ agent toolset via `agent_registry::add_runtime_tools` (cross-cutting, like
   (`kawai_paths::cli_catalog_db`): `cli_catalog(name, description, path,
   embedding FLOAT32(dims))` + an FTS5/BM25 mirror, hybrid cosine+BM25 fused
   via RRF with the relative-cosine gate. Embeddings come ONLY from the
-  on-device EmbeddingGemma 300M engine (same fixed space as the catalog
+  on-device EmbeddingGemma 2 740M engine (same fixed space as the catalog
   catalog's seeding) — builds without that engine (mobile/web) get no
   catalog and stay on the fallback block. The background build (Tauri setup
   / web main via `kawai_cli::ensure_catalog_init`) scans, reconciles (upsert
