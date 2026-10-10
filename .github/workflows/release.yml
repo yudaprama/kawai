@@ -227,7 +227,11 @@ jobs:
   build-linux:
     needs: bump
     if: needs.bump.outputs.skipped == 'false'
-    runs-on: ubuntu-22.04
+    # 24.04 (glibc 2.39), NOT 22.04: piper-rs's static ONNX Runtime prebuilt
+    # references __isoc23_strtol & friends, which only exist on glibc >= 2.38
+    # — link fails on 22.04's glibc 2.35. Consequence: the release .deb/.AppImage
+    # need a distro with glibc >= 2.39 (Ubuntu 24.04+, Fedora 40+, Debian 13+).
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -252,7 +256,7 @@ jobs:
       - name: Install Tauri Linux system deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libfuse2
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libfuse2t64
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -264,21 +268,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/bazel
-          key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
-          restore-keys: bazel-linux-x86_64-
+          key: bazel-linux24-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-linux24-x86_64-
 
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
         run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr whatlang-rs
 
-      # LiteRT-LM's .bazelrc pins CC=clang (action_env); the runner default is
-      # clang-14, whose std lib lacks std::source_location in C++20 mode
-      # (absl fails). clang-18 via apt.llvm.org — stays on ubuntu-22.04 so the
-      # built .so keeps targeting glibc >= 2.35.
+      # LiteRT-LM's .bazelrc pins CC=clang (action_env). ubuntu-24.04 ships
+      # clang-18 in universe — no apt.llvm.org repo needed. clang-18's std lib
+      # has the std::source_location C++20 support absl requires (the older
+      # runner default clang-14 lacked it).
       - name: Install clang-18
         run: |
           set -euo pipefail
-          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
-          echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm18.list
           sudo apt-get update -qq
           sudo apt-get install -y -qq clang-18
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 1000
@@ -429,6 +431,27 @@ jobs:
           # DLL so runtime loading and the bundle manifest resolve them.
           cp prebuilt/windows_x86_64/*.dll ../../native/
 
+      # ocr-rs `mnn-dynamic` (src-tauri feature `mnn-dynamic`, added to the
+      # tauri build args below): the prebuilt STATIC MNN is compiled /MT and
+      # its objects LNK2038-clash with the /MD onnxruntime objects from
+      # piper-rs's static ort-sys on the same MSVC link line. The dynamic
+      # prebuilt links via an import lib (no CRT directives in the link) and
+      # ships MNN.dll, which is staged beside litert-lm.dll so
+      # tauri.windows.conf.json's bundle.resources installs it next to the exe.
+      - name: Download MNN prebuilt (dynamic) for ocr-rs mnn-dynamic
+        shell: pwsh
+        run: |
+          $root = "C:\_mnn"
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $zip = "$root\mnn-dev-windows-x86_64.zip"
+          Invoke-WebRequest -Uri "https://github.com/zibo-chen/MNN-Prebuilds/releases/download/dev/mnn-dev-windows-x86_64.zip" -OutFile $zip
+          Expand-Archive -Force -Path $zip -DestinationPath $root
+          "MNN_LIB_DIR=C:\_mnn\mnn-dev-windows-x86_64\lib" >> $env:GITHUB_ENV
+          "MNN_INCLUDE_DIR=C:\_mnn\mnn-dev-windows-x86_64\include" >> $env:GITHUB_ENV
+          $native = Join-Path $env:GITHUB_WORKSPACE "cognee-litert-lm\native"
+          New-Item -ItemType Directory -Path $native -Force | Out-Null
+          Copy-Item "$root\mnn-dev-windows-x86_64\lib\MNN.dll" $native -Force
+
       - name: Build .msi/.exe (with litert + office)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -440,7 +463,7 @@ jobs:
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
-          args: --features litert,tts,binance --config .github/tauri-litert.json
+          args: --features litert,tts,binance,mnn-dynamic --config .github/tauri-litert.json
 
   build-web:
     needs: bump

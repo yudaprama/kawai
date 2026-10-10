@@ -217,6 +217,14 @@ analytics-sql = ["kawai-analytics/analytics-sql", "dep:sqlx"]
 # TTS via piper-rs (neural Piper ONNX models). Adds ~40 MB (static ONNX Runtime)
 # and requires cmake + clang at build time (espeak-ng phonemizer compiled from source).
 tts = ["dep:piper-rs"]
+# Windows release builds only: switch ocr-rs (PaddleOCR/MNN) to the prebuilt
+# dynamic MNN (import lib + MNN.dll at runtime). The static prebuilt MNN is
+# compiled /MT, which LNK2038-clashes with the /MD onnxruntime objects from
+# piper-rs's static ort-sys on the same MSVC link line. Requires
+# MNN_LIB_DIR/MNN_INCLUDE_DIR in the environment (release.yml downloads the
+# MNN-Prebuilds zip and exports them; MNN.dll is bundled via
+# tauri.windows.conf.json). Default builds keep the /MT static MNN.
+mnn-dynamic = ["kawai-vision/paddle-ocr-mnn-dynamic"]
 # The full product in one flag (CI battery shorthand): on-device LLM,
 # remote SQL, Binance, TTS, CodeGraph, web server + desktop shell.
 full = ["desktop", "litert", "analytics-sql", "binance", "tts", "codegraph", "monad", "web"]
