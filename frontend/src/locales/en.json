@@ -507,6 +507,7 @@
     "bridgeFirst": "Bridge from other networks first if needed."
   },
   "knowledge": {
+    "deleteDocumentAria": "Delete {{name}}",
     "title": "Knowledge",
     "importFile": "Import File",
     "importYoutube": "Import YouTube",
@@ -529,13 +530,14 @@
   "memory": {
     "title": "Memory",
     "tabs": {
+      "l0": "Conversations (L0)",
       "l1": "Memories (L1)",
       "l2": "Scenes (L2)",
       "l3": "Persona (L3)",
       "profile": "Profile",
       "experiences": "Experiences"
     },
-    "createMemory": "Add Memory",
+    "createMemory": "Add memory",
     "memoryKinds": {
       "preference": "Preference",
       "rule": "Rule",
@@ -550,10 +552,25 @@
       "episodic": "Episodic",
       "general": "General"
     },
-    "extractButton": "Extract from Session",
+    "origin": {
+      "manual": "Manual",
+      "extracted": "Extracted",
+      "consolidated": "Consolidated"
+    },
+    "facetState": {
+      "active": "Active",
+      "pinned": "Pinned",
+      "dropped": "Dropped"
+    },
+    "extractButton": "Extract from this block",
+    "extracting": "Extracting…",
     "consolidateButton": "Consolidate",
-    "sceneExtractButton": "Extract Scenes",
-    "personaGenerateButton": "Generate Persona",
+    "consolidating": "Consolidating…",
+    "sceneExtractButton": "Extract scenes",
+    "extractingScenes": "Extracting scenes…",
+    "personaGenerateButton": "Generate persona",
+    "generatingPersona": "Generating…",
+    "regenerated": "regenerated from all memories",
     "facetDistillButton": "Distill Facets",
     "searchPlaceholder": "Search memories…",
     "graphTab": "Graph",
@@ -565,26 +582,83 @@
       "linkedin": "LinkedIn",
       "document": "Document",
       "questions": "Questions",
-      "manual": "Manual"
+      "manual": "Manual",
+      "inferred": "Inferred"
     },
     "chatMemory": "chat memory",
     "chatMemoryTitle": "Chat Memory",
     "filterBlocks": "Filter blocks…",
     "selectBlock": "Select a memory block to inspect its layers",
     "blocks": "Blocks",
+    "untitled": "Untitled",
+    "archived": "Archived",
+    "blockLabel": "block #{{id}}",
+    "allBlocks": "All blocks",
+    "allBlocksHint": "no block selected — every layer below is global",
+    "selectBlockToExtract": "Select a block on the left to extract memories from its transcript",
+    "blocksCount": {
+      "one": "{{count}} memory block",
+      "other": "{{count}} memory blocks"
+    },
+    "l1Count": {
+      "one": "{{count}} memory",
+      "other": "{{count}} memories"
+    },
+    "globalMemories": {
+      "one": "{{count}} global memory",
+      "other": "{{count}} global memories"
+    },
+    "matchCount": {
+      "one": "{{count}} match",
+      "other": "{{count}} matches"
+    },
+    "sessionLoadError": "Couldn't load sessions — {{error}}",
+    "noBlocks": "No memory blocks yet — start a chat with an agent first.",
+    "loadingTranscript": "Loading transcript…",
+    "graphBuilding": "Building graph…",
+    "graphLoading": "Loading graph…",
+    "graphNote": "memories (newest 200) + the entities they mention",
+    "graphEmpty": "No memories to graph yet — add or extract memories first.",
     "graphBuildError": "Couldn't build the graph — {{error}}",
+    "noMatches": "No memories match your search.",
+    "noMemoriesHint": "No memories yet — extract them from a block, or add one manually.",
+    "newMemory": "New memory",
+    "editMemoryTitle": "Edit “{{title}}”",
+    "kindLabel": "Kind",
+    "titleLabel": "Title",
+    "contentLabel": "Content",
+    "editMemory": "Edit memory",
+    "editMemoryAria": "Edit {{title}}",
+    "deleteMemoryAria": "Delete {{title}}",
+    "pinAria": "Pin {{title}}",
+    "unpinAria": "Unpin {{title}}",
+    "pinTitle": "Pin — pinned memories sort first in the agent's prompt block",
+    "confirmAgain": "Click again to confirm",
+    "forgetAria": "Forget {{key}}",
+    "forget": "Forget facet",
+    "stability": "stability {{value}}% · {{state}}",
+    "resetNonPinned": "Reset non-pinned",
+    "confirmReset": "Confirm reset",
+    "resetNonPinnedTitle": "Delete all non-pinned facets",
+    "noFacets": "No facets yet — run memory extraction (L1 tab) or onboarding, and the distiller folds profile facts into stable facets here.",
+    "profileNote": "· injected as <profile>",
     "deleteExperience": "Delete experience",
-    "sceneExtractTitle": "Cluster related memories and name each scene via the cloud tier (needs a configured vault). Replaces all existing scenes.",
-    "personaGenerateTitle": "Synthesize the persona from all memories via the cloud tier (needs a configured vault). Replaces the stored persona.",
-    "facetDistillTitle": "Distill durable facts from this block's transcript via the cloud tier (needs a configured vault)",
-    "consolidateTitle": "Merge redundant memories into single items (embedding clustering + cloud LLM; needs a configured vault)",
+    "noExperiences": "No experiences yet — finish a run and the supervisor records what it did and learned here.",
+    "experiencesNote": "· what each run learned",
+    "experienceMeta": "session #{{session}} · tools: {{tools}} · {{time}}",
+    "noScenes": "No scenes yet — extract them from your memories above (needs at least a couple of related memories).",
+    "noPersona": "No persona yet — generate one from your memories (needs at least one memory).",
     "semanticSearch": "Semantic search…",
     "searchSemantic": "Search by semantic similarity",
-    "editMemory": "Edit memory",
     "factDescription": "An atomic, durable fact about the user the agents should remember.",
     "factPlaceholder": "Prefers dark UIs",
     "factDescriptionPlaceholder": "Always ships dark-mode-first interfaces; light mode only on request.",
-    "noMessages": "No messages stored for this block."
+    "noMessages": "No messages stored for this block.",
+    "refresh": "Refresh",
+    "sceneExtractTitle": "Cluster related memories and name each scene via the cloud tier (needs a configured vault). Replaces all existing scenes.",
+    "personaGenerateTitle": "Synthesize the persona from all memories via the cloud tier (needs a configured vault). Replaces the stored persona.",
+    "facetDistillTitle": "Distill durable facts from this block's transcript via the cloud tier (needs a configured vault)",
+    "consolidateTitle": "Merge redundant memories into single items (embedding clustering + cloud LLM; needs a configured vault)"
   },
   "skills": {
     "title": "Skills",
@@ -675,6 +749,7 @@
     "explorePlaceholder": "Enter a code question…"
   },
   "analytics": {
+    "deleteSourceAria": "Delete source {{name}}",
     "title": "Analytics",
     "sqlProfiles": "SQL Profiles",
     "createProfile": "Create Profile",

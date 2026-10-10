@@ -10,6 +10,7 @@ import {
   toFriendlyError,
 } from "@/features/chat/lib/chat-helpers";
 import type { ChatSession } from "@/lib/api";
+import { setLocale } from "@/lib/i18n";
 
 describe("stripToolMarkup", () => {
   it("keeps plain prose untouched", () => {
@@ -60,6 +61,23 @@ describe("relativeTime", () => {
 
   it("never reports a future timestamp as negative age", () => {
     expect(relativeTime(Math.floor(now / 1000) + 600, now)).toBe("just now");
+  });
+
+  it("formats the absolute-date tail in the APP locale, not the OS one", () => {
+    // Past a week it stops bucketing and prints a date. That date used to be
+    // rendered with `toLocaleDateString(undefined, …)`, so the same session
+    // read "Aug 12" on one machine and "12 Agu" on another while the rest of
+    // the app followed the in-app switch.
+    const old = ago(10 * 86_400_000);
+    setLocale("en");
+    const en = relativeTime(old, now);
+    setLocale("id");
+    const id = relativeTime(old, now);
+    setLocale("en");
+    expect(en).not.toBe("");
+    // Indonesian abbreviates months differently ("Agu" vs "Aug"); had the
+    // formatter ignored the app locale these would be byte-identical.
+    expect(id).not.toBe(en);
   });
 });
 

@@ -1,6 +1,7 @@
 import { Icon } from "@/components/shared/icon";
 import { useEffect, useState } from "react";
 
+import { ConfirmIconButton } from "@/components/shared/confirm-action";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -235,10 +236,11 @@ export function SqlProfilesSection() {
                   >
                     <Icon name="pencil" className="size-3.5" />
                   </Button>
-                  <Button
-                    aria-label={
-                      confirmDeleteName === p.name ? `Confirm delete profile ${p.name}` : `Delete profile ${p.name}`
-                    }
+                  <ConfirmIconButton
+                    armed={confirmDeleteName === p.name}
+                    confirmLabel={t("common.confirm")}
+                    icon="trash-2"
+                    label={t("analytics.deleteSourceAria", { name: p.name })}
                     onClick={() => {
                       if (confirmDeleteName !== p.name) {
                         setConfirmDeleteName(p.name);
@@ -247,12 +249,7 @@ export function SqlProfilesSection() {
                       setConfirmDeleteName(null);
                       void remove(p.name);
                     }}
-                    size="icon-sm"
-                    title={confirmDeleteName === p.name ? "Click again to delete" : "Delete source"}
-                    variant={confirmDeleteName === p.name ? "destructive" : "ghost"}
-                  >
-                    <Icon name="trash-2" className="size-3.5" />
-                  </Button>
+                  />
                 </div>
               </div>
               {test?.name === p.name && (

@@ -15,6 +15,7 @@ import { EmptyPane } from "@/features/assets/components/asset-shell";
 import { FileIcon } from "@/components/shared/file-icon";
 import { KnowledgeStatusBadge } from "@/features/knowledge/components/knowledge-file-row";
 import { KnowledgeFileSummary } from "@/features/knowledge/components/knowledge-file-summary";
+import { ConfirmButton } from "@/components/shared/confirm-action";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -230,15 +231,12 @@ function SourceDetail({
                   Add to session
                 </Button>
               )}
-              <Button
-                className={confirmDelete ? "" : "text-destructive hover:text-destructive"}
+              <ConfirmButton
+                armed={confirmDelete}
+                confirmLabel={t("common.confirm")}
+                label={t("common.delete")}
                 onClick={() => onDelete(file)}
-                size="xs"
-                title={confirmDelete ? "Click again to confirm — deletes the document everywhere" : "Delete document"}
-                variant="outline"
-              >
-                {confirmDelete ? t("common.confirm") : t("common.delete")}
-              </Button>
+              />
             </>
           }
           file={file}

@@ -1,6 +1,7 @@
 import type { PersistedPlanRecord } from "@/features/chat/hooks/supervisor-types";
 import type { UIMessage } from "@/lib/ai-types";
 import type { ChatMessage, ChatSession } from "@/lib/api";
+import { getLocale } from "@/lib/i18n";
 
 export interface SessionGroup {
   label: string;
@@ -87,12 +88,15 @@ export function relativeTime(unixSeconds: number | null | undefined, now = Date.
   if (days < 7) return `${days}d ago`;
   const date = new Date(unixSeconds * 1000);
   const currentYear = new Date(now).getFullYear();
-  return date.toLocaleDateString(
-    undefined,
+  // Bound to the APP locale, not the OS: `undefined` here made the same
+  // session read "Aug 12" or "12 Agu" depending on the user's machine while
+  // the rest of the app followed the in-app language switch.
+  return new Intl.DateTimeFormat(
+    getLocale(),
     date.getFullYear() === currentYear
       ? { month: "short", day: "numeric" }
       : { year: "numeric", month: "short", day: "numeric" },
-  );
+  ).format(date);
 }
 
 // Tool-call markup never renders as prose: taught ```tool fences and Gemma 4 native <|tool_call>… forms are stripped to tool cards.

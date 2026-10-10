@@ -75,7 +75,7 @@ frontend/
 │   │   │   ├── components/  # knowledge-dialogs, knowledge-file-row, knowledge-file-summary, knowledge-library
 │   │   │   ├── hooks/       # use-knowledge-actions, use-knowledge-files
 │   │   │   └── lib/         # knowledge.ts (+test)
-│   │   ├── memory/          # memory page: components/memory-page.tsx, hooks/use-memories, use-memory-tiers
+│   │   ├── memory/          # memory page: components/memory-page.tsx (+ .smoke.test), hooks/use-memories, use-memory-tiers, lib/labels (localized kind/namespace/source/origin/facet-state, raw-value fallback)
 │   │   ├── skills/          # skills page: components/skills-page.tsx, hooks/use-skills
 │   │   ├── analytics/       # analytics: components/sql-profiles-section.tsx, lib/analytics.ts (+test)
 │   │   ├── codegraph/       # code asset page: components/code-page.tsx
@@ -91,7 +91,7 @@ frontend/
 │   │   ├── ui/             # shadcn primitives (vendored from web/)
 │   │   ├── ai-elements/    # vendored chat components (from web/ SPA, trimmed)
 │   │   ├── tool-renderers/   # per-domain tool result cards
-│   │   ├── shared/          # cross-feature reusable product UI: file-preview, file-icon, rename-input
+│   │   ├── shared/          # cross-feature reusable product UI: file-preview, file-icon, rename-input, confirm-action (useArmedConfirm + ConfirmButton/ConfirmIconButton — the app's two-step destructive arm)
 │   │   └── error-boundary.tsx # top-level render crash fallback (mirrors to frontend_log)
 │   ├── hooks/              # truly global hooks (use-theme, use-app-shortcuts, use-session-filter, etc.)
 │   ├── lib/                # infrastructure: api.ts, stream.ts, utils.ts, logger.ts, ai-types.ts, preview-*.ts, ...

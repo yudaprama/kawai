@@ -42,3 +42,6 @@
 [submodule "pdf_oxide"]
 	path = pdf_oxide
 	url = https://github.com/yudaprama/pdf_oxide
+[submodule "kawai-website"]
+	path = kawai-website
+	url = https://github.com/kawai-network/kawai-website

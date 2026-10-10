@@ -5,6 +5,8 @@ import { isTabularExt } from "@/lib/extensions";
 import { fmtDateUS } from "@/features/workbench/components/tool-views/format";
 import type { KnowledgeFileInfo } from "@/lib/api";
 import { formatBytes } from "@/lib/utils";
+import { ConfirmIconButton } from "@/components/shared/confirm-action";
+import { useI18n } from "@/hooks/use-i18n";
 
 export function KnowledgeStatusBadge({ file }: { file: KnowledgeFileInfo }) {
   if (isTabularExt(file.ext)) {
@@ -73,6 +75,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
   actions: KnowledgeRowActions;
 }) {
   const tabular = isTabularExt(file.ext);
+  const { t } = useI18n();
   return (
     <div className="bg-card group/file flex items-center gap-2.5 rounded-lg border px-2.5 py-2">
       {inSessionList ? (
@@ -155,19 +158,13 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
             <Icon name="plus" className="size-3.5" />
           </button>
         )}
-        <button
-          aria-label={`Delete ${file.originalName}`}
-          className={`rounded p-1 ${
-            confirmDelete
-              ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              : "text-muted-foreground hover:text-destructive"
-          }`}
+        <ConfirmIconButton
+          armed={confirmDelete}
+          confirmLabel={t("common.confirm")}
+          icon="trash"
+          label={t("knowledge.deleteDocumentAria", { name: file.originalName })}
           onClick={() => actions.onDelete(file)}
-          title={confirmDelete ? "Click again to confirm — deletes the document everywhere" : "Delete document"}
-          type="button"
-        >
-          <Icon name="trash" className="size-3.5" />
-        </button>
+        />
       </div>
     </div>
   );

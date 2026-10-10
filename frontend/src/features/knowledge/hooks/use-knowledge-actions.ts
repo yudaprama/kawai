@@ -10,6 +10,7 @@ import { isTabularExt } from "@/lib/extensions";
 import { logWarn } from "@/lib/logger";
 import { showErrorToast } from "@/lib/utils";
 import { platform, runningInTauri } from "@/platform";
+import { useArmedConfirm } from "@/components/shared/confirm-action";
 
 export function useKnowledgeActions(chat: {
   sessionId: number | null;
@@ -31,7 +32,6 @@ export function useKnowledgeActions(chat: {
 
   const [importing, setImporting] = useState(false);
   const [linking, setLinking] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<KnowledgeFileInfo | null>(null);
   const [linkPromptOpen, setLinkPromptOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
@@ -40,12 +40,6 @@ export function useKnowledgeActions(chat: {
   useEffect(() => {
     setKnowledgeSessionId(chat.sessionId);
   }, [chat.sessionId, setKnowledgeSessionId]);
-
-  useEffect(() => {
-    if (!confirmDeleteId) return;
-    const t = setTimeout(() => setConfirmDeleteId(null), 3000);
-    return () => clearTimeout(t);
-  }, [confirmDeleteId]);
 
   const importKnowledgeFiles = useCallback(
     async (
@@ -268,23 +262,26 @@ export function useKnowledgeActions(chat: {
     [chat.sessionId, markIndexing, refreshKnowledge],
   );
 
-  const deleteFile = useCallback(
-    async (file: KnowledgeFileInfo) => {
-      if (confirmDeleteId !== file.id) {
-        setConfirmDeleteId(file.id);
-        return;
-      }
-      setConfirmDeleteId(null);
-      removeKnowledgeRows([file.id]);
-      try {
-        await call("office_delete_file", { fileId: file.id });
-      } catch (err) {
-        showErrorToast(err);
-        await refreshKnowledge();
-      }
-    },
-    [confirmDeleteId, removeKnowledgeRows, refreshKnowledge],
+  // Armed HERE rather than in each row: the sidebar list, the library detail,
+  // the wiki detail and the context panel all render this same pending delete,
+  // and they must never disagree about which row is armed. `confirmDeleteId`
+  // keeps its old shape — it is exactly the hook's `armedId`.
+  const { armedId: confirmDeleteId, click: armDelete } = useArmedConfirm(
+    useCallback(
+      async (fileId: string) => {
+        removeKnowledgeRows([fileId]);
+        try {
+          await call("office_delete_file", { fileId });
+        } catch (err) {
+          showErrorToast(err);
+          await refreshKnowledge();
+        }
+      },
+      [removeKnowledgeRows, refreshKnowledge],
+    ),
   );
+
+  const deleteFile = useCallback((file: KnowledgeFileInfo) => void armDelete(file.id), [armDelete]);
 
   const openPreview = useCallback((file: KnowledgeFileInfo) => setPreviewFile(file), []);
 

@@ -507,6 +507,7 @@
     "bridgeFirst": "Bridge dari jaringan lain terlebih dahulu jika diperlukan."
   },
   "knowledge": {
+    "deleteDocumentAria": "Hapus {{name}}",
     "title": "Pengetahuan",
     "importFile": "Impor File",
     "importYoutube": "Impor YouTube",
@@ -529,13 +530,14 @@
   "memory": {
     "title": "Memori",
     "tabs": {
+      "l0": "Percakapan (L0)",
       "l1": "Memori (L1)",
-      "l2": "Adegan (L2)",
+      "l2": "Klaster (L2)",
       "l3": "Persona (L3)",
       "profile": "Profil",
       "experiences": "Pengalaman"
     },
-    "createMemory": "Tambah Memori",
+    "createMemory": "Tambah memori",
     "memoryKinds": {
       "preference": "Preferensi",
       "rule": "Aturan",
@@ -550,10 +552,25 @@
       "episodic": "Episodik",
       "general": "Umum"
     },
-    "extractButton": "Ekstrak dari Sesi",
+    "origin": {
+      "manual": "Manual",
+      "extracted": "Diekstrak",
+      "consolidated": "Digabungkan"
+    },
+    "facetState": {
+      "active": "Aktif",
+      "pinned": "Disematkan",
+      "dropped": "Dibuang"
+    },
+    "extractButton": "Ekstrak dari blok ini",
+    "extracting": "Mengekstrak…",
     "consolidateButton": "Konsolidasi",
-    "sceneExtractButton": "Ekstrak Adegan",
-    "personaGenerateButton": "Buat Persona",
+    "consolidating": "Mengonsolidasi…",
+    "sceneExtractButton": "Ekstrak klaster",
+    "extractingScenes": "Mengekstrak klaster…",
+    "personaGenerateButton": "Buat persona",
+    "generatingPersona": "Membuat…",
+    "regenerated": "dibuat ulang dari semua memori",
     "facetDistillButton": "Distilasi Facet",
     "searchPlaceholder": "Cari memori…",
     "graphTab": "Graf",
@@ -565,26 +582,83 @@
       "linkedin": "LinkedIn",
       "document": "Dokumen",
       "questions": "Pertanyaan",
-      "manual": "Manual"
+      "manual": "Manual",
+      "inferred": "Disimpulkan"
     },
     "chatMemory": "memori chat",
     "chatMemoryTitle": "Memori Chat",
     "filterBlocks": "Saring blok…",
     "selectBlock": "Pilih blok memori untuk memeriksanya",
     "blocks": "Blok",
+    "untitled": "Tanpa judul",
+    "archived": "Diarsipkan",
+    "blockLabel": "blok #{{id}}",
+    "allBlocks": "Semua blok",
+    "allBlocksHint": "belum ada blok dipilih — semua layer di bawah bersifat global",
+    "selectBlockToExtract": "Pilih blok di sebelah kiri untuk mengekstrak memori dari transkripnya",
+    "blocksCount": {
+      "one": "{{count}} blok memori",
+      "other": "{{count}} blok memori"
+    },
+    "l1Count": {
+      "one": "{{count}} memori",
+      "other": "{{count}} memori"
+    },
+    "globalMemories": {
+      "one": "{{count}} memori global",
+      "other": "{{count}} memori global"
+    },
+    "matchCount": {
+      "one": "{{count}} cocok",
+      "other": "{{count}} cocok"
+    },
+    "sessionLoadError": "Gagal memuat sesi — {{error}}",
+    "noBlocks": "Belum ada blok memori — mulai obrolan dengan agen dulu.",
+    "loadingTranscript": "Memuat transkrip…",
+    "graphBuilding": "Membangun graf…",
+    "graphLoading": "Memuat graf…",
+    "graphNote": "memori (200 terbaru) + entitas yang mereka sebut",
+    "graphEmpty": "Belum ada memori untuk digraf — tambahkan atau ekstrak memori dulu.",
     "graphBuildError": "Gagal membangun graf — {{error}}",
+    "noMatches": "Tidak ada memori yang cocok dengan pencarianmu.",
+    "noMemoriesHint": "Belum ada memori — ekstrak dari sebuah blok, atau tambahkan manual.",
+    "newMemory": "Memori baru",
+    "editMemoryTitle": "Ubah “{{title}}”",
+    "kindLabel": "Jenis",
+    "titleLabel": "Judul",
+    "contentLabel": "Isi",
+    "editMemory": "Ubah memori",
+    "editMemoryAria": "Ubah {{title}}",
+    "deleteMemoryAria": "Hapus {{title}}",
+    "pinAria": "Sematkan {{title}}",
+    "unpinAria": "Lepas sematan {{title}}",
+    "pinTitle": "Sematkan — memori tersematkan diurutkan lebih dulu di prompt block agen",
+    "confirmAgain": "Klik lagi untuk konfirmasi",
+    "forgetAria": "Lupakan {{key}}",
+    "forget": "Lupakan facet",
+    "stability": "stabilitas {{value}}% · {{state}}",
+    "resetNonPinned": "Reset yang tidak disematkan",
+    "confirmReset": "Konfirmasi reset",
+    "resetNonPinnedTitle": "Hapus semua facet yang tidak disematkan",
+    "noFacets": "Belum ada facet — jalankan ekstraksi memori (tab L1) atau onboarding, lalu distiler melipat fakta profil menjadi facet yang stabil di sini.",
+    "profileNote": "· disuntikkan sebagai <profile>",
     "deleteExperience": "Hapus pengalaman",
-    "sceneExtractTitle": "Kelompokkan memori terkait dan beri nama setiap adegan via cloud tier (memerlukan vault). Mengganti semua adegan yang ada.",
-    "personaGenerateTitle": "Sintesis persona dari semua memori via cloud tier (memerlukan vault). Mengganti persona tersimpan.",
-    "facetDistillTitle": "Distilasi fakta durable dari transkrip blok ini via cloud tier (memerlukan vault)",
-    "consolidateTitle": "Gabungkan memori redundan menjadi item tunggal (clustering embedding + cloud LLM; memerlukan vault)",
+    "noExperiences": "Belum ada pengalaman — selesaikan satu run dan supervisor mencatat apa yang dilalui dan apa yang dipelajari di sini.",
+    "experiencesNote": "· yang dipelajari tiap run",
+    "experienceMeta": "sesi #{{session}} · alat: {{tools}} · {{time}}",
+    "noScenes": "Belum ada klaster — ekstrak dari memori di atas (butuh beberapa memori yang terkait).",
+    "noPersona": "Belum ada persona — buat satu dari memormu (butuh minimal satu memori).",
     "semanticSearch": "Pencarian semantik…",
     "searchSemantic": "Cari berdasarkan kemiripan semantik",
-    "editMemory": "Ubah memori",
     "factDescription": "Fakta atomik dan durable tentang pengguna yang harus diingat agen.",
     "factPlaceholder": "Suka UI gelap",
     "factDescriptionPlaceholder": "Selalu membuat antarmuka gelap lebih dulu; mode terang hanya jika diminta.",
-    "noMessages": "Tidak ada pesan tersimpan untuk blok ini."
+    "noMessages": "Tidak ada pesan tersimpan untuk blok ini.",
+    "refresh": "Segarkan",
+    "sceneExtractTitle": "Kelompokkan memori terkait dan beri nama setiap adegan via cloud tier (memerlukan vault). Mengganti semua adegan yang ada.",
+    "personaGenerateTitle": "Sintesis persona dari semua memori via cloud tier (memerlukan vault). Mengganti persona tersimpan.",
+    "facetDistillTitle": "Distilasi fakta durable dari transkrip blok ini via cloud tier (memerlukan vault)",
+    "consolidateTitle": "Gabungkan memori redundan menjadi item tunggal (clustering embedding + cloud LLM; memerlukan vault)"
   },
   "skills": {
     "title": "Skill",
@@ -675,6 +749,7 @@
     "explorePlaceholder": "Masukkan pertanyaan kode…"
   },
   "analytics": {
+    "deleteSourceAria": "Hapus sumber {{name}}",
     "title": "Analitik",
     "sqlProfiles": "Profil SQL",
     "createProfile": "Buat Profil",

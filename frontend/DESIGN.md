@@ -165,6 +165,43 @@ them.
   survives a restart. The image lane's op is synchronous, so its progress
   rides the Generate button.
 
+## Memory (asset page)
+
+Block list on the left, layer tabs on the right. A "block" is one chat
+session, read as the raw material memory was distilled from.
+
+- **Layers.** Seven tabs: Conversations (L0), Memories (L1), Scenes (L2),
+  Persona (L3), Profile, Experiences, Graph. **Only L0 is block-scoped** —
+  the other six are derived from the whole store, so they stay identical for
+  every selected block and are reachable with none selected. The detail pane
+  therefore always mounts; before a block is picked its header reads "All
+  blocks", L0 shows its select-a-block prompt, and L1's **Extract** is the one
+  control that reports why it is unavailable. The page opens on L1, the
+  global memory list, so a first visit lands on content rather than an empty
+  prompt.
+- **Tab strip.** Seven labels never fit a narrow split pane, so the row
+  scrolls horizontally and the active trigger scrolls into view — the graph
+  sits last, exactly where a clipping regression would hide it.
+- **Memory rows.** Each row carries chips for the three fields that decide
+  whether an agent is actually told a fact — `kind`, `namespace`, `source` —
+  plus a pin marker, because pinned rows sort first in the prompt block and
+  survive the item cap. A meta line adds `origin` (hand-written vs extracted
+  from a transcript vs the product of a consolidate pass — a different
+  question from `source`) and, for extracted rows, the source block. This is
+  what makes "what does Kawai know about me" auditable.
+- **Enum labels.** `kind` / `namespace` / `source` / `origin` / facet state
+  are free-text columns, so an unrecognized value renders verbatim rather
+  than as a missing-translation key.
+- **Destructive rows.** Delete and forget arm on first click — the control
+  turns destructive and reveals a visible confirm label (a `title` tooltip is
+  invisible to touch and keyboard users) — then commit on the second click,
+  lapsing after 3s. Arming is per-row, so one row's pending delete never
+  makes its siblings look destructive.
+- **Timestamps.** Sidebar rows pair an absolute creation date with a relative
+  last-activity stamp; row meta uses a relative time. The persona pane states
+  that it is regenerated from all memories rather than dating it, since the op
+  returns the text alone and carries no write time.
+
 ## Composer
 
 Capsule input (max-w-2xl) with attachment chips on top. The composer is
@@ -190,6 +227,27 @@ center-pane canvas (shield icon, the step's action prompt, Approve / Deny
 buttons — both mounts act on the same supervisor actions and disappear
 together once answered). When the gate opens, focus moves to the rail card;
 on mobile the progress drawer auto-opens in the same commit.
+
+### Destructive actions
+
+Every irreversible row action (delete a memory, forget a facet, delete a
+skill, a knowledge file, a SQL profile) is a two-step arm: the first click
+arms, the second inside a 3s window commits, and the arm lapses on its own so
+a stray click can't sit primed. `useArmedConfirm` in
+`components/shared/confirm-action.tsx` owns that state machine; two
+presentational renderers sit on top — `ConfirmButton` for a labelled button
+whose content swaps to the confirm label, and `ConfirmIconButton` for dense
+rows that grows the label beside the icon. Arming is per-row and one row is
+armed at a time, so a pending delete never makes its siblings look
+destructive.
+
+The arm must be VISIBLE, not a tooltip: an arm signalled only by `title` reads
+as "nothing happened" to anyone not hovering and to every touch user, so the
+second tap lands on a button that looks entirely ordinary. Rows whose armed
+state is owned further up the tree (the knowledge delete, shared by the
+sidebar list, the library detail, the wiki detail and the context panel) pass
+`armed`/`onClick` straight through, so those four surfaces can never disagree
+about which row is armed.
 
 ## Run history
 
@@ -265,6 +323,17 @@ errors, toasts, dialogs, nav labels, form labels — follows the selected locale
   literal status colors. Step-state and status colors use token classes
   (`text-success`, `text-primary`, `text-destructive`) — never raw palette
   hex classes.
+- **Brand:** `--brand` / `--brand-2` (with `--color-brand` utilities) are the
+  shared Kawai hue — cyan, the one chromatic value in the theme. They are NOT
+  `--primary`: `--primary` is the app's *accent* and the neutral-mono theme
+  makes it black/white, so repainting it would invert every link, focus ring
+  and filled button. Reserve `--brand` for identity surfaces (logo, primary
+  CTA, marketing accents); leave functional accents on `--primary`.
+- **Shared with the marketing site:** the token layer is mirrored into the
+  website repo at `kawai-website/static/kawai-theme.css` (fonts, brand,
+  neutral ramp, radius, shadows). The repos deploy independently, so that
+  file is a vendored copy, not a symlink — change a token here and mirror it
+  there in the same commit.
 - **Typography:** sans (`--font-sans`: bundled Inter Variable → system-ui) for
   body text and labels; monospace (`--font-mono`: bundled JetBrains Mono
   Variable → SF Mono) for tool names, handles, durations, phase headers, step

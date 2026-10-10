@@ -14,6 +14,7 @@ import { FilePreview } from "@/components/shared/file-preview";
 import { Icon } from "@/components/shared/icon";
 import { KnowledgeStatusBadge } from "@/features/knowledge/components/knowledge-file-row";
 import { KnowledgeFileSummary } from "@/features/knowledge/components/knowledge-file-summary";
+import { ConfirmButton } from "@/components/shared/confirm-action";
 import { Button } from "@/components/ui/button";
 import { fmtDateUS } from "@/features/workbench/components/tool-views/format";
 import type { KnowledgeFileInfo } from "@/lib/api";
@@ -188,16 +189,13 @@ function LibraryDetail({
               Retry indexing
             </Button>
           )}
-          <Button
-            className={confirmDelete ? "" : "text-destructive hover:text-destructive"}
+          <ConfirmButton
+            armed={confirmDelete}
+            confirmLabel={t("common.confirm")}
+            icon="trash"
+            label={t("common.delete")}
             onClick={() => onDelete(file)}
-            size="xs"
-            title={confirmDelete ? "Click again to confirm — deletes the document everywhere" : "Delete document"}
-            variant="outline"
-          >
-            <Icon name="trash" className="size-3" />
-            {confirmDelete ? "Confirm delete" : "Delete"}
-          </Button>
+          />
         </div>
       </div>
       <div className="bg-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">

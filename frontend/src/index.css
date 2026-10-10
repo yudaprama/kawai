@@ -116,6 +116,19 @@
   --sidebar-border: hsl(0 0% 89.8039%);
   --sidebar-ring: hsl(0 0% 0%);
 
+
+  /* ── Brand ──
+   * The shared Kawai brand hue. Deliberately NOT --primary: --primary is
+   * the app's accent (links, focus rings, selected chips, filled buttons)
+   * and the neutral-mono theme makes it black/white. Repainting it would
+   * invert every accent in the Workbench, so --brand is a separate,
+   * currently unconsumed token — use it for identity surfaces (logo,
+   * primary CTA, marketing accents). Mirrored to the marketing site in
+   * kawai-website/static/kawai-theme.css; keep the two in sync.
+   * The light value is darkened to clear WCAG 4.5:1 as text on white. */
+  --brand: hsl(186 100% 28%);
+  --brand-2: hsl(285 90% 34%);
+
   /* ── kawai extras ── */
   --font-sans: "Inter Variable", system-ui, -apple-system, sans-serif;
   --font-serif: Georgia, serif;
@@ -197,6 +210,12 @@
   --shadow-opacity: 0.8;
   --shadow-blur: 40px;
   --shadow-offset-y: 10px;
+
+  /* Brand keeps its dark-mode identity values — cyan reads as the brand on
+   * near-black, while the light-mode values are text-safety shades. */
+  --brand: hsl(184 100% 50%);
+  --brand-2: hsl(285 100% 50%);
+
 }
 
 @theme inline {
@@ -215,6 +234,10 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+
+  --color-brand: var(--brand);
+  --color-brand-2: var(--brand-2);
+
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);

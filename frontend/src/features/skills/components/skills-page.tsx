@@ -14,6 +14,7 @@ import { AssetPageHeader } from "@/features/assets/components/asset/asset-page-h
 import { AssetSplitLayout } from "@/features/assets/components/asset/asset-split-layout";
 import { FilterBar } from "@/features/assets/components/filter-bar";
 import { useAssetPage } from "@/features/assets/hooks/use-asset-page";
+import { ConfirmButton, useArmedConfirm } from "@/components/shared/confirm-action";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,7 +52,6 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
   const [detailAttempt, setDetailAttempt] = useState(0);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<SkillInfo | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const filterFn = useCallback(
     (s: SkillSummary, q: string) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
@@ -62,6 +62,14 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
     filterFn,
   });
   const { get } = store;
+  const { isArmed, click } = useArmedConfirm(
+    useCallback(
+      async (id: string) => {
+        if (await store.remove(id)) setSelectedId(null);
+      },
+      [store, setSelectedId],
+    ),
+  );
 
   // Load the selected skill's body. `skill_get` resolves `null` on failure
   // (it logs internally), so that counts as an error too.
@@ -89,12 +97,6 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
       cancelled = true;
     };
   }, [activeId, get, detailAttempt]);
-
-  useEffect(() => {
-    if (confirmDeleteId == null) return;
-    const t = setTimeout(() => setConfirmDeleteId(null), 3000);
-    return () => clearTimeout(t);
-  }, [confirmDeleteId]);
 
   return (
     <AssetShell onBack={onBack} subtitle={t("skills.agentSkills")} title={t("skills.title")}>
@@ -125,20 +127,12 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
         detail={
           active ? (
             <SkillDetail
-              confirmDelete={confirmDeleteId === active.id}
+              confirmDelete={isArmed(active.id)}
               detail={detail}
               error={detailError}
               loading={detailLoading}
               summary={active}
-              onDelete={async () => {
-                if (confirmDeleteId !== active.id) {
-                  setConfirmDeleteId(active.id);
-                  return;
-                }
-                setConfirmDeleteId(null);
-                const ok = await store.remove(active.id);
-                if (ok) setSelectedId(null);
-              }}
+              onDelete={() => void click(active.id)}
               onEdit={() => {
                 if (detail == null) return;
                 setEditing(detail);
@@ -251,22 +245,13 @@ function SkillDetail({
             <Icon name="pencil" className="size-3" />
             {t("skills.edit")}
           </Button>
-          <Button
-            className={confirmDelete ? "" : "text-destructive hover:text-destructive"}
+          <ConfirmButton
+            armed={confirmDelete}
+            confirmLabel={t("common.confirm")}
+            icon="trash"
+            label={t("common.delete")}
             onClick={onDelete}
-            size="xs"
-            title={confirmDelete ? t("skills.deleteConfirmTitle") : t("skills.deleteTitle")}
-            variant="outline"
-          >
-            {confirmDelete ? (
-              t("common.confirm")
-            ) : (
-              <>
-                <Icon name="trash" className="size-3" />
-                {t("common.delete")}
-              </>
-            )}
-          </Button>
+          />
         </div>
       </div>
       <div className="streamdown min-h-0 flex-1 overflow-auto p-4">

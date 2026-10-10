@@ -7,8 +7,36 @@ import { useOp } from "@/hooks/use-op";
  * The Memory page's L1 state: the global memory list plus CRUD and the
  * cloud-tier extraction (`memory_extract` — errors with guidance when no
  * vault provider is configured).
+ *
+ * Every mutation patches the cached list optimistically, so the pane never
+ * waits on a re-read to show a row the user just created, pinned or deleted.
  */
-export function useMemories(enabled: boolean) {
+
+/** What the Memory page's L1 pane needs from the store: the global list plus
+ *  its CRUD and the two cloud-tier transforms (extract / consolidate), each
+ *  with the in-flight flag its button binds to. */
+export interface MemoriesStore {
+  memories: MemoryItem[];
+  /** False only while the FIRST read is in flight — a refetch keeps the list. */
+  loaded: boolean;
+  extracting: boolean;
+  consolidating: boolean;
+  refresh: () => Promise<MemoryItem[] | undefined>;
+  create: (kind: MemoryItem["kind"], title: string, content: string) => Promise<MemoryItem | null>;
+  update: (
+    memoryId: string,
+    patch: { kind?: MemoryItem["kind"]; title?: string; content?: string },
+  ) => Promise<MemoryItem | null>;
+  remove: (memoryId: string) => Promise<boolean>;
+  extract: (sessionId: number) => Promise<MemoryItem[]>;
+  search: (query: string, limit?: number) => Promise<MemoryItem[]>;
+  consolidate: () => Promise<number>;
+}
+
+/** A narrower read shape for the pane that only lists rows. */
+export type MemoriesList = Pick<MemoriesStore, "memories" | "loaded" | "refresh" | "create" | "update" | "remove">;
+
+export function useMemories(enabled: boolean): MemoriesStore {
   const listOp = useOp<MemoryItem[]>("memory_list", undefined, { enabled });
   const memories = listOp.data ?? [];
   const [extracting, setExtracting] = useState(false);
