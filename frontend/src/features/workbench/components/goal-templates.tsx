@@ -32,8 +32,23 @@ const AUDIT_TEMPLATES: readonly GoalTemplateId[] = ["binanceAudit"];
 export const templateOpensAudit = (t: GoalTemplateId | null): boolean => t != null && AUDIT_TEMPLATES.includes(t);
 
 /** Contextual composer framing per template. Desk templates keep the default
- *  goal placeholder — the desk panel is their framing. */
+ * goal placeholder — the desk panel is their framing. */
 export const placeholderForTemplate = (_t: GoalTemplateId | null): string | undefined => undefined;
+
+/** Each template's deep-dive page on kawai.pro. The four research chips open
+ *  ONE page — Stock/Crypto/Commodity/Forex are the same pipeline over
+ *  different data sources. No chip selected falls back to the workflow hub. */
+const DOCS_FOR_TEMPLATE: Record<GoalTemplateId, string> = {
+  stock: "https://kawai.pro/workflows/research/",
+  crypto: "https://kawai.pro/workflows/research/",
+  commodity: "https://kawai.pro/workflows/research/",
+  forex: "https://kawai.pro/workflows/research/",
+  youtube: "https://kawai.pro/workflows/youtube-summary/",
+  binanceAudit: "https://kawai.pro/workflows/futures-risk-audit/",
+};
+
+export const docsUrlForTemplate = (t: GoalTemplateId | null): string =>
+  t ? DOCS_FOR_TEMPLATE[t] : "https://kawai.pro/workflows/";
 
 export interface GoalTemplatesProps {
   value: GoalTemplateId | null;
@@ -45,6 +60,15 @@ export function GoalTemplates({ value, disabled, onChange }: GoalTemplatesProps)
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
       <span className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">Templates</span>
+      <a
+        href={docsUrlForTemplate(value)}
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary inline-flex items-center gap-1 font-mono text-[11px] underline underline-offset-4 decoration-primary/40 hover:decoration-primary transition-colors"
+      >
+        <Icon name="external-link" className="size-3" />
+        How these workflows work
+      </a>
       <div className="flex flex-wrap gap-1.5">
         {GOAL_TEMPLATES.map((t) => {
           const active = value === t.id;
