@@ -54,6 +54,14 @@ async fn run_cycle() {
     if !::binance::risk_audit::guard_enabled(&user).await {
         return; // opted out this cycle — silent, not even a log line
     }
+    // Same scope rule as the Futures Risk Audit op: the guard audits a
+    // PORTFOLIO, so it only makes sense against the user's own account. With
+    // only the product-baked pair it would "protect" the product's positions
+    // and warn this user about someone else's naked notional — silently, into
+    // the log. Skip the cycle instead.
+    if ::binance::credentials::op_status(&user).await.source != "user" {
+        return;
+    }
     match ::binance::risk_audit::guard_cycle(&user, 15).await {
         Ok(report) => match report.alert {
             Some(line) => println!("[risk-guard] {line}"),
