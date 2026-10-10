@@ -265,7 +265,7 @@
     "mobileDrawerTitle": "Assets",
     "workbench": "Workbench",
     "assets": "Assets",
-    "binanceApi": "Binance API"
+    "credentials": "Credentials"
   },
   "modeBar": {
     "modes": "Modes",
@@ -1112,10 +1112,9 @@
     "startersNeedsImage": "This engine turns a source image into 3D — it has no prompt field, so drop in an image to begin.",
     "starterApplied": "Prompt loaded into the form"
   },
-  "binanceApi": {
-    "title": "Binance API",
-    "subtitle": "your futures & market keys",
-    "guide": "Create a READ-ONLY API key on Binance (Enable Reading only — never enable withdrawals or trading) and restrict it to your IP. The secret is stored in your local database only.",
+  "credentials": {
+    "title": "Credentials",
+    "subtitle": "API keys stored on this device",
     "apiKey": "API key",
     "apiSecret": "API secret",
     "save": "Save keys",
@@ -1125,6 +1124,11 @@
     "sourceNone": "Not configured",
     "saved": "Keys saved",
     "removed": "Keys removed",
-    "confirmRemove": "Remove the stored keys? Futures tools will fall back to the built-in keys (or stop working if none)."
+    "confirmRemove": "Remove them?",
+    "binance": {
+      "title": "Binance",
+      "subtitle": "your futures & market keys",
+      "guide": "Create a READ-ONLY API key on Binance (Enable Reading only — never enable withdrawals or trading) and restrict it to your IP. The secret is stored in your local database only."
+    }
   }
 }

@@ -14,7 +14,7 @@ export type AssetViewId =
   | "wallet"
   | "topup"
   | "connections"
-  | "binanceApi";
+  | "credentials";
 
 export interface AssetNavEntry {
   id: AssetViewId;
@@ -35,5 +35,5 @@ export const ASSET_NAV: AssetNavEntry[] = [
   { id: "memory", labelKey: "assetNav.memory", subtitle: "chat memory", icon: "brain" },
   { id: "sources", labelKey: "assetNav.databases", subtitle: "SQL sources", icon: "database" },
   { id: "connections", labelKey: "assetNav.connections", subtitle: "app connections", icon: "plug-zap" },
-  { id: "binanceApi", labelKey: "assetNav.binanceApi", subtitle: "Binance API", icon: "candlestick-chart" },
+  { id: "credentials", labelKey: "assetNav.credentials", subtitle: "API keys", icon: "key" },
 ];

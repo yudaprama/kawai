@@ -1608,6 +1608,7 @@ dependencies = [
  "kawai-router",
  "kawai-tools",
  "libsql",
+ "reqwest 0.13.5",
  "serde",
  "serde_json",
  "ta",

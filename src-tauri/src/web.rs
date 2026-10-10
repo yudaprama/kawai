@@ -2635,6 +2635,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/binance_credentials_set", post(binance_credentials_set_handler))
         .route("/api/binance_credentials_status", post(binance_credentials_status_handler))
         .route("/api/binance_credentials_delete", post(binance_credentials_delete_handler))
+        .route("/api/binance_trading_status", post(binance_trading_status_handler))
+        .route("/api/binance_trading_enable", post(binance_trading_enable_handler))
+        .route("/api/binance_trading_disable", post(binance_trading_disable_handler))
         .route("/api/risk_guard_status", post(risk_guard_status_handler))
         .route("/api/risk_guard_set", post(risk_guard_set_handler))
         .route("/api/codegraph_init", post(codegraph_init_handler));
@@ -3236,6 +3239,48 @@ async fn binance_credentials_delete_handler(
     Extension(user_id): Extension<String>,
 ) -> Result<Json<()>, (StatusCode, String)> {
     logic::binance_credentials::binance_credentials_delete(&user_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+
+// ── Futures trading consent (Settings → Binance API) ───────────────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BinanceTradingEnableRequest {
+    confirm: String,
+}
+async fn binance_trading_status_handler(
+    Extension(user_id): Extension<String>,
+) -> Json<logic::binance_credentials::BinanceTradingStatus> {
+    Json(logic::binance_credentials::binance_trading_status(&user_id).await.unwrap_or(
+        logic::binance_credentials::BinanceTradingStatus {
+            has_own_keys: false,
+            consented: false,
+        },
+    ))
+}
+async fn binance_trading_enable_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<BinanceTradingEnableRequest>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    // Same typed confirmation as the Tauri command.
+    if req.confirm.trim() != "ENABLE" {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "type ENABLE to confirm futures trading".into(),
+        ));
+    }
+    logic::binance_credentials::binance_trading_enable(&user_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+async fn binance_trading_disable_handler(
+    Extension(user_id): Extension<String>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    logic::binance_credentials::binance_trading_disable(&user_id)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))

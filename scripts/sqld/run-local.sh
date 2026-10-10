@@ -61,7 +61,7 @@ start_one() {
     echo "[$db] sqld started (pid $(cat "$DATA_DIR/sqld.pid")) on $HTTP_ADDR"
     case "$db" in
       squawk)      echo "[$db] schema is provisioned by kawai itself on first use (SquawkStore::ensure_schema)" ;;
-      toolcatalog) echo "[$db] seed via: cargo run -p seed_tool_catalog --bin seed_tool_catalog (src-tauri/examples)" ;;
+      toolcatalog) echo "[$db] seed via (src-tauri/): cargo build --example seed_tool_catalog --features litert,binance,codegraph,monad && ./target/debug/examples/seed_tool_catalog" ;;
     esac
   else
     echo "[$db] sqld failed to start — see $DATA_DIR/sqld.log" >&2

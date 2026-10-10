@@ -105,7 +105,7 @@ webread/knowledge.
 
 Keyless public spot market data + in-process TA. Signed reads (spot account,
 US-stocks, futures) resolve credentials PER USER: the user's own keys from
-Settings → Binance API (stored in their local DB, migration 0027) with the
+Settings → Credentials (stored in their local DB, migration 0027) with the
 product-baked kawai-vault pair as fallback; a user with neither gets a
 guidance error naming Settings, and the tools register unconditionally (an
 invisible tool can't tell the user what to do — a guidance error can). Also

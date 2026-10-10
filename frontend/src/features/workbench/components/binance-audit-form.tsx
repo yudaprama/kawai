@@ -164,12 +164,12 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
         <p className="text-destructive mt-3 font-mono text-[10px] leading-relaxed" role="alert">
           The audit grades YOUR open positions, so it needs your own Binance keys — the built-in pair signs as the
           product account, and its positions are not yours to risk-manage. Add a read-only, IP-restricted pair in
-          Settings → Binance API.
+          Settings → Credentials.
         </p>
       )}
       {source === "none" && (
         <p className="text-destructive mt-3 font-mono text-[10px] leading-relaxed" role="alert">
-          No Binance API keys yet. Add a read-only, IP-restricted pair in Settings → Binance API — the audit reads your
+          No Binance API keys yet. Add a read-only, IP-restricted pair in Settings → Credentials — the audit reads your
           open positions and resting orders, and never places an order.
         </p>
       )}

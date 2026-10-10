@@ -2347,6 +2347,39 @@ pub async fn binance_credentials_delete(
     logic::binance_credentials::binance_credentials_delete(&user_id).await
 }
 
+// ── Futures trading consent (Settings → Binance API) ───────────────────────
+
+#[tauri::command]
+pub async fn binance_trading_status(
+    session: State<'_, Session>,
+) -> Result<logic::binance_credentials::BinanceTradingStatus, String> {
+    let user_id = session_user_id(&session)?;
+    logic::binance_credentials::binance_trading_status(&user_id).await
+}
+
+#[tauri::command]
+pub async fn binance_trading_enable(
+    confirm: String,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    // The typed confirmation lives here, not only in the UI: the enable op
+    // refuses anything but the exact word, so an accidental click can never
+    // arm order placement.
+    if confirm.trim() != "ENABLE" {
+        return Err("type ENABLE to confirm futures trading".into());
+    }
+    let user_id = session_user_id(&session)?;
+    logic::binance_credentials::binance_trading_enable(&user_id).await
+}
+
+#[tauri::command]
+pub async fn binance_trading_disable(
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::binance_credentials::binance_trading_disable(&user_id).await
+}
+
 #[tauri::command]
 pub async fn risk_guard_status(
     session: State<'_, Session>,

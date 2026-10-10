@@ -265,7 +265,7 @@
     "mobileDrawerTitle": "Aset",
     "workbench": "Workbench",
     "assets": "Aset",
-    "binanceApi": "Binance API"
+    "credentials": "Kredensial"
   },
   "modeBar": {
     "modes": "Mode",
@@ -1112,19 +1112,23 @@
     "startersNeedsImage": "Engine ini mengubah gambar sumber menjadi 3D — tidak punya field prompt, jadi cukup masukkan gambar.",
     "starterApplied": "Prompt dimuat ke form"
   },
-  "binanceApi": {
-    "title": "Binance API",
-    "subtitle": "kunci futures & pasar",
-    "guide": "Buat API key READ-ONLY di Binance (aktifkan Enable Reading saja — jangan aktifkan withdrawal atau trading) dan batasi ke IP Anda. Secret hanya disimpan di database lokal Anda.",
+  "credentials": {
+    "title": "Kredensial",
+    "subtitle": "API key tersimpan di perangkat ini",
     "apiKey": "API key",
     "apiSecret": "API secret",
-    "save": "Save keys",
-    "remove": "Remove keys",
-    "sourceUser": "Your keys",
-    "sourceBaked": "Built-in keys",
-    "sourceNone": "Not configured",
-    "saved": "Keys saved",
-    "removed": "Keys removed",
-    "confirmRemove": "Remove the stored keys? Futures tools will fall back to the built-in keys (or stop working if none)."
+    "save": "Simpan kunci",
+    "remove": "Hapus kunci",
+    "sourceUser": "Kunci Anda",
+    "sourceBaked": "Kunci bawaan",
+    "sourceNone": "Belum diatur",
+    "saved": "Kunci tersimpan",
+    "removed": "Kunci dihapus",
+    "confirmRemove": "Hapus kunci?",
+    "binance": {
+      "title": "Binance",
+      "subtitle": "kunci futures & pasar Anda",
+      "guide": "Buat API key READ-ONLY di Binance (aktifkan Enable Reading saja — jangan aktifkan withdrawal atau trading) dan batasi ke IP Anda. Secret hanya disimpan di database lokal Anda."
+    }
   }
 }

@@ -22,7 +22,7 @@ import { ConnectionsPage } from "@/features/connector/components/connections-pag
 import { WikiAssetPage } from "@/features/assets/pages/wiki-page";
 import { SqlSourcesAssetPage } from "@/features/assets/pages/sql-sources-page";
 import { WalletPage } from "@/features/wallet/components/wallet-page";
-import { BinanceApiPage } from "@/features/binance/components/binance-api-page";
+import { CredentialsPage } from "@/features/credentials/credentials-page";
 import { OPEN_TOPUP_EVENT } from "@/features/topup/open-topup";
 import { TopupPage } from "@/features/topup/topup-page";
 import { GeneratorPage } from "@/features/generator/generator-page";
@@ -304,8 +304,8 @@ export default function App() {
       <SkillsAssetPage onBack={backToText} />
     ) : view === "connections" ? (
       <ConnectionsPage onBack={backToText} />
-    ) : view === "binanceApi" ? (
-      <BinanceApiPage onBack={backToText} />
+    ) : view === "credentials" ? (
+      <CredentialsPage onBack={backToText} />
     ) : view === "code" ? (
       <CodeAssetPage
         initialQuery={codeGraphSeed?.query}

@@ -68,3 +68,62 @@ pub async fn binance_credentials_status(
 pub async fn binance_credentials_delete(_user_id: &str) -> Result<(), String> {
     Err("binance feature not enabled (build with --features binance)".into())
 }
+
+// ── Futures trading consent (Settings → Binance API) ───────────────────────
+// The single switch that unlocks the WRITING futures tools (place SL/TP,
+// cancel protective order). Everything else in the Binance toolset stays
+// read-only. Consent is bound to the CURRENT key pair: rotating the keys
+// flips it back to disabled (the next enable re-asks).
+
+/// What the Settings trading card renders.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BinanceTradingStatus {
+    /// The user stored their own key pair at all.
+    pub has_own_keys: bool,
+    /// Trading consented for the CURRENT pair (rotation voids this).
+    pub consented: bool,
+}
+
+#[cfg(feature = "binance")]
+pub async fn binance_trading_status(
+    user_id: &str,
+) -> Result<BinanceTradingStatus, String> {
+    let s = ::binance::credentials::op_trading_status(user_id).await;
+    Ok(BinanceTradingStatus {
+        has_own_keys: s.has_own_keys,
+        consented: s.consented,
+    })
+}
+
+#[cfg(feature = "binance")]
+pub async fn binance_trading_enable(user_id: &str) -> Result<(), String> {
+    ::binance::credentials::op_trading_enable(user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(feature = "binance")]
+pub async fn binance_trading_disable(user_id: &str) -> Result<(), String> {
+    ::binance::credentials::op_trading_disable(user_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(feature = "binance"))]
+pub async fn binance_trading_status(_user_id: &str) -> Result<BinanceTradingStatus, String> {
+    Ok(BinanceTradingStatus {
+        has_own_keys: false,
+        consented: false,
+    })
+}
+
+#[cfg(not(feature = "binance"))]
+pub async fn binance_trading_enable(_user_id: &str) -> Result<(), String> {
+    Err("binance feature not enabled (build with --features binance)".into())
+}
+
+#[cfg(not(feature = "binance"))]
+pub async fn binance_trading_disable(_user_id: &str) -> Result<(), String> {
+    Err("binance feature not enabled (build with --features binance)".into())
+}

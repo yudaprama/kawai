@@ -79,6 +79,7 @@ frontend/
 │   │   ├── skills/          # skills page: components/skills-page.tsx, hooks/use-skills
 │   │   ├── analytics/       # analytics: components/sql-profiles-section.tsx, lib/analytics.ts (+test)
 │   │   ├── codegraph/       # code asset page: components/code-page.tsx
+│   │   ├── credentials/     # credentials asset page: registry-driven (types.ts provider contract, providers/* one entry per credential, credential-card + credentials-page generic); a new credential is one registry entry
 │   │   ├── tools/           # tool-workbench.tsx, tool-description.ts, tool-icon.ts
 │   │   └── assets/          # shared asset-management UI primitives
 │   │       ├── components/asset/  # vendored Tea-style: asset-split-layout, asset-list-panel, asset-page-header
