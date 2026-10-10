@@ -96,7 +96,7 @@ function Expiry({ expiresAt }: { expiresAt: number }) {
   );
 }
 
-export function TopupPage({ onBack }: { onBack: () => void }) {
+export function TopupPage() {
   // ── Balance card — shared store (the rail chip, the submit gate and this
   // page all read the same value; `useTokenBalance` reads on mount) ─────────
   const { tokens: balance, pending: balancePending } = useTokenBalance();
@@ -333,7 +333,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <AssetShell title="Top Up" subtitle="QRIS · app tokens" onBack={onBack}>
+    <AssetShell>
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
         <Card className="py-4">
           <CardContent className="px-4 text-sm">

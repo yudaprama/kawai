@@ -84,7 +84,6 @@ export function MemoryAssetPage({
   sessionsLoading,
   sessionsError,
   onRetrySessions,
-  onBack,
 }: {
   sessions: ChatSession[];
   /** In-flight `list_chat_sessions` read (App's chat state). */
@@ -93,7 +92,6 @@ export function MemoryAssetPage({
   sessionsError?: string | null;
   /** Re-reads the session list (App's `loadSessions` / `refreshSessions`). */
   onRetrySessions?: () => void;
-  onBack: () => void;
 }) {
   const { t, fmtDate, fmtRelative } = useI18n();
   // Opens on L1, the global memory list: it is the layer with content on a
@@ -126,7 +124,7 @@ export function MemoryAssetPage({
   const error = messagesOp.error;
 
   return (
-    <AssetShell onBack={onBack} subtitle={t("memory.chatMemory")} title={t("memory.title")}>
+    <AssetShell>
       <AssetPageHeader
         subtitle={`${t("memory.blocksCount", { count: filtered.length })} · ${t("memory.l1Count", { count: memories.memories.length })}`}
         title={t("memory.chatMemoryTitle")}

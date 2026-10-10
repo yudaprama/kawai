@@ -1128,7 +1128,7 @@
     "binance": {
       "title": "Binance",
       "subtitle": "kunci futures & pasar Anda",
-      "guide": "Buat API key READ-ONLY di Binance (aktifkan Enable Reading saja — jangan aktifkan withdrawal atau trading) dan batasi ke IP Anda. Secret hanya disimpan di database lokal Anda."
+      "guide": "Kunci API Binance, dibatasi ke IP Anda; hanya tersimpan di database lokal Anda. Kunci READ-ONLY (Enable Reading) mencakup semuanya kecuali pemasangan order. Agar agent bisa memasang stop-loss / take-profit, kunci perlu izin ENABLE FUTURES — dan aktifkan toggle Futures trading di bawah. Setiap order tetap minta konfirmasi Anda dulu."
     }
   }
 }

@@ -50,7 +50,6 @@ export function WikiAssetPage({
   onDelete,
   onImport,
   onRefresh,
-  onBack,
 }: {
   files: KnowledgeFileInfo[];
   loaded: boolean;
@@ -70,7 +69,6 @@ export function WikiAssetPage({
   onImport: () => void;
   /** `useKnowledgeFiles.refresh` — re-runs the failed `knowledge_list` read. */
   onRefresh?: () => void;
-  onBack: () => void;
 }) {
   // Three settled states, never the empty CTA on a failed load.
   const isLoading = loading ?? !loaded;
@@ -93,7 +91,7 @@ export function WikiAssetPage({
   const { t } = useI18n();
 
   return (
-    <AssetShell onBack={onBack} subtitle="knowledge base" title={t("assetNav.wiki")}>
+    <AssetShell>
       <AssetPageHeader
         actions={
           <Button disabled={importing} onClick={onImport} size="sm">

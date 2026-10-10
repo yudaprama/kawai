@@ -59,7 +59,7 @@ function LockedDialog({
   );
 }
 
-export function WalletPage({ onBack }: { onBack: () => void }) {
+export function WalletPage() {
   const { t } = useI18n();
   const { address, hasWallet, status, available, loading, create } = useWallet();
   const { currentNetwork, backendConfig } = useNetwork();
@@ -193,7 +193,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
   // Not connected state — create a device wallet
   if (!hasWallet) {
     return (
-      <AssetShell title={t("wallet.title")} subtitle={currentNetwork?.name ?? "Monad Testnet"} onBack={onBack}>
+      <AssetShell>
         <div className="mx-auto w-full max-w-lg space-y-6 py-8">
           <div className="text-center">
             <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-primary/10">
@@ -226,13 +226,7 @@ export function WalletPage({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <AssetShell
-      title={t("wallet.title")}
-      subtitle={
-        address ? `${address.slice(0, 6)}...${address.slice(-4)} · ${currentNetwork?.name ?? ""}` : currentNetwork?.name
-      }
-      onBack={onBack}
-    >
+    <AssetShell>
       <div className="flex min-h-0 flex-1 flex-col gap-4">
         <Tabs value={active} onValueChange={setActive}>
           <TabsList>

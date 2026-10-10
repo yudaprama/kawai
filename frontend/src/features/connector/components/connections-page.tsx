@@ -99,7 +99,7 @@ function AppCard({
   );
 }
 
-export function ConnectionsPage({ onBack }: { onBack: () => void }) {
+export function ConnectionsPage() {
   const { t } = useI18n();
   const { connections, loading, error, refetch } = useConnections();
   const { onConnect, pendingToolkit } = useConnectorConnect();
@@ -171,7 +171,7 @@ export function ConnectionsPage({ onBack }: { onBack: () => void }) {
   const showSkeleton = loading && connections.length === 0;
 
   return (
-    <AssetShell subtitle={t("connections.subtitle")} title={t("connections.title")} onBack={onBack}>
+    <AssetShell>
       <AssetPageHeader subtitle={t("connections.intro")} title={t("connections.title")} />
 
       {error != null && connections.length === 0 ? (

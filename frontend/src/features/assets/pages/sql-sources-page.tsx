@@ -1,6 +1,5 @@
 import { SqlProfilesSection } from "@/features/analytics/components/sql-profiles-section";
 import { AssetShell } from "@/features/assets/components/asset-shell";
-import { useI18n } from "@/hooks/use-i18n";
 
 /**
  * SQL data sources asset page — the analytics agent's named database
@@ -8,10 +7,9 @@ import { useI18n } from "@/hooks/use-i18n";
  * context pane; the pane now shows tool results, so source management lives
  * here.
  */
-export function SqlSourcesAssetPage({ onBack }: { onBack: () => void }) {
-  const { t } = useI18n();
+export function SqlSourcesAssetPage() {
   return (
-    <AssetShell onBack={onBack} subtitle="SQL sources" title={t("assetNav.databases")}>
+    <AssetShell>
       <div className="mx-auto w-full max-w-2xl p-4">
         <SqlProfilesSection />
       </div>

@@ -100,11 +100,14 @@ export function CredentialCard({ provider }: { provider: CredentialProvider }) {
           <span className="ml-auto flex items-center gap-2">
             {status === null ? (
               <Spinner className="size-4" />
-            ) : (
+            ) : status.source === "user" ? (
+              // The badge only says something when YOUR keys are active —
+              // for the built-in pair / no-key states the empty fields and
+              // the guide already tell the story.
               <Badge className={SOURCE_TONE[status.source]} variant="secondary">
                 {t(SOURCE_LABEL[status.source])}
               </Badge>
-            )}
+            ) : null}
             {status?.keyPreview && <span className="text-muted-foreground font-mono text-xs">{status.keyPreview}</span>}
           </span>
         </div>

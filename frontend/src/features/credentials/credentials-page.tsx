@@ -9,10 +9,10 @@ import { CREDENTIAL_PROVIDERS } from "./providers";
  * Credentials asset page — one card per provider from the registry. Keys are
  * stored in the user's LOCAL database only: never synced, never sent anywhere.
  */
-export function CredentialsPage({ onBack }: { onBack: () => void }) {
+export function CredentialsPage() {
   const { t } = useI18n();
   return (
-    <AssetShell title={t("credentials.title")} subtitle={t("credentials.subtitle")} onBack={onBack}>
+    <AssetShell>
       <AssetPageHeader title={t("credentials.title")} subtitle={t("credentials.subtitle")} />
       <div className="mx-auto w-full max-w-2xl space-y-4">
         {CREDENTIAL_PROVIDERS.map((provider) => (

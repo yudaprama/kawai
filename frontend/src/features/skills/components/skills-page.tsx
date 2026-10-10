@@ -41,7 +41,7 @@ import { useI18n } from "@/hooks/use-i18n";
  * body), delete with two-click confirm, markdown-rendered body. The version
  * counter bumps server-side on every update.
  */
-export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
+export function SkillsAssetPage() {
   const { t } = useI18n();
   const store = useSkills(true);
   const { skills, loaded, error } = store;
@@ -99,7 +99,7 @@ export function SkillsAssetPage({ onBack }: { onBack: () => void }) {
   }, [activeId, get, detailAttempt]);
 
   return (
-    <AssetShell onBack={onBack} subtitle={t("skills.agentSkills")} title={t("skills.title")}>
+    <AssetShell>
       <AssetPageHeader
         actions={
           <Button

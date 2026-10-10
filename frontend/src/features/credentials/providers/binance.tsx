@@ -129,7 +129,7 @@ function FuturesTradingConsent() {
               ? "AKTIF — agent boleh memasang stop-loss / take-profit reduce-only, selalu dengan konfirmasi per order."
               : status?.hasOwnKeys
                 ? "Izinkan agent memasang stop-loss / take-profit reduce-only di akun futures Anda (butuh API key dengan izin Enable Futures). Setiap order tetap minta konfirmasi."
-                : "Tambahkan API key Anda sendiri (izin Enable Futures, IP-restricted) dulu — kunci bawaan produk tidak pernah bisa trading."}
+                : "Tambahkan API key Anda sendiri (izin Enable Futures, IP-restricted) dulu."}
           </p>
         </div>
         <Switch

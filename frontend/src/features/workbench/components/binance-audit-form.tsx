@@ -162,8 +162,7 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
 
       {source === "baked" && (
         <p className="text-destructive mt-3 font-mono text-[10px] leading-relaxed" role="alert">
-          The audit grades YOUR open positions, so it needs your own Binance keys — the built-in pair signs as the
-          product account, and its positions are not yours to risk-manage. Add a read-only, IP-restricted pair in
+          The audit grades YOUR open positions, so it needs your own Binance keys. Add one (IP-restricted) in
           Settings → Credentials.
         </p>
       )}
@@ -174,9 +173,8 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
         </p>
       )}
       <p className="text-muted-foreground mt-3 font-mono text-[10px] leading-relaxed">
-        Read-only: the audit syncs your open positions and resting orders, grades every stop-loss, checks take-profit
-        coverage, and writes a portfolio risk report. It never places, modifies, or cancels an order — you execute on
-        the exchange.
+        Read-only: syncs your positions and resting orders, grades every stop, checks TP coverage, writes the report.
+        Never touches your orders — placing one is a separate opt-in that asks you first.
       </p>
     </div>
   );

@@ -153,8 +153,8 @@ export function EcoPicker({
  * footer leaves the flow and pins to the viewport bottom (the `pb-24` on both
  * scroll regions keeps the last row clear of it).
  *
- * It renders a bare shell: the mode bar above already names the lane and
- * carries the way back, so a page header here would only restate them.
+ * The shell carries no page header: the mode bar above already names the lane
+ * and carries the way back.
  */
 export function GeneratorLayout({
   children,
@@ -191,7 +191,7 @@ export function GeneratorLayout({
     };
   }, []);
   return (
-    <AssetShell bare>
+    <AssetShell>
       <div ref={shellBodyRef} className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {/* ── Form column — the generation panel ── */}
         <section className="flex w-full shrink-0 flex-col border-b lg:w-[400px] lg:border-r lg:border-b-0">

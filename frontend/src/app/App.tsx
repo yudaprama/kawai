@@ -45,7 +45,6 @@ export default function App() {
   // is not a mode — lighting up "Text" there would claim the Workbench shows).
   const [mode, setMode] = useState<AppMode>("text");
   const [view, setView] = useState<AssetViewId | null>(null);
-  const [codeGraphSeed, setCodeGraphSeed] = useState<{ query: string; result: string } | null>(null);
   // The backend compiles Monad support behind the opt-in `monad` feature; probe
   // once so the wallet nav entry only appears in builds that have it.
   const [walletAvailable, setWalletAvailable] = useState(false);
@@ -267,10 +266,6 @@ export default function App() {
   // Data comes from the same app state the workbench uses, so switching never
   // re-fetches or resets a run. Media GENERATION is not an asset — it is a
   // mode, so it renders from `mode` below, not from this switch.
-  const backToText = () => {
-    setMode("text");
-    setView(null);
-  };
   const assetWorkspace =
     view === "wiki" ? (
       <WikiAssetPage
@@ -284,7 +279,6 @@ export default function App() {
         sessionId={chat.sessionId}
         unavailable={ka.knowledge.unavailable}
         onAdd={ka.addToSession}
-        onBack={backToText}
         onDelete={ka.deleteFile}
         onImport={() => void ka.addKnowledgeFiles()}
         onRemove={ka.removeFromSession}
@@ -296,29 +290,21 @@ export default function App() {
         sessions={[...chat.sessions, ...chat.archivedSessions]}
         sessionsError={chat.sessionsError}
         sessionsLoading={chat.sessionsLoading}
-        onBack={backToText}
       />
     ) : view === "sources" ? (
-      <SqlSourcesAssetPage onBack={backToText} />
+      <SqlSourcesAssetPage />
     ) : view === "skills" ? (
-      <SkillsAssetPage onBack={backToText} />
+      <SkillsAssetPage />
     ) : view === "connections" ? (
-      <ConnectionsPage onBack={backToText} />
+      <ConnectionsPage />
     ) : view === "credentials" ? (
-      <CredentialsPage onBack={backToText} />
+      <CredentialsPage />
     ) : view === "code" ? (
-      <CodeAssetPage
-        initialQuery={codeGraphSeed?.query}
-        initialResult={codeGraphSeed?.result}
-        onBack={() => {
-          setCodeGraphSeed(null);
-          backToText();
-        }}
-      />
+      <CodeAssetPage />
     ) : view === "wallet" ? (
-      <WalletPage onBack={backToText} />
+      <WalletPage />
     ) : view === "topup" ? (
-      <TopupPage onBack={backToText} />
+      <TopupPage />
     ) : null;
 
   const assetChrome = {

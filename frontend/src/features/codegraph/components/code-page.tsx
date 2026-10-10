@@ -32,15 +32,7 @@ function StatusBadge({ status }: { status: CodegraphStatusResult | null }) {
   );
 }
 
-export function CodeAssetPage({
-  onBack,
-  initialQuery,
-  initialResult,
-}: {
-  onBack: () => void;
-  initialQuery?: string;
-  initialResult?: string;
-}) {
+export function CodeAssetPage() {
   const { t } = useI18n();
   const [status, setStatus] = useState<CodegraphStatusResult | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
@@ -51,11 +43,6 @@ export function CodeAssetPage({
   const [exploreError, setExploreError] = useState<string | null>(null);
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
   const [initLoading, setInitLoading] = useState(false);
-
-  useEffect(() => {
-    if (initialQuery) setQuery(initialQuery);
-    if (initialResult) setResult(initialResult);
-  }, [initialQuery, initialResult]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,7 +108,7 @@ export function CodeAssetPage({
   const isFeatureOff = statusError?.includes("codegraph feature not enabled") || exploreError?.includes("not compiled");
 
   return (
-    <AssetShell onBack={onBack} subtitle="code graph" title={t("assetNav.code")}>
+    <AssetShell>
       <AssetPageHeader
         actions={
           <div className="flex gap-2">

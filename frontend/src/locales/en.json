@@ -1128,7 +1128,7 @@
     "binance": {
       "title": "Binance",
       "subtitle": "your futures & market keys",
-      "guide": "Create a READ-ONLY API key on Binance (Enable Reading only — never enable withdrawals or trading) and restrict it to your IP. The secret is stored in your local database only."
+      "guide": "Binance API key, restricted to your IP; stored in your local database only. A READ-ONLY key (Enable Reading) covers everything except placing orders. To let the agent place protective stop-loss / take-profit orders, the key needs the ENABLE FUTURES permission — and turn on the Futures trading toggle below. Every order still asks you first."
     }
   }
 }
