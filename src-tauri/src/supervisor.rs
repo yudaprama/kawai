@@ -2005,6 +2005,23 @@ pub async fn build_youtube_registry(
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
 
+/// The Futures Risk Audit execution registry (feature `binance`): the merged
+/// auto catalog. `binance_futures_risk_audit` is one of the tools the binance
+/// toolset registers UNCONDITIONALLY (`registry::all_tools` — each user brings
+/// their own keys, so the tool ships and a missing pair surfaces as a guidance
+/// error naming Settings, never as an un-dispatchable step).
+#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+pub async fn build_binance_audit_registry(
+    user_id: &str,
+    session_id: i64,
+    plan_key: &str,
+) -> Result<ToolRegistry, SupervisorError> {
+    let toolset = build_supervisor_toolset(user_id, session_id, AUTO_AGENT_ID)
+        .await
+        .ok_or_else(|| SupervisorError::NoToolset(AUTO_AGENT_ID.to_string()))?;
+    build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
+}
+
 pub(crate) async fn build_registry_from_toolset(
     user_id: &str,
     session_id: i64,

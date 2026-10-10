@@ -15,10 +15,17 @@ import { DeliverableViewer, EMPTY_RUNS_HINT, PastRunCanvas, RunHistory, RunSwitc
 import type { CanvasView } from "./deliverable-viewer";
 import { ComposerQuoteBadge, FollowUpChips } from "./follow-up-composer";
 import { GoalComposer } from "./goal-composer";
-import { GoalTemplates, placeholderForTemplate, templateOpensDesk, templateOpensYoutube } from "./goal-templates";
+import {
+  GoalTemplates,
+  placeholderForTemplate,
+  templateOpensAudit,
+  templateOpensDesk,
+  templateOpensYoutube,
+} from "./goal-templates";
 import type { GoalTemplateId } from "./goal-templates";
 import { ProgressRail, RunHistoryRail } from "./progress-rail";
 import { YoutubeSummaryForm } from "./youtube-summary-form";
+import { BinanceAuditForm } from "./binance-audit-form";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
 import { useI18n } from "@/hooks/use-i18n";
@@ -381,6 +388,18 @@ export function WorkbenchPage({
     },
     [beginPipelineRun, workbench.runYoutube],
   );
+
+  /** Futures Risk Audit submit: the FIXED audit pipeline over the user's open
+   * Binance futures positions. Same canvas handoff as a desk submit — the run
+   * streams the same SupervisorEvent lifecycle, so the rail, deliverable
+   * viewer, and AGENT REPORTS render it unchanged. */
+  const submitBinanceAudit = useCallback(
+    (interval: string, risk: string, limit: number) => {
+      beginPipelineRun((onStart) => workbench.runBinanceAudit(interval, risk, limit, { onStart }));
+    },
+    [beginPipelineRun, workbench.runBinanceAudit],
+  );
+
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)
     : ("ready" as const);
@@ -543,6 +562,11 @@ export function WorkbenchPage({
             {templateOpensYoutube(template) && (
               <div className="mt-3">
                 <YoutubeSummaryForm disabled={composerStatus === "submitted"} onSubmit={submitYoutube} />
+              </div>
+            )}
+            {templateOpensAudit(template) && (
+              <div className="mt-3">
+                <BinanceAuditForm disabled={composerStatus === "submitted"} onSubmit={submitBinanceAudit} />
               </div>
             )}
           </div>

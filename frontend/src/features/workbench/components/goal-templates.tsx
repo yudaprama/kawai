@@ -1,13 +1,14 @@
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
 
-export type GoalTemplateId = "stock" | "crypto" | "commodity" | "forex" | "youtube";
+export type GoalTemplateId = "stock" | "crypto" | "commodity" | "forex" | "youtube" | "binanceAudit";
 const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "stock", label: "Stock Research" },
   { id: "crypto", label: "Crypto Research" },
   { id: "commodity", label: "Commodity Research" },
   { id: "forex", label: "Forex Research" },
   { id: "youtube", label: "YouTube Summary" },
+  { id: "binanceAudit", label: "Futures Risk Audit" },
 ];
 
 /** Templates whose workflow includes the fixed-pipeline Stock Research — only
@@ -22,6 +23,13 @@ export const templateOpensDesk = (t: GoalTemplateId | null): boolean => t != nul
 const YOUTUBE_TEMPLATES: readonly GoalTemplateId[] = ["youtube"];
 
 export const templateOpensYoutube = (t: GoalTemplateId | null): boolean => t != null && YOUTUBE_TEMPLATES.includes(t);
+
+/** Templates whose workflow is the fixed Binance Futures Risk Audit — the
+ * form discloses the audit presets (candle interval, stop distance, how many
+ * positions to grade) the same way the other fixed pipelines disclose theirs. */
+const AUDIT_TEMPLATES: readonly GoalTemplateId[] = ["binanceAudit"];
+
+export const templateOpensAudit = (t: GoalTemplateId | null): boolean => t != null && AUDIT_TEMPLATES.includes(t);
 
 /** Contextual composer framing per template. Desk templates keep the default
  *  goal placeholder — the desk panel is their framing. */

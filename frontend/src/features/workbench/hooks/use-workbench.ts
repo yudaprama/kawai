@@ -794,6 +794,39 @@ export function useWorkbench() {
     [supervisor, preflightRun, beginRun],
   );
 
+  /** Futures Risk Audit: the FIXED audit pipeline over the user's open
+   * Binance futures positions. Same client mechanics as `runYoutube` — balance
+   * gate (fail-closed), lazy session, no planner, no review gate: the backend
+   * builds the plan and streams the same SupervisorEvent lifecycle, so
+   * rail/canvas/reports render it unchanged. */
+  const runBinanceAudit = useCallback(
+    async (
+      interval: string,
+      risk: string,
+      limit: number,
+      opts?: {
+        /** Same contract as `run()`'s — fires once every gate passed, right
+         * before the run record appends; the page navigates from here. */
+        onStart?: () => void;
+      },
+    ) => {
+      // Balance gate + lazy session — the shared fail-closed pre-flight.
+      const sid = await preflightRun(
+        `Futures risk audit — ${interval}/${risk}`.slice(0, 80),
+        "Couldn't start the audit",
+      );
+      // All gates passed — consume the follow-up/quote arming after them so
+      // a blocked submit leaves both intact for the retry.
+      const goal = `Futures risk audit — ${interval} candles, ${risk} stops, top ${limit} positions`.slice(0, 140);
+      beginRun(goal, false);
+      opts?.onStart?.();
+      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
+      supervisor.runBinanceAudit({ interval, risk, limit }, sid);
+      void refreshTokenBalance();
+    },
+    [supervisor, preflightRun, beginRun],
+  );
+
   /** Open a past session in the workbench: clears the in-memory runs and
    *  points sessionId at the picked session — the restore effect below then
    *  rehydrates the latest persisted plan record (runs + deliverable + deck).
@@ -927,6 +960,7 @@ export function useWorkbench() {
     run,
     runDesk,
     runYoutube,
+    runBinanceAudit,
     selectSession,
     syncLatestRun,
     loadFullOutput,

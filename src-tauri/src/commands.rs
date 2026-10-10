@@ -2156,6 +2156,75 @@ pub async fn run_stock_research(
         .await
 }
 
+/// Futures Risk Audit: run the FIXED risk-audit pipeline over the user's open
+/// Binance futures positions and stream the same `SupervisorEvent` lifecycle
+/// the planner-driven runs emit. One step (`binance_futures_risk_audit` — the
+/// mirror sync, the stop grading, the take-profit coverage) plus the built-in
+/// deliverable writer; no planning round, because the audit is already
+/// deterministic Rust.
+///
+/// `interval` / `risk` / `limit` are normalized BEFORE the plan exists, so a
+/// bad preset is a plain op error rather than a half-started run.
+#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[tauri::command]
+pub async fn run_binance_risk_audit(
+    session_id: i64,
+    interval: Option<String>,
+    risk: Option<String>,
+    limit: Option<u32>,
+    // Raw device locale tag (e.g. "id-ID") — resolved into the report's
+    // output language at this edge (see `supervisor::resolve_user_language`).
+    language: Option<String>,
+    stream_id: String,
+    on_event: Channel<kawai_events::SupervisorEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+    pending: State<'_, crate::supervisor::PendingConfirmations>,
+) -> Result<(), String> {
+    let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
+
+    // Fail closed on credentials BEFORE the plan exists. The audit tool
+    // itself falls back to the product-baked pair (every signed binance tool
+    // does), but that account's positions are not the user's — a report
+    // grading someone else's naked notional, delivered under the user's name,
+    // is worse than no report. Only the user's own pair may run this op.
+    let creds = ::binance::credentials::op_status(&ctx.user_id).await;
+    if creds.source != "user" {
+        return Err(
+            "the futures risk audit grades YOUR open positions — add your own read-only Binance API \
+key and secret in Settings → Binance API first"
+                .to_string(),
+        );
+    }
+
+    let args = ::binance::normalize_audit_args(
+        interval.as_deref().unwrap_or_default(),
+        risk.as_deref().unwrap_or_default(),
+        limit,
+    );
+    // Read the normalized values back BEFORE the plan consumes them, so the
+    // report's goal describes the run that actually executes (an unknown preset
+    // fell back to the tool default rather than reaching the writer).
+    let interval = args["interval"].as_str().unwrap_or_default().to_string();
+    let risk = args["risk"].as_str().unwrap_or_default().to_string();
+    let limit = args["limit"].as_u64().unwrap_or_default() as u32;
+    let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
+        .unwrap_or_default();
+    let plan = ::binance::build_audit_plan(args);
+    let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language);
+    let tool_registry = crate::supervisor::build_binance_audit_registry(
+        &ctx.user_id,
+        session_id,
+        &crate::supervisor::plan_key(&plan),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tracing::info!(component = "binance-risk-audit", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running futures risk audit");
+    ctx.run(plan, tool_registry, Some(user_goal), stream_id, on_event, &pending)
+        .await
+}
+
 /// YouTube Summary (PLAN-youtube-summary): fetch the transcript, build the
 /// FIXED map→compose plan over it, and stream the same `SupervisorEvent`
 /// lifecycle the planner-driven runs emit. The fetch happens BEFORE the

@@ -1605,6 +1605,7 @@ dependencies = [
  "kawai-constants",
  "kawai-db",
  "kawai-http-client",
+ "kawai-router",
  "kawai-tools",
  "libsql",
  "serde",

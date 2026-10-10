@@ -54,6 +54,15 @@ interface RunYoutubeOptions {
   url: string;
 }
 
+interface RunBinanceAuditOptions {
+  /** Candle interval the stop fold runs on (default "4h"). */
+  interval: string;
+  /** Stop-distance preset: "tight" | "standard" | "wide". */
+  risk: string;
+  /** How many positions to klines-grade, largest |notional| first (1-50). */
+  limit: number;
+}
+
 export interface SupervisorPlanCallbacks {
   onPlanCompleted?: (
     goal: string | null,
@@ -519,6 +528,30 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [startStream],
   );
 
+  /** Futures Risk Audit: execute the FIXED risk-audit pipeline over the
+   * user's open Binance futures positions — no planner, no review gate.
+   * Streams the same SupervisorEvent lifecycle as runPlan, so the Workbench
+   * rail/deliverable/reports render it unchanged. The caller has already
+   * persisted the user message and resolved the session. */
+  const runBinanceAudit = useCallback(
+    (options: RunBinanceAuditOptions, sessionId: number) => {
+      if (streamCtrl.current) return;
+      startStream(
+        {
+          sessionId,
+          interval: options.interval,
+          risk: options.risk,
+          limit: options.limit,
+          // Device locale → report language (resolved server-side).
+          language: navigator.language,
+        },
+        sessionId,
+        "run_binance_risk_audit",
+      );
+    },
+    [startStream],
+  );
+
   const planAndRun = useCallback(
     async (goal: string, sessionId: number, agentId: string, userGoal?: string) => {
       const cleanGoal = userGoal ?? goal;
@@ -666,6 +699,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     runPlan,
     runDesk,
     runYoutube,
+    runBinanceAudit,
     planAndRun,
     resume,
     approvePlan,

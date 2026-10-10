@@ -2556,7 +2556,13 @@ pub fn router(dist_dir: PathBuf) -> Router {
     )
     .route("/api/plan_task", post(plan_task_handler))
     .route("/api/run_stock_research", post(run_stock_research_handler))
-    .route("/api/supervisor_step_output", post(supervisor_step_output_handler));
+    .route("/api/supervisor_step_output", post(supervisor_step_output_handler))
+    .route("/api/run_youtube_summary", post(run_youtube_summary_handler));
+
+    // Futures Risk Audit (fixed pipeline over the user's open positions).
+    #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+    let protected = protected
+        .route("/api/run_binance_risk_audit", post(run_binance_risk_audit_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
     let protected = protected.route(
@@ -2999,6 +3005,86 @@ async fn run_youtube_summary_handler(
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let user_goal = kawai_youtube::youtube_user_goal(&video, &language);
     let tool_registry = crate::supervisor::build_youtube_registry(
+        &user_id,
+        req.session_id,
+        &crate::supervisor::plan_key(&plan),
+    )
+    .await
+    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+
+    Ok(supervisor_sse(
+        plan,
+        tool_registry,
+        req.stream_id,
+        user_id,
+        req.session_id,
+        Some(user_goal),
+        &bearer,
+        pending,
+    ))
+}
+
+/// Futures Risk Audit: the FIXED risk-audit pipeline over the user's open
+/// Binance futures positions. Same fixed-plan contract as the desk and the
+/// YouTube summary — the presets are normalized before the plan exists, so a
+/// bad value is a 400, never a half-started run.
+#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunBinanceRiskAuditRequest {
+    session_id: i64,
+    interval: Option<String>,
+    risk: Option<String>,
+    limit: Option<u32>,
+    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
+    language: Option<String>,
+    stream_id: String,
+}
+
+#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+async fn run_binance_risk_audit_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+    Extension(user_id): Extension<String>,
+    headers: HeaderMap,
+    Json(req): Json<RunBinanceRiskAuditRequest>,
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
+    // Billing bearer off the session cookie — the edge middleware already
+    // validated it (AGENTS.md #8); fail closed here before the supervisor.
+    let bearer = cookie_bearer(&headers)?;
+    ensure_session(&user_id, req.session_id).await?;
+
+    // Same fail-closed credential gate as the Tauri command: the audit grades
+    // the user's OWN positions, so the product-baked pair must not stand in.
+    let creds = ::binance::credentials::op_status(&user_id).await;
+    if creds.source != "user" {
+        return Err((
+            StatusCode::PRECONDITION_FAILED,
+            "the futures risk audit grades YOUR open positions — add your own read-only Binance API \
+key and secret in Settings → Binance API first"
+                .to_string(),
+        ));
+    }
+
+    let args = ::binance::normalize_audit_args(
+        req.interval.as_deref().unwrap_or_default(),
+        req.risk.as_deref().unwrap_or_default(),
+        req.limit,
+    );
+    // Read the normalized values back BEFORE the plan consumes them, so the
+    // report's goal describes the run that actually executes.
+    let interval = args["interval"].as_str().unwrap_or_default().to_string();
+    let risk = args["risk"].as_str().unwrap_or_default().to_string();
+    let limit = args["limit"].as_u64().unwrap_or_default() as u32;
+    let language = crate::supervisor::resolve_user_language(
+        req.language.as_deref(),
+        headers
+            .get(header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok()),
+    )
+    .unwrap_or_default();
+    let plan = ::binance::build_audit_plan(args);
+    let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language);
+    let tool_registry = crate::supervisor::build_binance_audit_registry(
         &user_id,
         req.session_id,
         &crate::supervisor::plan_key(&plan),
