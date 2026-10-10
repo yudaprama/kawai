@@ -64,80 +64,20 @@ fn parsed<T: DeserializeOwned>(json: serde_json::Value) -> std::result::Result<T
     serde_json::from_value(json).map_err(|e| format!("unexpected worker response: {e}"))
 }
 
-// ── Wire structs (camelCase on both transports) ──────────────────────────────
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Preview {
-    pub qr_payload: String,
-    /// Base minimum (inclusive) that the user may request.
-    pub min_base: i64,
-    /// Base maksimum (inclusive) that the user may request.
-    pub max_base: i64,
-    /// Base wajib kelipatan ini (1000).
-    pub base_step: i64,
-    /// Token per 1 IDR base — `tokens = base * tokens_per_idr`.
-    pub tokens_per_idr: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Claim {
-    pub tx_id: String,
-    pub idr_amount: i64,
-    pub tokens: i64,
-    pub qr_payload: String,
-    /// Unix seconds — unique-nominal bill expiry.
-    pub expires_at: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Status {
-    /// `pending | crediting | credited | rejected | expired`.
-    pub status: String,
-    pub idr_amount: i64,
-    pub tokens: i64,
-    pub created_at: u64,
-    pub credited_at: Option<u64>,
-}
-
-// Wire DTO: defined once in `kawai_api_types` (the single source the TS
-// generator reads) and re-exported here, matching the sibling logic modules.
-pub use kawai_api_types::TopupBalance as Balance;
+// ── Wire structs ────────────────────────────────────────────────────────────
+//
+// Defined once in `kawai_api_types` (the single source the TS generator
+// reads) and re-exported here under their original names, matching the
+// sibling logic modules. Keeping the old names means every op signature and
+// call site below is untouched.
+pub use kawai_api_types::{
+    TopupBalance as Balance, TopupClaim as Claim, TopupHistory as History,
+    TopupHistoryEntry as HistoryEntry, TopupPreview as Preview,
+    TopupStatusInfo as Status, TopupVoucherRedeem as VoucherRedeem,
+};
 
 /// Riwayat ledger — halaman batas section Riwayat (source-hardcoded, no env).
 const HISTORY_LIMIT: u64 = 50;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryEntry {
-    /// Ledger primary key — the stable row key for the UI list.
-    pub id: i64,
-    /// Signed token delta — kredit positif (`qris`, `voucher`, `admin_adjustment`),
-    /// pemakaian negatif (`usage`).
-    pub amount: i64,
-    /// `qris | voucher | usage | admin_adjustment`.
-    pub reason: String,
-    /// Unix seconds.
-    pub created_at: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VoucherRedeem {
-    /// Kredit dari kode ini.
-    pub tokens: i64,
-    /// Saldo total sesudah kredit.
-    pub balance: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct History {
-    /// Terbaru dulu.
-    pub entries: Vec<HistoryEntry>,
-}
 
 // ── Ops (auth-required thin proxies) ─────────────────────────────────────────
 

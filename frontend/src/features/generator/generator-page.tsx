@@ -14,13 +14,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/shared/icon";
 import type { MediaMode } from "@/app/modes";
 import { cn } from "@/lib/utils";
-import { call, errText } from "@/lib/api";
+import { call, errText, type ModelCover, type SavedImage, type TemplatePreset } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { useFilePreview } from "@/lib/preview-file";
 import { useI18n } from "@/hooks/use-i18n";
 import {
   type GenParams,
-  type SavedImage,
   type SearchModelPage,
   type SearchModelRow,
   DEFAULT_WORKFLOW,
@@ -37,7 +36,7 @@ import {
 import { AdvancedSection } from "./advanced-section";
 import {
   fetchGenerationHistory,
-  type GenerationJobRow,
+  type GenerationJob,
   KeyStatusNotices,
   useAliveEffect,
   useCivitaiKeyStatus,
@@ -86,36 +85,6 @@ interface HistoryEntry {
   params?: ReusableParams;
 }
 
-interface ModelCover {
-  ecosystem: string;
-  label: string;
-  url: string | null;
-  modelName: string | null;
-}
-
-/** One `civitai_template_gallery` preset — a community image WITH its
- *  generation meta and its resources (checkpoint + LoRAs resolved to
- *  civitai's canonical AIR server-side, family-gated to the preset's own
- *  ecosystem — the gallery is unfiltered, so each tile carries where it
- *  came from). Inspiration, not reproduction: no seed. `width`/`height`
- *  are the image's own generation size, which is usually NOT one of the
- *  form's ~1 MP aspect chips — `applyTemplate` keeps it as a size
- *  override. */
-interface TemplatePreset {
-  ecosystem: string;
-  url: string;
-  width: number;
-  height: number;
-  prompt: string;
-  negativePrompt: string | null;
-  steps: number | null;
-  cfgScale: number | null;
-  sampler: string | null;
-  modelName: string | null;
-  checkpoint: { name: string; airUrn: string } | null;
-  loras: Array<{ name: string; airUrn: string; strength?: number }>;
-}
-
 interface LoraEntry {
   id: string;
   air: string;
@@ -135,7 +104,7 @@ const MAX_HISTORY = 50;
 /** History row → result entries (one row per run; quantity>1 yields several
  *  cards sharing the row id). `paramsJson` is the submitted `GenParams` minus
  *  the uploaded source image — the form re-asks for it anyway. */
-function imageEntriesFromJob(row: GenerationJobRow): HistoryEntry[] {
+function imageEntriesFromJob(row: GenerationJob): HistoryEntry[] {
   let parsed: Partial<GenParams> = {};
   try {
     parsed = JSON.parse(row.paramsJson || "{}") as Partial<GenParams>;

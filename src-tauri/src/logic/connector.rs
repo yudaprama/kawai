@@ -32,26 +32,11 @@ fn auth_config_for(toolkit: &str) -> Option<String> {
     (!id.trim().is_empty()).then_some(id)
 }
 
-/// One connected third-party account, camelCase on the wire.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Connection {
-    pub id: String,
-    pub app: String,
-    pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub created_at: Option<String>,
-}
-
-/// The connect kickoff result: open `redirect_url` in a browser, then poll
-/// `connector_poll` until `status == "ACTIVE"`.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConnectStart {
-    pub connection_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub redirect_url: Option<String>,
-}
+/// Wire DTOs: defined once in `kawai_api_types` (the single source the TS
+/// generator reads) and re-exported here under their original names.
+pub use kawai_api_types::{
+    ConnectorConnectStart as ConnectStart, ConnectorConnection as Connection,
+};
 
 /// List every connected third-party account, newest connection last.
 pub async fn list_connections(_user_id: &str) -> Result<Vec<Connection>, String> {

@@ -220,11 +220,6 @@ export type { ImageGenParams };
 export type { SearchModelPage, SearchModelsArgs, SearchModelRow };
 
 /** Stored generation result — the panel's localStorage job/results rows. */
-export interface SavedImage {
-  fileId: string;
-  name: string;
-}
-
 /**
  * App-token twin of the Rust debit constant (`logic/civitai.rs::
  * TOKENS_PER_BUZZ`) — keep the two in sync. 1 Buzz = $0,001 × FX 20.000 =

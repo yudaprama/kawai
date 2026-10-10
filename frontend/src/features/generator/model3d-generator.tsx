@@ -26,10 +26,9 @@ import {
 } from "./model3d-ecosystems";
 import {
   KeyStatusNotices,
-  type GenerationJobRow,
+  type GenerationJob,
   laneStatusKey,
   type LaneResultEntry,
-  type LaneStatusView,
   readFileAsDataUrl,
   useCivitaiKeyStatus,
   useEcoGroups,
@@ -49,32 +48,12 @@ import {
   ToggleRow,
 } from "./generator-shell";
 import type { Model3dGenParams } from "@/generated/api-types";
+import type { Model3dStatusView, SavedModel3d } from "@/lib/api";
 
 /** Civitai polyGen request — the generated wire contract
  *  (`civitai::Model3dGenParams`, specta in-place derive) verbatim: the
  *  form sends no literal unions, so the generated shape IS the type. */
 type Model3dGenRequest = Model3dGenParams;
-
-interface Model3dBlobView {
-  url: string;
-  format?: string;
-}
-
-interface Model3dStatusView extends LaneStatusView {
-  model?: Model3dBlobView;
-  fbx?: Model3dBlobView;
-  previewUrl?: string;
-  /** OMITTED when empty (`skip_serializing_if = "Vec::is_empty"`). */
-  extras?: Array<Model3dBlobView & { variant: string }>;
-}
-
-interface SavedModel3d {
-  fileId: string;
-  name: string;
-  fbxFileId?: string;
-  previewFileId?: string;
-  additional?: Array<{ fileId: string; name: string; variant: string }>;
-}
 
 interface Model3dResultEntry extends LaneResultEntry<ReusableModel3dReq> {
   previewFileId?: string;
@@ -94,7 +73,7 @@ const JOB_KEY = "kawai-generator-model3d-job-v1";
 
 /** History row → result entry (one mesh per run; the thumb-flagged file is
  *  the model3DPreview render that illustrates the card). */
-function model3dEntriesFromJob(row: GenerationJobRow): Model3dResultEntry[] {
+function model3dEntriesFromJob(row: GenerationJob): Model3dResultEntry[] {
   let req: ReusableModel3dReq = {} as ReusableModel3dReq;
   try {
     req = JSON.parse(row.paramsJson || "{}") as ReusableModel3dReq;

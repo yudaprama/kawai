@@ -51,6 +51,17 @@ export type CivitaiApiKeyStatus = {
 };
 
 /**
+ *  What every lane's free-whatif op returns. Also the lane's token debit
+ *  preview at submit.
+ */
+export type CivitaiCostView = {
+	totalBuzz: number | null,
+	totalTokens: number,
+	ready: boolean,
+	warnings: string[],
+};
+
+/**
  *  The submit response shared by every Civitai lane (videoGen, musicGen,
  *  polyGen): the workflow to poll plus the `generation_jobs` row the panel
  *  abandons via `generation_job_delete` if the job fails or is cancelled.
@@ -74,10 +85,40 @@ export type CodegraphStatusResult = {
 	message: string,
 };
 
+/**
+ *  `connector_connect` — open `redirect_url`, then poll until `status ==
+ *  "ACTIVE"`.
+ */
+export type ConnectorConnectStart = {
+	connectionId: string,
+	redirectUrl?: string | null,
+};
+
+/**  One connected third-party account. */
+export type ConnectorConnection = {
+	id: string,
+	app: string,
+	status: string,
+	/**
+	 *  Serialized unconditionally — see the note on `ArtifactManifest` about
+	 *  why `skip_serializing_if` cannot be expressed in the generated TS.
+	 */
+	createdAt?: string | null,
+};
+
 export type ConsolidationReport = {
 	mergedGroups: number,
 	removed: number,
 	created: MemoryItem[],
+};
+
+/**
+ *  One stored deliverable translation — the read-through cache behind the
+ *  viewer's translate toolbar.
+ */
+export type DeliverableTranslationMeta = {
+	language: string,
+	createdAt: number,
 };
 
 /**  A stored agent experience (PLAN-personal-context §2.2). */
@@ -98,6 +139,35 @@ export type ExperienceItem = {
 	/**  JSON array of free-form tags (used for goal-overlap ranking). */
 	tags: string[],
 	createdAt: number,
+};
+
+/**  One row of `generation_jobs` — the panel's cross-restart result history. */
+export type GenerationJob = {
+	id: string,
+	/**  `image` | `video` | `music` | `model3d` */
+	lane: string,
+	workflowId: string | null,
+	ecosystem: string,
+	workflow: string | null,
+	paramsJson: string,
+	/**  Buzz spent at submit (the whatif price; the image lane omits it). */
+	buzzCost: number | null,
+	/**  `running` | `succeeded` */
+	status: string,
+	files: GenerationJobFile[],
+	createdAt: number,
+	updatedAt: number,
+};
+
+/**
+ *  One stored artifact behind a generation job. `thumb` marks poster/preview
+ *  renders, which the panel attaches to the entry they illustrate instead of
+ *  listing as their own card.
+ */
+export type GenerationJobFile = {
+	id: string,
+	name: string,
+	thumb?: boolean | null,
 };
 
 export type GraphEdgeExport = {
@@ -216,6 +286,21 @@ export type KnowledgeFileInfo = {
 	raw: string | null,
 };
 
+/**
+ *  The status envelope every lane's long-poll op returns; each lane widens it
+ *  with its own terminal payload.
+ */
+export type LaneStatusView = {
+	workflowId: string,
+	/**
+	 *  Normalized: `queued | processing | succeeded | failed | expired |
+	 *  canceled` (anything else passes through lowercased).
+	 */
+	status: string,
+	queuePosition: number | null,
+	error?: string | null,
+};
+
 export type LocalModelInfo = {
 	modelPath: string,
 	backend: string,
@@ -274,6 +359,12 @@ export type MemoryItem = {
 	 *  unconfirmed external sources.
 	 */
 	source: string,
+};
+
+export type Model3dBlobView = {
+	url: string,
+	/**  "glb" / "fbx" when the output names the format. */
+	format?: string | null,
 };
 
 /**
@@ -348,6 +439,45 @@ export type Model3dGenParams = {
 	withPreview?: boolean | null,
 };
 
+export type Model3dStatusView = {
+	workflowId: string,
+	status: string,
+	queuePosition: number | null,
+	/**  Primary GLB. */
+	model?: Model3dBlobView | null,
+	fbx?: Model3dBlobView | null,
+	/**
+	 *  The chained model3DPreview render when present, else the polyGen
+	 *  auto-thumbnail — the result card's poster either way.
+	 */
+	previewUrl?: string | null,
+	extras?: Model3dVariantView[],
+	error?: string | null,
+};
+
+/**
+ *  One extra 3D output (rigged / animated twins, basicAnimations). `variant`
+ *  is "fbx" | "rigged" | "riggedFbx" | "animated" | "animatedFbx" |
+ *  "walking" | "walkingFbx" | "walkingArmature" | "running" | …
+ * 
+ *  The blob fields sit inline rather than behind a flattened sub-struct,
+ *  because specta cannot express `#[serde(flatten)]`; the wire shape is
+ *  unchanged.
+ */
+export type Model3dVariantView = {
+	variant: string,
+	url: string,
+	format?: string | null,
+};
+
+/**  One card of the model-picker grid: a top checkpoint per ecosystem. */
+export type ModelCover = {
+	ecosystem: string,
+	label: string,
+	url: string | null,
+	modelName: string | null,
+};
+
 /**
  *  One music generation request. One flat struct across the four engines —
  *  per-ecosystem fields validate against the registry and only the supported
@@ -403,6 +533,28 @@ export type MusicGenParams = {
 	 */
 	duration?: number | null,
 	seed?: number | null,
+};
+
+export type MusicStatusView = {
+	workflowId: string,
+	status: string,
+	queuePosition: number | null,
+	/**
+	 *  Signed, EXPIRING audio URL — `civitai_music_fetch` must run on
+	 *  `succeeded` before it lapses.
+	 */
+	audioUrl?: string | null,
+	error?: string | null,
+};
+
+/**  One community prompt in the music lane's empty state. */
+export type MusicTemplatePreset = {
+	ecosystem: string,
+	thumbnail: string,
+	caption: string,
+	steps: number | null,
+	cfgScale: number | null,
+	sampler: string | null,
 };
 
 /**
@@ -470,6 +622,17 @@ export type RagHit = {
 };
 
 /**
+ *  `office_read_deck` — the stored deck's source markdown plus the theme
+ *  stylesheet the preview runtime injects.
+ */
+export type ReadDeckResult = {
+	title: string | null,
+	template: string | null,
+	themeCss: string,
+	markdown: string,
+};
+
+/**
  *  `office_read_file` / `office_read_thumbnail` — the stored file's bytes,
  *  base64-encoded for the frontend to preview.
  */
@@ -499,6 +662,46 @@ export type RecentRun = {
 	stepsDone: number,
 	stepsTotal: number,
 	outputPreview: string | null,
+};
+
+export type SavedAudio = {
+	fileId: string,
+	name: string,
+};
+
+/**  An imported image artifact — the image lane's stored result. */
+export type SavedImage = {
+	fileId: string,
+	name: string,
+};
+
+export type SavedModel3d = {
+	fileId: string,
+	name: string,
+	fbxFileId?: string | null,
+	/**  model3DPreview render / polyGen auto-thumbnail, stored as an image. */
+	previewFileId?: string | null,
+	/**  Rigged / animated twins + the basicAnimations set, best-effort. */
+	additional?: SavedModel3dFile[],
+};
+
+/**  One imported extra 3D output. */
+export type SavedModel3dFile = {
+	fileId: string,
+	name: string,
+	variant: string,
+};
+
+/**  The imported clip set for a finished video job. */
+export type SavedVideo = {
+	fileId: string,
+	name: string,
+	thumbnailFileId?: string | null,
+	/**
+	 *  Nested one level in practice: each extra clip is imported with no
+	 *  extras of its own.
+	 */
+	additional?: SavedVideo[],
 };
 
 export type SceneHit = {
@@ -586,13 +789,118 @@ export type SqlProfileTest = {
 	error: string | null,
 };
 
+/**  `office_list_templates` — one entry per template pack the app can render. */
+export type TemplateListing = {
+	id: string,
+	name: string,
+	summary: string,
+	bundled: boolean,
+};
+
+/**  One community txt2img preset in the image lane's empty state. */
+export type TemplatePreset = {
+	ecosystem: string,
+	url: string,
+	width: number,
+	height: number,
+	prompt: string,
+	negativePrompt: string | null,
+	steps: number | null,
+	cfgScale: number | null,
+	sampler: string | null,
+	modelName: string | null,
+	checkpoint: TemplateResource | null,
+	loras: TemplateResource[],
+};
+
+/**
+ *  A model reference carried by a community preset — resolved through
+ *  `GET /v1/model-versions/{id}`, which returns the canonical AIR.
+ */
+export type TemplateResource = {
+	name: string,
+	airUrn: string,
+	strength: number | null,
+};
+
 /**  `topup_balance` — the user's app-token balance. */
 export type TopupBalance = {
 	tokens: number,
 };
 
+/**
+ *  `topup_qris_claim` — the claim carries its own nominal, so the QR the user
+ *  pays with is a dynamic one.
+ */
+export type TopupClaim = {
+	txId: string,
+	idrAmount: number,
+	tokens: number,
+	qrPayload: string,
+	/**  Unix seconds — unique-nominal bill expiry. */
+	expiresAt: number,
+};
+
+/**  `topup_history` — newest ledger rows first. */
+export type TopupHistory = {
+	entries: TopupHistoryEntry[],
+};
+
+/**
+ *  One ledger row: a credit (`qris`, `voucher`, `admin_adjustment`) or a
+ *  usage debit (`usage`).
+ */
+export type TopupHistoryEntry = {
+	id: number,
+	amount: number,
+	reason: string,
+	createdAt: number,
+};
+
+/**
+ *  `topup_qris_preview` — the static merchant payload plus the pay-as-you-go
+ *  amount range. Errors while the EMVCo constant is unset (worker 503).
+ */
+export type TopupPreview = {
+	qrPayload: string,
+	/**  Base minimum (inclusive) the user may request. */
+	minBase: number,
+	/**  Base maximum (inclusive) the user may request. */
+	maxBase: number,
+	/**  Every claim must be a multiple of this (1000). */
+	baseStep: number,
+	/**  Token per 1 IDR base — `tokens = base * tokens_per_idr`. */
+	tokensPerIdr: number,
+};
+
+/**
+ *  `topup_qris_status` — `status` is `pending | crediting | credited |
+ *  rejected | expired`.
+ */
+export type TopupStatusInfo = {
+	status: string,
+	idrAmount: number,
+	tokens: number,
+	createdAt: number,
+	creditedAt: number | null,
+};
+
+/**  `topup_voucher_redeem` — the credit granted and the resulting balance. */
+export type TopupVoucherRedeem = {
+	tokens: number,
+	balance: number,
+};
+
 export type UserInfo = {
 	userId: string,
+};
+
+/**  A playable clip plus its poster render. */
+export type VideoBlobView = {
+	videoUrl: string,
+	thumbnailUrl?: string | null,
+	width: number | null,
+	height: number | null,
 };
 
 /**
@@ -662,4 +970,42 @@ export type VideoGenParams = {
 	movementAmplitude?: string | null,
 	seed?: number | null,
 	quantity?: number | null,
+};
+
+export type VideoStatusView = {
+	workflowId: string,
+	status: string,
+	queuePosition: number | null,
+	/**
+	 *  Serialized unconditionally — see the `ConnectorConnection` note on why
+	 *  `skip_serializing_if` cannot be expressed in the generated TS.
+	 */
+	video?: VideoBlobView | null,
+	/**  LTX-style batched jobs: extra clips beyond the primary video. */
+	additional?: VideoBlobView[],
+	error?: string | null,
+};
+
+/**
+ *  One community clip in the video lane's empty state — a txt2vid preset the
+ *  panel can replay without any source media.
+ */
+export type VideoTemplatePreset = {
+	url: string,
+	thumbnail: string,
+	width: number,
+	height: number,
+	prompt: string,
+	ecosystem: string,
+	model: string | null,
+	duration: number | null,
+	aspect: string | null,
+	steps: number | null,
+	cfgScale: number | null,
+	draft: boolean | null,
+	/**
+	 *  Civitai's own recorded label — clip pixel sizes are not uniform, so the
+	 *  aspect is never re-derived from the preview dimensions.
+	 */
+	aspectLabel: string,
 };

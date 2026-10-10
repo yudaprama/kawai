@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
-import { call } from "@/lib/api";
+import { call, type ModelCover, type MusicStatusView, type MusicTemplatePreset, type SavedAudio } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { useFilePreview } from "@/lib/preview-file";
 import { useI18n } from "@/hooks/use-i18n";
@@ -31,10 +31,9 @@ import {
 } from "./music-ecosystems";
 import {
   KeyStatusNotices,
-  type GenerationJobRow,
+  type GenerationJob,
   laneStatusKey,
   type LaneResultEntry,
-  type LaneStatusView,
   readFileAsDataUrl,
   useCivitaiKeyStatus,
   useEcoGroups,
@@ -67,15 +66,6 @@ type MusicGenRequest = MusicGenParams & {
   model?: MusicAceVariant;
 };
 
-interface MusicStatusView extends LaneStatusView {
-  audioUrl?: string;
-}
-
-interface SavedAudio {
-  fileId: string;
-  name: string;
-}
-
 interface MusicResultEntry extends LaneResultEntry<ReusableMusicReq> {
   ecosystem: MusicEcosystemId;
 }
@@ -93,7 +83,7 @@ function stripMusicReq(req: MusicGenRequest): ReusableMusicReq {
 const JOB_KEY = "kawai-generator-music-job-v1";
 
 /** History row → result entry (one track per run). */
-function musicEntriesFromJob(row: GenerationJobRow): MusicResultEntry[] {
+function musicEntriesFromJob(row: GenerationJob): MusicResultEntry[] {
   let req: ReusableMusicReq = {} as ReusableMusicReq;
   try {
     req = JSON.parse(row.paramsJson || "{}") as ReusableMusicReq;
@@ -113,13 +103,6 @@ function musicEntriesFromJob(row: GenerationJobRow): MusicResultEntry[] {
       req,
     },
   ];
-}
-
-interface ModelCover {
-  ecosystem: string;
-  label: string;
-  url: string | null;
-  modelName: string | null;
 }
 
 /** One saved music result: <audio> card, click opens preview. */
@@ -165,19 +148,6 @@ function MusicResultCard({
       />
     </div>
   );
-}
-
-/** One `civitai_music_template_gallery` preset — a community music prompt
- *  with the cover art civitai posted alongside it. The gallery pools all
- *  four pinned engines, so each preset carries the engine it was written
- *  for. */
-interface MusicTemplatePreset {
-  ecosystem: string;
-  thumbnail: string;
-  caption: string;
-  steps: number | null;
-  cfgScale: number | null;
-  sampler: string | null;
 }
 
 /**

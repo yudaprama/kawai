@@ -3,7 +3,18 @@ import { toast } from "sonner";
 import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { Icon } from "@/components/shared/icon";
 import { Spinner } from "@/components/ui/spinner";
-import { call, errText, type CivitaiApiKeyStatus, type CivitaiSubmitView } from "@/lib/api";
+import {
+  call,
+  errText,
+  type CivitaiApiKeyStatus,
+  type CivitaiCostView,
+  type CivitaiSubmitView,
+  type GenerationJob,
+  type GenerationJobFile,
+  type LaneStatusView,
+} from "@/lib/api";
+
+export type { CivitaiCostView, GenerationJob, GenerationJobFile, LaneStatusView };
 import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 import type { TranslationKey } from "@/lib/i18n";
@@ -23,35 +34,9 @@ export const STATUS_WAIT_SECS = 15;
  *  per-webview, capped by storage limits, and lost on storage wipe. */
 export const MAX_RESULTS = 30;
 
-/** One stored artifact of a generation job — office-store pointer + name. */
-export interface GenerationJobFile {
-  id: string;
-  name: string;
-  /** Poster/preview render — paired with the entry before it instead of
-   *  listed as its own card. */
-  thumb?: boolean;
-}
-
-/** One `generation_jobs` row as `generation_history` returns it. */
-export interface GenerationJobRow {
-  id: string;
-  lane: string;
-  workflowId: string | null;
-  ecosystem: string;
-  workflow: string | null;
-  /** The request that produced the artifacts, minus heavy source media —
-   *  each lane parses it back into its own reusable-settings snapshot. */
-  paramsJson: string;
-  buzzCost: number | null;
-  status: string;
-  files: GenerationJobFile[];
-  createdAt: number;
-  updatedAt: number;
-}
-
 /** Lane-scoped history read (newest first). */
-export function fetchGenerationHistory(lane: string, limit = MAX_RESULTS): Promise<GenerationJobRow[]> {
-  return call<GenerationJobRow[]>("generation_history", { lane, limit, offset: 0 });
+export function fetchGenerationHistory(lane: string, limit = MAX_RESULTS): Promise<GenerationJob[]> {
+  return call<GenerationJob[]>("generation_history", { lane, limit, offset: 0 });
 }
 
 /** Debounce before the free-whatif quote fires, so typing a prompt does not
@@ -133,26 +118,6 @@ export function KeyStatusNotices({ configured }: { configured: boolean | null })
   return null;
 }
 
-/** What every lane's free-whatif op returns. */
-export interface LaneCostView {
-  totalBuzz: number;
-  /** App-token debit at submit (server-side ceil conversion). */
-  totalTokens: number;
-  ready: boolean;
-  warnings: string[];
-}
-
-/** The status envelope every lane's long-poll op returns; each lane widens it
- *  with its own terminal payload. */
-export interface LaneStatusView {
-  workflowId: string;
-  status: string;
-  queuePosition: number | null;
-  /** Always present on the wire (`error: Option<String>` has no
-   *  `skip_serializing_if`), so it arrives as `null`, not absent. */
-  error?: string | null;
-}
-
 /** An in-flight workflow, persisted so a restart resumes polling. */
 export interface LaneJob<Snapshot = unknown> {
   workflowId: string;
@@ -207,7 +172,7 @@ export interface WorkflowLaneOptions<Req, Snapshot, Status extends LaneStatusVie
   keys: { job: string };
   /** Maps one history row onto this lane's result entries (parse
    *  `paramsJson` into the lane's reusable snapshot, extract the prompt). */
-  fromJob: (row: GenerationJobRow) => Entry[];
+  fromJob: (row: GenerationJob) => Entry[];
   /** Give up on a job whose transport keeps failing after this long. */
   stuckMs: number;
   buildRequest: () => Req;
@@ -223,7 +188,7 @@ export interface WorkflowLaneOptions<Req, Snapshot, Status extends LaneStatusVie
 }
 
 export interface WorkflowLane<Snapshot, Status extends LaneStatusView, Entry> {
-  cost: LaneCostView | null;
+  cost: CivitaiCostView | null;
   costError: boolean;
   submitting: boolean;
   job: LaneJob<Snapshot> | null;
@@ -269,7 +234,7 @@ export function useWorkflowLane<
   labels,
 }: WorkflowLaneOptions<Req, Snapshot, Status, Saved, Entry>): WorkflowLane<Snapshot, Status, Entry> {
   const { t } = useI18n();
-  const [cost, setCost] = useState<LaneCostView | null>(null);
+  const [cost, setCost] = useState<CivitaiCostView | null>(null);
   const [costError, setCostError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [job, setJob] = useState<LaneJob<Snapshot> | null>(() => loadJson<LaneJob<Snapshot> | null>(keys.job, null));
@@ -320,7 +285,7 @@ export function useWorkflowLane<
     let cancelled = false;
     setCostError(false);
     const timer = setTimeout(() => {
-      call<LaneCostView>(ops.cost, { req: costRequest })
+      call<CivitaiCostView>(ops.cost, { req: costRequest })
         .then((c) => {
           if (!cancelled && aliveRef.current) {
             setCost(c);

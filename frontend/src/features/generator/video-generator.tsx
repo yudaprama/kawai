@@ -36,10 +36,9 @@ import {
 } from "./video-ecosystems";
 import {
   KeyStatusNotices,
-  type GenerationJobRow,
+  type GenerationJob,
   type LaneResultEntry,
   laneStatusKey,
-  type LaneStatusView,
   readFileAsDataUrl,
   useCivitaiKeyStatus,
   useEcoGroups,
@@ -59,6 +58,7 @@ import {
   ToggleRow,
 } from "./generator-shell";
 import type { VideoGenParams } from "@/generated/api-types";
+import type { SavedVideo, VideoStatusView, VideoTemplatePreset } from "@/lib/api";
 
 /** Civitai videoGen request — the generated wire contract
  *  (`civitai::VideoGenParams`, specta in-place derive) narrowed with
@@ -68,27 +68,6 @@ type VideoGenRequest = VideoGenParams & {
   workflow: VideoWorkflowId;
   images: string[];
 };
-
-interface VideoBlobView {
-  videoUrl: string;
-  thumbnailUrl?: string;
-  width?: number;
-  height?: number;
-}
-
-interface VideoStatusView extends LaneStatusView {
-  video?: VideoBlobView;
-  /** LTX-style batched jobs: extra clips beyond the primary. OMITTED when
-   *  empty (`skip_serializing_if = "Vec::is_empty"`), hence optional. */
-  additional?: VideoBlobView[];
-}
-
-interface SavedVideo {
-  fileId: string;
-  name: string;
-  thumbnailFileId?: string;
-  additional?: Array<{ fileId: string; name: string }>;
-}
 
 interface VideoResultEntry extends LaneResultEntry<ReusableVideoReq> {
   thumbnailFileId?: string;
@@ -108,7 +87,7 @@ const JOB_KEY = "kawai-generator-video-job-v1";
 
 /** History row → result entries. Files flagged `thumb` are poster renders —
  *  paired with the entry before them instead of listed as cards. */
-function videoEntriesFromJob(row: GenerationJobRow): VideoResultEntry[] {
+function videoEntriesFromJob(row: GenerationJob): VideoResultEntry[] {
   let req = {} as ReusableVideoReq;
   try {
     req = JSON.parse(row.paramsJson || "{}") as ReusableVideoReq;
@@ -127,25 +106,6 @@ function videoEntriesFromJob(row: GenerationJobRow): VideoResultEntry[] {
       at: row.createdAt * 1000,
       req,
     }));
-}
-
-/** One `civitai_video_template_gallery` preset — a community clip WITH the
- *  generation settings civitai recorded for it. Inspiration, not reproduction:
- *  the seed is left to the form. */
-interface VideoTemplatePreset {
-  url: string;
-  thumbnail: string;
-  width: number;
-  height: number;
-  prompt: string;
-  ecosystem: string;
-  model: string | null;
-  duration: number | null;
-  aspect: string | null;
-  steps: number | null;
-  cfgScale: number | null;
-  draft: boolean | null;
-  aspectLabel: string;
 }
 
 /**

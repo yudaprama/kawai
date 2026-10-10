@@ -5808,6 +5808,7 @@ dependencies = [
 name = "kawai-agent-contract"
 version = "0.1.0"
 dependencies = [
+ "kawai-api-types",
  "kawai-tools",
  "serde",
  "serde_json",
@@ -5886,6 +5887,7 @@ dependencies = [
 name = "kawai-db"
 version = "0.1.0"
 dependencies = [
+ "kawai-api-types",
  "kawai-constants",
  "kawai-paths",
  "libsql",
@@ -5982,6 +5984,7 @@ version = "0.1.0"
 dependencies = [
  "futures-util",
  "graph",
+ "kawai-api-types",
  "kawai-db",
  "kawai-embedding",
  "kawai-office",
@@ -6034,6 +6037,7 @@ dependencies = [
  "base64 0.22.1",
  "image",
  "kawai-agent-contract",
+ "kawai-api-types",
  "kawai-db",
  "kawai-paths",
  "kawai-tools",
@@ -6072,6 +6076,7 @@ dependencies = [
 name = "kawai-skills"
 version = "0.1.0"
 dependencies = [
+ "kawai-api-types",
  "kawai-db",
  "libsql",
  "rand 0.9.5",

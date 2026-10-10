@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useOp } from "@/hooks/use-op";
 import { useI18n } from "@/hooks/use-i18n";
-import { call, errText } from "@/lib/api";
+import { call, errText, type ConnectorConnectStart } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
 import { showErrorToast } from "@/lib/utils";
-import type { Connection } from "../constants";
+import type { ConnectorConnection } from "@/lib/api";
 
 /**
  * Connector connection state over the kawai backend ops
@@ -30,7 +30,7 @@ function invalidateConnections() {
 /** The connection list plus a manual refetch (used after mutations elsewhere). */
 export function useConnections(options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true;
-  const listOp = useOp<Connection[]>("connector_list_connections", undefined, { enabled });
+  const listOp = useOp<ConnectorConnection[]>("connector_list_connections", undefined, { enabled });
   // Keep a ref so the bus subscription stays stable across renders.
   const refetchRef = useRef(listOp.execute);
   refetchRef.current = listOp.execute;
@@ -65,11 +65,6 @@ function delay(ms: number): Promise<void> {
   });
 }
 
-interface ConnectResult {
-  connectionId: string;
-  redirectUrl?: string;
-}
-
 /** Distinguishes user-cancel / timeout from real failures so toasts match. */
 export type ConnectFailureKind = "cancelled" | "timeout" | "failed";
 
@@ -94,7 +89,7 @@ export function useConnectorConnect() {
   const [pendingToolkit, setPendingToolkit] = useState<string | null>(null);
 
   const onConnect = useCallback(
-    async (toolkit: string, label: string): Promise<Connection | undefined> => {
+    async (toolkit: string, label: string): Promise<ConnectorConnection | undefined> => {
       // Tauri desktop: `window.open` cannot host the provider's OAuth page —
       // open the OS default browser via the backend opener instead. Web keeps
       // the synchronous popup flow (browsers block popups opened after an await).
@@ -102,7 +97,7 @@ export function useConnectorConnect() {
       const popup = isTauri ? null : window.open("about:blank", "connector-oauth", "width=560,height=720");
       setPendingToolkit(toolkit);
       try {
-        const started = await call<ConnectResult>("connector_connect", { toolkit });
+        const started = await call<ConnectorConnectStart>("connector_connect", { toolkit });
         if (started.redirectUrl) {
           if (popup) popup.location.href = started.redirectUrl;
           else if (isTauri) await call("connector_open_url", { url: started.redirectUrl }).catch(() => {});
@@ -110,10 +105,12 @@ export function useConnectorConnect() {
         }
 
         const deadline = Date.now() + POLL_TIMEOUT_MS;
-        let active: Connection | undefined;
+        let active: ConnectorConnection | undefined;
         while (Date.now() < deadline) {
           await delay(POLL_INTERVAL_MS);
-          const s = await call<Connection>("connector_poll", { connectionId: started.connectionId }).catch(() => null);
+          const s = await call<ConnectorConnection>("connector_poll", { connectionId: started.connectionId }).catch(
+            () => null,
+          );
           if (s?.status === "ACTIVE") {
             active = s;
             break;
@@ -125,9 +122,9 @@ export function useConnectorConnect() {
           if (popup?.closed) {
             // The user may have closed the popup right after approving — one
             // final poll decides between success and cancellation.
-            const final = await call<Connection>("connector_poll", { connectionId: started.connectionId }).catch(
-              () => null,
-            );
+            const final = await call<ConnectorConnection>("connector_poll", {
+              connectionId: started.connectionId,
+            }).catch(() => null);
             if (final?.status === "ACTIVE") {
               active = final;
               break;
@@ -195,12 +192,12 @@ export function useDisconnect() {
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Check if a toolkit has an ACTIVE connection. */
-export function isToolkitConnected(connections: Connection[], toolkit: string): boolean {
+export function isToolkitConnected(connections: ConnectorConnection[], toolkit: string): boolean {
   return connections.some((c) => c.app === toolkit && c.status === "ACTIVE");
 }
 
 /** Return the set of toolkit slugs that have an ACTIVE connection. */
-export function connectedToolkits(connections: Connection[]): Set<string> {
+export function connectedToolkits(connections: ConnectorConnection[]): Set<string> {
   return new Set(connections.filter((c) => c.status === "ACTIVE").map((c) => c.app));
 }
 
@@ -208,7 +205,7 @@ export function connectedToolkits(connections: Connection[]): Set<string> {
  * Find the best matching connection for a toolkit. Prefers ACTIVE; falls back
  * to the first non-deleted row so the user can reconnect.
  */
-export function connectionFor(connections: Connection[], toolkit: string): Connection | undefined {
+export function connectionFor(connections: ConnectorConnection[], toolkit: string): ConnectorConnection | undefined {
   const matches = connections.filter((c) => c.app === toolkit && c.status !== "DELETED");
   if (matches.length === 0) return undefined;
   return matches.find((c) => c.status === "ACTIVE") ?? matches[0];

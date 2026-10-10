@@ -5,7 +5,15 @@ import { createApp, nextTick, onMounted, reactive, ref, watch } from "vue/dist/v
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { call, errText, tauriOpenFile, type ApplyTemplateResult, type OfficeFileSummary } from "@/lib/api";
+import {
+  call,
+  errText,
+  tauriOpenFile,
+  type ApplyTemplateResult,
+  type OfficeFileSummary,
+  type ReadDeckResult,
+  type TemplateListing,
+} from "@/lib/api";
 import { renderDeckInline } from "@/lib/deck-markdown";
 import { runningInTauri } from "@/platform";
 
@@ -24,20 +32,6 @@ import { runningInTauri } from "@/platform";
  * **Present** shows the same runtime fullscreen in the app (Esc exits).
  */
 
-interface ReadDeckResult {
-  title?: string | null;
-  template?: string | null;
-  themeCss?: string;
-  markdown?: string;
-}
-
-interface TemplateInfo {
-  id: string;
-  name: string;
-  summary: string;
-  bundled: boolean;
-}
-
 /** Post-generation template switcher: lists packs from
  *  `office_list_templates` (bundled starters + cached catalogue — never a
  *  network call) and re-themes the stored deck in place via
@@ -55,7 +49,7 @@ function TemplateSwitcher({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [templates, setTemplates] = useState<TemplateInfo[] | null>(null);
+  const [templates, setTemplates] = useState<TemplateListing[] | null>(null);
   const [applying, setApplying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fetched = useRef(false);
@@ -64,7 +58,7 @@ function TemplateSwitcher({
   useEffect(() => {
     if (!open || fetched.current) return;
     fetched.current = true;
-    void call<TemplateInfo[]>("office_list_templates", undefined)
+    void call<TemplateListing[]>("office_list_templates", undefined)
       .then(setTemplates)
       .catch(() => setTemplates([]));
   }, [open]);
@@ -82,7 +76,7 @@ function TemplateSwitcher({
     return [...list].sort((a, b) => Number(b.bundled) - Number(a.bundled));
   }, [templates, query]);
 
-  const apply = async (t: TemplateInfo) => {
+  const apply = async (t: TemplateListing) => {
     if (applying != null) return;
     if (t.id === current) {
       setOpen(false);

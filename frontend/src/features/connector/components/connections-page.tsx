@@ -12,13 +12,8 @@ import { useI18n } from "@/hooks/use-i18n";
 import type { TranslationKey } from "@/lib/i18n";
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
-import {
-  CONNECTOR_APPS,
-  CONNECTOR_CATEGORIES,
-  type Connection,
-  type ConnectorApp,
-  type ConnectorCategory,
-} from "../constants";
+import { CONNECTOR_APPS, CONNECTOR_CATEGORIES, type ConnectorApp, type ConnectorCategory } from "../constants";
+import type { ConnectorConnection } from "@/lib/api";
 import { connectionFor, useConnections, useConnectorConnect, useDisconnect } from "../hooks/use-connections";
 
 /**
@@ -85,7 +80,7 @@ function AppCard({
   children,
 }: {
   app: ConnectorApp;
-  connection?: Connection;
+  connection?: ConnectorConnection;
   children: React.ReactNode;
 }) {
   return (

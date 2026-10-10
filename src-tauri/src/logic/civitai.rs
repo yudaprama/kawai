@@ -93,27 +93,10 @@ pub use kawai_api_types::CivitaiApiKeyStatus as ApiKeyStatus;
 pub use kawai_api_types::CivitaiSubmitView as VideoSubmitView;
 pub use kawai_api_types::CivitaiSubmitView as MusicSubmitView;
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SavedImage {
-    pub file_id: String,
-    pub name: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ModelCover {
-    pub ecosystem: String,
-    pub label: String,
-    /// The model's card art on civitai (CDN URL) — None when the lookup
-    /// found nothing; the UI falls back to the gradient tile.
-    pub url: Option<String>,
-    /// Name of the model that will actually run. Set only for the music
-    /// lane's pinned records — the image lane's art is a rating-ranked
-    /// search hit, never the checkpoint the orchestrator falls back to, so
-    /// naming it would claim a provenance the request doesn't carry.
-    pub model_name: Option<String>,
-}
+// Wire DTOs: defined once in `kawai_api_types` (the single source the TS
+// generator reads) and re-exported here under their original names, so every
+// op signature and construction site below is untouched.
+pub use kawai_api_types::{ModelCover, SavedImage};
 
 /// Top-checkpoint cover art per panel ecosystem (the thing that makes the
 /// picker look like civitai's). Public v1 read; cached in-process for 1h —
@@ -218,53 +201,9 @@ pub async fn civitai_model_covers() -> Result<Vec<ModelCover>, String> {
 
 // ── Template gallery (empty-state presets) ─────────────────────────────────
 
-/// One community image preset for the image lane's empty state. Clicking it
-/// fills the form with the image's generation config AND its resources —
-/// the checkpoint (diffuser override) + LoRA stack, each resolved by hash
-/// to civitai's canonical AIR URN and family-gated to the PRESET'S OWN
-/// ecosystem (the gallery is not filtered by the panel's selection, so the
-/// preset carries where it came from and the panel switches on apply). The
-/// gallery is still not a reproduction: the seed is left random and the
-/// builtin diffuser renders when no compatible checkpoint resolved.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplatePreset {
-    /// Panel ecosystem this preset was drawn from — its checkpoint + LoRA
-    /// stack are family-gated to this ecosystem, so applying the preset
-    /// anywhere else would silently drop the resources.
-    pub ecosystem: String,
-    /// Worker-proxied CDN URL — the webview renders it directly.
-    pub url: String,
-    pub width: i64,
-    pub height: i64,
-    pub prompt: String,
-    pub negative_prompt: Option<String>,
-    pub steps: Option<i64>,
-    pub cfg_scale: Option<f64>,
-    /// Civitai sampler display name — meaningful on SD-family ecosystems
-    /// only; the frontend applies it conditionally.
-    pub sampler: Option<String>,
-    /// Checkpoint name from meta, when carried — display caption only.
-    pub model_name: Option<String>,
-    /// The image's checkpoint as a diffuser override, when its family
-    /// matches the selected ecosystem — None otherwise (the builtin
-    /// diffuser renders).
-    pub checkpoint: Option<TemplateResource>,
-    /// The image's LoRA stack (≤4), family-gated the same way.
-    pub loras: Vec<TemplateResource>,
-}
+pub use kawai_api_types::TemplatePreset;
 
-/// One auto-added model reference: a resolved `meta.resources` hash.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplateResource {
-    pub name: String,
-    /// Civitai's canonical AIR URN, verbatim from the by-hash endpoint.
-    pub air_urn: String,
-    /// LoRA strength (meta `weight`); checkpoint entries carry none.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub strength: Option<f64>,
-}
+pub use kawai_api_types::TemplateResource;
 
 /// Panel ecosystem → v1 checkpoint search term. The gallery draws from the
 /// highest-rated community checkpoints of the family (see
@@ -812,31 +751,7 @@ const VIDEO_TEMPLATE_WINDOWS: [(&str, &str); 3] = [
     ("Newest", "Month"),
 ];
 
-/// A community txt2vid clip, reduced to the form fields it can restore.
-/// Deliberately NOT a `TemplatePreset` alias: video has no checkpoint/LoRA
-/// stack to carry (the models are pinned by the engine), and its resolution
-/// is a quality tier ("1080p"), not the clip's pixel dimensions — carrying
-/// those over would be meaningless, so only the aspect is derived.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VideoTemplatePreset {
-    pub url: String,
-    /// Poster frame (animated WebP/JPEG) — the clip only loads on click.
-    pub thumbnail: String,
-    pub width: i64,
-    pub height: i64,
-    pub prompt: String,
-    /// Panel ecosystem key this clip's settings belong to.
-    pub ecosystem: String,
-    pub model: Option<String>,
-    pub duration: Option<i64>,
-    pub aspect: Option<String>,
-    pub steps: Option<i64>,
-    pub cfg_scale: Option<f64>,
-    pub draft: Option<bool>,
-    /// Aspect to show on the tile (nearest declared ratio for the width).
-    pub aspect_label: String,
-}
+pub use kawai_api_types::VideoTemplatePreset;
 
 static VIDEO_TEMPLATE_CACHE: LazyLock<Mutex<Option<(Instant, Vec<VideoTemplatePreset>)>>> =
     LazyLock::new(|| Mutex::new(None));
@@ -1023,28 +938,7 @@ fn closest_video_aspect(ecosystem: &str, width: i64, height: i64) -> Option<Stri
 
 // ── Music lane: community prompt presets ────────────────────────────────────
 
-/// A community music prompt, reduced to what the music form can restore.
-///
-/// Civitai has no audio feed: a music post is an ordinary image/video post
-/// that REFERENCES a music model (cover art / music video), so the `url` is
-/// always a civitai CDN media link and never an `.mp3`. The prompt is the
-/// only replayable payload — and on the music models it is genuinely good
-/// (civitai writers post structured `bpm / key / scale / genre / Vocal Style`
-/// prompts), which is exactly what a user would never write themselves.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MusicTemplatePreset {
-    /// Pinned model version (panel ecosystem key) this prompt was written
-    /// for — the gallery pools all four engines, and the panel switches to
-    /// this engine on apply.
-    pub ecosystem: String,
-    /// Cover art (a video poster when the post is a clip, else the image).
-    pub thumbnail: String,
-    pub caption: String,
-    pub steps: Option<i64>,
-    pub cfg_scale: Option<f64>,
-    pub sampler: Option<String>,
-}
+pub use kawai_api_types::MusicTemplatePreset;
 
 static MUSIC_TEMPLATE_CACHE: LazyLock<Mutex<Option<(Instant, Vec<MusicTemplatePreset>)>>> =
     LazyLock::new(|| Mutex::new(None));
@@ -1496,7 +1390,7 @@ fn uuidish() -> String {
 }
 
 // ── Video generation (workflows API) ───────────────────────────────────────
-//
+pub use kawai_api_types::CivitaiCostView as VideoCostView;
 // Video runs through the workflow surface, not a recipe: the image path
 // hides its own polling behind the recipe call, while video hands the
 // workflowId back to the panel. submit spends Buzz and returns a
@@ -1585,16 +1479,6 @@ impl VideoGenRequest {
     }
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VideoCostView {
-    pub total_buzz: f64,
-    /// App-token twin of `total_buzz` (ceil) — what the balance will be
-    /// debited at submit. Displayed as the panel's ≈ pill.
-    pub total_tokens: u64,
-    pub ready: bool,
-    pub warnings: Vec<String>,
-}
 
 /// Free cost estimate (whatif — no persist, no charge). A failure here means
 /// submit would fail too: surface it as the error.
@@ -1652,30 +1536,9 @@ pub async fn civitai_video_submit(
     })
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VideoBlobView {
-    pub video_url: String,
-    pub thumbnail_url: Option<String>,
-    pub width: Option<i64>,
-    pub height: Option<i64>,
-}
+pub use kawai_api_types::VideoBlobView;
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VideoStatusView {
-    pub workflow_id: String,
-    /// Normalized: `queued` | `processing` | `succeeded` | `failed` |
-    /// `expired` | `canceled` (anything else passes through lowercased).
-    pub status: String,
-    pub queue_position: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub video: Option<VideoBlobView>,
-    /// LTX-style batched jobs: extra clips beyond the primary video.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub additional: Vec<VideoBlobView>,
-    pub error: Option<String>,
-}
+pub use kawai_api_types::VideoStatusView;
 
 /// Poll one workflow (server-side long-poll — the call holds up to
 /// `wait_secs`, default 15, before replying with the current snapshot).
@@ -1717,17 +1580,7 @@ pub async fn civitai_video_status(
     })
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SavedVideo {
-    pub file_id: String,
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thumbnail_file_id: Option<String>,
-    /// LTX-style batched jobs: the extra clips, imported after the primary.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub additional: Vec<SavedVideo>,
-}
+pub use kawai_api_types::SavedVideo;
 
 /// Cancel a queued/running workflow (`PUT` `{status:"canceled"}` — civitai's
 /// own client shape). Best-effort from the panel: the job card's cancel
@@ -2189,20 +2042,7 @@ pub async fn civitai_music_submit(
     })
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MusicStatusView {
-    pub workflow_id: String,
-    /// Same normalization as the video lane: `queued` | `processing` |
-    /// `succeeded` | `failed` | `expired` | `canceled`.
-    pub status: String,
-    pub queue_position: Option<i64>,
-    /// Signed, EXPIRING audio URL — `civitai_music_fetch` must be called on
-    /// `succeeded` before it lapses.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub audio_url: Option<String>,
-    pub error: Option<String>,
-}
+pub use kawai_api_types::MusicStatusView;
 
 /// Poll one music workflow (server-side long-poll, default 15s hold).
 pub async fn civitai_music_status(
@@ -2228,12 +2068,7 @@ pub async fn civitai_music_status(
     })
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SavedAudio {
-    pub file_id: String,
-    pub name: String,
-}
+pub use kawai_api_types::SavedAudio;
 
 /// Download the finished track (SIGNED, EXPIRING URL — fetch once) into the
 /// office store as `ArtifactKind::Audio`. Idempotence is the CALLER's job,
@@ -2458,46 +2293,11 @@ pub async fn civitai_model3d_submit(
     })
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Model3dBlobView {
-    pub url: String,
-    /// "glb" / "fbx" when the output names the format.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub format: Option<String>,
-}
+pub use kawai_api_types::Model3dBlobView;
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Model3dVariantView {
-    /// "fbx" | "rigged" | "riggedFbx" | "animated" | "animatedFbx" |
-    /// "walking" | "walkingFbx" | "walkingArmature" | "running" | …
-    pub variant: String,
-    #[serde(flatten)]
-    pub blob: Model3dBlobView,
-}
+pub use kawai_api_types::Model3dVariantView;
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Model3dStatusView {
-    pub workflow_id: String,
-    /// Normalized: `queued` | `processing` | `succeeded` | `failed` |
-    /// `expired` | `canceled` (anything else passes through lowercased).
-    pub status: String,
-    pub queue_position: Option<i64>,
-    /// Primary GLB.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model: Option<Model3dBlobView>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fbx: Option<Model3dBlobView>,
-    /// The chained model3DPreview render when present, else the polyGen
-    /// auto-thumbnail — the result card's poster either way.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub preview_url: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub extras: Vec<Model3dVariantView>,
-    pub error: Option<String>,
-}
+pub use kawai_api_types::Model3dStatusView;
 
 /// Poll one 3D workflow (server-side long-poll — the call holds up to
 /// `wait_secs`, default 15, before replying with the current snapshot).
@@ -2532,10 +2332,8 @@ pub async fn civitai_model3d_status(
             .into_iter()
             .map(|v| Model3dVariantView {
                 variant: v.variant,
-                blob: Model3dBlobView {
-                    url: v.blob.url,
-                    format: v.blob.format,
-                },
+                url: v.blob.url,
+                format: v.blob.format,
             })
             .collect(),
         error: wf.error,
@@ -2543,29 +2341,9 @@ pub async fn civitai_model3d_status(
     })
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SavedModel3d {
-    /// Primary GLB.
-    pub file_id: String,
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fbx_file_id: Option<String>,
-    /// model3DPreview render / polyGen auto-thumbnail, stored as an image.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub preview_file_id: Option<String>,
-    /// Rigged / animated twins + the basicAnimations set, best-effort.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub additional: Vec<SavedModel3dFile>,
-}
+pub use kawai_api_types::SavedModel3d;
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SavedModel3dFile {
-    pub file_id: String,
-    pub name: String,
-    pub variant: String,
-}
+pub use kawai_api_types::SavedModel3dFile;
 
 /// Blob url → stored extension. Trusts the engine-declared format ("glb"/
 /// "fbx"), falls back to the URL's extension, defaults glb.
@@ -2693,14 +2471,14 @@ pub async fn civitai_model3d_fetch(
     // a failed extra is logged, not fatal.
     let mut additional = Vec::new();
     for extra in extra_urls {
-        if extra.blob.url.trim().is_empty() {
+        if extra.url.trim().is_empty() {
             continue;
         }
         match import_model3d_file(
             user_id,
             &workflow_id,
-            extra.blob.url.trim(),
-            extra.blob.format.as_deref(),
+            extra.url.trim(),
+            extra.format.as_deref(),
             &variant_stem(&extra.variant),
         )
         .await

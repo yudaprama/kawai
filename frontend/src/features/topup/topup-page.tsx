@@ -7,61 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { AssetShell } from "@/features/assets/components/asset-shell";
 import { cn } from "@/lib/utils";
-import { call, errText } from "@/lib/api";
+import {
+  call,
+  errText,
+  type TopupClaim,
+  type TopupHistory,
+  type TopupHistoryEntry,
+  type TopupPreview,
+  type TopupStatusInfo,
+  type TopupVoucherRedeem,
+} from "@/lib/api";
 import { QrisCard } from "@/features/topup/qris-card";
 import { isLowTokenBalance, refreshTokenBalance, useTokenBalance } from "@/features/topup/use-token-balance";
-
-// ── Wire shapes (camelCase JSON — local mirrors of the worker contract) ─────
-
-export interface TopupPreview {
-  qrPayload: string;
-  /** Inclusive base range (IDR) the user may request. */
-  minBase: number;
-  maxBase: number;
-  /** Base must be a multiple of this (1000). */
-  baseStep: number;
-  /** `tokens = base * tokensPerIdr`. */
-  tokensPerIdr: number;
-}
-
-export interface TopupClaim {
-  txId: string;
-  idrAmount: number;
-  tokens: number;
-  qrPayload: string;
-  /** Unix seconds. */
-  expiresAt: number;
-}
-
-export type TopupStatus = "pending" | "crediting" | "credited" | "rejected" | "expired";
-
-export interface TopupStatusInfo {
-  status: TopupStatus;
-  idrAmount: number;
-  tokens: number;
-  createdAt: number;
-  creditedAt?: number | null;
-}
-
-export interface VoucherRedeem {
-  tokens: number;
-  balance: number;
-}
-
-export interface HistoryEntry {
-  /** Ledger primary key — the stable row key for the list. */
-  id: number;
-  /** Signed: kredit positif, pemakaian negatif. */
-  amount: number;
-  /** Ledger category supplied by the worker. */
-  reason: string;
-  /** Unix seconds. */
-  createdAt: number;
-}
-
-interface History {
-  entries: HistoryEntry[];
-}
 
 // ── Constants (source-hardcoded — repo rule: no new env) ────────────────────
 
@@ -69,7 +26,11 @@ interface History {
 const FAST_POLL_MS = 5_000;
 const BACKOFF_AFTER_MS = 5 * 60_000;
 const BACKOFF_POLL_MS = 30_000;
-const TERMINAL_STATUSES: readonly TopupStatus[] = ["credited", "rejected", "expired"];
+/// The worker's documented status vocabulary. The wire type is free text
+/// (`status: string`), so this narrows it explicitly — an unrecognised value
+/// reads as "pending" rather than slipping past the compiler.
+export type TopupStatus = "pending" | "crediting" | "credited" | "rejected" | "expired";
+
 /** Second-ticking countdown only in the final 10 minutes; absolute deadline before that. */
 const EXPIRY_COUNTDOWN_FROM_MS = 10 * 60_000;
 
@@ -141,10 +102,10 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
   const { tokens: balance, pending: balancePending } = useTokenBalance();
 
   // ── Riwayat (balance ledger: kredit positif, pemakaian negatif) ──────────
-  const [history, setHistory] = useState<HistoryEntry[] | null>(null);
+  const [history, setHistory] = useState<TopupHistoryEntry[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const loadHistory = useCallback(() => {
-    void call<History>("topup_history")
+    void call<TopupHistory>("topup_history")
       .then(({ entries }) => {
         setHistory(entries);
         setHistoryError(null);
@@ -253,8 +214,16 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
     }
   }, []);
 
-  const effectiveStatus: TopupStatus = txStatus?.status ?? "pending";
-  const isTerminal = claim != null && TERMINAL_STATUSES.includes(effectiveStatus);
+  const rawStatus = txStatus?.status;
+  const effectiveStatus: TopupStatus =
+    rawStatus === "pending" ||
+    rawStatus === "crediting" ||
+    rawStatus === "credited" ||
+    rawStatus === "rejected" ||
+    rawStatus === "expired"
+      ? rawStatus
+      : "pending";
+  const isTerminal = claim != null && effectiveStatus !== "pending" && effectiveStatus !== "crediting";
   /** Active (non-terminal) claim — rendered as a pending row in Riwayat. */
   const activeClaim = claim != null && !isTerminal ? claim : null;
   /** Verification adjustment: worker bills base + a 0–900 suffix so the bank
@@ -306,7 +275,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
   // backoff; stops entirely on a terminal status. "Periksa pembayaran" is
   // the manual escape hatch at any time.
   useEffect(() => {
-    if (!claim || TERMINAL_STATUSES.includes(effectiveStatus)) return;
+    if (!claim || isTerminal) return;
     let cancelled = false;
     let timer: number | undefined;
     async function run() {
@@ -323,7 +292,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [claim, effectiveStatus, checkStatus]);
+  }, [claim, isTerminal, checkStatus]);
 
   // At expiry the server flips pending → expired lazily ON READ — one
   // targeted status call at expiresAt surfaces the expired state at once.
@@ -337,7 +306,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
   // ── Voucher (kode sekali-pakai → token) ──────────────────────────────────
   const [voucherInput, setVoucherInput] = useState("");
   const [redeeming, setRedeeming] = useState(false);
-  const [voucherResult, setVoucherResult] = useState<VoucherRedeem | null>(null);
+  const [voucherResult, setVoucherResult] = useState<TopupVoucherRedeem | null>(null);
   const [voucherError, setVoucherError] = useState<string | null>(null);
 
   /** Kode dinormalisasi: trim + uppercase (worker memvalidasi format). */
@@ -349,7 +318,7 @@ export function TopupPage({ onBack }: { onBack: () => void }) {
     setVoucherError(null);
     setVoucherResult(null);
     try {
-      const data = await call<VoucherRedeem>("topup_voucher_redeem", { code: voucherCode });
+      const data = await call<TopupVoucherRedeem>("topup_voucher_redeem", { code: voucherCode });
       setVoucherResult(data);
       setVoucherInput("");
       void refreshTokenBalance();

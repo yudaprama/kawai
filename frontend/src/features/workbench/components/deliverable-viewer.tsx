@@ -7,7 +7,7 @@ import { FileIcon } from "@/components/shared/file-icon";
 import { MarkdownWithCharts } from "@/features/workbench/components/markdown-with-charts";
 import { DeckPreview } from "@/features/workbench/components/deck-preview";
 import { slugify } from "@/lib/utils";
-import { call, errText, type OfficeFileSummary } from "@/lib/api";
+import { call, errText, type DeliverableTranslationMeta, type OfficeFileSummary } from "@/lib/api";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { AgentReportsSwitcher, StepReportBody } from "@/features/workbench/components/shared-canvas";
 import {
@@ -217,10 +217,6 @@ const TRANSLATE_LANGUAGES = [
 /** Display label for a language value (unknown/custom values pass through). */
 const translateLabel = (value: string) => TRANSLATE_LANGUAGES.find((l) => l.value === value)?.label ?? value;
 
-/** A stored translation of the current deliverable — metadata only; the body
- *  itself comes back from `translate_deliverable`'s cache hit on restore. */
-type SavedTranslation = { language: string; createdAt: number };
-
 /** Deliverable body + its toolbar: the translate control, the body (original
  *  or a translated copy), and the export row. Shared by the live canvas and
  *  PastRunCanvas so the translate feature exists in exactly one place. The
@@ -247,7 +243,7 @@ function DeliverableBody({
   const [error, setError] = useState<string | null>(null);
   // Server-side saved translations for THIS exact text (content-hash keyed):
   // chips restore one instantly from storage — no LLM call on reopen.
-  const [saved, setSaved] = useState<SavedTranslation[]>([]);
+  const [saved, setSaved] = useState<DeliverableTranslationMeta[]>([]);
 
   // A NEW deliverable must never inherit the previous one's overlay, and a
   // translation response landing after the deliverable changed must be
@@ -261,7 +257,7 @@ function DeliverableBody({
     // Saved chips are progressive enhancement: a failed list just renders none.
     void (async () => {
       try {
-        const rows = await call<SavedTranslation[]>("deliverable_translations", { markdown });
+        const rows = await call<DeliverableTranslationMeta[]>("deliverable_translations", { markdown });
         if (sourceRef.current === markdown) setSaved(rows);
       } catch (err) {
         console.error("[workbench] deliverable_translations:", errText(err));
