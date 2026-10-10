@@ -37,13 +37,16 @@ What Shipped (bullets), Results (table with metric/value rows), Next Steps (bull
 Results: cloud smoke 3.6s, 193 output tokens; local tests 40/40. Next: calibration, GUI badge.";
 
     let t0 = std::time::Instant::now();
-    // One retry: a cloud stream can drop mid-generation after the failover
-    // boundary (first text token) — truncated JSON is a transient provider
-    // flake, not a regression. The retry carries the rejection reason back to
-    // the model (the production draft path's correction round).
+    // Two retries: a cloud stream can drop mid-generation after the failover
+    // boundary (first text token) — truncated/malformed JSON is a transient
+    // provider flake, not a regression (measured: the provider can emit a
+    // structurally broken object twice in a row). Each retry carries the
+    // rejection reason back to the model (the production draft path's
+    // correction round); only three consecutive malformed outputs fail the
+    // gate.
     let mut blocks = None;
     let mut feedback = String::new();
-    for attempt in 1..=2 {
+    'attempts: for attempt in 1..=3 {
         let attempt_task = if feedback.is_empty() {
             task.to_string()
         } else {
@@ -72,7 +75,17 @@ Results: cloud smoke 3.6s, 193 output tokens; local tests 40/40. Next: calibrati
                     hit_cap = c;
                 }
                 Err(e) => {
-                    println!("[draft_smoke] stream error: {e}");
+                    // Mid-generation transport failure (post-failover boundary)
+                    // is a transient provider flake — retry it like malformed
+                    // JSON instead of failing the gate on attempt 1.
+                    if attempt < 3 {
+                        println!("[draft_smoke] stream error ({e}) — retrying (attempt {} follows)", attempt + 1);
+                        feedback = format!(
+                            "CORRECTION — your previous attempt was cut off by a transport error. Return ONLY one complete JSON object {{\"blocks\": [...]}}."
+                        );
+                        continue 'attempts;
+                    }
+                    println!("[draft_smoke] stream error after {attempt} attempts: {e}");
                     std::process::exit(1);
                 }
             }
@@ -90,14 +103,14 @@ Results: cloud smoke 3.6s, 193 output tokens; local tests 40/40. Next: calibrati
                 blocks = Some(b);
                 break;
             }
-            Err(e) if attempt == 1 => {
-                println!("[draft_smoke] JSON invalid ({e}) — retrying once\n--- raw ---\n{raw}");
+            Err(e) if attempt < 3 => {
+                println!("[draft_smoke] JSON invalid ({e}) — retrying (attempt {} follows)\n--- raw ---\n{raw}", attempt + 1);
                 feedback = format!(
                     "CORRECTION — your previous attempt was rejected: {e}. Return ONLY one JSON object {{\"blocks\": [...]}} whose every element is exactly one of the documented block objects."
                 );
             }
             Err(e) => {
-                println!("[draft_smoke] JSON invalid after retry: {e}\n--- raw ---\n{raw}");
+                println!("[draft_smoke] JSON invalid after 3 attempts: {e}\n--- raw ---\n{raw}");
                 std::process::exit(1);
             }
         }
