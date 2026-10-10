@@ -468,7 +468,12 @@ jobs:
   build-web:
     needs: bump
     if: needs.bump.outputs.skipped == 'false'
-    runs-on: ubuntu-latest
+    # Pinned, NOT ubuntu-latest: the `tts` feature links ort-sys's static
+    # pyke ONNX Runtime, whose objects reference __isoc23_strtol & friends —
+    # glibc >= 2.38 only (ubuntu-24.04 = 2.39). ubuntu-latest is an alias that
+    # can move under us; 22.04 (2.35) silently breaks the link, exactly as it
+    # did for build-linux. Same floor as build-linux.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
