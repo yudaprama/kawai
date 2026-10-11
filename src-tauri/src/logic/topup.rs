@@ -11,7 +11,6 @@
 //! response parsing and wrapper response emission).
 
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 
 use super::local_auth::worker_base_url;
 

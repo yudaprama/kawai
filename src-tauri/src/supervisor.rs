@@ -686,7 +686,7 @@ via the always-available `session_step_results` tool. If the goal depends on det
     // Rolling reasoning buffer + throttle for PlanningActivity — the UI gets
     // a trailing preview of the planner's thinking at most every 800 ms.
     let mut reasoning_tail = String::new();
-    let mut last_activity = std::time::Instant::now();
+    let mut last_activity: std::time::Instant;
 
     loop {
         calls += 1;
@@ -1327,7 +1327,7 @@ pub fn prefetch_tool_catalog() {
         if shared_catalog().await.is_none() {
             return;
         }
-        for attempt in 1..=5 {
+        for _ in 1..=5 {
             sync_shared_catalog(std::time::Duration::from_secs(60)).await;
             let Some(catalog) = shared_catalog().await else { return };
             let Some(cfg) = kawai_tool_catalog::RemoteConfig::from_env() else { return };
@@ -3246,7 +3246,7 @@ fn charts_material_block(charts: &[RunChart]) -> String {
 /// repeat it: a bare COIN-M PnL table presented as "analysis" implied a risk
 /// review that never ran. Collected from the steps' own `limitations` array,
 /// deduplicated — the writer states facts, it does not invent them.
-fn limitations_material_block(steps: &[StepResult]) -> String {
+fn limitations_material_block(steps: &[kawai_router::StepResult]) -> String {
     let mut seen = std::collections::BTreeSet::new();
     let mut out: Vec<String> = Vec::new();
     for st in steps {

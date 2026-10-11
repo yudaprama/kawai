@@ -11,8 +11,6 @@
 //! Wire shape = camelCase JSON (web request/response structs rely on
 //! `rename_all = "camelCase"` in the wrappers; Tauri maps automatically).
 
-use serde::Serialize;
-
 use composio::ComposioClient;
 
 fn client() -> Result<ComposioClient, String> {
