@@ -245,24 +245,27 @@ picture, so there is no multi-tool choreography to get wrong.
 The screener flips the direction of the advisory tools: instead of grading a
 KNOWN book, it searches the WHOLE market for setups. Ranks the top-liquidity
 USDT pairs (24h quote volume, spot mirror or fapi), folds indicators per
-symbol in-process (`ta` crate) ONCE, and evaluates ONE setup or SEVERAL over
-those same folds — a deterministic predicate with a conviction score (0-100)
-and per-hit reasons, hits tagged per screen (`perScreen` counts; the bare
-`screen` request stays valid as the single-setup shorthand). Read-only
-keyless public data; self-bounded (6 runs/min, 6-way parallel klines, 45s
-deadline → `partial: true`, fail-soft error rows).
+symbol in-process (`ta` crate), and evaluates ONE setup or SEVERAL — a
+deterministic predicate with a conviction score (0-100) and per-hit reasons,
+hits tagged per screen (`perScreen` counts; the bare `screen` request stays
+valid as the single-setup shorthand). Read-only keyless public data;
+self-bounded (12 runs/min, 6-way parallel klines, 45s deadline →
+`partial: true`, fail-soft error rows).
 
 - **Screens are pure policy** (`screener.rs::evaluate`), the same split as
   `stop_advice`: seven shipped (`oversold_rebound`, `macd_golden_cross`,
   `macd_death_cross`, `midband_reclaim`, `uptrend_pullback`, `squeeze_watch`,
   `rsi_overbought_uptrend`), each unit-tested hit/miss/gates without network.
-  Extra screens over one scan cost arithmetic only — the klines are shared.
+- **The fetches are shared** by a process-wide klines cache (market+symbol+
+  interval, TTL 90s — long enough to cover a whole parallel wave, short
+  enough that the still-forming last candle never goes materially stale):
+  a fixed plan of N per-screen steps costs ~one scan of fetches.
 - **The fixed workflow** (`screener_plan.rs`, op `run_crypto_screener`, both
-  wrappers, the "Crypto Screener" landing template) is ONE step scanning
-  every selected screen; the built-in deliverable writer turns the hit lists
-  into one report — cross-screen symbols called out first. No planning
-  round, and NO credential gate: the pipeline never touches a signed
-  endpoint.
+  wrappers, the "Crypto Screener" landing template) fires ONE PARALLEL step
+  per selected screen — the run view renders a per-screen report each — and
+  the built-in deliverable writer turns the hit lists into one summary,
+  cross-screen symbols called out first. No planning round, and NO
+  credential gate: the pipeline never touches a signed endpoint.
 
 ## 5b. Monad (`builtin.monad`) — `crates/toolsets/monad-tools` (feature `monad`)
 
