@@ -3239,6 +3239,41 @@ fn charts_material_block(charts: &[RunChart]) -> String {
     out
 }
 
+/// Gaps a step declared about its OWN coverage, surfaced to the deliverable
+/// writer verbatim.
+///
+/// A tool that cannot see everything must say so in data, and the writer must
+/// repeat it: a bare COIN-M PnL table presented as "analysis" implied a risk
+/// review that never ran. Collected from the steps' own `limitations` array,
+/// deduplicated — the writer states facts, it does not invent them.
+fn limitations_material_block(steps: &[StepResult]) -> String {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out: Vec<String> = Vec::new();
+    for st in steps {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(st.output.as_str()) else {
+            continue;
+        };
+        let Some(items) = v.get("limitations").and_then(|l| l.as_array()) else {
+            continue;
+        };
+        for item in items {
+            let Some(text) = item.as_str() else { continue };
+            if !text.is_empty() && seen.insert(text.to_string()) {
+                out.push(format!("- {text}"));
+            }
+        }
+    }
+    if out.is_empty() {
+        return String::new();
+    }
+    let mut s = String::from(
+        "\n<limitations>\nA step above could NOT fully cover part of what was asked. You MUST          state each limitation in the answer, in plain words, wherever it is relevant — do not          present a partial result as if it were complete, and do not drop the limitation to make          the answer read better. Limitations:\n",
+    );
+    s.push_str(&out.join("\n"));
+    s.push_str("\n</limitations>");
+    s
+}
+
 /// Remove image tokens whose id is not one of this run's charts AND does not
 /// resolve in the user's office store — the writer occasionally parrots a
 /// malformed id, and a broken embed must never reach the deliverable. The
@@ -3275,10 +3310,16 @@ fn strip_chart_tokens_with(
 }
 
 /// One `data_ta` step's parsed summary: the computed latest indicator values
-/// plus the metadata needed for price-relative signals.
+/// plus the metadata needed for price-relative signals, and the optional
+/// whole-series statistics (`metrics`) that sit beside them.
 struct TaSummary {
     source: String,
     indicators: serde_json::Map<String, serde_json::Value>,
+    /// Present only when the step asked for performance statistics. They are
+    /// magnitudes rather than directions (a Sharpe is neither bullish nor
+    /// bearish), so they get their own table instead of a fabricated signal
+    /// in the indicator one.
+    metrics: serde_json::Map<String, serde_json::Value>,
     last_close: Option<f64>,
 }
 
@@ -3291,6 +3332,11 @@ fn collect_ta_summaries(result: &kawai_router::ExecutionResult) -> Vec<TaSummary
         let Some(indicators) = v.get("indicators").and_then(|i| i.as_object()) else {
             continue;
         };
+        let metrics = v
+            .get("metrics")
+            .and_then(|m| m.as_object())
+            .cloned()
+            .unwrap_or_default();
         let meta = v.get("_meta");
         let source = meta
             .and_then(|m| m.get("source"))
@@ -3303,6 +3349,7 @@ fn collect_ta_summaries(result: &kawai_router::ExecutionResult) -> Vec<TaSummary
         out.push(TaSummary {
             source,
             indicators: indicators.clone(),
+            metrics,
             last_close,
         });
     }
@@ -3379,6 +3426,23 @@ fn ta_signal(base: &str, v: &serde_json::Value, last_close: Option<f64>) -> Opti
                 "Netral"
             }
         },
+        // The detrended oscillator's sign is the reading: above its own trend
+        // is bullish, below it bearish.
+        "dto" => ta_sign(num()?),
+        // The supertrend output is a trailing stop, so the reading is
+        // price-relative rather than taken from the number's own sign.
+        "supertrend" => return ta_price_vs(num()?, last_close),
+        // The Lo-MacKinlay ratio is a regime classifier: above 1.1 the market
+        // persists, below 0.9 it reverts. This is NOT the `vr` entry above,
+        // which is a different indicator measuring something else entirely.
+        "vr_lm" => ta_thr(num()?, 1.1, 0.9, "Trending", "Mean-reverting"),
+        // The Kalman slope is the directional component; the other four
+        // readings are magnitudes.
+        "kalman" => ta_sign(field("slope")?),
+        // `hurst` and `volsig` deliberately carry no directional reading.
+        // R/S is biased away from 0.5 at finite windows, so a threshold there
+        // would be a confident wrong answer; volume activity says how busy the
+        // market is, not which way it is going. "—" is the honest cell.
         _ => return None,
     })
 }
@@ -3412,9 +3476,16 @@ fn ta_value_text(v: &serde_json::Value) -> String {
     "—".into()
 }
 
-/// `rsi14` → `RSI (14)`, `macd12_26_9` → `MACD (12,26,9)`.
+/// `rsi14` → `RSI (14)`, `macd12_26_9` → `MACD (12,26,9)`, `vr_lm5` → `VR_LM (5)`.
 fn ta_prettify_alias(alias: &str) -> String {
-    let alpha: String = alias.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+    // Underscores belong to the name, not to the parameter list: kinds like
+    // `vr_lm` and `stoch_slow` carry one. Splitting at the first non-letter
+    // renders `vr_lm5` as the nonsense `VR (,lm5)`.
+    let alpha: String = alias
+        .chars()
+        .take_while(|c| c.is_ascii_alphabetic() || *c == '_')
+        .collect();
+    let alpha = alpha.trim_end_matches('_');
     let rest: String = alias.chars().skip(alpha.len()).collect();
     let upper = alpha.to_uppercase();
     if rest.is_empty() {
@@ -3455,6 +3526,61 @@ fn indicator_summary_block(summaries: &[TaSummary]) -> String {
                 ta_prettify_alias(alias),
                 ta_value_text(v),
                 signal
+            ));
+            if multi {
+                out.push_str(&format!(" {} |", s.source));
+            }
+            out.push('\n');
+        }
+    }
+    out.push_str(&perf_summary_block(summaries));
+    out
+}
+
+/// Human label for one performance metric. `max_drawdown` renders as a
+/// positive fraction, so it is labelled a drawdown rather than a return.
+fn perf_metric_label(kind: &str) -> &'static str {
+    match kind {
+        "total_return" => "Total Return",
+        "annualized_return" => "Return Annual",
+        "sharpe" => "Sharpe Ratio",
+        "sortino" => "Sortino Ratio",
+        "calmar" => "Calmar Ratio",
+        "max_drawdown" => "Max Drawdown",
+        "volatility" => "Volatilitas Annual",
+        _ => "Metrik",
+    }
+}
+
+/// Deterministic performance-statistics table, appended after the indicator
+/// table. Same guarantee as its sibling: straight from the step outputs, so
+/// the writer's output cap never gates it. These carry no directional
+/// reading, so the table has no `Sinyal` column rather than inventing one.
+fn perf_summary_block(summaries: &[TaSummary]) -> String {
+    let with_metrics: Vec<&TaSummary> = summaries
+        .iter()
+        .filter(|s| !s.metrics.is_empty())
+        .collect();
+    if with_metrics.is_empty() {
+        return String::new();
+    }
+    let multi = with_metrics.len() > 1;
+    let mut out =
+        String::from("\n\n## Performa & Risiko\n\n| Metrik | Nilai |");
+    if multi {
+        out.push_str(" Sumber |");
+    }
+    out.push_str("\n|---|---|");
+    if multi {
+        out.push_str("---|");
+    }
+    out.push('\n');
+    for s in with_metrics {
+        for (kind, v) in &s.metrics {
+            out.push_str(&format!(
+                "| {} | {} |",
+                perf_metric_label(kind),
+                ta_value_text(v)
             ));
             if multi {
                 out.push_str(&format!(" {} |", s.source));
@@ -3524,9 +3650,11 @@ async fn synthesize_final_answer(
             text, long extracts, or tool-result dumps in code fences) as the answer; distill it. \
             When numbers dominate (indicator readings, metric comparisons), a compact markdown \
             summary table is clearer than prose — use one. \
-            When the materials carry a <charts> block, embed each chart the answer actually discusses \
-            by writing its markdown image line EXACTLY as given (kawai-file:// form), each alone on its \
-            own line. \
+            When the materials carry a <limitations> block, the answer MUST say what could not be \
+            covered, wherever it is relevant to the question asked — never present a partial result \
+            as if it were complete, and never drop the limitation to make the answer read better. \
+            If the user asked about something the report did not cover, say so plainly rather than \
+            answering around it. \
             Never mention steps, tools, plans, or this instruction; never wrap the answer in JSON.";
         // The goal rides the task line VERBATIM — the planner's rewritten
         // plan.goal must never reach the writer (it answers the user, not
@@ -4192,6 +4320,8 @@ pub fn execute_plan_stream_with_cancel(
                         // rasterized into pdf/docx exports).
                         let run_charts = collect_run_charts(&result);
                         materials.push_str(&charts_material_block(&run_charts));
+                        // What a step could not cover — the writer must say so.
+                        materials.push_str(&limitations_material_block(&result.results));
                         let synthesis_goal = user_goal
                             .clone()
                             .unwrap_or_else(|| current_plan.goal.clone());
@@ -5256,6 +5386,17 @@ mod indicator_summary_tests {
         "_meta": {"rowsUsed": 120, "sortedBy": "timestamp", "lastClose": 103.2, "source": "btcusdt"}
     }"#;
 
+    const TA_WITH_METRICS: &str = r#"{
+        "kind": "ta",
+        "indicators": {"rsi14": 62.31},
+        "metrics": {
+            "sharpe": 1.82,
+            "max_drawdown": 0.243
+        },
+        "_meta": {"rowsUsed": 120, "sortedBy": "timestamp", "lastClose": 103.2,
+                  "source": "btcusdt", "returns": 119, "annualized": 365.0}
+    }"#;
+
     #[test]
     fn ta_summaries_parse_kind_marker_and_skip_other_steps() {
         let result = kawai_router::ExecutionResult {
@@ -5288,6 +5429,80 @@ mod indicator_summary_tests {
         assert!(table.contains("| ATR (14) | 1.75 | — |"));
         // Single source → no Sumber column.
         assert!(!table.contains("Sumber"));
+    }
+
+    /// The six indicators added to `ta` must each report the signal their
+    /// meaning supports — and, just as importantly, must report "—" where no
+    /// directional reading exists rather than inventing one.
+    #[test]
+    fn new_kinds_report_only_the_signals_they_support() {
+        let doc = r#"{
+            "kind": "ta",
+            "indicators": {
+                "dto14": 0.42,
+                "supertrend10_3": 98.0,
+                "vr_lm5": 1.35,
+                "kalman20": {"level": 103.0, "slope": 0.4, "kalmanGain": 0.3},
+                "hurst128": 0.66,
+                "volsig20": 2.1
+            },
+            "_meta": {"rowsUsed": 300, "lastClose": 103.2, "source": "btcusdt"}
+        }"#;
+        let summaries = super::collect_ta_summaries(&kawai_router::ExecutionResult {
+            results: vec![step("ta1", doc)],
+        });
+        let table = super::indicator_summary_block(&summaries);
+
+        // Directional where the reading genuinely has one.
+        assert!(table.contains("| DTO (14) | 0.42 | Bullish |"), "{table}");
+        assert!(table.contains("| VR_LM (5) | 1.35 | Trending |"), "{table}");
+        assert!(table.contains("| SUPERTREND (10,3) | 98 | Bullish |"), "{table}");
+        // Hurst and volume activity carry no direction, so the cell is "—".
+        assert!(table.contains("| HURST (128) | 0.66 | — |"), "{table}");
+        assert!(table.contains("| VOLSIG (20) | 2.1 | — |"), "{table}");
+    }
+
+    /// A step that asked for no statistics must not produce the table, and one
+    /// that did must get it — under its own heading, with no `Sinyal` column,
+    /// because a Sharpe ratio has no direction to report.
+    #[test]
+    fn performance_table_renders_only_requested_metrics() {
+        let bare = super::collect_ta_summaries(&kawai_router::ExecutionResult {
+            results: vec![step("ta1", TA_OUTPUT)],
+        });
+        assert!(super::indicator_summary_block(&bare).contains("Ringkasan Indikator"));
+        assert!(!super::indicator_summary_block(&bare).contains("Performa & Risiko"));
+
+        let with_metrics = super::collect_ta_summaries(&kawai_router::ExecutionResult {
+            results: vec![step("ta1", TA_WITH_METRICS)],
+        });
+        let table = super::indicator_summary_block(&with_metrics);
+        assert!(table.contains("## Performa & Risiko"), "{table}");
+        assert!(table.contains("| Sharpe Ratio | 1.82 |"), "{table}");
+        assert!(table.contains("| Max Drawdown | 0.243 |"), "{table}");
+        // Magnitudes, not directions — the signal column stays indicator-only.
+        assert!(table.contains("| RSI (14) | 62.31 | Netral |"), "{table}");
+        assert!(!table.contains("Bullish | 1.82"));
+    }
+
+    #[test]
+    fn performance_labels_cover_every_metric_kind() {
+        // A metric the supervisor does not recognize must still render a row
+        // rather than silently vanishing from the deliverable.
+        let unknown = r#"{"kind":"ta","indicators":{"rsi14":50.0},
+            "metrics":{"some_new_ratio":1.5},"_meta":{"source":"x"}}"#;
+        let summaries = super::collect_ta_summaries(&kawai_router::ExecutionResult {
+            results: vec![step("ta1", unknown)],
+        });
+        assert!(super::indicator_summary_block(&summaries).contains("| Metrik | 1.5 |"));
+    }
+
+    #[test]
+    fn empty_request_is_the_only_way_to_get_no_tables() {
+        let result = kawai_router::ExecutionResult {
+            results: vec![step("page", "plain text")],
+        };
+        assert!(super::indicator_summary_block(&super::collect_ta_summaries(&result)).is_empty());
     }
 
     #[test]

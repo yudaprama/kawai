@@ -25,5 +25,5 @@ export const ASSET_NAV: AssetNavEntry[] = [
   { id: "skills", labelKey: "assetNav.skills", subtitle: "agent skills", icon: "wrench" },
   { id: "memory", labelKey: "assetNav.memory", subtitle: "chat memory", icon: "brain" },
   { id: "connections", labelKey: "assetNav.connections", subtitle: "app connections", icon: "plug-zap" },
-  { id: "credentials", labelKey: "assetNav.credentials", subtitle: "API keys", icon: "key" },
+  { id: "credentials", labelKey: "assetNav.credentials", subtitle: "keys & databases", icon: "key" },
 ];

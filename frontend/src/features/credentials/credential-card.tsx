@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { Label } from "@/components/ui/label";
 import { useI18n } from "@/hooks/use-i18n";
 import { call, errText } from "@/lib/api";
 import type { TranslationKey } from "@/lib/i18n";
@@ -39,6 +40,7 @@ export function CredentialCard({ provider }: { provider: CredentialProvider }) {
   const [status, setStatus] = useState<CredentialStatus | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -104,30 +106,46 @@ export function CredentialCard({ provider }: { provider: CredentialProvider }) {
           <span className="ml-auto flex items-center gap-2">
             {status === null ? (
               <Spinner className="size-4" />
-            ) : status.source === "user" ? (
-              // The badge only says something when YOUR keys are active —
-              // for the built-in pair / no-key states the empty fields and
-              // the guide already tell the story.
+            ) : (
+              // Always name the state: an empty key form with no badge reads as
+              // a broken card rather than "not configured yet".
               <Badge className={SOURCE_TONE[status.source]} variant="secondary">
                 {t(SOURCE_LABEL[status.source])}
               </Badge>
-            ) : null}
+            )}
             {status?.keyPreview && <span className="text-muted-foreground font-mono text-xs">{status.keyPreview}</span>}
           </span>
         </div>
 
         <p className="text-muted-foreground text-xs leading-relaxed">{t(provider.guideKey)}</p>
+        {provider.guideDetailKey && (
+          <div className="space-y-1">
+            <Button aria-expanded={detailOpen} onClick={() => setDetailOpen((v) => !v)} size="xs" variant="ghost">
+              <Icon aria-hidden name={detailOpen ? "chevron-down" : "chevron-right"} className="size-3" />
+              {detailOpen ? t("credentials.guideDetailsHide") : t("credentials.guideDetailsShow")}
+            </Button>
+            {detailOpen && (
+              <p className="text-muted-foreground text-xs leading-relaxed">{t(provider.guideDetailKey)}</p>
+            )}
+          </div>
+        )}
 
         <div className="space-y-2">
           {provider.fields.map((field) => (
-            <Input
-              autoComplete={field.autoComplete}
+            <Label
+              className="text-muted-foreground flex flex-col gap-1 text-xs font-medium"
+              htmlFor={`${provider.id}-${field.arg}`}
               key={field.arg}
-              onChange={(e) => setValues((v) => ({ ...v, [field.arg]: e.target.value }))}
-              placeholder={t(field.labelKey)}
-              type="password"
-              value={values[field.arg] ?? ""}
-            />
+            >
+              {t(field.labelKey)}
+              <Input
+                autoComplete={field.autoComplete}
+                id={`${provider.id}-${field.arg}`}
+                onChange={(e) => setValues((v) => ({ ...v, [field.arg]: e.target.value }))}
+                type="password"
+                value={values[field.arg] ?? ""}
+              />
+            </Label>
           ))}
         </div>
 
@@ -137,8 +155,6 @@ export function CredentialCard({ provider }: { provider: CredentialProvider }) {
           </p>
         )}
         {notice && <p className="text-xs text-emerald-600 dark:text-emerald-400">{notice}</p>}
-
-        {provider.extra}
 
         <div className="flex gap-2">
           <Button size="sm" disabled={!canSave} onClick={() => void save()}>
@@ -155,6 +171,10 @@ export function CredentialCard({ provider }: { provider: CredentialProvider }) {
             />
           )}
         </div>
+
+        {/* Provider settings sit BELOW the actions: the key form is the one
+            thing a first-time visitor came here to do. */}
+        {provider.extra}
       </CardContent>
     </Card>
   );

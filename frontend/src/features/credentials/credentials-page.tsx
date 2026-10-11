@@ -16,10 +16,12 @@ export function CredentialsPage() {
   const { t } = useI18n();
   return (
     <AssetShell>
-      <AssetPageHeader title={t("credentials.title")} subtitle={t("credentials.subtitle")} />
-      <div className="mx-auto w-full max-w-2xl space-y-6">
+      {/* Header + body share ONE centered column: a full-bleed header above a
+          narrow body leaves a dead gap and reads as a broken layout. */}
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+        <AssetPageHeader title={t("credentials.title")} subtitle={t("credentials.subtitle")} />
         <SqlProfilesSection />
-        <div className="space-y-4">
+        <section className="space-y-4">
           <span className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium uppercase">
             <Icon name="key" className="size-3" />
             {t("credentials.apiKeysSection")}
@@ -27,7 +29,7 @@ export function CredentialsPage() {
           {CREDENTIAL_PROVIDERS.map((provider) => (
             <CredentialCard key={provider.id} provider={provider} />
           ))}
-        </div>
+        </section>
       </div>
     </AssetShell>
   );

@@ -5,6 +5,7 @@ import { ConfirmIconButton } from "@/components/shared/confirm-action";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { Label } from "@/components/ui/label";
 import { isRemoteSource, maskSource } from "@/features/analytics/lib/analytics";
 import { call, errText, type SqlProfile, type SqlProfileTest } from "@/lib/api";
 import { useOp } from "@/hooks/use-op";
@@ -36,6 +37,10 @@ export function SqlProfilesSection() {
   /** Two-click destructive confirm: the trash arms, a second click inside 3s
    *  deletes — same arm/disarm convention as every other delete in the app. */
   const [confirmDeleteName, setConfirmDeleteName] = useState<string | null>(null);
+  /** The bottom error block used to render the moment the form opened —
+   *  scolding an empty form before a single character was typed. It now waits
+   *  for a save attempt; the inline per-field hint stays live while typing. */
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   useEffect(() => {
     if (confirmDeleteName == null) return;
     const t = setTimeout(() => setConfirmDeleteName(null), 3000);
@@ -47,10 +52,10 @@ export function SqlProfilesSection() {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const picked = await open({
         multiple: false,
-        title: "Choose a SQLite database file",
+        title: t("credentials.databasePickTitle"),
         filters: [
           {
-            name: "SQLite database",
+            name: t("credentials.databasePickFilter"),
             extensions: ["db", "sqlite", "sqlite3", "db3"],
           },
         ],
@@ -65,6 +70,7 @@ export function SqlProfilesSection() {
     setEditing(null);
     setName("");
     setSource("");
+    setSubmitAttempted(false);
     setFormOpen((v) => !v);
   };
 
@@ -74,11 +80,15 @@ export function SqlProfilesSection() {
     setSource(profile.source);
     setFormOpen(true);
     setTest(null);
+    setSubmitAttempted(false);
   };
 
   const save = async () => {
     const finalName = name.trim().toLowerCase();
-    if (!NAME_OK.test(finalName) || !source.trim()) return;
+    if (!NAME_OK.test(finalName) || !source.trim()) {
+      setSubmitAttempted(true);
+      return;
+    }
     setSaving(true);
     try {
       await call("sql_profile_save", {
@@ -121,8 +131,8 @@ export function SqlProfilesSection() {
         name: profileName,
         ok: res.ok,
         message: res.ok
-          ? `Connected · ${res.tables} table${res.tables === 1 ? "" : "s"}${res.sample.length ? `: ${res.sample.join(", ")}` : ""}`
-          : (res.error ?? "Connection failed"),
+          ? `${t("credentials.databaseTestOk", { count: res.tables })}${res.sample.length ? `: ${res.sample.join(", ")}` : ""}`
+          : (res.error ?? t("credentials.databaseTestFail")),
       });
     } catch (err) {
       setTest({ name: profileName, ok: false, message: errText(err) });
@@ -142,52 +152,56 @@ export function SqlProfilesSection() {
       <div className="flex items-center justify-between px-1 pb-2">
         <span className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium uppercase">
           <Icon name="database" className="size-3" />
-          Connected databases
+          {t("credentials.databasesSection")}
         </span>
         <Button onClick={openAdd} size="xs" variant="ghost">
           <Icon name="plus" className="size-3" />
-          Add database
+          {t("credentials.addDatabase")}
         </Button>
+      </div>
+      <div className="space-y-1 px-1 pb-3">
+        <p className="text-muted-foreground text-xs leading-relaxed">{t("credentials.databasesHelp")}</p>
+        <p className="text-muted-foreground/80 text-xs leading-relaxed">{t("credentials.databasesHelpHint")}</p>
       </div>
       {formOpen && (
         <div className="mb-2 flex flex-col gap-2 rounded-md border p-2">
-          <Input
-            disabled={editing != null}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Profile name, e.g. finance"
-            value={name}
-          />
-          {name.length > 0 && !NAME_OK.test(name.trim().toLowerCase()) && (
-            <p className="text-xs text-warning">
-              Use lowercase letters, numbers, hyphens, or underscores (max 32 characters).
-            </p>
-          )}
-          <div className="flex gap-2">
+          <Label className="text-muted-foreground flex flex-col gap-1 text-xs font-medium" htmlFor="db-profile-name">
+            {t("credentials.databaseNameLabel")}
             <Input
-              onChange={(e) => setSource(e.target.value)}
-              placeholder="/path/database.db or postgres://user@host/db"
-              value={source}
+              disabled={editing != null}
+              id="db-profile-name"
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t("credentials.databaseName")}
+              value={name}
             />
+          </Label>
+          {name.length > 0 && !NAME_OK.test(name.trim().toLowerCase()) && (
+            <p className="text-xs text-warning">{t("credentials.databaseNameError")}</p>
+          )}
+          <div className="flex items-end gap-2">
+            <Label className="text-muted-foreground flex flex-1 flex-col gap-1 text-xs font-medium" htmlFor="db-source">
+              {t("credentials.databaseSourceLabel")}
+              <Input
+                id="db-source"
+                onChange={(e) => setSource(e.target.value)}
+                placeholder={t("credentials.databaseSource")}
+                value={source}
+              />
+            </Label>
             <Button onClick={pickFile} size="sm" variant="outline">
               <Icon name="folder-open" className="size-3" />
             </Button>
           </div>
-          {isRemoteSource(source) && (
-            <p className="text-xs text-warning">
-              Remote URLs (Postgres/MySQL) require the analytics-sql build feature; the source will still be saved.
-            </p>
-          )}
+          {isRemoteSource(source) && <p className="text-xs text-warning">{t("credentials.databaseRemoteHint")}</p>}
           <div className="flex items-center justify-end gap-2">
             {saving && <Spinner className="size-3" />}
             <Button disabled={saveDisabled} onClick={save} size="sm">
-              Save
+              {t("common.save")}
             </Button>
           </div>
-          {!saving && saveDisabled && (
+          {submitAttempted && !saving && saveDisabled && (
             <p className="text-xs text-destructive">
-              {!nameOk
-                ? "Enter a valid profile name: lowercase letters, numbers, hyphens, or underscores (max 32 characters)."
-                : "Enter the database source path."}
+              {!nameOk ? t("credentials.databaseNameError") : t("credentials.databaseSourceError")}
             </p>
           )}
         </div>
@@ -195,12 +209,10 @@ export function SqlProfilesSection() {
       {listOp.error && <p className="px-1 pb-2 text-xs text-destructive">{listOp.error}</p>}
       {!loaded ? (
         <div className="text-muted-foreground flex items-center gap-2 px-1 text-xs">
-          <Spinner className="size-3" /> Loading…
+          <Spinner className="size-3" /> {t("common.loading")}
         </div>
       ) : profiles.length === 0 ? (
-        <p className="text-muted-foreground px-1 text-xs">
-          No databases yet. Connect a .db file to let the agent analyze its tables.
-        </p>
+        <p className="text-muted-foreground px-1 text-xs">{t("credentials.databaseEmpty")}</p>
       ) : (
         <ul className="flex flex-col gap-1">
           {profiles.map((p) => (
@@ -214,7 +226,7 @@ export function SqlProfilesSection() {
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
                   <Button
-                    aria-label={`Test connection for ${p.name}`}
+                    aria-label={`${t("analytics.testConnection")}: ${p.name}`}
                     disabled={testing != null}
                     onClick={() => void runTest(p.name)}
                     size="icon-sm"
@@ -228,7 +240,7 @@ export function SqlProfilesSection() {
                     )}
                   </Button>
                   <Button
-                    aria-label={`Edit profile ${p.name}`}
+                    aria-label={`${t("analytics.editSource")}: ${p.name}`}
                     onClick={() => openEdit(p)}
                     size="icon-sm"
                     title={t("analytics.editSource")}

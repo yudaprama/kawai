@@ -396,20 +396,31 @@ export function renderDataSchema(output: unknown): ReactNode {
   );
 }
 
-/** data_ta → { indicators: { alias: value }, _meta: { rowsUsed, sortedBy?, skipped? } } */
+/** data_ta → { indicators?: { alias: value }, metrics?: { kind: value }, _meta: {...} } */
 export function renderDataTa(output: unknown): ReactNode {
   const d = parse(output);
-  if (!isRecord(d) || !isRecord(d.indicators)) return null;
+  if (!isRecord(d)) return null;
   const items: Metric[] = [];
-  for (const [alias, v] of Object.entries(d.indicators)) {
+  const indicators = isRecord(d.indicators) ? d.indicators : {};
+  for (const [alias, v] of Object.entries(indicators)) {
     if (typeof v !== "number") continue;
     items.push({ label: alias, value: fmtNum(v) });
+  }
+  // Performance statistics ride beside the indicators, not inside them: they
+  // are magnitudes over the whole sample, with no indicator-style reading.
+  const metrics = isRecord(d.metrics) ? d.metrics : {};
+  for (const [kind, v] of Object.entries(metrics)) {
+    if (typeof v !== "number") continue;
+    items.push({ label: METRIC_LABELS[kind] ?? kind, value: fmtNum(v) });
   }
   if (items.length === 0) return null;
   const m = isRecord(d._meta) ? d._meta : {};
   const bits: string[] = [];
   if (typeof m.rowsUsed === "number") bits.push(`${fmtNum(m.rowsUsed)} rows folded`);
   if (str(m.sortedBy)) bits.push(`sorted by ${str(m.sortedBy)}`);
+  const annualized = typeof m.annualized === "number" ? m.annualized : null;
+  if (annualized !== null) bits.push(`annualized at ${fmtNum(annualized)} bars/year`);
+  if (typeof m.riskFreeRate === "number") bits.push(`rf ${fmtNum(m.riskFreeRate)}`);
   const skipped = Array.isArray(m.skipped)
     ? m.skipped.filter(isRecord).map((s) => str(s.alias)).filter((a): a is string => !!a)
     : [];
@@ -421,6 +432,17 @@ export function renderDataTa(output: unknown): ReactNode {
     </div>
   );
 }
+
+/** Metric kind → display label, mirroring the backend's `perf_metric_label`. */
+const METRIC_LABELS: Record<string, string> = {
+  total_return: "Total Return",
+  annualized_return: "Return Annual",
+  sharpe: "Sharpe Ratio",
+  sortino: "Sortino Ratio",
+  calmar: "Calmar Ratio",
+  max_drawdown: "Max Drawdown",
+  volatility: "Volatilitas Annual",
+};
 
 /** data_tables → { profile, tables: [{ name, kind }] } */
 export function renderDataTables(output: unknown): ReactNode {

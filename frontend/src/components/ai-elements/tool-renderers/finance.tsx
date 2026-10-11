@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
-import { parse, isRecord, num, str, fmtNum, fmtPrice, fmtMoney, fmtPct, fmtSigned, MetricGrid, ChartCard, Footnote, TextCard, cards, type CardItem, type Metric, type Series } from "./shared";
+import { parse, isRecord, num, str, fmtNum, fmtPrice, fmtMoney, fmtPct, fmtRR, fmtSigned, placedRR, TpLadder, MetricGrid, ChartCard, Footnote, TextCard, cards, type CardItem, type Metric, type Series } from "./shared";
 
 /** frankfurter → { amount, base, rates: { SYMBOL: rate } } */
 export function renderCurrency(output: unknown): ReactNode {
@@ -561,9 +561,18 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
               <th className="px-2 py-1.5 font-medium">Position</th>
               <th className="px-2 py-1.5 text-right font-medium">Notional</th>
               <th className="px-2 py-1.5 text-right font-medium">PnL</th>
-              <th className="px-2 py-1.5 font-medium">Stop</th>
-              <th className="px-2 py-1.5 font-medium">Take-profit</th>
-              <th className="px-2 py-1.5 text-right font-medium">R:R</th>
+              <th className="px-2 py-1.5 font-medium" title="Closes the position at a loss if the price moves against you">
+                Stop (exit at a loss)
+              </th>
+              <th className="px-2 py-1.5 font-medium" title="Closes part of the position at a profit">
+                Targets (exit at a profit)
+              </th>
+              <th
+                className="px-2 py-1.5 text-right font-medium"
+                title="For every 1 put at risk at the stop, how much the first target pays back"
+              >
+                Risk : Reward
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -576,6 +585,26 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
               const sl = isRecord(p.stopLoss) ? p.stopLoss : {};
               const tp = isRecord(p.takeProfit) ? p.takeProfit : {};
               const tpAdvice = isRecord(advice.takeProfit) ? advice.takeProfit : {};
+              // The recommended ladder — `advice.takeProfit`, NOT the resting
+              // coverage in `takeProfit`. Reading the latter showed a bare
+              // "missing" chip on a book with no resting TPs while the engine's
+              // 1R/2R rungs and trailing exit sat unrendered beside it.
+              const tpRungs = (Array.isArray(tpAdvice.rungs) ? tpAdvice.rungs : [])
+                .filter(isRecord)
+                // A passed rung's exit window is gone — it is never placed.
+                .filter((r) => r.passed !== true)
+                .map((r) => ({
+                  label: str(r.label) ?? "",
+                  price: num(r.price),
+                  allocPct: num(r.allocPct),
+                }))
+                .filter((r) => r.price !== null);
+              const bandExit = isRecord(tpAdvice.bandExit)
+                ? { method: str(tpAdvice.bandExit.method), price: num(tpAdvice.bandExit.price) }
+                : null;
+              const trailingExit = isRecord(tpAdvice.trailingExit)
+                ? { method: str(tpAdvice.trailingExit.method), price: num(tpAdvice.trailingExit.price) }
+                : null;
               const slPresent = sl.present === true;
               const tpPresent = tp.present === true;
               const slPrice = num(sl.price);
@@ -595,6 +624,20 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
               const notional = num(p.notionalAbs);
               const recPrice = num(rec.price);
               const recMethod = str(rec.method);
+              // `riskReward` grades the RESTING pair, so it is null on a naked
+              // book — exactly where this column matters most. Fall back to the
+              // ratio the recommended stop and first target would create,
+              // measured from ENTRY (what the 1R/2R rungs are anchored to),
+              // not from the mark, which has already run past a deep loss.
+              const entryPrice = num(p.entryPrice);
+              const markPrice = num(p.markPrice) ?? 0;
+              const rrShown =
+                rr ??
+                placedRR(
+                  slPresent ? slPrice : recPrice,
+                  tpRungs[0]?.price ?? trailingExit?.price ?? bandExit?.price ?? null,
+                  entryPrice != null && entryPrice > 0 ? entryPrice : markPrice,
+                );
               return (
                 <tr
                   key={`${symbol}-${side}-${i}`}
@@ -636,28 +679,51 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
                     )}
                   </td>
                   <td className="px-2 py-1.5">
-                    <div className="flex items-center gap-1.5">
-                      {tpVerdict ? (
-                        <VerdictChip verdict={tpVerdict} />
-                      ) : (
-                        <span
-                          className={cn(
-                            "inline-flex shrink-0 rounded-sm border px-1 py-px font-mono text-[10px] tracking-wide uppercase",
-                            CHIP_TONE[tpPresent ? "ok" : "mute"]
-                          )}
-                        >
-                          {tpPresent ? "covered" : "none"}
-                        </span>
-                      )}
-                      {tpPresent && tpPrice !== null && (
-                        <span className="text-muted-foreground tabular-nums">
-                          {fmtPrice(tpPrice)}
-                          {tpDist !== null && ` (${fmtPct(tpDist)}%)`}
-                        </span>
-                      )}
-                    </div>
+                    {tpPresent ? (
+                      <div className="flex items-center gap-1.5">
+                        {tpVerdict ? (
+                          <VerdictChip verdict={tpVerdict} />
+                        ) : (
+                          <span
+                            className={cn(
+                              "inline-flex shrink-0 rounded-sm border px-1 py-px font-mono text-[10px] tracking-wide uppercase",
+                              CHIP_TONE.ok
+                            )}
+                          >
+                            covered
+                          </span>
+                        )}
+                        {tpPrice !== null && (
+                          <span className="text-muted-foreground tabular-nums">
+                            {fmtPrice(tpPrice)}
+                            {tpDist !== null && ` (${fmtPct(tpDist)}%)`}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      // No resting take-profit: show what the engine would
+                      // PLACE. The verdict chip stays regardless of whether a
+                      // ladder came with it — "too close" on an empty ladder is
+                      // still the reason the resting target is wrong.
+                      <div className="space-y-1">
+                        {tpVerdict && <VerdictChip verdict={tpVerdict} />}
+                        <TpLadder
+                          bandExit={bandExit?.price != null ? { method: bandExit.method ?? "", price: bandExit.price } : null}
+                          rungs={tpRungs.map((r) => ({
+                            label: r.label,
+                            price: r.price as number,
+                            allocPct: r.allocPct,
+                          }))}
+                          trailingExit={
+                            trailingExit?.price != null
+                              ? { method: trailingExit.method ?? "", price: trailingExit.price }
+                              : null
+                          }
+                        />
+                      </div>
+                    )}
                   </td>
-                  <Num value={rr !== null ? `${fmtPct(rr)}R` : "—"} />
+                  <Num value={rrShown !== null ? fmtRR(rrShown) : "—"} />
                 </tr>
               );
             })}
@@ -780,6 +846,19 @@ function FuturesRiskAuditCard({ data: d }: { data: Record<string, unknown> }) {
         </details>
       )}
       {str(d.note) && <Footnote>{str(d.note)}</Footnote>}
+      {/* What the report could NOT cover, stated by the tool itself. A bare
+          COIN-M PnL table next to no warning read as a completed analysis. */}
+      {(Array.isArray(d.limitations) ? d.limitations : [])
+        .filter((l): l is string => typeof l === "string" && l.length > 0)
+        .map((l) => (
+          <div
+            key={l.slice(0, 40)}
+            className="border-warning/30 bg-warning/5 flex items-start gap-1.5 rounded-md border px-2.5 py-2 text-xs"
+          >
+            <Icon name="alert-circle" className="text-warning mt-0.5 size-3.5 shrink-0" />
+            <span className="text-muted-foreground">{l}</span>
+          </div>
+        ))}
       {skipped > 0 && (
         <Footnote>
           Re-run with a higher position cap to grade the {fmtNum(skipped)} smaller position

@@ -124,6 +124,138 @@ describe("risk audit card", () => {
     expect(markup).toContain("no resting stop");
   });
 
+  it("shows the recommended take-profit ladder, not an empty coverage flag", () => {
+    // The regression this pins: the take-profit cell read the RESTING coverage
+    // (`takeProfit.nearestPrice`), so a book with no resting TPs rendered a
+    // bare "missing" chip on every row while the engine's 1R/2R ladder and
+    // trailing exit in `advice.takeProfit` went unrendered.
+    const markup = html(
+      audit({
+        positions: [
+          position({
+            takeProfit: { present: false, resting: 0, nearestPrice: null, distancePct: null },
+            advice: {
+              verdict: "missing",
+              recommended: { price: 82468.946, method: "chandelier_exit", distancePct: 0.64 },
+              notes: [],
+              takeProfit: {
+                shape: "ladder_runner",
+                verdict: "missing",
+                rungs: [
+                  { label: "1R", price: 84403.85001548, allocPct: 40, passed: false },
+                  { label: "2R", price: 85207.90003096, allocPct: 30, passed: false },
+                ],
+                bandExit: null,
+                trailingExit: { method: "chandelier_exit", price: 81878.06635339 },
+              },
+            },
+          }),
+        ],
+      }),
+    );
+    // Each line reads as the instruction it is: what share closes, at what
+    // price. The engine's "1R"/"2R" labels are gone — they name a multiple of
+    // the risk unit and mean nothing to someone who is not trading.
+    expect(markup).not.toContain(">1R<");
+    expect(markup).not.toContain(">2R<");
+    expect(markup).toContain("40%");
+    expect(markup).toContain("30%");
+    expect(markup).toContain("84,403.85");
+    // fmtPrice keeps 8 SIGNIFICANT digits, so the runner reads 81,878.066.
+    expect(markup).toContain("81,878.066");
+    expect(markup).toContain("trails from");
+  });
+
+  it("derives R:R from the levels it would place, not the resting pair", () => {
+    // `riskReward` is the audit's grade of the RESTING stop against the
+    // RESTING take-profit, so on a naked book it is null and the column read
+    // "—" on every row — blank exactly where the number matters most.
+    const markup = html(
+      audit({
+        positions: [
+          position({
+            markPrice: 100,
+            entryPrice: 100,
+            riskReward: null,
+            takeProfit: { present: false, resting: 0, nearestPrice: null, distancePct: null },
+            advice: {
+              verdict: "missing",
+              // Stop 5 below the mark, first target 10 above it → 2.00R.
+              recommended: { price: 95, method: "chandelier_exit", distancePct: 5 },
+              notes: [],
+              takeProfit: {
+                shape: "ladder_runner",
+                verdict: "missing",
+                rungs: [{ label: "1R", price: 110, allocPct: 40, passed: false }],
+                bandExit: null,
+                trailingExit: { method: "chandelier_exit", price: 112 },
+              },
+            },
+          }),
+        ],
+      }),
+    );
+    // Plain ratio: "for every 1 at risk, the target pays 2.00".
+    expect(markup).toContain("1 : 2.00");
+  });
+
+  it("drops a passed rung — its exit window is gone and it is never placed", () => {
+    const markup = html(
+      audit({
+        positions: [
+          position({
+            takeProfit: { present: false, resting: 0, nearestPrice: null, distancePct: null },
+            advice: {
+              verdict: "missing",
+              recommended: null,
+              notes: [],
+              takeProfit: {
+                shape: "ladder_runner",
+                verdict: "missing",
+                rungs: [
+                  { label: "1R", price: 101000, allocPct: 40, passed: false },
+                  { label: "2R", price: 104000, allocPct: 30, passed: true },
+                ],
+                bandExit: null,
+              },
+            },
+          }),
+        ],
+      }),
+    );
+    expect(markup).toContain("101,000");
+    // The 2R rung traded through and is never placed, so its price must not
+    // appear — asserting on a label that no longer exists would pass anyway.
+    expect(markup).not.toContain("104,000");
+  });
+
+  it("prefers the resting take-profit when one already covers the position", () => {
+    const markup = html(
+      audit({
+        positions: [
+          position({
+            takeProfit: { present: true, resting: 2, nearestPrice: 2800, distancePct: 6.67 },
+            advice: {
+              verdict: "ok",
+              recommended: { price: 3140, method: "atr_3x", distancePct: 4.67 },
+              notes: [],
+              takeProfit: {
+                shape: "ladder",
+                verdict: "ok",
+                rungs: [{ label: "1R", price: 2900, allocPct: 100, passed: false }],
+                bandExit: null,
+              },
+            },
+          }),
+        ],
+      }),
+    );
+    // The resting level is what is actually on the book — it wins the cell,
+    // and the engine's `ok` verdict on it replaces the bare "covered" word.
+    expect(markup).toContain("2,800");
+    expect(markup).not.toContain("2,900");
+  });
+
   it("colours each verdict by severity rather than flattening them to one word", () => {
     const markup = html(
       audit({
@@ -178,6 +310,27 @@ describe("risk audit card", () => {
     expect(markup).toContain("5 over the cap");
     // The backend's note is verbatim-authoritative; we must not paraphrase it.
     expect(markup).toContain("raise `limit`, max 500");
+  });
+
+  it("states what the report could NOT cover, in the card itself", () => {
+    // The follow-up composer lets a user ask about COIN-M; the audit cannot
+    // grade it. A PnL table with no warning reads as a completed analysis.
+    const markup = html(
+      audit({
+        limitations: [
+          "17 COIN-M position(s) are counted and their unrealized PnL is reported, but they are NOT risk-graded.",
+        ],
+      }),
+    );
+    expect(markup).toContain("COIN-M position(s) are counted");
+    expect(markup).toContain("NOT risk-graded");
+    expect(markup).toContain("border-warning/30");
+  });
+
+  it("renders no limitation banner when the tool declares none", () => {
+    // `text-warning` alone is not a marker — the "with a take-profit" tile uses
+    // it too. The banner's own border is.
+    expect(html(audit())).not.toContain("border-warning/30");
   });
 
   it("renders nothing for a payload that is not an audit matrix", () => {

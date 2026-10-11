@@ -264,7 +264,7 @@
     "mobileDrawerTitle": "Assets",
     "workbench": "Workbench",
     "assets": "Assets",
-    "credentials": "Credentials"
+    "credentials": "Connections & Keys"
   },
   "modeBar": {
     "modes": "Modes",
@@ -1112,9 +1112,30 @@
     "starterApplied": "Prompt loaded into the form"
   },
   "credentials": {
-    "title": "Credentials",
-    "subtitle": "API keys and connected databases stored on this device",
+    "title": "Connections & Keys",
+    "subtitle": "Everything here is optional — Kawai works without any of it.",
     "apiKeysSection": "API keys",
+    "databasesSection": "Connected databases",
+    "databasesHelp": "Databases the agent may read — a .db file, or a Postgres/MySQL server.",
+    "databasesHelpHint": "Most people skip this: Excel and CSV files work from the Wiki page without a database.",
+    "addDatabase": "Add database",
+    "databaseName": "Profile name, e.g. finance",
+    "databaseNameLabel": "Name",
+    "databaseNameError": "Use lowercase letters, numbers, hyphens, or underscores (max 32 characters).",
+    "databaseSource": "/path/database.db or postgres://user@host/db",
+    "databaseSourceLabel": "Database file or server URL",
+    "databaseSourceError": "Enter the database source path.",
+    "databaseRemoteHint": "Remote URLs (Postgres/MySQL) need the analytics-sql build feature; the source is still saved.",
+    "databaseEmpty": "No databases yet. Add one to let the agent analyze its tables.",
+    "databasePickTitle": "Choose a SQLite database file",
+    "databasePickFilter": "SQLite database",
+    "databaseTestOk": {
+      "one": "Connected · {{count}} table",
+      "other": "Connected · {{count}} tables"
+    },
+    "databaseTestFail": "Connection failed",
+    "guideDetailsShow": "How to get this key",
+    "guideDetailsHide": "Hide details",
     "apiKey": "API key",
     "apiSecret": "API secret",
     "save": "Save keys",
@@ -1128,7 +1149,10 @@
     "binance": {
       "title": "Binance",
       "subtitle": "your futures & market keys",
-      "guide": "Binance API key, restricted to your IP; stored in your local database only. A READ-ONLY key (Enable Reading) covers everything except placing orders. To let the agent place protective stop-loss / take-profit orders, the key needs the ENABLE FUTURES permission. Every order still asks you first."
+      "guide": "Paste your Binance API key and secret to let the agent read your market data and place protective orders. Kawai ships with a built-in key already — your own is only needed if you want YOUR account used. No Binance account? Skip this.",
+      "guideDetail": "Create one in Binance → Profile → API Management, and restrict it to your IP. A READ-ONLY key (Enable Reading) covers everything except placing orders; the ENABLE FUTURES permission is what lets the agent place protective stop-loss / take-profit orders, and every order still asks you first.",
+      "riskGuardTitle": "Risk guard",
+      "riskGuardDesc": "Checks your futures positions every 15 minutes while the app is open and warns when a position has no stop-loss."
     }
   }
 }

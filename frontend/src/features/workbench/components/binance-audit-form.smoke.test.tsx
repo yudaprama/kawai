@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { BinanceAuditForm, ownsAuditScope } from "./binance-audit-form";
+import { placementSummary } from "./binance-audit-offer";
 import { auditRunStepId, parseAuditOffer } from "./binance-audit-offer";
 import { GoalTemplates, templateOpensAudit, templateOpensDesk, templateOpensYoutube } from "./goal-templates";
 
@@ -193,6 +194,7 @@ describe("parseAuditOffer", () => {
         shape: "ladder_runner",
         rungs: [{ label: "1R", price: 101000, allocPct: 40 }],
         bandExit: null,
+        trailingExit: null,
       },
       {
         symbol: "SOLUSDT",
@@ -202,6 +204,7 @@ describe("parseAuditOffer", () => {
         shape: "band_exit",
         rungs: [],
         bandExit: { method: "donchian_20", price: 140 },
+        trailingExit: null,
       },
     ]);
     // The approval table merges both sides per symbol: BTCUSDT (stop + TP in
@@ -210,6 +213,7 @@ describe("parseAuditOffer", () => {
     expect(offer?.rows).toEqual([
       {
         symbol: "BTCUSDT",
+        entry: 0,
         long: true,
         size: 1.5,
         mark: 98000,
@@ -224,10 +228,12 @@ describe("parseAuditOffer", () => {
           shape: "ladder_runner",
           rungs: [{ label: "1R", price: 101000, allocPct: 40 }],
           bandExit: null,
+          trailingExit: null,
         },
       },
       {
         symbol: "SOLUSDT",
+        entry: 0,
         long: false,
         size: 10,
         mark: 150,
@@ -242,9 +248,47 @@ describe("parseAuditOffer", () => {
           shape: "band_exit",
           rungs: [],
           bandExit: { method: "donchian_20", price: 140 },
+          trailingExit: null,
         },
       },
     ]);
+  });
+
+  it("keeps a trailing-only exit that has no rungs and no band", () => {
+    // The parser dropped `trailingExit`, so a `trailing_only` position — the
+    // one shape with neither rungs nor a band — lost its whole take-profit
+    // row and read as "nothing to place" for the runner leg it does have.
+    const out = JSON.stringify({
+      summary: { usdmPositions: 2, graded: 2, withStopLoss: 0, naked: 2, nakedNotional: 1, withTakeProfit: 0 },
+      positions: [
+        {
+          symbol: "BTCUSDT",
+          positionAmt: 0.002,
+          markPrice: 98000,
+          restingStops: 0,
+          restingTps: 0,
+          advice: {
+            verdict: "missing",
+            recommended: { price: 95000, method: "chandelier_exit", distancePct: 3.06 },
+            takeProfit: {
+              shape: "trailing_only",
+              verdict: "trailing",
+              rungs: [],
+              bandExit: null,
+              trailingExit: { method: "chandelier_exit", price: 94000.5 },
+            },
+          },
+        },
+      ],
+    });
+    const offer = parseAuditOffer(out);
+    expect(offer?.tps).toHaveLength(1);
+    expect(offer?.rows[0].tp).toMatchObject({
+      shape: "trailing_only",
+      rungs: [],
+      bandExit: null,
+      trailingExit: { method: "chandelier_exit", price: 94000.5 },
+    });
   });
 
   it("carries the comparable notional and the engine's R:R on every row", () => {
@@ -257,6 +301,7 @@ describe("parseAuditOffer", () => {
         {
           symbol: "BTCUSDT",
           positionAmt: 0.002,
+          entryPrice: 101000,
           markPrice: 98000,
           restingStops: 0,
           restingTps: 0,
@@ -297,6 +342,9 @@ describe("parseAuditOffer", () => {
     expect(offer?.rows[1].notional).toBeCloseTo(40.3149, 3);
     // A missing R:R stays null rather than becoming a fabricated 0.
     expect(offer?.rows.map((r) => r.riskReward)).toEqual([2.4, null]);
+    // The entry is carried so the R:R column can anchor to it — the mark has
+    // already run past a deep loss, so anchoring there invents absurd ratios.
+    expect(offer?.rows.map((r) => r.entry)).toEqual([101000, 0]);
   });
 
   it("rejects anything that is not a readable audit matrix", () => {
@@ -354,5 +402,54 @@ describe("goal templates", () => {
   it("lists the audit template in the picker", () => {
     const html = renderToStaticMarkup(<GoalTemplates value={null} onChange={() => {}} />);
     expect(html).toContain("Futures Risk Audit");
+  });
+});
+
+describe("placement result failures", () => {
+  // A confirmed approval that placed nothing must say WHY. The tool returns a
+  // `failures` row per rejected symbol carrying the guard that refused it;
+  // dropping it left the panel reporting "1 failed" with no account at all,
+  // and no way for the operator to act.
+  const raw = JSON.stringify({
+    protected: 0,
+    alreadyProtected: 0,
+    failed: 1,
+    orders: [],
+    failures: [
+      {
+        symbol: "BTCUSDT",
+        error:
+          "futures trading is not enabled for this key pair — enable it once in Settings → Binance API (Futures trading consent).",
+      },
+    ],
+    note: "reduce-only stops at the audit's recommended levels (4h candles, standard preset)",
+  });
+
+  it("surfaces the rejection reason behind a failed placement", () => {
+    const summary = placementSummary(raw);
+    expect(summary?.failures).toEqual([
+      {
+        symbol: "BTCUSDT",
+        error:
+          "futures trading is not enabled for this key pair — enable it once in Settings → Binance API (Futures trading consent).",
+      },
+    ]);
+  });
+
+  it("falls back to the grader's note when no error string is present", () => {
+    const noErr = JSON.stringify({
+      protected: 0,
+      failed: 1,
+      failures: [{ symbol: "ETHUSDT", notes: ["no valid stop level could be computed"] }],
+    });
+    expect(placementSummary(noErr)?.failures.map((f) => f.error)).toEqual(["no valid stop level could be computed"]);
+  });
+
+  it("never invents a reason when the tool gave none", () => {
+    expect(
+      placementSummary(JSON.stringify({ protected: 0, failed: 1, failures: [{ symbol: "X" }] }))?.failures.map(
+        (f) => f.error,
+      ),
+    ).toEqual(["rejected without a reason"]);
   });
 });

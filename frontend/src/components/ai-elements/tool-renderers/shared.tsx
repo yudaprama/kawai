@@ -73,6 +73,94 @@ export const fmtPct = (n: number): string => pctFmt.format(n);
  * losses at a glance instead of relying on the eye to catch the minus. */
 export const fmtSigned = (n: number): string => `${n > 0 ? "+" : ""}${fmtMoney(n)}`;
 
+/** Reward-to-risk of the levels a placement would actually create: the
+ * recommended stop's distance from the anchor against the first target's.
+ *
+ * Two corrections over the audit's own `riskReward`:
+ *  - it grades the RESTING stop against the RESTING take-profit, so it is
+ *    `null` for exactly the naked positions the audit and the approval panel
+ *    exist to protect, leaving the column blank on a fully unprotected book;
+ *  - an R-multiple is defined from ENTRY — that is what the `1R`/`2R` rung
+ *    labels are anchored to — not from the mark. Anchoring to the mark on a
+ *    deeply-underwater position (RAVEUSDT: entry 0.609, mark 0.177) reports a
+ *    fictitious 122R because the mark has already run far past the stop.
+ * Returns null when either leg is missing — never a fabricated 0.
+ */
+export function placedRR(stop: number | null, target: number | null, anchor: number): number | null {
+  if (stop == null || target == null || !(anchor > 0)) return null;
+  const risk = Math.abs(anchor - stop);
+  if (!(risk > 0)) return null;
+  return Math.abs(target - anchor) / risk;
+}
+
+/* ── Take-profit ladder ──────────────────────────────────────────────────
+ * One rendering for both the audit report card and the approval panel, so the
+ * level a user reads can never differ from the level they approve. */
+
+export type TpRung = { label: string; price: number; allocPct: number | null };
+export type TpExit = { method: string; price: number } | null;
+
+/** Allocations are whole percents of the position; `fmtPct`'s two decimals
+ * printed "40.00%" for a 40% slice and buried the digit that matters. */
+const allocFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+/** The recommended exit ladder, in the words someone actually acts on.
+ *
+ * "1R" / "2R" were engine vocabulary: they name a multiple of the risk unit,
+ * which tells a non-trader nothing about what will happen. Each line now reads
+ * as the instruction it is — `40% @ 84,337.56` — the share of the position and
+ * the price it closes at. The trailing and band exits follow in muted type,
+ * marked `trail` / `band exit`, because they are different kinds of exit (a
+ * runner that follows price, not a fixed level) and must not read as another
+ * fixed target. */
+export function TpLadder({
+  rungs,
+  bandExit,
+  trailingExit,
+  className,
+}: {
+  rungs: TpRung[];
+  bandExit: TpExit;
+  trailingExit: TpExit;
+  className?: string;
+}) {
+  const hasExit = bandExit?.price != null || trailingExit?.price != null;
+  if (rungs.length === 0 && !hasExit) {
+    return <span className="text-muted-foreground/60 text-[10px]">no profit target to place</span>;
+  }
+  return (
+    <div className={cn("space-y-0.5", className)}>
+      {rungs.map((g, i) => (
+        <div key={`${g.label}-${i}`} className="flex items-baseline gap-1.5">
+          <span className="text-foreground w-9 shrink-0 text-right tabular-nums">
+            {g.allocPct !== null ? `${allocFmt.format(g.allocPct)}%` : ""}
+          </span>
+          <span className="text-muted-foreground shrink-0">at</span>
+          <span className="text-foreground shrink-0 tabular-nums">{fmtPrice(g.price)}</span>
+        </div>
+      ))}
+      {trailingExit?.price != null && (
+        <div className="text-muted-foreground flex items-baseline gap-1.5">
+          <span className="w-9 shrink-0 text-right">rest</span>
+          <span className="shrink-0">trails from</span>
+          <span className="shrink-0 tabular-nums">{fmtPrice(trailingExit.price)}</span>
+        </div>
+      )}
+      {bandExit?.price != null && (
+        <div className="text-muted-foreground flex items-baseline gap-1.5">
+          <span className="w-9 shrink-0 text-right">or</span>
+          <span className="shrink-0">band exit at</span>
+          <span className="shrink-0 tabular-nums">{fmtPrice(bandExit.price)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Risk-to-reward as a plain ratio: `1 : 0.65` reads as "for every 1 put at
+ * risk, this target pays 0.65" — the bare `0.65R` form did not. */
+export const fmtRR = (rr: number): string => `1 : ${fmtPct(rr)}`;
+
 export const TextCard = ({ className, children }: { className?: string; children: ReactNode }) => (
   <div className={cn("not-prose space-y-2", className)}>{children}</div>
 );

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Switch } from "@/components/ui/switch";
+import { useI18n } from "@/hooks/use-i18n";
 import { call } from "@/lib/api";
 
 import type { CredentialProvider } from "../types";
@@ -41,13 +42,12 @@ function RiskGuardSetting() {
     }
   };
 
+  const { t } = useI18n();
   return (
     <div className="bg-muted/30 flex items-center justify-between rounded-md border p-3">
       <div className="space-y-0.5">
-        <div className="text-sm font-medium">Risk guard</div>
-        <p className="text-muted-foreground text-xs">
-          Periksa posisi futures tiap 15 menit selama app terbuka — peringatan di log saat ada posisi tanpa stop-loss.
-        </p>
+        <div className="text-sm font-medium">{t("credentials.binance.riskGuardTitle")}</div>
+        <p className="text-muted-foreground text-xs">{t("credentials.binance.riskGuardDesc")}</p>
       </div>
       <Switch
         checked={guard?.enabled ?? false}
@@ -68,6 +68,7 @@ export const binanceCredential: CredentialProvider = {
   icon: "candlestick-chart",
   titleKey: "credentials.binance.title",
   subtitleKey: "credentials.binance.subtitle",
+  guideDetailKey: "credentials.binance.guideDetail",
   guideKey: "credentials.binance.guide",
   statusOp: "binance_credentials_status",
   setOp: "binance_credentials_set",

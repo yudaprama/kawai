@@ -264,7 +264,7 @@
     "mobileDrawerTitle": "Aset",
     "workbench": "Workbench",
     "assets": "Aset",
-    "credentials": "Kredensial"
+    "credentials": "Koneksi & Kunci"
   },
   "modeBar": {
     "modes": "Mode",
@@ -1112,9 +1112,29 @@
     "starterApplied": "Prompt dimuat ke form"
   },
   "credentials": {
-    "title": "Kredensial",
-    "subtitle": "Kunci API dan database terhubung tersimpan di perangkat ini",
+    "title": "Koneksi & Kunci",
+    "subtitle": "Semua di sini opsional — Kawai tetap jalan tanpa satu pun.",
     "apiKeysSection": "Kunci API",
+    "databasesSection": "Database terhubung",
+    "databasesHelp": "Database yang boleh dibaca agent — file .db, atau server Postgres/MySQL.",
+    "databasesHelpHint": "Kebanyakan orang tidak perlu ini: file Excel dan CSV bisa langsung dipakai dari halaman Wiki tanpa database.",
+    "addDatabase": "Tambah database",
+    "databaseName": "Nama profil, mis. keuangan",
+    "databaseNameLabel": "Nama",
+    "databaseNameError": "Gunakan huruf kecil, angka, strip, atau garis bawah (maks 32 karakter).",
+    "databaseSource": "/path/database.db atau postgres://user@host/db",
+    "databaseSourceLabel": "File database atau URL server",
+    "databaseSourceError": "Isi lokasi database.",
+    "databaseRemoteHint": "URL remote (Postgres/MySQL) butuh fitur build analytics-sql; sumbernya tetap disimpan.",
+    "databaseEmpty": "Belum ada database. Tambahkan agar agent bisa menganalisis tabelnya.",
+    "databasePickTitle": "Pilih file database SQLite",
+    "databasePickFilter": "Database SQLite",
+    "databaseTestOk": {
+      "other": "Terhubung · {{count}} tabel"
+    },
+    "databaseTestFail": "Koneksi gagal",
+    "guideDetailsShow": "Cara mendapatkan kunci ini",
+    "guideDetailsHide": "Sembunyikan detail",
     "apiKey": "API key",
     "apiSecret": "API secret",
     "save": "Simpan kunci",
@@ -1128,7 +1148,10 @@
     "binance": {
       "title": "Binance",
       "subtitle": "kunci futures & pasar Anda",
-      "guide": "Kunci API Binance, dibatasi ke IP Anda; hanya tersimpan di database lokal Anda. Kunci READ-ONLY (Enable Reading) mencakup semuanya kecuali pemasangan order. Agar agent bisa memasang stop-loss / take-profit, kunci perlu izin ENABLE FUTURES. Setiap order tetap minta konfirmasi Anda dulu."
+      "guide": "Tempel API key dan secret Binance agar agent bisa membaca data pasar dan memasang order pengaman. Kawai sudah punya kunci bawaan — kunci Anda sendiri hanya perlu bila ingin akun ANDA yang dipakai. Tidak punya akun Binance? Lewati saja.",
+      "guideDetail": "Buat di Binance → Profile → API Management, lalu batasi ke IP Anda. Kunci READ-ONLY (Enable Reading) mencakup semua kecuali memasang order; izin ENABLE FUTURES yang mengizinkan agent memasang stop-loss / take-profit, dan setiap order tetap minta konfirmasi Anda dulu.",
+      "riskGuardTitle": "Risk guard",
+      "riskGuardDesc": "Memeriksa posisi futures Anda tiap 15 menit selama app terbuka, dan memberi peringatan bila ada posisi tanpa stop-loss."
     }
   }
 }

@@ -4,7 +4,7 @@ import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { call, errText } from "@/lib/api";
 
-import { fmtMoney, fmtPct, fmtPrice } from "@/components/ai-elements/tool-renderers/shared";
+import { fmtMoney, fmtPct, fmtPrice, fmtRR, placedRR, TpLadder } from "@/components/ai-elements/tool-renderers/shared";
 import { cn } from "@/lib/utils";
 
 /** Dispatch key of the audit tool — identifies an audit run's step in both
@@ -33,8 +33,11 @@ export interface OfferStopRow {
 }
 
 /** One position the take-profit action would cover: the fixed rungs (passed
- * windows dropped — their exit is gone) or the band exit. Listed only when
- * the position carries NO resting take-profit order. */
+ * windows dropped — their exit is gone), the band exit, and the trailing exit.
+ * The trailing leg matters most on a `ladder_runner` shape — it IS the runner
+ * the ladder defers to — and the parser used to drop it, so the approval table
+ * under-reported what a confirmed approval would actually place.
+ * Listed only when the position carries NO resting take-profit order. */
 export interface OfferTpRow {
   symbol: string;
   long: boolean;
@@ -43,6 +46,7 @@ export interface OfferTpRow {
   shape: string;
   rungs: { label: string; price: number; allocPct: number }[];
   bandExit: { method: string; price: number } | null;
+  trailingExit: { method: string; price: number } | null;
 }
 
 /** One approval row: a position and exactly what a confirmed approval would
@@ -52,10 +56,13 @@ export interface OfferTpRow {
  * `notional` is the comparable size (|positionAmt| × mark, the same figure the
  * backend ranks by) — raw coin counts are not comparable across symbols and
  * invert the risk order, since 0.002 BTC outranks 5,491 ZORA while reading as
- * the smallest number in the column. `riskReward` is the engine's reward:risk
- * for the stop+take-profit pair this row would place. */
+ * the smallest number in the column. `entry` is the anchor an R-multiple is
+ * measured from. `riskReward` is the engine's resting-pair grade, kept for
+ * reference; the R:R column derives its own figure from what a placement
+ * would create. */
 export interface OfferRow {
   symbol: string;
+  entry: number;
   long: boolean;
   size: number;
   mark: number;
@@ -120,7 +127,7 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
 
   const stops: OfferStopRow[] = [];
   const tps: OfferTpRow[] = [];
-  const meta = new Map<string, { notional: number; riskReward: number | null }>();
+  const meta = new Map<string, { notional: number; riskReward: number | null; entry: number }>();
   if ("positions" in v && Array.isArray(v.positions)) {
     for (const row of v.positions) {
       if (typeof row !== "object" || row == null) continue;
@@ -139,7 +146,8 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
       // the reviewed contract.
       const notional = "notionalAbs" in row ? (num(row.notionalAbs) ?? Math.abs(size * mark)) : Math.abs(size * mark);
       const riskReward = "riskReward" in row ? num(row.riskReward) : null;
-      meta.set(symbol, { notional, riskReward });
+      const entry = "entryPrice" in row ? (num(row.entryPrice) ?? 0) : 0;
+      meta.set(symbol, { notional, riskReward, entry });
 
       if (restingStops === 0 && "recommended" in a && typeof a.recommended === "object" && a.recommended != null) {
         const rec = a.recommended;
@@ -178,8 +186,18 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
           "bandExit" in tp && typeof tp.bandExit === "object" && tp.bandExit != null && "price" in tp.bandExit
             ? { method: str(tp.bandExit.method) ?? "", price: num(tp.bandExit.price) ?? 0 }
             : null;
-        if (shape != null && (rungs.length > 0 || bandExit != null)) {
-          tps.push({ symbol, long, size, mark, shape, rungs, bandExit });
+        // A trailing-only exit carries no rungs and no band — without this the
+        // whole row was dropped and the position looked like it had nothing to
+        // place, which is exactly backwards for the runner leg.
+        const trailingExit =
+          "trailingExit" in tp &&
+          typeof tp.trailingExit === "object" &&
+          tp.trailingExit != null &&
+          "price" in tp.trailingExit
+            ? { method: str(tp.trailingExit.method) ?? "", price: num(tp.trailingExit.price) ?? 0 }
+            : null;
+        if (shape != null && (rungs.length > 0 || bandExit != null || trailingExit != null)) {
+          tps.push({ symbol, long, size, mark, shape, rungs, bandExit, trailingExit });
         }
       }
     }
@@ -197,6 +215,7 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
         long,
         size,
         mark,
+        entry: m?.entry ?? 0,
         notional: m?.notional ?? Math.abs(size * mark),
         riskReward: m?.riskReward ?? null,
         sl: null,
@@ -220,9 +239,19 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
   };
 }
 
-/** Compact counts from a placement op's JSON result — the raw body stays
- * available in the failures disclosure. */
-function placementSummary(raw: string): { placed: number; failed: number; note: string } | null {
+/** Compact counts from a placement op's JSON result.
+ *
+ * The `failures` rows are parsed, not discarded: each one carries the symbol
+ * and the guard that rejected it (missing trading consent, a rate limit, a
+ * crossed trigger…), and that text is the ONLY account of why a confirmed
+ * approval placed nothing. Without it the panel could say "1 failed" and
+ * nothing more — the operator had no way to act. */
+export function placementSummary(raw: string): {
+  placed: number;
+  failed: number;
+  note: string;
+  failures: { symbol: string; error: string }[];
+} | null {
   let v: unknown;
   try {
     v = JSON.parse(raw);
@@ -234,7 +263,23 @@ function placementSummary(raw: string): { placed: number; failed: number; note: 
   const failed = num(v.failed);
   if (placed == null || failed == null) return null;
   const note = "note" in v ? str(v.note) : null;
-  return { placed, failed, note: note ?? "" };
+  const failures =
+    "failures" in v && Array.isArray(v.failures)
+      ? v.failures
+          .filter((f): f is Record<string, unknown> => typeof f === "object" && f != null)
+          .map((f) => ({
+            symbol: "symbol" in f ? (str(f.symbol) ?? "") : "",
+            // The rejection reason rides `error`, or — when the grader had no
+            // level to place — its first note.
+            error:
+              "error" in f && typeof f.error === "string"
+                ? f.error
+                : "notes" in f && Array.isArray(f.notes) && typeof f.notes[0] === "string"
+                  ? f.notes[0]
+                  : "rejected without a reason",
+          }))
+      : [];
+  return { placed, failed, note: note ?? "", failures };
 }
 
 interface BinanceAuditOfferProps {
@@ -356,23 +401,12 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
     });
 
   const side = (long: boolean) => (long ? "long" : "short");
-  // Engine vocabulary is snake_case (band_exit, chandelier_exit, keltner_10_2);
-  // it reads as an identifier leaking into the UI, so it is spaced out here.
+  // Engine vocabulary is snake_case (chandelier_exit, keltner_10_2); spaced
+  // out so it reads as a word rather than an identifier leaking into the UI.
   const human = (method: string) => method.replace(/_/g, " ");
-  const tpCell = (tp: OfferRow["tp"]) => {
-    if (tp == null) return <span className="text-muted-foreground/50">—</span>;
-    return (
-      <span className="flex flex-col gap-0.5">
-        <span>{tp.rungs.map((g) => `${g.label} ${fmtPrice(g.price)} (${fmtPct(g.allocPct)}%)`).join(" · ")}</span>
-        {tp.bandExit != null && (
-          <span className="text-muted-foreground/80">
-            band exit {fmtPrice(tp.bandExit.price)}
-            {tp.bandExit.method ? ` · ${human(tp.bandExit.method)}` : ""}
-          </span>
-        )}
-      </span>
-    );
-  };
+  const tpCell = (tp: OfferRow["tp"]) => (
+    <TpLadder bandExit={tp?.bandExit ?? null} rungs={tp?.rungs ?? []} trailingExit={tp?.trailingExit ?? null} />
+  );
 
   return (
     <div className="border-primary/30 bg-card space-y-3 rounded-lg border p-4">
@@ -416,10 +450,20 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
                     backend actually ranked by. */}
                 <th className="p-1.5 text-right">Notional</th>
                 <th className="p-1.5 text-right">Mark</th>
-                <th className="p-1.5">Recommended stop</th>
-                <th className="p-1.5">Recommended take-profit</th>
-                <th className="p-1.5 text-right" title="Reward-to-risk of the stop and first take-profit together">
-                  R:R
+                <th className="p-1.5" title="Where the position closes automatically if the price moves against you">
+                  Stop (exit at a loss)
+                </th>
+                <th
+                  className="p-1.5"
+                  title="Where the position closes automatically at a profit, and how much of it closes there"
+                >
+                  Targets (exit at a profit)
+                </th>
+                <th
+                  className="p-1.5 text-right"
+                  title="For every 1 put at risk at the stop, how much the first profit target pays back"
+                >
+                  Risk : Reward
                 </th>
                 <th className="p-1.5" aria-label="Approve row" />
               </tr>
@@ -466,7 +510,20 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
                     </td>
                     <td className="p-1.5">{tpCell(r.tp)}</td>
                     <td className="text-muted-foreground p-1.5 text-right tabular-nums">
-                      {r.riskReward != null ? `${fmtPct(r.riskReward)}R` : "—"}
+                      {(() => {
+                        // Prefer the engine's resting-pair figure; otherwise
+                        // derive the ratio this approval would create, measured
+                        // from ENTRY (the anchor the 1R/2R rungs use) rather
+                        // than the mark, which has already run past a deep loss.
+                        const rr =
+                          r.riskReward ??
+                          placedRR(
+                            r.sl?.price ?? null,
+                            r.tp?.rungs[0]?.price ?? r.tp?.trailingExit?.price ?? r.tp?.bandExit?.price ?? null,
+                            r.entry > 0 ? r.entry : r.mark,
+                          );
+                        return rr !== null ? fmtRR(rr) : "—";
+                      })()}
                     </td>
                     <td className="p-1.5 text-right whitespace-nowrap">
                       {armedKey === rowKey ? (
@@ -516,6 +573,27 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
           </span>
           {!noneSelected && <span className="text-foreground">{fmtMoney(selectedNotional)} exposure</span>}
         </div>
+        {/* A reader who cannot tell a stop from a target cannot safely approve
+            an order. Three plain sentences, once, rather than tooltips they
+            have to discover. */}
+        <dl className="text-muted-foreground grid gap-x-4 gap-y-0.5 text-[11px] sm:grid-cols-2">
+          <div className="flex gap-1.5">
+            <dt className="text-foreground shrink-0 font-medium">Stop</dt>
+            <dd>closes the whole position at a loss if the price moves against you</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-foreground shrink-0 font-medium">Targets</dt>
+            <dd>closes part of it at a profit — e.g. 40% at one price, 30% at a higher one</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-foreground shrink-0 font-medium">Risk : Reward</dt>
+            <dd>for every 1 put at risk, how much the first target pays back</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-foreground shrink-0 font-medium">Mark</dt>
+            <dd>the price right now — the number every level is measured against</dd>
+          </div>
+        </dl>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -607,18 +685,37 @@ function PlacementResult({ raw }: { raw: string }) {
           );
         }
         return (
-          <span
-            key={part.slice(0, 32)}
-            className="text-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px]"
-          >
-            <Icon name="check" className="text-success size-3" />
-            {summary.placed} order{summary.placed === 1 ? "" : "s"} placed
-            {summary.failed > 0 && <span className="text-destructive">· {summary.failed} failed</span>}
-            {summary.placed + summary.failed > 0 && (
-              <span className="text-muted-foreground">— re-run the audit to refresh the verdicts</span>
-            )}
-            {summary.note != null && summary.note.length > 0 && (
-              <span className="text-muted-foreground block font-mono text-[10px] leading-relaxed">{summary.note}</span>
+          <span key={part.slice(0, 32)} className="block w-full space-y-1">
+            <span className="text-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+              {summary.failed > 0 ? (
+                <Icon name="alert-circle" className="text-destructive size-3" />
+              ) : (
+                <Icon name="check" className="text-success size-3" />
+              )}
+              {summary.placed} order{summary.placed === 1 ? "" : "s"} placed
+              {summary.failed > 0 && <span className="text-destructive">· {summary.failed} failed</span>}
+              {summary.placed + summary.failed > 0 && (
+                <span className="text-muted-foreground">— re-run the audit to refresh the verdicts</span>
+              )}
+              {summary.note.length > 0 && (
+                <span className="text-muted-foreground block font-mono text-[10px] leading-relaxed">
+                  {summary.note}
+                </span>
+              )}
+            </span>
+            {summary.failures.length > 0 && (
+              <details className="border-destructive/30 rounded-md border">
+                <summary className="text-destructive cursor-pointer px-2 py-1 font-mono text-[10px] select-none">
+                  Why {summary.failures.length} order{summary.failures.length === 1 ? "" : "s"} failed
+                </summary>
+                <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[11px]">
+                  {summary.failures.map((f) => (
+                    <li key={`${f.symbol}:${f.error}`} className="text-muted-foreground">
+                      <span className="text-foreground">{f.symbol || "position"}</span> — {f.error}
+                    </li>
+                  ))}
+                </ul>
+              </details>
             )}
           </span>
         );

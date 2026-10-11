@@ -49,6 +49,9 @@ export interface CredentialProvider {
   subtitleKey: TranslationKey;
   /** How to obtain the key, and what NOT to enable. */
   guideKey: TranslationKey;
+  /** Long-form "how to get this" copy, hidden behind a disclosure so the card
+   *  opens with a one-line pitch instead of a permission wall. */
+  guideDetailKey?: TranslationKey;
   /** Op returning `CredentialStatus`. */
   statusOp: string;
   /** Op taking one arg per field; clears both fields to "" on success. */
