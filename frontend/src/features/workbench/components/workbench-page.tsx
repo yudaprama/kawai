@@ -20,12 +20,14 @@ import {
   placeholderForTemplate,
   templateOpensAudit,
   templateOpensDesk,
+  templateOpensScreener,
   templateOpensYoutube,
 } from "./goal-templates";
 import type { GoalTemplateId } from "./goal-templates";
 import { ProgressRail, RunHistoryRail } from "./progress-rail";
 import { YoutubeSummaryForm } from "./youtube-summary-form";
 import { BinanceAuditForm } from "./binance-audit-form";
+import { CryptoScreenerForm } from "./crypto-screener-form";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
 import { useI18n } from "@/hooks/use-i18n";
@@ -400,6 +402,16 @@ export function WorkbenchPage({
     [beginPipelineRun, workbench.runBinanceAudit],
   );
 
+  /** Crypto Screener submit: the FIXED multi-screen pipeline over Binance
+   * public market data — one parallel scan per selected screen, then the
+   * deliverable writer. Same canvas handoff as the audit submit. */
+  const submitCryptoScreener = useCallback(
+    (screens: string[], universe: string, interval: string, topN: number) => {
+      beginPipelineRun((onStart) => workbench.runScreener(screens, universe, interval, topN, 60, { onStart }));
+    },
+    [beginPipelineRun, workbench.runScreener],
+  );
+
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)
     : ("ready" as const);
@@ -567,6 +579,11 @@ export function WorkbenchPage({
             {templateOpensAudit(template) && (
               <div className="mt-3">
                 <BinanceAuditForm disabled={composerStatus === "submitted"} onSubmit={submitBinanceAudit} />
+              </div>
+            )}
+            {templateOpensScreener(template) && (
+              <div className="mt-3">
+                <CryptoScreenerForm disabled={composerStatus === "submitted"} onSubmit={submitCryptoScreener} />
               </div>
             )}
           </div>

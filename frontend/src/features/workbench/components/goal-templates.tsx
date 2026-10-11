@@ -1,7 +1,7 @@
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
 
-export type GoalTemplateId = "stock" | "crypto" | "commodity" | "forex" | "youtube" | "binanceAudit";
+export type GoalTemplateId = "stock" | "crypto" | "commodity" | "forex" | "youtube" | "binanceAudit" | "cryptoScreener";
 const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "stock", label: "Stock Research" },
   { id: "crypto", label: "Crypto Research" },
@@ -9,6 +9,7 @@ const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "forex", label: "Forex Research" },
   { id: "youtube", label: "YouTube Summary" },
   { id: "binanceAudit", label: "Futures Risk Audit" },
+  { id: "cryptoScreener", label: "Crypto Screener" },
 ];
 
 /** Templates whose workflow includes the fixed-pipeline Stock Research — only
@@ -31,6 +32,13 @@ const AUDIT_TEMPLATES: readonly GoalTemplateId[] = ["binanceAudit"];
 
 export const templateOpensAudit = (t: GoalTemplateId | null): boolean => t != null && AUDIT_TEMPLATES.includes(t);
 
+/** Templates whose workflow is the fixed Crypto Screener — the form discloses
+ * the screen selection and scan presets the same way the other fixed
+ * pipelines disclose theirs. */
+const SCREENER_TEMPLATES: readonly GoalTemplateId[] = ["cryptoScreener"];
+
+export const templateOpensScreener = (t: GoalTemplateId | null): boolean => t != null && SCREENER_TEMPLATES.includes(t);
+
 /** Contextual composer framing per template. Desk templates keep the default
  * goal placeholder — the desk panel is their framing. */
 export const placeholderForTemplate = (_t: GoalTemplateId | null): string | undefined => undefined;
@@ -45,6 +53,7 @@ const DOCS_FOR_TEMPLATE: Record<GoalTemplateId, string> = {
   forex: "https://kawai.pro/workflows/research/",
   youtube: "https://kawai.pro/workflows/youtube-summary/",
   binanceAudit: "https://kawai.pro/workflows/futures-risk-audit/",
+  cryptoScreener: "https://kawai.pro/workflows/",
 };
 
 export const docsUrlForTemplate = (t: GoalTemplateId | null): string =>

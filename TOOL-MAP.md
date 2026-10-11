@@ -132,6 +132,7 @@ the reason.
 | `binance_futures_positions` | open futures positions + their open orders incl. stop-losses / take-profits, mirrored into `binance_futures_positions` / `binance_futures_open_orders` — BOTH markets: USDⓈ-M (`fapi`) AND COIN-M (`dapi`) — see §5.1 |
 | `crypto_futures_stop_loss` / `crypto_futures_take_profit` | per-position advisory stop (CE/Donchian/Keltner + ratchet vs the advice history table) and R-multiple TP ladder, graded against the resting orders |
 | `binance_futures_risk_audit` | ONE-call portfolio risk review: sync → grade the biggest USDⓈ-M positions with the SAME stop policy → TP coverage → summary (naked positions, naked notional, R:R) — see §5.2 |
+| `crypto_screener` | market-wide setup scan: top-liquidity USDT pairs (spot or USDⓈ-M) folded over candles for ONE named screen (`oversold_rebound`, `macd_golden_cross`/`macd_death_cross`, `midband_reclaim`, `uptrend_pullback`, `squeeze_watch`, `rsi_overbought_uptrend`) — conviction-ranked hits with per-hit reasons — see §5.3 |
 
 ### 5.1 `binance_futures_positions` — the local futures mirror
 
@@ -238,6 +239,27 @@ picture, so there is no multi-tool choreography to get wrong.
 - **Advice history is shared** with the stop-loss/take-profit tools (same
   `binance_futures_advice` table, `kind = 'stop_loss'`), so the monotonic
   ratchet carries across entry points.
+
+### 5.3 `crypto_screener` — the market-wide setup scan
+
+The screener flips the direction of the advisory tools: instead of grading a
+KNOWN book, it searches the WHOLE market for setups. Ranks the top-liquidity
+USDT pairs (24h quote volume, spot mirror or fapi), folds indicators per
+symbol in-process (`ta` crate), and evaluates ONE screen — a deterministic
+predicate over the folds with a conviction score (0-100) and per-hit reasons.
+Read-only keyless public data; self-bounded (6 runs/min, 6-way parallel
+klines, 45s deadline → `partial: true`, fail-soft error rows).
+
+- **Screens are pure policy** (`screener.rs::evaluate`), the same split as
+  `stop_advice`: seven shipped (`oversold_rebound`, `macd_golden_cross`,
+  `macd_death_cross`, `midband_reclaim`, `uptrend_pullback`, `squeeze_watch`,
+  `rsi_overbought_uptrend`), each unit-tested hit/miss/gates without network.
+- **The fixed workflow** (`screener_plan.rs`, op `run_crypto_screener`, both
+  wrappers, the "Crypto Screener" landing template) fans ONE parallel step
+  out per picked screen (≤4) and lets the built-in deliverable writer turn
+  the hit lists into one report — cross-screen symbols called out first. No
+  planning round, and NO credential gate: the pipeline never touches a
+  signed endpoint.
 
 ## 5b. Monad (`builtin.monad`) — `crates/toolsets/monad-tools` (feature `monad`)
 

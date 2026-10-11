@@ -64,6 +64,20 @@ interface RunBinanceAuditOptions {
   limit: number;
 }
 
+interface RunCryptoScreenerOptions {
+  /** Which setups to scan for — one parallel pipeline step each (1-4; the
+   * backend rejects unknown names and over-sized picks before a plan exists). */
+  screens: string[];
+  /** Market family: "spot" | "usdm" (default "usdm"). */
+  universe: string;
+  /** Candle interval the screens fold on (default "1d"). */
+  interval: string;
+  /** Hits returned per screen (1-25, default 10). */
+  topN: number;
+  /** How many top-liquidity symbols each scan covers (1-150, default 60). */
+  scanSize: number;
+}
+
 export interface SupervisorPlanCallbacks {
   onPlanCompleted?: (
     goal: string | null,
@@ -553,6 +567,32 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [startStream],
   );
 
+  /** Crypto Screener: execute the FIXED screener pipeline — one parallel
+   * `crypto_screener` step per selected screen, then the built-in deliverable
+   * writer. No planner, no review gate, keyless public market data. Streams
+   * the same SupervisorEvent lifecycle as runPlan, so the Workbench
+   * rail/deliverable/reports render it unchanged. */
+  const runCryptoScreener = useCallback(
+    (options: RunCryptoScreenerOptions, sessionId: number) => {
+      if (streamCtrl.current) return;
+      startStream(
+        {
+          sessionId,
+          screens: options.screens,
+          universe: options.universe,
+          interval: options.interval,
+          topN: options.topN,
+          scanSize: options.scanSize,
+          // Device locale → report language (resolved server-side).
+          language: navigator.language,
+        },
+        sessionId,
+        "run_crypto_screener",
+      );
+    },
+    [startStream],
+  );
+
   const planAndRun = useCallback(
     async (goal: string, sessionId: number, agentId: string, userGoal?: string) => {
       const cleanGoal = userGoal ?? goal;
@@ -701,6 +741,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     runDesk,
     runYoutube,
     runBinanceAudit,
+    runCryptoScreener,
     planAndRun,
     resume,
     approvePlan,

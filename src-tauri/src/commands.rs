@@ -2212,7 +2212,7 @@ key and secret in Settings → Binance API first"
         .unwrap_or_default();
     let plan = ::binance::build_audit_plan(args);
     let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language);
-    let tool_registry = crate::supervisor::build_binance_audit_registry(
+    let tool_registry = crate::supervisor::build_fixed_binance_registry(
         &ctx.user_id,
         session_id,
         &crate::supervisor::plan_key(&plan),
@@ -2221,6 +2221,77 @@ key and secret in Settings → Binance API first"
     .map_err(|e| e.to_string())?;
 
     tracing::info!(component = "binance-risk-audit", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running futures risk audit");
+    ctx.run(plan, tool_registry, Some(user_goal), stream_id, on_event, &pending)
+        .await
+}
+
+/// Crypto Screener: run the FIXED screener pipeline — one `crypto_screener`
+/// scan per selected screen, all in ONE parallel wave — and stream the same
+/// `SupervisorEvent` lifecycle the planner-driven runs emit. No planning
+/// round: the scan is deterministic Rust (`binance::screener`), the fan-out
+/// is the whole point of the fixed plan.
+///
+/// Strictly public market data: unlike the risk audit there is NO credential
+/// gate — the pipeline never touches a signed endpoint.
+#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[tauri::command]
+pub async fn run_crypto_screener(
+    session_id: i64,
+    screens: Option<Vec<String>>,
+    universe: Option<String>,
+    interval: Option<String>,
+    top_n: Option<u32>,
+    scan_size: Option<u32>,
+    // Raw device locale tag (e.g. "id-ID") — resolved into the report's
+    // output language at this edge (see `supervisor::resolve_user_language`).
+    language: Option<String>,
+    stream_id: String,
+    on_event: Channel<kawai_events::SupervisorEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+    pending: State<'_, crate::supervisor::PendingConfirmations>,
+) -> Result<(), String> {
+    let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
+
+    let screens_owned = screens.unwrap_or_default();
+    let screen_names: Vec<&str> = screens_owned
+        .iter()
+        .map(|s| s.as_str())
+        .collect();
+    let args = ::binance::normalize_screener_args(
+        &screen_names,
+        universe.as_deref().unwrap_or_default(),
+        interval.as_deref().unwrap_or_default(),
+        top_n,
+        scan_size,
+    )
+    .map_err(|e| e.to_string())?;
+    // Read the normalized values back BEFORE the plan consumes them, so the
+    // report's goal describes the run that actually executes.
+    let screens: Vec<String> = args["screens"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let universe = args["universe"].as_str().unwrap_or_default().to_string();
+    let interval = args["interval"].as_str().unwrap_or_default().to_string();
+    let top_n = args["topN"].as_u64().unwrap_or_default() as u32;
+    let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
+        .unwrap_or_default();
+    let plan = ::binance::build_screener_plan(args);
+    let user_goal = ::binance::screener_user_goal(&screens, &universe, &interval, top_n, &language);
+    let tool_registry = crate::supervisor::build_fixed_binance_registry(
+        &ctx.user_id,
+        session_id,
+        &crate::supervisor::plan_key(&plan),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tracing::info!(component = "crypto-screener", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running crypto screener");
     ctx.run(plan, tool_registry, Some(user_goal), stream_id, on_event, &pending)
         .await
 }

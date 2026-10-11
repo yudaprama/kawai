@@ -2563,6 +2563,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
     #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
     let protected = protected
         .route("/api/run_binance_risk_audit", post(run_binance_risk_audit_handler));
+    let protected = protected
+        .route("/api/run_crypto_screener", post(run_crypto_screener_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
     let protected = protected.route(
@@ -3046,6 +3048,27 @@ struct RunBinanceRiskAuditRequest {
     stream_id: String,
 }
 
+/// Crypto Screener: the FIXED multi-screen pipeline over public market data —
+/// one parallel `crypto_screener` step per selected screen, then the built-in
+/// deliverable writer. Same fixed-plan contract as the audit: the presets are
+/// normalized before the plan exists, so a bad value is a 400, never a
+/// half-started run. No credential gate — keyless public endpoints only.
+#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunCryptoScreenerRequest {
+    session_id: i64,
+    /// One step per screen; normalize rejects unknown names and >4 picks.
+    screens: Option<Vec<String>>,
+    universe: Option<String>,
+    interval: Option<String>,
+    top_n: Option<u32>,
+    scan_size: Option<u32>,
+    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
+    language: Option<String>,
+    stream_id: String,
+}
+
 #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
 async fn run_binance_risk_audit_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
@@ -3089,7 +3112,72 @@ key and secret in Settings → Binance API first"
     .unwrap_or_default();
     let plan = ::binance::build_audit_plan(args);
     let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language);
-    let tool_registry = crate::supervisor::build_binance_audit_registry(
+    let tool_registry = crate::supervisor::build_fixed_binance_registry(
+        &user_id,
+        req.session_id,
+        &crate::supervisor::plan_key(&plan),
+    )
+    .await
+    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+
+    Ok(supervisor_sse(
+        plan,
+        tool_registry,
+        req.stream_id,
+        user_id,
+        req.session_id,
+        Some(user_goal),
+        &bearer,
+        pending,
+    ))
+}
+
+#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+async fn run_crypto_screener_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+    Extension(user_id): Extension<String>,
+    headers: HeaderMap,
+    Json(req): Json<RunCryptoScreenerRequest>,
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
+    // Billing bearer off the session cookie — the edge middleware already
+    // validated it (AGENTS.md #8); fail closed here before the supervisor.
+    let bearer = cookie_bearer(&headers)?;
+    ensure_session(&user_id, req.session_id).await?;
+
+    // NO credential gate: the screener is public market data and never
+    // touches a signed endpoint — anyone signed in may scan the market.
+    let screens: Vec<&str> = req.screens.unwrap_or_default().iter().map(|s| s.as_str()).collect();
+    let args = ::binance::normalize_screener_args(
+        &screens,
+        req.universe.as_deref().unwrap_or_default(),
+        req.interval.as_deref().unwrap_or_default(),
+        req.top_n,
+        req.scan_size,
+    )
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    // Read the normalized values back BEFORE the plan consumes them, so the
+    // report's goal describes the run that actually executes.
+    let screens: Vec<String> = args["screens"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let universe = args["universe"].as_str().unwrap_or_default().to_string();
+    let interval = args["interval"].as_str().unwrap_or_default().to_string();
+    let top_n = args["topN"].as_u64().unwrap_or_default() as u32;
+    let language = crate::supervisor::resolve_user_language(
+        req.language.as_deref(),
+        headers
+            .get(header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok()),
+    )
+    .unwrap_or_default();
+    let plan = ::binance::build_screener_plan(args);
+    let user_goal = ::binance::screener_user_goal(&screens, &universe, &interval, top_n, &language);
+    let tool_registry = crate::supervisor::build_fixed_binance_registry(
         &user_id,
         req.session_id,
         &crate::supervisor::plan_key(&plan),

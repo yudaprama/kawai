@@ -868,3 +868,152 @@ function FuturesRiskAuditCard({ data: d }: { data: Record<string, unknown> }) {
     </TextCard>
   );
 }
+
+// ── crypto_screener ─────────────────────────────────────────────────────────
+
+/**
+ * crypto_screener →
+ * { kind: "screener", screen, direction, universe, interval, scanned,
+ *   skipped, hits: [{ symbol, last, change24hPct, score, reasons: [..] }],
+ *   hitsTotal, topN, universeTotal, partial, errors, errorsTotal }.
+ *
+ * The headline is the HIT TABLE ranked by conviction score — the score IS the
+ * engine's ranking, so the table preserves it verbatim (no re-sort). Reasons
+ * ride the row (why it fired is the payload a screener sells), direction and
+ * coverage (scanned / partial) ride the header.
+ */
+
+/** Score chip palette: ≥80 reads as actionable, ≥60 as worth a look, below
+ * stays muted — a screener table where every row shouts is no signal. */
+function scoreTone(score: number): "ok" | "warn" | "mute" {
+  if (score >= 80) return "ok";
+  if (score >= 60) return "warn";
+  return "mute";
+}
+
+const SCREENER_ROW_CAP = 12;
+
+export function renderCryptoScreener(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || !Array.isArray(d.hits)) return null;
+  const hits = d.hits.filter(isRecord);
+  if (hits.length === 0 && d.scanned === undefined) return null;
+  const screen = str(d.screen) ?? "";
+  const direction = str(d.direction) ?? "";
+  const universe = str(d.universe) ?? "";
+  const interval = str(d.interval) ?? "";
+  const scanned = num(d.scanned);
+  const hitsTotal = num(d.hitsTotal);
+  const partial = d.partial === true;
+  const errorsTotal = num(d.errorsTotal) ?? 0;
+  const capped = hits.length > SCREENER_ROW_CAP;
+
+  return (
+    <TextCard>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Icon name="scan-search" className="text-primary size-4" />
+        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+          {screen.replace(/_/g, " ") || "Screener"}
+        </span>
+        <span
+          className={cn(
+            "rounded-sm border px-1 py-px font-mono text-[10px] tracking-wide uppercase",
+            direction === "bullish"
+              ? "border-success/30 bg-success/10 text-success"
+              : direction === "bearish"
+                ? "border-destructive/30 bg-destructive/10 text-destructive"
+                : "border-border bg-muted/40 text-muted-foreground"
+          )}
+        >
+          {direction}
+        </span>
+        <span className="text-muted-foreground font-mono text-[10px]">
+          {universe} · {interval}
+        </span>
+        {partial && (
+          <span className="border-warning/30 bg-warning/10 text-warning rounded-sm border px-1 py-px font-mono text-[10px] uppercase">
+            partial
+          </span>
+        )}
+      </div>
+
+      {hits.length > 0 ? (
+        <div className="border-border/60 max-h-[26rem] overflow-auto rounded-md border">
+          <table className="w-full border-collapse font-mono text-[11px]">
+            <thead className="bg-muted/50 sticky top-0 z-10">
+              <tr className="text-muted-foreground border-border/60 border-b text-left">
+                <th className="px-2 py-1.5 font-medium">Symbol</th>
+                <th className="px-2 py-1.5 text-right font-medium">Last</th>
+                <th className="px-2 py-1.5 text-right font-medium">24h</th>
+                <th className="px-2 py-1.5 text-right font-medium" title="The engine's conviction ranking, 0-100">
+                  Score
+                </th>
+                <th className="px-2 py-1.5 font-medium">Why it fired</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(capped ? hits.slice(0, SCREENER_ROW_CAP) : hits).map((h, i) => {
+                const symbol = str(h.symbol) ?? "?";
+                const last = num(h.last);
+                const chg = num(h.change24hPct);
+                const score = num(h.score) ?? 0;
+                const reasons = (Array.isArray(h.reasons) ? h.reasons : []).filter(
+                  (r): r is string => typeof r === "string"
+                );
+                const tone = scoreTone(score);
+                return (
+                  <tr
+                    key={`${symbol}-${i}`}
+                    className="border-border/40 hover:bg-muted/30 border-b last:border-b-0"
+                    title={reasons.join(" · ")}
+                  >
+                    <td className="text-foreground px-2 py-1.5 font-medium">{symbol}</td>
+                    <td className="text-muted-foreground px-2 py-1.5 text-right whitespace-nowrap tabular-nums">
+                      {last !== null ? fmtPrice(last) : "—"}
+                    </td>
+                    <td
+                      className={cn(
+                        "px-2 py-1.5 text-right whitespace-nowrap tabular-nums",
+                        chg === null ? "text-muted-foreground" : chg < 0 ? "text-destructive" : "text-success"
+                      )}
+                    >
+                      {chg !== null ? `${chg > 0 ? "+" : ""}${fmtPct(chg / 100)}` : "—"}
+                    </td>
+                    <td className="px-2 py-1.5 text-right">
+                      <span
+                        className={cn(
+                          "rounded-sm border px-1 py-px font-mono text-[10px] tracking-wide",
+                          tone === "ok"
+                            ? "border-success/30 bg-success/10 text-success"
+                            : tone === "warn"
+                              ? "border-warning/30 bg-warning/10 text-warning"
+                              : "border-border bg-muted/40 text-muted-foreground"
+                        )}
+                      >
+                        {score}
+                      </span>
+                    </td>
+                    <td className="text-muted-foreground max-w-[22rem] px-2 py-1.5">
+                      <span className="line-clamp-2">{reasons.join(" · ")}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-muted-foreground font-mono text-[11px]">
+          No symbols fired this pass — a screen firing is market-dependent, not guaranteed.
+        </p>
+      )}
+
+      <Footnote>
+        {scanned !== null ? fmtNum(scanned) : "?"} symbols scanned
+        {hitsTotal !== null && hitsTotal > hits.length ? ` · top ${hits.length} of ${fmtNum(hitsTotal)} hits` : ""}
+        {errorsTotal > 0 ? ` · ${fmtNum(errorsTotal)} symbol(s) unreachable` : ""}
+        {capped ? " · showing the strongest rows" : ""}
+      </Footnote>
+    </TextCard>
+  );
+}
