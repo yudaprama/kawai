@@ -213,6 +213,8 @@ describe("parseAuditOffer", () => {
         long: true,
         size: 1.5,
         mark: 98000,
+        notional: 147000,
+        riskReward: null,
         sl: { price: 95000, method: "chandelier_exit", distancePct: 3.06 },
         tp: {
           symbol: "BTCUSDT",
@@ -229,6 +231,8 @@ describe("parseAuditOffer", () => {
         long: false,
         size: 10,
         mark: 150,
+        notional: 1500,
+        riskReward: null,
         sl: null,
         tp: {
           symbol: "SOLUSDT",
@@ -241,6 +245,58 @@ describe("parseAuditOffer", () => {
         },
       },
     ]);
+  });
+
+  it("carries the comparable notional and the engine's R:R on every row", () => {
+    // The approval table is read in risk order, and raw coin counts are not
+    // comparable across symbols (0.002 BTC vs 5,491 ZORA) — a row must carry
+    // |size| × mark so the visible order matches the backend's ranking.
+    const out = JSON.stringify({
+      summary: { usdmPositions: 2, graded: 2, withStopLoss: 0, naked: 2, nakedNotional: 1, withTakeProfit: 0 },
+      positions: [
+        {
+          symbol: "BTCUSDT",
+          positionAmt: 0.002,
+          markPrice: 98000,
+          restingStops: 0,
+          restingTps: 0,
+          riskReward: 2.4,
+          advice: {
+            verdict: "missing",
+            recommended: { price: 95000, method: "chandelier_exit", distancePct: 3.06 },
+            takeProfit: {
+              shape: "ladder",
+              verdict: "missing",
+              rungs: [{ label: "1R", price: 104000, allocPct: 100, passed: false }],
+              bandExit: null,
+            },
+          },
+        },
+        {
+          symbol: "ZORAUSDT",
+          positionAmt: 5491,
+          markPrice: 0.007342,
+          restingStops: 0,
+          restingTps: 0,
+          advice: {
+            verdict: "missing",
+            recommended: { price: 0.007, method: "keltner_10_2", distancePct: 4.27 },
+            takeProfit: {
+              shape: "ladder",
+              verdict: "missing",
+              rungs: [{ label: "1R", price: 0.008, allocPct: 100, passed: false }],
+              bandExit: null,
+            },
+          },
+        },
+      ],
+    });
+    const offer = parseAuditOffer(out);
+    // Smallest coin count, largest exposure — the ordering the table shows.
+    expect(offer?.rows[0].notional).toBe(196);
+    expect(offer?.rows[1].notional).toBeCloseTo(40.3149, 3);
+    // A missing R:R stays null rather than becoming a fabricated 0.
+    expect(offer?.rows.map((r) => r.riskReward)).toEqual([2.4, null]);
   });
 
   it("rejects anything that is not a readable audit matrix", () => {

@@ -4,7 +4,8 @@ import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { call, errText } from "@/lib/api";
 
-import { fmtPct, fmtPrice } from "@/components/ai-elements/tool-renderers/shared";
+import { fmtMoney, fmtPct, fmtPrice } from "@/components/ai-elements/tool-renderers/shared";
+import { cn } from "@/lib/utils";
 
 /** Dispatch key of the audit tool — identifies an audit run's step in both
  * live supervisor state and persisted run records. */
@@ -46,12 +47,21 @@ export interface OfferTpRow {
 
 /** One approval row: a position and exactly what a confirmed approval would
  * place for it (either side may be absent — a position that only lacks a
- * stop shows a stop, one lacking both shows both). */
+ * stop shows a stop, one lacking both shows both).
+ *
+ * `notional` is the comparable size (|positionAmt| × mark, the same figure the
+ * backend ranks by) — raw coin counts are not comparable across symbols and
+ * invert the risk order, since 0.002 BTC outranks 5,491 ZORA while reading as
+ * the smallest number in the column. `riskReward` is the engine's reward:risk
+ * for the stop+take-profit pair this row would place. */
 export interface OfferRow {
   symbol: string;
   long: boolean;
   size: number;
   mark: number;
+  notional: number;
+  /** Null when the position has no both-sides R:R (one side absent). */
+  riskReward: number | null;
   sl: { price: number; method: string; distancePct: number | null } | null;
   tp: OfferTpRow | null;
 }
@@ -110,6 +120,7 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
 
   const stops: OfferStopRow[] = [];
   const tps: OfferTpRow[] = [];
+  const meta = new Map<string, { notional: number; riskReward: number | null }>();
   if ("positions" in v && Array.isArray(v.positions)) {
     for (const row of v.positions) {
       if (typeof row !== "object" || row == null) continue;
@@ -123,6 +134,12 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
       const mark = "markPrice" in row ? (num(row.markPrice) ?? 0) : 0;
       const restingStops = "restingStops" in row ? num(row.restingStops) : null;
       const restingTps = "restingTps" in row ? num(row.restingTps) : null;
+      // Comparable size + the engine's R:R for this position. Kept in a
+      // side map rather than on the stop/TP rows so the merged row shape stays
+      // the reviewed contract.
+      const notional = "notionalAbs" in row ? (num(row.notionalAbs) ?? Math.abs(size * mark)) : Math.abs(size * mark);
+      const riskReward = "riskReward" in row ? num(row.riskReward) : null;
+      meta.set(symbol, { notional, riskReward });
 
       if (restingStops === 0 && "recommended" in a && typeof a.recommended === "object" && a.recommended != null) {
         const rec = a.recommended;
@@ -174,7 +191,17 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
   const touch = (symbol: string, long: boolean, size: number, mark: number): OfferRow => {
     let r = bySymbol.get(symbol);
     if (r == null) {
-      r = { symbol, long, size, mark, sl: null, tp: null };
+      const m = meta.get(symbol);
+      r = {
+        symbol,
+        long,
+        size,
+        mark,
+        notional: m?.notional ?? Math.abs(size * mark),
+        riskReward: m?.riskReward ?? null,
+        sl: null,
+        tp: null,
+      };
       bySymbol.set(symbol, r);
     }
     return r;
@@ -234,8 +261,10 @@ interface BinanceAuditOfferProps {
 export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOfferProps) {
   const [output, setOutput] = useState<string | null>(null);
   const [readFailed, setReadFailed] = useState(false);
-  /** Selection by omission: every row starts approved, the user unchecks. */
-  const [deselected, setDeselected] = useState<ReadonlySet<string>>(new Set());
+  /** Approval is OPT-IN: a 183-row whole-book placement is two clicks from
+   * real reduce-only orders, so nothing is selected on arrival. "Select all"
+   * has to be a deliberate act, not the resting state of the panel. */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   /** "bulk" | `row:${symbol}` — only one arm at a time. */
   const [armedKey, setArmedKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -247,7 +276,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
     let alive = true;
     setOutput(null);
     setReadFailed(false);
-    setDeselected(new Set());
+    setSelected(new Set());
     setArmedKey(null);
     void fetcher(stepId, planKey)
       .then((out) => {
@@ -266,10 +295,14 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
   const offer = parseAuditOffer(output);
   if (readFailed || offer == null || offer.rows.length === 0) return null;
 
-  const selectedRows = offer.rows.filter((r) => !deselected.has(r.symbol));
+  const selectedRows = offer.rows.filter((r) => selected.has(r.symbol));
   const selectedStops = selectedRows.filter((r) => r.sl != null).length;
   const selectedTps = selectedRows.filter((r) => r.tp != null).length;
-  const allSelected = deselected.size === 0;
+  const allSelected = selected.size === offer.rows.length;
+  const noneSelected = selected.size === 0;
+  // The scroll viewport is ~8 rows; the selection can be 183. Without this the
+  // user arms a whole-book placement against a viewport showing 4% of it.
+  const selectedNotional = selectedRows.reduce((sum, r) => sum + r.notional, 0);
 
   /** One approval = up to two op calls (stops, then TPs), each scoped to the
    * approved symbol list. Level cap 500 = the backend's AUDIT_LIMIT_MAX, so
@@ -313,9 +346,9 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
     }
   };
 
-  const toggleAll = () => setDeselected(allSelected ? new Set(offer.rows.map((r) => r.symbol)) : new Set());
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(offer.rows.map((r) => r.symbol)));
   const toggleRow = (symbol: string) =>
-    setDeselected((prev) => {
+    setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(symbol)) next.delete(symbol);
       else next.add(symbol);
@@ -323,13 +356,21 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
     });
 
   const side = (long: boolean) => (long ? "long" : "short");
+  // Engine vocabulary is snake_case (band_exit, chandelier_exit, keltner_10_2);
+  // it reads as an identifier leaking into the UI, so it is spaced out here.
+  const human = (method: string) => method.replace(/_/g, " ");
   const tpCell = (tp: OfferRow["tp"]) => {
     if (tp == null) return <span className="text-muted-foreground/50">—</span>;
     return (
-      <>
-        {tp.rungs.map((g) => `${g.label} ${fmtPrice(g.price)} (${fmtPct(g.allocPct)}%)`).join(" · ")}
-        {tp.bandExit != null && `${tp.rungs.length > 0 ? " · " : ""}band_exit ${fmtPrice(tp.bandExit.price)}`}
-      </>
+      <span className="flex flex-col gap-0.5">
+        <span>{tp.rungs.map((g) => `${g.label} ${fmtPrice(g.price)} (${fmtPct(g.allocPct)}%)`).join(" · ")}</span>
+        {tp.bandExit != null && (
+          <span className="text-muted-foreground/80">
+            band exit {fmtPrice(tp.bandExit.price)}
+            {tp.bandExit.method ? ` · ${human(tp.bandExit.method)}` : ""}
+          </span>
+        )}
+      </span>
     );
   };
 
@@ -339,115 +380,156 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
         <Icon name="shield-check" className="text-primary size-4" />
         Protect this book
       </div>
-      <p className="text-muted-foreground font-mono text-xs leading-relaxed">
-        Recommended protection, engine-computed from this audit ({offer.params.interval} candles, {offer.params.risk}{" "}
-        stop preset, standard take-profit style). Book totals: {offer.naked} without a stop · {offer.noTp} without a
-        take-profit. Pick the rows to approve — one, a subset, or all.
+      {/* Four lines of mono prose explained what four chips say faster. */}
+      <div className="text-muted-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+        <span className="rounded border px-1.5 py-0.5">{offer.params.interval} candles</span>
+        <span className="rounded border px-1.5 py-0.5">{offer.params.risk} stops</span>
+        <span className="rounded border px-1.5 py-0.5">standard take-profit</span>
+        <span className="text-destructive rounded border px-1.5 py-0.5">{offer.naked} without a stop</span>
+        <span className="rounded border px-1.5 py-0.5">{offer.noTp} without a take-profit</span>
+      </div>
+      <p className="text-muted-foreground text-xs">
+        Approve the rows you want protected — one, a subset, or all.
         {offer.naked > offer.stops.length &&
-          ` This audit graded only the ${offer.params.limit} largest — ${offer.naked - offer.stops.length} smaller positions are unlisted; re-run the audit with "Positions graded: All" to cover the whole book.`}
+          ` This audit graded only the ${offer.params.limit} largest, so ${offer.naked - offer.stops.length} smaller unprotected positions are not listed; re-run with "Positions graded: All" to cover the whole book.`}
       </p>
 
-      <div className="border-border/60 max-h-96 overflow-y-auto rounded-md border">
-        <table className="w-full border-collapse font-mono text-[11px]">
-          <thead className="bg-background sticky top-0 z-10">
-            <tr className="text-muted-foreground border-border/60 border-b text-left">
-              <th className="p-1.5">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleAll}
-                  disabled={busy}
-                  aria-label="Select all positions"
-                  className="accent-primary"
-                />
-              </th>
-              <th className="p-1.5">Symbol</th>
-              <th className="p-1.5">Side</th>
-              <th className="p-1.5 text-right">Size</th>
-              <th className="p-1.5 text-right">Mark</th>
-              <th className="p-1.5">Recommended stop</th>
-              <th className="p-1.5">Recommended take-profit</th>
-              <th className="p-1.5" aria-label="Approve row" />
-            </tr>
-          </thead>
-          <tbody>
-            {offer.rows.map((r) => {
-              const rowKey = `row:${r.symbol}`;
-              return (
-                <tr key={r.symbol} className="border-border/40 border-b last:border-b-0">
-                  <td className="p-1.5">
-                    <input
-                      type="checkbox"
-                      checked={!deselected.has(r.symbol)}
-                      onChange={() => toggleRow(r.symbol)}
-                      disabled={busy}
-                      aria-label={`Select ${r.symbol}`}
-                      className="accent-primary"
-                    />
-                  </td>
-                  <td className="text-foreground p-1.5">{r.symbol}</td>
-                  <td className="text-muted-foreground p-1.5">{side(r.long)}</td>
-                  <td className="text-muted-foreground p-1.5 text-right">{fmtPrice(r.size)}</td>
-                  <td className="text-muted-foreground p-1.5 text-right">{fmtPrice(r.mark)}</td>
-                  <td className="p-1.5">
-                    {r.sl != null ? (
-                      <>
-                        <span className="text-foreground">{fmtPrice(r.sl.price)}</span>{" "}
-                        <span className="text-muted-foreground">
-                          · {r.sl.method}
-                          {r.sl.distancePct != null && ` (${fmtPct(r.sl.distancePct)}%)`}
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-muted-foreground/50">—</span>
+      <div className="space-y-1.5">
+        <div className="border-border/60 max-h-96 overflow-y-auto rounded-md border">
+          <table className="w-full border-collapse font-mono text-[11px]">
+            <thead className="bg-background sticky top-0 z-10">
+              <tr className="text-muted-foreground border-border/60 border-b text-left">
+                <th className="p-1.5">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    disabled={busy}
+                    aria-label="Select all positions"
+                    className="accent-primary"
+                  />
+                </th>
+                <th className="p-1.5">Symbol</th>
+                <th className="p-1.5">Side</th>
+                {/* Notional, not coin count: 0.002 BTC and 5,491 ZORA are not
+                    comparable, and the raw counts inverted the risk order the
+                    backend actually ranked by. */}
+                <th className="p-1.5 text-right">Notional</th>
+                <th className="p-1.5 text-right">Mark</th>
+                <th className="p-1.5">Recommended stop</th>
+                <th className="p-1.5">Recommended take-profit</th>
+                <th className="p-1.5 text-right" title="Reward-to-risk of the stop and first take-profit together">
+                  R:R
+                </th>
+                <th className="p-1.5" aria-label="Approve row" />
+              </tr>
+            </thead>
+            <tbody>
+              {offer.rows.map((r) => {
+                const rowKey = `row:${r.symbol}`;
+                return (
+                  <tr
+                    key={r.symbol}
+                    className={cn(
+                      "border-border/40 hover:bg-muted/20 border-b last:border-b-0",
+                      selected.has(r.symbol) && "bg-primary/5",
                     )}
-                  </td>
-                  <td className="p-1.5">{tpCell(r.tp)}</td>
-                  <td className="p-1.5 text-right whitespace-nowrap">
-                    {armedKey === rowKey ? (
-                      <span className="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void executeRows(r.symbol, [r])}
-                          className="bg-primary text-primary-foreground rounded px-1.5 py-0.5 font-bold uppercase"
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => setArmedKey(null)}
-                          className="border-border text-muted-foreground rounded border px-1.5 py-0.5 uppercase"
-                        >
-                          Cancel
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
+                  >
+                    <td className="p-1.5">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(r.symbol)}
+                        onChange={() => toggleRow(r.symbol)}
                         disabled={busy}
-                        onClick={() => setArmedKey(rowKey)}
-                        className="border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground rounded border px-1.5 py-0.5 uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Approve
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                        aria-label={`Select ${r.symbol}`}
+                        className="accent-primary"
+                      />
+                    </td>
+                    <td className="text-foreground p-1.5">{r.symbol}</td>
+                    <td className="text-muted-foreground p-1.5">{side(r.long)}</td>
+                    <td className="text-foreground p-1.5 text-right tabular-nums">{fmtMoney(r.notional)}</td>
+                    {/* A null `sl` means either "a stop already rests" or "the
+                        engine found no valid level" — assert the fact that
+                        holds for both rather than guessing the reason. */}
+                    <td className="p-1.5">
+                      {r.sl != null ? (
+                        <>
+                          <span className="text-foreground">{fmtPrice(r.sl.price)}</span>{" "}
+                          <span className="text-muted-foreground">
+                            · {human(r.sl.method)}
+                            {r.sl.distancePct != null && ` (${fmtPct(r.sl.distancePct)}%)`}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground/50 text-[10px]">no stop to place</span>
+                      )}
+                    </td>
+                    <td className="p-1.5">{tpCell(r.tp)}</td>
+                    <td className="text-muted-foreground p-1.5 text-right tabular-nums">
+                      {r.riskReward != null ? `${fmtPct(r.riskReward)}R` : "—"}
+                    </td>
+                    <td className="p-1.5 text-right whitespace-nowrap">
+                      {armedKey === rowKey ? (
+                        <span className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void executeRows(r.symbol, [r])}
+                            className="bg-primary text-primary-foreground rounded px-1.5 py-0.5 font-bold uppercase"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => setArmedKey(null)}
+                            className="border-border text-muted-foreground rounded border px-1.5 py-0.5 uppercase"
+                          >
+                            Cancel
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => setArmedKey(rowKey)}
+                          className="border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground rounded border px-1.5 py-0.5 uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Approve
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {/* The viewport is ~8 rows tall; a whole-book selection is not. The
+            count and the exposure stay on screen so the armed action can never
+            describe orders the user cannot see. */}
+        <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
+          <span>
+            {noneSelected
+              ? `Nothing selected — ${offer.rows.length} position${offer.rows.length === 1 ? "" : "s"} available`
+              : `${selectedRows.length} of ${offer.rows.length} selected`}
+          </span>
+          {!noneSelected && <span className="text-foreground">{fmtMoney(selectedNotional)} exposure</span>}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {!allSelected && !noneSelected && !busy && (
+          <Button onClick={toggleAll} size="sm" variant="outline">
+            Select all {offer.rows.length}
+          </Button>
+        )}
         {armedKey === "bulk" ? (
           <span className="flex flex-wrap items-center gap-2">
             <span className="text-foreground font-mono text-[11px]">
-              Place protection for {selectedRows.length} position{selectedRows.length === 1 ? "" : "s"} —{" "}
-              {selectedStops} stop{selectedStops === 1 ? "" : "s"}, {selectedTps} take-profit
-              {selectedTps === 1 ? "" : "s"}?
+              Place {selectedStops} stop{selectedStops === 1 ? "" : "s"} and {selectedTps} take-profit
+              {selectedTps === 1 ? "" : "s"} on {selectedRows.length} position
+              {selectedRows.length === 1 ? "" : "s"} ({fmtMoney(selectedNotional)} exposure)?
             </span>
             <Button disabled={busy} onClick={() => void executeRows("selected", selectedRows)} size="sm">
               Confirm
@@ -463,7 +545,12 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
             ) : (
               <Icon name="shield-alert" className="size-3" />
             )}
-            Approve selected ({selectedRows.length})
+            {/* The consequence belongs on the FIRST click, not only on the
+                arm step — a button reading "Approve selected (183)" told the
+                user nothing about what 183 meant. */}
+            {selectedRows.length === 0
+              ? "Select positions to approve"
+              : `Place ${selectedStops} stop${selectedStops === 1 ? "" : "s"} + ${selectedTps} take-profit${selectedTps === 1 ? "" : "s"}`}
           </Button>
         )}
       </div>
@@ -483,11 +570,17 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
         </div>
       ))}
 
-      <p className="text-muted-foreground font-mono text-[10px] leading-relaxed">
-        Reduce-only: these orders can only close positions, never open or increase one. Levels are computed by the same
-        engine that graded this report and are re-validated against live prices at placement; positions that already
-        carry the protection are left untouched. Nothing is sent until you click Confirm. A whole-book approval runs at
-        up to 120 orders/minute — large books take a few minutes.
+      {/* The safety guarantee was 10px prose below the fold — the most
+          important text on a panel that places real orders. Promoted to a
+          readable line; the rate limit only matters while a run is in
+          flight, so it appears then instead of permanently. */}
+      <p className="text-muted-foreground flex items-start gap-1.5 text-xs">
+        <Icon name="shield-check" className="text-success mt-0.5 size-3.5 shrink-0" />
+        <span>
+          Reduce-only: these orders can only close positions, never open or increase one. Levels come from the same
+          engine that graded this report and are re-validated against live prices at placement.
+          {busy && " Running at up to 120 orders/minute — a large book takes a few minutes."}
+        </span>
       </p>
     </div>
   );

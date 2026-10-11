@@ -59,8 +59,14 @@ export function fmtMoney(n: number): string {
 }
 
 /** Distances, allocations, verdicts: computed in float (0.62000000001), two
- * decimals carry the whole number. */
-const pctFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+ * decimals carry the whole number — and `minimumFractionDigits` is mirrored so
+ * a column of them stays in rhythm (`0.64% · 1.50% · 2.41%`). Dropping
+ * trailing zeros put `1.5%` beside `2.41%` and broke the vertical scan in
+ * every table that prints one. */
+const pctFmt = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 export const fmtPct = (n: number): string => pctFmt.format(n);
 
 /** Money with an explicit direction sign, so a P&L column reads as gains and
