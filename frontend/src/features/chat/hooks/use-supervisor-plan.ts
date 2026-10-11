@@ -60,7 +60,7 @@ interface RunBinanceAuditOptions {
   /** Stop-distance preset: "tight" | "standard" | "wide". */
   risk: string;
   /** How many positions to klines-grade, largest |notional| first (1-500; the
- *  form's "All" = 500 = whole book). */
+   * form's "All" = 500 = whole book). */
   limit: number;
 }
 
