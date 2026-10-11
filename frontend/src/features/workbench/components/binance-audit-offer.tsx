@@ -70,9 +70,20 @@ export interface AuditOffer {
 const num = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
 const str = (x: unknown): string | null => (typeof x === "string" ? x : null);
 
-/** Prices come from the backend as round8 floats — String() drops the
- * trailing zeros (0.2510 → "0.251", 97500 → "97500"). */
-const fmtPrice = (x: number): string => String(x);
+/** The engine emits round8 floats (82468.94556389) — unreadable, and the
+ * digits past the tick size mean nothing to the reader. Group the thousands
+ * and cap at 8 SIGNIFICANT digits: a BTC mark reads "82,985.477" while a
+ * sub-cent alt keeps every digit it has ("0.00702863"). Trailing zeros drop
+ * on their own, so 1036.4904027 reads "1,036.49". Locale is pinned so the
+ * decimal separator matches the percentages below it. */
+const priceFmt = new Intl.NumberFormat("en-US", { maximumSignificantDigits: 8 });
+const fmtPrice = (x: number): string => priceFmt.format(x);
+
+/** Distance/alloc percentages are computed in float (0.62000000001) — two
+ * decimals carry the whole story, and the pinned locale keeps the dot a
+ * decimal point next to the grouped price beside it. */
+const pctFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+const fmtPct = (x: number): string => pctFmt.format(x);
 
 /** Parse the audit step's full output into the offer. The step body is the
  * tool's JSON emit: `summary` counts + echoed `params` + the per-position
@@ -329,7 +340,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
     if (tp == null) return <span className="text-muted-foreground/50">—</span>;
     return (
       <>
-        {tp.rungs.map((g) => `${g.label} ${fmtPrice(g.price)} (${g.allocPct}%)`).join(" · ")}
+        {tp.rungs.map((g) => `${g.label} ${fmtPrice(g.price)} (${fmtPct(g.allocPct)}%)`).join(" · ")}
         {tp.bandExit != null && `${tp.rungs.length > 0 ? " · " : ""}band_exit ${fmtPrice(tp.bandExit.price)}`}
       </>
     );
@@ -397,7 +408,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
                         <span className="text-foreground">{fmtPrice(r.sl.price)}</span>{" "}
                         <span className="text-muted-foreground">
                           · {r.sl.method}
-                          {r.sl.distancePct != null && ` (${r.sl.distancePct}%)`}
+                          {r.sl.distancePct != null && ` (${fmtPct(r.sl.distancePct)}%)`}
                         </span>
                       </>
                     ) : (
