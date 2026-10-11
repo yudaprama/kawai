@@ -29,10 +29,11 @@ const INTERVALS = ["15m", "1h", "4h", "1d", "1w"] as const;
 /** Hits returned per screen (the backend clamps 1-25). */
 const TOP_NS = [5, 10, 25] as const;
 
-/** At most four screens per run — each is a FULL market scan; beyond this the
- * report stops being readable. Mirrors the backend's `SCREENER_MAX_SCREENS`,
- * which rejects an over-sized pick as a plain op error. */
-const MAX_SCREENS = 4;
+/** At most seven screens per run — the full catalog. The single-scan
+ * multi-screen tool evaluates every screen over ONE set of klines, so a
+ * screen beyond the first costs arithmetic only. Mirrors the backend, whose
+ * catalog is the cap. */
+const MAX_SCREENS = SCREENS.length;
 
 export interface CryptoScreenerFormProps {
   disabled?: boolean;
@@ -82,6 +83,16 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
       <div className="flex flex-col gap-3">
         <Field label={`Setups (${screens.length}/${MAX_SCREENS})`}>
           <div className="flex flex-wrap gap-1">
+            <button
+              type="button"
+              disabled={disabled}
+              aria-pressed={screens.length === SCREENS.length}
+              onClick={() => setScreens(screens.length === SCREENS.length ? [SCREENS[0].id] : SCREENS.map((s) => s.id))}
+              title="Scan every setup over one shared market scan"
+              className={chip(screens.length === SCREENS.length)}
+            >
+              All setups
+            </button>
             {SCREENS.map((s) => {
               const active = screens.includes(s.id);
               const blocked = !active && screens.length >= MAX_SCREENS;

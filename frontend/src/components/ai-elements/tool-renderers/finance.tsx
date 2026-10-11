@@ -898,7 +898,13 @@ export function renderCryptoScreener(output: unknown): ReactNode {
   if (!isRecord(d) || !Array.isArray(d.hits)) return null;
   const hits = d.hits.filter(isRecord);
   if (hits.length === 0 && d.scanned === undefined) return null;
-  const screen = str(d.screen) ?? "";
+  // Multi-screen runs carry `screens` (the requested set) and tag every hit
+  // row with its screen; single-screen runs keep the bare `screen` name.
+  const screensList = (Array.isArray(d.screens) ? d.screens : []).filter(
+    (s): s is string => typeof s === "string"
+  );
+  const multi = screensList.length > 1;
+  const screen = str(d.screen) ?? screensList.join(", ");
   const direction = str(d.direction) ?? "";
   const universe = str(d.universe) ?? "";
   const interval = str(d.interval) ?? "";
@@ -907,13 +913,14 @@ export function renderCryptoScreener(output: unknown): ReactNode {
   const partial = d.partial === true;
   const errorsTotal = num(d.errorsTotal) ?? 0;
   const capped = hits.length > SCREENER_ROW_CAP;
+  const perScreen = (Array.isArray(d.perScreen) ? d.perScreen : []).filter(isRecord);
 
   return (
     <TextCard>
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Icon name="scan-search" className="text-primary size-4" />
         <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
-          {screen.replace(/_/g, " ") || "Screener"}
+          {multi ? `${screensList.length} setups · one scan` : screen.replace(/_/g, " ") || "Screener"}
         </span>
         <span
           className={cn(
@@ -942,6 +949,7 @@ export function renderCryptoScreener(output: unknown): ReactNode {
           <table className="w-full border-collapse font-mono text-[11px]">
             <thead className="bg-muted/50 sticky top-0 z-10">
               <tr className="text-muted-foreground border-border/60 border-b text-left">
+                {multi && <th className="px-2 py-1.5 font-medium">Setup</th>}
                 <th className="px-2 py-1.5 font-medium">Symbol</th>
                 <th className="px-2 py-1.5 text-right font-medium">Last</th>
                 <th className="px-2 py-1.5 text-right font-medium">24h</th>
@@ -954,6 +962,7 @@ export function renderCryptoScreener(output: unknown): ReactNode {
             <tbody>
               {(capped ? hits.slice(0, SCREENER_ROW_CAP) : hits).map((h, i) => {
                 const symbol = str(h.symbol) ?? "?";
+                const hitScreen = str(h.screen);
                 const last = num(h.last);
                 const chg = num(h.change24hPct);
                 const score = num(h.score) ?? 0;
@@ -963,10 +972,15 @@ export function renderCryptoScreener(output: unknown): ReactNode {
                 const tone = scoreTone(score);
                 return (
                   <tr
-                    key={`${symbol}-${i}`}
+                    key={`${hitScreen ?? ""}-${symbol}-${i}`}
                     className="border-border/40 hover:bg-muted/30 border-b last:border-b-0"
                     title={reasons.join(" · ")}
                   >
+                    {multi && (
+                      <td className="text-muted-foreground max-w-[9rem] px-2 py-1.5">
+                        <span className="truncate">{hitScreen?.replace(/_/g, " ")}</span>
+                      </td>
+                    )}
                     <td className="text-foreground px-2 py-1.5 font-medium">{symbol}</td>
                     <td className="text-muted-foreground px-2 py-1.5 text-right whitespace-nowrap tabular-nums">
                       {last !== null ? fmtPrice(last) : "—"}
@@ -1010,7 +1024,13 @@ export function renderCryptoScreener(output: unknown): ReactNode {
 
       <Footnote>
         {scanned !== null ? fmtNum(scanned) : "?"} symbols scanned
-        {hitsTotal !== null && hitsTotal > hits.length ? ` · top ${hits.length} of ${fmtNum(hitsTotal)} hits` : ""}
+        {multi
+          ? ` · ${perScreen
+              .map((p) => `${str(p.screen)?.replace(/_/g, " ")}: ${fmtNum(num(p.hits) ?? 0)}`)
+              .join(", ")}`
+          : hitsTotal !== null && hitsTotal > hits.length
+            ? ` · top ${hits.length} of ${fmtNum(hitsTotal)} hits`
+            : ""}
         {errorsTotal > 0 ? ` · ${fmtNum(errorsTotal)} symbol(s) unreachable` : ""}
         {capped ? " · showing the strongest rows" : ""}
       </Footnote>
