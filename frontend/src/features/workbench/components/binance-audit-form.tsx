@@ -59,7 +59,9 @@ export function ownsAuditScope(source: AuditCredentialSource): boolean {
 export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) {
   const [interval, setInterval] = useState<string>("4h");
   const [risk, setRisk] = useState<string>("standard");
-  const [limit, setLimit] = useState<number>(25);
+  // Whole book by default — the placement offer can only list positions this
+  // audit graded, so a capped default would quietly limit the approval table.
+  const [limit, setLimit] = useState<number>(500);
   const [source, setSource] = useState<AuditCredentialSource>(null);
 
   useEffect(() => {

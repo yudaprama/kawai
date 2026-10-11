@@ -4,6 +4,8 @@ import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { call, errText } from "@/lib/api";
 
+import { fmtPct, fmtPrice } from "@/components/ai-elements/tool-renderers/shared";
+
 /** Dispatch key of the audit tool — identifies an audit run's step in both
  * live supervisor state and persisted run records. */
 export const BINANCE_AUDIT_TOOL = "binance_futures_risk_audit";
@@ -69,21 +71,6 @@ export interface AuditOffer {
 
 const num = (x: unknown): number | null => (typeof x === "number" && Number.isFinite(x) ? x : null);
 const str = (x: unknown): string | null => (typeof x === "string" ? x : null);
-
-/** The engine emits round8 floats (82468.94556389) — unreadable, and the
- * digits past the tick size mean nothing to the reader. Group the thousands
- * and cap at 8 SIGNIFICANT digits: a BTC mark reads "82,985.477" while a
- * sub-cent alt keeps every digit it has ("0.00702863"). Trailing zeros drop
- * on their own, so 1036.4904027 reads "1,036.49". Locale is pinned so the
- * decimal separator matches the percentages below it. */
-const priceFmt = new Intl.NumberFormat("en-US", { maximumSignificantDigits: 8 });
-const fmtPrice = (x: number): string => priceFmt.format(x);
-
-/** Distance/alloc percentages are computed in float (0.62000000001) — two
- * decimals carry the whole story, and the pinned locale keeps the dot a
- * decimal point next to the grouped price beside it. */
-const pctFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
-const fmtPct = (x: number): string => pctFmt.format(x);
 
 /** Parse the audit step's full output into the offer. The step body is the
  * tool's JSON emit: `summary` counts + echoed `params` + the per-position

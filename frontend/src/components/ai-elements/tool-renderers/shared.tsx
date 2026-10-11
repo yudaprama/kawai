@@ -31,6 +31,42 @@ export function fmtNum(n: number): string {
   return n.toLocaleString(undefined, { maximumFractionDigits: 6 });
 }
 
+/* ── Numeric formatters ──────────────────────────────────────────────────
+ * The engine emits round8 floats everywhere (mark 82468.94556389, PnL
+ * -1.2268, notional 2097.430683). One convention for all of them, so a
+ * price beside a PnL beside a percentage never disagrees about digits.
+ * Locale is pinned to en-US: the decimal separator has to match the dot in
+ * the percentages printed right next to it. */
+
+/** Price-like values (marks, stop levels, sizes): group thousands, cap at 8
+ * SIGNIFICANT digits — a BTC mark reads "82,985.477" while a sub-cent alt
+ * keeps every digit it has ("0.00702863"). Trailing zeros drop on their own,
+ * so 1036.4904027 reads "1,036.49". */
+const priceFmt = new Intl.NumberFormat("en-US", { maximumSignificantDigits: 8 });
+export const fmtPrice = (n: number): string => priceFmt.format(n);
+
+/** Money amounts (PnL, notional): cents are the whole story. Sub-cent
+ * amounts — alt-coin PnL, dust notionals — would round to a useless "0.00",
+ * so they keep four significant digits instead. */
+const moneyFmt = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const dustFmt = new Intl.NumberFormat("en-US", { maximumSignificantDigits: 4 });
+export function fmtMoney(n: number): string {
+  const abs = Math.abs(n);
+  return abs > 0 && abs < 0.01 ? dustFmt.format(n) : moneyFmt.format(n);
+}
+
+/** Distances, allocations, verdicts: computed in float (0.62000000001), two
+ * decimals carry the whole number. */
+const pctFmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
+export const fmtPct = (n: number): string => pctFmt.format(n);
+
+/** Money with an explicit direction sign, so a P&L column reads as gains and
+ * losses at a glance instead of relying on the eye to catch the minus. */
+export const fmtSigned = (n: number): string => `${n > 0 ? "+" : ""}${fmtMoney(n)}`;
+
 export const TextCard = ({ className, children }: { className?: string; children: ReactNode }) => (
   <div className={cn("not-prose space-y-2", className)}>{children}</div>
 );
@@ -124,14 +160,32 @@ export const ParamChips = ({ names, tone }: { names: string[]; tone: "req" | "op
     </>
   ) : null;
 
-export type Metric = { label: string; value: string; sub?: string; delta?: string; up?: boolean };
+/** `tone` colours the value line for metrics that carry a verdict rather than
+ * a plain count — in a risk report, "183 unprotected" rendered identically to
+ * "183 graded" reads as calm. */
+export type Metric = {
+  label: string;
+  value: string;
+  sub?: string;
+  delta?: string;
+  up?: boolean;
+  tone?: "default" | "danger" | "ok" | "warn";
+};
 
 export const MetricGrid = ({ items }: { items: Metric[] }) => (
   <div className="not-prose grid grid-cols-2 gap-2 sm:grid-cols-3">
     {items.map((m, i) => (
       <div key={i} className="rounded-md border bg-muted/40 p-3">
         <div className="text-muted-foreground text-xs">{m.label}</div>
-        <div className="font-semibold text-lg text-foreground tabular-nums">
+        <div
+          className={cn(
+            "font-semibold text-lg tabular-nums",
+            m.tone === "danger" && "text-destructive",
+            m.tone === "ok" && "text-success",
+            m.tone === "warn" && "text-warning",
+            !m.tone || m.tone === "default" ? "text-foreground" : undefined
+          )}
+        >
           {m.value}
         </div>
         {m.sub && <div className="text-muted-foreground text-[11px]">{m.sub}</div>}
