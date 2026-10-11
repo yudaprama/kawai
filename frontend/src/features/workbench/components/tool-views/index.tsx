@@ -49,6 +49,7 @@ import {
   renderBinanceOpenOrders,
   renderBinanceTa,
   renderCryptoScreener,
+  renderCryptoScreenerData,
 } from "@/components/ai-elements/tool-renderers/finance";
 import {
   renderDataChart,
@@ -282,6 +283,7 @@ const registry: Record<string, StepView> = {
   binance_futures_positions: (p) => renderBinanceFuturesPositions(p),
   binance_futures_risk_audit: (p) => renderBinanceFuturesRiskAudit(p),
   crypto_screener: (p) => renderCryptoScreener(p),
+  crypto_screener_data: (p) => renderCryptoScreenerData(p),
   // binance stocks — bid/ask quote + symbol metadata (records, no dedicated view yet)
   stock_quote: (p) => (isRecord(p) ? genericKv(p) : null),
   stock_info: (p) => (isRecord(p) ? genericKv(p) : null),

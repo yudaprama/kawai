@@ -256,15 +256,18 @@ self-bounded (12 runs/min, 6-way parallel klines, 45s deadline →
   `stop_advice`: seven shipped (`oversold_rebound`, `macd_golden_cross`,
   `macd_death_cross`, `midband_reclaim`, `uptrend_pullback`, `squeeze_watch`,
   `rsi_overbought_uptrend`), each unit-tested hit/miss/gates without network.
-- **The fetches are shared** by a process-wide klines cache (market+symbol+
-  interval, TTL 90s — long enough to cover a whole parallel wave, short
-  enough that the still-forming last candle never goes materially stale):
-  a fixed plan of N per-screen steps costs ~one scan of fetches.
+- **The fetches are shared** by `crypto_screener_data` — the phase-1 tool:
+  it resolves the universe, pulls every candle ONCE into a process-wide
+  klines cache (market+symbol+interval, TTL 90s — long enough to cover the
+  whole phase-2 wave, short enough that the still-forming last candle never
+  goes materially stale), and emits `universeData` as its binding contract.
 - **The fixed workflow** (`screener_plan.rs`, op `run_crypto_screener`, both
-  wrappers, the "Crypto Screener" landing template) fires ONE PARALLEL step
-  per selected screen — the run view renders a per-screen report each — and
-  the built-in deliverable writer turns the hit lists into one summary,
-  cross-screen symbols called out first. No planning round, and NO
+  wrappers, the "Crypto Screener" landing template) is TWO PHASES: one
+  `crypto_screener_data` step, then ONE PARALLEL `crypto_screener` step per
+  selected screen bound to its `universeData` (`fromStep` — the progress
+  rail renders the phase split) — the run view shows a per-screen report
+  each; the built-in deliverable writer turns the hit lists into one
+  summary, cross-screen symbols called out first. No planning round, and NO
   credential gate: the pipeline never touches a signed endpoint.
 
 ## 5b. Monad (`builtin.monad`) — `crates/toolsets/monad-tools` (feature `monad`)

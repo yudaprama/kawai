@@ -869,6 +869,55 @@ function FuturesRiskAuditCard({ data: d }: { data: Record<string, unknown> }) {
   );
 }
 
+// ── crypto_screener_data ────────────────────────────────────────────────────
+
+/**
+ * crypto_screener_data →
+ * { kind: "screener_data", universe, interval, scanned, universeData:
+ *   [{symbol, last, change24hPct}], universeTotal, partial, errors,
+ *   errorsTotal }.
+ *
+ * Phase 1 of the phased pipeline: its PRODUCT is the warmed candle cache —
+ * the report only needs to say what got warmed and whether the phase is
+ * partial, never dump the rows (the per-screen reports in phase 2 render
+ * them).
+ */
+export function renderCryptoScreenerData(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || d.kind !== "screener_data") return null;
+  const rows = Array.isArray(d.universeData) ? d.universeData.length : null;
+  const scanned = num(d.scanned);
+  const universe = str(d.universe) ?? "";
+  const interval = str(d.interval) ?? "";
+  const partial = d.partial === true;
+  const errorsTotal = num(d.errorsTotal) ?? 0;
+  return (
+    <TextCard>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Icon name="database" className="text-primary size-4" />
+        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+          Market data
+        </span>
+        <span className="text-muted-foreground font-mono text-[10px]">
+          {universe} · {interval}
+        </span>
+        {partial && (
+          <span className="border-warning/30 bg-warning/10 text-warning rounded-sm border px-1 py-px font-mono text-[10px] uppercase">
+            partial
+          </span>
+        )}
+      </div>
+      <p className="text-muted-foreground font-mono text-[11px]">
+        Fetched candles for {rows !== null ? fmtNum(rows) : scanned !== null ? fmtNum(scanned) : "?"} symbol
+        {(rows ?? scanned ?? 0) === 1 ? "" : "s"} — the per-screen reports below reuse this data (no refetch).
+      </p>
+      {errorsTotal > 0 && (
+        <Footnote>{fmtNum(errorsTotal)} symbol(s) unreachable during the fetch.</Footnote>
+      )}
+    </TextCard>
+  );
+}
+
 // ── crypto_screener ─────────────────────────────────────────────────────────
 
 /**
