@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Switch } from "@/components/ui/switch";
-import { call, errText } from "@/lib/api";
+import { call } from "@/lib/api";
 
 import type { CredentialProvider } from "../types";
 
@@ -58,131 +58,10 @@ function RiskGuardSetting() {
   );
 }
 
-/** Futures trading consent state from `binance_trading_status`. */
-interface FuturesTradingStatus {
-  hasOwnKeys: boolean;
-  consented: boolean;
-}
-
-/** The one switch that unlocks the WRITING futures tools (place reduce-only
- *  SL/TP, cancel protective order). Everything else stays read-only. The
- *  consent is bound to the CURRENT key pair — rotating the keys flips it
- *  back off and the next enable re-asks. Arming requires typing ENABLE, both
- *  in this UI and again server-side. */
-function FuturesTradingConsent() {
-  const [status, setStatus] = useState<FuturesTradingStatus | null>(null);
-  const [arming, setArming] = useState(false);
-  const [confirmText, setConfirmText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      setStatus(await call<FuturesTradingStatus>("binance_trading_status"));
-    } catch {
-      setStatus(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const disable = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await call("binance_trading_disable");
-      setStatus((s) => (s ? { ...s, consented: false } : s));
-      setArming(false);
-      setConfirmText("");
-    } catch (e) {
-      setError(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const enable = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await call("binance_trading_enable", { confirm: confirmText });
-      setStatus((s) => (s ? { ...s, consented: true } : s));
-      setArming(false);
-      setConfirmText("");
-    } catch (e) {
-      setError(errText(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const consented = status?.consented ?? false;
-  return (
-    <div className="bg-muted/30 rounded-md border p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="space-y-0.5">
-          <div className="text-sm font-medium">Futures trading</div>
-          <p className="text-muted-foreground text-xs">
-            {consented
-              ? "AKTIF — agent boleh memasang stop-loss / take-profit reduce-only, selalu dengan konfirmasi per order."
-              : status?.hasOwnKeys
-                ? "Izinkan agent memasang stop-loss / take-profit reduce-only di akun futures Anda (butuh API key dengan izin Enable Futures). Setiap order tetap minta konfirmasi."
-                : "Tambahkan API key Anda sendiri (izin Enable Futures, IP-restricted) dulu."}
-          </p>
-        </div>
-        <Switch
-          checked={consented}
-          disabled={busy || status === null || !status.hasOwnKeys}
-          onCheckedChange={(v) => (v ? setArming(true) : void disable())}
-        />
-      </div>
-      {arming && !consented && (
-        <div className="mt-3 space-y-2">
-          <input
-            className="w-full rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none"
-            placeholder="ketik ENABLE untuk mengaktifkan"
-            value={confirmText}
-            onChange={(e) => setConfirmText(e.target.value)}
-          />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={busy || confirmText.trim() !== "ENABLE"}
-              onClick={() => void enable()}
-              className="rounded-md bg-destructive px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
-            >
-              Aktifkan
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setArming(false);
-                setConfirmText("");
-              }}
-              className="text-muted-foreground rounded-md px-3 py-1 text-xs hover:underline"
-            >
-              Batal
-            </button>
-          </div>
-        </div>
-      )}
-      {error && (
-        <p className="text-destructive mt-2 text-xs" role="alert">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
-
 /**
- * Binance credentials — the user's OWN read-only, IP-restricted keys, stored
- * in the LOCAL database only. Every signed Binance tool falls back to the
- * product's baked pair when absent; the Futures Risk Audit does not (it grades
- * the user's own portfolio, so it requires `source === "user"`).
+ * Binance credentials — the user's OWN keys, stored in the LOCAL database
+ * only. Saving a pair automatically arms it for protective order placement
+ * (consent follows the key); the audit still needs `source === "user"`.
  */
 export const binanceCredential: CredentialProvider = {
   id: "binance",
@@ -197,10 +76,5 @@ export const binanceCredential: CredentialProvider = {
     { arg: "apiKey", labelKey: "credentials.apiKey", autoComplete: "off" },
     { arg: "apiSecret", labelKey: "credentials.apiSecret", autoComplete: "new-password" },
   ],
-  extra: (
-    <>
-      <FuturesTradingConsent />
-      <RiskGuardSetting />
-    </>
-  ),
+  extra: <RiskGuardSetting />,
 };

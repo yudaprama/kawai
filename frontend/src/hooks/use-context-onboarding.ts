@@ -8,7 +8,7 @@ import { isTabularExt } from "@/lib/extensions";
  * Empty-data onboarding policy for the analytics agent. Shows the "No data
  * connected yet" card only while the user sits on an empty session with no
  * tabular files AND no SQL profiles. Owns the profile polling; App supplies
- * the shell actions (file import, open the Databases asset page).
+ * the shell actions (file import, open the Credentials asset page).
  */
 export function useContextOnboarding(args: {
   agent: Pick<AgentInfo, "id" | "tools"> | null;
@@ -17,10 +17,10 @@ export function useContextOnboarding(args: {
   files: KnowledgeFileInfo[];
   /** File-import action offered by the card. */
   importFiles: () => void;
-  /** "Connect database" CTA — opens the Databases asset page. */
-  openSources: () => void;
+  /** "Connect database" CTA — opens the Credentials asset page. */
+  openCredentials: () => void;
 }): { onboarding: ContextOnboarding | null } {
-  const { agent, inSession, knowledgeLoaded, files, importFiles, openSources } = args;
+  const { agent, inSession, knowledgeLoaded, files, importFiles, openCredentials } = args;
 
   const relevant = useMemo(() => Boolean(agent?.tools) && agent?.id === "builtin.analytics", [agent]);
 
@@ -32,7 +32,7 @@ export function useContextOnboarding(args: {
   const profileCount = profilesOp.data?.length ?? null;
 
   const onImport = useCallback(() => importFiles(), [importFiles]);
-  const onConnect = useCallback(() => openSources(), [openSources]);
+  const onConnect = useCallback(() => openCredentials(), [openCredentials]);
 
   const hasTabular = useMemo(() => files.some((f) => isTabularExt(f.ext)), [files]);
 

@@ -5,16 +5,7 @@ import type { TranslationKey } from "@/lib/i18n";
  *  modes in the global bar (`app/modes.ts`), reachable from every screen, so
  *  listing "Generator" here would give one destination a second, staler name
  *  ("civitai image gen") competing with the mode label beside it. */
-export type AssetViewId =
-  | "wiki"
-  | "code"
-  | "skills"
-  | "memory"
-  | "sources"
-  | "wallet"
-  | "topup"
-  | "connections"
-  | "credentials";
+export type AssetViewId = "wiki" | "code" | "skills" | "memory" | "wallet" | "topup" | "connections" | "credentials";
 
 export interface AssetNavEntry {
   id: AssetViewId;
@@ -33,7 +24,6 @@ export const ASSET_NAV: AssetNavEntry[] = [
   { id: "code", labelKey: "assetNav.code", subtitle: "code graph", icon: "code-xml" },
   { id: "skills", labelKey: "assetNav.skills", subtitle: "agent skills", icon: "wrench" },
   { id: "memory", labelKey: "assetNav.memory", subtitle: "chat memory", icon: "brain" },
-  { id: "sources", labelKey: "assetNav.databases", subtitle: "SQL sources", icon: "database" },
   { id: "connections", labelKey: "assetNav.connections", subtitle: "app connections", icon: "plug-zap" },
   { id: "credentials", labelKey: "assetNav.credentials", subtitle: "API keys", icon: "key" },
 ];

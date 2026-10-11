@@ -2,7 +2,6 @@ import { Icon } from "@/components/shared/icon";
 import { useEffect, useRef, useState } from "react";
 import { FileIcon } from "@/components/shared/file-icon";
 import { KnowledgeFileRow, KnowledgeSectionLabel } from "@/features/knowledge/components/knowledge-file-row";
-import { SqlProfilesSection } from "@/features/analytics/components/sql-profiles-section";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,8 +12,7 @@ import { KnowledgeLibrary } from "@/features/knowledge/components/knowledge-libr
 /**
  * The right context pane: per-agent tab composition arrives via the registry
  * (`contextTabsFor`) — this shell only renders whatever tabs it is given.
- * Office/analytics share the file lists (one store backs both); analytics
- * additionally gets the SQL sources tab its tools are built on.
+ * Office/analytics/presentation share the file lists (one store backs them).
  */
 export function ContextPanel({
   tabs,
@@ -45,9 +43,8 @@ export function ContextPanel({
   importing: boolean;
   linking: boolean;
   confirmDeleteId: string | null;
-  /** Imperative tab switch (e.g. the onboarding's "Connect database" CTA) —
-   *  increment `n` to re-fire for the same tab; ignored when the agent's
-   *  composition has no such tab. */
+  /** Imperative tab switch — increment `n` to re-fire for the same tab;
+   *  ignored when the agent's composition has no such tab. */
   focus?: { tab: ContextTabId; n: number };
   onAddFiles: () => void;
   onAddLink: () => void;
@@ -126,9 +123,6 @@ export function ContextPanel({
                   </TabsTrigger>
                 ))}
               </TabsList>
-              <TabsContent value="sources">
-                <SqlProfilesSection />
-              </TabsContent>
               <TabsContent value="session">
                 {sessionId != null && (
                   <div>

@@ -21,6 +21,7 @@ import { fmtDateUS } from "@/features/workbench/components/tool-views/format";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { fmtDuration, ReviewActions, settledCount } from "./progress-rail";
+import { auditRunStepId, BinanceAuditOffer } from "./binance-audit-offer";
 
 /** The run's deck artifact, if any — the deliverable hero. Set DIRECTLY from
  *  the planCompleted callback / restored record (workbench.deck) — not via
@@ -431,6 +432,9 @@ export function PastRunCanvas({
   setDiscardArmed: (v: boolean) => void;
 }) {
   const isDeliverable = doc === "final";
+  /** The audit step when this run IS a futures risk audit — keys the
+   * post-report placement offer. */
+  const pastAuditStepId = auditRunStepId(run.steps);
   /** Header label: the step's task (agentName), or the tool — never the raw
    *  step id. Same derivation the active canvas uses. */
   const docStep = (run.steps ?? []).find((s) => s.stepId === doc);
@@ -557,6 +561,17 @@ export function PastRunCanvas({
             stepId={doc}
             tool={stepTool}
             onAsk={onAsk ? (stepId, question) => onAsk(stepId, question, run.planKey ?? "") : undefined}
+          />
+        )}
+
+        {/* Post-audit placement offer: the audit proposed, the user approves
+            here. Renders under the report of a COMPLETED audit run only. */}
+        {isDeliverable && run.status === "completed" && pastAuditStepId != null && (
+          <BinanceAuditOffer
+            fetcher={loadFullOutput}
+            planKey={run.planKey ?? ""}
+            sessionId={sessionId}
+            stepId={pastAuditStepId}
           />
         )}
       </div>
@@ -779,6 +794,12 @@ export function DeliverableViewer({
   // session's newest run renders here too, and the supervisor may be empty
   // or hold a different run's state.
   const runRecord = workbench.runs[runIndex];
+  /** The audit step when the shown run IS a futures risk audit — keys the
+   * post-report placement offer. Live state wins (it is authoritative for
+   * the run it holds); the persisted record covers a reopened session. */
+  const liveAuditStepId = unseeded
+    ? auditRunStepId(runRecord?.steps)
+    : (auditRunStepId(supervisor.steps) ?? auditRunStepId(runRecord?.steps));
   const step =
     reports.find((r) => r.stepId === effective) ??
     (runRecord?.steps ?? []).find(
@@ -952,6 +973,17 @@ export function DeliverableViewer({
             markdown={supervisor.finalOutput}
             sessionId={workbench.sessionId}
             showExport={supervisor.status === "completed"}
+          />
+        )}
+        {/* Post-audit placement offer: the audit proposed, the user approves
+            here — one click each for stops and take-profits, confirmed before
+            anything is sent. Renders only under a COMPLETED audit run. */}
+        {effective === "final" && !unseeded && supervisor.status === "completed" && liveAuditStepId != null && (
+          <BinanceAuditOffer
+            fetcher={workbench.loadFullOutput}
+            planKey={runRecord?.planKey ?? supervisor.planKey ?? ""}
+            sessionId={workbench.sessionId}
+            stepId={liveAuditStepId}
           />
         )}
         {/* Failed step with no output: show its WHY instead of an empty body

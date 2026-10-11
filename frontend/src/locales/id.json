@@ -258,7 +258,6 @@
     "skills": "Skill",
     "connections": "Koneksi",
     "memory": "Memori",
-    "databases": "Database",
     "wallet": "Dompet",
     "topUp": "Isi Saldo",
     "backToWorkbench": "Kembali ke Workbench",
@@ -1114,7 +1113,8 @@
   },
   "credentials": {
     "title": "Kredensial",
-    "subtitle": "API key tersimpan di perangkat ini",
+    "subtitle": "Kunci API dan database terhubung tersimpan di perangkat ini",
+    "apiKeysSection": "Kunci API",
     "apiKey": "API key",
     "apiSecret": "API secret",
     "save": "Simpan kunci",
@@ -1128,7 +1128,7 @@
     "binance": {
       "title": "Binance",
       "subtitle": "kunci futures & pasar Anda",
-      "guide": "Kunci API Binance, dibatasi ke IP Anda; hanya tersimpan di database lokal Anda. Kunci READ-ONLY (Enable Reading) mencakup semuanya kecuali pemasangan order. Agar agent bisa memasang stop-loss / take-profit, kunci perlu izin ENABLE FUTURES — dan aktifkan toggle Futures trading di bawah. Setiap order tetap minta konfirmasi Anda dulu."
+      "guide": "Kunci API Binance, dibatasi ke IP Anda; hanya tersimpan di database lokal Anda. Kunci READ-ONLY (Enable Reading) mencakup semuanya kecuali pemasangan order. Agar agent bisa memasang stop-loss / take-profit, kunci perlu izin ENABLE FUTURES. Setiap order tetap minta konfirmasi Anda dulu."
     }
   }
 }

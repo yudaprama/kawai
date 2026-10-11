@@ -8,7 +8,7 @@ import type { AgentInfo } from "@/lib/api";
  */
 
 /** Ids of the tab contents rendered by ContextPanel (context-panel.tsx). */
-export type ContextTabId = "session" | "library" | "sources";
+export type ContextTabId = "session" | "library";
 
 export interface ContextTabSpec {
   id: ContextTabId;
@@ -24,12 +24,11 @@ const CONTEXT_TABS: Record<string, ContextTabSpec[]> = {
     { id: "session", label: "In this session" },
     { id: "library", label: "Library" },
   ],
-  // Analytics adds the SQL data sources its tools are built on. The file
-  // lists themselves stay shared with office — one store backs both.
+  // Analytics shares office's file lists — one store backs both. Its SQL
+  // data sources (sql_profiles) are managed on the Credentials asset page.
   "builtin.analytics": [
     { id: "session", label: "In this session" },
     { id: "library", label: "Library" },
-    { id: "sources", label: "Databases" },
   ],
 };
 

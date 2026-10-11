@@ -20,7 +20,6 @@ import { MemoryAssetPage } from "@/features/memory/components/memory-page";
 import { SkillsAssetPage } from "@/features/skills/components/skills-page";
 import { ConnectionsPage } from "@/features/connector/components/connections-page";
 import { WikiAssetPage } from "@/features/assets/pages/wiki-page";
-import { SqlSourcesAssetPage } from "@/features/assets/pages/sql-sources-page";
 import { WalletPage } from "@/features/wallet/components/wallet-page";
 import { CredentialsPage } from "@/features/credentials/credentials-page";
 import { OPEN_TOPUP_EVENT } from "@/features/topup/open-topup";
@@ -105,9 +104,6 @@ export default function App() {
   const busy = status === "submitted" || status === "streaming";
 
   const ka = useKnowledgeActions(chat);
-
-  // Empty-data onboarding (analytics only) — the "Connect database" CTA opens
-  // the Databases asset page; import rides the knowledge file dialog.
 
   // Preview bridge: tool cards inside the vendored renderer tree emit an
   // event instead of threading app callbacks; resolve to a knowledge row
@@ -262,7 +258,8 @@ export default function App() {
   }
 
   // Asset workspace — replaces the center pane while an asset is open (Wiki =
-  // knowledge base, Databases = SQL sources, Memory = raw conversations).
+  // knowledge base, Memory = raw conversations, Credentials = API keys and
+  // connected databases).
   // Data comes from the same app state the workbench uses, so switching never
   // re-fetches or resets a run. Media GENERATION is not an asset — it is a
   // mode, so it renders from `mode` below, not from this switch.
@@ -291,8 +288,6 @@ export default function App() {
         sessionsError={chat.sessionsError}
         sessionsLoading={chat.sessionsLoading}
       />
-    ) : view === "sources" ? (
-      <SqlSourcesAssetPage />
     ) : view === "skills" ? (
       <SkillsAssetPage />
     ) : view === "connections" ? (

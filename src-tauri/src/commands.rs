@@ -2380,6 +2380,58 @@ pub async fn binance_trading_disable(
     logic::binance_credentials::binance_trading_disable(&user_id).await
 }
 
+// ── Direct protective-order placement (post-audit offer) ─────────────────
+// The audit's offer buttons forward the audit's OWN presets — the click IS
+// the confirmation, so no planner round and no extra gate. Every guard
+// (reduce-only, trigger side/distance/liquidation, idempotent client id)
+// lives inside the engines; levels are engine-computed, never typed.
+
+/// One click, whole book: the engine grades every naked USDⓈ-M position
+/// (same policy as the audit) and places the recommended reduce-only stop.
+#[tauri::command]
+pub async fn binance_auto_protect_positions(
+    limit: Option<usize>,
+    interval: Option<String>,
+    risk: Option<String>,
+    // Explicit approval scope: the offer table passes the symbols the user
+    // approved. Absent = the whole naked book (the old whole-book action).
+    symbols: Option<Vec<String>>,
+    session: State<'_, Session>,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    logic::binance_trade::binance_auto_protect_positions(
+        &user_id,
+        interval.as_deref().unwrap_or("4h"),
+        risk.as_deref().unwrap_or("standard"),
+        limit.unwrap_or(25),
+        symbols,
+    )
+    .await
+}
+
+/// One click, whole book: the engine computes the advised take-profit ladder
+/// for every USDⓈ-M position without one and places the rungs as reduce-only
+/// orders.
+#[tauri::command]
+pub async fn binance_auto_take_profit_positions(
+    limit: Option<usize>,
+    interval: Option<String>,
+    style: Option<String>,
+    // Explicit approval scope — same contract as the stop batch.
+    symbols: Option<Vec<String>>,
+    session: State<'_, Session>,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    logic::binance_trade::binance_auto_take_profit_positions(
+        &user_id,
+        interval.as_deref().unwrap_or("4h"),
+        style.as_deref().unwrap_or("standard"),
+        limit.unwrap_or(25),
+        symbols,
+    )
+    .await
+}
+
 #[tauri::command]
 pub async fn risk_guard_status(
     session: State<'_, Session>,

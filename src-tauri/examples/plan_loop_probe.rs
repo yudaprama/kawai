@@ -18,6 +18,12 @@ fn main() {
 
 #[cfg(feature = "litert")]
 async fn run() -> Result<(), String> {
+    // Read the SAME catalog replica the desktop app reads (tauri app data
+    // dir), not the headless /tmp default — otherwise this probe searches a
+    // never-seeded replica and "proves" a problem the app does not have.
+    if let Some(dir) = kawai_paths::tauri_app_data_dir(kawai_paths::APP_IDENTIFIER) {
+        kawai_paths::set_data_root(dir);
+    }
     let goal = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "buatkan deck presentasi penjualan dari data analytics".to_string());
@@ -32,7 +38,14 @@ async fn run() -> Result<(), String> {
         &goal,
         None, // dev probe — no billing identity, so the balance gate is off
         &registry,
-        |_| {},
+        |event| {
+            // Diagnostic: what each planning search round found — separates
+            // "planner never saw the tool" from "saw it and chose something
+            // else".
+            if let kawai_events::SupervisorEvent::PlanningToolSearch { queries, tools } = &event {
+                println!("[probe] search {queries:?} -> {tools:?}");
+            }
+        },
     )
     .await?;
     let elapsed = started.elapsed();

@@ -2638,6 +2638,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/binance_trading_status", post(binance_trading_status_handler))
         .route("/api/binance_trading_enable", post(binance_trading_enable_handler))
         .route("/api/binance_trading_disable", post(binance_trading_disable_handler))
+        .route("/api/binance_auto_protect_positions", post(binance_auto_protect_positions_handler))
+        .route("/api/binance_auto_take_profit_positions", post(binance_auto_take_profit_positions_handler))
         .route("/api/risk_guard_status", post(risk_guard_status_handler))
         .route("/api/risk_guard_set", post(risk_guard_set_handler))
         .route("/api/codegraph_init", post(codegraph_init_handler));
@@ -3284,6 +3286,58 @@ async fn binance_trading_disable_handler(
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+
+// ── Direct protective-order placement ────────────────────────────────────
+// Typed values from the form; the click is the confirmation. Guards live in
+// the tools. A failed placement returns the tool's guidance error as-is.
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BinanceAutoProtectRequest {
+    limit: Option<usize>,
+    interval: Option<String>,
+    risk: Option<String>,
+    symbols: Option<Vec<String>>,
+}
+async fn binance_auto_protect_positions_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<BinanceAutoProtectRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::binance_trade::binance_auto_protect_positions(
+        &user_id,
+        req.interval.as_deref().unwrap_or("4h"),
+        req.risk.as_deref().unwrap_or("standard"),
+        req.limit.unwrap_or(25),
+        req.symbols,
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BinanceAutoTakeProfitRequest {
+    limit: Option<usize>,
+    interval: Option<String>,
+    style: Option<String>,
+    symbols: Option<Vec<String>>,
+}
+async fn binance_auto_take_profit_positions_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<BinanceAutoTakeProfitRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::binance_trade::binance_auto_take_profit_positions(
+        &user_id,
+        req.interval.as_deref().unwrap_or("4h"),
+        req.style.as_deref().unwrap_or("standard"),
+        req.limit.unwrap_or(25),
+        req.symbols,
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))
 }
 
 // ── Risk guard toggle (Settings → Binance API) ─────────────────────────────

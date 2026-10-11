@@ -65,6 +65,9 @@ export function CredentialCard({ provider }: { provider: CredentialProvider }) {
       setValues({});
       setNotice(t("credentials.saved"));
       await refresh();
+      // Companion cards (e.g. Binance futures-trading consent) re-read their
+      // own status when the stored pair changes.
+      window.dispatchEvent(new CustomEvent("kawai-credentials-changed", { detail: { id: provider.id } }));
     } catch (e) {
       setError(errText(e));
     } finally {
@@ -80,6 +83,7 @@ export function CredentialCard({ provider }: { provider: CredentialProvider }) {
       await call(provider.deleteOp);
       setNotice(t("credentials.removed"));
       await refresh();
+      window.dispatchEvent(new CustomEvent("kawai-credentials-changed", { detail: { id: provider.id } }));
     } catch (e) {
       setError(errText(e));
     } finally {

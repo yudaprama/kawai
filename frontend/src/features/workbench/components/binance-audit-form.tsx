@@ -15,9 +15,15 @@ const RISKS = [
   { id: "wide", label: "Wide", hint: "3.5× ATR" },
 ] as const;
 
-/** How many positions to grade. The audit caps at 50 and takes the largest
- * |notional| first, so a lower number trades detail for a shorter run. */
-const LIMITS = [10, 25, 50] as const;
+/** How many positions to grade. "All" passes the backend's max (500) — the
+ * audit grades the whole book, largest |notional| first, so the placement
+ * offer can list every unprotected position. */
+const LIMITS: { value: number; label?: string }[] = [
+  { value: 10 },
+  { value: 25 },
+  { value: 50 },
+  { value: 500, label: "All" },
+];
 
 export interface BinanceAuditFormProps {
   disabled?: boolean;
@@ -46,9 +52,10 @@ export function ownsAuditScope(source: AuditCredentialSource): boolean {
  * supervisor scheduler, then the built-in deliverable writer. No planning
  * round: the audit is already deterministic Rust.
  *
- * The form reads the credential source so a user without keys — or relying on
- * the product's built-in pair — learns it HERE, next to the button that would
- * otherwise produce a portfolio report that isn't about them. */
+ * READ-ONLY BY DESIGN: this form never places an order. Once the report
+ * lands, the run view offers one-click placement of the recommended stops
+ * and take-profits (BinanceAuditOffer) — the audit proposes, the user
+ * approves there. */
 export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) {
   const [interval, setInterval] = useState<string>("4h");
   const [risk, setRisk] = useState<string>("standard");
@@ -132,16 +139,17 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
         </Field>
 
         <Field label="Positions graded">
-          {LIMITS.map((n) => (
+          {LIMITS.map((l) => (
             <button
-              key={n}
+              key={l.value}
               type="button"
               disabled={disabled}
-              aria-pressed={limit === n}
-              onClick={() => setLimit(n)}
-              className={chip(limit === n)}
+              aria-pressed={limit === l.value}
+              onClick={() => setLimit(l.value)}
+              title={l.label === "All" ? "Grade the whole book" : undefined}
+              className={chip(limit === l.value)}
             >
-              {n}
+              {l.label ?? l.value}
             </button>
           ))}
         </Field>
@@ -162,8 +170,8 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
 
       {source === "baked" && (
         <p className="text-destructive mt-3 font-mono text-[10px] leading-relaxed" role="alert">
-          The audit grades YOUR open positions, so it needs your own Binance keys. Add one (IP-restricted) in
-          Settings → Credentials.
+          The audit grades YOUR open positions, so it needs your own Binance keys. Add one (IP-restricted) in Settings →
+          Credentials.
         </p>
       )}
       {source === "none" && (
@@ -174,7 +182,8 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
       )}
       <p className="text-muted-foreground mt-3 font-mono text-[10px] leading-relaxed">
         Read-only: syncs your positions and resting orders, grades every stop, checks TP coverage, writes the report.
-        Never touches your orders — placing one is a separate opt-in that asks you first.
+        The audit itself never places, modifies, or cancels an order — after the report lands, the run view offers
+        one-click placement of the recommended stops and take-profits, and nothing is sent until you approve it there.
       </p>
     </div>
   );
@@ -183,8 +192,8 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">{label}</span>
-      <div className="flex flex-wrap gap-1.5">{children}</div>
+      <span className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">{label}</span>
+      <div className="flex items-center gap-1">{children}</div>
     </div>
   );
 }

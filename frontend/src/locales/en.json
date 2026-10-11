@@ -258,7 +258,6 @@
     "skills": "Skills",
     "connections": "Connections",
     "memory": "Memory",
-    "databases": "Databases",
     "wallet": "Wallet",
     "topUp": "Top Up",
     "backToWorkbench": "Back to Workbench",
@@ -1114,7 +1113,8 @@
   },
   "credentials": {
     "title": "Credentials",
-    "subtitle": "API keys stored on this device",
+    "subtitle": "API keys and connected databases stored on this device",
+    "apiKeysSection": "API keys",
     "apiKey": "API key",
     "apiSecret": "API secret",
     "save": "Save keys",
@@ -1128,7 +1128,7 @@
     "binance": {
       "title": "Binance",
       "subtitle": "your futures & market keys",
-      "guide": "Binance API key, restricted to your IP; stored in your local database only. A READ-ONLY key (Enable Reading) covers everything except placing orders. To let the agent place protective stop-loss / take-profit orders, the key needs the ENABLE FUTURES permission — and turn on the Futures trading toggle below. Every order still asks you first."
+      "guide": "Binance API key, restricted to your IP; stored in your local database only. A READ-ONLY key (Enable Reading) covers everything except placing orders. To let the agent place protective stop-loss / take-profit orders, the key needs the ENABLE FUTURES permission. Every order still asks you first."
     }
   }
 }
