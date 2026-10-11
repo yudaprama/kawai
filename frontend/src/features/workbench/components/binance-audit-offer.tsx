@@ -316,6 +316,12 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
   /** One entry per executed approval, newest last. */
   const [log, setLog] = useState<{ id: number; label: string; raw?: string; error?: string }[]>([]);
   const logIdRef = useRef(0);
+  /** Find-a-position. A 182-row book in a 24rem scroll box is unsearchable by
+   * scrolling, and hunting for one symbol is the most common thing a user does
+   * here. Filters the VISIBLE list only — it never touches the selection. */
+  const [query, setQuery] = useState("");
+  /** Narrow by what the position is MISSING — the actual decision axis. */
+  const [gap, setGap] = useState<"all" | "noStop" | "noTp">("all");
 
   useEffect(() => {
     let alive = true;
@@ -348,6 +354,22 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
   // The scroll viewport is ~8 rows; the selection can be 183. Without this the
   // user arms a whole-book placement against a viewport showing 4% of it.
   const selectedNotional = selectedRows.reduce((sum, r) => sum + r.notional, 0);
+
+  /** Visible rows: symbol search + missing-protection scope. Filtering narrows
+   * the VIEW only — the selection and the counts beside the table always stay
+   * in terms of the whole book, so a filter can never shrink what an approval
+   * would place. */
+  const q = query.trim().toUpperCase();
+  const matching = offer.rows.filter((r) => {
+    if (gap === "noStop" && r.sl != null) return false;
+    if (gap === "noTp" && r.tp != null) return false;
+    return q.length === 0 || r.symbol.includes(q);
+  });
+  const filtered = matching.length !== offer.rows.length;
+  const selectedInView = matching.filter((r) => selected.has(r.symbol)).length;
+  /** Select all MATCHING — the only scope a user reading a filtered list can
+   * reason about. Never silently widen to the whole book. */
+  const selectMatching = () => setSelected(new Set(matching.map((r) => r.symbol)));
 
   /** One approval = up to two op calls (stops, then TPs), each scoped to the
    * approved symbol list. Level cap 500 = the backend's AUDIT_LIMIT_MAX, so
@@ -429,6 +451,54 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
       </p>
 
       <div className="space-y-1.5">
+        {/* 182 rows in a scroll box is a haystack. Search + a gap filter are
+            how one position gets found; neither touches the selection. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Cari simbol… (mis. BTC)"
+            aria-label="Search positions by symbol"
+            className="border-input bg-input/20 h-7 w-44 rounded-md border px-2 font-mono text-[11px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+          />
+          {(
+            [
+              ["all", "Semua"],
+              ["noStop", "Tanpa stop"],
+              ["noTp", "Tanpa take-profit"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setGap(value)}
+              aria-pressed={gap === value}
+              disabled={busy}
+              className={cn(
+                "rounded-md border px-2 py-1 font-mono text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                gap === value
+                  ? "border-primary/40 bg-primary/10 text-foreground"
+                  : "border-border text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+          <span className="text-muted-foreground ml-auto font-mono text-[11px] tabular-nums">
+            {filtered ? `${matching.length} of ${offer.rows.length}` : `${offer.rows.length} positions`}
+          </span>
+        </div>
+        {filtered && (
+          <button
+            type="button"
+            onClick={selectMatching}
+            disabled={busy || selectedInView === matching.length}
+            className="text-muted-foreground hover:text-foreground text-xs underline disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Select the {matching.length} shown{selectedInView > 0 ? ` (${selectedInView} already selected)` : ""}
+          </button>
+        )}
         <div className="border-border/60 max-h-96 overflow-y-auto rounded-md border">
           <table className="w-full border-collapse font-mono text-[11px]">
             <thead className="bg-background sticky top-0 z-10">
@@ -469,7 +539,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
               </tr>
             </thead>
             <tbody>
-              {offer.rows.map((r) => {
+              {matching.map((r) => {
                 const rowKey = `row:${r.symbol}`;
                 return (
                   <tr
@@ -562,6 +632,12 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
             </tbody>
           </table>
         </div>
+        {matching.length === 0 && (
+          <div className="text-muted-foreground px-3 py-6 text-center text-xs">
+            No position matches{q.length > 0 ? ` "${query.trim()}"` : ""}
+            {gap !== "all" ? " with that gap" : ""}.
+          </div>
+        )}
         {/* The viewport is ~8 rows tall; a whole-book selection is not. The
             count and the exposure stay on screen so the armed action can never
             describe orders the user cannot see. */}
