@@ -114,6 +114,26 @@ jobs:
           # DLL so PATH-based loading resolves them.
           cp prebuilt/windows_x86_64/*.dll ../../native/
 
+      # tauri_build validates bundle.resources at compile time, and
+      # tauri.windows.conf.json lists ../cognee-litert-lm/native/MNN.dll —
+      # without this file EVERY cargo invocation on src-tauri dies in the
+      # build script (`resource path ..\cognee-litert-lm\native\MNN.dll
+      # doesn't exist`). The release workflow stages the same DLL before its
+      # tauri build; the smoke only needs the DLL present (the test link uses
+      # the static MNN path, not mnn-dynamic), so fetch the same dynamic
+      # prebuilt and drop MNN.dll beside litert-lm.dll.
+      - name: Download MNN prebuilt (staging for tauri build script)
+        shell: pwsh
+        run: |
+          $root = "C:\_mnn"
+          New-Item -ItemType Directory -Path $root -Force | Out-Null
+          $zip = "$root\mnn-dev-windows-x86_64.zip"
+          Invoke-WebRequest -Uri "https://github.com/zibo-chen/MNN-Prebuilds/releases/download/dev/mnn-dev-windows-x86_64.zip" -OutFile $zip
+          Expand-Archive -Force -Path $zip -DestinationPath $root
+          $native = Join-Path $env:GITHUB_WORKSPACE "cognee-litert-lm\native"
+          New-Item -ItemType Directory -Path $native -Force | Out-Null
+          Copy-Item "$root\mnn-dev-windows-x86_64\lib\MNN.dll" $native -Force
+
       # Expose the staged DLLs to the test/smoke binaries WITHOUT clobbering
       # PATH: a step-env `PATH:` override replaces the runner PATH entirely
       # (`${{ env.PATH }}` is empty in workflow-file context, which erases
