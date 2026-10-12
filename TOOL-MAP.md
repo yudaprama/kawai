@@ -239,10 +239,14 @@ picture, so there is no multi-tool choreography to get wrong.
   denominated per settlement asset in `coinmUnrealizedPnlByAsset` — never
   summed with the USDT figures; the card labels COIN-M units per row and
   `summary.usdm` / `summary.coinm` carry the per-family rollups the
-  decision card breaks down by market. `market` ("all" | "usdm" |
-  "coinm") scopes the WHOLE report to one family — filtered rows and
-  summary, one sync either way; the fixed pipeline and the guard keep
-  "all", and the card renders a scoped report without USDⓈ-M noise.
+  decision card breaks down by market. The audit ships as TWO
+  sibling tools — `binance_futures_risk_audit` (USDⓈ-M) and
+  `binance_coinm_risk_audit` (COIN-M) — so the run view renders a SEPARATE
+  step report per family (`see report` twice); the fixed pipeline runs the
+  fetch step then both grading steps in ONE wave (one phase, two step
+  reports); a `market` form scope picks which grading steps exist, their
+  DB writes are serialized by the process-wide write gate, and the risk
+  guard runs both siblings merged into one whole-book report.
 - **Two phases in the fixed pipeline**: `audit_plan.rs` runs
   `binance_futures_audit_data` first (mirror sync + the graded set's candles
   pulled in PARALLEL into the shared `candles.rs` cache), then the audit

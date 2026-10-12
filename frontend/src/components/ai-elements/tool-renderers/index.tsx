@@ -84,6 +84,7 @@ const registry: Record<string, ToolRenderer> = {
   crypto_open_orders: renderBinanceOpenOrders,
   binance_futures_positions: renderBinanceFuturesPositions,
   binance_futures_risk_audit: renderBinanceFuturesRiskAudit,
+  binance_coinm_risk_audit: renderBinanceFuturesRiskAudit,
   binance_futures_audit_data: renderBinanceFuturesAuditData,
   crypto_screener: renderCryptoScreener,
   crypto_screener_data: renderCryptoScreenerData,

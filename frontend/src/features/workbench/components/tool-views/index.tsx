@@ -283,6 +283,7 @@ const registry: Record<string, StepView> = {
   crypto_open_orders: (p) => renderBinanceOpenOrders(p),
   binance_futures_positions: (p) => renderBinanceFuturesPositions(p),
   binance_futures_risk_audit: (p) => renderBinanceFuturesRiskAudit(p),
+  binance_coinm_risk_audit: (p) => renderBinanceFuturesRiskAudit(p),
   binance_futures_audit_data: (p) => renderBinanceFuturesAuditData(p),
   crypto_screener: (p) => renderCryptoScreener(p),
   crypto_screener_data: (p) => renderCryptoScreenerData(p),
