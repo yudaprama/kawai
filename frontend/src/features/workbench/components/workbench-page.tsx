@@ -396,8 +396,8 @@ export function WorkbenchPage({
    * streams the same SupervisorEvent lifecycle, so the rail, deliverable
    * viewer, and AGENT REPORTS render it unchanged. */
   const submitBinanceAudit = useCallback(
-    (interval: string, risk: string, limit: number) => {
-      beginPipelineRun((onStart) => workbench.runBinanceAudit(interval, risk, limit, { onStart }));
+    (interval: string, risk: string, limit: number, market: string) => {
+      beginPipelineRun((onStart) => workbench.runBinanceAudit(interval, risk, limit, market, { onStart }));
     },
     [beginPipelineRun, workbench.runBinanceAudit],
   );

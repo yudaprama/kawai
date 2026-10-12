@@ -51,9 +51,20 @@ describe("BinanceAuditForm", () => {
 
   it("marks the active preset with aria-pressed so the selection is announced", () => {
     const html = render();
-    // Defaults are 4h / Standard / 25 — each must render pressed exactly once.
+    // Defaults are 4h / Standard / 25 / All — each of the FOUR groups must
+    // render exactly one pressed chip.
     expect(html).toContain('aria-pressed="true"');
-    expect(html.match(/aria-pressed="true"/g)).toHaveLength(3);
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(4);
+  });
+
+  it("offers exactly the backend's market scopes", () => {
+    const html = render();
+    expect(html).toContain(">All</button>");
+    expect(html).toContain(">USDⓈ-M</button>");
+    expect(html).toContain(">COIN-M</button>");
+    // The scope names ride the backend enum verbatim — an unknown chip would
+    // silently fall back to "all" server-side and grade the wrong book.
+    expect(html).not.toContain(">Spot</button>");
   });
 
   it("keeps the read-only guarantee on screen", () => {

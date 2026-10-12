@@ -482,6 +482,7 @@ export function renderBinanceFuturesAuditData(output: unknown): ReactNode {
   const d = parse(output);
   if (!isRecord(d) || d.kind !== "audit_data") return null;
   const usdm = num(d.usdmPositions) ?? 0;
+  const coinm = num(d.coinmPositions) ?? 0;
   const selected = num(d.selected) ?? 0;
   const warmed = num(d.warmed) ?? 0;
   const errorsTotal = num(d.errorsTotal) ?? 0;
@@ -495,9 +496,11 @@ export function renderBinanceFuturesAuditData(output: unknown): ReactNode {
         <span className="text-muted-foreground font-mono text-[10px]">{str(d.interval) ?? ""}</span>
       </div>
       <p className="text-muted-foreground font-mono text-[11px]">
-        Synced {fmtNum(usdm)} open USDⓈ-M position{usdm === 1 ? "" : "s"}; warming candles for the{" "}
-        {fmtNum(selected)} largest exposure{selected === 1 ? "" : "s"} ({fmtNum(warmed)} warmed) — the
-        grading report below reuses this data.
+        Synced {fmtNum(usdm)} USDⓈ-M
+        {coinm > 0 ? ` + ${fmtNum(coinm)} COIN-M` : ""} open position
+        {usdm + coinm === 1 ? "" : "s"}; warming candles for the {fmtNum(selected)} largest
+        exposure{selected === 1 ? "" : "s"} ({fmtNum(warmed)} warmed) — the grading report below
+        reuses this data.
       </p>
       {errorsTotal > 0 && (
         <Footnote>{fmtNum(errorsTotal)} position(s) unreachable during the fetch.</Footnote>
@@ -512,8 +515,9 @@ export function renderBinanceFuturesAuditData(output: unknown): ReactNode {
  * binance_futures_risk_audit →
  * { params: { interval, risk, limit },
  *   summary: { usdmPositions, graded, skippedByCap, withStopLoss, naked,
- *              nakedNotional, withTakeProfit, slVerdicts, coinmPositions },
- *   coinmUnrealizedPnlByAsset, positions: [{ symbol, positionSide,
+ *              nakedNotional, withTakeProfit, slVerdicts, coinmPositions,
+ *              usdm: {positions, graded, naked, …}, coinm: {…} },
+ *   coinmUnrealizedPnlByAsset, positions: [{ margin, symbol, positionSide,
  *   positionAmt, markPrice, unRealizedProfit, notionalAbs, marginAsset,
  *   stopLoss{present,price,distancePct}, takeProfit{present,resting,…},
  *   riskReward, restingStops, restingTps, graded,
@@ -522,10 +526,13 @@ export function renderBinanceFuturesAuditData(output: unknown): ReactNode {
  *
  * The headline is EXPOSURE AT RISK, not a count: `nakedNotional` is the money
  * a single adverse tick can take, and a report that renders "183 unprotected"
- * in the same neutral tile as "183 graded" reads as calm. Rows follow as a
- * scannable table (aligned numeric columns, severity-toned verdict chips)
- * because position coverage is a comparison, not a prose list — and they are
- * capped WITH the hidden count stated, never silently sliced.
+ * in the same neutral tile as "183 graded" reads as calm. Every total spans
+ * BOTH futures markets — the denominator is `usdmPositions + coinmPositions`
+ * (dividing by USDⓈ-M alone once printed "200/184 graded"). The report reads
+ * as TWO market cards (USDⓈ-M / COIN-M) under one whole-book banner because
+ * the books are different CURRENCIES: COIN-M size is contracts (face USD) and
+ * its PnL rides the settlement coin, suffixed per row. Tables are capped WITH
+ * the hidden count stated, never silently sliced.
  */
 
 /** Rows rendered before the "show all" disclosure. A 183-position book must
@@ -655,6 +662,12 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
               const symbol = str(p.symbol) ?? "Position";
               const side = (str(p.positionSide) ?? "").toUpperCase();
               const asset = str(p.marginAsset);
+              // COIN-M PnL is denominated in the SETTLEMENT COIN, not USD —
+              // a bare "-0.0001188" next to USDT-pair numbers reads as ~zero
+              // USD. The unit rides the value.
+              const isCoinm = str(p.margin) === "COINM";
+              const pnlText =
+                pnl !== null ? `${fmtSigned(pnl)}${isCoinm && asset ? ` ${asset}` : ""}` : "—";
               // Side is a direction, not a quality — it stays muted so the
               // only coloured thing in the row is the protection verdict.
               const verdict =
@@ -694,7 +707,7 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
                   </td>
                   <Num value={notional !== null ? fmtMoney(notional) : "—"} />
                   <Num
-                    value={pnl !== null ? fmtSigned(pnl) : "—"}
+                    value={pnlText}
                     tone={pnl === null ? "mute" : pnl < 0 ? "down" : pnl > 0 ? "up" : "mute"}
                   />
                   <td className="px-2 py-1.5">
@@ -785,126 +798,239 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
 export function renderBinanceFuturesRiskAudit(output: unknown): ReactNode {
   const d = parse(output);
   if (!isRecord(d) || !isRecord(d.summary)) return null;
-  return <FuturesRiskAuditCard data={d} />;
+  return <FuturesRiskAuditReport data={d} />;
 }
 
-function FuturesRiskAuditCard({ data: d }: { data: Record<string, unknown> }) {
-  const s = d.summary as Record<string, unknown>;
-  const usdm = num(s.usdmPositions) ?? 0;
-  const naked = num(s.naked) ?? 0;
-  const graded = num(s.graded) ?? 0;
-  const skipped = num(s.skippedByCap) ?? 0;
-  const withSl = num(s.withStopLoss) ?? 0;
-  const withTp = num(s.withTakeProfit) ?? 0;
-  const nakedNotional = num(s.nakedNotional) ?? 0;
-  const coinmCount = num(s.coinmPositions) ?? 0;
-  const params = isRecord(d.params) ? d.params : {};
-  const rows = (Array.isArray(d.positions) ? d.positions : []).filter(isRecord);
+/** Client-side fold of coverage rows into one family's stats — the same
+ * shape the backend's `summary.usdm` / `summary.coinm` rollups carry. Only
+ * needed for payloads from before those rollups existed; coverage still
+ * reads the resting-order flags, so the numbers match the flat totals. */
+function rollupRows(rows: Record<string, unknown>[]): Record<string, unknown> {
+  let graded = 0;
+  let withSl = 0;
+  let withTp = 0;
+  let nakedNotional = 0;
+  for (const r of rows) {
+    const sl = isRecord(r.stopLoss) ? r.stopLoss : {};
+    const tp = isRecord(r.takeProfit) ? r.takeProfit : {};
+    if (sl.present === true) withSl += 1;
+    else nakedNotional += num(r.notional) ?? num(r.notionalAbs) ?? 0;
+    if (tp.present === true) withTp += 1;
+    if (r.graded === true) graded += 1;
+  }
+  return {
+    positions: rows.length,
+    graded,
+    naked: rows.length - withSl,
+    withStopLoss: withSl,
+    withTakeProfit: withTp,
+    nakedNotional,
+  };
+}
 
-  // Exposure at risk leads, in the currency the numbers are actually in.
-  const summary: Metric[] = [
+/** The four protection tiles for ONE market family. */
+function familyTiles(stats: Record<string, unknown>): Metric[] {
+  const positions = num(stats.positions) ?? 0;
+  const naked = num(stats.naked) ?? 0;
+  const withSl = num(stats.withStopLoss) ?? 0;
+  const withTp = num(stats.withTakeProfit) ?? 0;
+  const graded = num(stats.graded) ?? 0;
+  const nakedNotional = num(stats.nakedNotional) ?? 0;
+  return [
     {
       label: "Unprotected exposure",
       value: naked > 0 ? fmtMoney(nakedNotional) : fmtMoney(0),
-      sub: `${fmtNum(naked)} of ${fmtNum(usdm)} positions have no stop`,
+      sub: `${fmtNum(naked)} of ${fmtNum(positions)} positions have no stop`,
       tone: naked > 0 ? "danger" : "ok",
     },
     { label: "With a stop", value: fmtNum(withSl) },
     {
       label: "With a take-profit",
       value: fmtNum(withTp),
-      tone: withTp < usdm ? "warn" : "ok",
+      tone: withTp < positions ? "warn" : "ok",
     },
-    {
-      label: "Graded",
-      value: `${fmtNum(graded)}/${fmtNum(usdm)}`,
-      ...(skipped > 0 ? { sub: `${fmtNum(skipped)} over the cap` } : {}),
-      ...(skipped > 0 ? { tone: "warn" as const } : {}),
-    },
+    { label: "Graded", value: `${fmtNum(graded)}/${fmtNum(positions)}` },
   ];
+}
+
+/**
+ * The report reads as TWO CARDS — one per futures family — because the books
+ * are different CURRENCIES: USDⓈ-M sizes are coins (USDT margin), COIN-M
+ * sizes are contracts and its PnL rides the settlement coin. A slim banner
+ * above them keeps the WHOLE-book answer (total exposure at risk, graded
+ * fraction, skipped count, engine notes) in one place so neither family card
+ * has to sum across currencies.
+ */
+function FuturesRiskAuditReport({ data: d }: { data: Record<string, unknown> }) {
+  const s = d.summary as Record<string, unknown>;
+  const usdm = num(s.usdmPositions) ?? 0;
+  const naked = num(s.naked) ?? 0;
+  const graded = num(s.graded) ?? 0;
+  const skipped = num(s.skippedByCap) ?? 0;
+  const nakedNotional = num(s.nakedNotional) ?? 0;
+  const coinmCount = num(s.coinmPositions) ?? 0;
+  // Both futures markets grade since COIN-M rode the dapi candle path — the
+  // denominator is the WHOLE book, not just the USDⓈ-M family (a "200/184
+  // graded" tile read as nonsense).
+  const total = usdm + coinmCount;
+  const params = isRecord(d.params) ? d.params : {};
+  const market = str(params.market) ?? "all";
+  const rows = (Array.isArray(d.positions) ? d.positions : []).filter(isRecord);
+
+  // Rows default to the USDⓈ-M family: payloads from before COIN-M grading
+  // carry no `margin` and were USDⓈ-M-only books.
+  const usdmRows = rows.filter((r) => (str(r.margin) ?? "USDM") !== "COINM");
+  const coinmRows = rows.filter((r) => r.margin === "COINM");
+  // Family stats: backend rollups when present; older payloads fold the same
+  // numbers client-side from the rows.
+  const usdmStats = isRecord(s.usdm) ? s.usdm : rollupRows(usdmRows);
+  const coinmStats = isRecord(s.coinm) ? s.coinm : rollupRows(coinmRows);
 
   const coinm = isRecord(d.coinmUnrealizedPnlByAsset) ? d.coinmUnrealizedPnlByAsset : {};
   const coinmLines = Object.entries(coinm)
     .filter(([, v]) => typeof v === "number" && v !== 0)
     .sort((a, b) => Math.abs(b[1] as number) - Math.abs(a[1] as number));
 
+  const usdmCardVisible =
+    market !== "coinm" && (usdmRows.length > 0 || usdm > 0 || market === "usdm");
+  const coinmCardVisible =
+    market !== "usdm" && (coinmRows.length > 0 || coinmCount > 0 || market === "coinm");
+
   return (
-    <TextCard>
-      <MetricGrid items={summary} />
-      <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px]">
-        {naked > 0 && (
-          <span className="text-destructive inline-flex items-center gap-1">
-            <Icon name="alert-circle" className="size-3.5" />
-            no stop floor on any of them — an adverse move runs to liquidation
-          </span>
-        )}
-        {naked === 0 && usdm > 0 && (
-          <span className="text-success inline-flex items-center gap-1">
-            <Icon name="check-circle-2" className="size-3.5" />
-            every graded position carries a stop
-          </span>
-        )}
-        {str(params.interval) && (
-          <span>
-            {str(params.interval)} candles · {str(params.risk) ?? "standard"} stop preset
-          </span>
-        )}
-      </div>
-      {rows.length > 0 ? (
-        <AuditPositionTable rows={rows} />
-      ) : (
-        <Footnote>No open USDⓈ-M positions.</Footnote>
-      )}
-      {coinmCount > 0 && (
-        <details className="border-border/60 rounded-md border">
-          <summary className="text-muted-foreground hover:text-foreground cursor-pointer px-2.5 py-2 text-xs select-none">
-            {fmtNum(coinmCount)} COIN-M position{coinmCount > 1 ? "s" : ""} counted, not klines-audited
-            {coinmLines.length > 0 && " · unrealized PnL by settlement asset"}
-          </summary>
-          {coinmLines.length > 0 && (
-            <dl className="border-border/60 grid grid-cols-2 gap-x-3 gap-y-1 border-t px-2.5 py-2 font-mono text-[11px] sm:grid-cols-3">
-              {coinmLines.map(([asset, v]) => (
-                <div key={asset} className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">{asset}</dt>
-                  <dd
-                    className={cn(
-                      "tabular-nums",
-                      (v as number) < 0
-                        ? "text-destructive"
-                        : (v as number) > 0
-                          ? "text-success"
-                          : "text-muted-foreground"
-                    )}
-                  >
-                    {fmtSigned(v as number)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </details>
-      )}
-      {str(d.note) && <Footnote>{str(d.note)}</Footnote>}
-      {/* What the report could NOT cover, stated by the tool itself. A bare
-          COIN-M PnL table next to no warning read as a completed analysis. */}
-      {(Array.isArray(d.limitations) ? d.limitations : [])
-        .filter((l): l is string => typeof l === "string" && l.length > 0)
-        .map((l) => (
-          <div
-            key={l.slice(0, 40)}
-            className="border-warning/30 bg-warning/5 flex items-start gap-1.5 rounded-md border px-2.5 py-2 text-xs"
+    <div className="space-y-6">
+      {/* ── Whole-book banner ── the combined answer in one slim card. */}
+      <TextCard className="bg-background rounded-xl border shadow-sm p-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-muted-foreground text-xs">Unprotected exposure</span>
+          <span
+            className={cn(
+              "font-semibold text-lg tabular-nums",
+              naked > 0 ? "text-destructive" : "text-success"
+            )}
           >
-            <Icon name="alert-circle" className="text-warning mt-0.5 size-3.5 shrink-0" />
-            <span className="text-muted-foreground">{l}</span>
+            {naked > 0 ? fmtMoney(nakedNotional) : fmtMoney(0)}
+          </span>
+          <span className="text-muted-foreground text-[11px]">
+            {fmtNum(naked)} of {fmtNum(total)} positions have no stop · {fmtNum(graded)}/
+            {fmtNum(total)} graded
+            {skipped > 0 ? ` · ${fmtNum(skipped)} over the cap` : ""}
+          </span>
+        </div>
+        <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px]">
+          {naked > 0 && (
+            <span className="text-destructive inline-flex items-center gap-1">
+              <Icon name="alert-circle" className="size-3.5" />
+              no stop floor on any of them — an adverse move runs to liquidation
+            </span>
+          )}
+          {naked === 0 && total > 0 && (
+            <span className="text-success inline-flex items-center gap-1">
+              <Icon name="check-circle-2" className="size-3.5" />
+              every graded position carries a stop
+            </span>
+          )}
+          {str(params.interval) && (
+            <span>
+              {str(params.interval)} candles · {str(params.risk) ?? "standard"} stop preset
+            </span>
+          )}
+          {market !== "all" && <span>scoped to {market.toUpperCase()}</span>}
+        </div>
+        {str(d.note) && <Footnote>{str(d.note)}</Footnote>}
+        {/* What the report could NOT cover, stated by the tool itself. A bare
+            COIN-M PnL table next to no warning read as a completed analysis. */}
+        {(Array.isArray(d.limitations) ? d.limitations : [])
+          .filter((l): l is string => typeof l === "string" && l.length > 0)
+          .map((l) => (
+            <div
+              key={l.slice(0, 40)}
+              className="border-warning/30 bg-warning/5 flex items-start gap-1.5 rounded-md border px-2.5 py-2 text-xs"
+            >
+              <Icon name="alert-circle" className="text-warning mt-0.5 size-3.5 shrink-0" />
+              <span className="text-muted-foreground">{l}</span>
+            </div>
+          ))}
+        {skipped > 0 && (
+          <Footnote>
+            Re-run with a higher position cap to grade the {fmtNum(skipped)} smaller position
+            {skipped > 1 ? "s" : ""}.
+          </Footnote>
+        )}
+      </TextCard>
+
+      {/* ── USDⓈ-M card ── USDT margin; sizes are coin amounts. */}
+      {usdmCardVisible && (
+        <TextCard className="bg-background rounded-xl border shadow-sm p-4">
+          <div className="border-border/60 flex items-center gap-2 border-b pb-2">
+            <span className="bg-primary size-2 shrink-0 rounded-full" />
+            <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+              USDⓈ-M — USDT margin
+            </span>
           </div>
-        ))}
-      {skipped > 0 && (
-        <Footnote>
-          Re-run with a higher position cap to grade the {fmtNum(skipped)} smaller position
-          {skipped > 1 ? "s" : ""}.
-        </Footnote>
+          <MetricGrid items={familyTiles(usdmStats)} />
+          {usdmRows.length > 0 ? (
+            <AuditPositionTable rows={usdmRows} />
+          ) : (
+            <Footnote>No open USDⓈ-M positions.</Footnote>
+          )}
+        </TextCard>
       )}
-    </TextCard>
+
+      {/* ── COIN-M card ── coin-settled: sizes are CONTRACTS (face USD) and
+             PnL rides the settlement coin, so it never mixes with USDT. */}
+      {coinmCardVisible && (
+        <TextCard className="bg-background rounded-xl border shadow-sm p-4">
+          <div className="border-border/60 flex items-center gap-2 border-b pb-2">
+            <span className="bg-warning size-2 shrink-0 rounded-full" />
+            <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+              COIN-M — coin-settled · size in contracts · PnL per settlement coin
+            </span>
+          </div>
+          {(coinmRows.length > 0 || isRecord(s.coinm)) && (
+            <MetricGrid items={familyTiles(coinmStats)} />
+          )}
+          {coinmRows.length > 0 ? (
+            <AuditPositionTable rows={coinmRows} />
+          ) : (
+            <Footnote>No open COIN-M positions.</Footnote>
+          )}
+          {coinmCount > 0 && (
+            <details className="border-border/60 rounded-md border">
+              <summary className="text-muted-foreground hover:text-foreground cursor-pointer px-2.5 py-2 text-xs select-none">
+                {fmtNum(coinmCount)} COIN-M position{coinmCount > 1 ? "s" : ""}
+                {coinmRows.length === 0 &&
+                  ` · ${fmtNum(num(coinmStats.graded) ?? 0)}/${fmtNum(coinmCount)} graded · ${fmtNum(
+                    num(coinmStats.naked) ?? 0
+                  )} naked`}
+                {coinmLines.length > 0 &&
+                  " · unrealized PnL per settlement asset (never summed with USDT)"}
+              </summary>
+              {coinmLines.length > 0 && (
+                <dl className="border-border/60 grid grid-cols-2 gap-x-3 gap-y-1 border-t px-2.5 py-2 font-mono text-[11px] sm:grid-cols-3">
+                  {coinmLines.map(([asset, v]) => (
+                    <div key={asset} className="flex justify-between gap-2">
+                      <dt className="text-muted-foreground">{asset}</dt>
+                      <dd
+                        className={cn(
+                          "tabular-nums",
+                          (v as number) < 0
+                            ? "text-destructive"
+                            : (v as number) > 0
+                              ? "text-success"
+                              : "text-muted-foreground"
+                        )}
+                      >
+                        {fmtSigned(v as number)}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </details>
+          )}
+        </TextCard>
+      )}
+    </div>
   );
 }
 

@@ -25,9 +25,18 @@ const LIMITS: { value: number; label?: string }[] = [
   { value: 500, label: "All" },
 ];
 
+/** Market scope (mirrors the backend's `market` param): which futures family
+ * the report covers. "All" keeps the combined book; the scoped values grade
+ * that ONE family — useful when the two books move on different clocks. */
+const MARKETS = [
+  { id: "all", label: "All" },
+  { id: "usdm", label: "USDⓈ-M" },
+  { id: "coinm", label: "COIN-M" },
+] as const;
+
 export interface BinanceAuditFormProps {
   disabled?: boolean;
-  onSubmit: (interval: string, risk: string, limit: number) => void;
+  onSubmit: (interval: string, risk: string, limit: number, market: string) => void;
 }
 
 /** Which credential source the audit is allowed to run under. `null` is the
@@ -62,6 +71,7 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
   // Whole book by default — the placement offer can only list positions this
   // audit graded, so a capped default would quietly limit the approval table.
   const [limit, setLimit] = useState<number>(500);
+  const [market, setMarket] = useState<string>("all");
   const [source, setSource] = useState<AuditCredentialSource>(null);
 
   useEffect(() => {
@@ -90,7 +100,7 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
   const missingOwnKeys = !ownsAuditScope(source);
   const submit = () => {
     if (disabled || missingOwnKeys) return;
-    onSubmit(interval, risk, limit);
+    onSubmit(interval, risk, limit, market);
   };
   const chip = (active: boolean) =>
     cn(
@@ -152,6 +162,22 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
               className={chip(limit === l.value)}
             >
               {l.label ?? l.value}
+            </button>
+          ))}
+        </Field>
+
+        <Field label="Market">
+          {MARKETS.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              disabled={disabled}
+              aria-pressed={market === m.id}
+              onClick={() => setMarket(m.id)}
+              title={m.id === "all" ? "Grade both futures markets" : `Grade the ${m.label} book only`}
+              className={chip(market === m.id)}
+            >
+              {m.label}
             </button>
           ))}
         </Field>

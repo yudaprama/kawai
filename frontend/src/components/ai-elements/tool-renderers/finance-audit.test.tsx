@@ -300,6 +300,98 @@ describe("risk audit card", () => {
     expect(markup).toContain("+11.40");
   });
 
+  it("grades BOTH markets — the denominator is the whole book, never USDⓈ-M alone", () => {
+    // The card once divided the all-market totals by `usdmPositions` and
+    // rendered "200/184 graded" / "199 of 184 positions have no stop".
+    const markup = html(
+      audit({
+        summary: {
+          usdmPositions: 184, graded: 200, skippedByCap: 0, withStopLoss: 1,
+          naked: 199, nakedNotional: 6639.18, withTakeProfit: 2,
+          slVerdicts: { missing: 199, tighten: 1 }, coinmPositions: 16,
+        },
+      }),
+    );
+    expect(markup).toContain("200/200");
+    expect(markup).toContain("199 of 200 positions have no stop");
+    expect(markup).not.toContain("/184");
+  });
+
+  it("splits the matrix by market and labels COIN-M units per row", () => {
+    // COIN-M rows carry contract sizes and coin-denominated PnL; mixed into
+    // one undivided table, "-0.0001188" read as ~zero USD beside USDT pairs,
+    // and the stale "not klines-audited" disclosure contradicted the graded
+    // COIN-M rows sitting right above it.
+    const coinmRow = position({
+      symbol: "BTCUSD_PERP",
+      margin: "COINM",
+      marginAsset: "BTC",
+      unRealizedProfit: -0.0001188,
+      notionalAbs: 2300,
+    });
+    const markup = html(audit({ positions: [position(), coinmRow] }));
+    expect(markup).toContain("USDⓈ-M — USDT margin");
+    expect(markup).toContain("COIN-M — coin-settled");
+    expect(markup).toContain("BTCUSD_PERP");
+    expect(markup).toContain("-0.0001188 BTC");
+    expect(markup).not.toContain("not klines-audited");
+  });
+
+  it("renders TWO market cards under one whole-book banner", () => {
+    // One undivided card read USDⓈ-M and COIN-M as one book; the split gives
+    // each family its own tiles (2,603.50 vs 4,060.43 — different currencies,
+    // never summed) under a banner that keeps the combined answer.
+    const markup = html(
+      audit({
+        summary: {
+          usdmPositions: 188, graded: 205, skippedByCap: 0, withStopLoss: 1,
+          naked: 204, nakedNotional: 6663.93, withTakeProfit: 2,
+          slVerdicts: { missing: 204, tighten: 1 }, coinmPositions: 17,
+          usdm: { positions: 188, graded: 188, naked: 187, withStopLoss: 1, withTakeProfit: 2, nakedNotional: 2603.5 },
+          coinm: { positions: 17, graded: 17, naked: 17, withStopLoss: 0, withTakeProfit: 0, nakedNotional: 4060.43 },
+        },
+        coinmUnrealizedPnlByAsset: { DOGE: -74.39 },
+        positions: [
+          position(),
+          position({ symbol: "BTCUSD_PERP", margin: "COINM", marginAsset: "BTC", unRealizedProfit: -0.0001188, notionalAbs: 2300 }),
+        ],
+      }),
+    );
+    expect(markup).toContain("6,663.93");
+    expect(markup).toContain("204 of 205 positions have no stop");
+    // Per-family tiles, in order: USDⓈ-M card first, COIN-M card second.
+    expect(markup.indexOf("USDⓈ-M — USDT margin")).toBeGreaterThan(-1);
+    expect(markup.indexOf("COIN-M — coin-settled")).toBeGreaterThan(markup.indexOf("USDⓈ-M — USDT margin"));
+    expect(markup).toContain("187 of 188 positions have no stop");
+    expect(markup).toContain("17 of 17 positions have no stop");
+    expect(markup).toContain("2,603.50");
+    expect(markup).toContain("4,060.43");
+  });
+
+  it("renders a coinm-scoped audit without USDⓈ-M noise", () => {
+    // `market: "coinm"` scopes every number to the COIN-M family: the
+    // denominator is the scoped book and the empty USDⓈ-M side stays
+    // silent (an empty-by-request section is not a finding).
+    const markup = html(
+      audit({
+        params: { interval: "4h", risk: "standard", limit: 25, market: "coinm" },
+        summary: {
+          usdmPositions: 0, graded: 16, skippedByCap: 0, withStopLoss: 0,
+          naked: 16, nakedNotional: 6639, withTakeProfit: 0,
+          slVerdicts: { missing: 16 }, coinmPositions: 16,
+        },
+        positions: [
+          position({ symbol: "BTCUSD_PERP", margin: "COINM", marginAsset: "BTC", notionalAbs: 2300 }),
+        ],
+      }),
+    );
+    expect(markup).toContain("16/16");
+    expect(markup).toContain("16 of 16 positions have no stop");
+    expect(markup).toContain("COIN-M — coin-settled");
+    expect(markup).not.toContain("No open USDⓈ-M positions");
+    expect(markup).not.toContain("USDT pairs");
+  });
+
   it("states the grading cap when positions were skipped", () => {
     const markup = html(
       audit({

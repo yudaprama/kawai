@@ -231,11 +231,18 @@ picture, so there is no multi-tool choreography to get wrong.
   COUNTED in the coverage summary from the resting orders alone. One
   position's klines failure degrades to an error row — it never aborts the
   audit.
-- **COIN-M is counted, not audited.** The dapi kline endpoint is not wired in
-  this toolset; COIN-M positions appear in the summary and their coin PnL in
-  `coinmUnrealizedPnlByAsset`, explicitly labeled not-audited — a half-audit
-  that pretends to be whole would be worse than one that says what it
-  skipped.
+- **COIN-M grades through the same audit.** The dapi kline path is wired
+  (`candles::Market::Coinm`, keyless `/dapi/v1/klines`); a COIN-M row's
+  notional derives from its dapi `contractSize` (positionRisk carries no
+  notional field), positions rank together with USDⓈ-M by |notional|, and
+  each COIN-M row carries verdicts like any other. Coin PnL stays
+  denominated per settlement asset in `coinmUnrealizedPnlByAsset` — never
+  summed with the USDT figures; the card labels COIN-M units per row and
+  `summary.usdm` / `summary.coinm` carry the per-family rollups the
+  decision card breaks down by market. `market` ("all" | "usdm" |
+  "coinm") scopes the WHOLE report to one family — filtered rows and
+  summary, one sync either way; the fixed pipeline and the guard keep
+  "all", and the card renders a scoped report without USDⓈ-M noise.
 - **Two phases in the fixed pipeline**: `audit_plan.rs` runs
   `binance_futures_audit_data` first (mirror sync + the graded set's candles
   pulled in PARALLEL into the shared `candles.rs` cache), then the audit

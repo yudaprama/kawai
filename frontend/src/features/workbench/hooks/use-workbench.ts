@@ -804,6 +804,7 @@ export function useWorkbench() {
       interval: string,
       risk: string,
       limit: number,
+      market: string,
       opts?: {
         /** Same contract as `run()`'s — fires once every gate passed, right
          * before the run record appends; the page navigates from here. */
@@ -817,14 +818,15 @@ export function useWorkbench() {
       );
       // All gates passed — consume the follow-up/quote arming after them so
       // a blocked submit leaves both intact for the retry.
+      const scope = market === "all" ? "" : ` — ${market.toUpperCase()} only`;
       const goal =
         limit >= 500
-          ? `Futures risk audit — ${interval} candles, ${risk} stops, the whole book`.slice(0, 140)
-          : `Futures risk audit — ${interval} candles, ${risk} stops, top ${limit} positions`.slice(0, 140);
+          ? `Futures risk audit — ${interval} candles, ${risk} stops, the whole book${scope}`.slice(0, 140)
+          : `Futures risk audit — ${interval} candles, ${risk} stops, top ${limit} positions${scope}`.slice(0, 140);
       beginRun(goal, false);
       opts?.onStart?.();
       void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runBinanceAudit({ interval, risk, limit }, sid);
+      supervisor.runBinanceAudit({ interval, risk, limit, market }, sid);
       void refreshTokenBalance();
     },
     [supervisor, preflightRun, beginRun],

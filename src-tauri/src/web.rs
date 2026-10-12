@@ -3043,6 +3043,8 @@ struct RunBinanceRiskAuditRequest {
     interval: Option<String>,
     risk: Option<String>,
     limit: Option<u32>,
+    /// Market scope: "all" (default), "usdm", or "coinm".
+    market: Option<String>,
     /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
     language: Option<String>,
     stream_id: String,
@@ -3097,12 +3099,14 @@ key and secret in Settings → Binance API first"
         req.interval.as_deref().unwrap_or_default(),
         req.risk.as_deref().unwrap_or_default(),
         req.limit,
+        req.market.as_deref(),
     );
     // Read the normalized values back BEFORE the plan consumes them, so the
     // report's goal describes the run that actually executes.
     let interval = args["interval"].as_str().unwrap_or_default().to_string();
     let risk = args["risk"].as_str().unwrap_or_default().to_string();
     let limit = args["limit"].as_u64().unwrap_or_default() as u32;
+    let market = args["market"].as_str().unwrap_or_default().to_string();
     let language = crate::supervisor::resolve_user_language(
         req.language.as_deref(),
         headers
@@ -3111,7 +3115,7 @@ key and secret in Settings → Binance API first"
     )
     .unwrap_or_default();
     let plan = ::binance::build_audit_plan(args);
-    let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language);
+    let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language, Some(&market));
     let tool_registry = crate::supervisor::build_fixed_binance_registry(
         &user_id,
         req.session_id,

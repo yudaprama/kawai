@@ -62,6 +62,8 @@ interface RunBinanceAuditOptions {
   /** How many positions to klines-grade, largest |notional| first (1-500; the
    * form's "All" = 500 = whole book). */
   limit: number;
+  /** Market scope: "all" (both futures markets, default) | "usdm" | "coinm". */
+  market: string;
 }
 
 interface RunCryptoScreenerOptions {
@@ -557,6 +559,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           interval: options.interval,
           risk: options.risk,
           limit: options.limit,
+          market: options.market,
           // Device locale → report language (resolved server-side).
           language: navigator.language,
         },
