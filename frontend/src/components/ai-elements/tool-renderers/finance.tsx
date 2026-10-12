@@ -467,6 +467,45 @@ export function renderBinanceTa(output: unknown): ReactNode {
   );
 }
 
+// ── binance_futures_audit_data ─────────────────────────────────────────────
+
+/**
+ * binance_futures_audit_data →
+ * { kind: "audit_data", interval, usdmPositions, selected, warmed, errors,
+ *   errorsTotal }.
+ *
+ * Phase 1 of the audit pipeline: the PRODUCT is the warm candle cache, so
+ * this report is coverage bookkeeping — how many positions exist, how many
+ * the grading step will fold, how many candle sets made it warm.
+ */
+export function renderBinanceFuturesAuditData(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || d.kind !== "audit_data") return null;
+  const usdm = num(d.usdmPositions) ?? 0;
+  const selected = num(d.selected) ?? 0;
+  const warmed = num(d.warmed) ?? 0;
+  const errorsTotal = num(d.errorsTotal) ?? 0;
+  return (
+    <TextCard>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Icon name="database" className="text-primary size-4" />
+        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+          Position data
+        </span>
+        <span className="text-muted-foreground font-mono text-[10px]">{str(d.interval) ?? ""}</span>
+      </div>
+      <p className="text-muted-foreground font-mono text-[11px]">
+        Synced {fmtNum(usdm)} open USDⓈ-M position{usdm === 1 ? "" : "s"}; warming candles for the{" "}
+        {fmtNum(selected)} largest exposure{selected === 1 ? "" : "s"} ({fmtNum(warmed)} warmed) — the
+        grading report below reuses this data.
+      </p>
+      {errorsTotal > 0 && (
+        <Footnote>{fmtNum(errorsTotal)} position(s) unreachable during the fetch.</Footnote>
+      )}
+    </TextCard>
+  );
+}
+
 // ── binance_futures_risk_audit ─────────────────────────────────────────────
 
 /**

@@ -236,6 +236,13 @@ picture, so there is no multi-tool choreography to get wrong.
   `coinmUnrealizedPnlByAsset`, explicitly labeled not-audited — a half-audit
   that pretends to be whole would be worse than one that says what it
   skipped.
+- **Two phases in the fixed pipeline**: `audit_plan.rs` runs
+  `binance_futures_audit_data` first (mirror sync + the graded set's candles
+  pulled in PARALLEL into the shared `candles.rs` cache), then the audit
+  step, which grades from warm candles instead of one awaited klines fetch
+  per position. The portfolio matrix AND its deterministic rollup stay in
+  the single Rust call — phasing the EXECUTION never fragments the report
+  or moves money arithmetic into the writer.
 - **Advice history is shared** with the stop-loss/take-profit tools (same
   `binance_futures_advice` table, `kind = 'stop_loss'`), so the monotonic
   ratchet carries across entry points.
