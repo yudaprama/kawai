@@ -44,7 +44,7 @@ async fn run() -> Result<(), String> {
     {
         let cfg = kawai_tool_catalog::RemoteConfig::from_env()
             .ok_or("KAWAI_TURSO_* missing")?;
-        let model = kawai_embedding::build_providers_from_env();
+        let model = kawai_embedding::build_providers_from_env("");
         let qvec = model
             .embed_strings(kawai_embedding::EmbedRole::Query, vec![goal.to_string()])
             .await
@@ -66,6 +66,7 @@ async fn run() -> Result<(), String> {
     let mut narrowed = None;
     for attempt in 1..=3 {
         match kawai_lib::supervisor::narrow_registry_for_goal_with(
+            "",
             &registry,
             goal,
             MIN_TOOLS,

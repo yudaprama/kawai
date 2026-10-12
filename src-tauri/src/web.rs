@@ -2089,9 +2089,10 @@ struct CivitaiMusicStatusRequest {
 }
 
 async fn civitai_music_cost_handler(
+    Extension(user_id): Extension<String>,
     Json(req): Json<logic::civitai::MusicGenRequest>,
 ) -> Result<Json<logic::civitai::VideoCostView>, (StatusCode, String)> {
-    logic::civitai::civitai_music_cost(req)
+    logic::civitai::civitai_music_cost(&user_id, req)
         .await
         .map(Json)
         .map_err(err500)
@@ -2562,8 +2563,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
     // Futures Risk Audit (fixed pipeline over the user's open positions).
     #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
     let protected = protected
-        .route("/api/run_binance_risk_audit", post(run_binance_risk_audit_handler));
-    let protected = protected
+        .route("/api/run_binance_risk_audit", post(run_binance_risk_audit_handler))
         .route("/api/run_crypto_screener", post(run_crypto_screener_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
@@ -3146,7 +3146,8 @@ async fn run_crypto_screener_handler(
 
     // NO credential gate: the screener is public market data and never
     // touches a signed endpoint — anyone signed in may scan the market.
-    let screens: Vec<&str> = req.screens.unwrap_or_default().iter().map(|s| s.as_str()).collect();
+    let screens_owned: Vec<String> = req.screens.unwrap_or_default();
+    let screens: Vec<&str> = screens_owned.iter().map(|s| s.as_str()).collect();
     let args = ::binance::normalize_screener_args(
         &screens,
         req.universe.as_deref().unwrap_or_default(),

@@ -1860,7 +1860,10 @@ const ACE_CONCEPT_SYSTEM: &str = "You write short song concepts. Respond with JS
 /// caption/lyrics (MiniMax/YuE2) or lyrics/musicDescription/bpm/key (ACE)
 /// from the user's prompt, mirroring civitai's own chatCompletion drafting
 /// step. Duration shapes the drafting ask, matching civitai's user message.
-async fn finalize_request(req: &MusicGenRequest) -> Result<civitai::MusicGenParams, String> {
+async fn finalize_request(
+    req: &MusicGenRequest,
+    user_id: &str,
+) -> Result<civitai::MusicGenParams, String> {
     let ecosystem = civitai::registry::music_ecosystem(&req.ecosystem)
         .ok_or_else(|| format!("ecosystem music '{}' tidak dikenal", req.ecosystem))?
         .key;
@@ -1918,9 +1921,15 @@ async fn finalize_request(req: &MusicGenRequest) -> Result<civitai::MusicGenPara
                 "music-concept",
             )
         };
-        let answer = remote_llm::reason::reason_in(system, &task, role, None, None)
-            .await
-            .map_err(|e| format!("gagal menyusun konsep lagu: {e}"))?;
+        let answer = remote_llm::reason::reason_in(
+            system,
+            &task,
+            role,
+            None,
+            Some(user_id.to_string()),
+        )
+        .await
+        .map_err(|e| format!("gagal menyusun konsep lagu: {e}"))?;
         let parsed: serde_json::Value = serde_json::from_str(&remote_llm::reason::extract_json(
             &answer,
         ))
@@ -1989,9 +1998,9 @@ fn registry_duration_default(
 /// Free cost estimate (whatif). Simple mode drafts first — the price of the
 /// music step does not depend on the drafted text, so this matches what
 /// submit will spend.
-pub async fn civitai_music_cost(req: MusicGenRequest) -> Result<VideoCostView, String> {
+pub async fn civitai_music_cost(user_id: &str, req: MusicGenRequest) -> Result<VideoCostView, String> {
     let key = require_key()?;
-    let params = finalize_request(&req).await?;
+    let params = finalize_request(&req, user_id).await?;
     let est = civitai::whatif_music_gen(&key, &params).await?;
     Ok(VideoCostView {
         total_buzz: est.total_buzz,
@@ -2011,7 +2020,7 @@ pub async fn civitai_music_submit(
     req: MusicGenRequest,
 ) -> Result<MusicSubmitView, String> {
     let key = require_key()?;
-    let params = finalize_request(&req).await?;
+    let params = finalize_request(&req, user_id).await?;
     let est = civitai::whatif_music_gen(&key, &params).await?;
     let tokens = buzz_to_tokens(est.total_buzz);
     require_balance_covering(bearer, tokens).await?;
@@ -2628,7 +2637,7 @@ mod music_tests {
             cover_image: None,
             duration: Some(2.5),
             seed: None,
-        })
+        }, "")
         .await
         .unwrap();
         assert_eq!(params.caption.as_deref(), Some("glass shatter"));
@@ -2654,7 +2663,7 @@ mod music_tests {
             cover_image: None,
             duration: Some(60.0),
             seed: None,
-        })
+        }, "")
         .await
         .unwrap();
         assert_eq!(params.caption.as_deref(), Some("lofi beat"));

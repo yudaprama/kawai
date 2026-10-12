@@ -322,7 +322,7 @@ pub fn onboarding_run_stream(
             // their `profile` namespace (facet distill folds them).
             if !linkedin_materials.trim().is_empty() {
                 yield OnboardingEvent::CompressStarted;
-                match compress_with_cloud(&linkedin_materials).await {
+                match compress_with_cloud(&user_id, &linkedin_materials).await {
                     Ok(compressed) => {
                         let counts = (
                             compressed.profile.len() as u32,
@@ -368,7 +368,7 @@ pub fn onboarding_run_stream(
         }
 
         yield OnboardingEvent::CompressStarted;
-        let compressed = match compress_with_cloud(&materials).await {
+        let compressed = match compress_with_cloud(&user_id, &materials).await {
             Ok(c) => c,
             Err(e) => {
                 yield OnboardingEvent::OnboardingError {
@@ -465,7 +465,7 @@ pub async fn onboarding_import_document(user_id: &str, file_id: &str) -> Result<
         return Err(DbError::Config("document contained no extractable text".into()));
     }
 
-    let compressed = compress_with_cloud(&materials)
+    let compressed = compress_with_cloud(user_id, &materials)
         .await
         .map_err(|e| DbError::Config(e.to_string()))?;
     let stored = persist_compressed(user_id, &compressed, SOURCE_DOCUMENT, false).await?;
@@ -585,13 +585,16 @@ impl RoleMerged for IdentitySignals {
 
 /// One cloud one-shot over the materials. Errors when no provider is
 /// configured or the answer is malformed.
-async fn compress_with_cloud(materials: &str) -> Result<onboarding::compress::CompressedProfile, OnboardingError> {
+async fn compress_with_cloud(
+    user_id: &str,
+    materials: &str,
+) -> Result<onboarding::compress::CompressedProfile, OnboardingError> {
     let answer = remote_llm::reason::reason_in(
         compress_system_prompt(),
         &compress_task(materials),
         "onboarding-compressor",
         None,
-        None,
+        Some(user_id.to_string()),
     )
     .await
     .map_err(|e| OnboardingError::Compression(e.to_string()))?;

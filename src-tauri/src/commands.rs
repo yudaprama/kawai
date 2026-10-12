@@ -1304,9 +1304,11 @@ pub async fn civitai_video_fetch(
 
 #[tauri::command]
 pub async fn civitai_music_cost(
+    session: State<'_, Session>,
     req: logic::civitai::MusicGenRequest,
 ) -> Result<logic::civitai::VideoCostView, String> {
-    logic::civitai::civitai_music_cost(req).await
+    let user_id = session_user_id(&session)?;
+    logic::civitai::civitai_music_cost(&user_id, req).await
 }
 
 #[tauri::command]

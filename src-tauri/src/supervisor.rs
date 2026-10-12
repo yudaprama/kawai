@@ -1813,13 +1813,18 @@ const NARROW_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 /// names tools this install cannot dispatch) degrades gracefully. Every
 /// failure mode — no Turso config, no embedder, sync timeout, dimension
 /// mismatch, empty intersection — falls back to `None` = full catalog.
-pub async fn narrow_registry_for_goal(registry: &ToolRegistry, goal: &str) -> Option<ToolRegistry> {
-    narrow_registry_for_goal_with(registry, goal, NARROW_MIN_TOOLS, NARROW_TOP_K).await
+pub async fn narrow_registry_for_goal(
+    user_id: &str,
+    registry: &ToolRegistry,
+    goal: &str,
+) -> Option<ToolRegistry> {
+    narrow_registry_for_goal_with(user_id, registry, goal, NARROW_MIN_TOOLS, NARROW_TOP_K).await
 }
 
 /// Parametrized variant of [`narrow_registry_for_goal`] (inspection/test
 /// seam): `min_tools` is the activation threshold, `top_k` the admitted set.
 pub async fn narrow_registry_for_goal_with(
+    user_id: &str,
     registry: &ToolRegistry,
     goal: &str,
     min_tools: usize,
@@ -1829,7 +1834,7 @@ pub async fn narrow_registry_for_goal_with(
         return None;
     }
     let _cfg = kawai_tool_catalog::RemoteConfig::from_env()?;
-    let model = kawai_embedding::build_providers_from_env();
+    let model = kawai_embedding::build_providers_from_env(user_id);
     let query_vec = model
         .embed_strings(kawai_embedding::EmbedRole::Query, vec![goal.to_string()])
         .await
@@ -1984,7 +1989,11 @@ pub async fn build_desk_registry(
         });
         search
     });
-    toolset.add_tool(kawai_desk::DeskRoleTool::default().with_web_news(desk_news));
+    toolset.add_tool(
+        kawai_desk::DeskRoleTool::default()
+            .with_web_news(desk_news)
+            .with_user(user_id),
+    );
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
 
@@ -2001,7 +2010,7 @@ pub async fn build_youtube_registry(
     let mut toolset = build_supervisor_toolset(user_id, session_id, AUTO_AGENT_ID)
         .await
         .ok_or_else(|| SupervisorError::NoToolset(AUTO_AGENT_ID.to_string()))?;
-    toolset.add_tool(kawai_youtube::YoutubeStageTool::default());
+    toolset.add_tool(kawai_youtube::YoutubeStageTool::default().with_user(user_id));
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
 
@@ -2208,7 +2217,7 @@ pub async fn supervisor_toolset_with_explainer(
     let mut toolset = build_supervisor_toolset(user_id, session_id, AUTO_AGENT_ID)
         .await
         .ok_or_else(|| SupervisorError::NoToolset(AUTO_AGENT_ID.to_string()))?;
-    toolset.add_tool(kawai_agent::ExplainStepResultTool);
+    toolset.add_tool(kawai_agent::ExplainStepResultTool::default().with_user(user_id));
     Ok(toolset)
 }
 
@@ -3702,13 +3711,15 @@ async fn synthesize_final_answer(
 /// cloud longer than that; a slow provider just skips the lesson (the row
 /// still lands with an empty one).
 #[cfg(not(test))]
-async fn distill_lesson(lesson_task: &str) -> String {
+async fn distill_lesson(user_id: &str, lesson_task: &str) -> String {
     match tokio::time::timeout(
         std::time::Duration::from_secs(4),
-        remote_llm::reason::reason_as(
+        remote_llm::reason::reason_in(
             "You distill one reusable lesson from a completed AI agent run.",
             lesson_task,
             "experience-distiller",
+            None,
+            Some(user_id.to_string()),
         ),
     )
     .await
@@ -3722,7 +3733,7 @@ async fn distill_lesson(lesson_task: &str) -> String {
 /// the live API from `cargo test`/CI — keep the terminal path deterministic
 /// under test; the experience row still lands with an empty lesson.
 #[cfg(test)]
-async fn distill_lesson(_lesson_task: &str) -> String {
+async fn distill_lesson(_user_id: &str, _lesson_task: &str) -> String {
     String::new()
 }
 
@@ -4477,7 +4488,7 @@ pub fn execute_plan_stream_with_cancel(
                                 exp_tools.join(", "),
                                 exp_outcome,
                             );
-                            let lesson = distill_lesson(&lesson_task).await;
+                            let lesson = distill_lesson(&user_id, &lesson_task).await;
                             if let Err(e) = kawai_agent::experience_record(
                                 &user_id,
                                 AUTO_AGENT_ID,
