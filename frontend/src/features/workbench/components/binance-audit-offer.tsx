@@ -4,7 +4,15 @@ import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { call, errText } from "@/lib/api";
 
-import { fmtMoney, fmtPct, fmtPrice, fmtRR, placedRR, TpLadder } from "@/components/ai-elements/tool-renderers/shared";
+import {
+  fmtMoney,
+  fmtPct,
+  fmtPrice,
+  fmtRR,
+  fmtSigned,
+  placedRR,
+  TpLadder,
+} from "@/components/ai-elements/tool-renderers/shared";
 import { cn } from "@/lib/utils";
 
 /** Dispatch key of the audit tool — identifies an audit run's step in both
@@ -67,6 +75,9 @@ export interface OfferRow {
   size: number;
   mark: number;
   notional: number;
+  /** Exchange's own unrealized P&L at mark — direction-correct for both
+   * sides, and the figure the "hanya posisi untung" scope filters on. */
+  pnl: number;
   /** Null when the position has no both-sides R:R (one side absent). */
   riskReward: number | null;
   sl: { price: number; method: string; distancePct: number | null } | null;
@@ -127,7 +138,7 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
 
   const stops: OfferStopRow[] = [];
   const tps: OfferTpRow[] = [];
-  const meta = new Map<string, { notional: number; riskReward: number | null; entry: number }>();
+  const meta = new Map<string, { notional: number; riskReward: number | null; entry: number; pnl: number }>();
   if ("positions" in v && Array.isArray(v.positions)) {
     for (const row of v.positions) {
       if (typeof row !== "object" || row == null) continue;
@@ -147,7 +158,11 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
       const notional = "notionalAbs" in row ? (num(row.notionalAbs) ?? Math.abs(size * mark)) : Math.abs(size * mark);
       const riskReward = "riskReward" in row ? num(row.riskReward) : null;
       const entry = "entryPrice" in row ? (num(row.entryPrice) ?? 0) : 0;
-      meta.set(symbol, { notional, riskReward, entry });
+      // The exchange's own unrealized P&L, read here so a "profitable only"
+      // scope needs no extra fetch. Null → 0, so an unreadable figure reads as
+      // "not in profit" (excluded) rather than silently passing the scope.
+      const pnl = "unRealizedProfit" in row ? (num(row.unRealizedProfit) ?? 0) : 0;
+      meta.set(symbol, { notional, riskReward, entry, pnl });
 
       if (restingStops === 0 && "recommended" in a && typeof a.recommended === "object" && a.recommended != null) {
         const rec = a.recommended;
@@ -217,6 +232,7 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
         mark,
         entry: m?.entry ?? 0,
         notional: m?.notional ?? Math.abs(size * mark),
+        pnl: m?.pnl ?? 0,
         riskReward: m?.riskReward ?? null,
         sl: null,
         tp: null,
@@ -322,6 +338,11 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
   const [query, setQuery] = useState("");
   /** Narrow by what the position is MISSING — the actual decision axis. */
   const [gap, setGap] = useState<"all" | "noStop" | "noTp">("all");
+  /** Only positions already in profit. A SEPARATE axis from `gap`, not a
+   * fourth peer of it: "in profit AND no take-profit" is as legitimate a
+   * review as "in profit AND no stop", and a single-select group could only
+   * ever express one of the two. */
+  const [winnersOnly, setWinnersOnly] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -355,12 +376,15 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
   // user arms a whole-book placement against a viewport showing 4% of it.
   const selectedNotional = selectedRows.reduce((sum, r) => sum + r.notional, 0);
 
-  /** Visible rows: symbol search + missing-protection scope. Filtering narrows
-   * the VIEW only — the selection and the counts beside the table always stay
-   * in terms of the whole book, so a filter can never shrink what an approval
-   * would place. */
+  /** Visible rows: symbol search + missing-protection scope + winners-only.
+   * Filtering narrows the VIEW only — the selection and the counts beside the
+   * table always stay in terms of the whole book, so a filter can never
+   * shrink what an approval would place. */
   const q = query.trim().toUpperCase();
   const matching = offer.rows.filter((r) => {
+    // Strictly positive. A position at exactly break-even is not "in profit",
+    // and a stop locked there buys nothing over a structural one.
+    if (winnersOnly && !(r.pnl > 0)) return false;
     if (gap === "noStop" && r.sl != null) return false;
     if (gap === "noTp" && r.tp != null) return false;
     return q.length === 0 || r.symbol.includes(q);
@@ -485,6 +509,26 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
               {label}
             </button>
           ))}
+          {/* A different AXIS from the gap chips above, so it is visually and
+              spatially separate: gap = what is missing, this = the position's
+              own state. It is a toggle, not a member of the single-select
+              group — the two compose. */}
+          <span className="bg-border/60 mx-0.5 h-4 w-px" aria-hidden />
+          <button
+            type="button"
+            onClick={() => setWinnersOnly((v) => !v)}
+            aria-pressed={winnersOnly}
+            disabled={busy}
+            title="Only positions currently in profit — the ones worth locking in with a break-even stop"
+            className={cn(
+              "rounded-md border px-2 py-1 font-mono text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+              winnersOnly
+                ? "border-success/40 bg-success/10 text-foreground"
+                : "border-border text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Dalam untung
+          </button>
           <span className="text-muted-foreground ml-auto font-mono text-[11px] tabular-nums">
             {filtered ? `${matching.length} of ${offer.rows.length}` : `${offer.rows.length} positions`}
           </span>
@@ -519,7 +563,18 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
                     comparable, and the raw counts inverted the risk order the
                     backend actually ranked by. */}
                 <th className="p-1.5 text-right">Notional</th>
-                <th className="p-1.5 text-right">Mark</th>
+                <th
+                  className="p-1.5 text-right"
+                  title="The unrealized profit or loss on the position right now — the scope the “Dalam untung” filter reads"
+                >
+                  P&amp;L
+                </th>
+                <th
+                  className="p-1.5 text-right"
+                  title="The price right now — the number every level is measured against"
+                >
+                  Mark
+                </th>
                 <th className="p-1.5" title="Where the position closes automatically if the price moves against you">
                   Stop (exit at a loss)
                 </th>
@@ -562,6 +617,20 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
                     <td className="text-foreground p-1.5">{r.symbol}</td>
                     <td className="text-muted-foreground p-1.5">{side(r.long)}</td>
                     <td className="text-foreground p-1.5 text-right tabular-nums">{fmtMoney(r.notional)}</td>
+                    {/* What the "Dalam untung" scope filters on, shown signed so
+                        a green number can't be misread as a green-tinted
+                        position value. */}
+                    <td
+                      className={cn(
+                        "p-1.5 text-right tabular-nums",
+                        r.pnl > 0 ? "text-success" : r.pnl < 0 ? "text-destructive" : "text-muted-foreground",
+                      )}
+                    >
+                      {r.pnl === 0 ? "—" : fmtSigned(r.pnl)}
+                    </td>
+                    <td className="text-muted-foreground p-1.5 text-right tabular-nums">
+                      {r.mark > 0 ? fmtPrice(r.mark) : "—"}
+                    </td>
                     {/* A null `sl` means either "a stop already rests" or "the
                         engine found no valid level" — assert the fact that
                         holds for both rather than guessing the reason. */}
@@ -635,7 +704,8 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
         {matching.length === 0 && (
           <div className="text-muted-foreground px-3 py-6 text-center text-xs">
             No position matches{q.length > 0 ? ` "${query.trim()}"` : ""}
-            {gap !== "all" ? " with that gap" : ""}.
+            {gap !== "all" ? " with that gap" : ""}
+            {winnersOnly ? " and is in profit" : ""}.
           </div>
         )}
         {/* The viewport is ~8 rows tall; a whole-book selection is not. The
@@ -668,6 +738,10 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
           <div className="flex gap-1.5">
             <dt className="text-foreground shrink-0 font-medium">Mark</dt>
             <dd>the price right now — the number every level is measured against</dd>
+          </div>
+          <div className="flex gap-1.5">
+            <dt className="text-foreground shrink-0 font-medium">P&amp;L</dt>
+            <dd>profit or loss on the position so far — “Dalam untung” shows only the positive ones</dd>
           </div>
         </dl>
       </div>

@@ -107,6 +107,8 @@ describe("parseAuditOffer", () => {
           symbol: "BTCUSDT",
           positionAmt: 1.5,
           markPrice: 98000,
+          // In profit — the "Dalam untung" scope keys off this.
+          unRealizedProfit: 4200,
           restingStops: 0,
           restingTps: 0,
           advice: {
@@ -148,6 +150,8 @@ describe("parseAuditOffer", () => {
           symbol: "SOLUSDT",
           positionAmt: -10,
           markPrice: 150,
+          // In loss — must be EXCLUDED by the winners-only scope.
+          unRealizedProfit: -85.5,
           restingStops: 0,
           restingTps: 0,
           advice: {
@@ -218,6 +222,7 @@ describe("parseAuditOffer", () => {
         size: 1.5,
         mark: 98000,
         notional: 147000,
+        pnl: 4200,
         riskReward: null,
         sl: { price: 95000, method: "chandelier_exit", distancePct: 3.06 },
         tp: {
@@ -238,6 +243,7 @@ describe("parseAuditOffer", () => {
         size: 10,
         mark: 150,
         notional: 1500,
+        pnl: -85.5,
         riskReward: null,
         sl: null,
         tp: {
@@ -345,6 +351,41 @@ describe("parseAuditOffer", () => {
     // The entry is carried so the R:R column can anchor to it — the mark has
     // already run past a deep loss, so anchoring there invents absurd ratios.
     expect(offer?.rows.map((r) => r.entry)).toEqual([101000, 0]);
+  });
+
+  it("carries the exchange's unrealized P&L so the winners-only scope needs no extra fetch", () => {
+    // The "Dalam untung" filter reads `pnl`. Two failure modes matter: a
+    // row that silently reads 0 when the wire HAD a figure would exclude a
+    // profitable position, and a non-finite/absent figure must never pass a
+    // >0 test.
+    const pos = (symbol: string, pnl: unknown) => ({
+      symbol,
+      positionAmt: 1,
+      entryPrice: 100,
+      markPrice: 110,
+      ...(pnl === undefined ? {} : { unRealizedProfit: pnl }),
+      restingStops: 0,
+      restingTps: 0,
+      advice: {
+        verdict: "missing",
+        recommended: { price: 105, method: "chandelier_exit", distancePct: 4.5 },
+      },
+    });
+    const out = JSON.stringify({
+      summary: { usdmPositions: 4, graded: 4, withStopLoss: 0, naked: 4, nakedNotional: 1, withTakeProfit: 0 },
+      positions: [pos("WINUSDT", 42.5), pos("LOSUSDT", -12.25), pos("FLATUSDT", 0), pos("NOPNLUSDT", undefined)],
+    });
+    const offer = parseAuditOffer(out);
+    expect(offer?.rows.map((r) => [r.symbol, r.pnl])).toEqual([
+      ["WINUSDT", 42.5],
+      ["LOSUSDT", -12.25],
+      ["FLATUSDT", 0],
+      ["NOPNLUSDT", 0],
+    ]);
+    // Exactly what the filter admits: strictly positive. Break-even is not
+    // "in profit", and a missing figure must not sneak through as 0 > 0.
+    const winners = offer?.rows.filter((r) => r.pnl > 0).map((r) => r.symbol);
+    expect(winners).toEqual(["WINUSDT"]);
   });
 
   it("rejects anything that is not a readable audit matrix", () => {
