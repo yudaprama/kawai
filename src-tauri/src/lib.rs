@@ -200,6 +200,7 @@ pub fn run() {
         commands::binance_trading_disable,
         commands::binance_auto_protect_positions,
         commands::binance_auto_take_profit_positions,
+        commands::binance_open_screened_positions,
         commands::risk_guard_status,
         commands::risk_guard_set,
         commands::codegraph_is_available,

@@ -209,7 +209,14 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
       <p className="text-muted-foreground mt-3 font-mono text-[10px] leading-relaxed">
         Read-only market scan over Binance public data (top-liquidity USDT pairs): ranks symbols by 24h volume, folds
         indicators per symbol, and reports every hit with a conviction score and reasons. No API keys needed — the scan
-        never places an order. Symbols hitting multiple setups are called out first in the report.
+        itself never places an order. Symbols hitting multiple setups are called out first in the report.
+        {universe === "usdm" && (
+          <>
+            {" "}
+            On a USDⓈ-M run you can then open the hits you want from the report: kawai sizes each one, derives the
+            direction from the setup that fired, and places the protective stop with the entry.
+          </>
+        )}
       </p>
     </div>
   );

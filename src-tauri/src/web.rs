@@ -2642,6 +2642,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/binance_trading_disable", post(binance_trading_disable_handler))
         .route("/api/binance_auto_protect_positions", post(binance_auto_protect_positions_handler))
         .route("/api/binance_auto_take_profit_positions", post(binance_auto_take_profit_positions_handler))
+        // Opens positions — protected like every other order-writing route.
+        .route("/api/binance_open_screened_positions", post(binance_open_screened_positions_handler))
         .route("/api/risk_guard_status", post(risk_guard_status_handler))
         .route("/api/risk_guard_set", post(risk_guard_set_handler))
         .route("/api/codegraph_init", post(codegraph_init_handler));
@@ -3427,6 +3429,39 @@ async fn binance_auto_take_profit_positions_handler(
         req.style.as_deref().unwrap_or("standard"),
         req.limit.unwrap_or(25),
         req.symbols,
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+/// The screener's post-run offer — the one op that OPENS positions. Same
+/// contract as the protective batches above: the approval list IS the
+/// selection, the side is derived from the screen server-side, and the armed
+/// click is the confirmation.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BinanceOpenScreenedRequest {
+    picks: Vec<crate::logic::binance_trade::ScreenedPick>,
+    interval: Option<String>,
+    risk: Option<String>,
+}
+
+async fn binance_open_screened_positions_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<BinanceOpenScreenedRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    if req.picks.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "no symbols approved — nothing to open".into(),
+        ));
+    }
+    logic::binance_trade::binance_open_screened_positions(
+        &user_id,
+        req.picks,
+        req.interval.as_deref().unwrap_or("4h"),
+        req.risk.as_deref().unwrap_or("standard"),
     )
     .await
     .map(Json)

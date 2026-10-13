@@ -22,6 +22,7 @@ import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { fmtDuration, ReviewActions, settledCount } from "./progress-rail";
 import { auditRunStepId, BinanceAuditOffer } from "./binance-audit-offer";
+import { CryptoScreenerOffer, screenerRunStepIds } from "./crypto-screener-offer";
 
 /** The run's deck artifact, if any — the deliverable hero. Set DIRECTLY from
  *  the planCompleted callback / restored record (workbench.deck) — not via
@@ -435,6 +436,11 @@ export function PastRunCanvas({
   /** The audit step when this run IS a futures risk audit — keys the
    * post-report placement offer. */
   const pastAuditStepId = auditRunStepId(run.steps);
+  /** EVERY screener step, not just the first: the pipeline emits one step per
+   * screen and each carries its own hits, so reading one showed a single
+   * screen's slice of the scan. Renders only for a `usdm` run (the parser
+   * returns null for spot, which has no futures trade client). */
+  const pastScreenerStepIds = screenerRunStepIds(run.steps);
   /** Header label: the step's task (agentName), or the tool — never the raw
    *  step id. Same derivation the active canvas uses. */
   const docStep = (run.steps ?? []).find((s) => s.stepId === doc);
@@ -573,6 +579,12 @@ export function PastRunCanvas({
             sessionId={sessionId}
             stepId={pastAuditStepId}
           />
+        )}
+        {/* Post-screener entry offer: the run's own hits, opened only where
+            the user approves. Sits beside the audit's offer — a run is one
+            or the other, never both. */}
+        {isDeliverable && run.status === "completed" && pastAuditStepId == null && pastScreenerStepIds.length > 0 && (
+          <CryptoScreenerOffer fetcher={loadFullOutput} planKey={run.planKey ?? ""} stepIds={pastScreenerStepIds} />
         )}
       </div>
     </div>
@@ -800,6 +812,13 @@ export function DeliverableViewer({
   const liveAuditStepId = unseeded
     ? auditRunStepId(runRecord?.steps)
     : (auditRunStepId(supervisor.steps) ?? auditRunStepId(runRecord?.steps));
+  /** EVERY screener step — same live-then-record precedence as the audit's, so
+   * a reopened session offers its hits too. All of them: the pipeline emits
+   * one step per screen and each holds a different slice of the scan, so
+   * merging live + persisted (deduped) is what a completed run needs. */
+  const liveScreenerStepIds = unseeded
+    ? screenerRunStepIds(runRecord?.steps)
+    : [...new Set([...screenerRunStepIds(supervisor.steps), ...screenerRunStepIds(runRecord?.steps)])];
   const step =
     reports.find((r) => r.stepId === effective) ??
     (runRecord?.steps ?? []).find(
@@ -986,6 +1005,19 @@ export function DeliverableViewer({
             stepId={liveAuditStepId}
           />
         )}
+        {/* Post-screener entry offer: the run's own hits, opened only where
+            the user approves. A run is an audit or a screener, never both. */}
+        {effective === "final" &&
+          !unseeded &&
+          supervisor.status === "completed" &&
+          liveAuditStepId == null &&
+          liveScreenerStepIds.length > 0 && (
+            <CryptoScreenerOffer
+              fetcher={workbench.loadFullOutput}
+              planKey={runRecord?.planKey ?? supervisor.planKey ?? ""}
+              stepIds={liveScreenerStepIds}
+            />
+          )}
         {/* Failed step with no output: show its WHY instead of an empty body
             (the rail's "see report" now opens something meaningful). */}
         {effective !== "final" &&

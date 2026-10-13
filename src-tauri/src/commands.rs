@@ -2509,6 +2509,33 @@ pub async fn binance_auto_take_profit_positions(
     .await
 }
 
+/// The screener's post-run offer: open the approved hits as real positions,
+/// each with the engine's stop already resting.
+///
+/// The ONLY command that can increase exposure, and — like the protective
+/// pair above — it carries no planner round: the run view's offer passes the
+/// hits the run itself produced, each with the notional the user approved, and
+/// the armed click IS the confirmation. The side is derived from the screen
+/// name (never sent by the client), and `picks` is the whole approval — the
+/// engine never widens it.
+#[tauri::command]
+pub async fn binance_open_screened_positions(
+    picks: Vec<logic::binance_trade::ScreenedPick>,
+    interval: Option<String>,
+    risk: Option<String>,
+    session: State<'_, Session>,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    logic::binance_trade::binance_open_screened_positions(
+        &user_id,
+        picks,
+        interval.as_deref().unwrap_or("4h"),
+        risk.as_deref().unwrap_or("standard"),
+    )
+    .await
+}
+
+
 #[tauri::command]
 pub async fn risk_guard_status(
     session: State<'_, Session>,
