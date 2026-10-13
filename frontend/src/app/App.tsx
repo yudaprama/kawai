@@ -3,6 +3,7 @@ import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { LinkDialog, PreviewDialog } from "@/features/knowledge/components/knowledge-dialogs";
 import { useAppShortcuts } from "@/hooks/use-app-shortcuts";
+import { useUpdater } from "@/features/updater/use-updater";
 import { overlayOwnsEscape } from "@/lib/esc";
 import { useKnowledgeActions } from "@/features/knowledge/hooks/use-knowledge-actions";
 import { useSupervisorChat } from "@/features/chat/hooks/use-supervisor-chat";
@@ -34,6 +35,7 @@ import { useI18n } from "@/hooks/use-i18n";
 import { cn } from "@/lib/utils";
 
 export default function App() {
+  useUpdater();
   const { t } = useI18n();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [sessionsOpen, setSessionsOpen] = useState(false);

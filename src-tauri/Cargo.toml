@@ -114,6 +114,10 @@ hex = "0.4"
 # Office tool store imports (drag-drop/web base64 blobs) + TTS audio payloads.
 base64 = "0.22"
 tauri-plugin-dialog = { version = "2", optional = true }
+# Auto-update (GitHub Releases static latest.json) + app relaunch after
+# install. Desktop-only like the other tauri plugins.
+tauri-plugin-updater = { version = "2", optional = true }
+tauri-plugin-process = { version = "2", optional = true }
 # RAG pipeline for knowledge files:
 #   kawai-embedding — embed (local LiteRT embedder fallback under the litert
 #   feature, desktop only, no API key)
@@ -195,7 +199,7 @@ libc = "0.2"
 
 [features]
 default = ["desktop"]
-desktop = ["dep:tauri", "dep:tauri-plugin-opener", "dep:tauri-plugin-fs", "dep:tauri-plugin-dialog", "dep:keyring"]
+desktop = ["dep:tauri", "dep:tauri-plugin-opener", "dep:tauri-plugin-fs", "dep:tauri-plugin-dialog", "dep:tauri-plugin-updater", "dep:tauri-plugin-process", "dep:keyring"]
 web = ["dep:axum", "dep:tower-http"]
 # CodeGraph — sidecar only (AgentTool + LRU cache, zero cost off)
 codegraph = ["dep:codegraph"]

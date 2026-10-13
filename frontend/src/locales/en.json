@@ -1,4 +1,9 @@
 {
+  "updater": {
+    "available": "kawai {{version}} is available",
+    "install": "Update & restart",
+    "downloading": "Downloading update… {{percent}}%"
+  },
   "common": {
     "loading": "Loading…",
     "error": "Error",

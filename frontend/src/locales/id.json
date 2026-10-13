@@ -1,4 +1,9 @@
 {
+  "updater": {
+    "available": "kawai {{version}} tersedia",
+    "install": "Perbarui & mulai ulang",
+    "downloading": "Mengunduh pembaruan… {{percent}}%"
+  },
   "common": {
     "loading": "Memuat…",
     "error": "Kesalahan",

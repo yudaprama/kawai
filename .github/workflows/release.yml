@@ -213,6 +213,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
+          # Minisign key for the updater artifacts (.sig) + latest.json —
+          # passwordless key; no TAURI_SIGNING_PRIVATE_KEY_PASSWORD needed.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           tagName: v${{ needs.bump.outputs.version }}
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
@@ -324,6 +327,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
+          # Minisign key for the updater artifacts (.sig) + latest.json —
+          # passwordless key; no TAURI_SIGNING_PRIVATE_KEY_PASSWORD needed.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           tagName: v${{ needs.bump.outputs.version }}
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
@@ -458,11 +464,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
+          # Minisign key for the updater artifacts (.sig) + latest.json —
+          # passwordless key; no TAURI_SIGNING_PRIVATE_KEY_PASSWORD needed.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           tagName: v${{ needs.bump.outputs.version }}
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
+          # latest.json's windows-x86_64 entry points at the NSIS setup.exe
+          # (what the updater runs), not the WiX .msi.
+          updaterJsonPreferNsis: true
           args: --features litert,tts,binance,mnn-dynamic --config .github/tauri-litert.json
 
   build-web:
