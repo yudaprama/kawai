@@ -83,6 +83,28 @@ async fn require_balance_covering(bearer: &str, tokens: u64) -> Result<(), Strin
     }
 }
 
+/// Meter one media spend into BOTH sinks: the Grafana telemetry counter (the
+/// recap's billing source today) and the local append-only usage ledger
+/// (`usage_ledger`, migration 0031 — the source the sqld phase reads and the
+/// character cross-check will validate against). Neither may fail the caller:
+/// telemetry drops silently without its ingest queue, the ledger drops with a
+/// stderr line from its flusher. Media bills `billed_tokens` and leaves the
+/// input/output columns NULL — a spend has no token split (see the migration
+/// header's "exactly one billable column per row" rule).
+fn meter_media(user_id: &str, tokens: u64, lane: &str) {
+    kawai_telemetry::record_media_usage(Some(user_id), tokens, lane);
+    kawai_db::record_usage(
+        user_id,
+        kawai_db::UsageRecord {
+            kind: kawai_db::KIND_MEDIA.to_string(),
+            role: Some(lane.to_string()),
+            provider: Some("civitai".to_string()),
+            billed_tokens: Some(i64::try_from(tokens).unwrap_or(0)),
+            ..Default::default()
+        },
+    );
+}
+
 // ── Wire types (camelCase both directions, like logic::topup) ──────────────
 
 // Wire DTOs: defined once in `kawai_api_types` (the single source the TS
@@ -1274,7 +1296,7 @@ pub async fn civitai_generate(
     let key = require_key()?;
     let result = civitai::submit_image_gen(&key, &params).await?;
     // Cost committed — Buzz is charged at submit — so meter it for the recap.
-    kawai_telemetry::record_media_usage(Some(user_id), tokens, "image");
+    meter_media(user_id, tokens, "image");
     if result.images.is_empty() {
         return Err(result
             .errors
@@ -1510,7 +1532,7 @@ pub async fn civitai_video_submit(
     let tokens = buzz_to_tokens(est.total_buzz);
     require_balance_covering(bearer, tokens).await?;
     let submitted = civitai::submit_video_gen(&key, &params).await?;
-    kawai_telemetry::record_media_usage(Some(user_id), tokens, "video");
+    meter_media(user_id, tokens, "video");
     let job_id = match kawai_db::generation_jobs::generation_job_insert(
         user_id,
         "video",
@@ -2025,7 +2047,7 @@ pub async fn civitai_music_submit(
     let tokens = buzz_to_tokens(est.total_buzz);
     require_balance_covering(bearer, tokens).await?;
     let submitted = civitai::submit_music_gen(&key, &params).await?;
-    kawai_telemetry::record_media_usage(Some(user_id), tokens, "music");
+    meter_media(user_id, tokens, "music");
     let job_id = match kawai_db::generation_jobs::generation_job_insert(
         user_id,
         "music",
@@ -2276,7 +2298,7 @@ pub async fn civitai_model3d_submit(
     let tokens = buzz_to_tokens(est.total_buzz);
     require_balance_covering(bearer, tokens).await?;
     let submitted = civitai::submit_model3d_gen(&key, &params, with_preview).await?;
-    kawai_telemetry::record_media_usage(Some(user_id), tokens, "model3d");
+    meter_media(user_id, tokens, "model3d");
     let job_id = match kawai_db::generation_jobs::generation_job_insert(
         user_id,
         "model3d",
