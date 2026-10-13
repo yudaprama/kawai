@@ -221,6 +221,12 @@ jobs:
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
+          # Version-less asset names: permalinks like
+          # releases/latest/download/kawai_aarch64.dmg keep working across
+          # releases (updater latest.json + brew cask + _redirects depend on
+          # this). latest.json itself is excluded by tauri-action; .sig
+          # companions follow the same pattern.
+          releaseAssetNamePattern: "[name]_[arch][setup].[ext]"
           args: --features litert,tts,binance --config .github/tauri-litert.json
 
       # Wallet note: the opt-in `monad` feature (Monad wallet) is deliberately
@@ -335,6 +341,12 @@ jobs:
           releaseName: "kawai v${{ needs.bump.outputs.version }}"
           releaseDraft: true
           prerelease: false
+          # Version-less asset names: permalinks like
+          # releases/latest/download/kawai_aarch64.dmg keep working across
+          # releases (updater latest.json + brew cask + _redirects depend on
+          # this). latest.json itself is excluded by tauri-action; .sig
+          # companions follow the same pattern.
+          releaseAssetNamePattern: "[name]_[arch][setup].[ext]"
           args: --features litert,tts,binance --config .github/tauri-litert.json
 
   build-windows:
@@ -475,6 +487,8 @@ jobs:
           # latest.json's windows-x86_64 entry points at the NSIS setup.exe
           # (what the updater runs), not the WiX .msi.
           updaterJsonPreferNsis: true
+          # Stable version-less name (see the macos/linux jobs).
+          releaseAssetNamePattern: "[name]_[arch][setup].[ext]"
           args: --features litert,tts,binance,mnn-dynamic --config .github/tauri-litert.json
 
   build-web:
