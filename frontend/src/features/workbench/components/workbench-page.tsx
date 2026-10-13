@@ -406,8 +406,8 @@ export function WorkbenchPage({
    * public market data — one parallel scan per selected screen, then the
    * deliverable writer. Same canvas handoff as the audit submit. */
   const submitCryptoScreener = useCallback(
-    (screens: string[], universe: string, interval: string, topN: number) => {
-      beginPipelineRun((onStart) => workbench.runScreener(screens, universe, interval, topN, 60, { onStart }));
+    (screens: string[], universe: string, interval: string, topN: number, scanSize?: number) => {
+      beginPipelineRun((onStart) => workbench.runScreener(screens, universe, interval, topN, scanSize, { onStart }));
     },
     [beginPipelineRun, workbench.runScreener],
   );

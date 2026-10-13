@@ -845,7 +845,7 @@ export function useWorkbench() {
       universe: string,
       interval: string,
       topN: number,
-      scanSize: number,
+      scanSize: number | undefined,
       opts?: {
         /** Same contract as `run()`'s — fires once every gate passed, right
          * before the run record appends; the page navigates from here. */

@@ -26,8 +26,17 @@ const UNIVERSES = [
  * server-side (and `1s` is spot-only — the backend rejects it for perp). */
 const INTERVALS = ["15m", "1h", "4h", "1d", "1w"] as const;
 
-/** Hits returned per screen (the backend clamps 1-25). */
+/** Hits returned per setup (the backend clamps 1-25). */
 const TOP_NS = [5, 10, 25] as const;
+
+/** How many top-liquidity symbols the scan covers. "Full" omits `scanSize`
+ * — the backend then scans the ENTIRE filtered universe (~750 pairs, a
+ * multi-minute paced scan). */
+const SCAN_SIZES: { label: string; value?: number }[] = [
+  { label: "60", value: 60 },
+  { label: "150", value: 150 },
+  { label: "Full (~750)" },
+];
 
 /** At most seven screens per run — the full catalog. The single-scan
  * multi-screen tool evaluates every screen over ONE set of klines, so a
@@ -37,7 +46,7 @@ const MAX_SCREENS = SCREENS.length;
 
 export interface CryptoScreenerFormProps {
   disabled?: boolean;
-  onSubmit: (screens: string[], universe: string, interval: string, topN: number) => void;
+  onSubmit: (screens: string[], universe: string, interval: string, topN: number, scanSize?: number) => void;
 }
 
 /** Crypto Screener entry form on the Workbench landing. Pick up to four
@@ -50,6 +59,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
   const [universe, setUniverse] = useState<string>("usdm");
   const [interval, setInterval] = useState<string>("1d");
   const [topN, setTopN] = useState<number>(10);
+  const [scanSize, setScanSize] = useState<number | undefined>(undefined);
 
   const toggleScreen = (id: string) => {
     setScreens((prev) => {
@@ -61,7 +71,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
 
   const submit = () => {
     if (disabled || screens.length === 0) return;
-    onSubmit(screens, universe, interval, topN);
+    onSubmit(screens, universe, interval, topN, scanSize);
   };
 
   const chip = (active: boolean) =>
@@ -155,6 +165,26 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
                 className={chip(topN === n)}
               >
                 {n}
+              </button>
+            ))}
+          </Field>
+
+          <Field label="Scan size">
+            {SCAN_SIZES.map((s) => (
+              <button
+                key={s.label}
+                type="button"
+                disabled={disabled}
+                aria-pressed={scanSize === s.value}
+                onClick={() => setScanSize(s.value)}
+                title={
+                  s.value == null
+                    ? "Scan the whole filtered universe (~750 pairs, takes minutes)"
+                    : `Scan the top ${s.value} pairs by 24h volume`
+                }
+                className={chip(scanSize === s.value)}
+              >
+                {s.label}
               </button>
             ))}
           </Field>

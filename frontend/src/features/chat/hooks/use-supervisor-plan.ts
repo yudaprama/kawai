@@ -76,8 +76,9 @@ interface RunCryptoScreenerOptions {
   interval: string;
   /** Hits returned per screen (1-25, default 10). */
   topN: number;
-  /** How many top-liquidity symbols each scan covers (1-150, default 60). */
-  scanSize: number;
+  /** How many top-liquidity symbols each scan covers (1-2000). Omitted =
+   * the backend scans the ENTIRE filtered universe (~750 pairs). */
+  scanSize?: number;
 }
 
 export interface SupervisorPlanCallbacks {
