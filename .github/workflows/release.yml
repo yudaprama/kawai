@@ -448,13 +448,9 @@ jobs:
           # DLL so runtime loading and the bundle manifest resolve them.
           cp prebuilt/windows_x86_64/*.dll ../../native/
 
-      # ocr-rs `mnn-dynamic` (src-tauri feature `mnn-dynamic`, added to the
-      # tauri build args below): the prebuilt STATIC MNN is compiled /MT and
-      # its objects LNK2038-clash with the /MD onnxruntime objects from
-      # piper-rs's static ort-sys on the same MSVC link line. The dynamic
-      # prebuilt links via an import lib (no CRT directives in the link) and
-      # ships MNN.dll, which is staged beside litert-lm.dll so
-      # tauri.windows.conf.json's bundle.resources installs it next to the exe.
+      # ocr-rs `mnn-dynamic` was removed from src-tauri's features (see
+      # b3743be); the MNN.dll download below only remains because
+      # tauri.windows.conf.json still lists it under bundle.resources.
       - name: Download MNN prebuilt (dynamic) for ocr-rs mnn-dynamic
         shell: pwsh
         run: |
@@ -489,7 +485,7 @@ jobs:
           # Stable version-less name — input is assetNamePattern on
           # tauri-action@v0 (see the macos job).
           assetNamePattern: "[name]_[arch].[ext]"
-          args: --features litert,tts,binance,mnn-dynamic --config .github/tauri-litert.json
+          args: --features litert,tts,binance --config .github/tauri-litert.json
 
   build-web:
     needs: bump
