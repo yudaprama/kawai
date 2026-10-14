@@ -2642,6 +2642,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/binance_trading_disable", post(binance_trading_disable_handler))
         .route("/api/binance_auto_protect_positions", post(binance_auto_protect_positions_handler))
         .route("/api/binance_auto_take_profit_positions", post(binance_auto_take_profit_positions_handler))
+        // Moves existing stops to the engine's recommended level — same
+        // contract as the two placement batches above.
+        .route("/api/binance_auto_tighten_stops", post(binance_auto_tighten_stops_handler))
         // Opens positions — protected like every other order-writing route.
         .route("/api/binance_open_screened_positions", post(binance_open_screened_positions_handler))
         .route("/api/risk_guard_status", post(risk_guard_status_handler))
@@ -3427,6 +3430,30 @@ async fn binance_auto_take_profit_positions_handler(
         &user_id,
         req.interval.as_deref().unwrap_or("4h"),
         req.style.as_deref().unwrap_or("standard"),
+        req.limit.unwrap_or(25),
+        req.symbols,
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BinanceAutoTightenRequest {
+    limit: Option<usize>,
+    interval: Option<String>,
+    risk: Option<String>,
+    symbols: Option<Vec<String>>,
+}
+async fn binance_auto_tighten_stops_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<BinanceAutoTightenRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::binance_trade::binance_auto_tighten_stops(
+        &user_id,
+        req.interval.as_deref().unwrap_or("4h"),
+        req.risk.as_deref().unwrap_or("standard"),
         req.limit.unwrap_or(25),
         req.symbols,
     )

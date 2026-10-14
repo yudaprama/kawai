@@ -168,6 +168,16 @@ No `draft_document` — this agent does not create files.
 
 Persona: the Binance definition in `crates/toolsets/binance/src/agent.rs` (binance + not-android).
 
+The order-writing side is not an agent toolset: three direct ops
+(`logic::binance_trade.rs`, both wrappers) back the post-audit offer panel —
+`binance_auto_protect_positions` (place a stop where there is none),
+`binance_auto_take_profit_positions` (place the R-ladder where none rests),
+and `binance_auto_tighten_stops` (MOVE an existing stop to the level the
+policy recommends once it grades `tighten` — the break-even lock, valid from
+1×ATR of profit). The move is place-then-cancel, because Binance has no atomic
+amend for a conditional order and an unprotected window is the one state that
+costs money. Full rationale: TOOL-MAP.md §5.3a.
+
 ### `builtin.analytics` — Analytics
 
 Structured queries over tabular data files (csv/parquet/Excel) and SQL sources.

@@ -83,6 +83,35 @@ pub async fn binance_auto_take_profit_positions(
     Err("binance feature not enabled (build with --features binance)".into())
 }
 
+/// Lock in the winners in ONE call: for every USDⓈ-M position whose resting
+/// stop the engine grades `tighten` — typically a position in profit past
+/// 1×ATR, where the break-even lock becomes a valid stop — move the stop to
+/// the recommended level (place-then-cancel, so the position is never
+/// unprotected mid-move). Levels are engine-computed.
+#[cfg(feature = "binance")]
+pub async fn binance_auto_tighten_stops(
+    user_id: &str,
+    interval: &str,
+    risk: &str,
+    limit: usize,
+    symbols: Option<Vec<String>>,
+) -> Result<String, String> {
+    ::binance::trade::auto_tighten_stops(user_id, interval, risk, limit, symbols)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(feature = "binance"))]
+pub async fn binance_auto_tighten_stops(
+    _user_id: &str,
+    _interval: &str,
+    _risk: &str,
+    _limit: usize,
+    _symbols: Option<Vec<String>>,
+) -> Result<String, String> {
+    Err("binance feature not enabled (build with --features binance)".into())
+}
+
 /// Open the approved screener candidates, each with its stop already resting.
 ///
 /// The ONE op that can increase exposure, and deliberately not an

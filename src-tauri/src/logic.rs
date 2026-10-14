@@ -476,6 +476,10 @@ pub fn import_office_file(
 
 pub mod rag;
 pub mod remote;
+// Web read/search tiering — implementation lives in the `webread` toolset
+// crate; re-exported so `logic::scrape::*` call sites (incl. the desktop
+// webview engine) stay stable.
+pub use webread::scrape;
 // Data analysis agent tools (builtin.analytics). Implies office — the
 // tabular files live in the office store.
 pub mod analytics;
@@ -485,6 +489,7 @@ pub mod analytics;
 pub mod sql_remote;
 // GraphRAG (libSQL-native, feature "graph"): Naive/Local/Global/Hybrid/Mix
 // over one DB file. No office/analytics dependency.
+#[cfg(feature = "graph")]
 pub mod graph;
 // When graph + office are both on, logic::graph re-exports from knowledge::graph.
 // When only graph is on (no office), logic::graph compiles the full implementation

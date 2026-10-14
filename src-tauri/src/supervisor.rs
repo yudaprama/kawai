@@ -5434,10 +5434,12 @@ mod indicator_summary_tests {
         let table = super::indicator_summary_block(&summaries);
         assert!(table.contains("## Ringkasan Indikator Teknikal"));
         assert!(table.contains("| RSI (14) | 62.31 | Netral |"));
-        assert!(table.contains("| MACD (12,26,9) | macd 1.5, signal 0.9, histogram 0.6 | Bullish |"));
+        // serde_json object iteration is alphabetical (BTreeMap), so the
+        // MACD fields render histogram → macd → signal.
+        assert!(table.contains("| MACD (12,26,9) | histogram 0.6, macd 1.5, signal 0.9 | Bullish |"));
         // lastClose 103.2 above EMA9 101.5 → Bullish; inside the BB bands → Netral.
         assert!(table.contains("| EMA (9) | 101.5 | Bullish |"));
-        assert!(table.contains("| BB (20,2) | average 100, upper 104, lower 96 | Netral |"));
+        assert!(table.contains("| BB (20,2) | average 100, lower 96, upper 104 | Netral |"));
         // Volatility kinds carry no directional reading.
         assert!(table.contains("| ATR (14) | 1.75 | — |"));
         // Single source → no Sumber column.

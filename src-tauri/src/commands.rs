@@ -2509,6 +2509,32 @@ pub async fn binance_auto_take_profit_positions(
     .await
 }
 
+/// One click, whole book: the engine grades every USDⓈ-M position that
+/// already HAS a stop, and where the verdict is `tighten` — the resting stop
+/// is looser than the policy recommends, which is what a position in profit
+/// past 1×ATR looks like — the stop is moved to the recommended level.
+/// Positions with no stop belong to `binance_auto_protect_positions`; a stop
+/// that is already optimal, or already locked in profit, is left alone.
+#[tauri::command]
+pub async fn binance_auto_tighten_stops(
+    limit: Option<usize>,
+    interval: Option<String>,
+    risk: Option<String>,
+    // Explicit approval scope — same contract as the two placement batches.
+    symbols: Option<Vec<String>>,
+    session: State<'_, Session>,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    logic::binance_trade::binance_auto_tighten_stops(
+        &user_id,
+        interval.as_deref().unwrap_or("4h"),
+        risk.as_deref().unwrap_or("standard"),
+        limit.unwrap_or(25),
+        symbols,
+    )
+    .await
+}
+
 /// The screener's post-run offer: open the approved hits as real positions,
 /// each with the engine's stop already resting.
 ///

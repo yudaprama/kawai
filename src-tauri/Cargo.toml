@@ -38,8 +38,8 @@ tower-http = { version = "0.6", optional = true, features = ["fs"] }
 # High-level streaming chat over LiteRT-LM (on-device Gemma 4, etc.).
 # Pulls in cognee-litert-lm transitively. Gated behind `litert`.
 local-llm = { path = "../local-llm", optional = true }
-# One rig-core source for the whole graph (src-tauri + rig-tools + rig-libsql).
-# Every consumer uses crates.io "0.42" uniformly — see ARCHITECTURE.md.
+# Agent-tier runtime (tool dispatch, tool loop) + hybrid cloud-subagent
+# streaming client (logic/remote.rs). Pin: crates.io "0.42" — see ARCHITECTURE.md.
 rig = "0.42"
 # default-features=false keeps only the local-SQLite core: replication/remote
 # would pull tonic 0.11 + hyper 0.14 + axum 0.6 + rustls 0.22 (dead weight —
@@ -52,65 +52,118 @@ jsonwebtoken = "9"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 # Loads KAWAI_AUTH_* from the project-root .env in dev (no-op if absent).
 dotenvy = "0.15"
-# Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
-# Private repo — CI authenticates via the insteadOf git rewrite (release.yml).
-kawai-constants = { git = "https://github.com/yudaprama/kawai-vault" }
+# Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.) — local vault
+# submodule (build-first; the git release lags the checkout).
+kawai-constants = { path = "../kawai-vault/constants" }
 # Office tool store imports (drag-drop/web base64 blobs). Gated behind
 # "office" so non-office builds stay dep-free.
 base64 = { version = "0.22", optional = true }
 tauri-plugin-dialog = "2"
-# RAG pipeline for office knowledge files (gated behind "office"):
-#   kawai-embedding — embed (local fastembed ONNX fallback, no API key)
-#   rig-libsql     — vector store (insert_documents / search)
-# Uses the same crates.io rig-core 0.42 source as the rest of the graph
-# so the vector-store seam unifies with kawai-embedding's EmbeddingModel.
+tauri-plugin-fs = "2"
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
+# Embeddings (local fastembed ONNX fallback, no API key) — used by the
+# knowledge pipeline (crates/engines/knowledge) and supervisor recall.
 kawai-embedding = { path = "../kawai-embedding", optional = true }
-# Markdown-aware + char-based chunking for RAG indexing (office feature only).
-# Replaces the in-tree chunk_text sliding window with text-splitter's
-# MarkdownSplitter (heading-aware locators) / TextSplitter.
-text-splitter = { version = "0.27", features = ["markdown"], optional = true }
-rig-libsql = { path = "../rig-libsql", optional = true }
-# Image understanding for knowledge ingestion (office feature): describe
-# images to text via the ragloader DescriberChain (local stub → JigsawStack
-# VOCR). Pulls jigsawstack (reqwest 0.12) transitively.
-ragloader = { path = "../rig-components/ragloader", optional = true }
+# Document text extraction for knowledge ingestion (office feature):
+# markdown/PDF/office-aware loader. Pulls jigsawstack (reqwest 0.12)
+# transitively for image description (DescriberChain).
+ragloader = { path = "../crates/integrations/ragloader", optional = true }
 # YouTube transcript fetching for knowledge ingestion (office feature).
 # Uses reqwest 0.13 — coexists with our direct 0.12 (like the rustls pair).
-youtube_transcript = { path = "../rig-components/youtube_transcript", optional = true }
-# rig-core is a direct dep (not just transitive) because logic::rag uses its
-# `Embed` derive + `EmbeddingsBuilder`/`InsertDocuments` traits directly.
-rig-core = { version = "0.42", optional = true }
+youtube_transcript = { path = "../crates/integrations/youtube-transcript", optional = true }
 # Pure-Rust office create/read/edit (vendored submodule): markdown → IR →
 # docx/xlsx/pptx (in-process), raw-part surgery for in-place edits. PDF
-# operations via pdf_oxide (fetched from GitHub, no local submodule).
+# operations via pdf_oxide (yudaprama fork — same source as the other crates
+# in the graph; upstream lags office_oxide's DocumentIR schema).
 office_oxide = { path = "../office_oxide", optional = true }
-pdf_oxide = { git = "https://github.com/yfedoseev/pdf_oxide", optional = true }
+pdf_oxide = { git = "https://github.com/yudaprama/pdf_oxide", optional = true }
 regex = { version = "1", optional = true }
 # Web read tiering (office feature): Cloudflare Browser Rendering fallback
 # tier via the generated browser tool crate (reqwest-only, mobile-safe), plus
 # the `url` crate for pure URL normalization in logic::scrape.
-browser = { path = "../rig-components/tools/browser", optional = true }
+browser = { path = "../crates/generated-tools/browser", optional = true }
 url = { version = "2", optional = true }
 # Binance agent tools (builtin.binance): keyless public market data via the
-# crates.io binance-sdk (rustls, spot-only) + in-process TA via rig-components/ta.
-binance = { path = "../rig-components/binance", optional = true }
+# crates.io binance-sdk (rustls, spot-only) + in-process TA.
+binance = { path = "../crates/toolsets/binance", optional = true }
+
+# Split-out first-party crates (foundation / engines / toolsets / integrations).
+kawai-auth = { path = "../crates/foundation/auth" }
+kawai-db = { path = "../crates/foundation/db" }
+kawai-paths = { path = "../crates/foundation/paths" }
+kawai-events = { path = "../crates/foundation/events" }
+kawai-api-types = { path = "../crates/foundation/api-types" }
+kawai-agent-contract = { path = "../crates/foundation/agent-contract" }
+kawai-memory = { path = "../crates/foundation/memory" }
+kawai-skills = { path = "../crates/foundation/skills" }
+kawai-agent = { path = "../crates/engines/agent" }
+kawai-router = { path = "../crates/router" }
+kawai-tool-catalog = { path = "../crates/foundation/tool-catalog" }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+iana-time-zone = "0.1"
+kawai-desk = { path = "../crates/engines/desk" }
+kawai-youtube = { path = "../crates/engines/youtube" }
+kawai-knowledge = { path = "../crates/engines/knowledge" }
+kawai-office = { path = "../crates/engines/office" }
+
+kawai-analytics = { path = "../crates/toolsets/analytics-tools" }
+composio = { path = "../crates/toolsets/composio" }
+civitai = { path = "../crates/integrations/civitai" }
+kawai-tools = { path = "../kawai-tools" }
+kawai-dyntoken = { path = "../kawai-vault/dyntoken" }
+webread = { path = "../crates/toolsets/webread" }
+kawai-cli = { path = "../crates/toolsets/cli" }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+apify = { path = "../crates/integrations/apify" }
+kawai-email = { path = "../crates/integrations/email" }
+kawai-vault = { path = "../kawai-vault/kawai-vault" }
+kawai-telemetry = { path = "../crates/foundation/telemetry" }
+hex = "0.4"
+onboarding = { path = "../crates/engines/onboarding", features = ["webread-backend"] }
+remote-llm = { path = "../crates/foundation/remote-llm" }
+analytics = { path = "../crates/engines/analytics" }
+weather_geo = { path = "../crates/generated-tools/weather-geo" } # location_sync_via_tool (ungated)
+
+# Generated tool catalogs — only referenced by litert-gated supervisor fns.
+entertainment = { path = "../crates/generated-tools/entertainment", optional = true }
+finance = { path = "../crates/generated-tools/finance", optional = true }
+news_media = { path = "../crates/generated-tools/news-media", optional = true }
+sports = { path = "../crates/generated-tools/sports", optional = true }
+food_drink = { path = "../crates/generated-tools/food-drink", optional = true }
+geospace = { path = "../crates/generated-tools/geospace", optional = true }
+knowledge = { path = "../crates/generated-tools/knowledge", optional = true }
+religion = { path = "../crates/generated-tools/religion", optional = true }
+utility = { path = "../crates/generated-tools/utility", optional = true }
+coinmarketcap = { path = "../crates/generated-tools/coinmarketcap", optional = true }
+
+sha2 = "0.10"
+thiserror = "2"
+tracing = "0.1"
 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [features]
-default = []
+default = ["desktop"]
+# Desktop/mobile app shell (tauri builder entry point). Implies office + graph —
+# the desktop app ships both (webview_engine's scrape tier needs office; the
+# graph ops are desktop-only). The web bin never calls `run()`; server deploys
+# build with `--no-default-features --features web`.
+desktop = ["office", "graph", "dep:finance", "kawai-agent/webread"]
 web = ["dep:axum", "dep:tower-http"]
-litert = ["dep:local-llm", "local-llm/rig-tools"]
+litert = ["dep:local-llm", "dep:entertainment", "dep:finance", "dep:news_media", "dep:sports", "dep:food_drink", "dep:geospace", "dep:knowledge", "dep:religion", "dep:utility", "dep:coinmarketcap", "kawai-agent/litert", "kawai-embedding/litert"]
+# GraphRAG — re-exported from kawai-knowledge behind its own feature.
+graph = ["kawai-knowledge/graph", "kawai-agent/graph"]
 # Office document tools (logic::office): pure-Rust create/read/edit/info via
-# office_oxide and PDF via pdf_oxide (both in-process) — plus the RAG pipeline
-# (kawai-embedding → rig-libsql, with in-tree chunking) for idle-time
-# knowledge indexing.
-office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "dep:browser", "dep:url"]
+# office_oxide and PDF via pdf_oxide (both in-process) — plus the knowledge
+# pipeline (crates/engines/knowledge: kawai-embedding + libsql vector/FTS)
+# for idle-time knowledge indexing.
+office = ["dep:base64", "dep:kawai-embedding", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "dep:browser", "dep:url", "kawai-agent/office"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
-binance = ["dep:binance"]
+binance = ["dep:binance", "kawai-agent/binance"]
 
 [[bin]]
 name = "kawai"
@@ -134,19 +187,11 @@ name = "remote_smoke"
 required-features = ["litert"]
 
 [[example]]
-name = "chat_route_check"
-required-features = ["litert"]
-
-[[example]]
 name = "thinking_smoke"
 required-features = ["litert", "office"]
 
 [[example]]
 name = "draft_smoke"
-required-features = ["litert", "office"]
-
-[[example]]
-name = "agent_smoke"
 required-features = ["litert", "office"]
 
 [[example]]
@@ -161,3 +206,6 @@ required-features = ["litert"]
 # graph (including pdf_oxide). Prevents duplicate FFI symbols on Linux.
 [patch.crates-io]
 office_oxide = { path = "../office_oxide" }
+
+[dev-dependencies]
+tempfile = "3"

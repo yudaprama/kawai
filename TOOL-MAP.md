@@ -133,6 +133,7 @@ the reason.
 | `crypto_futures_stop_loss` / `crypto_futures_take_profit` | per-position advisory stop (CE/Donchian/Keltner + ratchet vs the advice history table) and R-multiple TP ladder, graded against the resting orders |
 | `binance_futures_risk_audit` | ONE-call portfolio risk review: sync → grade the biggest USDⓈ-M positions with the SAME stop policy → TP coverage → summary (naked positions, naked notional, R:R) — see §5.2 |
 | `crypto_screener` | market-wide setup scan: top-liquidity USDT pairs (spot or USDⓈ-M) folded over candles for ONE named screen (`oversold_rebound`, `macd_golden_cross`/`macd_death_cross`, `midband_reclaim`, `uptrend_pullback`, `squeeze_watch`, `rsi_overbought_uptrend`) — conviction-ranked hits with per-hit reasons — see §5.3 |
+| `crypto_futures_trade_stats` | REALIZED trading performance over your closed fills: win rate, avg win/loss, expectancy, profit factor, largest win/loss, total realized PnL (per market, optionally one symbol) — see §5.4 |
 
 ### 5.1 `binance_futures_positions` — the local futures mirror
 
@@ -287,6 +288,93 @@ self-bounded (12 runs/min, 6-way parallel klines, 45s deadline →
   each; the built-in deliverable writer turns the hit lists into one
   summary, cross-screen symbols called out first. No planning round, and NO
   credential gate: the pipeline never touches a signed endpoint.
+
+### 5.3a The placement actions — protect, take-profit, MOVE a stop
+
+Three direct ops (both wrappers, no planner round — the post-audit offer's
+armed click IS the confirmation) over the §5.2 matrix. All three take the
+audit's own `params` and an approved `symbols` list, and all three compute
+levels with the SAME policy the audit grades with, so the user approves an
+action, never a hand-typed number:
+
+| Op | Population it touches | What it does |
+|---|---|---|
+| `binance_auto_protect_positions` | positions with NO resting stop | places the recommended reduce-only stop (`auto_protect_naked`) |
+| `binance_auto_take_profit_positions` | positions with NO resting TP | places the advised R-ladder rungs (`auto_take_profit_naked`) |
+| `binance_auto_tighten_stops` | positions whose resting stop grades `tighten` | MOVES that stop to the recommended level (`auto_tighten_stops`) |
+
+The third is the break-even lock, and it is the population the other two
+cannot reach by construction: `auto_protect_naked` skips any position that
+already carries a stop, which is exactly the set this action exists for. The
+`breakeven_lock` candidate (`stop_loss.rs`) becomes valid once a position is
+in profit by ≥1×ATR, and from that moment the stop advice's own verdict turns
+`tighten` — so the trigger is the engine's policy, never a UI-side guess.
+
+- **A move is place-then-cancel.** Binance offers no atomic amend for a
+  conditional order (`/fapi/v1/algoOrder` takes POST/DELETE/GET only), so the
+  new stop is submitted FIRST and the old one cancelled second. The window
+  where the position is unprotected is the one state this pipeline treats as
+  actually costing money; two reduce-only stops resting for a few hundred
+  milliseconds is the harmless version of the same trade, because a second
+  one firing finds nothing to reduce and the venue rejects it instead of
+  opening a reverse position.
+- **The gate is the verdict, plus two structural checks** (`tighten_decision`,
+  pure + unit-tested): `verdict == "tighten"`, the level on the protective
+  side of the live mark, and strictly tighter than EVERY resting stop it
+  supersedes. So the action can only ever tighten — `ok`, `loosen` and
+  `missing` are no-ops, and a position already locked in profit keeps its
+  locked stop (`profit_locked` in `stop_advice`).
+- **An unconfirmed cancel is reported, not hidden.** A move returns per-position
+  `canceled` and `stale` rows; `stale` means the new stop IS resting and the
+  old one may be too. The move still counts as done (hiding the protection
+  that is now in place would be the worse lie), and the offer panel surfaces
+  the stale rows with a note to cancel them by hand. Both go through
+  `cancel_one`, the shared probe discipline — an ambiguous cancel is settled
+  by re-reading the book, never by assuming.
+- **Each move spends TWO order calls**, which is why it rides
+  `Budget::Batch` (120/min) rather than the 10/min single-order budget; the
+  two batches above are unchanged.
+
+### 5.4 `crypto_futures_trade_stats` — the realized-PnL ledger
+
+Everything else in this section reports either market data or the UNREALIZED
+PnL on positions still open. Neither answers "is this trading paying?", so
+`trades.rs` ingests Binance's own per-fill `realizedPnl` from
+`/fapi/v1/userTrades` (USDⓈ-M) and `/dapi/v1/userTrades` (COIN-M) into the
+append-only `binance_futures_trades` table (migration 0032) and computes
+performance over it. Read-only; it never places, cancels, or changes an order.
+
+- **The PnL is NOT recomputed.** Binance already books realized PnL per fill
+  against the right side, quantity, and fees. Re-deriving it locally
+  (nautilus's average-cost engine) would only risk disagreeing with the number
+  the user sees on binance.com — and there is no local position history to
+  derive from anyway, since positions arrive as exchange-computed snapshots.
+- **Append-only, unlike the mirror beside it.** §5.1's tables are exact
+  mirrors: every sync rewrites them and prunes by `synced_at`. A fill happened
+  and cannot un-happen, so this table has no prune column at all — the
+  statistics are only meaningful over time. `ON CONFLICT(margin, trade_id)
+  DO NOTHING` makes re-syncing an overlapping page free, which is what lets the
+  tool sync-then-read with no window bookkeeping.
+- **The market tag partitions the ledger.** dapi and fapi trade ids collide
+  numerically (the same trap migration 0025 fixed for positions), so the PK is
+  `(margin, trade_id)`. COIN-M settles in the underlying coin, which is why the
+  two markets are never summed into one figure.
+- **Credential scope is `resolve_account`** — own keys only, never the public
+  `resolve`. The product-baked pair signs as the PRODUCT's Binance account; a
+  fallback here would mirror the product's fill history into the user's own
+  database as if it were their trading record.
+- **The statistics follow nautilus's conventions**
+  (`crates/analysis/src/statistics/`), because they are the ones that do not
+  quietly lie: a BREAKEVEN counts in `winRate`'s denominator (it was still a
+  trade) but is excluded from `expectancy` (it has no winner or loser to
+  average); `profitFactor` is `null`, not infinite, when there are no losing
+  trades, so the agent reports *unknown* rather than a perfect score. An
+  uncomputable statistic serializes as JSON `null`, never `0` — the tool
+  description says so explicitly, because the model reading the payload cannot
+  infer it.
+- **Fetching is best-effort.** A rate-limited or unreachable exchange
+  downgrades the `sync` field to an explanation and the tool still answers from
+  the local history — which is the entire reason for keeping a ledger.
 
 ## 5b. Monad (`builtin.monad`) — `crates/toolsets/monad-tools` (feature `monad`)
 

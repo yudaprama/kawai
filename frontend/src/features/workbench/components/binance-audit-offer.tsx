@@ -57,6 +57,21 @@ export interface OfferTpRow {
   trailingExit: { method: string; price: number } | null;
 }
 
+/** One position whose RESTING stop the engine graded `tighten`: where the
+ * stop sits now and the level it would move to. This is the population the
+ * stop-move action touches — positions already protected, where a lock-in at
+ * break-even has become valid (profit past 1×ATR). Distinct from
+ * {@link OfferStopRow}, which lists positions carrying NO stop at all. */
+export interface OfferTightenRow {
+  symbol: string;
+  long: boolean;
+  size: number;
+  mark: number;
+  from: number;
+  to: number;
+  method: string;
+}
+
 /** One approval row: a position and exactly what a confirmed approval would
  * place for it (either side may be absent — a position that only lacks a
  * stop shows a stop, one lacking both shows both).
@@ -82,6 +97,10 @@ export interface OfferRow {
   riskReward: number | null;
   sl: { price: number; method: string; distancePct: number | null } | null;
   tp: OfferTpRow | null;
+  /** Present when a resting stop exists AND the engine graded it `tighten` —
+   * the level that stop would move TO, and where it rests now. Excludes the
+   * positions with no stop at all (`sl`), which the protect action places. */
+  tighten: { from: number; to: number; method: string } | null;
 }
 
 /** What the placement offer needs from the audit matrix: the portfolio
@@ -92,6 +111,7 @@ export interface AuditOffer {
   naked: number;
   noTp: number;
   params: { interval: string; risk: string; limit: number };
+  tightens: OfferTightenRow[];
   stops: OfferStopRow[];
   tps: OfferTpRow[];
   rows: OfferRow[];
@@ -106,9 +126,11 @@ const str = (x: unknown): string | null => (typeof x === "string" ? x : null);
  * take-profit ladder). Rows that are not actionable are dropped: a stop row
  * needs a recommendation AND zero resting stops; a TP row needs un-passed
  * rungs or a band exit AND zero resting TPs — the same positions the
- * placement batches would actually touch. `rows` merges both sides per
- * symbol, in audit order (largest |notional| first). Anything unreadable →
- * null, and the offer renders nothing. */
+ * placement batches would actually touch, plus the `tighten` verdicts — a
+ * position that already has a stop but where the engine wants it tighter
+ * (the break-even lock becomes valid once profit passes 1×ATR). `rows`
+ * merges all three sides per symbol, in audit order (largest |notional|
+ * first). Anything unreadable → null, and the offer renders nothing. */
 export function parseAuditOffer(output: string | null | undefined): AuditOffer | null {
   if (output == null) return null;
   let v: unknown;
@@ -138,6 +160,7 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
 
   const stops: OfferStopRow[] = [];
   const tps: OfferTpRow[] = [];
+  const tightens: OfferTightenRow[] = [];
   const meta = new Map<string, { notional: number; riskReward: number | null; entry: number; pnl: number }>();
   if ("positions" in v && Array.isArray(v.positions)) {
     for (const row of v.positions) {
@@ -163,6 +186,39 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
       // "not in profit" (excluded) rather than silently passing the scope.
       const pnl = "unRealizedProfit" in row ? (num(row.unRealizedProfit) ?? 0) : 0;
       meta.set(symbol, { notional, riskReward, entry, pnl });
+
+      // The `tighten` population: a stop ALREADY rests here, and the engine
+      // says it is looser than the policy recommends — the state a position
+      // in profit past 1×ATR reaches once the break-even lock is valid. The
+      // resting level comes from the coverage matrix (`stopLoss.price`,
+      // already filtered to a protective one) and the destination from the
+      // same recommendation the naked rows read, so the two lists can never
+      // disagree about a level. Mutually exclusive with `sl` by
+      // construction: that one requires zero resting stops.
+      if (
+        restingStops != null &&
+        restingStops > 0 &&
+        "verdict" in a &&
+        a.verdict === "tighten" &&
+        "stopLoss" in row &&
+        typeof row.stopLoss === "object" &&
+        row.stopLoss != null &&
+        "recommended" in a &&
+        typeof a.recommended === "object" &&
+        a.recommended != null
+      ) {
+        const rec = a.recommended;
+        const to = "price" in rec ? num(rec.price) : null;
+        const method = "method" in rec ? str(rec.method) : null;
+        const from = "price" in row.stopLoss ? num(row.stopLoss.price) : null;
+        // Only a strictly tighter, real destination — the same structural
+        // gate the backend's move decision applies before it touches an
+        // order. A level that is not tighter would be a loosen, and this
+        // panel must never offer one.
+        if (from != null && to != null && method != null && (long ? to > from : to < from)) {
+          tightens.push({ symbol, long, size, mark, from, to, method });
+        }
+      }
 
       if (restingStops === 0 && "recommended" in a && typeof a.recommended === "object" && a.recommended != null) {
         const rec = a.recommended;
@@ -218,7 +274,7 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
     }
   }
 
-  // Merge the two sides per symbol, first-seen order (the audit's
+  // Merge the three sides per symbol, first-seen order (the audit's
   // largest-notional-first ordering).
   const bySymbol = new Map<string, OfferRow>();
   const touch = (symbol: string, long: boolean, size: number, mark: number): OfferRow => {
@@ -235,6 +291,7 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
         pnl: m?.pnl ?? 0,
         riskReward: m?.riskReward ?? null,
         sl: null,
+        tighten: null,
         tp: null,
       };
       bySymbol.set(symbol, r);
@@ -244,11 +301,15 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
   for (const s of stops)
     touch(s.symbol, s.long, s.size, s.mark).sl = { price: s.price, method: s.method, distancePct: s.distancePct };
   for (const t of tps) touch(t.symbol, t.long, t.size, t.mark).tp = t;
+  for (const t of tightens) {
+    touch(t.symbol, t.long, t.size, t.mark).tighten = { from: t.from, to: t.to, method: t.method };
+  }
 
   return {
     naked,
     noTp: Math.max(0, usdm - withTp),
     params: { interval, risk, limit },
+    tightens,
     stops,
     tps,
     rows: [...bySymbol.values()],
@@ -298,6 +359,69 @@ export function placementSummary(raw: string): {
   return { placed, failed, note: note ?? "", failures };
 }
 
+/** Compact counts from the stop-MOVE op's JSON result.
+ *
+ * The `stale` rows are the point of parsing this at all: a move places the
+ * new stop and only then cancels the old one, so a cancel that could not be
+ * confirmed leaves BOTH resting. That is harmless (both reduce-only) but the
+ * operator has to be told, or the next audit shows a stop they did not
+ * expect. */
+export function tightenSummary(raw: string): {
+  tightened: number;
+  unchanged: number;
+  noStop: number;
+  failed: number;
+  note: string;
+  failures: { symbol: string; error: string }[];
+  stale: { symbol: string; error: string }[];
+} | null {
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof v !== "object" || v == null || !("tightened" in v) || !("failed" in v)) return null;
+  const tightened = num(v.tightened);
+  const failed = num(v.failed);
+  if (tightened == null || failed == null) return null;
+  const failures =
+    "failures" in v && Array.isArray(v.failures)
+      ? v.failures
+          .filter((f): f is Record<string, unknown> => typeof f === "object" && f != null)
+          .map((f) => ({
+            symbol: "symbol" in f ? (str(f.symbol) ?? "") : "",
+            error: "error" in f && typeof f.error === "string" ? f.error : "rejected without a reason",
+          }))
+      : [];
+  // Per moved position, the orders the move could NOT confirm canceled.
+  const stale =
+    "positions" in v && Array.isArray(v.positions)
+      ? v.positions
+          .filter((p): p is Record<string, unknown> => typeof p === "object" && p != null)
+          .flatMap((p) =>
+            ("stale" in p && Array.isArray(p.stale) ? p.stale : [])
+              .filter((s): s is Record<string, unknown> => typeof s === "object" && s != null)
+              .map((s) => ({
+                symbol: "symbol" in p ? (str(p.symbol) ?? "") : "",
+                error:
+                  "error" in s && typeof s.error === "string"
+                    ? s.error
+                    : "the old stop may still be resting next to the new one",
+              })),
+          )
+      : [];
+  return {
+    tightened,
+    unchanged: "unchanged" in v ? (num(v.unchanged) ?? 0) : 0,
+    noStop: "noStop" in v ? (num(v.noStop) ?? 0) : 0,
+    failed,
+    note: "note" in v ? (str(v.note) ?? "") : "",
+    failures,
+    stale,
+  };
+}
+
 interface BinanceAuditOfferProps {
   /** Observability/session scope of the run whose audit is being offered on. */
   sessionId?: number | null;
@@ -337,7 +461,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
    * here. Filters the VISIBLE list only — it never touches the selection. */
   const [query, setQuery] = useState("");
   /** Narrow by what the position is MISSING — the actual decision axis. */
-  const [gap, setGap] = useState<"all" | "noStop" | "noTp">("all");
+  const [gap, setGap] = useState<"all" | "noStop" | "noTp" | "toTighten">("all");
   /** Only positions already in profit. A SEPARATE axis from `gap`, not a
    * fourth peer of it: "in profit AND no take-profit" is as legitimate a
    * review as "in profit AND no stop", and a single-select group could only
@@ -370,6 +494,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
   const selectedRows = offer.rows.filter((r) => selected.has(r.symbol));
   const selectedStops = selectedRows.filter((r) => r.sl != null).length;
   const selectedTps = selectedRows.filter((r) => r.tp != null).length;
+  const selectedTightens = selectedRows.filter((r) => r.tighten != null).length;
   const allSelected = selected.size === offer.rows.length;
   const noneSelected = selected.size === 0;
   // The scroll viewport is ~8 rows; the selection can be 183. Without this the
@@ -386,6 +511,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
     // and a stop locked there buys nothing over a structural one.
     if (winnersOnly && !(r.pnl > 0)) return false;
     if (gap === "noStop" && r.sl != null) return false;
+    if (gap === "toTighten" && r.tighten == null) return false;
     if (gap === "noTp" && r.tp != null) return false;
     return q.length === 0 || r.symbol.includes(q);
   });
@@ -395,18 +521,34 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
    * reason about. Never silently widen to the whole book. */
   const selectMatching = () => setSelected(new Set(matching.map((r) => r.symbol)));
 
-  /** One approval = up to two op calls (stops, then TPs), each scoped to the
-   * approved symbol list. Level cap 500 = the backend's AUDIT_LIMIT_MAX, so
-   * an approved whole-book selection is never silently truncated. */
+  /** One approval = up to three op calls (tighten existing stops, then place
+   * missing stops, then missing take-profits), each scoped to the approved
+   * symbol list. Level cap 500 = the backend's AUDIT_LIMIT_MAX, so an
+   * approved whole-book selection is never silently truncated. */
   const executeRows = async (label: string, rows: OfferRow[]) => {
     if (busy || rows.length === 0) return;
     setBusy(true);
     setArmedKey(null);
+    // A row can carry more than one side (a stop AND a take-profit, or a
+    // tighten AND a take-profit), so each op gets the symbols that actually
+    // need IT — never the whole selection, which would make the protect batch
+    // re-place a stop the tighten batch just moved.
+    const tightenSymbols = rows.filter((r) => r.tighten != null).map((r) => r.symbol);
     const slSymbols = rows.filter((r) => r.sl != null).map((r) => r.symbol);
     const tpSymbols = rows.filter((r) => r.tp != null).map((r) => r.symbol);
     const p = offer.params;
     try {
       const out: string[] = [];
+      if (tightenSymbols.length > 0) {
+        out.push(
+          await call<string>("binance_auto_tighten_stops", {
+            interval: p.interval,
+            risk: p.risk,
+            limit: 500,
+            symbols: tightenSymbols,
+          }),
+        );
+      }
       if (slSymbols.length > 0) {
         out.push(
           await call<string>("binance_auto_protect_positions", {
@@ -467,6 +609,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
         <span className="rounded border px-1.5 py-0.5">standard take-profit</span>
         <span className="text-destructive rounded border px-1.5 py-0.5">{offer.naked} without a stop</span>
         <span className="rounded border px-1.5 py-0.5">{offer.noTp} without a take-profit</span>
+        <span className="text-success rounded border px-1.5 py-0.5">{offer.tightens.length} stop to lock in</span>
       </div>
       <p className="text-muted-foreground text-xs">
         Approve the rows you want protected — one, a subset, or all.
@@ -491,6 +634,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
               ["all", "Semua"],
               ["noStop", "Tanpa stop"],
               ["noTp", "Tanpa take-profit"],
+              ["toTighten", "Stop bisa ditarik"],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -643,8 +787,20 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
                             {r.sl.distancePct != null && ` (${fmtPct(r.sl.distancePct)}%)`}
                           </span>
                         </>
+                      ) : r.tighten != null ? (
+                        // A resting stop the engine wants TIGHTER. Both levels
+                        // are shown, from → to, because the whole point of the
+                        // row is the move: an arrow with only the destination
+                        // would leave the operator unable to judge it.
+                        <>
+                          <span className="text-muted-foreground line-through">{fmtPrice(r.tighten.from)}</span>{" "}
+                          <span className="text-foreground">→ {fmtPrice(r.tighten.to)}</span>{" "}
+                          <span className="text-success">· {human(r.tighten.method)}</span>
+                        </>
                       ) : (
-                        <span className="text-muted-foreground/50 text-[10px]">no stop to place</span>
+                        <span className="text-muted-foreground/50 text-[10px]">
+                          {r.pnl > 0 ? "stop is already tight" : "no stop to place"}
+                        </span>
                       )}
                     </td>
                     <td className="p-1.5">{tpCell(r.tp)}</td>
@@ -755,9 +911,11 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
         {armedKey === "bulk" ? (
           <span className="flex flex-wrap items-center gap-2">
             <span className="text-foreground font-mono text-[11px]">
-              Place {selectedStops} stop{selectedStops === 1 ? "" : "s"} and {selectedTps} take-profit
-              {selectedTps === 1 ? "" : "s"} on {selectedRows.length} position
-              {selectedRows.length === 1 ? "" : "s"} ({fmtMoney(selectedNotional)} exposure)?
+              {selectedTightens > 0 && `Move ${selectedTightens} stop${selectedTightens === 1 ? "" : "s"} in, `}
+              {selectedStops > 0 && `place ${selectedStops} stop${selectedStops === 1 ? "" : "s"}, `}
+              {selectedTps > 0 && `${selectedTps} take-profit${selectedTps === 1 ? "" : "s"}, `}
+              on {selectedRows.length} position{selectedRows.length === 1 ? "" : "s"} ({fmtMoney(selectedNotional)}{" "}
+              exposure)?
             </span>
             <Button disabled={busy} onClick={() => void executeRows("selected", selectedRows)} size="sm">
               Confirm
@@ -778,7 +936,13 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
                 user nothing about what 183 meant. */}
             {selectedRows.length === 0
               ? "Select positions to approve"
-              : `Place ${selectedStops} stop${selectedStops === 1 ? "" : "s"} + ${selectedTps} take-profit${selectedTps === 1 ? "" : "s"}`}
+              : [
+                  selectedTightens > 0 ? `move ${selectedTightens} stop in` : null,
+                  selectedStops > 0 ? `place ${selectedStops} stop${selectedStops === 1 ? "" : "s"}` : null,
+                  selectedTps > 0 ? `${selectedTps} take-profit${selectedTps === 1 ? "" : "s"}` : null,
+                ]
+                  .filter((p) => p != null)
+                  .join(" + ")}
           </Button>
         )}
       </div>
@@ -824,7 +988,8 @@ function PlacementResult({ raw }: { raw: string }) {
     <span className="w-full space-y-1">
       {parts.map((part) => {
         const summary = placementSummary(part);
-        if (summary == null) {
+        const tighten = summary == null ? tightenSummary(part) : null;
+        if (summary == null && tighten == null) {
           return (
             <pre
               key={part.slice(0, 32)}
@@ -834,6 +999,70 @@ function PlacementResult({ raw }: { raw: string }) {
             </pre>
           );
         }
+        if (tighten != null) {
+          return (
+            <span key={part.slice(0, 32)} className="block w-full space-y-1">
+              <span className="text-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+                {tighten.failed > 0 || tighten.stale.length > 0 ? (
+                  <Icon name="alert-circle" className="text-destructive size-3" />
+                ) : (
+                  <Icon name="check" className="text-success size-3" />
+                )}
+                {tighten.tightened} stop{tighten.tightened === 1 ? "" : "s"} moved in
+                {tighten.failed > 0 && <span className="text-destructive">· {tighten.failed} failed</span>}
+                {tighten.unchanged > 0 && (
+                  <span className="text-muted-foreground">· {tighten.unchanged} already tight</span>
+                )}
+                {tighten.noStop > 0 && <span className="text-muted-foreground">· {tighten.noStop} without a stop</span>}
+                {tighten.tightened > 0 && (
+                  <span className="text-muted-foreground">— re-run the audit to refresh the verdicts</span>
+                )}
+                {tighten.note.length > 0 && (
+                  <span className="text-muted-foreground block font-mono text-[10px] leading-relaxed">
+                    {tighten.note}
+                  </span>
+                )}
+              </span>
+              {tighten.stale.length > 0 && (
+                <details className="rounded-md border border-[var(--tea-color-border-focus)]">
+                  <summary className="cursor-pointer px-2 py-1 font-mono text-[10px] select-none text-foreground">
+                    {tighten.stale.length} old stop{tighten.stale.length === 1 ? "" : "s"} could not be confirmed
+                    canceled
+                  </summary>
+                  <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[11px]">
+                    {tighten.stale.map((f) => (
+                      <li key={`${f.symbol}:${f.error}`} className="text-muted-foreground">
+                        <span className="text-foreground">{f.symbol || "position"}</span> — {f.error}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-muted-foreground px-2.5 pb-1.5 font-mono text-[10px]">
+                    Both stops are reduce-only, so the tighter one fires first — check the resting orders on the
+                    exchange and cancel the older one by hand.
+                  </p>
+                </details>
+              )}
+              {tighten.failures.length > 0 && (
+                <details className="border-destructive/30 rounded-md border">
+                  <summary className="text-destructive cursor-pointer px-2 py-1 font-mono text-[10px] select-none">
+                    Why {tighten.failures.length} move{tighten.failures.length === 1 ? "" : "s"} failed
+                  </summary>
+                  <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[11px]">
+                    {tighten.failures.map((f) => (
+                      <li key={`${f.symbol}:${f.error}`} className="text-muted-foreground">
+                        <span className="text-foreground">{f.symbol || "position"}</span> — {f.error}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </span>
+          );
+        }
+        // Unreachable: an unreadable part already returned the raw `<pre>`
+        // above. Present so the branch below reads as non-null to the type
+        // checker rather than asserting it.
+        if (summary == null) return null;
         return (
           <span key={part.slice(0, 32)} className="block w-full space-y-1">
             <span className="text-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px]">

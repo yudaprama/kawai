@@ -2,8 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { BinanceAuditForm, ownsAuditScope } from "./binance-audit-form";
-import { placementSummary } from "./binance-audit-offer";
-import { auditRunStepId, parseAuditOffer } from "./binance-audit-offer";
+import { auditRunStepId, parseAuditOffer, placementSummary, tightenSummary } from "./binance-audit-offer";
 import { GoalTemplates, templateOpensAudit, templateOpensDesk, templateOpensYoutube } from "./goal-templates";
 
 /**
@@ -236,6 +235,7 @@ describe("parseAuditOffer", () => {
         pnl: 4200,
         riskReward: null,
         sl: { price: 95000, method: "chandelier_exit", distancePct: 3.06 },
+        tighten: null,
         tp: {
           symbol: "BTCUSDT",
           long: true,
@@ -257,6 +257,7 @@ describe("parseAuditOffer", () => {
         pnl: -85.5,
         riskReward: null,
         sl: null,
+        tighten: null,
         tp: {
           symbol: "SOLUSDT",
           long: false,
@@ -406,6 +407,91 @@ describe("parseAuditOffer", () => {
     expect(parseAuditOffer(JSON.stringify({ summary: { naked: "many" } }))).toBeNull();
     expect(parseAuditOffer(JSON.stringify({ ok: true }))).toBeNull();
   });
+
+  it("lists a `tighten` verdict as a MOVE, never as a stop to place", () => {
+    // The stop-move population: a stop already rests, and the engine grades
+    // it `tighten`. The row must carry BOTH levels — an arrow with only the
+    // destination leaves the operator unable to judge the move — and must
+    // stay out of `stops`, or the protect batch would place a SECOND stop
+    // next to the one the move is about to cancel.
+    const out = JSON.stringify({
+      params: { interval: "4h", risk: "standard", limit: 25 },
+      summary: { usdmPositions: 2, graded: 2, withStopLoss: 2, naked: 0, nakedNotional: 0, withTakeProfit: 0 },
+      positions: [
+        {
+          symbol: "BTCUSDT",
+          positionAmt: 1,
+          entryPrice: 98000,
+          markPrice: 110000,
+          unRealizedProfit: 12000,
+          restingStops: 1,
+          restingTps: 0,
+          stopLoss: { present: true, price: 95000, distancePct: 13.64 },
+          advice: {
+            verdict: "tighten",
+            recommended: { price: 98098, method: "breakeven_lock", distancePct: 10.82 },
+          },
+        },
+        {
+          // Already locked in profit: the policy refuses to roll a locked stop
+          // back, so the verdict is `ok` and the panel must not offer a move.
+          symbol: "ETHUSDT",
+          positionAmt: 10,
+          entryPrice: 2900,
+          markPrice: 3200,
+          unRealizedProfit: 3000,
+          restingStops: 1,
+          restingTps: 0,
+          stopLoss: { present: true, price: 2903, distancePct: 9.28 },
+          advice: { verdict: "ok", recommended: { price: 3200, method: "chandelier_exit", distancePct: 0 } },
+        },
+      ],
+    });
+    const offer = parseAuditOffer(out);
+    expect(offer?.tightens).toEqual([
+      {
+        symbol: "BTCUSDT",
+        long: true,
+        size: 1,
+        mark: 110000,
+        from: 95000,
+        to: 98098,
+        method: "breakeven_lock",
+      },
+    ]);
+    // Never a placement — the stop it would "place" already exists.
+    expect(offer?.stops).toEqual([]);
+    const row = offer?.rows.find((r) => r.symbol === "BTCUSDT");
+    expect(row?.sl).toBeNull();
+    expect(row?.tighten).toEqual({ from: 95000, to: 98098, method: "breakeven_lock" });
+    // ETHUSDT is not in `rows` at all: its stop is already `ok` and it has no
+    // take-profit, so nothing about it is actionable — the panel must not
+    // carry a row whose every action would be a no-op.
+    expect(offer?.rows.map((r) => r.symbol)).toEqual(["BTCUSDT"]);
+  });
+
+  it("never offers a move to a level that is not tighter than the resting stop", () => {
+    // A `tighten` verdict whose recommendation sits on the wrong side of the
+    // resting stop would be a LOOSEN — the panel must drop it rather than
+    // show an arrow that widens the risk. Long: destination must exceed the
+    // resting stop. Short: it must be below.
+    const row = (symbol: string, amt: number, from: number, to: number) => ({
+      symbol,
+      positionAmt: amt,
+      entryPrice: 100,
+      markPrice: 120,
+      restingStops: 1,
+      restingTps: 0,
+      stopLoss: { present: true, price: from, distancePct: 10 },
+      advice: { verdict: "tighten", recommended: { price: to, method: "breakeven_lock" } },
+    });
+    const out = JSON.stringify({
+      summary: { usdmPositions: 3, graded: 3, withStopLoss: 3, naked: 0, nakedNotional: 0, withTakeProfit: 0 },
+      positions: [row("LOOSENLONG", 1, 100, 95), row("TIGHTENLONG", 1, 100, 105), row("LOOSENSHORT", -1, 100, 105)],
+    });
+    const offer = parseAuditOffer(out);
+    expect(offer?.tightens.map((t) => t.symbol)).toEqual(["TIGHTENLONG"]);
+  });
 });
 
 describe("auditRunStepId", () => {
@@ -503,5 +589,55 @@ describe("placement result failures", () => {
         (f) => f.error,
       ),
     ).toEqual(["rejected without a reason"]);
+  });
+});
+
+describe("stop-move result", () => {
+  // The move places the new stop and only then cancels the old one, so a
+  // cancel that could not be confirmed leaves BOTH resting. That is harmless
+  // (both reduce-only) but the operator has to be told, or the next audit
+  // shows a stop they never placed.
+  const raw = JSON.stringify({
+    tightened: 2,
+    unchanged: 3,
+    noStop: 1,
+    failed: 0,
+    positions: [
+      { symbol: "BTCUSDT", from: [95000], to: "98098.00", stale: [] },
+      {
+        symbol: "ETHUSDT",
+        from: [2900],
+        to: "2902.90",
+        stale: [{ algoId: 123, from: 2900, error: "the order is STILL RESTING on the exchange" }],
+      },
+    ],
+    failures: [],
+    note: "stops moved to the engine's recommended levels",
+  });
+
+  it("reports the moves and lifts the unconfirmed old stops out of the moved positions", () => {
+    const summary = tightenSummary(raw);
+    expect(summary?.tightened).toBe(2);
+    expect(summary?.unchanged).toBe(3);
+    expect(summary?.noStop).toBe(1);
+    expect(summary?.stale).toEqual([{ symbol: "ETHUSDT", error: "the order is STILL RESTING on the exchange" }]);
+    expect(summary?.failures).toEqual([]);
+  });
+
+  it("keeps a failure row's reason and rejects output it does not recognise", () => {
+    const failed = JSON.stringify({
+      tightened: 0,
+      unchanged: 1,
+      noStop: 0,
+      failed: 1,
+      positions: [],
+      failures: [{ symbol: "SOLUSDT", error: "trade budget 120/min exhausted" }],
+      note: "",
+    });
+    expect(tightenSummary(failed)?.failures).toEqual([{ symbol: "SOLUSDT", error: "trade budget 120/min exhausted" }]);
+    expect(tightenSummary("not json")).toBeNull();
+    // A placement result is NOT a move result — the panel must not read one
+    // as the other.
+    expect(tightenSummary(JSON.stringify({ protected: 2, failed: 0 }))).toBeNull();
   });
 });
