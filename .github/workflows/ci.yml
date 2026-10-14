@@ -83,9 +83,9 @@ jobs:
           git diff --exit-code frontend/src/generated/
 
       # True kawai-web deploy gate: web feature without desktop/tauri (matches
-      # kawai-web/Cargo.toml's default-features=false, features=[web]).
-      # The per-feature checks (codegraph, tts) are subsumed by linux-check's
-      # `cargo check --features full`.
+      # kawai-web/Cargo.toml's default-features=false, features=[web]). The web
+      # feature implies office+graph (both pure-Rust) — only the tauri shell is
+      # excluded; the desktop bin is skipped via required-features.
       - name: cargo check (web only; no desktop/tauri)
         run: cargo check --no-default-features --features web
         working-directory: src-tauri
@@ -94,38 +94,11 @@ jobs:
   linux-check:
     runs-on: ubuntu-22.04
     # 30m was not enough: the battery of `cargo check --features …` runs plus
-    # the two `sql_remote_check --deep` live-DB gates (~8m) reaches ~28m on a
-    # cold cache, leaving the `cargo test (agent_eval harness)` build without
-    # the time to compile — the job was killed mid-compile by the job-level
-    # timeout, not by a test failure.
+    # the agent_eval harness compile reaches ~28m on a cold cache, leaving the
+    # `cargo test (agent_eval harness)` build without the time to compile —
+    # the job was killed mid-compile by the job-level timeout, not by a test
+    # failure.
     timeout-minutes: 60
-    # Real database engines for the remote-SQL snapshot gate below — the
-    # data_tables/data_import live checks need servers, not mocks.
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: kawai_check
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      mysql:
-        image: mysql:8
-        env:
-          MYSQL_ROOT_PASSWORD: mysql
-          MYSQL_DATABASE: kawai_check
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd "mysqladmin ping -proot --silent"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -167,10 +140,11 @@ jobs:
         run: cargo check --features litert
         working-directory: src-tauri
 
-      # One flag that pulls every feature (incl. web) — guards cross-feature
-      # combos like litert+web that per-feature checks never compile together.
-      - name: cargo check (full)
-        run: cargo check --features full
+      # Cross-feature combo guard — per-feature checks never compile these
+      # together. `full` no longer exists (features are flat: desktop/litert/
+      # office/graph/binance/web).
+      - name: cargo check (cross-feature combo)
+        run: cargo check --features litert,office,binance,graph,web
         working-directory: src-tauri
 
       # Binance agent tools: keyless, no C deps — a plain compile gate is
@@ -186,14 +160,6 @@ jobs:
       # sidecar cache; fixture parquet/csv/xlsx built in-test).
       - name: cargo check (default desktop feature set)
         run: cargo check
-        working-directory: src-tauri
-
-      - name: cargo check (codegraph feature)
-        run: cargo check --features codegraph
-        working-directory: src-tauri
-
-      - name: cargo check (tts feature)
-        run: cargo check --features tts
         working-directory: src-tauri
 
       # Lightweight audit: duplicate crate versions (no release build, no CPU heavy).
@@ -215,27 +181,6 @@ jobs:
       - name: typecheck (kawai-server worker)
         run: bun install --frozen-lockfile && bun run typecheck
         working-directory: kawai-server/worker
-
-      # Remote SQL sources (sqlx, rustls): compile gate + LIVE-server checks
-      # against the service containers — data_tables/data_import/dump typing
-      # run for real (--deep seeds fixture tables — basic, temporal/NULL,
-      # binary-guard, zero-row — and drops them after).
-      # This is the gate class that catches catalog/dump scope mismatches.
-      - name: cargo check (analytics-sql feature)
-        run: cargo check --features analytics-sql
-        working-directory: src-tauri
-
-      - name: sql_remote_check (live Postgres service container)
-        working-directory: src-tauri
-        env:
-          KAWAI_SQL_PROFILE_CHECK: postgres://postgres:postgres@127.0.0.1:5432/kawai_check
-        run: cargo run --quiet --example sql_remote_check --features analytics-sql -- --deep
-
-      - name: sql_remote_check (live MySQL service container)
-        working-directory: src-tauri
-        env:
-          KAWAI_SQL_PROFILE_CHECK: mysql://root:mysql@127.0.0.1:3306/kawai_check
-        run: cargo run --quiet --example sql_remote_check --features analytics-sql -- --deep
 
       - name: cargo test (crates/engines/analytics)
         run: cargo test -p analytics

@@ -28,6 +28,7 @@ async-stream = "0.3"
 futures-core = "0.3"
 futures-util = "0.3"
 tokio-util = "0.7"
+tokio-stream = "0.1"
 # Matches the graph majority (hf-hub / tokenizers / jigsawstack run 0.9).
 rand = "0.9"
 
@@ -152,7 +153,7 @@ default = ["desktop"]
 # graph ops are desktop-only). The web bin never calls `run()`; server deploys
 # build with `--no-default-features --features web`.
 desktop = ["office", "graph", "dep:finance", "kawai-agent/webread"]
-web = ["dep:axum", "dep:tower-http"]
+web = ["dep:axum", "dep:tower-http", "office", "graph"] # office+graph are pure-Rust — the web server ships both; only the tauri shell (desktop) is excluded
 litert = ["dep:local-llm", "dep:entertainment", "dep:finance", "dep:news_media", "dep:sports", "dep:food_drink", "dep:geospace", "dep:knowledge", "dep:religion", "dep:utility", "dep:coinmarketcap", "kawai-agent/litert", "kawai-embedding/litert"]
 # GraphRAG — re-exported from kawai-knowledge behind its own feature.
 graph = ["kawai-knowledge/graph", "kawai-agent/graph"]
@@ -168,6 +169,7 @@ binance = ["dep:binance", "kawai-agent/binance"]
 [[bin]]
 name = "kawai"
 path = "src/main.rs"
+required-features = ["desktop"]
 
 [[bin]]
 name = "kawai-web"
