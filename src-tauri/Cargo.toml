@@ -100,6 +100,8 @@ kawai-memory = { path = "../crates/foundation/memory" }
 kawai-skills = { path = "../crates/foundation/skills" }
 kawai-agent = { path = "../crates/engines/agent" }
 kawai-router = { path = "../crates/router" }
+kawai-monad = { path = "../crates/integrations/monad", optional = true }
+monad-tools = { path = "../crates/toolsets/monad-tools", optional = true }
 kawai-tool-catalog = { path = "../crates/foundation/tool-catalog" }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 iana-time-zone = "0.1"
@@ -165,6 +167,10 @@ office = ["dep:base64", "dep:kawai-embedding", "dep:ragloader", "dep:youtube_tra
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
 binance = ["dep:binance", "kawai-agent/binance"]
+# Monad EVM chain client (read-only RPC: balance + chain status). Pure alloy
+# HTTP provider — no keys, no signing. monad-tools carries the read-only
+# AgentTool surface (builtin.monad).
+monad = ["dep:kawai-monad", "dep:monad-tools"]
 
 [[bin]]
 name = "kawai"
