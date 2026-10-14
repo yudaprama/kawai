@@ -22,8 +22,9 @@ All links resolve to the newest published release. Browse everything (including 
 versions and the standalone `kawai-web` server binary) on the
 [Releases page](https://github.com/yudaprama/kawai/releases).
 
-> **Note:** the stable download names above require release **v0.2.2+**. Older releases used
-> versioned asset names.
+> **Note:** the stable download names above resolve from release **v0.3.2+** onward
+> (`assetNamePattern` in the release workflow). Earlier releases used versioned asset
+> names.
 
 ## First launch
 
