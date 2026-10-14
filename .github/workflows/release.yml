@@ -238,10 +238,6 @@ jobs:
   build-linux:
     needs: bump
     if: needs.bump.outputs.skipped == 'false'
-    # 24.04 (glibc 2.39), NOT 22.04: piper-rs's static ONNX Runtime prebuilt
-    # references __isoc23_strtol & friends, which only exist on glibc >= 2.38
-    # — link fails on 22.04's glibc 2.35. Consequence: the release .deb/.AppImage
-    # need a distro with glibc >= 2.39 (Ubuntu 24.04+, Fedora 40+, Debian 13+).
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -490,11 +486,6 @@ jobs:
   build-web:
     needs: bump
     if: needs.bump.outputs.skipped == 'false'
-    # Pinned, NOT ubuntu-latest: tts links ort-sys's static pyke ONNX Runtime,
-    # whose objects reference __isoc23_strtol & friends — glibc >= 2.38 only
-    # (ubuntu-24.04 = 2.39). ubuntu-latest is an alias that can move under us;
-    # 22.04 (2.35) silently breaks the link, exactly as it
-    # did for build-linux. Same floor as build-linux.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

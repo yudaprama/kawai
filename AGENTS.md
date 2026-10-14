@@ -211,7 +211,7 @@ src-tauri/src/logic/rag.rs       # office-gated RAG: chunk/embed/index (status t
 src-tauri/src/logic/office/      # office domain (feature "office"): mod.rs + store.rs + ooxml.rs + pdf.rs + tools.rs
 src-tauri/src/webview_engine.rs  # tauri-side WebViewFetch: hidden WebviewWindow + eval_with_callback extractor (office feature; registered in lib.rs, never in kawai-web)
 src-tauri/src/logic/remote.rs    # hybrid-tier cloud client (RemoteLlm): hand-written OpenAI-compatible SSE client, provider pool (zai → venice → opencode → openrouter → ollama) with health-aware failover; kawai-tools ToolSet registries live in kawai-tools/ (agent loop + web read tiering live in crates/engines/agent + crates/toolsets/webread)
-src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), turn_log_report (hybrid calibration), agent_eval (H1 orchestration-quality gate — 20 office scenarios, E4B baseline 20/20)
+src-tauri/examples/              # headless dev tools: local_llm_smoke (on-device streaming), remote_smoke (cloud tier), draft_smoke (draft_document e2e), tts_smoke (supertonic TTS e2e), turn_log_report (hybrid calibration), agent_eval (H1 orchestration-quality gate — 20 office scenarios, E4B baseline 20/20)
 src-tauri/src/logging.rs         # stderr tee → platform log dir (macOS ~/Library/Logs/, Linux $XDG_STATE_HOME)
 src-tauri/src/auth.rs            # PURE auth; Clerk JWKS verify + EdDSA mint + Session
 src-tauri/src/commands.rs        # #[tauri::command] wrappers + Channel + cancel registry

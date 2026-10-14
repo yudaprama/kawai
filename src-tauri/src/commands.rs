@@ -2354,9 +2354,10 @@ pub async fn run_youtube_summary(
         .await
 }
 
-// ── TTS (piper-rs, feature "tts") ──────────────────────────────────────
+// ── TTS (supertonic, feature "tts") ─────────────────────────────────────
 
-/// Synthesize speech from text using the Piper neural TTS engine.
+/// Synthesize speech from text using the Supertonic neural TTS engine
+/// (on-device MNN, language auto-detected).
 /// Returns base64-encoded WAV audio for playback in the frontend.
 /// When the `tts` feature is off, returns an error immediately.
 #[tauri::command]

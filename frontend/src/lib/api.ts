@@ -197,13 +197,14 @@ export function codegraphInit(projectPath?: string): Promise<CodegraphStatusResu
   return call<CodegraphStatusResult>("codegraph_init", { projectPath: projectPath ?? null });
 }
 
-// ── TTS (piper-rs, feature "tts") ──────────────────────────────────────────
+// ── TTS (supertonic, feature "tts") ────────────────────────────────────────
 
 /**
- * Synthesize speech from text using the Piper neural TTS engine.
+ * Synthesize speech from text using the Supertonic neural TTS engine
+ * (on-device, language auto-detected).
  * Returns base64-encoded WAV audio for playback.
  * @param text - Text to synthesize
- * @param voice - Voice id (optional, defaults to en_US-libritts_r-medium)
+ * @param voice - Supertonic voice id `M1`–`F5` (optional, defaults to M1)
  * @param lengthScale - Speech speed (1.0 = normal, <1.0 = faster, >1.0 = slower)
  */
 export function synthesizeSpeech(text: string, voice?: string, lengthScale?: number): Promise<string> {

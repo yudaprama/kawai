@@ -3240,7 +3240,7 @@ async fn respond_supervisor_confirmation_handler(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ── TTS (piper-rs, feature "tts") ──────────────────────────────────────────
+// ── TTS (supertonic, feature "tts") ────────────────────────────────────────
 // Always compiled so the router is static; inner dispatch is cfg-gated.
 
 #[derive(Deserialize)]
@@ -3251,7 +3251,7 @@ struct SynthesizeSpeechRequest {
     length_scale: Option<f32>,
 }
 
-/// Protected RPC: synthesize speech via Piper neural TTS.
+/// Protected RPC: synthesize speech via Supertonic neural TTS.
 /// Returns base64-encoded WAV audio. Returns 501 when tts feature is off.
 async fn synthesize_speech_handler(
     Json(req): Json<SynthesizeSpeechRequest>,

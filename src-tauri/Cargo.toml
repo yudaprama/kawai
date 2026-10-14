@@ -106,9 +106,9 @@ kawai-agent = { path = "../crates/engines/agent" }
 kawai-router = { path = "../crates/router" }
 kawai-monad = { path = "../crates/integrations/monad", optional = true }
 monad-tools = { path = "../crates/toolsets/monad-tools", optional = true }
-# TTS via piper-rs (neural ONNX Piper TTS). Gated behind `tts` so non-TTS
-# builds skip the static ONNX Runtime (+~40 MB) and the espeak-ng build.
-piper-rs = { version = "0.2.0", optional = true }
+# TTS via supertonic (neural MNN TTS, multilingual). Gated behind `tts` so
+# non-TTS builds skip the ~191 MB model download and MNN TTS sessions.
+supertonic = { path = "../crates/integrations/supertonic", optional = true }
 kawai-tool-catalog = { path = "../crates/foundation/tool-catalog" }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 iana-time-zone = "0.1"
@@ -178,9 +178,10 @@ binance = ["dep:binance", "kawai-agent/binance"]
 # HTTP provider — no keys, no signing. monad-tools carries the read-only
 # AgentTool surface (builtin.monad).
 monad = ["dep:kawai-monad", "dep:monad-tools"]
-# TTS via piper-rs (neural Piper ONNX models). Adds ~40 MB (static ONNX Runtime)
-# and requires cmake + clang at build time (espeak-ng phonemizer compiled from source).
-tts = ["dep:piper-rs"]
+# TTS via supertonic (neural MNN TTS, multilingual). Links the same MNN as
+# the OCR engine (ocr-rs) — no ONNX Runtime, no espeak-ng. Models
+# (~191 MB fp16) download on first use.
+tts = ["dep:supertonic"]
 
 [[bin]]
 name = "kawai"

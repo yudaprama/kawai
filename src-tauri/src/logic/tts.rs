@@ -1,21 +1,25 @@
-//! TTS via piper-rs (neural Piper ONNX models).
+//! TTS via Supertonic on MNN (multilingual, on-device, no phonemizer).
 //!
-//! Pure logic layer — no transport deps. Models live in `~/.kawai/models/tts/`
-//! and are auto-downloaded on first use from HuggingFace.
+//! Pure logic layer — no transport deps. Models live in
+//! `~/.kawai/models/tts/supertonic/` and are auto-downloaded on first use
+//! from HuggingFace (pinned revision, fp16, ~191 MB for v3).
 //!
-//! Default voice: `en_US-libritts_r-medium` (~60 MB onnx + json config).
-//! All pretrained models: <https://huggingface.co/rhasspy/piper-voices>
+//! Default voice: `M1`. All voices: `M1`–`M5` (male), `F1`–`F5` (female).
+//! Language is auto-detected per call (whatlang → supertonic lang tag).
 
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
-/// Default voice id (matches huggingface.co/rhasspy/piper-voices directory layout).
-/// Only referenced by the piper pipeline, which compiles under the `tts` feature.
-#[cfg_attr(not(feature = "tts"), allow(dead_code))]
-const DEFAULT_VOICE: &str = "en_US-libritts_r-medium";
+#[cfg(feature = "tts")]
+use supertonic::SupertonicEngine;
 
-/// HuggingFace Piper voices base URL.
-#[cfg_attr(not(feature = "tts"), allow(dead_code))]
-const VOICES_BASE_URL: &str = "https://huggingface.co/rhasspy/piper-voices/resolve/main";
+/// Default voice (supertonic style name).
+const DEFAULT_VOICE: &str = "M1";
+
+/// Supertonic model version + precision (bump together with the pinned HF
+/// revision in the supertonic crate + a parity re-check).
+const MODEL_VERSION: &str = "v3";
+const MODEL_PRECISION: &str = "fp16";
 
 /// TTS error type.
 #[derive(Debug)]
@@ -39,11 +43,10 @@ impl std::fmt::Display for TtsError {
 
 impl std::error::Error for TtsError {}
 
-/// Return the TTS model directory (`~/.kawai/models/tts/`).
-/// Only referenced by the piper pipeline, which compiles under the `tts` feature.
-#[cfg_attr(not(feature = "tts"), allow(dead_code))]
+/// Return the TTS model directory (`~/.kawai/models/tts/supertonic/`).
 fn tts_model_dir() -> Result<PathBuf, TtsError> {
     kawai_paths::tts_model_dir()
+        .map(|dir| dir.join("supertonic"))
         .ok_or_else(|| TtsError::ModelNotFound("HOME not set".into()))
 }
 
@@ -79,160 +82,29 @@ pub fn pcm_to_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
 
     for &sample in samples {
         let clamped = sample.clamp(-1.0, 1.0);
-        let i16_sample = (clamped * 32767.0) as i16;
-        wav.extend_from_slice(&i16_sample.to_le_bytes());
+        let value = (clamped * 32767.0) as i16;
+        wav.extend_from_slice(&value.to_le_bytes());
     }
 
     wav
 }
 
-// ── Feature ON: piper-rs neural TTS ────────────────────────────────────────
+// ── Supertonic engine cache (feature ON) ───────────────────────────────────
 
 #[cfg(feature = "tts")]
 mod inner {
     use super::*;
-    use std::sync::OnceLock;
-    use piper_rs::Piper;
 
-    /// Cached Piper instance (loaded once, reused across calls).
-    static PIPER: OnceLock<tokio::sync::Mutex<Option<Piper>>> = OnceLock::new();
-
-    /// Resolve paths for a voice: `.onnx` model + `.onnx.json` config.
-    fn resolve_voice_paths(voice: &str) -> Result<(PathBuf, PathBuf), TtsError> {
-        let dir = tts_model_dir()?;
-        let onnx = dir.join(format!("{voice}.onnx"));
-        let config = dir.join(format!("{voice}.onnx.json"));
-        if onnx.exists() && config.exists() {
-            Ok((onnx, config))
-        } else {
-            Err(TtsError::ModelNotFound(format!(
-                "voice '{voice}' not found in {}",
-                dir.display()
-            )))
-        }
+    struct CachedEngine {
+        voice: String,
+        engine: SupertonicEngine,
     }
 
-    /// Download a single file from HuggingFace with resume support and progress logging.
-    async fn download_file(url: &str, dest: &std::path::Path, label: &str) -> Result<(), TtsError> {
-        let client = reqwest::Client::builder()
-            .build()
-            .map_err(|e| TtsError::DownloadFailed(format!("reqwest client: {e}")))?;
-
-        let tmp = dest.with_extension("part");
-        let existing_size = std::fs::metadata(&tmp)
-            .ok()
-            .map(|m| m.len())
-            .unwrap_or(0);
-
-        let response = if existing_size > 0 {
-            eprintln!("[tts] resuming {label} download ({:.1} MB done)", existing_size as f64 / 1e6);
-            client
-                .get(url)
-                .header("Range", format!("bytes={}-", existing_size))
-                .send()
-                .await
-                .map_err(|e| TtsError::DownloadFailed(format!("http (resume): {e}")))?
-        } else {
-            client
-                .get(url)
-                .send()
-                .await
-                .map_err(|e| TtsError::DownloadFailed(format!("http: {e}")))?
-        };
-
-        if !response.status().is_success() && response.status().as_u16() != 206 {
-            return Err(TtsError::DownloadFailed(format!(
-                "HTTP {} for {url}",
-                response.status()
-            )));
-        }
-
-        let total_size = existing_size + response.content_length().unwrap_or(0);
-        eprintln!(
-            "[tts] downloading {label} ({:.1} MB) ...",
-            total_size as f64 / 1e6
-        );
-
-        use futures_util::StreamExt;
-        use std::io::Write;
-
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(existing_size > 0)
-            .write(true)
-            .open(&tmp)
-            .map_err(|e| TtsError::DownloadFailed(format!("open tmp: {e}")))?;
-
-        let mut stream = response.bytes_stream();
-        let mut downloaded = existing_size;
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| TtsError::DownloadFailed(format!("chunk: {e}")))?;
-            file.write_all(&chunk)
-                .map_err(|e| TtsError::DownloadFailed(format!("write: {e}")))?;
-            downloaded += chunk.len() as u64;
-
-            let prev_mb = (downloaded - chunk.len() as u64) / 5_000_000;
-            let cur_mb = downloaded / 5_000_000;
-            if cur_mb > prev_mb && total_size > 0 {
-                let pct = downloaded as f64 / total_size as f64 * 100.0;
-                eprintln!(
-                    "[tts] {label}: {:.1}/{:.1} MB ({:.0}%)",
-                    downloaded as f64 / 1e6,
-                    total_size as f64 / 1e6,
-                    pct
-                );
-            }
-        }
-
-        std::fs::rename(&tmp, dest)
-            .map_err(|e| TtsError::DownloadFailed(format!("rename: {e}")))?;
-
-        eprintln!("[tts] {label} download complete: {}", dest.display());
-        Ok(())
-    }
-
-    /// Ensure the voice model is downloaded.
-    async fn ensure_voice(voice: &str) -> Result<(PathBuf, PathBuf), TtsError> {
-        if let Ok(paths) = resolve_voice_paths(voice) {
-            return Ok(paths);
-        }
-
-        let dir = tts_model_dir()?;
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| TtsError::DownloadFailed(format!("create dir: {e}")))?;
-
-        let onnx_url = format!("{VOICES_BASE_URL}/{voice}.onnx");
-        let config_url = format!("{VOICES_BASE_URL}/{voice}.onnx.json");
-
-        let onnx_path = dir.join(format!("{voice}.onnx"));
-        let config_path = dir.join(format!("{voice}.onnx.json"));
-
-        download_file(&config_url, &config_path, &format!("{voice}.onnx.json")).await?;
-        download_file(&onnx_url, &onnx_path, &format!("{voice}.onnx")).await?;
-
-        resolve_voice_paths(voice)
-    }
-
-    /// Load or get the cached Piper instance.
-    async fn get_piper(voice: &str) -> Result<tokio::sync::MutexGuard<'static, Option<Piper>>, TtsError> {
-        let cell = PIPER.get_or_init(|| tokio::sync::Mutex::new(None));
-        let mut guard = cell.lock().await;
-
-        if guard.is_some() {
-            return Ok(guard);
-        }
-
-        let (onnx_path, config_path) = ensure_voice(voice).await?;
-        eprintln!("[tts] loading model: {}", onnx_path.display());
-
-        let piper = Piper::new(&onnx_path, &config_path)
-            .map_err(|e| TtsError::InferenceFailed(format!("load model: {e}")))?;
-
-        *guard = Some(piper);
-        eprintln!("[tts] model loaded");
-        Ok(guard)
-    }
+    /// One loaded engine (voice pinned at load); voice changes reload it.
+    /// The engine is CPU-heavy inference state — all access happens on a
+    /// blocking thread under this mutex.
+    static ENGINE: LazyLock<std::sync::Mutex<Option<CachedEngine>>> =
+        LazyLock::new(|| std::sync::Mutex::new(None));
 
     /// Synthesize speech from text. Returns `(pcm_samples, sample_rate)`.
     pub async fn synthesize_impl(
@@ -240,18 +112,73 @@ mod inner {
         voice: Option<&str>,
         length_scale: Option<f32>,
     ) -> Result<(Vec<f32>, u32), TtsError> {
-        let voice = voice.unwrap_or(DEFAULT_VOICE);
-        let mut guard = get_piper(voice).await?;
-        let piper = guard
-            .as_mut()
-            .ok_or_else(|| TtsError::InferenceFailed("model not loaded".into()))?;
+        let voice = voice.unwrap_or(DEFAULT_VOICE).to_string();
+        let dir = tts_model_dir()?;
 
-        let (samples, sample_rate) = piper
-            .create(text, false, None, length_scale, None, None)
-            .map_err(|e| TtsError::InferenceFailed(format!("synthesis: {e}")))?;
+        supertonic::ensure_models(&dir, MODEL_VERSION, MODEL_PRECISION, &voice)
+            .await
+            .map_err(|e| match e {
+                supertonic::SupertonicError::DownloadFailed(msg) => {
+                    TtsError::DownloadFailed(msg)
+                }
+                other => TtsError::ModelNotFound(other.to_string()),
+            })?;
 
-        Ok((samples, sample_rate))
+        // `length_scale` semantics: higher = slower. The engine's speed
+        // factor DIVIDES the predicted duration, so it maps inversely.
+        let speed = length_scale.map_or(1.0, |ls| 1.0 / ls.max(1e-3));
+        let text = text.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let mut guard = ENGINE
+                .lock()
+                .map_err(|e| TtsError::InferenceFailed(format!("engine lock: {e}")))?;
+
+            let engine = match guard.as_mut() {
+                Some(cached) if cached.voice == voice => &mut cached.engine,
+                _ => {
+                    eprintln!("[tts] loading supertonic {MODEL_VERSION}/{MODEL_PRECISION} voice {voice}");
+                    let engine = SupertonicEngine::load(&dir, MODEL_VERSION, MODEL_PRECISION, &voice)
+                        .map_err(|e| TtsError::InferenceFailed(e.to_string()))?;
+                    *guard = Some(CachedEngine {
+                        voice: voice.to_string(),
+                        engine,
+                    });
+                    eprintln!("[tts] supertonic engine ready");
+                    &mut guard.as_mut().expect("just inserted").engine
+                }
+            };
+            engine.steps = 5;
+            engine.speed = speed;
+
+            let lang = supertonic::detect_lang(&text);
+            let sample_rate = engine.sample_rate();
+            let samples = engine
+                .synthesize(&text, lang)
+                .map_err(|e| TtsError::InferenceFailed(e.to_string()))?;
+            Ok((samples, sample_rate))
+        })
+        .await
+        .map_err(|e| TtsError::InferenceFailed(format!("synthesis task: {e}")))?
     }
+}
+
+#[cfg(feature = "tts")]
+pub use inner::synthesize_impl;
+
+/// Synthesize speech from text. Returns `(pcm_samples, sample_rate)`.
+///
+/// - `text`: the text to synthesize (language auto-detected)
+/// - `voice`: supertonic voice id `M1`–`F5` (None = `M1`)
+/// - `length_scale`: speech speed (1.0 = normal, <1.0 = faster, >1.0 =
+///   slower)
+#[cfg(feature = "tts")]
+pub async fn synthesize(
+    text: &str,
+    voice: Option<&str>,
+    length_scale: Option<f32>,
+) -> Result<(Vec<f32>, u32), TtsError> {
+    synthesize_impl(text, voice, length_scale).await
 }
 
 // ── Feature OFF: stub that returns an error ────────────────────────────────
@@ -263,20 +190,6 @@ async fn synthesize_impl(
     _length_scale: Option<f32>,
 ) -> Result<(Vec<f32>, u32), TtsError> {
     Err(TtsError::FeatureDisabled)
-}
-
-/// Synthesize speech from text. Returns `(pcm_samples, sample_rate)`.
-///
-/// - `text`: the text to synthesize
-/// - `voice`: voice id (None = DEFAULT_VOICE)
-/// - `length_scale`: speech speed (1.0 = normal, <1.0 = faster, >1.0 = slower)
-#[cfg(feature = "tts")]
-pub async fn synthesize(
-    text: &str,
-    voice: Option<&str>,
-    length_scale: Option<f32>,
-) -> Result<(Vec<f32>, u32), TtsError> {
-    inner::synthesize_impl(text, voice, length_scale).await
 }
 
 #[cfg(not(feature = "tts"))]
