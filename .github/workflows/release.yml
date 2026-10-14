@@ -507,7 +507,7 @@ jobs:
           ref: ${{ needs.bump.outputs.sha }}
           token: ${{ secrets.RELEASE_TOKEN }}
       # No submodules needed (no litert feature), but future private cargo git
-      # deps (e.g. rig forks) fetch through git — authenticate them too.
+      # deps fetch through git — authenticate them too.
       - name: Git auth for private dependencies
         run: |
           git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"

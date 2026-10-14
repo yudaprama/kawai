@@ -308,9 +308,9 @@ pub fn run() {
         #[cfg(feature = "litert")]
         commands::ask_about_step_result,
 
-        // ── litert + office (knowledge context + rig tools) ─────────────
+        // ── litert + office (knowledge context + agent tools) ───────────
         #[cfg(feature = "litert")]
-        commands::local_llm_get_rig_tools,
+        commands::local_llm_get_agent_tools,
         #[cfg(feature = "litert")]
         commands::knowledge_context,
 

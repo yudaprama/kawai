@@ -145,7 +145,7 @@ export function chart(series: Series | null, label?: string): ReactNode {
   return series ? <ChartCard series={series} label={label} /> : null;
 }
 
-// ── builtin.binance agent tools (rig-components/binance) ───────────────────
+// ── builtin.binance agent tools (crates/toolsets/binance) ───────────────────
 
 /** Binance agent balances → { canTrade, balances: [{ asset, free, locked }] }. */
 export function renderBinanceBalances(output: unknown): ReactNode {

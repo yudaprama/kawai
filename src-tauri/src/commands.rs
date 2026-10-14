@@ -1064,7 +1064,7 @@ pub fn local_llm_get_test_tools() -> Result<String, String> {
 #[cfg(feature = "litert")]
 #[tauri::command]
 #[allow(dead_code)]
-pub fn local_llm_get_rig_tools(tool_names: Vec<String>) -> Result<String, String> {
+pub fn local_llm_get_agent_tools(tool_names: Vec<String>) -> Result<String, String> {
     let names: Vec<&str> = tool_names.iter().map(|s| s.as_str()).collect();
     Ok(logic::local_llm::get_agent_tools_json(&names))
 }
@@ -1626,7 +1626,7 @@ pub async fn office_read_deck(
 
 /// Authenticated RPC: extract stored documents into a prompt-injectable
 /// context block (composer @-mention knowledge). Registered under `litert`
-/// (rides the local rig-tool path); web wrapper always exposes it.
+/// (rides the local agent-tool path); web wrapper always exposes it.
 #[cfg_attr(not(feature = "litert"), allow(dead_code))]
 #[tauri::command]
 pub async fn knowledge_context(
