@@ -19,8 +19,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
+tauri = { version = "2", features = [], optional = true }
+tauri-plugin-opener = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process", "io-util", "sync"] }
@@ -59,10 +59,10 @@ kawai-constants = { path = "../kawai-vault/constants" }
 # Office tool store imports (drag-drop/web base64 blobs). Gated behind
 # "office" so non-office builds stay dep-free.
 base64 = { version = "0.22", optional = true }
-tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
-tauri-plugin-process = "2"
-tauri-plugin-updater = "2"
+tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-fs = { version = "2", optional = true }
+tauri-plugin-process = { version = "2", optional = true }
+tauri-plugin-updater = { version = "2", optional = true }
 # Embeddings (local fastembed ONNX fallback, no API key) — used by the
 # knowledge pipeline (crates/engines/knowledge) and supervisor recall.
 kawai-embedding = { path = "../kawai-embedding", optional = true }
@@ -115,7 +115,7 @@ kawai-tools = { path = "../kawai-tools" }
 kawai-dyntoken = { path = "../kawai-vault/dyntoken" }
 webread = { path = "../crates/toolsets/webread" }
 kawai-cli = { path = "../crates/toolsets/cli" }
-keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"], optional = true }
 apify = { path = "../crates/integrations/apify" }
 kawai-email = { path = "../crates/integrations/email" }
 kawai-vault = { path = "../kawai-vault/kawai-vault" }
@@ -152,7 +152,7 @@ default = ["desktop"]
 # the desktop app ships both (webview_engine's scrape tier needs office; the
 # graph ops are desktop-only). The web bin never calls `run()`; server deploys
 # build with `--no-default-features --features web`.
-desktop = ["office", "graph", "dep:finance", "kawai-agent/webread"]
+desktop = ["office", "graph", "dep:finance", "kawai-agent/webread", "dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-plugin-fs", "dep:tauri-plugin-opener", "dep:tauri-plugin-process", "dep:tauri-plugin-updater", "dep:keyring"]
 web = ["dep:axum", "dep:tower-http", "office", "graph"] # office+graph are pure-Rust — the web server ships both; only the tauri shell (desktop) is excluded
 litert = ["dep:local-llm", "dep:entertainment", "dep:finance", "dep:news_media", "dep:sports", "dep:food_drink", "dep:geospace", "dep:knowledge", "dep:religion", "dep:utility", "dep:coinmarketcap", "kawai-agent/litert", "kawai-embedding/litert"]
 # GraphRAG — re-exported from kawai-knowledge behind its own feature.
@@ -197,8 +197,10 @@ name = "draft_smoke"
 required-features = ["litert", "office"]
 
 [[example]]
+# No required-features: the litert-dependent main is cfg-gated to a stub, so
+# the harness unit tests compile under default features (CI runs them litert-
+# free in linux-check; the real runs pass --features litert explicitly).
 name = "agent_eval"
-required-features = ["litert", "office"]
 
 [[example]]
 name = "turn_log_report"

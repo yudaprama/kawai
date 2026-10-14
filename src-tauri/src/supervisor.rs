@@ -1322,6 +1322,8 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
 
 /// Startup prefetch: converge the replica in the background so plan_task
 /// never pays (or loses) the first sync. Loop until fresh or attempts out.
+/// Desktop-only: the only caller is the tauri shell's setup hook.
+#[cfg(feature = "desktop")]
 pub fn prefetch_tool_catalog() {
     tauri::async_runtime::spawn(async {
         if shared_catalog().await.is_none() {
