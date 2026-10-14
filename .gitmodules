@@ -18,8 +18,8 @@
 	url = https://github.com/yudaprama/office_oxide
 [submodule "rust-paddle-ocr"]
 	path = rust-paddle-ocr
-	url = https://github.com/zibo-chen/rust-paddle-ocr
-	branch = main
+	url = https://github.com/yudaprama/ocr-rs.git
+	branch = kawai-mnn-multi
 [submodule "openhuman"]
 	path = openhuman
 	url = https://github.com/tinyhumansai/openhuman
