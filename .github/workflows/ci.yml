@@ -468,7 +468,7 @@ jobs:
       - name: Download E4B eval model
         run: |
           mkdir -p eval-model
-          curl -fL --retry 3 -o eval-model/gemma-4-E4B-it.litertlm \
+          curl -fL --retry 3 --retry-all-errors --continue-at - -o eval-model/gemma-4-E4B-it.litertlm \
             https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
 
       - name: agent_eval (orchestration quality gate + report)
@@ -689,7 +689,7 @@ jobs:
       - name: Download E4B eval model
         run: |
           mkdir -p eval-model
-          curl -fL --retry 3 -o eval-model/gemma-4-E4B-it.litertlm \
+          curl -fL --retry 3 --retry-all-errors --continue-at - -o eval-model/gemma-4-E4B-it.litertlm \
             https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
 
       - name: agent_eval (orchestration quality gate + report)
