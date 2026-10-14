@@ -41,7 +41,7 @@ tower-http = { version = "0.6", optional = true, features = ["fs"] }
 local-llm = { path = "../local-llm", optional = true }
 # Agent-tier runtime (tool dispatch, tool loop) + hybrid cloud-subagent
 # streaming client (logic/remote.rs). Pin: crates.io "0.42" — see ARCHITECTURE.md.
-rig = "0.42"
+rig = { version = "0.42", default-features = false }
 # default-features=false keeps only the local-SQLite core: replication/remote
 # would pull tonic 0.11 + hyper 0.14 + axum 0.6 + rustls 0.22 (dead weight —
 # every call site uses Builder::new_local; re-add "remote" with sqld sync).
@@ -102,6 +102,11 @@ kawai-agent = { path = "../crates/engines/agent" }
 kawai-router = { path = "../crates/router" }
 kawai-monad = { path = "../crates/integrations/monad", optional = true }
 monad-tools = { path = "../crates/toolsets/monad-tools", optional = true }
+# TTS via piper-rs (neural ONNX Piper TTS). Gated behind `tts` so non-TTS
+# builds skip the static ONNX Runtime (+~40 MB) and the espeak-ng build.
+# (Requires rig default-features to stay off — rig's optional fastembed pins
+# ort 2.0.0-rc.9 while piper-rs pins 2.0.0-rc.12.)
+piper-rs = { version = "0.2.0", optional = true }
 kawai-tool-catalog = { path = "../crates/foundation/tool-catalog" }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 iana-time-zone = "0.1"
@@ -171,6 +176,9 @@ binance = ["dep:binance", "kawai-agent/binance"]
 # HTTP provider — no keys, no signing. monad-tools carries the read-only
 # AgentTool surface (builtin.monad).
 monad = ["dep:kawai-monad", "dep:monad-tools"]
+# TTS via piper-rs (neural Piper ONNX models). Adds ~40 MB (static ONNX Runtime)
+# and requires cmake + clang at build time (espeak-ng phonemizer compiled from source).
+tts = ["dep:piper-rs"]
 
 [[bin]]
 name = "kawai"
