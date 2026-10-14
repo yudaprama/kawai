@@ -229,11 +229,11 @@ jobs:
           # "Unexpected input(s)"). latest.json itself is excluded by
           # tauri-action; .sig companions follow the same pattern.
           assetNamePattern: "[name]_[arch].[ext]"
-          args: --features litert,tts,binance --config .github/tauri-litert.json
+          args: --features litert,binance --config .github/tauri-litert.json
 
       # Wallet note: the opt-in `monad` feature (Monad wallet) is deliberately
       # NOT built into release bundles — regulatory. For a local wallet build:
-      #   --features litert,tts,binance,monad --config .github/tauri-monad.json
+      #   --features litert,binance,monad --config .github/tauri-monad.json
 
   build-linux:
     needs: bump
@@ -346,7 +346,7 @@ jobs:
           # Version-less asset names — input is assetNamePattern on
           # tauri-action@v0 (see the macos job).
           assetNamePattern: "[name]_[arch].[ext]"
-          args: --features litert,tts,binance --config .github/tauri-litert.json
+          args: --features litert,binance --config .github/tauri-litert.json
 
   build-windows:
     needs: bump
@@ -489,15 +489,15 @@ jobs:
           # Stable version-less name — input is assetNamePattern on
           # tauri-action@v0 (see the macos job).
           assetNamePattern: "[name]_[arch].[ext]"
-          args: --features litert,tts,binance,mnn-dynamic --config .github/tauri-litert.json
+          args: --features litert,binance,mnn-dynamic --config .github/tauri-litert.json
 
   build-web:
     needs: bump
     if: needs.bump.outputs.skipped == 'false'
-    # Pinned, NOT ubuntu-latest: the `tts` feature links ort-sys's static
-    # pyke ONNX Runtime, whose objects reference __isoc23_strtol & friends —
-    # glibc >= 2.38 only (ubuntu-24.04 = 2.39). ubuntu-latest is an alias that
-    # can move under us; 22.04 (2.35) silently breaks the link, exactly as it
+    # Pinned, NOT ubuntu-latest: historical tts-era builds linked ort-sys's
+    # static pyke ONNX Runtime, whose objects reference __isoc23_strtol &
+    # friends — glibc >= 2.38 only (ubuntu-24.04 = 2.39). ubuntu-latest is an
+    # alias that can move under us; 22.04 (2.35) silently breaks the link, exactly as it
     # did for build-linux. Same floor as build-linux.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -536,8 +536,11 @@ jobs:
       # NOT bundled — deploy them as siblings of the binary (or set
       # KAWAI_OFFICE_BIN_DIR / KAWAI_OFFICE_RUNTIME_DIR); without them
       # office_capabilities reports them absent and the agent degrades.
+      # NOTE: no tts — piper-rs 0.2.0 pins ort 2.0.0-rc.12 while rig 0.42's
+      # fastembed pins ort 2.0.0-rc.9; the two exact pins cannot share a
+      # lockfile. TTS returns when piper-rs bumps ort.
       - name: Build kawai-web binary
-        run: cargo build --release --bin kawai-web --features web,tts
+        run: cargo build --release --bin kawai-web --features web
         working-directory: src-tauri
       - name: Attach to release
         uses: softprops/action-gh-release@v2
