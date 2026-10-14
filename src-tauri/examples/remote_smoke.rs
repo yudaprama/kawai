@@ -28,7 +28,7 @@ async fn run() {
     kawai_telemetry::init();
     tracing::info!(component = "remote_smoke", "smoke run started");
 
-    let Some(remote) = RemoteLlm::from_env().map(|r| r.with_conversation("kawai-remote-smoke")) else {
+    let Some(remote) = RemoteLlm::from_env() else {
         println!("[remote_smoke] remote tier DISABLED (no vault keys) — this is the graceful-degradation path: OK");
         return;
     };
