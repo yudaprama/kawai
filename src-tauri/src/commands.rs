@@ -1632,9 +1632,9 @@ pub async fn office_read_deck(
 pub async fn knowledge_context(
     file_ids: Vec<String>,
     session: State<'_, Session>,
-) -> Result<logic::office::KnowledgeContext, String> {
+) -> Result<logic::rag::KnowledgeContext, String> {
     let user_id = session_user_id(&session)?;
-    logic::office::knowledge_context(&user_id, &file_ids)
+    logic::rag::knowledge_context(&user_id, &file_ids)
         .await
         .map_err(|e| e.to_string())
 }
@@ -1720,6 +1720,19 @@ pub async fn knowledge_add_to_session(
 ) -> Result<usize, String> {
     let user_id = session_user_id(&session)?;
     logic::rag::knowledge_add_to_session(&user_id, session_id, &file_ids)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Authenticated RPC: re-index legacy media files whose index row claims
+/// `ready` with 0 chunks (indexed before media support — they were never
+/// actually read). Bounded batch; idempotent, safe to call on panel load.
+#[tauri::command]
+pub async fn knowledge_backfill_media(
+    session: State<'_, Session>,
+) -> Result<Vec<logic::rag::BackfillOutcome>, String> {
+    let user_id = session_user_id(&session)?;
+    logic::rag::knowledge_backfill_media(&user_id)
         .await
         .map_err(|e| e.to_string())
 }

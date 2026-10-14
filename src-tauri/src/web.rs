@@ -1254,8 +1254,8 @@ struct KnowledgeContextRequest {
 async fn knowledge_context_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<KnowledgeContextRequest>,
-) -> Result<Json<logic::office::KnowledgeContext>, (StatusCode, String)> {
-    logic::office::knowledge_context(&user_id, &req.file_ids)
+) -> Result<Json<logic::rag::KnowledgeContext>, (StatusCode, String)> {
+    logic::rag::knowledge_context(&user_id, &req.file_ids)
         .await
         .map(Json)
         .map_err(err500)
@@ -1357,6 +1357,15 @@ async fn knowledge_add_to_session_handler(
     Json(req): Json<KnowledgeAddToSessionRequest>,
 ) -> Result<Json<usize>, (StatusCode, String)> {
     logic::rag::knowledge_add_to_session(&user_id, req.session_id, &req.file_ids)
+        .await
+        .map(Json)
+        .map_err(err500)
+}
+
+async fn knowledge_backfill_media_handler(
+    Extension(user_id): Extension<String>,
+) -> Result<Json<Vec<logic::rag::BackfillOutcome>>, (StatusCode, String)> {
+    logic::rag::knowledge_backfill_media(&user_id)
         .await
         .map(Json)
         .map_err(err500)
@@ -2599,6 +2608,10 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route(
             "/api/knowledge_add_to_session",
             post(knowledge_add_to_session_handler),
+        )
+        .route(
+            "/api/knowledge_backfill_media",
+            post(knowledge_backfill_media_handler),
         )
         .route(
             "/api/knowledge_import_youtube",

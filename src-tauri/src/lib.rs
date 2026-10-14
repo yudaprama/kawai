@@ -333,6 +333,7 @@ pub fn run() {
         commands::list_session_files,
         commands::knowledge_list,
         commands::knowledge_add_to_session,
+        commands::knowledge_backfill_media,
         commands::knowledge_import_youtube,
         commands::office_delete_file,
         commands::office_restore_backup,

@@ -1,8 +1,18 @@
 # Implementation Plan — Multimodal knowledge indexing (LiteRT-LM embedding engine)
 
-Status: **TEXT EMBEDDING SHIPPED via LiteRT (2026-08-26), migrated to
-EmbeddingGemma 2 (2026-10-09); MEDIA INDEXING unblocked — the model trigger
-landed, see §0.**
+Status: **SHIPPED — text embedding via LiteRT (2026-08-26), migrated to
+EmbeddingGemma 2 (2026-10-09); MEDIA INDEXING live (2026-10-14), single-space
+in `rag_chunks`.** Media landed differently than §1–§5 below designed: EG2's
+media encoders emit the SAME 768-d space as text, so there is no
+`rag_media_chunks` table (W2), no third RRF ranking (W4) — media chunks are
+ordinary `rag_chunks` rows whose vector comes from the vision/audio encoder.
+Decode goes through `ffmpeg` (`crates/engines/knowledge/src/media.rs`),
+resolved via `kawai_paths::find_executable` so it sees Homebrew on packaged
+macOS builds. Feature chain: `litert` → `kawai-knowledge/media`. Media files
+index or FAIL with a reason — never `ready` with 0 chunks. Regression suite:
+`media::tests` in the knowledge crate (real-ffmpeg round trips); full-stack
+proof: `cargo run -p kawai-knowledge --features media,office --example
+media_e2e`.
 
 ## What shipped — local text embedding on LiteRT
 
@@ -171,4 +181,9 @@ runner the trigger model needs)
 
 ## 5. Explicitly out of scope (tracked elsewhere)
 
-- Mobile media indexing UX, audio ingestion, GPU backends.
+- Mobile media indexing UX, GPU backends. (Audio ingestion SHIPPED 2026-10-14
+  via the `media` feature — desktop/web only: it shells out to `ffmpeg`, so
+  phones need a bundled decoder first.)
+- Per-segment captions are positional (`"tone.wav — audio segment 2 (20s)"`),
+  not ASR transcriptions — a speech-recognition describer would make long
+  recordings content-searchable in keyword mode; none is wired.

@@ -156,7 +156,7 @@ default = ["desktop"]
 # build with `--no-default-features --features web`.
 desktop = ["office", "graph", "dep:finance", "kawai-agent/webread", "dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-plugin-fs", "dep:tauri-plugin-opener", "dep:tauri-plugin-process", "dep:tauri-plugin-updater", "dep:keyring"]
 web = ["dep:axum", "dep:tower-http", "office", "graph"] # office+graph are pure-Rust — the web server ships both; only the tauri shell (desktop) is excluded
-litert = ["dep:local-llm", "dep:entertainment", "dep:finance", "dep:news_media", "dep:sports", "dep:food_drink", "dep:geospace", "dep:knowledge", "dep:religion", "dep:utility", "dep:coinmarketcap", "kawai-agent/litert", "kawai-embedding/litert"]
+litert = ["dep:local-llm", "dep:entertainment", "dep:finance", "dep:news_media", "dep:sports", "dep:food_drink", "dep:geospace", "dep:knowledge", "dep:religion", "dep:utility", "dep:coinmarketcap", "kawai-agent/litert", "kawai-embedding/litert", "kawai-knowledge/media"] # media rides litert: it embeds through the same on-device EG2 engine (audio/video decode needs ffmpeg present at runtime)
 # GraphRAG — re-exported from kawai-knowledge behind its own feature.
 graph = ["kawai-knowledge/graph", "kawai-agent/graph"]
 # Office document tools (logic::office): pure-Rust create/read/edit/info via
