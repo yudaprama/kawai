@@ -19,26 +19,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# Desktop shell (Tauri) — optional so `kawai-web` standalone does not link
-# wry/tao/webkit. Enable via `--features desktop` (default).
-tauri = { version = "2", features = [], optional = true }
-tauri-plugin-opener = { version = "2", optional = true }
-tauri-plugin-fs = { version = "2", optional = true }
-# OS-native credential storage for the session JWT (Keychain/Keystore).
-keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"], optional = true }
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
-# Planner <environment> block: device timezone + local time (fresh per plan).
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
-tracing = "0.1"
-thiserror = "1"
-iana-time-zone = "0.1"
-# Minimal tokio for the core crate: `process` only via codegraph/office-common
-# and `io-util` only via kawai-vision — they enable those features transitively
-# when the corresponding feature is on. `stream` for reqwest is likewise
-# owned by remote-llm/kawai-embedding.
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
-tokio-stream = "0.1"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "process", "io-util", "sync"] }
 async-stream = "0.3"
 futures-core = "0.3"
 futures-util = "0.3"
@@ -53,190 +38,83 @@ tower-http = { version = "0.6", optional = true, features = ["fs"] }
 # High-level streaming chat over LiteRT-LM (on-device Gemma 4, etc.).
 # Pulls in cognee-litert-lm transitively. Gated behind `litert`.
 local-llm = { path = "../local-llm", optional = true }
-# Phase-1/2/3 extracted crates (pure, no transport). Re-exported via
-# `src/auth.rs`, `src/logic/remote.rs`, `src/logic/db.rs`/`db_migrations.rs`,
-# `src/logic/skills.rs`/`memory.rs`, `src/logic/office` shims so
-# `crate::auth::*` and `crate::logic::*` remain stable.
-kawai-auth = { path = "../crates/foundation/auth" }
-kawai-telemetry = { path = "../crates/foundation/telemetry" }
-remote-llm = { path = "../crates/foundation/remote-llm" }
-kawai-db = { path = "../crates/foundation/db" }
-kawai-paths = { path = "../crates/foundation/paths" }
-kawai-skills = { path = "../crates/foundation/skills" }
-kawai-memory = { path = "../crates/foundation/memory" }
-kawai-events = { path = "../crates/foundation/events" }
-kawai-api-types = { path = "../crates/foundation/api-types" }
-apify = { path = "../crates/integrations/apify" }
-composio = { path = "../crates/toolsets/composio" }
-onboarding = { path = "../crates/engines/onboarding", features = ["webread-backend"] }
-kawai-tool-catalog = { path = "../crates/foundation/tool-catalog" }
-kawai-office = { path = "../crates/engines/office", features = ["paddle-ocr"] }
-kawai-knowledge = { path = "../crates/engines/knowledge", features = ["office", "graph"] }
-kawai-analytics = { path = "../crates/toolsets/analytics-tools" }
-# Per-device CLI inventory + the cli_run executor tool (PLAN-cli-tools.md).
-kawai-cli = { path = "../crates/toolsets/cli" }
-kawai-email = { path = "../crates/integrations/email" }
-# Civitai Orchestration client — image generation (Generator panel + future
-# supervisor tool). Pure reqwest, ungated.
-civitai = { path = "../crates/integrations/civitai" }
-# Local email+password auth — email-as-identity user directory + Session type.
-# Polars-backed data analysis engine; used by the analytics tools + `sql_remote_check` example.
-analytics = { path = "../crates/engines/analytics" }
-kawai-agent = { path = "../crates/engines/agent", features = ["office", "webread", "graph", "analytics"] }
-codegraph = { path = "../crates/toolsets/codegraph", optional = true }
-kawai-agent-contract = { path = "../crates/foundation/agent-contract" }
-# The agent tool seam (tool trait + registry) shared with components.
-kawai-tools = { path = "../kawai-tools" }
-# Auto-routing: rule-based agent selection for auto mode.
-kawai-router = { path = "../crates/router", optional = true }
-kawai-desk = { path = "../crates/engines/desk", optional = true }
-kawai-youtube = { path = "../crates/engines/youtube", optional = true }
+# One rig-core source for the whole graph (src-tauri + rig-tools + rig-libsql).
+# Every consumer uses crates.io "0.42" uniformly — see ARCHITECTURE.md.
+rig = "0.42"
 # default-features=false keeps only the local-SQLite core: replication/remote
 # would pull tonic 0.11 + hyper 0.14 + axum 0.6 + rustls 0.22 (dead weight —
 # every call site uses Builder::new_local; re-add "remote" with sqld sync).
 libsql = { version = "0.9.30", default-features = false, features = ["core"] }
 jsonwebtoken = "9"
-# rustls (not default features) keeps the TLS stack aligned with libsql
+# rustls (not default features) keeps the TLS stack aligned with libsql/rig
 # and compiles for android arm64 + ios arm64. Used only for JWKS fetch in auth.rs.
-# `stream` is owned by remote-llm/kawai-embedding (SSE bytes_stream); they
-# enable it transitively so the core crate does not need to.
-# 0.13 matches kawai-embedding/youtube_transcript — one reqwest in the graph.
+# 0.13 matches rig-core/kawai-embedding/youtube_transcript — one reqwest in the graph.
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
 # Loads KAWAI_AUTH_* from the project-root .env in dev (no-op if absent).
 dotenvy = "0.15"
 # Obfuscated constants (Cloudflare, LLM keys, Treasury, etc.)
 # Private repo — CI authenticates via the insteadOf git rewrite (release.yml).
-kawai-constants = { path = "../kawai-vault/constants" }
-kawai-vault = { path = "../kawai-vault/kawai-vault" }
-kawai-dyntoken = { path = "../kawai-vault/dyntoken" }
-sha2 = "0.10"
-hex = "0.4"
-# Office tool store imports (drag-drop/web base64 blobs) + TTS audio payloads.
-base64 = "0.22"
-tauri-plugin-dialog = { version = "2", optional = true }
-# Auto-update (GitHub Releases static latest.json) + app relaunch after
-# install. Desktop-only like the other tauri plugins.
-tauri-plugin-updater = { version = "2", optional = true }
-tauri-plugin-process = { version = "2", optional = true }
-# RAG pipeline for knowledge files:
-#   kawai-embedding — embed (local LiteRT embedder fallback under the litert
-#   feature, desktop only, no API key)
-kawai-embedding = { path = "../kawai-embedding" }
-# Markdown-aware + char-based chunking for RAG indexing: text-splitter's
+kawai-constants = { git = "https://github.com/yudaprama/kawai-vault" }
+# Office tool store imports (drag-drop/web base64 blobs). Gated behind
+# "office" so non-office builds stay dep-free.
+base64 = { version = "0.22", optional = true }
+tauri-plugin-dialog = "2"
+# RAG pipeline for office knowledge files (gated behind "office"):
+#   kawai-embedding — embed (local fastembed ONNX fallback, no API key)
+#   rig-libsql     — vector store (insert_documents / search)
+# Uses the same crates.io rig-core 0.42 source as the rest of the graph
+# so the vector-store seam unifies with kawai-embedding's EmbeddingModel.
+kawai-embedding = { path = "../kawai-embedding", optional = true }
+# Markdown-aware + char-based chunking for RAG indexing (office feature only).
+# Replaces the in-tree chunk_text sliding window with text-splitter's
 # MarkdownSplitter (heading-aware locators) / TextSplitter.
-text-splitter = { version = "0.27", features = ["markdown"] }
-# Image understanding — reusable DescriberChain (local PaddleOCR → JigsawStack
-# VOCR). Single source for RAG indexing (kawai-vision) + ragloader shim.
-kawai-vision = { path = "../crates/foundation/vision", features = ["paddle-ocr"] }
-ragloader = { path = "../crates/integrations/ragloader", features = ["paddle-ocr"] }
-# YouTube transcript fetching for knowledge ingestion (reqwest 0.13, unified).
-youtube_transcript = { path = "../crates/integrations/youtube-transcript" }
+text-splitter = { version = "0.27", features = ["markdown"], optional = true }
+rig-libsql = { path = "../rig-libsql", optional = true }
+# Image understanding for knowledge ingestion (office feature): describe
+# images to text via the ragloader DescriberChain (local stub → JigsawStack
+# VOCR). Pulls jigsawstack (reqwest 0.12) transitively.
+ragloader = { path = "../rig-components/ragloader", optional = true }
+# YouTube transcript fetching for knowledge ingestion (office feature).
+# Uses reqwest 0.13 — coexists with our direct 0.12 (like the rustls pair).
+youtube_transcript = { path = "../rig-components/youtube_transcript", optional = true }
+# rig-core is a direct dep (not just transitive) because logic::rag uses its
+# `Embed` derive + `EmbeddingsBuilder`/`InsertDocuments` traits directly.
+rig-core = { version = "0.42", optional = true }
 # Pure-Rust office create/read/edit (vendored submodule): markdown → IR →
 # docx/xlsx/pptx (in-process), raw-part surgery for in-place edits. PDF
 # operations via pdf_oxide (fetched from GitHub, no local submodule).
-office_oxide = { path = "../office_oxide" }
-pdf_oxide = { git = "https://github.com/yudaprama/pdf_oxide", features = ["rendering"] }
-regex = "1"
-# Web read + search tiering: the reusable crates/toolsets/webread tool crate —
-# engine chain + budgets + cache for the `web_read` / `web_search` agent
-# tools. `browser` (tier-1 Cloudflare Browser Rendering) rides inside webread
-# but stays listed so the headless example can drive it directly.
-webread = { path = "../crates/toolsets/webread" }
-browser = { path = "../crates/generated-tools/browser" }
-# Finance tools (stock price/quote/detail/fundamentals + StockTwits social
-# sentiment). Keyed providers (TwelveData/AlphaVantage/Tiingo) fall back to
-# the keyless StockTwits provider — see finance::stocktwits.
-finance = { path = "../crates/generated-tools/finance" }
-# Entertainment — anime/manga, books, TV, music, poetry, photos (all pure HTTP)
-entertainment = { path = "../crates/generated-tools/entertainment" }
-# Generated tool categories — pure HTTP, no native deps, always compiled
-weather_geo = { path = "../crates/generated-tools/weather-geo" }
-news_media = { path = "../crates/generated-tools/news-media" }
-sports = { path = "../crates/generated-tools/sports" }
-food_drink = { path = "../crates/generated-tools/food-drink" }
-geospace = { path = "../crates/generated-tools/geospace" }
-knowledge = { path = "../crates/generated-tools/knowledge" }
-religion = { path = "../crates/generated-tools/religion" }
-utility = { path = "../crates/generated-tools/utility" }
-coinmarketcap = { path = "../crates/generated-tools/coinmarketcap" }
-url = "2"
-# TTS via piper-rs (neural ONNX Piper TTS). Gated behind `tts` so non-TTS
-# builds stay dep-free. Adds ~40 MB (static ONNX Runtime) + espeak-ng build
-# requirement (cmake + clang).
-piper-rs = { version = "0.2.0", optional = true }
+office_oxide = { path = "../office_oxide", optional = true }
+pdf_oxide = { git = "https://github.com/yfedoseev/pdf_oxide", optional = true }
+regex = { version = "1", optional = true }
+# Web read tiering (office feature): Cloudflare Browser Rendering fallback
+# tier via the generated browser tool crate (reqwest-only, mobile-safe), plus
+# the `url` crate for pure URL normalization in logic::scrape.
+browser = { path = "../rig-components/tools/browser", optional = true }
+url = { version = "2", optional = true }
 # Binance agent tools (builtin.binance): keyless public market data via the
-# binance-sdk fork submodule (crates/vendor/binance-connector-rust, patched
-# rustls-only) + in-process TA via crates/vendor/ta.
-# Android still excluded: never exercised on NDK (un-excluding needs a
-# `cargo ndk check --features binance` pass).
-[target.'cfg(not(target_os = "android"))'.dependencies]
-binance = { path = "../crates/toolsets/binance", optional = true }
-# Monad EVM chain client (feature "monad") — read-only public RPC.
-kawai-monad = { path = "../crates/integrations/monad", optional = true }
-# Monad agent tools (builtin.monad): thin read-only AgentTool wrappers over
-# kawai-monad — wallet snapshot via Multicall3, token reads, tx status,
-# bounded Transfer log scans, allowance.
-monad-tools = { path = "../crates/toolsets/monad-tools", optional = true }
-
-# libSQL-native GraphRAG engine — pure crate (crates/engines/graph). Feature-gated
-# so it can be included/excluded as a module (@crates/engines/graph).
-# GraphRAG (libSQL-native): Naive/Local/Global/Hybrid/Mix over one DB file.
-# Always compiled in — rides the existing libSQL + kawai-embedding stack.
-graph = { path = "../crates/engines/graph" }
-
-# Remote SQL sources for the analytics snapshot tools (data_tables /
-# data_import over Postgres/MySQL). rustls on purpose — mobile has no
-# openssl prebuilts. SQLite stays on the existing libsql dep (always on).
-sqlx = { version = "0.8", optional = true, default-features = false, features = [
-    "runtime-tokio-rustls",
-    "postgres",
-    "mysql",
-] }
+# crates.io binance-sdk (rustls, spot-only) + in-process TA via rig-components/ta.
+binance = { path = "../rig-components/binance", optional = true }
 
 # stderr tee for file logging (logging.rs). Unix only.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [features]
-default = ["desktop"]
-desktop = ["dep:tauri", "dep:tauri-plugin-opener", "dep:tauri-plugin-fs", "dep:tauri-plugin-dialog", "dep:tauri-plugin-updater", "dep:tauri-plugin-process", "dep:keyring"]
+default = []
 web = ["dep:axum", "dep:tower-http"]
-# CodeGraph — sidecar only (AgentTool + LRU cache, zero cost off)
-codegraph = ["dep:codegraph"]
-# On-device LLM. Also owns the kawai-router dep (rule-based auto-routing is
-# only used by the litert supervisor stack).
-litert = ["dep:local-llm", "local-llm/agent-tools", "kawai-embedding/litert", "kawai-agent/litert", "kawai-vision/litert", "kawai-knowledge/litert", "remote-llm/litert", "kawai-analytics/litert", "kawai-cli/litert", "dep:kawai-router", "dep:kawai-desk", "dep:kawai-youtube"]
-# Export operational tracing logs to Grafana Cloud Loki directly.
-loki-logs = ["kawai-telemetry/loki-logs"]
+litert = ["dep:local-llm", "local-llm/rig-tools"]
+# Office document tools (logic::office): pure-Rust create/read/edit/info via
+# office_oxide and PDF via pdf_oxide (both in-process) — plus the RAG pipeline
+# (kawai-embedding → rig-libsql, with in-tree chunking) for idle-time
+# knowledge indexing.
+office = ["dep:base64", "dep:kawai-embedding", "dep:rig-libsql", "dep:rig-core", "dep:text-splitter", "dep:ragloader", "dep:youtube_transcript", "dep:office_oxide", "dep:pdf_oxide", "dep:regex", "dep:browser", "dep:url"]
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
-# technical-analysis tools. Needs a tool-loop runtime.
-binance = ["dep:binance", "kawai-agent/binance"]
-# Monad EVM chain client (read-only RPC: balance + chain status). Pure alloy
-# HTTP provider — no keys, no signing. monad-tools carries the read-only
-# AgentTool surface (builtin.monad).
-monad = ["dep:kawai-monad", "dep:monad-tools"]
-# Remote SQL sources (Postgres/MySQL) for the analytics snapshot tools.
-# Implies analytics (always compiled); SQLite needs no feature (libsql rides along).
-analytics-sql = ["kawai-analytics/analytics-sql", "dep:sqlx"]
-# TTS via piper-rs (neural Piper ONNX models). Adds ~40 MB (static ONNX Runtime)
-# and requires cmake + clang at build time (espeak-ng phonemizer compiled from source).
-tts = ["dep:piper-rs"]
-# Windows release builds only: switch ocr-rs (PaddleOCR/MNN) to the prebuilt
-# dynamic MNN (import lib + MNN.dll at runtime). The static prebuilt MNN is
-# compiled /MT, which LNK2038-clashes with the /MD onnxruntime objects from
-# piper-rs's static ort-sys on the same MSVC link line. Requires
-# MNN_LIB_DIR/MNN_INCLUDE_DIR in the environment (release.yml downloads the
-# MNN-Prebuilds zip and exports them; MNN.dll is bundled via
-# tauri.windows.conf.json). Default builds keep the /MT static MNN.
-mnn-dynamic = ["kawai-vision/paddle-ocr-mnn-dynamic"]
-# The full product in one flag (CI battery shorthand): on-device LLM,
-# remote SQL, Binance, TTS, CodeGraph, web server + desktop shell.
-full = ["desktop", "litert", "analytics-sql", "binance", "tts", "codegraph", "monad", "web"]
+# technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
+binance = ["dep:binance"]
 
 [[bin]]
 name = "kawai"
 path = "src/main.rs"
-required-features = ["desktop"]
 
 [[bin]]
 name = "kawai-web"
@@ -256,93 +134,30 @@ name = "remote_smoke"
 required-features = ["litert"]
 
 [[example]]
-name = "binance_smoke"
-required-features = ["binance"]
-
-[[example]]
-name = "binance_futures_probe"
-required-features = ["binance"]
-
-[[example]]
-name = "monad_wallet_smoke"
-required-features = ["monad"]
-
-[[example]]
-name = "planner_smoke"
-required-features = ["litert", "binance"]
-
-[[example]]
-name = "analytics_smoke"
-
-[[example]]
-name = "sql_remote_check"
-required-features = ["analytics-sql"]
-
-[[example]]
-name = "web_read_check"
+name = "chat_route_check"
+required-features = ["litert"]
 
 [[example]]
 name = "thinking_smoke"
-required-features = ["litert"]
+required-features = ["litert", "office"]
 
 [[example]]
 name = "draft_smoke"
-required-features = ["litert"]
+required-features = ["litert", "office"]
+
+[[example]]
+name = "agent_smoke"
+required-features = ["litert", "office"]
 
 [[example]]
 name = "agent_eval"
+required-features = ["litert", "office"]
 
 [[example]]
 name = "turn_log_report"
 required-features = ["litert"]
 
-[profile.release]
-lto = "thin"
-codegen-units = 1
-strip = true
-panic = "abort"
-debug = 0
-
-[profile.release.package.analytics]
-opt-level = "z"
-[profile.release.package.aws-lc-sys]
-opt-level = "z"
-[profile.release.package.aws-lc-rs]
-opt-level = "z"
-[profile.release.package.pdf_oxide]
-opt-level = "z"
-[profile.release.package.office_oxide]
-opt-level = "z"
-
-[profile.release.package.polars]
-opt-level = "z"
-[profile.release.package.polars-arrow]
-opt-level = "z"
-[profile.release.package.polars-core]
-opt-level = "z"
-[profile.release.package.polars-ops]
-opt-level = "z"
-[profile.release.package.polars-plan]
-opt-level = "z"
-[profile.release.package.polars-lazy]
-opt-level = "z"
-[profile.release.package.polars-stream]
-opt-level = "z"
-[profile.release.package.polars-io]
-opt-level = "z"
-[profile.release.package.polars-parquet]
-opt-level = "z"
-[profile.release.package.piper-rs]
-opt-level = "z"
-[profile.release.package.espeak-rs-sys]
-opt-level = "z"
-[profile.release.package.ort-sys]
-opt-level = "z"
-
 # Redirect crates.io office_oxide to the local fork for the entire dependency
 # graph (including pdf_oxide). Prevents duplicate FFI symbols on Linux.
 [patch.crates-io]
 office_oxide = { path = "../office_oxide" }
-
-[dev-dependencies]
-tempfile = "3"
