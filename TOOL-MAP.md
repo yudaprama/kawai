@@ -375,6 +375,28 @@ performance over it. Read-only; it never places, cancels, or changes an order.
 - **Fetching is best-effort.** A rate-limited or unreachable exchange
   downgrades the `sync` field to an explanation and the tool still answers from
   the local history — which is the entire reason for keeping a ledger.
+- **Statistics are per TRADE, not per fill.** Fills are matched into round
+  trips first (`trades.rs::round_trips`): one position opened and closed again
+  is ONE trade however many fills it spanned. This is not cosmetic — an ENTRY
+  fill carries `realizedPnl = 0`, so a per-fill statistic counts every entry as
+  a breakeven and *understates* the win rate. A winning position that scaled
+  out across three fills reads as a 33% win rate per fill and 100% per trade.
+  Positions still open at the end of the history have no realized result and
+  are excluded, with `fillsRecorded` reported so the gap is visible rather
+  than silent.
+- **PnL is NET of both legs' commission.** A trade grossed +5 on 6 of fees is a
+  loss, and is counted as one. Matching is FIFO within
+  `(margin, symbol, positionSide)` and works unchanged for one-way and hedge
+  mode; a fill whose side is neither BUY nor SELL is skipped, never guessed.
+- **`per_symbol_performance`** feeds the ledger's other two consumers:
+  `crypto_screener`'s `rankBy: "myPerformance"` (hits ordered by the user's
+  own expectancy on that symbol) and the risk audit's `realizedBySymbol`
+  rollup — the one place its otherwise forward-looking numbers meet what has
+  actually been paid. Symbols with fewer than `min_trades` completed round
+  trips (default 3) are never ranked this way and keep their score order; one
+  lucky trade must not outrank a real record. The screener reads only the
+  LOCAL ledger, never a signed endpoint, so it stays usable with no Binance
+  credentials.
 
 ## 5b. Monad (`builtin.monad`) — `crates/toolsets/monad-tools` (feature `monad`)
 
