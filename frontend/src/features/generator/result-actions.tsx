@@ -123,9 +123,15 @@ export function ResultActions({
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-0.5 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
+        {/* `line-clamp-N` must stand alone: it relies on `display: -webkit-box`,
+            and Tailwind emits `block` AFTER it, so the paired `block` silently
+            won the cascade and a long prompt wrapped to a dozen lines — the bar
+            grew to a third of the tile and painted itself over the image. */}
         <span className="min-w-0 flex-1">
-          <span className="line-clamp-1 block text-[11px] text-white/90">{label}</span>
-          {meta && <span className="line-clamp-1 block text-[10px] text-white/60">{meta}</span>}
+          <span className="line-clamp-1 text-[11px] text-white/90" title={label}>
+            {label}
+          </span>
+          {meta && <span className="line-clamp-1 text-[10px] text-white/60">{meta}</span>}
         </span>
         <Button
           aria-label={t("generator.copyToken")}

@@ -212,3 +212,77 @@ describe("placementSummary", () => {
     expect(placementSummary(JSON.stringify({ nope: true }))).toBeNull();
   });
 });
+
+/**
+ * The regression this panel had: it re-sorted every hit by `score`
+ * *unconditionally*, which silently discarded the engine's ranking. A user
+ * asking for a performance-based scan saw exactly the old order back and had
+ * no way to tell. The offer now honours `rankBy` and says which one ran.
+ */
+describe("the offer honours the engine's ranking", () => {
+  const ranked = (score: number, expectancy: number | null, trades: number | null) =>
+    hit({ score, myPerformance: expectancy == null ? null : { expectancy, trades: trades ?? 4 } });
+
+  const twoHitOutput = (hits: unknown[], over: Record<string, unknown> = {}) =>
+    output({
+      hitsTotal: hits.length,
+      hits,
+      rankBy: "myPerformance",
+      rankByAutomatic: true,
+      myPerformanceSymbols: { rankedOn: 1, minimumTrades: 3 },
+      ...over,
+    });
+
+  it("keeps a symbol with real history above a higher-scoring one without", () => {
+    const offer = parseScreenerOffer([
+      twoHitOutput([
+        // Better technically, but no history of the user's own.
+        { ...ranked(95, null, null), symbol: "BTCUSDT" },
+        // Weaker technically, but historically profitable for this user.
+        { ...ranked(60, 25, 4), symbol: "ETHUSDT" },
+      ]),
+    ]);
+    expect(offer?.rankBy).toBe("myPerformance");
+    expect(offer?.rankByAutomatic).toBe(true);
+    expect(offer?.rankedOn).toBe(1);
+    // The old unconditional score sort put BTCUSDT first here.
+    expect(offer?.hits.map((h) => h.symbol)).toEqual(["ETHUSDT", "BTCUSDT"]);
+  });
+
+  it("carries the user's expectancy through to the row", () => {
+    const offer = parseScreenerOffer([twoHitOutput([ranked(70, 12.5, 6)])]);
+    expect(offer?.hits[0].expectancy).toBe(12.5);
+    expect(offer?.hits[0].trades).toBe(6);
+  });
+
+  it("reports no history as null, never as zero", () => {
+    const offer = parseScreenerOffer([twoHitOutput([ranked(70, null, null)])]);
+    expect(offer?.hits[0].expectancy).toBeNull();
+    expect(offer?.hits[0].trades).toBeNull();
+  });
+
+  it("leaves score ordering untouched when the engine ranked by score", () => {
+    const offer = parseScreenerOffer([
+      output({
+        rankBy: "score",
+        hitsTotal: 2,
+        hits: [
+          { ...ranked(50, 99, 9), symbol: "ETHUSDT" },
+          { ...ranked(90, -5, 5), symbol: "BTCUSDT" },
+        ],
+      }),
+    ]);
+    expect(offer?.rankBy).toBe("score");
+    expect(offer?.rankByAutomatic).toBe(false);
+    expect(offer?.rankedOn).toBeNull();
+    // Highest technical score first, regardless of the user's own record.
+    expect(offer?.hits.map((h) => h.symbol)).toEqual(["BTCUSDT", "ETHUSDT"]);
+  });
+
+  it("defaults to score for an older run that predates rankBy", () => {
+    const offer = parseScreenerOffer([output()]);
+    expect(offer?.rankBy).toBe("score");
+    expect(offer?.rankByAutomatic).toBe(false);
+    expect(offer?.hits.every((h) => h.expectancy == null)).toBe(true);
+  });
+});

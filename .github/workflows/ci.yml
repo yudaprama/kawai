@@ -210,6 +210,15 @@ jobs:
         run: cargo test -p monad-tools
         working-directory: crates
 
+      # Binance toolset: venue-order guards (LOT_SIZE / PERCENT_PRICE /
+      # halted-contract refusals), the venue error taxonomy behind every order
+      # write, FIFO fill→round-trip matching + per-trade statistics, and the
+      # realized-PnL ledger round-trip through real SQLite. Pure + local DB —
+      # no API keys, no network, no LLM.
+      - name: cargo test (crates/toolsets/binance)
+        run: cargo test -p binance
+        working-directory: crates
+
       # Recap cron (billing Variant A): unit test aritmetika uang (base/cursor/
       # rebase/unattributed) + truncate char-boundary — murni offline.
       - name: cargo test (crates/ops/recap)

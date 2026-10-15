@@ -45,6 +45,24 @@ export interface ScreenedHit {
   change24hPct: number;
   score: number;
   reasons: string[];
+  /** The user's OWN realized expectancy on this symbol, when the scan had
+ * enough history to rank on it. `null` means no history — which is not the
+ * same as zero. Carried so the offer can rank and LABEL consistently with
+ * what the screener actually reported. */
+  expectancy: number | null;
+  trades: number | null;
+}
+
+/** How the run ordered its hits, echoed from the screener output. */
+export type ScreenerRanking = "score" | "liquidity" | "myPerformance";
+
+/** The user's own record on one symbol, as the screener reported it. */
+export interface MyPerformance {
+  trades: number;
+  winRate: number;
+  expectancy: number;
+  profitFactor: number | null;
+  totalRealizedPnl: number;
 }
 
 /** What the offer needs from the run: the market family and the interval the
@@ -62,6 +80,14 @@ export interface ScreenerOffer {
   hitsTotal: number;
   /** Rows dropped because their setup has no direction. */
   neutralHits: number;
+  /** Which ordering the screener applied. Carried so this view does not
+   * re-sort by score behind the engine's back, and so the user can SEE when
+   * their own history drove the order. */
+  rankBy: ScreenerRanking;
+  rankByAutomatic: boolean;
+  /** How many symbols had enough of the user's own history to rank on;
+   * `null` when the ranking was not performance-based. */
+  rankedOn: number | null;
   hits: ScreenedHit[];
 }
 
@@ -112,6 +138,9 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
   let hitsTotal = 0;
   let neutralHits = 0;
   let readable = 0;
+  let rankBy: ScreenerRanking = "score";
+  let rankByAutomatic = false;
+  let rankedOn: number | null = null;
 
   for (const output of outputs) {
     if (output == null) continue;
@@ -136,6 +165,15 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
     readable += 1;
     scanned += num(o.scanned) ?? 0;
     hitsTotal += num(o.hitsTotal) ?? o.hits.length;
+    // The engine's ordering, echoed. Every step of one run reports the same
+    // value, so a later step cannot silently override an earlier one.
+    const r = str(o.rankBy);
+    if (r === "score" || r === "liquidity" || r === "myPerformance") rankBy = r;
+    if (o.rankByAutomatic === true) rankByAutomatic = true;
+    const mps = o.myPerformanceSymbols;
+    const ranked =
+      typeof mps === "object" && mps != null ? num((mps as Record<string, unknown>).rankedOn) : null;
+    if (ranked != null) rankedOn = ranked;
     for (const raw of o.hits) {
       if (typeof raw !== "object" || raw == null) continue;
       const h = raw as Record<string, unknown>;
@@ -148,6 +186,17 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
         continue; // neutral or unknown setup — nothing to enter on
       }
       const score = num(h.score);
+      const mp = h.myPerformance;
+      const myPerformance =
+        typeof mp === "object" && mp != null
+          ? {
+              trades: num((mp as Record<string, unknown>).trades) ?? 0,
+              winRate: num((mp as Record<string, unknown>).winRate) ?? 0,
+              expectancy: num((mp as Record<string, unknown>).expectancy) ?? 0,
+              profitFactor: num((mp as Record<string, unknown>).profitFactor),
+              totalRealizedPnl: num((mp as Record<string, unknown>).totalRealizedPnl) ?? 0,
+            }
+          : null;
       const last = num(h.last);
       if (score == null || last == null) continue;
       const reasons = Array.isArray(h.reasons) ? h.reasons.filter((x): x is string => typeof x === "string") : [];
@@ -162,16 +211,38 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
         change24hPct: num(h.change24hPct) ?? 0,
         score,
         reasons,
+        expectancy: myPerformance?.expectancy ?? null,
+        trades: myPerformance?.trades ?? null,
       });
     }
   }
 
   if (readable === 0 || universe !== "usdm") return null;
-  // Strongest first, and a symbol that fired several setups surfaces above a
-  // single weak one — the same "cross-screen candidates first" ordering the
-  // deliverable writer is asked for.
-  hits.sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
-  return { universe, interval: interval ?? "4h", scanned, hitsTotal, neutralHits, hits };
+  // Order by WHAT THE ENGINE DID, not by re-deriving a score order here. The
+  // previous unconditional `b.score` sort silently discarded the engine's
+  // ranking whenever it had history to rank on, so a user asking for a
+  // performance-based scan saw exactly the old order back. Same rule as
+  // `compare_hits` in the engine: performance first, then score, then symbol.
+  hits.sort((a, b) => {
+    if (rankBy === "myPerformance") {
+      const ah = a.expectancy != null;
+      const bh = b.expectancy != null;
+      if (ah !== bh) return ah ? -1 : 1;
+      if (ah && bh && a.expectancy !== b.expectancy) return b.expectancy! - a.expectancy!;
+    }
+    return b.score - a.score || a.symbol.localeCompare(b.symbol);
+  });
+  return {
+    universe,
+    interval: interval ?? "4h",
+    scanned,
+    hitsTotal,
+    neutralHits,
+    rankBy,
+    rankByAutomatic,
+    rankedOn,
+    hits,
+  };
 }
 
 /** Read the human-usable numbers out of the engine's entry response: the
@@ -433,6 +504,26 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
         <span className="rounded border px-1.5 py-0.5">standard stops</span>
         <span className="text-foreground rounded border px-1.5 py-0.5">
           {offer.hits.length} of {offer.hitsTotal} hits from {offer.scanned} symbols
+        </span>
+        {/* Which ordering actually ran. Without this the list can silently
+            reorder away from the technical score and the user has no way to
+            tell why. */}
+        <span
+          className="rounded border px-1.5 py-0.5"
+          title={
+            offer.rankBy === "myPerformance"
+              ? `Ordered by your own realized record${offer.rankByAutomatic ? " (automatic)" : ""} — symbols you have actually been profitable on come first, ahead of the technical score.`
+              : "Ordered by the engine's technical conviction score."
+          }
+        >
+          ranked:{" "}
+          {offer.rankBy === "myPerformance"
+            ? offer.rankByAutomatic
+              ? `your record${offer.rankedOn ? ` (${offer.rankedOn})` : ""}`
+              : "your record"
+            : offer.rankBy === "liquidity"
+              ? "liquidity"
+              : "score"}
         </span>
         {offer.neutralHits > 0 && (
           <span
