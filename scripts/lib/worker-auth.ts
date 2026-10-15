@@ -9,12 +9,13 @@
  *    signup → POST /auth/sign_up {email, salt, credential} → {token}
  *    login  → POST /auth/sign_in {email, credential}        → {token}
  *
- *  Token disimpan ke path yang sama dengan yang dibaca CLI
- *  (`<app-data>/<sanitized email>/auth.token`, 0600), jadi `issue`/`list`/
- *  `revoke` langsung jalan tanpa flag tambahan.
+ *  Semua secret CLI (email, password, token) tinggal di `.env` repo root:
+ *  `KAWAI_ADMIN_EMAIL`, `KAWAI_ADMIN_PASSWORD`, `KAWAI_ADMIN_TOKEN` (token TTL
+ *  7 hari → `login` menyegarnya). `issue`/`list`/`revoke` membaca token dari
+ *  sana — tanpa state di luar repo dan tanpa app desktop.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -152,28 +153,34 @@ export function randomSalt(): string {
 	return randomBytes(16).toString("hex");
 }
 
-// ─── Token storage ────────────────────────────────────────────────────────
+// ─── Penyimpanan token (`.env` repo root — satu-satunya tempat) ────────────
+// `KAWAI_ADMIN_TOKEN` ditulis di `.env` (gitignored) bersama email+password,
+// jadi semua secret admin worker berada di satu file. Tidak ada token di
+// app-data: `auth.token` milik app desktop, bukan CLI.
 
-export function readToken(email: string): string | null {
-	try {
-		const token = readFileSync(authTokenPath(email), "utf8").trim();
-		return token.length > 0 ? token : null;
-	} catch {
-		return null;
-	}
+const TOKEN_KEY = "KAWAI_ADMIN_TOKEN";
+
+export function readToken(): string | null {
+	loadRepoDotEnv();
+	const token = process.env[TOKEN_KEY]?.trim();
+	return token !== undefined && token.length > 0 ? token : null;
 }
 
-/** Simpan token 0600 di path yang dibaca CLI — konsisten dengan app desktop. */
-export function writeToken(email: string, token: string): string {
-	const dir = userDataDir(email);
-	mkdirSync(dir, { recursive: true });
-	const path = join(dir, "auth.token");
-	writeFileSync(path, token, { mode: 0o600 });
+/** Tulis/segarkan `KAWAI_ADMIN_TOKEN` di `.env` (mengganti nilai lama). */
+export function writeToken(token: string): string {
+	const path = REPO_DOT_ENV;
+	let lines: string[];
 	try {
-		chmodSync(path, 0o600);
+		lines = readFileSync(path, "utf8").split("\n");
 	} catch {
-		/* filesystem tanpa chmod — bukan kondisi fatal */
+		lines = [];
 	}
+	const entry = `${TOKEN_KEY}=${token}`;
+	const at = lines.findIndex((l) => l.trimStart().startsWith(`${TOKEN_KEY}=`));
+	if (at >= 0) lines[at] = entry;
+	else lines.push(entry);
+	const text = `${lines.join("\n").replace(/\n+$/, "")}\n`;
+	writeFileSync(path, text, { mode: 0o600 });
 	return path;
 }
 
@@ -220,7 +227,7 @@ export async function signUp(url: string, email: string, password: string): Prom
 	if (status !== 200 || token === undefined) {
 		throw new Error(`sign_up gagal (HTTP ${status}): ${JSON.stringify(data)}`);
 	}
-	return { token, path: writeToken(email, token) };
+	return { token, path: writeToken(token) };
 }
 
 /** Login akun yang sudah terdaftar → token baru. */
@@ -238,7 +245,7 @@ export async function signIn(url: string, email: string, password: string): Prom
 	if (status !== 200 || token === undefined) {
 		throw new Error(`sign_in gagal (HTTP ${status}): ${JSON.stringify(data)}`);
 	}
-	return { token, path: writeToken(email, token) };
+	return { token, path: writeToken(token) };
 }
 
 

@@ -8,11 +8,11 @@
  *    [--token-file <path>]   berkas auth.token admin (default: direktori data app)
  *    [--url <worker>]        default production worker; lokal: --url http://127.0.0.1:8787
  *
- *  Token dibaca dari berkas (default direktori data app utk ADMIN_EMAIL) — tidak
- *  ada env var baru. `bun scripts/voucher.ts login` menulis token itu.
+ *  Token dibaca dari `.env` (`KAWAI_ADMIN_TOKEN`, ditulis `voucher.ts login`) —
+ *  tidak ada env var lain dan tidak perlu app desktop.
  */
 import { readFileSync } from "node:fs";
-import { ADMIN_EMAIL, authTokenPath, WORKER_DEFAULT } from "./lib/worker-auth";
+import { readToken, WORKER_DEFAULT } from "./lib/worker-auth";
 
 interface PendingItem {
   txId: string;
@@ -33,14 +33,17 @@ for (let i = 0; i < argv.length; i++) {
   else rest.push(a);
 }
 const [cmd, txId] = rest;
-if (tokenFile === "") tokenFile = authTokenPath(ADMIN_EMAIL);
-
 let token: string;
-try {
+if (tokenFile !== "") {
   token = readFileSync(tokenFile, "utf8").trim();
-} catch {
-  console.error(`Jalankan \`bun scripts/voucher.ts login\` dulu, atau beri --token-file <path>.`);
-  process.exit(1);
+} else {
+  const fromEnv = readToken();
+  if (fromEnv === null) {
+    console.error(`Token admin tidak ada di .env (KAWAI_ADMIN_TOKEN).`);
+    console.error(`Jalankan \`bun scripts/voucher.ts login\` dulu, atau beri --token-file <path>.`);
+    process.exit(1);
+  }
+  token = fromEnv;
 }
 
 async function req(path: string, body?: unknown): Promise<Record<string, unknown>> {

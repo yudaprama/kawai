@@ -11,13 +11,13 @@
  *   bun scripts/topup.ts user@example.com 1000000   # +1jt token
  *   bun scripts/topup.ts user@example.com -500000   # koreksi -500rb (gagal bila saldo kurang)
  *
- * Token dibaca dari berkas (default direktori data app utk ADMIN_EMAIL) - tidak ada
- * env var baru; `bun scripts/voucher.ts login` menulis token itu.
+ * Token dibaca dari `.env` (`KAWAI_ADMIN_TOKEN`, ditulis `voucher.ts login`) -
+ * tidak ada env var lain dan tidak perlu app desktop.
  * Endpoint: POST /admin/balance/credit (Bearer admin — identity wajib ADMIN_EMAIL
  * di worker; saldo hidup di D1, bukan lagi DATABASE_URL/psql).
  */
 import { readFileSync } from "node:fs";
-import { ADMIN_EMAIL, authTokenPath, WORKER_DEFAULT } from "./lib/worker-auth";
+import { readToken, WORKER_DEFAULT } from "./lib/worker-auth";
 
 const argv = process.argv.slice(2);
 let tokenFile = "";
@@ -30,7 +30,7 @@ for (let i = 0; i < argv.length; i++) {
   else rest.push(a);
 }
 const [email, amountStr] = rest;
-if (tokenFile === "") tokenFile = authTokenPath(ADMIN_EMAIL);
+
 
 if (!email || !amountStr) {
   console.error(`Pemakaian:
@@ -49,12 +49,16 @@ if (!Number.isSafeInteger(amount) || amount === 0) {
 }
 
 let token: string;
-try {
+if (tokenFile !== "") {
   token = readFileSync(tokenFile, "utf8").trim();
-} catch {
-  console.error(`Token admin tidak terbaca: ${tokenFile}`);
-  console.error(`Jalankan \`bun scripts/voucher.ts login\` dulu, atau beri --token-file <path>.`);
-  process.exit(1);
+} else {
+  const fromEnv = readToken();
+  if (fromEnv === null) {
+    console.error(`Token admin tidak ada di .env (KAWAI_ADMIN_TOKEN).`);
+    console.error(`Jalankan \`bun scripts/voucher.ts login\` dulu, atau beri --token-file <path>.`);
+    process.exit(1);
+  }
+  token = fromEnv;
 }
 
 const resp = await fetch(`${url}/admin/balance/credit`, {

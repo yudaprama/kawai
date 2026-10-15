@@ -7,16 +7,17 @@
  *    bun scripts/voucher.ts issue --tokens <n> --count <n> [--note "..."] [--expires YYYY-MM-DD]
  *    bun scripts/voucher.ts list
  *    bun scripts/voucher.ts revoke <code>
- *    [--email <addr>]      default ADMIN_EMAIL
- *    [--token-file <path>] berkas auth.token (default direktori data app)
+ *    [--email <addr>]      default KAWAI_ADMIN_EMAIL dari .env
+ *    [--token-file <path>] override token dari .env (KAWAI_ADMIN_TOKEN)
  *    [--url <worker>]      default production worker; lokal: --url http://127.0.0.1:8787
  *
- *  Token dibaca dari berkas (pola sama dgn scripts/qris.ts) — tidak ada env var baru.
- *  `signup`/`login` mandiri: daftar/login via worker lalu tulis token ke path yang
- *  sama, jadi CLI tidak bergantung pada app desktop (lihat lib/worker-auth.ts).
+ *  Kredensial + token tinggal di `.env` repo root (`KAWAI_ADMIN_*`) — tanpa app
+ *  desktop. Password dari env; kalau kosong, prompt tanpa echo. `signup`/`login`
+ *  mandiri: daftar/login via worker lalu tulis token ke `.env`
+ *  (lihat lib/worker-auth.ts).
  */
 import { readFileSync } from "node:fs";
-import { adminEmailFromEnv, adminPasswordFromEnv, authTokenPath, promptPassword, signIn, signUp, WORKER_DEFAULT } from "./lib/worker-auth";
+import { adminEmailFromEnv, adminPasswordFromEnv, promptPassword, readToken, signIn, signUp, WORKER_DEFAULT } from "./lib/worker-auth";
 
 interface VoucherItem {
   code: string;
@@ -57,17 +58,18 @@ if (cmd === "signup" || cmd === "login") {
   process.exit(0);
 }
 
-if (tokenFile === "") tokenFile = authTokenPath(email);
-
 let token: string;
-try {
+if (tokenFile !== "") {
   token = readFileSync(tokenFile, "utf8").trim();
-} catch {
-  console.error(`Token admin tidak terbaca: ${tokenFile}`);
-  console.error(`Jalankan \`bun scripts/voucher.ts login\` (atau signup sekali) — tidak perlu app desktop.`);
-  process.exit(1);
+} else {
+  const fromEnv = readToken();
+  if (fromEnv === null) {
+    console.error(`Token admin tidak ada di .env (KAWAI_ADMIN_TOKEN).`);
+    console.error(`Jalankan \`bun scripts/voucher.ts login\` (atau signup sekali) — tidak perlu app desktop.`);
+    process.exit(1);
+  }
+  token = fromEnv;
 }
-
 
 async function req(path: string, body?: unknown): Promise<Record<string, unknown>> {
   const resp = await fetch(`${url}${path}`, {
