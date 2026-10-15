@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { applyPalette, getPalette, setPalette, usePaletteId } from "@/lib/themes";
 
 export type Theme = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
@@ -47,5 +48,12 @@ export function useTheme() {
     return () => mq.removeEventListener("change", onChange);
   }, [theme]);
 
-  return { theme, setTheme, resolvedTheme };
+  // The palette (color theme) is orthogonal to the light/dark/system mode:
+  // repaint its tokens whenever either side changes.
+  const paletteId = usePaletteId();
+  useEffect(() => {
+    applyPalette(getPalette(paletteId), resolvedTheme);
+  }, [paletteId, resolvedTheme]);
+
+  return { theme, setTheme, resolvedTheme, paletteId, setPalette };
 }

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ChoiceChip, EcoPicker, NumberStepper, ResultsPaneHeader, ToggleRow, choiceClass } from "./generator-shell";
+import { ChoiceChip, EcoPicker, NumberStepper, ToggleRow, choiceClass } from "./generator-shell";
 
 /**
  * Render-level smoke for the shared lane chrome. The refactor replaced four
@@ -85,13 +85,6 @@ describe("ToggleRow", () => {
     const off = renderToStaticMarkup(<ToggleRow checked={false} label="Draft" onCheckedChange={() => {}} />);
     expect(on).toContain('data-state="checked"');
     expect(off).toContain('data-state="unchecked"');
-  });
-});
-
-describe("ResultsPaneHeader", () => {
-  it("renders the title and optional meta line", () => {
-    expect(renderToStaticMarkup(<ResultsPaneHeader title="Results" />)).toContain("Results");
-    expect(renderToStaticMarkup(<ResultsPaneHeader meta="12 results" title="Results" />)).toContain("12 results");
   });
 });
 

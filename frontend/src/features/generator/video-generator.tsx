@@ -45,7 +45,7 @@ import {
   useWorkflowLane,
 } from "./civitai-shared";
 import { GenerateFooter } from "./generate-footer";
-import { ResultActions, mediaToken } from "./result-actions";
+import { ResultActions, ResultTile, mediaToken } from "./result-actions";
 import {
   ChoiceChip,
   detailLine,
@@ -54,8 +54,9 @@ import {
   GeneratorLayout,
   JobCard,
   resultMeta,
-  ResultsPaneHeader,
+  ResultsPaneTabs,
   ToggleRow,
+  useResultsPaneTab,
 } from "./generator-shell";
 import type { VideoGenParams } from "@/generated/api-types";
 import type { SavedVideo, VideoStatusView, VideoTemplatePreset } from "@/lib/api";
@@ -294,11 +295,10 @@ function VideoResultCard({
     entry.thumbnailFileId ? { id: entry.thumbnailFileId, name: `${entry.name}-thumb.jpg` } : { id: "", name: "" },
   );
   return (
-    <div className="group relative overflow-hidden rounded-[8px] border bg-secondary">
+    <ResultTile label={entry.prompt || entry.name} meta={resultMeta(entry.at, videoDetail(entry.req))}>
       <button
         className="block w-full cursor-zoom-in"
         onClick={() => emitOpenPreview(entry.fileId, entry.name)}
-        title={entry.prompt}
         type="button"
       >
         <div className="relative flex aspect-video w-full items-center justify-center bg-black">
@@ -319,13 +319,11 @@ function VideoResultCard({
       <ResultActions
         fileId={entry.fileId}
         fileName={entry.name}
-        label={entry.prompt || entry.name}
-        meta={resultMeta(entry.at, videoDetail(entry.req))}
         onRemove={onRemove}
         onReuse={onReuse}
         token={mediaToken(entry.prompt, entry.fileId, entry.name)}
       />
-    </div>
+    </ResultTile>
   );
 }
 
@@ -545,6 +543,8 @@ export function VideoGenerator() {
       }),
   });
   const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
+  /** Results ↔ community clips: both stay reachable whatever the lane holds. */
+  const pane = useResultsPaneTab({ busy: job != null, count: results.length });
   const {
     groups: ecoGroups,
     open: ecoOpen,
@@ -1021,9 +1021,11 @@ export function VideoGenerator() {
       }
       form={form}
       header={
-        <ResultsPaneHeader
-          meta={t("generator.resultsCount", { count: results.length })}
-          title={t("videoGenerator.results")}
+        <ResultsPaneTabs
+          active={pane.active}
+          onChange={pane.set}
+          resultsLabel={t("generator.resultsCount", { count: results.length })}
+          templatesLabel={t("videoGenerator.templates")}
         />
       }
     >
@@ -1041,7 +1043,7 @@ export function VideoGenerator() {
             />
           </div>
         )}
-        {results.length === 0 && !job ? (
+        {pane.active === "templates" ? (
           <VideoTemplateGallery onApply={applyVideoPreset} />
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">

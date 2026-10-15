@@ -47,9 +47,10 @@ import {
   GeneratorLayout,
   JobCard,
   resultMeta,
-  ResultsPaneHeader,
+  ResultsPaneTabs,
+  useResultsPaneTab,
 } from "./generator-shell";
-import { ResultActions, mediaToken } from "./result-actions";
+import { ResultActions, ResultTile, mediaToken } from "./result-actions";
 import type { MusicGenParams } from "@/generated/api-types";
 
 /** Civitai musicGen request — the generated wire contract
@@ -117,13 +118,14 @@ function MusicResultCard({
 }) {
   const main = useFilePreview({ id: entry.fileId, name: entry.name });
   return (
-    <div className="group relative overflow-hidden rounded-[8px] border bg-secondary">
-      <button
-        className="block w-full p-2"
-        onClick={() => emitOpenPreview(entry.fileId, entry.name)}
-        title={entry.prompt}
-        type="button"
-      >
+    <ResultTile
+      label={entry.prompt || entry.name}
+      meta={resultMeta(
+        entry.at,
+        detailLine(entry.req?.duration ? `${entry.req.duration}s` : undefined, entry.req?.mode),
+      )}
+    >
+      <button className="block w-full p-2" onClick={() => emitOpenPreview(entry.fileId, entry.name)} type="button">
         {main.isLoading ? (
           <div className="flex h-14 items-center justify-center">
             <Spinner className="size-5" />
@@ -137,16 +139,11 @@ function MusicResultCard({
       <ResultActions
         fileId={entry.fileId}
         fileName={entry.name}
-        label={entry.prompt || entry.name}
-        meta={resultMeta(
-          entry.at,
-          detailLine(entry.req?.duration ? `${entry.req.duration}s` : undefined, entry.req?.mode),
-        )}
         onRemove={onRemove}
         onReuse={onReuse}
         token={mediaToken(entry.prompt, entry.fileId, entry.name)}
       />
-    </div>
+    </ResultTile>
   );
 }
 
@@ -427,6 +424,8 @@ export function MusicGenerator() {
     fetchSaved: (st, workflowId) => call<SavedAudio>("civitai_music_fetch", { workflowId, audioUrl: st.audioUrl }),
   });
   const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
+  /** Results ↔ community prompts: both stay reachable whatever the lane holds. */
+  const pane = useResultsPaneTab({ busy: job != null, count: results.length });
   const {
     groups: ecoGroups,
     open: ecoOpen,
@@ -1013,9 +1012,11 @@ export function MusicGenerator() {
       }
       form={form}
       header={
-        <ResultsPaneHeader
-          meta={t("generator.resultsCount", { count: results.length })}
-          title={t("musicGenerator.results")}
+        <ResultsPaneTabs
+          active={pane.active}
+          onChange={pane.set}
+          resultsLabel={t("generator.resultsCount", { count: results.length })}
+          templatesLabel={t("musicGenerator.templates")}
         />
       }
     >
@@ -1033,7 +1034,7 @@ export function MusicGenerator() {
             />
           </div>
         )}
-        {results.length === 0 && !job ? (
+        {pane.active === "templates" ? (
           <MusicTemplateGallery
             starters={MUSIC_STARTERS[ecoId] ?? []}
             onApplyCommunity={applyMusicTemplate}

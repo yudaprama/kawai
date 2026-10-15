@@ -46,17 +46,18 @@ import { MusicGenerator } from "./music-generator";
 import { Model3dGenerator } from "./model3d-generator";
 import { Masonry, useColumnCount } from "./masonry";
 import { type PickerGroup, type PickerItem, PickerMenu } from "./picker-menu";
-import { ResultActions, mediaToken } from "./result-actions";
+import { ResultActions, ResultTile, mediaToken } from "./result-actions";
 import {
   ChoiceChip,
   EcoPicker,
   EmptyResults,
   GeneratorLayout,
   NumberStepper,
-  ResultsPaneHeader,
+  ResultsPaneTabs,
   resultMeta,
   segmentClass,
   SEGMENTED_LIST,
+  useResultsPaneTab,
 } from "./generator-shell";
 import { VideoGenerator } from "./video-generator";
 
@@ -209,7 +210,8 @@ function ModelTile({ cover, eco, size }: { cover?: string | null; eco: (typeof E
  * The tile keeps the image's own aspect — four of the five size presets are
  * non-square, so a square crop threw most generations away. The reserved box
  * comes from the run's own dimensions when the snapshot has them (no layout
- * shift as the tile loads); legacy entries fall back to a square. */
+ * shift as the tile loads); legacy entries fall back to a square. The prompt
+ * rides the caption row under the artwork, never an overlay. */
 function ResultCard({ entry, onRemove, onReuse }: { entry: HistoryEntry; onRemove: () => void; onReuse: () => void }) {
   // The tile renders the 512px preview JPEG, never the original — a 4K PNG
   // would be megabytes of base64 per card. Click-to-preview reads the full
@@ -217,19 +219,14 @@ function ResultCard({ entry, onRemove, onReuse }: { entry: HistoryEntry; onRemov
   const { data, isLoading } = useFilePreview({ id: entry.fileId, name: entry.name, thumb: true });
   const dims = entry.params;
   return (
-    <div
-      className={cn(
-        "group relative overflow-hidden rounded-[8px] border bg-secondary",
-        // No snapshot (a pre-existing entry) — the children are h-full, so the
-        // box still needs a height. Square is the old behaviour.
-        !dims && "aspect-square",
-      )}
-      style={dims ? { aspectRatio: `${dims.width} / ${dims.height}` } : undefined}
+    <ResultTile
+      aspect={dims ? `${dims.width} / ${dims.height}` : "1 / 1"}
+      label={entry.prompt || entry.name}
+      meta={resultMeta(entry.at, dims ? `${dims.width}×${dims.height}` : undefined)}
     >
       <button
         className="block h-full w-full cursor-zoom-in"
         onClick={() => emitOpenPreview(entry.fileId, entry.name)}
-        title={entry.prompt}
         type="button"
       >
         {isLoading ? (
@@ -247,13 +244,11 @@ function ResultCard({ entry, onRemove, onReuse }: { entry: HistoryEntry; onRemov
       <ResultActions
         fileId={entry.fileId}
         fileName={entry.name}
-        label={entry.prompt || entry.name}
-        meta={resultMeta(entry.at, dims ? `${dims.width}×${dims.height}` : undefined)}
         onRemove={onRemove}
         onReuse={onReuse}
         token={mediaToken(entry.prompt, entry.fileId, entry.name)}
       />
-    </div>
+    </ResultTile>
   );
 }
 
@@ -1025,6 +1020,10 @@ function ImageGenerator() {
   /** Results masonry density — four across on a wide window, like the old grid. */
   const resultCols = useColumnCount(4);
 
+  /** Results ↔ community templates: both stay reachable whatever the lane
+   *  holds, and a new run pulls the pane back to the media. */
+  const pane = useResultsPaneTab({ busy: running, count: results.length });
+
   /** civitai's ecosystem picker groups: the current workflow's own ecosystem
    *  list first ("Workflow Compatible"), the rest under "All" — picking one of
    *  those retargets the workflow through `switchEcosystem`
@@ -1451,6 +1450,7 @@ function ImageGenerator() {
               sampler={sampler}
               clipSkip={clipSkip}
               sdFamily={isSdFamily(eco.id)}
+              specCfg={eco.defaultCfgScale}
               onCfgScale={setCfgScale}
               onSeed={setSeed}
               onSteps={setSteps}
@@ -1484,14 +1484,16 @@ function ImageGenerator() {
       }
       form={form}
       header={
-        <ResultsPaneHeader
-          meta={t("generator.resultsCount", { count: results.length })}
-          title={t("generator.results")}
+        <ResultsPaneTabs
+          active={pane.active}
+          onChange={pane.set}
+          resultsLabel={t("generator.resultsCount", { count: results.length })}
+          templatesLabel={t("generator.templates")}
         />
       }
     >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-auto p-3 pb-24 lg:overscroll-contain lg:pb-3">
-        {results.length === 0 && !running ? (
+        {pane.active === "templates" ? (
           <TemplateGallery cols={resultCols} onApply={applyTemplate} />
         ) : (
           <Masonry

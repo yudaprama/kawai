@@ -286,9 +286,19 @@
     "theme": "Tema",
     "signOut": "Keluar",
     "assets": "Aset",
-    "assetsAndAccount": "Aset dan akun"
+    "assetsAndAccount": "Aset dan akun",
+    "appearance": "Tampilan",
+    "colorTheme": "Warna tema"
+  },
+  "themePicker": {
+    "title": "Warna tema",
+    "description": "Pilih palet, atau tempel link tema tweakcn / shadcn untuk menambah milikmu.",
+    "inputPlaceholder": "https://tweakcn.com/r/themes/… atau zinc",
+    "add": "Tambah",
+    "remove": "Hapus tema"
   },
   "generator": {
+    "templates": "Template",
     "checkingKey": "Memeriksa layanan generate…",
     "keyMissingTitle": "Layanan generate belum terpasang",
     "keyMissingBody": "API key layanan generate belum dikonfigurasi di vault aplikasi (kawai-vault/constants). Generate dinonaktifkan sampai key tersedia.",
@@ -316,6 +326,7 @@
     "negativePrompt": "Prompt Negatif",
     "cfgScale": "CFG scale",
     "steps": "Langkah (steps)",
+    "specDefault": "spec {{value}}",
     "addLora": "Tambah LoRA",
     "removeLora": "Hapus LoRA",
     "estimate": "Perkiraan biaya token",
@@ -946,6 +957,7 @@
     "status": "Status"
   },
   "videoGenerator": {
+    "templates": "Klip",
     "workflow": "Workflow",
     "txt2vid": "Teks → Video",
     "img2vid": "Gambar → Video",
@@ -1002,6 +1014,7 @@
     "ecosystem": "Ekosistem"
   },
   "musicGenerator": {
+    "templates": "Prompt",
     "mode": "Mode",
     "simple": "Sederhana",
     "custom": "Kustom",
@@ -1058,6 +1071,7 @@
     "cancel": "Batalkan"
   },
   "model3dGenerator": {
+    "templates": "Saran",
     "ecosystem": "Ekosistem",
     "process": "Proses",
     "txt2_3d": "Teks → 3D",

@@ -43,6 +43,21 @@
           document.documentElement.classList.toggle("dark", dark);
           document.documentElement.style.colorScheme = dark ? "dark" : "light";
         } catch (e) {}
+        // Replay the active palette's tokens before paint (written by
+        // lib/themes.ts). Without this the app would flash the stylesheet
+        // palette on every launch. Key matches SNAPSHOT_KEY there.
+        try {
+          var snap = localStorage.getItem("kawai-palette-vars");
+          if (snap) {
+            var p = JSON.parse(snap);
+            var vars = dark ? p.dark : p.light;
+            var css = "";
+            for (var key in vars) css += "--" + key + ":" + vars[key] + ";";
+            var paletteStyle = document.createElement("style");
+            paletteStyle.textContent = ":root{" + css + "}";
+            document.head.appendChild(paletteStyle);
+          }
+        } catch (e) {}
       })();
     </script>
   </head>

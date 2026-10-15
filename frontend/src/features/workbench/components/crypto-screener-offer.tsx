@@ -46,9 +46,9 @@ export interface ScreenedHit {
   score: number;
   reasons: string[];
   /** The user's OWN realized expectancy on this symbol, when the scan had
- * enough history to rank on it. `null` means no history — which is not the
- * same as zero. Carried so the offer can rank and LABEL consistently with
- * what the screener actually reported. */
+   * enough history to rank on it. `null` means no history — which is not the
+   * same as zero. Carried so the offer can rank and LABEL consistently with
+   * what the screener actually reported. */
   expectancy: number | null;
   trades: number | null;
 }
@@ -171,8 +171,7 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
     if (r === "score" || r === "liquidity" || r === "myPerformance") rankBy = r;
     if (o.rankByAutomatic === true) rankByAutomatic = true;
     const mps = o.myPerformanceSymbols;
-    const ranked =
-      typeof mps === "object" && mps != null ? num((mps as Record<string, unknown>).rankedOn) : null;
+    const ranked = typeof mps === "object" && mps != null ? num((mps as Record<string, unknown>).rankedOn) : null;
     if (ranked != null) rankedOn = ranked;
     for (const raw of o.hits) {
       if (typeof raw !== "object" || raw == null) continue;
@@ -225,10 +224,12 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
   // `compare_hits` in the engine: performance first, then score, then symbol.
   hits.sort((a, b) => {
     if (rankBy === "myPerformance") {
-      const ah = a.expectancy != null;
-      const bh = b.expectancy != null;
+      const ae = a.expectancy;
+      const be = b.expectancy;
+      const ah = ae != null;
+      const bh = be != null;
       if (ah !== bh) return ah ? -1 : 1;
-      if (ah && bh && a.expectancy !== b.expectancy) return b.expectancy! - a.expectancy!;
+      if (ae != null && be != null && ae !== be) return be - ae;
     }
     return b.score - a.score || a.symbol.localeCompare(b.symbol);
   });

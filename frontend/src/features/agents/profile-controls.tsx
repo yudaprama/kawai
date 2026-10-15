@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,21 +11,30 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { type AssetViewId, ASSET_NAV } from "@/features/assets/components/asset-nav";
 import { type Theme, useTheme } from "@/hooks/use-theme";
+import { getPalette } from "@/lib/themes";
+import { ThemePickerDialog } from "@/features/agents/theme-picker";
 import { useI18n } from "@/hooks/use-i18n";
 import type { Locale } from "@/lib/i18n";
 import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
 
-function ThemeItems() {
-  const { theme, setTheme } = useTheme();
+/** Appearance section — light/dark/system mode plus a way into the color
+ *  palette picker (the mode only decides which token set of the active
+ *  palette paints, so both live together). */
+function ThemeItems({ onOpenPalettes }: { onOpenPalettes: () => void }) {
+  const { theme, setTheme, paletteId } = useTheme();
   const { t } = useI18n();
   const options: { value: Theme; label: string; icon: string }[] = [
     { value: "light", label: t("common.light"), icon: "sun" },
     { value: "dark", label: t("common.dark"), icon: "moon" },
     { value: "system", label: t("common.system"), icon: "monitor" },
   ];
+  const palette = getPalette(paletteId);
 
   return (
     <>
+      <DropdownMenuLabel className="font-mono text-xs tracking-wider uppercase text-muted-foreground">
+        {t("profileDropdown.appearance")}
+      </DropdownMenuLabel>
       {options.map((opt) => (
         <DropdownMenuItem key={opt.value} onClick={() => setTheme(opt.value)} className="gap-2 cursor-pointer">
           <Icon name={opt.icon} className="text-muted-foreground size-4" />
@@ -32,6 +42,11 @@ function ThemeItems() {
           {theme === opt.value && <Icon name="check" className="size-4" />}
         </DropdownMenuItem>
       ))}
+      <DropdownMenuItem onSelect={onOpenPalettes} className="gap-2 cursor-pointer">
+        <Icon name="palette" className="text-muted-foreground size-4" />
+        <span className="flex-1">{t("profileDropdown.colorTheme")}</span>
+        <span className="text-muted-foreground truncate text-xs">{palette.label}</span>
+      </DropdownMenuItem>
     </>
   );
 }
@@ -85,6 +100,7 @@ export function ProfileControls({
   onSelectAsset: (id: AssetViewId) => void;
   onLogout: () => void;
 }) {
+  const [palettesOpen, setPalettesOpen] = useState(false);
   const assets = ASSET_NAV.filter(
     (asset) => (asset.id !== "code" || codegraphAvailable) && (asset.id !== "wallet" || walletAvailable),
   );
@@ -132,7 +148,7 @@ export function ProfileControls({
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
-          <ThemeItems />
+          <ThemeItems onOpenPalettes={() => setPalettesOpen(true)} />
           <DropdownMenuSeparator />
           <LanguageItems />
           <DropdownMenuSeparator />
@@ -142,6 +158,7 @@ export function ProfileControls({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <ThemePickerDialog open={palettesOpen} onOpenChange={setPalettesOpen} />
     </div>
   );
 }

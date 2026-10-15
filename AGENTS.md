@@ -17,6 +17,7 @@ Desktop/mobile app (Tauri), with a standalone web server binary.
 - **LLM (on-device)**: LiteRT-LM via `cognee-litert-lm` (path dep, vendored at `cognee-litert-lm/vendor/LiteRT-LM` = upstream `google-ai-edge` main). Behind the `litert` cargo feature. Gemma 4 / Qwen `.litertlm` verified streaming on macOS arm64 CPU.
 - **LLM (remote)**: no LLM SDK — the hybrid tier's cloud client is hand-written (`logic/remote.rs`): a reqwest OpenAI-compatible SSE client (`chat/completions` streaming, reasoning deltas, terminal usage) over a hardcoded provider pool (zai → venice → opencode → openrouter → ollama), keys from kawai-vault. **Decision (2026-08-16): local Gemma 4 via LiteRT-LM is the orchestrator** — no *replacement* remote provider planned. **Updated 2026-08-20: the hybrid cloud-subagent tier is now wired** — `agent_chat` keeps local Gemma 4 as the permanent orchestrator and delegates heavy synthesis to cloud subagent *tools* (`deep_write`, `draft_document`) via prompt-based tool calling whenever a remote LLM is configured (default `zai`, key from kawai-vault; `logic/remote.rs` + config block below). Toolsets are usable standalone (definitions + dispatch); the agent tier runs on local Gemma 4 with prompt-based tool calling (the LiteRT-LM Conversation API has no native function calling). Remote providers are optional configuration (see Roadmap 5 ✅), not a requirement.
 - **DB**: local SQLite via `libsql` crate (desktop MVP). Post-MVP: sqld for multi-device sync.
+- **Appearance**: two orthogonal layers — the light/dark/system *mode* (`hooks/use-theme.ts`, toggled on `<html>.dark`) and the *color palette* (`lib/themes.ts`: a palette is a set of shadcn semantic tokens applied as inline custom properties on `<html>`). Bundled: `mono` (the `index.css` values themselves) + `vekis`. Users add their own from the account dropdown → **Color theme** (`features/agents/theme-picker.tsx`) by pasting a tweakcn theme link (`https://tweakcn.com/r/themes/<id>`) or a shadcn preset name (`zinc`, `stone`, …) — both registries serve CORS JSON; imports persist in localStorage, and the active palette is snapshotted so the inline script in `index.html` repaints it before first paint.
 
 ## Current phase: MVP (desktop-first)
 
@@ -193,6 +194,7 @@ frontend/                        # React 19 + Vite + Tailwind v4 SPA (vite root)
 │   │   ├── download.ts          # triggerDownload helper
 │   │   ├── file-types.ts        # extension → FileKind classification
 │   │   ├── utils.ts             # cn() + misc
+│   │   ├── themes.ts            # color palettes: token store, tweakcn/shadcn registry import, <html> application
 │   │   └── streamdown/          # vendored markdown/streaming renderer (from web/)
 │   ├── hooks/
 │   │   ├── use-local-chat.ts    # chat state: LocalChatEvent → UIMessage parts, sessions, model mgmt

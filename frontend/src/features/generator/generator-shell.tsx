@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { AssetShell } from "@/features/assets/components/asset-shell";
 import { Icon } from "@/components/shared/icon";
@@ -166,7 +166,7 @@ export function GeneratorLayout({
   /** The lane's `GenerateFooter` (or null while the key check is pending). */
   footer: ReactNode;
   form: ReactNode;
-  /** Results-pane header contents — usually `ResultsPaneHeader`. */
+  /** Results-pane header contents — usually `ResultsPaneTabs`. */
   header: ReactNode;
 }) {
   const shellBodyRef = useRef<HTMLDivElement>(null);
@@ -211,14 +211,89 @@ export function GeneratorLayout({
   );
 }
 
-/** The results pane's title row. `meta` is the right-hand status line. */
-export function ResultsPaneHeader({ meta, title }: { meta?: ReactNode; title: string }) {
+/**
+ * Which surface the results pane shows. The community template gallery used
+ * to REPLACE the results grid while the panel was empty, so a single saved
+ * result made the templates unreachable — the only way back was to delete
+ * every result. It is a section, not an empty state.
+ */
+export type PaneTab = "results" | "templates";
+
+/**
+ * The results pane's section switcher. Rendered in place of the old
+ * title+count row, which said "Results" twice.
+ */
+export function ResultsPaneTabs({
+  active,
+  onChange,
+  resultsLabel,
+  templatesLabel,
+}: {
+  active: PaneTab;
+  onChange: (tab: PaneTab) => void;
+  resultsLabel: string;
+  templatesLabel: string;
+}) {
   return (
-    <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-      <span className="text-foreground text-xs font-semibold">{title}</span>
-      {meta && <span className="text-muted-foreground truncate text-[11px]">{meta}</span>}
+    <div className="border-b px-3 py-2">
+      <div className={SEGMENTED_LIST}>
+        <button
+          aria-pressed={active === "results"}
+          className={segmentClass(active === "results")}
+          onClick={() => onChange("results")}
+          type="button"
+        >
+          {resultsLabel}
+        </button>
+        <button
+          aria-pressed={active === "templates"}
+          className={segmentClass(active === "templates")}
+          onClick={() => onChange("templates")}
+          type="button"
+        >
+          {templatesLabel}
+        </button>
+      </div>
     </div>
   );
+}
+
+/**
+ * Which section the pane follows: templates while the lane is empty, results
+ * as soon as there is one (or a run is in flight). `override` is the user's
+ * explicit pick and wins until a new result or a new run arrives.
+ */
+export function paneTab({
+  busy,
+  count,
+  override,
+}: {
+  busy: boolean;
+  count: number;
+  override: PaneTab | null;
+}): PaneTab {
+  if (override) return override;
+  return count === 0 && !busy ? "templates" : "results";
+}
+
+/**
+ * Pane state for every lane: `paneTab`'s follow rules, plus the one bit of
+ * bookkeeping they need — an explicit choice survives until something new
+ * arrives. A new result (or a new run) drops it, so generating from the
+ * templates tab lands you on the media you just made instead of leaving you
+ * staring at the gallery you generated from.
+ */
+export function useResultsPaneTab({ busy, count }: { busy: boolean; count: number }): {
+  active: PaneTab;
+  set: (tab: PaneTab) => void;
+} {
+  const [override, setOverride] = useState<PaneTab | null>(null);
+  const seen = useRef(count);
+  useEffect(() => {
+    if (count > seen.current || busy) setOverride(null);
+    seen.current = count;
+  }, [busy, count]);
+  return { active: paneTab({ busy, count, override }), set: setOverride };
 }
 
 /**

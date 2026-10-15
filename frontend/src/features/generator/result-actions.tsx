@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 
 import { Icon } from "@/components/shared/icon";
@@ -24,10 +24,75 @@ export function mediaToken(prompt: string, fileId: string, name: string): string
 }
 
 /**
- * The action bar shared by every generated-media result card (image, video,
- * music, 3D): copy the markdown token, download the stored bytes, load the
- * generating settings back into the form, or drop the entry from the panel's
- * results log.
+ * A result caption is one line of a tile that can be 185px wide, and a
+ * generated prompt is routinely 300+ characters (booru tag soup). Cut at a
+ * word boundary so the tail stays readable instead of slicing a tag in half;
+ * the full text stays on the caption's `title` and in the preview overlay.
+ */
+export function mediaExcerpt(text: string, limit = 72): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= limit) return flat;
+  const cut = flat.slice(0, limit);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > limit * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+/**
+ * The caption row under a result tile: prompt excerpt, then the run's detail
+ * line (timestamp, dimensions, model). It sits BELOW the media box on purpose
+ * — the prompt used to be an overlay strip inside the image, and a long one
+ * grew that strip to a third of the tile and painted itself across the
+ * artwork. The tile shows the art; the caption explains it.
+ */
+function ResultCaption({ label, meta }: { label: string; meta?: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5 px-2 py-1.5" title={label}>
+      {/* `line-clamp-N` needs `display: -webkit-box` to clamp at all, and
+          Tailwind emits `block`/`flex` AFTER it — pairing them silently
+          disables the clamp. Keep display utilities off these spans. */}
+      <span className="line-clamp-1 text-[12px] text-foreground">{mediaExcerpt(label)}</span>
+      {meta && <span className="line-clamp-1 text-[11px] text-muted-foreground">{meta}</span>}
+    </div>
+  );
+}
+
+/**
+ * The card shell every generated-media result shares: a media box (the lane's
+ * own markup — image, poster, `<audio>` player) with `ResultActions` pinned
+ * inside it, plus the caption row underneath.
+ *
+ * `aspect` is the media box's own ratio (`"1024 / 1216"`). Left out, the box
+ * takes the height its content needs — the music lane's player, and the image
+ * lane's legacy entries without a dimension snapshot.
+ */
+export function ResultTile({
+  aspect,
+  children,
+  label,
+  meta,
+}: {
+  aspect?: string;
+  children: ReactNode;
+  label: string;
+  meta?: string;
+}) {
+  return (
+    <div className="group overflow-hidden rounded-[8px] border bg-secondary">
+      <div className="relative overflow-hidden" style={aspect ? { aspectRatio: aspect } : undefined}>
+        {children}
+      </div>
+      <ResultCaption label={label} meta={meta} />
+    </div>
+  );
+}
+
+/**
+ * The action overlay every generated-media result card (image, video, music,
+ * 3D) pins INSIDE its media box: copy the markdown token, download the stored
+ * bytes, load the generating settings back into the form, or drop the entry
+ * from the panel's results log. The prompt and the run's detail line live in
+ * `ResultCaption`, below the artwork — this bar is buttons only, so it can sit
+ * over the media without ever covering the subject.
  *
  * The bar reveals on hover AND keyboard focus. Because a touch device has no
  * hover — and tapping a card opens the preview overlay, never this bar — the
@@ -42,18 +107,12 @@ export function mediaToken(prompt: string, fileId: string, name: string): string
 export function ResultActions({
   fileId,
   fileName,
-  label,
-  meta,
   onRemove,
   onReuse,
   token,
 }: {
   fileId: string;
   fileName: string;
-  /** Prompt/name line shown left of the buttons. */
-  label: string;
-  /** Secondary line under the prompt — timestamp, model, dimensions. */
-  meta?: string;
   onRemove: () => void;
   onReuse: () => void;
   token: string;
@@ -122,17 +181,11 @@ export function ResultActions({
         </DropdownMenu>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-0.5 bg-gradient-to-t from-black/80 to-transparent p-1.5 opacity-100 transition-opacity sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
-        {/* `line-clamp-N` must stand alone: it relies on `display: -webkit-box`,
-            and Tailwind emits `block` AFTER it, so the paired `block` silently
-            won the cascade and a long prompt wrapped to a dozen lines — the bar
-            grew to a third of the tile and painted itself over the image. */}
-        <span className="min-w-0 flex-1">
-          <span className="line-clamp-1 text-[11px] text-white/90" title={label}>
-            {label}
-          </span>
-          {meta && <span className="line-clamp-1 text-[10px] text-white/60">{meta}</span>}
-        </span>
+      {/* Buttons only, right-aligned, revealed on hover AND keyboard focus.
+          Hidden on touch as well now that the caption carries the prompt: the
+          persistent ⋯ menu above already reaches all four actions by pointer
+          and by keyboard, so an always-on strip would only sit on the art. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-end gap-0.5 bg-gradient-to-t from-black/70 to-transparent p-1.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
         <Button
           aria-label={t("generator.copyToken")}
           className={actionClass}

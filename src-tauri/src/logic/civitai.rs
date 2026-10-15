@@ -1294,6 +1294,21 @@ pub async fn civitai_generate(
     let tokens = buzz_to_tokens(image_buzz_estimate(&params));
     require_balance_covering(bearer, tokens).await?;
     let key = require_key()?;
+    // The panel's params are the only record of what went on the wire, so log
+    // them BEFORE the spend: the recipe response carries no model/sampler echo,
+    // so a generation that comes out soft is otherwise unexplainable after the
+    // fact. `None` here = the ecosystem spec default applied server-side.
+    eprintln!(
+        "civitai: generate eco={} workflow={} size={}x{} cfg={:?} steps={:?} sampler={:?} qty={:?}",
+        params.ecosystem,
+        params.effective_workflow(),
+        params.width,
+        params.height,
+        params.cfg_scale,
+        params.steps,
+        params.sampler,
+        params.quantity,
+    );
     let result = civitai::submit_image_gen(&key, &params).await?;
     // Cost committed — Buzz is charged at submit — so meter it for the recap.
     meter_media(user_id, tokens, "image");
@@ -1322,6 +1337,15 @@ pub async fn civitai_generate(
             "jpg"
         };
         let name = format!("civitai-{short_id}-{}.{}", i + 1, ext);
+        // Bytes + the server's own dims are the only cheap way to tell a
+        // soft generation from a soft DELIVERY after the fact.
+        eprintln!(
+            "civitai: unduh {name} {} bytes (blob {}, server {:?}x{:?})",
+            bytes.len(),
+            blob.id,
+            blob.width,
+            blob.height,
+        );
         let file = kawai_office::store::import_as(
             user_id,
             &name,

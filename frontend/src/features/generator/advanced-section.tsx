@@ -36,13 +36,19 @@ interface SliderFieldProps {
   max: number;
   step?: number;
   presets: Preset[];
+  /** The ecosystem's spec default (civitai's OpenAPI `cfgScale`/`steps`
+   *  defaults). Shown as a hint when the value sits above it — the chips
+   *  below are civitai's GENERIC SD-graph presets, so nothing else tells
+   *  the user that cfg 7 is +75% over what the ecosystem recommends. */
+  specDefault?: number;
   onChange: (value: string) => void;
 }
 
 /** Slider + number-input pair (civitai's SliderInput) — both write
  *  the same string state, so the slider thumb and the input never
  *  disagree. Preset chips sit right of the label, civitai-style. */
-function SliderField({ id, label, value, min, max, step = 1, presets, onChange }: SliderFieldProps) {
+function SliderField({ id, label, value, min, max, step = 1, presets, specDefault, onChange }: SliderFieldProps) {
+  const { t } = useI18n();
   const numeric = Number(value) || 0;
   const clamped = Math.min(Math.max(numeric, min), max);
   return (
@@ -51,6 +57,11 @@ function SliderField({ id, label, value, min, max, step = 1, presets, onChange }
         <Label className="text-muted-foreground text-[13px] font-medium" htmlFor={id}>
           {label}
         </Label>
+        {specDefault !== undefined && clamped > specDefault ? (
+          <span className="text-warning text-[11px] font-medium">
+            {t("generator.specDefault", { value: specDefault })}
+          </span>
+        ) : null}
         <div className="flex flex-wrap items-center gap-1">
           {presets.map((preset) => {
             const active = clamped === preset.value;
@@ -231,6 +242,10 @@ export interface AdvancedSectionProps {
    *  schema carries sampleMethod/schedule/clipSkip for
    *  Sd1/Sdxl, so both fields are hidden elsewhere. */
   sdFamily: boolean;
+  /** The ecosystem's spec default cfg (`ECOSYSTEMS[].defaultCfgScale`) —
+   *  an inline hint when the panel's value sits above it, since the chips
+   *  are civitai's generic SD-graph presets, not per-ecosystem values. */
+  specCfg: number;
   onCfgScale: (value: string) => void;
   onSteps: (value: string) => void;
   onSeed: (value: string) => void;
@@ -244,6 +259,7 @@ export function AdvancedSection({
   seed,
   sampler,
   clipSkip,
+  specCfg,
   sdFamily,
   onCfgScale,
   onSteps,
@@ -281,6 +297,7 @@ export function AdvancedSection({
         max={30}
         step={0.5}
         presets={cfgPresets}
+        specDefault={specCfg}
         onChange={onCfgScale}
       />
       <SliderField

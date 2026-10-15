@@ -35,7 +35,7 @@ import {
   useWorkflowLane,
 } from "./civitai-shared";
 import { GenerateFooter } from "./generate-footer";
-import { ResultActions, mediaToken } from "./result-actions";
+import { ResultActions, ResultTile, mediaToken } from "./result-actions";
 import { FrameSlot } from "./video-generator";
 import {
   ChoiceChip,
@@ -44,8 +44,9 @@ import {
   GeneratorLayout,
   JobCard,
   resultMeta,
-  ResultsPaneHeader,
+  ResultsPaneTabs,
   ToggleRow,
+  useResultsPaneTab,
 } from "./generator-shell";
 import type { Model3dGenParams } from "@/generated/api-types";
 import type { Model3dStatusView, SavedModel3d } from "@/lib/api";
@@ -118,11 +119,13 @@ function Model3dResultCard({
   const previewName = entry.previewFileId ? `${entry.name}-preview.png` : entry.name;
   const openPreviewId = entry.previewFileId ?? entry.fileId;
   return (
-    <div className="group relative overflow-hidden rounded-[8px] border bg-secondary">
+    <ResultTile
+      label={entry.prompt || entry.name}
+      meta={resultMeta(entry.at, detailLine(entry.req?.modelVersion, entry.req?.mode))}
+    >
       <button
         className="block w-full cursor-zoom-in"
         onClick={() => emitOpenPreview(openPreviewId, previewName)}
-        title={entry.prompt}
         type="button"
       >
         <div className="relative flex aspect-square w-full items-center justify-center bg-black">
@@ -141,13 +144,11 @@ function Model3dResultCard({
       <ResultActions
         fileId={entry.fileId}
         fileName={entry.name}
-        label={entry.prompt || entry.name}
-        meta={resultMeta(entry.at, detailLine(entry.req?.modelVersion, entry.req?.mode))}
         onRemove={onRemove}
         onReuse={onReuse}
         token={mediaToken(entry.prompt, entry.fileId, entry.name)}
       />
-    </div>
+    </ResultTile>
   );
 }
 
@@ -390,6 +391,8 @@ export function Model3dGenerator() {
       }),
   });
   const { cancel, cost, costError, elapsed, job, removeEntry, results, status, submit, submitting } = lane;
+  /** Results ↔ starter suggestions: both stay reachable whatever the lane holds. */
+  const pane = useResultsPaneTab({ busy: job != null, count: results.length });
   const {
     groups: ecoGroups,
     open: ecoOpen,
@@ -826,9 +829,11 @@ export function Model3dGenerator() {
       }
       form={form}
       header={
-        <ResultsPaneHeader
-          meta={t("generator.resultsCount", { count: results.length })}
-          title={t("generator.results")}
+        <ResultsPaneTabs
+          active={pane.active}
+          onChange={pane.set}
+          resultsLabel={t("generator.resultsCount", { count: results.length })}
+          templatesLabel={t("model3dGenerator.templates")}
         />
       }
     >
@@ -846,7 +851,7 @@ export function Model3dGenerator() {
             />
           </div>
         )}
-        {results.length === 0 && !job ? (
+        {pane.active === "templates" ? (
           <Model3dStarterList ecosystem={ecoId} onApply={applyModel3dStarter} />
         ) : (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
