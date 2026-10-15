@@ -11,18 +11,13 @@
  *   bun scripts/topup.ts user@example.com 1000000   # +1jt token
  *   bun scripts/topup.ts user@example.com -500000   # koreksi -500rb (gagal bila saldo kurang)
  *
- * Token dibaca dari berkas (pola sama scripts/qris.ts) - tidak ada env var baru.
+ * Token dibaca dari berkas (default direktori data app utk ADMIN_EMAIL) - tidak ada
+ * env var baru; `bun scripts/voucher.ts login` menulis token itu.
  * Endpoint: POST /admin/balance/credit (Bearer admin — identity wajib ADMIN_EMAIL
  * di worker; saldo hidup di D1, bukan lagi DATABASE_URL/psql).
  */
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
-const WORKER_DEFAULT = "https://kawai-worker.akuntestinguntukseto.workers.dev";
-const APP_DATA_ID = "pro.kawai.app";
-// Harus sama dengan ADMIN_EMAIL di kawai-server/worker/src/billing.ts.
-const ADMIN_EMAIL = "yudaprama@icloud.com";
+import { ADMIN_EMAIL, authTokenPath, WORKER_DEFAULT } from "./lib/worker-auth";
 
 const argv = process.argv.slice(2);
 let tokenFile = "";
@@ -35,18 +30,7 @@ for (let i = 0; i < argv.length; i++) {
   else rest.push(a);
 }
 const [email, amountStr] = rest;
-if (tokenFile === "") {
-  // Default: direktori data app utk ADMIN_EMAIL - mirror sanitize_userdir
-  // (id mengandung @/. di-hex agar valid nama folder).
-  tokenFile = join(
-    homedir(),
-    "Library",
-    "Application Support",
-    APP_DATA_ID,
-    /^[A-Za-z0-9_-]+$/.test(ADMIN_EMAIL) ? ADMIN_EMAIL : Buffer.from(ADMIN_EMAIL, "utf8").toString("hex"),
-    "auth.token",
-  );
-}
+if (tokenFile === "") tokenFile = authTokenPath(ADMIN_EMAIL);
 
 if (!email || !amountStr) {
   console.error(`Pemakaian:
@@ -69,7 +53,7 @@ try {
   token = readFileSync(tokenFile, "utf8").trim();
 } catch {
   console.error(`Token admin tidak terbaca: ${tokenFile}`);
-  console.error(`Login dgn akun admin dulu (app) atau beri --token-file <path>.`);
+  console.error(`Jalankan \`bun scripts/voucher.ts login\` dulu, atau beri --token-file <path>.`);
   process.exit(1);
 }
 

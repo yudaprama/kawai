@@ -1,23 +1,22 @@
 #!/usr/bin/env bun
-/** voucher.ts — CLI admin voucher: issue, list, revoke.
+/** voucher.ts — CLI admin voucher: signup, login, issue, list, revoke.
  *
  *  Pakai:
+ *    bun scripts/voucher.ts signup                        (sekali saja, buat akun admin)
+ *    bun scripts/voucher.ts login                         (token 7 hari → perlu login ulang)
  *    bun scripts/voucher.ts issue --tokens <n> --count <n> [--note "..."] [--expires YYYY-MM-DD]
  *    bun scripts/voucher.ts list
  *    bun scripts/voucher.ts revoke <code>
- *    [--token-file <path>]   berkas auth.token admin (default: direktori data app)
- *    [--url <worker>]        default production worker; lokal: --url http://127.0.0.1:8787
+ *    [--email <addr>]      default ADMIN_EMAIL
+ *    [--token-file <path>] berkas auth.token (default direktori data app)
+ *    [--url <worker>]      default production worker; lokal: --url http://127.0.0.1:8787
  *
  *  Token dibaca dari berkas (pola sama dgn scripts/qris.ts) — tidak ada env var baru.
+ *  `signup`/`login` mandiri: daftar/login via worker lalu tulis token ke path yang
+ *  sama, jadi CLI tidak bergantung pada app desktop (lihat lib/worker-auth.ts).
  */
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-
-const WORKER_DEFAULT = "https://kawai-worker.akuntestinguntukseto.workers.dev";
-const APP_DATA_ID = "pro.kawai.app";
-// Harus sama dengan ADMIN_EMAIL di kawai-server/worker/src/qris.ts.
-const ADMIN_EMAIL = "yudaprama@icloud.com";
+import { ADMIN_EMAIL, authTokenPath, promptPassword, signIn, signUp, WORKER_DEFAULT } from "./lib/worker-auth";
 
 interface VoucherItem {
   code: string;
@@ -33,35 +32,40 @@ interface VoucherItem {
 const argv = process.argv.slice(2);
 let tokenFile = "";
 let url = WORKER_DEFAULT;
+let email = ADMIN_EMAIL;
 const rest: string[] = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]!;
   if (a === "--token-file") tokenFile = argv[++i] ?? "";
   else if (a === "--url") url = argv[++i] ?? "";
+  else if (a === "--email") email = argv[++i] ?? email;
   else rest.push(a);
 }
 const [cmd, arg1] = rest;
-if (tokenFile === "") {
-  // Default: direktori data app utk ADMIN_EMAIL — mirror sanitize_userdir
-  // (id mengandung @/. di-hex agar valid nama folder).
-  tokenFile = join(
-    homedir(),
-    "Library",
-    "Application Support",
-    APP_DATA_ID,
-    /^[A-Za-z0-9_-]+$/.test(ADMIN_EMAIL) ? ADMIN_EMAIL : Buffer.from(ADMIN_EMAIL, "utf8").toString("hex"),
-    "auth.token",
-  );
+
+if (cmd === "signup" || cmd === "login") {
+  const password = await promptPassword(`Password ${email}: `);
+  try {
+    const res = cmd === "signup" ? await signUp(url, email, password) : await signIn(url, email, password);
+    console.log(`OK ${email} → token disimpan: ${res.path}`);
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  }
+  process.exit(0);
 }
+
+if (tokenFile === "") tokenFile = authTokenPath(email);
 
 let token: string;
 try {
   token = readFileSync(tokenFile, "utf8").trim();
 } catch {
   console.error(`Token admin tidak terbaca: ${tokenFile}`);
-  console.error(`Login dgn akun admin dulu (app) atau beri --token-file <path>.`);
+  console.error(`Jalankan \`bun scripts/voucher.ts login\` (atau signup sekali) — tidak perlu app desktop.`);
   process.exit(1);
 }
+
 
 async function req(path: string, body?: unknown): Promise<Record<string, unknown>> {
   const resp = await fetch(`${url}${path}`, {
@@ -128,9 +132,11 @@ if (cmd === "issue") {
   console.log(JSON.stringify(out));
 } else {
   console.error("Usage:");
+  console.error("  bun scripts/voucher.ts signup --email <addr>");
+  console.error("  bun scripts/voucher.ts login  [--email <addr>]");
   console.error("  bun scripts/voucher.ts issue --tokens <n> --count <n> [--note '...'] [--expires YYYY-MM-DD]");
   console.error("  bun scripts/voucher.ts list");
   console.error("  bun scripts/voucher.ts revoke <code>");
-  console.error("  [--token-file <path>] [--url <worker>]");
+  console.error("  [--token-file <path>] [--url <worker>] [--email <addr>]");
   process.exit(1);
 }
