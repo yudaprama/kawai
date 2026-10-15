@@ -22,7 +22,7 @@ All links resolve to the newest published release. Browse everything (including 
 versions and the standalone `kawai-web` server binary) on the
 [Releases page](https://github.com/yudaprama/kawai/releases).
 
-> **Note:** the stable download names above resolve from release **v0.3.2+** onward
+> **Note:** the stable download names above resolve from release **v0.3.3+** onward
 > (`assetNamePattern` in the release workflow). Earlier releases used versioned asset
 > names.
 
@@ -30,7 +30,9 @@ versions and the standalone `kawai-web` server binary) on the
 
 - **macOS** — the app is ad-hoc signed (no Apple Developer account). Gatekeeper asks once:
   right-click the app → **Open**. Every launch after that is normal, and in-app updates are
-  quarantine-free.
+  quarantine-free. If macOS says the app is **damaged** (copies downloaded before v0.3.4,
+  which shipped without a bundle signature seal), run
+  `xattr -cr /Applications/kawai.app` once — or reinstall from a v0.3.4+ download.
 - **Windows** — unsigned installer: SmartScreen shows "Windows protected your PC" →
   **More info → Run anyway**. Updates installed through the in-app updater do not re-trigger it.
 - **Linux** — AppImage (`chmod +x`, run) or install the deb/rpm.
