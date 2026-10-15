@@ -7,6 +7,9 @@ name: ci
 # desktop platforms (macOS arm64 + Linux x86_64 here; Windows x86_64 in
 # windows-smoke.yml — it needs a 3h+ cold compile, so it cannot survive the
 # push cadence of cancel-in-progress and runs nightly/dispatched instead).
+# The agent_eval analytics suite runs as its own macOS job
+# (macos-analytics-eval) — office eval + analytics suite together exceeded
+# the 120-min job ceiling on one runner.
 #
 # release.yml (app bundles) is gated on this workflow's conclusion via
 # workflow_run — a green run on main is what starts a release.
@@ -430,6 +433,70 @@ jobs:
             ${{ github.workspace }}/agent-eval-report.md
           cat ${{ github.workspace }}/agent-eval-report.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-report
+          path: agent-eval-report.md
+          if-no-files-found: warn
+
+  # ── Analytics eval suite (own job): office eval (~33 min) + analytics
+  #    suite (~15 min) together pushed macos-smoke past the 120-min job
+  #    ceiling (run 38588409726 — killed mid-analytics-suite at 2h5m). The
+  #    suite runs standalone here on the same runner image + shared bazel
+  #    cache; it needs only the litert dylib + the E4B model (no unit tests,
+  #    no other smokes).
+  macos-analytics-eval:
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-on-failure: true
+
+      # Same cache key as macos-smoke — restore-keys makes the dylib build a
+      # no-op whenever either job ran recently.
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            /private/var/tmp/_bazel_runner
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos26-arm64-
+
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr whatlang-rs
+
+      - name: Build litert-lm dylib
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_arm64"
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=macos_arm64 --jobs=6
+          mkdir -p ../../native
+          cp bazel-bin/c/liblitert-lm.dylib ../../native/
+          install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
+          bash ../../../scripts/bundle-litert-dylibs.sh
+
+      - name: Download E4B eval model
+        run: |
+          mkdir -p eval-model
+          curl -fL --retry 3 --retry-all-errors --continue-at - -o eval-model/gemma-4-E4B-it.litertlm \
+            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
+
       # ── Analytics suite (EVAL_SUITE=analytics): data_schema/data_query/data_ta
       #    selection + argument composition over a stated schema (A01-A18,
       #    incl. in/offset/having + data_chart bar/line/histogram/pie). GATED at
@@ -466,14 +533,6 @@ jobs:
             cat "${{ github.workspace }}/agent-eval-report-analytics.md" >> "$GITHUB_STEP_SUMMARY"
           fi
           exit "$status"
-
-      - name: Upload eval report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: agent-eval-report
-          path: agent-eval-report.md
-          if-no-files-found: warn
 
       - name: Upload analytics eval report
         if: always()
