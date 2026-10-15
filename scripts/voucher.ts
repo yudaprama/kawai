@@ -16,7 +16,7 @@
  *  sama, jadi CLI tidak bergantung pada app desktop (lihat lib/worker-auth.ts).
  */
 import { readFileSync } from "node:fs";
-import { ADMIN_EMAIL, authTokenPath, promptPassword, signIn, signUp, WORKER_DEFAULT } from "./lib/worker-auth";
+import { adminEmailFromEnv, adminPasswordFromEnv, authTokenPath, promptPassword, signIn, signUp, WORKER_DEFAULT } from "./lib/worker-auth";
 
 interface VoucherItem {
   code: string;
@@ -32,7 +32,7 @@ interface VoucherItem {
 const argv = process.argv.slice(2);
 let tokenFile = "";
 let url = WORKER_DEFAULT;
-let email = ADMIN_EMAIL;
+let email = adminEmailFromEnv();
 const rest: string[] = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]!;
@@ -44,7 +44,9 @@ for (let i = 0; i < argv.length; i++) {
 const [cmd, arg1] = rest;
 
 if (cmd === "signup" || cmd === "login") {
-  const password = await promptPassword(`Password ${email}: `);
+  // Password dari KAWAI_ADMIN_PASSWORD (.env) kalau ada; selain itu prompt
+  // tanpa echo — sehingga CLI jalan di terminal maupun di pipeline.
+  const password = adminPasswordFromEnv() ?? (await promptPassword(`Password ${email}: `));
   try {
     const res = cmd === "signup" ? await signUp(url, email, password) : await signIn(url, email, password);
     console.log(`OK ${email} → token disimpan: ${res.path}`);

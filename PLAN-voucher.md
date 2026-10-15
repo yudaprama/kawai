@@ -36,14 +36,14 @@ Kenapa bukan conditional UPDATE: statement zero-row di D1 TIDAK menggugurkan bat
 
 ### Issue/List/Revoke flow (CLI-only)
 
-- **Signup/Login** (`bun scripts/voucher.ts signup` / `login [--email <addr>]`): CLI mandiri, tanpa app desktop. Password di-prompt tanpa echo → `POST /auth/sign_up`, atau `/auth/salt` + `/auth/sign_in` → token (TTL 7 hari, `TOKEN_TTL_SECS`) ditulis ke `<app-data>/<email ter-sanitize>/auth.token` mode 0600 — path yang sama dibaca `issue`/`list`/`revoke` (juga `qris.ts`/`topup.ts`). Derivasi kredensial = `sha256(salt_hex || encode_string(password))`; `encode_string` (fungsi murni, tanpa RNG/waktu) di-port ke TS di `scripts/lib/worker-auth.ts`. `signup` cukup sekali seumur akun, `login` diulang tiap kali token habis.
+- **Signup/Login** (`bun scripts/voucher.ts signup` / `login [--email <addr>]`): CLI mandiri, tanpa app desktop. Kredensial dibaca dari `.env` repo root — `KAWAI_ADMIN_EMAIL` + `KAWAI_ADMIN_PASSWORD` (dibuang `scripts/lib/worker-auth.ts`, semantik dotenvy: env yang sudah ada tidak ditimpa); kalau `KAWAI_ADMIN_PASSWORD` kosong, CLI prompt password tanpa echo. Lalu `POST /auth/sign_up`, atau `/auth/salt` + `/auth/sign_in` → token (TTL 7 hari, `TOKEN_TTL_SECS`) ditulis ke `<app-data>/<email ter-sanitize>/auth.token` mode 0600 — path yang sama dibaca `issue`/`list`/`revoke` (juga `qris.ts`/`topup.ts`). Derivasi kredensial = `sha256(salt_hex || encode_string(password))`; `encode_string` (fungsi murni, tanpa RNG/waktu) di-port ke TS di `scripts/lib/worker-auth.ts`. `signup` cukup sekali seumur akun, `login` diulang tiap kali token habis.
 - **Issue** (`bun scripts/voucher.ts issue --tokens <n> --count <n> [--note "..."] [--expires YYYY-MM-DD]`): `tokens` integer positif, `count` 1..100, `note` ≤200 char, `expiresAt` unix harus masa depan. Insert per-baris `INSERT ... ON CONFLICT DO NOTHING` (tabrakan PK praktis nol → generate ulang), cap percobaan `count * 10` → 503 `code_pool_exhausted`. Kode dicetak CLI (header + satu kode per baris).
 - **List** (`bun scripts/voucher.ts list`): semua kode terbaru dulu (limit 500), kolom `status` (`active`/`revoked`) plus `redeemed_by`/`redeemed_at` untuk audit.
 - **Revoke** (`bun scripts/voucher.ts revoke <code>`): CAS `UPDATE ... SET status='revoked' WHERE status='active' AND redeemed_at IS NULL`. Kode terpakai tak tersentuh (uangnya sudah masuk) → 409 `voucher_already_redeemed`.
 
 Ketentuan tambahan:
-- `--email` default `ADMIN_EMAIL` (`yudaprama@icloud.com`); identity lain tetap ditolak 403 oleh guard worker.
-- Token tidak pernah disimpan di env var atau repo — hanya di app-data per user (`chmod 600`).
+- `--email` default `KAWAI_ADMIN_EMAIL` (`.env`), lalu `ADMIN_EMAIL` (`yudaprama@icloud.com`); identity lain tetap ditolak 403 oleh guard worker.
+- Kredensial hanya di `.env` (gitignored). **Token** tidak pernah di env/repo — hanya di app-data per user (`chmod 600`).
 - Pesan "Token admin tidak terbaca" selalu disertakan perintah `bun scripts/voucher.ts login` — CLI tidak lagi bergantung pada app desktop.
 
 ### DB schema (runtime DDL — `ensureVoucherSchema`, pola qris/billing)

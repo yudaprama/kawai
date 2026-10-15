@@ -241,6 +241,54 @@ export async function signIn(url: string, email: string, password: string): Prom
 	return { token, path: writeToken(email, token) };
 }
 
+
+// ─── Kredensial dari .env (opsional) ──────────────────────────────────────
+// CLI script tidak baca `.env` (dipanggil langsung, bukan lewat app yang
+// memanggil `dotenvy`), jadi `KAWAI_ADMIN_EMAIL` / `KAWAI_ADMIN_PASSWORD`
+// di repo root dimuat manual. Semantik sama dengan dotenvy: variabel yang
+// sudah ada di environment TIDAK ditimpa.
+
+const REPO_DOT_ENV = join(import.meta.dir, "..", "..", ".env");
+
+export function loadRepoDotEnv(path: string = REPO_DOT_ENV): void {
+	let raw: string;
+	try {
+		raw = readFileSync(path, "utf8");
+	} catch {
+		return; // .env opsional — CLI tetap jalan dengan prompt/env.
+	}
+	for (const line of raw.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed === "" || trimmed.startsWith("#")) continue;
+		const eq = trimmed.indexOf("=");
+		if (eq <= 0) continue;
+		const key = trimmed.slice(0, eq).trim();
+		if (key.startsWith("export ") || key in process.env) continue;
+		let value = trimmed.slice(eq + 1).trim();
+		if (
+			(value.startsWith('"') && value.endsWith('"')) ||
+			(value.startsWith("'") && value.endsWith("'"))
+		) {
+			value = value.slice(1, -1);
+		}
+		process.env[key] = value;
+	}
+}
+
+/** Email admin dari `.env` (`KAWAI_ADMIN_EMAIL`), default konstanta worker. */
+export function adminEmailFromEnv(): string {
+	loadRepoDotEnv();
+	const fromEnv = process.env.KAWAI_ADMIN_EMAIL?.trim();
+	return fromEnv !== undefined && fromEnv.length > 0 ? fromEnv : ADMIN_EMAIL;
+}
+
+/** Password admin dari `.env`, atau `undefined` → CLI harus prompt. */
+export function adminPasswordFromEnv(): string | undefined {
+	loadRepoDotEnv();
+	const fromEnv = process.env.KAWAI_ADMIN_PASSWORD;
+	return fromEnv !== undefined && fromEnv.length > 0 ? fromEnv : undefined;
+}
+
 /** Prompt password tanpa echo (raw mode; Enter selesai, Ctrl-C batal). */
 export function promptPassword(prompt: string): Promise<string> {
 	const { promise, resolve, reject } = Promise.withResolvers<string>();
