@@ -71,6 +71,16 @@ bun run typecheck      # tsc -b --force
 bun tauri dev
 bun tauri build
 
+# Android (Tauri) — SDK/NDK come from the .env "Android build" block
+# (scripts/tauri.sh reads it; no manual export). Fallback when the key is
+# absent: discovery over ~/Library/Android/sdk, homebrew's
+# android-commandlinetools, $HOME/Android/Sdk, then newest $ANDROID_HOME/ndk/*.
+# Generated project: src-tauri/gen/android (applicationId pro.kawai.app,
+# minSdk 24). LiteRT-LM is NOT in this build until scripts/stage-litert-android.sh
+# stages the android_arm64 .so — hence no `litert` feature here.
+bun tauri android build --target aarch64 --apk --debug
+bun tauri android build                       # release APK + AAB (unsigned)
+
 # Manual equivalent of `bun tauri dev` (for extra flags like office dev):
 cd src-tauri && env \
   RUSTFLAGS="-C link-arg=-Wl,-rpath,<ABS>/cognee-litert-lm/native" \
