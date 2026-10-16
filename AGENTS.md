@@ -85,7 +85,10 @@ bun run bundle:litert
 # CI release (.github/workflows/release.yml): on push to main a bot bumps the
 # patch version in src-tauri/tauri.conf.json, commits + tags vX.Y.Z, then builds
 # the macOS .app (tauri-action, features litert, bazel-cached) and the
-# kawai-web binary into a DRAFT GitHub release. Needs RELEASE_TOKEN (PAT with
+# kawai-web binary into a draft GitHub release. A final `publish` job (needs:
+# all build jobs) flips the draft to published + latest once every platform
+# build is green — a failed platform build leaves the draft for manual
+# completion. Needs RELEASE_TOKEN (PAT with
 # contents:write) as a repo secret so the bump push doesn't trigger recursive
 # runs (GITHUB_TOKEN pushes create no push event — intentional). The same PAT
 # authenticates ALL github.com git traffic in the build jobs (insteadOf rewrite)

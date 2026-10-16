@@ -535,3 +535,21 @@ jobs:
           tag_name: v${{ needs.bump.outputs.version }}
           draft: true
           files: src-tauri/target/release/kawai-web
+
+  # Auto-publish: flip the draft to a published release marked "latest" only
+  # after EVERY platform build finished green — needs: is the gate. A failed
+  # platform build skips this job and leaves the draft (with the assets that
+  # did land) for manual completion/resume — same fallback as before.
+  # tauri-action's publishDraft can't do this: each platform job would publish
+  # the release the moment IT finishes, with the other platforms' assets still
+  # missing. Idempotent on an already-published release (resume re-runs).
+  publish:
+    needs: [bump, build-macos, build-linux, build-windows, build-web]
+    if: needs.bump.outputs.skipped == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Publish draft release as latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "v${{ needs.bump.outputs.version }}" --draft=false --latest
