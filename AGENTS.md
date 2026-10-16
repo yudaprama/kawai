@@ -144,8 +144,13 @@ bun run bundle:litert
 # src-tauri/gen/android/ (gitignored); without it the release build falls back
 # to the debug key and the Play step is skipped with a warning annotation.
 # versionCode = 10000 + run_number (Play requires it to strictly increase per
-# app); versionName = the tag's semver. First upload must be done by hand in
-# Play Console — an app with no listing rejects every API upload.
+# app); versionName = the tag's semver. The signed AAB is kept as a 30-day run
+# artifact (NOT attached to the public release, unlike the APK) so a manual
+# Play upload or an exact re-submit is possible — rebuilding is not equivalent
+# because Play rejects a re-used versionCode.
+# Only the APP CREATION is manual: the Play Developer API cannot create apps,
+# and a service account must be invited to the app with "Release" before any
+# upload. The first AAB itself may come from CI.
 
 # Build the LiteRT-LM C library (first build ~15-30 min; cached afterwards)
 cd cognee-litert-lm/vendor/LiteRT-LM && bazel build //c:litert-lm --config=macos_arm64 --jobs=6

@@ -145,6 +145,20 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           files: src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
 
+      # The AAB is the Play submission format and is NOT attached to the
+      # public release (unlike the APK) — it is kept as a 30-day run
+      # artifact so a manual Play upload or a re-submit of the exact same
+      # bundle is possible without rebuilding. Rebuilding is NOT
+      # equivalent: Play rejects a re-upload of an already-used versionCode,
+      # so keeping the bytes matters.
+      - name: Store the signed AAB as a run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kawai-android-aab-${{ steps.tag.outputs.tag }}
+          path: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Upload AAB to Play Store (internal track)
         if: ${{ steps.signing.outputs.signed == 'true' && vars.PLAY_UPLOAD_ENABLED == 'true' }}
         uses: r0adkll/upload-google-play@v1
