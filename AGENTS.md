@@ -92,6 +92,13 @@ adb shell am start -n pro.kawai.app/.MainActivity
 avdmanager create avd -n kawai_test -k "system-images;android-34;google_apis_playstore;arm64-v8a" -d pixel_6
 $ANDROID_HOME/emulator/emulator -avd kawai_test -no-window -no-audio -no-snapshot-load
 
+# `tauri android dev` NEVER returns — it stays attached to logcat after the
+# app starts (Ctrl-C to stop). Two things bite on a fresh AVD: the debug APK is
+# ~2.4 GB with debuginfo (use CARGO_PROFILE_DEV_DEBUG=0 → ~510 MB) and the
+# default 6 GB data partition then fails with INSTALL_FAILED_INSUFFICIENT_STORAGE
+# (disk.dataPartition.size=12G in the AVD config.ini + one `-wipe-data` boot).
+# `bunx tauri` bypasses scripts/tauri.sh — no .env SDK/NDK, so use `bun tauri`.
+
 # Manual equivalent of `bun tauri dev` (for extra flags like office dev):
 cd src-tauri && env \
   RUSTFLAGS="-C link-arg=-Wl,-rpath,<ABS>/cognee-litert-lm/native" \
