@@ -82,9 +82,17 @@ jobs:
           NEW=$(python3 -c "major,minor,patch = '$BASE'.split('.'); print(f'{int(major)}.{int(minor)}.{int(patch)+1}')")
 
           if git ls-remote --exit-code --tags origin "v$NEW" >/dev/null 2>&1; then
-            echo "Tag v$NEW already exists — another release run claimed it. Skipping."
-            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            # Tag already claimed — a prior release run bumped+tagged but died
+            # mid-build. Resume instead of skipping: the build jobs re-run
+            # against the tagged commit and tauri-action re-attaches assets
+            # into the existing draft release (same-name uploads clobber).
+            # The workflow-level concurrency group serializes runs on this
+            # ref, so this cannot be a live race with another bump.
+            SHA=$(git ls-remote origin "refs/tags/v$NEW" "refs/tags/v$NEW^{}" | tail -n1 | cut -f1)
+            echo "Tag v$NEW exists — resuming the interrupted release at ${SHA:0:12}."
             echo "version=$NEW" >> "$GITHUB_OUTPUT"
+            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+            echo "skipped=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -149,10 +157,6 @@ jobs:
       - name: Git auth for private dependencies
         run: |
           git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
 
       - uses: oven-sh/setup-bun@v2
 
@@ -249,10 +253,6 @@ jobs:
       - name: Git auth for private dependencies
         run: |
           git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
 
       - uses: oven-sh/setup-bun@v2
 

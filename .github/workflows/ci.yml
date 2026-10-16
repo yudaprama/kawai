@@ -1,15 +1,17 @@
 name: ci
 
 # Regression gates (AGENTS.md "Verify before considering work done" + Roadmap
-# MVP 3): unit tests, the on-device streaming smoke (small 270M fixture), the
-# hybrid-tier cloud smokes, and agent_eval (E4B orchestration-quality gate) —
-# on every push to main and every PR. litert-dependent smokes run on the three
-# desktop platforms (macOS arm64 + Linux x86_64 here; Windows x86_64 in
+# MVP 3): unit tests and the on-device/hybrid-tier smokes on every push to
+# main and every PR. litert-dependent smokes run on the three desktop
+# platforms (macOS arm64 + Linux x86_64 here; Windows x86_64 in
 # windows-smoke.yml — it needs a 3h+ cold compile, so it cannot survive the
 # push cadence of cancel-in-progress and runs nightly/dispatched instead).
-# The agent_eval analytics suite runs as its own macOS job
-# (macos-analytics-eval) — office eval + analytics suite together exceeded
-# the 120-min job ceiling on one runner.
+#
+# The agent_eval quality suites (office + analytics, E4B) live in evals.yml —
+# they run in parallel with this workflow and the release build so the
+# push→draft pipeline does not serialize behind an on-device eval battery.
+# A red eval never deletes the draft: drafts are human-published, and eval
+# status is part of that pre-publish check.
 #
 # release.yml (app bundles) is gated on this workflow's conclusion via
 # workflow_run — a green run on main is what starts a release.
@@ -139,22 +141,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libclang-dev
 
-      - name: cargo check (litert; desktop feature set)
-        run: cargo check --features litert
-        working-directory: src-tauri
-
-      # Cross-feature combo guard — per-feature checks never compile these
-      # together. `full` no longer exists (features are flat: desktop/litert/
-      # office/graph/binance/web).
-      - name: cargo check (cross-feature combo)
+      # Feature-matrix compile gate in 2 runs: the combo turns every feature
+      # on (all cfg(feature = …) code compiles), the default run compiles
+      # every cfg(not(feature = …)) stub. Mixed regions (e.g. litert without
+      # binance) are covered by linux-smoke's `--features litert` test build.
+      - name: cargo check (all features on)
         run: cargo check --features litert,office,binance,graph,web
-        working-directory: src-tauri
-
-      # Binance agent tools: keyless, no C deps — a plain compile gate is
-      # enough. webread is always compiled, so the binance-agent
-      # web_read/web_search reuse path is covered by this same check.
-      - name: cargo check (binance feature)
-        run: cargo check --features binance
         working-directory: src-tauri
 
       # Data analysis agent (polars + office_oxide xlsx bridge) is always
@@ -414,143 +406,6 @@ jobs:
         run: cargo run --example analytics_smoke
         working-directory: src-tauri
 
-      # ── Smoke 5: orchestration-quality gate (PLAN H1/L12). 20 office
-      #    scenarios against E4B, scored on tool selection + arguments.
-      #    Gate 19/20 (temp=1.0 sampling allows a one-scenario flake; a real
-      #    regression fails 2+). Report lands in the job summary + artifact.
-      #    K/V budget 8192: eval prompts are ~2k tokens, this halves peak RSS
-      #    vs the 16384 desktop default (runner has 14GB).
-      #    Download directly: the 4.8 GB model must not crowd out rust/bazel
-      #    caches in the repository-wide Actions cache budget.
-      - name: Download E4B eval model
-        run: |
-          mkdir -p eval-model
-          curl -fL --retry 3 --retry-all-errors --continue-at - -o eval-model/gemma-4-E4B-it.litertlm \
-            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
-
-      - name: agent_eval (orchestration quality gate + report)
-        working-directory: src-tauri
-        env:
-          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
-          LLVM_PROFILE_FILE: /dev/null
-          KAWAI_LLM_MAX_TOKENS: "8192"
-          EVAL_MIN_PASS: "19"
-        run: |
-          cargo run --release --example agent_eval --features litert -- \
-            ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
-            ${{ github.workspace }}/agent-eval-report.md
-          cat ${{ github.workspace }}/agent-eval-report.md >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload eval report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: agent-eval-report
-          path: agent-eval-report.md
-          if-no-files-found: warn
-
-  # ── Analytics eval suite (own job): office eval (~33 min) + analytics
-  #    suite (~15 min) together pushed macos-smoke past the 120-min job
-  #    ceiling (run 38588409726 — killed mid-analytics-suite at 2h5m). The
-  #    suite runs standalone here on the same runner image + shared bazel
-  #    cache; it needs only the litert dylib + the E4B model (no unit tests,
-  #    no other smokes).
-  macos-analytics-eval:
-    runs-on: macos-26
-    timeout-minutes: 120
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.RELEASE_TOKEN }}
-
-      - name: Git auth for private dependencies
-        run: |
-          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-          cache-on-failure: true
-
-      # Same cache key as macos-smoke — restore-keys makes the dylib build a
-      # no-op whenever either job ran recently.
-      - name: Mount bazel cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            /private/var/tmp/_bazel_runner
-          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
-          restore-keys: bazel-macos26-arm64-
-
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr whatlang-rs
-
-      - name: Build litert-lm dylib
-        run: |
-          set -euo pipefail
-          export JAVA_HOME="$JAVA_HOME_17_arm64"
-          cd cognee-litert-lm/vendor/LiteRT-LM
-          bazel build //c:litert-lm --config=macos_arm64 --jobs=6
-          mkdir -p ../../native
-          cp bazel-bin/c/liblitert-lm.dylib ../../native/
-          install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
-          bash ../../../scripts/bundle-litert-dylibs.sh
-
-      - name: Download E4B eval model
-        run: |
-          mkdir -p eval-model
-          curl -fL --retry 3 --retry-all-errors --continue-at - -o eval-model/gemma-4-E4B-it.litertlm \
-            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
-
-      # ── Analytics suite (EVAL_SUITE=analytics): data_schema/data_query/data_ta
-      #    selection + argument composition over a stated schema (A01-A18,
-      #    incl. in/offset/having + data_chart bar/line/histogram/pie). GATED at
-      #    16/18 — two-scenario tolerance, mirroring the office gate's 19/20;
-      #    the report artifact carries EVAL_DEBUG raw dumps for any failure
-      #    diagnosis.
-      #    Sampling is temp=1.0, so a whole assert cluster can drop in one run
-      #    (2026-09-25: A12/A13/A14 all lost the "query power" prompt block →
-      #    15/18, then 18/18 on the next run with zero code change). One retry
-      #    keeps the 16/18 gate itself untouched: a real regression fails both
-      #    attempts.
-      - name: agent_eval (analytics suite)
-        working-directory: src-tauri
-        env:
-          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
-          LLVM_PROFILE_FILE: /dev/null
-          KAWAI_LLM_MAX_TOKENS: "8192"
-          EVAL_SUITE: analytics
-          EVAL_DEBUG: "1"
-          EVAL_MIN_PASS: "16"
-        run: |
-          status=1
-          for attempt in 1 2; do
-            if cargo run --release --example agent_eval --features litert -- \
-              ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
-              ${{ github.workspace }}/agent-eval-report-analytics.md; then
-              status=0
-              break
-            fi
-            echo "::warning::agent_eval (analytics suite) attempt ${attempt}/2 failed — retrying (sampling flake vs regression is told apart by attempt 2)"
-          done
-          if [ -f "${{ github.workspace }}/agent-eval-report-analytics.md" ]; then
-            cat "${{ github.workspace }}/agent-eval-report-analytics.md" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          exit "$status"
-
-      - name: Upload analytics eval report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: agent-eval-report-analytics
-          path: agent-eval-report-analytics.md
-          if-no-files-found: warn
-
   # ── Linux full gate: bazel-built litert-lm + unit tests + all smokes ─────
   linux-smoke:
     runs-on: ubuntu-22.04
@@ -696,39 +551,7 @@ jobs:
         run: cargo run --example analytics_smoke
         working-directory: src-tauri
 
-      # ── Smoke 5: orchestration-quality gate ──
-      # Download directly: the 4.8 GB model must not crowd out rust/bazel
-      # caches in the repository-wide Actions cache budget.
-      - name: Download E4B eval model
-        run: |
-          mkdir -p eval-model
-          curl -fL --retry 3 --retry-all-errors --continue-at - -o eval-model/gemma-4-E4B-it.litertlm \
-            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
-
-      - name: agent_eval (orchestration quality gate + report)
-        working-directory: src-tauri
-        env:
-          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
-          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
-          LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
-          LLVM_PROFILE_FILE: /dev/null
-          KAWAI_LLM_MAX_TOKENS: "8192"
-          EVAL_MIN_PASS: "19"
-        run: |
-          set +e
-          cargo run --release --example agent_eval --features litert -- \
-            ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
-            ${{ github.workspace }}/agent-eval-report-linux.md
-          status=$?
-          if [ -f "${{ github.workspace }}/agent-eval-report-linux.md" ]; then
-            cat "${{ github.workspace }}/agent-eval-report-linux.md" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          exit "$status"
-
-      - name: Upload eval report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: agent-eval-report-linux
-          path: agent-eval-report-linux.md
-          if-no-files-found: warn
+      # agent_eval intentionally does NOT run here: the E4B orchestration
+      # quality suites (office + analytics) live in evals.yml on macOS only —
+      # same model, CPU inference, OS-independent quality signal. Running the
+      # battery per-OS tripled eval cost for no extra signal.

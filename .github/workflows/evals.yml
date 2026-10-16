@@ -1,0 +1,202 @@
+name: evals
+
+# agent_eval quality gates — the orchestration-quality suites, run in
+# PARALLEL with ci.yml and the release build (this is why ci no longer
+# carries them: an on-device eval battery must not serialize the
+# push→draft-release pipeline). Two suites, one macOS job each:
+#
+#   office-eval     20 office scenarios, gate 19/20 (PLAN H1/L12)
+#   analytics-eval  18 data-agent scenarios, gate 16/18 (2-attempt retry —
+#                   temp=1.0 sampling can drop an assert cluster in one run;
+#                   a real regression fails both attempts)
+#
+# Both run on-device against the E4B fixture (same model, CPU inference →
+# the quality signal is OS-independent, so one platform suffices; the
+# per-OS unit + smoke coverage stays in ci.yml / windows-smoke.yml).
+#
+# NOT a release gate: release.yml triggers on ci.yml only, so the draft
+# release is built while the evals run. A red eval never deletes the
+# draft — drafts are human-published, and this workflow's status is part
+# of that pre-publish check.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  office-eval:
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-on-failure: true
+
+      # Same cache key as release.yml build-macos — restore-keys makes the
+      # dylib build a no-op whenever either job ran recently.
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            /private/var/tmp/_bazel_runner
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos26-arm64-
+
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr whatlang-rs
+
+      - name: Build litert-lm dylib
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_arm64"
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=macos_arm64 --jobs=6
+          mkdir -p ../../native
+          cp bazel-bin/c/liblitert-lm.dylib ../../native/
+          install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
+          bash ../../../scripts/bundle-litert-dylibs.sh
+
+      # Download directly: the 4.8 GB model must not crowd out rust/bazel
+      # caches in the repository-wide Actions cache budget.
+      - name: Download E4B eval model
+        run: |
+          mkdir -p eval-model
+          curl -fL --retry 3 --retry-all-errors --continue-at - -o eval-model/gemma-4-E4B-it.litertlm \
+            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
+
+      # 20 office scenarios against E4B, scored on tool selection +
+      # arguments. Gate 19/20 (temp=1.0 sampling allows a one-scenario
+      # flake; a real regression fails 2+). Report lands in the job summary
+      # + artifact. K/V budget 8192: eval prompts are ~2k tokens, this
+      # halves peak RSS vs the 16384 desktop default (runner has 14GB).
+      - name: agent_eval (orchestration quality gate + report)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_LLM_MAX_TOKENS: "8192"
+          EVAL_MIN_PASS: "19"
+        run: |
+          cargo run --release --example agent_eval --features litert -- \
+            ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
+            ${{ github.workspace }}/agent-eval-report.md
+          cat ${{ github.workspace }}/agent-eval-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-report
+          path: agent-eval-report.md
+          if-no-files-found: warn
+
+  analytics-eval:
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-on-failure: true
+
+      # Same cache key as office-eval — restore-keys makes the dylib build a
+      # no-op whenever either job ran recently.
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            /private/var/tmp/_bazel_runner
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos26-arm64-
+
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr whatlang-rs
+
+      - name: Build litert-lm dylib
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_arm64"
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=macos_arm64 --jobs=6
+          mkdir -p ../../native
+          cp bazel-bin/c/liblitert-lm.dylib ../../native/
+          install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
+          bash ../../../scripts/bundle-litert-dylibs.sh
+
+      - name: Download E4B eval model
+        run: |
+          mkdir -p eval-model
+          curl -fL --retry 3 --retry-all-errors --continue-at - -o eval-model/gemma-4-E4B-it.litertlm \
+            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
+
+      # Analytics suite (EVAL_SUITE=analytics): data_schema/data_query/data_ta
+      # selection + argument composition over a stated schema (A01-A18,
+      # incl. in/offset/having + data_chart bar/line/histogram/pie). GATED at
+      # 16/18 — two-scenario tolerance, mirroring the office gate's 19/20;
+      # the report artifact carries EVAL_DEBUG raw dumps for any failure
+      # diagnosis. Sampling is temp=1.0, so a whole assert cluster can drop
+      # in one run — one retry keeps the 16/18 gate itself untouched (a real
+      # regression fails both attempts).
+      - name: agent_eval (analytics suite)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_LLM_MAX_TOKENS: "8192"
+          EVAL_SUITE: analytics
+          EVAL_DEBUG: "1"
+          EVAL_MIN_PASS: "16"
+        run: |
+          status=1
+          for attempt in 1 2; do
+            if cargo run --release --example agent_eval --features litert -- \
+              ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
+              ${{ github.workspace }}/agent-eval-report-analytics.md; then
+              status=0
+              break
+            fi
+            echo "::warning::agent_eval (analytics suite) attempt ${attempt}/2 failed — retrying (sampling flake vs regression is told apart by attempt 2)"
+          done
+          if [ -f "${{ github.workspace }}/agent-eval-report-analytics.md" ]; then
+            cat "${{ github.workspace }}/agent-eval-report-analytics.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+
+      - name: Upload analytics eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-report-analytics
+          path: agent-eval-report-analytics.md
+          if-no-files-found: warn

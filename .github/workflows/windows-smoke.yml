@@ -219,10 +219,13 @@ jobs:
         working-directory: src-tauri
 
       # ── Smoke 5: orchestration-quality gate ──
-      # Download directly instead of consuming the repository-wide Actions
-      # cache budget. The 4.8 GB E4B cache prevented rust target caches from
-      # surviving alongside the two platform bazel caches.
+      # Nightly only (schedule): the E4B suites (office + analytics) run on
+      # every push in evals.yml on macOS — same model, CPU inference, the
+      # signal is OS-independent. Repeating them per-push on Windows tripled
+      # eval cost; the nightly copy exists to catch OS-specific inference
+      # drift. Post-ci runs stop after the smokes.
       - name: Download E4B eval model
+        if: github.event_name == 'schedule'
         shell: bash
         run: |
           mkdir -p eval-model
@@ -230,6 +233,7 @@ jobs:
             https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
 
       - name: agent_eval (orchestration quality gate + report)
+        if: github.event_name == 'schedule'
         working-directory: src-tauri
         shell: bash
         env:
@@ -244,7 +248,7 @@ jobs:
           cat "$GITHUB_WORKSPACE/agent-eval-report-windows.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload eval report
-        if: always()
+        if: always() && github.event_name == 'schedule'
         uses: actions/upload-artifact@v4
         with:
           name: agent-eval-report-windows
