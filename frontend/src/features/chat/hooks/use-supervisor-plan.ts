@@ -234,20 +234,18 @@ function writePlanRecord(sessionId: number, record: PersistedPlan): void {
     return call("append_chat_message", { sessionId, role: "assistant", content }).then(() => {});
   };
   const terminal = !record.partial;
-  partialWriteChainRef.current = partialWriteChainRef.current
-    .then(write)
-    .catch(async (err) => {
-      if (terminal) {
-        // One retry — the row is the run's permanent history.
-        try {
-          await write();
-          return;
-        } catch (retryErr) {
-          err = retryErr;
-        }
+  partialWriteChainRef.current = partialWriteChainRef.current.then(write).catch(async (err) => {
+    if (terminal) {
+      // One retry — the row is the run's permanent history.
+      try {
+        await write();
+        return;
+      } catch (retryErr) {
+        err = retryErr;
       }
-      console.error("[supervisor] plan record persist failed:", err);
-    });
+    }
+    console.error("[supervisor] plan record persist failed:", err);
+  });
 }
 
 /** Persist the structured plan record (goal + per-step states). Embedded
@@ -758,9 +756,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       // stored under the run's planKey. Fills only a restored, still-empty
       // deliverable; a live run (stream in flight) is rejected above and a
       // non-completed status never matches the guard below.
-      const deliverableDone = (record.steps ?? []).some(
-        (s) => s.id === "__deliverable" && s.state === "completed",
-      );
+      const deliverableDone = (record.steps ?? []).some((s) => s.id === "__deliverable" && s.state === "completed");
       if (
         sessionId == null ||
         record.planKey == null ||
@@ -779,9 +775,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
         .then((body) => {
           if (!body?.trim()) return;
           setState((prev) =>
-            prev.status === "completed" && prev.finalOutput == null
-              ? { ...prev, finalOutput: body }
-              : prev,
+            prev.status === "completed" && prev.finalOutput == null ? { ...prev, finalOutput: body } : prev,
           );
         })
         .catch((err) => console.error("[supervisor] deliverable body restore:", err));

@@ -235,7 +235,9 @@ describe("placementSummary", () => {
 
 describe("previewTargets", () => {
   it("maps hits to (symbol, screen) pairs in rank order", () => {
-    expect(previewTargets([hit({ symbol: "BTCUSDT" }), hit({ symbol: "ETHUSDT", screen: "uptrend_pullback" })])).toEqual([
+    expect(
+      previewTargets([hit({ symbol: "BTCUSDT" }), hit({ symbol: "ETHUSDT", screen: "uptrend_pullback" })]),
+    ).toEqual([
       { symbol: "BTCUSDT", screen: "macd_golden_cross" },
       { symbol: "ETHUSDT", screen: "uptrend_pullback" },
     ]);

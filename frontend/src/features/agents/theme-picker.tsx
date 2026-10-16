@@ -2,13 +2,7 @@ import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/hooks/use-i18n";
-import {
-  removeCustomPalette,
-  setPalette,
-  type ThemePalette,
-  usePaletteId,
-  usePalettes,
-} from "@/lib/themes";
+import { removeCustomPalette, setPalette, type ThemePalette, usePaletteId, usePalettes } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 
 /** Preview colors: the palette's own `swatch`, else its light tokens. */

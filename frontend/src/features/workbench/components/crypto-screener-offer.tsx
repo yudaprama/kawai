@@ -472,10 +472,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
   const previewCell = (key: string) => {
     if (!previewedKeys.has(key)) {
       return (
-        <span
-          className="text-muted-foreground"
-          title={`Preview covers the top ${PREVIEW_CAP} ranked hits`}
-        >
+        <span className="text-muted-foreground" title={`Preview covers the top ${PREVIEW_CAP} ranked hits`}>
           —
         </span>
       );
@@ -974,9 +971,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
                   {summary.unprotected > 0 && (
                     <span className="text-destructive"> · {summary.unprotected} without a stop</span>
                   )}
-                  {summary.noTp > 0 && (
-                    <span className="text-warning"> · {summary.noTp} without take-profit</span>
-                  )}
+                  {summary.noTp > 0 && <span className="text-warning"> · {summary.noTp} without take-profit</span>}
                 </div>
                 {summary.note && <p className="text-muted-foreground text-[11px]">{summary.note}</p>}
                 {/* A filled position with no stop is the one outcome that must

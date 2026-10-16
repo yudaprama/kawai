@@ -440,8 +440,7 @@ export function useWorkbench() {
         // A partial record with every step completed is a FINISHED run whose
         // terminal write was lost — restore it completed, not failed
         // (planRecordInterrupted carries the evidence rule).
-        const interrupted = (f: (typeof found)[number]) =>
-          planRecordInterrupted(f.record.steps, f.record.partial);
+        const interrupted = (f: (typeof found)[number]) => planRecordInterrupted(f.record.steps, f.record.partial);
         setRuns((prev) =>
           prev.length > 0
             ? prev // a live run owns the canvas — never clobber it
