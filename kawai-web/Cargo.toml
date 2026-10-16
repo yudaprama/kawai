@@ -18,6 +18,11 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 [patch.crates-io]
 office_oxide = { path = "../office_oxide" }
 
+# Vendored pdf_oxide submodule — same markdown→PDF creator for every
+# consumer in this graph.
+[patch."https://github.com/yudaprama/pdf_oxide"]
+pdf_oxide = { path = "../pdf_oxide" }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

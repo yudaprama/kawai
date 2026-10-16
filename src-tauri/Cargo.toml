@@ -231,5 +231,11 @@ required-features = ["litert"]
 [patch.crates-io]
 office_oxide = { path = "../office_oxide" }
 
+# Redirect the pdf_oxide git source to the vendored submodule for the entire
+# graph (src-tauri + ragloader + engines/office) so every consumer builds the
+# same in-tree markdown→PDF creator.
+[patch."https://github.com/yudaprama/pdf_oxide"]
+pdf_oxide = { path = "../pdf_oxide" }
+
 [dev-dependencies]
 tempfile = "3"
