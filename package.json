@@ -19,6 +19,8 @@
     "tauri": "bash scripts/tauri.sh",
     "tauri:dev:litert": "bash scripts/tauri.sh dev",
     "tauri:dev:loki": "bash scripts/tauri.sh dev",
+    "tauri:android": "bash scripts/tauri.sh android",
+    "tauri:android:apk": "bash scripts/tauri.sh android build --target aarch64 --apk --debug",
     "bundle:litert": "bash scripts/bundle-litert-dylibs.sh",
     "tauri:build:litert": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features litert --config .github/tauri-litert.json",
     "tauri:build:litert-office": "bash scripts/bundle-litert-dylibs.sh && tauri build -- --features litert,office --config .github/tauri-litert.json",

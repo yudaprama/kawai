@@ -78,8 +78,19 @@ bun tauri build
 # Generated project: src-tauri/gen/android (applicationId pro.kawai.app,
 # minSdk 24). LiteRT-LM is NOT in this build until scripts/stage-litert-android.sh
 # stages the android_arm64 .so — hence no `litert` feature here.
-bun tauri android build --target aarch64 --apk --debug
-bun tauri android build                       # release APK + AAB (unsigned)
+bun run tauri:android dev              # dev ke device/emulator (adb devices)
+bun run tauri:android:apk               # debug APK per-ABI (aarch64)
+bun run tauri:android build             # release APK + AAB (unsigned)
+# Alias tanpa prefix: `bun tauri android <subcommand>` — sama saja.
+
+# Install + inspect a locally built debug APK:
+adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+adb logcat -s RustWebView:* chromium:* | tail -50
+adb shell am start -n pro.kawai.app/.MainActivity
+
+# No emulator/device? One-time AVD (arm64 image; x86_64 is NOT installed):
+avdmanager create avd -n kawai_test -k "system-images;android-34;google_apis_playstore;arm64-v8a" -d pixel_6
+$ANDROID_HOME/emulator/emulator -avd kawai_test -no-window -no-audio -no-snapshot-load
 
 # Manual equivalent of `bun tauri dev` (for extra flags like office dev):
 cd src-tauri && env \
@@ -109,6 +120,25 @@ bun run bundle:litert
 # and private cargo git deps work without workflow changes. The frontend builds
 # inside tauri-action via beforeBuildCommand ("bun run build"); setup-bun +
 # bun install are already workflow steps.
+#
+# Android release (.github/workflows/release-android.yml) — a SEPARATE
+# workflow from release.yml on purpose: mobile and desktop have independent
+# lifecycles, and an Android failure must never block or fail the desktop
+# release. Trigger = `release: published` (so mobile always ships the exact
+# tag desktop shipped) + workflow_dispatch(tag). Builds a signed AAB +
+# universal APK for aarch64 + armeabi-v7a with the `desktop` cargo feature
+# ONLY (no litert/tts/binance — see the feature note at the top of the
+# workflow), attaches the APK to the GitHub release, and uploads the AAB to
+# the Play internal track (packageName pro.kawai.app) when
+# PLAY_UPLOAD_ENABLED=true.
+# Needs repo secrets ANDROID_KEYSTORE_BASE64 / _PASSWORD / ANDROID_KEY_PASSWORD
+# / ANDROID_KEY_ALIAS / PLAY_SERVICE_ACCOUNT_JSON + repo variable
+# PLAY_UPLOAD_ENABLED. keystore.properties is written from those secrets into
+# src-tauri/gen/android/ (gitignored); without it the release build falls back
+# to the debug key and the Play step is skipped with a warning annotation.
+# versionCode = 10000 + run_number (Play requires it to strictly increase per
+# app); versionName = the tag's semver. First upload must be done by hand in
+# Play Console — an app with no listing rejects every API upload.
 
 # Build the LiteRT-LM C library (first build ~15-30 min; cached afterwards)
 cd cognee-litert-lm/vendor/LiteRT-LM && bazel build //c:litert-lm --config=macos_arm64 --jobs=6

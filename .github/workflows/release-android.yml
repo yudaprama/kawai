@@ -1,0 +1,162 @@
+name: release-android
+
+# Android release — deliberately a SEPARATE workflow from release.yml
+# (desktop). Mobile and desktop have independent lifecycles: a broken
+# Android build must never block, delay or fail the desktop release, and
+# the Play Console rollout is not gated on desktop being green.
+#
+# Trigger: the desktop release being PUBLISHED (release.yml's publish job
+# flips the draft). So mobile always ships the exact tag that desktop
+# shipped. workflow_dispatch re-runs it for one tag (failed upload, new
+# internal rollout).
+#
+# Feature set: the `desktop` cargo feature only — NO litert, tts, binance.
+# `litert` needs the LiteRT-LM C lib built for android_arm64
+# (`bazel build //c:litert-lm --config=android_arm64`, staged by
+# scripts/stage-litert-android.sh) and `tts` needs the MNN native libs;
+# neither exists for Android yet. Adding them is a separate change.
+#
+# Targets: aarch64 (Play requires 64-bit) + armeabi-v7a (minSdk 24).
+# x86/x86_64 are emulator-only — they double the Rust compile time and
+# Play does not require them.
+#
+# Secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+#          ANDROID_KEY_PASSWORD, ANDROID_KEY_ALIAS, PLAY_SERVICE_ACCOUNT_JSON
+# Variables: PLAY_UPLOAD_ENABLED ("true" enables the Play upload)
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v0.3.6). Defaults to the latest release.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+# Serialize per tag: two runs uploading the same versionCode would race
+# on Play's "versionCode already used".
+concurrency:
+  group: release-android-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Resolve tag
+        id: tag
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG="${EVENT_TAG:-${INPUT_TAG:-}}"
+          if [ -z "$TAG" ]; then
+            TAG="$(gh release view --json tagName --jq .tagName)"
+          fi
+          # versionName is what users see; Play also wants it to increase
+          # within a track — the tag's semver does, the versionCode below
+          # carries the strictly-monotonic part.
+          VERSION="${TAG#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag '$TAG' is not vMAJOR.MINOR.PATCH — cannot set versionName." >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # compileSdk/targetSdk 37 + NDK 28 match src-tauri/gen/android.
+          packages: 'platforms;android-37;build-tools;37.0.0;ndk;28.0.13004158'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Configure release signing
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "No keystore secret set — release falls back to the debug key (not uploadable to Play)."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload-keystore.jks"
+          cat > src-tauri/gen/android/keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/upload-keystore.jks
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      # Play rejects an upload whose versionCode was already used, so it
+      # must strictly increase per app — run_number is monotonic per repo
+      # and independent of the desktop version bump (which can be resumed
+      # and re-run at the same tag).
+      - name: Set Android version
+        run: |
+          cat > src-tauri/gen/android/app/tauri.properties <<EOF
+          tauri.android.versionCode=$(( 10000 + ${{ github.run_number }} ))
+          tauri.android.versionName=${{ steps.tag.outputs.version }}
+          EOF
+
+      - name: Build signed AAB
+        run: bun tauri android build --target aarch64 armv7
+
+      - name: Build universal APK (sideload)
+        run: bun tauri android build --target aarch64 armv7 --apk
+
+      - name: Attach APK to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+
+      - name: Upload AAB to Play Store (internal track)
+        if: ${{ steps.signing.outputs.signed == 'true' && vars.PLAY_UPLOAD_ENABLED == 'true' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: pro.kawai.app
+          releaseFiles: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
+          track: internal
+          status: completed
+
+      - name: Warn when the upload was skipped
+        if: ${{ !(steps.signing.outputs.signed == 'true' && vars.PLAY_UPLOAD_ENABLED == 'true') }}
+        run: |
+          echo "::warning::Play upload skipped — signed=${{ steps.signing.outputs.signed }} PLAY_UPLOAD_ENABLED=${{ vars.PLAY_UPLOAD_ENABLED }}"
+          echo "Artifacts are attached to the GitHub release; upload the AAB manually if needed."
