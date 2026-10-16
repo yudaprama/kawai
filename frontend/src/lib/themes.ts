@@ -47,7 +47,7 @@ const SNAPSHOT_KEY = "kawai-palette-vars";
  */
 const MONO: ThemePalette = {
   id: "mono",
-  label: "Mono",
+  label: "Chatgpt",
   light: {},
   dark: {},
   swatch: ["hsl(0 0% 100%)", "hsl(0 0% 97.0588%)", "hsl(0 0% 0%)", "hsl(0 0% 94.1176%)"],
@@ -132,7 +132,7 @@ const VEKIS: ThemePalette = {
 /** tweakcn "Claude +" — https://tweakcn.com/r/themes/cmdght103000n04lh3e2ae93r */
 const CLAUDE_PLUS: ThemePalette = {
   id: "claude-plus",
-  label: "Claude +",
+  label: "Claude",
   source: "https://tweakcn.com/r/themes/cmdght103000n04lh3e2ae93r",
   radius: "1rem",
   light: {
@@ -589,7 +589,10 @@ const CUTE: ThemePalette = {
   },
 };
 
-const BUNDLED: ThemePalette[] = [MONO, VEKIS, CLAUDE_PLUS, TOKYO_NIGHT, MUSE, CUTE];
+/** Default palette. Must stay first: `allPalettes[0]` is the fallback everywhere. */
+const DEFAULT_PALETTE_ID = "tokyo-night";
+
+const BUNDLED: ThemePalette[] = [TOKYO_NIGHT, VEKIS, CLAUDE_PLUS, MONO, MUSE, CUTE];
 
 // ---------------------------------------------------------------------------
 // Custom palettes (localStorage)
@@ -613,7 +616,7 @@ function readCustom(): ThemePalette[] {
 
 let customPalettes = readCustom();
 let allPalettes = [...BUNDLED, ...customPalettes];
-let currentId = allPalettes[0].id;
+let currentId = DEFAULT_PALETTE_ID;
 if (typeof window !== "undefined") {
   try {
     const stored = window.localStorage.getItem(PALETTE_KEY);
