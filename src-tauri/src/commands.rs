@@ -458,6 +458,23 @@ pub async fn update_chat_message(
     let user_id = session_user_id(&session)?;
     logic::update_chat_message(&user_id, session_id, message_id, &content)
         .await
+        .map(|msg| {
+            // Success breadcrumb — the supervisor's terminal plan-record write
+            // was observed to vanish SILENTLY (frontend swallows the error,
+            // backend never sees the call). This line makes every record
+            // write visible in app.log, so the next occurrence shows exactly
+            // which writes arrived and which never did.
+            tracing::info!(
+                component = "chat",
+                user = %user_id,
+                session = session_id,
+                message = message_id,
+                len = content.len(),
+                terminal_record = content.contains("\"type\":\"supervisor-plan\"") && !content.contains("\"partial\""),
+                "chat message updated"
+            );
+            msg
+        })
         .map_err(|e| {
             // History writes are best-effort on the caller side (fire-and-
             // forget persist) — without this log a rejection is invisible.
@@ -1457,8 +1474,13 @@ pub async fn plan_task(
     goal: String,
     session_id: i64,
     agent_id: String,
+    // Raw device locale tag (e.g. "id-ID") — feeds ONLY the template path's
+    // output language (resolve_user_language), so a composer-routed desk run
+    // renders in the user's language like the fixed-pipeline form. The
+    // planner itself is language-agnostic.
+    language: Option<String>,
     on_event: tauri::ipc::Channel<kawai_events::SupervisorEvent>,
-        session: State<'_, Session>,
+    session: State<'_, Session>,
 ) -> Result<kawai_router::TaskPlan, String> {
     let user_id = session_user_id(&session)?;
     // Billing bearer (Fase 0a/0b): resolved at the transport edge like the
@@ -1484,6 +1506,7 @@ pub async fn plan_task(
         session_id,
         &goal,
         Some(&bearer),
+        language.as_deref(),
         &registry,
         move |event| {
         let _ = on_event.send(event);
@@ -2091,23 +2114,10 @@ pub async fn execute_supervisor_plan(
 ) -> Result<(), String> {
     let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
 
-    let step_agent = plan
-        .steps
-        .first()
-        .map(|s| s.agent_id.as_str())
-        .unwrap_or("");
-    let agent_id = match step_agent {
-        crate::agent_registry::OFFICE_AGENT_ID
-        | crate::agent_registry::PRESENTATION_AGENT_ID
-        | crate::agent_registry::BINANCE_AGENT_ID
-        | crate::agent_registry::ANALYTICS_AGENT_ID => step_agent,
-        _ => crate::supervisor::AUTO_AGENT_ID,
-    };
-    let tool_registry = crate::supervisor::build_supervisor_registry(
+    let tool_registry = crate::supervisor::build_registry_for_plan(
         &ctx.user_id,
         session_id,
-        agent_id,
-        &crate::supervisor::plan_key(&plan),
+        &plan,
     )
     .await
     .map_err(|e| e.to_string())?;
@@ -2563,11 +2573,32 @@ pub async fn binance_open_screened_positions(
     picks: Vec<logic::binance_trade::ScreenedPick>,
     interval: Option<String>,
     risk: Option<String>,
+    take_profit: Option<bool>,
     session: State<'_, Session>,
 ) -> Result<String, String> {
     let user_id = session_user_id(&session)?;
     logic::binance_trade::binance_open_screened_positions(
         &user_id,
+        picks,
+        interval.as_deref().unwrap_or("4h"),
+        risk.as_deref().unwrap_or("standard"),
+        take_profit.unwrap_or(true),
+    )
+    .await
+}
+
+/// The pre-approval stop preview for the screener offer panel: per approved
+/// (symbol, screen), the stop level the engine's guard policy computes over
+/// fresh public candles and its distance in % (= 1R). Keyless and read-only
+/// — no signed call, no order, no history write; what the user sees before
+/// approving is the fold execution runs.
+#[tauri::command]
+pub async fn binance_screened_stop_preview(
+    picks: Vec<logic::binance_trade::ScreenedPreviewPick>,
+    interval: Option<String>,
+    risk: Option<String>,
+) -> Result<String, String> {
+    logic::binance_trade::binance_screened_stop_preview(
         picks,
         interval.as_deref().unwrap_or("4h"),
         risk.as_deref().unwrap_or("standard"),

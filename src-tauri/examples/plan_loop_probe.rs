@@ -37,6 +37,7 @@ async fn run() -> Result<(), String> {
         0,
         &goal,
         None, // dev probe — no billing identity, so the balance gate is off
+        None, // template-path language: probe goals are planner cases
         &registry,
         |event| {
             // Diagnostic: what each planning search round found — separates

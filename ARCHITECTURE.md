@@ -45,7 +45,7 @@ The backend also ships as a standalone web server (`kawai-web` crate, Axum, inde
 
 ## Request flow — Supervisor end-to-end
 
-What happens when a user sends a prompt. The Supervisor (`kawai-router`) is the **sole desktop execution path**: the LLM only writes a validated plan; a deterministic Rust scheduler executes it against the tool registry. The legacy `agent_chat` prompt-based tool-calling transport is fully removed (engine loop, command, Axum handler, frontend hook, `AgentChatEvent`).
+What happens when a user sends a prompt. The Supervisor (`kawai-router`) is the **sole desktop execution path**: every plan is executed by a deterministic Rust scheduler against the tool registry. A plan has **two possible authors**: the deterministic template router (`crates/router/src/route.rs` + `crates/engines/desk` — a goal claimed by a registered pipeline, e.g. a single-ticker market analysis, resolves to a Rust-authored `TaskPlan` with zero planner rounds, stamped `TaskPlan.template` and dispatched against the pipeline's own registry via `build_registry_for_plan`), or the LLM planner (`plan_task`'s bounded search loop — the default and the fallback). The legacy `agent_chat` prompt-based tool-calling transport is fully removed (engine loop, command, Axum handler, frontend hook, `AgentChatEvent`).
 
 ```mermaid
 sequenceDiagram
@@ -168,15 +168,24 @@ No `draft_document` — this agent does not create files.
 
 Persona: the Binance definition in `crates/toolsets/binance/src/agent.rs` (binance + not-android).
 
-The order-writing side is not an agent toolset: three direct ops
-(`logic::binance_trade.rs`, both wrappers) back the post-audit offer panel —
+The order-writing side is not an agent toolset: direct ops
+(`logic::binance_trade.rs`, both wrappers) back the offer panels —
 `binance_auto_protect_positions` (place a stop where there is none),
 `binance_auto_take_profit_positions` (place the R-ladder where none rests),
-and `binance_auto_tighten_stops` (MOVE an existing stop to the level the
+`binance_auto_tighten_stops` (MOVE an existing stop to the level the
 policy recommends once it grades `tighten` — the break-even lock, valid from
-1×ATR of profit). The move is place-then-cancel, because Binance has no atomic
-amend for a conditional order and an unprotected window is the one state that
-costs money. Full rationale: TOOL-MAP.md §5.3a.
+1×ATR of profit), and the screener's entry pair:
+`binance_open_screened_positions` (open the approved hits — the engine
+derives the side from each screen, refuses any entry whose protective-stop
+level fails the guards, and by default places the standard-style R-ladder
+take-profit off the just-attached stop; rungs that cannot rest are reported
+in the result's `noTakeProfit` count, never retried) and
+`binance_screened_stop_preview` (the keyless pre-approval read: per hit, the
+stop level the same guard policy folds over fresh public candles and its
+distance in % — what the offer panel shows before any order exists). The
+stop move is place-then-cancel, because Binance has no atomic amend for a
+conditional order and an unprotected window is the one state that costs
+money. Full rationale: TOOL-MAP.md §5.3a.
 
 ### `builtin.analytics` — Analytics
 

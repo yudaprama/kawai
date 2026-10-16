@@ -15,7 +15,7 @@ import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
 import type { SupervisorArtifact, SupervisorEvent, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { peekFreshTokenBalance, publishTokenBalance, refreshTokenBalance } from "@/features/topup/use-token-balance";
-import { hydrateStep, type PersistedPlanRecord } from "@/features/chat/hooks/supervisor-types";
+import { hydrateStep, planRecordInterrupted, type PersistedPlanRecord } from "@/features/chat/hooks/supervisor-types";
 import { getLocale, translate } from "@/lib/i18n";
 
 // ── Derived view models ─────────────────────────────────────────────────────
@@ -426,7 +426,7 @@ export function useWorkbench() {
         }
         if (found.length === 0) return;
         const newest = found[found.length - 1];
-        supervisor.restorePersisted(newest.record);
+        supervisor.restorePersisted(newest.record, sessionId);
         pickDeck(newest.record.artifacts);
         // The canvas only mounts the deliverable viewer when runs is
         // non-empty — seed one completed run per record so a reopened
@@ -437,28 +437,68 @@ export function useWorkbench() {
         // tool/[]/null respectively. A restored planKey lets "see report"
         // fetch the FULL step body from supervisor_step_results.
         const runSteps = (f: (typeof found)[number]) => f.record.steps?.map(hydrateStep) ?? [];
+        // A partial record with every step completed is a FINISHED run whose
+        // terminal write was lost — restore it completed, not failed
+        // (planRecordInterrupted carries the evidence rule).
+        const interrupted = (f: (typeof found)[number]) =>
+          planRecordInterrupted(f.record.steps, f.record.partial);
         setRuns((prev) =>
           prev.length > 0
             ? prev // a live run owns the canvas — never clobber it
             : found.map((f) => ({
                 id: `restored-${f.rowId}`,
                 goal: f.record.goal ?? "(restored run)",
-                status: f.record.error || f.record.partial ? ("failed" as const) : ("completed" as const),
+                status: f.record.error || interrupted(f) ? ("failed" as const) : ("completed" as const),
                 // The record's write time — when the run actually terminated
                 // (the DB row's created_at), not the moment of restoration.
                 startedAt: f.createdAt * 1000,
                 finishedAt: f.createdAt * 1000,
                 outputPreview: (f.record.output ?? "").slice(0, 500),
                 outputFull: f.record.output ?? undefined,
-                // A failed plan record carries the terminal error; a partial
-                // (interrupted) record never reached one.
-                error: f.record.error ?? (f.record.partial ? "Run interrupted before completion." : undefined),
+                // A failed plan record carries the terminal error; an
+                // interrupted one never reached a terminal event.
+                error: f.record.error ?? (interrupted(f) ? "Run interrupted before completion." : undefined),
                 planKey: f.record.planKey ?? null,
                 steps: runSteps(f),
                 stepsDone: f.record.steps?.filter((s) => s.state === "completed").length ?? 0,
                 stepsTotal: f.record.steps?.length ?? 0,
               })),
         );
+        // A record whose terminal write was lost carries `output: null` even
+        // though the run FINISHED (planRecordInterrupted reconciled its
+        // status above) — so the restored deliverable canvas would show
+        // nothing while the step reports and the screener/audit offers (which
+        // read supervisor_step_results directly) render fine. Heal it: fetch
+        // the deliverable writer's full body for the run's planKey and fill
+        // outputFull, so the summary, Copy, and Export all come back.
+        for (const f of found) {
+          const finished = !interrupted(f) && !(f.record.error ?? "");
+          const hasBody = !!(f.record.output ?? "").trim();
+          const deliverableDone = (f.record.steps ?? []).some(
+            (s) => s.id === "__deliverable" && s.state === "completed",
+          );
+          if (!finished || hasBody || !deliverableDone || f.record.planKey == null) continue;
+          const planKey: string = f.record.planKey;
+          void (async () => {
+            try {
+              const body = await call<string>("supervisor_step_output", {
+                sessionId,
+                planKey,
+                stepId: "__deliverable",
+              });
+              if (!body?.trim()) return;
+              setRuns((prev) =>
+                prev.map((r) =>
+                  r.id === `restored-${f.rowId}` && !r.outputFull
+                    ? { ...r, outputFull: body, outputPreview: body.slice(0, 500) }
+                    : r,
+                ),
+              );
+            } catch (err) {
+              console.error("[workbench] deliverable body restore:", errText(err));
+            }
+          })();
+        }
       } catch (err) {
         console.error("[workbench] plan restore:", errText(err));
       }

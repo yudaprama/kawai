@@ -1,4 +1,5 @@
 import type { PersistedPlanRecord } from "@/features/chat/hooks/supervisor-types";
+import { planRecordInterrupted } from "@/features/chat/hooks/supervisor-types";
 import type { UIMessage } from "@/lib/ai-types";
 import type { ChatMessage, ChatSession } from "@/lib/api";
 import { getLocale } from "@/lib/i18n";
@@ -48,7 +49,11 @@ function planToText(plan: PersistedPlanRecord): string {
   });
   const goal = plan.goal ? `Goal: ${plan.goal}\n` : "";
   const outline = lines.length > 0 ? `[plan]\n${lines.join("\n")}\n\n` : "";
-  const tail = plan.partial ? "(run interrupted before completion)" : (plan.output ?? "(plan completed)");
+  // A partial record whose steps ALL completed is a finished run whose final
+  // write was lost — not an interrupted one (see planRecordInterrupted).
+  const tail = planRecordInterrupted(plan.steps, plan.partial)
+    ? "(run interrupted before completion)"
+    : (plan.output ?? "(plan completed)");
   return `${goal}${outline}${tail}`;
 }
 

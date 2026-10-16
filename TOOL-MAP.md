@@ -291,7 +291,7 @@ self-bounded (12 runs/min, 6-way parallel klines, 45s deadline →
 
 ### 5.3a The placement actions — protect, take-profit, MOVE a stop
 
-Three direct ops (both wrappers, no planner round — the post-audit offer's
+Direct ops (both wrappers, no planner round — the post-audit offer's
 armed click IS the confirmation) over the §5.2 matrix. All three take the
 audit's own `params` and an approved `symbols` list, and all three compute
 levels with the SAME policy the audit grades with, so the user approves an
@@ -302,6 +302,29 @@ action, never a hand-typed number:
 | `binance_auto_protect_positions` | positions with NO resting stop | places the recommended reduce-only stop (`auto_protect_naked`) |
 | `binance_auto_take_profit_positions` | positions with NO resting TP | places the advised R-ladder rungs (`auto_take_profit_naked`) |
 | `binance_auto_tighten_stops` | positions whose resting stop grades `tighten` | MOVES that stop to the recommended level (`auto_tighten_stops`) |
+
+The screener's entry pair lives on the same seam (`trade.rs`):
+
+- **`binance_screened_stop_preview`** — the PRE-approval half. Per approved
+  (symbol, screen), folds `pre_entry_stop_advice` — the same guard policy the
+  entry runs — over fresh public candles and returns the stop level, its
+  method, and the distance in % (= 1R at the preset). Keyless and read-only:
+  no signed call, no advice-history write, no order; a hit whose guards find
+  no level previews as `ok: false` ("would be refused at execution").
+  Bounded (100 picks/call engine-side, the panel asks for the top 50,
+  6-way parallel klines); failures are per-pick rows, never aborts.
+- **`binance_open_screened_positions`** — opens the approved hits (side
+  derived from each screen, no entry without a surviving stop — the
+  fail-closed guard that makes a naked entry unreachable), and by default
+  (`takeProfit`, UI checkbox) places the **entry-time take-profit ladder**:
+  the standard-style `tp_advice` over the candles the stop folded, R
+  measured from the stop that is NOW resting. `entry_tp_orders` turns the
+  shape into orders — band exit closes the whole position, un-passed rungs
+  go through the same `coalesce_tp_rungs` merge the audit batch uses — and
+  they run under `Budget::Batch`. A position whose rungs all failed to rest
+  is counted in the result's `noTakeProfit` / surfaced amber in the panel —
+  one notch below a missing stop, but a reported gap, never a silent
+  success; `trailing_only` shapes legitimately place no fixed order.
 
 The third is the break-even lock, and it is the population the other two
 cannot reach by construction: `auto_protect_naked` skips any position that

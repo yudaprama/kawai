@@ -1,11 +1,8 @@
-import { useState } from "react";
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useI18n } from "@/hooks/use-i18n";
 import {
-  importPalette,
   removeCustomPalette,
   setPalette,
   type ThemePalette,
@@ -26,39 +23,19 @@ function swatchOf(palette: ThemePalette): string[] {
 /**
  * Palette picker — the color half of the appearance settings (the
  * light/dark/system mode lives in the account dropdown next to it). Every
- * palette is a set of shadcn tokens; users can add their own by pasting a
- * tweakcn theme link or a shadcn preset name, which the app fetches from the
- * registry and keeps in localStorage.
+ * palette is a set of shadcn tokens; the catalog is the bundled palettes in
+ * `lib/themes.ts` plus any palettes the user previously imported (localStorage).
  */
 export function ThemePickerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { t } = useI18n();
   const palettes = usePalettes();
   const activeId = usePaletteId();
-  const [source, setSource] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const add = async () => {
-    const input = source.trim();
-    if (!input || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await importPalette(input);
-      setSource("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t("themePicker.title")}</DialogTitle>
-          <DialogDescription>{t("themePicker.description")}</DialogDescription>
         </DialogHeader>
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -102,30 +79,6 @@ export function ThemePickerDialog({ open, onOpenChange }: { open: boolean; onOpe
             );
           })}
         </div>
-
-        <form
-          className="flex items-start gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void add();
-          }}
-        >
-          <div className="flex-1">
-            <Input
-              value={source}
-              onChange={(event) => setSource(event.target.value)}
-              placeholder={t("themePicker.inputPlaceholder")}
-              aria-label={t("themePicker.inputPlaceholder")}
-              spellCheck={false}
-              autoComplete="off"
-            />
-            {error && <p className="text-destructive mt-1 text-xs break-all">{error}</p>}
-          </div>
-          <Button type="submit" disabled={busy || source.trim().length === 0}>
-            {busy ? <Icon name="loader-circle" className="animate-spin" /> : <Icon name="plus" />}
-            {t("themePicker.add")}
-          </Button>
-        </form>
       </DialogContent>
     </Dialog>
   );

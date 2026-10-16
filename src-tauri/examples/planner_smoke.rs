@@ -63,12 +63,26 @@ async fn main() {
             -1,
             goal,
             None, // CI smoke — no billing identity, so the balance gate is off
+            None, // template-path language: smoke goals are planner cases
             &registry,
             |_| {},
         )
         .await
         {
             Ok((plan, _usage)) => {
+                // The template router short-circuits BEFORE the planner — a
+                // routed goal would return a Rust-authored plan with zero
+                // planner rounds and this smoke would pass vacuously. The
+                // fixture goals are planner cases by design; a template
+                // stamp here is a router regression, not a pass.
+                if plan.template.is_some() {
+                    eprintln!(
+                        "[FAIL] planner_smoke goal was routed to template {:?} — the smoke must exercise the planner",
+                        plan.template
+                    );
+                    failures += 1;
+                    continue;
+                }
                 let tools: Vec<&str> =
                     plan.steps.iter().map(|s| s.dispatch_key()).collect();
                 let ok_shape = plan

@@ -253,6 +253,44 @@ describe("sessionToMarkdown", () => {
     expect(md).not.toContain("(plan completed)");
   });
 
+  it("renders a partial record with ALL steps completed as finished, not interrupted", () => {
+    // Observed 2026-10-15: the terminal record write was lost after both
+    // screener runs finished backend-side — the stored row kept
+    // `partial: true` while carrying every step completed. That is a
+    // finished run, not an interrupted one.
+    const record = JSON.stringify({
+      type: "supervisor-plan",
+      v: 1,
+      goal: "Ship it",
+      steps: [
+        { id: "a", tool: "web_search", state: "completed" },
+        { id: "__deliverable", tool: "deliverable_writer", state: "completed" },
+      ],
+      output: null,
+      partial: true,
+    });
+    const md = sessionToMarkdown("t", [
+      { id: 9, sessionId: 1, role: "assistant", content: record, createdAt: 1_800_000_000 },
+    ]);
+    expect(md).not.toContain("(run interrupted before completion)");
+    expect(md).toContain("(plan completed)");
+  });
+
+  it("renders a partial record with zero steps as interrupted", () => {
+    const record = JSON.stringify({
+      type: "supervisor-plan",
+      v: 1,
+      goal: "Ship it",
+      steps: [],
+      output: null,
+      partial: true,
+    });
+    const md = sessionToMarkdown("t", [
+      { id: 10, sessionId: 1, role: "assistant", content: record, createdAt: 1_800_000_000 },
+    ]);
+    expect(md).toContain("(run interrupted before completion)");
+  });
+
   it("marks failed/skipped steps and falls back to a completed tail when output is missing", () => {
     const record = JSON.stringify({
       type: "supervisor-plan",

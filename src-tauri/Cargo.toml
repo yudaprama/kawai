@@ -222,6 +222,9 @@ name = "agent_eval"
 [[example]]
 name = "turn_log_report"
 required-features = ["litert"]
+[[example]]
+name = "route_eval"
+required-features = ["litert"]
 
 # Redirect crates.io office_oxide to the local fork for the entire dependency
 # graph (including pdf_oxide). Prevents duplicate FFI symbols on Linux.

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { parseScreenerOffer, placementSummary, screenerRunStepIds } from "./crypto-screener-offer";
+import {
+  parseScreenerOffer,
+  placementSummary,
+  PREVIEW_CAP,
+  previewTargets,
+  screenerRunStepIds,
+} from "./crypto-screener-offer";
 
 /**
  * The entry offer is the one panel in kawai that OPENS leveraged positions, so
@@ -206,10 +212,42 @@ describe("placementSummary", () => {
     expect(s?.naked).toEqual([]);
   });
 
+  it("carries the no-take-profit count for runs that asked for the ladder", () => {
+    const s = summary({
+      noTakeProfit: 1,
+      noTakeProfitPositions: [{ symbol: "ETHUSDT", error: "no take-profit order could be placed" }],
+    });
+    expect(s?.noTp).toBe(1);
+    // A missing TP is a warning, never folded into the stop's naked count.
+    expect(s?.unprotected).toBe(1);
+  });
+
+  it("defaults the no-TP count to zero for runs that never asked for a ladder", () => {
+    expect(summary()?.noTp).toBe(0);
+  });
+
   it("returns null on output it does not recognise", () => {
     expect(placementSummary("not json")).toBeNull();
     expect(placementSummary(JSON.stringify([1, 2]))).toBeNull();
     expect(placementSummary(JSON.stringify({ nope: true }))).toBeNull();
+  });
+});
+
+describe("previewTargets", () => {
+  it("maps hits to (symbol, screen) pairs in rank order", () => {
+    expect(previewTargets([hit({ symbol: "BTCUSDT" }), hit({ symbol: "ETHUSDT", screen: "uptrend_pullback" })])).toEqual([
+      { symbol: "BTCUSDT", screen: "macd_golden_cross" },
+      { symbol: "ETHUSDT", screen: "uptrend_pullback" },
+    ]);
+  });
+
+  it("caps the request below the engine's own truncation point", () => {
+    const hits = Array.from({ length: 120 }, (_, i) => hit({ symbol: `S${i}USDT` }));
+    const targets = previewTargets(hits);
+    expect(targets).toHaveLength(PREVIEW_CAP);
+    expect(targets[0].symbol).toBe("S0USDT");
+    // Below the cap nothing is dropped.
+    expect(previewTargets(hits.slice(0, 3))).toHaveLength(3);
   });
 });
 

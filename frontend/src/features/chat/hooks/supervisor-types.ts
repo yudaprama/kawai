@@ -179,8 +179,32 @@ export interface PersistedPlanRecord {
   artifacts?: { kind: string; handle?: string; filename?: string; label?: string }[];
   error?: string;
   /** Still in flight when last written — the run never reached a terminal
-   *  event (app quit / crash). Renders as an interrupted (failed) run. */
+   *  event (app quit / crash), OR the terminal record write was lost (the
+   *  partial snapshot is the last one that landed). Only the step states
+   *  distinguish the two — see [`planRecordInterrupted`]. */
   partial?: boolean;
+}
+
+/** Whether a `partial: true` record is a genuinely unfinished run.
+ *
+ * `partial` alone is NOT evidence of interruption: the terminal record write
+ * can be lost (observed 2026-10-15 — both crypto-screener runs completed
+ * backend-side, `__deliverable` persisted in supervisor_step_results, title
+ * rewritten by generate_session_title, yet every plan record stayed
+ * `partial: true`), leaving the last partial snapshot — which by then already
+ * carries ALL steps completed, `__deliverable` included — as the stored row.
+ *
+ * A genuinely interrupted run has at least one step that never completed.
+ * So: partial + every step completed (≥1 step) = the run FINISHED and only
+ * the final write was lost — render it as finished, never as interrupted.
+ * Partial with zero steps or any non-completed step = truly interrupted. */
+export function planRecordInterrupted(
+  steps: Pick<PersistedPlanStep, "state">[] | undefined,
+  partial?: boolean,
+): boolean {
+  if (!partial) return false;
+  const list = steps ?? [];
+  return !(list.length > 0 && list.every((s) => s.state === "completed"));
 }
 
 /** Map a wire/persisted artifact list into the live SupervisorArtifact

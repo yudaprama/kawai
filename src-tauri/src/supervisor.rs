@@ -519,11 +519,18 @@ omit filters to list the latest entries) and pass its output onward with `fromSt
 ///
 /// The registry contains metadata for the planner prompt and a dispatch
 /// closure that delegates to [`kawai_tools::ToolSet::execute`].
+///
+/// `language` is the device locale tag from the transport edge (e.g.
+/// "id-ID") — it only feeds the template path (`resolve_user_language`), so a
+/// composer-routed desk run renders its reports in the user's language
+/// exactly like the fixed-pipeline form does.
+#[allow(clippy::too_many_arguments)]
 pub async fn plan_task(
     user_id: &str,
     session_id: i64,
     goal: &str,
     bearer: Option<&str>,
+    language: Option<&str>,
     registry: &ToolRegistry,
     on_progress: impl Fn(SupervisorEvent),
 ) -> Result<(kawai_router::TaskPlan, remote_llm::RemoteUsage), String> {
@@ -553,6 +560,243 @@ pub async fn plan_task(
             Ok(balance) if balance.tokens > 0 => {}
             Ok(_) => return Err("Token habis — isi ulang lewat Top Up".to_string()),
             Err(e) => return Err(format!("balance check failed: {e}")),
+        }
+    }
+
+    // ── Template routing — two layers (PLAN-template-routing.md §2.5) ──────
+    //
+    // Layer 1 (deterministic, this block): the keyword gate claims goals it
+    // is SURE about and skips the planner entirely. Three deliberate
+    // refusals, all falling through to layer 2 or the planner:
+    // - Follow-ups (the `<previous-deliverable>` quote block): continuing a
+    //   session is not a fresh pipeline.
+    // - Required slots the goal does not carry — never a user-facing prompt.
+    // - `build` errors (a template that cannot build must never fail the
+    //   submit).
+    //
+    // Layer 2 (below the match): when layer 1's decision is `plan` — the
+    // grey band — one small LLM call re-validates the decision with real
+    // language understanding (micron → MU, "Bank BRI" is IDX). Rust still
+    // owns execution: the claim must be a registered template with a ticker
+    // the exchange itself lists, else planner. `direct` decisions are NOT
+    // re-validated (a short tool-free goal answered from memory should not
+    // pay an LLM call to be told it might be research).
+    //
+    // The remote pool serves this resolver AND the planner (the planner
+    // handle keeps the tight 4k output cap — the 2026-02 benchmark showed
+    // 14.6k output tokens = the whole 250 s latency). Built before the gate;
+    // the not-configured error stays at the planner stage so a
+    // template-routed goal still resolves on a no-vault build.
+    let remote_pool = remote_llm::RemoteLlm::from_env();
+
+    if !goal.contains("<previous-deliverable") {
+        let universe = usdm_universe_cached().await;
+        let decision = kawai_router::route_goal(goal, universe.as_ref(), &crate::templates::registry());
+        // (chosen, template_id, source, routed plan key). The actual insert
+        // is awaited once below — a sync closure calling the async writer
+        // would drop the future unawaited and silently lose the row (caught
+        // by the routing-gate test).
+        let mut logged: Option<(&'static str, Option<&'static str>, &'static str, Option<String>)> =
+            None;
+        let mut grey_band = false;
+        let facts = kawai_router::extract_facts(goal);
+        match &decision.route {
+            kawai_router::Route::Template(template) => {
+                // Same resolution the gate used: the universe-matched member
+                // ("nvidia" → "NVDA"). Unreachable as None for a market-bound
+                // claim (the gate blocked those), but never guess.
+                let ticker = facts
+                    .candidates
+                    .iter()
+                    .find(|c| universe.as_ref().is_some_and(|u| u.contains(*c)))
+                    .cloned();
+                let mut slots = kawai_router::ResolvedSlots::new();
+                if let Some(ticker) = ticker.as_deref().or(facts.ticker.as_deref()) {
+                    slots.set("ticker", ticker);
+                }
+                if let Some(url) = &facts.url {
+                    slots.set("url", url);
+                }
+                slots.set(
+                    "language",
+                    &resolve_user_language(language, None).unwrap_or_default(),
+                );
+                match (template.build)(&slots) {
+                    Ok(mut plan) => {
+                        plan.template = Some(template.id.to_string());
+                        let key = plan_key(&plan);
+                        on_progress(SupervisorEvent::PlanningStarted {});
+                        tracing::info!(
+                            component = "supervisor",
+                            template = template.id,
+                            goal_chars = goal.len(),
+                            "routed to template — planner skipped"
+                        );
+                        kawai_db::log_route_decision(
+                            user_id,
+                            kawai_db::RouteLogEntry {
+                                session_id,
+                                plan_key: Some(key.as_str()),
+                                goal,
+                                chosen: "template",
+                                template_id: Some(template.id),
+                                source: "rule",
+                                offered: &serde_json::to_string(&decision.offered)
+                                    .unwrap_or_default(),
+                                matched: &serde_json::to_string(&decision.matched)
+                                    .unwrap_or_default(),
+                                blocked_by_slots: &serde_json::to_string(
+                                    &decision.blocked_by_slots,
+                                )
+                                .unwrap_or_default(),
+                            },
+                        )
+                        .await;
+                        return Ok((plan, remote_llm::RemoteUsage::default()));
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[supervisor] template {} build failed ({e}) — falling back to the planner",
+                            template.id
+                        );
+                        logged = Some(("plan", None, "fallback", None));
+                    }
+                }
+            }
+            kawai_router::Route::Direct => {
+                // Reserved: a tool-free goal answered in one writer step. The
+                // composer path does not route here yet (Direct skips tool
+                // discovery entirely — see TOOL_FREE_INTENTS), so a Direct
+                // decision is recorded and the planner runs.
+                logged = Some(("direct", None, "rule", None));
+            }
+            kawai_router::Route::Plan => {
+                // Grey band — layer 2 decides below.
+                logged = None;
+                grey_band = true;
+            }
+        }
+
+        // ── Layer 2: LLM re-validation of planner decisions ────────────────
+        //
+        // The keyword gate is a precision instrument — it claims only what
+        // its vocabulary is sure about. Everything else (micron → MU,
+        // phrasings outside the keyword list) lands here, and one small LLM
+        // call decides with real language understanding whether a registered
+        // pipeline should run. Rust still owns execution: the claim must
+        // name a registered template whose ticker the exchange itself lists.
+        // `direct` goals skip this entirely (see the layer-1 arm).
+        if grey_band && decision.route == kawai_router::Route::Plan {
+            if let Some(pool) = remote_pool.as_ref() {
+                match llm_route_resolve(pool, goal, &crate::templates::registry()).await {
+                    Some((template_id, ticker)) => {
+                        if let Some(template) = crate::templates::registry().get(&template_id) {
+                            let member = ticker
+                                .to_uppercase()
+                                .split_whitespace()
+                                .next()
+                                .map(str::to_string);
+                            let listed = member.as_deref().is_some_and(|t| {
+                                universe.as_ref().is_some_and(|u| {
+                                    u.symbols.contains(t)
+                                        // Equity intent resolves ONLY to the
+                                        // tokenized-equity subset — the BANK
+                                        // meme coin is not the bank.
+                                        && (!facts.equity_intent || u.equities.contains(t))
+                                })
+                            });
+                            if listed {
+                                let mut slots = kawai_router::ResolvedSlots::new();
+                                if let Some(t) = member.as_deref() {
+                                    slots.set("ticker", t);
+                                }
+                                slots.set(
+                                    "language",
+                                    &resolve_user_language(language, None).unwrap_or_default(),
+                                );
+                                match (template.build)(&slots) {
+                                    Ok(mut plan) => {
+                                        plan.template = Some(template.id.to_string());
+                                        let key = plan_key(&plan);
+                                        on_progress(SupervisorEvent::PlanningStarted {});
+                                        tracing::info!(
+                                            component = "supervisor",
+                                            template = template.id,
+                                            ticker = member.as_deref().unwrap_or(""),
+                                            "layer-2 LLM resolution routed to template — planner skipped"
+                                        );
+                                        kawai_db::log_route_decision(
+                                            user_id,
+                                            kawai_db::RouteLogEntry {
+                                                session_id,
+                                                plan_key: Some(key.as_str()),
+                                                goal,
+                                                chosen: "template",
+                                                template_id: Some(template.id),
+                                                source: "llm",
+                                                offered: &serde_json::to_string(
+                                                    &decision.offered,
+                                                )
+                                                .unwrap_or_default(),
+                                                matched: &serde_json::to_string(
+                                                    &decision.matched,
+                                                )
+                                                .unwrap_or_default(),
+                                                blocked_by_slots: &serde_json::to_string(
+                                                    &decision.blocked_by_slots,
+                                                )
+                                                .unwrap_or_default(),
+                                            },
+                                        )
+                                        .await;
+                                        return Ok((plan, remote_llm::RemoteUsage::default()));
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "[supervisor] layer-2 claim {} build failed ({e}) — planner",
+                                            template.id
+                                        );
+                                    }
+                                }
+                            } else {
+                                eprintln!(
+                                    "[supervisor] layer-2 claim {} ticker {ticker:?} is not listed — planner",
+                                    template.id
+                                );
+                            }
+                        } else {
+                            eprintln!(
+                                "[supervisor] layer-2 claimed unknown template {template_id:?} — planner"
+                            );
+                        }
+                    }
+                    None => {
+                        // The resolver saw the goal and said "no pipeline" —
+                        // that is a decision, logged as one.
+                        grey_band = false;
+                        logged = Some(("plan", None, "llm", None));
+                    }
+                }
+            }
+        }
+
+        if let Some((chosen, template_id, source, plan_key)) = logged {
+            kawai_db::log_route_decision(
+                user_id,
+                kawai_db::RouteLogEntry {
+                    session_id,
+                    plan_key: plan_key.as_deref(),
+                    goal,
+                    chosen,
+                    template_id,
+                    source,
+                    offered: &serde_json::to_string(&decision.offered).unwrap_or_default(),
+                    matched: &serde_json::to_string(&decision.matched).unwrap_or_default(),
+                    blocked_by_slots: &serde_json::to_string(&decision.blocked_by_slots)
+                        .unwrap_or_default(),
+                },
+            )
+            .await;
         }
     }
 
@@ -1960,6 +2204,221 @@ pub async fn build_supervisor_registry(
         .ok_or_else(|| SupervisorError::NoToolset(agent_id.to_string()))?;
 
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
+}
+
+/// Which execution registry a plan needs. Template-stamped plans dispatch
+/// their pipeline's own stage tools (`desk_role` et al.), which the merged
+/// supervisor catalog deliberately does NOT carry — a template plan against
+/// the supervisor registry dies at `validate_plan` with `UnknownTool` before
+/// the first wave even starts.
+///
+/// Pure and exhaustive-by-default: an unknown template id degrades to `Auto`
+/// (the plan validation then reports the unknown tool, which is the honest
+/// failure) — it can only happen if a writer stamps an id that is not in
+/// [`crate::templates::TEMPLATES`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlanRegistryKind {
+    /// A registered fixed pipeline — its own stage tool rides the registry.
+    Template,
+    /// The merged supervisor catalog (planner-authored plans, and templates
+    /// whose tools live in the merged catalog).
+    Auto,
+}
+
+pub fn registry_kind_for_plan(plan: &kawai_router::TaskPlan) -> PlanRegistryKind {
+    match plan.template.as_deref() {
+        Some(id) if crate::templates::TEMPLATES.iter().any(|t| t.id == id) => {
+            // Pipeline dispatch tools live outside the merged catalog today
+            // (desk_role). A future template whose tools DO ride the merged
+            // catalog would map to `Auto` here.
+            match id {
+                "desk" => PlanRegistryKind::Template,
+                _ => PlanRegistryKind::Auto,
+            }
+        }
+        _ => PlanRegistryKind::Auto,
+    }
+}
+
+/// The registry a plan executes against — the ONE selection point both
+/// transports share (`execute_supervisor_plan` command + Axum handler). The
+/// plan carries the hint (`TaskPlan.template`); the LLM planner cannot set
+/// it, so template registries are unreachable from planner-authored plans.
+pub async fn build_registry_for_plan(
+    user_id: &str,
+    session_id: i64,
+    plan: &kawai_router::TaskPlan,
+) -> Result<ToolRegistry, SupervisorError> {
+    match registry_kind_for_plan(plan) {
+        PlanRegistryKind::Template => {
+            build_desk_registry(user_id, session_id, &plan_key(plan)).await
+        }
+        PlanRegistryKind::Auto => {
+            build_supervisor_registry(user_id, session_id, AUTO_AGENT_ID, &plan_key(plan)).await
+        }
+    }
+}
+
+// ── Template symbol-universe eligibility (PLAN-template-routing.md) ─────────
+
+type UniverseCell = std::sync::RwLock<Option<(std::time::Instant, kawai_router::MarketUniverse)>>;
+
+#[cfg(feature = "binance")]
+use binance::UsdmListing;
+#[cfg(not(feature = "binance"))]
+#[derive(Clone)]
+struct UsdmListing {
+    symbol: String,
+    base: Option<String>,
+    equity: bool,
+}
+
+/// The market's authoritative symbol set for market-bound templates, cached
+/// process-wide with a daily refresh (listings change rarely; a stale set
+/// only mis-prices a brand-new listing for a day). The FETCH is the source —
+/// `binance::usdm_symbols`, the exchange's own listing, zero curation.
+/// Unavailable (offline/fetch failure/no binance feature) ⇒ the cached set is
+/// empty ⇒ market-bound templates fail CLOSED (never claim; the planner is
+/// the always-valid fallback). The cache/seed are unconditional so the
+/// routing tests run on every feature set.
+static USDM_UNIVERSE: std::sync::LazyLock<UniverseCell> =
+    std::sync::LazyLock::new(|| std::sync::RwLock::new(None));
+
+const UNIVERSE_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+async fn usdm_universe_cached() -> Option<kawai_router::MarketUniverse> {
+    let lock = &*USDM_UNIVERSE;
+    {
+        let guard = lock.read().expect("universe lock");
+        if let Some((fetched, set)) = guard.as_ref() {
+            if fetched.elapsed() < UNIVERSE_TTL {
+                return Some(set.clone());
+            }
+        }
+    }
+    #[cfg(feature = "binance")]
+    let fresh = binance::usdm_symbols().await.ok()?;
+    #[cfg(not(feature = "binance"))]
+    // No market module ⇒ no instruments ⇒ an empty listing that can never
+    // match (fail-closed), not `None`-forever — same semantics, testable.
+    let fresh: Vec<UsdmListing> = Vec::new();
+    // Two views of one listing: membership (every symbol + base) and the
+    // EQUITY subset (tokenized stocks) — equity-intent goals must resolve
+    // there, so `analisis saham Bank BRI` cannot land on the BANK meme coin.
+    let mut u = kawai_router::MarketUniverse::default();
+    for l in fresh {
+        u.symbols.insert(l.symbol.clone());
+        if let Some(base) = &l.base {
+            u.symbols.insert(base.clone());
+        }
+        if l.equity {
+            u.equities.insert(l.symbol.clone());
+            if let Some(base) = &l.base {
+                u.equities.insert(base.clone());
+            }
+        }
+    }
+    let mut guard = lock.write().expect("universe lock");
+    *guard = Some((std::time::Instant::now(), u.clone()));
+    Some(u)
+}
+
+/// Layer-2 route resolver (PLAN-template-routing.md §2.5): one small
+/// completion that decides — with real language understanding — whether a
+/// grey-band goal matches a registered pipeline, resolving company names to
+/// exchange symbols on the way ("micron" → MU). Output is FORCED JSON and
+/// capped: this call must never approach a planner round's cost.
+///
+/// Returns `(template_id, ticker)` or `None` ("no pipeline") / unparseable
+/// (treated the same — planner). Validation is NOT this function's job: the
+/// caller checks registration, universe membership, and build.
+const ROUTER_RESOLVER_PROMPT: &str = "\
+You are a task router. Decide whether the user's goal requests one of the \
+registered pipelines, and if so resolve its subject to an exchange symbol.\n\
+Respond with ONLY minified JSON, no prose, no markdown:\n\
+{\"template\":\"<pipeline-id or null>\",\"ticker\":\"<SYMBOL or null>\"}\n\
+Rules:\n\
+- Resolve company/product names to their exchange ticker (micron → MU, \
+nvidia → NVDA, bitcoin → BTC). Uppercase, no exchange suffix.\n\
+- ticker must be null when template is null.\n\
+- A question, chat, translation, or anything that is not a request to run a \
+research/analysis pipeline ⇒ {\"template\":null,\"ticker\":null}.";
+
+async fn llm_route_resolve(
+    pool: &remote_llm::RemoteLlm,
+    goal: &str,
+    registry: &kawai_router::TemplateRegistry<'_>,
+) -> Option<(String, String)> {
+    let mut menu = registry.menu_lines();
+    menu.push_str(
+        "\nEach pipeline's subject is an exchange symbol; the market is \
+         Binance USDⓈ-M futures (crypto and tokenized stocks/ETFs).",
+    );
+    let owned: remote_llm::RemoteLlm = pool.clone();
+    let resolver = owned
+        .with_output_cap(160)
+        .with_agent("route-resolver")
+        .with_thinking_disabled();
+    let mut stream = resolver.stream(ROUTER_RESOLVER_PROMPT, goal, &menu).await.ok()?;
+    let mut text = String::new();
+    while let Some(ev) = stream.next().await {
+        let Ok(ev) = ev else { break };
+        match ev {
+            remote_llm::RemoteEvent::Token { text: t } => {
+                text.push_str(&t);
+                if text.len() > 400 {
+                    break; // bounded: this call must stay small
+                }
+            }
+            remote_llm::RemoteEvent::Done { .. } => break,
+            _ => {}
+        }
+    }
+    parse_router_claim(&text)
+}
+
+/// Parse the resolver's output into a `(template_id, ticker)` claim.
+/// Pure — unit-tested. Accepts fenced JSON and prose-wrapped JSON via the
+/// shared extractor; anything else is `None` (planner).
+fn parse_router_claim(text: &str) -> Option<(String, String)> {
+    let json = kawai_router::extract_json_slice(text).ok()?;
+    #[derive(serde::Deserialize)]
+    struct Claim {
+        template: Option<String>,
+        ticker: Option<String>,
+    }
+    let claim: Claim = serde_json::from_slice(json.as_bytes()).ok()?;
+    let template = claim.template?.trim().to_string();
+    if template.is_empty() {
+        return None;
+    }
+    let ticker = claim.ticker.unwrap_or_default().trim().to_uppercase();
+    if ticker.is_empty() {
+        return None;
+    }
+    Some((template, ticker))
+}
+
+/// Read-only view of the cached universe — the eval harness routes goals
+/// through the SAME eligibility data the runtime gate uses.
+pub fn universe_for_eval() -> Option<kawai_router::MarketUniverse> {
+    let lock = &*USDM_UNIVERSE;
+    let guard = lock.read().expect("universe lock");
+    guard.as_ref().map(|(_, set)| set.clone())
+}
+
+/// Test/eval seam: seed the symbol universe without network. route_eval and
+/// the routing-gate test seed a small representative set so the eligibility
+/// decision is deterministic offline.
+pub fn seed_usdm_universe_for_test(symbols: &[&str], equities: &[&str]) {
+    let lock = &*USDM_UNIVERSE;
+    let equities: std::collections::HashSet<String> =
+        equities.iter().map(|s| s.to_uppercase()).collect();
+    let mut set: std::collections::HashSet<String> =
+        symbols.iter().map(|s| s.to_uppercase()).collect();
+    set.extend(equities.iter().cloned());
+    *lock.write().expect("universe lock") =
+        Some((std::time::Instant::now(), kawai_router::MarketUniverse { symbols: set, equities }));
 }
 
 /// The Stock Research execution registry: the merged auto catalog narrowed
@@ -4653,6 +5112,31 @@ mod tests {
     use super::*;
     use kawai_router::{StepStatus, TaskStep};
 
+    /// Layer-2 resolver output parsing (PLAN-template-routing.md §2.5): the
+    /// claim must survive fenced/prose-wrapped JSON and case slop, and must
+    /// be REJECTED when the template is absent — an unparsable or hedging
+    /// answer means the planner, never a guessed pipeline.
+    #[test]
+    fn parse_router_claim_accepts_json_and_rejects_hedges() {
+        for text in [
+            r#"{"template":"desk","ticker":"MU"}"#,
+            "```json\n{\"template\": \"desk\", \"ticker\": \"mu\"}\n```",
+            "Sure — this is a market research request.\n{\"template\":\"desk\",\"ticker\":\"MU\"}",
+        ] {
+            assert_eq!(
+                parse_router_claim(text),
+                Some(("desk".into(), "MU".into())),
+                "input: {text}"
+            );
+        }
+        // No pipeline / hedging / garbage → None (planner).
+        assert_eq!(parse_router_claim(r#"{"template":null,"ticker":null}"#), None);
+        assert_eq!(parse_router_claim(r#"{"template":"","ticker":"MU"}"#), None);
+        assert_eq!(parse_router_claim(r#"{"template":"desk"}"#), None, "ticker missing");
+        assert_eq!(parse_router_claim("bukan json"), None);
+        assert_eq!(parse_router_claim(""), None);
+    }
+
     /// Regression for the 1-of-5 deliverable bug: a fat JSON array
     /// (5 Gmail-sized messages) must compact to whole elements with an
     /// omission marker — never a mid-element cut that leaves the writer
@@ -4734,7 +5218,8 @@ mod tests {
             ],
             final_writer: None,
             summary: None,
-        };
+            template: None,
+};
         let (legacy, collisions) = audit_dataflow(&plan);
         assert_eq!(legacy, 1, "one legacy ref");
         assert_eq!(collisions, 1, "one collision");
@@ -4752,7 +5237,8 @@ mod tests {
             }],
             final_writer: None,
             summary: None,
-        };
+            template: None,
+};
         let failed = |error: &str| kawai_router::StepResult {
             step_id: "s1".into(),
             agent_id: "t".into(),
@@ -4802,7 +5288,8 @@ mod tests {
             ],
             final_writer: None,
             summary: None,
-        };
+            template: None,
+};
         let result = kawai_router::ExecutionResult { results: vec![] };
         let mut contracts = HashMap::new();
         contracts.insert("office_list_files".to_string(), vec!["files".to_string()]);
@@ -4991,7 +5478,8 @@ mod tests {
             steps: vec![step],
             final_writer: None,
             summary: None,
-        };
+            template: None,
+};
 
         // Read-only grep authored WITHOUT the flag → stays prompt-free…
         let mut plan = mk_plan(mk_step("s1", "grep", false));
@@ -5032,7 +5520,8 @@ mod tests {
             ],
             final_writer: None,
             summary: None,
-        };
+            template: None,
+};
         // s2 failed; s3 depends on s2 → both repairable. s1 (root) and s4
         // (depends only on s1) are frozen.
         let mut repairable = std::collections::HashSet::new();
@@ -5051,7 +5540,8 @@ mod tests {
             ],
             final_writer: None,
             summary: None,
-        };
+            template: None,
+};
 
         let restored = restore_frozen_steps(&mut revised, &original, &repairable);
         assert_eq!(restored, vec!["s1".to_string(), "s4".to_string()]);
@@ -5092,7 +5582,8 @@ mod tests {
             steps: vec![confirm_step("s1")],
             final_writer: None,
             summary: None,
-        };
+            template: None,
+};
         let stream = execute_plan_stream_with_cancel(
             plan,
             echo_registry(),
@@ -5173,7 +5664,8 @@ mod tests {
             steps: vec![confirm_step("s1")],
             final_writer: None,
             summary: None,
-        };
+            template: None,
+};
         let stream = execute_plan_stream_with_cancel(
             plan,
             echo_registry(),
@@ -5239,7 +5731,8 @@ mod tests {
             }],
             final_writer: None,
             summary: None,
-        };
+            template: None,
+};
         let stream = execute_plan_stream_with_cancel(
             plan,
             echo_registry(),
@@ -5268,6 +5761,70 @@ mod tests {
         assert!(kinds.contains(&"stepCompleted"), "{kinds:?}");
         assert!(kinds.contains(&"planCompleted"), "{kinds:?}");
         assert!(!kinds.contains(&"other"), "{kinds:?}");
+    }
+
+    /// Fase 5 runtime gate (PLAN-template-routing.md): a market goal claimed
+    /// by the desk template resolves to a Rust-authored plan with ZERO
+    /// planner involvement — `usage == 0` proves the short-circuit fired
+    /// before any remote round (this env compiles provider keys in, so an
+    /// actual planner run would carry real tokens) — and the decision lands
+    /// in `route_log`. Deliberately NOT tested here: the fall-through to the
+    /// planner (it would make a live cloud call in a unit test) — that
+    /// behaviour is pinned offline in `route.rs`'s unit tests.
+    #[tokio::test]
+    async fn template_gate_routes_without_planner_and_logs_the_decision() {
+        let dir = tempfile::tempdir().unwrap();
+        kawai_db::set_data_root(dir.path());
+        std::mem::forget(dir);
+        let user = format!("route-gate-{}-{}", std::process::id(), kawai_db::unix_now());
+        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
+        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
+            .await
+            .expect("supervisor registry");
+
+        // Eligibility needs a market listing — seeded offline (NVDA in,
+        // the BRI/BBRI black-hole class out).
+        seed_usdm_universe_for_test(&["NVDA", "BTC", "ETH", "EURUSD", "BANK"], &["NVDA"]);
+
+        let (plan, usage) =
+            plan_task(&user, session, "analisis teknikal saham NVDA", None, Some("id-ID"), &registry, |_| {})
+                .await
+                .expect("template gate must resolve the plan");
+        assert_eq!(plan.template.as_deref(), Some("desk"));
+        assert_eq!(usage.input_tokens, 0, "the planner must not run");
+        assert_eq!(usage.output_tokens, 0, "the planner must not run");
+        assert!(!plan.steps.is_empty());
+        assert!(
+            plan.steps.iter().all(|s| s.dispatch_key() == "desk_role"),
+            "a routed desk plan dispatches the desk stage tool"
+        );
+        // The language slot rode the edge locale into every step.
+        assert_eq!(
+            plan.steps[0].arguments["language"], "Bahasa Indonesia",
+            "resolve_user_language must map the locale tag for the writer"
+        );
+
+        // ── The decision is logged with its evidence ───────────────────────
+        let conn = kawai_db::db_connection(&user).await.unwrap();
+        let mut rows = conn
+            .query("SELECT chosen, template_id, source, offered, matched FROM route_log", ())
+            .await
+            .unwrap();
+        let mut decisions: Vec<(String, Option<String>, String, String, String)> = Vec::new();
+        while let Some(row) = rows.next().await.unwrap() {
+            decisions.push((
+                row.get(0).unwrap(),
+                row.get(1).unwrap(),
+                row.get(2).unwrap(),
+                row.get(3).unwrap(),
+                row.get(4).unwrap(),
+            ));
+        }
+        assert_eq!(decisions.len(), 1, "{decisions:?}");
+        let (chosen, template_id, source, offered, matched) = &decisions[0];
+        assert_eq!((chosen.as_str(), template_id.as_deref(), source.as_str()), ("template", Some("desk"), "rule"));
+        assert!(offered.contains("\"desk\""), "menu: {offered}");
+        assert!(matched.contains("teknikal"), "keyword evidence: {matched}");
     }
 }
 
@@ -5549,7 +6106,8 @@ mod indicator_summary_tests {
             ],
             final_writer: None,
             summary: None,
-        };
+            template: None,
+};
         let result = kawai_router::ExecutionResult {
             results: vec![
                 step("page", &long_page),

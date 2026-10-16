@@ -31,7 +31,10 @@ export type ScreenDirection = "long" | "short";
 /** One hit the offer would open: the symbol, the setup that produced it, and
  * how strongly it fired. `last`/`change24hPct`/`score`/`reasons` come
  * straight from the screener step's own output — the offer renders the run's
- * findings, it does not re-derive them.
+ * findings. The one derived number is the Stop (1R) column: folded live by
+ * `binance_screened_stop_preview` (the same policy execution guards with),
+ * because a scan-time snapshot could be hours stale by the time the user
+ * approves.
  *
  * A symbol can hit under SEVERAL screens. Each (symbol, screen) pair is its
  * own row because the side is derived from the screen: a symbol that fired
@@ -249,11 +252,13 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
 /** Read the human-usable numbers out of the engine's entry response: the
  * counts up front and the rows that need attention. A position that filled
  * but ended up WITHOUT its stop is the one outcome that must never be buried
- * in a success count. */
+ * in a success count — and a position with no resting take-profit (the
+ * ladder was requested, no rung could rest) is the next one. */
 export function placementSummary(raw: string): {
   opened: number;
   failed: number;
   unprotected: number;
+  noTp: number;
   note: string;
   failures: { symbol: string; error: string }[];
   naked: { symbol: string; error: string }[];
@@ -282,10 +287,39 @@ export function placementSummary(raw: string): {
     opened,
     failed,
     unprotected: num(o.unprotected) ?? 0,
+    noTp: num(o.noTakeProfit) ?? 0,
     note: str(o.note) ?? "",
     failures: rows("failures"),
     naked: rows("unprotectedPositions"),
   };
+}
+
+/** One row of the pre-approval stop preview (`binance_screened_stop_preview`):
+ * the level the engine's guard policy computes for this (symbol, screen) over
+ * fresh public candles — the identical fold execution runs at order time.
+ * Keyless and read-only. */
+export interface StopPreview {
+  ok: boolean;
+  stopPrice?: number;
+  stopMethod?: string;
+  /** |mark − stop| / mark × 100 — this distance IS 1R at the preset. */
+  stopDistancePct?: number;
+  error?: string;
+}
+
+/** The preview folds stops for at most this many ranked hits — the panel
+ * renders the top of the ranking, and a 400-row preview would hammer public
+ * klines for rows nobody will open. Must stay ≤ the engine's own
+ * `PREVIEW_CAP` (100), which truncates silently. */
+export const PREVIEW_CAP = 50;
+
+/** The (symbol, screen) pairs to preview: the top of the ranking, in rank
+ * order, capped. */
+export function previewTargets(
+  hits: { symbol: string; screen: string }[],
+  cap: number = PREVIEW_CAP,
+): { symbol: string; screen: string }[] {
+  return hits.slice(0, cap).map((h) => ({ symbol: h.symbol, screen: h.screen }));
 }
 
 /** Default position size in USDT, and the per-symbol cap. Sized by the user,
@@ -337,6 +371,13 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState("");
   const [minScore, setMinScore] = useState<number>(0);
+  /** Keyed by `${symbol}|${screen}` — the pre-approval stop fold per hit. */
+  const [previews, setPreviews] = useState<Record<string, StopPreview>>({});
+  const [previewPending, setPreviewPending] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  /** Whether the approval also places the standard-style take-profit ladder.
+   * Default ON: an entry without a target is half a trade. */
+  const [withTp, setWithTp] = useState(true);
   const logIdRef = useRef(0);
   const [log, setLog] = useState<{ id: number; label: string; raw?: string; error?: string }[]>([]);
 
@@ -358,16 +399,49 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
     setArmedKey(null);
     setQuery("");
     setMinScore(0);
+    setPreviews({});
+    setPreviewPending(false);
+    setPreviewFailed(false);
+    setWithTp(true);
     if (ids.length === 0) {
       setReadFailed(true);
       return;
     }
-    void Promise.all(ids.map((id) => fetcher(id, planKey).catch(() => null))).then((results) => {
+    void Promise.all(ids.map((id) => fetcher(id, planKey).catch(() => null))).then(async (results) => {
       if (!alive) return;
       // Every read failed → the run view is broken, which must not read as
       // "the scan found nothing".
-      if (results.every((r) => r == null)) setReadFailed(true);
-      else setOutputs(results);
+      if (results.every((r) => r == null)) {
+        setReadFailed(true);
+        return;
+      }
+      setOutputs(results);
+      // The stop preview rides the same read: once the merged offer exists,
+      // fold the engine's stop policy over fresh public candles for the top
+      // of the ranking — the numbers the user reasons about BEFORE arming an
+      // order. Keyless and read-only; a failure degrades to "—" cells, never
+      // to a broken panel.
+      const parsed = parseScreenerOffer(results);
+      if (parsed == null || parsed.hits.length === 0) return;
+      setPreviewPending(true);
+      try {
+        const out = await call<string>("binance_screened_stop_preview", {
+          picks: previewTargets(parsed.hits),
+          interval: parsed.interval,
+          risk: "standard",
+        });
+        if (!alive) return;
+        const rows = JSON.parse(out) as {
+          previews?: (StopPreview & { symbol: string; screen: string })[];
+        };
+        const map: Record<string, StopPreview> = {};
+        for (const p of rows.previews ?? []) map[`${p.symbol}|${p.screen}`] = p;
+        setPreviews(map);
+      } catch {
+        if (alive) setPreviewFailed(true);
+      } finally {
+        if (alive) setPreviewPending(false);
+      }
     });
     return () => {
       alive = false;
@@ -388,6 +462,54 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
   const allSelected = selected.size === offer.hits.length;
   const noneSelected = selected.size === 0;
   const selectedInView = matching.filter((h) => selected.has(rowKey(h))).length;
+  const previewedKeys = new Set(offer.hits.slice(0, PREVIEW_CAP).map(rowKey));
+
+  /** What one row's Stop (1R) cell shows, in priority order: the folded level
+   * (its distance IS 1R at the preset), the guard refusal execution would
+   * raise, the loading state, or the honest dash — preview unavailable or
+   * beyond the cap is NOT the same as "no stop", so it never borrows that
+   * wording. */
+  const previewCell = (key: string) => {
+    if (!previewedKeys.has(key)) {
+      return (
+        <span
+          className="text-muted-foreground"
+          title={`Preview covers the top ${PREVIEW_CAP} ranked hits`}
+        >
+          —
+        </span>
+      );
+    }
+    if (previewPending) {
+      return <span className="text-muted-foreground">…</span>;
+    }
+    const pv = previews[key];
+    if (pv == null) {
+      return (
+        <span
+          className="text-muted-foreground"
+          title={previewFailed ? "Preview failed — the level still computes at execution" : "No preview for this row"}
+        >
+          —
+        </span>
+      );
+    }
+    if (!pv.ok) {
+      return (
+        <span className="text-warning" title={pv.error ?? "No stop level survived the guards"}>
+          refused
+        </span>
+      );
+    }
+    return (
+      <span
+        className="text-foreground"
+        title={`${pv.stopMethod} stop at ${usd(pv.stopPrice ?? 0)} — execution refolds this level at order time`}
+      >
+        {pv.stopDistancePct?.toFixed(1)}%
+      </span>
+    );
+  };
 
   /** The exposure an approval would commit — floored to the engine's own
    * minimum so the number on screen is never below what the order can be.
@@ -442,6 +564,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
         })),
         interval: offer.interval,
         risk: "standard",
+        takeProfit: withTp,
       });
       const id = ++logIdRef.current;
       setLog((l) => [...l, { id, label, raw: out }]);
@@ -538,7 +661,8 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
       </div>
       <p className="text-muted-foreground text-xs">
         These are this run&rsquo;s own hits. Pick the ones you want, set a size for each, and approve — every position
-        opens with its protective stop already resting. Kawai never opens a position it cannot place a stop for.
+        opens with its protective stop already resting, and with the ladder on its take-profit rungs rest too. Kawai
+        never opens a position it cannot place a stop for.
       </p>
 
       <div className="space-y-1.5">
@@ -576,6 +700,19 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
               {label}
             </button>
           ))}
+          <label
+            className="text-muted-foreground flex cursor-pointer items-center gap-1.5 font-mono text-[11px]"
+            title="Also place the take-profit ladder with each entry (1R/2R partials at the standard style, runner trails on the advisory levels) — levels are engine-computed from the attached stop. A rung that cannot rest is reported, never retried."
+          >
+            <input
+              type="checkbox"
+              checked={withTp}
+              onChange={(e) => setWithTp(e.target.checked)}
+              disabled={busy}
+              className="accent-primary"
+            />
+            Take-profit ladder
+          </label>
           <span className="text-muted-foreground ml-auto font-mono text-[11px] tabular-nums">
             {filtered ? `${matching.length} of ${offer.hits.length}` : `${offer.hits.length} hits`}
           </span>
@@ -607,6 +744,12 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
                 <th className="p-1.5">Symbol</th>
                 <th className="p-1.5">Side</th>
                 <th className="p-1.5">Setup</th>
+                <th
+                  className="p-1.5 text-right"
+                  title="The protective stop the engine's policy folds over fresh candles for this setup — its distance IS 1R. Execution re-folds the level at order time."
+                >
+                  Stop (1R)
+                </th>
                 <th
                   className="p-1.5 text-right"
                   title="How strongly the setup fired, 0–100 — the screener's own conviction score"
@@ -654,6 +797,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
                       {h.direction === "long" ? "long" : "short"}
                     </td>
                     <td className="text-muted-foreground p-1.5">{human(h.screen)}</td>
+                    <td className="p-1.5 text-right">{previewCell(k)}</td>
                     <td className="text-foreground p-1.5 text-right tabular-nums">{Math.round(h.score)}</td>
                     <td className="text-foreground p-1.5 text-right tabular-nums">{usd(h.last)}</td>
                     <td
@@ -756,6 +900,13 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
               nothing opens
             </dd>
           </div>
+          <div className="flex gap-1.5">
+            <dt className="text-foreground shrink-0 font-medium">Take profit</dt>
+            <dd>
+              optional ladder placed with the entry (1R/2R partials, runner trails) — engine-computed from the attached
+              stop; a rung that cannot rest is reported in the result, never retried
+            </dd>
+          </div>
         </dl>
       </div>
 
@@ -822,6 +973,9 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
                   Opened {summary.opened} · failed {summary.failed}
                   {summary.unprotected > 0 && (
                     <span className="text-destructive"> · {summary.unprotected} without a stop</span>
+                  )}
+                  {summary.noTp > 0 && (
+                    <span className="text-warning"> · {summary.noTp} without take-profit</span>
                   )}
                 </div>
                 {summary.note && <p className="text-muted-foreground text-[11px]">{summary.note}</p>}

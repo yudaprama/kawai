@@ -118,13 +118,17 @@ pub async fn binance_auto_tighten_stops(
 /// `AgentTool`: the planner never picks what gets bought. The direction is
 /// derived from the screen that produced each hit (a neutral screen has no
 /// side and is refused), and no entry is placed unless a protective stop
-/// level survives the same guards the audit grades with.
+/// level survives the same guards the audit grades with. `take_profit` also
+/// places the standard-style R-ladder off the just-attached stop — the rungs
+/// run under the batch order budget; a rung that cannot rest is reported in
+/// the result's `noTakeProfit` count, never retried.
 #[cfg(feature = "binance")]
 pub async fn binance_open_screened_positions(
     user_id: &str,
     picks: Vec<ScreenedPick>,
     interval: &str,
     risk: &str,
+    take_profit: bool,
 ) -> Result<String, String> {
     ::binance::trade::open_screened_positions(
         user_id,
@@ -138,6 +142,7 @@ pub async fn binance_open_screened_positions(
             .collect(),
         interval,
         risk,
+        take_profit,
     )
     .await
     .map_err(|e| e.to_string())
@@ -147,6 +152,50 @@ pub async fn binance_open_screened_positions(
 pub async fn binance_open_screened_positions(
     _user_id: &str,
     _picks: Vec<ScreenedPick>,
+    _interval: &str,
+    _risk: &str,
+    _take_profit: bool,
+) -> Result<String, String> {
+    Err("binance feature not enabled (build with --features binance)".into())
+}
+
+/// One (symbol, screen) pair the offer previews BEFORE any approval — no
+/// notional (sizing stays client-side), no credentials (public klines only).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ScreenedPreviewPick {
+    pub symbol: String,
+    /// The setup that produced the hit — the side is derived from it.
+    pub screen: String,
+}
+
+/// The pre-approval stop preview for the screener offer panel: per pick, the
+/// stop level the SAME guard policy computes over fresh public candles, plus
+/// its distance in % (= 1R at the requested preset). Strictly read-only and
+/// keyless — no signed call, no history write, no order.
+#[cfg(feature = "binance")]
+pub async fn binance_screened_stop_preview(
+    picks: Vec<ScreenedPreviewPick>,
+    interval: &str,
+    risk: &str,
+) -> Result<String, String> {
+    ::binance::trade::screened_stop_preview(
+        picks
+            .into_iter()
+            .map(|p| ::binance::trade::PreviewPick {
+                symbol: p.symbol,
+                screen: p.screen,
+            })
+            .collect(),
+        interval,
+        risk,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[cfg(not(feature = "binance"))]
+pub async fn binance_screened_stop_preview(
+    _picks: Vec<ScreenedPreviewPick>,
     _interval: &str,
     _risk: &str,
 ) -> Result<String, String> {

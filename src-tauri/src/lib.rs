@@ -11,6 +11,7 @@ mod keychain;
 pub mod logic;
 #[cfg(feature = "litert")]
 pub mod supervisor;
+pub mod templates;
 
 #[cfg(all(feature = "litert", feature = "desktop"))]
 fn supervisor_pending_state() -> crate::supervisor::PendingConfirmations {
@@ -204,6 +205,7 @@ pub fn run() {
         commands::binance_auto_take_profit_positions,
         commands::binance_auto_tighten_stops,
         commands::binance_open_screened_positions,
+        commands::binance_screened_stop_preview,
         commands::risk_guard_status,
         commands::risk_guard_set,
         commands::codegraph_is_available,

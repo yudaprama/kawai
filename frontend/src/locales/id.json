@@ -292,9 +292,6 @@
   },
   "themePicker": {
     "title": "Warna tema",
-    "description": "Pilih palet, atau tempel link tema tweakcn / shadcn untuk menambah milikmu.",
-    "inputPlaceholder": "https://tweakcn.com/r/themes/… atau zinc",
-    "add": "Tambah",
     "remove": "Hapus tema"
   },
   "generator": {

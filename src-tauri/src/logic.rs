@@ -623,7 +623,8 @@ pub async fn ask_about_step_result(
         }],
         final_writer: Some(crate::supervisor::WRITER_RAW.to_string()),
         summary: None,
-    };
+        template: None,
+};
 
     // 3. Registry: merged supervisor catalog + the explainer tool.
     let toolset = supervisor_toolset_with_explainer(user_id, session_id).await?;

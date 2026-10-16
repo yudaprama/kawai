@@ -292,9 +292,6 @@
   },
   "themePicker": {
     "title": "Color theme",
-    "description": "Pick a palette, or paste a tweakcn / shadcn theme link to add your own.",
-    "inputPlaceholder": "https://tweakcn.com/r/themes/… or zinc",
-    "add": "Add",
     "remove": "Remove theme"
   },
   "generator": {

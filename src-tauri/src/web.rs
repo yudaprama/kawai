@@ -2660,6 +2660,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/binance_auto_tighten_stops", post(binance_auto_tighten_stops_handler))
         // Opens positions — protected like every other order-writing route.
         .route("/api/binance_open_screened_positions", post(binance_open_screened_positions_handler))
+        // Pre-approval stop preview for the offer panel — read-only public
+        // data, auth-gated so it is never an open klines-folding handle.
+        .route("/api/binance_screened_stop_preview", post(binance_screened_stop_preview_handler))
         .route("/api/risk_guard_status", post(risk_guard_status_handler))
         .route("/api/risk_guard_set", post(risk_guard_set_handler))
         .route("/api/codegraph_init", post(codegraph_init_handler));
@@ -2747,6 +2750,9 @@ struct PlanTaskRequest {
     goal: String,
     session_id: i64,
     agent_id: Option<String>,
+    /// Raw device locale tag — template-path output language only.
+    #[serde(default)]
+    language: Option<String>,
 }
 
 /// Authenticated RPC: plan a task against the agent's tool catalog. The
@@ -2785,6 +2791,7 @@ async fn plan_task_handler(
         req.session_id,
         &req.goal,
         Some(&bearer),
+        req.language.as_deref(),
         &registry,
         |event| {
         if let kawai_events::SupervisorEvent::PlanningRound { round, provider, searching } = event {
@@ -2829,15 +2836,10 @@ async fn execute_supervisor_plan_handler(
         .await
         .map_err(|(status, _)| status)?;
 
-    let agent_id = req
-        .agent_id
-        .as_deref()
-        .unwrap_or(crate::agent_registry::OFFICE_AGENT_ID);
-    let tool_registry = crate::supervisor::build_supervisor_registry(
+    let tool_registry = crate::supervisor::build_registry_for_plan(
         &user_id,
         req.session_id,
-        agent_id,
-        &crate::supervisor::plan_key(&req.plan),
+        &req.plan,
     )
     .await
     .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
@@ -3485,6 +3487,9 @@ struct BinanceOpenScreenedRequest {
     picks: Vec<crate::logic::binance_trade::ScreenedPick>,
     interval: Option<String>,
     risk: Option<String>,
+    /// Also place the standard-style take-profit ladder off the just-attached
+    /// stop. Default ON: an entry without a target is half a trade.
+    take_profit: Option<bool>,
 }
 
 async fn binance_open_screened_positions_handler(
@@ -3499,6 +3504,32 @@ async fn binance_open_screened_positions_handler(
     }
     logic::binance_trade::binance_open_screened_positions(
         &user_id,
+        req.picks,
+        req.interval.as_deref().unwrap_or("4h"),
+        req.risk.as_deref().unwrap_or("standard"),
+        req.take_profit.unwrap_or(true),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+/// The pre-approval stop preview for the screener offer panel — keyless
+/// public-data read, but auth-gated like every other desk op so the endpoint
+/// is never an unauthenticated klines-folding handle.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BinanceStopPreviewRequest {
+    picks: Vec<crate::logic::binance_trade::ScreenedPreviewPick>,
+    interval: Option<String>,
+    risk: Option<String>,
+}
+
+async fn binance_screened_stop_preview_handler(
+    Extension(_user_id): Extension<String>,
+    Json(req): Json<BinanceStopPreviewRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::binance_trade::binance_screened_stop_preview(
         req.picks,
         req.interval.as_deref().unwrap_or("4h"),
         req.risk.as_deref().unwrap_or("standard"),

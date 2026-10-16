@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 
 import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { call, callWithEvents, respondSupervisorConfirmation, type ChatMessage } from "@/lib/api";
+import { getLocale } from "@/lib/i18n";
 import { type StreamControl, streamOperation } from "@/lib/stream";
 import type { UIMessage, UIMessagePart } from "@/lib/ai-types";
 import { initialSupervisorState, parseReview, pruneReviewStep, supervisorReducer } from "./plan-reducer";
@@ -13,7 +14,7 @@ import type {
   SupervisorPlanState,
   SupervisorStep,
 } from "./supervisor-types";
-import { hydrateArtifacts, hydrateStep } from "./supervisor-types";
+import { hydrateArtifacts, hydrateStep, planRecordInterrupted } from "./supervisor-types";
 
 // Re-export types so existing import paths (`@/features/chat/hooks/use-supervisor-plan`) keep working.
 export type {
@@ -197,37 +198,56 @@ function buildPlanRecord(
  *  PARTIAL records: appended once at the first write, then updated IN PLACE
  *  per step event — an interrupted run survives as exactly one row instead
  *  of one row per write. TERMINAL records replace the run's partial row, so
- *  a completed run leaves a single history row. */
+ *  a completed run leaves a single history row.
+ *
+ *  The TERMINAL write is the one write whose loss is user-visible forever
+ *  (history then renders a finished run as "interrupted" — observed
+ *  2026-10-15 on both screener runs), so it retries ONCE before giving up.
+ *  A partial-snapshot loss is self-healing (the next step event rewrites the
+ *  row) and is not retried. A lost terminal write is ALSO healed on restore
+ *  — `planRecordInterrupted` reconciles step states — but the retry keeps
+ *  the stored record truthful at the source. */
 function writePlanRecord(sessionId: number, record: PersistedPlan): void {
   const content = sanitizeForIpc(JSON.stringify(record)) ?? JSON.stringify(record);
-  partialWriteChainRef.current = partialWriteChainRef.current
-    .then(async () => {
-      if (record.partial) {
-        if (partialRowRef.current == null) {
-          const row = await call<ChatMessage>("append_chat_message", {
-            sessionId,
-            role: "assistant",
-            content,
-          });
+  const write = (): Promise<void> => {
+    if (record.partial) {
+      if (partialRowRef.current == null) {
+        return call<ChatMessage>("append_chat_message", {
+          sessionId,
+          role: "assistant",
+          content,
+        }).then((row) => {
           partialRowRef.current = typeof row?.id === "number" ? row.id : null;
-        } else {
-          await call("update_chat_message", {
-            sessionId,
-            messageId: partialRowRef.current,
-            content,
-          });
+        });
+      }
+      return call("update_chat_message", {
+        sessionId,
+        messageId: partialRowRef.current,
+        content,
+      }).then(() => {});
+    }
+    const rowId = partialRowRef.current;
+    partialRowRef.current = null;
+    if (rowId != null) {
+      return call("update_chat_message", { sessionId, messageId: rowId, content }).then(() => {});
+    }
+    return call("append_chat_message", { sessionId, role: "assistant", content }).then(() => {});
+  };
+  const terminal = !record.partial;
+  partialWriteChainRef.current = partialWriteChainRef.current
+    .then(write)
+    .catch(async (err) => {
+      if (terminal) {
+        // One retry — the row is the run's permanent history.
+        try {
+          await write();
+          return;
+        } catch (retryErr) {
+          err = retryErr;
         }
-        return;
       }
-      const rowId = partialRowRef.current;
-      partialRowRef.current = null;
-      if (rowId != null) {
-        await call("update_chat_message", { sessionId, messageId: rowId, content });
-      } else {
-        await call("append_chat_message", { sessionId, role: "assistant", content });
-      }
-    })
-    .catch((err) => console.error("[supervisor] plan record persist failed:", err));
+      console.error("[supervisor] plan record persist failed:", err);
+    });
 }
 
 /** Persist the structured plan record (goal + per-step states). Embedded
@@ -612,9 +632,16 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       userGoalRef.current = cleanGoal;
       let plan: unknown;
       try {
-        plan = await callWithEvents<unknown, SupervisorEvent>("plan_task", { goal, sessionId, agentId }, (ev) => {
-          dispatch(ev);
-        });
+        plan = await callWithEvents<unknown, SupervisorEvent>(
+          "plan_task",
+          // `language` feeds ONLY the template router's output-language slot —
+          // a composer-routed fixed pipeline renders in the user's language
+          // exactly like its landing form does. The planner ignores it.
+          { goal, sessionId, agentId, language: getLocale() },
+          (ev) => {
+            dispatch(ev);
+          },
+        );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         patch({ status: "failed", error: message, planning: null });
@@ -705,21 +732,59 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
    *  record's own planKey, or falls back to the session-scope step_output
    *  read for records without one. No-op mid-run. */
   const restorePersisted = useCallback(
-    (record: PersistedPlanRecord) => {
+    (record: PersistedPlanRecord, sessionId?: number) => {
       if (streamCtrl.current) return;
       // Hydrate through the shared contract — same task names, same
       // dependsOn-derived phases, non-terminal states stay pending, so a
       // restored rail matches the live-run rail field for field.
       const steps = (record.steps ?? []).map(hydrateStep);
+      // A partial record with every step completed is a FINISHED run whose
+      // terminal write was lost — restore it completed, not failed
+      // (planRecordInterrupted carries the evidence rule).
+      const interrupted = planRecordInterrupted(record.steps, record.partial);
       patch({
-        status: record.error || record.partial ? "failed" : "completed",
+        status: record.error || interrupted ? "failed" : "completed",
         goal: record.goal ?? null,
         steps,
         finalOutput: record.output ?? null,
         artifacts: hydrateArtifacts(record.artifacts),
-        error: record.error ?? (record.partial ? "Run interrupted before completion." : null),
+        error: record.error ?? (interrupted ? "Run interrupted before completion." : null),
         planCompletedAt: Date.now(),
       });
+      // The same lost write also empties the CANVAS: the deliverable body is
+      // the record's `output`, and the offer panels render fine beside an
+      // empty deliverable because they read supervisor_step_results
+      // directly. Heal it the same way — the writer's full body is still
+      // stored under the run's planKey. Fills only a restored, still-empty
+      // deliverable; a live run (stream in flight) is rejected above and a
+      // non-completed status never matches the guard below.
+      const deliverableDone = (record.steps ?? []).some(
+        (s) => s.id === "__deliverable" && s.state === "completed",
+      );
+      if (
+        sessionId == null ||
+        record.planKey == null ||
+        (record.output ?? "").trim() !== "" ||
+        record.error != null ||
+        !deliverableDone
+      ) {
+        return;
+      }
+      const planKey: string = record.planKey;
+      void call<string>("supervisor_step_output", {
+        sessionId,
+        planKey,
+        stepId: "__deliverable",
+      })
+        .then((body) => {
+          if (!body?.trim()) return;
+          setState((prev) =>
+            prev.status === "completed" && prev.finalOutput == null
+              ? { ...prev, finalOutput: body }
+              : prev,
+          );
+        })
+        .catch((err) => console.error("[supervisor] deliverable body restore:", err));
     },
     [patch],
   );
