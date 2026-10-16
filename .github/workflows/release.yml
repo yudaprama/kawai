@@ -44,27 +44,77 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       # Recursion guard: the bot lands its bump commit with a PAT, which DOES
-      # trigger `ci` again — and a green ci re-enters THIS workflow. Skipping
-      # on the bump commit's own subject breaks the loop. (workflow_run has no
+      # trigger `ci` again — and a green ci re-enters THIS workflow. (workflow_run has no
       # head_commit payload, so the subject is read from the checked-out
       # commit; the job-level gate above can't do this.)
+      # On a bump commit the run is either the loop terminator (the release
+      # for that version is already published — skip) or the ONE automatic
+      # retry for a failed release run (the release is still a draft — resume
+      # it: builds re-run against the tagged commit, tauri-action re-attaches
+      # assets into the same draft, publish flips it). The resumed run makes
+      # no commits, so no further release runs can follow — the retry chain
+      # ends here regardless of its outcome.
       - name: Recursion guard (release-bot bump commit)
         id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           MSG="$(git log -1 --format=%s)"
-          if [[ "$MSG" == "chore(release):"* ]]; then
-            echo "Release-bot bump commit — nothing to release."
-            echo "skipped=true" >> "$GITHUB_OUTPUT"
-          else
+          if [[ "$MSG" != "chore(release):"* ]]; then
             echo "skipped=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          VER="${MSG##*v}"
+          if [[ ! "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Bump commit subject not parseable ('$MSG') — skipping."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          DRAFT="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VER" --jq .draft 2>/dev/null || echo missing)"
+          case "$DRAFT" in
+            false)
+              echo "v$VER already published — loop terminator, nothing to do."
+              echo "skipped=true" >> "$GITHUB_OUTPUT"
+              ;;
+            true)
+              echo "v$VER is still a draft (its release run failed) — resuming."
+              echo "resume_version=$VER" >> "$GITHUB_OUTPUT"
+              echo "skipped=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "No release for v$VER (tag likely never claimed) — skipping."
+              echo "skipped=true" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
 
       - name: Bump patch version
         id: bump
         if: steps.guard.outputs.skipped == 'false'
         run: |
           set -euo pipefail
+          # ── Resume path ── the guard detected a still-draft release for the
+          # version this bump commit introduced (its release run failed).
+          # Re-run the builds at the EXISTING tag and republish — no new
+          # commit, no new tag. The concurrency group serializes this against
+          # the failed run, so there is no live race.
+          if [ -n "${{ steps.guard.outputs.resume_version }}" ]; then
+            VER="${{ steps.guard.outputs.resume_version }}"
+            if ! git ls-remote --exit-code --tags origin "v$VER" >/dev/null 2>&1; then
+              echo "Tag v$VER vanished — cannot resume."
+              echo "skipped=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            SHA=$(git ls-remote origin "refs/tags/v$VER" "refs/tags/v$VER^{}" | tail -n1 | cut -f1)
+            echo "Resuming v$VER at ${SHA:0:12} — rebuilding, then publishing the draft."
+            {
+              echo "version=$VER"
+              echo "sha=$SHA"
+              echo "skipped=false"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Version lives in src-tauri/tauri.conf.json; Cargo.toml picks it up
           # from there at build time (tauri reads the conf, not Cargo.toml —
           # keep Cargo.toml's 0.1.0 untouched).
@@ -555,4 +605,15 @@ jobs:
           # No checkout in this job — gh discovers the repo via git remote by
           # default and dies with "not a git repository". GH_REPO skips that.
           GH_REPO: ${{ github.repository }}
-        run: gh release edit "v${{ needs.bump.outputs.version }}" --draft=false --latest
+        run: |
+          # Transient gh/API failures get 3 attempts before the release run
+          # goes red — a red run here still self-heals via the guard's resume
+          # path, but a 2-minute retry beats a 1-2 hour rebuild.
+          for ATTEMPT in 1 2 3; do
+            if gh release edit "v${{ needs.bump.outputs.version }}" --draft=false --latest; then
+              exit 0
+            fi
+            echo "Attempt $ATTEMPT failed — retrying in 60s."
+            sleep 60
+          done
+          exit 1

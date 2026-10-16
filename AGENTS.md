@@ -87,8 +87,11 @@ bun run bundle:litert
 # the macOS .app (tauri-action, features litert, bazel-cached) and the
 # kawai-web binary into a draft GitHub release. A final `publish` job (needs:
 # all build jobs) flips the draft to published + latest once every platform
-# build is green — a failed platform build leaves the draft for manual
-# completion. Needs RELEASE_TOKEN (PAT with
+# build is green (3 retry attempts for transient gh/API failures). Failures
+# self-heal: the bot's own `chore(release): vX` ci re-run re-enters release;
+# the guard skips only if vX is already published, and otherwise RESUMES the
+# draft (rebuild missing assets, republish) — exactly one automatic retry.
+# Needs RELEASE_TOKEN (PAT with
 # contents:write) as a repo secret so the bump push doesn't trigger recursive
 # runs (GITHUB_TOKEN pushes create no push event — intentional). The same PAT
 # authenticates ALL github.com git traffic in the build jobs (insteadOf rewrite)
