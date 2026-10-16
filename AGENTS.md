@@ -199,6 +199,7 @@ Docs describe the **current state only**. History lives in git log, not in the r
 - **Same-commit cleanup.** The change that deletes/replaces a component also removes its mentions everywhere: AGENTS.md (incl. the layout tree + Roadmap), `ARCHITECTURE.md`, `PLAN-*.md`, script/workflow comments, config samples. Before committing, `grep -rn "<thing>" AGENTS.md ARCHITECTURE.md PLAN-*.md scripts/ .github/` must come back clean.
 - **Roadmap ✅ entries collapse.** Once an item ships, its entry states the current architecture in one block — drop sub-item history and delete superseded tiers (fold any surviving fact into the successor entry).
 - **"legacy" is allowed only while the code still supports it** (e.g. the `KAWAI_DB_DIR` fallback) — otherwise it is stale content and goes.
+- **Every credential is documented, never remembered.** Adding a secret (env var with a key/password/token, signing key, service-account key, CI secret) requires a row in [`../CREDENTIALS.md`](../CREDENTIALS.md) **in the same commit** — what it is, where the value lives, its fingerprint/ID, who consumes it, rotation path, blast radius if leaked. Values never go in that file (it is git-tracked); only locations and fingerprints. `kawai/.env` holds the local values, the GitHub repo secrets are the CI copy, and both are write-only from the CLI — a credential you cannot reproduce elsewhere is one you will eventually lose.
 - **Code comments follow the same rule**: describe what the code does, never what it used to do.
 
 ## Troubleshooting
