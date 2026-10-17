@@ -42,7 +42,7 @@ per-tool patch.
 # ADMIN token required (KAWAI_TURSO_WRITE_TOKEN in .env / 1Password).
 # Clients cannot write: the shared catalog's client token carries
 # perm=[all tables: data_read] and every write is rejected server-side.
-KAWAI_TURSO_DB_URL='libsql://kawai-tool-catalog-yudapramad.aws-ap-southeast-2.turso.io' \
+KAWAI_TURSO_DB_URL='libsql://libsql://kawai-tool-catalog-yudapramad.aws-ap-south-1.turso.io' \
 KAWAI_TURSO_AUTH_TOKEN="$KAWAI_TURSO_WRITE_TOKEN" \
 cargo run --release --manifest-path src-tauri/Cargo.toml \
   --example seed_tool_catalog --features litert,binance,monad -- --prune

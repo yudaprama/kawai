@@ -19,7 +19,7 @@
 //!                             include MUST be on here, or its tools silently
 //!                             drop out of the catalog)
 //!   KAWAI_TURSO_DB_URL       (from .env; the shared catalog —
-//!                             libsql://kawai-tool-catalog-yudapramad.aws-ap-southeast-2.turso.io;
+//!                             libsql://libsql://kawai-tool-catalog-yudapramad.aws-ap-south-1.turso.io;
 //!                             env overrides the baked constants)
 //!   KAWAI_TURSO_WRITE_TOKEN  (legacy name) — the ADMIN token. The shared
 //!                             catalog is read-only for every client: their

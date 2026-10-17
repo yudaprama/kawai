@@ -66,7 +66,7 @@ start_one() {
     echo "[$db] sqld started (pid $(cat "$DATA_DIR/sqld.pid")) on $HTTP_ADDR"
     case "$db" in
       squawk)      echo "[$db] schema is provisioned by kawai itself on first use (SquawkStore::ensure_schema)" ;;
-      toolcatalog) echo "[$db] dev-only instance. The catalog everyone reads is hosted on Turso; seed it with KAWAI_TURSO_DB_URL=libsql://kawai-tool-catalog-yudapramad.aws-ap-southeast-2.turso.io KAWAI_TURSO_AUTH_TOKEN=\$KAWAI_TURSO_WRITE_TOKEN cargo run --manifest-path src-tauri/Cargo.toml --example seed_tool_catalog --features litert,binance,monad -- --prune" ;;
+      toolcatalog) echo "[$db] dev-only instance. The catalog everyone reads is hosted on Turso; seed it with KAWAI_TURSO_DB_URL=libsql://libsql://kawai-tool-catalog-yudapramad.aws-ap-south-1.turso.io KAWAI_TURSO_AUTH_TOKEN=\$KAWAI_TURSO_WRITE_TOKEN cargo run --manifest-path src-tauri/Cargo.toml --example seed_tool_catalog --features litert,binance,monad -- --prune" ;;
     esac
   else
     echo "[$db] sqld failed to start — see $DATA_DIR/sqld.log" >&2

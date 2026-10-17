@@ -500,7 +500,7 @@ Full inventory: `grep -rhoE 'const NAME: &'"'"'static str = "[a-z_0-9]+"' crates
   execution. Design + benchmark: `PLAN-planner-search-loop.md`.
 - Credentials: `KAWAI_TURSO_DB_URL` / `KAWAI_TURSO_AUTH_TOKEN` (nama lama, tetap dipakai)
   → baked constants dari `kawai-vault/constants` bila env kosong. DB:
-  `libsql://kawai-tool-catalog-yudapramad.aws-ap-southeast-2.turso.io`.
+  `libsql://libsql://kawai-tool-catalog-yudapramad.aws-ap-south-1.turso.io`.
 - **Akses**: client (semua device) memakai token dengan `perm=[all: data_read]` — enforced
   server-side (`SQLITE_AUTH` untuk setiap write). Hanya token **admin**
   (`KAWAI_TURSO_WRITE_TOKEN`, tidak pernah di-bake) yang boleh seed/prune. Token read-only
