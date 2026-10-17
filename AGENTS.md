@@ -131,8 +131,12 @@ bun run bundle:litert
 # Android release (.github/workflows/release-android.yml) — a SEPARATE
 # workflow from release.yml on purpose: mobile and desktop have independent
 # lifecycles, and an Android failure must never block or fail the desktop
-# release. Trigger = `release: published` (so mobile always ships the exact
-# tag desktop shipped) + workflow_dispatch(tag). Builds a signed AAB +
+# release. Trigger = `workflow_run` on release.yml completing successfully —
+# NOT `release: published`, because release.yml's publish job flips the draft
+# with GITHUB_TOKEN and events from GITHUB_TOKEN never trigger workflows. The
+# job then matches the published tag whose commit equals that run's head SHA,
+# so mobile always ships exactly what desktop shipped. Plus
+# workflow_dispatch(tag) for a re-run. Builds a signed AAB +
 # universal APK for aarch64 + armeabi-v7a with the `desktop` cargo feature
 # ONLY (no litert/tts/binance — see the feature note at the top of the
 # workflow), attaches the APK to the GitHub release, and uploads the AAB to

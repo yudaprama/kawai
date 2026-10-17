@@ -26,10 +26,18 @@ name: release-android
 on:
   release:
     types: [published]
+  # `release: published` alone is NOT enough: release.yml's publish job flips
+  # the draft with GITHUB_TOKEN, and events created by GITHUB_TOKEN never
+  # trigger workflows (the anti-recursion rule). workflow_run is the trigger
+  # that actually fires; `release` stays for releases published by anything
+  # else (a human in the UI, another tool).
+  workflow_run:
+    workflows: [release]
+    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build (e.g. v0.3.6). Defaults to the latest release.'
+        description: 'Tag to build (e.g. v0.3.9). Defaults to the latest published release.'
         required: false
         type: string
 
@@ -44,6 +52,10 @@ concurrency:
 
 jobs:
   build-android:
+    # A failed/cancelled desktop release published nothing — there is no
+    # tag to ship. (The Resolve tag step matches the tag to that run's
+    # commit; a job-level `if` cannot read step outputs.)
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -52,22 +64,43 @@ jobs:
         env:
           EVENT_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ inputs.tag }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          GH_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          TAG="${EVENT_TAG:-${INPUT_TAG:-}}"
-          if [ -z "$TAG" ]; then
-            TAG="$(gh release view --json tagName --jq .tagName)"
+          TAG=""
+          if [ -n "${INPUT_TAG:-}" ]; then
+            TAG="$INPUT_TAG"
+          elif [ -n "${EVENT_TAG:-}" ]; then
+            TAG="$EVENT_TAG"
+          elif [ -n "${RUN_SHA:-}" ]; then
+            # Desktop release just finished: build the release whose tag
+            # points at that run's commit, so mobile always ships exactly
+            # what desktop shipped — not merely "whatever is newest".
+            while read -r TAGNAME; do
+              [ -n "$TAGNAME" ] || continue
+              SHA="$(git ls-remote "https://github.com/$GH_REPOSITORY" "refs/tags/$TAGNAME" "refs/tags/$TAGNAME^{}" \
+                     | tail -n1 | cut -f1)"
+              if [ "$SHA" = "$RUN_SHA" ]; then
+                TAG="$TAGNAME"
+                break
+              fi
+            done < <(gh release list --limit 20 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName')
           fi
-          # versionName is what users see; Play also wants it to increase
-          # within a track — the tag's semver does, the versionCode below
-          # carries the strictly-monotonic part.
+          if [ -z "$TAG" ]; then
+            echo "No published release matches the desktop run's commit — refusing to guess." >&2
+            exit 1
+          fi
+          # versionName is what users see; the versionCode below carries the
+          # strictly-monotonic part Play requires.
           VERSION="${TAG#v}"
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Tag '$TAG' is not vMAJOR.MINOR.PATCH — cannot set versionName." >&2
             exit 1
           fi
+          echo "Building Android for $TAG (versionName $VERSION)."
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -89,7 +122,9 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           # compileSdk/targetSdk 37 + NDK 28 match src-tauri/gen/android.
-          packages: 'platforms;android-37;build-tools;37.0.0;ndk;28.0.13004158'
+          # API 37's platform package is 'android-37.0' (minor-versioned naming);
+          # 'platforms;android-37' does not exist and makes setup-android fail.
+          packages: 'platforms;android-37.0;build-tools;37.0.0;ndk;28.0.13004158'
 
       - uses: dtolnay/rust-toolchain@stable
         with:
