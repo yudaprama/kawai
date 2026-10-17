@@ -47,6 +47,27 @@ The backend also ships as a standalone web server (`kawai-web` crate, Axum, inde
 
 What happens when a user sends a prompt. The Supervisor (`kawai-router`) is the **sole desktop execution path**: every plan is executed by a deterministic Rust scheduler against the tool registry. A plan has **two possible authors**: the deterministic template router (`crates/router/src/route.rs` + `crates/engines/desk` — a goal claimed by a registered pipeline, e.g. a single-ticker market analysis, resolves to a Rust-authored `TaskPlan` with zero planner rounds, stamped `TaskPlan.template` and dispatched against the pipeline's own registry via `build_registry_for_plan`), or the LLM planner (`plan_task`'s bounded search loop — the default and the fallback). The legacy `agent_chat` prompt-based tool-calling transport is fully removed (engine loop, command, Axum handler, frontend hook, `AgentChatEvent`).
 
+### Tool discovery — the shared catalog
+
+The planner prompt never carries the catalog. `plan_task` discovers tools in
+≤2 bounded search rounds against a **shared Turso catalog**
+(`kawai-tool-catalog`, `crates/foundation/tool-catalog`), read through a
+**per-device embedded replica** so discovery also works offline. Each hit is
+fused vector-cosine + FTS5/BM25 via RRF, then filtered against the toolset
+this build can actually dispatch.
+
+- **Write access is admin-only, enforced server-side.** The token baked into
+  every client carries `perm=[all tables: data_read]`; any write is rejected
+  with `SQLITE_AUTH`. Seeding and `--prune` use a separate admin token that is
+  never baked.
+- **The catalog is a curation layer, not the dispatch source of truth.** Which
+  tools run is always decided by the local `ToolSet` built per install
+  (feature-gated, per-user context); the catalog supplies descriptions,
+  schemas and embeddings.
+- **One vector space, on-device.** Rows are embedded by the local LiteRT
+  embedder (`build_litert_embedder`) and plan-time queries embed with the same
+  engine, so no cloud embedding provider participates.
+
 ```mermaid
 sequenceDiagram
     autonumber
