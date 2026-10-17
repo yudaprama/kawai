@@ -101,6 +101,12 @@ export interface OfferRow {
    * the level that stop would move TO, and where it rests now. Excludes the
    * positions with no stop at all (`sl`), which the protect action places. */
   tighten: { from: number; to: number; method: string } | null;
+  /** The resting stop already sits at/beyond entry: the trade cannot turn
+   * into a loss and advice never rolls it back. Its verdict is `ok`, the same
+   * as a stop that merely happens to align, so without this flag the row would
+   * read as "already tight" and the operator could not tell that the only
+   * remaining move here is to TRAIL it — never to loosen it. */
+  locked: boolean;
 }
 
 /** What the placement offer needs from the audit matrix: the portfolio
@@ -162,6 +168,12 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
   const tps: OfferTpRow[] = [];
   const tightens: OfferTightenRow[] = [];
   const meta = new Map<string, { notional: number; riskReward: number | null; entry: number; pnl: number }>();
+  // Positions whose resting stop is already at/beyond entry. They are NOT
+  // actionable (no stop to place, nothing to tighten, and advice never rolls a
+  // locked stop back), so no side list claims them — but they must still reach
+  // the table, or the operator sees an empty cell where the one decision that
+  // remains — trail it — actually lies.
+  const locked: { symbol: string; long: boolean; size: number; mark: number }[] = [];
   if ("positions" in v && Array.isArray(v.positions)) {
     for (const row of v.positions) {
       if (typeof row !== "object" || row == null) continue;
@@ -186,6 +198,9 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
       // "not in profit" (excluded) rather than silently passing the scope.
       const pnl = "unRealizedProfit" in row ? (num(row.unRealizedProfit) ?? 0) : 0;
       meta.set(symbol, { notional, riskReward, entry, pnl });
+      if ("profitLocked" in a && a.profitLocked === true) {
+        locked.push({ symbol, long, size, mark });
+      }
 
       // The `tighten` population: a stop ALREADY rests here, and the engine
       // says it is looser than the policy recommends — the state a position
@@ -293,6 +308,7 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
         sl: null,
         tighten: null,
         tp: null,
+        locked: false,
       };
       bySymbol.set(symbol, r);
     }
@@ -304,6 +320,9 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
   for (const t of tightens) {
     touch(t.symbol, t.long, t.size, t.mark).tighten = { from: t.from, to: t.to, method: t.method };
   }
+  // Last, so a position that ALSO needs a take-profit keeps both sides: this
+  // only fills the flag, never claims the row.
+  for (const l of locked) touch(l.symbol, l.long, l.size, l.mark).locked = true;
 
   return {
     naked,
@@ -798,8 +817,19 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
                           <span className="text-success">· {human(r.tighten.method)}</span>
                         </>
                       ) : (
-                        <span className="text-muted-foreground/50 text-[10px]">
-                          {r.pnl > 0 ? "stop is already tight" : "no stop to place"}
+                        // A resting stop at/beyond entry grades `ok` and has no
+                        // side to fill, so without the flag this cell would
+                        // read as the generic "already tight". The lock is the
+                        // whole message: the trade cannot lose, and the only
+                        // move left is to trail it higher.
+                        <span
+                          className={r.locked ? "text-success text-[10px]" : "text-muted-foreground/50 text-[10px]"}
+                        >
+                          {r.locked
+                            ? "profit locked — trail it higher"
+                            : r.pnl > 0
+                              ? "stop is already tight"
+                              : "no stop to place"}
                         </span>
                       )}
                     </td>

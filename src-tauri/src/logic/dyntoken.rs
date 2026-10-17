@@ -20,11 +20,11 @@ async fn ensure_keys() -> Result<(String, String), String> {
         return Ok(pair);
     }
     let url = format!("{}/dyntoken/keys", crate::logic::local_auth::worker_base_url());
-    let resp = reqwest::Client::new()
+    let resp = crate::logic::local_auth::worker_client()
         .get(&url)
         .send()
         .await
-        .map_err(|_| "auth server unreachable".to_string())?;
+        .map_err(|e| format!("auth server unreachable: {e}"))?;
     if resp.status().as_u16() != 200 {
         return Err(format!("dyntoken/keys → HTTP {}", resp.status().as_u16()));
     }

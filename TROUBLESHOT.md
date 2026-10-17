@@ -48,6 +48,73 @@ sqlite3 "$DB" "SELECT id, provider, tool, input_tokens, output_tokens, latency_m
 grep -a "agent_chat\]\|remote\]\|office\]\|supervisor\]\|webread\]" "$LOG" | tail -n 30
 ```
 
+### Android device (physical phone or emulator)
+
+There is no terminal on the device, so the desktop `LOG=` path does not
+apply. The app writes the SAME `app.log` into its app-data dir (injected by
+the Tauri shell in `lib.rs` — the platform default is not writable in a
+sandbox and would silently disable ALL logging on-device).
+
+```sh
+adb devices                                   # is the phone seen?
+adb logcat -c                                 # clear, then reproduce
+adb logcat | grep -aE "kawai|RustWebView|chromium"   # live: stderr + webview console
+
+# Pull the persistent log file (survives the app dying; logcat does not):
+adb exec-out run-as pro.kawai.app cat files/logs/app.log > /tmp/kawai-android.log
+tail -n 100 /tmp/kawai-android.log
+```
+
+- `run-as` only works on a DEBUG build. On a release APK the sandbox is
+  unreadable — use `adb logcat` (and note that stderr is what you get).
+- Rust `eprintln!` / `tracing` land in logcat via the process stderr; JS
+  console output lands under the `chromium` tag. Both are mirrored to
+  `files/logs/app.log` by the stderr tee (`logging.rs`).
+- WebView DevTools: `chrome://inspect` on the desktop Chrome with
+  `adb forward tcp:9222 localabstract:webview_devtools_remote_<pid>`.
+
+**Auth/login hangs on device** — the auth path emits `tracing` events
+(`component="auth"`) carrying `user_id_hash`, the failing `stage`
+(`salt` / `sign_in` / transport), the HTTP `status`, and `elapsed_ms`. That
+ makes it queryable from Grafana with no device attached (next section). The
+ client is bounded (10s connect / 30s total), so a stall surfaces as
+ `auth server unreachable: <cause>` instead of an endless spinner. Common
+ causes on a phone: captive portal / no real network, IPv6-first DNS, or the
+ worker URL in `KAWAI_WORKER_URL` being unreachable from the device.
+
+#### No USB / no adb (wireless) — use Grafana Cloud
+
+A phone with no cable still reports to Grafana Cloud: the Loki credential is
+compiled into the binary (`kawai-vault/constants`), so the device pushes on
+its own over the network. Two rules decide what arrives:
+
+1. **Loki's layer is a `tracing` layer and carries WARN/ERROR only.** A plain
+   `eprintln!` reaches the local file + logcat and NOTHING else. Any failure
+   you need to see from a wireless device MUST be a `tracing::warn!`.
+2. It is best-effort with a bounded channel, so a device offline during the
+   failure ships nothing — absence of an event is not proof of absence of a
+   bug.
+
+```sh
+source kawai/.env
+L="https://giganticgecko512.grafana.net/api/datasources/proxy/uid/grafanacloud-logs/loki/api/v1"
+
+# Auth failures, newest first (component="auth"):
+curl -s -G "$L/query_range" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
+  --data-urlencode 'query={service="kawai", os="android"} |= "auth"' \
+  --data-urlencode 'since=1h' --data-urlencode 'limit=50' | jq -r '.data.result[].values[][1]'
+
+# Everything from an Android device, any component:
+curl -s -G "$L/query_range" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
+  --data-urlencode 'query={service="kawai", os="android"}' --data-urlencode 'since=1h'
+```
+
+`os` is a Loki label, so `os="android"` isolates device logs from your
+desktop session without touching the app. Users group under `user_id`; the
+auth path emits a truncated `user_id_hash` (never the raw email) as the
+`user_id` label. `app_version` distinguishes a locally built APK from a
+published release.
+
 **Grafana (cloud evidence — MANDATORY for provider/failover/slow-generation
 questions, not optional).** Stack `giganticgecko512`; read token
 `GRAFANA_SERVICE_ACCOUNT_TOKEN` (glsa_) in `kawai/.env`. The Grafana MCP tool

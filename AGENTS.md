@@ -85,7 +85,12 @@ bun run tauri:android build             # release APK + AAB (unsigned)
 
 # Install + inspect a locally built debug APK:
 adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
-adb logcat -s RustWebView:* chromium:* | tail -50
+adb logcat | grep -aE "kawai|RustWebView|chromium"       # live: Rust stderr + JS console
+
+# The app also mirrors all of it to a persistent file in its sandbox, which
+# survives the app dying (logcat does not). Debug builds only:
+adb exec-out run-as pro.kawai.app cat files/logs/app.log > /tmp/kawai-android.log
+tail -n 100 /tmp/kawai-android.log
 adb shell am start -n pro.kawai.app/.MainActivity
 
 # No emulator/device? One-time AVD (arm64 image; x86_64 is NOT installed):
@@ -213,6 +218,10 @@ When debugging agent/tool-calling/hybrid-cloud misbehavior, follow
 app.log traces), §2 the healthy-turn log shape, §3 symptom→root-cause→action
 with exact commands, §4 the post-fix verification block.
 
+For debugging on an Android device (logcat, the sandboxed `app.log`, WebView
+DevTools, and auth/login-hang triage) see §2 "Android device" in
+`TROUBLESHOT.md`.
+
 ## Landmines (things that already bit us)
 
 - **`@types/hast` must stay pinned to 3.0.4.** `resolutions` in `package.json` forces it across the tree. 3.0.5 rewrites `Properties.className` to `string[]` and bun nests per-package copies (under `mdast-util-to-hast`, `@shikijs/*`, …), which SPLITS the `hast` module identity: `mdast-util-to-hast`'s module augmentation (`RootContentMap.raw`) stops applying to the copy `streamdown/lib/markdown.ts` sees → TS2367/TS2339 across the markdown renderer. If you bump it, `bun install --force` and re-check `find node_modules -path '*node_modules/@types/hast' -maxdepth 5 -type d | wc -l` is 1.
@@ -222,6 +231,8 @@ with exact commands, §4 the post-fix verification block.
 - **`Channel::send` takes the value by value**, not `&event` (Tauri 2: `send(data: T)`).
 - **`-p` in cargo-ndk collides with cargo `--package`.** Use `-P` / `--platform`. cargo-ndk's panic handler **dumps all env vars to stdout** — never let it panic, and keep secrets out of shell env.
 - **`libsql-sys` / `aws-lc-sys` are C.** Mobile needs NDK clang (Android) or Xcode clang (iOS) plus libclang for bindgen. Verified working on android arm64 + ios arm64.
+- **A mobile sandbox has no writable temp dir.** Never let a path resolve to `std::env::temp_dir()` on Android/iOS — the open fails, and for the LOG layer that failure is silent and total (no stderr tee, no `tracing`, no `frontend_log`), so on-device bugs become invisible. `kawai_paths::log_dir()` falls back to `<data_root>/logs` and the Tauri shell injects `<app_data>/logs` in `setup`; `logging.rs` re-resolves the path on every append because `init()` runs BEFORE that injection. Reuse `worker_client()` (10s connect / 30s total) for any new HTTP call — a bare `reqwest::Client::new()` on a phone network hangs for the OS TCP retry window, which reads to the user as an infinite spinner with no error.
+- **`eprintln!` does NOT reach Grafana Cloud.** The Loki layer is a `tracing` layer carrying WARN/ERROR only, so a plain `eprintln!` reaches the local file + logcat and nothing else — and a wireless phone has neither a terminal nor logcat. Any failure you must diagnose off-device has to be a `tracing::warn!`. Never make a Loki label a raw email/PII: the auth path emits a truncated `user_id_hash`, and Loki groups streams by the `user_id` field.
 - **Cancellation is asymmetric by design.** Web: `AbortController` (connection drop auto-cancels the backend future). Desktop/mobile: frontend `cancel()` calls `invoke('cancel_stream', {streamId})` → `CancellationToken` in the shared registry breaks the `select!` loop. Streaming commands must accept a `stream_id` param and register/clean up a token.
 - **Axum 0.8 `from_fn` hardcodes state to `()`.** A middleware that needs shared state can't use `from_fn` + `State<S>`; use `Extension` (our `auth_middleware` reads `Extension<Verifier>`) or `from_fn_with_state`. Don't fight the type inference by annotating `Router<S>` — switch to `Extension`.
 - **`libsql` positional tuple params start at arity 2.** `(&str,)` is NOT `IntoParams`; use `vec![x]` (or an array) for a single param. Tuples `(A,B)` and up are fine. Params blanket-impl `T: TryInto<Value>` (so `&str`, `String`, `i64`, … all work).
@@ -238,7 +249,7 @@ with exact commands, §4 the post-fix verification block.
 - **Web request structs need `#[serde(rename_all = "camelCase")]`.** Tauri maps camelCase invoke args → snake_case params automatically; Axum `Json<T>` does NOT — without the rename, camelCase bodies 422 (bit us 2026-08-16 with the chat ops). Every web request struct with a multi-word field carries the rename.
 - **Tool call events in `LocalChatEvent`.** The `local_chat` stream emits `ToolCall` and `ToolResult` variants (not just `Token`). The frontend (`use-local-chat.ts`) AND `agent.rs` both match on the union — add arms for new variants in all matchers or events are silently dropped.
 - **The remote tier has NO LLM SDK.** `logic/remote.rs` is a hand-written OpenAI-compatible SSE client (`POST {base}/chat/completions`, `stream_options.include_usage`, `reasoning_content`/`reasoning` delta spellings with `reasoning_details` as last resort, `[DONE]`, terminal usage chunk). Don't reach for a provider crate — extend the wire module; its unit tests pin the decoding.
-- **pdf_oxide is a vendored submodule** (`../pdf_oxide`, behind the `office` feature). Every consumer declares the git dep and each workspace root patches the URL to the submodule (`[patch."https://github.com/yudaprama/pdf_oxide"]` in `src-tauri`, `crates`, and `kawai-web`), so src-tauri, ragloader, engines/office, and office-tools/pdf all build the same in-tree crate. MSRV 1.88, default features only (`icc` + `legacy-crypto`; no `rendering`/`ocr`/`fips` — keeps it C-dep-free). Cold compile of the office feature grows by a few minutes (pure Rust, cached afterwards). The markdown→PDF creator (`api::Pdf::from_markdown`) measures text through the page builder's embedded-font metrics — never the Base-14 fallback — and wraps words, renders GFM tables with rules, and paginates with repeated table headers.
+- **pdf_oxide is a vendored submodule** (`../pdf_oxide`, behind the `office` feature). Every consumer declares the git dep and each workspace root patches the URL to the submodule (`[patch."https://github.com/yudaprama/pdf_oxide"]` in `src-tauri`, `crates`, and `kawai-web`), so src-tauri, ragloader, engines/office, and office-tools/pdf all build the same in-tree crate. MSRV 1.88, default features only (`icc` + `legacy-crypto`; no `rendering`/`ocr`/`fips` — keeps it C-dep-free). Cold compile of the office feature grows by a few minutes (pure Rust, cached afterwards). The markdown→PDF creator (`api::Pdf::from_markdown`) measures text through the page builder's embedded-font metrics — never the Base-14 fallback — and wraps words, renders GFM tables with rules (header tint + zebra stripes, grid boxed to the table width), and paginates with repeated table headers. Inline parsing covers bold, italic, code, `[text](url)` links (accent-coloured, URL dropped), and `~~strikethrough~~`; block parsing covers headings (accent underline on H1, keep-with-next so a heading is never stranded at a page bottom), accent-bar blockquotes, light-gray code panels (syntax-highlighted per fence language — keywords bold blue, strings green, numbers orange, comments gray), inline-code chips, bullet / ordered / GFM task lists (drawn checkbox), plus a page footer (title / date / page numbers via `PageTemplate`) set by `pdf_create_from_markdown`. A metadata `title` renders a cover title block (large title, author · date, accent rule) unless the document opens with its own `# ` H1. Base-14 text metrics in `writer/font_manager.rs` are exact Adobe AFM values — do not "approximate" them again: layout wrap points and inline-run pen advances drift visibly at every style boundary when they are off.
 - **PDF text replace is DOM-based, not content-stream regex.** `pdf_replace_text` composes `find_text` (regex predicate per element) + `set_text` — a match that spans fragmented sibling text elements in the content stream is NOT found, and replaced text keeps the original element bbox (no reflow). Fine for token substitutions (dates, names, codes); heavy rewrites should regenerate the source document (the `pdf_replace_text` tool description says exactly this).
 
 ## Where things live
@@ -299,7 +310,7 @@ design-demos/                    # UI mock HTML files (standalone)
 scripts/dev-sqld.sh              # dev launcher for self-hosted sqld
 scripts/bundle-litert-dylibs.sh  # prep all LiteRT dylibs into native/ for bundling into the .app
 .github/tauri-litert.json        # merges LiteRT dylibs into `bundle.macOS.files` (Contents/Frameworks)
-app.log                          # symlink → platform log dir (macOS ~/Library/Logs/kawai/)
+app.log                          # symlink → platform log dir (macOS ~/Library/Logs/kawai/; on-device: <app_data>/logs/app.log)
 ```
 
 ## Adding a new operation (checklist)

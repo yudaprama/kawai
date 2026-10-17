@@ -462,6 +462,17 @@ pub fn finance_tools_for_supervisor(
         // Earnings and news sentiment (Alpha Vantage)
         "get_earnings_data",
         "get_news_sentiment",
+        // On-chain DEX data (GeckoTerminal, keyless)
+        "get_onchain_networks",
+        "get_onchain_trending_pools",
+        "get_onchain_new_pools",
+        "get_onchain_top_pools",
+        "get_onchain_pool",
+        "get_onchain_pool_ohlcv",
+        "get_onchain_pool_trades",
+        "get_onchain_token_info",
+        "get_onchain_token_pools",
+        "search_onchain_pools",
     ]))
 }
 

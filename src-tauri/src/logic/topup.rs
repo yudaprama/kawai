@@ -12,18 +12,18 @@
 
 use serde::de::DeserializeOwned;
 
-use super::local_auth::worker_base_url;
+use super::local_auth::{worker_base_url, worker_client};
 
 /// GET a worker endpoint with the session bearer. Non-2xx → the worker's
 /// `{error}` text (e.g. `qr_payload_not_configured`, `insufficient_balance`).
 async fn get(token: &str, path: &str) -> std::result::Result<serde_json::Value, String> {
     let url = format!("{}{path}", worker_base_url());
-    let resp = reqwest::Client::new()
+    let resp = worker_client()
         .get(url)
         .bearer_auth(token)
         .send()
         .await
-        .map_err(|_| "worker unreachable".to_string())?;
+        .map_err(|e| format!("worker unreachable: {e}"))?;
     read_body(resp).await
 }
 
@@ -35,13 +35,13 @@ async fn post(
     body: serde_json::Value,
 ) -> std::result::Result<serde_json::Value, String> {
     let url = format!("{}{path}", worker_base_url());
-    let resp = reqwest::Client::new()
+    let resp = worker_client()
         .post(url)
         .bearer_auth(token)
         .json(&body)
         .send()
         .await
-        .map_err(|_| "worker unreachable".to_string())?;
+        .map_err(|e| format!("worker unreachable: {e}"))?;
     read_body(resp).await
 }
 

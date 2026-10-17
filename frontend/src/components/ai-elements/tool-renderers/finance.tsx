@@ -676,6 +676,20 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
               const notional = num(p.notionalAbs);
               const recPrice = num(rec.price);
               const recMethod = str(rec.method);
+              // The resting stop sits at/beyond entry: it grades `ok` exactly
+              // like a stop that merely happens to align, but the remaining
+              // decision differs — "trail it higher", never "roll it back".
+              // Only the flag separates those, so it gets its own chip.
+              const profitLocked = advice.profitLocked === true;
+              // The other valid candidates, loosest→tightest. Surfaced only on
+              // a locked stop: that is the one case where the engine
+              // deliberately declines a level, and an operator deciding
+              // whether to trail needs to see the structural level it passed
+              // on. On every other row it is noise beside the recommendation.
+              const alternatives = (Array.isArray(advice.alternatives) ? advice.alternatives : [])
+                .filter(isRecord)
+                .map((c) => ({ price: num(c.price), method: str(c.method) }))
+                .filter((c) => c.price !== null);
               // `riskReward` grades the RESTING pair, so it is null on a naked
               // book — exactly where this column matters most. Fall back to the
               // ratio the recommended stop and first target would create,
@@ -713,6 +727,17 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
                   <td className="px-2 py-1.5">
                     <div className="flex items-center gap-1.5">
                       <VerdictChip verdict={verdict} />
+                      {profitLocked && (
+                        <span
+                          className={cn(
+                            "inline-flex shrink-0 rounded-sm border px-1 py-px font-mono text-[10px] tracking-wide uppercase",
+                            CHIP_TONE.ok,
+                          )}
+                          title="This stop already sits at or beyond entry — the trade can no longer turn into a loss, and advice never rolls it back. The remaining move is to trail it higher."
+                        >
+                          profit locked
+                        </span>
+                      )}
                       {slPresent && slPrice !== null && (
                         <span className="text-muted-foreground tabular-nums">
                           {fmtPrice(slPrice)}
@@ -727,6 +752,17 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
                       <div className="text-muted-foreground/80 mt-0.5">
                         → {fmtPrice(recPrice)} suggested
                         {recMethod ? ` · ${recMethod.replace(/_/g, " ")}` : ""}
+                      </div>
+                    )}
+                    {profitLocked && alternatives.length > 0 && (
+                      <div
+                        className="text-muted-foreground/80 mt-0.5"
+                        title={alternatives
+                          .map((c) => `${c.method?.replace(/_/g, " ") ?? "structural"} ${fmtPrice(c.price!)}`)
+                          .join(" · ")}
+                      >
+                        declined{" "}
+                        {alternatives.slice(0, 2).map((c) => fmtPrice(c.price!)).join(" / ")} — trail instead
                       </div>
                     )}
                   </td>

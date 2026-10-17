@@ -235,6 +235,7 @@ describe("parseAuditOffer", () => {
         pnl: 4200,
         riskReward: null,
         sl: { price: 95000, method: "chandelier_exit", distancePct: 3.06 },
+        locked: false,
         tighten: null,
         tp: {
           symbol: "BTCUSDT",
@@ -258,6 +259,7 @@ describe("parseAuditOffer", () => {
         riskReward: null,
         sl: null,
         tighten: null,
+        locked: false,
         tp: {
           symbol: "SOLUSDT",
           long: false,
@@ -306,6 +308,77 @@ describe("parseAuditOffer", () => {
       rungs: [],
       bandExit: null,
       trailingExit: { method: "chandelier_exit", price: 94000.5 },
+    });
+  });
+
+  it("keeps a profit-locked position in the table even with nothing to place", () => {
+    // A stop at/beyond entry grades `ok`, so it lands in no side list — no
+    // stop to place, nothing to tighten, and advice never rolls it back. The
+    // panel would then drop the one row whose remaining decision is real:
+    // trail it higher. `profitLocked` is what keeps it visible.
+    const out = JSON.stringify({
+      summary: { usdmPositions: 1, graded: 1, withStopLoss: 1, naked: 0, nakedNotional: 0, withTakeProfit: 1 },
+      positions: [
+        {
+          symbol: "BTCUSDT",
+          positionAmt: 1.5,
+          entryPrice: 95000,
+          markPrice: 98000,
+          unRealizedProfit: 4500,
+          restingStops: 1,
+          restingTps: 1,
+          stopLoss: { present: true, price: 95600, distancePct: 2.45 },
+          advice: {
+            verdict: "ok",
+            profitLocked: true,
+            recommended: { price: 95600, method: "breakeven_lock", distancePct: 2.45 },
+            alternatives: [{ price: 94000, method: "donchian_20", distancePct: 4.08 }],
+          },
+        },
+      ],
+    });
+    const offer = parseAuditOffer(out);
+    expect(offer?.stops).toHaveLength(0);
+    expect(offer?.tightens).toHaveLength(0);
+    expect(offer?.rows).toHaveLength(1);
+    expect(offer?.rows[0].locked).toBe(true);
+    expect(offer?.rows[0].sl).toBeNull();
+    expect(offer?.rows[0].tighten).toBeNull();
+  });
+
+  it("does not flag a plain aligned stop as locked", () => {
+    // `pnl > 0` alone reads as "already tight", so a position that is merely
+    // profitable with a structural stop below entry must not be told to trail.
+    // Only the engine's flag means a lock — this one is a real `tighten`, so
+    // the row exists and must read as not-locked.
+    const out = JSON.stringify({
+      summary: { usdmPositions: 1, graded: 1, withStopLoss: 1, naked: 0, nakedNotional: 0, withTakeProfit: 1 },
+      positions: [
+        {
+          symbol: "ETHUSDT",
+          positionAmt: 5,
+          entryPrice: 3000,
+          markPrice: 3200,
+          unRealizedProfit: 1000,
+          restingStops: 1,
+          restingTps: 1,
+          stopLoss: { present: true, price: 2800, distancePct: 12.5 },
+          advice: {
+            verdict: "tighten",
+            profitLocked: false,
+            recommended: { price: 2880, method: "breakeven_lock", distancePct: 10 },
+            alternatives: [],
+          },
+        },
+      ],
+    });
+    const offer = parseAuditOffer(out);
+    expect(offer?.tightens).toHaveLength(1);
+    expect(offer?.rows[0].locked).toBe(false);
+    expect(offer?.rows[0].tighten).toEqual({
+      from: 2800,
+      to: 2880,
+      method: "breakeven_lock",
     });
   });
 

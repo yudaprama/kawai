@@ -256,6 +256,59 @@ describe("risk audit card", () => {
     expect(markup).not.toContain("2,900");
   });
 
+  it("marks a profit-locked stop and shows the structural level it declined", () => {
+    const markup = html(
+      audit({
+        positions: [
+          position({
+            symbol: "BTCUSDT",
+            stopLoss: { present: true, price: 95600, distancePct: 2.45 },
+            advice: {
+              verdict: "ok",
+              profitLocked: true,
+              recommended: { price: 95600, method: "breakeven_lock", distancePct: 2.45 },
+              alternatives: [{ price: 94000, method: "donchian_20", distancePct: 4.08 }],
+              notes: [],
+            },
+          }),
+        ],
+      }),
+    );
+    // Without the chip a locked stop is a bare `ok`, indistinguishable from a
+    // stop that merely happens to align with the recommendation.
+    expect(markup).toContain("profit locked");
+    // The looser structural candidate the engine refused to roll back to, so
+    // an operator deciding whether to trail can see what it passed on.
+    expect(markup).toContain("declined");
+    expect(markup).toContain("94,000");
+    expect(markup).toContain("trail instead");
+  });
+
+  it("does not mark a plain aligned stop as locked or list its alternatives", () => {
+    const markup = html(
+      audit({
+        positions: [
+          position({
+            symbol: "ETHUSDT",
+            stopLoss: { present: true, price: 2880, distancePct: 10 },
+            advice: {
+              verdict: "ok",
+              profitLocked: false,
+              recommended: { price: 2880, method: "donchian_20", distancePct: 10 },
+              alternatives: [{ price: 2800, method: "keltner_10_2", distancePct: 12.5 }],
+              notes: [],
+            },
+          }),
+        ],
+      }),
+    );
+    expect(markup).not.toContain("profit locked");
+    // Alternatives are noise beside a recommendation the operator is expected
+    // to act on — they only earn a line when a level was actually declined.
+    expect(markup).not.toContain("declined");
+    expect(markup).not.toContain("2,800");
+  });
+
   it("colours each verdict by severity rather than flattening them to one word", () => {
     const markup = html(
       audit({

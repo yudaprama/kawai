@@ -60,9 +60,15 @@ pub fn run() {
                     // kawai.db + docs/ (office store defaults into it).
                     // On-device models (LiteRT embedder, OCR, TTS) live in
                     // the app data dir — the home-derived ~/.kawai/models
-                    // is unwritable in mobile sandboxes. (Models first:
-                    // set_data_root consumes `data`.)
+                    // is unwritable in mobile sandboxes.
                     kawai_paths::set_models_dir(data.join("models"));
+                    // Logs: `<app_data>/logs`. MUST be injected on mobile —
+                    // the platform default (`<temp>/kawai`) is not writable in
+                    // an app sandbox, so without this the whole logging layer
+                    // (stderr tee, tracing, frontend_log) is dead on the
+                    // device and every failure is invisible. Pull it with
+                    // `adb exec-out run-as pro.kawai.app cat files/logs/app.log`.
+                    kawai_paths::set_log_dir(data.join("logs"));
                     logic::db::set_data_root(data);
                 // Auto-restore the previous session from the persisted worker
                 // token (no password prompt after a restart, until it expires).

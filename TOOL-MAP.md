@@ -226,6 +226,14 @@ picture, so there is no multi-tool choreography to get wrong.
   (at-market is a fill waiting to happen). R:R = TP distance / SL distance
   from the mark, using the NEAREST resting TP; `null` when either leg is
   missing, never a faked number.
+- **A locked stop is named, not just graded `ok`.** When the resting stop
+  already sits at/beyond entry the verdict is `ok` — the same verdict a stop
+  that merely happens to align with the recommendation gets — so the audit
+  emits `advice.profitLocked` alongside it, and `advice.alternatives` (every
+  other valid candidate) so the structural level the engine deliberately
+  refused to roll back to is visible rather than silently dropped. The UI
+  renders both: a `profit locked` chip plus the declined level, because the
+  remaining decision on such a position is to trail it, never to loosen it.
 - **Top-N by notional, honestly.** A klines fold per position is a real
   cost, so the audit grades `limit` (default 25, max 50) LARGEST exposures
   first and says exactly how many it skipped; skipped positions are still
