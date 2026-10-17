@@ -47,6 +47,7 @@ import type {
 import { PrefixContext } from "./lib/prefix-context";
 import { preprocessCustomTags } from "./lib/preprocess-custom-tags";
 import { preprocessLiteralTagContent } from "./lib/preprocess-literal-tag-content";
+import { rehypeDataImageSrc } from "./lib/rehype/data-image-src";
 import { rehypeLiteralTagContent } from "./lib/rehype/literal-tag-content";
 import { remarkCodeMeta } from "./lib/remark/code-meta";
 import {
@@ -287,6 +288,9 @@ const defaultSanitizeSchema = {
   protocols: {
     ...defaultSchema.protocols,
     href: [...(defaultSchema.protocols?.href ?? []), "tel"],
+    // `rehypeDataImageSrc` narrows this back to base64 raster images —
+    // a sanitize schema can only allow or deny a whole scheme.
+    src: [...(defaultSchema.protocols?.src ?? []), "data"],
   },
   attributes: {
     ...defaultSchema.attributes,
@@ -297,6 +301,7 @@ const defaultSanitizeSchema = {
 export const defaultRehypePlugins: Record<string, Pluggable> = {
   raw: rehypeRaw,
   sanitize: [rehypeSanitize, defaultSanitizeSchema],
+  dataImageSrc: rehypeDataImageSrc,
   harden: [
     harden,
     {
@@ -812,6 +817,7 @@ export const Streamdown = memo(
         result = [
           defaultRehypePlugins.raw,
           [rehypeSanitize, extendedSchema],
+          defaultRehypePlugins.dataImageSrc,
           defaultRehypePlugins.harden,
         ];
       }
