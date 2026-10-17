@@ -31,59 +31,36 @@ Result: planner search for "what's the price of bitcoin" returns `get_stock_pric
 instead of `crypto_price`. Plan validation then rejects `get_crypto_price`
 (hallucinated name) as "unknown tool".
 
-## What needs to happen
+## How the catalog is (re-)seeded
 
-Generate 768-dim embeddings for the 4 `crypto_*` tools and upsert them into the
-Turso catalog. The embeddings must use the same model as the original seed
-(`kawai_embedding::build_providers_from_env()` — tries OpenRouter
-`text-embedding-3-small` → NVIDIA `llama-3_2-nemoretriever-300m-embed-v1` →
-Gemini `embedding-001`, each requesting 768 dims).
+There is one procedure, and it is the only supported way to change what the
+planner can discover. The 4 `crypto_*` tools were missing embeddings because
+that seed predated the binance tools; the fix is a full re-seed, not a
+per-tool patch.
 
-### Approach 1: Run seed_tool_catalog (proper fix)
-
-CI-only (AGENTS.md RESOURCE rule — never seed from a dev machine): dispatch
-`.github/workflows/ci.yml` manually (Actions → ci → Run workflow) and let the
-`tool_catalog_seed` step in `macos-smoke` run with the `KAWAI_TURSO_WRITE_TOKEN`
-repo secret — check the `prune` input for a full prune re-seed. Purely additive
-fixes like this one are handled automatically by the drift gate's auto-seed on
-the next CI run.
-
-This re-seeds ALL tools with embeddings. The `ON CONFLICT(name) DO UPDATE` in
-`upsert_tools` will overwrite descriptions (so use the current descriptions from
-the Rust code, not the old ones).
-
-### Approach 2: Minimal upsert script (faster)
-
-Write a small Rust example or script that:
-1. Opens the remote catalog with the write token
-2. Builds the embedding provider via `kawai_embedding::build_providers_from_env()`
-3. For each of the 4 crypto tools, embeds `format!("{} {}", name, description)`
-4. Calls `catalog.upsert_tools(&[(tool, embedding)])` to upsert
-
-Key details:
-- Remote catalog URL: `libsql://kawai-tool-catalog-dielz.aws-ap-south-1.turso.io`
-- Write token: `turso db tokens create kawai-tool-catalog`
-- The `upsert_tools` method uses `ON CONFLICT(name) DO UPDATE` so it's safe to re-run
-- Embedding dimension MUST be 768 (matches the `FLOAT32(768)` column)
-
-### Approach 3: Direct SQL (if embedding provider isn't available)
-
-If you can't build the embedding provider, you can still fix the search by
-updating the stock tool descriptions to be even more discouraging for crypto:
-
-```sql
--- Make stock descriptions explicitly say "NOT for cryptocurrency" at the START
-UPDATE tool_catalog SET description = 'STOCKS ONLY — NOT for cryptocurrency. Use crypto_price for Bitcoin/ETH/SOL. Get the latest price for a stock ticker (e.g. AAPL, TSLA). Returns just the current price in USD.' WHERE name = 'get_stock_price';
-
-UPDATE tool_catalog SET description = 'STOCKS ONLY — NOT for cryptocurrency. Use crypto_price for Bitcoin/ETH/SOL. Get the latest stock quote for a ticker symbol (e.g. AAPL, TSLA). Returns open, high, low, price, volume, previous close, change, and change percent.' WHERE name = 'get_stock_quote';
-
-UPDATE tool_catalog SET description = 'STOCKS ONLY — NOT for cryptocurrency. Use crypto_klines for Bitcoin/ETH/SOL. Get historical daily stock prices (OHLCV) for ticker symbols (e.g. AAPL, TSLA, GOOGL). Returns date, open, high, low, close, and volume.' WHERE name = 'get_stock_history';
-
-UPDATE tool_catalog SET description = 'STOCKS ONLY — NOT for cryptocurrency. Use crypto_price/crypto_ta_analyze for Bitcoin/ETH/SOL. Get detailed stock information including open, high, low, close, volume, 52-week range for stock tickers (e.g. AAPL, TSLA).' WHERE name = 'get_stock_detail';
+```sh
+# ADMIN token required (KAWAI_TURSO_WRITE_TOKEN in .env / 1Password).
+# Clients cannot write: the shared catalog's client token carries
+# perm=[all tables: data_read] and every write is rejected server-side.
+KAWAI_TURSO_DB_URL='libsql://kawai-tool-catalog-yudapramad.aws-ap-southeast-2.turso.io' \
+KAWAI_TURSO_AUTH_TOKEN="$KAWAI_TURSO_WRITE_TOKEN" \
+cargo run --release --manifest-path src-tauri/Cargo.toml \
+  --example seed_tool_catalog --features litert,binance,monad -- --prune
 ```
 
-This won't fix the vector search gap but will push stock tools down in BM25
-rankings for crypto queries.
+- Embeddings come from the **local LiteRT embedder**
+  (`kawai_embedding::build_litert_embedder()`, EmbeddingGemma-2 740M, 768 dims)
+  — the same space plan-time queries embed in (`supervisor.rs:877`). Never
+  re-seed with a cloud embedding provider: the cosine side silently becomes
+  noise instead of erroring.
+- `upsert_tools` uses `ON CONFLICT(name) DO UPDATE`, so descriptions are
+  overwritten — always seed from the current Rust definitions
+  (`catalog_composition::merged_definitions()`), never from a stale dump.
+- `--prune` deletes rows that are no longer in the merged toolset. On a shared
+  catalog this affects every user at once, so read the drift output first.
+- Verify with the client token (read-only, cheap):
+  `cargo run --example tool_catalog_drift_check --features litert,binance,monad`
+  → expects `missing=0, stale=0`.
 
 ## Files modified (already done — DO NOT RE-EDIT)
 

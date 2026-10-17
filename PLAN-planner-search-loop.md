@@ -13,7 +13,7 @@ into the planner prompt. The planner runs a **bounded search loop**:
 Round 0    LLM sees: goal + <user-context> (persona/memories/skills)
            + core tool whitelist + protocol. No catalog.
 Round 0..2 LLM replies {"action":"search","queries":[≤3]} → executed against
-           the tool catalog (local sqld, embedded replica; hybrid vector+BM25+RRF),
+           the tool catalog (shared Turso, per-device embedded replica; hybrid vector+BM25+RRF),
            results appended to materials (12k char cap, dedup across rounds).
 Final      LLM replies {"goal","steps":[…]} → parse_supervisor_plan validates
            against the FULL ToolRegistry: structure, dispatch keys,

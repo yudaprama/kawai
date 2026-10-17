@@ -1,4 +1,4 @@
-//! Seed the LOCAL tool-catalog sqld with the supervisor's merged tool
+//! Seed the SHARED tool catalog (Turso) with the supervisor's merged tool
 //! definitions (same composition the planner sees in `auto` mode).
 //!
 //! Idempotent and incremental: re-running with a wider feature set adds the
@@ -8,25 +8,28 @@
 //!
 //! Embeddings use the LOCAL LiteRT embedder (`build_litert_embedder()`) —
 //! the same fixed space plan-time queries run in. Never mix providers here.
-//! at plan time, so writer and reader share one vector space on this machine.
+//! Writer and reader must share one vector space on every device.
 //! Toolset composition lives in `catalog_composition.rs` (shared with
 //! `tool_catalog_drift_check.rs` — exactly one copy).
 //!
 //! Requires:
-//!   --features litert,binance,codegraph,monad
+//!   --features litert,binance,monad
 //!                            (the domain tool builders are feature-gated;
 //!                             every feature that the runtime registry can
 //!                             include MUST be on here, or its tools silently
 //!                             drop out of the catalog)
-//!   KAWAI_TURSO_DB_URL       (from .env; points at the LOCAL tool-catalog
-//!                             sqld — http://127.0.0.1:8084; env overrides the
-//!                             baked constants)
-//!   KAWAI_TURSO_WRITE_TOKEN  (legacy name — the local sqld runs without auth,
-//!                             so any non-empty value satisfies the check)
+//!   KAWAI_TURSO_DB_URL       (from .env; the shared catalog —
+//!                             libsql://kawai-tool-catalog-yudapramad.aws-ap-southeast-2.turso.io;
+//!                             env overrides the baked constants)
+//!   KAWAI_TURSO_WRITE_TOKEN  (legacy name) — the ADMIN token. The shared
+//!                             catalog is read-only for every client: their
+//!                             token carries perm=[all: data_read] and the
+//!                             server rejects every write. Without an
+//!                             admin token the upsert fails SQLITE_AUTH.
 //!
 //! Usage: runs locally on the user's explicit request — it is a heavy build.
-//!   Prerequisite: the tool-catalog sqld is up (scripts/sqld/run-local.sh
-//!   toolcatalog start; HTTP 127.0.0.1:8084).
+//!   No local process is needed: the catalog is hosted. `--prune` changes
+//!   what EVERY user sees, so read the drift check output before running it.
 
 #[path = "catalog_composition.rs"]
 mod composition;
@@ -139,8 +142,9 @@ async fn run() -> Result<(), String> {
     }
 
     println!(
-        "{}",
-        "[seed] DONE. Verify:\n  curl -s http://127.0.0.1:8084/v2/pipeline -H 'content-type: application/json' -d '{\"requests\":[{\"type\":\"execute\",\"stmt\":{\"sql\":\"SELECT COUNT(*) FROM tool_catalog\"}}]}'"
+        "[seed] DONE at {}. Verify with the data_read client token:\n  \
+         turso db shell kawai-tool-catalog --command 'SELECT COUNT(*) FROM tool_catalog'",
+        cfg.url
     );
     Ok(())
 }

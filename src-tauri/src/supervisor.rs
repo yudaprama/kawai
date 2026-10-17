@@ -1603,9 +1603,11 @@ async fn open_synced_catalog(
         Ok(names) if !names.is_empty() => Some(catalog),
         Ok(_) => {
             eprintln!(
-                "[tool-catalog] local replica is EMPTY (sync failed or remote unseeded) — \
-                 planner restricted to core tools; re-seed via the ci.yml seed job \
-                 (workflow_dispatch with the `prune` input — seeding is CI-only)"
+                "[tool-catalog] local replica is EMPTY (sync failed or the shared catalog \
+                 is unseeded) — planner restricted to core tools; re-seed with \
+                 `--example seed_tool_catalog --features litert,binance,monad` using the \
+                 ADMIN token (KAWAI_TURSO_WRITE_TOKEN); verify with \
+                 `--example tool_catalog_drift_check` on the data_read client token"
             );
             None
         }

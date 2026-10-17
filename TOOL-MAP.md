@@ -10,7 +10,7 @@ per-category crate. Agent definitions (`builtin.office`, `builtin.presentation`,
 `builtin.analytics`, `builtin.binance`) build their toolsets via `build_tools`; the merged
 `auto` registry (first-wins per name) is what the supervisor actually dispatches against. The
 planner never sees the full catalog — it discovers tools through ≤2 search rounds against the
-tool catalog DB (local sqld), with a small core whitelist always visible.
+tool catalog DB (shared Turso), with a small core whitelist always visible.
 
 ---
 
@@ -21,7 +21,7 @@ AgentTool impl (crates/*)               →  kawai_tools::ToolSet (type-erased, 
 build_tools(context, remote_configured) →  per-agent ToolSet (agent_registry.rs composes)
 ToolRegistry (crates/router)            →  merged `auto` catalog, first-wins per NAME
 supervisor.rs build_supervisor_registry →  what plan_task validates & execute dispatches
-tool-catalog (local sqld + embedded replica) →  planner discovery (vector+BM25/RRF search)
+tool-catalog (Turso + embedded replica)   →  planner discovery (vector+BM25/RRF search)
 ```
 
 Rules that hold for every tool:
@@ -490,28 +490,36 @@ Full inventory: `grep -rhoE 'const NAME: &'"'"'static str = "[a-z_0-9]+"' crates
 ## 8. Planner discovery — `crates/foundation/tool-catalog`
 
 - The planner prompt carries **no** catalog: only the core whitelist (§1).
-- Tool discovery = ≤2 bounded search rounds against the local-sqld tool catalog replica
-  (vector + BM25 fused via RRF); 1 corrective round on plan validation failure; hard cap
-  6 LLM calls per `plan_task`.
+- Tool discovery = ≤2 bounded search rounds against the shared Turso catalog, read
+  through a **per-device embedded replica** (vector + BM25 fused via RRF); 1 corrective
+  round on plan validation failure; hard cap 6 LLM calls per `plan_task`. The replica
+  keeps discovery working offline; `sync_shared_catalog` converges it in the background
+  (startup prefetch + a row-count freshness gate).
 - The emitted plan is validated against the **full local `ToolRegistry`** (structure, dispatch
   keys, confirmation policy, per-step args vs each tool's `input_schema`) — fail-fast before
   execution. Design + benchmark: `PLAN-planner-search-loop.md`.
-- Credentials: `KAWAI_TURSO_DB_URL` / `KAWAI_TURSO_AUTH_TOKEN` (legacy names,
-  menunjuk instance lokal) → baked constants from `kawai-vault/constants`
-  (men Bake endpoint lokal yang sama). sqld lokal jalan tanpa auth.
+- Credentials: `KAWAI_TURSO_DB_URL` / `KAWAI_TURSO_AUTH_TOKEN` (nama lama, tetap dipakai)
+  → baked constants dari `kawai-vault/constants` bila env kosong. DB:
+  `libsql://kawai-tool-catalog-yudapramad.aws-ap-southeast-2.turso.io`.
+- **Akses**: client (semua device) memakai token dengan `perm=[all: data_read]` — enforced
+  server-side (`SQLITE_AUTH` untuk setiap write). Hanya token **admin**
+  (`KAWAI_TURSO_WRITE_TOKEN`, tidak pernah di-bake) yang boleh seed/prune. Token read-only
+  di-mint dengan `turso db tokens create kawai-tool-catalog -p 'all:data_read'` — **jangan
+  `-r`**: token itu (claim `a: "ro"`) ditolak server dengan `JWT error: InvalidToken`.
 
 ## 9. Seeder & drift gate
 
-- **Prasyarat**: tool-catalog sqld lokal jalan (`~/.local/bin/sqld --db-path
-  ~/.kawai/sqld/toolcatalog/data.sqld --http-listen-addr 127.0.0.1:8084
-  --hrana-listen-addr 127.0.0.1:8085`).
+- **Prasyarat**: tidak ada proses lokal. DB sudah-hosted; yang dibutuhkan token admin
+  (`KAWAI_TURSO_WRITE_TOKEN`) untuk menulis.
 - **Seed** (insert + update, idempotent upsert; `--prune` menghapus baris basi):
   `cargo run --release --manifest-path src-tauri/Cargo.toml --example seed_tool_catalog
-  --features litert,binance,codegraph,monad` — proses berat (kompilasi besar +
-  on-device embedder); jalan hanya atas permintaan eksplisit user.
+  --features litert,binance,monad -- --prune` — proses berat (kompilasi besar +
+  on-device embedder); jalan hanya atas permintaan eksplisit user. `upsert_tools`
+  memprovision tabel + index vektor + mirror FTS5 sendiri, jadi DB kosong cukup tanpa
+  bootstrap script.
 - **Drift check** (read-only, cepat): `cargo run --release --manifest-path
   src-tauri/Cargo.toml --example tool_catalog_drift_check --features
-  litert,binance,codegraph,monad` — verifikasi pasca-seed / coverage gate.
+  litert,binance,monad` — verifikasi pasca-seed / coverage gate.
 - Kedua example berbagi satu komposisi toolset: `src-tauri/examples/catalog_composition.rs` (jangan duplikasi logika di sana).
 
 ## 10. Adding a tool — checklist
