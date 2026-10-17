@@ -160,7 +160,7 @@ function DeliverableExport({ goal, markdown }: { goal: string; markdown: string 
   };
 
   return (
-    <div className="border-border/60 bg-background sticky bottom-0 z-10 -mx-6 flex flex-wrap items-center gap-2 border-t px-6 py-2">
+    <div className="border-border/60 bg-background sticky bottom-0 z-10 -mx-6 flex flex-wrap items-center gap-2 border-t px-6 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]">
       <Button disabled={copied} onClick={() => void copyMarkdown()} size="sm" variant="outline">
         <Icon name={copied ? "check" : "copy"} className="size-3" />
         {copied ? "Copied" : "Copy"}

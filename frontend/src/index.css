@@ -422,3 +422,22 @@ body {
     border-radius: inherit;
   }
 }
+
+/* Safe-area insets. `viewport-fit=cover` (frontend/index.html) makes these
+   non-zero on notched devices and under Android's edge-to-edge system bars;
+   they are 0 elsewhere, so desktop is unaffected. Apply to the app shell and
+   to any element pinned to a viewport edge (fixed/sticky bars, drawers,
+   toasts) — anything else is inside the shell's padding already. */
+@utility safe-t {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+@utility safe-b {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@utility safe-x {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+

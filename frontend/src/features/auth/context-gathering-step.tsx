@@ -36,8 +36,8 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
   if (onboarding.status == null) {
     if (!onboarding.loading) {
       return (
-        <main className="flex min-h-screen items-center justify-center bg-background p-6">
-          <div className="w-full max-w-md space-y-4 text-center">
+        <main className="safe-t safe-b flex min-h-dvh items-center justify-center overflow-y-auto bg-background p-6">
+          <div className="my-auto w-full max-w-md space-y-4 text-center">
             <p className="text-muted-foreground text-sm">
               {t("onboarding.statusReadFailed", { error: onboarding.error ?? "unknown error" })}
             </p>
@@ -106,8 +106,8 @@ export function ContextGatheringStep({ children }: { children: React.ReactNode }
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-6">
-      <div className="w-full max-w-lg space-y-6">
+    <main className="safe-t safe-b flex min-h-dvh items-center justify-center overflow-y-auto bg-background p-6">
+      <div className="my-auto w-full max-w-lg space-y-6">
         <div className="space-y-1.5 text-center">
           <h1 className="text-2xl font-semibold text-foreground">{t("onboarding.title")}</h1>
           <p className="text-muted-foreground text-sm">{t("onboarding.subtitle")}</p>
@@ -264,7 +264,7 @@ function BackgroundProgress() {
         : t("onboarding.progress.distilling");
 
   return (
-    <div className="fixed right-4 bottom-4 z-50 w-72 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3 shadow-lg">
+    <div className="fixed right-4 bottom-4 z-50 mb-[env(safe-area-inset-bottom,0px)] w-72 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3 shadow-lg">
       {onboarding.running ? (
         <>
           <p className="flex items-center gap-2 text-sm font-medium">

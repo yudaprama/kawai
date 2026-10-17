@@ -27,6 +27,9 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist"),
     emptyOutDir: true,
     rollupOptions: {
+      // Markdown/highlight deps stay OUT of the bundle and are fetched from
+      // esm.sh at runtime via the importmap in frontend/index.html. Bundling
+      // them locally costs ~15.4 MB (shiki alone emits 400+ language chunks).
       external: [
         /^shiki(\/.*)?$/,
         /^mermaid(\/.*)?$/,

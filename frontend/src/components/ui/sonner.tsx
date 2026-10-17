@@ -24,6 +24,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }
+      // `offset` accepts a CSS length, so fold the safe-area inset in:
+      // otherwise toasts land under the Android gesture-nav strip.
+      offset="calc(env(safe-area-inset-bottom, 0px) + 1rem)"
+      mobileOffset="calc(env(safe-area-inset-bottom, 0px) + 1rem)"
       {...props}
     />
   );

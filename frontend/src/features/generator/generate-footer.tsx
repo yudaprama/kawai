@@ -84,7 +84,7 @@ export function GenerateFooter({
   const shownReason = blocked ? null : !canSubmit || submitting ? disabledReason : null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-card p-3 lg:static lg:inset-auto">
+    <div className="fixed inset-x-0 bottom-0 z-20 border-t bg-card p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] lg:static lg:inset-auto lg:pb-3">
       <div className="flex items-stretch gap-2">
         <div
           className={cn(

@@ -71,8 +71,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-6">
-      <div className="w-full max-w-md space-y-6">
+    // min-h-dvh + overflow-y-auto + `my-auto` on the child: with the IME up
+    // the viewport shrinks (adjustResize), and this still centers on short
+    // screens while staying scrollable when the form is taller than the view.
+    <main className="safe-t safe-b flex min-h-dvh items-center justify-center overflow-y-auto bg-background p-6">
+      <div className="my-auto w-full max-w-md space-y-6">
         <h1 className="text-center text-2xl font-semibold text-foreground">{t("auth.welcome")}</h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">

@@ -315,7 +315,7 @@ export default function App() {
   };
 
   return (
-    <div className="bg-background text-foreground flex h-dvh w-full flex-col overflow-clip">
+    <div className="bg-background text-foreground safe-t safe-b safe-x flex h-dvh w-full flex-col overflow-clip">
       <ModeBar
         active={view == null ? mode : null}
         assetView={view}
@@ -360,7 +360,12 @@ export default function App() {
           <DialogContent
             aria-label={t("assetNav.mobileDrawerTitle")}
             className={cn(
-              "fixed inset-y-0 left-0 z-50 w-[210px] max-w-[85vw] p-3 shadow-xl",
+              // A sheet anchored to the left edge: cancel DialogContent's
+              // centering (top/left 50% + translate -50%/-50%), which
+              // twMerge does not remove on its own and which would otherwise
+              // push the drawer off-screen on phone widths.
+              "fixed inset-y-0 left-0 top-0 translate-x-0 translate-y-0 z-50",
+              "safe-t safe-b w-[210px] max-w-[85vw] p-3 shadow-xl",
               "data-[state=open]:animate-in data-[state=open]:slide-in-from-left",
               "data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left",
               "lg:hidden",

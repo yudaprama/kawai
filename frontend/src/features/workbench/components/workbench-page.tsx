@@ -516,94 +516,133 @@ export function WorkbenchPage({
         <div className="flex items-center justify-end gap-1 px-4 py-2">
           {onOpenSessions && <SessionsButton onOpen={onOpenSessions} />}
         </div>
-        <div className="flex flex-1 flex-col items-center justify-center gap-5 p-6 text-center">
-          <div className="space-y-2">
-            <p className="text-foreground inline-flex items-center gap-2 text-lg font-semibold">
-              <Icon name="zap" className="text-primary size-6" />
-              State a goal. Watch the work.
-            </p>
-            <p className="text-muted-foreground max-w-md text-xs">
-              Kawai plans the steps, runs the agents, and you watch every report land — the deliverable is written here,
-              not in a chat.
-            </p>
-          </div>
-          <div className="w-full max-w-2xl text-left">
-            <ChatComposer
-              agentName="Workbench"
-              chipDraft={chipDraft}
-              disabled={composerStatus === "submitted"}
-              lastUserText={workbench.lastUserText}
-              onAddFiles={handleAddFiles}
-              onAddLink={onAddLink}
-              onImageToKnowledge={onImageToKnowledge}
-              onSubmit={(text, fileIds) => submit(text, fileIds)}
-              onStop={workbench.supervisor.stop}
-              status={composerStatus}
-              placeholder={placeholderForTemplate(template)}
-              attachedFiles={workbench.attachedFiles}
-              onRemoveAttachedFile={workbench.removeAttachedFile}
-            />
-            <p className="text-muted-foreground mt-3 font-mono text-xs">
-              Attach knowledge files with @ — the run's agents can search them.
-            </p>
-            {/* Blocked submits reject the composer promise (draft kept) —
-                this is where the WHY lands; before, it only toasted. */}
-            {workbench.sessionError && (
-              <p className="text-destructive mt-2 font-mono text-xs leading-snug break-words" role="alert">
-                {workbench.sessionError}
+        <div className="flex min-h-0 flex-1 flex-col items-center gap-5 overflow-y-auto overscroll-contain p-6 text-center">
+          <div className="my-auto space-y-5">
+            <div className="space-y-2">
+              <p className="text-foreground inline-flex items-center gap-2 text-lg font-semibold">
+                <Icon name="zap" className="text-primary size-6" />
+                State a goal. Watch the work.
               </p>
-            )}
-            <GoalTemplates value={template} disabled={composerStatus === "submitted"} onChange={setTemplate} />
-            {templateOpensDesk(template) && (
-              <div className="mt-3">
-                <StockResearchForm
-                  disabled={composerStatus === "submitted"}
-                  domain={
-                    template === "crypto"
-                      ? "crypto"
-                      : template === "commodity"
-                        ? "commodity"
-                        : template === "forex"
-                          ? "forex"
-                          : "stock"
-                  }
-                  onSubmit={submitDesk}
+              <p className="text-muted-foreground max-w-md text-xs">
+                Kawai plans the steps, runs the agents, and you watch every report land — the deliverable is written
+                here, not in a chat.
+              </p>
+            </div>
+            <div className="w-full max-w-2xl text-left">
+              <ChatComposer
+                agentName="Workbench"
+                chipDraft={chipDraft}
+                disabled={composerStatus === "submitted"}
+                lastUserText={workbench.lastUserText}
+                onAddFiles={handleAddFiles}
+                onAddLink={onAddLink}
+                onImageToKnowledge={onImageToKnowledge}
+                onSubmit={(text, fileIds) => submit(text, fileIds)}
+                onStop={workbench.supervisor.stop}
+                status={composerStatus}
+                placeholder={placeholderForTemplate(template)}
+                attachedFiles={workbench.attachedFiles}
+                onRemoveAttachedFile={workbench.removeAttachedFile}
+              />
+              <p className="text-muted-foreground mt-3 font-mono text-xs">
+                Attach knowledge files with @ — the run's agents can search them.
+              </p>
+              {/* Blocked submits reject the composer promise (draft kept) —
+                this is where the WHY lands; before, it only toasted. */}
+              {workbench.sessionError && (
+                <p className="text-destructive mt-2 font-mono text-xs leading-snug break-words" role="alert">
+                  {workbench.sessionError}
+                </p>
+              )}
+              <GoalTemplates value={template} disabled={composerStatus === "submitted"} onChange={setTemplate} />
+              {templateOpensDesk(template) && (
+                <div className="mt-3">
+                  <StockResearchForm
+                    disabled={composerStatus === "submitted"}
+                    domain={
+                      template === "crypto"
+                        ? "crypto"
+                        : template === "commodity"
+                          ? "commodity"
+                          : template === "forex"
+                            ? "forex"
+                            : "stock"
+                    }
+                    onSubmit={submitDesk}
+                  />
+                </div>
+              )}
+              {templateOpensYoutube(template) && (
+                <div className="mt-3">
+                  <YoutubeSummaryForm disabled={composerStatus === "submitted"} onSubmit={submitYoutube} />
+                </div>
+              )}
+              {templateOpensAudit(template) && (
+                <div className="mt-3">
+                  <BinanceAuditForm disabled={composerStatus === "submitted"} onSubmit={submitBinanceAudit} />
+                </div>
+              )}
+              {templateOpensScreener(template) && (
+                <div className="mt-3">
+                  <CryptoScreenerForm disabled={composerStatus === "submitted"} onSubmit={submitCryptoScreener} />
+                </div>
+              )}
+            </div>
+            {workbench.runs.length > 0 ? (
+              <div className="w-full max-w-2xl text-left">
+                <RunHistory
+                  onReopen={(runId) => {
+                    setHome(false);
+                    userPick(runId, "final");
+                  }}
+                  runs={workbench.runs}
                 />
               </div>
-            )}
-            {templateOpensYoutube(template) && (
-              <div className="mt-3">
-                <YoutubeSummaryForm disabled={composerStatus === "submitted"} onSubmit={submitYoutube} />
-              </div>
-            )}
-            {templateOpensAudit(template) && (
-              <div className="mt-3">
-                <BinanceAuditForm disabled={composerStatus === "submitted"} onSubmit={submitBinanceAudit} />
-              </div>
-            )}
-            {templateOpensScreener(template) && (
-              <div className="mt-3">
-                <CryptoScreenerForm disabled={composerStatus === "submitted"} onSubmit={submitCryptoScreener} />
-              </div>
+            ) : (
+              <RecentRuns open={!sessionsOpen} reloadKey={recentKey} onOpen={openRecent} />
             )}
           </div>
-          {workbench.runs.length > 0 ? (
-            <div className="w-full max-w-2xl text-left">
-              <RunHistory
-                onReopen={(runId) => {
-                  setHome(false);
-                  userPick(runId, "final");
-                }}
-                runs={workbench.runs}
-              />
-            </div>
-          ) : (
-            <RecentRuns open={!sessionsOpen} reloadKey={recentKey} onOpen={openRecent} />
-          )}
         </div>
       </div>
     );
   }
+
+  // One composer, two placements: pinned to the bottom of the sidebar at lg+,
+  // and directly under the deliverable on phones (where the sidebar is a
+  // drawer — hiding the only input behind it made the app unusable on touch).
+  const composerPanel = (
+    <>
+      <div className="mb-2 flex items-center justify-between">
+        {workbench.runs.length > 0 ? (
+          <div className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
+            Session · {workbench.runs.length} run{workbench.runs.length === 1 ? "" : "s"}
+          </div>
+        ) : (
+          <span />
+        )}
+      </div>
+      {supervisor.status === "reviewing" && (
+        <p className="text-muted-foreground mb-2 font-mono text-xs">
+          A plan is awaiting your review above — run or discard it first.
+        </p>
+      )}
+      <FollowUpChips onChip={chipClicked} workbench={workbench} />
+      <ComposerQuoteBadge workbench={workbench} />
+      <GoalComposer
+        chipDraft={chipDraft}
+        workbench={workbench}
+        onAddFiles={handleAddFiles}
+        onAddLink={onAddLink}
+        onImageToKnowledge={onImageToKnowledge}
+        onSubmit={submit}
+        placeholder={
+          workbench.canFollowUp
+            ? "Follow up on the previous deliverable… (e.g. expand section 2, change tone)"
+            : undefined
+        }
+      />
+    </>
+  );
 
   return (
     <div className="bg-background flex h-full w-full overflow-hidden">
@@ -621,7 +660,9 @@ export function WorkbenchPage({
            the bottom. Hidden below lg by default; open = overlay drawer. */}
       <aside
         className={`border-border/60 bg-background w-96 max-w-[88vw] shrink-0 flex-col border-r lg:flex ${
-          mobileRail ? "fixed inset-y-0 left-0 z-50 flex shadow-xl lg:static lg:z-auto lg:shadow-none" : "hidden"
+          mobileRail
+            ? "safe-t safe-b fixed inset-y-0 left-0 z-50 flex shadow-xl lg:static lg:z-auto lg:shadow-none"
+            : "hidden"
         }`}
       >
         {/* Drawer header (below lg): label + close affordance. */}
@@ -660,37 +701,7 @@ export function WorkbenchPage({
             setDiscardArmed={setDiscardArmed}
           />
         </div>
-        <div className="border-border/60 border-t p-4">
-          <div className="mb-2 flex items-center justify-between">
-            {workbench.runs.length > 0 ? (
-              <div className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
-                Session · {workbench.runs.length} run{workbench.runs.length === 1 ? "" : "s"}
-              </div>
-            ) : (
-              <span />
-            )}
-          </div>
-          {supervisor.status === "reviewing" && (
-            <p className="text-muted-foreground mb-2 font-mono text-xs">
-              A plan is awaiting your review above — run or discard it first.
-            </p>
-          )}
-          <FollowUpChips onChip={chipClicked} workbench={workbench} />
-          <ComposerQuoteBadge workbench={workbench} />
-          <GoalComposer
-            chipDraft={chipDraft}
-            workbench={workbench}
-            onAddFiles={handleAddFiles}
-            onAddLink={onAddLink}
-            onImageToKnowledge={onImageToKnowledge}
-            onSubmit={submit}
-            placeholder={
-              workbench.canFollowUp
-                ? "Follow up on the previous deliverable… (e.g. expand section 2, change tone)"
-                : undefined
-            }
-          />
-        </div>
+        <div className="border-border/60 hidden border-t p-4 lg:block">{composerPanel}</div>
       </aside>
 
       {/* Right: the CANVAS — run switcher + exactly one full document. The
@@ -790,6 +801,9 @@ export function WorkbenchPage({
             </div>
           </div>
         )}
+        {/* Phone composer: the sidebar's copy is lg-only, so without this the
+            only way to type a follow-up is opening the progress drawer. */}
+        <div className="border-border/60 safe-b shrink-0 border-t p-3 lg:hidden">{composerPanel}</div>
       </main>
     </div>
   );
