@@ -173,11 +173,16 @@ jobs:
             exit 0
           fi
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload-keystore.jks"
+          # The upload keystore is PKCS12 (kawai-android-upload.p12, alias
+          # `upload`): the format has no separate key password — Java derives
+          # it from the store password. ANDROID_KEY_PASSWORD is ignored here;
+          # passing it as keyPassword makes gradle fail key decryption
+          # ("Given final block not properly padded") whenever it differs.
           cat > src-tauri/gen/android/keystore.properties <<EOF
           storeFile=$RUNNER_TEMP/upload-keystore.jks
           storePassword=$STORE_PASSWORD
           keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
+          keyPassword=$STORE_PASSWORD
           EOF
           echo "signed=true" >> "$GITHUB_OUTPUT"
 
