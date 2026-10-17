@@ -124,7 +124,9 @@ jobs:
           # compileSdk/targetSdk 37 + NDK 28 match src-tauri/gen/android.
           # API 37's platform package is 'android-37.0' (minor-versioned naming);
           # 'platforms;android-37' does not exist and makes setup-android fail.
-          packages: 'platforms;android-37.0;build-tools;37.0.0;ndk;28.0.13004158'
+          # NDK 28.0.13004158 was never published — 28.2.13676358 is the
+          # newest stable 28.x in the repository.
+          packages: 'platforms;android-37.0;build-tools;37.0.0;ndk;28.2.13676358'
 
       - uses: dtolnay/rust-toolchain@stable
         with:
