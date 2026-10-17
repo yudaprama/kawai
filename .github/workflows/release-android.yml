@@ -121,18 +121,27 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
+          # The runner's preinstalled cmdline-tools (16.0) cannot parse the
+          # SDK XML v4 repository, so minor-versioned platforms like
+          # 'platforms;android-37.0' are invisible to it. Install
+          # cmdline-tools;latest first (old-format package, always
+          # resolvable), then install the rest with the new sdkmanager.
+          packages: 'cmdline-tools;latest'
+
+      - name: Install SDK packages (API 37.0, build-tools 37, NDK 28)
+        run: |
+          set -euo pipefail
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           # compileSdk/targetSdk 37 + NDK 28 match src-tauri/gen/android.
-          # API 37's platform package is 'android-37.0' (minor-versioned naming);
-          # 'platforms;android-37' does not exist. NDK 28.0.13004158 was never
-          # published — 28.2.13676358 is the newest stable 28.x in the
-          # repository. Packages are NEWLINE-separated: the action passes each
-          # line to sdkmanager verbatim (one semicolon-containing string per
-          # package; space/semicolon joining makes sdkmanager look for a single
-          # package with the whole line as its name).
-          packages: |
-            platforms;android-37.0
-            build-tools;37.0.0
-            ndk;28.2.13676358
+          # API 37's platform package is 'android-37.0' (minor-versioned
+          # naming); 'platforms;android-37' does not exist. NDK 28.0.13004158
+          # was never published — 28.2.13676358 is the newest stable 28.x.
+          # One package per line: sdkmanager takes one package per argument.
+          yes | "$SDKM" --licenses > /dev/null
+          "$SDKM" --install \
+            "platforms;android-37.0" \
+            "build-tools;37.0.0" \
+            "ndk;28.2.13676358"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
