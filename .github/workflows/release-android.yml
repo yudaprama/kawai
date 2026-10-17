@@ -108,6 +108,10 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
           token: ${{ secrets.RELEASE_TOKEN }}
+          # Private submodules (office_oxide, pdf_oxide, kawai-vault, …) are
+          # path/git dependencies of src-tauri's default `desktop` feature —
+          # the release token above authenticates the fetches.
+          submodules: recursive
 
       - name: Git auth for private dependencies
         run: |
