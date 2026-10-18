@@ -260,6 +260,13 @@ jobs:
 
       # Office document ops (read/edit/info + creation) and PDF ops are
       # pure Rust (office_oxide, in-process) — no external engine.
+      # macOS bundles ad-hoc signed (`bundle.macOS.signingIdentity: "-"` in
+      # src-tauri/tauri.conf.json) — no Developer ID certificate is in the
+      # release path. Do NOT add APPLE_* env vars here: unset secrets arrive as
+      # EMPTY strings, and tauri prefers APPLE_SIGNING_IDENTITY over the config
+      # value, so the "-" identity would be replaced by "" and notarytool would
+      # run with empty credentials — red release. User-side workaround:
+      # README.md "First launch".
 
       - name: Build .app (with litert + office)
         uses: tauri-apps/tauri-action@v0

@@ -28,11 +28,22 @@ versions and the standalone `kawai-web` server binary) on the
 
 ## First launch
 
-- **macOS** — the app is ad-hoc signed (no Apple Developer account). Gatekeeper asks once:
-  right-click the app → **Open**. Every launch after that is normal, and in-app updates are
-  quarantine-free. If macOS says the app is **damaged** (copies downloaded before v0.3.4,
-  which shipped without a bundle signature seal), run
-  `xattr -cr /Applications/kawai.app` once — or reinstall from a v0.3.4+ download.
+- **macOS** — the release `.app` is **ad-hoc signed** (no Developer ID certificate in the
+  release path), so macOS treats it like any other unsigned download: a `.dmg` fetched in
+  a browser gets tagged `com.apple.quarantine`, and the first launch shows the
+  *"Apple could not verify …"* dialog. Three ways out, cheapest first:
+
+  ```sh
+  # 1. fetch it with a client, not a browser — no quarantine flag at all:
+  gh release download kawai_aarch64.dmg -R yudaprama/kawai   # or: curl -fLO <the URL in the table>
+  # 2. already downloaded? clear the flag on the .dmg BEFORE opening it, then drag as usual:
+  xattr -d com.apple.quarantine ~/Downloads/kawai_aarch64.dmg
+  # 3. or dismiss it once — right-click the app → Open
+  ```
+
+  With (1) or (2) nothing inherits the flag and every launch is clean; in-app updates never
+  re-trigger it. An older copy that macOS calls *damaged* (before v0.3.4, which shipped
+  without a bundle signature seal) is fixed by `xattr -cr /Applications/kawai.app`.
 - **Windows** — unsigned installer: SmartScreen shows "Windows protected your PC" →
   **More info → Run anyway**. Updates installed through the in-app updater do not re-trigger it.
 - **Linux** — AppImage (`chmod +x`, run) or install the deb/rpm.

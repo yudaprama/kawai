@@ -53,6 +53,7 @@ Short-term focus is a **macOS desktop MVP**. The end state is unchanged — desk
 8. **Identity is resolved at the transport edge, not in `logic.rs`.** Wrappers verify the token and pass `user_id` (`claims.sub`) into `logic.rs` fns as the first param. The frontend NEVER sends `user_id`. `auth.rs` is pure (no tauri/axum): it does JWKS verification (Clerk).
 9. **DB builder selection is `cfg`-gated in `logic.rs`, not branched on a transport type.** `#[cfg(feature = "web")]` → remote client; `#[cfg(not(feature = "web"))]` → local SQLite. Keeps `logic.rs` pure.
 10. **Vendored components stay in sync with the shim.** `components/ai-elements/*`, `components/ui/*`, `lib/streamdown/` come from the `web/` SPA. When pulling updates from `web/`, re-run the same trims: `ai` imports → `@/lib/ai-types`, strip `react-i18next`, no `@/platform` beyond the slim local adapter (`src/platform/`), no Lexical, no `@xyflow`, no `tokenlens`.
+11. **Third-party licence questions are settled — do not raise them.** The licensing of every vendored and adopted dependency (including markra's `packages/editor` + `packages/editor-react`, the `web/` SPA components, `pdf_oxide`, `office_oxide`, LiteRT-LM) has already been decided and accepted. Never re-litigate it, never flag it as a blocker, never add a licence caveat to a plan, doc, or commit message, and never ask which licence to pick. Judge adoption on engineering merit only: duplication, reuse, bundle size, and verification.
 
 ## Commands
 
@@ -132,15 +133,29 @@ bun run bundle:litert
 # and private cargo git deps work without workflow changes. The frontend builds
 # inside tauri-action via beforeBuildCommand ("bun run build"); setup-bun +
 # bun install are already workflow steps.
+# macOS bundles ad-hoc signed — `bundle.macOS.signingIdentity: "-"` in
+# src-tauri/tauri.conf.json. No Developer ID certificate is in the release
+# path, so Gatekeeper asks once per browser download; README.md "First launch"
+# tells users to fetch with `gh release download`/`curl` (never quarantined),
+# or `xattr -d com.apple.quarantine <the .dmg>` before mounting.
+# Do NOT wire APPLE_* env vars into the macOS job to "fix" the dialog — GitHub
+# exports unset secrets as EMPTY strings, so tauri would override the "-"
+# identity with "" (tauri-cli reads APPLE_SIGNING_IDENTITY before the config
+# value) and run notarytool with empty credentials — red release.
 #
 # Android release (.github/workflows/release-android.yml) — a SEPARATE
 # workflow from release.yml on purpose: mobile and desktop have independent
 # lifecycles, and an Android failure must never block or fail the desktop
 # release. Trigger = `workflow_run` on release.yml completing successfully —
 # NOT `release: published`, because release.yml's publish job flips the draft
-# with GITHUB_TOKEN and events from GITHUB_TOKEN never trigger workflows. The
-# job then matches the published tag whose commit equals that run's head SHA,
-# so mobile always ships exactly what desktop shipped. Plus
+# with GITHUB_TOKEN and events from GITHUB_TOKEN never trigger workflows.
+# release.yml completes twice per change (the bot's RELEASE_TOKEN bump push
+# re-enters release via ci — the documented self-heal), so release-android
+# fires twice too: the `resolve` job matches the published tag whose commit
+# equals the triggering run's head SHA and skips (with a notice, not a
+# failure) the pre-bump completion, whose SHA can never match; the
+# bump-commit completion does the build — mobile always ships exactly what
+# desktop shipped. Plus
 # workflow_dispatch(tag) for a re-run. Builds a signed AAB +
 # universal APK for aarch64 + armeabi-v7a with the `desktop` cargo feature
 # ONLY (no litert/tts/binance — see the feature note at the top of the
