@@ -267,6 +267,11 @@ jobs:
       # value, so the "-" identity would be replaced by "" and notarytool would
       # run with empty credentials — red release. User-side workaround:
       # README.md "First launch".
+      # The bundle must keep `bundle.macOS.entitlements`
+      # (src-tauri/Entitlements.plist — com.apple.security.cs.disable-library-validation).
+      # Without it, ad-hoc signing + the hardened runtime makes dyld's library
+      # validation reject the prebuilt LiteRT-LM dylibs (different Team IDs) and
+      # the app aborts at launch with "Library not loaded: @rpath/liblitert-lm.dylib".
 
       - name: Build .app (with litert + office)
         uses: tauri-apps/tauri-action@v0

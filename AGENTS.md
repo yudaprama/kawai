@@ -240,6 +240,7 @@ DevTools, and auth/login-hang triage) see §2 "Android device" in
 ## Landmines (things that already bit us)
 
 - **`@types/hast` must stay pinned to 3.0.4.** `resolutions` in `package.json` forces it across the tree. 3.0.5 rewrites `Properties.className` to `string[]` and bun nests per-package copies (under `mdast-util-to-hast`, `@shikijs/*`, …), which SPLITS the `hast` module identity: `mdast-util-to-hast`'s module augmentation (`RootContentMap.raw`) stops applying to the copy `streamdown/lib/markdown.ts` sees → TS2367/TS2339 across the markdown renderer. If you bump it, `bun install --force` and re-check `find node_modules -path '*node_modules/@types/hast' -maxdepth 5 -type d | wc -l` is 1.
+- **macOS: the ad-hoc bundle NEEDS `com.apple.security.cs.disable-library-validation`.** The .app is ad-hoc signed (`bundle.macOS.signingIdentity: "-"`), so it carries no Team ID, and the bundled LiteRT-LM dylibs are prebuilt (not signed by us). With the hardened runtime on (Tauri default `bundle.macOS.hardenedRuntime: true`), dyld's library validation rejects any loaded non-platform library whose Team ID differs from the process's — an ad-hoc Team ID never matches — and the app dies at launch with `Library not loaded: @rpath/liblitert-lm.dylib … mapping process and mapped file (non-platform) have different Team IDs`. `src-tauri/Entitlements.plist` (wired via `bundle.macOS.entitlements`) carries that single entitlement. Re-codesigning the dylibs ad-hoc does NOT help, and re-signing the main binary does NOT either — only dropping the runtime flag (`hardenedRuntime: false`) or the entitlement unblocks the load.
 - **Frontend deps must be installed before `tauri dev`/`tauri build`.** `bun install` in `kawai/` (Vite root is `frontend/`; deps live at the repo package root). CI already does this.
 - **Vite `server.port: 1420` is `strictPort`** (Tauri `devUrl` expects exactly this port) and `watch.ignored` covers `src-tauri/**` — don't let vite watch the Rust side (rebuild loop).
 - **`async_stream` streams are not `Unpin`.** `Box::pin(...)` before calling `.next()` in a loop.
@@ -314,6 +315,7 @@ src-tauri/src/lib.rs             # Tauri builder; .manage(...); generate_handler
 src-tauri/examples/local_llm_smoke.rs  # headless local-LLM smoke test (features litert)
 src-tauri/Cargo.toml             # axum/tower-http behind "web"; cognee-litert-lm behind "litert"
 src-tauri/build.rs               # tauri_build + embeds @executable_path/../Frameworks rpath (litert+macOS)
+src-tauri/Entitlements.plist      # macOS: com.apple.security.cs.disable-library-validation (see Landmines — the ad-hoc litert bundle needs it)
 cognee-litert-lm/                # Rust bindings for the LiteRT-LM C API (path dep)
 cognee-litert-lm/vendor/LiteRT-LM         # submodule = upstream google-ai-edge main + macOS patches
 cognee-litert-lm/native/         # gitignored: prepared LiteRT-LM dylibs (bundle-litert-dylibs.sh fills this)

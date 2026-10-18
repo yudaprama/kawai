@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!--
+      The LiteRT-LM shared libraries (liblitert-lm.dylib + companions) are
+      prebuilt, not signed by us, and the .app is ad-hoc signed
+      (bundle.macOS.signingIdentity "-", no Team ID). With the hardened
+      runtime on, dyld's library validation rejects any loaded non-platform
+      library whose Team ID differs from the process's — an ad-hoc team ID
+      never matches — and the app aborts at launch with
+      "Library not loaded: @rpath/liblitert-lm.dylib … different Team IDs".
+      This entitlement is the documented escape hatch for exactly that case.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+  </dict>
+</plist>
