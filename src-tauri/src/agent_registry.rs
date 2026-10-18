@@ -28,6 +28,9 @@ pub const ENTERTAINMENT_AGENT_ID: &str = "builtin.entertainment";
 /// Read-only Monad EVM chain reporter (wallet snapshot, token reads, tx
 /// status, transfer history). Feature "monad".
 pub const MONAD_AGENT_ID: &str = "builtin.monad";
+/// Local double-entry ledger + Indian GST accounting agent. Feature
+/// "accounting".
+pub const ACCOUNTING_AGENT_ID: &str = "builtin.accounting";
 
 /// Build the agent catalog list from the built-in registry.
 pub fn list_agents() -> Vec<AgentInfo> {
@@ -319,6 +322,25 @@ pub fn monad_tools_for_supervisor(
     }
 }
 
+/// Accounting: the local-ledger toolset, bound to the requesting user. No
+/// credentials, no network — the whole surface is the user's own database.
+#[cfg(feature = "litert")]
+pub fn accounting_tools_for_supervisor(
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    #[cfg(all(feature = "accounting", not(target_os = "android")))]
+    {
+        let mut set = accounting_tools::registry::toolset(context.user_id);
+        return Some(add_runtime_tools(set, context, remote_configured, false));
+    }
+    #[cfg(not(all(feature = "accounting", not(target_os = "android"))))]
+    {
+        let _ = (context, remote_configured);
+        None
+    }
+}
+
 /// Catalog-seed/drift variant: builds the same toolset with NO device wallet
 /// bound. The Turso catalog is global curation — one dev machine's keychain
 /// state must never leak into it (the `PER_DEVICE_TOOLS` principle), and
@@ -557,7 +579,33 @@ pub fn builtin() -> AgentRegistry {
         )
     };
 
-    AgentRegistry::new(vec![office, presentation, binance, analytics, entertainment, monad])
+    let accounting = {
+        #[cfg(all(feature = "accounting", not(target_os = "android")))]
+        {
+            AgentDefinition {
+                id: ACCOUNTING_AGENT_ID,
+                name: "Accounting",
+                description: "Double-entry bookkeeping, GST invoices, financial reports, and GSTR-1 exports on your local ledger.",
+                tools: true,
+                enabled: true,
+                persona: FALLBACK_PERSONA,
+                build_tools: accounting_tools_for_supervisor,
+                capabilities: AgentCapabilities::default(),
+                capability_for_tool: no_capability,
+                confirmation_for_tool: no_confirmation,
+                summary_directive: None,
+            }
+        }
+        #[cfg(not(all(feature = "accounting", not(target_os = "android"))))]
+        unavailable_definition(
+            ACCOUNTING_AGENT_ID,
+            "Accounting",
+            "Double-entry bookkeeping, GST invoices, financial reports, and GSTR-1 exports on your local ledger.",
+            false,
+        )
+    };
+
+    AgentRegistry::new(vec![office, presentation, binance, analytics, entertainment, monad, accounting])
 }
 
 /// Non-litert build: all agents are disabled placeholders.
@@ -598,6 +646,12 @@ pub fn builtin() -> AgentRegistry {
             MONAD_AGENT_ID,
             "Monad",
             "Read-only Monad EVM wallet and chain data.",
+            false,
+        ),
+        unavailable_definition(
+            ACCOUNTING_AGENT_ID,
+            "Accounting",
+            "Double-entry bookkeeping, GST invoices, financial reports, and GSTR-1 exports on your local ledger.",
             false,
         ),
     ])
@@ -645,6 +699,7 @@ mod tests {
                 ANALYTICS_AGENT_ID,
                 ENTERTAINMENT_AGENT_ID,
                 MONAD_AGENT_ID,
+                ACCOUNTING_AGENT_ID,
             ]
         );
     }

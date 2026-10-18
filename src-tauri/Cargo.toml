@@ -92,6 +92,9 @@ url = { version = "2", optional = true }
 # Binance agent tools (builtin.binance): keyless public market data via the
 # crates.io binance-sdk (rustls, spot-only) + in-process TA.
 binance = { path = "../crates/toolsets/binance", optional = true }
+# Accounting agent tools (builtin.accounting): local double-entry ledger,
+# GST invoices, reports, GSTR-1 exports via the vendored accounting-core.
+accounting-tools = { path = "../crates/toolsets/accounting", optional = true }
 
 # Split-out first-party crates (foundation / engines / toolsets / integrations).
 kawai-auth = { path = "../crates/foundation/auth" }
@@ -174,6 +177,9 @@ office = ["dep:base64", "dep:kawai-embedding", "dep:ragloader", "dep:youtube_tra
 # Binance agent (logic::agent BINANCE_AGENT_ID): read-only public market-data +
 # technical-analysis tools. Independent of `office`; needs a tool-loop runtime.
 binance = ["dep:binance", "kawai-agent/binance"]
+# Accounting agent (builtin.accounting): local double-entry ledger + GST
+# via accounting-tools (vendored accounting-core). No external services.
+accounting = ["dep:accounting-tools"]
 # Monad EVM chain client (read-only RPC: balance + chain status). Pure alloy
 # HTTP provider — no keys, no signing. monad-tools carries the read-only
 # AgentTool surface (builtin.monad).
