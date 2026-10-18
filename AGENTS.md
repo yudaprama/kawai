@@ -327,7 +327,7 @@ models/                          # .litertlm model files (gitignored, GB-scale)
 design-demos/                    # UI mock HTML files (standalone)
 .env                             # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)
 .env.local                       # VITE_CLERK_PUBLISHABLE_KEY + CLERK_SECRET_KEY (gitignored)
-scripts/sqld/run-local.sh        # dev-only local sqld (`squawk` / `toolcatalog` instances); the tool catalog itself is hosted on Turso
+scripts/sqld/run-local.sh        # dev-only local sqld (`toolcatalog` instance) for offline experiments; the live catalog is hosted on Turso (squawk = per-user local SQLite, no sqld)
 scripts/bundle-litert-dylibs.sh  # prep all LiteRT dylibs into native/ for bundling into the .app
 .github/tauri-litert.json        # merges LiteRT dylibs into `bundle.macOS.files` (Contents/Frameworks)
 app.log                          # symlink → platform log dir (macOS ~/Library/Logs/kawai/; on-device: <app_data>/logs/app.log)

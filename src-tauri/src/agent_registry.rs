@@ -392,7 +392,20 @@ macro_rules! generated_http_tools {
 }
 
 generated_http_tools!(weather_geo_tools_for_supervisor, weather_geo);
-generated_http_tools!(news_media_tools_for_supervisor, news_media);
+/// News-media: generated HTTP tools + the two user-bound squawk tools
+/// (per-user local SQLite cache; identity bound here — the model can never
+/// supply it).
+#[cfg(feature = "litert")]
+pub fn news_media_tools_for_supervisor(
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    let _ = remote_configured;
+    let mut set = news_media::all_tools();
+    set.add_tool(news_media::NewsSquawkTool(context.user_id.to_string()));
+    set.add_tool(news_media::NewsSquawkSearchTool(context.user_id.to_string()));
+    Some(set)
+}
 generated_http_tools!(sports_tools_for_supervisor, sports);
 generated_http_tools!(food_drink_tools_for_supervisor, food_drink);
 generated_http_tools!(geospace_tools_for_supervisor, geospace);
