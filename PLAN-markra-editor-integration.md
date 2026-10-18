@@ -135,6 +135,57 @@ kawai runs in Tauri/WKWebView, so this likely matters — a single click becomin
 a range selection is exactly the bug it prevents. markra's patch is pnpm-
 formatted; kawai is bun. `patchedDependencies` works in both, but the patch
 must be copied and re-verified, not symlinked. **Decision required:** port the
+patch, or verify the symptom first.
+
+### Dependency landscape — kawai vs markra (full inventory)
+
+Side-by-side of both package graphs (kawai root `package.json` vs markra
+`packages/*` + `apps/*`, markra v2.13.0). Three groups: same role / different
+library, same library / different version, and one-sided.
+
+**Same role, different library:**
+
+| Role | kawai | markra |
+|---|---|---|
+| Markdown → React | `marked` + `hast-util-to-jsx-runtime` (+ vendored `streamdown`) | `react-markdown` (app) |
+| HTML sanitisation | `rehype-sanitize` + `rehype-harden` + `rehype-raw` (HAST pipeline) | `raw-html-sanitize.ts` DOM allowlist (§3, §5 — not duplication) |
+| Line breaks / CJK | `remark-cjk-friendly` + `remark-cjk-friendly-gfm-strikethrough` | `remark-breaks` |
+| Syntax highlighting | `shiki` 4.4.3 | `lowlight` (highlight.js) — rejected, see §5 |
+| Editing surface | none (streamdown is read-only) | CodeMirror 6 (`@codemirror/*`) + `@lezer/*` — the whole point of this plan |
+| HTML → markdown | none in JS (Rust `logic/scrape.rs`) | `turndown` (+ `@mozilla/readability` + `jsdom` in `packages/ai`) |
+| LLM runtime | no SDK — hand-written Rust SSE client (`logic/remote.rs`) + on-device LiteRT-LM | `ai` 6 + 11 `@ai-sdk/*` providers + `@earendil-works/pi-agent-core` / `pi-ai` |
+| UI primitives | `radix-ui` + `cmdk` | `@base-ui/react` |
+| Icons | none (inline SVG / `components/ui/`) | `lucide` / `lucide-react` — rejected, see §5 |
+| Fonts | `@fontsource-variable/inter`, `jetbrains-mono` | `@fontsource-variable/noto-sans`, `noto-sans-sc` |
+| Animation / drag | `motion` (Framer Motion) | `@dnd-kit/{core,sortable,utilities}` (no animation lib) |
+| Telemetry | `@sentry/react` | none |
+
+**Same library, different version (potential conflicts if the seam shares
+them):**
+
+| Package | kawai | markra | Note |
+|---|---|---|---|
+| `katex` | 0.18.4 (pinned) | 0.16.45 | §5 says "use kawai's katex" — markra pins 0.16.45 exactly, so the adapter must compile against kawai's 0.18 and markra's 0.16 call sites are dropped. |
+| `mermaid` | 11.16.1 | 11.15.0 | kawai's loader wins (§5). |
+| `unified` | 11.0.5 | 11.0.5 | identical |
+| `remark-parse` / `remark-gfm` / `remark-math` | 11.0.0 / 4.0.1 / 6.0.0 | same | identical (but `remark-math` is dead in markra's manifest, §3) |
+| `sonner` | ^2.0.8 | ^2.0.7 | compatible range |
+| `@tanstack/react-virtual` | ^3.14.9 | 3.14.2 | compatible |
+| `react` / `react-dom` | ^19.2.7 | 19.2.5 exact peer | §4 open question 4 |
+| `@tauri-apps/api` | ^2.12.1 | 2.11.0 (pinned in `packages/markdown`) | §4 open question 4 |
+| `vite` / `tailwindcss` / `typescript` / `vitest` | ^8.1.1 / ^4.3.2 / ~6.0.2 / ^4.1.11 | 8.0.10 / ^4.2.4 / 6.0.3 / 4.1.5 | build-time only |
+
+**One-sided (present in only one graph):**
+
+| Only kawai | Only markra |
+|---|---|
+| `@rive-app/react-webgl2`, `d3-force`, `qrcode.react`, `media-chrome`, `embla-carousel-react`, `ansi-to-react`, `nanoid`, `use-stick-to-bottom`, `vue` (root-level legacy), `@sentry/react`, `shiki`, `marked`, `streamdown` (vendored) | `@codemirror/*`, `@lezer/*`, `@replit/codemirror-vim`, `turndown`, `@mozilla/readability`, `jsdom`, `cspell-trie-lib`, `css-tree`, `@noble/hashes`, `yaml`, `remark-frontmatter`, `@dnd-kit/*`, `lucide`, `@base-ui/react`, `mdast-util-to-string`, `ignore` (apps/web) |
+
+Takeaway for this plan: the only dependencies the adoption genuinely adds are
+the CodeMirror/Lezer family + `turndown` + `mdast-util-to-string` (§5 "kept
+whole" list); everything else markra pulls in is either already in kawai's
+tree under a different version (katex, mermaid), already rejected as
+duplicate capability (lowlight, lucide), or dead in markra's own manifest.
 
 ---
 
