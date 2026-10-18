@@ -2250,6 +2250,8 @@ key and secret in Settings → Binance API first"
     let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
         .unwrap_or_default();
     let plan = ::binance::build_audit_plan(args);
+    #[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
+    let plan = crate::supervisor::append_books_sync_step(plan);
     let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language, Some(&market));
     let tool_registry = crate::supervisor::build_fixed_binance_registry(
         &ctx.user_id,
@@ -2260,6 +2262,79 @@ key and secret in Settings → Binance API first"
     .map_err(|e| e.to_string())?;
 
     tracing::info!(component = "binance-risk-audit", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running futures risk audit");
+    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
+        .await
+}
+
+/// Trading Performance: run the FIXED performance pipeline — sync Binance
+/// futures fills into the ledger, then read the books back as a period review
+/// (win rate/expectancy, per-pair realized PnL, fee summary, ledger integrity
+/// gate).
+///
+/// Deterministic Rust plan: `accounting_tools::plan::build_trading_performance_plan`
+/// is the SAME builder the `trading_performance` router template calls, so the
+/// chip and free text produce an identical plan (the `kawaii_desk` pattern).
+/// Registry is the merged catalog; no planning round happens. The review gate
+/// still applies — the import step is a write, and the executor forces the
+/// registry's confirmation policy before dispatch.
+///
+/// The period is normalized BEFORE the plan exists, so an unreadable period is
+/// a plain op error the form can show — never a half-started run, never a
+/// silent planner fallback.
+#[cfg(all(feature = "litert", feature = "accounting", feature = "binance", not(target_os = "android")))]
+#[tauri::command]
+pub async fn run_trading_performance(
+    session_id: i64,
+    period: String,
+    // Raw device locale tag (e.g. "id-ID") — resolved into the report's
+    // output language at this edge (see `supervisor::resolve_user_language`).
+    language: Option<String>,
+    stream_id: String,
+    on_event: Channel<kawai_events::SupervisorEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+    pending: State<'_, crate::supervisor::PendingConfirmations>,
+) -> Result<(), String> {
+    let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
+    let plan = accounting_tools::plan::build_trading_performance_plan(
+        period.trim(),
+        chrono::Local::now().date_naive(),
+    )?;
+    let user_goal = plan.goal.clone();
+    let tool_registry = crate::supervisor::build_registry_for_plan(&ctx.user_id, session_id, &plan)
+        .await
+        .map_err(|e| e.to_string())?;
+    tracing::info!(component = "trading-performance", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running trading performance review");
+    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
+        .await
+}
+
+/// Monthly Close: the accounting close over one period — collect the period's
+/// transactions, build the four statements, gate on the integrity check,
+/// export GSTR-1. Same fixed-pipeline lifecycle and the same domain builder
+/// the `accounting_monthly_close` router template calls.
+#[cfg(all(feature = "litert", feature = "accounting", not(target_os = "android")))]
+#[tauri::command]
+pub async fn run_monthly_close(
+    session_id: i64,
+    period: String,
+    language: Option<String>,
+    stream_id: String,
+    on_event: Channel<kawai_events::SupervisorEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+    pending: State<'_, crate::supervisor::PendingConfirmations>,
+) -> Result<(), String> {
+    let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
+    let plan = accounting_tools::plan::build_monthly_close_plan(
+        period.trim(),
+        chrono::Local::now().date_naive(),
+    )?;
+    let user_goal = plan.goal.clone();
+    let tool_registry = crate::supervisor::build_registry_for_plan(&ctx.user_id, session_id, &plan)
+        .await
+        .map_err(|e| e.to_string())?;
+    tracing::info!(component = "monthly-close", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running monthly close");
     ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
         .await
 }

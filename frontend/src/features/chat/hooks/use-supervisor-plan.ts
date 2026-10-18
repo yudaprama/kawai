@@ -599,6 +599,46 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [startStream],
   );
 
+  /** Trading Performance: execute the FIXED performance pipeline — sync
+   *  Binance futures fills into the ledger, then read the books back as a
+   *  period review (win rate, per-pair PnL, fees, integrity gate). Same
+   *  fixed-plan contract as the audit: no planner round, no string routing,
+   *  merged-catalog registry. The write step still gates on confirmation. */
+  const runTradingPerformance = useCallback(
+    (options: { period: string }, sessionId: number) => {
+      if (streamCtrl.current) return;
+      startStream(
+        {
+          sessionId,
+          period: options.period,
+          // Device locale → report language (resolved server-side).
+          language: navigator.language,
+        },
+        sessionId,
+        "run_trading_performance",
+      );
+    },
+    [startStream],
+  );
+
+  /** Monthly Close: the FIXED accounting close over one period — collect the
+   *  period's transactions, four statements, integrity gate, GSTR-1 export. */
+  const runMonthlyClose = useCallback(
+    (options: { period: string }, sessionId: number) => {
+      if (streamCtrl.current) return;
+      startStream(
+        {
+          sessionId,
+          period: options.period,
+          language: navigator.language,
+        },
+        sessionId,
+        "run_monthly_close",
+      );
+    },
+    [startStream],
+  );
+
   /** Crypto Screener: execute the FIXED screener pipeline — one parallel
    * `crypto_screener` step per selected screen, then the built-in deliverable
    * writer. No planner, no review gate, keyless public market data. Streams
@@ -816,6 +856,8 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     runDesk,
     runYoutube,
     runBinanceAudit,
+    runTradingPerformance,
+    runMonthlyClose,
     runCryptoScreener,
     planAndRun,
     resume,

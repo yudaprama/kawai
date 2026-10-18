@@ -21,6 +21,8 @@ import {
   templateOpensAudit,
   templateOpensDesk,
   templateOpensScreener,
+  templateOpensBookClose,
+  templateOpensTradingPerformance,
   templateOpensYoutube,
 } from "./goal-templates";
 import type { GoalTemplateId } from "./goal-templates";
@@ -28,6 +30,8 @@ import { ProgressRail, RunHistoryRail } from "./progress-rail";
 import { YoutubeSummaryForm } from "./youtube-summary-form";
 import { BinanceAuditForm } from "./binance-audit-form";
 import { CryptoScreenerForm } from "./crypto-screener-form";
+import { BookCloseForm } from "./book-close-form";
+import { TradingPerformanceForm } from "./trading-performance-form";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
 import { useI18n } from "@/hooks/use-i18n";
@@ -412,6 +416,29 @@ export function WorkbenchPage({
     [beginPipelineRun, workbench.runScreener],
   );
 
+  /** Monthly book close submit: the goal routes through the deterministic
+   *  router to the `accounting_monthly_close` template — collect, four
+   *  statements, integrity gate, GSTR-1 — and the plan lands in the review
+   *  gate exactly like a planner-authored one. Same general path as free
+   *  text (`workbench.run`), only with the goal pre-structured by the form. */
+  const submitBookClose = useCallback(
+    (period: string) => {
+      beginPipelineRun((onStart) => workbench.runMonthlyClose(period, { onStart }));
+    },
+    [beginPipelineRun, workbench.runMonthlyClose],
+  );
+
+  /** Trading performance review submit: the goal routes through the
+   *  deterministic router to the `trading_performance` template — sync,
+   *  win rate, per-pair PnL, fees, integrity gate — and the plan lands in
+   *  the review gate like any planner-authored one. */
+  const submitTradingPerformance = useCallback(
+    (period: string) => {
+      beginPipelineRun((onStart) => workbench.runTradingPerformance(period, { onStart }));
+    },
+    [beginPipelineRun, workbench.runTradingPerformance],
+  );
+
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)
     : ("ready" as const);
@@ -523,10 +550,6 @@ export function WorkbenchPage({
                 <Icon name="zap" className="text-primary size-6" />
                 State a goal. Watch the work.
               </p>
-              <p className="text-muted-foreground max-w-md text-xs">
-                Kawai plans the steps, runs the agents, and you watch every report land — the deliverable is written
-                here, not in a chat.
-              </p>
             </div>
             <div className="w-full max-w-2xl text-left">
               <ChatComposer
@@ -585,6 +608,16 @@ export function WorkbenchPage({
               {templateOpensScreener(template) && (
                 <div className="mt-3">
                   <CryptoScreenerForm disabled={composerStatus === "submitted"} onSubmit={submitCryptoScreener} />
+                </div>
+              )}
+              {templateOpensBookClose(template) && (
+                <div className="mt-3">
+                  <BookCloseForm disabled={composerStatus === "submitted"} onSubmit={submitBookClose} />
+                </div>
+              )}
+              {templateOpensTradingPerformance(template) && (
+                <div className="mt-3">
+                  <TradingPerformanceForm disabled={composerStatus === "submitted"} onSubmit={submitTradingPerformance} />
                 </div>
               )}
             </div>

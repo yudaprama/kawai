@@ -30,6 +30,13 @@ const CONTEXT_TABS: Record<string, ContextTabSpec[]> = {
     { id: "session", label: "In this session" },
     { id: "library", label: "Library" },
   ],
+  // Accounting's ledger lives in its own SQLite tables, but the Library tab
+  // is still its intake surface: uploaded bank/gateway statement CSVs are
+  // what reconcile_csv reads.
+  "builtin.accounting": [
+    { id: "session", label: "In this session" },
+    { id: "library", label: "Library" },
+  ],
 };
 
 /** Ordered tab specs for an agent; empty → the agent has no context pane. */

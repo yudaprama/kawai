@@ -1,7 +1,7 @@
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
 
-export type GoalTemplateId = "stock" | "crypto" | "commodity" | "forex" | "youtube" | "binanceAudit" | "cryptoScreener";
+export type GoalTemplateId = "stock" | "crypto" | "commodity" | "forex" | "youtube" | "binanceAudit" | "cryptoScreener" | "bookClose" | "tradingPerformance";
 const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "stock", label: "Stock Research" },
   { id: "crypto", label: "Crypto Research" },
@@ -10,6 +10,8 @@ const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "youtube", label: "YouTube Summary" },
   { id: "binanceAudit", label: "Futures Risk Audit" },
   { id: "cryptoScreener", label: "Crypto Screener" },
+  { id: "bookClose", label: "Monthly Close" },
+  { id: "tradingPerformance", label: "Trading Performance" },
 ];
 
 /** Templates whose workflow includes the fixed-pipeline Stock Research — only
@@ -39,6 +41,23 @@ const SCREENER_TEMPLATES: readonly GoalTemplateId[] = ["cryptoScreener"];
 
 export const templateOpensScreener = (t: GoalTemplateId | null): boolean => t != null && SCREENER_TEMPLATES.includes(t);
 
+/** Templates whose workflow is the accounting monthly close: the goal routes
+ * through the deterministic router's `accounting_monthly_close` template
+ * (collect → four statements → integrity gate → GSTR-1) and the resulting
+ * plan lands in the review gate — nothing runs before approval. */
+const BOOK_CLOSE_TEMPLATES: readonly GoalTemplateId[] = ["bookClose"];
+
+export const templateOpensBookClose = (t: GoalTemplateId | null): boolean => t != null && BOOK_CLOSE_TEMPLATES.includes(t);
+
+/** Templates whose workflow is the trading performance review: the goal
+ * routes through the deterministic router's `trading_performance` template
+ * (sync fills → trade stats → per-pair PnL → fees → integrity gate) and the
+ * resulting plan lands in the review gate — nothing runs before approval. */
+const TRADING_PERFORMANCE_TEMPLATES: readonly GoalTemplateId[] = ["tradingPerformance"];
+
+export const templateOpensTradingPerformance = (t: GoalTemplateId | null): boolean =>
+  t != null && TRADING_PERFORMANCE_TEMPLATES.includes(t);
+
 /** Contextual composer framing per template. Desk templates keep the default
  * goal placeholder — the desk panel is their framing. */
 export const placeholderForTemplate = (_t: GoalTemplateId | null): string | undefined => undefined;
@@ -54,6 +73,8 @@ const DOCS_FOR_TEMPLATE: Record<GoalTemplateId, string> = {
   youtube: "https://kawai.pro/workflows/youtube-summary/",
   binanceAudit: "https://kawai.pro/workflows/futures-risk-audit/",
   cryptoScreener: "https://kawai.pro/workflows/",
+  bookClose: "https://kawai.pro/workflows/",
+  tradingPerformance: "https://kawai.pro/workflows/",
 };
 
 export const docsUrlForTemplate = (t: GoalTemplateId | null): string =>

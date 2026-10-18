@@ -13,10 +13,9 @@
 //! view of the same pipeline shapes, and the completeness test below is what
 //! keeps the two from drifting.
 
-use chrono::{Datelike, NaiveDate};
 
 use kawai_router::template::{PlanTemplate, ResolvedSlots, Slot, TemplateRegistry};
-use kawai_router::{TaskPlan, TaskStep};
+use kawai_router::TaskPlan;
 
 /// The Stock Research desk: analysts → bull/bear debate → research manager →
 /// trader → three-persona risk debate → risk manager → portfolio manager.
@@ -107,182 +106,15 @@ static ACCOUNTING_SLOT_PERIOD: Slot = Slot {
     hint: "the book period to close, e.g. 'Oktober 2026', '2026-10', 'Oct 2026'",
 };
 
-/// Resolve one period argument into its inclusive `(from, to)` month bounds.
-///
-/// Accepted: `YYYY-MM`, `YYYY-MM-DD` (the month containing the date),
-/// `MM/YYYY`, `DD/MM/YYYY` (the Indonesian day-first convention whenever the
-/// first number cannot be a year), or a month name in English or Indonesian
-/// with an optional 4-digit year. A bare month name means its LAST
-/// occurrence: the current year, unless that month has not started yet, in
-/// which case the previous year — a close is always backward-looking.
-fn parse_period(input: &str, today: NaiveDate) -> Result<(NaiveDate, NaiveDate), String> {
-    let text = input.trim().to_lowercase();
-    if text.is_empty() {
-        return Err("period is empty — name a month, e.g. '2026-10' or 'Oktober 2026'".into());
-    }
-    let numbers: Vec<u32> = text
-        .split(|c: char| !c.is_ascii_digit())
-        .filter(|s| !s.is_empty())
-        .filter_map(|s| s.parse().ok())
-        .collect();
-    let year_word = numbers.iter().find(|n| **n >= 1000).copied();
-    let month_word = text
-        .split(|c: char| !c.is_ascii_alphabetic())
-        .filter(|s| !s.is_empty())
-        .find_map(month_from_word);
-
-    let (year, month) = match (numbers.as_slice(), month_word) {
-        // YYYY-MM or YYYY-MM-DD: leading 4-digit year.
-        ([y, m, ..], _) if *y >= 1000 => {
-            validate_month(*m)?;
-            (*y as i32, *m)
-        }
-        // DD/MM/YYYY or MM/YYYY: trailing 4-digit year.
-        ([.., m, y], _) if *y >= 1000 => {
-            validate_month(*m)?;
-            (*y as i32, *m)
-        }
-        // D/M/Y day-first when the first number cannot be a year.
-        ([d, m, y], None) if *y < 100 && *d >= 1 => {
-            validate_month(*m)?;
-            (2000 + *y as i32, *m)
-        }
-        // Two numbers with no year slot (e.g. "10 2026" caught above) are
-        // ambiguous — refuse rather than guess.
-        (_, Some(m)) => {
-            let year = match year_word {
-                Some(y) => y as i32,
-                None => last_occurrence_year(m, today),
-            };
-            (year, m)
-        }
-        _ => {
-            return Err(format!(
-                "cannot read period {input:?} — use '2026-10', a month name like 'Oktober 2026', or '31/10/2026'"
-            ))
-        }
-    };
-    Ok(month_bounds(year, month))
-}
-
-fn validate_month(m: u32) -> Result<(), String> {
-    (1..=12)
-        .contains(&m)
-        .then_some(())
-        .ok_or_else(|| format!("month {m} is not 1-12"))
-}
-
-/// English + Indonesian month names, case-insensitively.
-fn month_from_word(word: &str) -> Option<u32> {
-    let names: [(&str, u32); 24] = [
-        ("january", 1), ("february", 2), ("march", 3), ("april", 4), ("may", 5), ("june", 6),
-        ("july", 7), ("august", 8), ("september", 9), ("october", 10), ("november", 11), ("december", 12),
-        ("januari", 1), ("februari", 2), ("maret", 3), ("april", 4), ("mei", 5), ("juni", 6),
-        ("juli", 7), ("agustus", 8), ("september", 9), ("oktober", 10), ("november", 11), ("desember", 12),
-    ];
-    names.iter().find(|(n, _)| *n == word).map(|(_, m)| *m)
-}
-
-/// A bare month means its last occurrence: this year, unless the month has
-/// not started yet — then last year.
-fn last_occurrence_year(month: u32, today: NaiveDate) -> i32 {
-    let mut year = today.year();
-    if NaiveDate::from_ymd_opt(year, month, 1).is_none_or(|first| first > today) {
-        year -= 1;
-    }
-    year
-}
-
-fn month_bounds(year: i32, month: u32) -> (NaiveDate, NaiveDate) {
-    let first = NaiveDate::from_ymd_opt(year, month, 1).expect("validated month");
-    let (next_year, next_month) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
-    let next = NaiveDate::from_ymd_opt(next_year, next_month, 1).expect("validated month");
-    let last = next.pred_opt().expect("any date has a predecessor");
-    (first, last)
-}
-
-fn close_step(
-    id: &str,
-    task: &str,
-    tool: &str,
-    args: serde_json::Value,
-    depends_on: &[&str],
-) -> TaskStep {
-    TaskStep {
-        id: id.to_string(),
-        task: task.to_string(),
-        tool: Some(tool.to_string()),
-        arguments: args,
-        depends_on: depends_on.iter().map(|s| (*s).to_string()).collect(),
-        ..TaskStep::default()
-    }
-}
-
-/// Build the monthly-close plan for one resolved period.
+/// Build the monthly-close plan for one resolved period — thin wrapper over
+/// the domain builder the fixed `run_monthly_close` command also calls, so
+/// chip and free-text produce the IDENTICAL plan (the `kawaii_desk` pattern).
+#[cfg(any(test, feature = "accounting"))]
 fn build_accounting_close(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
-    let period = slots.get("period").unwrap_or_default();
-    let today = chrono::Local::now().date_naive();
-    let (from, to) = parse_period(period, today)?;
-    let args_period = serde_json::json!({ "from": from.to_string(), "to": to.to_string() });
-    let args_as_of = serde_json::json!({ "as_of": to.to_string() });
-    let steps = vec![
-        close_step(
-            "collect",
-            "List every transaction in the period",
-            "ledger_list_transactions",
-            args_period.clone(),
-            &[],
-        ),
-        close_step(
-            "trial-balance",
-            "Trial balance as of the period end",
-            "ledger_trial_balance",
-            args_as_of.clone(),
-            &["collect"],
-        ),
-        close_step(
-            "balance-sheet",
-            "Balance sheet as of the period end",
-            "ledger_balance_sheet",
-            args_as_of.clone(),
-            &["collect"],
-        ),
-        close_step(
-            "income-statement",
-            "Income statement over the period",
-            "ledger_income_statement",
-            args_period.clone(),
-            &["collect"],
-        ),
-        close_step(
-            "cash-flow",
-            "Cash flow statement over the period",
-            "ledger_cash_flow",
-            args_period.clone(),
-            &["collect"],
-        ),
-        close_step(
-            "integrity-gate",
-            "Gate: if is_valid is false, stop and report the issues instead of exporting",
-            "ledger_integrity_check",
-            args_as_of,
-            &["trial-balance", "balance-sheet"],
-        ),
-        close_step(
-            "gstr1-export",
-            "Export the period's GSTR-1 portal JSON",
-            "gstr1_export",
-            serde_json::json!({ "year": from.year(), "month": from.month() as i64 }),
-            &["integrity-gate"],
-        ),
-    ];
-    Ok(TaskPlan {
-        goal: format!("Tutup buku periode {from} s/d {to}"),
-        steps,
-        final_writer: None,
-        summary: None,
-        template: None, // stamped by the router, never by the builder
-    })
+    accounting_tools::plan::build_monthly_close_plan(
+        slots.get("period").unwrap_or_default(),
+        chrono::Local::now().date_naive(),
+    )
 }
 
 #[cfg(feature = "accounting")]
@@ -300,11 +132,41 @@ static ACCOUNTING_MONTHLY_CLOSE: PlanTemplate = PlanTemplate {
     build: build_accounting_close,
 };
 
+/// Trading Performance — the accounting wedge's flagship: sync fills, then
+/// read the books back as a per-period performance review (win rate, PnL per
+/// pair, fees, integrity gate). Period-driven like the monthly close; unlike
+/// the audit it is not state-driven, so it is a router template with a
+/// review gate rather than a fixed pipeline. Needs BOTH features — the stats
+/// step dispatches a binance tool, the reads dispatch accounting tools — and
+/// rides the merged `Auto` registry, which carries both.
+#[cfg(all(feature = "accounting", feature = "binance"))]
+static TRADING_PERFORMANCE: PlanTemplate = PlanTemplate {
+    id: "trading_performance",
+    purpose: "trading performance review: sync fills, read win rate and per-pair PnL and fees from the books, gate on ledger integrity",
+    keywords: &["performa trading", "trading performance", "review pnl", "pnl review", "trading review"],
+    requires_literal: false,
+    market_bound: false,
+    slots: &[ACCOUNTING_SLOT_PERIOD],
+    build: build_trading_performance,
+};
+
+/// Build the performance plan for one resolved period — thin wrapper over
+/// the domain builder the fixed `run_trading_performance` command also calls.
+#[cfg(any(test, feature = "accounting"))]
+fn build_trading_performance(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
+    accounting_tools::plan::build_trading_performance_plan(
+        slots.get("period").unwrap_or_default(),
+        chrono::Local::now().date_naive(),
+    )
+}
+
 /// Every template the router may claim. Add new pipelines here.
 pub static TEMPLATES: &[&PlanTemplate] = &[
     &DESK,
     #[cfg(feature = "accounting")]
     &ACCOUNTING_MONTHLY_CLOSE,
+    #[cfg(all(feature = "accounting", feature = "binance"))]
+    &TRADING_PERFORMANCE,
 ];
 
 pub fn registry() -> TemplateRegistry<'static> {
@@ -445,30 +307,9 @@ mod tests {
         assert!(build_accounting_close(&ResolvedSlots::new()).is_err());
     }
 
-    #[test]
-    fn parse_period_reads_iso_ranges_names_and_day_first_dates() {
-        let today = NaiveDate::from_ymd_opt(2026, 10, 18).unwrap();
-        let (from, to) = parse_period("2026-10", today).unwrap();
-        assert_eq!((from, to), (date(2026, 10, 1), date(2026, 10, 31)));
-        // A full date means the month containing it.
-        assert_eq!(parse_period("2026-03-15", today).unwrap().0, date(2026, 3, 1));
-        // Day-first with a two-digit year.
-        assert_eq!(parse_period("31/10/26", today).unwrap().1, date(2026, 10, 31));
-        // Named month with an explicit year, English and Indonesian.
-        assert_eq!(parse_period("March 2025", today).unwrap().1, date(2025, 3, 31));
-        assert_eq!(parse_period("desember 2025", today).unwrap().1, date(2025, 12, 31));
-        // Bare month = last occurrence: March 2026 already started, December
-        // 2026 has not, so it folds back to 2025.
-        assert_eq!(parse_period("march", today).unwrap().0, date(2026, 3, 1));
-        assert_eq!(parse_period("december", today).unwrap().0, date(2025, 12, 1));
-        // Garbage is a guidance error, never a guess.
-        assert!(parse_period("sometime last year", today).is_err());
-        assert!(parse_period("2026-13", today).is_err());
-    }
-
-    fn date(year: i32, month: u32, day: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(year, month, day).unwrap()
-    }
+    /// The accounting builders' own coverage (period parsing, step shapes,
+    /// the gate ordering) lives in `accounting_tools::plan` — one place per
+    /// assertion, so the command and the router cannot drift.
 
     /// A slot sample that satisfies every required slot of `template`, so the
     /// completeness test builds real plans rather than skipping.

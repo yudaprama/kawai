@@ -353,6 +353,108 @@ const ANALYTICS_SCENARIOS: &[Scenario] = &[
     ),
 ];
 
+/// Accounting suite (`EVAL_SUITE=accounting`): trading-books tool selection,
+/// argument composition and ordering over the user's Binance futures fills
+/// ledger. Kept separate from the office suite so its manifest/context never
+/// shifts the T01-T20 baseline. Tool descriptions/args mirror the real
+/// crates/toolsets/accounting + toolsets/binance tools.
+const ACCOUNTING_SYSTEM: &str = "You are a trading assistant. The user keeps a double-entry ledger of Binance futures fills with these accounts:\n\
+- binance-wallet (asset — the exchange wallet)\n\
+- trading-gains, trading-losses (realized PnL), trading-fees (commissions)\n\
+Fills import is IDEMPOTENT: each fill posts exactly once, keyed by the exchange trade id — re-running an import over the same range is safe.\n\
+The user's library holds one statement file:\n\
+- stmt1 = bank_statement_march.csv (bank statement for the binance-wallet account)\n\
+Rules:\n\
+- Dates are ISO YYYY-MM-DD. A month means its exact boundaries (March 2026 = from 2026-03-01, to 2026-03-31).\n\
+- Performance questions (win rate, expectancy, profit factor) go to crypto_futures_trade_stats, which takes a look-back in DAYS (1-365), not dates.\n\
+- Reconciliation uses file_id (the stmtN handle from the library) — never paste statement text.\n\
+- Before a books review, run ledger_integrity_check and report issues instead of proceeding when is_valid is false.\n\
+- If a question lacks a period, ask which period — never invent dates.\n\
+Examples of the exact reply format — ONE call:<name>{...} line per reply:\n\
+User: Import my March 2026 fills.\ncall:binance_import_trades{\"from\":\"2026-03-01\",\"to\":\"2026-03-31\"}\n\
+User: PnL per pair for March 2026?\ncall:trading_pnl_by_symbol{\"from\":\"2026-03-01\",\"to\":\"2026-03-31\"}\n\
+User: Win rate on BTCUSDT over the last 90 days?\ncall:crypto_futures_trade_stats{\"symbol\":\"BTCUSDT\",\"days\":90}\n";
+
+const ACCOUNTING_TOOLS: &str = r#"[
+  {"type":"function","function":{"name":"binance_import_trades","description":"Import executed Binance futures fills from the locally synced trade history into the double-entry ledger. Per fill: realized PnL credits trading-gains or debits trading-losses, commission debits trading-fees, both netting the exchange wallet account (default binance-wallet). Each fill posts exactly once, keyed by the exchange trade id; already-imported fills are skipped, so re-running over the same range is safe.","parameters":{"type":"object","properties":{"from":{"type":"string","description":"Start date, YYYY-MM-DD (fills executed this day or later, UTC)."},"to":{"type":"string","description":"End date, YYYY-MM-DD (inclusive, UTC)."},"wallet_account_id":{"type":"string","description":"Optional id of the exchange wallet account; default binance-wallet."}},"required":["from","to"]}}},
+  {"type":"function","function":{"name":"crypto_futures_trade_stats","description":"Realized trading performance for your Binance futures positions: win rate, average win/loss, expectancy, profit factor, largest win/loss and total realized PnL — optionally scoped to one symbol. Counts are PER TRADE; PnL is net of commission; open positions are excluded. Read-only.","parameters":{"type":"object","properties":{"symbol":{"type":"string","description":"Optional single symbol, e.g. \"BTCUSDT\". Omit for the whole book."},"days":{"type":"integer","description":"How far back to fetch new fills from the exchange (1-365). Existing history is always included."},"market":{"type":"string","enum":["USDM","COINM"],"description":"Which futures market. Defaults to USDM."}}}}},
+  {"type":"function","function":{"name":"trading_pnl_by_symbol","description":"Realized PnL per symbol over a period, from the imported Binance futures fills (run binance_import_trades first so the mirror is current). Rows sorted by absolute PnL contribution; totals included. Exact decimals, no rounding.","parameters":{"type":"object","properties":{"from":{"type":"string","description":"Period start, YYYY-MM-DD (inclusive, UTC)."},"to":{"type":"string","description":"Period end, YYYY-MM-DD (inclusive, UTC)."}},"required":["from","to"]}}},
+  {"type":"function","function":{"name":"trading_fee_summary","description":"Commission totals over a period from the imported Binance futures fills: total, per symbol, and traded volume per symbol (fee-to-volume = commission_total / volume_total). Run binance_import_trades first so the mirror is current. Exact decimals.","parameters":{"type":"object","properties":{"from":{"type":"string","description":"Period start, YYYY-MM-DD (inclusive, UTC)."},"to":{"type":"string","description":"Period end, YYYY-MM-DD (inclusive, UTC)."}},"required":["from","to"]}}},
+  {"type":"function","function":{"name":"ledger_integrity_check","description":"Check the user's local ledger for integrity as of a date: verifies that the trial balance and the balance sheet both balance. is_valid is true when every check passed; issues lists one line per failure (empty when valid).","parameters":{"type":"object","properties":{"as_of":{"type":"string","description":"Date, YYYY-MM-DD. Transactions after it are ignored."}},"required":["as_of"]}}},
+  {"type":"function","function":{"name":"reconcile_csv","description":"Reconcile one ledger account against a CSV/TSV bank or gateway statement — pass either file_id (a statement uploaded to the Library) or statement_csv (the full CSV text including the header row), not both. Runs the same four-pass matching as reconcile_run; at most 1000 rows.","parameters":{"type":"object","properties":{"file_id":{"type":"string","description":"Stored statement file id (csv/tsv) from office_list_files — the Library upload. Use this OR statement_csv, not both."},"statement_csv":{"type":"string","description":"Full CSV text including the header row. Use this OR file_id, not both."},"account_id":{"type":"string","description":"Ledger account to reconcile (e.g. the bank account)."},"from":{"type":"string","description":"Period start, YYYY-MM-DD (inclusive)."},"to":{"type":"string","description":"Period end, YYYY-MM-DD (inclusive)."},"source":{"type":"object","description":"{\"type\":\"bank\",\"bank_name\",\"account_number\"} or {\"type\":\"gateway\",\"name\",\"merchant_id\"}.","properties":{"type":{"type":"string","enum":["bank","gateway"]},"bank_name":{"type":"string"},"account_number":{"type":"string"},"name":{"type":"string"},"merchant_id":{"type":"string"}},"required":["type"]}},"required":["account_id","from","to","source"]}}},
+  {"type":"function","function":{"name":"ledger_trial_balance","description":"Generate a trial balance from the user's local ledger as of a date: every account on its debit or credit column, totals, and whether the books balance. Amounts are decimal strings.","parameters":{"type":"object","properties":{"as_of":{"type":"string","description":"Date, YYYY-MM-DD. Transactions after it are ignored."}},"required":["as_of"]}}}
+]"#;
+
+const NONE_C: &[(&str, &str)] = &[];
+
+#[allow(clippy::type_complexity)]
+const ACCOUNTING_SCENARIOS: &[Scenario] = &[
+    // Month → exact ISO boundaries, no discovery round-trip.
+    Scenario(
+        "F01 import-month",
+        "Import my Binance futures fills for March 2026.",
+        Some("binance_import_trades"),
+        &[("from", "==2026-03-01"), ("to", "==2026-03-31")],
+    ),
+    // Indonesian phrasing, same month boundaries.
+    Scenario(
+        "F02 pnl-indonesian",
+        "Berapa PnL per pair Maret 2026?",
+        Some("trading_pnl_by_symbol"),
+        &[("from", "==2026-03-01"), ("to", "==2026-03-31")],
+    ),
+    // Fee question → fee summary, not pnl or stats.
+    Scenario(
+        "F03 fees",
+        "How much did I pay in commissions for March 2026?",
+        Some("trading_fee_summary"),
+        &[("from", "==2026-03-01"), ("to", "==2026-03-31")],
+    ),
+    // Stats take a look-back in DAYS, not dates — "last 90 days" maps to 90.
+    Scenario(
+        "F04 winrate-days",
+        "What's my win rate on BTCUSDT over the last 90 days?",
+        Some("crypto_futures_trade_stats"),
+        &[
+            ("symbol", "==BTCUSDT"),
+            ("days", "==90"),
+            ("market", "in:USDM|None"),
+        ],
+    ),
+    // Library statement → file_id handle, never pasted CSV text.
+    Scenario(
+        "F05 reconcile-file",
+        "Reconcile the bank statement stmt1 from my library against the binance-wallet account for March 2026.",
+        Some("reconcile_csv"),
+        &[
+            ("file_id", "==stmt1"),
+            ("statement_csv", "absent"),
+            ("account_id", "==binance-wallet"),
+            ("from", "==2026-03-01"),
+            ("to", "==2026-03-31"),
+            ("source/type", "==bank"),
+        ],
+    ),
+    // Integrity gate before a books review.
+    Scenario(
+        "F06 integrity-first",
+        "I want to review my books as of 2026-04-01 — check everything balances first.",
+        Some("ledger_integrity_check"),
+        &[("as_of", "==2026-04-01")],
+    ),
+    // No period given: the correct behavior is to ask, not invent dates.
+    Scenario("F07 no-period-refusal", "Berapa PnL saya?", None, NONE_C),
+    // Ordering: a combined import+stats ask must emit the import FIRST. The
+    // harness scores the first call: line, so import-before-stats discipline
+    // means the import is the emitted call, with the month boundaries intact.
+    Scenario(
+        "F08 import-then-stats",
+        "Import my March 2026 Binance fills and then show me my trading stats.",
+        Some("binance_import_trades"),
+        &[("from", "==2026-03-01"), ("to", "==2026-03-31")],
+    ),
+];
+
 /// Filler tools for the TOOL_INFLATE=N experiment: realistic names/descriptions
 /// modeled on the crates weather/finance/news/entertainment categories.
 /// Measures how manifest size affects selection accuracy + latency on E4B.
@@ -537,6 +639,13 @@ async fn main() {
                 ANALYTICS_SYSTEM,
                 ANALYTICS_TOOLS,
                 ANALYTICS_SCENARIOS,
+            )
+        } else if suite == "accounting" {
+            (
+                "accounting",
+                ACCOUNTING_SYSTEM,
+                ACCOUNTING_TOOLS,
+                ACCOUNTING_SCENARIOS,
             )
         } else {
             ("office", SYSTEM, TOOLS, SCENARIOS)
@@ -735,5 +844,26 @@ mod tests {
         assert_eq!(args["limit"], json!(5));
         assert!(parse_call("no call here").is_none());
         assert!(matches!(parse_call("call:data_{not json"), Some(Err(_))));
+    }
+
+    #[test]
+    fn accounting_suite_manifest_and_scenarios_are_consistent() {
+        use super::{ACCOUNTING_SCENARIOS, ACCOUNTING_TOOLS, Scenario};
+        use serde_json::Value;
+        use std::collections::BTreeSet;
+        let tools: Vec<Value> = serde_json::from_str(ACCOUNTING_TOOLS).unwrap();
+        let names: BTreeSet<&str> = tools
+            .iter()
+            .filter_map(|t| t["function"]["name"].as_str())
+            .collect();
+        assert_eq!(names.len(), tools.len(), "duplicate tool names");
+        let mut ids = BTreeSet::new();
+        for Scenario(id, _prompt, want_tool, _asserts) in ACCOUNTING_SCENARIOS {
+            assert!(ids.insert(*id), "duplicate scenario id {id}");
+            if let Some(want) = want_tool {
+                assert!(names.contains(want), "{id} expects unknown tool {want}");
+            }
+        }
+        assert_eq!(ACCOUNTING_SCENARIOS.len(), 8);
     }
 }

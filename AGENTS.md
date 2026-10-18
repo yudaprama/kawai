@@ -66,8 +66,9 @@ bun run build          # tsc -b && vite build → dist/
 bun run typecheck      # tsc -b --force
 
 # Desktop (Tauri) — the `tauri` npm script is wrapped by scripts/tauri.sh.
-# `dev` = on-device LLM stack: litert feature + native/ rpath + dev-bypass
-# auth + profraw off (needs the Bazel-built dylibs; run bundle:litert once).
+# `dev` = on-device LLM stack: litert + binance + accounting features +
+# native/ rpath + dev-bypass auth + profraw off (needs the Bazel-built
+# dylibs; run bundle:litert once).
 # `build` and everything else pass through unchanged.
 bun tauri dev
 bun tauri build
@@ -439,3 +440,18 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
 16. **`--enable-namespaces` on sqld** for hard per-user DB isolation (token `sub` → namespace) instead of shared-namespace + `WHERE user_id`.
 17. **Gemma 4 GPU (Metal) — blocked upstream.** The `-gpu.litertlm` variants need backend `GPU_ARTISAN`, which maps to engine types (`kAdvancedLegacyTfLite`/`kLegacyTfLite`) that upstream deleted; only `kAdvancedLiteRTCompiledModel` registers now → `No available engine for GPU_ARTISAN`. The plain `.litertlm` is CPU-locked by its section backend-constraint (`engine_settings.cc:78` rejects mismatches). Revisit when upstream ships a GPU path for the compiled-model engine.
 18. **LoRA support.** LoRA adapters enable on-device personalization (custom writing style, domain expertise, local language/slang). C API supports `set_lora_path` on SessionConfig and `set_lora_rank` on EngineSettings, but kawai uses the Conversation API which manages sessions internally — cannot inject SessionConfig. Options: (A) switch from Conversation API to Session API (big refactor, lose chat history/prompt templating), (B) wait for upstream to add LoRA to ConversationConfig, (C) hybrid approach. Fine-tuning on-device not yet supported by LiteRT-LM. Open questions: which use cases justify the refactor? How big is the Session API migration?
+
+### Backlog (parked)
+
+19. **Accounting agent — built, wedge chosen: trading books, design
+    finalized.** Double-entry ledger + reconciliation + Binance fills import,
+    shipped as 24 tools on `builtin.accounting`. The flagship workflow is a
+    NEW **Trading Performance** template (per-pair PnL, fee summary, win
+    rate, integrity gate — period-driven); the Futures Risk Audit gains an
+    automatic books-sync wave — no consent gate, idempotent and
+    exchange-derived (unrealized stays venue-only — realized events only, by
+    design). Parks outside all shipping surfaces — not in
+    `bun tauri dev`, CI, or release bundles — until the 7-step activation
+    plan in [PLAN-accounting.md](PLAN-accounting.md) is done (fill-meta side
+    table + per-pair reads, audit wave, template, agent_eval, dev flag,
+    live smoke, CI/release decision).

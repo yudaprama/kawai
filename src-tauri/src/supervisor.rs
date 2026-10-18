@@ -81,6 +81,18 @@ fn structured_label(value: &serde_json::Value) -> String {
 /// goal and the steps' `produces` artifacts. Actions stay EMPTY: the step
 /// list renders directly below the summary card, so copying step tasks here
 /// would be read twice.
+/// The goal text the ROUTER sees: the inner `<user-goal>` body when the
+/// frontend wrapped the goal in a `<previous-deliverable>` quote envelope,
+/// else the goal verbatim. The envelope's excerpt is arbitrary prior-run
+/// text — its dates and month words must never reach slot extraction or the
+/// keyword gate.
+fn routing_goal(goal: &str) -> &str {
+    match (goal.find("<user-goal>"), goal.find("</user-goal>")) {
+        (Some(start), Some(end)) if end > start => goal[start + "<user-goal>".len()..end].trim(),
+        _ => goal,
+    }
+}
+
 fn ensure_plan_summary(plan: &mut kawai_router::TaskPlan) {
     if plan.summary.is_some() {
         return;
@@ -579,8 +591,10 @@ pub async fn plan_task(
     // Layer 1 (deterministic, this block): the keyword gate claims goals it
     // is SURE about and skips the planner entirely. Three deliberate
     // refusals, all falling through to layer 2 or the planner:
-    // - Follow-ups (the `<previous-deliverable>` quote block): continuing a
-    //   session is not a fresh pipeline.
+    // - Follow-ups whose user-goal carries no complete pipeline spec — a
+    //   vague "lanjutkan" has no keyword/period, so the keyword gate
+    //   declines it (routing happens on the clean `<user-goal>` text, never
+    //   the quote envelope).
     // - Required slots the goal does not carry — never a user-facing prompt.
     // - `build` errors (a template that cannot build must never fail the
     //   submit).
@@ -600,9 +614,17 @@ pub async fn plan_task(
     // template-routed goal still resolves on a no-vault build.
     let remote_pool = remote_llm::RemoteLlm::from_env();
 
-    if !goal.contains("<previous-deliverable") {
+    // Route on the USER'S goal, not the quoted envelope: the
+    // `<previous-deliverable>` excerpt is arbitrary prior-run text — a date
+    // or month word inside it would poison the period slot, and skipping the
+    // rule router for quoted goals sent every post-first-run chip submit
+    // (Monthly Close, Trading Performance) to the planner instead of its
+    // template. A vague follow-up ("lanjutkan") carries no template keyword
+    // in its user-goal and still falls through to the planner.
+    let routing = routing_goal(goal);
+    {
         let universe = usdm_universe_cached().await;
-        let decision = kawai_router::route_goal(goal, universe.as_ref(), &crate::templates::registry());
+        let decision = kawai_router::route_goal(routing, universe.as_ref(), &crate::templates::registry());
         // (chosen, template_id, source, routed plan key). The actual insert
         // is awaited once below — a sync closure calling the async writer
         // would drop the future unawaited and silently lose the row (caught
@@ -610,7 +632,7 @@ pub async fn plan_task(
         let mut logged: Option<(&'static str, Option<&'static str>, &'static str, Option<String>)> =
             None;
         let mut grey_band = false;
-        let facts = kawai_router::extract_facts(goal);
+        let facts = kawai_router::extract_facts(routing);
         match &decision.route {
             kawai_router::Route::Template(template) => {
                 // Same resolution the gate used: the universe-matched member
@@ -628,12 +650,24 @@ pub async fn plan_task(
                 if let Some(url) = &facts.url {
                     slots.set("url", url);
                 }
+                // Period templates (accounting): the router already proved
+                // the goal carries a period-shaped mention — pass it through
+                // verbatim; the template builder parses the format.
+                if let Some(period) = &facts.period {
+                    slots.set("period", period);
+                }
                 slots.set(
                     "language",
                     &resolve_user_language(language, None).unwrap_or_default(),
                 );
                 match (template.build)(&slots) {
                     Ok(mut plan) => {
+                        // The registry is authoritative for write tools: the
+                        // template step never carries the flag itself, and
+                        // the scheduler reads ONLY the step flag — without
+                        // this, a routed plan would dispatch
+                        // binance_import_trades (a write) with no gate.
+                        registry.enforce_confirmation_policy(&mut plan);
                         plan.template = Some(template.id.to_string());
                         let key = plan_key(&plan);
                         on_progress(SupervisorEvent::PlanningStarted {});
@@ -666,6 +700,18 @@ pub async fn plan_task(
                         return Ok((plan, remote_llm::RemoteUsage::default()));
                     }
                     Err(e) => {
+                        // A template whose builder cannot run must not fail
+                        // the submit — the planner takes over — but the
+                        // reason must be searchable, not a local stderr line
+                        // (AGENTS.md: `eprintln!` never reaches Grafana). The
+                        // paired `route_log` row carries source="fallback";
+                        // this warn carries WHY.
+                        tracing::warn!(
+                            component = "supervisor",
+                            template = template.id,
+                            error = %e,
+                            "template build failed — falling back to the planner"
+                        );
                         eprintln!(
                             "[supervisor] template {} build failed ({e}) — falling back to the planner",
                             template.id
@@ -2535,6 +2581,26 @@ pub async fn build_fixed_binance_registry(
         .await
         .ok_or_else(|| SupervisorError::NoToolset(AUTO_AGENT_ID.to_string()))?;
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
+}
+
+/// The futures risk audit's books wave: when the `accounting` feature is on,
+/// append a step after the mirror sync that posts fills not yet recorded in
+/// the ledger (idempotent, rolling 30-day window). The step dispatches
+/// `books_auto_sync` — present in the AUTO toolset this registry is built
+/// from — and is fully automatic: postings derive from the exchange and are
+/// idempotent, and the audit's synthesis reports what was posted.
+#[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
+pub fn append_books_sync_step(mut plan: kawai_router::TaskPlan) -> kawai_router::TaskPlan {
+    plan.steps.push(kawai_router::TaskStep {
+        id: "books_sync".into(),
+        agent_id: ::binance::BINANCE_AUDIT_AGENT_ID.into(),
+        task: "Post fills not yet recorded in the ledger (idempotent, last 30 days); include the posted summary in the audit narrative".into(),
+        tool: Some("books_auto_sync".into()),
+        arguments: serde_json::json!({}),
+        depends_on: vec!["audit_data".into()],
+        ..kawai_router::TaskStep::default()
+    });
+    plan
 }
 
 pub(crate) async fn build_registry_from_toolset(
@@ -4480,7 +4546,7 @@ pub fn execute_plan_stream(
 }
 
 pub fn execute_plan_stream_with_cancel(
-    plan: kawai_router::TaskPlan,
+    mut plan: kawai_router::TaskPlan,
     registry: ToolRegistry,
     cancel: tokio_util::sync::CancellationToken,
     pending: PendingConfirmations,
@@ -4531,7 +4597,28 @@ pub fn execute_plan_stream_with_cancel(
                 }
             }
         }
+        // ── The ONE hardening point for every entry path ────────────────
+        // Plans reach execution from three doors: the planner (already
+        // hardened in `parse_supervisor_plan_scoped`), a routed template,
+        // and a fixed-pipeline command (audit/screener/research). Only the
+        // first went through the confirmation policy, and the scheduler
+        // reads the STEP flag alone — so a write tool on a template or
+        // fixed plan would have dispatched with no user gate. Enforce here,
+        // once, where every door converges: the registry is authoritative
+        // for side effects. Validation follows, so an undispatchable plan
+        // fails with the reason instead of a mid-run scheduler error.
+        // The registry is authoritative for side effects; the scheduler
+        // reads the STEP flag alone.
+        registry.enforce_confirmation_policy(&mut plan);
+        enforce_cli_run_confirmation_tiering(&mut plan);
+        if let Err(e) = registry.validate_plan(&plan) {
+            yield SupervisorEvent::PlanFailed {
+                error: format!("plan is not dispatchable: {e}"),
+            };
+            return;
+        }
 
+        // ── Telemetry: one Tempo trace per run + one workflow step per node ──
         let step_count = plan.steps.len();
         yield SupervisorEvent::PlanStarted {
             goal: plan.goal.clone(),
@@ -5853,6 +5940,140 @@ mod tests {
         }
     }
 
+    /// End-to-end: the Trading Performance goal claims through plan_task
+    /// with the REAL merged registry — the exact path the workbench chip
+    /// takes after the review gate.
+    #[cfg(all(feature = "accounting", feature = "binance"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn plan_task_claims_trading_performance() {
+        let dir = tempfile::tempdir().unwrap();
+        kawai_db::set_data_root(dir.path());
+        std::mem::forget(dir);
+        let user = format!("trading-perf-{}-{}", std::process::id(), kawai_db::unix_now());
+        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
+        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
+            .await
+            .expect("supervisor registry");
+
+        let (mut plan, usage) = plan_task(
+            &user,
+            session,
+            "performa trading 2026-10",
+            None,
+            Some("id-ID"),
+            &registry,
+            |_| {},
+        )
+        .await
+        .expect("trading goal must claim through plan_task");
+        assert_eq!(plan.template.as_deref(), Some("trading_performance"), "plan: {plan:?}");
+        assert_eq!(usage.input_tokens, 0, "the planner must not run");
+        let tools: Vec<_> = plan.steps.iter().filter_map(|s| s.tool.clone()).collect();
+        assert!(tools.contains(&"binance_import_trades".to_string()), "{tools:?}");
+        assert!(tools.contains(&"trading_pnl_by_symbol".to_string()), "{tools:?}");
+        assert!(
+            tools.contains(&"crypto_futures_trade_stats".to_string()),
+            "stats step dispatches a binance tool: {tools:?}"
+        );
+        // The execution registry is the MERGED catalog (no pipeline stage
+        // tool), and every step must resolve in it with a valid schema — a
+        // claim that builds an undispatchable plan is as broken as no claim.
+        assert_eq!(
+            registry_kind_for_plan(&plan),
+            PlanRegistryKind::Auto,
+            "trading performance dispatches merged-catalog tools"
+        );
+        registry
+            .validate_plan(&plan)
+            .unwrap_or_else(|e| panic!("the routed plan must validate: {e}"));
+        // The import step is a WRITE: the registry's confirmation policy must
+        // force its gate even though the template step never set the flag.
+        registry.enforce_confirmation_policy(&mut plan);
+        let import_step = plan
+            .steps
+            .iter()
+            .find(|s| s.tool.as_deref() == Some("binance_import_trades"))
+            .expect("import step");
+        assert_eq!(
+            import_step.requires_confirmation,
+            Some(true),
+            "the write step must gate on user confirmation"
+        );
+    }
+
+    /// The Monthly Close template claimed the same class of bug as the
+    /// trading template (the supervisor resolved no `period` slot for its
+    /// builder) and shipped broken for days — this pins the whole template
+    /// family, not one goal.
+    #[cfg(feature = "accounting")]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn plan_task_claims_monthly_close() {
+        let dir = tempfile::tempdir().unwrap();
+        kawai_db::set_data_root(dir.path());
+        std::mem::forget(dir);
+        let user = format!("monthly-close-{}-{}", std::process::id(), kawai_db::unix_now());
+        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
+        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
+            .await
+            .expect("supervisor registry");
+
+        let (plan, usage) =
+            plan_task(&user, session, "tutup buku 2026-10", None, Some("id-ID"), &registry, |_| {})
+                .await
+                .expect("close goal must claim through plan_task");
+        assert_eq!(plan.template.as_deref(), Some("accounting_monthly_close"), "plan: {plan:?}");
+        assert_eq!(usage.input_tokens, 0, "the planner must not run");
+        let tools: Vec<_> = plan.steps.iter().filter_map(|s| s.tool.clone()).collect();
+        assert!(tools.contains(&"ledger_trial_balance".to_string()), "{tools:?}");
+        registry
+            .validate_plan(&plan)
+            .unwrap_or_else(|e| panic!("the routed close plan must validate: {e}"));
+    }
+
+    /// The routing regression behind the Trading Performance chip: a quoted
+    /// goal must route on the USER'S text — the envelope excerpt's dates and
+    /// month words never reach slot extraction or the keyword gate.
+    #[test]
+    fn routing_goal_reads_the_user_goal_not_the_quote_envelope() {
+        let quoted = "<previous-deliverable planKey=\"k\" session=\"1\" chars=\"9\">\n\
+                      volatility spiked; closing narrative referenced oktober 2025\n\
+                      </previous-deliverable>\n\
+                      \n<user-goal>\nperforma trading 2026-10\n</user-goal>";
+        let clean = routing_goal(quoted);
+        assert_eq!(clean, "performa trading 2026-10");
+        // The poisoned shape: without the strip, the excerpt's month wins
+        // the period slot.
+        assert_eq!(
+            kawai_router::route::extract_period(clean).as_deref(),
+            Some("2026-10")
+        );
+        assert_eq!(
+            kawai_router::route::extract_period(quoted).as_deref(),
+            Some("oktober 2025"),
+            "documents the bug this strip fixes"
+        );
+        assert_eq!(routing_goal("tutup buku 2026-10"), "tutup buku 2026-10");
+        assert_eq!(routing_goal("no envelope here"), "no envelope here");
+    }
+
+    /// The runtime registry is NOT a single-template fixture: desk, monthly
+    /// close and trading performance sit together. A claim that works
+    /// against a lone-template fixture can still die in the full set
+    /// (ambiguity, guard ordering) — this pins the shipped regression.
+    #[cfg(all(feature = "accounting", feature = "binance"))]
+    #[test]
+    fn trading_performance_claims_in_the_full_runtime_registry() {
+        let registry = kawai_router::template::TemplateRegistry::new(crate::templates::TEMPLATES);
+        let d = kawai_router::route_goal("performa trading 2026-10", None, &registry);
+        match &d.route {
+            kawai_router::Route::Template(t) => assert_eq!(t.id, "trading_performance"),
+            other => panic!(
+                "expected the trading template, got {other:?} matched={:?} blocked={:?}",
+                d.matched, d.blocked_by_slots
+            ),
+        }
+    }
+
     /// Fase 5 runtime gate (PLAN-template-routing.md): a market goal claimed
     /// by the desk template resolves to a Rust-authored plan with ZERO
     /// planner involvement — `usage == 0` proves the short-circuit fired
@@ -5885,12 +6106,19 @@ mod tests {
         assert_eq!(usage.output_tokens, 0, "the planner must not run");
         assert!(!plan.steps.is_empty());
         assert!(
-            plan.steps.iter().all(|s| s.dispatch_key() == "desk_role"),
-            "a routed desk plan dispatches the desk stage tool"
+            plan.steps
+                .iter()
+                .all(|s| matches!(s.dispatch_key(), "desk_role" | "desk_data")),
+            "a routed desk plan dispatches only desk stage tools (data phase + role stages)"
         );
-        // The language slot rode the edge locale into every step.
+        // The language slot rode the edge locale into every writer step.
+        let first_role = plan
+            .steps
+            .iter()
+            .find(|s| s.dispatch_key() == "desk_role")
+            .expect("the desk plan has role steps");
         assert_eq!(
-            plan.steps[0].arguments["language"], "Bahasa Indonesia",
+            first_role.arguments["language"], "Bahasa Indonesia",
             "resolve_user_language must map the locale tag for the writer"
         );
 

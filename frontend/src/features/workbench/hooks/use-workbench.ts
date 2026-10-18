@@ -877,6 +877,60 @@ export function useWorkbench() {
     [supervisor, preflightRun, beginRun],
   );
 
+  /** Trading Performance: run the FIXED performance pipeline — sync Binance
+   *  futures fills into the ledger, then read the books back for a period
+   *  (win rate, per-pair PnL, fees, integrity gate). Same client mechanics as
+   *  `runBinanceAudit` — balance gate (fail-closed), lazy session, no planner,
+   *  no string routing: the backend builds the plan deterministically and
+   *  streams the same SupervisorEvent lifecycle, so rail/canvas render it
+   *  unchanged. The write step still gates on user confirmation. */
+  const runTradingPerformance = useCallback(
+    async (
+      period: string,
+      opts?: {
+        /** Same contract as `run()`'s — fires once every gate passed, right
+         * before the run record appends; the page navigates from here. */
+        onStart?: () => void;
+      },
+    ) => {
+      const sid = await preflightRun(
+        `Trading performance — ${period}`.slice(0, 80),
+        "Couldn't start the performance review",
+      );
+      const goal = `Trading performance review — ${period}`.slice(0, 140);
+      beginRun(goal, false);
+      opts?.onStart?.();
+      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
+      supervisor.runTradingPerformance({ period }, sid);
+      void refreshTokenBalance();
+    },
+    [supervisor, preflightRun, beginRun],
+  );
+
+  /** Monthly Close: the FIXED accounting close over one period — collect the
+   *  period's transactions, four statements, integrity gate, GSTR-1 export.
+   *  Same client mechanics; the export sits behind the gate. */
+  const runMonthlyClose = useCallback(
+    async (
+      period: string,
+      opts?: {
+        onStart?: () => void;
+      },
+    ) => {
+      const sid = await preflightRun(
+        `Monthly close — ${period}`.slice(0, 80),
+        "Couldn't start the monthly close",
+      );
+      const goal = `Monthly close — ${period}`.slice(0, 140);
+      beginRun(goal, false);
+      opts?.onStart?.();
+      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
+      supervisor.runMonthlyClose({ period }, sid);
+      void refreshTokenBalance();
+    },
+    [supervisor, preflightRun, beginRun],
+  );
+
   /** Crypto Screener: the FIXED multi-screen pipeline over Binance public
    * market data — one parallel scan per selected screen, then the deliverable
    * writer. Same client mechanics as `runBinanceAudit` — balance gate
@@ -1048,6 +1102,8 @@ export function useWorkbench() {
     runDesk,
     runYoutube,
     runBinanceAudit,
+    runTradingPerformance,
+    runMonthlyClose,
     runScreener,
     selectSession,
     syncLatestRun,

@@ -2573,6 +2573,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
     #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
     let protected = protected
         .route("/api/run_binance_risk_audit", post(run_binance_risk_audit_handler))
+        .route("/api/run_trading_performance", post(run_trading_performance_handler))
+        .route("/api/run_monthly_close", post(run_monthly_close_handler))
         .route("/api/run_crypto_screener", post(run_crypto_screener_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
@@ -3082,6 +3084,29 @@ struct RunBinanceRiskAuditRequest {
     stream_id: String,
 }
 
+/// Trading Performance (fixed pipeline over the trading-books ledger).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunTradingPerformanceRequest {
+    session_id: i64,
+    /// The period to review — "2026-10", "Oktober 2026", or a bare month
+    /// (last occurrence). Normalized before the plan exists.
+    period: String,
+    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
+    language: Option<String>,
+    stream_id: String,
+}
+
+/// Monthly Close (fixed pipeline over the double-entry ledger).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunMonthlyCloseRequest {
+    session_id: i64,
+    period: String,
+    language: Option<String>,
+    stream_id: String,
+}
+
 /// Crypto Screener: the FIXED multi-screen pipeline over public market data —
 /// one parallel `crypto_screener` step per selected screen, then the built-in
 /// deliverable writer. Same fixed-plan contract as the audit: the presets are
@@ -3147,6 +3172,8 @@ key and secret in Settings → Binance API first"
     )
     .unwrap_or_default();
     let plan = ::binance::build_audit_plan(args);
+    #[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
+    let plan = crate::supervisor::append_books_sync_step(plan);
     let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language, Some(&market));
     let tool_registry = crate::supervisor::build_fixed_binance_registry(
         &user_id,
@@ -3156,6 +3183,76 @@ key and secret in Settings → Binance API first"
     .await
     .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
 
+    Ok(supervisor_sse(
+        plan,
+        tool_registry,
+        req.stream_id,
+        user_id,
+        req.session_id,
+        Some(user_goal),
+        None,
+        &bearer,
+        pending,
+    ))
+}
+
+/// Trading Performance over the SSE transport — the same fixed plan the Tauri
+/// command runs (`accounting_tools::plan::build_trading_performance_plan`).
+#[cfg(all(feature = "litert", feature = "accounting", feature = "binance", not(target_os = "android")))]
+async fn run_trading_performance_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+    Extension(user_id): Extension<String>,
+    headers: HeaderMap,
+    Json(req): Json<RunTradingPerformanceRequest>,
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
+    let bearer = cookie_bearer(&headers)?;
+    ensure_session(&user_id, req.session_id).await?;
+    let language = crate::supervisor::resolve_user_language(
+        req.language.as_deref(),
+        headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
+    )
+    .unwrap_or_default();
+    let plan = accounting_tools::plan::build_trading_performance_plan(
+        req.period.trim(),
+        chrono::Local::now().date_naive(),
+    )
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let user_goal = plan.goal.clone();
+    let tool_registry = crate::supervisor::build_registry_for_plan(&user_id, req.session_id, &plan)
+        .await
+        .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+    Ok(supervisor_sse(
+        plan,
+        tool_registry,
+        req.stream_id,
+        user_id,
+        req.session_id,
+        Some(user_goal),
+        None,
+        &bearer,
+        pending,
+    ))
+}
+
+/// Monthly Close over the SSE transport — same fixed plan as the Tauri command.
+#[cfg(all(feature = "litert", feature = "accounting", not(target_os = "android")))]
+async fn run_monthly_close_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+    Extension(user_id): Extension<String>,
+    headers: HeaderMap,
+    Json(req): Json<RunMonthlyCloseRequest>,
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
+    let bearer = cookie_bearer(&headers)?;
+    ensure_session(&user_id, req.session_id).await?;
+    let plan = accounting_tools::plan::build_monthly_close_plan(
+        req.period.trim(),
+        chrono::Local::now().date_naive(),
+    )
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let user_goal = plan.goal.clone();
+    let tool_registry = crate::supervisor::build_registry_for_plan(&user_id, req.session_id, &plan)
+        .await
+        .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
     Ok(supervisor_sse(
         plan,
         tool_registry,
