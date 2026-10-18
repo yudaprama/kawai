@@ -52,6 +52,7 @@ import {
   renderCryptoScreener,
   renderCryptoScreenerData,
 } from "@/components/ai-elements/tool-renderers/finance";
+import { renderDeskData } from "@/components/ai-elements/tool-renderers/desk";
 import {
   renderDataChart,
   renderDataImport,
@@ -287,6 +288,7 @@ const registry: Record<string, StepView> = {
   binance_futures_audit_data: (p) => renderBinanceFuturesAuditData(p),
   crypto_screener: (p) => renderCryptoScreener(p),
   crypto_screener_data: (p) => renderCryptoScreenerData(p),
+  desk_data: (p) => renderDeskData(p),
   // binance stocks — bid/ask quote + symbol metadata (records, no dedicated view yet)
   stock_quote: (p) => (isRecord(p) ? genericKv(p) : null),
   stock_info: (p) => (isRecord(p) ? genericKv(p) : null),

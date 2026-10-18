@@ -10,6 +10,7 @@ import { renderCurrency, renderCryptoPrice, renderStockQuote, renderTicker24, ch
 import { jikanCards, mealCards, drinkCards, bookCards, repoCards, paperCards, quakeCards, flightStateCards, recentFlightCards, renderSpacexLaunch, spacexList } from "./cards";
 import { renderGeocode, renderIpLocation, renderIss } from "./geo";
 import { renderConnectorTools } from "./connector";
+import { renderDeskData } from "./desk";
 import { renderWebSearch, renderWebSearchSuggest } from "./search";
 import { renderDataSchema, renderDataQuery, renderDataTa, renderDataChart, renderDataTables, renderDataImport } from "./data";
 import { renderKnowledgeSearch } from "./knowledge";
@@ -88,6 +89,7 @@ const registry: Record<string, ToolRenderer> = {
   binance_futures_audit_data: renderBinanceFuturesAuditData,
   crypto_screener: renderCryptoScreener,
   crypto_screener_data: renderCryptoScreenerData,
+  desk_data: renderDeskData,
   geocode: renderGeocode,
   get_ip_location: renderIpLocation,
   get_iss_position: renderIss,

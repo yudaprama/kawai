@@ -26,9 +26,12 @@ Every primitive the desk needs already exists:
 
 - **Input form**: ticker, trade date, analyst selection (`market|social|news|fundamentals`,
   default all 4), research depth (shallow/medium/deep → debate rounds).
-- **Fixed pipeline** (never planned): selected analysts run in parallel →
+- **Fixed pipeline** (never planned): `desk_data` data phase (every source
+  fetched once, per-group failure rows) → selected analysts run in parallel,
+  bound to that data →
   Bull + Bear debate (N rounds per depth) → Research Manager verdict →
-  Trader investment plan → 3 risk personas debate → Risk Manager →
+  Trader investment plan (incl. the user's realized record on the symbol,
+  crypto) → 3 risk personas debate → Risk Manager →
   Portfolio Manager final decision.
 - **Panel state model** (`REPORT_SECTIONS`): each report section is
   `pending → running (spinner, live preview) → completed (see report)`.

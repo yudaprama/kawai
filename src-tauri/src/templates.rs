@@ -35,20 +35,29 @@ static DESK_SLOT_ANALYSTS: Slot = Slot {
 };
 
 /// Wrap the desk's own builder so both entry points (the fixed-pipeline
-/// command and the router) produce the identical plan. `build_desk_plan`
-/// panics on an empty ticker, so the required-slot check happens here — the
-/// router must never be able to panic the planning path.
+/// command and the router) produce the identical plan. Inputs are validated
+/// by `normalize_desk_args` BEFORE the plan exists — a bad slot value is a
+/// plain router error the planner can recover from, never a silently wrong
+/// run and never a panic on the planning path.
 fn build_desk(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
     let Some(ticker) = slots.get("ticker") else {
         return Err("desk template requires a ticker".into());
     };
     let analysts: Vec<&str> = slots.list("analysts");
-    Ok(kawai_desk::build_desk_plan(
+    let args = kawai_desk::normalize_desk_args(
         ticker,
         slots.get_or("tradeDate", ""),
         &analysts,
         slots.get_or("domain", "stock"),
         slots.get_or("language", ""),
+    )?;
+    let analysts_ref: Vec<&str> = args.analysts.iter().map(String::as_str).collect();
+    Ok(kawai_desk::build_desk_plan(
+        &args.ticker,
+        &args.trade_date,
+        &analysts_ref,
+        &args.domain,
+        &args.language,
     ))
 }
 
@@ -139,17 +148,36 @@ mod tests {
         }
     }
 
-    /// The desk's steps dispatch exactly one tool, `desk_role` — which only
-    /// exists in `build_desk_registry`, never in the planner catalog. That is
-    /// why Fase 4 adds the `TaskPlan.template` registry hint; until then this
-    /// test is the guard that the desk plan and the desk registry stay aligned.
+    /// The desk's steps dispatch exactly TWO tools: `desk_data` (the data
+    /// phase — exactly one, and first) and `desk_role` (every role) — both
+    /// exist ONLY in `build_desk_registry`, never in the planner catalog.
+    /// This test is the guard that the desk plan and the desk registry stay
+    /// aligned.
     #[test]
-    fn desk_plan_dispatches_only_the_desk_role_tool() {
+    fn desk_plan_dispatches_only_desk_tools() {
         let plan = build_desk(&sample_slots(&DESK)).unwrap();
         assert!(!plan.steps.is_empty());
         for step in &plan.steps {
-            assert_eq!(step.dispatch_key(), "desk_role", "step {}", step.id);
+            assert!(
+                step.dispatch_key() == "desk_role" || step.dispatch_key() == "desk_data",
+                "step {} dispatches {}",
+                step.id,
+                step.dispatch_key()
+            );
         }
+        assert_eq!(
+            plan.steps.first().expect("data step").dispatch_key(),
+            "desk_data",
+            "the data phase runs first"
+        );
+        assert_eq!(
+            plan.steps
+                .iter()
+                .filter(|s| s.dispatch_key() == "desk_data")
+                .count(),
+            1,
+            "exactly one data step"
+        );
     }
 
     #[test]

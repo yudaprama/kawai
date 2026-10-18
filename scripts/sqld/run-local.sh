@@ -1,44 +1,33 @@
 #!/usr/bin/env bash
-# Start/stop/status local sqld instances — a DEV seam only.
-# Two instances, one binary + pattern:
-#   - squawk      (127.0.0.1:8082 / hrana 8083) — market-squawk shared DB
+# Start/stop/status a local sqld instance — a DEV seam only.
 #   - toolcatalog (127.0.0.1:8084 / hrana 8085) — planner tool-catalog DB
 # The tool catalog itself is hosted on Turso (`kawai-tool-catalog`); this
 # instance is only for offline experiments. Point an app at it by setting
 # KAWAI_TURSO_DB_URL=http://127.0.0.1:8084 + KAWAI_TURSO_AUTH_TOKEN=dev —
 # and remove that pair again afterwards, because a second assignment in .env
 # silently overrides the shared-catalog URL.
-# The SAME sqld binary + schema run on the remote VPS for squawk
-# (see deploy-remote.sh), so local and prod stay byte-identical apart
-# from the bind address.
 #
 # Usage:
-#   ./run-local.sh <db> <cmd>     # db = squawk|toolcatalog|all (default: squawk)
-#   ./run-local.sh <cmd>          # shorthand for: squawk <cmd>
+#   ./run-local.sh <db> <cmd>     # db = toolcatalog|all (default: toolcatalog)
+#   ./run-local.sh <cmd>          # shorthand for: toolcatalog <cmd>
 #   cmd = start|stop|restart|status|logs
 set -euo pipefail
 
 BIN="${SQLD_BIN:-$HOME/.local/bin/sqld}"
 SCRIPT_DIR="$(cd "$(dirname "$(dirname "$0")")" && pwd)"
 
-# Per-instance config (override via <PREFIX>_* env, e.g. SQLD_SQUAWK_HTTP_ADDR).
-squawk_conf() {
-  DATA_DIR="${SQLD_SQUAWK_DATA_DIR:-$HOME/.kawai/sqld/squawk}"
-  HTTP_ADDR="${SQLD_SQUAWK_HTTP_ADDR:-127.0.0.1:8082}"
-  HRANA_ADDR="${SQLD_SQUAWK_HRANA_ADDR:-127.0.0.1:8083}"
-}
-
+# Config (override via SQLD_TOOLCATALOG_* env).
 toolcatalog_conf() {
   DATA_DIR="${SQLD_TOOLCATALOG_DATA_DIR:-$HOME/.kawai/sqld/toolcatalog}"
   HTTP_ADDR="${SQLD_TOOLCATALOG_HTTP_ADDR:-127.0.0.1:8084}"
   HRANA_ADDR="${SQLD_TOOLCATALOG_HRANA_ADDR:-127.0.0.1:8085}"
 }
 
-db="${1:-squawk}"
+db="${1:-toolcatalog}"
 cmd="status"
 case "$db" in
-  squawk|toolcatalog|all) cmd="${2:-status}" ;;
-  *) cmd="$db"; db="squawk" ;;  # legacy: ./run-local.sh start
+  toolcatalog|all) cmd="${2:-status}" ;;
+  *) cmd="$db"; db="toolcatalog" ;;  # legacy: ./run-local.sh start
 esac
 
 is_running() {
@@ -64,10 +53,7 @@ start_one() {
   done
   if curl -fsS "http://${HTTP_ADDR}/health" >/dev/null 2>&1; then
     echo "[$db] sqld started (pid $(cat "$DATA_DIR/sqld.pid")) on $HTTP_ADDR"
-    case "$db" in
-      squawk)      echo "[$db] schema is provisioned by kawai itself on first use (SquawkStore::ensure_schema)" ;;
-      toolcatalog) echo "[$db] dev-only instance. The catalog everyone reads is hosted on Turso; seed it with KAWAI_TURSO_DB_URL=libsql://libsql://kawai-tool-catalog-yudapramad.aws-ap-south-1.turso.io KAWAI_TURSO_AUTH_TOKEN=\$KAWAI_TURSO_WRITE_TOKEN cargo run --manifest-path src-tauri/Cargo.toml --example seed_tool_catalog --features litert,binance,monad -- --prune" ;;
-    esac
+    echo "[$db] dev-only instance. The catalog everyone reads is hosted on Turso; seed it with KAWAI_TURSO_DB_URL=libsql://libsql://kawai-tool-catalog-yudapramad.aws-ap-south-1.turso.io KAWAI_TURSO_AUTH_TOKEN=\$KAWAI_TURSO_WRITE_TOKEN cargo run --manifest-path src-tauri/Cargo.toml --example seed_tool_catalog --features litert,binance,monad -- --prune"
   else
     echo "[$db] sqld failed to start — see $DATA_DIR/sqld.log" >&2
     exit 1
@@ -95,10 +81,7 @@ status_one() {
 }
 
 run_one() {
-  case "$db" in
-    squawk)      squawk_conf ;;
-    toolcatalog) toolcatalog_conf ;;
-  esac
+  toolcatalog_conf
   LOG="$DATA_DIR/sqld.log"
   PID_FILE="$DATA_DIR/sqld.pid"
   case "$cmd" in
@@ -107,11 +90,11 @@ run_one() {
     restart) stop_one; start_one ;;
     status)  status_one ;;
     logs)    tail -f "$LOG" ;;
-    *) echo "usage: $0 [squawk|toolcatalog|all] start|stop|restart|status|logs" >&2; exit 1 ;;
+    *) echo "usage: $0 [toolcatalog|all] start|stop|restart|status|logs" >&2; exit 1 ;;
   esac
 }
 
 case "$db" in
-  all) for d in squawk toolcatalog; do db="$d" run_one || true; done ;;
+  all) db="toolcatalog"; run_one ;;
   *)   run_one ;;
 esac

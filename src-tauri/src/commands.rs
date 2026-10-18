@@ -2159,19 +2159,25 @@ pub async fn run_stock_research(
     let domain_str = domain.unwrap_or_else(|| "stock".into());
     let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
         .unwrap_or_default();
-    let plan = kawai_desk::build_desk_plan(
+    // Validate BEFORE the plan exists — a drifted domain/analyst is a plain
+    // op error, not a silently wrong 15-LLM-call run (same contract as the
+    // screener's normalize_screener_args).
+    let args = kawai_desk::normalize_desk_args(
         &ticker,
         trade_date.as_deref().unwrap_or(""),
         &analyst_slices,
         &domain_str,
         &language,
+    )?;
+    let analysts_ref: Vec<&str> = args.analysts.iter().map(String::as_str).collect();
+    let plan = kawai_desk::build_desk_plan(
+        &args.ticker,
+        &args.trade_date,
+        &analysts_ref,
+        &args.domain,
+        &args.language,
     );
-    let user_goal = kawai_desk::desk_user_goal(
-        &ticker,
-        trade_date.as_deref().unwrap_or(""),
-        &domain_str,
-        &language,
-    );
+    let user_goal = kawai_desk::desk_user_goal(&args.ticker, &args.trade_date, &args.domain, &args.language);
     let tool_registry = crate::supervisor::build_desk_registry(
         &ctx.user_id,
         session_id,

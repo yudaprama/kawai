@@ -2452,10 +2452,40 @@ pub async fn build_desk_registry(
         });
         search
     });
+    // The desk's ledger material — the user's OWN realized record on the
+    // symbol, read from the LOCAL fill ledger (a SQLite read, never a
+    // signed endpoint). Absent without the Binance feature or on Android:
+    // the decision roles simply run without it.
+    #[cfg(all(feature = "binance", not(target_os = "android")))]
+    let desk_ledger: Option<kawai_desk::LedgerFn> = {
+        let user_id = user_id.to_string();
+        Some(Arc::new(move |symbol: String| {
+            let user_id = user_id.clone();
+            Box::pin(async move {
+                match binance::trades::symbol_realized_record(&user_id, &symbol).await {
+                    Ok(Some(record)) => Some(record),
+                    Ok(None) => None,
+                    Err(e) => {
+                        tracing::warn!(
+                            component = "desk",
+                            symbol = %symbol,
+                            error = %e,
+                            "ledger record unavailable"
+                        );
+                        None
+                    }
+                }
+            })
+        }))
+    };
+    #[cfg(not(all(feature = "binance", not(target_os = "android"))))]
+    let desk_ledger: Option<kawai_desk::LedgerFn> = None;
+
+    toolset.add_tool(kawai_desk::DeskRoleTool::default().with_user(user_id));
     toolset.add_tool(
-        kawai_desk::DeskRoleTool::default()
+        kawai_desk::DeskDataTool::default()
             .with_web_news(desk_news)
-            .with_user(user_id),
+            .with_ledger(desk_ledger),
     );
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }

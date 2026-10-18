@@ -2942,13 +2942,11 @@ async fn run_stock_research_handler(
     Extension(user_id): Extension<String>,
     headers: HeaderMap,
     Json(req): Json<RunStockResearchRequest>,
-) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, StatusCode> {
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
     // Billing bearer off the session cookie — the edge middleware already
     // validated it (AGENTS.md #8); fail closed here before the supervisor.
-    let bearer = cookie_bearer(&headers).map_err(|(status, _)| status)?;
-    ensure_session(&user_id, req.session_id)
-        .await
-        .map_err(|(status, _)| status)?;
+    let bearer = cookie_bearer(&headers)?;
+    ensure_session(&user_id, req.session_id).await?;
 
     let analysts = req.analysts.unwrap_or_default();
     let analyst_slices: Vec<&str> = analysts.iter().map(String::as_str).collect();
@@ -2961,26 +2959,33 @@ async fn run_stock_research_handler(
             .and_then(|v| v.to_str().ok()),
     )
     .unwrap_or_default();
-    let plan = kawai_desk::build_desk_plan(
+    // Validate BEFORE the plan exists — a drifted domain/analyst is a 4xx
+    // carrying the reason, not a silently wrong run (same contract as the
+    // screener's normalize_screener_args).
+    let args = kawai_desk::normalize_desk_args(
         &req.ticker,
         req.trade_date.as_deref().unwrap_or(""),
         &analyst_slices,
         &domain_str,
         &language,
+    )
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let analysts_ref: Vec<&str> = args.analysts.iter().map(String::as_str).collect();
+    let plan = kawai_desk::build_desk_plan(
+        &args.ticker,
+        &args.trade_date,
+        &analysts_ref,
+        &args.domain,
+        &args.language,
     );
-    let user_goal = kawai_desk::desk_user_goal(
-        &req.ticker,
-        req.trade_date.as_deref().unwrap_or(""),
-        &domain_str,
-        &language,
-    );
+    let user_goal = kawai_desk::desk_user_goal(&args.ticker, &args.trade_date, &args.domain, &args.language);
     let tool_registry = crate::supervisor::build_desk_registry(
         &user_id,
         req.session_id,
         &crate::supervisor::plan_key(&plan),
     )
     .await
-    .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
 
     Ok(supervisor_sse(
         plan,
