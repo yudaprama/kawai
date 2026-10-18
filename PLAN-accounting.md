@@ -107,10 +107,12 @@ Steps (from existing tools except one):
    `trading_performance` router template wraps the SAME builder for
    free-text. The chip no longer touches the router or the planner at all —
    no string routing, no silent planner fallback. Steps: sync → stats →
-   pnl-by-symbol → fee summary → integrity gate; the import write gates on
-   confirmation (`enforce_confirmation_policy` now runs in the plan
-   executor — the single choke point every entry path passes: planner,
-   router template, fixed command, resume).
+   pnl-by-symbol → fee summary → integrity gate. Accounting write tools are
+   **ungated** (decision 2026-10-18): the review gate is the consent, so no
+   per-write dialog repeats it. `enforce_confirmation_policy` still runs in
+   the plan executor — the single choke point every entry path passes
+   (planner, router template, fixed command, resume) — which keeps any
+   FUTURE gated tool honest.
 4. **DONE** — agent_eval accounting suite (`EVAL_SUITE=accounting`): 7-tool
    manifest, 8 scenarios (F01–F08) incl. a no-invented-dates refusal; office
    suite untouched; harness tests pass without features.

@@ -5986,18 +5986,19 @@ mod tests {
         registry
             .validate_plan(&plan)
             .unwrap_or_else(|e| panic!("the routed plan must validate: {e}"));
-        // The import step is a WRITE: the registry's confirmation policy must
-        // force its gate even though the template step never set the flag.
+        // The registry policy runs for every entry path, and accounting write
+        // tools are ungated by policy (decision 2026-10-18 — the review gate is
+        // the consent), so the import step must stay ungated here.
         registry.enforce_confirmation_policy(&mut plan);
         let import_step = plan
             .steps
             .iter()
             .find(|s| s.tool.as_deref() == Some("binance_import_trades"))
             .expect("import step");
-        assert_eq!(
+        assert_ne!(
             import_step.requires_confirmation,
             Some(true),
-            "the write step must gate on user confirmation"
+            "accounting write tools must not add a per-write confirmation"
         );
     }
 
