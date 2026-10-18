@@ -45,3 +45,6 @@
 [submodule "kawai-website"]
 	path = kawai-website
 	url = https://github.com/kawai-network/kawai-website
+[submodule "markra"]
+	path = markra
+	url = https://github.com/markrahq/markra

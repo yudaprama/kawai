@@ -613,7 +613,13 @@ jobs:
     steps:
       - name: Publish draft release as latest
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # RELEASE_TOKEN (PAT), NOT GITHUB_TOKEN: events created by
+          # GITHUB_TOKEN never trigger workflows, so release-android's
+          # `release: published` trigger would never fire. A PAT-created
+          # publish event does fire downstream workflows. Exactly one run
+          # publishes (the guard skips re-published releases), so
+          # release-android sees exactly one event per release.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           # No checkout in this job — gh discovers the repo via git remote by
           # default and dies with "not a git repository". GH_REPO skips that.
           GH_REPO: ${{ github.repository }}

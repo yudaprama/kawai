@@ -6,17 +6,14 @@ name: release-android
 # the Play Console rollout is not gated on desktop being green.
 #
 # Trigger: the desktop release being PUBLISHED (release.yml's publish job
-# flips the draft). So mobile always ships the exact tag that desktop
+# flips the draft with RELEASE_TOKEN — a PAT — so the `release: published`
+# event actually fires; events created by GITHUB_TOKEN never trigger
+# workflows). release.yml runs twice per change (the bot's bump-push
+# re-entry), but only the first completion publishes — the re-entry's
+# publish is a guarded no-op — so this workflow sees exactly ONE event:
+# one Android build per release, mobile always ships the exact tag desktop
 # shipped. workflow_dispatch re-runs it for one tag (failed upload, new
 # internal rollout).
-#
-# release.yml completes TWICE per change: the bot's version-bump commit is
-# pushed with RELEASE_TOKEN (a PAT — PAT pushes create events, GITHUB_TOKEN
-# pushes do not), so ci re-runs and release re-enters (the documented
-# one-shot self-heal). Each release completion fires this workflow. The
-# `resolve` job drops the pre-bump completion: the release tag points at
-# the bump commit, so the pre-bump run's head SHA can never match a
-# published tag.
 #
 # Feature set: the `desktop` cargo feature only — NO litert, tts, binance.
 # `litert` needs the LiteRT-LM C lib built for android_arm64
@@ -34,14 +31,6 @@ name: release-android
 on:
   release:
     types: [published]
-  # `release: published` alone is NOT enough: release.yml's publish job flips
-  # the draft with GITHUB_TOKEN, and events created by GITHUB_TOKEN never
-  # trigger workflows (the anti-recursion rule). workflow_run is the trigger
-  # that actually fires; `release` stays for releases published by anything
-  # else (a human in the UI, another tool).
-  workflow_run:
-    workflows: [release]
-    types: [completed]
   workflow_dispatch:
     inputs:
       tag:
@@ -59,25 +48,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  resolve:
-    # A failed/cancelled desktop release published nothing — there is no
-    # tag to ship.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+  build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-      version: ${{ steps.tag.outputs.version }}
+    timeout-minutes: 120
     steps:
       - name: Resolve tag
         id: tag
         env:
           EVENT_TAG: ${{ github.event.release.tag_name }}
           INPUT_TAG: ${{ inputs.tag }}
-          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          GH_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           TAG=""
@@ -85,29 +64,9 @@ jobs:
             TAG="$INPUT_TAG"
           elif [ -n "${EVENT_TAG:-}" ]; then
             TAG="$EVENT_TAG"
-          elif [ -n "${RUN_SHA:-}" ]; then
-            # Desktop release just finished: build the release whose tag
-            # points at that run's commit, so mobile always ships exactly
-            # what desktop shipped — not merely "whatever is newest".
-            while read -r TAGNAME; do
-              [ -n "$TAGNAME" ] || continue
-              SHA="$(git ls-remote "https://github.com/$GH_REPOSITORY" "refs/tags/$TAGNAME" "refs/tags/$TAGNAME^{}" \
-                     | tail -n1 | cut -f1)"
-              if [ "$SHA" = "$RUN_SHA" ]; then
-                TAG="$TAGNAME"
-                break
-              fi
-            done < <(gh release list --limit 20 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName')
           fi
           if [ -z "$TAG" ]; then
-            if [ -n "${RUN_SHA:-}" ]; then
-              # The pre-bump release completion: the tag points at the bump
-              # commit this run itself pushed, never at RUN_SHA. The
-              # bump-commit re-entry's completion does match and builds.
-              echo "::notice::Desktop run ${RUN_SHA} matches no published release tag — pre-bump release completion; the bump-commit re-entry builds Android for this tag. Skipping."
-              exit 0
-            fi
-            echo "No published release matches — refusing to guess." >&2
+            echo "No tag to build — workflow_dispatch requires the tag input." >&2
             exit 1
           fi
           # versionName is what users see; the versionCode below carries the
@@ -121,15 +80,9 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-  build-android:
-    needs: resolve
-    if: needs.resolve.outputs.tag != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.resolve.outputs.tag }}
+          ref: ${{ steps.tag.outputs.tag }}
           token: ${{ secrets.RELEASE_TOKEN }}
           # Private submodules (office_oxide, pdf_oxide, kawai-vault, …) are
           # path/git dependencies of src-tauri's default `desktop` feature —
@@ -217,7 +170,7 @@ jobs:
         run: |
           cat > src-tauri/gen/android/app/tauri.properties <<EOF
           tauri.android.versionCode=$(( 10000 + ${{ github.run_number }} ))
-          tauri.android.versionName=${{ needs.resolve.outputs.version }}
+          tauri.android.versionName=${{ steps.tag.outputs.version }}
           EOF
 
       - name: Build signed AAB
@@ -229,7 +182,7 @@ jobs:
       - name: Attach APK to the release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.resolve.outputs.tag }}
+          tag_name: ${{ steps.tag.outputs.tag }}
           files: src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
 
       # The AAB is the Play submission format and is NOT attached to the
@@ -241,7 +194,7 @@ jobs:
       - name: Store the signed AAB as a run artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kawai-android-aab-${{ needs.resolve.outputs.tag }}
+          name: kawai-android-aab-${{ steps.tag.outputs.tag }}
           path: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
           if-no-files-found: error
           retention-days: 30
