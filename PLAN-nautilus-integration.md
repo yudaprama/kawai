@@ -4,18 +4,19 @@ Status: **DRAFT (2026-08-24)** — decision record + staged plan. Nothing in thi
 doc is scheduled work; every stage below is gated on an explicit user request.
 Live status stays in `AGENTS.md` → Roadmap (Binance agent entry).
 
-Decision context (2026-08-24): the fork/submodule
-`components/nautilus_trader/` (upstream nautechsystems/nautilus_trader) was
-added as a **reference-only** submodule. It is NOT a workspace member
-of `components/Cargo.toml` and NOT a path dependency of anything; it must
-stay out of the build graph unless a stage below is explicitly started.
+Decision context: the submodule `nautilus_trader/` (upstream
+nautechsystems/nautilus_trader) at the repo root is a **reference-only**
+submodule. It is NOT a workspace member of `crates/Cargo.toml` and NOT a
+path dependency of anything; it must stay out of the build graph unless a
+stage below is explicitly started. §5 records the standing decision that
+`nautilus-binance` does not replace `binance-sdk` in-app.
 
 ---
 
 ## 0. Ground rules (apply to every stage)
 
-- **`components/nautilus_trader/` stays reference-only** until a stage is
-  explicitly started. Never add it to `components/Cargo.toml` `[members]`
+- **`nautilus_trader/` stays reference-only** until a stage is
+  explicitly started. Never add it to `crates/Cargo.toml` `[members]`
   or as a path dep "to try something".
 - **Nothing from nautilus becomes a dependency while the current tool works.**
   The Binance agent Phase 1 (keyless reads via crates.io `binance-sdk` +
@@ -284,27 +285,73 @@ code.
 
 ## 5. Dependency-decision ledger (what we learned, recorded so it survives)
 
-Findings from the 2026-08-24 evaluation — keep these; they re-justify the
-staging whenever the question recurs:
+Evaluated 2026-08-24 (adapter selection) and re-evaluated 2026-10-18
+(adapter vs adapter, after order placement + Stocks + TP/SL shipped). Keep
+these; they re-justify the staging whenever the question recurs.
 
-- **`nautilus-binance` as a `binance-sdk` replacement: rejected for Phase 1–2.**
-  Costs that outweighed the benefit at current scope:
-  - Build: adapter pulls `nautilus-common/live/model/network/serialization`
-    (SBE + **arrow** — multi-minute cold compile alone), `dashmap`,
-    `ed25519-dalek`; the nautilus workspace carries 141 `[workspace.dependencies]`
-    entries vs kawai-binance's ~20-crate graph.
-  - Seam: nautilus returns typed models (fixed-point, `Bar`/`OrderBookDelta`);
-    kawai tools must return compact one-line JSON for the on-device
-    orchestrator — the conversion layer would be larger than the code it
-    replaces (`market.rs` is 226 lines).
-  - Architecture: the adapter is designed against the nautilus kernel/message
-    bus; standalone use is unnatural. `binance-sdk` does the same keyless
-    REST job with rustls and zero ceremony.
-- **C-dep argument is WEAK — recorded correction.** Initial evaluation flagged
-  nautilus's `aws-lc-rs` as new C cost. Audit of `src-tauri/Cargo.lock` showed
-  `aws-lc-sys` 0.44 + `ring` 0.17 already in kawai's graph today (libsql/tonic
-  stack — also an AGENTS.md landmine entry). The real migration cost is
-  arrow/SBE/`nautilus-model` + the conversion seam, not crypto C.
+### 5.1 Decision: `nautilus-binance` is not a `binance-sdk` replacement — standing rejection
+
+Scope: replacing the in-app Binance HTTP layer (`crates/vendor/binance-connector-rust`,
+MIT) with `nautilus-binance` as a library dependency. It stays a **reference
+source**; only Stage 3's server-side executor (§4) would run it, as a separate
+process.
+
+The two are not the same layer, and the gap widened as the agent shipped:
+`nautilus-binance` is 122k LOC of venue adapter (typed models, order state
+machine, WS/SBE, Arrow catalogs) against kawai's 16.7k LOC of stateless-REST
+agent tools that return compact JSON to the on-device orchestrator.
+
+| Blocker | Evidence | Why it is decisive |
+|---|---|---|
+| **No Binance Stocks product** | nautilus `common/enums.rs:42-56` covers `Spot`/`Margin`/`UsdM`/`CoinM`/`Options`; no `sapi/v1/equity/market/*` route and no stocks quote endpoint exist anywhere in the adapter. Its `EQUITY` asset class (`common/parse.rs:129`) is equity **perpetual underlyings**, not the Stocks product | `stock_quote` / `stock_info` (`crates/toolsets/binance/src/stocks.rs`) plus the frontend provider tile would lose their transport. The SDK (or a hand-written client) would have to stay ⇒ **two** Binance stacks, not one |
+| **Layer mismatch** | nautilus exposes `LiveDataClient`/`LiveExecutionClient` over `nautilus-model` + clock/cache/message-bus/factories; kawai tools are one-shot calls per user with per-user SQLite (`kawai_db`) and no engine loop | Migration is a rewrite, not an import: `trade` 3697 + `futures` 1739 + `credentials` 677 + `lib` 324 + `candles` 239 + `market` 238 + `account` 161 ≈ **7.6k LOC** re-expressed against nautilus types, plus scaffolding. The venue-agnostic ~7.1k LOC (screener, `ta`, risk audit, TP/SL, trade stats, plans) stays either way |
+| **Dependency weight** | adapter pulls `nautilus-common/core/live/model/network/serialization` (SBE + Arrow), `dashmap`, `ed25519-dalek`; workspace carries 141 `[workspace.dependencies]` and requires rust 1.99 / edition 2024. kawai's whole Binance graph today is one MIT crate | Cold-compile and upgrade coupling to a fast-moving 0.x project, in an app whose Binance surface is a few hundred ms of REST per user action |
+| **Licence** | `nautilus_trader/Cargo.toml:56` → `LGPL-3.0-only`; the vendored SDK is MIT | A linked LGPL dependency inside a distributed closed desktop binary. §4.4 already keeps nautilus arm's-length as a separate process for exactly this reason |
+| **Seam cost** | nautilus returns typed/fixed-point models; `market.rs` — the entire keyless read surface — is 238 lines of compact JSON | The conversion layer would be larger than the code it replaces |
+| **Nothing on the roadmap needs it** | OCO, cancel-replace, trailing stop, LOB sync/recovery, SBE, Arrow catalogs are not product surface for an agent tier | The one real gap (real-time fill events) is a single well-specified endpoint, not an engine |
+
+**Re-check trigger** (any one, and the question reopens): Stage 3 §4 is
+approved; a product decision to run unattended strategy bots; or Binance
+retiring the connector's generated clients for endpoints kawai depends on.
+
+### 5.2 What nautilus is genuinely better at — and where it lands in kawai
+
+Port the pattern, never the crate. Checked items:
+
+- [x] **Failure taxonomy.** `VenueOutcome{NotSent, Rejected, Ambiguous, Banned}`
+      over `-1006`/`-1007`, from nautilus `common/failure.rs` + `common/error.rs`
+      (`crates/toolsets/binance/src/venue_error.rs:12-15`). Ambiguity is
+      resolved by probing by `clientOrderId` (`trade.rs:550`), never by
+      re-sending.
+- [ ] **Algo-order endpoints.** `binance-sdk` v69 has no `/fapi/v1/algoOrder`,
+      so 9 signed calls are hand-rolled through `send_signed_request`
+      (`futures.rs:811`; `trade.rs:498,630,1068,1176,1416,1465`;
+      `trades.rs:431,457`) — signing duplicated in kawai. nautilus has
+      first-class `submit_algo_order`/`cancel_algo_order`/`query_*_algo_orders`
+      (`futures/execution.rs:542,784,4129`). Consolidate into one typed kawai
+      module with fixture tests.
+- [ ] **Read-path retry budget.** `RetryManager` honoring `Retry-After`
+      (seconds and HTTP-date), capped at 180s, retryable `-1003`/`-1015`,
+      429/418/5xx (`common/http.rs`, `common/error.rs:89-97`). Writes stay
+      single-send.
+- [ ] **Decimal precision.** nautilus parses `exchangeInfo` filters into
+      `price_increment`/`size_precision`/`lot_size`/`min_notional`
+      (`common/parse.rs:344-383`); kawai rounds through `f64` (`trade.rs:357-380`).
+      Cheapest correct form: strings in, strings out, validated against filters.
+- [ ] **Fixture-pinned wire tests.** nautilus keeps recorded `test_data/**`
+      + `axum` mock venue + 31.7k LOC of integration tests. kawai has zero
+      integration tests for the wire layer; order placement is verified only by
+      opt-in live smoke binaries.
+- [ ] **User-data stream for the fill ledger.** `futures/websocket/streams/recovery.rs`
+      (listen-key rotation + reconcile) against `trades.rs` polling
+      `GET /fapi/v1/userTrades`, which drifts if an interval is missed.
+
+### 5.3 Standing findings from the first evaluation
+
+- **C-dep argument is WEAK — recorded correction.** `aws-lc-rs` adds no new
+  C cost: `aws-lc-sys` 0.44 + `ring` 0.17 are already in kawai's graph
+  (libsql/tonic stack — also an AGENTS.md landmine entry). The real migration
+  cost is Arrow/SBE/`nautilus-model` + the conversion seam, not crypto C.
 - **`nautilus-analysis` import: deferred, not rejected.** Cheapest nautilus
   crate (no C, no network, `rust_decimal`+`indexmap` only) but still typed to
   `nautilus-model`. Formula reference until Stage 3 unifies the types.
@@ -319,22 +366,25 @@ staging whenever the question recurs:
   keeping, order reconciliation, and 24/7 recovery remain nautilus's tier
   (Stage 3). `binance-sdk` therefore remains the in-app layer for ALL of
   Stages 1–2 AND for any live price panel in Stage 3.
-- **`binance-sdk` remains the HTTP layer for all in-app stages (1–2).** It has
-  signed-endpoint support for Phase 2; swap was evaluated and rejected on
-  cost/benefit, not on capability.
+- **`binance-sdk` remains the HTTP layer for every in-app stage (1–2) and the
+  Stocks transport.** It covers signed spot/futures/COIN-M/Stocks; swap was
+  evaluated and rejected on coverage + cost (§5.1), not on capability.
 
 ---
 
 ## 6. Housekeeping (one-time, this doc's commit)
 
-- [x] `AGENTS.md` — layout tree now notes `components/nautilus_trader/`
-      is a reference-only submodule, pointing at this doc. (done 2026-08-24)
-- [x] Verify `components/Cargo.toml` `[members]` does NOT include
-      `nautilus_trader` (already true as of 2026-08-24; guard against
-      accidental `cargo add`/workspace globs).
-- [ ] Never run `cargo` commands inside `components/nautilus_trader/` in
+- [x] `AGENTS.md` — the "Where things live" tree lists `nautilus_trader/`
+      as a reference-only submodule, pointing at this doc.
+- [x] Verify `crates/Cargo.toml` `[members]` does NOT include
+      `nautilus_trader` (guard against accidental `cargo add`/workspace
+      globs).
+- [ ] Never run `cargo` commands inside `nautilus_trader/` in
       CI or scripts — its toolchain pin (`rust-toolchain.toml`) and lockfile
       are the submodule's own business.
 - [ ] When Stage 3 is ever started: the server-side design (§4) supersedes the
       earlier "node configured by kawai" sketch; Roadmap cross-links (8, 16)
       must be added to the actual Roadmap entries at that time.
+- [ ] §5.2 residuals (algo-endpoint consolidation, read-path retry budget,
+      decimal precision, fixture tests, user-data stream) are opportunistic
+      hardening, not a project.

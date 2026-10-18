@@ -107,7 +107,14 @@ planKey: string;
  *  backfilled deterministically from the steps (see
  *  `ensure_plan_summary`). Drives the Plan Summary card in the rail.
  */
-summary: PlanSummary } | { type: "stepStarted"; stepId: string; tool: string } | { type: "confirmationRequested"; streamId: string; stepId: string; task: string; description: string } | { type: "stepCompleted"; stepId: string; output: string; artifacts: ArtifactInfo[]; 
+summary: PlanSummary; 
+/**
+ *  The source video of a YouTube Summary run (`run_youtube_summary`) —
+ *  `None` for every other pipeline and for planner-driven goals. The
+ *  frontend embeds the player from this id; the step `arguments` that
+ *  also carry it never reach the wire, so this is the only channel.
+ */
+videoId: string | null } | { type: "stepStarted"; stepId: string; tool: string } | { type: "confirmationRequested"; streamId: string; stepId: string; task: string; description: string } | { type: "stepCompleted"; stepId: string; output: string; artifacts: ArtifactInfo[]; 
 /**
  *  Retries the scheduler spent on this step (0 = first attempt
  *  succeeded) — drives the retry indicator in the progress UI.

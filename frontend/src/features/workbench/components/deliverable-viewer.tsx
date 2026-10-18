@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileIcon } from "@/components/shared/file-icon";
 import { MarkdownWithCharts } from "@/features/workbench/components/markdown-with-charts";
+import { YoutubeEmbed, type YoutubeEmbedHandle } from "@/features/workbench/components/youtube-embed";
 import { DeckPreview } from "@/features/workbench/components/deck-preview";
 import { slugify } from "@/lib/utils";
 import { call, errText, type DeliverableTranslationMeta, type OfficeFileSummary } from "@/lib/api";
@@ -230,6 +231,7 @@ function DeliverableBody({
   markdown,
   sessionId,
   showExport,
+  videoId,
 }: {
   goal: string;
   markdown: string;
@@ -238,7 +240,11 @@ function DeliverableBody({
   sessionId?: number | null;
   /** Offer the Copy/Export row (a completed run only). */
   showExport: boolean;
+  /** Source video of a YouTube Summary run — mounts the player above the
+   *  body and turns the deliverable's `mm:ss` timestamps into seeks. */
+  videoId?: string | null;
 }) {
+  const playerRef = useRef<YoutubeEmbedHandle>(null);
   const [language, setLanguage] = useState<string>(TRANSLATE_LANGUAGES[0].value);
   const [translating, setTranslating] = useState(false);
   const [translated, setTranslated] = useState<{ language: string; text: string } | null>(null);
@@ -304,6 +310,11 @@ function DeliverableBody({
 
   return (
     <>
+      {videoId != null && (
+        <div className="max-w-2xl">
+          <YoutubeEmbed ref={playerRef} videoId={videoId} title={goal} />
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-muted-foreground font-mono text-[11px] uppercase">Translate</span>
         <Select onValueChange={setLanguage} value={language}>
@@ -374,7 +385,9 @@ function DeliverableBody({
         aria-busy={translating}
         className={`border-primary/30 bg-card rounded-lg border p-6 ${translating ? "opacity-60 transition-opacity" : ""}`}
       >
-        <MarkdownWithCharts>{shown}</MarkdownWithCharts>
+        <MarkdownWithCharts videoId={videoId} onSeek={(s) => playerRef.current?.seek(s)}>
+          {shown}
+        </MarkdownWithCharts>
       </div>
 
       {showExport && <DeliverableExport goal={goal} markdown={shown} />}
@@ -538,6 +551,7 @@ export function PastRunCanvas({
               markdown={deliverableBody}
               sessionId={sessionId}
               showExport={run.status === "completed" && run.outputFull != null}
+              videoId={run.videoId}
             />
           ) : (
             <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center font-mono text-sm">
@@ -992,6 +1006,7 @@ export function DeliverableViewer({
             markdown={supervisor.finalOutput}
             sessionId={workbench.sessionId}
             showExport={supervisor.status === "completed"}
+            videoId={supervisor.videoId ?? runRecord?.videoId ?? null}
           />
         )}
         {/* Post-audit placement offer: the audit proposed, the user approves

@@ -2851,6 +2851,7 @@ async fn execute_supervisor_plan_handler(
         user_id,
         req.session_id,
         req.user_goal,
+        None,
         &bearer,
         pending,
     ))
@@ -2896,6 +2897,9 @@ fn supervisor_sse(
     user_id: String,
     session_id: i64,
     user_goal: Option<String>,
+    // Source video of a YouTube Summary run — surfaced on `PlanStarted` so
+    // the frontend can embed the player. `None` for every other handler.
+    video_id: Option<String>,
     bearer: &str,
     pending: crate::supervisor::PendingConfirmations,
 ) -> Sse<impl Stream<Item = Result<SseFrame, Infallible>>> {
@@ -2908,6 +2912,7 @@ fn supervisor_sse(
         user_id,
         session_id,
         user_goal,
+        video_id,
         Some(bearer),
     );
     let s = stream.map(|event| Ok::<_, Infallible>(supervisor_sse_frame(&event)));
@@ -2984,6 +2989,7 @@ async fn run_stock_research_handler(
         user_id,
         req.session_id,
         Some(user_goal),
+        None,
         &bearer,
         pending,
     ))
@@ -3046,6 +3052,7 @@ async fn run_youtube_summary_handler(
         user_id,
         req.session_id,
         Some(user_goal),
+        Some(video.id),
         &bearer,
         pending,
     ))
@@ -3151,6 +3158,7 @@ key and secret in Settings → Binance API first"
         user_id,
         req.session_id,
         Some(user_goal),
+        None,
         &bearer,
         pending,
     ))
@@ -3217,6 +3225,7 @@ async fn run_crypto_screener_handler(
         user_id,
         req.session_id,
         Some(user_goal),
+        None,
         &bearer,
         pending,
     ))

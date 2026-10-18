@@ -4434,6 +4434,7 @@ pub fn execute_plan_stream(
         0,
         None,
         None,
+        None,
     )
 }
 
@@ -4452,6 +4453,9 @@ pub fn execute_plan_stream_with_cancel(
     // (it plans, so it reframes) — but the deliverable must answer what the
     // USER asked, so synthesis prefers this over the rewritten goal.
     user_goal: Option<String>,
+    // The source video of a YouTube Summary run, surfaced on `PlanStarted`
+    // so the frontend can embed the player. `None` for every other caller.
+    video_id: Option<String>,
     // Billing bearer from the transport edge (AGENTS.md #8) — same contract
     // as supervisor::plan_task. `None` = non-billing caller (legacy/test).
     bearer: Option<&str>,
@@ -4494,6 +4498,7 @@ pub fn execute_plan_stream_with_cancel(
             steps: plan_step_infos(&plan),
             plan_key: plan_key(&plan),
             summary: plan_summary_info(&plan),
+            video_id: video_id.clone(),
         };
 
         // ── Telemetry: one Tempo trace per run + one workflow step per node ──
@@ -5596,6 +5601,7 @@ mod tests {
             1,
             None,
             None,
+            None,
         );
         let mut stream = Box::pin(stream);
 
@@ -5678,6 +5684,7 @@ mod tests {
             1,
             None,
             None,
+            None,
         );
         let mut stream = Box::pin(stream);
 
@@ -5745,6 +5752,7 @@ mod tests {
             1,
             None,
             None,
+            None,
         );
         let events: Vec<SupervisorEvent> = Box::pin(stream)
             .take(8)
@@ -5763,6 +5771,45 @@ mod tests {
         assert!(kinds.contains(&"stepCompleted"), "{kinds:?}");
         assert!(kinds.contains(&"planCompleted"), "{kinds:?}");
         assert!(!kinds.contains(&"other"), "{kinds:?}");
+    }
+
+    /// The YouTube Summary's source video rides `planStarted` — the frontend
+    /// embeds the player from this field, so a dropped id silently degrades
+    /// the canvas to a text-only deliverable.
+    #[tokio::test]
+    async fn plan_started_carries_source_video_id() {
+        let pending: PendingConfirmations = Arc::new(Mutex::new(HashMap::new()));
+        let plan = kawai_router::TaskPlan {
+            goal: "g".into(),
+            steps: vec![TaskStep {
+                id: "p1".into(),
+                agent_id: "echo".into(),
+                task: "plain".into(),
+                ..Default::default()
+            }],
+            final_writer: None,
+            summary: None,
+            template: None,
+        };
+        let stream = execute_plan_stream_with_cancel(
+            plan,
+            echo_registry(),
+            tokio_util::sync::CancellationToken::new(),
+            pending,
+            "st-v".into(),
+            "test-user".into(),
+            1,
+            None,
+            Some("abc123xyz".into()),
+            None,
+        );
+        let events: Vec<SupervisorEvent> = Box::pin(stream).take(4).collect::<Vec<_>>().await;
+        match events.into_iter().find(|e| matches!(e, SupervisorEvent::PlanStarted { .. })) {
+            Some(SupervisorEvent::PlanStarted { video_id, .. }) => {
+                assert_eq!(video_id.as_deref(), Some("abc123xyz"));
+            }
+            other => panic!("planStarted never arrived: {other:?}"),
+        }
     }
 
     /// Fase 5 runtime gate (PLAN-template-routing.md): a market goal claimed

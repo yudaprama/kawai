@@ -102,6 +102,9 @@ export interface SupervisorPlanState {
   goal: string | null;
   /** Full plan structure — seeded at planStarted, before any step runs. */
   steps: SupervisorStep[];
+  /** Source video of a YouTube Summary run (`planStarted.videoId`) — the
+   *  canvas embeds the player from it. `null` for every other run. */
+  videoId: string | null;
   /** User-facing "what will the agent do / produce" — from planStarted/planRevised. */
   summary: PlanSummaryInfo | null;
   /** Live planning progress — non-null only while `plan_task` is in flight. */
@@ -183,6 +186,9 @@ export interface PersistedPlanRecord {
    *  partial snapshot is the last one that landed). Only the step states
    *  distinguish the two — see [`planRecordInterrupted`]. */
   partial?: boolean;
+  /** Source video of a YouTube Summary run — restored so the canvas embeds
+   *  the player after a reopen. Absent on every other run. */
+  videoId?: string | null;
 }
 
 /** Whether a `partial: true` record is a genuinely unfinished run.

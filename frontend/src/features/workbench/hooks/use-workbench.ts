@@ -126,6 +126,10 @@ export interface WorkbenchRun {
   /** Plan key — lets the journal read this run's full step reports from
    *  supervisor_step_results even after the supervisor moved on. */
   planKey?: string | null;
+  /** Source video of a YouTube Summary run — the canvas embeds the player
+   *  from it. Copied from supervisor state at terminal, restored from the
+   *  persisted plan record on reopen. */
+  videoId?: string | null;
   /** Lightweight step snapshot captured at terminal state — backs the
    *  journal's step timeline. Full bodies stay in supervisor_step_results.
    *  `output` is set only on restored runs (from the persisted plan record's
@@ -458,6 +462,7 @@ export function useWorkbench() {
                 // interrupted one never reached a terminal event.
                 error: f.record.error ?? (interrupted(f) ? "Run interrupted before completion." : undefined),
                 planKey: f.record.planKey ?? null,
+                videoId: f.record.videoId ?? null,
                 steps: runSteps(f),
                 stepsDone: f.record.steps?.filter((s) => s.state === "completed").length ?? 0,
                 stepsTotal: f.record.steps?.length ?? 0,
@@ -567,6 +572,7 @@ export function useWorkbench() {
           ? {
               ...r,
               planKey: supervisor.planKey,
+              videoId: supervisor.videoId,
               steps: supervisor.steps.map((s) => ({
                 stepId: s.stepId,
                 tool: s.tool,
@@ -581,7 +587,7 @@ export function useWorkbench() {
           : r,
       );
     });
-  }, [terminal, supervisor.planKey, supervisor.steps]);
+  }, [terminal, supervisor.planKey, supervisor.steps, supervisor.videoId]);
 
   /** Shared submit pre-flight for every workbench run: clears the previous
    *  gate failure, then the Fase 0a balance gate (PLAN-qris-topup) — ONE

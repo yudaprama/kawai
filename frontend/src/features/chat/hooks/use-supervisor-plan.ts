@@ -151,12 +151,19 @@ export interface PersistedPlan {
    *  that stays partial means the run never reached a terminal event (app
    *  quit / crash) — history renders it as an interrupted run. */
   partial?: boolean;
+  /** Source video of a YouTube Summary run — the deliverable canvas embeds
+   *  the player from it after a session reopen. Absent on every other run. */
+  videoId?: string | null;
 }
 
 /** The current run's execution-memo key, kept in sync from planStarted /
  *  planRevised events — module-level because persistPlanSnapshot (also
  *  module-level) embeds it in every record. One supervisor runs at a time. */
 const planKeyRef: { current: string | null } = { current: null };
+
+/** The current run's source video (`planStarted.videoId`) — module-level
+ * like planKeyRef because buildPlanSnapshot embeds it in every record. */
+const videoIdRef: { current: string | null } = { current: null };
 
 /** The current run's partial-snapshot message row (appended once, updated in
  *  place per step event) and the chain serializing those writes — a row id
@@ -190,6 +197,7 @@ function buildPlanRecord(
     output: extra.output,
     artifacts: extra.artifacts,
     error: extra.error,
+    videoId: videoIdRef.current ?? undefined,
     partial: partial || undefined,
   };
 }
@@ -293,6 +301,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       const next = supervisorReducer(prev, event);
       stepsRef.current = next.steps;
       if (event.type === "planStarted") goalRef.current = event.goal;
+      if (event.type === "planStarted") videoIdRef.current = event.videoId;
       if (event.type === "planStarted" || event.type === "planRevised") {
         planKeyRef.current = event.planKey;
         // New plan → its progress snapshot is a NEW history row.
@@ -321,6 +330,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       goalRef.current = null;
       userGoalRef.current = null;
       planKeyRef.current = null;
+      videoIdRef.current = null;
 
       setState({
         ...initialSupervisorState(),
@@ -743,6 +753,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
       patch({
         status: record.error || interrupted ? "failed" : "completed",
         goal: record.goal ?? null,
+        videoId: record.videoId ?? null,
         steps,
         finalOutput: record.output ?? null,
         artifacts: hydrateArtifacts(record.artifacts),
@@ -794,6 +805,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     stoppingRef.current = false;
     lastPlanRef.current = null;
     planKeyRef.current = null;
+    videoIdRef.current = null;
   }, []);
 
   return {

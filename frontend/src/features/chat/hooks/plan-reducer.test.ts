@@ -32,6 +32,7 @@ function makePlan(
       steps,
       planKey,
       summary: { overview: "o", actions: [], outputs: [] },
+      videoId: null,
     },
     { now: t },
   );
@@ -68,6 +69,7 @@ describe("supervisorReducer — happy path", () => {
         steps: [step("b", { tool: "code_write" }), step("b")],
         planKey: "pk1",
         summary: { overview: "o", actions: [], outputs: [] },
+        videoId: "abc123xyz",
       },
       { now: NOW },
     );
@@ -76,8 +78,28 @@ describe("supervisorReducer — happy path", () => {
     expect(s.steps).toHaveLength(2);
     expect(s.steps[0].state).toBe("pending");
     expect(s.planKey).toBe("pk1");
+    expect(s.videoId).toBe("abc123xyz"); // the canvas player's source
     expect(s.planStartedAt).toBe(NOW);
     expect(s.planCompletedAt).toBeNull();
+  });
+
+  it("planRevised keeps the run's videoId (same video, new plan)", () => {
+    let s = makePlan([step("a")], { planKey: "pk1" });
+    // makePlan seeds videoId: null; seed it the way a youtube run arrives.
+    s = supervisorReducer(
+      s,
+      {
+        type: "planRevised",
+        attempt: 1,
+        stepCount: 1,
+        steps: [step("a2")],
+        planKey: "pk2",
+        summary: { overview: "o", actions: [], outputs: [] },
+      },
+      { now: NOW + 10 },
+    );
+    expect(s.planKey).toBe("pk2");
+    expect(s.videoId).toBeNull(); // revisions never change the source video
   });
 
   it("full lifecycle: planStarted → stepStarted → stepCompleted → planCompleted", () => {

@@ -322,6 +322,7 @@ cognee-litert-lm/native/         # gitignored: prepared LiteRT-LM dylibs (bundle
 office_oxide/                    # submodule (path dep, office feature): pure-Rust docx/xlsx/pptx CREATE + read + EDIT + info (markdown → IR; raw-part surgery for in-place edits)
 kawai-tools/                     # the agent tool seam: AgentTool trait + ToolSet registry (name-keyed, type-erased dispatch)
 crates/                          # split-out first-party crates (foundation / engines / toolsets / integrations / generated-tools)
+nautilus_trader/                # submodule, REFERENCE-ONLY: never a workspace member or path dep. nautilus-binance does NOT replace binance-sdk in-app — see PLAN-nautilus-integration.md §5.1
 models/                          # .litertlm model files (gitignored, GB-scale)
 design-demos/                    # UI mock HTML files (standalone)
 .env                             # KAWAI_AUTH_* + KAWAI_DB_* (gitignored; dotenvy at startup)

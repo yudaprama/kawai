@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Streamdown } from "@/lib/streamdown";
 import { useFilePreview } from "@/lib/preview-file";
 import { emitOpenPreview } from "@/lib/preview-bridge";
+import { linkifyTimestamps, youtubeSeekSeconds } from "./youtube-embed";
 
 /**
  * Media token the deliverable writer may embed:
@@ -79,23 +80,73 @@ function ChartFigure({ fileId, alt }: { fileId: string; alt: string }) {
  * Deliverable markdown with inline chart support: text renders through
  * Streamdown exactly as before; `kawai-file://` image tokens render as
  * store-backed chart figures between the text segments.
+ *
+ * On a YouTube run (`videoId` set), the timestamp links `linkifyTimestamps`
+ * produced are intercepted at the container and turned into player seeks —
+ * the href stays a real watch URL, so a swallowed click still degrades to
+ * opening the video.
  */
-export function MarkdownWithCharts({ children }: { children: string }) {
-  const parts: React.ReactNode[] = [];
+export function MarkdownWithCharts({
+  children,
+  videoId,
+  onSeek,
+}: {
+  children: string;
+  /** Source video of a YouTube Summary run — enables timestamp-link seeks. */
+  videoId?: string | null;
+  /** The player's seek — wired by the same parent that owns the embed. */
+  onSeek?: (seconds: number) => void;
+}) {
+  // Click capture: a timestamp anchor becomes a seek; everything else
+  // (including other youtube links of other videos) navigates normally.
+  const onClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (videoId == null || onSeek == null) return;
+    const anchor = (e.target as HTMLElement | null)?.closest("a");
+    if (anchor == null) return;
+    const seconds = youtubeSeekSeconds(anchor.getAttribute("href") ?? "", videoId);
+    if (seconds == null) return;
+    e.preventDefault();
+    onSeek(seconds);
+  };
+
+  const body = videoId != null ? linkifyTimestamps(children, videoId) : children;
+  return (
+    <div onClickCapture={videoId != null && onSeek != null ? onClickCapture : undefined}>
+      <Body segments={segmentChartTokens(body)} />
+    </div>
+  );
+}
+
+/** Split the markdown into text runs and `kawai-file://` chart tokens —
+ *  text renders as Streamdown, tokens as figures between the segments. Each
+ *  segment carries its source offset so React keys are stable positions,
+ *  never array indices. */
+type MarkdownSegment = { at: number; text: string; chart: { fileId: string; alt: string } | null };
+
+function segmentChartTokens(markdown: string): MarkdownSegment[] {
+  const segments: MarkdownSegment[] = [];
   let last = 0;
-  let i = 0;
-  for (const m of children.matchAll(IMAGE_TOKEN)) {
+  for (const m of markdown.matchAll(IMAGE_TOKEN)) {
     const idx = m.index ?? 0;
-    if (idx > last) {
-      parts.push(<Streamdown key={`t${last}`}>{children.slice(last, idx)}</Streamdown>);
-    }
-    const fileId = m[2] ?? "";
-    parts.push(<ChartFigure key={`c${i++}`} fileId={fileId} alt={m[1] ?? ""} />);
+    if (idx > last) segments.push({ at: last, text: markdown.slice(last, idx), chart: null });
+    segments.push({ at: idx, text: "", chart: { fileId: m[2] ?? "", alt: m[1] ?? "" } });
     last = idx + m[0].length;
   }
-  if (parts.length === 0) return <Streamdown>{children}</Streamdown>;
-  if (last < children.length) {
-    parts.push(<Streamdown key={`t${last}`}>{children.slice(last)}</Streamdown>);
-  }
-  return <div className="space-y-3">{parts}</div>;
+  if (segments.length === 0) return [{ at: 0, text: markdown, chart: null }];
+  if (last < markdown.length) segments.push({ at: last, text: markdown.slice(last), chart: null });
+  return segments;
+}
+
+function Body({ segments }: { segments: MarkdownSegment[] }) {
+  return (
+    <div className="space-y-3">
+      {segments.map((s) =>
+        s.chart != null ? (
+          <ChartFigure key={`c${s.at}`} fileId={s.chart.fileId} alt={s.chart.alt} />
+        ) : (
+          <Streamdown key={`t${s.at}`}>{s.text}</Streamdown>
+        ),
+      )}
+    </div>
+  );
 }

@@ -651,6 +651,7 @@ pub async fn ask_about_step_result(
         user_id.to_string(),
         session_id,
         Some(question.to_string()), // user_goal = the question
+        None,                       // internal call — no source video
         None,                       // internal call — no billing bearer
     ))
 }

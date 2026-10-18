@@ -2078,6 +2078,9 @@ impl SupervisorStreamCtx {
         plan: kawai_router::TaskPlan,
         tool_registry: kawai_router::ToolRegistry,
         user_goal: Option<String>,
+        // Source video of a YouTube Summary run — surfaced on `PlanStarted`
+        // so the frontend can embed the player. `None` everywhere else.
+        video_id: Option<String>,
         stream_id: String,
         on_event: Channel<kawai_events::SupervisorEvent>,
         pending: &crate::supervisor::PendingConfirmations,
@@ -2092,6 +2095,7 @@ impl SupervisorStreamCtx {
             self.user_id.clone(),
             self.session_id,
             user_goal,
+            video_id,
             Some(&self.bearer),
         );
         run_streaming(stream_id, on_event, &self.registry, stream, Some(token)).await
@@ -2123,7 +2127,7 @@ pub async fn execute_supervisor_plan(
     .map_err(|e| e.to_string())?;
 
     tracing::info!(component = "supervisor", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "executing plan");
-    ctx.run(plan, tool_registry, user_goal, stream_id, on_event, &pending)
+    ctx.run(plan, tool_registry, user_goal, None, stream_id, on_event, &pending)
         .await
 }
 
@@ -2177,7 +2181,7 @@ pub async fn run_stock_research(
     .map_err(|e| e.to_string())?;
 
     tracing::info!(component = "stock-research", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running stock research");
-    ctx.run(plan, tool_registry, Some(user_goal), stream_id, on_event, &pending)
+    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
         .await
 }
 
@@ -2250,7 +2254,7 @@ key and secret in Settings → Binance API first"
     .map_err(|e| e.to_string())?;
 
     tracing::info!(component = "binance-risk-audit", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running futures risk audit");
-    ctx.run(plan, tool_registry, Some(user_goal), stream_id, on_event, &pending)
+    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
         .await
 }
 
@@ -2321,7 +2325,7 @@ pub async fn run_crypto_screener(
     .map_err(|e| e.to_string())?;
 
     tracing::info!(component = "crypto-screener", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running crypto screener");
-    ctx.run(plan, tool_registry, Some(user_goal), stream_id, on_event, &pending)
+    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
         .await
 }
 
@@ -2360,7 +2364,7 @@ pub async fn run_youtube_summary(
     .map_err(|e| e.to_string())?;
 
     tracing::info!(component = "youtube", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running youtube summary");
-    ctx.run(plan, tool_registry, Some(user_goal), stream_id, on_event, &pending)
+    ctx.run(plan, tool_registry, Some(user_goal), Some(video.id), stream_id, on_event, &pending)
         .await
 }
 

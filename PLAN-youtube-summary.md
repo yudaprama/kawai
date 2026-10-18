@@ -118,6 +118,12 @@ Identity/bearer resolve at the transport edge (AGENTS.md #8); the session
 must exist. Billing is the status-quo execution gate (balance > 0 before
 `PlanStarted`, no debit) — same as the desk.
 
+`planStarted.videoId` carries the source video (`None` on every other
+pipeline) — the step `arguments` that also hold it never reach the wire, so
+this event field is the frontend's only channel to the id. The field rides
+the persisted plan record (`supervisor-plan.videoId`), so a reopened session
+still shows the player.
+
 ## Frontend
 
 - `goal-templates.tsx` — `GoalTemplateId += "youtube"`; the chip discloses
@@ -131,10 +137,38 @@ must exist. Billing is the status-quo execution gate (balance > 0 before
 - A pre-stream rejection surfaces as a failed run in the run view (the
   `onError` path) — the same transport-error handling every stream op has.
 
+## Canvas player (`youtube-embed.tsx`)
+
+The deliverable canvas renders the video above the summary when the run has
+a `videoId` (`youtube-embed.tsx`, mounted by `DeliverableBody`, fed by
+`planStarted.videoId` / the persisted record — so live runs and restored
+sessions both get it):
+
+- **Click-to-load facade** — a poster (`i.ytimg.com`, with an offline
+  placeholder) plus a play button; the `youtube-nocookie.com` iframe with
+  `enablejsapi=1` mounts only on click, so reading a summary never loads
+  YouTube's player JS. "YouTube" in the caption bar hands off to the OS
+  browser (`plugin-opener` on desktop, `window.open` on web).
+- **Timestamp seek** — `linkifyTimestamps` rewrites every `mm:ss` that LEADS
+  a list item/line into a link to the canonical watch URL (`?t=<n>s`),
+  skipping fenced code blocks (transcript excerpts are data, not
+  navigation). `MarkdownWithCharts` intercepts those clicks (`onClickCapture`
+  + `youtubeSeekSeconds`), preventDefaults, and `seekTo`s the player via the
+  IFrame-API postMessage handshake (`listening` → `seekTo`); a seek that
+  arrives before the iframe mounts flushes on load. The href stays a real
+  watch URL, so a failed interception still opens the video at the right
+  time.
+
+Embedded-disabled / age-gated videos degrade inside YouTube's own player
+UI — the facade still opens; playback is between the user and YouTube.
+
 ## Verification
 
-`bun run build`; `cargo check`; `cargo check --features litert`;
-`cargo check --features web`; `cargo check --features full`;
-`cargo check -p kawai --no-default-features --features web`;
-`cargo check -p kawai-youtube` (crates workspace). No unit tests: the
-crates workspace has no test gate for engines (desk ships the same way).
+`bun run build`; `bun run test` (the embed's pure helpers + facade smoke +
+the reducer's `videoId` fold); `cargo check`; `cargo check --features
+litert`; `cargo check --features web`; `cargo check -p kawai
+--no-default-features --features web`; `cargo check -p kawai-youtube`
+(crates workspace); `cargo test --features litert --lib
+plan_started_carries_source_video_id` pins the wire field. No unit tests in
+the crates workspace: it has no test gate for engines (desk ships the same
+way).

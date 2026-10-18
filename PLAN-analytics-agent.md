@@ -299,7 +299,7 @@ Files:
 - `crates/engines/analytics/src/engine.rs` — AST → LazyFrame translation,
   literal coercion, schema validation (the only file that touches polars
   exprs).
-- Add `"analytics"` to `components/Cargo.toml` workspace members.
+- Add `"analytics"` to `crates/Cargo.toml` workspace members.
 - Unit tests in-crate: build fixture parquet + csv via polars writers in
   `tempfile` dirs; cover: dtype-aware filters (numeric string → f64/i64,
   date string, contains), unknown column error lists valid names, unparseable
