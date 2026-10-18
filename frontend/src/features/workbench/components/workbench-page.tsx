@@ -617,7 +617,10 @@ export function WorkbenchPage({
               )}
               {templateOpensTradingPerformance(template) && (
                 <div className="mt-3">
-                  <TradingPerformanceForm disabled={composerStatus === "submitted"} onSubmit={submitTradingPerformance} />
+                  <TradingPerformanceForm
+                    disabled={composerStatus === "submitted"}
+                    onSubmit={submitTradingPerformance}
+                  />
                 </div>
               )}
             </div>

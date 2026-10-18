@@ -45,8 +45,12 @@ export function TradingPerformanceForm({ disabled, onSubmit }: TradingPerformanc
     <div className="border-border/60 w-full rounded-xl border p-4">
       <div className="mb-3 flex items-center gap-2">
         <Icon name="chart-line" className="text-primary size-4" />
-        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">Trading Performance</span>
-        <span className="text-muted-foreground font-mono text-[10px]">sync · win rate · per-pair PnL · fees · integrity gate</span>
+        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+          Trading Performance
+        </span>
+        <span className="text-muted-foreground font-mono text-[10px]">
+          sync · win rate · per-pair PnL · fees · integrity gate
+        </span>
       </div>
       <div className="flex gap-2">
         <input

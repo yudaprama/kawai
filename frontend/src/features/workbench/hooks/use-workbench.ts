@@ -917,10 +917,7 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
-      const sid = await preflightRun(
-        `Monthly close — ${period}`.slice(0, 80),
-        "Couldn't start the monthly close",
-      );
+      const sid = await preflightRun(`Monthly close — ${period}`.slice(0, 80), "Couldn't start the monthly close");
       const goal = `Monthly close — ${period}`.slice(0, 140);
       beginRun(goal, false);
       opts?.onStart?.();

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { renderStepReport } from "@/features/workbench/components/tool-views";
+
 import {
   renderBinanceImportTrades,
   renderCryptoFuturesTradeStats,
@@ -143,5 +145,32 @@ describe("accounting tool renderers", () => {
     const t = text(out);
     expect(t).toContain("imbalanced");
     expect(t).toContain("Trial balance is not balanced");
+  });
+
+  // The regression that cost a week: a renderer that is not reachable from
+  // the canvas dispatch is indistinguishable from no renderer at all — the
+  // step card silently falls back to raw JSON. These assert the WIRING, by
+  // driving renderStepReport exactly as the workbench canvas does (string
+  // output → parsed → registry).
+  it("every accounting tool dispatches its own card through the canvas path", () => {
+    const cases: [string, unknown, string][] = [
+      ["binance_import_trades", importPayload, "Ledger import"],
+      ["crypto_futures_trade_stats", statsPayload, "Trade statistics"],
+      ["trading_pnl_by_symbol", pnlPayload, "Realized PnL by symbol"],
+      ["trading_fee_summary", feePayload, "Fee / volume"],
+      ["ledger_integrity_check", validIntegrity, "Ledger integrity"],
+    ];
+    for (const [tool, payload, marker] of cases) {
+      const node = renderStepReport(tool, JSON.stringify(payload));
+      const t = text(node);
+      expect(t, `${tool} must render its own card, not the JSON fallback`).toContain(marker);
+      // The fallback view is what a user sees when no view claims a tool.
+      expect(t).not.toContain("json");
+    }
+  });
+
+  it("an imbalanced ledger shows the imbalance, not a pass", () => {
+    const t = text(renderStepReport("ledger_integrity_check", JSON.stringify(brokenIntegrity)));
+    expect(t).toContain("imbalanced");
   });
 });

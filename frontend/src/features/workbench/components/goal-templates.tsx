@@ -1,7 +1,16 @@
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
 
-export type GoalTemplateId = "stock" | "crypto" | "commodity" | "forex" | "youtube" | "binanceAudit" | "cryptoScreener" | "bookClose" | "tradingPerformance";
+export type GoalTemplateId =
+  | "stock"
+  | "crypto"
+  | "commodity"
+  | "forex"
+  | "youtube"
+  | "binanceAudit"
+  | "cryptoScreener"
+  | "bookClose"
+  | "tradingPerformance";
 const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "stock", label: "Stock Research" },
   { id: "crypto", label: "Crypto Research" },
@@ -47,7 +56,8 @@ export const templateOpensScreener = (t: GoalTemplateId | null): boolean => t !=
  * plan lands in the review gate — nothing runs before approval. */
 const BOOK_CLOSE_TEMPLATES: readonly GoalTemplateId[] = ["bookClose"];
 
-export const templateOpensBookClose = (t: GoalTemplateId | null): boolean => t != null && BOOK_CLOSE_TEMPLATES.includes(t);
+export const templateOpensBookClose = (t: GoalTemplateId | null): boolean =>
+  t != null && BOOK_CLOSE_TEMPLATES.includes(t);
 
 /** Templates whose workflow is the trading performance review: the goal
  * routes through the deterministic router's `trading_performance` template

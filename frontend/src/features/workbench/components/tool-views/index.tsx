@@ -2,6 +2,13 @@ import type { ReactNode } from "react";
 
 import { cards } from "@/components/ai-elements/tool-renderers/shared";
 import { renderKnowledgeSearch } from "@/components/ai-elements/tool-renderers/knowledge";
+import {
+  renderBinanceImportTrades,
+  renderCryptoFuturesTradeStats,
+  renderLedgerIntegrityCheck,
+  renderTradingFeeSummary,
+  renderTradingPnlBySymbol,
+} from "@/components/ai-elements/tool-renderers/accounting";
 import { renderWebSearch, renderWebSearchSuggest } from "@/components/ai-elements/tool-renderers/search";
 import { renderCliRun } from "@/components/ai-elements/tool-renderers/terminal";
 import { renderConnectorTools } from "@/components/ai-elements/tool-renderers/connector";
@@ -289,6 +296,13 @@ const registry: Record<string, StepView> = {
   crypto_screener: (p) => renderCryptoScreener(p),
   crypto_screener_data: (p) => renderCryptoScreenerData(p),
   desk_data: (p) => renderDeskData(p),
+
+  // accounting — trading-books wedge (ledger view of Binance fills)
+  binance_import_trades: (p) => renderBinanceImportTrades(p),
+  crypto_futures_trade_stats: (p) => renderCryptoFuturesTradeStats(p),
+  trading_pnl_by_symbol: (p) => renderTradingPnlBySymbol(p),
+  trading_fee_summary: (p) => renderTradingFeeSummary(p),
+  ledger_integrity_check: (p) => renderLedgerIntegrityCheck(p),
   // binance stocks — bid/ask quote + symbol metadata (records, no dedicated view yet)
   stock_quote: (p) => (isRecord(p) ? genericKv(p) : null),
   stock_info: (p) => (isRecord(p) ? genericKv(p) : null),
