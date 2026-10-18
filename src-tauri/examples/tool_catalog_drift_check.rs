@@ -12,7 +12,7 @@
 //! `seed_tool_catalog.rs` — exactly one copy).
 //!
 //! Usage:
-//!   cargo run --example tool_catalog_drift_check --features litert,binance,codegraph,monad
+//!   cargo run --example tool_catalog_drift_check --features litert,binance,codegraph,monad,accounting
 
 #[path = "catalog_composition.rs"]
 mod composition;

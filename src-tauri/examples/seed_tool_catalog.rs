@@ -13,7 +13,7 @@
 //! `tool_catalog_drift_check.rs` — exactly one copy).
 //!
 //! Requires:
-//!   --features litert,binance,monad
+//!   --features litert,binance,monad,accounting
 //!                            (the domain tool builders are feature-gated;
 //!                             every feature that the runtime registry can
 //!                             include MUST be on here, or its tools silently
