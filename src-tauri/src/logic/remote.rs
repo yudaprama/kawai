@@ -290,7 +290,7 @@ impl RemoteLlm {
         {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("[remote] HTTP client build failed — remote tier disabled: {e}");
+                tracing::error!(component = "remote", "HTTP client build failed — remote tier disabled: {e}");
                 return None;
             }
         };
@@ -320,7 +320,7 @@ impl RemoteLlm {
             });
         }
         if candidates.is_empty() {
-            eprintln!("[remote] no vault keys configured — remote tier disabled");
+            tracing::warn!(component = "remote", "no vault keys configured — remote tier disabled");
             return None;
         }
 

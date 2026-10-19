@@ -69,7 +69,7 @@ async fn run_cycle() {
         },
         // Credential/config errors are guidance, not incidents — one quiet
         // line, the next tick retries.
-        Err(e) => eprintln!("[risk-guard] skip: {e}"),
+        Err(e) => tracing::warn!(component = "risk-guard", "skip: {e}"),
     }
 }
 

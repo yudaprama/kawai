@@ -39,7 +39,7 @@ async fn ensure_keys() -> Result<(String, String), String> {
         .to_string();
     let path = kawai_paths::vault_keys();
     if let Err(e) = kawai_paths::write_private_file(&path, &format!("{key}\n{secret}\n")) {
-        eprintln!("[dyntoken] failed to cache keys {}: {e}", path.display());
+        tracing::warn!(component = "dyntoken", "failed to cache keys {}: {e}", path.display());
     }
     Ok((key, secret))
 }

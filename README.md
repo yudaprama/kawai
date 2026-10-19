@@ -8,11 +8,25 @@ step's report and a final deliverable in one view. Runs fully on-device where po
 Free desktop distribution — no app store. Auto-update is built in (signed with minisign;
 every release publishes a `latest.json` manifest that installed apps check at launch).
 
-## Download
+## Install via Homebrew (macOS only)
 
-| Platform | File |
+```bash
+brew tap yudaprama/tap
+brew install --cask kawai
+```
+
+To upgrade when a new version is released:
+
+```bash
+brew update && brew upgrade kawai
+```
+
+> **Note:** The cask uses `version :latest` and `auto_updates true`. Homebrew installs
+> once and relies on Kawai's built-in updater for subsequent updates.
+
+| Platform | File / Command |
 |---|---|
-| macOS (Apple Silicon) | [kawai_aarch64.dmg](https://github.com/yudaprama/kawai/releases/latest/download/kawai_aarch64.dmg) |
+| macOS (Apple Silicon) | [kawai_aarch64.dmg](https://github.com/yudaprama/kawai/releases/latest/download/kawai_aarch64.dmg) or `brew install --cask kawai` |
 | Windows x64 | [kawai_x64-setup.exe](https://github.com/yudaprama/kawai/releases/latest/download/kawai_x64-setup.exe) |
 | Linux (AppImage) | [kawai_amd64.AppImage](https://github.com/yudaprama/kawai/releases/latest/download/kawai_amd64.AppImage) |
 | Linux (deb) | [kawai_amd64.deb](https://github.com/yudaprama/kawai/releases/latest/download/kawai_amd64.deb) |

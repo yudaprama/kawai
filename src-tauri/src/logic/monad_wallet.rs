@@ -245,7 +245,7 @@ mod imp {
                 Ok(r) => r,
                 Err(e) => {
                     // Preserve the unreadable file as evidence, then start fresh.
-                    eprintln!("[monad_wallet] history corrupt ({e}) — preserved as .corrupt");
+                    tracing::error!(component = "monad_wallet", "history corrupt ({e}) — preserved as .corrupt");
                     let _ = std::fs::rename(&path, path.with_extension("json.corrupt"));
                     Vec::new()
                 }
@@ -253,7 +253,7 @@ mod imp {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
             Err(e) => {
                 // Unreadable ≠ corrupt — never overwrite a file we merely can't read.
-                eprintln!("[monad_wallet] history read failed ({e}) — record skipped");
+                tracing::error!(component = "monad_wallet", "history read failed ({e}) — record skipped");
                 return;
             }
         };
@@ -273,7 +273,7 @@ mod imp {
         let json = match serde_json::to_string_pretty(&records) {
             Ok(j) => j,
             Err(e) => {
-                eprintln!("[monad_wallet] history serialize failed ({e})");
+                tracing::error!(component = "monad_wallet", "history serialize failed ({e})");
                 return;
             }
         };
@@ -283,7 +283,7 @@ mod imp {
         // Write-to-temp then rename = atomic; a crash mid-write can't corrupt it.
         let tmp = path.with_extension("json.tmp");
         if let Err(e) = std::fs::write(&tmp, &json).and_then(|_| std::fs::rename(&tmp, &path)) {
-            eprintln!("[monad_wallet] history write failed ({e})");
+            tracing::error!(component = "monad_wallet", "history write failed ({e})");
         }
     }
 

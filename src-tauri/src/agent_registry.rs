@@ -203,7 +203,7 @@ fn session_cli_workspace(user_id: &str, session_id: i64) -> Option<std::path::Pa
 #[cfg(feature = "litert")]
 async fn materialize_session_files(user_id: String, session_id: i64, dir: std::path::PathBuf) {
     let Ok(conn) = crate::logic::db_connection(&user_id).await else {
-        eprintln!("[cli_workspace] db_connection failed");
+        tracing::warn!(user_id = %user_id, component = "cli_workspace", "db_connection failed");
         return;
     };
     let Ok(mut rows) = conn
@@ -213,7 +213,7 @@ async fn materialize_session_files(user_id: String, session_id: i64, dir: std::p
         )
         .await
     else {
-        eprintln!("[cli_workspace] session_files query failed");
+        tracing::warn!(user_id = %user_id, component = "cli_workspace", "session_files query failed");
         return;
     };
     let mut want: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -230,7 +230,7 @@ async fn materialize_session_files(user_id: String, session_id: i64, dir: std::p
     let files = match kawai_office::list_files(&user_id) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("[cli_workspace] list_files: {e}");
+            tracing::warn!(user_id = %user_id, component = "cli_workspace", "list_files: {e}");
             return;
         }
     };
@@ -243,7 +243,7 @@ async fn materialize_session_files(user_id: String, session_id: i64, dir: std::p
             continue; // already materialized
         }
         if let Err(e) = kawai_office::export_file(&user_id, &f.id, Some(&dest.to_string_lossy())) {
-            eprintln!("[cli_workspace] export {}: {e}", f.id);
+            tracing::warn!(user_id = %user_id, component = "cli_workspace", "export {}: {e}", f.id);
         }
     }
 }
@@ -676,10 +676,10 @@ pub async fn location_sync_via_tool(user_id: &str) {
     {
         Ok(json) => {
             if let Err(e) = kawai_memory::location::memory_location_sync(user_id, &json).await {
-                eprintln!("location sync skipped: {e}");
+                tracing::warn!(user_id = %user_id, component = "location_sync", "location sync skipped: {e}");
             }
         }
-        Err(e) => eprintln!("location sync skipped: {e}"),
+        Err(e) => tracing::warn!(user_id = %user_id, component = "location_sync", "location sync skipped: {e}"),
     }
 }
 

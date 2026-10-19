@@ -396,7 +396,7 @@ pub fn onboarding_run_stream(
         // vault-less run just skips; the profile facts still live as
         // general-namespace memories and inject normally).
         if let Err(e) = kawai_memory::facet_distill(&user_id).await {
-            eprintln!("[onboarding] facet distill skipped: {e}");
+            tracing::warn!(user_id = %user_id, component = "onboarding", "facet distill skipped: {e}");
         }
         mark_done(&user_id, &processed).await;
         yield OnboardingEvent::OnboardingFinished { total_items: stored + linkedin_items };
@@ -471,7 +471,7 @@ pub async fn onboarding_import_document(user_id: &str, file_id: &str) -> Result<
     let stored = persist_compressed(user_id, &compressed, SOURCE_DOCUMENT, false).await?;
 
     if let Err(e) = kawai_memory::facet_distill(user_id).await {
-        eprintln!("[onboarding] facet distill skipped: {e}");
+        tracing::warn!(user_id = %user_id, component = "onboarding", "facet distill skipped: {e}");
     }
 
     // Record the source in onboarding state (append if not present).
@@ -566,7 +566,7 @@ async fn mark_done(user_id: &str, processed: &[String]) {
             )
             .await;
         }
-        Err(e) => eprintln!("[onboarding] state write failed: {e}"),
+        Err(e) => tracing::error!(user_id = %user_id, component = "onboarding", "state write failed: {e}"),
     }
 }
 

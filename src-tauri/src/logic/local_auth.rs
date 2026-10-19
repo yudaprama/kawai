@@ -135,17 +135,17 @@ fn persist_token(user_email: &str, token: &str) {
     // machine) — create it before writing the pointer.
     if let Some(parent) = pointer.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
-            eprintln!("[auth] failed to create data root {}: {e}", parent.display());
+            tracing::error!(component = "auth", "failed to create data root {}: {e}", parent.display());
         }
     }
     if let Err(e) = std::fs::write(&pointer, user_email) {
-        eprintln!("[auth] failed to write session pointer {}: {e}", pointer.display());
+        tracing::error!(component = "auth", "failed to write session pointer {}: {e}", pointer.display());
     }
     let dir = kawai_paths::user_data_dir(user_email);
     if std::fs::create_dir_all(&dir).is_ok() {
         let path = kawai_paths::auth_token(user_email);
         if let Err(e) = kawai_paths::write_private_file(&path, token) {
-            eprintln!("[auth] failed to write auth token {}: {e}", path.display());
+            tracing::error!(component = "auth", "failed to write auth token {}: {e}", path.display());
         }
     }
 }
@@ -273,7 +273,7 @@ pub async fn auth_sign_up(email_addr: &str, password: &str) -> std::result::Resu
 
     // Fire-and-forget welcome email — never blocks or fails signup.
     if let Err(e) = email::send_welcome_email(&email).await {
-        eprintln!("[auth] welcome email to {} failed: {e}", email);
+        tracing::warn!(component = "auth", "welcome email to {} failed: {e}", email);
     }
     Ok(user)
 }

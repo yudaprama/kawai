@@ -1367,7 +1367,7 @@ pub async fn civitai_generate(
         ));
     }
     if !failed_downloads.is_empty() {
-        eprintln!("civitai: {} unduhan gagal", failed_downloads.join("; "));
+        tracing::warn!(user_id = %user_id, component = "civitai", "{} unduhan gagal", failed_downloads.join("; "));
     }
     record_generation_history(
         user_id,
@@ -1403,7 +1403,7 @@ async fn record_generation_history(
     let params_json = match serde_json::to_value(request) {
         Ok(v) => kawai_db::generation_jobs::strip_media_fields(v),
         Err(e) => {
-            eprintln!("civitai: history params serialize gagal: {e}");
+            tracing::error!(user_id = %user_id, component = "civitai", "history params serialize gagal: {e}");
             return;
         }
     };
@@ -1417,11 +1417,11 @@ async fn record_generation_history(
                 if let Err(e) =
                     kawai_db::generation_jobs::generation_job_complete(user_id, &job_id, &files).await
                 {
-                    eprintln!("civitai: history complete gagal: {e}");
+                    tracing::error!(user_id = %user_id, component = "civitai", "history complete gagal: {e}");
                 }
             }
         }
-        Err(e) => eprintln!("civitai: history insert gagal: {e}"),
+        Err(e) => tracing::error!(user_id = %user_id, component = "civitai", "history insert gagal: {e}"),
     }
 }
 
@@ -1572,7 +1572,7 @@ pub async fn civitai_video_submit(
     {
         Ok(id) => id,
         Err(e) => {
-            eprintln!("civitai: history insert gagal: {e}");
+            tracing::error!(user_id = %user_id, component = "civitai", "history insert gagal: {e}");
             String::new()
         }
     };
@@ -1705,7 +1705,7 @@ pub async fn civitai_video_fetch(
             }
             // Poster is best-effort — the <video> element renders its own
             // first frame when the thumbnail is missing.
-            Err(e) => eprintln!("civitai: thumbnail unduh gagal: {e}"),
+            Err(e) => tracing::warn!(user_id = %user_id, component = "civitai", "thumbnail unduh gagal: {e}"),
         }
     }
     // Batched jobs (LTX): import the extra clips after the primary. A failed
@@ -1717,7 +1717,7 @@ pub async fn civitai_video_fetch(
         }
         match import_video_file(user_id, &workflow_id, url, i + 2).await {
             Ok(saved) => additional.push(saved),
-            Err(e) => eprintln!("civitai: klip tambahan {} gagal: {e}", i + 2),
+            Err(e) => tracing::warn!(user_id = %user_id, component = "civitai", "klip tambahan {} gagal: {e}", i + 2),
         }
     }
     // History: mark the submit-time `running` row succeeded with the stored
@@ -1749,7 +1749,7 @@ pub async fn civitai_video_fetch(
     )
     .await
     {
-        eprintln!("civitai: history complete gagal: {e}");
+        tracing::error!(user_id = %user_id, component = "civitai", "history complete gagal: {e}");
     }
     Ok(SavedVideo {
         file_id: file.id,
@@ -2087,7 +2087,7 @@ pub async fn civitai_music_submit(
     {
         Ok(id) => id,
         Err(e) => {
-            eprintln!("civitai: history insert gagal: {e}");
+            tracing::error!(user_id = %user_id, component = "civitai", "history insert gagal: {e}");
             String::new()
         }
     };
@@ -2179,7 +2179,7 @@ pub async fn civitai_music_fetch(
     )
     .await
     {
-        eprintln!("civitai: history complete gagal: {e}");
+        tracing::error!(user_id = %user_id, component = "civitai", "history complete gagal: {e}");
     }
     Ok(SavedAudio {
         file_id: file.id,
@@ -2338,7 +2338,7 @@ pub async fn civitai_model3d_submit(
     {
         Ok(id) => id,
         Err(e) => {
-            eprintln!("civitai: history insert gagal: {e}");
+            tracing::error!(user_id = %user_id, component = "civitai", "history insert gagal: {e}");
             String::new()
         }
     };
@@ -2480,7 +2480,7 @@ pub async fn civitai_model3d_fetch(
                 Some(id)
             }
             Err(e) => {
-                eprintln!("civitai: fbx unduh gagal: {e}");
+                tracing::warn!(user_id = %user_id, component = "civitai", "fbx unduh gagal: {e}");
                 None
             }
         },
@@ -2508,7 +2508,7 @@ pub async fn civitai_model3d_fetch(
                         Some(file.id)
                     }
                     Err(e) => {
-                        eprintln!("civitai: preview simpan gagal: {e}");
+                        tracing::warn!(user_id = %user_id, component = "civitai", "preview simpan gagal: {e}");
                         None
                     }
                 }
@@ -2516,7 +2516,7 @@ pub async fn civitai_model3d_fetch(
             // Preview is best-effort — the result card falls back to a
             // generic 3D tile when the render is missing.
             Err(e) => {
-                eprintln!("civitai: preview unduh gagal: {e}");
+                tracing::warn!(user_id = %user_id, component = "civitai", "preview unduh gagal: {e}");
                 None
             }
         },
@@ -2543,7 +2543,7 @@ pub async fn civitai_model3d_fetch(
                 name,
                 variant: extra.variant,
             }),
-            Err(e) => eprintln!("civitai: varian {} gagal: {e}", extra.variant),
+            Err(e) => tracing::warn!(user_id = %user_id, component = "civitai", "varian {} gagal: {e}", extra.variant),
         }
     }
     let mut history_files = vec![kawai_db::generation_jobs::GenerationJobFile::new(
@@ -2575,7 +2575,7 @@ pub async fn civitai_model3d_fetch(
     )
     .await
     {
-        eprintln!("civitai: history complete gagal: {e}");
+        tracing::error!(user_id = %user_id, component = "civitai", "history complete gagal: {e}");
     }
     Ok(SavedModel3d {
         file_id,

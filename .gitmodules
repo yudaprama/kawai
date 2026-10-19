@@ -48,3 +48,6 @@
 [submodule "markra"]
 	path = markra
 	url = https://github.com/markrahq/markra
+[submodule "homebrew-tap"]
+	path = homebrew-tap
+	url = https://github.com/yudaprama/homebrew-tap

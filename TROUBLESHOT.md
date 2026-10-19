@@ -230,10 +230,17 @@ turn must match §3.
   probe `POST /auth/salt` on the worker; 409-with-no-account → stale D1 row;
   session lost each restart → decode the token's `sub`/`exp`.
 - **Agent Observability** (`crates/foundation/telemetry`): every cloud call
-  exports to Grafana — query paths in §2. Env-gated by `AGENTO11Y_*`/
-  `OTEL_*`; one `glc_` token covers both channels. Agent roles: a NEW system
-  prompt = a NEW role (`with_agent`/`reason_as`), or it collapses into
-  `kawai-agent`. Short-lived processes must call
+  exports to Grafana — query paths in §2. Credentials are **baked**
+  (obfuscated `kawai-vault/constants`), not env-gated: generation ingest +
+  OTLP auth come from the vault; `OTEL_EXPORTER_OTLP_ENDPOINT`/`_HEADERS`
+  env vars override the OTLP side only (dev); a build with empty vault
+  entries is inert and no env var turns it on. One `glc_` token covers both
+  channels. Generation/workflow export = 3 attempts with backoff; a final
+  failure drops the batch LOUDLY (`tracing::error!` → Loki — alert on it,
+  see `docs/GRAFANA-ALERTS.md`; dropped tokens are never billed by the
+  recap). Agent roles: a NEW system prompt = a NEW role
+  (`with_agent`/`reason_as`), or it collapses into `kawai-agent`.
+  Short-lived processes must call
   `kawai_telemetry::shutdown()` before exit. Org slug lives in
   `~/.config/gcx/config.yaml`; refresh OAuth with `gcx cloud login` when
   Grafana calls 401.

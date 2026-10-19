@@ -809,21 +809,24 @@ pub async fn plan_task(
                                         return Ok((plan, remote_llm::RemoteUsage::default()));
                                     }
                                     Err(e) => {
-                                        eprintln!(
-                                            "[supervisor] layer-2 claim {} build failed ({e}) — planner",
+                                        tracing::warn!(
+                                            component = "supervisor",
+                                            "layer-2 claim {} build failed ({e}) — planner",
                                             template.id
                                         );
                                     }
                                 }
                             } else {
-                                eprintln!(
-                                    "[supervisor] layer-2 claim {} ticker {ticker:?} is not listed — planner",
+                                tracing::warn!(
+                                    component = "supervisor",
+                                    "layer-2 claim {} ticker {ticker:?} is not listed — planner",
                                     template.id
                                 );
                             }
                         } else {
-                            eprintln!(
-                                "[supervisor] layer-2 claimed unknown template {template_id:?} — planner"
+                            tracing::warn!(
+                                component = "supervisor",
+                                "layer-2 claimed unknown template {template_id:?} — planner"
                             );
                         }
                     }
@@ -1391,8 +1394,9 @@ fn audit_dataflow(plan: &kawai_router::TaskPlan) -> (usize, usize) {
     for step in &plan.steps {
         if has_legacy_ref(&step.arguments) {
             legacy += 1;
-            eprintln!(
-                "[supervisor] plan-quality: step \"{}\" uses a legacy fromStep reference inside arguments — move it to \"inputs\" (deprecated wiring)",
+            tracing::warn!(
+                component = "supervisor",
+                "plan-quality: step \"{}\" uses a legacy fromStep reference inside arguments — move it to \"inputs\" (deprecated wiring)",
                 step.id
             );
         }
@@ -1400,8 +1404,9 @@ fn audit_dataflow(plan: &kawai_router::TaskPlan) -> (usize, usize) {
             for key in bindings.keys() {
                 if args.contains_key(key) {
                     collisions += 1;
-                    eprintln!(
-                        "[supervisor] plan-quality: step \"{}\": argument \"{key}\" is OVERRIDDEN by an inputs binding — the literal value in arguments is discarded",
+                    tracing::warn!(
+                        component = "supervisor",
+                        "plan-quality: step \"{}\": argument \"{key}\" is OVERRIDDEN by an inputs binding — the literal value in arguments is discarded",
                         step.id
                     );
                 }
@@ -1586,8 +1591,9 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
         Err(_) => {
             // Do NOT leave the sync dead: a dropped sync mid-WAL-apply
             // poisons the replica file. Hand it to the background to finish.
-            eprintln!(
-                "[tool-catalog] sync exceeded {sync_timeout:?} — continuing in background"
+            tracing::warn!(
+                component = "tool-catalog",
+                "sync exceeded {sync_timeout:?} — continuing in background"
             );
             catalog.sync_detached();
         }
@@ -1603,15 +1609,17 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
     };
     if let Ok((local, remote)) = catalog.row_counts(&cfg).await {
         if local < remote {
-            eprintln!(
-                "[tool-catalog] replica STALE ({local} vs {remote} on remote) — retrying sync"
+            tracing::warn!(
+                component = "tool-catalog",
+                "replica STALE ({local} vs {remote} on remote) — retrying sync"
             );
             let _ = tokio::time::timeout(sync_timeout, catalog.sync()).await;
             catalog.sync_detached(); // never leave a dropped sync behind
             *LAST_SYNC_AT.lock().unwrap() = Some(std::time::Instant::now());
             match catalog.row_counts(&cfg).await {
-                Ok((local, remote)) if local < remote => eprintln!(
-                    "[tool-catalog] CRITICAL: replica still stale after retry \
+                Ok((local, remote)) if local < remote => tracing::error!(
+                    component = "tool-catalog",
+                    "CRITICAL: replica still stale after retry \
                      ({local} vs {remote}) — planner sees an outdated catalog"
                 ),
                 Ok(_) => tracing::info!(component = "tool-catalog", "replica fresh after retry"),
@@ -1637,12 +1645,13 @@ pub fn prefetch_tool_catalog() {
             match catalog.row_counts(&cfg).await {
                 Ok((local, remote)) if local >= remote => break, // converged
                 Ok((local, remote)) => {
-                    eprintln!(
-                        "[tool-catalog] prefetch: replica still stale ({local} vs {remote}), retrying"
+                    tracing::warn!(
+                        component = "tool-catalog",
+                        "prefetch: replica still stale ({local} vs {remote}), retrying"
                     );
                 }
                 Err(e) => {
-                    eprintln!("[tool-catalog] prefetch count check failed: {e}");
+                    tracing::error!(component = "tool-catalog", "prefetch count check failed: {e}");
                     break;
                 }
             }
@@ -1659,8 +1668,9 @@ async fn open_synced_catalog(
     match catalog.list_names().await {
         Ok(names) if !names.is_empty() => Some(catalog),
         Ok(_) => {
-            eprintln!(
-                "[tool-catalog] local replica is EMPTY (sync failed or the shared catalog \
+            tracing::error!(
+                component = "tool-catalog",
+                "local replica is EMPTY (sync failed or the shared catalog \
                  is unseeded) — planner restricted to core tools; re-seed with \
                  `--example seed_tool_catalog --features litert,binance,monad` using the \
                  ADMIN token (KAWAI_TURSO_WRITE_TOKEN); verify with \
@@ -1669,7 +1679,7 @@ async fn open_synced_catalog(
             None
         }
         Err(e) => {
-            eprintln!("[tool-catalog] replica unreadable: {e}");
+            tracing::error!(component = "tool-catalog", "replica unreadable: {e}");
             None
         }
     }
@@ -3153,7 +3163,7 @@ fn finish_step_telemetry(
             .collect(),
         parent_step_ids,
         agent_name: "kawai-supervisor".into(),
-        agent_version: env!("CARGO_PKG_VERSION").into(),
+        agent_version: kawai_telemetry::app_version().into(),
         trace_span: Some((trace_id, span_id)),
     });
 }
@@ -3658,7 +3668,7 @@ async fn revise_plan(
                 Ok::<(), String>(())
             };
             if let Err(e) = tokio::time::timeout(std::time::Duration::from_secs(300), collect).await {
-                eprintln!("[supervisor] revise round {round}: watchdog fired (300s), raw so far: {} chars", raw.len());
+                tracing::warn!(component = "supervisor", "revise round {round}: watchdog fired (300s), raw so far: {} chars", raw.len());
                 return Err(format!("revised-planner call did not finish in 300s: {e}"));
             }
             eprintln!(
@@ -4354,7 +4364,7 @@ async fn synthesize_final_answer(
         let mut stream = match remote.stream(system, &task, materials).await {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("[supervisor] deliverable writer: planner pool unavailable ({e}) — falling back to raw output");
+                tracing::error!(component = "supervisor", "deliverable writer: planner pool unavailable ({e}) — falling back to raw output");
                 return None;
             }
         };
@@ -4367,8 +4377,9 @@ async fn synthesize_final_answer(
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!(
-                        "[supervisor] deliverable writer: stream failed mid-generation ({e}) — falling back to raw output"
+                    tracing::error!(
+                        component = "supervisor",
+                        "deliverable writer: stream failed mid-generation ({e}) — falling back to raw output"
                     );
                     return None;
                 }
@@ -4376,8 +4387,9 @@ async fn synthesize_final_answer(
         }
         let trimmed = text.trim();
         if trimmed.is_empty() {
-            eprintln!(
-                "[supervisor] deliverable writer: model returned empty text — falling back to raw output"
+            tracing::error!(
+                component = "supervisor",
+                "deliverable writer: model returned empty text — falling back to raw output"
             );
             return None;
         }
@@ -4522,7 +4534,7 @@ async fn synthesize_deck(
         let mut round = 0usize;
         loop {
             if round > 2 {
-                eprintln!("[supervisor] deliverable writer: exhausted 3 synthesis rounds — falling back to raw output");
+                tracing::error!(component = "supervisor", "deliverable writer: exhausted 3 synthesis rounds — falling back to raw output");
                 return None;
             }
             round += 1;
@@ -4943,8 +4955,10 @@ pub fn execute_plan_stream_with_cancel(
                     // An EMPTY result set must not count as success —
                     // `[].all(completed)` is trivially true in Rust.
                     if result.results.is_empty() {
-                        eprintln!(
-                            "[supervisor] plan '{}' produced no step results (steps in plan: {})",
+                        tracing::error!(
+                            user_id = %user_id,
+                            component = "supervisor",
+                            "plan '{}' produced no step results (steps in plan: {})",
                             current_plan.goal,
                             current_plan.steps.len()
                         );
@@ -5006,8 +5020,11 @@ pub fn execute_plan_stream_with_cancel(
                             match deck {
                                 Some(s) => (Some(s.note), Some(s.artifact)),
                                 None => {
-                                    eprintln!(
-                                        "[supervisor] deck writer unavailable — falling back to markdown deliverable"
+                                    // Degradation, not loss — the markdown deliverable still lands.
+                                    tracing::warn!(
+                                        user_id = %user_id,
+                                        component = "supervisor",
+                                        "deck writer unavailable — falling back to markdown deliverable"
                                     );
                                     (None, None)
                                 }
@@ -5109,14 +5126,14 @@ pub fn execute_plan_stream_with_cancel(
                                     .cloned()
                                     .collect::<Vec<_>>(),
                                 agent_name: "kawai-supervisor".into(),
-                                agent_version: env!("CARGO_PKG_VERSION").into(),
+                                agent_version: kawai_telemetry::app_version().into(),
                                 trace_span: Some((trace_id, span_id)),
                             });
                         }
                         if let Some(answer) = &synthesized {
                             tracing::info!(component = "supervisor", user_id = %user_id, chars = answer.chars().count(), "synthesis completed");
                         } else {
-                            eprintln!("[supervisor] synthesis unavailable — falling back to raw final output");
+                            tracing::error!(user_id = %user_id, component = "supervisor", "synthesis unavailable — falling back to raw final output");
                         }
                         let written = synthesized
                             .map(|text| strip_unknown_chart_tokens(&text, &run_charts, &user_id))
@@ -5206,7 +5223,7 @@ pub fn execute_plan_stream_with_cancel(
                             )
                             .await
                             {
-                                eprintln!("[supervisor] experience record failed: {e:?}");
+                                tracing::error!(user_id = %user_id, component = "supervisor", "experience record failed: {e:?}");
                             }
                         }
                         yield SupervisorEvent::PlanCompleted {
@@ -5267,7 +5284,7 @@ pub fn execute_plan_stream_with_cancel(
                                         "{}; replan (attempt {replan_attempt}) failed: {e}",
                                         reason
                                     );
-                                    eprintln!("[supervisor] PlanFailed: {error}");
+                                    tracing::error!(user_id = %user_id, component = "supervisor", "PlanFailed: {error}");
                                     yield SupervisorEvent::PlanFailed {
                                         error,
                                     };
@@ -5279,14 +5296,14 @@ pub fn execute_plan_stream_with_cancel(
                     let error = result.failures().into_iter().map(|f| {
                         format!("step '{}' failed: {}", f.step_id, f.error.as_deref().unwrap_or("unknown"))
                     }).collect::<Vec<_>>().join("; ");
-                    eprintln!("[supervisor] PlanFailed: {error}");
+                    tracing::error!(user_id = %user_id, component = "supervisor", "PlanFailed: {error}");
                     yield SupervisorEvent::PlanFailed {
                         error,
                     };
                     break;
                 }
                 Err(e) => {
-                    eprintln!("[supervisor] PlanFailed: {e}");
+                    tracing::error!(user_id = %user_id, component = "supervisor", "PlanFailed: {e}");
                     yield SupervisorEvent::PlanFailed {
                         error: e.to_string(),
                     };
