@@ -380,6 +380,12 @@ win-rate statistics over MEXC fills are not implemented yet. Both are read by
 `venue_fills_import` → `trading_pnl_by_symbol` / `trading_fee_summary`, which
 take an optional `venue` (absent = every venue's fills, one shared books).
 
+- **The desk asks every venue in its own spelling.** A user's realized record
+  is read per `(venue, market)`: Binance writes `BTCUSDT`, MEXC writes
+  `BTC_USDT`, and the desk's `crypto_pair` accepts both so a MEXC ticker still
+  routes. The market DATA the desk fetches is Binance's — a real venue
+  mismatch, and the reason the ledger record, not the candles, is what tells
+  the roles where the user actually trades.
 - **Only the venue's own sync writes its rows**, so a scoped review that skips
   the fetch imports an empty history. The plan builder therefore emits the
   venue's sync step ahead of the import and makes the import depend on it, and
@@ -394,6 +400,28 @@ take an optional `venue` (absent = every venue's fills, one shared books).
   (`side` `1`/`2`, `category`, `positionType`, the sign of `profit`, the sign of
   `fee`); each is one named mapping in `crates/toolsets/mexc/src/fills.rs`.
   `cargo run -p mexc --example mexc_probe` reports which ones a payload settles.
+
+### 5.4a `mexc_futures_positions` — the MEXC live mirror
+
+The same exact-mirror contract as §5.1, on the same venue-keyed tables
+(`venue_positions`, `venue_open_orders` — migration 0037). MEXC reports USDT
+perps only, so `market` is always `USDTM` and there is no per-settlement-asset
+rollup. The payload is flat with `kind: "futures_positions"`; `orders` is
+currently empty because the MEXC open-orders read is not implemented yet, and
+the card says so rather than rendering an empty table.
+
+- **The prune is venue-scoped.** Every sync writes the full open set with a
+  fresh `synced_at` and deletes older rows — but only its OWN venue's. A MEXC
+  sync running later must never delete the Binance rows.
+- **Stamps must strictly increase within a millisecond** (`fetch_max`, not a
+  plain counter): two syncs in the same millisecond would make a closed
+  position indistinguishable from a fresh one, and it would survive the prune
+  forever.
+- **Zero-size positions never enter the mirror.** They are closed positions;
+  a mirror full of dust zeros is a lie about what is open.
+- **MEXC has no hedge mode**, so `position_side` is derived from the sign of
+  the size, and an order's risk `intent` comes from the exchange's
+  reduce-only flag rather than its order-type spelling.
 
 ### 5.5 `crypto_futures_trade_stats` detail — the realized-PnL ledger
 

@@ -6,7 +6,7 @@ import { cards } from "./shared";
 import { renderBibleVerse, renderQuran, renderPoem, renderDefinition } from "./typographic";
 import { renderWeather, renderForecast } from "./weather";
 import { renderMedia } from "./media";
-import { renderCurrency, renderCryptoPrice, renderStockQuote, renderTicker24, chart, twelveSeries, klinesSeries, tiingoSeries, binanceKlineSeries, renderBinanceDepth, renderBinanceTa, renderBinanceBalances, renderBinanceOpenOrders, renderBinanceFuturesPositions, renderBinanceFuturesRiskAudit, renderBinanceFuturesAuditData, renderCryptoScreener, renderCryptoScreenerData } from "./finance";
+import { renderCurrency, renderCryptoPrice, renderStockQuote, renderTicker24, chart, twelveSeries, klinesSeries, tiingoSeries, binanceKlineSeries, renderBinanceDepth, renderBinanceTa, renderBinanceBalances, renderBinanceOpenOrders, renderBinanceFuturesPositions, renderMexcFuturesPositions, renderBinanceFuturesRiskAudit, renderBinanceFuturesAuditData, renderCryptoScreener, renderCryptoScreenerData } from "./finance";
 import { jikanCards, mealCards, drinkCards, bookCards, repoCards, paperCards, quakeCards, flightStateCards, recentFlightCards, renderSpacexLaunch, spacexList } from "./cards";
 import { renderGeocode, renderIpLocation, renderIss } from "./geo";
 import { renderConnectorTools } from "./connector";
@@ -100,9 +100,12 @@ const registry: Record<string, ToolRenderer> = {
   crypto_balances: renderBinanceBalances,
   crypto_open_orders: renderBinanceOpenOrders,
   binance_futures_positions: renderBinanceFuturesPositions,
+  mexc_futures_positions: renderMexcFuturesPositions,
   binance_futures_risk_audit: renderBinanceFuturesRiskAudit,
   binance_coinm_risk_audit: renderBinanceFuturesRiskAudit,
   binance_futures_audit_data: renderBinanceFuturesAuditData,
+  mexc_futures_risk_audit: renderBinanceFuturesRiskAudit,
+  mexc_futures_audit_data: renderBinanceFuturesAuditData,
   venue_fills_import: renderVenueFillsImport,
   mexc_futures_fill_sync: renderMexcFuturesFillSync,
   crypto_futures_trade_stats: renderCryptoFuturesTradeStats,

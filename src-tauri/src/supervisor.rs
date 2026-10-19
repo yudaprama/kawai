@@ -2618,6 +2618,19 @@ pub async fn build_fixed_binance_registry(
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
 }
 
+/// Shared dispatch registry for the FIXED MEXC Futures Risk Audit pipeline.
+#[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+pub async fn build_fixed_mexc_registry(
+    user_id: &str,
+    session_id: i64,
+    plan_key: &str,
+) -> Result<ToolRegistry, SupervisorError> {
+    let toolset = build_supervisor_toolset(user_id, session_id, AUTO_AGENT_ID)
+        .await
+        .ok_or_else(|| SupervisorError::NoToolset(AUTO_AGENT_ID.to_string()))?;
+    build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
+}
+
 /// The futures risk audit's books wave: when the `accounting` feature is on,
 /// append a step after the mirror sync that posts fills not yet recorded in
 /// the ledger (idempotent, rolling 30-day window). The step dispatches

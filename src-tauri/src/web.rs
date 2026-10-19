@@ -2573,6 +2573,7 @@ pub fn router(dist_dir: PathBuf) -> Router {
     #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
     let protected = protected
         .route("/api/run_binance_risk_audit", post(run_binance_risk_audit_handler))
+        .route("/api/run_mexc_risk_audit", post(run_mexc_risk_audit_handler))
         .route("/api/run_trading_performance", post(run_trading_performance_handler))
         .route("/api/run_monthly_close", post(run_monthly_close_handler))
         .route("/api/run_crypto_screener", post(run_crypto_screener_handler));
@@ -3087,6 +3088,19 @@ struct RunBinanceRiskAuditRequest {
     stream_id: String,
 }
 
+#[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunMexcRiskAuditRequest {
+    session_id: i64,
+    interval: Option<String>,
+    risk: Option<String>,
+    limit: Option<u32>,
+    /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
+    language: Option<String>,
+    stream_id: String,
+}
+
 /// Trading Performance (fixed pipeline over the trading-books ledger).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3179,9 +3193,68 @@ key and secret in Settings → Binance API first"
     .unwrap_or_default();
     let plan = ::binance::build_audit_plan(args);
     #[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
-    let plan = crate::supervisor::append_books_sync_step(plan);
+    let plan = crate::supervisor::append_books_sync_step(plan, "binance");
     let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language, Some(&market));
     let tool_registry = crate::supervisor::build_fixed_binance_registry(
+        &user_id,
+        req.session_id,
+        &crate::supervisor::plan_key(&plan),
+    )
+    .await
+    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+
+    Ok(supervisor_sse(
+        plan,
+        tool_registry,
+        req.stream_id,
+        user_id,
+        req.session_id,
+        Some(user_goal),
+        None,
+        &bearer,
+        pending,
+    ))
+}
+
+#[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+async fn run_mexc_risk_audit_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+    Extension(user_id): Extension<String>,
+    headers: HeaderMap,
+    Json(req): Json<RunMexcRiskAuditRequest>,
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
+    let bearer = cookie_bearer(&headers)?;
+    ensure_session(&user_id, req.session_id).await?;
+
+    let creds = ::mexc::credentials::op_status(&user_id).await;
+    if creds.source != "user" {
+        return Err((
+            StatusCode::PRECONDITION_FAILED,
+            "the futures risk audit grades YOUR open positions — add your own read-only MEXC API key and secret in Settings → MEXC API first"
+                .to_string(),
+        ));
+    }
+
+    let args = ::mexc::normalize_audit_args(
+        req.interval.as_deref().unwrap_or_default(),
+        req.risk.as_deref().unwrap_or_default(),
+        req.limit,
+    );
+    let interval = args["interval"].as_str().unwrap_or_default().to_string();
+    let risk = args["risk"].as_str().unwrap_or_default().to_string();
+    let limit = args["limit"].as_u64().unwrap_or_default() as u32;
+    let language = crate::supervisor::resolve_user_language(
+        req.language.as_deref(),
+        headers
+            .get(header::ACCEPT_LANGUAGE)
+            .and_then(|v| v.to_str().ok()),
+    )
+    .unwrap_or_default();
+    let plan = ::mexc::build_audit_plan(args);
+    #[cfg(all(feature = "accounting", feature = "mexc", not(target_os = "android")))]
+    let plan = crate::supervisor::append_books_sync_step(plan, "mexc");
+    let user_goal = ::mexc::audit_user_goal(&interval, &risk, limit, &language);
+    let tool_registry = crate::supervisor::build_fixed_mexc_registry(
         &user_id,
         req.session_id,
         &crate::supervisor::plan_key(&plan),

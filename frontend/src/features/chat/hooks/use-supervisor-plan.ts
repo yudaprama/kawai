@@ -599,6 +599,25 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [startStream],
   );
 
+  const runMexcAudit = useCallback(
+    (options: { interval: string; risk: string; limit: number }, sessionId: number) => {
+      if (streamCtrl.current) return;
+      startStream(
+        {
+          sessionId,
+          interval: options.interval,
+          risk: options.risk,
+          limit: options.limit,
+          // Device locale → report language (resolved server-side).
+          language: navigator.language,
+        },
+        sessionId,
+        "run_mexc_risk_audit",
+      );
+    },
+    [startStream],
+  );
+
   /** Trading Performance: execute the FIXED performance pipeline — sync
    *  futures fills into the ledger, then read the books back as a
    *  period review (win rate, per-pair PnL, fees, integrity gate). `venue`
@@ -861,6 +880,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     runDesk,
     runYoutube,
     runBinanceAudit,
+    runMexcAudit,
     runTradingPerformance,
     runMonthlyClose,
     runCryptoScreener,

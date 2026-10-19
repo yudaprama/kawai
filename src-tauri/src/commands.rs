@@ -2251,7 +2251,7 @@ key and secret in Settings → Binance API first"
         .unwrap_or_default();
     let plan = ::binance::build_audit_plan(args);
     #[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
-    let plan = crate::supervisor::append_books_sync_step(plan);
+    let plan = crate::supervisor::append_books_sync_step(plan, "binance");
     let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language, Some(&market));
     let tool_registry = crate::supervisor::build_fixed_binance_registry(
         &ctx.user_id,
@@ -2262,6 +2262,59 @@ key and secret in Settings → Binance API first"
     .map_err(|e| e.to_string())?;
 
     tracing::info!(component = "binance-risk-audit", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running futures risk audit");
+    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
+        .await
+}
+
+/// Futures Risk Audit (MEXC): run the FIXED risk-audit pipeline over the
+/// user's open MEXC futures positions.
+#[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+#[tauri::command]
+pub async fn run_mexc_risk_audit(
+    session_id: i64,
+    interval: Option<String>,
+    risk: Option<String>,
+    limit: Option<u32>,
+    language: Option<String>,
+    stream_id: String,
+    on_event: Channel<kawai_events::SupervisorEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+    pending: State<'_, crate::supervisor::PendingConfirmations>,
+) -> Result<(), String> {
+    let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
+
+    let creds = ::mexc::credentials::op_status(&ctx.user_id).await;
+    if creds.source != "user" {
+        return Err(
+            "the futures risk audit grades YOUR open positions — add your own read-only MEXC API key and secret in Settings → MEXC API first"
+                .to_string(),
+        );
+    }
+
+    let args = ::mexc::normalize_audit_args(
+        interval.as_deref().unwrap_or_default(),
+        risk.as_deref().unwrap_or_default(),
+        limit,
+    );
+    let interval = args["interval"].as_str().unwrap_or_default().to_string();
+    let risk = args["risk"].as_str().unwrap_or_default().to_string();
+    let limit = args["limit"].as_u64().unwrap_or_default() as u32;
+    let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
+        .unwrap_or_default();
+    let plan = ::mexc::build_audit_plan(args);
+    #[cfg(all(feature = "accounting", feature = "mexc", not(target_os = "android")))]
+    let plan = crate::supervisor::append_books_sync_step(plan, "mexc");
+    let user_goal = ::mexc::audit_user_goal(&interval, &risk, limit, &language);
+    let tool_registry = crate::supervisor::build_fixed_mexc_registry(
+        &ctx.user_id,
+        session_id,
+        &crate::supervisor::plan_key(&plan),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tracing::info!(component = "mexc-risk-audit", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running futures risk audit");
     ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
         .await
 }

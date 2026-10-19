@@ -295,7 +295,7 @@ jobs:
           # "Unexpected input(s)"). latest.json itself is excluded by
           # tauri-action; .sig companions follow the same pattern.
           assetNamePattern: "[name]_[arch].[ext]"
-          args: --features litert,tts,binance,accounting --config .github/tauri-litert.json
+          args: --features litert,tts,binance,accounting,mexc --config .github/tauri-litert.json
 
       # Wallet note: the opt-in `monad` feature (Monad wallet) is deliberately
       # NOT built into release bundles — regulatory. For a local wallet build:
@@ -404,7 +404,7 @@ jobs:
           # Version-less asset names — input is assetNamePattern on
           # tauri-action@v0 (see the macos job).
           assetNamePattern: "[name]_[arch].[ext]"
-          args: --features litert,tts,binance,accounting --config .github/tauri-litert.json
+          args: --features litert,tts,binance,accounting,mexc --config .github/tauri-litert.json
 
   build-windows:
     needs: bump
@@ -543,7 +543,7 @@ jobs:
           # Stable version-less name — input is assetNamePattern on
           # tauri-action@v0 (see the macos job).
           assetNamePattern: "[name]_[arch].[ext]"
-          args: --features litert,tts,binance,accounting --config .github/tauri-litert.json
+          args: --features litert,tts,binance,accounting,mexc --config .github/tauri-litert.json
 
   build-web:
     needs: bump

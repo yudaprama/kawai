@@ -95,6 +95,9 @@ binance = { path = "../crates/toolsets/binance", optional = true }
 # Accounting agent tools (builtin.accounting): local double-entry ledger,
 # GST invoices, reports, GSTR-1 exports via the vendored accounting-core.
 accounting-tools = { path = "../crates/toolsets/accounting", optional = true }
+# Venue-neutral exchange types, so the composition root can ask every venue for
+# the user's own realized record on a symbol.
+kawai-venue = { path = "../crates/foundation/venue" }
 # MEXC tools: signed futures fills sync into the venue-keyed fill history the
 # ledger reads. Own-keys-only (no product-baked pair exists for MEXC).
 mexc = { path = "../crates/toolsets/mexc", optional = true }

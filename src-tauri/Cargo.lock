@@ -1652,14 +1652,17 @@ name = "binance"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "binance-sdk",
  "coinmarketcap",
  "kawai-agent-contract",
  "kawai-constants",
  "kawai-db",
+ "kawai-futures-risk",
  "kawai-http-client",
  "kawai-router",
  "kawai-tools",
+ "kawai-venue",
  "libsql",
  "reqwest 0.13.4",
  "serde",
@@ -5657,6 +5660,7 @@ dependencies = [
  "kawai-tool-catalog",
  "kawai-tools",
  "kawai-vault",
+ "kawai-venue",
  "kawai-youtube",
  "keyring",
  "knowledge",
@@ -5885,6 +5889,17 @@ dependencies = [
  "serde_json",
  "specta",
  "specta-typescript",
+]
+
+[[package]]
+name = "kawai-futures-risk"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "ta",
+ "tokio",
 ]
 
 [[package]]
@@ -6677,7 +6692,9 @@ dependencies = [
  "async-trait",
  "hmac",
  "kawai-db",
+ "kawai-futures-risk",
  "kawai-http-client",
+ "kawai-router",
  "kawai-tools",
  "kawai-venue",
  "libsql",

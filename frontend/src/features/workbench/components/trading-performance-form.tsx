@@ -102,9 +102,7 @@ export function TradingPerformanceForm({ disabled, onSubmit }: TradingPerformanc
         <span className="text-muted-foreground ml-auto font-mono text-[10px]">kosong = bulan lalu</span>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
-          Exchange
-        </span>
+        <span className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">Exchange</span>
         {VENUES.map((v) => (
           <button
             key={v.label}

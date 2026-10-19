@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderStepReport } from "@/features/workbench/components/tool-views";
 
 import { renderMexcFuturesFillSync, renderVenueFillsImport } from "@/components/ai-elements/tool-renderers/accounting";
+import { renderMexcFuturesPositions } from "@/components/ai-elements/tool-renderers/finance";
 
 /**
  * The registry gate: every tool kawai can dispatch in a plan must CLAIM its
@@ -59,6 +60,33 @@ const MEXC_FILL_SYNC = {
   symbols: ["BTC_USDT"],
   from_ms: 1735689600000,
   to_ms: 1736294400000,
+};
+
+const MEXC_FUTURES_POSITIONS = {
+  kind: "futures_positions",
+  venue: "mexc",
+  market: "USDTM",
+  synced: 2,
+  totalUnrealizedPnl: 123.45,
+  positions: [
+    {
+      venue: "mexc",
+      market: "USDTM",
+      symbol: "BTCUSDT",
+      positionSide: "LONG",
+      positionAmt: 0.5,
+      entryPrice: 98000,
+      markPrice: 98246.9,
+      unRealizedProfit: 123.45,
+      liquidationPrice: 91000,
+      notional: 49123.45,
+      marginAsset: "USDT",
+      isolatedWallet: 0,
+      adl: 2,
+      updatedAt: "2026-10-19T00:00:00Z",
+    },
+  ],
+  orders: [],
 };
 
 const TRADE_STATS = {
@@ -219,6 +247,7 @@ const DISPATCHABLE: [string, unknown][] = [
   ["ledger_list_transactions", TRANSACTIONS],
   ["invoice_list", INVOICES],
   ["mexc_futures_fill_sync", MEXC_FILL_SYNC],
+  ["mexc_futures_positions", MEXC_FUTURES_POSITIONS],
   ["reconcile_run", RECONCILIATION],
   ["reconcile_csv", RECONCILIATION],
 ];
@@ -246,5 +275,11 @@ describe("dispatch gate: every accounting tool claims its output", () => {
     // Same anti-drift check as the ledger import: the chat inspector registry
     // and the canvas registry must both claim the tool.
     expect(renderMexcFuturesFillSync(MEXC_FILL_SYNC)).not.toBeNull();
+  });
+
+  it("mexc_futures_positions renders through the chat registry too", () => {
+    // Same anti-drift check as the fill sync: the chat inspector registry and
+    // the canvas registry must both claim the tool.
+    expect(renderMexcFuturesPositions(MEXC_FUTURES_POSITIONS)).not.toBeNull();
   });
 });

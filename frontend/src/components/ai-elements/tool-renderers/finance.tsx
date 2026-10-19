@@ -196,6 +196,105 @@ export function renderBinanceOpenOrders(output: unknown): ReactNode {
   return cards(items);
 }
 
+
+/**
+ * Shared presentational core for every venue's futures-positions card.
+ *
+ * Binance and MEXC mirror the same open positions into the same local tables,
+ * so they show the same things; the only real differences are venue-specific
+ * (Binance's COIN-M settlement rollup, MEXC's venue strip and its explicit
+ * "nothing mirrored" note). Those differences live in the caller's slots, not
+ * in a second copy of this markup.
+ */
+function futuresPositionsCard(opts: {
+  positions: CardItem[];
+  orders: CardItem[];
+  /** Rendered when the venue has neither positions nor orders. */
+  empty: ReactNode;
+  /** Venue strip / identity line above the rows (Binance: none). */
+  header?: ReactNode;
+  /** Label over the order list; unset means the list is not headed. */
+  ordersTitle?: string;
+  /** Replaces an empty order list — MEXC must say so instead of showing nothing. */
+  noOrders?: ReactNode;
+  /** Aggregate lines under the rows (total PnL, per-asset rollup). */
+  footer?: ReactNode;
+}): ReactNode {
+  const { positions, orders, empty, header, ordersTitle, noOrders, footer } = opts;
+  if (!positions.length && !orders.length) return <TextCard>{empty}</TextCard>;
+  return (
+    <>
+      {header}
+      {cards(positions)}
+      {ordersTitle ? (
+        <>
+          <div className="not-prose pt-2 text-muted-foreground text-xs font-medium uppercase">
+            {ordersTitle}
+          </div>
+          {orders.length ? cards(orders) : noOrders}
+        </>
+      ) : orders.length ? (
+        cards(orders)
+      ) : null}
+      {footer}
+    </>
+  );
+}
+
+/** One open position → a card row. `tagOf` is the venue's settlement label. */
+function positionCards(rows: unknown[], tagOf?: (p: Record<string, unknown>) => string | undefined): CardItem[] {
+  return rows.filter(isRecord).map((p) => {
+    const side = str(p.positionSide)?.toUpperCase();
+    const amt = num(p.positionAmt);
+    const entry = num(p.entryPrice);
+    const mark = num(p.markPrice);
+    const pnl = num(p.unRealizedProfit);
+    const liq = num(p.liquidationPrice);
+    const notional = num(p.notional);
+    const tag = tagOf?.(p);
+    return {
+      title: [str(p.symbol), side].filter(Boolean).join(" ") || "Position",
+      subtitle: amt !== null ? `${fmtNum(amt)} @ ${entry !== null ? fmtNum(entry) : "—"}` : undefined,
+      meta: [
+        ...(tag ? [tag] : []),
+        ...(mark !== null ? [`mark ${fmtNum(mark)}`] : []),
+        ...(pnl !== null ? [`PnL ${fmtNum(pnl)}`] : []),
+        ...(liq !== null && liq > 0 ? [`liq ${fmtNum(liq)}`] : []),
+        ...(notional !== null && notional !== 0 ? [`${fmtNum(notional)} notional`] : []),
+      ].join(" · "),
+    };
+  });
+}
+
+/** One resting order → a card row. Order type is spelled `type` on Binance
+ * and `orderType` on MEXC; both mean the same thing here. */
+function orderCards(rows: unknown[], tagOf?: (o: Record<string, unknown>) => string | undefined): CardItem[] {
+  return rows.filter(isRecord).map((o) => {
+    const intent = str(o.intent)?.toUpperCase();
+    const kind = (str(o.orderType) ?? str(o.type))?.replace(/_/g, " ");
+    const qty = num(o.origQty);
+    const price = num(o.price);
+    const stop = num(o.stopPrice);
+    // Stop/TP orders carry their level in stopPrice; a plain limit uses price.
+    const level = stop !== null && stop > 0 ? stop : price;
+    const tag = tagOf?.(o);
+    return {
+      title: [str(o.symbol), intent ?? kind].filter(Boolean).join(" ") || "Order",
+      subtitle:
+        qty !== null ? `${fmtNum(qty)} @ ${level !== null && level > 0 ? fmtNum(level) : "market"}` : undefined,
+      meta: [
+        ...(tag ? [tag] : []),
+        ...(kind !== undefined ? [kind] : []),
+        str(o.side)?.toUpperCase(),
+        ...(o.reduceOnly === true ? ["reduce-only"] : []),
+        ...(o.closePosition === true ? ["close-position"] : []),
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    };
+  });
+}
+
 /**
  * Binance agent futures positions + open orders →
  * { synced, totalUnrealizedPnl, positions: [...],
@@ -206,68 +305,20 @@ export function renderBinanceOpenOrders(output: unknown): ReactNode {
  * reads as SHORT with a negative amount), then the resting orders grouped by
  * the server-side `intent` — stop-losses and take-profits are the ones the
  * user is actually looking for, so they lead.
+ *
+ * The rows come from the shared futures-positions core; only the venue
+ * specifics (the COIN-M settlement rollup, which is Binance-only) stay here.
  */
 export function renderBinanceFuturesPositions(output: unknown): ReactNode {
   const d = parse(output);
   if (!isRecord(d) || !Array.isArray(d.positions)) return null;
-  const positions: CardItem[] = d.positions
-    .filter(isRecord)
-    .map((p) => {
-      const side = str(p.positionSide)?.toUpperCase();
-      const amt = num(p.positionAmt);
-      const entry = num(p.entryPrice);
-      const mark = num(p.markPrice);
-      const pnl = num(p.unRealizedProfit);
-      const liq = num(p.liquidationPrice);
-      const notional = num(p.notional);
-      const market = str(p.margin)?.toUpperCase();
-      const tag = market === "COINM" ? "COIN-M" : market === "USDM" ? undefined : market;
-      return {
-        title: [str(p.symbol), side].filter(Boolean).join(" ") || "Position",
-        subtitle: amt !== null ? `${fmtNum(amt)} @ ${entry !== null ? fmtNum(entry) : "—"}` : undefined,
-        meta: [
-          ...(tag ? [tag] : []),
-          ...(mark !== null ? [`mark ${fmtNum(mark)}`] : []),
-          ...(pnl !== null ? [`PnL ${fmtNum(pnl)}`] : []),
-          ...(liq !== null && liq > 0 ? [`liq ${fmtNum(liq)}`] : []),
-          ...(notional !== null && notional !== 0 ? [`${fmtNum(notional)} notional`] : []),
-        ].join(" · "),
-      };
-    });
-
-  const orders: CardItem[] = (Array.isArray(d.openOrders) ? d.openOrders : [])
-    .filter(isRecord)
-    .map((o) => {
-      const intent = str(o.intent)?.toUpperCase();
-      const kind = str(o.type)?.replace(/_/g, " ");
-      const qty = num(o.origQty);
-      const price = num(o.price);
-      const stop = num(o.stopPrice);
-      // Stop/TP orders carry their level in stopPrice; a plain limit uses price.
-      const level = stop !== null && stop > 0 ? stop : price;
-      return {
-        title: [str(o.symbol), intent ?? kind].filter(Boolean).join(" ") || "Order",
-        subtitle:
-          qty !== null ? `${fmtNum(qty)} @ ${level !== null && level > 0 ? fmtNum(level) : "market"}` : undefined,
-        meta: [
-          ...(str(o.margin)?.toUpperCase() === "COINM" ? ["COIN-M"] : []),
-          ...(kind !== undefined ? [kind] : []),
-          str(o.side)?.toUpperCase(),
-          ...(o.reduceOnly === true ? ["reduce-only"] : []),
-          ...(o.closePosition === true ? ["close-position"] : []),
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      };
-    });
-
-  if (!positions.length && !orders.length) {
-    return (
-      <TextCard>
-        <Footnote>No open Binance futures positions or orders.</Footnote>
-      </TextCard>
-    );
-  }
+  const positions = positionCards(d.positions, (p) => {
+    const market = str(p.margin)?.toUpperCase();
+    return market === "COINM" ? "COIN-M" : market === "USDM" ? undefined : market;
+  });
+  const orders = orderCards(Array.isArray(d.openOrders) ? d.openOrders : [], (o) =>
+    str(o.margin)?.toUpperCase() === "COINM" ? "COIN-M" : undefined,
+  );
   const total = num(d.totalUnrealizedPnl);
   // COIN-M PnL is denominated in the settlement coin, so it is NEVER summed
   // into the USDT total — each asset renders as its own line.
@@ -275,25 +326,57 @@ export function renderBinanceFuturesPositions(output: unknown): ReactNode {
   const coinmLines = Object.entries(coinm).filter(
     ([, v]) => typeof v === "number" && v !== 0,
   );
-  return (
-    <>
-      {cards(positions)}
-      {orders.length ? (
-        <>
-          <div className="not-prose pt-2 text-muted-foreground text-xs font-medium uppercase">
-            Open orders
-          </div>
-          {cards(orders)}
-        </>
-      ) : null}
-      {total !== null ? <Footnote>Total unrealized PnL (USDⓈ-M) {fmtNum(total)}</Footnote> : null}
-      {coinmLines.map(([asset, v]) => (
-        <Footnote key={asset}>
-          COIN-M unrealized PnL ({asset}) {fmtNum(v as number)}
-        </Footnote>
-      ))}
-    </>
-  );
+  return futuresPositionsCard({
+    positions,
+    orders,
+    empty: <Footnote>No open Binance futures positions or orders.</Footnote>,
+    ordersTitle: "Open orders",
+    footer: (
+      <>
+        {total !== null ? <Footnote>Total unrealized PnL (USDⓈ-M) {fmtNum(total)}</Footnote> : null}
+        {coinmLines.map(([asset, v]) => (
+          <Footnote key={asset}>
+            COIN-M unrealized PnL ({asset}) {fmtNum(v as number)}
+          </Footnote>
+        ))}
+      </>
+    ),
+  });
+}
+
+/**
+ * MEXC agent futures positions →
+ * { kind: "futures_positions", venue, market, synced, totalUnrealizedPnl,
+ *   positions: [...], orders: [...] }.
+ *
+ * MEXC has no COIN-M, so there is no per-settlement-asset rollup, and it
+ * mirrors positions only: `orders` comes back empty and the card SAYS that
+ * rather than rendering an empty table that reads like a sync gap.
+ */
+export function renderMexcFuturesPositions(output: unknown): ReactNode {
+  const d = parse(output);
+  // Flat payloads carry a `kind` discriminator; anything else belongs to the
+  // raw-JSON card, not here.
+  if (!isRecord(d) || d.kind !== "futures_positions" || !Array.isArray(d.positions)) return null;
+  const positions = positionCards(d.positions);
+  const orders = orderCards(Array.isArray(d.orders) ? d.orders : []);
+  const total = num(d.totalUnrealizedPnl);
+  const venue = str(d.venue)?.toUpperCase();
+  const market = str(d.market)?.toUpperCase();
+  const synced = num(d.synced);
+  const items: Metric[] = [
+    { label: venue ? `${venue} positions` : "Positions", value: synced !== null ? fmtNum(synced) : "—" },
+    ...(market ? [{ label: "Market", value: market }] : []),
+    ...(total !== null ? [{ label: "Unrealized PnL", value: fmtNum(total), delta: fmtNum(total) }] : []),
+  ];
+  return futuresPositionsCard({
+    positions,
+    orders,
+    empty: <Footnote>No open MEXC futures positions.</Footnote>,
+    header: <MetricGrid items={items} />,
+    ordersTitle: "Resting orders",
+    noOrders: <Footnote>No resting orders mirrored.</Footnote>,
+  });
 }
 
 /** Binance agent klines → { candles: [[openTime, o, h, l, c, v], ...] }. */

@@ -82,6 +82,23 @@ does and does not settle.
 
 ## Remaining phases
 
+**P3a — DONE: the live mirror and the desk.** `venue_positions` /
+`venue_open_orders` (migration 0037, Binance rows backfilled), `mexc_futures_positions`
+writing the same tables with a venue-scoped prune, the desk accepting MEXC's
+`BTC_USDT` spelling and asking every venue for the user's own realized record,
+and a shared frontend card both venues render.
+
+**P3b — DONE: shared risk crate + MEXC audit.** The shared crate
+`crates/engines/futures-risk` (`kawai-futures-risk`) now owns the candle
+fetch + stop-spec math, keyed on a `CandleSource` trait; Binance's 162 tests
+and `stop_grading_envelope_is_golden` still pass on it, so the extraction
+changed nothing. MEXC now grades through the SAME policy via
+`mexc_futures_risk_audit` + `mexc_futures_audit_data` (read-only; empty mirror
+returns an actionable guidance error instead of syncing), mapping
+`4h`→`Hour4`/`1h`→`Min60`/… in one named function, with coverage + naked-
+notional rollup and the same envelope the Binance card renders. The frontend
+renders both under `renderBinanceFuturesRiskAudit`.
+
 **P3 — positions and the audit.** `venue_positions` mirror, `mexc_futures_positions`,
 venue-aware `symbol_realized_record` and the desk `LedgerFn`
 (`crates/engines/desk/src/tool.rs:1949`, bound at `supervisor.rs:2516`),
@@ -119,4 +136,8 @@ noise).
 |An unsynced venue fails with guidance; an untraded month does not|`venue_import_refuses_an_unsynced_window`, `venue_import_reports_an_untraded_window_without_erroring`|
 |A MEXC review dispatches real tools in the real merged registry|`supervisor::a_mexc_scoped_trading_plan_fetches_before_it_imports` — fetch first, import depends on it, `validate_plan` passes|
 |MEXC signing is byte-correct|the `mexc` signer tests pin three digests with their python3 derivation in the comment|
+|A MEXC sync never deletes another venue's mirror|`mexc` `another_venues_rows_survive_a_mexc_sync`|
+|A closed MEXC position leaves the mirror, an open one is replaced not appended|`second_write_prunes_the_vanished_position`, `changed_mark_replaces_rather_than_appends`|
+|The merged registry reaches the MEXC mirror|`supervisor::the_merged_registry_carries_the_mexc_positions_mirror`|
+|The positions cutover carries an open book across|`kawai-db` `venue_positions_cutover_carries_the_open_set_across`|
 |Live protocol behaviour|`mexc_probe` — needs a MEXC account; not yet run|

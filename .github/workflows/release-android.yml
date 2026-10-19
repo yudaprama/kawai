@@ -15,7 +15,7 @@ name: release-android
 # shipped. workflow_dispatch re-runs it for one tag (failed upload, new
 # internal rollout).
 #
-# Feature set: the `desktop` cargo feature only — NO litert, tts, binance.
+# Feature set: the `desktop` cargo feature only — NO litert, tts, binance; accounting + mexc included.
 # `litert` needs the LiteRT-LM C lib built for android_arm64
 # (`bazel build //c:litert-lm --config=android_arm64`, staged by
 # scripts/stage-litert-android.sh) and `tts` needs the MNN native libs;
@@ -174,10 +174,10 @@ jobs:
           EOF
 
       - name: Build signed AAB
-        run: bun tauri android build --target aarch64 armv7
+        run: bun tauri android build --target aarch64 armv7 --features accounting,mexc
 
       - name: Build universal APK (sideload)
-        run: bun tauri android build --target aarch64 armv7 --apk
+        run: bun tauri android build --target aarch64 armv7 --features accounting,mexc --apk
 
       - name: Attach APK to the release
         uses: softprops/action-gh-release@v2
