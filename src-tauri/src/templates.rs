@@ -109,7 +109,7 @@ static ACCOUNTING_SLOT_PERIOD: Slot = Slot {
 /// Build the monthly-close plan for one resolved period — thin wrapper over
 /// the domain builder the fixed `run_monthly_close` command also calls, so
 /// chip and free-text produce the IDENTICAL plan (the `kawaii_desk` pattern).
-#[cfg(any(test, feature = "accounting"))]
+#[cfg(feature = "accounting")]
 fn build_accounting_close(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
     accounting_tools::plan::build_monthly_close_plan(
         slots.get("period").unwrap_or_default(),
@@ -152,7 +152,7 @@ static TRADING_PERFORMANCE: PlanTemplate = PlanTemplate {
 
 /// Build the performance plan for one resolved period — thin wrapper over
 /// the domain builder the fixed `run_trading_performance` command also calls.
-#[cfg(any(test, feature = "accounting"))]
+#[cfg(all(feature = "accounting", feature = "binance"))]
 fn build_trading_performance(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
     accounting_tools::plan::build_trading_performance_plan(
         slots.get("period").unwrap_or_default(),
@@ -271,45 +271,6 @@ mod tests {
         assert!(plan.goal.contains("NVDA"), "goal: {}", plan.goal);
         assert_eq!(plan.final_writer, None, "deliverable writer synthesizes");
     }
-
-    /// The close pipeline dispatches only merged-catalog accounting tools,
-    /// the integrity gate runs before the export, and the export consumes
-    /// the gate's decision (depends_on), never the other way round.
-    #[test]
-    fn accounting_close_dispatches_only_accounting_tools_gate_first() {
-        let plan =
-            build_accounting_close(&ResolvedSlots::new().with("period", "2026-10")).unwrap();
-        const TOOLS: &[&str] = &[
-            "ledger_list_transactions",
-            "ledger_trial_balance",
-            "ledger_balance_sheet",
-            "ledger_income_statement",
-            "ledger_cash_flow",
-            "ledger_integrity_check",
-            "gstr1_export",
-        ];
-        assert_eq!(plan.steps.len(), 7);
-        for step in &plan.steps {
-            let tool = step.tool.as_deref().expect("close steps dispatch tools");
-            assert!(TOOLS.contains(&tool), "step {} dispatches {tool}", step.id);
-        }
-        let gate = plan.steps.iter().find(|s| s.id == "integrity-gate").unwrap();
-        let export = plan.steps.iter().find(|s| s.id == "gstr1-export").unwrap();
-        assert!(gate.depends_on.contains(&"trial-balance".to_string()));
-        assert!(export.depends_on.contains(&"integrity-gate".to_string()));
-        assert!(plan.goal.contains("2026-10-01") && plan.goal.contains("2026-10-31"));
-    }
-
-    #[test]
-    fn accounting_close_refuses_without_a_period() {
-        // Required-slot contract: `route_goal` routes to Plan before build;
-        // build must not panic if reached anyway.
-        assert!(build_accounting_close(&ResolvedSlots::new()).is_err());
-    }
-
-    /// The accounting builders' own coverage (period parsing, step shapes,
-    /// the gate ordering) lives in `accounting_tools::plan` — one place per
-    /// assertion, so the command and the router cannot drift.
 
     /// A slot sample that satisfies every required slot of `template`, so the
     /// completeness test builds real plans rather than skipping.
