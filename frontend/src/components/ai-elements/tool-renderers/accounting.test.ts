@@ -447,3 +447,190 @@ describe("audit books-sync and reconciliation renderers", () => {
     }
   });
 });
+
+// ── The server's own bytes ──────────────────────────────────────────────────
+// Captured by running the four report TOOLS against a seeded ledger
+// (crates/toolsets/accounting/examples/dump_reports.rs) and dumping their
+// output. Hand-written fixtures are how a renderer "passes" while the app
+// shows JSON: these are what the server actually emits, verbatim.
+const REAL_REPORTS = {
+  "TRIAL": {
+    "report": {
+      "as_of_date": "2026-10-31",
+      "balances": {
+        "cash": {
+          "account": {
+            "account_type": "Asset",
+            "balance": "1500.50",
+            "created_at": "2026-10-19T00:30:49.928600",
+            "id": "cash",
+            "metadata": {},
+            "name": "Cash",
+            "parent_id": null,
+            "updated_at": "2026-10-19T00:30:49.966902"
+          },
+          "credit_balance": null,
+          "debit_balance": "1500.50"
+        },
+        "rent": {
+          "account": {
+            "account_type": "Expense",
+            "balance": "0",
+            "created_at": "2026-10-19T00:30:49.961150",
+            "id": "rent",
+            "metadata": {},
+            "name": "Rent",
+            "parent_id": null,
+            "updated_at": "2026-10-19T00:30:49.961150"
+          },
+          "credit_balance": null,
+          "debit_balance": "0"
+        },
+        "sales": {
+          "account": {
+            "account_type": "Income",
+            "balance": "1500.50",
+            "created_at": "2026-10-19T00:30:49.959386",
+            "id": "sales",
+            "metadata": {},
+            "name": "Sales",
+            "parent_id": null,
+            "updated_at": "2026-10-19T00:30:49.969152"
+          },
+          "credit_balance": "1500.50",
+          "debit_balance": null
+        }
+      },
+      "is_balanced": true,
+      "total_credits": "1500.50",
+      "total_debits": "1500.50"
+    }
+  },
+  "SHEET": {
+    "report": {
+      "as_of_date": "2026-10-31",
+      "assets": [
+        {
+          "account": {
+            "account_type": "Asset",
+            "balance": "1500.50",
+            "created_at": "2026-10-19T00:30:49.928600",
+            "id": "cash",
+            "metadata": {},
+            "name": "Cash",
+            "parent_id": null,
+            "updated_at": "2026-10-19T00:30:49.966902"
+          },
+          "credit_balance": null,
+          "debit_balance": "1500.50"
+        }
+      ],
+      "equity": [
+        {
+          "account": {
+            "account_type": "Equity",
+            "balance": "0",
+            "created_at": "2026-10-19T00:30:49.974248",
+            "id": "net_income",
+            "metadata": {},
+            "name": "Net Income",
+            "parent_id": null,
+            "updated_at": "2026-10-19T00:30:49.974248"
+          },
+          "credit_balance": "1500.50",
+          "debit_balance": null
+        }
+      ],
+      "is_balanced": true,
+      "liabilities": [],
+      "total_assets": "1500.50",
+      "total_equity": "1500.50",
+      "total_liabilities": "0"
+    }
+  },
+  "INCOME": {
+    "report": {
+      "end_date": "2026-10-31",
+      "expenses": [
+        {
+          "account": {
+            "account_type": "Expense",
+            "balance": "0",
+            "created_at": "2026-10-19T00:30:49.961150",
+            "id": "rent",
+            "metadata": {},
+            "name": "Rent",
+            "parent_id": null,
+            "updated_at": "2026-10-19T00:30:49.961150"
+          },
+          "credit_balance": null,
+          "debit_balance": "0"
+        }
+      ],
+      "net_income": "1500.50",
+      "revenue": [
+        {
+          "account": {
+            "account_type": "Income",
+            "balance": "1500.50",
+            "created_at": "2026-10-19T00:30:49.959386",
+            "id": "sales",
+            "metadata": {},
+            "name": "Sales",
+            "parent_id": null,
+            "updated_at": "2026-10-19T00:30:49.969152"
+          },
+          "credit_balance": "1500.50",
+          "debit_balance": null
+        }
+      ],
+      "start_date": "2026-10-01",
+      "total_expenses": "0",
+      "total_revenue": "1500.50"
+    }
+  },
+  "CASHFLOW": {
+    "report": {
+      "end_date": "2026-10-31",
+      "financing_activities": [],
+      "investing_activities": [],
+      "net_cash_flow": "1500.50",
+      "net_financing_cash_flow": "0",
+      "net_investing_cash_flow": "0",
+      "net_operating_cash_flow": "1500.50",
+      "operating_activities": [
+        {
+          "amount": "1500.50",
+          "description": "Cash sale"
+        }
+      ],
+      "start_date": "2026-10-01"
+    }
+  }
+} as const;
+
+describe("report renderers against the server's real payloads", () => {
+  it("trial balance renders the engine's exact payload", () => {
+    expect(text(renderStepReport("ledger_trial_balance", JSON.stringify(REAL_REPORTS.TRIAL)))).toContain(
+      "Trial balance",
+    );
+  });
+
+  it("balance sheet renders the engine's exact payload", () => {
+    expect(text(renderStepReport("ledger_balance_sheet", JSON.stringify(REAL_REPORTS.SHEET)))).toContain(
+      "Balance sheet",
+    );
+  });
+
+  it("income statement renders the engine's exact payload", () => {
+    expect(text(renderStepReport("ledger_income_statement", JSON.stringify(REAL_REPORTS.INCOME)))).toContain(
+      "Income statement",
+    );
+  });
+
+  it("cash flow renders the engine's exact payload", () => {
+    expect(
+      text(renderStepReport("ledger_cash_flow", JSON.stringify(REAL_REPORTS.CASHFLOW))),
+    ).toContain("Cash flow");
+  });
+});
