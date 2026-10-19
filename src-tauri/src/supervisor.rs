@@ -2625,16 +2625,18 @@ pub async fn build_fixed_binance_registry(
 /// from — and is fully automatic: postings derive from the exchange and are
 /// idempotent, and the audit's synthesis reports what was posted.
 #[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
-pub fn append_books_sync_step(mut plan: kawai_router::TaskPlan) -> kawai_router::TaskPlan {
+pub fn append_books_sync_step(
+    mut plan: kawai_router::TaskPlan,
+    venue: &str,
+) -> kawai_router::TaskPlan {
     plan.steps.push(kawai_router::TaskStep {
         id: "books_sync".into(),
         agent_id: ::binance::BINANCE_AUDIT_AGENT_ID.into(),
         task: "Post fills not yet recorded in the ledger (idempotent, last 30 days); include the posted summary in the audit narrative".into(),
         tool: Some("books_auto_sync".into()),
-        // The audit runs on the Binance positions mirror, so its books wave
-        // posts Binance fills — the ledger itself is venue-generic, this step
-        // is not.
-        arguments: serde_json::json!({ "venue": "binance" }),
+        // The ledger is venue-generic; the audit that carries this wave is
+        // not, so the wave names the venue whose fills it posts.
+        arguments: serde_json::json!({ "venue": venue }),
         depends_on: vec!["audit_data".into()],
         ..kawai_router::TaskStep::default()
     });
@@ -5531,29 +5533,33 @@ mod tool_charge_tests {
         assert_eq!(rows[1].tool.as_deref(), Some("probe_b"));
         assert_eq!(rows[3].outcome, "error", "the failing probe logs an error");
 
-        // Fase 2 surcharge: exactly ONE KIND_TOOL row — the COMPLETED priced
-        // step. The failing step buys nothing, the unpriced probes buy
-        // nothing, and the fee carries the step's session + tool. The ledger
-        // writer is a queued flusher (FLUSH_BATCH_WAIT) — drain before reading
-        // (same discipline as the kawai-db ledger tests).
+        // Fase 2 surcharge, revenue model: EVERY completed dispatch leaves a
+        // KIND_TOOL row at its tier (default 100), the failing step buys
+        // nothing. Rows ride the flusher in dispatch order (serial steps).
         tokio::time::sleep(std::time::Duration::from_millis(750)).await;
         let conn = kawai_db::db_connection(user).await.unwrap();
         let mut tool_rows = conn
             .query(
                 "SELECT tool, billed_tokens, session_id, role FROM usage_ledger \
-                 WHERE kind = 'tool'",
+                 WHERE kind = 'tool' ORDER BY seq",
                 (),
             )
             .await
             .unwrap();
-        let r = tool_rows.next().await.unwrap().expect("one surcharge row");
-        assert_eq!(r.get::<String>(0).unwrap(), "cli_run");
-        assert_eq!(r.get::<i64>(1).unwrap(), 1_000);
-        assert_eq!(r.get::<i64>(2).unwrap(), 42);
-        assert_eq!(r.get::<String>(3).unwrap(), "supervisor-step");
-        assert!(
-            tool_rows.next().await.unwrap().is_none(),
-            "no second surcharge row"
+        let mut seen = Vec::new();
+        while let Some(r) = tool_rows.next().await.unwrap() {
+            assert_eq!(r.get::<String>(3).unwrap(), "supervisor-step");
+            assert_eq!(r.get::<i64>(2).unwrap(), 42);
+            seen.push((r.get::<String>(0).unwrap(), r.get::<i64>(1).unwrap()));
+        }
+        assert_eq!(
+            seen,
+            vec![
+                ("probe_a".to_string(), 100),
+                ("probe_b".to_string(), 100),
+                ("cli_run".to_string(), 1_000),
+            ],
+            "completed steps bill at tier; the failed step must be absent"
         );
     }
 }

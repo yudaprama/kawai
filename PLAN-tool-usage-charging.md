@@ -1,6 +1,6 @@
 # PLAN — Charge Usage Token dari Tool Calling
 
-**Status:** implemented (Fase 1 + 2) · **rev2 — 2026-10-19**: Fase 2 dijalankan dengan surcharge (Q1a) + harga proposal default (Q2) — lihat §10.
+**Status:** implemented (Fase 1 + 2) · **rev3 — 2026-10-19**: harga jadi model revenue bertingkat (keputusan pemilik) — lihat §10 Q2.
 **Scope fase ini:** atribusi per-tool atas seluruh konsumsi token LLM yang dipicu sebuah tool call (Fase 1), plus opsi harga app-token per tool call (Fase 2). Debit tetap lewat jalur recap → worker yang sudah ada — **client tidak pernah mendebit** (invarian `PLAN-qris-topup.md` §15).
 
 ---
@@ -214,7 +214,7 @@ Semua wajib hijau sebelum commit; `cargo check` + `cargo check --features web` u
 | # | Keputusan | Hasil |
 |---|---|---|
 | Q1 | Model tagihan Fase 2 | **(a) Surcharge** di atas pass-through LLM (D5) — diimplementasi |
-| Q2 | Daftar harga | **Proposal default** di `logic/tool_pricing.rs`: `cli_run` = 1.000, `web_search` = 250; `web_read` sengaja None (tier-0 gratis, tier-1 sudah dibudget harian — harga flat menagih tier gratis juga). Angka milik pemilik — ubah tabel, mekanisme tidak berubah |
+| Q2 | Daftar harga | **(rev3 — keputusan pemilik: REVENUE, bukan cost-recovery)** semua tool call kena surcharge bertingkat — 1.000 side-effect (`cli_run`, `composio_execute`), 500 placement order, 250 generasi/authoring, 150 `web_read`, **100 default** (Rp 1/panggilan); `FREE` set (19 tool) = meta/lokal murni & baca data sendiri — satu-satunya yang gratis. Tabel: `logic/tool_pricing.rs` (`FREE` const + tier match), test `tiers_are_distinct_and_ordered` mengunci urutan tier |
 | Q3 | `reason_in` conversation key per step | **Skip** (§3.5 default) — grouping UI tidak diubah |
 
 Status: Fase 1 + Fase 2 **terimplementasi dan terverifikasi** (§7). Sisa: angka harga final (Q2) dan `recap --dry-run` pada data dev saat cron dijalankan berikutnya.

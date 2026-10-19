@@ -1,30 +1,79 @@
 //! Per-tool-call app-token surcharge (PLAN-tool-usage-charging.md Fase 2).
 //!
-//! A priced tool charges a FLAT app-token fee per COMPLETED supervisor step,
-//! on top of the LLM tokens its execution burned (those stay billable
-//! KIND_LLM rows via the remote pool — the surcharge is tool margin, the same
-//! relationship Civitai's 1.2× infrastructure markup has to its Buzz cost).
-//! 1 app token = Rp 0,01 (worker `qris.ts` `TOKENS_PER_IDR = 100`).
+//! PRICING MODEL (owner decision 2026-10-19 — REVENUE, not cost-recovery):
+//! the marginal cost of most calls is ~zero (free/flat APIs, on-device
+//! compute), and LLM spend is already billed via the `gen_ai` pass-through —
+//! so this fee is how tool usage itself makes money. Tiers, 1 token =
+//! Rp 0,01:
 //!
-//! The table is the ONLY place a price lives. `None` = free — the default
-//! for every tool not named here, and the reason local/on-device tools never
-//! cost anything. Prices are PROPOSAL DEFAULTS (plan §10 Q2): the owner
-//! adjusts the numbers, the mechanism does not change.
+//!   1.000  external side effects (CLI execution, composio actions)
+//!     500  money-moving order placements (confirmation-gated as well)
+//!     250  generation / authoring (documents, decks, PDFs, invoices,
+//!          diagrams, NL analytics, desk synthesis, web search)
+//!     150  web page reads
+//!     100  everything else — the affordable default (Rp 1/call)
+//!    None  pure-local meta & own-data reads — the free set keeps the app
+//!          fully navigable at zero balance
+//!
+//! The table below is the ONLY place a price lives. Never priced: tools that
+//! never reach the dispatcher (internal subagents) — the choke point never
+//! sees them, so their absence here is not a leak.
 
-/// The flat app-token price of one completed call of `tool`, if priced.
+/// Pure-local introspection of the user's own data: free, always. This is
+/// the set a zero-balance user can still run to see what the app holds.
+const FREE: &[&str] = &[
+    "office_list_files",
+    "office_read_document",
+    "office_document_info",
+    "office_restore_backup",
+    "pdf_extract_text",
+    "pdf_search_text",
+    "pdf_info",
+    "pdf_merge",
+    "pdf_split",
+    "knowledge_search",
+    "explain_step_result",
+    "session_step_results",
+    "graph_list",
+    "graph_search",
+    "codegraph_explore",
+    "codegraph_status",
+    "data_schema",
+    "data_tables",
+    "composio_list_tools",
+];
+
+/// The flat app-token price of one completed call of `tool`.
 pub fn tool_price(tool: &str) -> Option<u64> {
+    if FREE.contains(&tool) {
+        return None;
+    }
+
     match tool {
-        // Arbitrary command execution through the external CLI bridge — the
-        // heaviest per-call external surface in the catalog.
-        "cli_run" => Some(1_000),
-        // External search API spend (composio-backed discovery).
-        "web_search" => Some(250),
-        // `web_read` is deliberately UNPRICED for now: its tier-0 engine is
-        // the on-device webview (free by design) and tier-1 is already
-        // budgeted per-user/day (KAWAI_CF_PER_USER_DAILY) — a flat fee would
-        // charge the free tier too. Price it only once the tool result
-        // exposes which engine served the read.
-        _ => None,
+        // External side effects through first-party bridges.
+        "cli_run" | "composio_execute" => Some(1_000),
+        // Money-moving placements — also confirmation-gated upstream.
+        "crypto_futures_place_stop_loss" | "crypto_futures_place_take_profit" => Some(500),
+        // Generation / authoring — the product's output surface.
+        "office_create_document"
+        | "office_create_deck"
+        | "office_edit_document"
+        | "office_export_deck"
+        | "pdf_create_from_markdown"
+        | "pdf_replace_text"
+        | "invoice_create"
+        | "diagram_generate"
+        | "data_query_nl"
+        | "data_chart_nl"
+        | "desk_data"
+        | "desk_role"
+        | "youtube_stage"
+        | "web_search" => Some(250),
+        // Web reads: now priced on BOTH tiers by owner decision — tier-0
+        // (on-device webview) is free to serve but no longer free to use.
+        "web_read" => Some(150),
+        // Everything else — data reads, TA, syncs, bookkeeping — Rp 1/call.
+        _ => Some(100),
     }
 }
 
@@ -32,16 +81,51 @@ pub fn tool_price(tool: &str) -> Option<u64> {
 mod tests {
     use super::*;
 
-    /// The priced set is deliberate and small — everything else is free by
-    /// default, and the free set is the reason the surcharge never fires on
-    /// local/on-device tools.
+    /// The free set is the only `None` — revenue model charges every
+    /// dispatched call, with pure-local introspection exempted.
     #[test]
-    fn only_named_tools_are_priced() {
+    fn only_the_free_set_is_free() {
+        for tool in FREE {
+            assert_eq!(tool_price(tool), None, "{tool} must stay free");
+        }
+        assert_eq!(tool_price("web_read"), Some(150));
+        assert_eq!(tool_price("data_query"), Some(100));
+        assert_eq!(tool_price("binance_futures_risk_audit"), Some(100));
+        assert_eq!(tool_price("nonexistent_tool"), Some(100));
+    }
+
+    /// The tier boundaries an owner price change must keep deliberate:
+    /// side effects > placements > generation > web reads > default.
+    #[test]
+    fn tiers_are_distinct_and_ordered() {
         assert_eq!(tool_price("cli_run"), Some(1_000));
-        assert_eq!(tool_price("web_search"), Some(250));
-        assert_eq!(tool_price("web_read"), None, "tier split unresolved — see module doc");
-        assert_eq!(tool_price("data_query_nl"), None);
-        assert_eq!(tool_price("office_list_files"), None);
-        assert_eq!(tool_price("nonexistent_tool"), None);
+        assert_eq!(tool_price("composio_execute"), Some(1_000));
+        assert_eq!(tool_price("crypto_futures_place_stop_loss"), Some(500));
+        assert_eq!(tool_price("crypto_futures_place_take_profit"), Some(500));
+        for tool in [
+            "office_create_document",
+            "office_create_deck",
+            "pdf_create_from_markdown",
+            "invoice_create",
+            "diagram_generate",
+            "data_query_nl",
+            "desk_role",
+            "web_search",
+        ] {
+            assert_eq!(tool_price(tool), Some(250), "{tool}");
+        }
+        let prices: Vec<u64> = [
+            tool_price("cli_run"),
+            tool_price("crypto_futures_place_stop_loss"),
+            tool_price("office_create_document"),
+            tool_price("web_read"),
+            tool_price("data_query"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let mut sorted = prices.clone();
+        sorted.sort_unstable_by(|a, b| b.cmp(a));
+        assert_eq!(prices, sorted, "tiers must descend: 1000/500/250/150/100");
     }
 }
