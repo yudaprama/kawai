@@ -358,14 +358,29 @@ export function renderLedgerIntegrityCheck(output: unknown): ReactNode {
 }
 // ── ledger reports (the close workflow's four statements) ───────────────────
 
-/** Every report tool wraps the engine's DTO: `{ report: {...} }`. Amounts
- * inside are exact decimal strings; `as_of_date` / period dates are the
- * engine's own `YYYY-MM-DD`. */
+/** The report DTO. The tools wrap it as `{ report: {...} }`, but a step
+ * whose output passes through an unwrapping layer (artifact extraction,
+ * a persisted step row, the chat inspector's `data` field) arrives as the
+ * bare DTO — and a renderer that only accepts one shape silently degrades
+ * to the key/value fallback. Accept both: the envelope when present, the
+ * payload itself when it already carries report keys. */
 function report(output: unknown): Record<string, unknown> | null {
   const d = parse(output);
   if (!isRecord(d)) return null;
-  return isRecord(d.report) ? d.report : null;
+  if (isRecord(d.report)) return d.report;
+  return REPORT_KEYS.some((k) => k in d) ? d : null;
 }
+
+/** Keys that identify a report payload on its own. */
+const REPORT_KEYS = [
+  "balances",
+  "assets",
+  "revenue",
+  "operating_activities",
+  "reconciliation_items",
+  "is_balanced",
+  "trial_balance_total_debits",
+];
 
 /** AccountBalance → one table row: account name, debit, credit. */
 function balanceRows(list: unknown): { label: string; debit?: string; credit?: string }[] {

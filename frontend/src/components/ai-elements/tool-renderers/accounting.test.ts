@@ -634,3 +634,54 @@ describe("report renderers against the server's real payloads", () => {
     ).toContain("Cash flow");
   });
 });
+
+// A step output can reach a view UNWRAPPED (artifact extraction, a persisted
+// step row, the chat inspector's `data` field). A renderer that only accepts
+// the tool envelope silently degrades to the key/value fallback there — which
+// is exactly what the canvas showed.
+describe("report renderers accept the bare DTO as well as the envelope", () => {
+  const bare = (wrapped: unknown) => (wrapped as { report: unknown }).report;
+
+  it("trial balance renders with and without the envelope", () => {
+    const wrapped = REAL_REPORTS.TRIAL;
+    expect(text(renderStepReport("ledger_trial_balance", JSON.stringify(wrapped)))).toContain("Trial balance");
+    expect(text(renderStepReport("ledger_trial_balance", JSON.stringify(bare(wrapped))))).toContain(
+      "Trial balance",
+    );
+  });
+
+  it("balance sheet renders with and without the envelope", () => {
+    const wrapped = REAL_REPORTS.SHEET;
+    expect(text(renderStepReport("ledger_balance_sheet", JSON.stringify(bare(wrapped))))).toContain(
+      "Balance sheet",
+    );
+  });
+
+  it("income statement renders with and without the envelope", () => {
+    const wrapped = REAL_REPORTS.INCOME;
+    expect(text(renderStepReport("ledger_income_statement", JSON.stringify(bare(wrapped))))).toContain(
+      "Income statement",
+    );
+  });
+
+  it("cash flow renders with and without the envelope", () => {
+    const wrapped = REAL_REPORTS.CASHFLOW;
+    expect(text(renderStepReport("ledger_cash_flow", JSON.stringify(bare(wrapped))))).toContain("Cash flow");
+  });
+
+  it("integrity and reconciliation also accept the bare DTO", () => {
+    const integrity = JSON.parse(JSON.stringify(validIntegrity)) as { report: unknown };
+    expect(text(renderStepReport("ledger_integrity_check", JSON.stringify(integrity.report)))).toContain(
+      "Ledger integrity",
+    );
+    const recon = JSON.parse(JSON.stringify(reconciliationPayload)) as { report: unknown };
+    expect(text(renderStepReport("reconcile_run", JSON.stringify(recon.report)))).toContain("Reconciliation");
+  });
+
+  it("still refuses payloads that are not reports at all", () => {
+    for (const render of [renderLedgerTrialBalance, renderLedgerBalanceSheet, renderLedgerIncomeStatement, renderLedgerCashFlow]) {
+      expect(render({ unrelated: true })).toBeNull();
+      expect(render(null)).toBeNull();
+    }
+  });
+});
