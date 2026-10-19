@@ -2511,27 +2511,36 @@ pub async fn build_desk_registry(
     });
     // The desk's ledger material — the user's OWN realized record on the
     // symbol, read from the LOCAL fill ledger (a SQLite read, never a
-    // signed endpoint). Absent without the Binance feature or on Android:
-    // the decision roles simply run without it.
+    // signed endpoint). Absent without a venue feature or on Android: the
+    // decision roles simply run without it.
     #[cfg(all(feature = "binance", not(target_os = "android")))]
     let desk_ledger: Option<kawai_desk::LedgerFn> = {
         let user_id = user_id.to_string();
         Some(Arc::new(move |symbol: String| {
             let user_id = user_id.clone();
             Box::pin(async move {
-                match binance::trades::symbol_realized_record(&user_id, &symbol).await {
-                    Ok(Some(record)) => Some(record),
-                    Ok(None) => None,
-                    Err(e) => {
-                        tracing::warn!(
-                            component = "desk",
-                            symbol = %symbol,
-                            error = %e,
-                            "ledger record unavailable"
-                        );
-                        None
+                // One record per (venue, market): the exchanges spell the same
+                // pair differently (`BTCUSDT` vs `BTC_USDT`) and keep separate
+                // books, so each venue is asked in its own spelling and the
+                // first record with enough history wins.
+                for (venue, market, symbol) in venue_symbol_spellings(&symbol) {
+                    match binance::trades::symbol_realized_record(&user_id, venue, market, &symbol)
+                        .await
+                    {
+                        Ok(Some(record)) => return Some(record),
+                        Ok(None) => continue,
+                        Err(e) => {
+                            tracing::warn!(
+                                component = "desk",
+                                symbol = %symbol,
+                                venue = %venue,
+                                error = %e,
+                                "ledger record unavailable"
+                            );
+                        }
                     }
                 }
+                None
             })
         }))
     };
@@ -2545,6 +2554,32 @@ pub async fn build_desk_registry(
             .with_ledger(desk_ledger),
     );
     build_registry_from_toolset(user_id, session_id, toolset, plan_key).await
+}
+
+/// Every (venue, market, symbol-spelling) the local fill history could hold a
+/// user's record under, most-recorded-first.
+///
+/// The exchanges disagree on the pair spelling — Binance writes `BTCUSDT`, MEXC
+/// writes `BTC_USDT` — and each keeps its own book, so a ticker the user typed
+/// has to be asked of every venue in that venue's own spelling. Order follows
+/// the feature set, so a build without MEXC never asks for a MEXC record.
+fn venue_symbol_spellings(symbol: &str) -> Vec<(kawai_venue::Venue, &'static str, String)> {
+    let t = symbol.trim().to_uppercase();
+    let base = t
+        .strip_suffix("USDT")
+        .or_else(|| t.strip_suffix("USD"))
+        .unwrap_or(&t)
+        .trim_end_matches("/_ ")
+        .to_string();
+    let base = base.replace(['/', '_'], "");
+    let mut out = Vec::new();
+    if base.is_empty() {
+        return out;
+    }
+    out.push((kawai_venue::Venue::Binance, "USDM", format!("{base}USDT")));
+    #[cfg(feature = "mexc")]
+    out.push((kawai_venue::Venue::Mexc, "USDTM", format!("{base}_USDT")));
+    out
 }
 
 /// The YouTube Summary execution registry: the merged auto catalog narrowed
@@ -2696,6 +2731,15 @@ pub(crate) async fn build_registry_from_toolset(
                 preview_chars(&args, 200)
             );
             let started = std::time::Instant::now();
+            // Usage attribution scope (PLAN-tool-usage-charging.md Fase 1):
+            // every remote LLM call inside this tool (a `reason` one-shot, a
+            // subagent round) folds its provider-reported usage into
+            // `step_charge` and lands its ledger row with this tool's name —
+            // and with this step's user when the call carries none (web).
+            let step_charge = std::sync::Arc::new(kawai_telemetry::ToolCharge::new(
+                name.clone(),
+                db_user_id.as_str(),
+            ));
             // Cooperative deadline: tools with internal retry loops (the NL
             // data tools) read this and return a structured "budget ran out"
             // error instead of being hard-killed into an opaque timeout.
@@ -2704,12 +2748,24 @@ pub(crate) async fn build_registry_from_toolset(
                 .map(|ms| started + std::time::Duration::from_millis(ms));
             let result = kawai_analytics::deadline::scope(
                 step_deadline,
-                toolset.execute(&name, args.clone()),
+                kawai_telemetry::scoped_tool_charge(
+                    step_charge.clone(),
+                    toolset.execute(&name, args.clone()),
+                ),
             )
             .await;
             let latency_ms = started.elapsed().as_millis() as i64;
             // Per-step telemetry (turn_log) — best-effort, never fails a step.
+            // Real provider-reported token totals replace the NULL/estimate
+            // pair whenever the step drove at least one remote call; a
+            // pure-local step keeps the old shape (input unknown, output
+            // estimated) — on-device tokens are free and unreported.
             let success = result.is_success();
+            let (step_in, step_out) = (
+                step_charge.input_tokens(),
+                step_charge.output_tokens(),
+            );
+            let remote_ran = step_in + step_out > 0;
             kawai_db::log_turn(
                 &db_user_id,
                 kawai_db::TurnLogEntry {
@@ -2717,13 +2773,48 @@ pub(crate) async fn build_registry_from_toolset(
                     agent_id: call.step.agent_id.as_str(),
                     provider: "supervisor",
                     tool: Some(name.as_str()),
-                    input_tokens: None,
-                    output_tokens: result.text().map(|t| t.len() as i64 / 4),
+                    input_tokens: remote_ran.then_some(step_in as i64),
+                    output_tokens: if remote_ran {
+                        Some(step_out as i64)
+                    } else {
+                        result.text().map(|t| t.len() as i64 / 4)
+                    },
                     latency_ms,
                     outcome: if success { "tool" } else { "error" },
                 },
             )
             .await;
+
+            // Fase 2 surcharge (PLAN-tool-usage-charging.md): a priced tool
+            // charges its flat app-token fee on COMPLETED steps only — a
+            // failed step or scheduler retry that fails buys nothing, and a
+            // memo hit returned before this line. The fee rides the two
+            // existing sinks — the telemetry counter (the recap's debit
+            // source) and the ledger row (the sqld-phase source) — under the
+            // meter_media contract: fire-and-forget, never fails the step.
+            // The counter carries NO tool label (low-cardinality rule); the
+            // breakdown lives in the ledger row.
+            if success {
+                if let Some(price) = crate::logic::tool_pricing::tool_price(&name) {
+                    kawai_telemetry::metric_counter(
+                        kawai_telemetry::TOOL_TOKEN_USAGE_COUNTER,
+                        price,
+                        vec![("user.id".to_string(), db_user_id.clone())],
+                    );
+                    kawai_db::record_usage(
+                        &db_user_id,
+                        kawai_db::UsageRecord {
+                            kind: kawai_db::KIND_TOOL.to_string(),
+                            role: Some("supervisor-step".to_string()),
+                            provider: Some("kawai".to_string()),
+                            billed_tokens: Some(price as i64),
+                            session_id: Some(db_session_id),
+                            tool: Some(name.clone()),
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
 
             let output = result.text().unwrap_or("").to_string();
             let (error, status) = if result.is_success() {
@@ -5244,6 +5335,229 @@ mod user_language_tests {
     }
 }
 
+#[cfg(test)]
+mod tool_charge_tests {
+    //! Fase 1 tool-charge wiring (PLAN-tool-usage-charging.md): the dispatch
+    //! closure wraps every execution in its step's `ToolCharge` scope — the
+    //! tool observes ITS OWN tool name, a serial next step never sees the
+    //! previous step's scope (R3 leak guard), and the per-dispatch turn_log
+    //! row still lands. Runs only under `litert` (the whole supervisor module
+    //! is litert-gated), but the probes make no remote calls, so the token
+    //! pair keeps the old shape: input unknown, output = estimate.
+
+    use super::*;
+    use kawai_router::{StepStatus, TaskStep};
+
+    #[derive(serde::Deserialize)]
+    struct EmptyArgs {}
+
+    /// Records the tool name its execution observed in the charge scope.
+    fn record_scope_name(sink: &parking_lot::Mutex<Vec<String>>) {
+        let observed = kawai_telemetry::current_tool_charge()
+            .map(|c| c.tool().to_string())
+            .unwrap_or_else(|| "<none>".into());
+        sink.lock().push(observed);
+    }
+
+    struct ProbeA(Arc<parking_lot::Mutex<Vec<String>>>);
+    struct ProbeB(Arc<parking_lot::Mutex<Vec<String>>>);
+
+    impl kawai_tools::AgentTool for ProbeA {
+        const NAME: &'static str = "probe_a";
+        type Args = EmptyArgs;
+        type Output = String;
+        type Error = std::io::Error;
+
+        fn description(&self) -> String {
+            "test probe".into()
+        }
+
+        fn parameters(&self) -> serde_json::Value {
+            serde_json::json!({ "type": "object" })
+        }
+
+        async fn call(&self, _args: Self::Args) -> Result<String, Self::Error> {
+            record_scope_name(&self.0);
+            Ok("probe ok".into())
+        }
+    }
+
+    impl kawai_tools::AgentTool for ProbeB {
+        const NAME: &'static str = "probe_b";
+        type Args = EmptyArgs;
+        type Output = String;
+        type Error = std::io::Error;
+
+        fn description(&self) -> String {
+            "test probe".into()
+        }
+
+        fn parameters(&self) -> serde_json::Value {
+            serde_json::json!({ "type": "object" })
+        }
+
+        async fn call(&self, _args: Self::Args) -> Result<String, Self::Error> {
+            record_scope_name(&self.0);
+            Ok("probe ok".into())
+        }
+    }
+
+    #[derive(Debug)]
+    struct ProbeFail;
+
+    impl std::fmt::Display for ProbeFail {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("probe fails on purpose")
+        }
+    }
+
+    impl std::error::Error for ProbeFail {}
+
+    /// Reuses the REAL priced name (`cli_run`, 1.000) so the test pins the
+    /// actual table, not a test-only entry.
+    struct ProbePriced;
+
+    impl kawai_tools::AgentTool for ProbePriced {
+        const NAME: &'static str = "cli_run";
+        type Args = EmptyArgs;
+        type Output = String;
+        type Error = ProbeFail;
+
+        fn description(&self) -> String {
+            "test probe on a priced name".into()
+        }
+
+        fn parameters(&self) -> serde_json::Value {
+            serde_json::json!({ "type": "object" })
+        }
+
+        async fn call(&self, _args: Self::Args) -> Result<String, Self::Error> {
+            Ok("priced ok".into())
+        }
+    }
+
+    struct ProbeFails;
+
+    impl kawai_tools::AgentTool for ProbeFails {
+        const NAME: &'static str = "probe_err";
+        type Args = EmptyArgs;
+        type Output = String;
+        type Error = ProbeFail;
+
+        fn description(&self) -> String {
+            "test probe that always fails".into()
+        }
+
+        fn parameters(&self) -> serde_json::Value {
+            serde_json::json!({ "type": "object" })
+        }
+
+        async fn call(&self, _args: Self::Args) -> Result<String, Self::Error> {
+            Err(ProbeFail)
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_scopes_tool_charge_per_step_and_logs_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        kawai_db::set_data_root(dir.path());
+        std::mem::forget(dir);
+        let user = "toolcharge-probe";
+
+        let observed = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let mut toolset = kawai_tools::ToolSet::new();
+        toolset.add_tool(ProbeA(Arc::clone(&observed)));
+        toolset.add_tool(ProbeB(Arc::clone(&observed)));
+        toolset.add_tool(ProbePriced);
+        toolset.add_tool(ProbeFails);
+        let registry = build_registry_from_toolset(user, 42, toolset, "")
+            .await
+            .expect("registry builds");
+        let dispatch = registry.step_dispatch();
+
+        for (i, (step_id, tool)) in [
+            ("s0", "probe_a"),
+            ("s1", "probe_b"),
+            ("s2", "cli_run"),
+            ("s3", "probe_err"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let step = TaskStep {
+                id: step_id.into(),
+                agent_id: "test-agent".into(),
+                tool: Some(tool.into()),
+                ..TaskStep::default()
+            };
+            let result = dispatch(
+                step,
+                serde_json::json!({}),
+                Vec::new(),
+                tokio_util::sync::CancellationToken::new(),
+                std::time::Duration::from_secs(300),
+            )
+            .await
+            .expect("dispatch resolves");
+            if tool == "probe_err" {
+                assert_ne!(
+                    result.status,
+                    StepStatus::Completed,
+                    "the failing probe must fail: {result:?}"
+                );
+            } else {
+                assert_eq!(
+                    result.status,
+                    StepStatus::Completed,
+                    "step {i} ({tool}) failed: {}",
+                    result.error.unwrap_or_default()
+                );
+            }
+        }
+
+        // Each execution saw its own step's scope — never the sibling's,
+        // never none (an unscooped dispatch would attribute its LLM spend to
+        // no tool and skip the ledger tool column).
+        assert_eq!(
+            observed.lock().as_slice(),
+            ["probe_a".to_string(), "probe_b".to_string()]
+        );
+
+        // One turn_log row per dispatch, named per tool, estimate-shaped
+        // (no remote call ran inside the probes).
+        let rows = kawai_db::list_turn_log(user, 0).await.unwrap();
+        assert_eq!(rows.len(), 4, "expected 4 turn_log rows");
+        assert_eq!(rows[0].tool.as_deref(), Some("probe_a"));
+        assert_eq!(rows[1].tool.as_deref(), Some("probe_b"));
+        assert_eq!(rows[3].outcome, "error", "the failing probe logs an error");
+
+        // Fase 2 surcharge: exactly ONE KIND_TOOL row — the COMPLETED priced
+        // step. The failing step buys nothing, the unpriced probes buy
+        // nothing, and the fee carries the step's session + tool. The ledger
+        // writer is a queued flusher (FLUSH_BATCH_WAIT) — drain before reading
+        // (same discipline as the kawai-db ledger tests).
+        tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+        let conn = kawai_db::db_connection(user).await.unwrap();
+        let mut tool_rows = conn
+            .query(
+                "SELECT tool, billed_tokens, session_id, role FROM usage_ledger \
+                 WHERE kind = 'tool'",
+                (),
+            )
+            .await
+            .unwrap();
+        let r = tool_rows.next().await.unwrap().expect("one surcharge row");
+        assert_eq!(r.get::<String>(0).unwrap(), "cli_run");
+        assert_eq!(r.get::<i64>(1).unwrap(), 1_000);
+        assert_eq!(r.get::<i64>(2).unwrap(), 42);
+        assert_eq!(r.get::<String>(3).unwrap(), "supervisor-step");
+        assert!(
+            tool_rows.next().await.unwrap().is_none(),
+            "no second surcharge row"
+        );
+    }
+}
+
 #[cfg(all(test, feature = "litert"))]
 mod tests {
 
@@ -6003,6 +6317,30 @@ mod tests {
             Some(true),
             "accounting write tools must not add a per-write confirmation"
         );
+    }
+
+    /// The merged supervisor registry is how the agent reaches a venue's tools
+    /// at all: MEXC has no agent of its own, so its positions mirror rides the
+    /// accounting agent's toolset. A registry without it means the agent cannot
+    /// see the user's MEXC risk, whatever the toolset crate exports.
+    #[cfg(all(feature = "accounting", feature = "mexc", feature = "litert"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_merged_registry_carries_the_mexc_positions_mirror() {
+        let dir = tempfile::tempdir().unwrap();
+        kawai_db::set_data_root(dir.path());
+        std::mem::forget(dir);
+        let user = format!("mexc-pos-{}-{}", std::process::id(), kawai_db::unix_now());
+        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
+        let toolset = build_supervisor_toolset(&user, session, AUTO_AGENT_ID)
+            .await
+            .expect("supervisor toolset");
+        let names: Vec<String> = toolset
+            .get_tool_definitions()
+            .into_iter()
+            .map(|d| d.name.to_string())
+            .collect();
+        assert!(names.contains(&"mexc_futures_positions".to_string()), "{names:?}");
+        assert!(names.contains(&"venue_fills_import".to_string()), "{names:?}");
     }
 
     /// A venue-scoped review of an exchange whose fills must be FETCHED first

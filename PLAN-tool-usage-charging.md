@@ -1,6 +1,6 @@
 # PLAN — Charge Usage Token dari Tool Calling
 
-**Status:** proposed · **rev1 — 2026-10-19**
+**Status:** implemented (Fase 1 + 2) · **rev2 — 2026-10-19**: Fase 2 dijalankan dengan surcharge (Q1a) + harga proposal default (Q2) — lihat §10.
 **Scope fase ini:** atribusi per-tool atas seluruh konsumsi token LLM yang dipicu sebuah tool call (Fase 1), plus opsi harga app-token per tool call (Fase 2). Debit tetap lewat jalur recap → worker yang sudah ada — **client tidak pernah mendebit** (invarian `PLAN-qris-topup.md` §15).
 
 ---
@@ -11,7 +11,7 @@
 |---|---|---|
 | D1 | **Satu titik ukur: `ToolDispatch` closure** di `build_registry_from_toolset` (`src-tauri/src/supervisor.rs:2682-2695`) — setiap step tool supervisor lewat sini | Choke point tunggal yang sudah ada (canonical name, memo, deadline, `log_turn`); tidak ada jalur dispatch kedua yang perlu dirawat |
 | D2 | **Atribusi via scope per-task** (`tokio::task_local!` di `kawai-telemetry`), bukan parameter baru di tiap tool | `reason_in` (`crates/foundation/remote-llm/src/reason.rs:47-63`) dipanggil dari ≥9 crate tool tanpa konteks step; menyuntik parameter berarti menyentuh semua call site. `grep tokio::spawn crates/toolsets crates/engines` → **nol hasil** — alur tool same-task, task_local aman hari ini (jaga dengan tes, lihat R2) |
-| D3 | **Ledger dapat kolom `tool`** (migrasi `0037_usage_tool.sql`), bukan prefix pada `role` | `role` = Agent Observability grouping key (`remote-llm/src/lib.rs:413`); mengotorinya dengan `tool:` merusak grouping UI. Ledger adalah sumber penagihan fase sqld + sasaran cross-check karakter (`usage.rs` header) — kolom eksplisit bisa di-`GROUP BY` |
+| D3 | **Ledger dapat kolom `tool`** (migrasi `0038_usage_tool.sql`), bukan prefix pada `role` | `role` = Agent Observability grouping key (`remote-llm/src/lib.rs:413`); mengotorinya dengan `tool:` merusak grouping UI. Ledger adalah sumber penagihan fase sqld + sasaran cross-check karakter (`usage.rs` header) — kolom eksplisit bisa di-`GROUP BY` |
 | D4 | **Tidak ada counter Prometheus berlabel tool** | Aturan kardinalitas sendiri: billing counter hanya label low-cardinality; `model`/`agent.version` saja sudah dibuang dari counter (`telemetry/src/lib.rs:400-411`). Ratusan nama tool × user = ledak seri. Breakdown per tool hidup di ledger lokal + `turn_log` |
 | D5 | **Fase 2 (harga per tool) menumpuk di atas tagihan LLM pass-through** — bukan menggantikan | LLM tool-internal sudah tertagih via `gen_ai_client_token_usage_total`; surcharge = margin tool (preseden: media Civitai membebankan 1,2× margin infra di atas Buzz — `logic/civitai.rs:29-33`). Opsi pass-through (reroute generation tool-scope ke counter terpisah) dicatat sebagai keputusan terbuka §10 |
 | D6 | **Fase 1 tidak mengubah total tagihan** — murni atribusi + angka nyata di `turn_log` + perbaikan kebocoran atribusi web | Total per user di recap dihitung dari counter yang sama; kolom/label baru tidak menambah baris tagihan |
@@ -32,7 +32,7 @@
 | Ledger punya 3 kind: `llm` / `embed` / `media`; media menagih `billed_tokens` dan dikecualikan dari total token | `foundation/db/src/usage.rs:37-41,53`; `usage_window` media `:289`; `usage_by_session` mengecualikan media `:323` |
 | Recap menagih dari Prometheus: `sum by (user_id) ({__name__=~"gen_ai_client_token_usage_total\|kawai_media_token_usage_total", job="kawai"})` + cross-check ledger per window | `crates/ops/recap/src/main.rs:50-56,425-433`; nama counter dikunci tes `billing_metric_names_match_recap_promql` (`telemetry/src/lib.rs:974-985`) |
 | Preseden metering app-token non-LLM: `meter_media` → dua sink (telemetry + ledger), tanpa gagalkan caller | `src-tauri/src/logic/civitai.rs:86-101` |
-| Migrasi terakhir `0036_venue_fills` → berikutnya `0037`; runner transaksional + tes wajib | `crates/foundation/db/src/db_migrations.rs:342-389` |
+| Migrasi terakhir `0037_venue_positions` → milik saya `0038_usage_tool`; runner transaksional + tes wajib | `crates/foundation/db/src/db_migrations.rs:342-389` |
 | Step sudah memuat link ke generation-nya di telemetri (`linked_generation_ids` via `last_generation_id(conversation, tool)`) | `supervisor.rs:3020-3053` — join konseptual step↔generation sudah ada, tinggal diangkat ke ledger |
 
 ---
@@ -87,7 +87,7 @@ Saat `ToolCharge::current()` aktif:
 3. **Kolom `tool`**: `UsageRecord.tool = Some(charge.tool)` (butuh field baru + tulis di `write_rows`).
 4. Counter `gen_ai` **tidak berubah** (D4, D6).
 
-### 3.3 Migrasi `0037_usage_tool.sql`
+### 3.3 Migrasi `0038_usage_tool.sql`
 
 - `ALTER TABLE usage_ledger ADD COLUMN tool TEXT;` (+ indeks `(user_id, tool)` bila cross-check per-tool jadi kebutuhan — awal: tanpa indeks, volume kecil).
 - Field `UsageRecord.tool: Option<String>` + mapping di `write_rows` (`usage.rs:160-173`).
@@ -164,7 +164,7 @@ if let Some(price) = tool_pricing::tool_price(&name) {
 
 ```sh
 # Ledger + migrasi
-cargo test -p kawai-db            # round-trip 0037: tool terisi, NULL ≠ 0, KIND_TOOL billed_tokens-only
+cargo test -p kawai-db            # round-trip 0038: tool terisi, NULL ≠ 0, billing tak berubah
 cargo test -p remote-llm          # record closure: scope aktif → akumulasi + user fallback + kolom tool
 cargo test -p kawai-telemetry     # billing_metric_names_match_recap_promql (Fase 2: +kawai_tool_…)
 
@@ -200,7 +200,7 @@ Semua wajib hijau sebelum commit; `cargo check` + `cargo check --features web` u
 
 ## 9. Urutan kerja
 
-1. **Fase 1a** — migrasi `0037_usage_tool.sql` + `UsageRecord.tool` + tes (`kawai-db`).
+1. **Fase 1a** — migrasi `0038_usage_tool.sql` + `UsageRecord.tool` + tes (`kawai-db`).
 2. **Fase 1b** — `ToolChargeScope` (`kawai-telemetry`) + closure `record` remote-llm (akumulasi, fallback user, kolom tool) + tes.
 3. **Fase 1c** — pasang scope di `ToolDispatch` closure + `turn_log` nyata + tes serial-step (R3).
 4. **Verifikasi Fase 1** (§7 baris 1-3 + manual 1-2-4) → commit.
@@ -209,10 +209,12 @@ Semua wajib hijau sebelum commit; `cargo check` + `cargo check --features web` u
 
 ---
 
-## 10. Keputusan yang saya butuhkan dari Anda
+## 10. Keputusan (Fase 2 dijalankan — rev2, 2026-10-19)
 
-| # | Keputusan | Opsi |
+| # | Keputusan | Hasil |
 |---|---|---|
-| Q1 | **Fase 2 dikerjakan?** | (a) Ya — surcharge tetap di atas pass-through LLM (D5, boring); (b) Ya — tapi pass-through: generation tool-scope diroute ke counter terpisah agar tidak dobel; (c) Fase 1 saja dulu |
-| Q2 | **Tool mana yang berbayar, berapa?** | Usulan awal: tools ber-domain eksternal berat (composio CLI run, web_read tier-1, civitai sudah lewat lane sendiri) = priced; sisanya `None`. Tabel final menunggu daftar harga Anda |
-| Q3 | **`reason_in` conversation key per step** (3.5) | (a) lewat (grouping UI berubah halus); (b) skip dulu |
+| Q1 | Model tagihan Fase 2 | **(a) Surcharge** di atas pass-through LLM (D5) — diimplementasi |
+| Q2 | Daftar harga | **Proposal default** di `logic/tool_pricing.rs`: `cli_run` = 1.000, `web_search` = 250; `web_read` sengaja None (tier-0 gratis, tier-1 sudah dibudget harian — harga flat menagih tier gratis juga). Angka milik pemilik — ubah tabel, mekanisme tidak berubah |
+| Q3 | `reason_in` conversation key per step | **Skip** (§3.5 default) — grouping UI tidak diubah |
+
+Status: Fase 1 + Fase 2 **terimplementasi dan terverifikasi** (§7). Sisa: angka harga final (Q2) dan `recap --dry-run` pada data dev saat cron dijalankan berikutnya.

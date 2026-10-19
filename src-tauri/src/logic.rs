@@ -531,6 +531,9 @@ pub mod dyntoken;
 // QRIS top-up + token-balance worker proxies (PLAN-qris-topup.md Fase 3).
 // Pure reqwest — shared by the Tauri commands and the web routes.
 pub mod topup;
+// Per-tool-call app-token surcharge table (PLAN-tool-usage-charging.md
+// Fase 2) — consumed by the supervisor's dispatch choke point.
+pub mod tool_pricing;
 // Civitai image generation (Generator panel) — submit/estimate/poll/save
 // over the Orchestration API. Pure reqwest — shared by both transports;
 // the user's own API key comes from the desktop keychain or
