@@ -4,6 +4,12 @@ import { renderStepReport } from "@/features/workbench/components/tool-views";
 
 import {
   renderBinanceImportTrades,
+  renderInvoiceList,
+  renderLedgerBalanceSheet,
+  renderLedgerCashFlow,
+  renderLedgerIncomeStatement,
+  renderLedgerListTransactions,
+  renderLedgerTrialBalance,
   renderCryptoFuturesTradeStats,
   renderLedgerIntegrityCheck,
   renderTradingFeeSummary,
@@ -172,5 +178,169 @@ describe("accounting tool renderers", () => {
   it("an imbalanced ledger shows the imbalance, not a pass", () => {
     const t = text(renderStepReport("ledger_integrity_check", JSON.stringify(brokenIntegrity)));
     expect(t).toContain("imbalanced");
+  });
+});
+
+// Engine DTO fixtures — exact shapes from accounting-core's report types and
+// the transaction log envelope the tools emit.
+const trialBalancePayload = {
+  report: {
+    as_of_date: "2026-10-31",
+    balances: {
+      cash: { account: { id: "cash", name: "Cash" }, debit_balance: "1500.5", credit_balance: null },
+      sales: { account: { id: "sales", name: "Sales" }, debit_balance: null, credit_balance: "1500.5" },
+    },
+    total_debits: "1500.5",
+    total_credits: "1500.5",
+    is_balanced: true,
+  },
+};
+
+const balanceSheetPayload = {
+  report: {
+    as_of_date: "2026-10-31",
+    assets: [{ account: { id: "cash", name: "Cash" }, debit_balance: "1500.5" }],
+    liabilities: [],
+    equity: [{ account: { id: "net_income", name: "net_income" }, credit_balance: "1500.5" }],
+    total_assets: "1500.5",
+    total_liabilities: "0",
+    total_equity: "1500.5",
+    is_balanced: true,
+  },
+};
+
+const incomePayload = {
+  report: {
+    start_date: "2026-10-01",
+    end_date: "2026-10-31",
+    revenue: [{ account: { id: "sales", name: "Sales" }, credit_balance: "5000" }],
+    expenses: [{ account: { id: "rent", name: "Rent" }, debit_balance: "2000" }],
+    total_revenue: "5000",
+    total_expenses: "2000",
+    net_income: "3000",
+  },
+};
+
+const cashFlowPayload = {
+  report: {
+    start_date: "2026-10-01",
+    end_date: "2026-10-31",
+    operating_activities: [{ description: "Fees paid", amount: "-0.8" }],
+    investing_activities: [],
+    financing_activities: [{ description: "Owner investment", amount: "1000" }],
+    net_operating_cash_flow: "-0.8",
+    net_investing_cash_flow: "0",
+    net_financing_cash_flow: "1000",
+  },
+};
+
+const transactionsPayload = {
+  count: 2,
+  items: [
+    {
+      id: "bns_fapi_1",
+      date: "2026-10-10",
+      description: "Binance fapi BTCUSDT SELL fill",
+      reference: null,
+      entries: [
+        { account_id: "binance-wallet", entry_type: "debit", amount: "25.5" },
+        { account_id: "trading-gains", entry_type: "credit", amount: "25.5" },
+      ],
+    },
+    { id: "txn_rent", date: "2026-10-02", description: "Rent", reference: null, entries: [] },
+  ],
+  pagination: { page: 1, page_size: 50, total_count: 2, total_pages: 1 },
+};
+
+const invoicesPayload = {
+  count: 1,
+  items: [
+    {
+      invoice_number: "INV/03/001",
+      issue_date: "2026-10-10",
+      taxable_value: "15000",
+      cgst: "1350",
+      sgst: "1350",
+      igst: null,
+      total: "17700",
+    },
+  ],
+};
+
+describe("ledger report and list renderers", () => {
+  it("trial balance flattens the balance map and keeps both totals", () => {
+    const t = text(renderLedgerTrialBalance(trialBalancePayload));
+    expect(t).toContain("Trial balance");
+    expect(t).toContain("balanced");
+    expect(t).toContain("Cash"); // account NAME, not the raw map key only
+    expect(t).toContain("1500.5");
+  });
+
+  it("balance sheet groups assets, liabilities and equity and shows the net_income row", () => {
+    const t = text(renderLedgerBalanceSheet(balanceSheetPayload));
+    expect(t).toContain("Balance sheet");
+    expect(t).toContain("assets");
+    expect(t).toContain("equity");
+    expect(t).toContain("net_income");
+  });
+
+  it("income statement leads with net income and colours a loss as a loss", () => {
+    const t = text(renderLedgerIncomeStatement(incomePayload));
+    expect(t).toContain("Income statement");
+    expect(t).toContain("3000");
+    expect(t).toContain("2026-10-01");
+  });
+
+  it("cash flow lists the three nets and the activity rows", () => {
+    const t = text(renderLedgerCashFlow(cashFlowPayload));
+    expect(t).toContain("Cash flow");
+    expect(t).toContain("Operating");
+    expect(t).toContain("Owner investment");
+    expect(t).toContain("-0.8");
+  });
+
+  it("transactions collapse each journal entry into debit/credit legs", () => {
+    const t = text(renderLedgerListTransactions(transactionsPayload));
+    expect(t).toContain("Transactions");
+    expect(t).toContain("D binance-wallet 25.5");
+    expect(t).toContain("C trading-gains 25.5");
+    expect(t).toContain("page 1 of 1");
+  });
+
+  it("invoice list prints the GST breakdown columns", () => {
+    const t = text(renderInvoiceList(invoicesPayload));
+    expect(t).toContain("Invoices");
+    expect(t).toContain("INV/03/001");
+    expect(t).toContain("17700");
+  });
+
+  it("every report returns null for a non-report payload so the JSON fallback stands", () => {
+    for (const render of [
+      renderLedgerTrialBalance,
+      renderLedgerBalanceSheet,
+      renderLedgerIncomeStatement,
+      renderLedgerCashFlow,
+    ]) {
+      expect(render(null)).toBeNull();
+      expect(render({ not: "a report" })).toBeNull();
+    }
+    expect(renderLedgerListTransactions({ count: 0, items: [] })).toBeNull();
+    expect(renderInvoiceList({ count: 0, items: [] })).toBeNull();
+  });
+
+  // The wiring regression again: a renderer that no dispatch path reaches is
+  // indistinguishable from no renderer at all.
+  it("all six dispatch their own card through the canvas path", () => {
+    const cases: [string, unknown, string][] = [
+      ["ledger_list_transactions", transactionsPayload, "Transactions"],
+      ["ledger_trial_balance", trialBalancePayload, "Trial balance"],
+      ["ledger_balance_sheet", balanceSheetPayload, "Balance sheet"],
+      ["ledger_income_statement", incomePayload, "Income statement"],
+      ["ledger_cash_flow", cashFlowPayload, "Cash flow"],
+      ["invoice_list", invoicesPayload, "Invoices"],
+    ];
+    for (const [tool, payload, marker] of cases) {
+      expect(text(renderStepReport(tool, JSON.stringify(payload))), tool).toContain(marker);
+    }
   });
 });

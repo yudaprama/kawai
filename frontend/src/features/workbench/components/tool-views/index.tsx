@@ -5,7 +5,13 @@ import { renderKnowledgeSearch } from "@/components/ai-elements/tool-renderers/k
 import {
   renderBinanceImportTrades,
   renderCryptoFuturesTradeStats,
+  renderInvoiceList,
+  renderLedgerBalanceSheet,
+  renderLedgerCashFlow,
+  renderLedgerIncomeStatement,
   renderLedgerIntegrityCheck,
+  renderLedgerListTransactions,
+  renderLedgerTrialBalance,
   renderTradingFeeSummary,
   renderTradingPnlBySymbol,
 } from "@/components/ai-elements/tool-renderers/accounting";
@@ -303,6 +309,12 @@ const registry: Record<string, StepView> = {
   trading_pnl_by_symbol: (p) => renderTradingPnlBySymbol(p),
   trading_fee_summary: (p) => renderTradingFeeSummary(p),
   ledger_integrity_check: (p) => renderLedgerIntegrityCheck(p),
+  ledger_list_transactions: (p) => renderLedgerListTransactions(p),
+  ledger_trial_balance: (p) => renderLedgerTrialBalance(p),
+  ledger_balance_sheet: (p) => renderLedgerBalanceSheet(p),
+  ledger_income_statement: (p) => renderLedgerIncomeStatement(p),
+  ledger_cash_flow: (p) => renderLedgerCashFlow(p),
+  invoice_list: (p) => renderInvoiceList(p),
   // binance stocks — bid/ask quote + symbol metadata (records, no dedicated view yet)
   stock_quote: (p) => (isRecord(p) ? genericKv(p) : null),
   stock_info: (p) => (isRecord(p) ? genericKv(p) : null),

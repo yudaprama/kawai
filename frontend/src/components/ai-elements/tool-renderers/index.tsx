@@ -16,7 +16,19 @@ import { renderDataSchema, renderDataQuery, renderDataTa, renderDataChart, rende
 import { renderKnowledgeSearch } from "./knowledge";
 import { renderOfficeDocument } from "./artifacts";
 import { renderCliRun } from "./terminal";
-import { renderBinanceImportTrades, renderCryptoFuturesTradeStats, renderTradingFeeSummary, renderTradingPnlBySymbol, renderLedgerIntegrityCheck } from "./accounting";
+import {
+  renderBinanceImportTrades,
+  renderCryptoFuturesTradeStats,
+  renderInvoiceList,
+  renderLedgerBalanceSheet,
+  renderLedgerCashFlow,
+  renderLedgerIncomeStatement,
+  renderLedgerIntegrityCheck,
+  renderLedgerListTransactions,
+  renderLedgerTrialBalance,
+  renderTradingFeeSummary,
+  renderTradingPnlBySymbol,
+} from "./accounting";
 
 // ---------------------------------------------------------------------------
 // registry
@@ -93,6 +105,12 @@ const registry: Record<string, ToolRenderer> = {
   trading_pnl_by_symbol: renderTradingPnlBySymbol,
   trading_fee_summary: renderTradingFeeSummary,
   ledger_integrity_check: renderLedgerIntegrityCheck,
+  ledger_list_transactions: renderLedgerListTransactions,
+  ledger_trial_balance: renderLedgerTrialBalance,
+  ledger_balance_sheet: renderLedgerBalanceSheet,
+  ledger_income_statement: renderLedgerIncomeStatement,
+  ledger_cash_flow: renderLedgerCashFlow,
+  invoice_list: renderInvoiceList,
   crypto_screener: renderCryptoScreener,
   crypto_screener_data: renderCryptoScreenerData,
   desk_data: renderDeskData,
