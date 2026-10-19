@@ -320,14 +320,17 @@ function ratioOf(commission: string | undefined, volume: string | undefined): st
  */
 export function renderLedgerIntegrityCheck(output: unknown): ReactNode {
   const d = parse(output);
-  if (!isRecord(d)) return null;
+  if (!isRecord(d) || d.kind !== "integrity") return null;
   const valid = d.is_valid === true;
   const issues = Array.isArray(d.issues) ? d.issues.filter((x): x is string => typeof x === "string") : [];
-  const r = isRecord(d.report) ? d.report : {};
   const metrics: Metric[] = [
-    { label: "Trial balance", value: dec(r.trial_balance_total_debits) ?? "—", sub: `credits ${dec(r.trial_balance_total_credits) ?? "—"}` },
-    { label: "Assets", value: dec(r.balance_sheet_total_assets) ?? "—" },
-    { label: "Liabilities + equity", value: dec(r.balance_sheet_total_liabilities_equity) ?? "—" },
+    {
+      label: "Trial balance",
+      value: dec(d.trial_balance_total_debits) ?? "—",
+      sub: `credits ${dec(d.trial_balance_total_credits) ?? "—"}`,
+    },
+    { label: "Assets", value: dec(d.balance_sheet_total_assets) ?? "—" },
+    { label: "Liabilities + equity", value: dec(d.balance_sheet_total_liabilities_equity) ?? "—" },
   ];
   return (
     <TextCard>
@@ -341,7 +344,7 @@ export function renderLedgerIntegrityCheck(output: unknown): ReactNode {
         >
           {valid ? "balanced" : "imbalanced"}
         </span>
-        {str(r.as_of_date) && <span className="text-muted-foreground font-mono text-[10px]">as of {str(r.as_of_date)}</span>}
+        {str(d.as_of_date) && <span className="text-muted-foreground font-mono text-[10px]">as of {str(d.as_of_date)}</span>}
       </div>
       <MetricGrid items={metrics} />
       {!valid && issues.length > 0 && (
@@ -358,29 +361,18 @@ export function renderLedgerIntegrityCheck(output: unknown): ReactNode {
 }
 // ── ledger reports (the close workflow's four statements) ───────────────────
 
-/** The report DTO. The tools wrap it as `{ report: {...} }`, but a step
- * whose output passes through an unwrapping layer (artifact extraction,
- * a persisted step row, the chat inspector's `data` field) arrives as the
- * bare DTO — and a renderer that only accepts one shape silently degrades
- * to the key/value fallback. Accept both: the envelope when present, the
- * payload itself when it already carries report keys. */
-function report(output: unknown): Record<string, unknown> | null {
+/** The report DTO, as the tools now emit it: FLAT at the root with a
+ * `kind` discriminator (the repo convention — audit_data, desk_data,
+ * screener). A view identifies the payload by `kind` instead of guessing
+ * whether a tool wrapped its output in an envelope — the guessing that
+ * silently degraded every report card to the key/value fallback.
+ *
+ * `expected` is the kind this view claims. A mismatch returns null so the
+ * generic fallback stands rather than rendering a foreign payload. */
+function report(output: unknown, expected: string): Record<string, unknown> | null {
   const d = parse(output);
-  if (!isRecord(d)) return null;
-  if (isRecord(d.report)) return d.report;
-  return REPORT_KEYS.some((k) => k in d) ? d : null;
+  return isRecord(d) && d.kind === expected ? d : null;
 }
-
-/** Keys that identify a report payload on its own. */
-const REPORT_KEYS = [
-  "balances",
-  "assets",
-  "revenue",
-  "operating_activities",
-  "reconciliation_items",
-  "is_balanced",
-  "trial_balance_total_debits",
-];
 
 /** AccountBalance → one table row: account name, debit, credit. */
 function balanceRows(list: unknown): { label: string; debit?: string; credit?: string }[] {
@@ -431,7 +423,7 @@ function LedgerTable({
  * `balances` is a MAP keyed by account id, so the renderer flattens it into
  * sorted rows — a JSON object would otherwise be a wall of braces. */
 export function renderLedgerTrialBalance(output: unknown): ReactNode {
-  const r = report(output);
+  const r = report(output, "trial_balance");
   if (!r) return null;
   const balances = isRecord(r.balances) ? r.balances : null;
   if (!balances) return null;
@@ -482,8 +474,8 @@ export function renderLedgerTrialBalance(output: unknown): ReactNode {
  * non-zero — that row is the period's result folded into the sheet, so it
  * is rendered like any other equity row rather than hidden. */
 export function renderLedgerBalanceSheet(output: unknown): ReactNode {
-  const r = report(output);
-  if (!r || r.assets === undefined) return null;
+  const r = report(output, "balance_sheet");
+  if (!r) return null;
   const balanced = r.is_balanced === true;
   return (
     <TextCard>
@@ -529,8 +521,8 @@ export function renderLedgerBalanceSheet(output: unknown): ReactNode {
  * Net income is the number the whole report exists for, so it leads as a
  * metric (coloured by sign) and the two columns follow. */
 export function renderLedgerIncomeStatement(output: unknown): ReactNode {
-  const r = report(output);
-  if (!r || r.revenue === undefined) return null;
+  const r = report(output, "income_statement");
+  if (!r) return null;
   const net = dec(r.net_income);
   const period =
     str(r.start_date) && str(r.end_date) ? `${str(r.start_date)} → ${str(r.end_date)}` : str(r.end_date);
@@ -572,8 +564,8 @@ export function renderLedgerIncomeStatement(output: unknown): ReactNode {
  * The three nets are the summary; each activity list is a
  * description/amount pair rather than accounts, so it gets its own table. */
 export function renderLedgerCashFlow(output: unknown): ReactNode {
-  const r = report(output);
-  if (!r || r.operating_activities === undefined) return null;
+  const r = report(output, "cash_flow");
+  if (!r) return null;
   const items = (list: unknown) =>
     (Array.isArray(list) ? list.filter(isRecord) : []).map((i) => ({
       label: str(i.description) ?? "—",
@@ -788,8 +780,8 @@ export function renderBooksAutoSync(output: unknown): ReactNode {
  * count — 400 lines of "these two agree" bury the rows that do not.
  */
 export function renderReconciliationReport(output: unknown): ReactNode {
-  const r = report(output);
-  if (!r || r.reconciliation_items === undefined) return null;
+  const r = report(output, "reconciliation");
+  if (!r) return null;
   const summary = isRecord(r.summary) ? r.summary : null;
   const difference = summary ? dec(summary.difference) : undefined;
   const matchRate = summary ? num(summary.match_rate) : null;
