@@ -3,7 +3,8 @@
 //! PRICING MODEL (owner decision 2026-10-19 — REVENUE, not cost-recovery):
 //! the marginal cost of most calls is ~zero (free/flat APIs, on-device
 //! compute), and LLM spend is already billed via the `gen_ai` pass-through —
-//! so this fee is how tool usage itself makes money. Tiers, 1 token =
+//! so this fee is how tool usage itself makes money. EVERY dispatched tool
+//! call is priced — there is no free tier (rev4). Tiers, 1 token =
 //! Rp 0,01:
 //!
 //!   1.000  external side effects (CLI execution, composio actions)
@@ -11,44 +12,15 @@
 //!     250  generation / authoring (documents, decks, PDFs, invoices,
 //!          diagrams, NL analytics, desk synthesis, web search)
 //!     150  web page reads
-//!     100  everything else — the affordable default (Rp 1/call)
-//!    None  pure-local meta & own-data reads — the free set keeps the app
-//!          fully navigable at zero balance
+//!     100  everything else — the default (Rp 1/call)
 //!
 //! The table below is the ONLY place a price lives. Never priced: tools that
 //! never reach the dispatcher (internal subagents) — the choke point never
 //! sees them, so their absence here is not a leak.
 
-/// Pure-local introspection of the user's own data: free, always. This is
-/// the set a zero-balance user can still run to see what the app holds.
-const FREE: &[&str] = &[
-    "office_list_files",
-    "office_read_document",
-    "office_document_info",
-    "office_restore_backup",
-    "pdf_extract_text",
-    "pdf_search_text",
-    "pdf_info",
-    "pdf_merge",
-    "pdf_split",
-    "knowledge_search",
-    "explain_step_result",
-    "session_step_results",
-    "graph_list",
-    "graph_search",
-    "codegraph_explore",
-    "codegraph_status",
-    "data_schema",
-    "data_tables",
-    "composio_list_tools",
-];
-
-/// The flat app-token price of one completed call of `tool`.
+/// The flat app-token price of one completed call of `tool`. Always `Some`
+/// today; the `Option` stays so a future free tier needs no call-site churn.
 pub fn tool_price(tool: &str) -> Option<u64> {
-    if FREE.contains(&tool) {
-        return None;
-    }
-
     match tool {
         // External side effects through first-party bridges.
         "cli_run" | "composio_execute" => Some(1_000),
@@ -81,12 +53,33 @@ pub fn tool_price(tool: &str) -> Option<u64> {
 mod tests {
     use super::*;
 
-    /// The free set is the only `None` — revenue model charges every
-    /// dispatched call, with pure-local introspection exempted.
+    /// No free tier (rev4): the former FREE set now bills the default 100 —
+    /// same assertion for a made-up name, so a tool added tomorrow is priced
+    /// without touching this table.
     #[test]
-    fn only_the_free_set_is_free() {
-        for tool in FREE {
-            assert_eq!(tool_price(tool), None, "{tool} must stay free");
+    fn every_call_is_priced() {
+        for tool in [
+            "office_list_files",
+            "office_read_document",
+            "office_document_info",
+            "office_restore_backup",
+            "pdf_extract_text",
+            "pdf_search_text",
+            "pdf_info",
+            "pdf_merge",
+            "pdf_split",
+            "knowledge_search",
+            "explain_step_result",
+            "session_step_results",
+            "graph_list",
+            "graph_search",
+            "codegraph_explore",
+            "codegraph_status",
+            "data_schema",
+            "data_tables",
+            "composio_list_tools",
+        ] {
+            assert_eq!(tool_price(tool), Some(100), "{tool} bills the default tier");
         }
         assert_eq!(tool_price("web_read"), Some(150));
         assert_eq!(tool_price("data_query"), Some(100));
