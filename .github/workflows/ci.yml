@@ -149,7 +149,7 @@ jobs:
       # every cfg(not(feature = …)) stub. Mixed regions (e.g. litert without
       # binance) are covered by linux-smoke's `--features litert` test build.
       - name: cargo check (all features on)
-        run: cargo check --features litert,office,binance,graph,web
+        run: cargo check --features litert,office,binance,graph,web,accounting
         working-directory: src-tauri
 
       # Data analysis agent (polars + office_oxide xlsx bridge) is always
@@ -210,6 +210,14 @@ jobs:
       # write, FIFO fill→round-trip matching + per-trade statistics, and the
       # realized-PnL ledger round-trip through real SQLite. Pure + local DB —
       # no API keys, no network, no LLM.
+      # Accounting tools (double-entry ledger + trading-books reporting):
+      # store round-trips (BigDecimal over TEXT), the fill-mirror reader, the
+      # report/import tool contract, and the flat `kind`-tagged payload
+      # contract the frontend renderers guard on. Pure + local SQLite.
+      - name: cargo test (crates/toolsets/accounting)
+        run: cargo test -p accounting-tools
+        working-directory: crates
+
       - name: cargo test (crates/toolsets/binance)
         run: cargo test -p binance
         working-directory: crates
