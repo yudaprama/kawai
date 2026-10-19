@@ -2286,6 +2286,10 @@ key and secret in Settings → Binance API first"
 pub async fn run_trading_performance(
     session_id: i64,
     period: String,
+    // Exchange to review (`binance`, `mexc`); absent reviews every venue's
+    // fills. Bound here at the transport edge and passed to the plan builder —
+    // the model never chooses the scope.
+    venue: Option<String>,
     // Raw device locale tag (e.g. "id-ID") — resolved into the report's
     // output language at this edge (see `supervisor::resolve_user_language`).
     language: Option<String>,
@@ -2299,6 +2303,7 @@ pub async fn run_trading_performance(
     let plan = accounting_tools::plan::build_trading_performance_plan(
         period.trim(),
         chrono::Local::now().date_naive(),
+        venue.as_deref().map(str::trim).filter(|v| !v.is_empty()),
     )?;
     let user_goal = plan.goal.clone();
     let tool_registry = crate::supervisor::build_registry_for_plan(&ctx.user_id, session_id, &plan)
@@ -2531,6 +2536,37 @@ pub async fn binance_credentials_delete(
 ) -> Result<(), String> {
     let user_id = session_user_id(&session)?;
     logic::binance_credentials::binance_credentials_delete(&user_id).await
+}
+
+// ── MEXC API credentials (Settings → MEXC API) ─────────────────────────────
+// Same contract as Binance: the secret never crosses this boundary — status
+// returns the source ("user" | "none") + a masked key preview only. MEXC has
+// no product-baked pair, so there is nothing to fall back to.
+
+#[tauri::command]
+pub async fn mexc_credentials_set(
+    api_key: String,
+    api_secret: String,
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::mexc_credentials::mexc_credentials_set(&user_id, &api_key, &api_secret).await
+}
+
+#[tauri::command]
+pub async fn mexc_credentials_status(
+    session: State<'_, Session>,
+) -> Result<logic::mexc_credentials::MexcCredentialStatus, String> {
+    let user_id = session_user_id(&session)?;
+    Ok(logic::mexc_credentials::mexc_credentials_status(&user_id).await)
+}
+
+#[tauri::command]
+pub async fn mexc_credentials_delete(
+    session: State<'_, Session>,
+) -> Result<(), String> {
+    let user_id = session_user_id(&session)?;
+    logic::mexc_credentials::mexc_credentials_delete(&user_id).await
 }
 
 // ── Futures trading consent (Settings → Binance API) ───────────────────────

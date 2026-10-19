@@ -888,20 +888,25 @@ export function useWorkbench() {
     async (
       period: string,
       opts?: {
+        /** Venue to review — omitted means EVERY exchange's fills. */
+        venue?: "binance" | "mexc";
         /** Same contract as `run()`'s — fires once every gate passed, right
          * before the run record appends; the page navigates from here. */
         onStart?: () => void;
       },
     ) => {
+      // Named in the session title and the goal line, so a MEXC-only review
+      // is never confused with an all-venue one after the run.
+      const label = opts?.venue ? ` — ${opts.venue}` : "";
       const sid = await preflightRun(
-        `Trading performance — ${period}`.slice(0, 80),
+        `Trading performance — ${period}${label}`.slice(0, 80),
         "Couldn't start the performance review",
       );
-      const goal = `Trading performance review — ${period}`.slice(0, 140);
+      const goal = `Trading performance review — ${period}${label}`.slice(0, 140);
       beginRun(goal, false);
       opts?.onStart?.();
       void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runTradingPerformance({ period }, sid);
+      supervisor.runTradingPerformance({ period, venue: opts?.venue }, sid);
       void refreshTokenBalance();
     },
     [supervisor, preflightRun, beginRun],

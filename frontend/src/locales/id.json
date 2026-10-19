@@ -1168,6 +1168,12 @@
       "guideDetail": "Buat di Binance → Profile → API Management, lalu batasi ke IP Anda. Kunci READ-ONLY (Enable Reading) mencakup semua kecuali memasang order; izin ENABLE FUTURES yang mengizinkan agent memasang stop-loss / take-profit, dan setiap order tetap minta konfirmasi Anda dulu.",
       "riskGuardTitle": "Risk guard",
       "riskGuardDesc": "Memeriksa posisi futures Anda tiap 15 menit selama app terbuka, dan memberi peringatan bila ada posisi tanpa stop-loss."
+    },
+    "mexc": {
+      "title": "MEXC",
+      "subtitle": "akun futures Anda, baca saja",
+      "guide": "Tempel API key dan secret MEXC agar agent bisa menarik fill futures Anda ke pembukuan. MEXC di sini BACA SAJA — kawai mengimpor fill, PnL, dan biaya, dan tidak pernah memasang order di MEXC. Tidak punya akun MEXC? Lewati saja.",
+      "guideDetail": "Buat di MEXC → Account → API, lalu batasi ke IP Anda. Yang dibutuhkan hanya kunci read-only: agent mengimpor riwayat deal futures Anda beberapa hari terakhir supaya review bisa menghitung PnL dan biaya. Tidak ada izin trading yang perlu dinyalakan — eksekusi MEXC belum ada, jadi biarkan izin trading mati."
     }
   }
 }

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderStepReport } from "@/features/workbench/components/tool-views";
 
 import {
-  renderBinanceImportTrades,
+  renderVenueFillsImport,
   renderBooksAutoSync,
   renderInvoiceList,
   renderLedgerBalanceSheet,
@@ -16,11 +16,13 @@ import {
   renderLedgerIntegrityCheck,
   renderTradingFeeSummary,
   renderTradingPnlBySymbol,
+  renderMexcFuturesFillSync,
 } from "./accounting";
 
 // Exact decimal strings — the ledger stores money as TEXT (BigDecimal), and
 // these fixtures mirror what the Rust tools actually emit.
 const importPayload = {
+  venue: "binance",
   scanned: 4,
   posted: 2,
   skipped_already_imported: 1,
@@ -29,7 +31,7 @@ const importPayload = {
   fees_total: "0.8",
   posted_ids: ["bns_fapi_1", "bns_fapi_2"],
   posted_ids_truncated: false,
-  wallet_account_id: "binance-wallet",
+  wallet_account_ids: ["binance-wallet"],
 };
 
 const statsPayload = {
@@ -88,11 +90,26 @@ const brokenIntegrity = {
   issues: ["Trial balance is not balanced: debits = 1500.5, credits = 1400.5"],
 };
 
+
+// mexc_futures_fill_sync — the flat kind payload, verbatim from the Rust tool.
+const fillSyncPayload = {
+  kind: "mexc_fill_sync",
+  venue: "mexc",
+  window_days: 7,
+  fetched: 12,
+  written: 10,
+  skipped_known: 2,
+  symbols: ["BTC_USDT"],
+  from_ms: 1735689600000,
+  to_ms: 1736294400000,
+};
+
+const upToDateSyncPayload = { ...fillSyncPayload, fetched: 12, written: 0, skipped_known: 12 };
 const text = (node: unknown): string => (node == null ? "" : JSON.stringify(node));
 
 describe("accounting tool renderers", () => {
-  it("renderBinanceImportTrades surfaces the idempotence counters and exact amounts", () => {
-    const out = renderBinanceImportTrades(importPayload);
+  it("renderVenueFillsImport surfaces the idempotence counters and exact amounts", () => {
+    const out = renderVenueFillsImport(importPayload);
     const t = text(out);
     expect(t).toContain("Ledger import");
     expect(t).toContain("15.25"); // exact decimal string, not 15.249999
@@ -100,10 +117,56 @@ describe("accounting tool renderers", () => {
     expect(t).toContain("Fills scanned");
   });
 
-  it("renderBinanceImportTrades returns null for junk payloads", () => {
-    expect(renderBinanceImportTrades(null)).toBeNull();
-    expect(renderBinanceImportTrades("not json")).toBeNull();
-    expect(renderBinanceImportTrades({})).toBeNull();
+  it("renderVenueFillsImport names a second venue's fills", () => {
+    // The same card serves every venue — only the label changes.
+    const out = renderVenueFillsImport({ ...importPayload, venue: "mexc" });
+    const t = text(out);
+    expect(t).toContain("mexc");
+    expect(t).toContain("Ledger import");
+  });
+
+  it("renderVenueFillsImport lists every wallet a multi-venue pass moved", () => {
+    // An unscoped import posts into one wallet PER VENUE — the card has to name
+    // both, or the reader cannot tell which balances changed.
+    const out = renderVenueFillsImport({
+      ...importPayload,
+      venue: undefined,
+      wallet_account_ids: ["binance-wallet", "mexc-wallet"],
+    });
+    const t = text(out);
+    expect(t).toContain("binance-wallet + mexc-wallet");
+  });
+
+  it("renderVenueFillsImport returns null for junk payloads", () => {
+    expect(renderVenueFillsImport(null)).toBeNull();
+    expect(renderVenueFillsImport("not json")).toBeNull();
+    expect(renderVenueFillsImport({})).toBeNull();
+  });
+
+  it("renderMexcFuturesFillSync reads written:0 as already up to date, not a failure", () => {
+    // Nothing new is the HEALTHY outcome of an idempotent import — the card
+    // must say so plainly instead of reading as an error.
+    const t = text(renderMexcFuturesFillSync(upToDateSyncPayload));
+    expect(t).toContain("Already up to date");
+    expect(t).toContain("MEXC fills synced");
+    expect(t).toContain("Deals fetched");
+  });
+
+  it("renderMexcFuturesFillSync reports new fills written and the window", () => {
+    const t = text(renderMexcFuturesFillSync(fillSyncPayload));
+    expect(t).toContain("MEXC fills synced");
+    expect(t).toContain("New fills written");
+    expect(t).not.toContain("Already up to date");
+    expect(t).toContain("BTC_USDT");
+    expect(t).toContain("last 7 days");
+  });
+
+  it("renderMexcFuturesFillSync returns null for junk payloads, so raw JSON stands", () => {
+    expect(renderMexcFuturesFillSync(null)).toBeNull();
+    expect(renderMexcFuturesFillSync("not json")).toBeNull();
+    expect(renderMexcFuturesFillSync({})).toBeNull();
+    // Right shape, wrong `kind` — the discriminator must still refuse it.
+    expect(renderMexcFuturesFillSync({ ...fillSyncPayload, kind: "integrity" })).toBeNull();
   });
 
   it("renderCryptoFuturesTradeStats scales the win-rate fraction to a percentage", () => {
@@ -164,11 +227,12 @@ describe("accounting tool renderers", () => {
   // output → parsed → registry).
   it("every accounting tool dispatches its own card through the canvas path", () => {
     const cases: [string, unknown, string][] = [
-      ["binance_import_trades", importPayload, "Ledger import"],
+      ["venue_fills_import", importPayload, "Ledger import"],
       ["crypto_futures_trade_stats", statsPayload, "Trade statistics"],
       ["trading_pnl_by_symbol", pnlPayload, "Realized PnL by symbol"],
       ["trading_fee_summary", feePayload, "Fee / volume"],
       ["ledger_integrity_check", validIntegrity, "Ledger integrity"],
+      ["mexc_futures_fill_sync", fillSyncPayload, "MEXC fills synced"],
     ];
     for (const [tool, payload, marker] of cases) {
       const node = renderStepReport(tool, JSON.stringify(payload));
@@ -351,6 +415,7 @@ describe("ledger report and list renderers", () => {
 
 const booksSyncPayload = {
   books_sync: "ok",
+  venue: "binance",
   window_days: 30,
   scanned: 6,
   posted: 3,
@@ -359,7 +424,7 @@ const booksSyncPayload = {
   pnl_total: "15.25",
   fees_total: "0.8",
   posted_ids: ["bns_fapi_7"],
-  wallet_account_id: "binance-wallet",
+  wallet_account_ids: ["binance-wallet"],
 };
 
 const reconciliationPayload = {
@@ -403,6 +468,22 @@ describe("audit books-sync and reconciliation renderers", () => {
     expect(t).toContain("last 30 days");
     expect(t).toContain("Newly posted");
     expect(t).toContain("15.25");
+  });
+
+  it("books_auto_sync names a second venue's fills", () => {
+    const t = text(renderBooksAutoSync({ ...booksSyncPayload, venue: "mexc" }));
+    expect(t).toContain("mexc");
+    expect(t).toContain("Books synced");
+  });
+
+  it("books_auto_sync lists every wallet a multi-venue pass moved", () => {
+    const t = text(
+      renderBooksAutoSync({
+        ...booksSyncPayload,
+        wallet_account_ids: ["binance-wallet", "mexc-wallet"],
+      }),
+    );
+    expect(t).toContain("binance-wallet + mexc-wallet");
   });
 
   it("books_auto_sync says nothing-to-do when every fill was already recorded", () => {

@@ -95,6 +95,9 @@ binance = { path = "../crates/toolsets/binance", optional = true }
 # Accounting agent tools (builtin.accounting): local double-entry ledger,
 # GST invoices, reports, GSTR-1 exports via the vendored accounting-core.
 accounting-tools = { path = "../crates/toolsets/accounting", optional = true }
+# MEXC tools: signed futures fills sync into the venue-keyed fill history the
+# ledger reads. Own-keys-only (no product-baked pair exists for MEXC).
+mexc = { path = "../crates/toolsets/mexc", optional = true }
 
 # Split-out first-party crates (foundation / engines / toolsets / integrations).
 kawai-auth = { path = "../crates/foundation/auth" }
@@ -180,6 +183,9 @@ binance = ["dep:binance", "kawai-agent/binance"]
 # Accounting agent (builtin.accounting): local double-entry ledger + GST
 # via accounting-tools (vendored accounting-core). No external services.
 accounting = ["dep:accounting-tools"]
+# MEXC: the fill-sync tool rides the accounting agent's toolset (the books are
+# the accounting agent's job), so the books read one venue-generic fill history.
+mexc = ["dep:mexc"]
 # Monad EVM chain client (read-only RPC: balance + chain status). Pure alloy
 # HTTP provider — no keys, no signing. monad-tools carries the read-only
 # AgentTool surface (builtin.monad).

@@ -146,17 +146,30 @@ static TRADING_PERFORMANCE: PlanTemplate = PlanTemplate {
     keywords: &["performa trading", "trading performance", "review pnl", "pnl review", "trading review"],
     requires_literal: false,
     market_bound: false,
-    slots: &[ACCOUNTING_SLOT_PERIOD],
+    // `venue` is optional: absent reviews every exchange's fills, which is the
+    // right default for a trader who runs more than one account.
+    slots: &[ACCOUNTING_SLOT_PERIOD, ACCOUNTING_SLOT_VENUE],
     build: build_trading_performance,
 };
 
-/// Build the performance plan for one resolved period — thin wrapper over
-/// the domain builder the fixed `run_trading_performance` command also calls.
+/// Optional exchange scope for the performance review — read from the goal
+/// when the user names one ("review MEXC performance"), otherwise every venue.
+#[cfg(all(feature = "accounting", feature = "binance"))]
+static ACCOUNTING_SLOT_VENUE: Slot = Slot {
+    name: "venue",
+    required: false,
+    hint: "the exchange to review — 'binance' or 'mexc'; omit for every exchange",
+};
+
+/// Build the performance plan for one resolved period (and optional venue) —
+/// thin wrapper over the domain builder the fixed `run_trading_performance`
+/// command also calls.
 #[cfg(all(feature = "accounting", feature = "binance"))]
 fn build_trading_performance(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
     accounting_tools::plan::build_trading_performance_plan(
         slots.get("period").unwrap_or_default(),
         chrono::Local::now().date_naive(),
+        slots.get("venue").map(str::trim).filter(|v| !v.is_empty()),
     )
 }
 

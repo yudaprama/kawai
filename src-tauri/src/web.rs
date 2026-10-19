@@ -2652,6 +2652,9 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/binance_credentials_set", post(binance_credentials_set_handler))
         .route("/api/binance_credentials_status", post(binance_credentials_status_handler))
         .route("/api/binance_credentials_delete", post(binance_credentials_delete_handler))
+        .route("/api/mexc_credentials_set", post(mexc_credentials_set_handler))
+        .route("/api/mexc_credentials_status", post(mexc_credentials_status_handler))
+        .route("/api/mexc_credentials_delete", post(mexc_credentials_delete_handler))
         .route("/api/binance_trading_status", post(binance_trading_status_handler))
         .route("/api/binance_trading_enable", post(binance_trading_enable_handler))
         .route("/api/binance_trading_disable", post(binance_trading_disable_handler))
@@ -3092,6 +3095,9 @@ struct RunTradingPerformanceRequest {
     /// The period to review — "2026-10", "Oktober 2026", or a bare month
     /// (last occurrence). Normalized before the plan exists.
     period: String,
+    /// Exchange to review ("binance", "mexc"); absent reviews every venue's
+    /// fills. Resolved at this edge, never by the model.
+    venue: Option<String>,
     /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
     language: Option<String>,
     stream_id: String,
@@ -3215,6 +3221,7 @@ async fn run_trading_performance_handler(
     let plan = accounting_tools::plan::build_trading_performance_plan(
         req.period.trim(),
         chrono::Local::now().date_naive(),
+        req.venue.as_deref().map(str::trim).filter(|v| !v.is_empty()),
     )
     .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let user_goal = plan.goal.clone();
@@ -3465,6 +3472,37 @@ async fn binance_credentials_delete_handler(
     Extension(user_id): Extension<String>,
 ) -> Result<Json<()>, (StatusCode, String)> {
     logic::binance_credentials::binance_credentials_delete(&user_id)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+
+// ── MEXC API credentials (Settings → MEXC API) ─────────────────────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MexcCredentialsRequest {
+    api_key: String,
+    api_secret: String,
+}
+async fn mexc_credentials_set_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<MexcCredentialsRequest>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    logic::mexc_credentials::mexc_credentials_set(&user_id, &req.api_key, &req.api_secret)
+        .await
+        .map(Json)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+}
+async fn mexc_credentials_status_handler(
+    Extension(user_id): Extension<String>,
+) -> Json<logic::mexc_credentials::MexcCredentialStatus> {
+    Json(logic::mexc_credentials::mexc_credentials_status(&user_id).await)
+}
+async fn mexc_credentials_delete_handler(
+    Extension(user_id): Extension<String>,
+) -> Result<Json<()>, (StatusCode, String)> {
+    logic::mexc_credentials::mexc_credentials_delete(&user_id)
         .await
         .map(Json)
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))

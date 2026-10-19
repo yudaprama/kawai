@@ -101,7 +101,7 @@ webread/knowledge.
 | `data_tables` | registered SQL source → typed parquet snapshot (only when `sql_profiles` non-empty) |
 | `data_import` | snapshot a validated SQL source into the office store (same gate) |
 
-## 5. Binance (`builtin.binance`) — `crates/toolsets/binance` (feature `binance`)
+## 5. Binance (`builtin.binance`) — `crates/toolsets/binance` (feature `binance`) — and the venue-generic fill history
 
 Keyless public spot market data + in-process TA. Signed reads (spot account,
 US-stocks, futures) resolve credentials PER USER: the user's own keys from
@@ -366,13 +366,42 @@ in profit by ≥1×ATR, and from that moment the stop advice's own verdict turns
   `Budget::Batch` (120/min) rather than the 10/min single-order budget; the
   two batches above are unchanged.
 
-### 5.4 `crypto_futures_trade_stats` — the realized-PnL ledger
+### 5.4 `crypto_futures_trade_stats` / `mexc_futures_fill_sync` — the venue fill history
+
+**The fill history is venue-generic; the fetchers are not.** (`venue_fills`
+and its readers belong to `builtin.accounting`; the Binance fetcher is the tool
+below, and MEXC's rides the same agent's toolset under feature `mexc`.) `venue_fills`
+(migration 0036) is keyed `(venue, market, trade_id)` and every venue's row
+carries the exchange's OWN realized PnL and commission — the ledger never
+re-derives either. Binance fetches and computes statistics in one tool
+(`crypto_futures_trade_stats`); MEXC fetches only
+(`mexc_futures_fill_sync`, flat payload with `kind: "mexc_fill_sync"`), because
+win-rate statistics over MEXC fills are not implemented yet. Both are read by
+`venue_fills_import` → `trading_pnl_by_symbol` / `trading_fee_summary`, which
+take an optional `venue` (absent = every venue's fills, one shared books).
+
+- **Only the venue's own sync writes its rows**, so a scoped review that skips
+  the fetch imports an empty history. The plan builder therefore emits the
+  venue's sync step ahead of the import and makes the import depend on it, and
+  an import over a venue with NO history at all fails with guidance naming the
+  missing sync instead of reporting a successful zero-fill pass.
+- **MEXC signs differently.** HMAC-SHA256 over `apiKey + requestTime +
+  parameterString` in a `Signature` header (not a query `signature`); GET signs
+  the sorted **unencoded** query while the request line carries the encoded one,
+  POST signs the raw body in alphabetical key order. MEXC has no product-baked
+  key pair, so its resolver is own-keys-only and fails closed with guidance.
+- **Five MEXC field semantics are unverified** until a live account is probed
+  (`side` `1`/`2`, `category`, `positionType`, the sign of `profit`, the sign of
+  `fee`); each is one named mapping in `crates/toolsets/mexc/src/fills.rs`.
+  `cargo run -p mexc --example mexc_probe` reports which ones a payload settles.
+
+### 5.5 `crypto_futures_trade_stats` detail — the realized-PnL ledger
 
 Everything else in this section reports either market data or the UNREALIZED
 PnL on positions still open. Neither answers "is this trading paying?", so
 `trades.rs` ingests Binance's own per-fill `realizedPnl` from
 `/fapi/v1/userTrades` (USDⓈ-M) and `/dapi/v1/userTrades` (COIN-M) into the
-append-only `binance_futures_trades` table (migration 0032) and computes
+append-only `venue_fills` table (migration 0036) and computes
 performance over it. Read-only; it never places, cancels, or changes an order.
 
 - **The PnL is NOT recomputed.** Binance already books realized PnL per fill

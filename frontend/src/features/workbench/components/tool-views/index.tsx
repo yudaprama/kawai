@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { cards } from "@/components/ai-elements/tool-renderers/shared";
 import { renderKnowledgeSearch } from "@/components/ai-elements/tool-renderers/knowledge";
 import {
-  renderBinanceImportTrades,
   renderBooksAutoSync,
   renderCryptoFuturesTradeStats,
   renderInvoiceList,
@@ -13,9 +12,11 @@ import {
   renderLedgerIntegrityCheck,
   renderLedgerListTransactions,
   renderLedgerTrialBalance,
+  renderMexcFuturesFillSync,
   renderReconciliationReport,
   renderTradingFeeSummary,
   renderTradingPnlBySymbol,
+  renderVenueFillsImport,
 } from "@/components/ai-elements/tool-renderers/accounting";
 import { renderWebSearch, renderWebSearchSuggest } from "@/components/ai-elements/tool-renderers/search";
 import { renderCliRun } from "@/components/ai-elements/tool-renderers/terminal";
@@ -305,8 +306,9 @@ const registry: Record<string, StepView> = {
   crypto_screener_data: (p) => renderCryptoScreenerData(p),
   desk_data: (p) => renderDeskData(p),
 
-  // accounting — trading-books wedge (ledger view of Binance fills)
-  binance_import_trades: (p) => renderBinanceImportTrades(p),
+  // accounting — trading-books wedge (ledger view of exchange fills)
+  venue_fills_import: (p) => renderVenueFillsImport(p),
+  mexc_futures_fill_sync: (p) => renderMexcFuturesFillSync(p),
   crypto_futures_trade_stats: (p) => renderCryptoFuturesTradeStats(p),
   trading_pnl_by_symbol: (p) => renderTradingPnlBySymbol(p),
   trading_fee_summary: (p) => renderTradingFeeSummary(p),

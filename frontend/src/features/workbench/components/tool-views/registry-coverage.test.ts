@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { renderStepReport } from "@/features/workbench/components/tool-views";
 
-import { renderBinanceImportTrades } from "@/components/ai-elements/tool-renderers/accounting";
+import { renderMexcFuturesFillSync, renderVenueFillsImport } from "@/components/ai-elements/tool-renderers/accounting";
 
 /**
  * The registry gate: every tool kawai can dispatch in a plan must CLAIM its
@@ -23,6 +23,7 @@ import { renderBinanceImportTrades } from "@/components/ai-elements/tool-rendere
 
 // Tool output shapes, verbatim from the Rust side.
 const IMPORT_TRADES = {
+  venue: "binance",
   scanned: 4,
   posted: 2,
   skipped_already_imported: 1,
@@ -31,10 +32,11 @@ const IMPORT_TRADES = {
   fees_total: "0.8",
   posted_ids: ["bns_fapi_1"],
   posted_ids_truncated: false,
-  wallet_account_id: "binance-wallet",
+  wallet_account_ids: ["binance-wallet"],
 };
 
 const BOOKS_SYNC = {
+  venue: "binance",
   books_sync: "ok",
   window_days: 30,
   scanned: 6,
@@ -44,7 +46,19 @@ const BOOKS_SYNC = {
   pnl_total: "15.25",
   fees_total: "0.8",
   posted_ids: ["bns_fapi_7"],
-  wallet_account_id: "binance-wallet",
+  wallet_account_ids: ["binance-wallet"],
+};
+
+const MEXC_FILL_SYNC = {
+  kind: "mexc_fill_sync",
+  venue: "mexc",
+  window_days: 7,
+  fetched: 12,
+  written: 10,
+  skipped_known: 2,
+  symbols: ["BTC_USDT"],
+  from_ms: 1735689600000,
+  to_ms: 1736294400000,
 };
 
 const TRADE_STATS = {
@@ -192,7 +206,7 @@ const RECONCILIATION = {
 
 /** Every tool a plan can dispatch in the accounting wedge. */
 const DISPATCHABLE: [string, unknown][] = [
-  ["binance_import_trades", IMPORT_TRADES],
+  ["venue_fills_import", IMPORT_TRADES],
   ["books_auto_sync", BOOKS_SYNC],
   ["crypto_futures_trade_stats", TRADE_STATS],
   ["trading_pnl_by_symbol", PNL_BY_SYMBOL],
@@ -204,6 +218,7 @@ const DISPATCHABLE: [string, unknown][] = [
   ["ledger_integrity_check", INTEGRITY],
   ["ledger_list_transactions", TRANSACTIONS],
   ["invoice_list", INVOICES],
+  ["mexc_futures_fill_sync", MEXC_FILL_SYNC],
   ["reconcile_run", RECONCILIATION],
   ["reconcile_csv", RECONCILIATION],
 ];
@@ -221,9 +236,15 @@ describe("dispatch gate: every accounting tool claims its output", () => {
     expect(JSON.stringify(node)).not.toContain("Trial balance");
   });
 
-  it("binance_import_trades renders through the chat registry too", () => {
+  it("venue_fills_import renders through the chat registry too", () => {
     // The tool-renderers registry (chat inspector) must not drift from the
     // canvas registry; importing the renderer directly keeps both honest.
-    expect(renderBinanceImportTrades(IMPORT_TRADES)).not.toBeNull();
+    expect(renderVenueFillsImport(IMPORT_TRADES)).not.toBeNull();
+  });
+
+  it("mexc_futures_fill_sync renders through the chat registry too", () => {
+    // Same anti-drift check as the ledger import: the chat inspector registry
+    // and the canvas registry must both claim the tool.
+    expect(renderMexcFuturesFillSync(MEXC_FILL_SYNC)).not.toBeNull();
   });
 });

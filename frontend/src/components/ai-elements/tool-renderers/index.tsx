@@ -17,7 +17,6 @@ import { renderKnowledgeSearch } from "./knowledge";
 import { renderOfficeDocument } from "./artifacts";
 import { renderCliRun } from "./terminal";
 import {
-  renderBinanceImportTrades,
   renderBooksAutoSync,
   renderCryptoFuturesTradeStats,
   renderInvoiceList,
@@ -27,9 +26,11 @@ import {
   renderLedgerIntegrityCheck,
   renderLedgerListTransactions,
   renderLedgerTrialBalance,
+  renderMexcFuturesFillSync,
   renderReconciliationReport,
   renderTradingFeeSummary,
   renderTradingPnlBySymbol,
+  renderVenueFillsImport,
 } from "./accounting";
 
 // ---------------------------------------------------------------------------
@@ -102,7 +103,8 @@ const registry: Record<string, ToolRenderer> = {
   binance_futures_risk_audit: renderBinanceFuturesRiskAudit,
   binance_coinm_risk_audit: renderBinanceFuturesRiskAudit,
   binance_futures_audit_data: renderBinanceFuturesAuditData,
-  binance_import_trades: renderBinanceImportTrades,
+  venue_fills_import: renderVenueFillsImport,
+  mexc_futures_fill_sync: renderMexcFuturesFillSync,
   crypto_futures_trade_stats: renderCryptoFuturesTradeStats,
   trading_pnl_by_symbol: renderTradingPnlBySymbol,
   trading_fee_summary: renderTradingFeeSummary,

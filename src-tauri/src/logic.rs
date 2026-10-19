@@ -505,11 +505,17 @@ pub mod onboarding;
 // (`codegraph-native` implies `codegraph`; kernel rlib wired when available).
 pub mod codegraph;
 // Per-user Binance API key management (Settings → Binance API): storage in
-// the user's local DB (`binance_api_credentials`, migration 0027) with the
-// baked kawai-vault pair as fallback. Always compiled (stable surface for
+// the user's local DB (`venue_credentials`, migration 0036) with the baked
+// kawai-vault pair as fallback. Always compiled (stable surface for
 // the always-registered commands); without the `binance` feature it serves
 // guidance-error stubs (codegraph/tts pattern).
 pub mod binance_credentials;
+// Per-user MEXC API key management (Settings → MEXC API): storage in the
+// user's local DB (`venue_credentials`, migration 0036). No product-baked
+// pair exists for MEXC, so there is no fallback to resolve. Always compiled
+// (stable surface for the always-registered commands); without the `mexc`
+// feature it serves guidance-error stubs.
+pub mod mexc_credentials;
 pub mod binance_trade;
 // In-process futures risk guard (feature `binance`): 15-minute timer over
 // the active user's toggle; the cron binary covers closed periods with the

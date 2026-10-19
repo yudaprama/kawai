@@ -149,7 +149,7 @@ jobs:
       # every cfg(not(feature = …)) stub. Mixed regions (e.g. litert without
       # binance) are covered by linux-smoke's `--features litert` test build.
       - name: cargo check (all features on)
-        run: cargo check --features litert,office,binance,graph,web,accounting
+        run: cargo check --features litert,office,binance,graph,web,accounting,mexc
         working-directory: src-tauri
 
       # Data analysis agent (polars + office_oxide xlsx bridge) is always

@@ -28,8 +28,9 @@ placement.
 
 ## Auto-sync on audit (books always fresh, no asking)
 
-The audit's wave 1 already syncs the `binance_futures_trades` mirror — the
-same local table the import reads. So "update the books automatically on
+The audit's wave 1 syncs the Binance POSITIONS mirror, not the fill history —
+`crypto_futures_trade_stats` is the only writer of the fill table, so a fresh
+install must run it before the import has anything to post. So "update the books automatically on
 every audit" is one new step in the fixed pipeline:
 
 ```
@@ -57,7 +58,7 @@ attaches automatically (the sync step is a write).
 
 Steps (from existing tools except one):
 
-1. `binance_import_trades(period)` — freshness (idempotent)
+1. `venue_fills_import(period, venue?)` — freshness (idempotent)
 2. `crypto_futures_trade_stats(period)` — win rate, expectancy, profit
    factor, FIFO round-trips (exists in the binance toolset)
 3. `trading_pnl_by_symbol(period)` — per-pair realized PnL (NEW)
@@ -74,7 +75,7 @@ Steps (from existing tools except one):
 - **Toolset** `crates/toolsets/accounting` (`accounting-tools`): 24 tools —
   ledger CRUD, 5 reports, GST calculator (dormant), invoice create/list,
   GSTR-1 export (dormant), 7 pattern writers, `reconcile_run`, `reconcile_csv`
-  (paste **or** Library `file_id`), `binance_import_trades` (idempotent).
+  (paste **or** Library `file_id`), `venue_fills_import` (idempotent).
 - **Storage**: per-user SQLite, migration `0034_accounting_ledger.sql`
   (`acct_*` tables; BigDecimal as TEXT, zero f64).
 - **Agent + routing**: `builtin.accounting` (feature-gated); Monthly Close
@@ -91,10 +92,11 @@ Steps (from existing tools except one):
 ## Activation plan (ordered)
 
 1. **DONE** — per-pair data plumbing: migration `0035_accounting_fill_meta`
-   (`acct_fill_meta`), tools
-   `trading_pnl_by_symbol(from, to)` + `trading_fee_summary(from, to)` +
+   (superseded by `0036_venue_fills` → `venue_fill_meta`), tools
+   `trading_pnl_by_symbol(from, to, venue?)` +
+   `trading_fee_summary(from, to, venue?)` +
    `books_auto_sync` (automatic audit wave, rolling 30-day window);
-   `binance_import_trades` upserts fill metadata for every scanned fill.
+   `venue_fills_import` upserts fill metadata for every scanned fill.
 2. **DONE** — audit wave "books sync": `append_books_sync_step` in
    supervisor.rs, appended at both `build_audit_plan` call sites
    (commands.rs + web.rs) behind

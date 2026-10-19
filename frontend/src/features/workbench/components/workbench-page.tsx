@@ -31,7 +31,7 @@ import { YoutubeSummaryForm } from "./youtube-summary-form";
 import { BinanceAuditForm } from "./binance-audit-form";
 import { CryptoScreenerForm } from "./crypto-screener-form";
 import { BookCloseForm } from "./book-close-form";
-import { TradingPerformanceForm } from "./trading-performance-form";
+import { TradingPerformanceForm, type TradingVenue } from "./trading-performance-form";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
 import { useI18n } from "@/hooks/use-i18n";
@@ -433,8 +433,8 @@ export function WorkbenchPage({
    *  win rate, per-pair PnL, fees, integrity gate — and the plan lands in
    *  the review gate like any planner-authored one. */
   const submitTradingPerformance = useCallback(
-    (period: string) => {
-      beginPipelineRun((onStart) => workbench.runTradingPerformance(period, { onStart }));
+    (period: string, venue?: TradingVenue) => {
+      beginPipelineRun((onStart) => workbench.runTradingPerformance(period, { venue, onStart }));
     },
     [beginPipelineRun, workbench.runTradingPerformance],
   );

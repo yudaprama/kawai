@@ -1169,6 +1169,12 @@
       "guideDetail": "Create one in Binance → Profile → API Management, and restrict it to your IP. A READ-ONLY key (Enable Reading) covers everything except placing orders; the ENABLE FUTURES permission is what lets the agent place protective stop-loss / take-profit orders, and every order still asks you first.",
       "riskGuardTitle": "Risk guard",
       "riskGuardDesc": "Checks your futures positions every 15 minutes while the app is open and warns when a position has no stop-loss."
+    },
+    "mexc": {
+      "title": "MEXC",
+      "subtitle": "your futures account, read-only",
+      "guide": "Paste your MEXC API key and secret to let the agent read your futures fills into the books. MEXC is READ-ONLY here — kawai imports fills, PnL and fees, and never places an order on MEXC. No MEXC account? Skip this.",
+      "guideDetail": "Create one in MEXC → Account → API, and restrict it to your IP. A read-only key is all this needs: the agent imports your futures deal history over the last few days so the review can compute PnL and fees. There is no trading permission to enable — no MEXC execution exists yet, so leave trade permissions off."
     }
   }
 }

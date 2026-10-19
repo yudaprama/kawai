@@ -600,17 +600,22 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
   );
 
   /** Trading Performance: execute the FIXED performance pipeline — sync
-   *  Binance futures fills into the ledger, then read the books back as a
-   *  period review (win rate, per-pair PnL, fees, integrity gate). Same
-   *  fixed-plan contract as the audit: no planner round, no string routing,
-   *  merged-catalog registry. The write step still gates on confirmation. */
+   *  futures fills into the ledger, then read the books back as a
+   *  period review (win rate, per-pair PnL, fees, integrity gate). `venue`
+   *  scopes the run to one exchange; omitting it reads every venue's fills.
+   *  Same fixed-plan contract as the audit: no planner round, no string
+   *  routing, merged-catalog registry. The write step still gates on
+   *  confirmation. */
   const runTradingPerformance = useCallback(
-    (options: { period: string }, sessionId: number) => {
+    (options: { period: string; venue?: "binance" | "mexc" }, sessionId: number) => {
       if (streamCtrl.current) return;
       startStream(
         {
           sessionId,
           period: options.period,
+          // Venue is OPTIONAL: omitting the field reads every exchange's
+          // fills, so an all-venue review stays the default.
+          ...(options.venue ? { venue: options.venue } : {}),
           // Device locale → report language (resolved server-side).
           language: navigator.language,
         },

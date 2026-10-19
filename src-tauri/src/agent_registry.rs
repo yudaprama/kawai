@@ -332,6 +332,12 @@ pub fn accounting_tools_for_supervisor(
     #[cfg(all(feature = "accounting", not(target_os = "android")))]
     {
         let mut set = accounting_tools::registry::toolset(context.user_id);
+        // The venue fill syncs ride the ACCOUNTING agent's toolset, not a venue
+        // agent: the books are the accounting agent's job, and MEXC's only
+        // tool is one that fills them. Without the merge the fills import has
+        // nothing to import.
+        #[cfg(feature = "mexc")]
+        set.merge(&mut mexc::registry::all_tools(context.user_id));
         return Some(add_runtime_tools(set, context, remote_configured, false));
     }
     #[cfg(not(all(feature = "accounting", not(target_os = "android"))))]

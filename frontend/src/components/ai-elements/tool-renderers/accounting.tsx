@@ -48,11 +48,11 @@ function Table({ head, children }: { head: string[]; children: ReactNode }) {
   );
 }
 
-// ── binance_import_trades ───────────────────────────────────────────────────
+// ── venue_fills_import ──────────────────────────────────────────────────────
 
 /**
- * binance_import_trades →
- * { scanned, posted, skipped_already_imported, skipped_no_ledger_effect,
+ * venue_fills_import →
+ * { venue, scanned, posted, skipped_already_imported, skipped_no_ledger_effect,
  *   pnl_total, fees_total, posted_ids: string[], posted_ids_truncated,
  *   wallet_account_id } — every amount an exact decimal string.
  *
@@ -61,7 +61,7 @@ function Table({ head, children }: { head: string[]; children: ReactNode }) {
  * story, and the two skipped counters say why a scanned fill is not a
  * ledger entry (zero-effect fill, or one recorded in an earlier run).
  */
-export function renderBinanceImportTrades(output: unknown): ReactNode {
+export function renderVenueFillsImport(output: unknown): ReactNode {
   const d = parse(output);
   // The tool always emits `scanned`; without it this is not an import
   // payload (an error envelope, an empty object) and the raw JSON card
@@ -73,7 +73,13 @@ export function renderBinanceImportTrades(output: unknown): ReactNode {
   const empty = num(d.skipped_no_ledger_effect) ?? 0;
   const pnl = dec(d.pnl_total);
   const fees = dec(d.fees_total);
-  const wallet = str(d.wallet_account_id);
+  // One wallet per venue, so an unscoped import lists several; the chip joins
+  // them so a multi-exchange post still says which monies it moved.
+  const wallets = Array.isArray(d.wallet_account_ids)
+    ? d.wallet_account_ids.filter((x): x is string => typeof x === "string")
+    : [];
+  const wallet = wallets.join(" + ");
+  const venue = str(d.venue);
   const postedIds = Array.isArray(d.posted_ids) ? d.posted_ids.filter((x): x is string => typeof x === "string") : [];
   const metrics: Metric[] = [
     { label: "Fills scanned", value: fmtNum(scanned) },
@@ -91,6 +97,7 @@ export function renderBinanceImportTrades(output: unknown): ReactNode {
         <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
           Ledger import
         </span>
+        {venue && <span className="text-muted-foreground font-mono text-[10px]">{venue}</span>}
         {wallet && <span className="text-muted-foreground font-mono text-[10px]">→ {wallet}</span>}
         {d.posted_ids_truncated === true && (
           <span className="border-warning/30 bg-warning/10 text-warning rounded-sm border px-1 py-px font-mono text-[10px] uppercase">
@@ -118,6 +125,76 @@ export function renderBinanceImportTrades(output: unknown): ReactNode {
           Recorded as {postedIds.slice(0, 3).join(", ")}
           {postedIds.length > 3 ? ` +${postedIds.length - 3} more` : ""} — each exchange trade id posts exactly once.
         </Footnote>
+      )}
+    </TextCard>
+  );
+}
+
+// ── mexc_futures_fill_sync ───────────────────────────────────────────────────
+
+/**
+ * mexc_futures_fill_sync →
+ * { kind: "mexc_fill_sync", venue, window_days, fetched, written,
+ *   skipped_known, symbols: string[], from_ms, to_ms }
+ *
+ * The card answers one question: did the import have anything to do?
+ * `written: 0` with `skipped_known == fetched` is a HEALTHY outcome — every
+ * deal MEXC returned was already in the local fill history — so it reads as
+ * "already up to date", never as a failure or an error tone.
+ */
+export function renderMexcFuturesFillSync(output: unknown): ReactNode {
+  const d = parse(output);
+  // The `kind` discriminator is the flat-payload gate: an error envelope or an
+  // empty object must fall back to the raw JSON card, not render as zeros.
+  if (!isRecord(d) || d.kind !== "mexc_fill_sync" || num(d.fetched) == null) return null;
+  const fetched = num(d.fetched) ?? 0;
+  const written = num(d.written) ?? 0;
+  const skipped = num(d.skipped_known) ?? 0;
+  const window = num(d.window_days);
+  const venue = str(d.venue);
+  const symbols = Array.isArray(d.symbols) ? d.symbols.filter((x): x is string => typeof x === "string") : [];
+  const from = num(d.from_ms);
+  const to = num(d.to_ms);
+  const metrics: Metric[] = [
+    { label: "Deals fetched", value: fmtNum(fetched) },
+    {
+      label: "New fills written",
+      value: fmtNum(written),
+      tone: written > 0 ? "ok" : undefined,
+    },
+    { label: "Already known", value: fmtNum(skipped) },
+  ];
+  return (
+    <TextCard>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Icon name="refresh-cw" className="text-primary size-4" />
+        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+          MEXC fills synced
+        </span>
+        {window != null && (
+          <span className="text-muted-foreground font-mono text-[10px]">{`last ${window} days`}</span>
+        )}
+        {venue && <span className="text-muted-foreground font-mono text-[10px]">{venue}</span>}
+      </div>
+      <MetricGrid items={metrics} />
+      {written === 0 && skipped === fetched ? (
+        <Footnote>
+          Already up to date — every deal in the window was in the local fill history, so nothing was
+          written.
+        </Footnote>
+      ) : (
+        <Footnote>
+          {fmtNum(written)} new fill{written === 1 ? "" : "s"} recorded into the local fill history;
+          each exchange trade id is written exactly once.
+        </Footnote>
+      )}
+      {symbols.length > 0 && (
+        <Footnote>Symbols in the import window: {symbols.join(", ")}</Footnote>
+      )}
+      {from != null && to != null && (
+        <div className="text-muted-foreground font-mono text-[10px]">
+          {new Date(from).toISOString().slice(0, 10)} → {new Date(to).toISOString().slice(0, 10)}
+        </div>
       )}
     </TextCard>
   );
@@ -716,17 +793,27 @@ export function renderInvoiceList(output: unknown): ReactNode {
 // ── books_auto_sync (the futures risk audit's books wave) ──────────────────
 
 /** books_auto_sync →
- * { books_sync: "ok", window_days, scanned, posted, skipped_already_imported,
- *   skipped_no_ledger_effect, pnl_total, fees_total, posted_ids,
- *   wallet_account_id } — the import counters again, from the audit wave.
+ * { books_sync: "ok", venue, window_days, scanned, posted,
+ *   skipped_already_imported, skipped_no_ledger_effect, pnl_total, fees_total,
+ *   posted_ids, wallet_account_id } — the import counters again, from the audit
+ *   wave.
  *
  * Same card as the manual import, with the window the audit covered; a run
  * that posted nothing is the steady state and reads as "nothing to do", not
  * as a failure. */
+/** The wallets a books-sync pass moved money through (one per venue). */
+function bookWallets(d: Record<string, unknown>): string {
+  const ids = Array.isArray(d.wallet_account_ids)
+    ? d.wallet_account_ids.filter((x): x is string => typeof x === "string")
+    : [];
+  return ids.join(" + ");
+}
+
 export function renderBooksAutoSync(output: unknown): ReactNode {
   const d = parse(output);
   if (!isRecord(d) || d.books_sync !== "ok") return null;
   const window = num(d.window_days);
+  const venue = str(d.venue);
   return (
     <TextCard>
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -737,8 +824,9 @@ export function renderBooksAutoSync(output: unknown): ReactNode {
         {window != null && (
           <span className="text-muted-foreground font-mono text-[10px]">{`last ${window} days`}</span>
         )}
-        {str(d.wallet_account_id) && (
-          <span className="text-muted-foreground font-mono text-[10px]">→ {str(d.wallet_account_id)}</span>
+        {venue && <span className="text-muted-foreground font-mono text-[10px]">{venue}</span>}
+        {bookWallets(d) && (
+          <span className="text-muted-foreground font-mono text-[10px]">→ {bookWallets(d)}</span>
         )}
       </div>
       <MetricGrid

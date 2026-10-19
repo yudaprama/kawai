@@ -358,7 +358,7 @@ const ANALYTICS_SCENARIOS: &[Scenario] = &[
 /// ledger. Kept separate from the office suite so its manifest/context never
 /// shifts the T01-T20 baseline. Tool descriptions/args mirror the real
 /// crates/toolsets/accounting + toolsets/binance tools.
-const ACCOUNTING_SYSTEM: &str = "You are a trading assistant. The user keeps a double-entry ledger of Binance futures fills with these accounts:\n\
+const ACCOUNTING_SYSTEM: &str = "You are a trading assistant. The user keeps ONE double-entry ledger of exchange futures fills, with one wallet account per exchange:\n\
 - binance-wallet (asset — the exchange wallet)\n\
 - trading-gains, trading-losses (realized PnL), trading-fees (commissions)\n\
 Fills import is IDEMPOTENT: each fill posts exactly once, keyed by the exchange trade id — re-running an import over the same range is safe.\n\
@@ -371,15 +371,15 @@ Rules:\n\
 - Before a books review, run ledger_integrity_check and report issues instead of proceeding when is_valid is false.\n\
 - If a question lacks a period, ask which period — never invent dates.\n\
 Examples of the exact reply format — ONE call:<name>{...} line per reply:\n\
-User: Import my March 2026 fills.\ncall:binance_import_trades{\"from\":\"2026-03-01\",\"to\":\"2026-03-31\"}\n\
+User: Import my March 2026 fills.\ncall:venue_fills_import{\"from\":\"2026-03-01\",\"to\":\"2026-03-31\"}\n\
 User: PnL per pair for March 2026?\ncall:trading_pnl_by_symbol{\"from\":\"2026-03-01\",\"to\":\"2026-03-31\"}\n\
 User: Win rate on BTCUSDT over the last 90 days?\ncall:crypto_futures_trade_stats{\"symbol\":\"BTCUSDT\",\"days\":90}\n";
 
 const ACCOUNTING_TOOLS: &str = r#"[
-  {"type":"function","function":{"name":"binance_import_trades","description":"Import executed Binance futures fills from the locally synced trade history into the double-entry ledger. Per fill: realized PnL credits trading-gains or debits trading-losses, commission debits trading-fees, both netting the exchange wallet account (default binance-wallet). Each fill posts exactly once, keyed by the exchange trade id; already-imported fills are skipped, so re-running over the same range is safe.","parameters":{"type":"object","properties":{"from":{"type":"string","description":"Start date, YYYY-MM-DD (fills executed this day or later, UTC)."},"to":{"type":"string","description":"End date, YYYY-MM-DD (inclusive, UTC)."},"wallet_account_id":{"type":"string","description":"Optional id of the exchange wallet account; default binance-wallet."}},"required":["from","to"]}}},
+  {"type":"function","function":{"name":"venue_fills_import","description":"Import executed exchange futures fills from the locally synced trade history into the double-entry ledger, per venue. Per fill: realized PnL credits trading-gains or debits trading-losses, commission debits trading-fees, both netting that venue's wallet account (binance-wallet / mexc-wallet). Each fill posts exactly once, keyed by the exchange trade id; already-imported fills are skipped, so re-running over the same range is safe.","parameters":{"type":"object","properties":{"from":{"type":"string","description":"Start date, YYYY-MM-DD (fills executed this day or later, UTC)."},"to":{"type":"string","description":"End date, YYYY-MM-DD (inclusive, UTC)."},"wallet_account_id":{"type":"string","description":"Optional id of the exchange wallet account; default binance-wallet."}},"required":["from","to"]}}},
   {"type":"function","function":{"name":"crypto_futures_trade_stats","description":"Realized trading performance for your Binance futures positions: win rate, average win/loss, expectancy, profit factor, largest win/loss and total realized PnL — optionally scoped to one symbol. Counts are PER TRADE; PnL is net of commission; open positions are excluded. Read-only.","parameters":{"type":"object","properties":{"symbol":{"type":"string","description":"Optional single symbol, e.g. \"BTCUSDT\". Omit for the whole book."},"days":{"type":"integer","description":"How far back to fetch new fills from the exchange (1-365). Existing history is always included."},"market":{"type":"string","enum":["USDM","COINM"],"description":"Which futures market. Defaults to USDM."}}}}},
-  {"type":"function","function":{"name":"trading_pnl_by_symbol","description":"Realized PnL per symbol over a period, from the imported Binance futures fills (run binance_import_trades first so the mirror is current). Rows sorted by absolute PnL contribution; totals included. Exact decimals, no rounding.","parameters":{"type":"object","properties":{"from":{"type":"string","description":"Period start, YYYY-MM-DD (inclusive, UTC)."},"to":{"type":"string","description":"Period end, YYYY-MM-DD (inclusive, UTC)."}},"required":["from","to"]}}},
-  {"type":"function","function":{"name":"trading_fee_summary","description":"Commission totals over a period from the imported Binance futures fills: total, per symbol, and traded volume per symbol (fee-to-volume = commission_total / volume_total). Run binance_import_trades first so the mirror is current. Exact decimals.","parameters":{"type":"object","properties":{"from":{"type":"string","description":"Period start, YYYY-MM-DD (inclusive, UTC)."},"to":{"type":"string","description":"Period end, YYYY-MM-DD (inclusive, UTC)."}},"required":["from","to"]}}},
+  {"type":"function","function":{"name":"trading_pnl_by_symbol","description":"Realized PnL per symbol over a period, from the imported exchange futures fills (run venue_fills_import first so the mirror is current). Rows sorted by absolute PnL contribution; totals included. Exact decimals, no rounding.","parameters":{"type":"object","properties":{"from":{"type":"string","description":"Period start, YYYY-MM-DD (inclusive, UTC)."},"to":{"type":"string","description":"Period end, YYYY-MM-DD (inclusive, UTC)."}},"required":["from","to"]}}},
+  {"type":"function","function":{"name":"trading_fee_summary","description":"Commission totals over a period from the imported exchange futures fills: total, per venue + symbol, and traded volume per symbol (fee-to-volume = commission_total / volume_total). Run venue_fills_import first so the mirror is current. Exact decimals.","parameters":{"type":"object","properties":{"from":{"type":"string","description":"Period start, YYYY-MM-DD (inclusive, UTC)."},"to":{"type":"string","description":"Period end, YYYY-MM-DD (inclusive, UTC)."}},"required":["from","to"]}}},
   {"type":"function","function":{"name":"ledger_integrity_check","description":"Check the user's local ledger for integrity as of a date: verifies that the trial balance and the balance sheet both balance. is_valid is true when every check passed; issues lists one line per failure (empty when valid).","parameters":{"type":"object","properties":{"as_of":{"type":"string","description":"Date, YYYY-MM-DD. Transactions after it are ignored."}},"required":["as_of"]}}},
   {"type":"function","function":{"name":"reconcile_csv","description":"Reconcile one ledger account against a CSV/TSV bank or gateway statement — pass either file_id (a statement uploaded to the Library) or statement_csv (the full CSV text including the header row), not both. Runs the same four-pass matching as reconcile_run; at most 1000 rows.","parameters":{"type":"object","properties":{"file_id":{"type":"string","description":"Stored statement file id (csv/tsv) from office_list_files — the Library upload. Use this OR statement_csv, not both."},"statement_csv":{"type":"string","description":"Full CSV text including the header row. Use this OR file_id, not both."},"account_id":{"type":"string","description":"Ledger account to reconcile (e.g. the bank account)."},"from":{"type":"string","description":"Period start, YYYY-MM-DD (inclusive)."},"to":{"type":"string","description":"Period end, YYYY-MM-DD (inclusive)."},"source":{"type":"object","description":"{\"type\":\"bank\",\"bank_name\",\"account_number\"} or {\"type\":\"gateway\",\"name\",\"merchant_id\"}.","properties":{"type":{"type":"string","enum":["bank","gateway"]},"bank_name":{"type":"string"},"account_number":{"type":"string"},"name":{"type":"string"},"merchant_id":{"type":"string"}},"required":["type"]}},"required":["account_id","from","to","source"]}}},
   {"type":"function","function":{"name":"ledger_trial_balance","description":"Generate a trial balance from the user's local ledger as of a date: every account on its debit or credit column, totals, and whether the books balance. Amounts are decimal strings.","parameters":{"type":"object","properties":{"as_of":{"type":"string","description":"Date, YYYY-MM-DD. Transactions after it are ignored."}},"required":["as_of"]}}}
@@ -393,7 +393,7 @@ const ACCOUNTING_SCENARIOS: &[Scenario] = &[
     Scenario(
         "F01 import-month",
         "Import my Binance futures fills for March 2026.",
-        Some("binance_import_trades"),
+        Some("venue_fills_import"),
         &[("from", "==2026-03-01"), ("to", "==2026-03-31")],
     ),
     // Indonesian phrasing, same month boundaries.
@@ -450,7 +450,7 @@ const ACCOUNTING_SCENARIOS: &[Scenario] = &[
     Scenario(
         "F08 import-then-stats",
         "Import my March 2026 Binance fills and then show me my trading stats.",
-        Some("binance_import_trades"),
+        Some("venue_fills_import"),
         &[("from", "==2026-03-01"), ("to", "==2026-03-31")],
     ),
 ];

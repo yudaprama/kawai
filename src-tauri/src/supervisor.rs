@@ -666,7 +666,7 @@ pub async fn plan_task(
                         // template step never carries the flag itself, and
                         // the scheduler reads ONLY the step flag — without
                         // this, a routed plan would dispatch
-                        // binance_import_trades (a write) with no gate.
+                        // venue_fills_import (a write) with no gate.
                         registry.enforce_confirmation_policy(&mut plan);
                         plan.template = Some(template.id.to_string());
                         let key = plan_key(&plan);
@@ -2596,7 +2596,10 @@ pub fn append_books_sync_step(mut plan: kawai_router::TaskPlan) -> kawai_router:
         agent_id: ::binance::BINANCE_AUDIT_AGENT_ID.into(),
         task: "Post fills not yet recorded in the ledger (idempotent, last 30 days); include the posted summary in the audit narrative".into(),
         tool: Some("books_auto_sync".into()),
-        arguments: serde_json::json!({}),
+        // The audit runs on the Binance positions mirror, so its books wave
+        // posts Binance fills — the ledger itself is venue-generic, this step
+        // is not.
+        arguments: serde_json::json!({ "venue": "binance" }),
         depends_on: vec!["audit_data".into()],
         ..kawai_router::TaskStep::default()
     });
@@ -5969,7 +5972,7 @@ mod tests {
         assert_eq!(plan.template.as_deref(), Some("trading_performance"), "plan: {plan:?}");
         assert_eq!(usage.input_tokens, 0, "the planner must not run");
         let tools: Vec<_> = plan.steps.iter().filter_map(|s| s.tool.clone()).collect();
-        assert!(tools.contains(&"binance_import_trades".to_string()), "{tools:?}");
+        assert!(tools.contains(&"venue_fills_import".to_string()), "{tools:?}");
         assert!(tools.contains(&"trading_pnl_by_symbol".to_string()), "{tools:?}");
         assert!(
             tools.contains(&"crypto_futures_trade_stats".to_string()),
@@ -5993,13 +5996,54 @@ mod tests {
         let import_step = plan
             .steps
             .iter()
-            .find(|s| s.tool.as_deref() == Some("binance_import_trades"))
+            .find(|s| s.tool.as_deref() == Some("venue_fills_import"))
             .expect("import step");
         assert_ne!(
             import_step.requires_confirmation,
             Some(true),
             "accounting write tools must not add a per-write confirmation"
         );
+    }
+
+    /// A venue-scoped review of an exchange whose fills must be FETCHED first
+    /// (MEXC): the plan has to carry the venue's sync tool and the import has
+    /// to depend on it, and every step must resolve in the REAL merged
+    /// registry. A plan that validates but imports an empty history is exactly
+    /// the failure this pins.
+    #[cfg(all(feature = "accounting", feature = "mexc"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_mexc_scoped_trading_plan_fetches_before_it_imports() {
+        let dir = tempfile::tempdir().unwrap();
+        kawai_db::set_data_root(dir.path());
+        std::mem::forget(dir);
+        let user = format!("trading-mexc-{}-{}", std::process::id(), kawai_db::unix_now());
+        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
+        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
+            .await
+            .expect("supervisor registry");
+
+        let plan = accounting_tools::plan::build_trading_performance_plan(
+            "2026-10",
+            chrono::Local::now().date_naive(),
+            Some("mexc"),
+        )
+        .expect("mexc-scoped plan");
+        let tools: Vec<_> = plan.steps.iter().filter_map(|s| s.tool.clone()).collect();
+        assert_eq!(tools.first().map(String::as_str), Some("mexc_futures_fill_sync"), "{tools:?}");
+        let import = plan
+            .steps
+            .iter()
+            .find(|s| s.tool.as_deref() == Some("venue_fills_import"))
+            .expect("import step");
+        assert_eq!(
+            import.depends_on,
+            vec![plan.steps[0].id.clone()],
+            "the import must wait for the venue fetch"
+        );
+        assert_eq!(import.arguments["venue"], "mexc");
+        registry
+            .validate_plan(&plan)
+            .unwrap_or_else(|e| panic!("the venue-scoped plan must validate: {e}"));
     }
 
     /// The Monthly Close template claimed the same class of bug as the

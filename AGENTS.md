@@ -319,6 +319,9 @@ cognee-litert-lm/vendor/LiteRT-LM         # submodule = upstream google-ai-edge 
 cognee-litert-lm/native/         # gitignored: prepared LiteRT-LM dylibs (bundle-litert-dylibs.sh fills this)
 office_oxide/                    # submodule (path dep, office feature): pure-Rust docx/xlsx/pptx CREATE + read + EDIT + info (markdown → IR; raw-part surgery for in-place edits)
 kawai-tools/                     # the agent tool seam: AgentTool trait + ToolSet registry (name-keyed, type-erased dispatch)
+crates/foundation/venue/         # venue-neutral exchange types: Venue, VenueFill/Position/Asset, VenueError, VenueClient
+crates/toolsets/binance/         # Binance agent tools (feature `binance`): market data, futures mirror, execution, venue fill history
+crates/toolsets/mexc/            # MEXC agent tools (feature `mexc`): fills sync into the same venue-keyed history; own keys only
 crates/                          # split-out first-party crates (foundation / engines / toolsets / integrations / generated-tools / vendor); crates/vendor/accounting-core is a vendored copy of accounting-blue (double-entry ledger + Indian GST) whose invoice PDF renders through pdf_oxide; exposed as the `builtin.accounting` agent via the `accounting` feature and crates/toolsets/accounting
 nautilus_trader/                # submodule, REFERENCE-ONLY: never a workspace member or path dep. nautilus-binance does NOT replace binance-sdk in-app — see PLAN-nautilus-integration.md §5.1
 models/                          # .litertlm model files (gitignored, GB-scale)
