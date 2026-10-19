@@ -18,6 +18,7 @@ import { renderOfficeDocument } from "./artifacts";
 import { renderCliRun } from "./terminal";
 import {
   renderBinanceImportTrades,
+  renderBooksAutoSync,
   renderCryptoFuturesTradeStats,
   renderInvoiceList,
   renderLedgerBalanceSheet,
@@ -26,6 +27,7 @@ import {
   renderLedgerIntegrityCheck,
   renderLedgerListTransactions,
   renderLedgerTrialBalance,
+  renderReconciliationReport,
   renderTradingFeeSummary,
   renderTradingPnlBySymbol,
 } from "./accounting";
@@ -111,6 +113,9 @@ const registry: Record<string, ToolRenderer> = {
   ledger_income_statement: renderLedgerIncomeStatement,
   ledger_cash_flow: renderLedgerCashFlow,
   invoice_list: renderInvoiceList,
+  books_auto_sync: renderBooksAutoSync,
+  reconcile_run: renderReconciliationReport,
+  reconcile_csv: renderReconciliationReport,
   crypto_screener: renderCryptoScreener,
   crypto_screener_data: renderCryptoScreenerData,
   desk_data: renderDeskData,

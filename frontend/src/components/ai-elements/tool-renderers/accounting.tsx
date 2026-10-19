@@ -705,3 +705,150 @@ export function renderInvoiceList(output: unknown): ReactNode {
     </TextCard>
   );
 }
+
+// ── books_auto_sync (the futures risk audit's books wave) ──────────────────
+
+/** books_auto_sync →
+ * { books_sync: "ok", window_days, scanned, posted, skipped_already_imported,
+ *   skipped_no_ledger_effect, pnl_total, fees_total, posted_ids,
+ *   wallet_account_id } — the import counters again, from the audit wave.
+ *
+ * Same card as the manual import, with the window the audit covered; a run
+ * that posted nothing is the steady state and reads as "nothing to do", not
+ * as a failure. */
+export function renderBooksAutoSync(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || d.books_sync !== "ok") return null;
+  const window = num(d.window_days);
+  return (
+    <TextCard>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Icon name="refresh-cw" className="text-primary size-4" />
+        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+          Books synced
+        </span>
+        {window != null && (
+          <span className="text-muted-foreground font-mono text-[10px]">{`last ${window} days`}</span>
+        )}
+        {str(d.wallet_account_id) && (
+          <span className="text-muted-foreground font-mono text-[10px]">→ {str(d.wallet_account_id)}</span>
+        )}
+      </div>
+      <MetricGrid
+        items={[
+          { label: "Fills scanned", value: fmtNum(num(d.scanned) ?? 0) },
+          {
+            label: "Newly posted",
+            value: fmtNum(num(d.posted) ?? 0),
+            tone: (num(d.posted) ?? 0) > 0 ? "ok" : undefined,
+          },
+          { label: "Already recorded", value: fmtNum(num(d.skipped_already_imported) ?? 0) },
+          {
+            label: "Realized PnL",
+            value: dec(d.pnl_total) ?? "—",
+            tone: (dec(d.pnl_total) ?? "").startsWith("-") ? "danger" : "ok",
+          },
+        ]}
+      />
+      {(num(d.posted) ?? 0) === 0 && (
+        <Footnote>Every scanned fill was already in the ledger — nothing to post.</Footnote>
+      )}
+    </TextCard>
+  );
+}
+
+// ── reconcile_run / reconcile_csv ───────────────────────────────────────────
+
+/** reconcile_run & reconcile_csv →
+ * { report: { period_start, period_end, external_source, account_ids,
+ *   total_ledger_transactions, total_external_transactions, matched_count,
+ *   unmatched_ledger_count, unmatched_external_count, partial_match_count,
+ *   reconciliation_items: ReconciliationStatus[], summary: { ledger_balance,
+ *   external_balance, difference, match_rate, confidence_score } },
+ *   pagination? }
+ *
+ * The card answers the two questions reconciliation exists for: how much
+ * agreed (match rate, balance difference) and what still needs a human
+ * (unmatched rows and their best candidates). Matched pairs collapse to a
+ * count — 400 lines of "these two agree" bury the rows that do not.
+ */
+export function renderReconciliationReport(output: unknown): ReactNode {
+  const r = report(output);
+  if (!r || r.reconciliation_items === undefined) return null;
+  const summary = isRecord(r.summary) ? r.summary : null;
+  const difference = summary ? dec(summary.difference) : undefined;
+  const matchRate = summary ? num(summary.match_rate) : null;
+  const items = Array.isArray(r.reconciliation_items) ? r.reconciliation_items.filter(isRecord) : [];
+  const needsReview = items.filter((i) => i.status !== "matched" || !("ledger_id" in i));
+  const source = isRecord(r.external_source) ? r.external_source : null;
+
+  /** One unresolved row: which side is missing, and the best candidates. */
+  const candidate = (p: Record<string, unknown>) => {
+    const score = num(p.match_score);
+    const diffs = Array.isArray(p.differences) ? p.differences : [];
+    return `${score == null ? "" : `${fmtPct(score * 100)}% · `}${diffs.length} difference${diffs.length === 1 ? "" : "s"}`;
+  };
+
+  return (
+    <TextCard>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Icon name="git-compare-arrows" className="text-primary size-4" />
+        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+          Reconciliation
+        </span>
+        {str(r.period_start) && str(r.period_end) && (
+          <span className="text-muted-foreground font-mono text-[10px]">
+            {str(r.period_start)} → {str(r.period_end)}
+          </span>
+        )}
+        {source && (str(source.bank_name) || str(source.name)) && (
+          <span className="text-muted-foreground font-mono text-[10px]">
+            vs {(str(source.bank_name) ?? str(source.name)) as string}
+          </span>
+        )}
+      </div>
+      <MetricGrid
+        items={[
+          { label: "Matched", value: fmtNum(num(r.matched_count) ?? 0), tone: "ok" },
+          { label: "Needs review", value: fmtNum(needsReview.length), tone: needsReview.length > 0 ? "warn" : undefined },
+          { label: "Match rate", value: matchRate == null ? "—" : `${fmtPct(matchRate * 100)}%` },
+          {
+            label: "Balance difference",
+            value: difference ?? "—",
+            tone: difference && difference !== "0" ? "warn" : "ok",
+          },
+        ]}
+      />
+      {needsReview.length > 0 && (
+        <div>
+          <div className="text-muted-foreground mb-1 mt-1 font-mono text-[10px] font-bold tracking-wider uppercase">
+            unresolved
+          </div>
+          <Table head={["status", "side", "best candidates"]}>
+            {needsReview.map((item, i) => {
+              const possible = Array.isArray(item.possible_matches) ? item.possible_matches.filter(isRecord) : [];
+              return (
+                <tr key={String(i)} className="border-border/40 border-b last:border-0">
+                  <Cell>{str(item.status) ?? "—"}</Cell>
+                  <Cell>{str(item.ledger_id) ?? str(item.external_id) ?? "—"}</Cell>
+                  <Cell right>
+                    <span className="text-muted-foreground">
+                      {possible.length === 0 ? "no candidates" : possible.map(candidate).join("  ·  ")}
+                    </span>
+                  </Cell>
+                </tr>
+              );
+            })}
+          </Table>
+        </div>
+      )}
+      <Footnote>
+        {fmtNum(num(r.total_ledger_transactions) ?? 0)} ledger vs{" "}
+        {fmtNum(num(r.total_external_transactions) ?? 0)} statement rows
+        {summary && num(summary.confidence_score) != null
+          ? ` · confidence ${fmtPct((num(summary.confidence_score) as number) * 100)}`
+          : ""}
+      </Footnote>
+    </TextCard>
+  );
+}

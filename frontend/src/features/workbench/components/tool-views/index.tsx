@@ -4,6 +4,7 @@ import { cards } from "@/components/ai-elements/tool-renderers/shared";
 import { renderKnowledgeSearch } from "@/components/ai-elements/tool-renderers/knowledge";
 import {
   renderBinanceImportTrades,
+  renderBooksAutoSync,
   renderCryptoFuturesTradeStats,
   renderInvoiceList,
   renderLedgerBalanceSheet,
@@ -12,6 +13,7 @@ import {
   renderLedgerIntegrityCheck,
   renderLedgerListTransactions,
   renderLedgerTrialBalance,
+  renderReconciliationReport,
   renderTradingFeeSummary,
   renderTradingPnlBySymbol,
 } from "@/components/ai-elements/tool-renderers/accounting";
@@ -315,6 +317,9 @@ const registry: Record<string, StepView> = {
   ledger_income_statement: (p) => renderLedgerIncomeStatement(p),
   ledger_cash_flow: (p) => renderLedgerCashFlow(p),
   invoice_list: (p) => renderInvoiceList(p),
+  books_auto_sync: (p) => renderBooksAutoSync(p),
+  reconcile_run: (p) => renderReconciliationReport(p),
+  reconcile_csv: (p) => renderReconciliationReport(p),
   // binance stocks — bid/ask quote + symbol metadata (records, no dedicated view yet)
   stock_quote: (p) => (isRecord(p) ? genericKv(p) : null),
   stock_info: (p) => (isRecord(p) ? genericKv(p) : null),

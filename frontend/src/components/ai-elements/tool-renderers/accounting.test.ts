@@ -4,12 +4,14 @@ import { renderStepReport } from "@/features/workbench/components/tool-views";
 
 import {
   renderBinanceImportTrades,
+  renderBooksAutoSync,
   renderInvoiceList,
   renderLedgerBalanceSheet,
   renderLedgerCashFlow,
   renderLedgerIncomeStatement,
   renderLedgerListTransactions,
   renderLedgerTrialBalance,
+  renderReconciliationReport,
   renderCryptoFuturesTradeStats,
   renderLedgerIntegrityCheck,
   renderTradingFeeSummary,
@@ -338,6 +340,107 @@ describe("ledger report and list renderers", () => {
       ["ledger_income_statement", incomePayload, "Income statement"],
       ["ledger_cash_flow", cashFlowPayload, "Cash flow"],
       ["invoice_list", invoicesPayload, "Invoices"],
+    ];
+    for (const [tool, payload, marker] of cases) {
+      expect(text(renderStepReport(tool, JSON.stringify(payload))), tool).toContain(marker);
+    }
+  });
+});
+
+const booksSyncPayload = {
+  books_sync: "ok",
+  window_days: 30,
+  scanned: 6,
+  posted: 3,
+  skipped_already_imported: 3,
+  skipped_no_ledger_effect: 0,
+  pnl_total: "15.25",
+  fees_total: "0.8",
+  posted_ids: ["bns_fapi_7"],
+  wallet_account_id: "binance-wallet",
+};
+
+const reconciliationPayload = {
+  report: {
+    period_start: "2026-10-01",
+    period_end: "2026-10-31",
+    external_source: { type: "bank", bank_name: "BCA" },
+    account_ids: ["cash"],
+    total_ledger_transactions: 12,
+    total_external_transactions: 14,
+    matched_count: 11,
+    unmatched_ledger_count: 1,
+    unmatched_external_count: 2,
+    partial_match_count: 1,
+    reconciliation_items: [
+      { status: "matched", ledger_id: "txn_1", external_id: "stmt-1", match_score: 1 },
+      { status: "matched", ledger_id: "txn_2", external_id: "stmt-2", match_score: 1 },
+      {
+        status: "unmatched_external",
+        external_id: "stmt-9",
+        possible_matches: [
+          { ledger_id: "txn_7", external_id: "stmt-9", match_score: 0.82, differences: [{ type: "amount_difference" }] },
+        ],
+      },
+    ],
+    summary: {
+      ledger_balance: "1500.5",
+      external_balance: "1498",
+      difference: "2.5",
+      match_rate: 0.78,
+      confidence_score: 0.71,
+    },
+  },
+};
+
+describe("audit books-sync and reconciliation renderers", () => {
+  it("books_auto_sync reports the window and the posted counters", () => {
+    const t = text(renderBooksAutoSync(booksSyncPayload));
+    expect(t).toContain("Books synced");
+    expect(t).toContain("last 30 days");
+    expect(t).toContain("Newly posted");
+    expect(t).toContain("15.25");
+  });
+
+  it("books_auto_sync says nothing-to-do when every fill was already recorded", () => {
+    const t = text(renderBooksAutoSync({ ...booksSyncPayload, posted: 0, pnl_total: "0" }));
+    expect(t).toContain("nothing to post");
+  });
+
+  it("books_auto_sync ignores a non-ok envelope", () => {
+    expect(renderBooksAutoSync({ books_sync: "disabled" })).toBeNull();
+    expect(renderBooksAutoSync(null)).toBeNull();
+  });
+
+  it("reconciliation leads with match rate and the balance difference", () => {
+    const t = text(renderReconciliationReport(reconciliationPayload));
+    expect(t).toContain("Reconciliation");
+    expect(t).toContain("78.00%");
+    expect(t).toContain("2.5");
+    expect(t).toContain("BCA");
+  });
+
+  it("reconciliation collapses matched pairs and surfaces the unresolved rows", () => {
+    const t = text(renderReconciliationReport(reconciliationPayload));
+    expect(t).toContain("unresolved");
+    expect(t).toContain("unmatched_external");
+    expect(t).toContain("stmt-9");
+    // The best-candidate score is shown as a percentage.
+    expect(t).toContain("82.00%");
+    // Matched pairs are counted, not listed.
+    expect(t).not.toContain("txn_2");
+  });
+
+  it("reconciliation returns null without a report envelope", () => {
+    expect(renderReconciliationReport({ items: [] })).toBeNull();
+    expect(renderReconciliationReport(null)).toBeNull();
+  });
+
+  it("books_auto_sync and both reconcile tools dispatch through the canvas", () => {
+    const cases: [string, unknown, string][] = [
+      ["books_auto_sync", booksSyncPayload, "Books synced"],
+      ["reconcile_run", reconciliationPayload, "Reconciliation"],
+      ["reconcile_csv", reconciliationPayload, "Reconciliation"],
     ];
     for (const [tool, payload, marker] of cases) {
       expect(text(renderStepReport(tool, JSON.stringify(payload))), tool).toContain(marker);
