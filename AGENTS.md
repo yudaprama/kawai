@@ -344,6 +344,76 @@ app.log                          # symlink → platform log dir (macOS ~/Library
 5. Call from React: `call('<name>', args)` from `@/lib/api`, or `streamOperation('<name>', args, handlers)` from `@/lib/stream` — mirror any new event variant in the matching union type (e.g. `LocalChatEvent` in `hooks/use-local-chat.ts`).
 6. Verify: `bun run build`, `cargo check`, `cargo check --features web`.
 
+## Adding a tool or workflow (checklist)
+
+The accounting build took a week to land and three silent failures to
+*find*, all the same shape: every layer verified green, the app still
+degraded to raw JSON. The rules below exist because each one was learned
+the expensive way. They are not stylistic preferences — skipping them is
+what produced the mess.
+
+**Process (non-negotiable, and cheap):**
+
+1. **Read two siblings before writing wiring.** Stock Research, Crypto
+   Screener and Futures Risk Audit already do what you are about to do.
+   Copy their shape; do not invent a parallel one. A new submission path
+   next to an existing one is the single most expensive thing you can add
+   — it is what made the trading workflow's plan never claim its template.
+2. **Run the real path once before calling it done.** Headless green is
+   not evidence the feature lives; unit tests assert your assumptions,
+   not the system. One end-to-end pass (chip → review gate → step →
+   card, or `plan_task` for a template) is the minimum.
+3. **"It should work but shows raw JSON" is a WIRING gap, not a logic
+   bug.** Check in this order, it's ~10 seconds each: the tool name in
+   `route_log` / `supervisor_step_results`, the view registry that path
+   uses, then the payload shape the tool actually emits.
+4. **Fixtures come from the producer.** Capture the tool's real output
+   (a throwaway example that calls the tool is fine) and paste it into
+   the test. Hand-written fixtures drift silently and every renderer
+   test passed while the app rendered JSON.
+
+**A new tool is done when:**
+
+1. **Output is FLAT with a `kind` discriminator** — the repo-wide
+   convention (`audit_data`, `desk_data`, `screener`). No envelope
+   wrapper: views guard on `kind` and refuse foreign payloads.
+   Wrapping in `{ report: … }` is what broke every accounting report
+   card. Pagination is a root sibling key.
+2. It is registered in the view registry the **step** path uses
+   (`tool-views/index.tsx` → `renderStepReport`) AND in the chat
+   inspector (`tool-renderers/index.tsx`) — or a comment says why it
+   deliberately has no view. `registry-coverage.test.ts` enforces this.
+3. `cargo test -p <crate>` has a test that CALLS the tool and pins the
+   JSON paths the frontend reads (the accounting equivalent is
+   `report_payloads_are_flat_and_kind_tagged`).
+4. It has a chat catalog entry when it is dispatchable as an agent tool
+   (`toolseed <domain>`; embeddings come from the local model).
+
+**A new pipeline / workflow is done when:**
+
+1. **The plan builder lives in the domain crate**, not in `templates.rs`
+   — `kawai_desk::build_desk_plan` is the pattern: the fixed command AND
+   the router template call the SAME builder, so chip and free text can
+   never disagree.
+2. Its steps dispatch tools that exist in the registry its
+   `registry_kind_for_plan` maps to (`Auto` for merged-catalog tools).
+   Run `registry.validate_plan(&plan)` in a test — an undispatchable
+   plan is as broken as no plan.
+3. A `plan_task` end-to-end test claims the goal through the REAL merged
+   registry and asserts `usage.input_tokens == 0` (the planner was
+   skipped). This is the only test that caught the trading-workflow
+   failures.
+4. Side-effecting steps get an explicit confirmation decision —
+   `requires_confirmation` on the tool, forced by the executor's
+   `enforce_confirmation_policy`. Never rely on a step flag being
+   absent, and never let a policy default fail open on side effects.
+
+**One source of truth per fact.** The slot resolution, the confirmation
+policy and the plan builder each existed in two places during the
+accounting build, and the copies diverged. If you catch yourself writing
+a second implementation of something that already resolves a slot,
+validates a plan or builds a plan — extract it and share it instead.
+
 ## Authentication
 
 - **MVP (current)**: no auth UI. On boot `use-local-chat.ts` calls `whoami`; on failure it calls `set_session(<any-token>)`, which only succeeds when the backend runs the dev bypass (`KAWAI_AUTH_DEV_USER_ID`). Identity = the bypass user until prod auth lands.
