@@ -308,6 +308,7 @@ pub fn run() {
         commands::run_youtube_summary,
         #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
         commands::run_binance_risk_audit,
+        #[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
         commands::run_mexc_risk_audit,
         #[cfg(all(feature = "litert", feature = "accounting", feature = "binance", not(target_os = "android")))]
         commands::run_trading_performance,
