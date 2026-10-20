@@ -31,9 +31,10 @@ const monthIso = (offset: number): string => {
  *  with a concrete month, and an empty Review defaults to the LAST MONTH
  *  (the natural "how did I do?" period — the current month is incomplete).
  *  The goal routes through the deterministic router's `trading_performance`
- *  template: sync fills → win rate/expectancy → per-pair PnL → fees →
- *  integrity gate. The plan lands in the review gate — nothing runs before
- *  it is approved. */
+ *  template: fetch every exchange's fills (Binance's stats tool is also its
+ *  sync; MEXC is best-effort when unconfigured) → post to the books →
+ *  per-pair PnL → fees → integrity gate. The plan lands in the review gate —
+ *  nothing runs before it is approved. */
 export function TradingPerformanceForm({ disabled, onSubmit }: TradingPerformanceFormProps) {
   const [period, setPeriod] = useState("");
   const [venue, setVenue] = useState<TradingVenue | undefined>(undefined);

@@ -6328,6 +6328,34 @@ mod tests {
             tools.contains(&"crypto_futures_trade_stats".to_string()),
             "stats step dispatches a binance tool: {tools:?}"
         );
+        // The stats tool is ALSO Binance's fill sync, and the routed plan is
+        // unscoped (the router resolves no venue) — so it must fetch EVERY
+        // exchange this build can sync before the ledger import. An import
+        // over a cold fill history reports "no synced fills" and halts the
+        // review; fetching only Binance silently reports a partial book.
+        let fetches: Vec<String> = plan
+            .steps
+            .iter()
+            .filter(|s| s.id.starts_with("fetch-"))
+            .map(|s| s.id.clone())
+            .collect();
+        let syncable: Vec<String> = crate::templates::TRADING_SYNC_VENUES
+            .iter()
+            .map(|v| format!("fetch-{v}"))
+            .collect();
+        assert_eq!(
+            fetches, syncable,
+            "the routed plan must fetch EVERY syncable exchange: {plan:?}"
+        );
+        let import = plan
+            .steps
+            .iter()
+            .find(|s| s.tool.as_deref() == Some("venue_fills_import"))
+            .expect("import step");
+        assert_eq!(
+            import.depends_on, fetches,
+            "the routed plan must fetch fills before importing: {plan:?}"
+        );
         // The execution registry is the MERGED catalog (no pipeline stage
         // tool), and every step must resolve in it with a valid schema — a
         // claim that builds an undispatchable plan is as broken as no claim.
@@ -6400,6 +6428,7 @@ mod tests {
             "2026-10",
             chrono::Local::now().date_naive(),
             Some("mexc"),
+            crate::templates::TRADING_SYNC_VENUES,
         )
         .expect("mexc-scoped plan");
         let tools: Vec<_> = plan.steps.iter().filter_map(|s| s.tool.clone()).collect();

@@ -396,20 +396,28 @@ take an optional `venue` (absent = every venue's fills, one shared books).
   the sorted **unencoded** query while the request line carries the encoded one,
   POST signs the raw body in alphabetical key order. MEXC has no product-baked
   key pair, so its resolver is own-keys-only and fails closed with guidance.
-- **Five MEXC field semantics are unverified** until a live account is probed
-  (`side` `1`/`2`, `category`, `positionType`, the sign of `profit`, the sign of
+- **Four MEXC field semantics are unverified** until a live account is probed
+  (`side` `1`/`2`, `category`, the sign of `profit`, the sign of
   `fee`); each is one named mapping in `crates/toolsets/mexc/src/fills.rs`.
   `cargo run -p mexc --example mexc_probe` reports which ones a payload settles.
+  `positionType` is settled: `1` long / `2` short, sent as a JSON **number**
+  (`positions::position_type_code`) — reading the string form made every short a
+  long with a positive size and collapsed hedge-mode pairs in the mirror.
 
 ### 5.4a `mexc_futures_positions` — the MEXC live mirror
 
 The same exact-mirror contract as §5.1, on the same venue-keyed tables
 (`venue_positions`, `venue_open_orders` — migration 0037). MEXC reports USDT
 perps only, so `market` is always `USDTM` and there is no per-settlement-asset
-rollup. The payload is flat with `kind: "futures_positions"`; `orders` is
-currently empty because the MEXC open-orders read is not implemented yet, and
-the card says so rather than rendering an empty table.
+rollup. The payload is flat with `kind: "futures_positions"`; `orders` carries
+every resting order the same sync read (the mirror writes both halves under one
+stamp).
 
+- **`unRealizedPnl` is the venue's unrealized PnL, carried verbatim** — not
+  `realised`, which is realized PnL (funding + closed volume) and reads positive
+  on an underwater position. `holdVol` is a CONTRACT count, so the notional is
+  `contracts × contractSize × price` with the size joined from the public
+  `contract/detail`.
 - **The prune is venue-scoped.** Every sync writes the full open set with a
   fresh `synced_at` and deletes older rows — but only its OWN venue's. A MEXC
   sync running later must never delete the Binance rows.
@@ -419,9 +427,12 @@ the card says so rather than rendering an empty table.
   forever.
 - **Zero-size positions never enter the mirror.** They are closed positions;
   a mirror full of dust zeros is a lie about what is open.
-- **MEXC has no hedge mode**, so `position_side` is derived from the sign of
-  the size, and an order's risk `intent` comes from the exchange's
-  reduce-only flag rather than its order-type spelling.
+- **One-way and hedge accounts both work.** `position_side` comes from
+  `positionType` (`1` long / `2` short, sent as a JSON NUMBER) and its sign is
+  applied to the size, so a hedge account's long and short legs on one contract
+  are two mirror rows, not one overwriting the other. An order's risk `intent`
+  comes from the exchange's reduce-only flag rather than its order-type
+  spelling.
 
 ### 5.5 `crypto_futures_trade_stats` detail — the realized-PnL ledger
 

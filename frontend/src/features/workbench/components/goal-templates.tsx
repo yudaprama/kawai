@@ -61,8 +61,9 @@ export const templateOpensBookClose = (t: GoalTemplateId | null): boolean =>
 
 /** Templates whose workflow is the trading performance review: the goal
  * routes through the deterministic router's `trading_performance` template
- * (sync fills → trade stats → per-pair PnL → fees → integrity gate) and the
- * resulting plan lands in the review gate — nothing runs before approval. */
+ * (fetch every exchange's fills → post to books → per-pair PnL → fees →
+ * integrity gate) and the resulting plan lands in the review gate — nothing
+ * runs before approval. */
 const TRADING_PERFORMANCE_TEMPLATES: readonly GoalTemplateId[] = ["tradingPerformance"];
 
 export const templateOpensTradingPerformance = (t: GoalTemplateId | null): boolean =>

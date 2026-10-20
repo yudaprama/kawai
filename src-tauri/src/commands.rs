@@ -2357,6 +2357,7 @@ pub async fn run_trading_performance(
         period.trim(),
         chrono::Local::now().date_naive(),
         venue.as_deref().map(str::trim).filter(|v| !v.is_empty()),
+        crate::templates::TRADING_SYNC_VENUES,
     )?;
     let user_goal = plan.goal.clone();
     let tool_registry = crate::supervisor::build_registry_for_plan(&ctx.user_id, session_id, &plan)

@@ -3303,6 +3303,7 @@ async fn run_trading_performance_handler(
         req.period.trim(),
         chrono::Local::now().date_naive(),
         req.venue.as_deref().map(str::trim).filter(|v| !v.is_empty()),
+        crate::templates::TRADING_SYNC_VENUES,
     )
     .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let user_goal = plan.goal.clone();

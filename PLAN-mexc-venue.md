@@ -55,7 +55,7 @@ Field translation (`crates/toolsets/mexc/src/fills.rs`), MEXC → `VenueFill`:
 | `taker` | `maker` | inverted — MEXC reports taker, Binance reports maker |
 | `side` (`"1"`/`"2"`) | `side` | **UNVERIFIED**: open/close? buy/sell? |
 | `category` | `DealKind` | **UNVERIFIED** |
-| `positionType` (`"1"`/`"2"`) | `position_side` | **UNVERIFIED** |
+| `positionType` (`1`/`2`, JSON number) | `position_side` + size sign | confirmed 2026-10-20 (`1` long, `2` short; read via `positions::position_type_code`) |
 | `positionMode` | — | isolated/cross, Binance reports it separately |
 
 Every unverified mapping is a single named function or constant with a doc
@@ -70,7 +70,7 @@ comment, so the probe result fixes one line each.
 2. **Host.** The demo material names `api.mexc.com`, `contract.mexc.com` and
    `api.mexc.co`. The client uses `contract.mexc.com` and
    `KAWAI_MEXC_REST_BASE` overrides it.
-3. **`side` / `category` / `positionType` semantics** — see the table above.
+3. **`side` / `category` semantics** — see the table above.
 4. **Deal-history retention.** Binance's `/fapi/v1/userTrades` reaches far
    back; MEXC's window is unverified and `books_auto_sync` defaults to 30 days.
 5. **Fee sign** — the ledger posts a fee only when positive; a credited

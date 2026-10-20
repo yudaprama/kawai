@@ -435,9 +435,9 @@ export function WorkbenchPage({
   );
 
   /** Trading performance review submit: the goal routes through the
-   *  deterministic router to the `trading_performance` template — sync,
-   *  win rate, per-pair PnL, fees, integrity gate — and the plan lands in
-   *  the review gate like any planner-authored one. */
+   *  deterministic router to the `trading_performance` template — fetch
+   *  fills, post to the books, per-pair PnL, fees, integrity gate — and the
+   *  plan lands in the review gate like any planner-authored one. */
   const submitTradingPerformance = useCallback(
     (period: string, venue?: TradingVenue) => {
       beginPipelineRun((onStart) => workbench.runTradingPerformance(period, { venue, onStart }));

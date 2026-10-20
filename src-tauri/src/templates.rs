@@ -161,6 +161,16 @@ static ACCOUNTING_SLOT_VENUE: Slot = Slot {
     hint: "the exchange to review — 'binance' or 'mexc'; omit for every exchange",
 };
 
+/// Exchanges this build can FETCH fills for: Binance's stats tool (compiled in
+/// whenever this template exists), plus MEXC's standalone sync when that
+/// toolset is. An "every exchange" review must sync every entry — reading a
+/// venue whose fills were never fetched silently reports a partial book.
+#[cfg(all(feature = "accounting", feature = "binance", feature = "mexc"))]
+pub const TRADING_SYNC_VENUES: &[&str] = &["binance", "mexc"];
+
+#[cfg(all(feature = "accounting", feature = "binance", not(feature = "mexc")))]
+pub const TRADING_SYNC_VENUES: &[&str] = &["binance"];
+
 /// Build the performance plan for one resolved period (and optional venue) —
 /// thin wrapper over the domain builder the fixed `run_trading_performance`
 /// command also calls.
@@ -170,6 +180,7 @@ fn build_trading_performance(slots: &ResolvedSlots) -> Result<TaskPlan, String> 
         slots.get("period").unwrap_or_default(),
         chrono::Local::now().date_naive(),
         slots.get("venue").map(str::trim).filter(|v| !v.is_empty()),
+        TRADING_SYNC_VENUES,
     )
 }
 

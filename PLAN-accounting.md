@@ -29,8 +29,9 @@ placement.
 ## Auto-sync on audit (books always fresh, no asking)
 
 The audit's wave 1 syncs the Binance POSITIONS mirror, not the fill history —
-`crypto_futures_trade_stats` is the only writer of the fill table, so a fresh
-install must run it before the import has anything to post. So "update the books automatically on
+`crypto_futures_trade_stats` is the only writer of BINANCE fills
+(`mexc_futures_fill_sync` writes MEXC's), so a fresh install must run it
+before the import has anything to post. So "update the books automatically on
 every audit" is one new step in the fixed pipeline:
 
 ```
@@ -56,11 +57,22 @@ period-driven, unlike the state-driven fixed audit pipeline). Keywords:
 merged `Auto` registry (both toolsets) — zero registry work. Review gate
 attaches automatically (the sync step is a write).
 
-Steps (from existing tools except one):
+Steps (from existing tools except one). The FETCH is first by necessity: the
+import reads the LOCAL fill history, which only a venue fill sync writes, so
+an import over a cold history finds nothing and (default `OnError::Fail`)
+halts the review. Binance fuses the fetch into its stats tool; MEXC has a
+standalone sync:
 
-1. `venue_fills_import(period, venue?)` — freshness (idempotent)
-2. `crypto_futures_trade_stats(period)` — win rate, expectancy, profit
-   factor, FIFO round-trips (exists in the binance toolset)
+1. FETCH, one step per exchange: `crypto_futures_trade_stats(days)` for
+   Binance (fetch new fills, then win rate, expectancy, profit factor, FIFO
+   round-trips — exists in the binance toolset) and
+   `mexc_futures_fill_sync(days)` for MEXC. An unscoped review fetches EVERY
+   exchange the build can sync (serially — one libsql writer), with the
+   non-Binance fetches `best_effort` so an unconfigured exchange reports a
+   skipped sync instead of halting the review. A scoped review fetches only
+   its own exchange and stays fail-closed.
+2. `venue_fills_import(period, venue?)` — posts the fetched fills
+   (idempotent, waits for step 1)
 3. `trading_pnl_by_symbol(period)` — per-pair realized PnL (NEW)
 4. `trading_fee_summary(period)` — fees and fees-as-%-of-volume (NEW)
 5. `ledger_integrity_check(period end)` — gate before the narrative
@@ -108,8 +120,10 @@ Steps (from existing tools except one):
    command `run_trading_performance` + web route run it directly, and the
    `trading_performance` router template wraps the SAME builder for
    free-text. The chip no longer touches the router or the planner at all —
-   no string routing, no silent planner fallback. Steps: sync → stats →
-   pnl-by-symbol → fee summary → integrity gate. Accounting write tools are
+   no string routing, no silent planner fallback. Steps: fetch (Binance
+   fill sync via `crypto_futures_trade_stats`, `mexc_futures_fill_sync` for
+   MEXC) → import → pnl-by-symbol → fee summary → integrity gate. Accounting
+   write tools are
    **ungated** (decision 2026-10-18): the review gate is the consent, so no
    per-write dialog repeats it. `enforce_confirmation_policy` still runs in
    the plan executor — the single choke point every entry path passes
