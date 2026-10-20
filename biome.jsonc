@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["frontend/src/**", "!**/*.css"]
+    "includes": ["frontend/src/**", "!**/*.css", "!!pdf_oxide/**"]
   },
   "formatter": {
     "enabled": true,

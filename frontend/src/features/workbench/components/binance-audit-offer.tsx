@@ -172,10 +172,7 @@ const str = (x: unknown): string | null => (typeof x === "string" ? x : null);
  * (the break-even lock becomes valid once profit passes 1×ATR). `rows`
  * merges all three sides per symbol, in audit order (largest |notional|
  * first). Anything unreadable → null, and the offer renders nothing. */
-export function parseAuditOffer(
-  output: string | null | undefined,
-  venue: AuditVenue = "binance",
-): AuditOffer | null {
+export function parseAuditOffer(output: string | null | undefined, venue: AuditVenue = "binance"): AuditOffer | null {
   if (output == null) return null;
   let v: unknown;
   try {
@@ -196,7 +193,9 @@ export function parseAuditOffer(
       ? "coverage" in v && typeof v.coverage === "object" && v.coverage != null
         ? (v.coverage as Record<string, unknown>)
         : null
-      : ("naked" in summary && "withTakeProfit" in summary ? (summary as Record<string, unknown>) : null);
+      : "naked" in summary && "withTakeProfit" in summary
+        ? (summary as Record<string, unknown>)
+        : null;
   if (counts == null) return null;
   const naked = num(counts.naked);
   const usdm = num(counts.usdmPositions ?? counts.positions);
@@ -687,9 +686,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
         <span className="text-destructive rounded border px-1.5 py-0.5">{offer.naked} without a stop</span>
         <span className="rounded border px-1.5 py-0.5">{offer.noTp} without a take-profit</span>
         {PLACEMENT_OPS[venue].tighten != null && (
-          <span className="text-success rounded border px-1.5 py-0.5">
-            {offer.tightens.length} stop to lock in
-          </span>
+          <span className="text-success rounded border px-1.5 py-0.5">{offer.tightens.length} stop to lock in</span>
         )}
       </div>
       <p className="text-muted-foreground text-xs">
@@ -716,9 +713,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
               ["noStop", "Tanpa stop"],
               ["noTp", "Tanpa take-profit"],
               // Only where the panel can act on a loose stop.
-              ...(PLACEMENT_OPS[venue].tighten != null
-                ? ([["toTighten", "Stop bisa ditarik"]] as const)
-                : []),
+              ...(PLACEMENT_OPS[venue].tighten != null ? ([["toTighten", "Stop bisa ditarik"]] as const) : []),
             ] as const
           ).map(([value, label]) => (
             <button

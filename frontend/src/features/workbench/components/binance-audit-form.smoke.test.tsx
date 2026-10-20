@@ -692,8 +692,12 @@ describe("auditRunStep", () => {
   });
 
   it("reads a MEXC audit as MEXC — the other venue's ops can place nothing", () => {
-    expect(auditRunStep([{ tool: "mexc_futures_audit_data", stepId: "s1" }, { tool: "mexc_futures_risk_audit", stepId: "mexc_audit" }]))
-      .toEqual({ stepId: "mexc_audit", venue: "mexc" });
+    expect(
+      auditRunStep([
+        { tool: "mexc_futures_audit_data", stepId: "s1" },
+        { tool: "mexc_futures_risk_audit", stepId: "mexc_audit" },
+      ]),
+    ).toEqual({ stepId: "mexc_audit", venue: "mexc" });
   });
 
   it("returns null for any other run", () => {
