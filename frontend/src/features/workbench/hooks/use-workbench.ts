@@ -877,6 +877,36 @@ export function useWorkbench() {
     [supervisor, preflightRun, beginRun],
   );
 
+  /** Futures Risk Audit (MEXC): the SAME fixed audit pipeline over the user's
+   * open MEXC futures positions. MEXC has a single USDT-margined family, so
+   * there is no `market` scope to pass — and the run's goal names the venue,
+   * so a reopened session never confuses it with a Binance audit. */
+  const runMexcAudit = useCallback(
+    async (
+      interval: string,
+      risk: string,
+      limit: number,
+      opts?: {
+        onStart?: () => void;
+      },
+    ) => {
+      const sid = await preflightRun(
+        `Futures risk audit (MEXC) — ${interval}/${risk}`.slice(0, 80),
+        "Couldn't start the audit",
+      );
+      const goal =
+        limit >= 500
+          ? `Futures risk audit (MEXC) — ${interval} candles, ${risk} stops, the whole book`.slice(0, 140)
+          : `Futures risk audit (MEXC) — ${interval} candles, ${risk} stops, top ${limit} positions`.slice(0, 140);
+      beginRun(goal, false);
+      opts?.onStart?.();
+      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
+      supervisor.runMexcAudit({ interval, risk, limit }, sid);
+      void refreshTokenBalance();
+    },
+    [supervisor, preflightRun, beginRun],
+  );
+
   /** Trading Performance: run the FIXED performance pipeline — sync Binance
    *  futures fills into the ledger, then read the books back for a period
    *  (win rate, per-pair PnL, fees, integrity gate). Same client mechanics as
@@ -1104,6 +1134,7 @@ export function useWorkbench() {
     runDesk,
     runYoutube,
     runBinanceAudit,
+    runMexcAudit,
     runTradingPerformance,
     runMonthlyClose,
     runScreener,

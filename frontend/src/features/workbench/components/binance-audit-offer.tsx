@@ -15,16 +15,51 @@ import {
 } from "@/components/ai-elements/tool-renderers/shared";
 import { cn } from "@/lib/utils";
 
-/** Dispatch key of the audit tool — identifies an audit run's step in both
- * live supervisor state and persisted run records. */
-export const BINANCE_AUDIT_TOOL = "binance_futures_risk_audit";
+/** Which exchange's book an audit graded. The risk POLICY is venue-neutral
+ * (`kawai_futures_risk`), but the placement ops are per-venue — MEXC keeps
+ * conditional orders outside the resting order book and has no stop-move
+ * batch yet — so the offer has to know whose orders it would place. */
+export type AuditVenue = "binance" | "mexc";
 
-/** The audit step of a run, if the run IS a futures risk audit. Accepts the
- * minimal step shape both the live supervisor state and the persisted run
- * records carry. */
-export function auditRunStepId(steps: { tool: string; stepId: string }[] | undefined | null): string | null {
-  const step = (steps ?? []).find((s) => s.tool === BINANCE_AUDIT_TOOL);
-  return step?.stepId ?? null;
+/** Exchange label for the offer's chips. */
+const VENUE_LABEL: Record<AuditVenue, string> = { binance: "Binance", mexc: "MEXC" };
+
+/** Dispatch keys of the audit tools — identify an audit run's step in both
+ * live supervisor state and persisted run records. */
+export const AUDIT_TOOLS: Record<AuditVenue, string> = {
+  binance: "binance_futures_risk_audit",
+  mexc: "mexc_futures_risk_audit",
+};
+
+/** The placement op each action calls, per venue. `tighten` is absent for
+ * MEXC: there is no move batch, so the offer never lists a resting stop to
+ * move there (and this type makes that impossible to forget). */
+const PLACEMENT_OPS: Record<AuditVenue, { protect: string; takeProfit: string; tighten: string | null }> = {
+  binance: {
+    protect: "binance_auto_protect_positions",
+    takeProfit: "binance_auto_take_profit_positions",
+    tighten: "binance_auto_tighten_stops",
+  },
+  mexc: {
+    protect: "mexc_auto_protect_positions",
+    takeProfit: "mexc_auto_take_profit_positions",
+    tighten: null,
+  },
+};
+
+/** The audit step of a run, if the run IS a futures risk audit — the step id
+ * (the offer's output key) plus the venue whose orders it would place.
+ * Accepts the minimal step shape both the live supervisor state and the
+ * persisted run records carry. */
+export function auditRunStep(
+  steps: { tool: string; stepId: string }[] | undefined | null,
+): { stepId: string; venue: AuditVenue } | null {
+  const list = steps ?? [];
+  for (const [venue, tool] of Object.entries(AUDIT_TOOLS) as [AuditVenue, string][]) {
+    const step = list.find((s) => s.tool === tool);
+    if (step != null) return { stepId: step.stepId, venue };
+  }
+  return null;
 }
 
 /** One position the stop action would protect: the engine's recommended
@@ -137,7 +172,10 @@ const str = (x: unknown): string | null => (typeof x === "string" ? x : null);
  * (the break-even lock becomes valid once profit passes 1×ATR). `rows`
  * merges all three sides per symbol, in audit order (largest |notional|
  * first). Anything unreadable → null, and the offer renders nothing. */
-export function parseAuditOffer(output: string | null | undefined): AuditOffer | null {
+export function parseAuditOffer(
+  output: string | null | undefined,
+  venue: AuditVenue = "binance",
+): AuditOffer | null {
   if (output == null) return null;
   let v: unknown;
   try {
@@ -148,10 +186,21 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
   if (typeof v !== "object" || v == null || !("summary" in v)) return null;
   const summary = v.summary;
   if (typeof summary !== "object" || summary == null) return null;
-  if (!("naked" in summary) || !("usdmPositions" in summary) || !("withTakeProfit" in summary)) return null;
-  const naked = num(summary.naked);
-  const usdm = num(summary.usdmPositions);
-  const withTp = num(summary.withTakeProfit);
+  // Whole-book counts. Both audits report the same facts, in their own block:
+  // Binance flattens them into `summary` (book size `usdmPositions` — it also
+  // carries COIN-M), MEXC keeps them in `coverage` (book size `positions` — one
+  // futures family). The offer reads the block the venue actually emits rather
+  // than trusting one spelling everywhere.
+  const counts: Record<string, unknown> | null =
+    venue === "mexc"
+      ? "coverage" in v && typeof v.coverage === "object" && v.coverage != null
+        ? (v.coverage as Record<string, unknown>)
+        : null
+      : ("naked" in summary && "withTakeProfit" in summary ? (summary as Record<string, unknown>) : null);
+  if (counts == null) return null;
+  const naked = num(counts.naked);
+  const usdm = num(counts.usdmPositions ?? counts.positions);
+  const withTp = num(counts.withTakeProfit);
   if (naked == null || usdm == null || withTp == null) return null;
   let interval = "4h";
   let risk = "standard";
@@ -211,6 +260,10 @@ export function parseAuditOffer(output: string | null | undefined): AuditOffer |
       // disagree about a level. Mutually exclusive with `sl` by
       // construction: that one requires zero resting stops.
       if (
+        // Only a venue with a stop-MOVE batch has an actionable tighten: a
+        // resting stop that is too loose is otherwise not something this panel
+        // can act on, and listing it would approve nothing.
+        venue === "binance" &&
         restingStops != null &&
         restingStops > 0 &&
         "verdict" in a &&
@@ -446,8 +499,11 @@ interface BinanceAuditOfferProps {
   sessionId?: number | null;
   /** The audit run's plan key — scopes the full-output read. */
   planKey: string;
-  /** The audit step's id (auditRunStepId). */
+  /** The audit step's id (auditRunStep). */
   stepId: string;
+  /** Whose book the audit graded — decides which placement ops this panel
+   *  can call. */
+  venue: AuditVenue;
   /** Full-output fetcher — the same loader the canvas step reports use. */
   fetcher: (stepId: string, planKey?: string) => Promise<string | null>;
 }
@@ -462,7 +518,7 @@ interface BinanceAuditOfferProps {
  * This component never renders when there is nothing actionable, and a
  * failed matrix read renders nothing too — a broken read must not look like
  * "nothing to do". */
-export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOfferProps) {
+export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAuditOfferProps) {
   const [output, setOutput] = useState<string | null>(null);
   const [readFailed, setReadFailed] = useState(false);
   /** Approval is OPT-IN: a 183-row whole-book placement is two clicks from
@@ -507,7 +563,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
     };
   }, [fetcher, planKey, stepId]);
 
-  const offer = parseAuditOffer(output);
+  const offer = parseAuditOffer(output, venue);
   if (readFailed || offer == null || offer.rows.length === 0) return null;
 
   const selectedRows = offer.rows.filter((r) => selected.has(r.symbol));
@@ -556,11 +612,12 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
     const slSymbols = rows.filter((r) => r.sl != null).map((r) => r.symbol);
     const tpSymbols = rows.filter((r) => r.tp != null).map((r) => r.symbol);
     const p = offer.params;
+    const ops = PLACEMENT_OPS[venue];
     try {
       const out: string[] = [];
-      if (tightenSymbols.length > 0) {
+      if (ops.tighten != null && tightenSymbols.length > 0) {
         out.push(
-          await call<string>("binance_auto_tighten_stops", {
+          await call<string>(ops.tighten, {
             interval: p.interval,
             risk: p.risk,
             limit: 500,
@@ -570,7 +627,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
       }
       if (slSymbols.length > 0) {
         out.push(
-          await call<string>("binance_auto_protect_positions", {
+          await call<string>(ops.protect, {
             interval: p.interval,
             risk: p.risk,
             limit: 500,
@@ -580,7 +637,7 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
       }
       if (tpSymbols.length > 0) {
         out.push(
-          await call<string>("binance_auto_take_profit_positions", {
+          await call<string>(ops.takeProfit, {
             interval: p.interval,
             style: "standard",
             limit: 500,
@@ -625,10 +682,15 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
       <div className="text-muted-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
         <span className="rounded border px-1.5 py-0.5">{offer.params.interval} candles</span>
         <span className="rounded border px-1.5 py-0.5">{offer.params.risk} stops</span>
+        <span className="rounded border px-1.5 py-0.5">{VENUE_LABEL[venue]} · USDⓈ-M</span>
         <span className="rounded border px-1.5 py-0.5">standard take-profit</span>
         <span className="text-destructive rounded border px-1.5 py-0.5">{offer.naked} without a stop</span>
         <span className="rounded border px-1.5 py-0.5">{offer.noTp} without a take-profit</span>
-        <span className="text-success rounded border px-1.5 py-0.5">{offer.tightens.length} stop to lock in</span>
+        {PLACEMENT_OPS[venue].tighten != null && (
+          <span className="text-success rounded border px-1.5 py-0.5">
+            {offer.tightens.length} stop to lock in
+          </span>
+        )}
       </div>
       <p className="text-muted-foreground text-xs">
         Approve the rows you want protected — one, a subset, or all.
@@ -653,7 +715,10 @@ export function BinanceAuditOffer({ planKey, stepId, fetcher }: BinanceAuditOffe
               ["all", "Semua"],
               ["noStop", "Tanpa stop"],
               ["noTp", "Tanpa take-profit"],
-              ["toTighten", "Stop bisa ditarik"],
+              // Only where the panel can act on a loose stop.
+              ...(PLACEMENT_OPS[venue].tighten != null
+                ? ([["toTighten", "Stop bisa ditarik"]] as const)
+                : []),
             ] as const
           ).map(([value, label]) => (
             <button

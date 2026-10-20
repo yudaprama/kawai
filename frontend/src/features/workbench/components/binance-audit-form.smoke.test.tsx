@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { BinanceAuditForm, ownsAuditScope } from "./binance-audit-form";
-import { auditRunStepId, parseAuditOffer, placementSummary, tightenSummary } from "./binance-audit-offer";
+import { auditRunStep, parseAuditOffer, placementSummary, tightenSummary } from "./binance-audit-offer";
 import { GoalTemplates, templateOpensAudit, templateOpensDesk, templateOpensYoutube } from "./goal-templates";
 
 /**
@@ -15,9 +15,10 @@ import { GoalTemplates, templateOpensAudit, templateOpensDesk, templateOpensYout
  * placement is offered by the audit's run view (BinanceAuditOffer), where the
  * user reviews the report first.
  *
- * The credential read (`binance_credentials_status`) runs in an effect, which
- * `renderToStaticMarkup` never fires, so `source` stays null here and the
- * no-keys branch is covered by its own assertion on the pure predicate below.
+ * The credential read (`binance_credentials_status` / `mexc_credentials_status`)
+ * runs in an effect, which `renderToStaticMarkup` never fires, so both sources
+ * stay null here and the no-keys branch is covered by its own assertion on the
+ * pure predicate below.
  */
 
 const render = () => renderToStaticMarkup(<BinanceAuditForm onSubmit={() => {}} />);
@@ -50,10 +51,19 @@ describe("BinanceAuditForm", () => {
 
   it("marks the active preset with aria-pressed so the selection is announced", () => {
     const html = render();
-    // Defaults are 4h / Standard / 25 / All — each of the FOUR groups must
-    // render exactly one pressed chip.
+    // Defaults are Binance / 4h / Standard / 25 / All — each of the FIVE
+    // groups must render exactly one pressed chip (the exchange row is a
+    // preset group like the others).
     expect(html).toContain('aria-pressed="true"');
-    expect(html.match(/aria-pressed="true"/g)).toHaveLength(4);
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(5);
+  });
+
+  it("offers exactly the two venues the fixed audit pipeline has a plan for", () => {
+    const html = render();
+    expect(html).toContain(">Binance</button>");
+    expect(html).toContain(">MEXC</button>");
+    // A venue without an audit command would 404 the submit after the gates.
+    expect(html).not.toContain(">OKX</button>");
   });
 
   it("offers exactly the backend's market scopes", () => {
@@ -567,19 +577,128 @@ describe("parseAuditOffer", () => {
   });
 });
 
-describe("auditRunStepId", () => {
+describe("MEXC audit offer", () => {
+  /** Producer-shaped fixture: the MEXC audit emits counts under `coverage`
+   * (book size `positions`), and its rows carry the same coverage/advice keys
+   * the Binance audit does. Hand-written shapes are what made the accounting
+   * cards render raw JSON; this is the payload `build_payload` emits. */
+  const raw = JSON.stringify({
+    kind: "mexc_risk_audit",
+    venue: "mexc",
+    market: "USDTM",
+    params: { interval: "4h", risk: "standard", limit: 25, market: "USDTM" },
+    coverage: {
+      positions: 2,
+      graded: 2,
+      withStopLoss: 1,
+      naked: 1,
+      withTakeProfit: 1,
+      nakedNotional: 12000,
+      slVerdicts: { missing: 1, tighten: 1 },
+    },
+    summary: { positions: 2, skippedByCap: 0, totalNotional: 30000, totalUnrealizedPnl: 40 },
+    positions: [
+      {
+        venue: "mexc",
+        market: "USDTM",
+        symbol: "BTC_USDT",
+        positionSide: "LONG",
+        positionAmt: 0.2,
+        entryPrice: 60000,
+        markPrice: 61000,
+        unRealizedProfit: 200,
+        notionalAbs: 12200,
+        riskReward: null,
+        restingStops: 0,
+        restingTps: 0,
+        graded: true,
+        advice: {
+          symbol: "BTC_USDT",
+          verdict: "missing",
+          atr: 900,
+          profitLocked: false,
+          recommended: { price: 59200, method: "chandelier_exit", distancePct: 2.95 },
+          alternatives: [],
+          notes: [],
+          takeProfit: {
+            shape: "ladder",
+            rungs: [{ label: "1R", price: 62800, allocPct: 50, passed: false }],
+            bandExit: null,
+            trailingExit: null,
+          },
+        },
+      },
+      {
+        venue: "mexc",
+        market: "USDTM",
+        symbol: "ETH_USDT",
+        positionSide: "LONG",
+        positionAmt: 3,
+        entryPrice: 2500,
+        markPrice: 2560,
+        unRealizedProfit: 180,
+        notionalAbs: 7680,
+        riskReward: 2.1,
+        stopLoss: { present: true, price: 2400, distancePct: 6.25 },
+        takeProfit: { present: true, resting: 1, nearestPrice: 2700, distancePct: 5.47 },
+        restingStops: 2,
+        restingTps: 1,
+        graded: true,
+        advice: {
+          symbol: "ETH_USDT",
+          verdict: "tighten",
+          atr: 60,
+          profitLocked: false,
+          recommended: { price: 2480, method: "atr_multiple", distancePct: 3.1 },
+          alternatives: [],
+          notes: [],
+        },
+      },
+    ],
+  });
+
+  it("reads the counts block MEXC actually emits", () => {
+    const offer = parseAuditOffer(raw, "mexc");
+    expect(offer).not.toBeNull();
+    expect(offer?.naked).toBe(1);
+    expect(offer?.noTp).toBe(1);
+    expect(offer?.params.interval).toBe("4h");
+  });
+
+  it("offers only the sides a MEXC placement op can execute", () => {
+    const offer = parseAuditOffer(raw, "mexc");
+    // The naked position: stop + ladder. The protected one has a resting TP
+    // and its loosen-stop verdict has NO MEXC move batch, so it is not listed
+    // at all rather than approved into a no-op.
+    expect(offer?.stops.map((s) => s.symbol)).toEqual(["BTC_USDT"]);
+    expect(offer?.tps.map((t) => t.symbol)).toEqual(["BTC_USDT"]);
+    expect(offer?.tightens).toEqual([]);
+    expect(offer?.rows.map((r) => r.symbol)).toEqual(["BTC_USDT"]);
+  });
+
+  it("stays unreadable as a Binance audit — the two envelopes differ", () => {
+    expect(parseAuditOffer(raw)).toBeNull();
+  });
+});
+
+describe("auditRunStep", () => {
   it("finds the audit step among a run's steps", () => {
     expect(
-      auditRunStepId([
+      auditRunStep([
         { tool: "web_search", stepId: "s1" },
         { tool: "binance_futures_risk_audit", stepId: "audit_positions" },
       ]),
-    ).toBe("audit_positions");
+    ).toEqual({ stepId: "audit_positions", venue: "binance" });
+  });
+
+  it("reads a MEXC audit as MEXC — the other venue's ops can place nothing", () => {
+    expect(auditRunStep([{ tool: "mexc_futures_audit_data", stepId: "s1" }, { tool: "mexc_futures_risk_audit", stepId: "mexc_audit" }]))
+      .toEqual({ stepId: "mexc_audit", venue: "mexc" });
   });
 
   it("returns null for any other run", () => {
-    expect(auditRunStepId([{ tool: "deliverable_writer", stepId: "__deliverable" }])).toBeNull();
-    expect(auditRunStepId(undefined)).toBeNull();
+    expect(auditRunStep([{ tool: "deliverable_writer", stepId: "__deliverable" }])).toBeNull();
+    expect(auditRunStep(undefined)).toBeNull();
   });
 });
 

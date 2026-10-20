@@ -2569,14 +2569,20 @@ pub fn router(dist_dir: PathBuf) -> Router {
     .route("/api/supervisor_step_output", post(supervisor_step_output_handler))
     .route("/api/run_youtube_summary", post(run_youtube_summary_handler));
 
-    // Futures Risk Audit (fixed pipeline over the user's open positions).
+    // Futures Risk Audit (fixed pipeline over the user's open positions) +
+    // the other fixed pipelines. Each route carries the SAME feature gate as
+    // its handler: one shared gate would drop routes that its features don't
+    // cover (or reference handlers that were compiled out).
     #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
     let protected = protected
         .route("/api/run_binance_risk_audit", post(run_binance_risk_audit_handler))
-        .route("/api/run_mexc_risk_audit", post(run_mexc_risk_audit_handler))
-        .route("/api/run_trading_performance", post(run_trading_performance_handler))
-        .route("/api/run_monthly_close", post(run_monthly_close_handler))
         .route("/api/run_crypto_screener", post(run_crypto_screener_handler));
+    #[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+    let protected = protected.route("/api/run_mexc_risk_audit", post(run_mexc_risk_audit_handler));
+    #[cfg(all(feature = "litert", feature = "accounting", feature = "binance", not(target_os = "android")))]
+    let protected = protected.route("/api/run_trading_performance", post(run_trading_performance_handler));
+    #[cfg(all(feature = "litert", feature = "accounting", not(target_os = "android")))]
+    let protected = protected.route("/api/run_monthly_close", post(run_monthly_close_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
     let protected = protected.route(
@@ -2661,6 +2667,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/binance_trading_disable", post(binance_trading_disable_handler))
         .route("/api/binance_auto_protect_positions", post(binance_auto_protect_positions_handler))
         .route("/api/binance_auto_take_profit_positions", post(binance_auto_take_profit_positions_handler))
+        .route("/api/mexc_auto_protect_positions", post(mexc_auto_protect_positions_handler))
+        .route("/api/mexc_auto_take_profit_positions", post(mexc_auto_take_profit_positions_handler))
         // Moves existing stops to the engine's recommended level — same
         // contract as the two placement batches above.
         .route("/api/binance_auto_tighten_stops", post(binance_auto_tighten_stops_handler))
@@ -3664,6 +3672,54 @@ async fn binance_auto_take_profit_positions_handler(
     Json(req): Json<BinanceAutoTakeProfitRequest>,
 ) -> Result<Json<String>, (StatusCode, String)> {
     logic::binance_trade::binance_auto_take_profit_positions(
+        &user_id,
+        req.interval.as_deref().unwrap_or("4h"),
+        req.style.as_deref().unwrap_or("standard"),
+        req.limit.unwrap_or(25),
+        req.symbols,
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MexcAutoProtectRequest {
+    limit: Option<usize>,
+    interval: Option<String>,
+    risk: Option<String>,
+    symbols: Option<Vec<String>>,
+}
+async fn mexc_auto_protect_positions_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<MexcAutoProtectRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::mexc_trade::mexc_auto_protect_positions(
+        &user_id,
+        req.interval.as_deref().unwrap_or("4h"),
+        req.risk.as_deref().unwrap_or("standard"),
+        req.limit.unwrap_or(25),
+        req.symbols,
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MexcAutoTakeProfitRequest {
+    limit: Option<usize>,
+    interval: Option<String>,
+    style: Option<String>,
+    symbols: Option<Vec<String>>,
+}
+async fn mexc_auto_take_profit_positions_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<MexcAutoTakeProfitRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::mexc_trade::mexc_auto_take_profit_positions(
         &user_id,
         req.interval.as_deref().unwrap_or("4h"),
         req.style.as_deref().unwrap_or("standard"),

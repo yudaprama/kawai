@@ -306,7 +306,7 @@ kawai/
 │   ├── kv_sweep.sh             # K/V budget sweep wrapper
 │   └── bundle-litert-dylibs.sh  # prep LiteRT dylibs into native/ for .app bundling
 ├── .env                      # KAWAI_AUTH_* + KAWAI_DB_* (gitignored)
-├── .env.local                # VITE_CLERK_PUBLISHABLE_KEY (gitignored; reference only)
+├── .env.local                # reserved for future auth config (gitignored; reference only)
 ├── kawai-web/                 # standalone Axum server (independent deploy, no Tauri)
 │   ├── Cargo.toml            # kawai = {path="../src-tauri", default-features=false, features=["web"]} + patch office_oxide
 │   ├── src/main.rs           # KAWAI_WEB_ADDR + dist discovery, calls kawai_lib::web::serve

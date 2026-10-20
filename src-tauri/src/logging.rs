@@ -45,6 +45,20 @@ pub fn write(level: &str, msg: &str) {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     append_raw(format!("[{ts}] [{level}] {msg}\n").as_bytes());
+    // The file is local-only. Mirror into `tracing` so the same line reaches
+    // the remote layer (Grafana Loki) — the ONLY channel a physical phone has
+    // (no terminal, no `run-as` on a signed APK). The level decides shipping:
+    // release builds export WARN/ERROR, debug builds INFO and above.
+    mirror_to_tracing(level, msg);
+}
+
+fn mirror_to_tracing(level: &str, msg: &str) {
+    match level.to_ascii_lowercase().as_str() {
+        "error" | "fatal" => tracing::error!(target: "frontend", "{msg}"),
+        "warn" | "warning" => tracing::warn!(target: "frontend", "{msg}"),
+        "info" => tracing::info!(target: "frontend", "{msg}"),
+        other => tracing::debug!(target: "frontend", level = other, "{msg}"),
+    }
 }
 
 /// Append bytes verbatim (the stderr tee path — no timestamp rewriting).

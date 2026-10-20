@@ -86,14 +86,27 @@ tail -n 100 /tmp/kawai-android.log
 
 A phone with no cable still reports to Grafana Cloud: the Loki credential is
 compiled into the binary (`kawai-vault/constants`), so the device pushes on
-its own over the network. Two rules decide what arrives:
+its own over the network. Three rules decide what arrives:
 
-1. **Loki's layer is a `tracing` layer and carries WARN/ERROR only.** A plain
-   `eprintln!` reaches the local file + logcat and NOTHING else. Any failure
-   you need to see from a wireless device MUST be a `tracing::warn!`.
-2. It is best-effort with a bounded channel, so a device offline during the
+1. **The layer carries `tracing` events only, gated by level.** Release
+   builds ship WARN/ERROR; debug builds ship INFO and above (which is why a
+   debug APK shows a startup line, `loki operational-log export active`,
+   with the effective `loki_level`). A plain `eprintln!` reaches the local
+   file + logcat and NOTHING else — any failure you need to see from a
+   wireless device MUST be a `tracing::*` event. The `frontend_log` sink
+   (`logging::write`) mirrors JS log levels into `tracing`, so JS
+   errors/warnings ship too.
+2. **The gate is `KAWAI_LOKI_LEVEL`** (`off|error|warn|info|debug|trace`) —
+   read from the runtime env first, then from the value baked at compile
+   time. A phone cannot export env into the app, so a RELEASE APK under test
+   opts in at build time:
+   `KAWAI_LOKI_LEVEL=info bun run tauri:android:apk` (or `build`). Rebuild —
+   the value is compiled in, not read from `.env` at runtime.
+3. It is best-effort with a bounded channel, so a device offline during the
    failure ships nothing — absence of an event is not proof of absence of a
-   bug.
+   bug. A dead network/push is reported on-device only (`loki push failed
+   (N lines dropped): …`, target `kawai_telemetry::loki`) and never via
+   Loki itself.
 
 ```sh
 source kawai/.env
@@ -107,6 +120,11 @@ curl -s -G "$L/query_range" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_T
 # Everything from an Android device, any component:
 curl -s -G "$L/query_range" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
   --data-urlencode 'query={service="kawai", os="android"}' --data-urlencode 'since=1h'
+
+# Liveness only — did the app boot AND ship anything in the last hour?
+curl -s -G "$L/query_range" -H "Authorization: Bearer $GRAFANA_SERVICE_ACCOUNT_TOKEN" \
+  --data-urlencode 'query={service="kawai", os="android"} |= "loki operational-log export active"' \
+  --data-urlencode 'since=1h' --data-urlencode 'limit=10' | jq -r '.data.result[].values[][1]'
 ```
 
 `os` is a Loki label, so `os="android"` isolates device logs from your

@@ -28,7 +28,7 @@ import {
 import type { GoalTemplateId } from "./goal-templates";
 import { ProgressRail, RunHistoryRail } from "./progress-rail";
 import { YoutubeSummaryForm } from "./youtube-summary-form";
-import { BinanceAuditForm } from "./binance-audit-form";
+import { BinanceAuditForm, type AuditVenue } from "./binance-audit-form";
 import { CryptoScreenerForm } from "./crypto-screener-form";
 import { BookCloseForm } from "./book-close-form";
 import { TradingPerformanceForm, type TradingVenue } from "./trading-performance-form";
@@ -396,14 +396,20 @@ export function WorkbenchPage({
   );
 
   /** Futures Risk Audit submit: the FIXED audit pipeline over the user's open
-   * Binance futures positions. Same canvas handoff as a desk submit — the run
-   * streams the same SupervisorEvent lifecycle, so the rail, deliverable
-   * viewer, and AGENT REPORTS render it unchanged. */
-  const submitBinanceAudit = useCallback(
-    (interval: string, risk: string, limit: number, market: string) => {
-      beginPipelineRun((onStart) => workbench.runBinanceAudit(interval, risk, limit, market, { onStart }));
+   * futures positions on the chosen exchange — the same two-step shape on both
+   * (sync mirror + warm candles, then grade the book). Same canvas handoff as a
+   * desk submit — the run streams the same SupervisorEvent lifecycle, so the
+   * rail, deliverable viewer, and AGENT REPORTS render it unchanged. */
+  const submitAudit = useCallback(
+    (interval: string, risk: string, limit: number, market: string, venue: AuditVenue) => {
+      beginPipelineRun((onStart) =>
+        venue === "mexc"
+          ? // MEXC has one USDT-margined family and its op takes no `market`.
+            workbench.runMexcAudit(interval, risk, limit, { onStart })
+          : workbench.runBinanceAudit(interval, risk, limit, market, { onStart }),
+      );
     },
-    [beginPipelineRun, workbench.runBinanceAudit],
+    [beginPipelineRun, workbench.runBinanceAudit, workbench.runMexcAudit],
   );
 
   /** Crypto Screener submit: the FIXED multi-screen pipeline over Binance
@@ -602,7 +608,7 @@ export function WorkbenchPage({
               )}
               {templateOpensAudit(template) && (
                 <div className="mt-3">
-                  <BinanceAuditForm disabled={composerStatus === "submitted"} onSubmit={submitBinanceAudit} />
+                  <BinanceAuditForm disabled={composerStatus === "submitted"} onSubmit={submitAudit} />
                 </div>
               )}
               {templateOpensScreener(template) && (

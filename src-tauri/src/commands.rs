@@ -2707,6 +2707,53 @@ pub async fn binance_auto_take_profit_positions(
     .await
 }
 
+/// One click, approved set: the MEXC twin of the pair above. Places the
+/// recommended protective stop as a reduce-only PLAN order (MEXC keeps
+/// conditional orders outside the resting book), sized and ticked to the
+/// contract's own granularity. Coverage is read from BOTH the book and the
+/// untriggered plan orders, so a position already protected is skipped rather
+/// than double-stopped.
+#[tauri::command]
+pub async fn mexc_auto_protect_positions(
+    limit: Option<usize>,
+    interval: Option<String>,
+    risk: Option<String>,
+    // Explicit approval scope — the offer passes the symbols the user approved.
+    symbols: Option<Vec<String>>,
+    session: State<'_, Session>,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    logic::mexc_trade::mexc_auto_protect_positions(
+        &user_id,
+        interval.as_deref().unwrap_or("4h"),
+        risk.as_deref().unwrap_or("standard"),
+        limit.unwrap_or(25),
+        symbols,
+    )
+    .await
+}
+
+/// One click, approved set: the advised take-profit ladder for MEXC positions
+/// without a resting target, placed as reduce-only plan orders.
+#[tauri::command]
+pub async fn mexc_auto_take_profit_positions(
+    limit: Option<usize>,
+    interval: Option<String>,
+    style: Option<String>,
+    symbols: Option<Vec<String>>,
+    session: State<'_, Session>,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    logic::mexc_trade::mexc_auto_take_profit_positions(
+        &user_id,
+        interval.as_deref().unwrap_or("4h"),
+        style.as_deref().unwrap_or("standard"),
+        limit.unwrap_or(25),
+        symbols,
+    )
+    .await
+}
+
 /// One click, whole book: the engine grades every USDⓈ-M position that
 /// already HAS a stop, and where the verdict is `tighten` — the resting stop
 /// is looser than the policy recommends, which is what a position in profit

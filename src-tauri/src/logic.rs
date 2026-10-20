@@ -517,6 +517,7 @@ pub mod binance_credentials;
 // feature it serves guidance-error stubs.
 pub mod mexc_credentials;
 pub mod binance_trade;
+pub mod mexc_trade;
 // In-process futures risk guard (feature `binance`): 15-minute timer over
 // the active user's toggle; the cron binary covers closed periods with the
 // same cycle function. Always compiled; no-op without the feature.

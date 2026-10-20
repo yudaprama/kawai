@@ -1741,7 +1741,7 @@ name = "financialjuice"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "kawai-constants",
+ "kawai-paths",
  "libsql",
  "log",
  "quick-xml 0.39.4",
@@ -2962,6 +2962,7 @@ dependencies = [
  "kawai-tool-catalog",
  "kawai-tools",
  "kawai-vault",
+ "kawai-venue",
  "kawai-youtube",
  "libc",
  "libsql",
@@ -3330,6 +3331,14 @@ name = "kawai-vault"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+]
+
+[[package]]
+name = "kawai-venue"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
 ]
 
 [[package]]

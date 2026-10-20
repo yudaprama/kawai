@@ -22,7 +22,7 @@ import { fmtDateUS } from "@/features/workbench/components/tool-views/format";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
 import type { SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
 import { fmtDuration, ReviewActions, settledCount } from "./progress-rail";
-import { auditRunStepId, BinanceAuditOffer } from "./binance-audit-offer";
+import { auditRunStep, BinanceAuditOffer } from "./binance-audit-offer";
 import { CryptoScreenerOffer, screenerRunStepIds } from "./crypto-screener-offer";
 
 /** The run's deck artifact, if any — the deliverable hero. Set DIRECTLY from
@@ -447,8 +447,8 @@ export function PastRunCanvas({
 }) {
   const isDeliverable = doc === "final";
   /** The audit step when this run IS a futures risk audit — keys the
-   * post-report placement offer. */
-  const pastAuditStepId = auditRunStepId(run.steps);
+   * post-report placement offer, and carries the venue whose orders it places. */
+  const pastAuditStep = auditRunStep(run.steps);
   /** EVERY screener step, not just the first: the pipeline emits one step per
    * screen and each carries its own hits, so reading one showed a single
    * screen's slice of the scan. Renders only for a `usdm` run (the parser
@@ -586,18 +586,19 @@ export function PastRunCanvas({
 
         {/* Post-audit placement offer: the audit proposed, the user approves
             here. Renders under the report of a COMPLETED audit run only. */}
-        {isDeliverable && run.status === "completed" && pastAuditStepId != null && (
+        {isDeliverable && run.status === "completed" && pastAuditStep != null && (
           <BinanceAuditOffer
             fetcher={loadFullOutput}
             planKey={run.planKey ?? ""}
             sessionId={sessionId}
-            stepId={pastAuditStepId}
+            stepId={pastAuditStep.stepId}
+            venue={pastAuditStep.venue}
           />
         )}
         {/* Post-screener entry offer: the run's own hits, opened only where
             the user approves. Sits beside the audit's offer — a run is one
             or the other, never both. */}
-        {isDeliverable && run.status === "completed" && pastAuditStepId == null && pastScreenerStepIds.length > 0 && (
+        {isDeliverable && run.status === "completed" && pastAuditStep == null && pastScreenerStepIds.length > 0 && (
           <CryptoScreenerOffer fetcher={loadFullOutput} planKey={run.planKey ?? ""} stepIds={pastScreenerStepIds} />
         )}
       </div>
@@ -823,9 +824,9 @@ export function DeliverableViewer({
   /** The audit step when the shown run IS a futures risk audit — keys the
    * post-report placement offer. Live state wins (it is authoritative for
    * the run it holds); the persisted record covers a reopened session. */
-  const liveAuditStepId = unseeded
-    ? auditRunStepId(runRecord?.steps)
-    : (auditRunStepId(supervisor.steps) ?? auditRunStepId(runRecord?.steps));
+  const liveAuditStep = unseeded
+    ? auditRunStep(runRecord?.steps)
+    : (auditRunStep(supervisor.steps) ?? auditRunStep(runRecord?.steps));
   /** EVERY screener step — same live-then-record precedence as the audit's, so
    * a reopened session offers its hits too. All of them: the pipeline emits
    * one step per screen and each holds a different slice of the scan, so
@@ -1012,12 +1013,13 @@ export function DeliverableViewer({
         {/* Post-audit placement offer: the audit proposed, the user approves
             here — one click each for stops and take-profits, confirmed before
             anything is sent. Renders only under a COMPLETED audit run. */}
-        {effective === "final" && !unseeded && supervisor.status === "completed" && liveAuditStepId != null && (
+        {effective === "final" && !unseeded && supervisor.status === "completed" && liveAuditStep != null && (
           <BinanceAuditOffer
             fetcher={workbench.loadFullOutput}
             planKey={runRecord?.planKey ?? supervisor.planKey ?? ""}
             sessionId={workbench.sessionId}
-            stepId={liveAuditStepId}
+            stepId={liveAuditStep.stepId}
+            venue={liveAuditStep.venue}
           />
         )}
         {/* Post-screener entry offer: the run's own hits, opened only where
@@ -1025,7 +1027,7 @@ export function DeliverableViewer({
         {effective === "final" &&
           !unseeded &&
           supervisor.status === "completed" &&
-          liveAuditStepId == null &&
+          liveAuditStep == null &&
           liveScreenerStepIds.length > 0 && (
             <CryptoScreenerOffer
               fetcher={workbench.loadFullOutput}

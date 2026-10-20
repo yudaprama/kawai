@@ -25,6 +25,7 @@ venue" or "all venues".
 | Venue slot on the trading-performance plan, router template, Tauri command and Axum route | `crates/toolsets/accounting/src/plan.rs`, `src-tauri/src/{templates,commands,web,supervisor}.rs` |
 | MEXC client: signer, fills (v2 + v3 fallback), positions, assets, public market data, own-keys-only credentials, probe example | `crates/toolsets/mexc` |
 | `mexc_futures_fill_sync` writing `venue_fills`, dispatched through the ACCOUNTING agent's toolset (feature `mexc`); `mexc_credentials_{set,status,delete}` on both transports; the MEXC card in Settings; a venue selector on the trading-performance chip | `crates/toolsets/mexc/src/{sync,registry}.rs`, `src-tauri/src/logic/mexc_credentials.rs`, `frontend/src/features/credentials/providers/mexc.tsx` |
+| The audit offer's two placement batches on MEXC — `mexc_auto_protect_positions` / `mexc_auto_take_profit_positions` (both transports), placing reduce-only **plan orders** at the levels the shared risk crate recommends | `crates/toolsets/mexc/src/protect.rs`, `src-tauri/src/logic/mexc_trade.rs`, `frontend/src/features/workbench/components/binance-audit-offer.tsx` |
 
 ## Why the MEXC protocol needs care
 
@@ -105,9 +106,17 @@ venue-aware `symbol_realized_record` and the desk `LedgerFn`
 `build_audit_plan` generalized, and `crypto_pair`
 (`crates/engines/desk/src/tool.rs:502`) taught the `BTC_USDT` underscore form.
 
-**P4 — execution.** Order placement/cancel, stop-loss, take-profit on MEXC.
-`VenueOutcome` moves onto `VenueClient` with a MEXC code table, and trading
-consent stays per venue (`venue_trading_consent`).
+**P4 — execution.** DONE: order placement/cancel (`mexc_futures_create_order`,
+`mexc_futures_cancel_order`) and the post-audit offer's two batches — protective stops and the advised
+take-profit ladder — as reduce-only plan orders
+(`crates/toolsets/mexc/src/protect.rs`). Levels come from
+`kawai-futures-risk`, the same policy the audit grades with; coverage is read
+from BOTH the book and the untriggered plan orders (MEXC keeps conditional
+orders out of the resting book, so the book alone would re-stop a position);
+prices and sizes are floored to the contract's own `priceUnit` / `volUnit`
+from `/contract/detail`, never to a guessed tick. Still open: a stop-MOVE
+batch (MEXC has none, so the offer lists no "tighten" row there) and per-venue
+trading consent (`venue_trading_consent`, Binance-only today).
 
 ## Deployment note
 

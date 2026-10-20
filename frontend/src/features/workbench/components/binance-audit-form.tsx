@@ -34,9 +34,28 @@ const MARKETS = [
   { id: "coinm", label: "COIN-M" },
 ] as const;
 
+/** Venue whose open book the audit grades. Both exchanges run the SAME fixed
+ * pipeline (one audit tool: mirror sync + stop grading + take-profit coverage);
+ * they differ in the futures families they have and in whose keys sign. */
+export type AuditVenue = "binance" | "mexc";
+
+const VENUES: { id: AuditVenue; label: string }[] = [
+  { id: "binance", label: "Binance" },
+  { id: "mexc", label: "MEXC" },
+];
+
+const VENUE_LABEL: Record<AuditVenue, string> = { binance: "Binance", mexc: "MEXC" };
+
+/** Each venue keeps its OWN pair, so the gate reads the selected venue's
+ * status op — a Binance key never authorizes a MEXC audit, and vice versa. */
+const CREDENTIAL_OP: Record<AuditVenue, string> = {
+  binance: "binance_credentials_status",
+  mexc: "mexc_credentials_status",
+};
+
 export interface BinanceAuditFormProps {
   disabled?: boolean;
-  onSubmit: (interval: string, risk: string, limit: number, market: string) => void;
+  onSubmit: (interval: string, risk: string, limit: number, market: string, venue: AuditVenue) => void;
 }
 
 /** Which credential source the audit is allowed to run under. `null` is the
@@ -55,41 +74,50 @@ export function ownsAuditScope(source: AuditCredentialSource): boolean {
   return source === null || source === "user";
 }
 
-/** Futures Risk Audit entry form on the Workbench landing. Three presets and
- * a button — the pipeline itself is fixed: one `binance_futures_risk_audit`
- * call (mirror sync + stop grading + take-profit coverage) through the
- * supervisor scheduler, then the built-in deliverable writer. No planning
- * round: the audit is already deterministic Rust.
+/** Futures Risk Audit entry form on the Workbench landing. An exchange row,
+ * three presets and a button — the pipeline itself is fixed: one audit call
+ * (`binance_futures_risk_audit` / `mexc_futures_risk_audit`: mirror sync +
+ * stop grading + take-profit coverage) through the supervisor scheduler, then
+ * the built-in deliverable writer. No planning round: the audit is already
+ * deterministic Rust.
  *
  * READ-ONLY BY DESIGN: this form never places an order. Once the report
  * lands, the run view offers one-click placement of the recommended stops
  * and take-profits (BinanceAuditOffer) — the audit proposes, the user
  * approves there. */
 export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) {
+  const [venue, setVenue] = useState<AuditVenue>("binance");
   const [interval, setInterval] = useState<string>("4h");
   const [risk, setRisk] = useState<string>("standard");
   // Whole book by default — the placement offer can only list positions this
   // audit graded, so a capped default would quietly limit the approval table.
   const [limit, setLimit] = useState<number>(500);
   const [market, setMarket] = useState<string>("all");
-  const [source, setSource] = useState<AuditCredentialSource>(null);
+  const [sources, setSources] = useState<Record<AuditVenue, AuditCredentialSource>>({
+    binance: null,
+    mexc: null,
+  });
 
   useEffect(() => {
     let alive = true;
-    void call<{ source: "user" | "baked" | "none" }>("binance_credentials_status")
-      .then((s) => {
-        if (alive) setSource(s.source);
-      })
-      .catch(() => {
-        // Status unreadable (feature off, op missing) — treat as "not read
-        // yet" so the form neither blocks nor claims a source it can't see.
-        // The backend gate still fails closed if the run slips through.
-        if (alive) setSource(null);
-      });
+    for (const v of VENUES.map((x) => x.id)) {
+      void call<{ source: "user" | "baked" | "none" }>(CREDENTIAL_OP[v])
+        .then((s) => {
+          if (alive) setSources((prev) => ({ ...prev, [v]: s.source }));
+        })
+        .catch(() => {
+          // Status unreadable (feature off, op missing) — treat as "not read
+          // yet" so the form neither blocks nor claims a source it can't see.
+          // The backend gate still fails closed if the run slips through.
+          if (alive) setSources((prev) => ({ ...prev, [v]: null }));
+        });
+    }
     return () => {
       alive = false;
     };
   }, []);
+
+  const source = sources[venue];
 
   // The audit reports on a PORTFOLIO: naked positions, naked notional, R:R.
   // The built-in pair signs as the product's account, so an audit run on it
@@ -100,7 +128,7 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
   const missingOwnKeys = !ownsAuditScope(source);
   const submit = () => {
     if (disabled || missingOwnKeys) return;
-    onSubmit(interval, risk, limit, market);
+    onSubmit(interval, risk, limit, market, venue);
   };
   const chip = (active: boolean) =>
     cn(
@@ -119,6 +147,22 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
       </div>
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <Field label="Exchange">
+          {VENUES.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              disabled={disabled}
+              aria-pressed={venue === v.id}
+              onClick={() => setVenue(v.id)}
+              title={`Grade the ${v.label} futures book`}
+              className={chip(venue === v.id)}
+            >
+              {v.label}
+            </button>
+          ))}
+        </Field>
+
         <Field label="Candles">
           {INTERVALS.map((iv) => (
             <button
@@ -166,21 +210,25 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
           ))}
         </Field>
 
-        <Field label="Market">
-          {MARKETS.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              disabled={disabled}
-              aria-pressed={market === m.id}
-              onClick={() => setMarket(m.id)}
-              title={m.id === "all" ? "Grade both futures markets" : `Grade the ${m.label} book only`}
-              className={chip(market === m.id)}
-            >
-              {m.label}
-            </button>
-          ))}
-        </Field>
+        {/* The market scope is Binance's futures-FAMILY selector; MEXC has one
+            USDT-margined family, so the row would be a choice with one answer. */}
+        {venue === "binance" && (
+          <Field label="Market">
+            {MARKETS.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                disabled={disabled}
+                aria-pressed={market === m.id}
+                onClick={() => setMarket(m.id)}
+                title={m.id === "all" ? "Grade both futures markets" : `Grade the ${m.label} book only`}
+                className={chip(market === m.id)}
+              >
+                {m.label}
+              </button>
+            ))}
+          </Field>
+        )}
       </div>
 
       <div className="mt-4 flex items-center gap-3">
@@ -198,20 +246,22 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
 
       {source === "baked" && (
         <p className="text-destructive mt-3 font-mono text-[10px] leading-relaxed" role="alert">
-          The audit grades YOUR open positions, so it needs your own Binance keys. Add one (IP-restricted) in Settings →
-          Credentials.
+          The audit grades YOUR open positions, so it needs your own {VENUE_LABEL[venue]} keys. Add one (IP-restricted)
+          in Settings → Credentials.
         </p>
       )}
       {source === "none" && (
         <p className="text-destructive mt-3 font-mono text-[10px] leading-relaxed" role="alert">
-          No Binance API keys yet. Add a read-only, IP-restricted pair in Settings → Credentials — the audit reads your
-          open positions and resting orders, and never places an order.
+          No {VENUE_LABEL[venue]} API keys yet. Add a read-only, IP-restricted pair in Settings → Credentials — the
+          audit reads your open positions and resting orders, and never places an order.
         </p>
       )}
       <p className="text-muted-foreground mt-3 font-mono text-[10px] leading-relaxed">
         Read-only: syncs your positions and resting orders, grades every stop, checks TP coverage, writes the report.
-        The audit itself never places, modifies, or cancels an order — after the report lands, the run view offers
-        one-click placement of the recommended stops and take-profits, and nothing is sent until you approve it there.
+        The audit itself never places, modifies, or cancels an order —{" "}
+        {venue === "mexc"
+          ? "MEXC placement is not wired yet, so the recommended stops and take-profits are yours to place on the exchange."
+          : "after the report lands, the run view offers one-click placement of the recommended stops and take-profits, and nothing is sent until you approve it there."}
       </p>
     </div>
   );
