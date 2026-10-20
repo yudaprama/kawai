@@ -69,6 +69,10 @@ pub fn run() {
                     // device and every failure is invisible. Pull it with
                     // `adb exec-out run-as pro.kawai.app cat files/logs/app.log`.
                     kawai_paths::set_log_dir(data.join("logs"));
+                    // Deck template packs + registry cache: `<app_data>/templates`.
+                    // Same root as models/logs/per-user data — the home-derived
+                    // `~/.kawai/templates` fallback is for headless binaries only.
+                    kawai_paths::set_template_packs_dir(data.join("templates"));
                     logic::db::set_data_root(data);
                 // Auto-restore the previous session from the persisted worker
                 // token (no password prompt after a restart, until it expires).

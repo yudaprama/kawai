@@ -451,8 +451,12 @@ Project-root `.env` (gitignored) — backend reads these via `auth::load_dotenv(
 KAWAI_AUTH_JWKS_URI=...        # Clerk public JWKS
 KAWAI_AUTH_ISSUER=...          # Clerk frontend-API origin
 # KAWAI_AUTH_DEV_USER_ID=dev   # uncomment to accept ANY token as this user (dev only)
-KAWAI_DATA_DIR=/path/to/dir    # optional per-user data root; default on desktop = Tauri app-data dir (~/Library/Application Support/pro.kawai.app on macOS), else /tmp/kawai
-KAWAI_MODEL_PATH=/path/to/gemma-4-E4B-it.litertlm  # optional on-device model; resolved by logic::resolve_model_path (env → ./models/ → ~/.kawai/models)
+# Data root: NOT env-configurable. Injected by the Tauri shell (app-data dir,
+# ~/Library/Application Support/pro.kawai.app on macOS); headless binaries fall
+# back to <temp>/kawai.
+# On-device model: NOT env-configurable. kawai_paths::model_candidates searches
+# ./models → <repo>/models → models/ + resources/models/ next to the exe →
+# <app_data>/models (the shell-injected user models dir).
 KAWAI_LLM_MAX_TOKENS=16384       # optional context budget (K/V state entries) for the on-device conversation; default 16384, clamped below the model's max (Gemma 4: 32003). Larger = more K/V memory; raise for longer sessions before the prefill-overflow reset.
 # ── Hybrid LLM tier — cloud subagents (logic/remote.rs, PLAN-hybrid-llm-subagents.md) ──
 # Provider pool with health-aware failover: every provider with a vault key
