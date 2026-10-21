@@ -39,9 +39,9 @@ describe("CryptoScreenerForm", () => {
 
   it("defaults every group to one pressed chip — no narrowing pre-selected", () => {
     const html = render();
-    // screens, market, candles, hits, scan size, and the three structure
-    // groups: one pressed chip each.
-    expect(html.match(/aria-pressed="true"/g)).toHaveLength(8);
+    // setups, exchange, market, candles, hits, scan size, and the three
+    // structure groups: one pressed chip each.
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(9);
   });
 
   it("tells the user each hit carries structure and that the chips narrow the book", () => {
