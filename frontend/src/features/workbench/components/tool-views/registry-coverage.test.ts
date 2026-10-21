@@ -3,10 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderStepReport } from "@/features/workbench/components/tool-views";
 
 import { renderMexcFuturesFillSync, renderVenueFillsImport } from "@/components/ai-elements/tool-renderers/accounting";
-import {
-  renderMarketStructure,
-  renderMexcFuturesPositions,
-} from "@/components/ai-elements/tool-renderers/finance";
+import { renderMarketStructure, renderMexcFuturesPositions } from "@/components/ai-elements/tool-renderers/finance";
 
 /**
  * The registry gate: every tool kawai can dispatch in a plan must CLAIM its

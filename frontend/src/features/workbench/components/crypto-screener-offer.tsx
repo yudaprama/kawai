@@ -208,7 +208,8 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
           : null;
       const last = num(h.last);
       if (score == null || last == null) continue;
-      const st = typeof h.structure === "object" && h.structure != null ? (h.structure as Record<string, unknown>) : null;
+      const st =
+        typeof h.structure === "object" && h.structure != null ? (h.structure as Record<string, unknown>) : null;
       const nl =
         st != null && typeof st.nearestLevel === "object" && st.nearestLevel != null
           ? (st.nearestLevel as Record<string, unknown>)

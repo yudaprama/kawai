@@ -334,19 +334,11 @@ describe("the offer honours the engine's ranking", () => {
  * badge still claims "structure".
  */
 describe("a structure-ranked run keeps the level ordering", () => {
-  const withLevel = (
-    symbol: string,
-    score: number,
-    distancePct: number | null,
-    touches: number | null,
-  ) =>
+  const withLevel = (symbol: string, score: number, distancePct: number | null, touches: number | null) =>
     hit({
       symbol,
       score,
-      structure:
-        distancePct == null
-          ? null
-          : { nearestLevel: { price: 1, side: "resistance", distancePct, touches } },
+      structure: distancePct == null ? null : { nearestLevel: { price: 1, side: "resistance", distancePct, touches } },
     });
 
   const structureOutput = (hits: unknown[]) =>
@@ -354,10 +346,7 @@ describe("a structure-ranked run keeps the level ordering", () => {
 
   it("puts the tightest level first, even against a much higher score", () => {
     const offer = parseScreenerOffer([
-      structureOutput([
-        withLevel("BTCUSDT", 95, 9, 5),
-        withLevel("ETHUSDT", 40, -0.4, 1),
-      ]),
+      structureOutput([withLevel("BTCUSDT", 95, 9, 5), withLevel("ETHUSDT", 40, -0.4, 1)]),
     ]);
     expect(offer?.rankBy).toBe("structure");
     expect(offer?.hits.map((h) => h.symbol)).toEqual(["ETHUSDT", "BTCUSDT"]);
@@ -368,20 +357,14 @@ describe("a structure-ranked run keeps the level ordering", () => {
 
   it("breaks a distance tie on touch count", () => {
     const offer = parseScreenerOffer([
-      structureOutput([
-        withLevel("ONCEUSDT", 99, 0.5, 1),
-        withLevel("RESPECTEDUSDT", 10, -0.5, 6),
-      ]),
+      structureOutput([withLevel("ONCEUSDT", 99, 0.5, 1), withLevel("RESPECTEDUSDT", 10, -0.5, 6)]),
     ]);
     expect(offer?.hits.map((h) => h.symbol)).toEqual(["RESPECTEDUSDT", "ONCEUSDT"]);
   });
 
   it("sorts a hit with no level below every hit that has one", () => {
     const offer = parseScreenerOffer([
-      structureOutput([
-        withLevel("NONEUSDT", 100, null, null),
-        withLevel("LEVELUSDT", 5, 8, 1),
-      ]),
+      structureOutput([withLevel("NONEUSDT", 100, null, null), withLevel("LEVELUSDT", 5, 8, 1)]),
     ]);
     expect(offer?.hits.map((h) => h.symbol)).toEqual(["LEVELUSDT", "NONEUSDT"]);
   });
