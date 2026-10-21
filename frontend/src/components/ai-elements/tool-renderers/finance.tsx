@@ -1310,13 +1310,24 @@ export function renderCryptoScreenerData(output: unknown): ReactNode {
 /**
  * crypto_screener →
  * { kind: "screener", screen, direction, universe, interval, scanned,
- *   skipped, hits: [{ symbol, last, change24hPct, score, reasons: [..] }],
- *   hitsTotal, topN, universeTotal, partial, errors, errorsTotal }.
+ *   skipped, hits: [{ symbol, last, change24hPct, score, reasons: [..],
+ *     structure: { trend, nearestLevel: { price, side, distancePct, touches,
+ *     lastTouchAge }, lastBreak: { direction, level, barsAgo } } | null }],
+ *   hitsTotal, topN, universeTotal, partial, errors, errorsTotal,
+ *   structureFiltered, structureFilter: { side, maxDistancePct, minTouches } | null }.
  *
  * The headline is the HIT TABLE ranked by conviction score — the score IS the
  * engine's ranking, so the table preserves it verbatim (no re-sort). Reasons
  * ride the row (why it fired is the payload a screener sells), direction and
  * coverage (scanned / partial) ride the header.
+ *
+ * The STRUCTURE column is context for the setup, not a second score: the
+ * nearest confirmed level with its touch count and SIGNED distance (`-1.6%`
+ * = the level sits below price, i.e. already broken), the level type (R/S)
+ * and the trend/break on hover. It only appears when the payload carries it,
+ * so an older hit list renders exactly as before. `structureFiltered` names
+ * hits the structural filter removed, so a narrowed pass never reads as an
+ * unfiltered market with no signals.
  */
 
 /** Score chip palette: ≥80 reads as actionable, ≥60 as worth a look, below
@@ -1328,6 +1339,60 @@ function scoreTone(score: number): "ok" | "warn" | "mute" {
 }
 
 const SCREENER_ROW_CAP = 12;
+
+/**
+ * One hit's structural context. The SIGN of the distance is the fact a reader
+ * acts on (`-1.6%` = the level sits below price, i.e. it has already been
+ * broken), so it is printed rather than implied; the level TYPE (R/S) comes
+ * from the pivot kind and is not the same thing as the side of price.
+ */
+function StructureCell({ structure }: { structure: unknown }) {
+  if (!isRecord(structure)) {
+    return <td className="text-muted-foreground px-2 py-1.5 text-right">—</td>;
+  }
+  const trend = str(structure.trend);
+  const level = isRecord(structure.nearestLevel) ? structure.nearestLevel : null;
+  const brk = isRecord(structure.lastBreak) ? structure.lastBreak : null;
+  const price = level ? num(level.price) : null;
+  const side = level ? str(level.side) : null;
+  const dist = level ? num(level.distancePct) : null;
+  const touches = level ? num(level.touches) : null;
+  const breakDir = brk ? str(brk.direction) : null;
+  const breakLevel = brk ? num(brk.level) : null;
+  const breakAgo = brk ? num(brk.barsAgo) : null;
+  const title = [
+    trend ? `trend ${trend}` : null,
+    breakDir && breakLevel !== null
+      ? `last break ${breakDir} ${fmtPrice(breakLevel)}${breakAgo !== null ? ` (${breakAgo} bars ago)` : ""}`
+      : "no structural break",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <td className="px-2 py-1.5 text-right whitespace-nowrap" title={title}>
+      {level && price !== null ? (
+        <div className="flex items-center justify-end gap-1.5">
+          <span
+            className={cn(
+              "font-mono text-[10px] font-bold",
+              side === "resistance" ? "text-warning" : "text-success"
+            )}
+          >
+            {side === "resistance" ? "R" : side === "support" ? "S" : "?"}
+          </span>
+          <span className="text-foreground tabular-nums">{fmtPrice(price)}</span>
+          <span className="text-muted-foreground tabular-nums">
+            {dist !== null ? `${dist > 0 ? "+" : ""}${fmtPct(dist)}%` : "—"}
+            {touches !== null ? ` · ${touches}×` : ""}
+          </span>
+        </div>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      )}
+    </td>
+  );
+}
 
 export function renderCryptoScreener(output: unknown): ReactNode {
   const d = parse(output);
@@ -1350,6 +1415,13 @@ export function renderCryptoScreener(output: unknown): ReactNode {
   const errorsTotal = num(d.errorsTotal) ?? 0;
   const capped = hits.length > SCREENER_ROW_CAP;
   const perScreen = (Array.isArray(d.perScreen) ? d.perScreen : []).filter(isRecord);
+  // Structural context is optional per hit (a series too short to fold has
+  // none): the column appears only when at least one row can fill it.
+  const hasStructure = hits.some(
+    (h) => isRecord(h.structure) && isRecord(h.structure.nearestLevel)
+  );
+  const structureFiltered = num(d.structureFiltered) ?? 0;
+  const structureFilter = isRecord(d.structureFilter) ? d.structureFilter : null;
 
   return (
     <TextCard>
@@ -1378,6 +1450,31 @@ export function renderCryptoScreener(output: unknown): ReactNode {
             partial
           </span>
         )}
+        {structureFiltered > 0 && (
+          <span
+            className="border-border bg-muted/40 text-muted-foreground rounded-sm border px-1 py-px font-mono text-[10px] uppercase"
+            title={[
+              "hits dropped by the structural filter",
+              structureFilter
+                ? [
+                    structureFilter.side ? `side ${str(structureFilter.side)}` : null,
+                    num(structureFilter.maxDistancePct) !== null
+                      ? `within ${fmtPct(num(structureFilter.maxDistancePct) ?? 0)}% of price`
+                      : null,
+                    num(structureFilter.minTouches) !== null
+                      ? `${num(structureFilter.minTouches)}x touches`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" — ")}
+          >
+            -{structureFiltered} structure
+          </span>
+        )}
       </div>
 
       {hits.length > 0 ? (
@@ -1389,6 +1486,14 @@ export function renderCryptoScreener(output: unknown): ReactNode {
                 <th className="px-2 py-1.5 font-medium">Symbol</th>
                 <th className="px-2 py-1.5 text-right font-medium">Last</th>
                 <th className="px-2 py-1.5 text-right font-medium">24h</th>
+                {hasStructure && (
+                  <th
+                    className="px-2 py-1.5 text-right font-medium"
+                    title="Nearest confirmed level (pivot scan shared with the stop policy) — touches and signed distance from the last close"
+                  >
+                    Structure
+                  </th>
+                )}
                 <th className="px-2 py-1.5 text-right font-medium" title="The engine's conviction ranking, 0-100">
                   Score
                 </th>
@@ -1429,6 +1534,7 @@ export function renderCryptoScreener(output: unknown): ReactNode {
                     >
                       {chg !== null ? `${chg > 0 ? "+" : ""}${fmtPct(chg / 100)}` : "—"}
                     </td>
+                    {hasStructure && <StructureCell structure={h.structure} />}
                     <td className="px-2 py-1.5 text-right">
                       <span
                         className={cn(

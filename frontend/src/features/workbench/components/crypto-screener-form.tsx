@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Icon } from "@/components/shared/icon";
+import type { ScreenerStructureFilter } from "@/features/chat/hooks/use-supervisor-plan";
 import { cn } from "@/lib/utils";
 
 /** The screens the fixed pipeline accepts (mirrors the backend's
@@ -38,6 +39,30 @@ const SCAN_SIZES: { label: string; value?: number }[] = [
   { label: "Full (~750)" },
 ];
 
+/** Structure filter: which side of price the confirming level must sit on.
+ * "Any" leaves the OVERALL nearest level as the subject (still filtered by
+ * the distance / touch chips below). */
+const SIDES: { label: string; value?: "support" | "resistance"; hint: string }[] = [
+  { label: "Any", hint: "whichever pivot level is closest to price" },
+  { label: "Support", value: "support", hint: "a pivot low below price" },
+  { label: "Resistance", value: "resistance", hint: "a pivot high above price" },
+];
+
+/** Max distance between price and that level, in percent. */
+const DISTANCES: { label: string; value?: number; hint: string }[] = [
+  { label: "Any", hint: "no distance limit" },
+  { label: "2%", value: 2, hint: "price is pressing the level" },
+  { label: "5%", value: 5, hint: "level within reach" },
+  { label: "10%", value: 10, hint: "level visible but not near" },
+];
+
+/** Minimum pivot touches that confirm the level. */
+const TOUCHES: { label: string; value?: number; hint: string }[] = [
+  { label: "Any", hint: "no touch requirement" },
+  { label: "2×", value: 2, hint: "confirmed at least twice" },
+  { label: "3×", value: 3, hint: "well-tested level" },
+];
+
 /** At most seven screens per run — the full catalog. The single-scan
  * multi-screen tool evaluates every screen over ONE set of klines, so a
  * screen beyond the first costs arithmetic only. Mirrors the backend, whose
@@ -46,7 +71,16 @@ const MAX_SCREENS = SCREENS.length;
 
 export interface CryptoScreenerFormProps {
   disabled?: boolean;
-  onSubmit: (screens: string[], universe: string, interval: string, topN: number, scanSize?: number) => void;
+  onSubmit: (
+    screens: string[],
+    universe: string,
+    interval: string,
+    topN: number,
+    scanSize?: number,
+    /** Omitted when every chip sits on "Any" — the scan then reports each
+     *  hit's structure without narrowing the book. */
+    structure?: ScreenerStructureFilter,
+  ) => void;
 }
 
 /** Crypto Screener entry form on the Workbench landing. Pick up to four
@@ -60,6 +94,9 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
   const [interval, setInterval] = useState<string>("1d");
   const [topN, setTopN] = useState<number>(10);
   const [scanSize, setScanSize] = useState<number | undefined>(undefined);
+  const [side, setSide] = useState<"support" | "resistance" | undefined>(undefined);
+  const [maxDistancePct, setMaxDistancePct] = useState<number | undefined>(undefined);
+  const [minTouches, setMinTouches] = useState<number | undefined>(undefined);
 
   const toggleScreen = (id: string) => {
     setScreens((prev) => {
@@ -69,9 +106,14 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
     });
   };
 
+  const structure: ScreenerStructureFilter | undefined =
+    side != null || maxDistancePct != null || minTouches != null
+      ? { side, maxDistancePct, minTouches }
+      : undefined;
+
   const submit = () => {
     if (disabled || screens.length === 0) return;
-    onSubmit(screens, universe, interval, topN, scanSize);
+    onSubmit(screens, universe, interval, topN, scanSize, structure);
   };
 
   const chip = (active: boolean) =>
@@ -189,6 +231,59 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
             ))}
           </Field>
         </div>
+
+        <Field label="Structure">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex items-center gap-1">
+              <span className="text-muted-foreground font-mono text-[10px]">Level</span>
+              {SIDES.map((s) => (
+                <button
+                  key={s.label}
+                  type="button"
+                  disabled={disabled}
+                  aria-pressed={side === s.value}
+                  onClick={() => setSide(s.value)}
+                  title={s.hint}
+                  className={chip(side === s.value)}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-muted-foreground font-mono text-[10px]">Within</span>
+              {DISTANCES.map((d) => (
+                <button
+                  key={d.label}
+                  type="button"
+                  disabled={disabled}
+                  aria-pressed={maxDistancePct === d.value}
+                  onClick={() => setMaxDistancePct(d.value)}
+                  title={d.hint}
+                  className={chip(maxDistancePct === d.value)}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-muted-foreground font-mono text-[10px]">Touches</span>
+              {TOUCHES.map((t) => (
+                <button
+                  key={t.label}
+                  type="button"
+                  disabled={disabled}
+                  aria-pressed={minTouches === t.value}
+                  onClick={() => setMinTouches(t.value)}
+                  title={t.hint}
+                  className={chip(minTouches === t.value)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </Field>
       </div>
 
       <div className="mt-4 flex items-center gap-3">
@@ -208,8 +303,10 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
 
       <p className="text-muted-foreground mt-3 font-mono text-[10px] leading-relaxed">
         Read-only market scan over Binance public data (top-liquidity USDT pairs): ranks symbols by 24h volume, folds
-        indicators per symbol, and reports every hit with a conviction score and reasons. No API keys needed — the scan
-        itself never places an order. Symbols hitting multiple setups are called out first in the report.
+        indicators per symbol, and reports every hit with a conviction score and reasons. Every hit also carries its
+        market structure — the nearest confirmed pivot level, how far price is from it, and how often it was tested; the
+        Structure chips above narrow the book to symbols that satisfy all of them (no extra fetch). No API keys needed —
+        the scan itself never places an order. Symbols hitting multiple setups are called out first in the report.
         {universe === "usdm" && (
           <>
             {" "}

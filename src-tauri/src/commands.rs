@@ -2415,6 +2415,9 @@ pub async fn run_crypto_screener(
     interval: Option<String>,
     top_n: Option<u32>,
     scan_size: Option<u32>,
+    // Structural narrowing of the hits (nearest pivot level per symbol);
+    // validated by `normalize_screener_args` before any plan exists.
+    structure: Option<::binance::StructureNarrowing>,
     // Raw device locale tag (e.g. "id-ID") — resolved into the report's
     // output language at this edge (see `supervisor::resolve_user_language`).
     language: Option<String>,
@@ -2437,6 +2440,7 @@ pub async fn run_crypto_screener(
         interval.as_deref().unwrap_or_default(),
         top_n,
         scan_size,
+        structure.as_ref(),
     )
     .map_err(|e| e.to_string())?;
     // Read the normalized values back BEFORE the plan consumes them, so the
@@ -2454,8 +2458,17 @@ pub async fn run_crypto_screener(
     let top_n = args["topN"].as_u64().unwrap_or_default() as u32;
     let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
         .unwrap_or_default();
+    // Read the narrowing label BEFORE the plan consumes the args.
+    let structure_label = args["structureLabel"].as_str().map(str::to_string);
     let plan = ::binance::build_screener_plan(args);
-    let user_goal = ::binance::screener_user_goal(&screens, &universe, &interval, top_n, &language);
+    let user_goal = ::binance::screener_user_goal(
+        &screens,
+        &universe,
+        &interval,
+        top_n,
+        &language,
+        structure_label.as_deref(),
+    );
     let tool_registry = crate::supervisor::build_fixed_binance_registry(
         &ctx.user_id,
         session_id,

@@ -12,7 +12,12 @@ import {
 } from "@/lib/api";
 import { isTabularExt } from "@/lib/extensions";
 import { useSupervisorPlan } from "@/features/chat/hooks/use-supervisor-plan";
-import type { SupervisorArtifact, SupervisorEvent, SupervisorStep } from "@/features/chat/hooks/use-supervisor-plan";
+import type {
+  ScreenerStructureFilter,
+  SupervisorArtifact,
+  SupervisorEvent,
+  SupervisorStep,
+} from "@/features/chat/hooks/use-supervisor-plan";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { peekFreshTokenBalance, publishTokenBalance, refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { hydrateStep, planRecordInterrupted, type PersistedPlanRecord } from "@/features/chat/hooks/supervisor-types";
@@ -977,6 +982,7 @@ export function useWorkbench() {
       interval: string,
       topN: number,
       scanSize: number | undefined,
+      structure: ScreenerStructureFilter | undefined,
       opts?: {
         /** Same contract as `run()`'s — fires once every gate passed, right
          * before the run record appends; the page navigates from here. */
@@ -990,11 +996,24 @@ export function useWorkbench() {
       );
       // All gates passed — consume the follow-up/quote arming after them so
       // a blocked submit leaves both intact for the retry.
-      const goal = `Crypto screener — ${universe} ${interval} candles: ${screens.join(", ")}`.slice(0, 140);
+      // Structure narrowing belongs in the run record: a 3-hit list and a
+      // 30-hit list are the same market only if the filter is stated.
+      const narrowing = structure
+        ? [
+            structure.side,
+            structure.maxDistancePct != null ? `≤${structure.maxDistancePct}%` : null,
+            structure.minTouches != null ? `≥${structure.minTouches} touches` : null,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : "";
+      const goal = `Crypto screener — ${universe} ${interval} candles: ${screens.join(", ")}${
+        narrowing ? ` · structure: ${narrowing}` : ""
+      }`.slice(0, 140);
       beginRun(goal, false);
       opts?.onStart?.();
       void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runCryptoScreener({ screens, universe, interval, topN, scanSize }, sid);
+      supervisor.runCryptoScreener({ screens, universe, interval, topN, scanSize, structure }, sid);
       void refreshTokenBalance();
     },
     [supervisor, preflightRun, beginRun],

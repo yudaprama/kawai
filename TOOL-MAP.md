@@ -133,7 +133,7 @@ the reason.
 | `binance_futures_positions` | open futures positions + their open orders incl. stop-losses / take-profits, mirrored into `binance_futures_positions` / `binance_futures_open_orders` — BOTH markets: USDⓈ-M (`fapi`) AND COIN-M (`dapi`) — see §5.1 |
 | `crypto_futures_stop_loss` / `crypto_futures_take_profit` | per-position advisory stop (CE/Donchian/Keltner + ratchet vs the advice history table) and R-multiple TP ladder, graded against the resting orders |
 | `binance_futures_risk_audit` | ONE-call portfolio risk review: sync → grade the biggest USDⓈ-M positions with the SAME stop policy → TP coverage → summary (naked positions, naked notional, R:R) — see §5.2 |
-| `crypto_screener` | market-wide setup scan: top-liquidity USDT pairs (spot or USDⓈ-M) folded over candles for ONE named screen (`oversold_rebound`, `macd_golden_cross`/`macd_death_cross`, `midband_reclaim`, `uptrend_pullback`, `squeeze_watch`, `rsi_overbought_uptrend`) — conviction-ranked hits with per-hit reasons — see §5.3 |
+| `crypto_screener` | market-wide setup scan: top-liquidity USDT pairs (spot or USDⓈ-M) folded over candles for ONE named screen (`oversold_rebound`, `macd_golden_cross`/`macd_death_cross`, `midband_reclaim`, `uptrend_pullback`, `squeeze_watch`, `rsi_overbought_uptrend`) — conviction-ranked hits with per-hit reasons AND each hit's structure (trend, nearest confirmed level with touches + signed distance, last break), optionally narrowed by `structure_side` / `max_distance_pct` / `min_touches` — see §5.3 |
 | `crypto_futures_trade_stats` | REALIZED trading performance over your closed fills: win rate, avg win/loss, expectancy, profit factor, largest win/loss, total realized PnL (per market, optionally one symbol) — see §5.4 |
 
 ### 5.1 `binance_futures_positions` — the local futures mirror
@@ -284,6 +284,32 @@ self-bounded (12 runs/min, 6-way parallel klines, 45s deadline →
   `stop_advice`: seven shipped (`oversold_rebound`, `macd_golden_cross`,
   `macd_death_cross`, `midband_reclaim`, `uptrend_pullback`, `squeeze_watch`,
   `rsi_overbought_uptrend`), each unit-tested hit/miss/gates without network.
+- **Every hit carries its structure**, read from the SAME candles the screen
+  just folded and the SAME pivot scan the stop policy uses
+  (`futures_risk::structure`) — no second detector, no extra fetch. The block
+  is `{trend, nearestLevel:{price, side, distancePct, touches, lastTouchAge},
+  lastBreak:{direction, level, barsAgo}}`, where `distancePct` is SIGNED
+  (positive = the level sits above price): CLUSDT's nearest "resistance" at
+  `-1.62%` is a pivot-high cluster the market has already closed above, and
+  the card prints the sign rather than re-labeling it. Computed only for
+  symbols that fired at least one screen.
+- **Structural narrowing** (`structure_side`, `max_distance_pct`,
+  `min_touches` — all `crypto_screener` args, validated BEFORE the scan so a
+  typo fails the call instead of quietly returning the unfiltered book):
+  `resistance` = a pivot-high cluster ABOVE the close, `support` = a
+  pivot-low cluster BELOW it; the distance/touch conditions then apply to the
+  nearest level on that side. The output reports how many hits the filter
+  removed (`structureFiltered`) plus the applied values (`structureFilter`),
+  so a narrowed pass never reads as "the market has no signals". The fixed
+  pipeline takes the same three knobs from the Workbench form's Structure row
+  (`run_crypto_screener` → `normalize_screener_args`, which validates through
+  the scan's OWN resolver, so a plan can never carry a filter the tool would
+  reject); the filter is then stated in the plan goal, in every screen step's
+  task, and in the writer's `userGoal` — a three-hit report from a narrowed
+  run cannot be read as an empty market. The `userGoal` also ASKS the writer
+  for each hit's nearest level (price, side, SIGNED distance, touches), so the
+  report a user reads carries the same structure the card shows; a negative
+  distance must be printed as negative, never relabelled as support.
 - **The fetches are shared** by `crypto_screener_data` — the phase-1 tool:
   it resolves the universe, pulls every candle ONCE into a process-wide
   klines cache (market+symbol+interval, TTL 90s — long enough to cover the
@@ -690,6 +716,7 @@ Binance (`crates/toolsets/binance`):
 | `crypto_market_structure` | `{kind:"market_structure", symbol:{symbol, interval, half_width}, last_close, candles, atr, er, trend, swings:[{bar, price, kind, age}], levels:[{price, distance_pct, touches, side, last_touch_age}], last_break:{direction, level, bars_ago}, skipped}` | `renderMarketStructure` |
 | `crypto_balances` | `{canTrade, balances:[{asset, free, locked}]}` | `renderBinanceBalances` |
 | `crypto_open_orders` | `{count, orders:[…]}` | `renderBinanceOpenOrders` |
+| `crypto_screener` | `{kind:"screener", screen, screens, direction, universe, interval, scanned, skipped, hitsTotal, perScreen, hits:[{screen, symbol, last, change24hPct, score, reasons, myPerformance, structure:{trend, nearestLevel:{price, side, distancePct, touches, lastTouchAge}, lastBreak:{direction, level, barsAgo}}}], rankBy, rankByAutomatic, structureFiltered, structureFilter:{side, maxDistancePct, minTouches}, partial, errors}` | `renderCryptoScreener` — hit table + Structure column (R/S, price, signed distance, touch count) |
 | `stock_quote` / `stock_info` | `{symbol, bidPrice?, askPrice?, bidSize?, askSize?, mid?}` / `{symbol, tradability, fractionable, …}` | `KeyValueView` (via `genericKv`) |
 
 Finance (`generated-tools/finance`):

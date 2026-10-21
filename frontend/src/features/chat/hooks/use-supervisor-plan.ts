@@ -67,6 +67,18 @@ interface RunBinanceAuditOptions {
   market: string;
 }
 
+/** Structural narrowing of the hits: keep only symbols whose NEAREST pivot
+ * level satisfies every condition (mirrors the tool's `structure_*` args and
+ * is validated by the same resolver before a plan exists). */
+export interface ScreenerStructureFilter {
+  /** Which side of price the level must sit on. Omitted = overall nearest. */
+  side?: "support" | "resistance";
+  /** Max distance between price and that level, in percent (0, 100]. */
+  maxDistancePct?: number;
+  /** Minimum pivot touches that confirm the level (1-50). */
+  minTouches?: number;
+}
+
 interface RunCryptoScreenerOptions {
   /** Which setups to scan for — one parallel pipeline step each (1-4; the
    * backend rejects unknown names and over-sized picks before a plan exists). */
@@ -80,6 +92,8 @@ interface RunCryptoScreenerOptions {
   /** How many top-liquidity symbols each scan covers (1-2000). Omitted =
    * the backend scans the ENTIRE filtered universe (~750 pairs). */
   scanSize?: number;
+  /** Optional structure filter — omitted = every hit, structure only shown. */
+  structure?: ScreenerStructureFilter;
 }
 
 export interface SupervisorPlanCallbacks {
@@ -679,6 +693,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           interval: options.interval,
           topN: options.topN,
           scanSize: options.scanSize,
+          structure: options.structure,
           // Device locale → report language (resolved server-side).
           language: navigator.language,
         },

@@ -6,6 +6,7 @@ import type { RecentRun } from "@/lib/api";
 import { RecentRuns } from "@/features/workbench/components/recent-runs";
 import { isDeliverableStep, useWorkbench } from "@/features/workbench/hooks/use-workbench";
 import type { WorkbenchRun } from "@/features/workbench/hooks/use-workbench";
+import type { ScreenerStructureFilter } from "@/features/chat/hooks/use-supervisor-plan";
 import { logInfo } from "@/lib/logger";
 import { overlayOwnsEscape } from "@/lib/esc";
 import { toast } from "sonner";
@@ -416,8 +417,17 @@ export function WorkbenchPage({
    * public market data — one parallel scan per selected screen, then the
    * deliverable writer. Same canvas handoff as the audit submit. */
   const submitCryptoScreener = useCallback(
-    (screens: string[], universe: string, interval: string, topN: number, scanSize?: number) => {
-      beginPipelineRun((onStart) => workbench.runScreener(screens, universe, interval, topN, scanSize, { onStart }));
+    (
+      screens: string[],
+      universe: string,
+      interval: string,
+      topN: number,
+      scanSize?: number,
+      structure?: ScreenerStructureFilter,
+    ) => {
+      beginPipelineRun((onStart) =>
+        workbench.runScreener(screens, universe, interval, topN, scanSize, structure, { onStart }),
+      );
     },
     [beginPipelineRun, workbench.runScreener],
   );

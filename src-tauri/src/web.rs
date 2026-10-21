@@ -3151,6 +3151,9 @@ struct RunCryptoScreenerRequest {
     interval: Option<String>,
     top_n: Option<u32>,
     scan_size: Option<u32>,
+    /// Structural narrowing of the hits (nearest pivot level per symbol);
+    /// validated by `normalize_screener_args` before any plan exists.
+    structure: Option<::binance::StructureNarrowing>,
     /// Raw device locale tag (e.g. "id-ID"); falls back to Accept-Language.
     language: Option<String>,
     stream_id: String,
@@ -3377,6 +3380,7 @@ async fn run_crypto_screener_handler(
         req.interval.as_deref().unwrap_or_default(),
         req.top_n,
         req.scan_size,
+        req.structure.as_ref(),
     )
     .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     // Read the normalized values back BEFORE the plan consumes them, so the
@@ -3399,8 +3403,17 @@ async fn run_crypto_screener_handler(
             .and_then(|v| v.to_str().ok()),
     )
     .unwrap_or_default();
+    // Read the narrowing label BEFORE the plan consumes the args.
+    let structure_label = args["structureLabel"].as_str().map(str::to_string);
     let plan = ::binance::build_screener_plan(args);
-    let user_goal = ::binance::screener_user_goal(&screens, &universe, &interval, top_n, &language);
+    let user_goal = ::binance::screener_user_goal(
+        &screens,
+        &universe,
+        &interval,
+        top_n,
+        &language,
+        structure_label.as_deref(),
+    );
     let tool_registry = crate::supervisor::build_fixed_binance_registry(
         &user_id,
         req.session_id,
