@@ -58,3 +58,54 @@ pub async fn mexc_auto_take_profit_positions(
 ) -> Result<String, String> {
     Err("mexc feature not enabled (build with --features mexc)".into())
 }
+
+/// Open the user-approved screener hits on MEXC, each with its protective
+/// stop (plan order) and, when requested, the take-profit ladder.
+#[cfg(feature = "mexc")]
+pub async fn mexc_open_screened_positions(
+    user_id: &str,
+    picks: Vec<(String, String, f64)>,
+    interval: &str,
+    risk: &str,
+    place_tp: bool,
+) -> Result<String, String> {
+    let picks = picks
+        .into_iter()
+        .map(|(symbol, screen, notional)| ::mexc::screened::EntryPick { symbol, screen, notional })
+        .collect();
+    ::mexc::screened::mexc_open_screened_positions(user_id, picks, interval, risk, place_tp)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(feature = "mexc"))]
+pub async fn mexc_open_screened_positions(
+    _user_id: &str,
+    _picks: Vec<(String, String, f64)>,
+    _interval: &str,
+    _risk: &str,
+    _place_tp: bool,
+) -> Result<String, String> {
+    Err("mexc feature not enabled (build with --features mexc)".into())
+}
+
+/// Pre-approval stop preview for MEXC hits — keyless fold over public candles.
+#[cfg(feature = "mexc")]
+pub async fn mexc_screened_stop_preview(
+    picks: Vec<(String, String)>,
+    interval: &str,
+    risk: &str,
+) -> Result<String, String> {
+    ::mexc::screened::mexc_screened_stop_preview(picks, interval, risk)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(feature = "mexc"))]
+pub async fn mexc_screened_stop_preview(
+    _picks: Vec<(String, String)>,
+    _interval: &str,
+    _risk: &str,
+) -> Result<String, String> {
+    Err("mexc feature not enabled (build with --features mexc)".into())
+}

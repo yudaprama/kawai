@@ -340,8 +340,9 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
         {venue === "mexc" ? (
           <>
             {" "}
-            MEXC hits are scan-only: kawai does not place MEXC orders from the screener, so act on them yourself on the
-            exchange.
+            On a MEXC run you can then open the hits you want from the report: kawai sizes each one, derives the
+            direction from the setup that fired, and places the protective stop (plan order) with the entry, plus the
+            take-profit ladder.
           </>
         ) : (
           universe === "usdm" && (

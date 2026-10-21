@@ -217,6 +217,8 @@ pub fn run() {
         commands::binance_auto_protect_positions,
         commands::binance_auto_take_profit_positions,
         commands::mexc_auto_protect_positions,
+        commands::mexc_open_screened_positions,
+        commands::mexc_screened_stop_preview,
         commands::mexc_auto_take_profit_positions,
         commands::binance_auto_tighten_stops,
         commands::binance_open_screened_positions,

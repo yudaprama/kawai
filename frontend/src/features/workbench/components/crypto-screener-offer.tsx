@@ -471,7 +471,23 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
       // A MEXC run offers nothing to place, so the Binance stop preview has
       // nothing to annotate — skip the fetch entirely.
       if (parsed.venue === "mexc") {
-        setPreviewPending(false);
+        setPreviewPending(true);
+        try {
+          const out = await call<string>("mexc_screened_stop_preview", {
+            picks: previewTargets(parsed.hits).map((p) => [p.symbol, p.screen] as [string, string]),
+            interval: parsed.interval,
+            risk: "standard",
+          });
+          if (!alive) return;
+          const rows = JSON.parse(out) as { previews?: (StopPreview & { symbol: string; screen: string })[] };
+          const map: Record<string, StopPreview> = {};
+          for (const p of rows.previews ?? []) map[`${p.symbol}|${p.screen}`] = p;
+          setPreviews(map);
+        } catch {
+          if (alive) setPreviewFailed(true);
+        } finally {
+          if (alive) setPreviewPending(false);
+        }
         return;
       }
       setPreviewPending(true);
@@ -507,7 +523,6 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
   // MEXC hits are read-only: no selection, no sizes, no placement — the panel
   // is a report of where setups fired, nothing more. Absent venue = a
   // pre-venue payload = a Binance run, so the placement path is unchanged.
-  const scanOnly = offer.venue === "mexc";
   const venueLabel = VENUE_LABEL[offer.venue ?? "binance"] ?? "Binance";
 
   const rowKey = (h: ScreenedHit) => `${h.symbol}|${h.screen}`;
@@ -608,7 +623,8 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
     setBusy(true);
     setArmedKey(null);
     try {
-      const out = await call<string>("binance_open_screened_positions", {
+      const endpoint = offer.venue === "mexc" ? "mexc_open_screened_positions" : "binance_open_screened_positions";
+      const payload: Record<string, unknown> = {
         picks: hits.map((h) => ({
           symbol: h.symbol,
           // The screen, never a side: the engine derives the direction from it.
@@ -617,8 +633,9 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
         })),
         interval: offer.interval,
         risk: "standard",
-        takeProfit: withTp,
-      });
+      };
+      if (offer.venue !== "mexc") payload.takeProfit = withTp;
+      const out = await call<string>(endpoint, payload);
       const id = ++logIdRef.current;
       setLog((l) => [...l, { id, label, raw: out }]);
       // The rows that were approved are now positions — leaving them ticked
@@ -637,21 +654,6 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
   const human = (name: string) => name.replace(/_/g, " ");
   const usd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
-  if (scanOnly) {
-    return (
-      <div className="border-border/60 bg-card space-y-2 rounded-lg border p-4">
-        <div className="text-foreground inline-flex items-center gap-2 font-mono text-xs font-bold tracking-wider uppercase">
-          <Icon name="scan-search" className="size-4" />
-          {venueLabel} scan — read-only
-        </div>
-        <p className="text-muted-foreground text-xs">
-          {offer.hits.length} hit{offer.hits.length === 1 ? "" : "s"} on {venueLabel} · {offer.interval} candles — kawai
-          does not place
-          {venueLabel} orders from the screener, so act on these yourself on the exchange.
-        </p>
-      </div>
-    );
-  }
   if (offer.hits.length === 0) {
     // Two very different outcomes must not look alike: the scan found
     // nothing, or it found plenty but every hit was directionless. The second

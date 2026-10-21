@@ -2668,6 +2668,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
         .route("/api/binance_auto_protect_positions", post(binance_auto_protect_positions_handler))
         .route("/api/binance_auto_take_profit_positions", post(binance_auto_take_profit_positions_handler))
         .route("/api/mexc_auto_protect_positions", post(mexc_auto_protect_positions_handler))
+        .route("/api/mexc_open_screened_positions", post(mexc_open_screened_positions_handler))
+        .route("/api/mexc_screened_stop_preview", post(mexc_screened_stop_preview_handler))
         .route("/api/mexc_auto_take_profit_positions", post(mexc_auto_take_profit_positions_handler))
         // Moves existing stops to the engine's recommended level — same
         // contract as the two placement batches above.
@@ -3710,6 +3712,50 @@ struct MexcAutoProtectRequest {
     risk: Option<String>,
     symbols: Option<Vec<String>>,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MexcOpenScreenedRequest {
+    picks: Vec<(String, String, f64)>,
+    interval: Option<String>,
+    risk: Option<String>,
+    place_tp: Option<bool>,
+}
+async fn mexc_open_screened_positions_handler(
+    Extension(user_id): Extension<String>,
+    Json(req): Json<MexcOpenScreenedRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::mexc_trade::mexc_open_screened_positions(
+        &user_id,
+        req.picks,
+        req.interval.as_deref().unwrap_or("4h"),
+        req.risk.as_deref().unwrap_or("standard"),
+        req.place_tp.unwrap_or(true),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MexcScreenedStopPreviewRequest {
+    picks: Vec<(String, String)>,
+    interval: Option<String>,
+    risk: Option<String>,
+}
+async fn mexc_screened_stop_preview_handler(
+    Json(req): Json<MexcScreenedStopPreviewRequest>,
+) -> Result<Json<String>, (StatusCode, String)> {
+    logic::mexc_trade::mexc_screened_stop_preview(
+        req.picks,
+        req.interval.as_deref().unwrap_or("4h"),
+        req.risk.as_deref().unwrap_or("standard"),
+    )
+    .await
+    .map(Json)
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))
+}
+
 async fn mexc_auto_protect_positions_handler(
     Extension(user_id): Extension<String>,
     Json(req): Json<MexcAutoProtectRequest>,

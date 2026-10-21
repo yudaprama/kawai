@@ -2863,3 +2863,40 @@ pub async fn risk_guard_set(
     let user_id = session_user_id(&session)?;
     logic::risk_guard::risk_guard_set(&user_id, enabled).await
 }
+
+/// Open the user-approved screener hits on MEXC, each with its protective
+/// stop (plan order) and, when requested, the take-profit ladder.
+#[tauri::command]
+pub async fn mexc_open_screened_positions(
+    picks: Vec<(String, String, f64)>,
+    interval: Option<String>,
+    risk: Option<String>,
+    place_tp: Option<bool>,
+    session: State<'_, Session>,
+) -> Result<String, String> {
+    let user_id = session_user_id(&session)?;
+    logic::mexc_trade::mexc_open_screened_positions(
+        &user_id,
+        picks,
+        interval.as_deref().unwrap_or("4h"),
+        risk.as_deref().unwrap_or("standard"),
+        place_tp.unwrap_or(true),
+    )
+    .await
+}
+
+/// Pre-approval stop preview for MEXC screener hits — keyless fold over
+/// public candles.
+#[tauri::command]
+pub async fn mexc_screened_stop_preview(
+    picks: Vec<(String, String)>,
+    interval: Option<String>,
+    risk: Option<String>,
+) -> Result<String, String> {
+    logic::mexc_trade::mexc_screened_stop_preview(
+        picks,
+        interval.as_deref().unwrap_or("4h"),
+        risk.as_deref().unwrap_or("standard"),
+    )
+    .await
+}
