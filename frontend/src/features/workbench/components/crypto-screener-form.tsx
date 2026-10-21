@@ -107,9 +107,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
   };
 
   const structure: ScreenerStructureFilter | undefined =
-    side != null || maxDistancePct != null || minTouches != null
-      ? { side, maxDistancePct, minTouches }
-      : undefined;
+    side != null || maxDistancePct != null || minTouches != null ? { side, maxDistancePct, minTouches } : undefined;
 
   const submit = () => {
     if (disabled || screens.length === 0) return;
