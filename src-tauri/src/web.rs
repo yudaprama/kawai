@@ -3149,6 +3149,8 @@ struct RunCryptoScreenerRequest {
     screens: Option<Vec<String>>,
     universe: Option<String>,
     interval: Option<String>,
+    /// Exchange the scan reads: "binance" (default) or "mexc" (scan-only).
+    venue: Option<String>,
     top_n: Option<u32>,
     scan_size: Option<u32>,
     /// Structural narrowing of the hits (nearest pivot level per symbol);
@@ -3378,6 +3380,7 @@ async fn run_crypto_screener_handler(
         &screens,
         req.universe.as_deref().unwrap_or_default(),
         req.interval.as_deref().unwrap_or_default(),
+        req.venue.as_deref().unwrap_or_default(),
         req.top_n,
         req.scan_size,
         req.structure.as_ref(),
@@ -3395,6 +3398,7 @@ async fn run_crypto_screener_handler(
         .unwrap_or_default();
     let universe = args["universe"].as_str().unwrap_or_default().to_string();
     let interval = args["interval"].as_str().unwrap_or_default().to_string();
+    let venue = args["venue"].as_str().unwrap_or_default().to_string();
     let top_n = args["topN"].as_u64().unwrap_or_default() as u32;
     let language = crate::supervisor::resolve_user_language(
         req.language.as_deref(),
@@ -3410,6 +3414,7 @@ async fn run_crypto_screener_handler(
         &screens,
         &universe,
         &interval,
+        &venue,
         top_n,
         &language,
         structure_label.as_deref(),

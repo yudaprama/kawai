@@ -87,6 +87,9 @@ interface RunCryptoScreenerOptions {
   universe: string;
   /** Candle interval the screens fold on (default "1d"). */
   interval: string;
+  /** Exchange the scan reads: "binance" (default) | "mexc" (futures-only,
+   * scan-only — no placement offer). */
+  venue?: string;
   /** Hits returned per screen (1-25, default 10). */
   topN: number;
   /** How many top-liquidity symbols each scan covers (1-2000). Omitted =
@@ -691,6 +694,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           screens: options.screens,
           universe: options.universe,
           interval: options.interval,
+          venue: options.venue,
           topN: options.topN,
           scanSize: options.scanSize,
           structure: options.structure,

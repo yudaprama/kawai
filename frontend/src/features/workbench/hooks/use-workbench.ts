@@ -980,6 +980,7 @@ export function useWorkbench() {
       screens: string[],
       universe: string,
       interval: string,
+      venue: string,
       topN: number,
       scanSize: number | undefined,
       structure: ScreenerStructureFilter | undefined,
@@ -1007,13 +1008,14 @@ export function useWorkbench() {
             .filter(Boolean)
             .join(" ")
         : "";
-      const goal = `Crypto screener — ${universe} ${interval} candles: ${screens.join(", ")}${
-        narrowing ? ` · structure: ${narrowing}` : ""
-      }`.slice(0, 140);
+      const goal =
+        `Crypto screener — ${venue === "mexc" ? "MEXC" : "Binance"} ${universe} ${interval} candles: ${screens.join(", ")}${
+          narrowing ? ` · structure: ${narrowing}` : ""
+        }`.slice(0, 140);
       beginRun(goal, false);
       opts?.onStart?.();
       void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
-      supervisor.runCryptoScreener({ screens, universe, interval, topN, scanSize, structure }, sid);
+      supervisor.runCryptoScreener({ screens, universe, interval, venue, topN, scanSize, structure }, sid);
       void refreshTokenBalance();
     },
     [supervisor, preflightRun, beginRun],

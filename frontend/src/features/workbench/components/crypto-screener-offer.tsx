@@ -9,6 +9,11 @@ import { cn } from "@/lib/utils";
  * both live supervisor state and persisted run records. */
 export const CRYPTO_SCREENER_TOOL = "crypto_screener";
 
+/** Exchange label for placement results — the placement payload carries the
+ * venue key (`venue: "binance"`), and the user must never have to guess which
+ * exchange a confirmed order went to. */
+const VENUE_LABEL: Record<string, string> = { binance: "Binance", mexc: "MEXC" };
+
 /**
  * EVERY screener step of a run, in plan order.
  *
@@ -80,6 +85,9 @@ export interface MyPerformance {
  * SAME candles the scan used), the actionable hits merged from EVERY screen's
  * step, and the scan's own totals for context. */
 export interface ScreenerOffer {
+  /** Exchange the scan read. `null` on a payload predating the venue key —
+   * every such run was a Binance run, so a null reads as binance. */
+  venue: string | null;
   universe: string;
   interval: string;
   /** Symbols folded in the scan, across all steps. */
@@ -143,6 +151,7 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
   const hits: ScreenedHit[] = [];
   const seen = new Set<string>();
   let universe: string | null = null;
+  let venue: string | null = null;
   let interval: string | null = null;
   let scanned = 0;
   let hitsTotal = 0;
@@ -165,11 +174,15 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
     // `hits` present but empty is a legitimate "this screen found nothing".
     if (!("hits" in o) || !Array.isArray(o.hits)) continue;
     const u = str(o.universe) ?? "";
-    // A run is ONE market family; a step claiming otherwise is a stale or
-    // foreign result, and honoring it would offer rows the engine refuses.
+    // A run is ONE market family AND ONE exchange; a step claiming otherwise
+    // is a stale or foreign result, and honoring it would offer rows the
+    // engine refuses. Absent venue = a pre-venue payload = Binance.
     if (universe != null && u !== universe) continue;
+    const vv = str(o.venue) ?? "binance";
+    if (venue != null && vv !== venue) continue;
     if (universe == null) {
       universe = u;
+      venue = vv;
       interval = str(o.interval) ?? "4h";
     }
     readable += 1;
@@ -266,6 +279,7 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
     return b.score - a.score || a.symbol.localeCompare(b.symbol);
   });
   return {
+    venue,
     universe,
     interval: interval ?? "4h",
     scanned,
@@ -284,6 +298,7 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
  * in a success count — and a position with no resting take-profit (the
  * ladder was requested, no rung could rest) is the next one. */
 export function placementSummary(raw: string): {
+  venue: string | null;
   opened: number;
   failed: number;
   unprotected: number;
@@ -313,6 +328,7 @@ export function placementSummary(raw: string): {
           }))
       : [];
   return {
+    venue: str(o.venue),
     opened,
     failed,
     unprotected: num(o.unprotected) ?? 0,
@@ -452,6 +468,12 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
       // to a broken panel.
       const parsed = parseScreenerOffer(results);
       if (parsed == null || parsed.hits.length === 0) return;
+      // A MEXC run offers nothing to place, so the Binance stop preview has
+      // nothing to annotate — skip the fetch entirely.
+      if (parsed.venue === "mexc") {
+        setPreviewPending(false);
+        return;
+      }
       setPreviewPending(true);
       try {
         const out = await call<string>("binance_screened_stop_preview", {
@@ -482,6 +504,11 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
   // gets an explicit empty state rather than vanishing — the same "did nothing
   // happen, or is something broken?" question the audit offer answers.
   if (readFailed || offer == null) return null;
+  // MEXC hits are read-only: no selection, no sizes, no placement — the panel
+  // is a report of where setups fired, nothing more. Absent venue = a
+  // pre-venue payload = a Binance run, so the placement path is unchanged.
+  const scanOnly = offer.venue === "mexc";
+  const venueLabel = VENUE_LABEL[offer.venue ?? "binance"] ?? "Binance";
 
   const rowKey = (h: ScreenedHit) => `${h.symbol}|${h.screen}`;
   const q = query.trim().toUpperCase();
@@ -610,6 +637,21 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
   const human = (name: string) => name.replace(/_/g, " ");
   const usd = (n: number) => `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 
+  if (scanOnly) {
+    return (
+      <div className="border-border/60 bg-card space-y-2 rounded-lg border p-4">
+        <div className="text-foreground inline-flex items-center gap-2 font-mono text-xs font-bold tracking-wider uppercase">
+          <Icon name="scan-search" className="size-4" />
+          {venueLabel} scan — read-only
+        </div>
+        <p className="text-muted-foreground text-xs">
+          {offer.hits.length} hit{offer.hits.length === 1 ? "" : "s"} on {venueLabel} · {offer.interval} candles — kawai
+          does not place
+          {venueLabel} orders from the screener, so act on these yourself on the exchange.
+        </p>
+      </div>
+    );
+  }
   if (offer.hits.length === 0) {
     // Two very different outcomes must not look alike: the scan found
     // nothing, or it found plenty but every hit was directionless. The second
@@ -649,7 +691,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
           was searched rather than the whole job — and a run whose steps were
           only partly readable says so. */}
       <div className="text-muted-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
-        <span className="rounded border px-1.5 py-0.5">USDⓈ-M futures</span>
+        <span className="rounded border px-1.5 py-0.5">{venueLabel} · USDⓈ-M futures</span>
         <span className="rounded border px-1.5 py-0.5">{offer.interval} candles</span>
         <span className="rounded border px-1.5 py-0.5">standard stops</span>
         <span className="text-foreground rounded border px-1.5 py-0.5">
@@ -1001,6 +1043,9 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
               <div className="space-y-1">
                 <div className="text-foreground font-mono text-[11px]">
                   Opened {summary.opened} · failed {summary.failed}
+                  {summary.venue && (
+                    <span className="text-muted-foreground"> · on {VENUE_LABEL[summary.venue] ?? summary.venue}</span>
+                  )}
                   {summary.unprotected > 0 && (
                     <span className="text-destructive"> · {summary.unprotected} without a stop</span>
                   )}

@@ -27,6 +27,14 @@ const UNIVERSES = [
  * server-side (and `1s` is spot-only — the backend rejects it for perp). */
 const INTERVALS = ["15m", "1h", "4h", "1d", "1w"] as const;
 
+/** Exchange the scan reads — mirrors the backend's `resolve_venue`. MEXC is
+ * futures-only and scan-only: kawai places no MEXC order from the screener,
+ * so its hits are read-and-decide-yourself. */
+const VENUES = [
+  { id: "binance", label: "Binance" },
+  { id: "mexc", label: "MEXC · hasil saja" },
+] as const;
+
 /** Hits returned per setup (the backend clamps 1-25). */
 const TOP_NS = [5, 10, 25] as const;
 
@@ -75,6 +83,7 @@ export interface CryptoScreenerFormProps {
     screens: string[],
     universe: string,
     interval: string,
+    venue: string,
     topN: number,
     scanSize?: number,
     /** Omitted when every chip sits on "Any" — the scan then reports each
@@ -92,6 +101,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
   const [screens, setScreens] = useState<string[]>(["macd_golden_cross"]);
   const [universe, setUniverse] = useState<string>("usdm");
   const [interval, setInterval] = useState<string>("1d");
+  const [venue, setVenue] = useState<string>("binance");
   const [topN, setTopN] = useState<number>(10);
   const [scanSize, setScanSize] = useState<number | undefined>(undefined);
   const [side, setSide] = useState<"support" | "resistance" | undefined>(undefined);
@@ -111,7 +121,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
 
   const submit = () => {
     if (disabled || screens.length === 0) return;
-    onSubmit(screens, universe, interval, topN, scanSize, structure);
+    onSubmit(screens, universe, interval, venue, topN, scanSize, structure);
   };
 
   const chip = (active: boolean) =>
@@ -164,14 +174,35 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
         </Field>
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <Field label="Exchange">
+            {VENUES.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                disabled={disabled}
+                aria-pressed={venue === v.id}
+                onClick={() => {
+                  setVenue(v.id);
+                  // MEXC has no spot market — the backend would reject the
+                  // run, so the switch moves the family here instead.
+                  if (v.id === "mexc") setUniverse("usdm");
+                }}
+                className={chip(venue === v.id)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </Field>
+
           <Field label="Market">
             {UNIVERSES.map((u) => (
               <button
                 key={u.id}
                 type="button"
-                disabled={disabled}
+                disabled={disabled || (venue === "mexc" && u.id !== "usdm")}
                 aria-pressed={universe === u.id}
                 onClick={() => setUniverse(u.id)}
+                title={venue === "mexc" && u.id !== "usdm" ? "MEXC has futures only" : undefined}
                 className={chip(universe === u.id)}
               >
                 {u.label}
@@ -300,17 +331,26 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
       </div>
 
       <p className="text-muted-foreground mt-3 font-mono text-[10px] leading-relaxed">
-        Read-only market scan over Binance public data (top-liquidity USDT pairs): ranks symbols by 24h volume, folds
-        indicators per symbol, and reports every hit with a conviction score and reasons. Every hit also carries its
-        market structure — the nearest confirmed pivot level, how far price is from it, and how often it was tested; the
-        Structure chips above narrow the book to symbols that satisfy all of them (no extra fetch). No API keys needed —
-        the scan itself never places an order. Symbols hitting multiple setups are called out first in the report.
-        {universe === "usdm" && (
+        Read-only market scan over {venue === "mexc" ? "MEXC" : "Binance"} public data (top-liquidity USDT pairs): ranks
+        symbols by 24h volume, folds indicators per symbol, and reports every hit with a conviction score and reasons.
+        Every hit also carries its market structure — the nearest confirmed pivot level, how far price is from it, and
+        how often it was tested; the Structure chips above narrow the book to symbols that satisfy all of them (no extra
+        fetch). No API keys needed — the scan itself never places an order. Symbols hitting multiple setups are called
+        out first in the report.
+        {venue === "mexc" ? (
           <>
             {" "}
-            On a USDⓈ-M run you can then open the hits you want from the report: kawai sizes each one, derives the
-            direction from the setup that fired, and places the protective stop with the entry.
+            MEXC hits are scan-only: kawai does not place MEXC orders from the screener, so act on them yourself on the
+            exchange.
           </>
+        ) : (
+          universe === "usdm" && (
+            <>
+              {" "}
+              On a USDⓈ-M run you can then open the hits you want from the report: kawai sizes each one, derives the
+              direction from the setup that fired, and places the protective stop with the entry.
+            </>
+          )
         )}
       </p>
     </div>

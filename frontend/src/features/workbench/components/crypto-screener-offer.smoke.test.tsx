@@ -185,6 +185,7 @@ describe("placementSummary", () => {
   const summary = (over: Record<string, unknown> = {}) =>
     placementSummary(
       JSON.stringify({
+        venue: "binance",
         opened: 2,
         failed: 1,
         unprotected: 1,
@@ -200,10 +201,17 @@ describe("placementSummary", () => {
     const s = summary();
     expect(s?.opened).toBe(2);
     expect(s?.failed).toBe(1);
+    // The venue the orders actually went to — never left for the user to
+    // discover on the exchange.
+    expect(s?.venue).toBe("binance");
     // The one outcome that must never hide behind the success count.
     expect(s?.unprotected).toBe(1);
     expect(s?.naked[0].symbol).toBe("BTCUSDT");
     expect(s?.failures[0].symbol).toBe("XRPUSDT");
+  });
+
+  it("leaves the venue null when the payload predates it", () => {
+    expect(summary({ venue: undefined })?.venue).toBeNull();
   });
 
   it("reads a clean all-protected run without inventing a naked position", () => {

@@ -421,12 +421,13 @@ export function WorkbenchPage({
       screens: string[],
       universe: string,
       interval: string,
+      venue: string,
       topN: number,
       scanSize?: number,
       structure?: ScreenerStructureFilter,
     ) => {
       beginPipelineRun((onStart) =>
-        workbench.runScreener(screens, universe, interval, topN, scanSize, structure, { onStart }),
+        workbench.runScreener(screens, universe, interval, venue, topN, scanSize, structure, { onStart }),
       );
     },
     [beginPipelineRun, workbench.runScreener],
