@@ -28,6 +28,10 @@ Lint/format is Biome (`biome.jsonc` at the repo root). The vendored trees
 are excluded from both linter and formatter so re-syncs from `web/` stay
 diff-clean. CI runs `lint` + `test` + `build` in the `web` job.
 
+A pre-commit hook auto-fixes staged frontend files (`biome check --write` via
+lint-staged; unfixable lint errors block the commit). Enable per clone:
+`git config core.hooksPath scripts/githooks`.
+
 ## What's vendored (do NOT edit these unless syncing from upstream)
 
 From the `web/` SPA (updates require the same trims to be reapplied):

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Biome auto-fix for staged frontend files, via lint-staged (config in package.json).
+# biome check --write applies safe fixes + formatting; unfixable lint errors block the commit.
+# One-time enable per clone: git config core.hooksPath scripts/githooks
+[ -x node_modules/.bin/lint-staged ] || exit 0
+exec node_modules/.bin/lint-staged "$@"
