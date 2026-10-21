@@ -2868,7 +2868,7 @@ pub async fn risk_guard_set(
 /// stop (plan order) and, when requested, the take-profit ladder.
 #[tauri::command]
 pub async fn mexc_open_screened_positions(
-    picks: Vec<(String, String, f64)>,
+    picks: Vec<logic::mexc_trade::MexcScreenedPick>,
     interval: Option<String>,
     risk: Option<String>,
     place_tp: Option<bool>,
@@ -2889,7 +2889,7 @@ pub async fn mexc_open_screened_positions(
 /// public candles.
 #[tauri::command]
 pub async fn mexc_screened_stop_preview(
-    picks: Vec<(String, String)>,
+    picks: Vec<logic::mexc_trade::MexcScreenedPreviewPick>,
     interval: Option<String>,
     risk: Option<String>,
 ) -> Result<String, String> {

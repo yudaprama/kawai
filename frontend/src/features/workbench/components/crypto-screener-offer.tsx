@@ -474,7 +474,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
         setPreviewPending(true);
         try {
           const out = await call<string>("mexc_screened_stop_preview", {
-            picks: previewTargets(parsed.hits).map((p) => [p.symbol, p.screen] as [string, string]),
+            picks: previewTargets(parsed.hits),
             interval: parsed.interval,
             risk: "standard",
           });

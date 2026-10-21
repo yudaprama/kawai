@@ -3715,7 +3715,7 @@ struct MexcAutoProtectRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MexcOpenScreenedRequest {
-    picks: Vec<(String, String, f64)>,
+    picks: Vec<crate::logic::mexc_trade::MexcScreenedPick>,
     interval: Option<String>,
     risk: Option<String>,
     place_tp: Option<bool>,
@@ -3739,7 +3739,7 @@ async fn mexc_open_screened_positions_handler(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MexcScreenedStopPreviewRequest {
-    picks: Vec<(String, String)>,
+    picks: Vec<crate::logic::mexc_trade::MexcScreenedPreviewPick>,
     interval: Option<String>,
     risk: Option<String>,
 }

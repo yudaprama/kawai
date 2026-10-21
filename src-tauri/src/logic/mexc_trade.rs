@@ -59,19 +59,38 @@ pub async fn mexc_auto_take_profit_positions(
     Err("mexc feature not enabled (build with --features mexc)".into())
 }
 
+/// The MEXC twin of `binance_trade::ScreenedPick` — one approved screener hit.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct MexcScreenedPick {
+    pub symbol: String,
+    /// The screen that produced the hit — the side is DERIVED from it, so a
+    /// client cannot ask for a short on a bullish setup.
+    pub screen: String,
+    /// Position size in USDT, exactly as approved in the offer.
+    pub notional: f64,
+}
+
+/// One (symbol, screen) pair the MEXC offer previews BEFORE any approval —
+/// the twin of `binance_trade::ScreenedPreviewPick`.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct MexcScreenedPreviewPick {
+    pub symbol: String,
+    pub screen: String,
+}
+
 /// Open the user-approved screener hits on MEXC, each with its protective
 /// stop (plan order) and, when requested, the take-profit ladder.
 #[cfg(feature = "mexc")]
 pub async fn mexc_open_screened_positions(
     user_id: &str,
-    picks: Vec<(String, String, f64)>,
+    picks: Vec<MexcScreenedPick>,
     interval: &str,
     risk: &str,
     place_tp: bool,
 ) -> Result<String, String> {
     let picks = picks
         .into_iter()
-        .map(|(symbol, screen, notional)| ::mexc::screened::EntryPick { symbol, screen, notional })
+        .map(|p| ::mexc::screened::EntryPick { symbol: p.symbol, screen: p.screen, notional: p.notional })
         .collect();
     ::mexc::screened::mexc_open_screened_positions(user_id, picks, interval, risk, place_tp)
         .await
@@ -81,7 +100,7 @@ pub async fn mexc_open_screened_positions(
 #[cfg(not(feature = "mexc"))]
 pub async fn mexc_open_screened_positions(
     _user_id: &str,
-    _picks: Vec<(String, String, f64)>,
+    _picks: Vec<MexcScreenedPick>,
     _interval: &str,
     _risk: &str,
     _place_tp: bool,
@@ -92,10 +111,11 @@ pub async fn mexc_open_screened_positions(
 /// Pre-approval stop preview for MEXC hits — keyless fold over public candles.
 #[cfg(feature = "mexc")]
 pub async fn mexc_screened_stop_preview(
-    picks: Vec<(String, String)>,
+    picks: Vec<MexcScreenedPreviewPick>,
     interval: &str,
     risk: &str,
 ) -> Result<String, String> {
+    let picks = picks.into_iter().map(|p| (p.symbol, p.screen)).collect();
     ::mexc::screened::mexc_screened_stop_preview(picks, interval, risk)
         .await
         .map_err(|e| e.to_string())
@@ -103,7 +123,7 @@ pub async fn mexc_screened_stop_preview(
 
 #[cfg(not(feature = "mexc"))]
 pub async fn mexc_screened_stop_preview(
-    _picks: Vec<(String, String)>,
+    _picks: Vec<MexcScreenedPreviewPick>,
     _interval: &str,
     _risk: &str,
 ) -> Result<String, String> {
