@@ -127,6 +127,7 @@ the reason.
 | `crypto_klines` | OHLCV candles |
 | `crypto_depth` | order book |
 | `crypto_ta_analyze` | indicator suite over klines |
+| `crypto_market_structure` | confirmed swing pivots, clustered support/resistance levels, trend regime and the last structural break |
 | `crypto_balances` / `crypto_open_orders` | read-only account tools — signed via the baked kawai-vault read-only pair (never trade permission) |
 | `stock_quote` / `stock_info` | Binance Stocks US-equity bid/ask quote + symbol metadata — same baked kawai-vault pair |
 | `binance_futures_positions` | open futures positions + their open orders incl. stop-losses / take-profits, mirrored into `binance_futures_positions` / `binance_futures_open_orders` — BOTH markets: USDⓈ-M (`fapi`) AND COIN-M (`dapi`) — see §5.1 |
@@ -686,6 +687,7 @@ Binance (`crates/toolsets/binance`):
 | `crypto_depth` | `{symbol, book:{bestBid, bestAsk, spread, mid}, bids, asks}` | `renderBinanceDepth` |
 | `crypto_klines` | `{symbol, interval, count, candles:[[openTime, open, high, low, close, volume],…], _source}` | `chart(binanceKlineSeries)` |
 | `crypto_ta_analyze` | indicator finals (e.g. `rsi14`, `ema9`, `macd12269`) + `windowChangePct`, `skipped` | `renderBinanceTa` |
+| `crypto_market_structure` | `{kind:"market_structure", symbol:{symbol, interval, half_width}, last_close, candles, atr, er, trend, swings:[{bar, price, kind, age}], levels:[{price, distance_pct, touches, side, last_touch_age}], last_break:{direction, level, bars_ago}, skipped}` | `renderMarketStructure` |
 | `crypto_balances` | `{canTrade, balances:[{asset, free, locked}]}` | `renderBinanceBalances` |
 | `crypto_open_orders` | `{count, orders:[…]}` | `renderBinanceOpenOrders` |
 | `stock_quote` / `stock_info` | `{symbol, bidPrice?, askPrice?, bidSize?, askSize?, mid?}` / `{symbol, tradability, fractionable, …}` | `KeyValueView` (via `genericKv`) |

@@ -550,6 +550,109 @@ export function renderBinanceTa(output: unknown): ReactNode {
   );
 }
 
+/**
+ * crypto_market_structure →
+ * { kind: "market_structure", symbol: { symbol, interval, half_width },
+ *   last_close, candles, atr, er, trend, swings[], levels[], last_break, skipped[] }
+ *
+ * The structural card: the regime and the confirmed breaks up top, then the
+ * clustered levels with their distance from price. `touches` is the whole
+ * point of the card — a level tested three times is structure, one tested once
+ * is a wick — so it leads every level cell.
+ */
+export function renderMarketStructure(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || d.kind !== "market_structure") return null;
+  const meta = isRecord(d.symbol) ? d.symbol : {};
+  const last = num(d.last_close);
+  if (last === null || last === 0) return null;
+
+  const trend = str(d.trend) ?? "range";
+  const items: Metric[] = [
+    {
+      label: [str(meta.symbol), str(meta.interval), `${num(d.candles) ?? 0} candles`]
+        .filter(Boolean)
+        .join(" · "),
+      value: fmtPrice(last),
+      delta: trend,
+      up: trend === "bullish" ? true : trend === "bearish" ? false : undefined,
+      tone: trend === "bullish" ? "ok" : trend === "bearish" ? "danger" : "warn",
+    },
+  ];
+
+  const atr = num(d.atr);
+  if (atr !== null) {
+    items.push({
+      label: "ATR 14",
+      value: fmtPrice(atr),
+      sub: `${fmtPct((atr / last) * 100)}% of price`,
+    });
+  }
+  const er = num(d.er);
+  if (er !== null) {
+    items.push({ label: "Efficiency 14", value: er.toFixed(2), sub: "regime filter" });
+  }
+
+  const brk = isRecord(d.last_break) ? d.last_break : null;
+  const level = brk ? num(brk.level) : null;
+  if (brk && level !== null) {
+    const up = str(brk.direction) === "up";
+    const ago = num(brk.bars_ago) ?? 0;
+    items.push({
+      label: "Last break",
+      value: fmtPrice(level),
+      sub: `${up ? "resistance broken" : "support broken"} · ${ago} ${ago === 1 ? "bar" : "bars"} ago`,
+      delta: up ? "bullish" : "bearish",
+      up,
+    });
+  }
+
+  const levels = Array.isArray(d.levels) ? d.levels.filter(isRecord) : [];
+  const levelItems: Metric[] = levels.slice(0, 8).map((l) => {
+    const price = num(l.price);
+    const touches = num(l.touches) ?? 0;
+    const age = num(l.last_touch_age) ?? 0;
+    const support = str(l.side) === "support";
+    // Precomputed by the engine: the same arithmetic on both sides would drift.
+    const distance = num(l.distance_pct);
+    const sub = [
+      distance !== null ? `${distance >= 0 ? "+" : ""}${fmtPct(distance)}% vs price` : null,
+      age > 0 ? `${age} ${age === 1 ? "bar" : "bars"} old` : "on the last bar",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return {
+      label: `${support ? "Support" : "Resistance"} · ${touches}×`,
+      value: price !== null ? fmtPrice(price) : "—",
+      sub,
+      tone: support ? "ok" : "warn",
+    };
+  });
+
+  const half = num(meta.half_width) ?? 2;
+  const swings = Array.isArray(d.swings) ? d.swings.length : 0;
+  const skipped = Array.isArray(d.skipped)
+    ? d.skipped
+        .map((s) => (isRecord(s) && typeof s.name === "string" ? s.name : null))
+        .filter((s): s is string => s !== null)
+    : [];
+
+  return (
+    <TextCard>
+      <MetricGrid items={items} />
+      {levelItems.length > 0 && (
+        <div className="mt-2">
+          <MetricGrid items={levelItems} />
+        </div>
+      )}
+      <Footnote>
+        {`${swings} confirmed swing${swings === 1 ? "" : "s"} · pivots need ${half} closed bars on each side, so the last ${half} bars can never be one`}
+      </Footnote>
+      {skipped.length > 0 && <Footnote>Not enough history for: {skipped.join(", ")}</Footnote>}
+    </TextCard>
+  );
+}
+
 // ── binance_futures_audit_data ─────────────────────────────────────────────
 
 /**

@@ -4,8 +4,9 @@
 // exercised here — those live on api.binance.com only and geo-block CI.
 //
 // Exercises: crypto_price → crypto_depth → crypto_klines → the composite
-// crypto_ta_analyze (klines fetch + in-process `ta` indicator suite), plus
-// server-side input validation.
+// crypto_ta_analyze (klines fetch + in-process `ta` indicator suite) →
+// crypto_market_structure (the shared pivot scan: swings, levels, trend,
+// last break), plus server-side input validation.
 //
 // Geo-skip: api.binance.com answers 451/403 to some hosting regions (e.g.
 // US-based CI runners). When NOTHING has succeeded yet and the failure looks
@@ -16,8 +17,8 @@
 // Usage:
 //   cargo run --example binance_smoke --features binance
 use binance::{
-    DepthArgs, DepthTool, KlinesArgs, KlinesTool, PriceArgs, PriceTool, TaAnalyzeArgs,
-    TaAnalyzeTool,
+    DepthArgs, DepthTool, KlinesArgs, KlinesTool, MarketStructureArgs, MarketStructureTool,
+    PriceArgs, PriceTool, TaAnalyzeArgs, TaAnalyzeTool,
 };
 use kawai_tools::AgentTool;
 use serde_json::Value;
@@ -170,7 +171,58 @@ async fn main() {
         ta["windowChangePct"]
     );
 
-    // ── 5. invalid input is rejected server-side ──
+    // ── 5. market structure (the pivot scan the stop policy shares) ──
+    let structure = parse(
+        "crypto_market_structure",
+        step!(
+            succeeded,
+            "crypto_market_structure",
+            MarketStructureTool.call(MarketStructureArgs {
+                symbol: "BTCUSDT".into(),
+                interval: Some("1d".into()),
+                limit: None,
+                half_width: None,
+                max_levels: None,
+            })
+        ),
+    );
+    assert_eq!(
+        structure["kind"], "market_structure",
+        "structure: kind discriminator"
+    );
+    let levels = structure["levels"]
+        .as_array()
+        .expect("structure: levels array");
+    assert!(!levels.is_empty(), "structure: no levels on 300 daily bars");
+    let level = &levels[0];
+    for key in ["price", "touches", "side", "distance_pct", "last_touch_age"] {
+        assert!(level.get(key).is_some(), "structure: level missing {key}");
+    }
+    let trend = structure["trend"].as_str().expect("structure: trend");
+    assert!(
+        matches!(trend, "bullish" | "bearish" | "range"),
+        "structure: unexpected trend {trend}"
+    );
+    let swings = structure["swings"]
+        .as_array()
+        .expect("structure: swings array");
+    assert!(!swings.is_empty(), "structure: no confirmed swings");
+    // Pivots are lagged by design: the newest possible one sits `half_width`
+    // bars back, so its age can never be 0.
+    let newest_age = swings
+        .iter()
+        .filter_map(|s| s["age"].as_u64())
+        .min()
+        .expect("structure: swing age");
+    assert!(newest_age >= 1, "structure: a pivot repainted the current bar");
+    println!(
+        "[binance_smoke] structure  BTCUSDT 1d trend={trend} levels={} swings={} newest_age={newest_age} break={}",
+        levels.len(),
+        swings.len(),
+        structure["last_break"]
+    );
+
+    // ── 6. invalid input is rejected server-side ──
     let bad_interval = KlinesTool
         .call(KlinesArgs {
             symbol: "BTCUSDT".into(),

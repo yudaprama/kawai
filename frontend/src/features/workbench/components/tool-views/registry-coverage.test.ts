@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import { renderStepReport } from "@/features/workbench/components/tool-views";
 
 import { renderMexcFuturesFillSync, renderVenueFillsImport } from "@/components/ai-elements/tool-renderers/accounting";
-import { renderMexcFuturesPositions } from "@/components/ai-elements/tool-renderers/finance";
+import {
+  renderMarketStructure,
+  renderMexcFuturesPositions,
+} from "@/components/ai-elements/tool-renderers/finance";
 
 /**
  * The registry gate: every tool kawai can dispatch in a plan must CLAIM its
@@ -281,5 +284,48 @@ describe("dispatch gate: every accounting tool claims its output", () => {
     // Same anti-drift check as the fill sync: the chat inspector registry and
     // the canvas registry must both claim the tool.
     expect(renderMexcFuturesPositions(MEXC_FUTURES_POSITIONS)).not.toBeNull();
+  });
+});
+
+/** crypto_market_structure output, verbatim from the Rust tool's payload
+ * builder (a 9-bar fixture: ATR/ER still in warmup, so both are null). */
+const MARKET_STRUCTURE = {
+  atr: null,
+  candles: 9,
+  er: null,
+  kind: "market_structure",
+  last_break: { bars_ago: 2, direction: "up", level: 12.0 },
+  last_close: 12.25,
+  levels: [
+    { distance_pct: -26.53, last_touch_age: 3, price: 9.0, side: "support", touches: 2 },
+    { distance_pct: -2.04, last_touch_age: 4, price: 12.0, side: "resistance", touches: 2 },
+    { distance_pct: -18.37, last_touch_age: 1, price: 10.0, side: "support", touches: 1 },
+    { distance_pct: 10.2, last_touch_age: 2, price: 13.5, side: "resistance", touches: 1 },
+  ],
+  skipped: [
+    { have: 9, name: "atr", need: 15 },
+    { have: 9, name: "er", need: 15 },
+  ],
+  swings: [
+    { age: 1, bar: 7, kind: "low", price: 10.0 },
+    { age: 2, bar: 6, kind: "high", price: 13.5 },
+  ],
+  symbol: { half_width: 1, interval: "4h", symbol: "BTCUSDT" },
+  trend: "bullish",
+};
+
+describe("dispatch gate: market structure claims its output", () => {
+  it("renders a card through the step registry", () => {
+    const node = renderStepReport("crypto_market_structure", JSON.stringify(MARKET_STRUCTURE));
+    expect(node).not.toBeNull();
+    expect(JSON.stringify(node)).toContain("Last break");
+  });
+
+  it("renders through the chat registry too", () => {
+    expect(renderMarketStructure(MARKET_STRUCTURE)).not.toBeNull();
+  });
+
+  it("refuses a foreign payload instead of half-rendering it", () => {
+    expect(renderMarketStructure({ kind: "audit_data", last_close: 1 })).toBeNull();
   });
 });

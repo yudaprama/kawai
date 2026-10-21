@@ -6,7 +6,7 @@ import { cards } from "./shared";
 import { renderBibleVerse, renderQuran, renderPoem, renderDefinition } from "./typographic";
 import { renderWeather, renderForecast } from "./weather";
 import { renderMedia } from "./media";
-import { renderCurrency, renderCryptoPrice, renderStockQuote, renderTicker24, chart, twelveSeries, klinesSeries, tiingoSeries, binanceKlineSeries, renderBinanceDepth, renderBinanceTa, renderBinanceBalances, renderBinanceOpenOrders, renderBinanceFuturesPositions, renderMexcFuturesPositions, renderBinanceFuturesRiskAudit, renderBinanceFuturesAuditData, renderCryptoScreener, renderCryptoScreenerData } from "./finance";
+import { renderCurrency, renderCryptoPrice, renderStockQuote, renderTicker24, chart, twelveSeries, klinesSeries, tiingoSeries, binanceKlineSeries, renderBinanceDepth, renderBinanceTa, renderMarketStructure, renderBinanceBalances, renderBinanceOpenOrders, renderBinanceFuturesPositions, renderMexcFuturesPositions, renderBinanceFuturesRiskAudit, renderBinanceFuturesAuditData, renderCryptoScreener, renderCryptoScreenerData } from "./finance";
 import { jikanCards, mealCards, drinkCards, bookCards, repoCards, paperCards, quakeCards, flightStateCards, recentFlightCards, renderSpacexLaunch, spacexList } from "./cards";
 import { renderGeocode, renderIpLocation, renderIss } from "./geo";
 import { renderConnectorTools } from "./connector";
@@ -97,6 +97,7 @@ const registry: Record<string, ToolRenderer> = {
   crypto_depth: renderBinanceDepth,
   crypto_klines: (o) => chart(binanceKlineSeries(o)),
   crypto_ta_analyze: renderBinanceTa,
+  crypto_market_structure: renderMarketStructure,
   crypto_balances: renderBinanceBalances,
   crypto_open_orders: renderBinanceOpenOrders,
   binance_futures_positions: renderBinanceFuturesPositions,
