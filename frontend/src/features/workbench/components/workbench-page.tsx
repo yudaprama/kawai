@@ -567,7 +567,7 @@ export function WorkbenchPage({
                 State a goal. Watch the work.
               </p>
             </div>
-            <div className="w-full max-w-2xl text-left">
+            <div className="mx-auto w-full max-w-2xl text-left">
               <ChatComposer
                 agentName="Workbench"
                 chipDraft={chipDraft}
@@ -641,7 +641,7 @@ export function WorkbenchPage({
               )}
             </div>
             {workbench.runs.length > 0 ? (
-              <div className="w-full max-w-2xl text-left">
+              <div className="mx-auto w-full max-w-2xl text-left">
                 <RunHistory
                   onReopen={(runId) => {
                     setHome(false);
