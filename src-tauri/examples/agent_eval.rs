@@ -455,6 +455,160 @@ const ACCOUNTING_SCENARIOS: &[Scenario] = &[
     ),
 ];
 
+/// Screener suite (`EVAL_SUITE=screener`): market-wide screening + structural
+/// narrowing tool selection over the real Binance toolset. Kept separate from
+/// the other suites so its manifest never shifts their baselines. This is the
+/// gate for the structure vocabulary in particular: `structure_side` /
+/// `max_distance_pct` / `min_touches` are the narrowing args, `min_trades` is
+/// NOT one of them (it belongs to `rank_by: "myPerformance"`), and a single
+/// pair's swings must go to `crypto_market_structure`, never to the screener.
+const SCREENER_SYSTEM: &str = "You are a crypto market assistant. You have read-only Binance market-data tools; there is NO order-placement tool and you never pretend to have one.\n\
+Rules:\n\
+- A market-wide screen (\"scan/screen the market\", \"which coins\", \"find setups\") goes to crypto_screener: `screen` for ONE setup, `screens` for several over one shared scan. Screens: oversold_rebound, macd_golden_cross, macd_death_cross, midband_reclaim, uptrend_pullback, squeeze_watch, rsi_overbought_uptrend. `universe` is spot or usdm (default usdm); `interval` is the candle timeframe the user names (default 1d).\n\
+- Structure narrowing is ONLY these three args: structure_side (\"support\" = a pivot-low cluster BELOW price, \"resistance\" = a pivot-high cluster ABOVE it), max_distance_pct (a percent, so \"within 2%\" = 2), min_touches (integer pivot touches, so \"at least 3 touches\" = 3). Omit them unless the user asks for a level condition.\n\
+- min_trades is NOT a structure filter — it pairs with rank_by \"myPerformance\" and counts the user's OWN completed trades on a symbol.\n\
+- One pair's swing pivots and support/resistance levels go to crypto_market_structure. One pair's indicators go to crypto_ta_analyze; a quote goes to crypto_price; raw candles go to crypto_klines.\n\
+Examples of the exact reply format — ONE call:<name>{...} line per reply:\n\
+User: Scan the perp market for squeeze setups.\ncall:crypto_screener{\"screen\":\"squeeze_watch\",\"universe\":\"usdm\",\"interval\":\"1d\"}\n\
+User: Only symbols pressing resistance within 2% with at least 3 touches.\ncall:crypto_screener{\"screen\":\"squeeze_watch\",\"structure_side\":\"resistance\",\"max_distance_pct\":2,\"min_touches\":3}\n\
+User: Where are the swing levels on BTCUSDT?\ncall:crypto_market_structure{\"symbol\":\"BTCUSDT\"}\n";
+
+/// Property sets/args mirror the REAL toolsets/binance schemas (checked by
+/// `screener_suite_manifest_matches_the_binance_tools` when the `binance`
+/// feature is on).
+const SCREENER_TOOLS: &str = r#"[
+  {"type":"function","function":{"name":"crypto_screener","description":"Screen the whole Binance market for ONE setup or SEVERAL at once: ranks the top-liquidity USDT pairs by 24h quote volume, folds indicators over candles per symbol once, and evaluates every requested screen over those same folds. Returns per screen the symbols where it fires with a conviction score, per-hit reasons, and each hit's structure (trend, nearest confirmed support/resistance with touch count and distance, last break). Optional structural narrowing: structure_side / max_distance_pct / min_touches.","parameters":{"type":"object","properties":{
+    "screen":{"type":"string","enum":["oversold_rebound","macd_golden_cross","macd_death_cross","midband_reclaim","uptrend_pullback","squeeze_watch","rsi_overbought_uptrend"],"description":"One setup to scan for. Pass this OR screens, never both."},
+    "screens":{"type":"array","items":{"type":"string"},"description":"Several setups over ONE scan. 1-7 entries, duplicates ignored. Pass this OR screen, never both."},
+    "universe":{"type":"string","enum":["spot","usdm"],"description":"Market family. Default \"usdm\"."},
+    "interval":{"type":"string","description":"Candle interval, e.g. 15m, 1h, 4h, 1d. Default \"1d\"."},
+    "top_n":{"type":"integer","description":"Hits returned PER screen, 1-25. Default 10."},
+    "scan_size":{"type":"integer","description":"How many top-liquidity symbols to scan, 1-2000. Omit for the entire filtered universe."},
+    "structure_side":{"type":"string","enum":["support","resistance"],"description":"Structural filter: keep only hits with a confirmed level on this side of price — resistance = a pivot-high cluster ABOVE the close, support = a pivot-low cluster BELOW it."},
+    "max_distance_pct":{"type":"number","description":"Structural filter: keep only hits whose nearest confirmed level sits within this percent of the last close (2 = pressed into a level)."},
+    "min_touches":{"type":"integer","description":"Structural filter: minimum pivot touches on the nearest level (1-50)."},
+    "rank_by":{"type":"string","enum":["score","liquidity","myPerformance"],"description":"How to order hits. Leave unset to use the user's own realized history automatically; \"myPerformance\" ranks by that history."},
+    "min_trades":{"type":"integer","description":"Completed trades a symbol needs before rank_by \"myPerformance\" will rank it. Default 3."}
+  },"required":[]}}},
+  {"type":"function","function":{"name":"crypto_market_structure","description":"Read the market structure of ONE Binance spot pair from its candles: confirmed swing pivots, clustered support/resistance levels (with touches and side), the trend regime and the most recent structural break.","parameters":{"type":"object","properties":{
+    "symbol":{"type":"string","description":"Trading pair, e.g. \"BTCUSDT\"."},
+    "interval":{"type":"string","description":"Candle interval. Default \"4h\"."},
+    "limit":{"type":"integer","description":"Candles to analyse, 64-1000. Default 300."},
+    "half_width":{"type":"integer","description":"Bars required on each side of a pivot, 1-10. Default 2."},
+    "max_levels":{"type":"integer","description":"Levels to report, strongest first, 1-50. Default 8."}
+  },"required":["symbol"]}}},
+  {"type":"function","function":{"name":"crypto_ta_analyze","description":"Fetch Binance spot candles for ONE pair and compute technical indicators in one step (RSI, MACD, Bollinger, ATR, stochastic, Ichimoku, ...).","parameters":{"type":"object","properties":{
+    "symbol":{"type":"string","description":"Trading pair, e.g. \"BTCUSDT\"."},
+    "interval":{"type":"string","description":"Candle interval. Default \"1d\"."},
+    "limit":{"type":"integer","description":"Candles to fetch, 30-1000. Default 200."},
+    "indicators":{"type":"array","items":{"type":"string"},"description":"Indicator names (preset windows), e.g. [\"rsi\"], [\"macd\"], [\"bb\",\"atr\"]."}
+  },"required":["symbol"]}}},
+  {"type":"function","function":{"name":"crypto_price","description":"Get current spot market stats for one trading pair (24h change, last/bid/ask, high/low, volume).","parameters":{"type":"object","properties":{
+    "symbol":{"type":"string","description":"Trading pair, uppercase, e.g. \"BTCUSDT\"."}
+  },"required":["symbol"]}}},
+  {"type":"function","function":{"name":"crypto_klines","description":"Get historical spot OHLCV candles for one pair, oldest first.","parameters":{"type":"object","properties":{
+    "symbol":{"type":"string","description":"Trading pair, e.g. \"BTCUSDT\"."},
+    "interval":{"type":"string","description":"Candle interval. Default \"1d\"."},
+    "limit":{"type":"integer","description":"Number of candles, 1-1000. Default 90."}
+  },"required":["symbol"]}}}
+]"#;
+
+const NONE_S: &[(&str, &str)] = &[];
+
+const SCREENER_SCENARIOS: &[Scenario] = &[
+    // Plain screen: the setup maps to `screen`, market family defaults to usdm.
+    Scenario(
+        "S01 squeeze-scan",
+        "Scan the perp market for squeeze setups.",
+        Some("crypto_screener"),
+        &[("screen", "==squeeze_watch"), ("universe", "in:usdm|None")],
+    ),
+    // Structural narrowing, all three args: side + percent + touches.
+    Scenario(
+        "S02 resistance-narrowing",
+        "Scan the perp market for squeeze setups, but only symbols pressing resistance within 2% with at least 3 touches.",
+        Some("crypto_screener"),
+        &[
+            ("screen", "==squeeze_watch"),
+            ("structure_side", "==resistance"),
+            ("max_distance_pct", "==2"),
+            ("min_touches", "==3"),
+        ],
+    ),
+    // Same vocabulary on the other side; a bare percent must not become a fraction.
+    Scenario(
+        "S03 support-narrowing",
+        "Find oversold rebounds on the perp market where price sits on support within 5%.",
+        Some("crypto_screener"),
+        &[
+            ("screen", "==oversold_rebound"),
+            ("structure_side", "==support"),
+            ("max_distance_pct", "==5"),
+        ],
+    ),
+    // Several setups in ONE call use `screens`, not repeated single screens.
+    Scenario(
+        "S04 multi-screen",
+        "Check mid-band reclaims and MACD golden crosses on 4h spot candles, top 5 each.",
+        Some("crypto_screener"),
+        &[
+            ("screens", "re:midband_reclaim"),
+            ("screens", "re:macd_golden_cross"),
+            ("universe", "==spot"),
+            ("interval", "==4h"),
+            ("top_n", "==5"),
+        ],
+    ),
+    // One pair's swings/levels — NOT the market-wide screener.
+    Scenario(
+        "S05 pair-structure",
+        "Where are the swing support and resistance levels for BTCUSDT on the 4h chart?",
+        Some("crypto_market_structure"),
+        &[("symbol", "==BTCUSDT"), ("interval", "==4h")],
+    ),
+    // Bait: "levels" wording must still not pull the screener.
+    Scenario(
+        "S06 structure-not-screener",
+        "Do not scan the market — just show me ETHUSDT's structural levels on 1h.",
+        Some("crypto_market_structure"),
+        &[("symbol", "==ETHUSDT"), ("interval", "==1h")],
+    ),
+    // `min_trades` belongs to myPerformance ranking, NOT to the structure filter.
+    Scenario(
+        "S07 my-performance",
+        "Screen for oversold rebounds, but only coins I've completed at least 5 trades on.",
+        Some("crypto_screener"),
+        &[
+            ("screen", "==oversold_rebound"),
+            ("rank_by", "==myPerformance"),
+            ("min_trades", "==5"),
+            ("min_touches", "absent"),
+            ("structure_side", "absent"),
+        ],
+    ),
+    // Indicator ask → ta_analyze for that pair.
+    Scenario(
+        "S08 indicator",
+        "Is ETHUSDT overbought? Check RSI.",
+        Some("crypto_ta_analyze"),
+        &[("symbol", "==ETHUSDT"), ("indicators", "re:rsi")],
+    ),
+    // Plain quote → the cheapest tool, not a market scan.
+    Scenario(
+        "S09 quote",
+        "What's SOLUSDT trading at right now?",
+        Some("crypto_price"),
+        &[("symbol", "==SOLUSDT")],
+    ),
+    // No order-placement tool exists: the correct reply is prose, not a call.
+    Scenario(
+        "S10 no-order-tool",
+        "Open a 10x long on BTCUSDT for me.",
+        None,
+        NONE_S,
+    ),
+];
+
 /// Filler tools for the TOOL_INFLATE=N experiment: realistic names/descriptions
 /// modeled on the crates weather/finance/news/entertainment categories.
 /// Measures how manifest size affects selection accuracy + latency on E4B.
@@ -646,6 +800,13 @@ async fn main() {
                 ACCOUNTING_SYSTEM,
                 ACCOUNTING_TOOLS,
                 ACCOUNTING_SCENARIOS,
+            )
+        } else if suite == "screener" {
+            (
+                "screener",
+                SCREENER_SYSTEM,
+                SCREENER_TOOLS,
+                SCREENER_SCENARIOS,
             )
         } else {
             ("office", SYSTEM, TOOLS, SCENARIOS)
@@ -865,5 +1026,90 @@ mod tests {
             }
         }
         assert_eq!(ACCOUNTING_SCENARIOS.len(), 8);
+    }
+
+    #[test]
+    fn screener_suite_manifest_and_scenarios_are_consistent() {
+        use super::{Scenario, SCREENER_SCENARIOS, SCREENER_TOOLS};
+        use serde_json::Value;
+        use std::collections::BTreeSet;
+        let tools: Vec<Value> = serde_json::from_str(SCREENER_TOOLS).unwrap();
+        let names: BTreeSet<&str> = tools
+            .iter()
+            .filter_map(|t| t["function"]["name"].as_str())
+            .collect();
+        assert_eq!(names.len(), tools.len(), "duplicate tool names");
+        // Every asserted argument must be DECLARED by its tool — an eval that
+        // asserts an arg the model was never shown grades a hallucination.
+        let declared = |tool: &str| -> BTreeSet<String> {
+            tools
+                .iter()
+                .find(|t| t["function"]["name"] == tool)
+                .and_then(|t| t["function"]["parameters"]["properties"].as_object())
+                .map(|p| p.keys().cloned().collect())
+                .unwrap_or_default()
+        };
+        let mut ids = BTreeSet::new();
+        for Scenario(id, _prompt, want_tool, asserts) in SCREENER_SCENARIOS {
+            assert!(ids.insert(*id), "duplicate scenario id {id}");
+            if let Some(want) = want_tool {
+                assert!(names.contains(want), "{id} expects unknown tool {want}");
+                let props = declared(want);
+                for (path, spec) in *asserts {
+                    let key = path.split('/').next().unwrap();
+                    assert!(
+                        props.contains(key),
+                        "{id}: assert on undeclared arg {key} of {want} (spec {spec})"
+                    );
+                }
+            }
+        }
+        assert_eq!(SCREENER_SCENARIOS.len(), 10);
+    }
+
+    /// The manifest is hand-written (the other suites' convention), so the
+    /// argument NAMES and enums must match the shipped toolset — drift here
+    /// would grade the model against an API that does not exist.
+    #[cfg(feature = "binance")]
+    #[test]
+    fn screener_suite_manifest_matches_the_binance_tools() {
+        use serde_json::Value;
+        let manifest: Vec<Value> = serde_json::from_str(super::SCREENER_TOOLS).unwrap();
+        let real = binance::registry::all_tools("eval");
+        for def in real.get_tool_definitions() {
+            let Some(entry) = manifest.iter().find(|t| t["function"]["name"] == def.name) else {
+                continue;
+            };
+            let shown = entry["function"]["parameters"]["properties"]
+                .as_object()
+                .expect("manifest properties");
+            let shipped = def.parameters["properties"]
+                .as_object()
+                .expect("tool properties");
+            for (key, prop) in shown {
+                let actual = shipped
+                    .get(key)
+                    .unwrap_or_else(|| panic!("{}: manifest declares undeclared arg {key}", def.name));
+                if let Some(want) = prop["enum"].as_array() {
+                    let got: Vec<&str> = actual["enum"]
+                        .as_array()
+                        .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+                        .unwrap_or_default();
+                    for v in want {
+                        assert!(
+                            got.contains(&v.as_str().unwrap_or_default()),
+                            "{}: enum value {v} missing from the shipped schema",
+                            def.name
+                        );
+                    }
+                }
+                // Same JSON type, so a number/string mix-up cannot pass.
+                assert_eq!(
+                    prop["type"], actual["type"],
+                    "{}: arg {key} type drifted",
+                    def.name
+                );
+            }
+        }
     }
 }
