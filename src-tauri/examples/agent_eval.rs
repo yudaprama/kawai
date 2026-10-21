@@ -531,7 +531,8 @@ const SCREENER_SCENARIOS: &[Scenario] = &[
         &[
             ("screen", "==squeeze_watch"),
             ("structure_side", "==resistance"),
-            ("max_distance_pct", "==2"),
+            // A percent may arrive as 2 or 2.0 — both are the same arg.
+            ("max_distance_pct", r"re:^2(\.0)?$"),
             ("min_touches", "==3"),
         ],
     ),
@@ -543,7 +544,7 @@ const SCREENER_SCENARIOS: &[Scenario] = &[
         &[
             ("screen", "==oversold_rebound"),
             ("structure_side", "==support"),
-            ("max_distance_pct", "==5"),
+            ("max_distance_pct", r"re:^5(\.0)?$"),
         ],
     ),
     // Several setups in ONE call use `screens`, not repeated single screens.
@@ -564,7 +565,8 @@ const SCREENER_SCENARIOS: &[Scenario] = &[
         "S05 pair-structure",
         "Where are the swing support and resistance levels for BTCUSDT on the 4h chart?",
         Some("crypto_market_structure"),
-        &[("symbol", "==BTCUSDT"), ("interval", "==4h")],
+        // 4h is the tool default, so omitting it is equally correct.
+        &[("symbol", "==BTCUSDT"), ("interval", "in:4h|None")],
     ),
     // Bait: "levels" wording must still not pull the screener.
     Scenario(
