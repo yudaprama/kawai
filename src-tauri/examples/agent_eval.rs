@@ -487,7 +487,7 @@ const SCREENER_TOOLS: &str = r#"[
     "structure_side":{"type":"string","enum":["support","resistance"],"description":"Structural filter: keep only hits with a confirmed level on this side of price — resistance = a pivot-high cluster ABOVE the close, support = a pivot-low cluster BELOW it."},
     "max_distance_pct":{"type":"number","description":"Structural filter: keep only hits whose nearest confirmed level sits within this percent of the last close (2 = pressed into a level)."},
     "min_touches":{"type":"integer","description":"Structural filter: minimum pivot touches on the nearest level (1-50)."},
-    "rank_by":{"type":"string","enum":["score","liquidity","myPerformance"],"description":"How to order hits. Leave unset to use the user's own realized history automatically; \"myPerformance\" ranks by that history."},
+    "rank_by":{"type":"string","enum":["score","liquidity","myPerformance","structure"],"description":"How to order hits. Leave unset to use the user's own realized history automatically; \"myPerformance\" ranks by that history, \"structure\" by proximity to each hit's nearest confirmed level."},
     "min_trades":{"type":"integer","description":"Completed trades a symbol needs before rank_by \"myPerformance\" will rank it. Default 3."}
   },"required":[]}}},
   {"type":"function","function":{"name":"crypto_market_structure","description":"Read the market structure of ONE Binance spot pair from its candles: confirmed swing pivots, clustered support/resistance levels (with touches and side), the trend regime and the most recent structural break.","parameters":{"type":"object","properties":{

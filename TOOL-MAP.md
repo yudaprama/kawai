@@ -133,7 +133,7 @@ the reason.
 | `binance_futures_positions` | open futures positions + their open orders incl. stop-losses / take-profits, mirrored into `binance_futures_positions` / `binance_futures_open_orders` — BOTH markets: USDⓈ-M (`fapi`) AND COIN-M (`dapi`) — see §5.1 |
 | `crypto_futures_stop_loss` / `crypto_futures_take_profit` | per-position advisory stop (CE/Donchian/Keltner + ratchet vs the advice history table) and R-multiple TP ladder, graded against the resting orders |
 | `binance_futures_risk_audit` | ONE-call portfolio risk review: sync → grade the biggest USDⓈ-M positions with the SAME stop policy → TP coverage → summary (naked positions, naked notional, R:R) — see §5.2 |
-| `crypto_screener` | market-wide setup scan: top-liquidity USDT pairs (spot or USDⓈ-M) folded over candles for ONE named screen (`oversold_rebound`, `macd_golden_cross`/`macd_death_cross`, `midband_reclaim`, `uptrend_pullback`, `squeeze_watch`, `rsi_overbought_uptrend`) — conviction-ranked hits with per-hit reasons AND each hit's structure (trend, nearest confirmed level with touches + signed distance, last break), optionally narrowed by `structure_side` / `max_distance_pct` / `min_touches` — see §5.3 |
+| `crypto_screener` | market-wide setup scan: top-liquidity USDT pairs (spot or USDⓈ-M) folded over candles for ONE named screen (`oversold_rebound`, `macd_golden_cross`/`macd_death_cross`, `midband_reclaim`, `uptrend_pullback`, `squeeze_watch`, `rsi_overbought_uptrend`) — conviction-ranked hits with per-hit reasons AND each hit's structure (trend, nearest confirmed level with touches + signed distance, last break), optionally narrowed by `structure_side` / `max_distance_pct` / `min_touches` or ordered by that level (`rank_by: "structure"`) — see §5.3 |
 | `crypto_futures_trade_stats` | REALIZED trading performance over your closed fills: win rate, avg win/loss, expectancy, profit factor, largest win/loss, total realized PnL (per market, optionally one symbol) — see §5.4 |
 
 ### 5.1 `binance_futures_positions` — the local futures mirror
@@ -310,6 +310,15 @@ self-bounded (12 runs/min, 6-way parallel klines, 45s deadline →
   for each hit's nearest level (price, side, SIGNED distance, touches), so the
   report a user reads carries the same structure the card shows; a negative
   distance must be printed as negative, never relabelled as support.
+- **Structure ranking** (`rank_by: "structure"`): hits are ordered by the
+  level they would actually be defended against — the SMALLEST absolute
+  distance to `structure.nearestLevel` first, the level with more touches
+  breaking a tie, and a hit whose series produced no level last (structure was
+  asked for and cannot be claimed for it). It reads the SAME `nearest()` the
+  row prints, so the order can never disagree with the level beside it, and it
+  needs no fill ledger: unlike `myPerformance` it works for a user with no
+  trade history. Remaining ties fall through to score then liquidity, exactly
+  as the other modes do.
 - **The fetches are shared** by `crypto_screener_data` — the phase-1 tool:
   it resolves the universe, pulls every candle ONCE into a process-wide
   klines cache (market+symbol+interval, TTL 90s — long enough to cover the

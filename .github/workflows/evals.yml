@@ -9,8 +9,9 @@ name: evals
 #   analytics-eval  18 data-agent scenarios, gate 16/18 (2-attempt retry —
 #                   temp=1.0 sampling can drop an assert cluster in one run;
 #                   a real regression fails both attempts)
+#   screener-eval   10 crypto-screener/structure scenarios, gate 8/10
 #
-# Both run on-device against the E4B fixture (same model, CPU inference →
+# All run on-device against the E4B fixture (same model, CPU inference →
 # the quality signal is OS-independent, so one platform suffices; the
 # per-OS unit + smoke coverage stays in ci.yml / windows-smoke.yml).
 #
@@ -199,4 +200,96 @@ jobs:
         with:
           name: agent-eval-report-analytics
           path: agent-eval-report-analytics.md
+          if-no-files-found: warn
+
+  # Screener suite (EVAL_SUITE=screener): market-structure vocabulary — the
+  # three structural filters (`structure_side`/`max_distance_pct`/
+  # `min_touches`) versus `min_trades` (a myPerformance ranking knob, not a
+  # level filter), `crypto_screener` for a market scan versus
+  # `crypto_market_structure` for one pair, and the no-order-tool refusal.
+  # GATED at 8/10: provisional floor until CI runs pin the real headroom —
+  # tighten to 9/10 once the suite is green across a few runs. Same
+  # 2-attempt retry as analytics-eval (temp=1.0 sampling).
+  screener-eval:
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-on-failure: true
+
+      # Same cache key as office-eval — restore-keys makes the dylib build a
+      # no-op whenever any eval job ran recently.
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            /private/var/tmp/_bazel_runner
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos26-arm64-
+
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr whatlang-rs pdf_oxide
+
+      - name: Build litert-lm dylib
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_arm64"
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=macos_arm64 --jobs=6
+          mkdir -p ../../native
+          cp bazel-bin/c/liblitert-lm.dylib ../../native/
+          install_name_tool -id @rpath/liblitert-lm.dylib ../../native/liblitert-lm.dylib
+          bash ../../../scripts/bundle-litert-dylibs.sh
+
+      - name: Download E4B eval model
+        run: |
+          mkdir -p eval-model
+          curl -fL --retry 3 --retry-all-errors --continue-at - -o eval-model/gemma-4-E4B-it.litertlm \
+            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
+
+      - name: agent_eval (screener suite)
+        working-directory: src-tauri
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
+          LLVM_PROFILE_FILE: /dev/null
+          KAWAI_LLM_MAX_TOKENS: "8192"
+          EVAL_SUITE: screener
+          EVAL_DEBUG: "1"
+          EVAL_MIN_PASS: "8"
+        run: |
+          status=1
+          for attempt in 1 2; do
+            if cargo run --release --example agent_eval --features litert -- \
+              ${{ github.workspace }}/eval-model/gemma-4-E4B-it.litertlm \
+              ${{ github.workspace }}/agent-eval-report-screener.md; then
+              status=0
+              break
+            fi
+            echo "::warning::agent_eval (screener suite) attempt ${attempt}/2 failed — retrying (sampling flake vs regression is told apart by attempt 2)"
+          done
+          if [ -f "${{ github.workspace }}/agent-eval-report-screener.md" ]; then
+            cat "${{ github.workspace }}/agent-eval-report-screener.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+
+      - name: Upload screener eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-eval-report-screener
+          path: agent-eval-report-screener.md
           if-no-files-found: warn

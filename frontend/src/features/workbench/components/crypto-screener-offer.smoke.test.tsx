@@ -326,3 +326,69 @@ describe("the offer honours the engine's ranking", () => {
     expect(offer?.hits.every((h) => h.expectancy == null)).toBe(true);
   });
 });
+
+/**
+ * `rank_by: "structure"` orders hits by the level the trade would be defended
+ * against. Same failure mode as the myPerformance case above — a score re-sort
+ * would swap the tight-stop setup for the highest-conviction one while the
+ * badge still claims "structure".
+ */
+describe("a structure-ranked run keeps the level ordering", () => {
+  const withLevel = (
+    symbol: string,
+    score: number,
+    distancePct: number | null,
+    touches: number | null,
+  ) =>
+    hit({
+      symbol,
+      score,
+      structure:
+        distancePct == null
+          ? null
+          : { nearestLevel: { price: 1, side: "resistance", distancePct, touches } },
+    });
+
+  const structureOutput = (hits: unknown[]) =>
+    output({ rankBy: "structure", rankByAutomatic: false, hitsTotal: hits.length, hits });
+
+  it("puts the tightest level first, even against a much higher score", () => {
+    const offer = parseScreenerOffer([
+      structureOutput([
+        withLevel("BTCUSDT", 95, 9, 5),
+        withLevel("ETHUSDT", 40, -0.4, 1),
+      ]),
+    ]);
+    expect(offer?.rankBy).toBe("structure");
+    expect(offer?.hits.map((h) => h.symbol)).toEqual(["ETHUSDT", "BTCUSDT"]);
+    // The distance is carried ABSOLUTE: support below price is as tight as
+    // resistance above it.
+    expect(offer?.hits[0].levelDistancePct).toBeCloseTo(0.4);
+  });
+
+  it("breaks a distance tie on touch count", () => {
+    const offer = parseScreenerOffer([
+      structureOutput([
+        withLevel("ONCEUSDT", 99, 0.5, 1),
+        withLevel("RESPECTEDUSDT", 10, -0.5, 6),
+      ]),
+    ]);
+    expect(offer?.hits.map((h) => h.symbol)).toEqual(["RESPECTEDUSDT", "ONCEUSDT"]);
+  });
+
+  it("sorts a hit with no level below every hit that has one", () => {
+    const offer = parseScreenerOffer([
+      structureOutput([
+        withLevel("NONEUSDT", 100, null, null),
+        withLevel("LEVELUSDT", 5, 8, 1),
+      ]),
+    ]);
+    expect(offer?.hits.map((h) => h.symbol)).toEqual(["LEVELUSDT", "NONEUSDT"]);
+  });
+
+  it("reports no level as null, never as zero distance", () => {
+    const offer = parseScreenerOffer([structureOutput([withLevel("NONEUSDT", 50, null, null)])]);
+    expect(offer?.hits[0].levelDistancePct).toBeNull();
+    expect(offer?.hits[0].levelTouches).toBeNull();
+  });
+});

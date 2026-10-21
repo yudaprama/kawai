@@ -54,10 +54,17 @@ export interface ScreenedHit {
    * what the screener actually reported. */
   expectancy: number | null;
   trades: number | null;
+  /** Distance (percent, absolute) from the last close to this hit's nearest
+   * confirmed level, and how many pivots that level has. `null` when the
+   * series produced no level. Carried so a `structure`-ranked run can be
+   * ordered the way the engine ordered it instead of silently reverting to
+   * score order. */
+  levelDistancePct: number | null;
+  levelTouches: number | null;
 }
 
 /** How the run ordered its hits, echoed from the screener output. */
-export type ScreenerRanking = "score" | "liquidity" | "myPerformance";
+export type ScreenerRanking = "score" | "liquidity" | "myPerformance" | "structure";
 
 /** The user's own record on one symbol, as the screener reported it. */
 export interface MyPerformance {
@@ -171,7 +178,7 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
     // The engine's ordering, echoed. Every step of one run reports the same
     // value, so a later step cannot silently override an earlier one.
     const r = str(o.rankBy);
-    if (r === "score" || r === "liquidity" || r === "myPerformance") rankBy = r;
+    if (r === "score" || r === "liquidity" || r === "myPerformance" || r === "structure") rankBy = r;
     if (o.rankByAutomatic === true) rankByAutomatic = true;
     const mps = o.myPerformanceSymbols;
     const ranked = typeof mps === "object" && mps != null ? num((mps as Record<string, unknown>).rankedOn) : null;
@@ -201,6 +208,12 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
           : null;
       const last = num(h.last);
       if (score == null || last == null) continue;
+      const st = typeof h.structure === "object" && h.structure != null ? (h.structure as Record<string, unknown>) : null;
+      const nl =
+        st != null && typeof st.nearestLevel === "object" && st.nearestLevel != null
+          ? (st.nearestLevel as Record<string, unknown>)
+          : null;
+      const levelDelta = num(nl?.distancePct);
       const reasons = Array.isArray(h.reasons) ? h.reasons.filter((x): x is string => typeof x === "string") : [];
       const key = `${symbol}|${screen}`;
       if (seen.has(key)) continue;
@@ -215,6 +228,8 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
         reasons,
         expectancy: myPerformance?.expectancy ?? null,
         trades: myPerformance?.trades ?? null,
+        levelDistancePct: levelDelta == null ? null : Math.abs(levelDelta),
+        levelTouches: num(nl?.touches),
       });
     }
   }
@@ -233,6 +248,19 @@ export function parseScreenerOffer(outputs: (string | null | undefined)[]): Scre
       const bh = be != null;
       if (ah !== bh) return ah ? -1 : 1;
       if (ae != null && be != null && ae !== be) return be - ae;
+    }
+    if (rankBy === "structure") {
+      // Same rule as `compare_hits` in the engine: tightest level first,
+      // most-respected level breaking a tie, no level last.
+      const ad = a.levelDistancePct;
+      const bd = b.levelDistancePct;
+      const ah = ad != null;
+      const bh = bd != null;
+      if (ah !== bh) return ah ? -1 : 1;
+      if (ad != null && bd != null && ad !== bd) return ad - bd;
+      const at = a.levelTouches ?? 0;
+      const bt = b.levelTouches ?? 0;
+      if (at !== bt) return bt - at;
     }
     return b.score - a.score || a.symbol.localeCompare(b.symbol);
   });
@@ -634,7 +662,9 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
           title={
             offer.rankBy === "myPerformance"
               ? `Ordered by your own realized record${offer.rankByAutomatic ? " (automatic)" : ""} — symbols you have actually been profitable on come first, ahead of the technical score.`
-              : "Ordered by the engine's technical conviction score."
+              : offer.rankBy === "structure"
+                ? "Ordered by the distance to each hit's nearest confirmed level — the tightest stop first, the level the market has respected most often breaking a tie, hits without a level last."
+                : "Ordered by the engine's technical conviction score."
           }
         >
           ranked:{" "}
@@ -644,7 +674,9 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
               : "your record"
             : offer.rankBy === "liquidity"
               ? "liquidity"
-              : "score"}
+              : offer.rankBy === "structure"
+                ? "structure"
+                : "score"}
         </span>
         {offer.neutralHits > 0 && (
           <span
