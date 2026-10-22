@@ -5,6 +5,7 @@
 //! dispatch steps directly against the application's tool implementations.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use futures_core::Stream;
@@ -166,6 +167,64 @@ fn plan_step_infos(plan: &kawai_router::TaskPlan) -> Vec<PlanStepInfo> {
 /// remain as an optional narrowing hint.
 pub const AUTO_AGENT_ID: &str = "auto";
 
+/// Echo tool for statically-authored plans (`direct_greeting`,
+/// `direct_identity`): `plan_task` pre-bakes the localized reply into the
+/// step arguments, this tool surfaces it as the step output, and
+/// `WRITER_RAW` promotes that output to the final answer — no planner
+/// rounds, no LLM call. Never planner-visible: it rides no domain toolset,
+/// the Turso catalog, or `PLAN_CORE_TOOLS` — the merged Auto toolset below
+/// is its only registration.
+#[derive(Default)]
+pub struct DirectReplyTool;
+
+/// Arguments of [`DirectReplyTool`].
+#[derive(Debug, serde::Deserialize)]
+pub struct DirectReplyArgs {
+    /// The pre-authored reply text, delivered verbatim.
+    pub text: String,
+}
+
+/// Failure type — the echo cannot fail, but the trait requires the
+/// associated type.
+#[derive(Debug)]
+pub struct DirectReplyError;
+
+impl std::fmt::Display for DirectReplyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "direct_reply echo failed")
+    }
+}
+
+impl std::error::Error for DirectReplyError {}
+
+impl kawai_tools::AgentTool for DirectReplyTool {
+    const NAME: &'static str = "direct_reply";
+    type Args = DirectReplyArgs;
+    type Output = String;
+    type Error = DirectReplyError;
+
+    fn description(&self) -> String {
+        "Returns the pre-authored reply text verbatim.".into()
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "The pre-authored reply text."}
+            },
+            "required": ["text"]
+        })
+    }
+
+    fn call(
+        &self,
+        arguments: Self::Args,
+    ) -> impl Future<Output = Result<Self::Output, Self::Error>> + Send {
+        std::future::ready(Ok(arguments.text))
+    }
+}
+
 /// Build the supervisor toolset for a request.
 ///
 /// `auto` merges every available domain toolset into one registry so the
@@ -296,6 +355,17 @@ async fn build_supervisor_toolset(
             match &mut merged {
                 Some(base) => base.merge(&mut { set }),
                 None => merged = Some(set),
+            }
+        }
+        // Static replies (greetings, identity questions) dispatch this tool
+        // even on a bare build with no domain toolset — this merged Auto set
+        // is the tool's only registration.
+        match &mut merged {
+            Some(base) => base.add_tool(DirectReplyTool),
+            None => {
+                let mut set = kawai_tools::ToolSet::default();
+                set.add_tool(DirectReplyTool);
+                merged = Some(set);
             }
         }
         return merged;
@@ -543,6 +613,83 @@ omit filters to list the latest entries) and pass its output onward with `fromSt
 /// The registry contains metadata for the planner prompt and a dispatch
 /// closure that delegates to [`kawai_tools::ToolSet::execute`].
 ///
+/// The pre-authored reply for a statically-classified goal, localized.
+/// `indonesian` comes from `resolve_user_language` naming Bahasa Indonesia;
+/// everything else falls back to English.
+fn static_reply_text(
+    intent: kawai_router::StaticIntent,
+    thanks: bool,
+    indonesian: bool,
+) -> String {
+    match intent {
+        kawai_router::StaticIntent::Greeting if thanks => {
+            if indonesian {
+                "Sama-sama! 😊 Senang bisa membantu. Ada lagi yang ingin Anda kerjakan?".into()
+            } else {
+                "You're welcome! 😊 Happy to help. Anything else you'd like to work on?".into()
+            }
+        }
+        kawai_router::StaticIntent::Greeting => {
+            if indonesian {
+                "Halo! 👋 Senang bertemu Anda. Saya Kawai, asisten kerja Anda — saya bisa membantu analisis saham & crypto, audit portofolio futures, rangkum video YouTube, tutup buku akunting, dan olah dokumen/PDF. Mau mulai dari mana?".into()
+            } else {
+                "Hi! 👋 Great to meet you. I'm Kawai, your work assistant — I can analyze stocks & crypto, audit your futures portfolio, summarize YouTube videos, close your books, and work on documents/PDFs. Where would you like to start?".into()
+            }
+        }
+        kawai_router::StaticIntent::Identity => {
+            if indonesian {
+                "Saya Kawai — asisten kerja Anda di aplikasi Kawai. Saya bisa membantu: analisis saham & crypto (research desk, screener), audit & performa trading, rangkuman YouTube, akunting (tutup buku, laporan keuangan), serta pengolahan dokumen & PDF. Tulis saja tujuan Anda di composer — saya yang menyusun langkah-langkahnya.".into()
+            } else {
+                "I'm Kawai — your work assistant in the Kawai app. I can help with: stock & crypto analysis (research desk, screener), portfolio audit & trading performance, YouTube summaries, accounting (book close, financial reports), and document & PDF work. Just type your goal in the composer and I'll plan the steps.".into()
+            }
+        }
+    }
+}
+
+/// The one-step plan behind a statically-authored reply: the pre-baked text
+/// rides the `direct_reply` step arguments, `WRITER_RAW` makes that output
+/// the final answer (no synthesis call), and the template stamp carries the
+/// intent class for the review card, telemetry, and `registry_kind_for_plan`
+/// (a non-`desk` stamp resolves to the Auto registry, where the tool lives).
+/// No per-run nonce: the reply text is constant, so a repeated plan_key can
+/// only replay the identical output.
+fn static_reply_plan(
+    goal: &str,
+    intent: kawai_router::StaticIntent,
+    thanks: bool,
+    indonesian: bool,
+) -> kawai_router::TaskPlan {
+    let reply = static_reply_text(intent, thanks, indonesian);
+    let (task, overview) = match intent {
+        kawai_router::StaticIntent::Greeting => (
+            "Balas sapaan pengguna",
+            "Balasan instan untuk sapaan — tanpa perencanaan.",
+        ),
+        kawai_router::StaticIntent::Identity => (
+            "Memperkenalkan asisten",
+            "Perkenalan asisten dan kemampuan utamanya — tanpa perencanaan.",
+        ),
+    };
+    kawai_router::TaskPlan {
+        goal: goal.to_string(),
+        steps: vec![kawai_router::TaskStep {
+            id: "reply".into(),
+            agent_id: AUTO_AGENT_ID.into(),
+            tool: Some(<DirectReplyTool as kawai_tools::AgentTool>::NAME.into()),
+            task: task.into(),
+            arguments: serde_json::json!({ "text": reply }),
+            ..Default::default()
+        }],
+        final_writer: Some(WRITER_RAW.to_string()),
+        summary: Some(kawai_router::PlanSummary {
+            overview: overview.into(),
+            actions: vec![],
+            outputs: vec![],
+        }),
+        template: Some(intent.label().to_string()),
+    }
+}
+
 /// `language` is the device locale tag from the transport edge (e.g.
 /// "id-ID") — it only feeds the template path (`resolve_user_language`), so a
 /// composer-routed desk run renders its reports in the user's language
@@ -727,6 +874,51 @@ pub async fn plan_task(
                 }
             }
             kawai_router::Route::Direct => {
+                // Statically-authored replies: a goal whose every token is
+                // greeting or self-identity vocabulary cannot name a subject,
+                // a ticker, or a tool — there is nothing to route on — so it
+                // is answered with a pre-written localized text: no planner
+                // rounds, no LLM call, review gate still applies. Anything
+                // else (a greeting carrying content, an unmatched prefix) is
+                // only logged and the planner runs.
+                if let Some(intent) = kawai_router::static_reply_intent(routing) {
+                    let indonesian =
+                        resolve_user_language(language, None).as_deref() == Some("Bahasa Indonesia");
+                    let mut plan = static_reply_plan(
+                        routing,
+                        intent,
+                        kawai_router::static_reply_is_thanks(routing),
+                        indonesian,
+                    );
+                    registry.enforce_confirmation_policy(&mut plan);
+                    let key = plan_key(&plan);
+                    on_progress(SupervisorEvent::PlanningStarted {});
+                    tracing::info!(
+                        component = "supervisor",
+                        intent = intent.label(),
+                        goal_chars = goal.len(),
+                        "static reply — planner skipped"
+                    );
+                    kawai_db::log_route_decision(
+                        user_id,
+                        kawai_db::RouteLogEntry {
+                            session_id,
+                            plan_key: Some(key.as_str()),
+                            goal,
+                            chosen: intent.label(),
+                            template_id: None,
+                            source: "rule",
+                            offered: &serde_json::to_string(&decision.offered)
+                                .unwrap_or_default(),
+                            matched: &serde_json::to_string(&decision.matched)
+                                .unwrap_or_default(),
+                            blocked_by_slots: &serde_json::to_string(&decision.blocked_by_slots)
+                                .unwrap_or_default(),
+                        },
+                    )
+                    .await;
+                    return Ok((plan, remote_llm::RemoteUsage::default()));
+                }
                 // Reserved: a tool-free goal answered in one writer step. The
                 // composer path does not route here yet (Direct skips tool
                 // discovery entirely — see TOOL_FREE_INTENTS), so a Direct
@@ -6397,6 +6589,99 @@ mod tests {
                 assert_eq!(video_id.as_deref(), Some("abc123xyz"));
             }
             other => panic!("planStarted never arrived: {other:?}"),
+        }
+    }
+
+    /// End-to-end: a pure greeting and a self-identity question claim
+    /// through plan_task with ZERO planner tokens, and the pre-authored
+    /// localized text rides the direct_reply step under WRITER_RAW. A
+    /// greeting carrying content must NOT claim — it falls to the planner
+    /// stage, which fails closed without a remote pool.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn plan_task_answers_static_goals_without_the_planner() {
+        let dir = tempfile::tempdir().unwrap();
+        kawai_db::set_data_root(dir.path());
+        std::mem::forget(dir);
+        let user = format!("static-reply-{}-{}", std::process::id(), kawai_db::unix_now());
+        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
+        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
+            .await
+            .expect("supervisor registry");
+
+        let (plan, usage) = plan_task(
+            &user,
+            session,
+            "hi halo",
+            None,
+            Some("id-ID"),
+            &registry,
+            |_| {},
+        )
+        .await
+        .expect("greeting must claim statically");
+        assert_eq!(plan.template.as_deref(), Some("direct_greeting"), "plan: {plan:?}");
+        assert_eq!(usage.input_tokens, 0, "the planner must not run");
+        assert_eq!(usage.output_tokens, 0, "the planner must not run");
+        assert_eq!(plan.final_writer.as_deref(), Some(WRITER_RAW), "raw passthrough");
+        let [step] = plan.steps.as_slice() else {
+            panic!("exactly one step: {plan:?}");
+        };
+        assert_eq!(step.tool.as_deref(), Some("direct_reply"), "plan: {plan:?}");
+        let text = step.arguments.get("text").and_then(|v| v.as_str()).expect("reply text");
+        assert!(text.contains("Kawai"), "localized indonesian greeting: {text}");
+
+        // Identity questions ride the same mechanism with their own stamp.
+        let (plan, usage) = plan_task(
+            &user,
+            session,
+            "siapa anda?",
+            None,
+            None,
+            &registry,
+            |_| {},
+        )
+        .await
+        .expect("identity question must claim statically");
+        assert_eq!(plan.template.as_deref(), Some("direct_identity"), "plan: {plan:?}");
+        assert_eq!(usage.input_tokens, 0, "the planner must not run");
+        let [step] = plan.steps.as_slice() else {
+            panic!("exactly one step: {plan:?}");
+        };
+        let text = step.arguments.get("text").and_then(|v| v.as_str()).expect("reply text");
+        assert!(text.contains("Kawai"), "english identity reply: {text}");
+
+        // A greeting carrying content is NOT static — the canned reply must
+        // never swallow it. Whatever comes back is planner-authored (a real
+        // pool plans the NVDA analysis) or the planner stage fails closed on
+        // a keyless build — never the direct_greeting stamp.
+        match plan_task(
+            &user,
+            session,
+            "halo, analisis NVDA minggu ini",
+            None,
+            None,
+            &registry,
+            |_| {},
+        )
+        .await
+        {
+            Ok((plan, usage)) => {
+                assert_ne!(
+                    plan.template.as_deref(),
+                    Some("direct_greeting"),
+                    "canned reply swallowed a content goal: {plan:?}"
+                );
+                assert!(
+                    usage.input_tokens > 0,
+                    "a non-static goal must pay planner tokens: {plan:?}"
+                );
+            }
+            Err(err) => {
+                assert!(
+                    err.contains("remote LLM is not configured"),
+                    "unexpected planner failure: {err}"
+                );
+            }
         }
     }
 
