@@ -87,8 +87,8 @@ interface RunCryptoScreenerOptions {
   universe: string;
   /** Candle interval the screens fold on (default "1d"). */
   interval: string;
-  /** Exchange the scan reads: "binance" (default) | "mexc" (futures-only,
-   * scan-only — no placement offer). */
+  /** Exchange the scan reads: "binance" (default) | "mexc" (USDT-margined
+   * futures only; hits open from the offer panel like Binance). */
   venue?: string;
   /** Hits returned per screen (1-25, default 10). */
   topN: number;
@@ -537,6 +537,11 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
           sessionId: options.sessionId,
           agentId: options.agentId,
           userGoal: options.userGoal,
+          // The deliverable's output language. A planner-driven / template-
+          // routed plan answers the CLIENT's goal, so unlike the fixed
+          // pipelines (whose server-side builders compose their own rule)
+          // the locale has to ride the execute call itself.
+          language: getLocale(),
         },
         options.sessionId,
       );

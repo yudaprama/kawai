@@ -861,6 +861,13 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
+      // One run at a time — the same gate the composer's run() enforces (see
+      // runScreener): a second submit would leave a phantom "running" record.
+      if (["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)) {
+        const msg = "A run is already in progress — stop it or wait for it to finish before submitting.";
+        setSessionError(msg);
+        throw new Error(msg);
+      }
       // Balance gate + lazy session — the shared fail-closed pre-flight.
       const sid = await preflightRun(
         `Futures risk audit — ${interval}/${risk}`.slice(0, 80),
@@ -990,6 +997,15 @@ export function useWorkbench() {
         onStart?: () => void;
       },
     ) => {
+      // One run at a time — the same gate the composer's run() enforces. A
+      // second submit that slips through would append a "running" record and
+      // then be dropped silently by runCryptoScreener (streamCtrl already
+      // busy): a phantom run that never starts and never errors.
+      if (["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)) {
+        const msg = "A run is already in progress — stop it or wait for it to finish before submitting.";
+        setSessionError(msg);
+        throw new Error(msg);
+      }
       // Balance gate + lazy session — the shared fail-closed pre-flight.
       const sid = await preflightRun(
         `Crypto screener — ${universe}/${interval}`.slice(0, 80),

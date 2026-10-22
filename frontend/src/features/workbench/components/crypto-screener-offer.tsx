@@ -597,12 +597,24 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
     });
   };
 
+  /** Select ALL hits — the header checkbox and the "Select all N" button both
+   *  promise the full list. A filtered subset has its own explicit
+   *  "Select the N shown" link (selectMatching), so the two scopes never
+   *  silently disagree about what an approval covers. */
   const toggleAll = () => {
     if (allSelected) {
       setSelected(new Set());
       return;
     }
-    selectMatching();
+    setSelected(new Set(offer.hits.map(rowKey)));
+    setNotionals((prev) => {
+      const next = { ...prev };
+      for (const h of offer.hits) {
+        const k = rowKey(h);
+        if (next[k] == null) next[k] = DEFAULT_NOTIONAL;
+      }
+      return next;
+    });
   };
 
   const toggleRow = (key: string) =>

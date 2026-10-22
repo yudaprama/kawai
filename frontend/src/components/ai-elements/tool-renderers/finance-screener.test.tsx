@@ -102,6 +102,12 @@ describe("crypto_screener structure column", () => {
       renderCryptoScreener(payload()) as React.ReactElement
     );
     expect(html).toContain("Structure");
+    // 24h change is ALREADY percent on the wire (change24hPct: -6.5 = -6.5%;
+    // the unit lives in the "24h" header, the cell prints the bare number):
+    // the column must print it verbatim, never scale it (a `/100` regression
+    // rendered -6.5 as "-0.07").
+    expect(html).toContain(">-6.50<");
+    expect(html).toContain(">+0.51<");
     // CLUSDT: resistance BELOW price — the minus sign is the fact a reader acts on.
     expect(html).toContain("97.742");
     expect(html).toContain("-1.62%");

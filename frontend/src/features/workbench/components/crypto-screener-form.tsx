@@ -28,8 +28,8 @@ const UNIVERSES = [
 const INTERVALS = ["15m", "1h", "4h", "1d", "1w"] as const;
 
 /** Exchange the scan reads — mirrors the backend's `resolve_venue`. MEXC is
- * futures-only and scan-only: kawai places no MEXC order from the screener,
- * so its hits are read-and-decide-yourself. */
+ * USDT-margined futures only; its hits open from the offer panel the same way
+ * Binance hits do. */
 const VENUES = [
   { id: "binance", label: "Binance" },
   { id: "mexc", label: "MEXC · hasil saja" },

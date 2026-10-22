@@ -1532,7 +1532,7 @@ export function renderCryptoScreener(output: unknown): ReactNode {
                         chg === null ? "text-muted-foreground" : chg < 0 ? "text-destructive" : "text-success"
                       )}
                     >
-                      {chg !== null ? `${chg > 0 ? "+" : ""}${fmtPct(chg / 100)}` : "—"}
+                      {chg !== null ? `${chg > 0 ? "+" : ""}${fmtPct(chg)}` : "—"}
                     </td>
                     {hasStructure && <StructureCell structure={h.structure} />}
                     <td className="px-2 py-1.5 text-right">
