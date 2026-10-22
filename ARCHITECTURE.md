@@ -345,7 +345,7 @@ kawai/
 
 ## Core dependencies (in `logic.rs` / `auth.rs`)
 
-- **`reqwest`** — remote tier transport: the OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool, health-aware failover). rustls-only. Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers are optional configuration, not a requirement.
+- **`reqwest`** — remote tier transport: the OpenAI-compatible SSE client in `crates/foundation/remote-llm` (provider pool, health-aware failover). rustls-only; on Android the rustls verifier is initialized with the JNI context in the Tauri shell setup (`lib.rs`, android-gated deps in `src-tauri/Cargo.toml`, Kotlin verifier component vendored in `gen/android`) — see AGENTS.md Landmines. Local Gemma 4 via LiteRT-LM is the model (decision 2026-08-16); remote providers are optional configuration, not a requirement.
 - **`libsql`** — per-user local SQLite via `Builder::new_local`; connections are per-op and migrations run on every open. Post-MVP: sqld embedded replicas.
 - **`jsonwebtoken`** — EdDSA only (future sqld token mint in `logic.rs`).
 - All compile clean across desktop, android arm64, and ios arm64 (default/web/litert feature combos). One rustls (0.23) across the graph — libsql runs core-only (`Builder::new_local` everywhere; re-add its `remote` feature with sqld sync).

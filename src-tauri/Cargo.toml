@@ -164,6 +164,15 @@ tracing = "0.1"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Android TLS: reqwest's `rustls` feature verifies against the Android system
+# cert store through rustls-platform-verifier, which panics on first use
+# unless initialized with the app's JNI context (lib.rs setup does this).
+# The Kotlin verifier component lives in gen/android (CertificateVerifier.kt).
+[target.'cfg(target_os = "android")'.dependencies]
+rustls-platform-verifier = "0.7"
+jni = "0.22"
+ndk-context = "0.1"
+
 [features]
 default = ["desktop"]
 # Desktop/mobile app shell (tauri builder entry point). Implies office + graph —

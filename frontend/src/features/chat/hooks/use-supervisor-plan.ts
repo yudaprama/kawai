@@ -799,8 +799,17 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     async (approved: boolean) => {
       const current = state.pendingConfirmation;
       if (!current) return;
-      await respondSupervisorConfirmation(streamIdRef.current, current.stepId, approved);
-      patch({ pendingConfirmation: null, status: "running" });
+      try {
+        await respondSupervisorConfirmation(streamIdRef.current, current.stepId, approved);
+        patch({ pendingConfirmation: null, status: "running" });
+      } catch (err) {
+        // The gate is already gone — the run was cancelled, the backend
+        // restarted, or the entry was resolved elsewhere. Re-sending cannot
+        // succeed, and leaving the card up parks the composer behind a
+        // decision nobody is waiting for.
+        console.error("[supervisor] confirmation response failed:", err);
+        patch({ pendingConfirmation: null, status: stoppingRef.current ? "stopping" : "running" });
+      }
     },
     [patch, state.pendingConfirmation],
   );

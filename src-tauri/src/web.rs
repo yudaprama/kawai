@@ -2830,6 +2830,10 @@ struct ExecuteSupervisorPlanRequest {
     /// The user's verbatim goal — synthesis answers THIS, not the planner's
     /// rewritten `plan.goal`.
     user_goal: Option<String>,
+    /// Raw device locale tag — the deliverable's output language. Absent for
+    /// older clients; the `Accept-Language` header is the web fallback.
+    #[serde(default)]
+    language: Option<String>,
         stream_id: String,
 }
 
@@ -2860,13 +2864,24 @@ async fn execute_supervisor_plan_handler(
     .await
     .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
 
+    // Same edge rule as the Tauri command: a client goal carries the output
+    // language, or the writer answers in English regardless of the locale.
+    let language = crate::supervisor::resolve_user_language(
+        req.language.as_deref(),
+        headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
+    );
+    let user_goal = Some(crate::supervisor::goal_in_language(
+        req.user_goal.unwrap_or_else(|| req.plan.goal.clone()),
+        language.as_deref(),
+    ));
+
     Ok(supervisor_sse(
         req.plan,
         tool_registry,
         req.stream_id,
         user_id,
         req.session_id,
-        req.user_goal,
+        user_goal,
         None,
         &bearer,
         pending,
@@ -3151,7 +3166,8 @@ struct RunCryptoScreenerRequest {
     screens: Option<Vec<String>>,
     universe: Option<String>,
     interval: Option<String>,
-    /// Exchange the scan reads: "binance" (default) or "mexc" (scan-only).
+    /// Exchange the scan reads: "binance" (default) or "mexc" (USDT-margined
+    /// futures only).
     venue: Option<String>,
     top_n: Option<u32>,
     scan_size: Option<u32>,
@@ -3304,13 +3320,13 @@ async fn run_trading_performance_handler(
     let language = crate::supervisor::resolve_user_language(
         req.language.as_deref(),
         headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
-    )
-    .unwrap_or_default();
+    );
     let plan = accounting_tools::plan::build_trading_performance_plan(
         req.period.trim(),
         chrono::Local::now().date_naive(),
         req.venue.as_deref().map(str::trim).filter(|v| !v.is_empty()),
         crate::templates::TRADING_SYNC_VENUES,
+        language.as_deref(),
     )
     .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let user_goal = plan.goal.clone();
@@ -3340,9 +3356,14 @@ async fn run_monthly_close_handler(
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
     let bearer = cookie_bearer(&headers)?;
     ensure_session(&user_id, req.session_id).await?;
+    let language = crate::supervisor::resolve_user_language(
+        req.language.as_deref(),
+        headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
+    );
     let plan = accounting_tools::plan::build_monthly_close_plan(
         req.period.trim(),
         chrono::Local::now().date_naive(),
+        language.as_deref(),
     )
     .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
     let user_goal = plan.goal.clone();

@@ -61,23 +61,33 @@ Steps (from existing tools except one). The FETCH is first by necessity: the
 import reads the LOCAL fill history, which only a venue fill sync writes, so
 an import over a cold history finds nothing and (default `OnError::Fail`)
 halts the review. Binance fuses the fetch into its stats tool; MEXC has a
-standalone sync:
+standalone sync. Order is load-bearing, so it is pinned by
+`crates/toolsets/accounting/tests/plan_order.rs`:
 
-1. FETCH, one step per exchange: `crypto_futures_trade_stats(days)` for
-   Binance (fetch new fills, then win rate, expectancy, profit factor, FIFO
-   round-trips — exists in the binance toolset) and
+1. FETCH, one step per exchange: `crypto_futures_trade_stats(days, from, to,
+   market: USDM)` for Binance (fetch new fills, then the PERIOD's win rate,
+   expectancy, profit factor over FIFO round-trips) and
    `mexc_futures_fill_sync(days)` for MEXC. An unscoped review fetches EVERY
    exchange the build can sync (serially — one libsql writer), with the
    non-Binance fetches `best_effort` so an unconfigured exchange reports a
-   skipped sync instead of halting the review. A scoped review fetches only
-   its own exchange and stays fail-closed.
+   skipped sync instead of halting the review. A goal that NAMES an exchange
+   fills the template's `venue` slot, and then only that exchange is fetched
+   (fail-closed: a scope with no fill-sync tool is refused before the plan
+   exists).
 2. `venue_fills_import(period, venue?)` — posts the fetched fills
-   (idempotent, waits for step 1)
-3. `trading_pnl_by_symbol(period)` — per-pair realized PnL (NEW)
-4. `trading_fee_summary(period)` — fees and fees-as-%-of-volume (NEW)
-5. `ledger_integrity_check(period end)` — gate before the narrative
+   (idempotent, waits for step 1). USDT-settled markets only: a COIN-M fill
+   settles in the coin and is counted under `skipped_other_settlement`
+   instead of being credited to a USDT wallet.
+3. `ledger_integrity_check(period end, gate: true)` — the GATE, before any
+   read: an invalid ledger FAILS this step, so `OnError::Fail` skips the
+   reads and no report is ever written over books that do not balance.
+4. `trading_pnl_by_symbol(period, venue?)` — per-pair realized PnL
+5. `trading_fee_summary(period, venue?)` — fees and fees-as-%-of-volume
 6. Synthesis: best/worst pair, fee drag, period-over-period, venue context
-   (unrealized) from the audit when available
+   (unrealized) from the audit when available. The deliverable's language
+   comes from the device locale (`language` on both the fixed pipeline and
+   `execute_supervisor_plan`), so a routed/free-text review is not English
+   by default.
 
 ## What exists (all compile + test green at time of writing)
 

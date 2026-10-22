@@ -114,6 +114,9 @@ fn build_accounting_close(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
     accounting_tools::plan::build_monthly_close_plan(
         slots.get("period").unwrap_or_default(),
         chrono::Local::now().date_naive(),
+        // The device locale rides the plan: it is the writer's brief, so a
+        // routed close is delivered in the user's language.
+        slots.get("language"),
     )
 }
 
@@ -181,6 +184,7 @@ fn build_trading_performance(slots: &ResolvedSlots) -> Result<TaskPlan, String> 
         chrono::Local::now().date_naive(),
         slots.get("venue").map(str::trim).filter(|v| !v.is_empty()),
         TRADING_SYNC_VENUES,
+        slots.get("language"),
     )
 }
 

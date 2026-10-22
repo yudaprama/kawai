@@ -183,6 +183,33 @@ describe("accounting tool renderers", () => {
     expect(renderCryptoFuturesTradeStats({ market: "USDM" })).toBeNull();
   });
 
+  it("renderCryptoFuturesTradeStats renders a quiet period instead of raw JSON", () => {
+    // The tool's own empty answer (a period with no closed position): no
+    // `statistics` block, because zeroes would claim a 0% win rate.
+    const out = renderCryptoFuturesTradeStats({
+      market: "USDM",
+      symbol: null,
+      period: { from: "2026-03-01", to: "2026-03-31" },
+      trades: 0,
+      fills: 4,
+      note: "no COMPLETED positions are recorded for this scope yet",
+    });
+    const t = text(out);
+    expect(t).toContain("Trade statistics");
+    expect(t).toContain("No completed trades");
+    expect(t).toContain("2026-03-01 → 2026-03-31");
+  });
+
+  it("renderCryptoFuturesTradeStats prints the period the numbers cover", () => {
+    const t = text(
+      renderCryptoFuturesTradeStats({
+        ...statsPayload,
+        period: { from: "2026-03-01", to: "2026-03-31" },
+      }),
+    );
+    expect(t).toContain("2026-03-01 → 2026-03-31");
+  });
+
   it("renderTradingPnlBySymbol keeps exact decimals per row and totals", () => {
     const out = renderTradingPnlBySymbol(pnlPayload);
     const t = text(out);

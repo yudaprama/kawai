@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+vouchers.local.txt
 
 # env files (CLERK_SECRET_KEY lives in .env.local; backend public config in .env)
 .env

@@ -217,7 +217,30 @@ export function renderCryptoFuturesTradeStats(output: unknown): ReactNode {
   const d = parse(output);
   if (!isRecord(d)) return null;
   const s = isRecord(d.statistics) ? d.statistics : null;
-  if (!s) return null;
+  const periodLabel = periodOf(d);
+  if (!s) {
+    // A period-scoped read of a quiet month is a NORMAL result, not a
+    // malformed payload: the tool answers `trades: 0` with no `statistics`
+    // block at all (zeroes would claim "0% win rate" for a month that simply
+    // had no closed positions). Rendering null here is what showed raw JSON.
+    if (num(d.trades) !== 0) return null;
+    return (
+      <TextCard>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Icon name="chart-line" className="text-primary size-4" />
+          <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+            Trade statistics
+          </span>
+          {str(d.market) && <span className="text-muted-foreground font-mono text-[10px]">{str(d.market)}</span>}
+          {periodLabel && <span className="text-muted-foreground font-mono text-[10px]">· {periodLabel}</span>}
+        </div>
+        <Footnote>
+          No completed trades — {fmtNum(num(d.fills) ?? 0)} fill
+          {(num(d.fills) ?? 0) === 1 ? "" : "s"} in scope, none flat yet.
+        </Footnote>
+      </TextCard>
+    );
+  }
   const trades = num(s.trades) ?? 0;
   const wins = num(s.wins) ?? 0;
   const losses = num(s.losses) ?? 0;
@@ -250,6 +273,7 @@ export function renderCryptoFuturesTradeStats(output: unknown): ReactNode {
           Trade statistics
         </span>
         {str(d.market) && <span className="text-muted-foreground font-mono text-[10px]">{str(d.market)}</span>}
+        {periodLabel && <span className="text-muted-foreground font-mono text-[10px]">· {periodLabel}</span>}
         {cur && <span className="text-muted-foreground font-mono text-[10px]">· settled in {cur}</span>}
       </div>
       <MetricGrid items={metrics} />
@@ -259,6 +283,16 @@ export function renderCryptoFuturesTradeStats(output: unknown): ReactNode {
       </Footnote>
     </TextCard>
   );
+}
+
+/// The `period: { from, to }` scope a stats read was asked for, printed
+/// verbatim so a one-month review can never be mistaken for a lifetime one.
+function periodOf(d: Record<string, unknown>): string | undefined {
+  const p = isRecord(d.period) ? d.period : null;
+  if (!p) return undefined;
+  const from = str(p.from);
+  const to = str(p.to);
+  return from && to ? `${from} → ${to}` : undefined;
 }
 
 // ── trading_pnl_by_symbol ──────────────────────────────────────────────────

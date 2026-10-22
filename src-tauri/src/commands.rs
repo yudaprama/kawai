@@ -2110,6 +2110,11 @@ pub async fn execute_supervisor_plan(
     plan: kawai_router::TaskPlan,
     session_id: i64,
     user_goal: Option<String>,
+    // Raw device locale tag (e.g. "id-ID"). A planner-driven or template-routed
+    // goal is the CLIENT's text, so — unlike the fixed pipelines, whose domain
+    // builders compose their own rule — the output language has to ride the
+    // goal here or the deliverable ignores the locale (see `goal_in_language`).
+    language: Option<String>,
         stream_id: String,
     on_event: Channel<kawai_events::SupervisorEvent>,
     registry: State<'_, StreamRegistry>,
@@ -2126,6 +2131,11 @@ pub async fn execute_supervisor_plan(
     .await
     .map_err(|e| e.to_string())?;
 
+    let language = crate::supervisor::resolve_user_language(language.as_deref(), None);
+    let user_goal = Some(crate::supervisor::goal_in_language(
+        user_goal.unwrap_or_else(|| plan.goal.clone()),
+        language.as_deref(),
+    ));
     tracing::info!(component = "supervisor", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "executing plan");
     ctx.run(plan, tool_registry, user_goal, None, stream_id, on_event, &pending)
         .await
@@ -2303,7 +2313,12 @@ pub async fn run_mexc_risk_audit(
     let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
         .unwrap_or_default();
     let plan = ::mexc::build_audit_plan(args);
-    #[cfg(all(feature = "accounting", feature = "mexc", not(target_os = "android")))]
+    #[cfg(all(
+        feature = "accounting",
+        feature = "binance",
+        feature = "mexc",
+        not(target_os = "android")
+    ))]
     let plan = crate::supervisor::append_books_sync_step(plan, "mexc");
     let user_goal = ::mexc::audit_user_goal(&interval, &risk, limit, &language);
     let tool_registry = crate::supervisor::build_fixed_mexc_registry(
@@ -2353,11 +2368,13 @@ pub async fn run_trading_performance(
     pending: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
     let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
+    let language = crate::supervisor::resolve_user_language(language.as_deref(), None);
     let plan = accounting_tools::plan::build_trading_performance_plan(
         period.trim(),
         chrono::Local::now().date_naive(),
         venue.as_deref().map(str::trim).filter(|v| !v.is_empty()),
         crate::templates::TRADING_SYNC_VENUES,
+        language.as_deref(),
     )?;
     let user_goal = plan.goal.clone();
     let tool_registry = crate::supervisor::build_registry_for_plan(&ctx.user_id, session_id, &plan)
@@ -2385,9 +2402,11 @@ pub async fn run_monthly_close(
     pending: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
     let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
+    let language = crate::supervisor::resolve_user_language(language.as_deref(), None);
     let plan = accounting_tools::plan::build_monthly_close_plan(
         period.trim(),
         chrono::Local::now().date_naive(),
+        language.as_deref(),
     )?;
     let user_goal = plan.goal.clone();
     let tool_registry = crate::supervisor::build_registry_for_plan(&ctx.user_id, session_id, &plan)
@@ -2413,7 +2432,8 @@ pub async fn run_crypto_screener(
     screens: Option<Vec<String>>,
     universe: Option<String>,
     interval: Option<String>,
-    // Exchange the scan reads: "binance" (default) or "mexc" (scan-only).
+    // Exchange the scan reads: "binance" (default) or "mexc" (USDT-margined
+    // futures only).
     venue: Option<String>,
     top_n: Option<u32>,
     scan_size: Option<u32>,

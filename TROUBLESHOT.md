@@ -48,6 +48,23 @@ sqlite3 "$DB" "SELECT id, provider, tool, input_tokens, output_tokens, latency_m
 grep -a "agent_chat\]\|remote\]\|office\]\|supervisor\]\|webread\]" "$LOG" | tail -n 30
 ```
 
+### Run on a physical Android device over USB
+
+```sh
+adb devices                                              # phone seen + authorized?
+bun run tauri:android dev                                # dev loop: build + install + logcat
+bun tauri android build --apk --debug --target aarch64   # bundled debug APK (no dev server needed)
+adb install -r -d src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+adb shell am start -n pro.kawai.app/.MainActivity
+```
+
+Gotchas, all hit for real:
+
+- **First build is slow; installs can fail on versionCode.** If a CI release APK is on the phone, the dev build (lower versionCode) is rejected with `INSTALL_FAILED_VERSION_DOWNGRADE` — reinstall with `adb install -r -d` (keeps app data). If adb says `device unauthorized`, accept the RSA prompt on the phone screen.
+- **`tauri android dev` needs the PHONE to reach the Mac's dev server.** It prints `Replacing devUrl host with <mac-LAN-IP>` and bakes that into the APK; the phone must be on the same Wi-Fi *without client isolation*. Symptoms of isolation: black screen / `ERR_CONNECTION_REFUSED` at `tauri.localhost` in the WebView, `ping` from the phone to the Mac loses 100%. Workaround when the Wi-Fi isolates clients: install the bundled debug APK (frontend baked in, no dev server) — do NOT chase `TAURI_DEV_HOST`, it doesn't change the baked devUrl.
+- **Dev-server lifecycle:** `tauri android dev` owns the vite server; if it exits, vite dies with it and an already-installed dev APK shows `CONNECTION_REFUSED`. Either restart the dev loop or install the bundled APK.
+- **No `litert` on Android** — dev/`tauri:android` builds use the `desktop` feature only; `scripts/stage-litert-android.sh` must stage the android `.so` before any `litert` build.
+
 ### Android device (physical phone or emulator)
 
 There is no terminal on the device, so the desktop `LOG=` path does not
@@ -81,6 +98,16 @@ tail -n 100 /tmp/kawai-android.log
  `auth server unreachable: <cause>` instead of an endless spinner. Common
  causes on a phone: captive portal / no real network, IPv6-first DNS, or the
  worker URL in `KAWAI_WORKER_URL` being unreachable from the device.
+
+An ENDLESS spinner (timeout never fires) is different: the auth request
+future died before the timeout could. Check `adb logcat` for
+`panicked at rustls-platform-verifier-0.7.0/src/android.rs:90: Expect
+rustls-platform-verifier to be initialized` — that panic kills every Rust
+HTTPS call (auth, JWKS, remote LLM, Loki push; the device then ships
+NOTHING to Grafana, so an empty `{service="kawai", os="android"}` query is
+itself a symptom). Fixed in the Tauri shell: `lib.rs` setup initializes the
+verifier with the JNI context on Android (see the Landmines entry in
+AGENTS.md). If login spins forever again, logcat first.
 
 #### No USB / no adb (wireless) — use Grafana Cloud
 

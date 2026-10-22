@@ -45,6 +45,23 @@ pub fn run() {
         .manage(auth::new_session())
         .manage(supervisor_pending_state())
         .setup(|app| {
+            // Android: rustls-platform-verifier (reqwest's `rustls` TLS
+            // verifier) needs the app's JNI context before ANY TLS call, or
+            // it panics ("Expect rustls-platform-verifier to be
+            // initialized") — Loki push, remote LLM, JWKS fetch all die.
+            // The Kotlin CertificateVerifier component is compiled into the
+            // gen/android app (org.rustls.platformverifier).
+            #[cfg(target_os = "android")]
+            {
+                let ctx = ndk_context::android_context();
+                let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) };
+                vm.attach_current_thread(|env| {
+                    let activity =
+                        unsafe { jni::objects::JObject::from_raw(env, ctx.context().cast()) };
+                    rustls_platform_verifier::android::init_with_env(env, activity)
+                })
+                .expect("init rustls-platform-verifier on Android");
+            }
             // Stamp the release version (tauri.conf.json) onto remote telemetry
             // labels before any WARN/ERROR can ship.
             kawai_telemetry::set_app_version(

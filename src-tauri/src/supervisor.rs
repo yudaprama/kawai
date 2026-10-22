@@ -656,6 +656,12 @@ pub async fn plan_task(
                 if let Some(period) = &facts.period {
                     slots.set("period", period);
                 }
+                // A named exchange scopes the review's plan — the template
+                // declares the slot, so an unfilled one silently reviews every
+                // venue the user did not ask for.
+                if let Some(venue) = &facts.venue {
+                    slots.set("venue", venue);
+                }
                 slots.set(
                     "language",
                     &resolve_user_language(language, None).unwrap_or_default(),
@@ -2178,9 +2184,20 @@ pub async fn narrow_registry_for_goal_with(
 /// Re-executing the SAME plan (resume) reuses the key — identical completed
 /// steps are served from the persisted ExecutionMemo seed; a revised or
 /// edited plan gets a different key and never reuses stale results.
+///
+/// `requires_confirmation` is REGISTRY-DERIVED: `enforce_confirmation_policy`
+/// flips it on at execution time, after the registry was built with its own
+/// `plan_key`. Hashing the raw flag made one run produce two keys (step rows
+/// under the pre-enforcement key, the deliverable under the post-enforcement
+/// one), so the key is computed over a copy with that field cleared — the
+/// same plan yields the same key before and after enforcement.
 pub fn plan_key(plan: &kawai_router::TaskPlan) -> String {
     use sha2::Digest;
-    let serialized = serde_json::to_string(plan)
+    let mut normalized = plan.clone();
+    for step in &mut normalized.steps {
+        step.requires_confirmation = None;
+    }
+    let serialized = serde_json::to_string(&normalized)
         .expect("plan serialization must not fail (all TaskPlan fields are infallible)");
     let hash = sha2::Sha256::digest(serialized.as_bytes());
     hex::encode(hash)
@@ -2235,6 +2252,28 @@ pub fn resolve_user_language(
         _ => return None,
     };
     Some(name.to_string())
+}
+
+/// Scope a CLIENT-SUPPLIED goal with the resolved output language.
+///
+/// Fixed pipelines compose their own rule into the goal they hand the writer
+/// (`desk_user_goal`, `screener_user_goal`, the accounting plan builders, …).
+/// A planner-driven or template-routed goal is the user's own text, so without
+/// this the deliverable writer answered in English no matter the locale — the
+/// `language` argument stopped at the plan and never reached the report.
+///
+/// The marker check keeps it idempotent: a goal that already carries a rule is
+/// left untouched, so two instructions never stack (a resume re-runs the same
+/// goal, and the fixed-pipeline goals already carry theirs).
+pub fn goal_in_language(goal: String, language: Option<&str>) -> String {
+    let language = language.map(str::trim).unwrap_or_default();
+    if language.is_empty() || goal.contains("LANGUAGE: Write your ENTIRE report in") {
+        return goal;
+    }
+    format!(
+        "{goal}\n\nLANGUAGE: Write your ENTIRE report in {language}. Keep numbers, tickers, \
+         tool labels and quoted tool output verbatim."
+    )
 }
 
 /// Full body of one persisted step result — the read path the wire preview
@@ -2732,7 +2771,12 @@ pub(crate) async fn build_registry_from_toolset(
             // Legacy tool names (persisted plans, stale catalog) resolve to the
             // current tool here — the single dispatch choke point.
             let name = kawai_router::legacy::canonical_tool_name(call.step.dispatch_key()).to_string();
-            let args_value = coerce_resolved_args(&name, &call.args, schemas.get(&name));
+            let args_value = coerce_resolved_args(
+                &name,
+                &call.args,
+                schemas.get(&name),
+                &resolved_arg_keys(&call.step),
+            );
             if let Some(hit) = memo.get(&name, &args_value) {
                 return Ok(kawai_router::StepResult {
                     step_id: call.step.id,
@@ -2922,6 +2966,7 @@ fn coerce_resolved_args(
     tool: &str,
     args: &serde_json::Value,
     schema: Option<&serde_json::Value>,
+    resolved_keys: &std::collections::HashSet<String>,
 ) -> serde_json::Value {
     let Some(schema) = schema else { return args.clone(); };
     let Some(properties) = schema.get("properties").and_then(|v| v.as_object()) else {
@@ -2951,11 +2996,45 @@ fn coerce_resolved_args(
         if value.is_string() && !stringified {
             continue;
         }
+        // A stringified blob is only ever produced by dataflow resolution, so
+        // only keys the resolver actually wrote may be unwrapped. Without this
+        // guard a LITERAL argument the model wrote (a JSON-shaped document
+        // body, an expression) that happens to parse into a file-shaped value
+        // would be silently replaced by a file id.
+        if stringified && !resolved_keys.contains(key) {
+            continue;
+        }
         if let Some(coerced) = pick_file_id(tool, value, 2) {
             out.insert(key.clone(), coerced);
         }
     }
     serde_json::Value::Object(out)
+}
+
+/// The argument keys a step's dataflow resolution can own: keys whose planned
+/// value is a `{"fromStep": …}` reference or a `${step.output}` interpolation,
+/// plus every explicit `inputs` binding. Used to keep
+/// [`coerce_resolved_args`] off literal arguments.
+fn resolved_arg_keys(step: &kawai_router::TaskStep) -> std::collections::HashSet<String> {
+    fn is_reference(v: &serde_json::Value) -> bool {
+        match v {
+            serde_json::Value::String(s) => s.contains("${"),
+            serde_json::Value::Object(_) => v.get("fromStep").is_some(),
+            _ => false,
+        }
+    }
+    let mut keys = std::collections::HashSet::new();
+    if let Some(obj) = step.arguments.as_object() {
+        for (k, v) in obj {
+            if is_reference(v) {
+                keys.insert(k.clone());
+            }
+        }
+    }
+    if let Some(obj) = step.inputs.as_object() {
+        keys.extend(obj.keys().cloned());
+    }
+    keys
 }
 
 /// Pick a single file id out of a resolver-produced value. Prefer the PDF
@@ -4809,6 +4888,19 @@ pub fn execute_plan_stream_with_cancel(
                                 format!("supervisor.step {tool}"),
                                 span_attrs,
                             );
+                        // A replan / resume re-emits StepStarted for a step id
+                        // that already has a span (the earlier attempt was
+                        // replaced, not completed). Close the stale span first
+                        // or it is orphaned in the map: never ended, never
+                        // exported, and it holds its trace id forever.
+                        if let Some((mut stale, _, _)) = step_spans
+                            .lock()
+                            .expect("supervisor step spans mutex")
+                            .remove(step_id)
+                        {
+                            stale.set_attr("kawai.outcome", "superseded");
+                            stale.end();
+                        }
                         step_spans
                             .lock()
                             .expect("supervisor step spans mutex")
@@ -4879,18 +4971,33 @@ pub fn execute_plan_stream_with_cancel(
         // the public API compatible while transport callers use stream_id.
         let confirmation_stream_id = stream_id.clone();
         let gate: kawai_router::ConfirmationHandler = Arc::new(move |step_id: String, _task: String| {
+            /// Owns one pending-confirmation slot and releases it on EVERY
+            /// exit path. The awaiting future can be dropped mid-await (plan
+            /// cancelled, transport disconnected, run torn down) — no branch
+            /// body runs then, so a remove-in-each-branch leaks the entry for
+            /// the life of the process, keyed by stream id.
+            struct PendingGuard {
+                pending: PendingConfirmations,
+                key: String,
+            }
+            impl Drop for PendingGuard {
+                fn drop(&mut self) {
+                    self.pending
+                        .lock()
+                        .expect("pending confirmations mutex held across panic")
+                        .remove(&self.key);
+                }
+            }
             let pending = gate_pending.clone();
             let key = confirmation_key(&confirmation_stream_id, &step_id);
             let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
             pending.lock().expect("pending confirmations mutex held across panic").insert(key.clone(), tx);
             Box::pin(async move {
+                let _guard = PendingGuard { pending, key };
                 match rx.await {
                     Ok(true) => Ok(()),
                     Ok(false) => Err(kawai_router::RouterError::ConfirmationRejected(step_id)),
-                    Err(_) => {
-                        pending.lock().expect("pending confirmations mutex held across panic").remove(&key);
-                        Err(kawai_router::RouterError::ConfirmationRequired(step_id))
-                    }
+                    Err(_) => Err(kawai_router::RouterError::ConfirmationRequired(step_id)),
                 }
             })
         });
@@ -6328,11 +6435,11 @@ mod tests {
             tools.contains(&"crypto_futures_trade_stats".to_string()),
             "stats step dispatches a binance tool: {tools:?}"
         );
-        // The stats tool is ALSO Binance's fill sync, and the routed plan is
-        // unscoped (the router resolves no venue) — so it must fetch EVERY
-        // exchange this build can sync before the ledger import. An import
-        // over a cold fill history reports "no synced fills" and halts the
-        // review; fetching only Binance silently reports a partial book.
+        // The stats tool is ALSO Binance's fill sync, and this goal names no
+        // exchange — so the plan is unscoped and must fetch EVERY exchange
+        // this build can sync before the ledger import. An import over a cold
+        // fill history reports "no synced fills" and halts the review;
+        // fetching only Binance silently reports a partial book.
         let fetches: Vec<String> = plan
             .steps
             .iter()
@@ -6383,6 +6490,60 @@ mod tests {
         );
     }
 
+    /// A goal that NAMES an exchange must scope the routed plan to it. The
+    /// template declares a `venue` slot, but the router only ever filled
+    /// ticker/url/period — so "review MEXC performance" silently reviewed
+    /// every venue, fetched every venue's fills, and reported the combined
+    /// book the user did not ask about.
+    #[cfg(all(feature = "accounting", feature = "binance", feature = "mexc"))]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn plan_task_scopes_the_trading_review_to_the_named_exchange() {
+        let dir = tempfile::tempdir().unwrap();
+        kawai_db::set_data_root(dir.path());
+        std::mem::forget(dir);
+        let user = format!("trading-venue-{}-{}", std::process::id(), kawai_db::unix_now());
+        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
+        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
+            .await
+            .expect("supervisor registry");
+
+        let (plan, usage) = plan_task(
+            &user,
+            session,
+            "performa trading mexc 2026-10",
+            None,
+            Some("id-ID"),
+            &registry,
+            |_| {},
+        )
+        .await
+        .expect("a venue-named trading goal must claim through plan_task");
+        assert_eq!(usage.input_tokens, 0, "the planner must not run");
+        assert_eq!(plan.template.as_deref(), Some("trading_performance"));
+        let fetches: Vec<&str> = plan.steps.iter().map(|s| s.id.as_str()).collect();
+        assert!(
+            fetches.contains(&"fetch-mexc") && !fetches.contains(&"fetch-binance"),
+            "a MEXC-scoped review must fetch only MEXC's fills: {fetches:?}"
+        );
+        for id in ["sync", "pnl", "fees"] {
+            let step = plan.steps.iter().find(|s| s.id == id).expect(id);
+            assert_eq!(
+                step.arguments.get("venue").and_then(|v| v.as_str()),
+                Some("mexc"),
+                "step {id} lost the venue scope"
+            );
+        }
+        registry
+            .validate_plan(&plan)
+            .unwrap_or_else(|e| panic!("the venue-scoped plan must validate: {e}"));
+        // ... and the device locale rides the plan's goal (the writer's brief).
+        assert!(
+            plan.goal.contains("LANGUAGE: Write your ENTIRE report in Bahasa Indonesia"),
+            "{}",
+            plan.goal
+        );
+    }
+
     /// The merged supervisor registry is how the agent reaches a venue's tools
     /// at all: MEXC has no agent of its own, so its positions mirror rides the
     /// accounting agent's toolset. A registry without it means the agent cannot
@@ -6412,7 +6573,7 @@ mod tests {
     /// to depend on it, and every step must resolve in the REAL merged
     /// registry. A plan that validates but imports an empty history is exactly
     /// the failure this pins.
-    #[cfg(all(feature = "accounting", feature = "mexc"))]
+    #[cfg(all(feature = "accounting", feature = "binance", feature = "mexc"))]
     #[tokio::test(flavor = "multi_thread")]
     async fn a_mexc_scoped_trading_plan_fetches_before_it_imports() {
         let dir = tempfile::tempdir().unwrap();
@@ -6429,6 +6590,7 @@ mod tests {
             chrono::Local::now().date_naive(),
             Some("mexc"),
             crate::templates::TRADING_SYNC_VENUES,
+            None,
         )
         .expect("mexc-scoped plan");
         let tools: Vec<_> = plan.steps.iter().filter_map(|s| s.tool.clone()).collect();
@@ -6595,9 +6757,52 @@ mod tests {
 }
 
 #[cfg(test)]
+mod plan_key_tests {
+    use super::plan_key;
+    use kawai_router::{TaskPlan, TaskStep};
+
+    fn plan(flag: Option<bool>) -> TaskPlan {
+        TaskPlan {
+            goal: "g".into(),
+            steps: vec![TaskStep {
+                id: "s1".into(),
+                agent_id: "builtin.x".into(),
+                task: "t".into(),
+                requires_confirmation: flag,
+                ..Default::default()
+            }],
+            final_writer: None,
+            summary: None,
+            template: None,
+        }
+    }
+
+    #[test]
+    fn confirmation_enforcement_does_not_change_the_key() {
+        // `enforce_confirmation_policy` flips the flag at execution time, but
+        // the registry was already built with the RAW plan's key. One run must
+        // not file step rows under one key and the deliverable under another.
+        assert_eq!(plan_key(&plan(None)), plan_key(&plan(Some(true))));
+        assert_eq!(plan_key(&plan(Some(true))), plan_key(&plan(Some(false))));
+    }
+
+    #[test]
+    fn a_changed_step_gets_a_new_key() {
+        let mut changed = plan(None);
+        changed.steps[0].arguments = serde_json::json!({"nonce": 1});
+        assert_ne!(plan_key(&plan(None)), plan_key(&changed));
+    }
+}
+
+#[cfg(test)]
 mod coerce_tests {
     use super::coerce_resolved_args;
     use serde_json::json;
+
+    /// The resolver-owned keys for a test step.
+    fn keys(names: &[&str]) -> std::collections::HashSet<String> {
+        names.iter().map(|s| (*s).to_string()).collect()
+    }
 
     #[test]
     fn files_list_coerced_to_single_id_for_string_arg() {
@@ -6607,7 +6812,7 @@ mod coerce_tests {
             "properties": {"fileId": {"type": "string"}}
         });
         let args = json!({"fileId": [{"id": "doc1", "ext": "pdf"}, {"id": "doc2", "ext": "md"}]});
-        let out = coerce_resolved_args("pdf_extract_text", &args, Some(&schema));
+        let out = coerce_resolved_args("pdf_extract_text", &args, Some(&schema), &keys(&["fileId"]));
         assert_eq!(out["fileId"], "doc1");
     }
 
@@ -6615,7 +6820,7 @@ mod coerce_tests {
     fn pdf_tool_prefers_pdf_entry_in_mixed_list() {
         let schema = json!({"type": "object", "properties": {"fileId": {"type": "string"}}});
         let args = json!({"fileId": [{"id": "doc2", "ext": "md"}, {"id": "doc1", "ext": "pdf"}]});
-        let out = coerce_resolved_args("pdf_extract_text", &args, Some(&schema));
+        let out = coerce_resolved_args("pdf_extract_text", &args, Some(&schema), &keys(&["fileId"]));
         assert_eq!(out["fileId"], "doc1");
     }
 
@@ -6623,16 +6828,16 @@ mod coerce_tests {
     fn non_string_args_and_missing_schema_pass_through() {
         let schema = json!({"type": "object", "properties": {"query": {"type": "string"}}});
         let args = json!({"query": ["a", "b"], "limit": 5});
-        let out = coerce_resolved_args("knowledge_search", &args, Some(&schema));
+        let out = coerce_resolved_args("knowledge_search", &args, Some(&schema), &keys(&["query"]));
         assert_eq!(out, args);
-        assert_eq!(coerce_resolved_args("t", &args, None), args);
+        assert_eq!(coerce_resolved_args("t", &args, None, &keys(&[])), args);
     }
 
     #[test]
     fn file_object_coerced_to_handle() {
         let schema = json!({"type": "object", "properties": {"fileId": {"type": "string"}}});
         let args = json!({"fileId": {"type": "file", "handle": "doc9", "filename": "x.pdf"}});
-        let out = coerce_resolved_args("office_read_document", &args, Some(&schema));
+        let out = coerce_resolved_args("office_read_document", &args, Some(&schema), &keys(&["fileId"]));
         assert_eq!(out["fileId"], "doc9");
     }
 
@@ -6652,8 +6857,43 @@ mod coerce_tests {
         }))
         .unwrap();
         let args = json!({"fileId": blob});
-        let out = coerce_resolved_args("data_schema", &args, Some(&schema));
+        let out = coerce_resolved_args("data_schema", &args, Some(&schema), &keys(&["fileId"]));
         assert_eq!(out["fileId"], "f89462861576850000-0001");
+    }
+
+    #[test]
+    fn stringified_literal_is_left_alone_when_the_resolver_did_not_write_it() {
+        // A literal argument the model wrote can be JSON-shaped (a document
+        // body, an expression) and parse into a file-shaped value. Only keys
+        // the resolver owns may be unwrapped.
+        let schema = json!({"type": "object", "properties": {"fileId": {"type": "string"}}});
+        let blob = serde_json::to_string(&json!({
+            "data": {"files": [{"id": "f1", "ext": "xlsx"}]},
+            "ok": true
+        }))
+        .unwrap();
+        let args = json!({"fileId": blob});
+        let out = coerce_resolved_args("data_schema", &args, Some(&schema), &keys(&[]));
+        assert_eq!(out, args);
+    }
+
+    #[test]
+    fn resolver_owned_keys_cover_references_and_bindings() {
+        let mut step = kawai_router::TaskStep {
+            id: "s".into(),
+            arguments: json!({
+                "fileId": {"fromStep": "list", "output": "files"},
+                "template": "${s1.files}",
+                "query": "a literal",
+            }),
+            ..Default::default()
+        };
+        step.inputs = json!({"source": {"fromStep": "list", "output": "files"}});
+        let resolved = super::resolved_arg_keys(&step);
+        assert!(resolved.contains("fileId"));
+        assert!(resolved.contains("template"));
+        assert!(resolved.contains("source"));
+        assert!(!resolved.contains("query"));
     }
 
     #[test]
@@ -6662,7 +6902,7 @@ mod coerce_tests {
         // resolve_args returns {"type":"handle","value":…,"kind":"files"}.
         let schema = json!({"type": "object", "properties": {"fileId": {"type": "string"}}});
         let args = json!({"fileId": {"type": "handle", "value": "f1", "kind": "files"}});
-        let out = coerce_resolved_args("data_schema", &args, Some(&schema));
+        let out = coerce_resolved_args("data_schema", &args, Some(&schema), &keys(&["fileId"]));
         assert_eq!(out["fileId"], "f1");
     }
 }

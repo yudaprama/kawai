@@ -618,7 +618,12 @@ pub async fn ask_about_step_result(
         goal: format!("Explain step {step_id} result to the user"),
         steps: vec![TaskStep {
             id: "explain".into(),
+            // `dispatch_key()` is `tool` when present, else `agent_id` — the
+            // registry knows the tool as `explain_step_result`, so naming only
+            // the agent id made `validate_plan` reject the plan with
+            // `UnknownTool` before the first wave (every ask failed).
             agent_id: "builtin.explain".into(),
+            tool: Some("explain_step_result".into()),
             task: question.to_string(),
             arguments: serde_json::to_value(ExplainStepResultArgs {
                 step_tool: step_tool_name,
