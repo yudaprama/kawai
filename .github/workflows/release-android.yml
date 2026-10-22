@@ -37,6 +37,11 @@ on:
         description: 'Tag to build (e.g. v0.3.9). Defaults to the latest published release.'
         required: false
         type: string
+      loki_level:
+        description: 'KAWAI_LOKI_LEVEL baked at compile time (off|error|warn|info|debug|trace). info makes a device session observable from Grafana alone.'
+        required: false
+        type: string
+        default: 'warn'
 
 permissions:
   contents: write
@@ -174,9 +179,15 @@ jobs:
           EOF
 
       - name: Build signed AAB
+        env:
+          # Read at compile time (option_env!) — this is how a release APK
+          # under test opts into INFO; a phone has no shell to export into.
+          KAWAI_LOKI_LEVEL: ${{ inputs.loki_level || 'warn' }}
         run: bun tauri android build --target aarch64 armv7 --features accounting,mexc
 
       - name: Build universal APK (sideload)
+        env:
+          KAWAI_LOKI_LEVEL: ${{ inputs.loki_level || 'warn' }}
         run: bun tauri android build --target aarch64 armv7 --features accounting,mexc --apk
 
       - name: Attach APK to the release
