@@ -9,7 +9,7 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-export function base64ToBytes(b64: string): Uint8Array {
+export function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -20,10 +20,30 @@ export function base64ToText(b64: string): string {
   return new TextDecoder("utf-8").decode(base64ToBytes(b64));
 }
 
+/**
+ * Saves a Blob via an object-URL anchor download. Blob URLs (not `data:`
+ * URLs) keep large media out of the JS heap — a multi-MB base64 data URL
+ * doubles the memory spike on phones — and revoke is deferred so the
+ * download has started before the URL dies.
+ */
+export function downloadBlob(blob: Blob, name: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** `data:` URL → Blob → {@link downloadBlob} (for callers that already hold a data URL). */
+export async function downloadDataUrl(dataUrl: string, name: string): Promise<void> {
+  downloadBlob(await (await fetch(dataUrl)).blob(), name);
+}
+
 export function dataUrlToFile(dataUrl: string, name: string): File {
   const [meta, b64] = dataUrl.split(",", 2);
   const mime = meta.slice(5, meta.indexOf(";")) || "application/octet-stream";
-  return new File([base64ToBytes(b64 ?? "") as unknown as BlobPart], name, {
+  return new File([base64ToBytes(b64 ?? "")], name, {
     type: mime,
   });
 }

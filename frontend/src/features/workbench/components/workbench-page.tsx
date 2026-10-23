@@ -51,7 +51,7 @@ function SessionsButton({ onOpen, iconOnly = false }: { onOpen: () => void; icon
       onClick={onOpen}
       title={t("sessionSwitcher.browseSessionsHint")}
       aria-label={t("sessionSwitcher.openHistory")}
-      className="text-muted-foreground hover:bg-[var(--tea-color-bg-secondary-default)] hover:text-foreground inline-flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] tracking-wider uppercase transition-colors"
+      className="text-muted-foreground hover:bg-[var(--tea-color-bg-secondary-default)] hover:text-foreground hit-44 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] tracking-wider uppercase transition-colors"
     >
       <Icon name="history" className="size-3.5" />
       {!iconOnly && "Sessions"}
@@ -83,6 +83,10 @@ export interface WorkbenchPageProps {
    *  so the App-level "New" shortcut (Cmd/Ctrl+N) can reset the
    *  WORKBENCH — resetting the chat hook alone is invisible on this surface. */
   newSessionRef?: React.MutableRefObject<(() => void) | null>;
+  /** App-owned ref: while mounted the page publishes its rail-back handler
+   *  here — App's Android hardware-back arbitration calls it to close the
+   *  mobile progress rail; it reports whether a rail was actually open. */
+  railBackRef?: React.MutableRefObject<(() => boolean) | null>;
   /** App-owned ref: on mount the page publishes its attachFiles here so the
    *  App-level LinkDialog can auto-attach a freshly imported YouTube
    *  transcript as a composer chip (same UX as the file-import auto-attach). */
@@ -104,6 +108,7 @@ export function WorkbenchPage({
   sessionsOpen = false,
   sessionSelectorRef,
   newSessionRef,
+  railBackRef,
   attachFilesRef,
 }: WorkbenchPageProps) {
   const { t } = useI18n();
@@ -529,6 +534,20 @@ export function WorkbenchPage({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mobileRail, supervisor.status, supervisor.stop, t]);
 
+  // Publish the rail-back handler upward (App's Android hardware-back
+  // arbitration): close the mobile rail and report whether one was open.
+  useEffect(() => {
+    if (railBackRef == null) return;
+    railBackRef.current = () => {
+      if (!mobileRail) return false;
+      setMobileRail(false);
+      return true;
+    };
+    return () => {
+      railBackRef.current = null;
+    };
+  }, [railBackRef, mobileRail]);
+
   // Below lg the sidebar is a drawer — force it open when the plan needs the
   // user (confirmation gates, review) so the run can't stall invisibly.
   useEffect(() => {
@@ -732,7 +751,7 @@ export function WorkbenchPage({
               aria-label="Close progress panel"
               title={t("common.close")}
               onClick={() => setMobileRail(false)}
-              className="text-muted-foreground hover:text-foreground rounded-lg p-1.5 transition-colors"
+              className="text-muted-foreground hover:text-foreground hit-44 rounded-lg p-1.5 transition-colors"
             >
               <Icon name="x" className="size-4" />
             </button>
@@ -769,7 +788,7 @@ export function WorkbenchPage({
               aria-label={t("workbench.progressRail.openNavigation")}
               title={t("workbench.progressRail.navigation")}
               onClick={onOpenNav}
-              className="text-muted-foreground hover:text-foreground rounded-lg p-1.5 transition-colors"
+              className="text-muted-foreground hover:text-foreground hit-44 rounded-lg p-1.5 transition-colors"
             >
               <Icon name="menu" className="size-4" />
             </button>
@@ -779,7 +798,7 @@ export function WorkbenchPage({
             aria-label={t("workbench.progressRail.openProgress")}
             title="Progress"
             onClick={() => setMobileRail(true)}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors"
+            className="text-muted-foreground hover:text-foreground hit-44 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors"
           >
             <Icon name="panel-left" className="size-4" />
             <span className="font-mono text-[10px] tracking-wider uppercase">Progress</span>
@@ -792,7 +811,7 @@ export function WorkbenchPage({
             title={t("workbench.progressRail.newGoalButton")}
             disabled={supervisor.planning != null || runInFlight || supervisor.status === "reviewing"}
             onClick={goHome}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors disabled:opacity-40"
+            className="text-muted-foreground hover:text-foreground hit-44 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors disabled:opacity-40"
           >
             <Icon name="arrow-left" className="size-4" />
           </button>

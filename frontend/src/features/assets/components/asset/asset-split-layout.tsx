@@ -6,7 +6,8 @@
  *   storageKey so it survives reloads
  * - both columns fill the height and scroll internally; the outer page never
  *   grows a scrollbar
- * - the drag handle is keyboard accessible (← / → arrows, 16px steps)
+ * - the drag handle is keyboard accessible (← / → arrows, 16px steps);
+ *   pointer events with capture make the same drag work by touch
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -44,24 +45,14 @@ export function AssetSplitLayout({ sidebar, detail, storageKey }: AssetSplitLayo
   const containerRef = useRef<HTMLDivElement>(null);
 
   // While dragging: width follows the pointer relative to the container's
-  // left edge, clamped to [MIN, MAX].
+  // left edge, clamped to [MIN, MAX]. The handle captures the pointer, so
+  // move/up events route to it — touch drags work like mouse drags.
   useEffect(() => {
     if (!dragging) return;
-    const onMove = (e: MouseEvent) => {
-      const container = containerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      setSidebarWidth(clampWidth(e.clientX - rect.left));
-    };
-    const onUp = () => setDragging(false);
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
     // Suppress text selection while dragging so list content isn't highlighted.
     const prevUserSelect = document.body.style.userSelect;
     document.body.style.userSelect = "none";
     return () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
       document.body.style.userSelect = prevUserSelect;
     };
   }, [dragging]);
@@ -76,10 +67,20 @@ export function AssetSplitLayout({ sidebar, detail, storageKey }: AssetSplitLayo
     }
   }, [dragging, sidebarWidth, storageKey]);
 
-  const onHandleMouseDown = useCallback((e: React.MouseEvent) => {
+  const onHandlePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
     setDragging(true);
   }, []);
+  const onHandlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (!dragging) return;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) setSidebarWidth(clampWidth(e.clientX - rect.left));
+    },
+    [dragging],
+  );
+  const endDrag = useCallback(() => setDragging(false), []);
 
   return (
     <div
@@ -90,7 +91,7 @@ export function AssetSplitLayout({ sidebar, detail, storageKey }: AssetSplitLayo
       <section className="_asset-split-sidebar">{sidebar}</section>
       <button
         aria-label="Resize sidebar"
-        className="_asset-split-resizer"
+        className="_asset-split-resizer touch-none"
         onKeyDown={(e) => {
           if (e.key === "ArrowLeft") {
             e.preventDefault();
@@ -100,7 +101,10 @@ export function AssetSplitLayout({ sidebar, detail, storageKey }: AssetSplitLayo
             setSidebarWidth((w) => clampWidth(w + 16));
           }
         }}
-        onMouseDown={onHandleMouseDown}
+        onPointerCancel={endDrag}
+        onPointerDown={onHandlePointerDown}
+        onPointerMove={onHandlePointerMove}
+        onPointerUp={endDrag}
         type="button"
       >
         <span className="_asset-split-resizer-bar" />

@@ -21,7 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Streamdown } from "@/lib/streamdown";
+import { LazyStreamdown } from "@/components/shared/lazy-streamdown";
 
 import { Shimmer } from "./shimmer";
 
@@ -206,7 +206,7 @@ export type ReasoningContentProps = ComponentProps<
 export const ReasoningContent = memo(
   ({ className, children, ...props }: ReasoningContentProps) => {
     const { isStreaming } = useReasoning();
-    const { plugins, translations, mermaid } = useStreamdownConfig();
+    const { plugins, translations, mermaid, ready } = useStreamdownConfig();
     return (
       <CollapsibleContent
         className={cn(
@@ -216,16 +216,11 @@ export const ReasoningContent = memo(
         )}
         {...props}
       >
-        <Streamdown
-          isAnimating={isStreaming}
-          caret="block"
-          dir="auto"
-          plugins={plugins}
-          translations={translations}
-          mermaid={mermaid}
-        >
-          {children}
-        </Streamdown>
+        {ready && (
+          <LazyStreamdown isAnimating={isStreaming} caret="block" dir="auto" plugins={plugins} translations={translations} mermaid={mermaid}>
+            {children}
+          </LazyStreamdown>
+        )}
       </CollapsibleContent>
     );
   }

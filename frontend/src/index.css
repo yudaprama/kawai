@@ -346,6 +346,13 @@ html {
   overscroll-behavior: none;
 }
 
+/* Android WebView paints a gray flash on every tap; the app already carries
+   pressed feedback ([role="button"]:active scale(0.97)) and per-component
+   hover/active states, so the native highlight is pure noise on touch. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
   min-height: 100dvh;
 }

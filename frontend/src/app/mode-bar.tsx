@@ -12,7 +12,7 @@ const TRACK = "inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5";
 
 function pillClass(active: boolean): string {
   return cn(
-    "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
+    "hit-44 flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
     active ? "bg-background text-foreground shadow-sm dark:bg-input/30" : "text-muted-foreground hover:text-foreground",
   );
 }

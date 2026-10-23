@@ -4,7 +4,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { toast } from "sonner";
 import { getLocale, translate } from "@/lib/i18n";
 import { logWarn } from "@/lib/logger";
-import { runningInTauri } from "@/platform";
+import { platform, runningInTauri } from "@/platform";
 
 /**
  * Auto-update check, once per launch (updater endpoint: the GitHub release
@@ -12,13 +12,18 @@ import { runningInTauri } from "@/platform";
  * or a bad signature must never nag. When an update exists, a persistent
  * toast offers download+install; installing streams a progress toast and
  * relaunches into the new bundle.
+ *
+ * Desktop-only: tauri-plugin-updater has no mobile backend, but the Android
+ * build compiles the `desktop` feature (so the plugin IS registered there) —
+ * without the target gate every phone launch would run a doomed check and
+ * could surface an install toast that can never install.
  */
 export function useUpdater() {
   // `started` survives effect re-runs (strict-mode double-invoke) so the
   // check is scheduled exactly once per process.
   const started = useRef(false);
   useEffect(() => {
-    if (started.current || !runningInTauri || import.meta.env.DEV) return;
+    if (started.current || !runningInTauri || platform.target !== "desktop" || import.meta.env.DEV) return;
     started.current = true;
     // Boot network traffic (auth bootstrap, session restore) goes first.
     const timer = setTimeout(() => {

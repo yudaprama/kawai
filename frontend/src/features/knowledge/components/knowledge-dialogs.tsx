@@ -14,19 +14,22 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { tauriOpenFile, type KnowledgeFileInfo } from "@/lib/api";
 import { knowledgeFileToPreview } from "@/lib/preview-file";
-import { runningInTauri } from "@/platform";
+import { platform, runningInTauri } from "@/platform";
 
 export function PreviewDialog({ file, onClose }: { file: KnowledgeFileInfo | null; onClose: () => void }) {
   const ext = file?.ext?.toLowerCase();
-  // On desktop, PDFs open directly in the OS viewer — skip the modal entirely.
+  // On desktop, PDFs open directly in the OS viewer — skip the modal
+  // entirely. Mobile keeps the modal: its PDF card auto-attempts the OS open
+  // and surfaces a retry/download fallback when the opener fails.
+  const openNatively = !!file && runningInTauri && platform.target === "desktop" && ext === "pdf";
   useEffect(() => {
-    if (file && runningInTauri && ext === "pdf") {
+    if (openNatively) {
       tauriOpenFile(file.id).catch(() => {});
       onClose();
     }
-  }, [file, ext, onClose]);
+  }, [openNatively, file, onClose]);
 
-  if (file && runningInTauri && ext === "pdf") return null;
+  if (openNatively) return null;
 
   return (
     <Dialog open={file != null} onOpenChange={(open) => !open && onClose()}>

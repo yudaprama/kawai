@@ -10,7 +10,10 @@
          typecheck/dev-server; at build time vite.config.ts rollupOptions.external
          keeps them out of the bundle and this importmap serves them from esm.sh
          at runtime. If the two drift, typecheck validates one version while the
-         CDN loads another. Update BOTH in the same commit. -->
+         CDN loads another. Update BOTH in the same commit.
+         katex CSS is NOT linked here: a head stylesheet from the CDN would be
+         render-blocking (first paint waits on esm.sh). The math plugin injects
+         it when its (lazily loaded) module runs — keep that URL in sync too. -->
     <script type="importmap">
       {
         "imports": {
@@ -30,7 +33,6 @@
         }
       }
     </script>
-    <link rel="stylesheet" href="https://esm.sh/katex@0.18.4/dist/katex.min.css" />
     <script>
       // Set the theme before paint to avoid a flash of the wrong theme.
       // Key matches the one written by hooks/use-theme.ts ("kawai-theme").
@@ -42,6 +44,10 @@
             (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
           document.documentElement.classList.toggle("dark", dark);
           document.documentElement.style.colorScheme = dark ? "dark" : "light";
+          // Android edge-to-edge: sync status-bar icon contrast with the APP
+          // theme at first paint (bridge registered in MainActivity before
+          // load, so it exists here; absent on desktop/web).
+          try { if (window.KawaiStatusBar) window.KawaiStatusBar.setLightIcons(!dark); } catch (e) {}
         } catch (e) {}
         // Replay the active palette's tokens before paint (written by
         // lib/themes.ts). Without this the app would flash the stylesheet

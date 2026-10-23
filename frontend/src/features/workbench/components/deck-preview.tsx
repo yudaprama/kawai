@@ -14,8 +14,8 @@ import {
   type ReadDeckResult,
   type TemplateListing,
 } from "@/lib/api";
-import { renderDeckInline } from "@/lib/deck-markdown";
-import { runningInTauri } from "@/platform";
+import { deckMarkdownReady, renderDeckInline } from "@/lib/deck-markdown";
+import { platform, runningInTauri } from "@/platform";
 
 /**
  * Deck preview — markdown slide runtime (Slidev model) as a Vue island
@@ -31,6 +31,22 @@ import { runningInTauri } from "@/platform";
  *
  * **Present** shows the same runtime fullscreen in the app (Esc exits).
  */
+
+/** The deck markdown pipeline loads its esm.sh-resolved modules dynamically —
+ *  every surface that renders through `inline()`/`renderSlide()` gates on it. */
+function useDeckMarkdownReady(): boolean {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let disposed = false;
+    void deckMarkdownReady().then(() => {
+      if (!disposed) setReady(true);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, []);
+  return ready;
+}
 
 /** Post-generation template switcher: lists packs from
  *  `office_list_templates` (bundled starters + cached catalogue — never a
@@ -590,13 +606,15 @@ export function DeckPreview({ fileId }: { fileId: string }) {
   }, [presenting]);
 
   const [pptxExported, setPptxExported] = useState<string | null>(null);
+  const deckReady = useDeckMarkdownReady();
   const openPptxExport = useCallback(async () => {
     try {
       const f = await call<OfficeFileSummary>("office_export_deck", { fileId });
       setPptxExported(f.originalName);
       // Desktop: open the exported .pptx in the OS default viewer. Web has
-      // no opener op — the status text still points at Documents.
-      if (runningInTauri) {
+      // no opener op, and on mobile the opener can't serve app-sandbox
+      // paths — both keep the status text pointing at Documents.
+      if (runningInTauri && platform.target === "desktop") {
         void tauriOpenFile(f.id).catch((e) => setPptxExported(`ERROR: ${errText(e)}`));
       }
     } catch (e) {
@@ -611,7 +629,7 @@ export function DeckPreview({ fileId }: { fileId: string }) {
       </div>
     );
   }
-  if (data == null) {
+  if (data == null || !deckReady) {
     return (
       <div className="text-muted-foreground flex items-center justify-center p-8 font-mono text-xs">Loading deck…</div>
     );

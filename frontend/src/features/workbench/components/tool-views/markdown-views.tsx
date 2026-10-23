@@ -1,4 +1,4 @@
-import { Streamdown } from "@/lib/streamdown";
+import { LazyStreamdown } from "@/components/shared/lazy-streamdown";
 import { fmtNumberUS, isRecord } from "./format";
 import { SectionLabel } from "./atoms";
 
@@ -7,7 +7,7 @@ import { SectionLabel } from "./atoms";
 export function MarkdownView({ text }: { text: string }) {
   return (
     <div className="text-sm">
-      <Streamdown>{text}</Streamdown>
+      <LazyStreamdown>{text}</LazyStreamdown>
     </div>
   );
 }

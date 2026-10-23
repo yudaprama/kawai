@@ -1,7 +1,6 @@
 import { Icon } from "@/components/shared/icon";
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { BundledLanguage } from "shiki";
-import { CodeBlock } from "@/components/ai-elements/code-block";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { renderDataSchema } from "@/components/ai-elements/tool-renderers/data";
 import { Button } from "@/components/ui/button";
@@ -9,11 +8,18 @@ import { Spinner } from "@/components/ui/spinner";
 import { useI18n } from "@/hooks/use-i18n";
 import type { TranslationKey, TranslationParams } from "@/lib/i18n";
 import { call, errText, tauriOpenFile } from "@/lib/api";
+import { downloadDataUrl } from "@/lib/base64";
 import { isTabularExt } from "@/lib/extensions";
 import { type FileKind, fileExtension, fileKind, shikiLanguage } from "@/lib/file-types";
 import { logWarn } from "@/lib/logger";
 import { type PreviewFile, useFilePreview } from "@/lib/preview-file";
 import { runningInTauri } from "@/platform";
+
+// code-block.tsx statically imports the shiki plugin — a CDN module. It must
+// load dynamically so the entry chunk stays CDN-free (see
+// components/shared/lazy-streamdown.tsx); raw text holds the pane while the
+// highlighter chunk fetches.
+const CodeBlock = lazy(() => import("@/components/ai-elements/code-block").then((m) => ({ default: m.CodeBlock })));
 
 function fallbackReason(t: (key: TranslationKey, params?: TranslationParams) => string, kind: FileKind): string {
   const reasons: Record<string, TranslationKey> = {
@@ -138,11 +144,14 @@ function AudioPreview({ file }: { file: PreviewFile }) {
 }
 
 function PdfPreview({ file }: { file: PreviewFile }) {
-  // Desktop opens the file in the OS default viewer rather than embedding an
-  // iframe (which can't render PDFs reliably under a restrictive sandbox).
-  // The branch happens in a wrapper so `useFilePreview` stays unconditional
-  // inside whichever child actually renders (rules of hooks).
-  return runningInTauri ? <DesktopFileOpen file={file} /> : <PdfEmbedPreview file={file} />;
+  // Inside the Tauri shell (desktop AND mobile app builds) the file is
+  // handed to the OS viewer — Android/iOS WebView has no PDF renderer, so
+  // the iframe embed would show a blank frame there. Outside Tauri (web
+  // browsers) the iframe embed renders natively. The branch happens in a
+  // wrapper so `useFilePreview` stays unconditional inside whichever child
+  // actually renders (rules of hooks).
+  if (runningInTauri) return <ExternalFileOpen file={file} />;
+  return <PdfEmbedPreview file={file} />;
 }
 
 function PdfEmbedPreview({ file }: { file: PreviewFile }) {
@@ -187,12 +196,13 @@ function HtmlPreview({ file }: { file: PreviewFile }) {
 }
 
 /**
- * Desktop-only: resolves the file's on-disk path and opens it in the OS
- * default viewer via Tauri's `opener`. Shows a status panel with a
- * re-open / download fallback (the latter still needs the `data:` URL, so we
- * reuse the preview fetch).
+ * Native open: resolves the file's on-disk path and opens it in the OS
+ * default viewer via Tauri's `opener`. Auto-attempts once on mount; a
+ * failure (e.g. the opener plugin can't serve app-sandbox paths on
+ * Android) leaves a status panel with a re-open / download fallback (the
+ * latter still needs the `data:` URL, so we reuse the preview fetch).
  */
-function DesktopFileOpen({ file }: { file: PreviewFile }) {
+function ExternalFileOpen({ file }: { file: PreviewFile }) {
   const { t } = useI18n();
   const [error, setError] = useState<string | null>(null);
   const { data } = useFilePreview(file);
@@ -226,10 +236,8 @@ function DesktopFileOpen({ file }: { file: PreviewFile }) {
           <Icon name="external-link" className="size-4" /> {t("preview.openAgain")}
         </Button>
         {data?.dataUrl && (
-          <Button asChild variant="secondary" size="sm">
-            <a href={data.dataUrl} target="_blank" rel="noreferrer" download={file.name}>
-              <Icon name="download" className="size-4" /> {t("common.download")}
-            </a>
+          <Button variant="secondary" size="sm" onClick={() => void downloadDataUrl(data.dataUrl, file.name)}>
+            <Icon name="download" className="size-4" /> {t("common.download")}
           </Button>
         )}
       </div>
@@ -259,12 +267,14 @@ function TextPreview({ file, render }: { file: PreviewFile; render: "markdown" |
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <CodeBlock
-        code={text}
-        language={shikiLanguage(file.name) as BundledLanguage}
-        showLineNumbers
-        className="rounded-none border-0"
-      />
+      <Suspense fallback={<PreviewLoading />}>
+        <CodeBlock
+          code={text}
+          language={shikiLanguage(file.name) as BundledLanguage}
+          showLineNumbers
+          className="rounded-none border-0"
+        />
+      </Suspense>
     </div>
   );
 }

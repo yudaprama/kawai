@@ -4,6 +4,9 @@
     "install": "Update & restart",
     "downloading": "Downloading update… {{percent}}%"
   },
+  "markdown": {
+    "renderFailed": "Couldn't load the markdown renderer — check your connection and retry."
+  },
   "common": {
     "loading": "Loading…",
     "error": "Error",

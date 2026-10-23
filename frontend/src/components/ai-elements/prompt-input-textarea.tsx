@@ -112,6 +112,9 @@ export const PromptInputTextarea = ({
       onKeyDown={handleKeyDown}
       onPaste={handlePaste}
       placeholder={placeholder}
+      // Android IME: the action button says "send", matching the actual
+      // behavior (Enter submits, Shift+Enter newlines).
+      enterKeyHint="send"
       {...props}
       {...controlledProps}
     />

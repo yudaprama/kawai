@@ -4,6 +4,18 @@ import rehypeKatex from "rehype-katex";
 import remarkMath from "remark-math";
 import type { Pluggable } from "unified";
 
+// katex styling: injected HERE (when this lazily-loaded module first runs)
+// instead of a render-blocking <head> stylesheet in index.html — first paint
+// must never wait on the CDN. Version MUST match the katex pin in the
+// importmap in frontend/index.html.
+if (typeof document !== "undefined" && !document.querySelector("link[data-katex-css]")) {
+  const katexCss = document.createElement("link");
+  katexCss.rel = "stylesheet";
+  katexCss.href = "https://esm.sh/katex@0.18.4/dist/katex.min.css";
+  katexCss.setAttribute("data-katex-css", "");
+  document.head.appendChild(katexCss);
+}
+
 /**
  * Plugin for math rendering (KaTeX)
  */

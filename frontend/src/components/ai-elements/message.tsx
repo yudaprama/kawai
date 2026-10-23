@@ -23,7 +23,8 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Streamdown } from "@/lib/streamdown";
+import { LazyStreamdown } from "@/components/shared/lazy-streamdown";
+import type { StreamdownProps } from "@/lib/streamdown";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -301,11 +302,11 @@ export const MessageBranchPage = ({
   );
 };
 
-export type MessageResponseProps = ComponentProps<typeof Streamdown>;
+export type MessageResponseProps = StreamdownProps;
 
 export const MessageResponse = memo(
   ({ className, children, urlTransform, ...props }: MessageResponseProps) => {
-    const { plugins, translations, mermaid } = useStreamdownConfig();
+    const { plugins, translations, mermaid, ready } = useStreamdownConfig();
 
     // P1-5: harden — mirrors desktop/src/components/MarkdownContent.tsx:188 + 168
     const safeChildren =
@@ -329,8 +330,14 @@ export const MessageResponse = memo(
         return transformed === "" ? undefined : transformed;
       });
 
+    // CDN renderer not ready yet (first launch, cold cache) — hold the
+    // bubble's box so layout stays stable until the lazy pipeline resolves.
+    if (!ready) {
+      return <div aria-busy="true" className={cn("size-full", className)} />;
+    }
+
     return (
-      <Streamdown
+      <LazyStreamdown
         className={cn(
           "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
           className
@@ -344,7 +351,7 @@ export const MessageResponse = memo(
         {...props}
       >
         {safeChildren}
-      </Streamdown>
+      </LazyStreamdown>
     );
   },
   (prevProps, nextProps) =>

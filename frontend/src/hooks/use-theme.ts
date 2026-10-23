@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { applyPalette, getPalette, setPalette, usePaletteId } from "@/lib/themes";
+import { setStatusBarLightIcons } from "@/platform/status-bar";
 
 export type Theme = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
@@ -14,6 +15,13 @@ function applyTheme(theme: Theme): ResolvedTheme {
   const dark = theme === "dark" || (theme === "system" && systemPrefersDark());
   document.documentElement.classList.toggle("dark", dark);
   document.documentElement.style.colorScheme = dark ? "dark" : "light";
+  // Android edge-to-edge: the status-bar icon contrast must follow the APP's
+  // dark mode (this class toggle), not the system one — MainActivity's
+  // enableEdgeToEdge() defaults to the system, which can paint dark icons on
+  // the dark app. `KawaiStatusBar` is the JavascriptInterface registered in
+  // MainActivity.onWebViewCreate; absent on desktop/web, so the optional
+  // chain is the guard.
+  setStatusBarLightIcons(!dark);
   return dark ? "dark" : "light";
 }
 

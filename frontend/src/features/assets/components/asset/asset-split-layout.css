@@ -47,6 +47,17 @@
   border: none;
   background: transparent;
   cursor: col-resize;
+  /* Let touch drags move the handle instead of scrolling the pane. */
+  touch-action: none;
+  /* Invisible hit-area expansion: the 2px bar is far below the 48dp
+     touch target; the ::after overlay widens it to ~22px. */
+  position: relative;
+}
+
+._asset-split-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 -10px;
 }
 
 ._asset-split-resizer-bar {
@@ -66,7 +77,10 @@
   cursor: col-resize;
 }
 
-@media (max-width: 960px) {
+/* Matches the app's lg breakpoint (Tailwind lg = 1024px): below it the app
+   chrome is already the mobile variant (nav drawer, mobile rail), so the
+   split stacks too. */
+@media (max-width: 1023px) {
   ._asset-split {
     grid-template-columns: minmax(0, 1fr) !important;
     height: auto;

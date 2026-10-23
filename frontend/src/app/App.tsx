@@ -12,7 +12,7 @@ import { AssetChromeContext } from "@/features/assets/components/asset-chrome";
 import { type AgentInfo, call, codegraphIsAvailable, tauriOpenFile, errText } from "@/lib/api";
 import { logWarn } from "@/lib/logger";
 import { OPEN_PREVIEW_EVENT, type OpenPreviewDetail } from "@/lib/preview-bridge";
-import { runningInTauri } from "@/platform";
+import { platform, runningInTauri } from "@/platform";
 import { AssetNavList } from "@/features/assets/components/asset-nav-list";
 import type { AssetViewId } from "@/features/assets/components/asset-nav";
 import { tauriWalletAdapter } from "@/features/wallet/lib/wallet-adapter";
@@ -66,6 +66,10 @@ export default function App() {
   // Cmd/Ctrl+N; the workbench keeps its runs/session/view state, so the chat
   // hook's newChat() alone is invisible on that surface).
   const workbenchNewRef = useRef<(() => void) | null>(null);
+  // Workbench publishes its rail-back handler here (App arbitrates the Android
+  // hardware back: when the workbench's mobile progress rail is open, back
+  // closes it and nothing else).
+  const workbenchRailBackRef = useRef<(() => boolean) | null>(null);
   // Workbench publishes its attachFiles here (App owns the LinkDialog; a
   // successful YouTube import auto-attaches the transcript as a composer chip
   // — same UX as the file-import auto-attach).
@@ -114,8 +118,10 @@ export default function App() {
   useEffect(() => {
     const onOpen = (e: Event) => {
       const { fileId, name } = (e as CustomEvent<OpenPreviewDetail>).detail;
-      // On desktop: PDFs open directly in the OS viewer — no in-app modal needed.
-      if (runningInTauri && name.split(".").pop()?.toLowerCase() === "pdf") {
+      // On desktop: PDFs open directly in the OS viewer — no in-app modal
+      // needed. Mobile keeps the modal: its PDF card auto-attempts the OS
+      // open and surfaces a retry/download fallback when the opener fails.
+      if (runningInTauri && platform.target === "desktop" && name.split(".").pop()?.toLowerCase() === "pdf") {
         tauriOpenFile(fileId).catch((err) => logWarn("preview-bridge", errText(err)));
         return;
       }
@@ -224,6 +230,38 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mode, view]);
+
+  // ── Android hardware back (MainActivity forwards each press here) ──
+  // Mirrors the app's Esc semantics WITHOUT arming the two-step run stop:
+  // overlay → close it (synthetic Esc — Radix owns dismissal; every window-level
+  // Esc handler stands down while overlayOwnsEscape() is true), then nav
+  // drawer, then asset page / media lane → Workbench, then the workbench's
+  // mobile progress rail (via its published ref), and only "exit" when nothing
+  // is left — the Kotlin side answers that by moveTaskToBack (recents keep the
+  // state; never finish()).
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__kawaiHandleBackPress = (): string => {
+      if (overlayOwnsEscape()) {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+        return "consumed";
+      }
+      if (mobileDrawer != null) {
+        setMobileDrawer(null);
+        return "consumed";
+      }
+      if (view != null || mode !== "text") {
+        setMode("text");
+        setView(null);
+        setMobileDrawer(null);
+        return "consumed";
+      }
+      if (workbenchRailBackRef.current?.() === true) return "consumed";
+      return "exit";
+    };
+    return () => {
+      delete (window as unknown as Record<string, unknown>).__kawaiHandleBackPress;
+    };
+  }, [mobileDrawer, mode, view]);
 
   const touchStartX = useRef(0);
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -346,6 +384,7 @@ export default function App() {
             sessionsOpen={sessionsOpen}
             sessionSelectorRef={workbenchSelectRef}
             newSessionRef={workbenchNewRef}
+            railBackRef={workbenchRailBackRef}
             attachFilesRef={workbenchAttachRef}
           />
         )}

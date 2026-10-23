@@ -197,8 +197,13 @@ export function MemoryGraph({ nodes, edges, emptyHint, fill, showLabels, onReady
   const dragRef = useRef<
     | { kind: "node"; node: SimNode; dx: number; dy: number }
     | { kind: "pan"; vbStartX: number; vbStartY: number; tx0: number; ty0: number }
+    // Two-finger pinch: `anchor` is the graph point under the gesture's start
+    // midpoint, held fixed while the distance ratio drives the scale.
+    | { kind: "pinch"; anchorX: number; anchorY: number; dist0: number; scale0: number }
     | null
   >(null);
+  // Live touch pointers (id → viewBox coords) for the pinch gesture.
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   // True once the pointer moved during the current gesture — guards the
   // node click so a drag doesn't also open the preview.
   const movedRef = useRef(false);
@@ -244,6 +249,28 @@ export function MemoryGraph({ nodes, edges, emptyHint, fill, showLabels, onReady
       const vb = clientToViewBox(svgRef.current, e.clientX, e.clientY);
       if (!vb) return;
       (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+      const pointers = pointersRef.current;
+      pointers.set(e.pointerId, { x: vb.x, y: vb.y });
+      if (pointers.size === 2) {
+        // Second finger down: convert the pan into a pinch. Anchor = the
+        // graph point under the midpoint of the two touches.
+        const [p1, p2] = [...pointers.values()];
+        const dist0 = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        if (dist0 > 0) {
+          const anchorX = (p1.x + p2.x) / 2;
+          const anchorY = (p1.y + p2.y) / 2;
+          dragRef.current = {
+            kind: "pinch",
+            anchorX: (anchorX - view.tx) / view.scale,
+            anchorY: (anchorY - view.ty) / view.scale,
+            dist0,
+            scale0: view.scale,
+          };
+          setGrabbing(true);
+          return;
+        }
+        pointers.delete(e.pointerId);
+      }
       dragRef.current = { kind: "pan", vbStartX: vb.x, vbStartY: vb.y, tx0: view.tx, ty0: view.ty };
       setGrabbing(true);
     },
@@ -259,6 +286,31 @@ export function MemoryGraph({ nodes, edges, emptyHint, fill, showLabels, onReady
       if (!movedRef.current) {
         stopLayoutRef.current();
         userInteractedRef.current = true;
+      }
+      // Track live pointers first so a pinch sees current positions.
+      const pointers = pointersRef.current;
+      if (pointers.has(e.pointerId)) {
+        const vbNow = clientToViewBox(svgRef.current, e.clientX, e.clientY);
+        if (vbNow) pointers.set(e.pointerId, { x: vbNow.x, y: vbNow.y });
+      }
+      if (d.kind === "pinch") {
+        if (pointers.size < 2) {
+          dragRef.current = null;
+          setGrabbing(false);
+          return;
+        }
+        const [p1, p2] = [...pointers.values()];
+        const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        if (dist <= 0) return;
+        movedRef.current = true;
+        setView(() => {
+          const scale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, d.scale0 * (dist / d.dist0)));
+          const mx = (p1.x + p2.x) / 2;
+          const my = (p1.y + p2.y) / 2;
+          // Keep the anchor graph point under the live midpoint.
+          return { scale, tx: mx - d.anchorX * scale, ty: my - d.anchorY * scale };
+        });
+        return;
       }
       if (d.kind === "node") {
         const g = clientToGraph(e.clientX, e.clientY);
@@ -277,7 +329,8 @@ export function MemoryGraph({ nodes, edges, emptyHint, fill, showLabels, onReady
     [clientToGraph],
   );
 
-  const endDrag = useCallback(() => {
+  const endDrag = useCallback((e: ReactPointerEvent) => {
+    pointersRef.current.delete(e.pointerId);
     dragRef.current = null;
     setGrabbing(false);
   }, []);

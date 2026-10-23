@@ -421,7 +421,12 @@ function ChatComposerInner({
           <ComposerConnections />
           <SpeechInput className="hit-44 size-8 [&_svg]:size-4" onTranscriptionChange={handleTranscription} />
         </PromptInputTools>
-        <PromptInputSubmit disabled={disabled || importProgress !== null} onStop={onStop} status={status} />
+        <PromptInputSubmit
+          className="hit-44"
+          disabled={disabled || importProgress !== null}
+          onStop={onStop}
+          status={status}
+        />
       </PromptInputFooter>
     </PromptInput>
   );

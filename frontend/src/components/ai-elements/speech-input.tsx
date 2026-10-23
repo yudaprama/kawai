@@ -73,6 +73,17 @@ export type SpeechInputProps = ComponentProps<typeof Button> & {
   lang?: string;
 };
 
+const isTauriDesktop = (): boolean => {
+  if (typeof window === "undefined") return false;
+  return "__TAURI_INTERNALS__" in window;
+};
+
+/** Android (WebView or browser) — the app's Android build grants no
+ *  RECORD_AUDIO permission, so getUserMedia audio capture always fails and
+ *  the Web Speech API is absent in Android WebView. */
+const isAndroid = (): boolean =>
+  typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+
 export const detectSpeechInputMode = (): SpeechInputMode => {
   if (typeof window === "undefined") {
     return "none";
@@ -82,16 +93,11 @@ export const detectSpeechInputMode = (): SpeechInputMode => {
     return "speech-recognition";
   }
 
-  if ("MediaRecorder" in window && "mediaDevices" in navigator) {
+  if (!isAndroid() && "MediaRecorder" in window && "mediaDevices" in navigator) {
     return "media-recorder";
   }
 
   return "none";
-};
-
-const isTauriDesktop = (): boolean => {
-  if (typeof window === "undefined") return false;
-  return "__TAURI_INTERNALS__" in window;
 };
 
 export const SpeechInput = ({
@@ -295,9 +301,11 @@ export const SpeechInput = ({
 
     if (mode === "none") {
       toast.error(
-        isTauriDesktop()
-          ? "Speech is not supported in this desktop app. WKWebView does not provide the Web Speech API — use system dictation (Fn Fn) or open Kawai in Chrome/Edge."
-          : "This browser does not support speech recognition. Use Chrome or Edge."
+        isAndroid()
+          ? "Speech input is unavailable on Android in this build — use your keyboard's voice typing."
+          : isTauriDesktop()
+            ? "Speech is not supported in this desktop app. WKWebView does not provide the Web Speech API — use system dictation (Fn Fn) or open Kawai in Chrome/Edge."
+            : "This browser does not support speech recognition. Use Chrome or Edge."
       );
       return;
     }
@@ -341,9 +349,11 @@ export const SpeechInput = ({
 
   const disabledReason =
     mode === "none"
-      ? isTauriDesktop()
-        ? "Speech is unavailable in desktop WKWebView. Use system dictation or Chrome/Edge."
-        : "Speech is unavailable in this browser. Use Chrome or Edge."
+      ? isAndroid()
+        ? "Speech input is unavailable on Android in this build."
+        : isTauriDesktop()
+          ? "Speech is unavailable in desktop WKWebView. Use system dictation or Chrome/Edge."
+          : "Speech is unavailable in this browser. Use Chrome or Edge."
       : mode === "speech-recognition" && !isRecognitionReady
         ? "Menyiapkan speech recognition…"
         : mode === "media-recorder" && !onAudioRecorded

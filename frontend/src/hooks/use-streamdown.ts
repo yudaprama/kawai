@@ -1,18 +1,30 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MermaidError } from "@/components/ai-elements/mermaid-error";
 import { useI18n } from "@/hooks/use-i18n";
-import type { MermaidOptions, StreamdownTranslations } from "@/lib/streamdown";
-import { cjk } from "@/lib/streamdown/plugins/cjk";
-import { code } from "@/lib/streamdown/plugins/code";
-import { math } from "@/lib/streamdown/plugins/math";
-import { mermaid as mermaidPlugin } from "@/lib/streamdown/plugins/mermaid";
+import type { MermaidOptions, StreamdownProps, StreamdownTranslations } from "@/lib/streamdown";
 
-export const streamdownPlugins = {
-  cjk,
-  code,
-  math,
-  mermaid: mermaidPlugin,
-};
+// The plugin modules import the esm.sh-resolved markdown pipeline — the same
+// CDN graph LazyStreamdown loads behind a dynamic import. They are imported
+// dynamically here too: a static import would put the CDN modules back into
+// the entry chunk, where a CDN failure bricks the whole app at boot
+// (see components/shared/lazy-streamdown.tsx).
+type StreamdownPlugins = NonNullable<StreamdownProps["plugins"]>;
+
+let pluginsPromise: Promise<StreamdownPlugins> | null = null;
+function loadStreamdownPlugins(): Promise<StreamdownPlugins> {
+  pluginsPromise ??= Promise.all([
+    import("@/lib/streamdown/plugins/cjk"),
+    import("@/lib/streamdown/plugins/code"),
+    import("@/lib/streamdown/plugins/math"),
+    import("@/lib/streamdown/plugins/mermaid"),
+  ]).then(([cjk, code, math, mermaid]) => ({
+    cjk: cjk.cjk,
+    code: code.code,
+    math: math.math,
+    mermaid: mermaid.mermaid,
+  }));
+  return pluginsPromise;
+}
 
 const mermaidOptions: MermaidOptions = { errorComponent: MermaidError };
 
@@ -55,12 +67,24 @@ export function useStreamdownTranslations(): StreamdownTranslations {
 
 export function useStreamdownConfig() {
   const translations = useStreamdownTranslations();
+  const [plugins, setPlugins] = useState<StreamdownPlugins | null>(null);
+  useEffect(() => {
+    let disposed = false;
+    void loadStreamdownPlugins().then((loaded) => {
+      if (!disposed) setPlugins(loaded);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, []);
   return useMemo(
     () => ({
-      plugins: streamdownPlugins,
-      translations,
       mermaid: mermaidOptions,
+      plugins: plugins ?? undefined,
+      /** false until the CDN plugin modules resolve — renderers gate on this. */
+      ready: plugins != null,
+      translations,
     }),
-    [translations],
+    [plugins, translations],
   );
 }

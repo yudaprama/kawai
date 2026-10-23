@@ -4,6 +4,9 @@
     "install": "Perbarui & mulai ulang",
     "downloading": "Mengunduh pembaruan… {{percent}}%"
   },
+  "markdown": {
+    "renderFailed": "Gagal memuat perender markdown — periksa koneksi lalu coba lagi."
+  },
   "common": {
     "loading": "Memuat…",
     "error": "Kesalahan",

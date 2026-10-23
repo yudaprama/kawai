@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Streamdown } from "@/lib/streamdown";
+import { LazyStreamdown } from "@/components/shared/lazy-streamdown";
 import { useFilePreview } from "@/lib/preview-file";
 import { emitOpenPreview } from "@/lib/preview-bridge";
 import { linkifyTimestamps, youtubeSeekSeconds } from "./youtube-embed";
@@ -144,7 +144,7 @@ function Body({ segments }: { segments: MarkdownSegment[] }) {
         s.chart != null ? (
           <ChartFigure key={`c${s.at}`} fileId={s.chart.fileId} alt={s.chart.alt} />
         ) : (
-          <Streamdown key={`t${s.at}`}>{s.text}</Streamdown>
+          <LazyStreamdown key={`t${s.at}`}>{s.text}</LazyStreamdown>
         ),
       )}
     </div>

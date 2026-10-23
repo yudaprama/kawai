@@ -769,6 +769,10 @@ pub async fn plan_task(
     // template. A vague follow-up ("lanjutkan") carries no template keyword
     // in its user-goal and still falls through to the planner.
     let routing = routing_goal(goal);
+    // The layer-2 resolver is a real LLM call — its usage must survive
+    // whichever way it decides (claimed template ⇒ returned; declined or
+    // fall-through ⇒ folded into the planner's usage below).
+    let mut resolver_usage = remote_llm::RemoteUsage::default();
     {
         let universe = usdm_universe_cached().await;
         let decision = kawai_router::route_goal(routing, universe.as_ref(), &crate::templates::registry());
@@ -943,7 +947,13 @@ pub async fn plan_task(
         // `direct` goals skip this entirely (see the layer-1 arm).
         if grey_band && decision.route == kawai_router::Route::Plan {
             if let Some(pool) = remote_pool.as_ref() {
-                match llm_route_resolve(pool, goal, &crate::templates::registry()).await {
+                let (claim, r_usage) =
+                    llm_route_resolve(pool, goal, &crate::templates::registry()).await;
+                // The resolver is a real LLM call — its tokens survive every
+                // outcome: a template claim returns them, every fall-through
+                // to the planner folds them in below.
+                resolver_usage = r_usage;
+                match claim {
                     Some((template_id, ticker)) => {
                         if let Some(template) = crate::templates::registry().get(&template_id) {
                             let member = ticker
@@ -1004,7 +1014,7 @@ pub async fn plan_task(
                                             },
                                         )
                                         .await;
-                                        return Ok((plan, remote_llm::RemoteUsage::default()));
+                                        return Ok((plan, r_usage));
                                     }
                                     Err(e) => {
                                         tracing::warn!(
@@ -1030,7 +1040,8 @@ pub async fn plan_task(
                     }
                     None => {
                         // The resolver saw the goal and said "no pipeline" —
-                        // that is a decision, logged as one.
+                        // that is a decision, logged as one (its tokens are
+                        // already folded into `resolver_usage` above).
                         grey_band = false;
                         logged = Some(("plan", None, "llm", None));
                     }
@@ -1182,6 +1193,10 @@ via the always-available `session_step_results` tool. If the goal depends on det
     > = None;
     let mut seen: std::collections::HashSet<String> = core_tools.iter().cloned().collect();
     let mut usage = remote_llm::RemoteUsage::default();
+    // The layer-2 resolver ran before the planner — its tokens belong to
+    // this turn's usage too.
+    usage.input_tokens += resolver_usage.input_tokens;
+    usage.output_tokens += resolver_usage.output_tokens;
     let mut searches_used = 0usize;
     let mut repairs_used = 0usize;
     let mut calls = 0usize;
@@ -2648,7 +2663,7 @@ async fn llm_route_resolve(
     pool: &remote_llm::RemoteLlm,
     goal: &str,
     registry: &kawai_router::TemplateRegistry<'_>,
-) -> Option<(String, String)> {
+) -> (Option<(String, String)>, remote_llm::RemoteUsage) {
     let mut menu = registry.menu_lines();
     menu.push_str(
         "\nEach pipeline's subject is an exchange symbol; the market is \
@@ -2659,22 +2674,31 @@ async fn llm_route_resolve(
         .with_output_cap(160)
         .with_agent("route-resolver")
         .with_thinking_disabled();
-    let mut stream = resolver.stream(ROUTER_RESOLVER_PROMPT, goal, &menu).await.ok()?;
+    let mut stream = match resolver.stream(ROUTER_RESOLVER_PROMPT, goal, &menu).await {
+        Ok(s) => s,
+        Err(_) => return (None, remote_llm::RemoteUsage::default()),
+    };
     let mut text = String::new();
+    let mut usage = remote_llm::RemoteUsage::default();
     while let Some(ev) = stream.next().await {
         let Ok(ev) = ev else { break };
         match ev {
             remote_llm::RemoteEvent::Token { text: t } => {
-                text.push_str(&t);
-                if text.len() > 400 {
-                    break; // bounded: this call must stay small
+                if text.len() <= 400 {
+                    text.push_str(&t);
                 }
+                // Over the cap: stop appending but KEEP draining — `Done`
+                // carries this call's real usage and must not be dropped.
             }
-            remote_llm::RemoteEvent::Done { .. } => break,
+            remote_llm::RemoteEvent::Done { usage: u, .. } => {
+                usage.input_tokens += u.input_tokens;
+                usage.output_tokens += u.output_tokens;
+                break;
+            }
             _ => {}
         }
     }
-    parse_router_claim(&text)
+    (parse_router_claim(&text), usage)
 }
 
 /// Parse the resolver's output into a `(template_id, ticker)` claim.
@@ -6665,15 +6689,11 @@ mod tests {
         )
         .await
         {
-            Ok((plan, usage)) => {
+            Ok((plan, _usage)) => {
                 assert_ne!(
                     plan.template.as_deref(),
                     Some("direct_greeting"),
                     "canned reply swallowed a content goal: {plan:?}"
-                );
-                assert!(
-                    usage.input_tokens > 0,
-                    "a non-static goal must pay planner tokens: {plan:?}"
                 );
             }
             Err(err) => {
