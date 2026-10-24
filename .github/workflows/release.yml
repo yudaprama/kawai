@@ -261,6 +261,36 @@ jobs:
           # own directory), not from the CWD where ln runs.
           ln -sfn vendor/LiteRT-LM/bazel-bin/_solib_darwin_arm64 ../../_solib_darwin_arm64
 
+      # Laya router assets — bundled into Contents/Resources/models/laya/
+      # (tauri-litert.json "Resources/models/laya/multilingual/*", resolved by
+      # kawai_paths::find_laya_model_dir). 679 MB, cached.
+      - name: Cache laya assets
+        id: laya
+        uses: actions/cache@v4
+        with:
+          path: models/laya/multilingual
+          key: laya-multilingual-s256-wfp16-v1
+
+      - name: Download laya assets
+        if: steps.laya.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          base=https://huggingface.co/litert-community/Laya-Multilingual-LiteRT/resolve/main
+          mkdir -p models/laya/multilingual/fixtures
+          for f in laya_ml_s256_embeds_wfp16.tflite laya_ml_act_head_fp32.tflite \
+                   token_embeddings_fp16.bin tokenizer.json tokenizer_config.json \
+                   laya_ml_calibration.json SHA256SUMS; do
+            curl -fL --retry 3 -o "models/laya/multilingual/$f" "$base/$f"
+          done
+
+      - name: Verify laya assets
+        working-directory: models/laya/multilingual
+        run: |
+          set -euo pipefail
+          grep -E "laya_ml_s256_embeds_wfp16\.tflite|laya_ml_act_head_fp32\.tflite|token_embeddings_fp16\.bin|tokenizer\.json|laya_ml_calibration\.json" SHA256SUMS > /tmp/laya.sha
+          shasum -a 256 -c /tmp/laya.sha
+          test -f tokenizer_config.json
+
       # Office document ops (read/edit/info + creation) and PDF ops are
       # pure Rust (office_oxide, in-process) — no external engine.
       # macOS bundles ad-hoc signed (`bundle.macOS.signingIdentity: "-"` in

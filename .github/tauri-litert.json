@@ -7,7 +7,13 @@
         "Frameworks/libGemmaModelConstraintProvider.dylib": "../cognee-litert-lm/native/libGemmaModelConstraintProvider.dylib",
         "Frameworks/libLiteRt.dylib": "../cognee-litert-lm/native/libLiteRt.dylib",
         "Frameworks/libLiteRtMetalAccelerator.dylib": "../cognee-litert-lm/native/libLiteRtMetalAccelerator.dylib",
-        "Frameworks/libLiteRtTopKMetalSampler.dylib": "../cognee-litert-lm/native/libLiteRtTopKMetalSampler.dylib"
+        "Frameworks/libLiteRtTopKMetalSampler.dylib": "../cognee-litert-lm/native/libLiteRtTopKMetalSampler.dylib",
+        "Resources/models/laya/multilingual/laya_ml_s256_embeds_wfp16.tflite": "../models/laya/multilingual/laya_ml_s256_embeds_wfp16.tflite",
+        "Resources/models/laya/multilingual/laya_ml_act_head_fp32.tflite": "../models/laya/multilingual/laya_ml_act_head_fp32.tflite",
+        "Resources/models/laya/multilingual/token_embeddings_fp16.bin": "../models/laya/multilingual/token_embeddings_fp16.bin",
+        "Resources/models/laya/multilingual/tokenizer.json": "../models/laya/multilingual/tokenizer.json",
+        "Resources/models/laya/multilingual/tokenizer_config.json": "../models/laya/multilingual/tokenizer_config.json",
+        "Resources/models/laya/multilingual/laya_ml_calibration.json": "../models/laya/multilingual/laya_ml_calibration.json"
       }
     },
     "linux": {
