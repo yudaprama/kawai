@@ -64,7 +64,7 @@ struct Gate {
     calibration: serde_json::Value,
 }
 
-static GATE: std::sync::Mutex<Option<Gate>> = std::sync::Mutex::new(None);
+static GATE: std::sync::Mutex<Option<std::sync::Arc<Gate>>> = std::sync::Mutex::new(None);
 
 static DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
 static DOWNLOAD_FAILED: AtomicBool = AtomicBool::new(false);
@@ -142,25 +142,40 @@ async fn download_assets() -> Result<(), String> {
             .map_err(|e| format!("{url}: {e}"))?
             .error_for_status()
             .map_err(|e| format!("{url}: {e}"))?;
-        let tmp = dir.join(format!("{file}.part"));
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| format!("{url}: read body: {e}"))?;
-        // Verify BEFORE anything lands in place — a wrong byte never wins.
-        use sha2::Digest as _;
+        // Hash expected BEFORE the transfer — a file with no recorded digest
+        // is a package mistake, not a download problem.
         let hash = expected
             .get(file)
-            .ok_or_else(|| format!("SHA256SUMS has no entry for {file}"))?;
-        let actual = hex::encode(sha2::Sha256::new().chain_update(&bytes).finalize());
-        if actual != *hash {
+            .ok_or_else(|| format!("SHA256SUMS has no entry for {file}"))?
+            .to_string();
+        // Stream to .part with an incremental digest — never hold a 393 MB
+        // body in RAM (the house pattern: logic::ensure_model).
+        use futures_util::StreamExt;
+        use sha2::Digest as _;
+        use std::io::Write as _;
+        let tmp = dir.join(format!("{file}.part"));
+        let mut stream = response.bytes_stream();
+        let mut hasher = sha2::Sha256::new();
+        let mut written: u64 = 0;
+        let mut out = std::fs::File::create(&tmp)
+            .map_err(|e| format!("create {}: {e}", tmp.display()))?;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| format!("{url}: stream: {e}"))?;
+            hasher.update(&chunk);
+            out.write_all(&chunk)
+                .map_err(|e| format!("write {}: {e}", tmp.display()))?;
+            written += chunk.len() as u64;
+        }
+        out.flush().map_err(|e| format!("flush {}: {e}", tmp.display()))?;
+        let actual = hex::encode(hasher.finalize());
+        if actual != hash {
             return Err(format!("{file}: sha256 mismatch (got {actual})"));
         }
-        std::fs::write(&tmp, &bytes).map_err(|e| format!("write {}: {e}", tmp.display()))?;
         std::fs::rename(&tmp, &target).map_err(|e| format!("rename {}: {e}", target.display()))?;
-        tracing::info!(component = "laya_router", file, bytes = bytes.len(), "asset downloaded");
+        tracing::info!(component = "laya_router", file, bytes = written, "asset downloaded");
     }
     tracing::info!(component = "laya_router", "laya assets ready — gate active");
+    DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
     Ok(())
 }
 
@@ -206,9 +221,13 @@ pub fn claim(goal: &str, registry: &kawai_router::TemplateRegistry<'_>) -> Optio
         // First attempt after the assets land (or the only attempt when they
         // were installed manually) — retried on every grey-band goal, so a
         // goal that raced the background download picks the gate up late.
-        *guard = load();
+        *guard = load().map(std::sync::Arc::new);
     }
-    let gate = guard.as_ref()?;
+    // Clone the handle OUT and drop the lock: inference takes ~250 ms and
+    // the first load parses a 34 MB tokenizer — neither may serialize other
+    // claims or `laya_status` behind the mutex.
+    let gate = std::sync::Arc::clone(guard.as_ref()?);
+    drop(guard);
 
     let question = Question {
         t: "choice".into(),
