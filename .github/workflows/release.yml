@@ -420,6 +420,27 @@ jobs:
           cp bazel-bin/c/liblitert-lm.so ../../native/
           cp prebuilt/linux_x86_64/*.so ../../native/
 
+      - name: Cache laya assets
+        id: laya
+        uses: actions/cache@v4
+        with:
+          path: models/laya/multilingual
+          key: laya-multilingual-s256-wfp16-v1
+
+      - name: Download laya assets
+        run: |
+          set -euo pipefail
+          base=https://huggingface.co/litert-community/Laya-Multilingual-LiteRT/resolve/main
+          mkdir -p models/laya/multilingual
+          for f in laya_ml_s256_embeds_wfp16.tflite laya_ml_act_head_fp32.tflite \
+                   token_embeddings_fp16.bin tokenizer.json tokenizer_config.json \
+                   laya_ml_calibration.json SHA256SUMS; do
+            curl -fL --retry 3 -o "models/laya/multilingual/$f" "$base/$f"
+          done
+          cd models/laya/multilingual
+          grep -E "laya_ml_s256_embeds_wfp16\.tflite|laya_ml_act_head_fp32\.tflite|token_embeddings_fp16\.bin|tokenizer\.json|laya_ml_calibration\.json" SHA256SUMS > /tmp/laya.sha
+          sha256sum -c /tmp/laya.sha
+
       - name: Build .deb/.AppImage (with litert + office)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -555,6 +576,28 @@ jobs:
           $native = Join-Path $env:GITHUB_WORKSPACE "cognee-litert-lm\native"
           New-Item -ItemType Directory -Path $native -Force | Out-Null
           Copy-Item "$root\mnn-dev-windows-x86_64\lib\MNN.dll" $native -Force
+
+      - name: Cache laya assets
+        id: laya
+        uses: actions/cache@v4
+        with:
+          path: models/laya/multilingual
+          key: laya-multilingual-s256-wfp16-v1
+
+      - name: Download laya assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=https://huggingface.co/litert-community/Laya-Multilingual-LiteRT/resolve/main
+          mkdir -p models/laya/multilingual
+          for f in laya_ml_s256_embeds_wfp16.tflite laya_ml_act_head_fp32.tflite \
+                   token_embeddings_fp16.bin tokenizer.json tokenizer_config.json \
+                   laya_ml_calibration.json SHA256SUMS; do
+            curl -fL --retry 3 -o "models/laya/multilingual/$f" "$base/$f"
+          done
+          cd models/laya/multilingual
+          grep -E "laya_ml_s256_embeds_wfp16\.tflite|laya_ml_act_head_fp32\.tflite|token_embeddings_fp16\.bin|tokenizer\.json|laya_ml_calibration\.json" SHA256SUMS > /tmp/laya.sha
+          sha256sum -c /tmp/laya.sha
 
       - name: Build .msi/.exe (with litert + office)
         uses: tauri-apps/tauri-action@v0
