@@ -342,6 +342,7 @@
     "noResults": "Nothing generated yet.",
     "copyToken": "Copy markdown token",
     "copied": "Markdown token copied",
+    "copyFailed": "Couldn't copy to clipboard",
     "resultsCount": "Results ({{count}})",
     "noResultsHint": "Fill the form and hit Generate — images appear here.",
     "templatesHint": "Start from a community template — click an image to load its prompt and settings into the form.",

@@ -31,7 +31,7 @@ export function TokenBalanceChip({ onSelectAsset }: { onSelectAsset: (id: AssetV
   return (
     <button
       aria-label={label}
-      className={`mr-0.5 flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 transition-colors ${
+      className={`mr-0.5 flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 transition-colors ${
         low ? "border-warning/40 text-warning hover:bg-warning/10" : "hover:bg-[var(--tea-color-bg-secondary-default)]"
       }`}
       onClick={() => onSelectAsset("topup")}

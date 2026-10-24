@@ -64,3 +64,18 @@ if (rootEl) {
     </React.StrictMode>,
   );
 }
+
+// Pre-warm the markdown pipeline at idle: it is externalized to esm.sh (see
+// the GUARD in index.html) and otherwise cold-fetches over the network on the
+// FIRST deliverable render — mid-read, worst on a mobile radio. Dynamic
+// import of the seam (never a static import — the entry chunk must stay
+// CDN-free) warms the exact module graph the first render resolves. mermaid
+// stays cold: rare and by far the heaviest.
+const warmMarkdownPipeline = () => {
+  void import("@/lib/streamdown").catch(() => {});
+};
+if (typeof window.requestIdleCallback === "function") {
+  window.requestIdleCallback(warmMarkdownPipeline, { timeout: 8000 });
+} else {
+  window.setTimeout(warmMarkdownPipeline, 1500);
+}

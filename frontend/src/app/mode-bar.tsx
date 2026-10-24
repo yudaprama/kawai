@@ -1,4 +1,5 @@
 import { Icon } from "@/components/shared/icon";
+import { EdgeFades, useXOverflow } from "@/components/shared/edge-fades";
 import { ProfileControls } from "@/features/agents/profile-controls";
 import type { AssetViewId } from "@/features/assets/components/asset-nav";
 import { useI18n } from "@/hooks/use-i18n";
@@ -12,7 +13,7 @@ const TRACK = "inline-flex items-center gap-0.5 rounded-lg bg-muted p-0.5";
 
 function pillClass(active: boolean): string {
   return cn(
-    "hit-44 flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
+    "hit-44 flex min-h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
     active ? "bg-background text-foreground shadow-sm dark:bg-input/30" : "text-muted-foreground hover:text-foreground",
   );
 }
@@ -29,32 +30,36 @@ function pillClass(active: boolean): string {
  */
 export function ModePills({ active, onSelect }: { active: AppMode | null; onSelect: (mode: AppMode) => void }) {
   const { t } = useI18n();
+  const { ref, showStart, showEnd } = useXOverflow<HTMLElement>();
   return (
-    <nav aria-label={t("modeBar.modes")} className="min-w-0 flex-1 overflow-x-auto">
-      <div className={TRACK}>
-        {APP_MODES.map((mode) => {
-          const label = t(MODE_LABEL[mode]);
-          return mode === active ? (
-            <span aria-current="page" className={cn(pillClass(true), "pointer-events-none")} key={mode}>
-              <Icon className="size-4" name={MODE_ICON[mode]} />
-              <span>{label}</span>
-            </span>
-          ) : (
-            <button
-              aria-label={label}
-              className={pillClass(false)}
-              key={mode}
-              onClick={() => onSelect(mode)}
-              title={label}
-              type="button"
-            >
-              <Icon className="size-4" name={MODE_ICON[mode]} />
-              <span>{label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </nav>
+    <div className="relative min-w-0 flex-1">
+      <nav aria-label={t("modeBar.modes")} className="overflow-x-auto" ref={ref}>
+        <div className={TRACK}>
+          {APP_MODES.map((mode) => {
+            const label = t(MODE_LABEL[mode]);
+            return mode === active ? (
+              <span aria-current="page" className={cn(pillClass(true), "pointer-events-none")} key={mode}>
+                <Icon className="size-4" name={MODE_ICON[mode]} />
+                <span>{label}</span>
+              </span>
+            ) : (
+              <button
+                aria-label={label}
+                className={pillClass(false)}
+                key={mode}
+                onClick={() => onSelect(mode)}
+                title={label}
+                type="button"
+              >
+                <Icon className="size-4" name={MODE_ICON[mode]} />
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+      <EdgeFades showEnd={showEnd} showStart={showStart} />
+    </div>
   );
 }
 
@@ -89,7 +94,7 @@ export function ModeBar({
   walletAvailable?: boolean;
 }) {
   return (
-    <header className="border-border bg-background flex h-12 shrink-0 items-center gap-3 border-b px-3">
+    <header className="border-border bg-background flex min-h-12 shrink-0 items-center gap-3 border-b px-3">
       <span className="text-foreground flex shrink-0 items-center gap-1.5 text-sm font-semibold">
         <Icon className="text-primary size-4" name="zap" />
         <span className="hidden sm:inline">kawai</span>

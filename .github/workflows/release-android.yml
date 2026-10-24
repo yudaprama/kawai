@@ -18,8 +18,10 @@ name: release-android
 # Feature set: the `desktop` cargo feature only — NO litert, tts, binance; accounting + mexc included.
 # `litert` needs the LiteRT-LM C lib built for android_arm64
 # (`bazel build //c:litert-lm --config=android_arm64`, staged by
-# scripts/stage-litert-android.sh) and `tts` needs the MNN native libs;
-# neither exists for Android yet. Adding them is a separate change.
+# scripts/stage-litert-android.sh) — not built yet. `tts` is unproven on
+# Android: its MNN comes from ocr-rs's build.rs (prebuilts exist for both
+# ABIs), and ci.yml's android-check job is the compile gate that must go
+# green before tts is enabled here. Adding either is a separate change.
 #
 # Targets: aarch64 (Play requires 64-bit) + armeabi-v7a (minSdk 24).
 # x86/x86_64 are emulator-only — they double the Rust compile time and

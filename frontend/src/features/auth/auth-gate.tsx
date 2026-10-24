@@ -106,7 +106,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
                 aria-pressed={showPassword}
                 title={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
                 onClick={() => setShowPassword((v) => !v)}
-                className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md transition-colors"
+                className="text-muted-foreground hover:text-foreground hit-44 absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-md transition-colors"
               >
                 <Icon name={showPassword ? "eye-off" : "eye"} className="size-4" />
               </button>

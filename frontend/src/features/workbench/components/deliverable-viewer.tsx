@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FileIcon } from "@/components/shared/file-icon";
+import { EdgeFades, useXOverflow } from "@/components/shared/edge-fades";
 import { MarkdownWithCharts } from "@/features/workbench/components/markdown-with-charts";
 import { YoutubeEmbed, type YoutubeEmbedHandle } from "@/features/workbench/components/youtube-embed";
 import { DeckPreview } from "@/features/workbench/components/deck-preview";
@@ -57,18 +58,7 @@ export function RunSwitcher({
   // Single-row scroll instead of unbounded wrapping — a 10-run session must
   // not eat the canvas with chip rows. The right-edge fade appears only when
   // the strip actually overflows (ResizeObserver, so window resizes track).
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  const [overflows, setOverflows] = useState(false);
-  useEffect(() => {
-    void runs.length; // re-check the overflow state when runs are added/removed
-    const el = scrollerRef.current;
-    if (!el) return;
-    const check = () => setOverflows(el.scrollWidth > el.clientWidth + 4);
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [runs.length]);
+  const { ref: scrollerRef, showStart, showEnd } = useXOverflow<HTMLDivElement>(runs.length);
   if (runs.length === 0) return null;
   const selectedId = view?.runId ?? activeRunId;
   return (
@@ -106,12 +96,7 @@ export function RunSwitcher({
           );
         })}
       </div>
-      {overflows && (
-        <div
-          aria-hidden
-          className="from-background pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l to-transparent"
-        />
-      )}
+      <EdgeFades showEnd={showEnd} showStart={showStart} />
     </div>
   );
 }

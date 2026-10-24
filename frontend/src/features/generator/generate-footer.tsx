@@ -88,7 +88,7 @@ export function GenerateFooter({
       <div className="flex items-stretch gap-2">
         <div
           className={cn(
-            "flex h-10 shrink-0 items-center gap-1 rounded-[8px] border bg-secondary px-2.5",
+            "flex min-h-10 shrink-0 items-center gap-1 rounded-[8px] border bg-secondary px-2.5",
             short && "border-destructive/50",
           )}
           title={t("generator.estimate")}
@@ -107,7 +107,7 @@ export function GenerateFooter({
           ) : null}
         </div>
         <Button
-          className="h-10 flex-1 rounded-[8px] text-[0.9375rem] font-semibold"
+          className="min-h-10 flex-1 rounded-[8px] text-[0.9375rem] font-semibold"
           disabled={submitDisabled}
           onClick={onSubmit}
           size="lg"

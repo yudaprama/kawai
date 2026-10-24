@@ -28,7 +28,7 @@ export const SEGMENTED_LIST = "inline-flex shrink-0 items-center gap-0.5 rounded
 
 export function segmentClass(active: boolean): string {
   return cn(
-    "flex h-7 items-center rounded-md px-3 text-xs font-medium transition-colors",
+    "flex min-h-7 items-center rounded-md px-3 text-xs font-medium transition-colors",
     active ? "bg-background text-foreground shadow-sm dark:bg-input/30" : "text-muted-foreground hover:text-foreground",
   );
 }

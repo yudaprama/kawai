@@ -123,8 +123,10 @@ export function ResultActions({
   const actionClass = "size-6 shrink-0 text-white hover:bg-white/20";
 
   const copyToken = () => {
-    void navigator.clipboard.writeText(token);
-    toast.success(t("generator.copied"));
+    navigator.clipboard.writeText(token).then(
+      () => toast.success(t("generator.copied")),
+      () => toast.error(t("generator.copyFailed")),
+    );
   };
 
   const download = async () => {
@@ -151,7 +153,7 @@ export function ResultActions({
           <DropdownMenuTrigger asChild>
             <Button
               aria-label={t("generator.moreActions")}
-              className="size-6 bg-black/55 text-white hover:bg-black/75"
+              className="hit-44 size-6 bg-black/55 text-white hover:bg-black/75"
               size="icon"
               title={t("generator.moreActions")}
               variant="ghost"

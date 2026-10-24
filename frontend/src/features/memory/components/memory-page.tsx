@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AssetBadge,
   AssetItemBadges,
@@ -13,6 +13,7 @@ import { AssetSplitLayout } from "@/features/assets/components/asset/asset-split
 import { FilterBar } from "@/features/assets/components/filter-bar";
 import { Icon } from "@/components/shared/icon";
 import { ConfirmIconButton, useArmedConfirm } from "@/components/shared/confirm-action";
+import { EdgeFades, useXOverflow } from "@/components/shared/edge-fades";
 import { useAssetPage } from "@/features/assets/hooks/use-asset-page";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
@@ -277,7 +278,7 @@ function BlockDetail({
  */
 export function MemoryLayerTabs({ tab }: { tab: MemoryTab }) {
   const { t } = useI18n();
-  const listRef = useRef<HTMLDivElement>(null);
+  const { ref: listRef, showStart, showEnd } = useXOverflow<HTMLDivElement>(LAYER_TABS.length);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `tab` is the TRIGGER — a new selection is what must scroll the strip, and the effect body reaches the DOM rather than the value
   useEffect(() => {
@@ -286,17 +287,20 @@ export function MemoryLayerTabs({ tab }: { tab: MemoryTab }) {
   }, [tab]);
 
   return (
-    <div
-      className="flex shrink-0 overflow-x-auto border-b px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      ref={listRef}
-    >
-      <TabsList className="h-9 w-max min-w-full justify-start">
-        {LAYER_TABS.map(({ value, labelKey }) => (
-          <TabsTrigger className="flex-none" key={value} value={value}>
-            {t(labelKey)}
-          </TabsTrigger>
-        ))}
-      </TabsList>
+    <div className="relative">
+      <div
+        className="flex shrink-0 overflow-x-auto border-b px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        ref={listRef}
+      >
+        <TabsList className="h-9 w-max min-w-full justify-start">
+          {LAYER_TABS.map(({ value, labelKey }) => (
+            <TabsTrigger className="flex-none" key={value} value={value}>
+              {t(labelKey)}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </div>
+      <EdgeFades showEnd={showEnd} showStart={showStart} />
     </div>
   );
 }

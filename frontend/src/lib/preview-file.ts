@@ -55,10 +55,21 @@ function toPreviewData(res: { mime: string; dataBase64: string }): FilePreviewDa
  * for the life of the window.
  */
 const PREVIEW_CACHE_MAX = 64;
+/** Memory ceiling for the whole cache, counted as base64 characters (~bytes
+ *  on the wire). A phone's JS heap is small: full video/PDF reads are
+ *  multi-MB and 64 of them would pin hundreds of MB → WebView OOM. Count
+ *  and evict by bytes, not only by entry count.
+ *
+ *  Individual entries above PREVIEW_CACHE_MAX_ENTRY are still returned to
+ *  the caller (rendered once, held only by the mounted preview) but skip
+ *  the cache — caching them evicts everything else for one read. */
+const PREVIEW_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+const PREVIEW_CACHE_MAX_ENTRY = 8 * 1024 * 1024;
 type CachedBytes = { mime: string; dataBase64: string };
 /** Insertion order doubles as recency: a re-read moves the key to the end. */
 const previewCache = new Map<string, CachedBytes>();
 const previewInflight = new Map<string, Promise<CachedBytes>>();
+let previewCacheBytes = 0;
 
 /** Thumbnail and full read of the same document must never share an entry. */
 function cacheKey(file: PreviewFile): string {
@@ -74,10 +85,21 @@ function cacheRead(key: string): CachedBytes | undefined {
 }
 
 function cacheWrite(key: string, value: CachedBytes): void {
+  // Base64 chars are ASCII, so length ≈ bytes on the wire ≈ heap cost.
+  const bytes = value.dataBase64.length;
+  if (bytes > PREVIEW_CACHE_MAX_ENTRY) return;
+  const prev = previewCache.get(key);
+  if (prev) {
+    previewCacheBytes -= prev.dataBase64.length;
+    previewCache.delete(key);
+  }
   previewCache.set(key, value);
-  while (previewCache.size > PREVIEW_CACHE_MAX) {
+  previewCacheBytes += bytes;
+  while (previewCache.size > PREVIEW_CACHE_MAX || previewCacheBytes > PREVIEW_CACHE_MAX_BYTES) {
     const oldest = previewCache.keys().next();
     if (oldest.done) break;
+    const evicted = previewCache.get(oldest.value);
+    previewCacheBytes -= evicted ? evicted.dataBase64.length : 0;
     previewCache.delete(oldest.value);
   }
 }

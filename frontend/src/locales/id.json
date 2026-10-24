@@ -342,6 +342,7 @@
     "noResults": "Belum ada gambar yang dihasilkan.",
     "copyToken": "Salin token markdown",
     "copied": "Token markdown tersalin",
+    "copyFailed": "Gagal menyalin ke papan klip",
     "resultsCount": "Hasil ({{count}})",
     "noResultsHint": "Isi form lalu klik Generate — gambarnya muncul di sini.",
     "templatesHint": "Mulai dari template komunitas — klik gambar untuk mengisi prompt dan pengaturannya ke form.",
