@@ -478,12 +478,12 @@ jobs:
             curl -fL --retry 3 -o "laya-fixture/$f" "$base/$f"
           done
 
-      - name: laya_poc (classifier fixture gate)
+      - name: laya_smoke (classifier fixture gate)
         working-directory: cognee-litert-lm
         env:
           LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
           DYLD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
-        run: cargo run --release --example laya_poc --features laya -- ${{ github.workspace }}/laya-fixture
+        run: cargo run --release --example laya_smoke --features laya -- ${{ github.workspace }}/laya-fixture
 
       # ── Smoke 2 + 3: hybrid cloud tier. The zai key comes from the compiled
       #    kawai-vault constants (cargo git dep — authenticated via the PAT

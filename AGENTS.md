@@ -496,7 +496,7 @@ KAWAI_LOKI_LEVEL=warn         # off|error|warn|info|debug|trace
 # ~/.kawai/models/laya/multilingual in the background — that first goal
 # falls through to the layer-2 resolver, later goals route on-device in
 # ~250 ms when facts fill every required slot (route_log source="laya"),
-# else the layer-2 resolver runs unchanged. CI keeps the laya_poc
+# else the layer-2 resolver runs unchanged. CI keeps the laya_smoke
 # fixture gate alive.
 ```
 `.env.local` (gitignored) — reserved for future auth configuration (unused by the React frontend).
