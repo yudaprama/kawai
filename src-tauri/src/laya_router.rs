@@ -30,10 +30,10 @@ const VARIANT: &str = "multilingual";
 const OPT_OUT: &str = "plan";
 
 /// Diagnostics for the `laya_status` op: asset presence only — there are no
-/// env knobs. The gate is always on and degrades to a no-op when the assets
-/// are absent (bundled in the .app at
-/// `Contents/Resources/models/laya/multilingual`). Never forces the lazy
-/// load — status must not pay a 34 MB tokenizer parse.
+/// env knobs and the assets are NOT bundled. A build without
+/// `~/.kawai/models/laya/multilingual` (or `<app_data>/models/…`) never
+/// loads the gate. Never forces the lazy load — status must not pay a
+/// 34 MB tokenizer parse.
 pub fn status() -> serde_json::Value {
     let assets = find_laya_model_dir(VARIANT);
     let assets_ok = assets.as_ref().is_some_and(|dir| {

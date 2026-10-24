@@ -1,14 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "resources": {
-      "../models/laya/multilingual/laya_ml_s256_embeds_wfp16.tflite": "models/laya/multilingual/",
-      "../models/laya/multilingual/laya_ml_act_head_fp32.tflite": "models/laya/multilingual/",
-      "../models/laya/multilingual/token_embeddings_fp16.bin": "models/laya/multilingual/",
-      "../models/laya/multilingual/tokenizer.json": "models/laya/multilingual/",
-      "../models/laya/multilingual/tokenizer_config.json": "models/laya/multilingual/",
-      "../models/laya/multilingual/laya_ml_calibration.json": "models/laya/multilingual/"
-    },
     "macOS": {
       "files": {
         "Frameworks/liblitert-lm.dylib": "../cognee-litert-lm/native/liblitert-lm.dylib",

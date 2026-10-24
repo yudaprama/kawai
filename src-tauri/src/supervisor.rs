@@ -951,8 +951,9 @@ pub async fn plan_task(
         // - Greeting/question/direct goals never reach here (static layers
         //   run first — the PoC measured Laya mis-claiming questions at 0.96
         //   confidence; those guards are code, not model).
-        // Always on: without the bundled assets the LazyLock load yields
-        // None and this block is a clean no-op.
+        // Optional capability: the assets are NOT bundled — a build without
+        // `~/.kawai/models/laya/multilingual` (or `<app_data>/models/…`)
+        // never loads the gate and this block is a clean no-op.
         {
             let templates = crate::templates::registry();
             let gate_goal = goal.to_string();

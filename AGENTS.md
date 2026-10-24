@@ -490,12 +490,13 @@ KAWAI_CF_GLOBAL_DAILY=300     # default 300 (dev-wallet fuse)
 # Unset: release builds ship WARN/ERROR, debug builds ship INFO.
 KAWAI_LOKI_LEVEL=warn         # off|error|warn|info|debug|trace
 # ── Laya router fast-claim gate (src-tauri/src/laya_router.rs) ──
-# Always on, ZERO env configuration. Assets are bundled in the .app
-# (Contents/Resources/models/laya/multilingual) and resolved by
-# kawai_paths::find_laya_model_dir; without them the gate is a clean no-op.
-# On the grey band it claims a registered template in ~250 ms on-device
-# when facts fill every required slot (route_log source="laya"), else the
-# layer-2 resolver runs unchanged.
+# ZERO env configuration. Assets are NOT bundled: the gate is a clean
+# no-op unless the 7-file set (litert-community/Laya-Multilingual-LiteRT)
+# is placed at ~/.kawai/models/laya/multilingual (or
+# <app_data>/models/laya/multilingual). On the grey band it claims a
+# registered template in ~250 ms on-device when facts fill every
+# required slot (route_log source="laya"), else the layer-2 resolver
+# runs unchanged. CI keeps the laya_poc fixture gate alive.
 ```
 `.env.local` (gitignored) — reserved for future auth configuration (unused by the React frontend).
 
