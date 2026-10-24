@@ -84,6 +84,13 @@ pub fn list_agents() -> Vec<crate::agent_registry::AgentInfo> {
     crate::agent_registry::builtin().list()
 }
 
+/// Public RPC: Laya router-gate diagnostics (flag + asset state; same op as
+/// the web `/api/laya_status`). Static config — no user scope, no auth state.
+#[tauri::command]
+pub fn laya_status() -> serde_json::Value {
+    crate::logic::laya_status()
+}
+
 /// Public RPC: client-side email verification — generate a 6-digit code and
 /// email it via the Brevo SMTP relay. Returns the code so the frontend can
 /// check the user's input locally (the auth server is never involved).

@@ -10,6 +10,8 @@ pub mod logging;
 mod keychain;
 pub mod logic;
 #[cfg(feature = "litert")]
+pub mod laya_router;
+#[cfg(feature = "litert")]
 pub mod supervisor;
 pub mod templates;
 
@@ -167,6 +169,7 @@ pub fn run() {
         // ── base (always registered) ───────────────────────────────────
         commands::greet,
         commands::list_agents,
+        commands::laya_status,
         commands::generate_activity,
         commands::send_verification_email,
         commands::auth_sign_up,

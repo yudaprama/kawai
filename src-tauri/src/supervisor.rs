@@ -694,6 +694,36 @@ fn static_reply_plan(
 /// "id-ID") — it only feeds the template path (`resolve_user_language`), so a
 /// composer-routed desk run renders its reports in the user's language
 /// exactly like the fixed-pipeline form does.
+/// Slot values the rule gate's own fact extraction supplies — shared by the
+/// layer-1 claim arm and the Laya fast-claim so both resolve identically
+/// (the universe-matched member, period/venue verbatim, output language).
+fn facts_slots(
+    facts: &kawai_router::GoalFacts,
+    universe: Option<&kawai_router::MarketUniverse>,
+    language: Option<&str>,
+) -> kawai_router::ResolvedSlots {
+    let mut slots = kawai_router::ResolvedSlots::new();
+    let ticker = facts
+        .candidates
+        .iter()
+        .find(|c| universe.is_some_and(|u| u.contains(*c)))
+        .cloned();
+    if let Some(ticker) = ticker.as_deref().or(facts.ticker.as_deref()) {
+        slots.set("ticker", ticker);
+    }
+    if let Some(url) = &facts.url {
+        slots.set("url", url);
+    }
+    if let Some(period) = &facts.period {
+        slots.set("period", period);
+    }
+    if let Some(venue) = &facts.venue {
+        slots.set("venue", venue);
+    }
+    slots.set("language", &resolve_user_language(language, None).unwrap_or_default());
+    slots
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn plan_task(
     user_id: &str,
@@ -786,37 +816,7 @@ pub async fn plan_task(
         let facts = kawai_router::extract_facts(routing);
         match &decision.route {
             kawai_router::Route::Template(template) => {
-                // Same resolution the gate used: the universe-matched member
-                // ("nvidia" → "NVDA"). Unreachable as None for a market-bound
-                // claim (the gate blocked those), but never guess.
-                let ticker = facts
-                    .candidates
-                    .iter()
-                    .find(|c| universe.as_ref().is_some_and(|u| u.contains(*c)))
-                    .cloned();
-                let mut slots = kawai_router::ResolvedSlots::new();
-                if let Some(ticker) = ticker.as_deref().or(facts.ticker.as_deref()) {
-                    slots.set("ticker", ticker);
-                }
-                if let Some(url) = &facts.url {
-                    slots.set("url", url);
-                }
-                // Period templates (accounting): the router already proved
-                // the goal carries a period-shaped mention — pass it through
-                // verbatim; the template builder parses the format.
-                if let Some(period) = &facts.period {
-                    slots.set("period", period);
-                }
-                // A named exchange scopes the review's plan — the template
-                // declares the slot, so an unfilled one silently reviews every
-                // venue the user did not ask for.
-                if let Some(venue) = &facts.venue {
-                    slots.set("venue", venue);
-                }
-                slots.set(
-                    "language",
-                    &resolve_user_language(language, None).unwrap_or_default(),
-                );
+                let slots = facts_slots(&facts, universe.as_ref(), language);
                 match (template.build)(&slots) {
                     Ok(mut plan) => {
                         // The registry is authoritative for write tools: the
@@ -936,8 +936,93 @@ pub async fn plan_task(
             }
         }
 
-        // ── Layer 2: LLM re-validation of planner decisions ────────────────
+        // ── Layer 1.5: Laya zero-shot fast claim (opt-in) ──────────────────
         //
+        // KAWAI_LAYA_ROUTER=1 + the model assets installed. On the grey band
+        // one ~250 ms on-device forward pass either names a registered
+        // template — short-circuiting the layer-2 LLM resolver call below —
+        // or declines and layer 2 runs exactly as before. Constraints that
+        // keep a fast claim as safe as a resolver claim:
+        // - It can only claim when the rule-extracted facts ALREADY fill
+        //   every required slot (`missing_required`): the classifier names a
+        //   pipeline, it cannot extract a period or a ticker, and a
+        //   default-filled slot would build a plausible-but-wrong plan.
+        // - The claim passes the same `build` + `enforce_confirmation_policy`
+        //   machinery and lands in `route_log` with source="laya".
+        // - Greeting/question/direct goals never reach here (static layers
+        //   run first — the PoC measured Laya mis-claiming questions at 0.96
+        //   confidence; those guards are code, not model).
+        if crate::laya_router::enabled() {
+            let templates = crate::templates::registry();
+            let gate_goal = goal.to_string();
+            let laya_claim = tokio::task::spawn_blocking(move || {
+                crate::laya_router::claim(&gate_goal, &templates)
+            })
+            .await
+            .map_err(|e| format!("laya gate join failed: {e}"))?;
+            if let Some((template_id, confidence)) = laya_claim {
+                if let Some(template) = crate::templates::registry().get(&template_id) {
+                    let slots = facts_slots(&facts, universe.as_ref(), language);
+                    let missing = slots.missing_required(template.slots);
+                    if missing.is_empty() {
+                        match (template.build)(&slots) {
+                            Ok(mut plan) => {
+                                registry.enforce_confirmation_policy(&mut plan);
+                                plan.template = Some(template.id.to_string());
+                                let key = plan_key(&plan);
+                                on_progress(SupervisorEvent::PlanningStarted {});
+                                tracing::info!(
+                                    component = "supervisor",
+                                    template = template.id,
+                                    confidence = %confidence,
+                                    goal_chars = goal.len(),
+                                    "laya fast claim routed to template — resolver and planner skipped"
+                                );
+                                kawai_db::log_route_decision(
+                                    user_id,
+                                    kawai_db::RouteLogEntry {
+                                        session_id,
+                                        plan_key: Some(key.as_str()),
+                                        goal,
+                                        chosen: "template",
+                                        template_id: Some(template.id),
+                                        source: "laya",
+                                        offered: &serde_json::to_string(&decision.offered)
+                                            .unwrap_or_default(),
+                                        matched: &serde_json::to_string(&decision.matched)
+                                            .unwrap_or_default(),
+                                        blocked_by_slots: &serde_json::to_string(
+                                            &decision.blocked_by_slots,
+                                        )
+                                        .unwrap_or_default(),
+                                    },
+                                )
+                                .await;
+                                return Ok((plan, resolver_usage));
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    component = "supervisor",
+                                    template = template.id,
+                                    error = %e,
+                                    "laya claim build failed — layer 2"
+                                );
+                            }
+                        }
+                    } else {
+                        tracing::info!(
+                            component = "supervisor",
+                            template = template.id,
+                            confidence = %confidence,
+                            ?missing,
+                            "laya claim missing required slots — layer 2"
+                        );
+                    }
+                }
+            }
+        }
+
+        // ── Layer 2: LLM re-validation of planner decisions ────────────────
         // The keyword gate is a precision instrument — it claims only what
         // its vocabulary is sure about. Everything else (micron → MU,
         // phrasings outside the keyword list) lands here, and one small LLM

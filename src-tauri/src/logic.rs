@@ -50,6 +50,19 @@ pub fn greet(name: &str) -> String {
     format!("Hello, {name}! You've been greeted from Rust!")
 }
 
+/// Diagnostics for the Laya router gate (public op, both transports). Returns
+/// flag state + asset presence; never loads the model. Stub on builds without
+/// the `litert` feature (web/Android ship without the on-device stack).
+#[cfg(feature = "litert")]
+pub fn laya_status() -> serde_json::Value {
+    crate::laya_router::status()
+}
+
+#[cfg(not(feature = "litert"))]
+pub fn laya_status() -> serde_json::Value {
+    serde_json::json!({ "enabled": false, "assets_dir": null, "assets_complete": false })
+}
+
 /// Authenticated identity. Real ops take `user_id` as the first param and use
 /// it to scope data. The wrappers (`commands.rs`, `web.rs`) resolve identity at
 /// the edge and pass `sub` in.

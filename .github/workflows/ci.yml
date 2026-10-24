@@ -21,6 +21,11 @@ name: ci
 # agent_smoke (the full local→cloud turn) is intentionally NOT run here: it
 # needs interactive cloud-side state beyond the smokes. Run it manually
 # (see its header comment) before tagging a release.
+#
+# android-check gates the Android compile of the tts chain (supertonic →
+# ocr-rs MNN prebuilt, static-linked) on both release ABIs — check-only, no
+# APK. It is the proof gate release-android.yml needs before enabling tts on
+# mobile (the MNN prebuilts for android exist; the link was never exercised).
 
 on:
   push:
@@ -149,7 +154,7 @@ jobs:
       # every cfg(not(feature = …)) stub. Mixed regions (e.g. litert without
       # binance) are covered by linux-smoke's `--features litert` test build.
       - name: cargo check (all features on)
-        run: cargo check --features litert,office,binance,graph,web,accounting,mexc
+        run: cargo check --features litert,office,binance,graph,web,accounting,mexc,tts
         working-directory: src-tauri
 
       # Data analysis agent (polars + office_oxide xlsx bridge) is always
@@ -275,6 +280,87 @@ jobs:
           EOF
           node /tmp/extractor.js
 
+  # ── Android compile gate: tts on the release ABIs (check-only, no APK) ────
+  # Proves the tts feature chain (supertonic → ocr-rs, MNN prebuilt from
+  # zibo-chen/MNN-Prebuilds, static-linked) compiles and links for
+  # aarch64-linux-android + armv7-linux-androideabi — the two targets
+  # release-android ships. release-android enables tts only once this is
+  # green. The MNN prebuilt downloads inside ocr-rs's build.rs; the ~191 MB
+  # TTS models are a runtime download, not needed for a check.
+  android-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      # Same manifest set as the web job, plus full rust-paddle-ocr +
+      # whatlang-rs sources (the tts chain compiles them).
+      - name: Init submodules
+        run: |
+          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr whatlang-rs pdf_oxide
+          git -C crates submodule update --init vendor/binance-connector-rust
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      # Own shared-key: the android target dirs must not thrash the linux
+      # desktop jobs' cache (same host triple, different --target).
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: android-check
+          cache-on-failure: true
+
+      # bindgen (ocr-rs build-dep) needs libclang; cmake ships with the runner.
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libclang-dev
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # See release-android.yml: the runner's preinstalled cmdline-tools
+          # cannot parse SDK XML v4; install cmdline-tools;latest first.
+          packages: 'cmdline-tools;latest'
+
+      # NDK only — a check links no APK, so no platform/build-tools. Same NDK
+      # 28 release-android builds with.
+      - name: Install Android NDK 28
+        run: |
+          set -euo pipefail
+          SDKM="$(ls -d "$ANDROID_HOME"/cmdline-tools/latest*/bin/sdkmanager | sort -V | tail -n1)"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "ndk;28.2.13676358"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - name: Cache cargo-ndk
+        id: cargo-ndk
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: cargo-ndk-${{ runner.os }}
+
+      - name: Install cargo-ndk
+        if: steps.cargo-ndk.outputs.cache-hit != 'true'
+        run: cargo install cargo-ndk --locked
+
+      # Feature set mirrors release-android (default `desktop` + accounting +
+      # mexc) PLUS tts — the combination this job exists to prove.
+      # -P (capital) is the cargo-ndk platform flag; -p collides with cargo
+      # --package. Keep secrets out of the env: cargo-ndk's panic handler
+      # dumps all env vars to stdout.
+      - name: cargo ndk check (aarch64 + armv7, tts)
+        working-directory: src-tauri
+        run: cargo ndk -t arm64-v8a -t armeabi-v7a -P 24 check --features tts,accounting,mexc
+
   # ── Full gate: unit tests + on-device smoke + hybrid cloud smokes ─────────
   macos-smoke:
     runs-on: macos-26
@@ -367,6 +453,37 @@ jobs:
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
         run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/lfm2.5-1.2b-instruct-int8.litertlm
+
+      # ── Smoke: Laya zero-shot classifier fixture gate (router layer 1.5).
+      #    Validates the Rust host against the shipped 201-row capture:
+      #    exact builder ids/markers + argmax parity vs captured logits.
+      #    679 MB asset set (wfp16 s256 graph, act head, fp16 table,
+      #    tokenizer, calibration), cached between runs.
+      - name: Cache laya fixture
+        id: laya
+        uses: actions/cache@v4
+        with:
+          path: laya-fixture
+          key: laya-multilingual-s256-wfp16-v1
+
+      - name: Download laya fixture
+        if: steps.laya.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          base=https://huggingface.co/litert-community/Laya-Multilingual-LiteRT/resolve/main
+          mkdir -p laya-fixture/fixtures
+          for f in laya_ml_s256_embeds_wfp16.tflite laya_ml_act_head_fp32.tflite \
+                   token_embeddings_fp16.bin tokenizer.json tokenizer_config.json \
+                   laya_ml_calibration.json fixtures/gate_rows_s256.json; do
+            curl -fL --retry 3 -o "laya-fixture/$f" "$base/$f"
+          done
+
+      - name: laya_poc (classifier fixture gate)
+        working-directory: cognee-litert-lm
+        env:
+          LITERT_LM_LIB_DIR: ${{ github.workspace }}/cognee-litert-lm/native
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
+        run: cargo run --release --example laya_poc --features laya -- ${{ github.workspace }}/laya-fixture --limit 24
 
       # ── Smoke 2 + 3: hybrid cloud tier. The zai key comes from the compiled
       #    kawai-vault constants (cargo git dep — authenticated via the PAT
