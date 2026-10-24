@@ -214,20 +214,28 @@ pub fn claim(goal: &str, registry: &kawai_router::TemplateRegistry<'_>) -> Optio
             .into(),
     );
 
-    let mut guard = GATE
+    // Load OUTSIDE the hot path's clone: the one-time parse of a 34 MB
+    // tokenizer plus graph init takes seconds and must not serialize a
+    // concurrent claim. Double-checked re-lock keeps a single load.
+    if GATE
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if guard.is_none() {
-        // First attempt after the assets land (or the only attempt when they
-        // were installed manually) — retried on every grey-band goal, so a
-        // goal that raced the background download picks the gate up late.
-        *guard = load().map(std::sync::Arc::new);
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .is_none()
+    {
+        let loaded = load().map(std::sync::Arc::new);
+        let mut guard = GATE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if guard.is_none() {
+            *guard = loaded;
+        }
     }
     // Clone the handle OUT and drop the lock: inference takes ~250 ms and
-    // the first load parses a 34 MB tokenizer — neither may serialize other
-    // claims or `laya_status` behind the mutex.
-    let gate = std::sync::Arc::clone(guard.as_ref()?);
-    drop(guard);
+    // must never serialize other claims or `laya_status` behind the mutex.
+    let gate = {
+        let guard = GATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        guard.as_ref().map(std::sync::Arc::clone)
+    }?;
 
     let question = Question {
         t: "choice".into(),

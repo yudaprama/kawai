@@ -1,0 +1,38 @@
+tutup buku 2026-10
+tutup buku bulan oktober dong
+bantu tutup buku periode ini
+monthly close for october
+performa trading 2026-10
+rekap performa trading binance bulan ini
+gimana hasil trading gwa bulan lalu?
+review trading performance mexc september
+analisis teknikal NVDA
+analisis saham BBRI mingguan
+analisis bitcoin sekarang
+cek BTC 4H
+kapan wajib tutup buku bulan oktober?
+apakah saham NVDA bagus?
+apa itu tutup buku?
+berapa inflasi AS bulan lalu
+halo apa kabar
+hai
+siapa anda?
+buatkan pitch deck untuk startup saya
+tolong bikinin surat penawaran
+buat presentasi hasil penjualan Q3
+draft email ke klien tentang invoice
+ringkas dokumen kontrak ini
+cari berita tentang bank Indonesia hari ini
+jelasin cara kerja blockchain
+audit buku besar saya tahun 2026
+periksa apakah ada transaksi ganda di ledger
+hitung PnL per pair koin saya
+win rate trading saya berapa persen?
+fee trading binance saya bulan ini banyak ga?
+tampilkan riwayat fill MEXC kemarin
+analisis fundamental ETH
+bandingkan NVDA dan AMD sahamnya
+tutup buku tapi untuk 2026-09
+# Corpus for the routing A/B (keyword router vs Laya gate). One goal per
+# line; '#' comment lines allowed. Seeded the original 35-row route_log
+# run (user "seed") and drives laya_poc --goals.
