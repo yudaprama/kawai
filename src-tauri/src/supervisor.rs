@@ -964,18 +964,30 @@ pub async fn plan_task(
         // never loads the gate and this block is a clean no-op.
         {
             if !crate::laya_router::assets_ready() {
-                // First-use auto-download (house pattern): kicks once in the
-                // background, this goal falls through to layer 2/planner,
-                // later goals pick the gate up when the assets have landed.
-                crate::laya_router::kick_download();
+                // Assets absent: the gate stays a no-op here. The first-use
+                // download is kicked once at app startup (Tauri shell setup),
+                // NOT per goal — a plan_task/test invocation must never
+                // trigger a 679 MB download.
             } else {
                 let templates = crate::templates::registry();
                 let gate_goal = goal.to_string();
-                let laya_claim = tokio::task::spawn_blocking(move || {
+                // The gate may NEVER fail the submit: a panic inside the
+                // classifier degrades to "no claim" and layer 2 runs.
+                let laya_claim = match tokio::task::spawn_blocking(move || {
                     crate::laya_router::claim(&gate_goal, &templates)
                 })
                 .await
-                .map_err(|e| format!("laya gate join failed: {e}"))?;
+                {
+                    Ok(claim) => claim,
+                    Err(e) => {
+                        tracing::warn!(
+                            component = "supervisor",
+                            error = %e,
+                            "laya gate panicked — skipping to layer 2"
+                        );
+                        None
+                    }
+                };
                 if let Some((template_id, confidence)) = laya_claim {
                     if let Some(template) = crate::templates::registry().get(&template_id) {
                         let slots = facts_slots(&facts, universe.as_ref(), language);

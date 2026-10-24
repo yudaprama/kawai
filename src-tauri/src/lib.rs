@@ -125,6 +125,13 @@ pub fn run() {
                 // live in supervisor (the plan-time path uses the same one).
                 #[cfg(feature = "litert")]
                 crate::supervisor::prefetch_tool_catalog();
+                // Laya assets: kick the one-time background download at
+                // startup (NOT per goal — plan_task/tests must never trigger
+                // a 679 MB transfer). No-op when the assets are already on
+                // disk. tauri::async_runtime for the same reactor reason as
+                // above.
+                #[cfg(feature = "litert")]
+                tauri::async_runtime::spawn(crate::laya_router::kick_download());
                 // Warm the device cli-catalog in the background too (no-op
                 // without the on-device embedder): scan → reconcile → embed
                 // lands before the first plan_task instead of racing it.

@@ -86,22 +86,21 @@ pub fn assets_ready() -> bool {
     find_laya_model_dir(VARIANT).is_some()
 }
 
-/// Fire-and-forget first-use download. No-op when the assets are already on
-/// disk or a download is in flight/failed (a failed download is retried on
-/// the next app launch, not hammered per goal). Call from an async context.
-pub fn kick_download() {
+/// Fire-and-forget first-use download body. Spawned ONCE at app startup by
+/// the Tauri shell (`tauri::async_runtime::spawn` — the setup hook runs
+/// outside any tokio reactor). No-op when the assets are already on disk or
+/// a previous download failed (retried on the next launch, not hammered).
+pub async fn kick_download() {
     if assets_ready() || DOWNLOAD_FAILED.load(Ordering::Relaxed) {
         return;
     }
-    if DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
-        return;
+    DOWNLOAD_STARTED.store(true, Ordering::Relaxed);
+    let result = download_assets().await;
+    if let Err(e) = &result {
+        tracing::warn!(component = "laya_router", error = %e, "asset download failed");
+        DOWNLOAD_FAILED.store(true, Ordering::Relaxed);
     }
-    tokio::spawn(async move {
-        if let Err(e) = download_assets().await {
-            tracing::warn!(component = "laya_router", error = %e, "asset download failed");
-            DOWNLOAD_FAILED.store(true, Ordering::Relaxed);
-        }
-    });
+    DOWNLOAD_STARTED.store(false, Ordering::Relaxed);
 }
 
 async fn download_assets() -> Result<(), String> {

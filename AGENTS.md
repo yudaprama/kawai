@@ -490,14 +490,15 @@ KAWAI_CF_GLOBAL_DAILY=300     # default 300 (dev-wallet fuse)
 # Unset: release builds ship WARN/ERROR, debug builds ship INFO.
 KAWAI_LOKI_LEVEL=warn         # off|error|warn|info|debug|trace
 # ── Laya router fast-claim gate (src-tauri/src/laya_router.rs) ──
-# ZERO env configuration. Assets are NOT bundled: on the first grey-band
-# goal the gate auto-downloads the 6-file set
-# (litert-community/Laya-Multilingual-LiteRT, SHA256SUMS-verified) to
-# ~/.kawai/models/laya/multilingual in the background — that first goal
-# falls through to the layer-2 resolver, later goals route on-device in
-# ~250 ms when facts fill every required slot (route_log source="laya"),
-# else the layer-2 resolver runs unchanged. CI keeps the laya_smoke
-# fixture gate alive.
+# ZERO env configuration. Assets are NOT bundled: the Tauri shell kicks a
+# one-shot background download of the 6-file set
+# (litert-community/Laya-Multilingual-LiteRT, SHA256SUMS-verified) at app
+# startup to ~/.kawai/models/laya/multilingual — plan_task and tests never
+# trigger a transfer. Goals before the download lands fall through to the
+# layer-2 resolver; later goals route on-device in ~250 ms when facts fill
+# every required slot (route_log source="laya"), else layer 2 runs
+# unchanged. A gate panic degrades to no-claim, never a failed submit.
+# CI keeps the laya_smoke fixture gate alive.
 ```
 `.env.local` (gitignored) — reserved for future auth configuration (unused by the React frontend).
 
