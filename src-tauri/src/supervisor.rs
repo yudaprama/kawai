@@ -1895,6 +1895,14 @@ async fn shared_catalog() -> Option<std::sync::Arc<kawai_tool_catalog::Catalog>>
 /// a sync completed recently. Safe to call from anywhere (startup prefetch,
 /// plan_task).
 async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
+    // CI kill-switch (KAWAI_TOOL_CATALOG_OFFLINE=1): planner_smoke opens the
+    // replica but NEVER touches Turso — zero sync requests, zero quota. The
+    // cached replica (see ci.yml) serves the read; on a cache miss the
+    // planner degrades to core tools, which planner_smoke tolerates (it
+    // validates plan STRUCTURE, not catalog coverage).
+    if std::env::var("KAWAI_TOOL_CATALOG_OFFLINE").as_deref() == Ok("1") {
+        return;
+    }
     let Some(catalog) = shared_catalog().await else {
         return;
     };
