@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# Start/stop/status a local sqld instance — a DEV seam only.
+# Start/stop/status a local sqld instance — the tool-catalog host.
 #   - toolcatalog (127.0.0.1:8084 / hrana 8085) — planner tool-catalog DB
-# The tool catalog itself is hosted on Turso (`kawai-tool-catalog`); this
-# instance is only for offline experiments. Point an app at it by setting
-# KAWAI_TURSO_DB_URL=http://127.0.0.1:8084 + KAWAI_TURSO_AUTH_TOKEN=dev —
-# and remove that pair again afterwards, because a second assignment in .env
-# silently overrides the shared-catalog URL.
+# This instance IS the catalog database (Turso is retired — the free tier
+# cannot absorb the per-device replica bootstrap). Public exposure for remote
+# clients goes through a cloudflared/tailscale tunnel in front of 127.0.0.1:8084.
+# Auth: Ed25519 JWT (see CREDENTIALS.md §2). Point an app at it via
+# KAWAI_TURSO_DB_URL=http://127.0.0.1:8084 + KAWAI_TURSO_AUTH_TOKEN=$CATALOG_APP_TOKEN
+# (both live in kawai/.env) — and remove that pair afterwards, because a
+# second assignment in .env silently overrides the shared-catalog URL.
+#
+# Start it WITH auth (run-local.sh's plain start skips JWT):
+#   set -a; source ~/.kawai/sqld/toolcatalog/tokens.env; set +a
+#   SQLD_AUTH_JWT_KEY_FILE=~/.kawai/sqld/toolcatalog/jwt.raw.pub ./run-local.sh start
 #
 # Usage:
 #   ./run-local.sh <db> <cmd>     # db = toolcatalog|all (default: toolcatalog)
@@ -53,7 +59,9 @@ start_one() {
   done
   if curl -fsS "http://${HTTP_ADDR}/health" >/dev/null 2>&1; then
     echo "[$db] sqld started (pid $(cat "$DATA_DIR/sqld.pid")) on $HTTP_ADDR"
-    echo "[$db] dev-only instance. The catalog everyone reads is hosted on Turso; seed it with KAWAI_TURSO_DB_URL=libsql://libsql://kawai-tool-catalog-yudapramad.aws-ap-south-1.turso.io KAWAI_TURSO_AUTH_TOKEN=\$KAWAI_TURSO_WRITE_TOKEN cargo run --manifest-path src-tauri/Cargo.toml --example seed_tool_catalog --features litert,binance,monad -- --prune"
+    echo "[$db] tool-catalog host. Seed/update with: source kawai/.env &&"
+    echo "[$db]   KAWAI_TURSO_DB_URL=http://127.0.0.1:8084 KAWAI_TURSO_WRITE_TOKEN=\$KAWAI_TURSO_WRITE_TOKEN \\"
+    echo "[$db]   cargo run --manifest-path src-tauri/Cargo.toml --example seed_tool_catalog --features litert,binance,monad,accounting"
   else
     echo "[$db] sqld failed to start — see $DATA_DIR/sqld.log" >&2
     exit 1

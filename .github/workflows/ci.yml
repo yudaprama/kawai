@@ -395,6 +395,19 @@ jobs:
           key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-macos26-arm64-
 
+      # Tool-catalog embedded replica (headless data root = /tmp/kawai).
+      # planner_smoke opens the replica and a FRESH one full-downloads the
+      # whole ~46 MB catalog from Turso EVERY run — the syncs-quota drain.
+      # Static key: the save is skipped once the key exists, so the replica
+      # ages deliberately — staleness is safe because the supervisor's
+      # row_counts gate detects local < remote and delta-syncs (KBs), and
+      # equal counts skip the sync entirely (zero bytes).
+      - name: Cache tool-catalog replica
+        uses: actions/cache@v4
+        with:
+          path: /tmp/kawai/tool-catalog
+          key: tool-catalog-replica-v1
+
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
         run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr whatlang-rs pdf_oxide
 
@@ -515,6 +528,10 @@ jobs:
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
           KAWAI_BINANCE_REST_BASE: https://data-api.binance.vision
+          # NEVER sync the tool catalog from CI (syncs-quota drain): the
+          # planner reads the cached replica above; a cache miss degrades to
+          # core tools, which this smoke tolerates (structural validation).
+          KAWAI_TOOL_CATALOG_OFFLINE: "1"
         run: cargo run --example planner_smoke --features litert,binance
 
       
