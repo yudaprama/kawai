@@ -15,10 +15,11 @@
 //! - A 0.96-confident wrong claim on a question-shaped goal is why the
 //!   static guards run first — do not reorder.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
 
 use cognee_litert_lm::{build_sequence, calibrated_probabilities, LayaRunner, Question};
-use kawai_paths::find_laya_model_dir;
+use kawai_paths::{find_laya_model_dir, user_models_dir};
 use tokenizers::Tokenizer;
 
 /// Claim threshold. The plan review gate (every claim builds a plan the user
@@ -46,6 +47,13 @@ pub fn status() -> serde_json::Value {
     serde_json::json!({
         "assets_dir": assets.map(|d| d.display().to_string()),
         "assets_complete": assets_ok,
+        "download": if DOWNLOAD_FAILED.load(Ordering::Relaxed) {
+            "failed"
+        } else if DOWNLOAD_STARTED.load(Ordering::Relaxed) {
+            "running"
+        } else {
+            "idle"
+        },
         "threshold": CLAIM_THRESHOLD,
     })
 }
@@ -56,7 +64,105 @@ struct Gate {
     calibration: serde_json::Value,
 }
 
-static GATE: LazyLock<Option<Gate>> = LazyLock::new(load);
+static GATE: std::sync::Mutex<Option<Gate>> = std::sync::Mutex::new(None);
+
+static DOWNLOAD_STARTED: AtomicBool = AtomicBool::new(false);
+static DOWNLOAD_FAILED: AtomicBool = AtomicBool::new(false);
+
+/// Files fetched from `litert-community/Laya-Multilingual-LiteRT` on first
+/// grey-band use (the house auto-download pattern — see `logic::ensure_model`).
+const ASSET_FILES: &[&str] = &[
+    "laya_ml_s256_embeds_wfp16.tflite",
+    "laya_ml_act_head_fp32.tflite",
+    "token_embeddings_fp16.bin",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "laya_ml_calibration.json",
+];
+const HF_BASE: &str = "https://huggingface.co/litert-community/Laya-Multilingual-LiteRT/resolve/main";
+
+/// Whether the assets are on disk (gate usable).
+pub fn assets_ready() -> bool {
+    find_laya_model_dir(VARIANT).is_some()
+}
+
+/// Fire-and-forget first-use download. No-op when the assets are already on
+/// disk or a download is in flight/failed (a failed download is retried on
+/// the next app launch, not hammered per goal). Call from an async context.
+pub fn kick_download() {
+    if assets_ready() || DOWNLOAD_FAILED.load(Ordering::Relaxed) {
+        return;
+    }
+    if DOWNLOAD_STARTED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    tokio::spawn(async move {
+        if let Err(e) = download_assets().await {
+            tracing::warn!(component = "laya_router", error = %e, "asset download failed");
+            DOWNLOAD_FAILED.store(true, Ordering::Relaxed);
+        }
+    });
+}
+
+async fn download_assets() -> Result<(), String> {
+    let models = user_models_dir().ok_or("no models dir (no home)")?;
+    let dir = models.join("laya").join(VARIANT);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+
+    let client = reqwest::Client::builder().build().map_err(|e| e.to_string())?;
+    let sums_url = format!("{HF_BASE}/SHA256SUMS");
+    let sums = client
+        .get(&sums_url)
+        .send()
+        .await
+        .map_err(|e| format!("{sums_url}: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("{sums_url}: {e}"))?
+        .text()
+        .await
+        .map_err(|e| format!("{sums_url}: {e}"))?;
+    let mut expected: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+    for line in sums.lines() {
+        let mut parts = line.split_whitespace();
+        if let (Some(hash), Some(file)) = (parts.next(), parts.next()) {
+            expected.insert(file, hash);
+        }
+    }
+
+    for file in ASSET_FILES {
+        let target = dir.join(file);
+        if target.is_file() {
+            continue;
+        }
+        let url = format!("{HF_BASE}/{file}");
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("{url}: {e}"))?
+            .error_for_status()
+            .map_err(|e| format!("{url}: {e}"))?;
+        let tmp = dir.join(format!("{file}.part"));
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| format!("{url}: read body: {e}"))?;
+        // Verify BEFORE anything lands in place — a wrong byte never wins.
+        use sha2::Digest as _;
+        let hash = expected
+            .get(file)
+            .ok_or_else(|| format!("SHA256SUMS has no entry for {file}"))?;
+        let actual = hex::encode(sha2::Sha256::new().chain_update(&bytes).finalize());
+        if actual != *hash {
+            return Err(format!("{file}: sha256 mismatch (got {actual})"));
+        }
+        std::fs::write(&tmp, &bytes).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, &target).map_err(|e| format!("rename {}: {e}", target.display()))?;
+        tracing::info!(component = "laya_router", file, bytes = bytes.len(), "asset downloaded");
+    }
+    tracing::info!(component = "laya_router", "laya assets ready — gate active");
+    Ok(())
+}
 
 fn load() -> Option<Gate> {
     let dir = find_laya_model_dir(VARIANT)?;
@@ -93,7 +199,16 @@ pub fn claim(goal: &str, registry: &kawai_router::TemplateRegistry<'_>) -> Optio
             .into(),
     );
 
-    let gate = GATE.as_ref()?;
+    let mut guard = GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if guard.is_none() {
+        // First attempt after the assets land (or the only attempt when they
+        // were installed manually) — retried on every grey-band goal, so a
+        // goal that raced the background download picks the gate up late.
+        *guard = load();
+    }
+    let gate = guard.as_ref()?;
 
     let question = Question {
         t: "choice".into(),

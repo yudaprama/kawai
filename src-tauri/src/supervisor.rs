@@ -955,70 +955,77 @@ pub async fn plan_task(
         // `~/.kawai/models/laya/multilingual` (or `<app_data>/models/…`)
         // never loads the gate and this block is a clean no-op.
         {
-            let templates = crate::templates::registry();
-            let gate_goal = goal.to_string();
-            let laya_claim = tokio::task::spawn_blocking(move || {
-                crate::laya_router::claim(&gate_goal, &templates)
-            })
-            .await
-            .map_err(|e| format!("laya gate join failed: {e}"))?;
-            if let Some((template_id, confidence)) = laya_claim {
-                if let Some(template) = crate::templates::registry().get(&template_id) {
-                    let slots = facts_slots(&facts, universe.as_ref(), language);
-                    let missing = slots.missing_required(template.slots);
-                    if missing.is_empty() {
-                        match (template.build)(&slots) {
-                            Ok(mut plan) => {
-                                registry.enforce_confirmation_policy(&mut plan);
-                                plan.template = Some(template.id.to_string());
-                                let key = plan_key(&plan);
-                                on_progress(SupervisorEvent::PlanningStarted {});
-                                tracing::info!(
-                                    component = "supervisor",
-                                    template = template.id,
-                                    confidence = %confidence,
-                                    goal_chars = goal.len(),
-                                    "laya fast claim routed to template — resolver and planner skipped"
-                                );
-                                kawai_db::log_route_decision(
-                                    user_id,
-                                    kawai_db::RouteLogEntry {
-                                        session_id,
-                                        plan_key: Some(key.as_str()),
-                                        goal,
-                                        chosen: "template",
-                                        template_id: Some(template.id),
-                                        source: "laya",
-                                        offered: &serde_json::to_string(&decision.offered)
+            if !crate::laya_router::assets_ready() {
+                // First-use auto-download (house pattern): kicks once in the
+                // background, this goal falls through to layer 2/planner,
+                // later goals pick the gate up when the assets have landed.
+                crate::laya_router::kick_download();
+            } else {
+                let templates = crate::templates::registry();
+                let gate_goal = goal.to_string();
+                let laya_claim = tokio::task::spawn_blocking(move || {
+                    crate::laya_router::claim(&gate_goal, &templates)
+                })
+                .await
+                .map_err(|e| format!("laya gate join failed: {e}"))?;
+                if let Some((template_id, confidence)) = laya_claim {
+                    if let Some(template) = crate::templates::registry().get(&template_id) {
+                        let slots = facts_slots(&facts, universe.as_ref(), language);
+                        let missing = slots.missing_required(template.slots);
+                        if missing.is_empty() {
+                            match (template.build)(&slots) {
+                                Ok(mut plan) => {
+                                    registry.enforce_confirmation_policy(&mut plan);
+                                    plan.template = Some(template.id.to_string());
+                                    let key = plan_key(&plan);
+                                    on_progress(SupervisorEvent::PlanningStarted {});
+                                    tracing::info!(
+                                        component = "supervisor",
+                                        template = template.id,
+                                        confidence = %confidence,
+                                        goal_chars = goal.len(),
+                                        "laya fast claim routed to template — resolver and planner skipped"
+                                    );
+                                    kawai_db::log_route_decision(
+                                        user_id,
+                                        kawai_db::RouteLogEntry {
+                                            session_id,
+                                            plan_key: Some(key.as_str()),
+                                            goal,
+                                            chosen: "template",
+                                            template_id: Some(template.id),
+                                            source: "laya",
+                                            offered: &serde_json::to_string(&decision.offered)
+                                                .unwrap_or_default(),
+                                            matched: &serde_json::to_string(&decision.matched)
+                                                .unwrap_or_default(),
+                                            blocked_by_slots: &serde_json::to_string(
+                                                &decision.blocked_by_slots,
+                                            )
                                             .unwrap_or_default(),
-                                        matched: &serde_json::to_string(&decision.matched)
-                                            .unwrap_or_default(),
-                                        blocked_by_slots: &serde_json::to_string(
-                                            &decision.blocked_by_slots,
-                                        )
-                                        .unwrap_or_default(),
-                                    },
-                                )
-                                .await;
-                                return Ok((plan, resolver_usage));
+                                        },
+                                    )
+                                    .await;
+                                    return Ok((plan, resolver_usage));
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        component = "supervisor",
+                                        template = template.id,
+                                        error = %e,
+                                        "laya claim build failed — layer 2"
+                                    );
+                                }
                             }
-                            Err(e) => {
-                                tracing::warn!(
-                                    component = "supervisor",
-                                    template = template.id,
-                                    error = %e,
-                                    "laya claim build failed — layer 2"
-                                );
-                            }
+                        } else {
+                            tracing::info!(
+                                component = "supervisor",
+                                template = template.id,
+                                confidence = %confidence,
+                                ?missing,
+                                "laya claim missing required slots — layer 2"
+                            );
                         }
-                    } else {
-                        tracing::info!(
-                            component = "supervisor",
-                            template = template.id,
-                            confidence = %confidence,
-                            ?missing,
-                            "laya claim missing required slots — layer 2"
-                        );
                     }
                 }
             }
