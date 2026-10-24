@@ -71,7 +71,10 @@ jobs:
             echo "skipped=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          DRAFT="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VER" --jq .draft 2>/dev/null || echo missing)"
+          # gh release view resolves DRAFT releases; the releases/tags API
+          # endpoint only matches published ones, so a still-draft release
+          # would 404 here and the resume branch below would never fire.
+          DRAFT="$(gh release view "v$VER" --json isDraft --jq .isDraft 2>/dev/null || echo missing)"
           case "$DRAFT" in
             false)
               echo "v$VER already published — loop terminator, nothing to do."
