@@ -6,7 +6,7 @@ import { cards } from "./shared";
 import { renderBibleVerse, renderQuran, renderPoem, renderDefinition } from "./typographic";
 import { renderWeather, renderForecast } from "./weather";
 import { renderMedia } from "./media";
-import { renderCurrency, renderCryptoPrice, renderStockQuote, renderTicker24, chart, twelveSeries, klinesSeries, tiingoSeries, binanceKlineSeries, renderBinanceDepth, renderBinanceTa, renderMarketStructure, renderBinanceBalances, renderBinanceOpenOrders, renderBinanceFuturesPositions, renderMexcFuturesPositions, renderBinanceFuturesRiskAudit, renderBinanceFuturesAuditData, renderCryptoScreener, renderCryptoScreenerData } from "./finance";
+import { renderCurrency, renderCryptoPrice, renderStockQuote, renderTicker24, chart, twelveSeries, klinesSeries, tiingoSeries, binanceKlineSeries, renderBinanceDepth, renderBinanceTa, renderMarketStructure, renderBinanceBalances, renderBinanceOpenOrders, renderBinanceFuturesPositions, renderMexcFuturesPositions, renderBinanceFuturesRiskAudit, renderBinanceFuturesAuditData, renderCryptoScreener, renderCryptoScreenerData, renderFundingArb } from "./finance";
 import { jikanCards, mealCards, drinkCards, bookCards, repoCards, paperCards, quakeCards, flightStateCards, recentFlightCards, renderSpacexLaunch, spacexList } from "./cards";
 import { renderGeocode, renderIpLocation, renderIss } from "./geo";
 import { renderConnectorTools } from "./connector";
@@ -124,6 +124,7 @@ const registry: Record<string, ToolRenderer> = {
   reconcile_csv: renderReconciliationReport,
   crypto_screener: renderCryptoScreener,
   crypto_screener_data: renderCryptoScreenerData,
+  crypto_funding_arb: renderFundingArb,
   desk_data: renderDeskData,
   geocode: renderGeocode,
   get_ip_location: renderIpLocation,

@@ -69,6 +69,7 @@ import {
   renderBinanceTa,
   renderCryptoScreener,
   renderCryptoScreenerData,
+  renderFundingArb,
 } from "@/components/ai-elements/tool-renderers/finance";
 import { renderDeskData } from "@/components/ai-elements/tool-renderers/desk";
 import {
@@ -310,6 +311,7 @@ const registry: Record<string, StepView> = {
   mexc_futures_audit_data: (p) => renderBinanceFuturesAuditData(p),
   crypto_screener: (p) => renderCryptoScreener(p),
   crypto_screener_data: (p) => renderCryptoScreenerData(p),
+  crypto_funding_arb: (p) => renderFundingArb(p),
   desk_data: (p) => renderDeskData(p),
 
   // accounting — trading-books wedge (ledger view of exchange fills)

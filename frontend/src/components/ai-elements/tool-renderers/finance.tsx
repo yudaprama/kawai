@@ -735,6 +735,14 @@ const CHIP_TONE: Record<string, string> = {
   mute: "border-border bg-muted/40 text-muted-foreground",
 };
 
+/** Funding rate as a percent-per-8h string (the fraction Binance reports,
+ * 0.0001 = 0.01%/8h). Four decimals: the equilibrium ±0.01% sits at the
+ * fourth digit, three would hide the very differences the column shows. */
+function fmtRate8(rate: unknown): string {
+  const r = num(rate);
+  return r === null ? "—" : `${(r * 100).toFixed(4)}%`;
+}
+
 /** Verdict vocabulary is the engine's (stop_loss.rs / take_profit.rs), not
  * ours: `ok`/`tighten`/`loosen` for stops, `ok`/`too_close`/`too_far`/
  * `trailing` for take-profits, `missing` for either, plus the frontend's own
@@ -784,6 +792,10 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
   const [expanded, setExpanded] = useState(false);
   const capped = rows.length > AUDIT_ROW_CAP;
   const visible = expanded ? rows : rows.slice(0, AUDIT_ROW_CAP);
+  // The funding column appears only when at least one USDⓈ-M row carries the
+  // backend's projection (COIN-M rows never do — the fapi price basis
+  // differs), mirroring how the Structure column stays optional.
+  const hasFunding = rows.some((r) => isRecord(r.funding));
   return (
     <div className="space-y-1.5">
       <div className="border-border/60 max-h-[26rem] overflow-auto rounded-md border">
@@ -793,6 +805,14 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
               <th className="px-2 py-1.5 font-medium">Position</th>
               <th className="px-2 py-1.5 text-right font-medium">Notional</th>
               <th className="px-2 py-1.5 text-right font-medium">PnL</th>
+              {hasFunding && (
+                <th
+                  className="px-2 py-1.5 text-right font-medium"
+                  title="Funding at the CURRENT rate: positive = you pay per 8h interval, negative = you receive. Hover a cell for the 3-day projection."
+                >
+                  Funding /8h
+                </th>
+              )}
               <th className="px-2 py-1.5 font-medium" title="Closes the position at a loss if the price moves against you">
                 Stop (exit at a loss)
               </th>
@@ -854,6 +874,27 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
               const isCoinm = str(p.margin) === "COINM";
               const pnlText =
                 pnl !== null ? `${fmtSigned(pnl)}${isCoinm && asset ? ` ${asset}` : ""}` : "—";
+              // Funding projection: positive cost = this holder PAYS per 8h
+              // interval at the current rate; negative = receives. COIN-M rows
+              // carry null (the fapi premiumIndex basis differs), so the cell
+              // only fills where the backend priced it.
+              const funding = isRecord(p.funding) ? p.funding : null;
+              const fundingCost = funding ? num(funding.costPer8h) : null;
+              const fundingProj =
+                funding && isRecord(funding.projection) ? funding.projection : null;
+              const fundingTitle =
+                fundingCost !== null
+                  ? [
+                      `${fmtRate8(funding?.rate)} per 8h interval`,
+                      fundingProj
+                        ? `projected ${fmtSigned(num(fundingProj.cost) ?? 0)} over ${fmtNum(
+                            num(fundingProj.holdingDays) ?? 3
+                          )} days`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : undefined;
               // Side is a direction, not a quality — it stays muted so the
               // only coloured thing in the row is the protection verdict.
               const verdict =
@@ -910,6 +951,23 @@ function AuditPositionTable({ rows }: { rows: Record<string, unknown>[] }) {
                     value={pnlText}
                     tone={pnl === null ? "mute" : pnl < 0 ? "down" : pnl > 0 ? "up" : "mute"}
                   />
+                  {hasFunding && (
+                    <td
+                      className={cn(
+                        "px-2 py-1.5 text-right whitespace-nowrap tabular-nums",
+                        fundingCost === null
+                          ? "text-muted-foreground"
+                          : fundingCost > 0
+                            ? "text-destructive"
+                            : fundingCost < 0
+                              ? "text-success"
+                              : "text-muted-foreground"
+                      )}
+                      title={fundingTitle}
+                    >
+                      {fundingCost !== null ? fmtSigned(fundingCost) : "—"}
+                    </td>
+                  )}
                   <td className="px-2 py-1.5">
                     <div className="flex items-center gap-1.5">
                       <VerdictChip verdict={verdict} />
@@ -1420,6 +1478,9 @@ export function renderCryptoScreener(output: unknown): ReactNode {
   const hasStructure = hits.some(
     (h) => isRecord(h.structure) && isRecord(h.structure.nearestLevel)
   );
+  // Funding context is Binance-only (MEXC rows carry null): the column
+  // appears only when at least one hit carries a rate.
+  const hasFunding = hits.some((h) => isRecord(h.funding));
   const structureFiltered = num(d.structureFiltered) ?? 0;
   const structureFilter = isRecord(d.structureFilter) ? d.structureFilter : null;
 
@@ -1494,6 +1555,14 @@ export function renderCryptoScreener(output: unknown): ReactNode {
                     Structure
                   </th>
                 )}
+                {hasFunding && (
+                  <th
+                    className="px-2 py-1.5 text-right font-medium"
+                    title="Current perpetual funding rate per 8h. Positive = longs pay (crowded longs); ⚠ marks an overheated rate (|rate| > 0.05%/8h)."
+                  >
+                    Funding
+                  </th>
+                )}
                 <th className="px-2 py-1.5 text-right font-medium" title="The engine's conviction ranking, 0-100">
                   Score
                 </th>
@@ -1535,6 +1604,38 @@ export function renderCryptoScreener(output: unknown): ReactNode {
                       {chg !== null ? `${chg > 0 ? "+" : ""}${fmtPct(chg)}` : "—"}
                     </td>
                     {hasStructure && <StructureCell structure={h.structure} />}
+                    {hasFunding && (() => {
+                      const f = isRecord(h.funding) ? h.funding : null;
+                      const rate = f ? num(f.rate) : null;
+                      const overheated = f?.overheated === true;
+                      const longsPay = str(f?.sentiment) === "long_paying";
+                      return (
+                        <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                          {rate === null ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : (
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-0.5 font-mono text-[10px] tabular-nums",
+                                overheated
+                                  ? "border-warning/30 bg-warning/10 text-warning rounded-sm border px-1 py-px"
+                                  : longsPay
+                                    ? "text-muted-foreground"
+                                    : "text-success"
+                              )}
+                              title={
+                                longsPay
+                                  ? "Longs pay shorts each 8h — crowded long positioning"
+                                  : "Shorts pay longs each 8h — crowded short positioning"
+                              }
+                            >
+                              {fmtRate8(rate)}
+                              {overheated && " ⚠"}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })()}
                     <td className="px-2 py-1.5 text-right">
                       <span
                         className={cn(
@@ -1575,6 +1676,130 @@ export function renderCryptoScreener(output: unknown): ReactNode {
             : ""}
         {errorsTotal > 0 ? ` · ${fmtNum(errorsTotal)} symbol(s) unreachable` : ""}
         {capped ? " · showing the strongest rows" : ""}
+      </Footnote>
+    </TextCard>
+  );
+}
+
+// ── crypto_funding_arb ──────────────────────────────────────────────────────
+
+/**
+ * crypto_funding_arb →
+ * { kind: "funding_arb", rows: [{ symbol, rate, apy, apyNetOfFees,
+ *   side_who_pays, overheated, markPrice }], assumptions:
+ *   { intervalsPerDay, takerFeePerSide, note } }.
+ *
+ * Every row is a DELTA-NEUTRAL harvest candidate: short the perp, hold the
+ * spot leg, collect whichever side pays. Rows arrive ranked by |rate|
+ * descending and the table preserves that order. The APY is stated as the
+ * conservative 8h baseline (symbols with a 4h/1h funding interval earn
+ * more); `apyNetOfFees` deducts the one-time round-trip taker cost once.
+ */
+export function renderFundingArb(output: unknown): ReactNode {
+  const d = parse(output);
+  if (!isRecord(d) || d.kind !== "funding_arb" || !Array.isArray(d.rows)) return null;
+  const rows = d.rows.filter(isRecord);
+  const assumptions = isRecord(d.assumptions) ? d.assumptions : {};
+
+  return (
+    <TextCard>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <Icon name="coins" className="text-primary size-4" />
+        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
+          Funding arbitrage
+        </span>
+        <span className="text-muted-foreground font-mono text-[10px]">
+          delta-neutral · short perp + long spot
+        </span>
+      </div>
+
+      {rows.length > 0 ? (
+        <div className="border-border/60 max-h-[26rem] overflow-auto rounded-md border">
+          <table className="w-full border-collapse font-mono text-[11px]">
+            <thead className="bg-muted/50 sticky top-0 z-10">
+              <tr className="text-muted-foreground border-border/60 border-b text-left">
+                <th className="px-2 py-1.5 font-medium">Symbol</th>
+                <th
+                  className="px-2 py-1.5 text-right font-medium"
+                  title="Current funding rate per 8h interval"
+                >
+                  Rate /8h
+                </th>
+                <th
+                  className="px-2 py-1.5 text-right font-medium"
+                  title="Annualized harvest at the 8h baseline: |rate| × 3 × 365"
+                >
+                  APY
+                </th>
+                <th
+                  className="px-2 py-1.5 text-right font-medium"
+                  title="APY minus the estimated one-time round-trip taker cost (enter + exit)"
+                >
+                  APY net of fees
+                </th>
+                <th className="px-2 py-1.5 font-medium">You collect from</th>
+                <th className="px-2 py-1.5 text-right font-medium">Mark</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const symbol = str(r.symbol) ?? "?";
+                const rate = num(r.rate);
+                const apy = num(r.apy);
+                const apyNet = num(r.apyNetOfFees);
+                const mark = num(r.markPrice);
+                const overheated = r.overheated === true;
+                const shortsPaying = str(r.side_who_pays) === "short_paying";
+                return (
+                  <tr
+                    key={`${symbol}-${i}`}
+                    className="border-border/40 hover:bg-muted/30 border-b last:border-b-0"
+                  >
+                    <td className="text-foreground px-2 py-1.5 font-medium">{symbol}</td>
+                    <td className="px-2 py-1.5 text-right whitespace-nowrap tabular-nums">
+                      <span
+                        className={cn(
+                          overheated &&
+                            "border-warning/30 bg-warning/10 text-warning rounded-sm border px-1 py-px"
+                        )}
+                        title={
+                          overheated
+                            ? "Overheated: |rate| above 0.05%/8h — extreme one-sided positioning, rate can flip fast"
+                            : undefined
+                        }
+                      >
+                        {rate !== null ? fmtRate8(rate) : "—"}
+                        {overheated && " ⚠"}
+                      </span>
+                    </td>
+                    <td className="text-success px-2 py-1.5 text-right tabular-nums">
+                      {apy !== null ? `${fmtPct(apy)}%` : "—"}
+                    </td>
+                    <td className="text-muted-foreground px-2 py-1.5 text-right tabular-nums">
+                      {apyNet !== null ? `${fmtPct(apyNet)}%` : "—"}
+                    </td>
+                    <td className="text-muted-foreground px-2 py-1.5 whitespace-nowrap">
+                      {shortsPaying ? "longs (they pay)" : "shorts (they pay)"}
+                    </td>
+                    <td className="text-muted-foreground px-2 py-1.5 text-right tabular-nums">
+                      {mark !== null ? fmtPrice(mark) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-muted-foreground font-mono text-[11px]">
+          No funding rates returned — the board read came back empty.
+        </p>
+      )}
+
+      <Footnote>
+        APY = |rate| × {fmtNum(num(assumptions.intervalsPerDay) ?? 3)} × 365 · net deducts a{" "}
+        {fmtPct((num(assumptions.takerFeePerSide) ?? 0.0004) * 200)} round-trip taker cost once ·
+        symbol funding intervals shorter than 8h earn more than shown
       </Footnote>
     </TextCard>
   );
