@@ -1863,6 +1863,12 @@ static CATALOG_SYNC_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new
 static LAST_SYNC_AT: std::sync::Mutex<Option<std::time::Instant>> =
     std::sync::Mutex::new(None);
 const SYNC_SUPPRESS: std::time::Duration = std::time::Duration::from_secs(600);
+/// How long a replica file counts as fresh by its MTIME alone (no remote
+/// calls at all). Deliberately much longer than SYNC_SUPPRESS: the catalog
+/// changes maybe once per release, so a replica written by any recent sync
+/// — including one from a PREVIOUS process run, which the in-process
+/// suppress timer can't see — skips the sync (and its quota cost) entirely.
+const REPLICA_FRESH_WINDOW: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
 
 async fn shared_catalog() -> Option<std::sync::Arc<kawai_tool_catalog::Catalog>> {
     SHARED_CATALOG
@@ -1909,6 +1915,48 @@ async fn sync_shared_catalog(sync_timeout: std::time::Duration) {
     {
         return;
     }
+
+    // ── Cheap-skip gates BEFORE the sync ──
+    // An embedded-replica sync() counts against the host's syncs quota even
+    // when it moves ZERO frames (the request is what Turso meters), so the
+    // "is the data stale?" question is answered first from the replica's
+    // own file age and the cheap local-vs-remote COUNT(*) — the sync only
+    // runs when staleness is proven or unprovable. Same suppress semantics
+    // as a completed sync: a skip here also suppresses re-checking for the
+    // window, so a hot planner loop pays at most one COUNT(*) pair per 10
+    // minutes.
+    let cfg = kawai_tool_catalog::RemoteConfig::from_env();
+    let replica_age = std::fs::metadata(kawai_tool_catalog::default_local_path())
+        .and_then(|m| m.modified().map(|t| t.elapsed()))
+        .ok()
+        .transpose()
+        .ok()
+        .flatten();
+    let counts = match &cfg {
+        Some(cfg) => catalog.row_counts(cfg).await.ok(),
+        None => None,
+    };
+    let (local_rows, remote_rows) = match &counts {
+        Some((l, r)) => (Some(*l), Some(*r)),
+        None => (None, None),
+    };
+    if !kawai_tool_catalog::Catalog::sync_needed(
+        replica_age,
+        local_rows,
+        remote_rows,
+        REPLICA_FRESH_WINDOW,
+    ) {
+        tracing::info!(
+            component = "tool-catalog",
+            ?local_rows,
+            ?remote_rows,
+            ?replica_age,
+            "replica fresh — sync skipped"
+        );
+        *LAST_SYNC_AT.lock().unwrap() = Some(std::time::Instant::now());
+        return;
+    }
+
     match tokio::time::timeout(sync_timeout, catalog.sync()).await {
         Ok(Ok(frames)) if frames > 0 => {
             tracing::info!(component = "tool-catalog", frames, "catalog synced");
