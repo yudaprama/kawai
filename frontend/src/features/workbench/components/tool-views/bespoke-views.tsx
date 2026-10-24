@@ -203,7 +203,7 @@ export function DrawCardsView({ data }: { data: Record<string, unknown> }) {
             <div key={i} className="bg-card rounded-lg border p-2 text-center">
               {img ? <img src={img} alt={label} className="w-full h-auto rounded" loading="lazy" /> : null}
               <div className="font-mono text-xs mt-1">{label}</div>
-              {code && <div className="text-muted-foreground font-mono text-[10px]">{code}</div>}
+              {code && <div className="text-muted-foreground font-mono text-[0.625rem]">{code}</div>}
             </div>
           );
         })}

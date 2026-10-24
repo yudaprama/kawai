@@ -38,7 +38,7 @@ function PlanSummaryCard({ summary }: { summary: PlanSummaryInfo | null }) {
   }
   return (
     <div>
-      <p className="text-primary font-mono text-[11px] font-bold uppercase tracking-wide">Plan summary</p>
+      <p className="text-primary font-mono text-[0.6875rem] font-bold uppercase tracking-wide">Plan summary</p>
       {summary.overview && <p className="text-foreground/90 mt-1 text-xs leading-relaxed">{summary.overview}</p>}
       {summary.actions.length > 0 && (
         <ul className="text-foreground/80 mt-2 space-y-0.5 text-xs">
@@ -50,7 +50,7 @@ function PlanSummaryCard({ summary }: { summary: PlanSummaryInfo | null }) {
       )}
       {summary.outputs.length > 0 && (
         <div className="mt-2">
-          <p className="text-muted-foreground font-mono text-[10px] uppercase">Expected outputs</p>
+          <p className="text-muted-foreground font-mono text-[0.625rem] uppercase">Expected outputs</p>
           <ul className="mt-1 space-y-0.5">
             {summary.outputs.map((o, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: static display list, no unique IDs
@@ -109,7 +109,7 @@ function StateIcon({ state }: { state: SupervisorStep["state"] }) {
 
 /** Live-ticking duration, freezing at `to` once set. The tick lives HERE so
  *  the parent rail/tree never re-renders per second. `className` upgrades
- *  the text size (header uses text-xs; step rows keep text-[10px]). */
+ *  the text size (header uses text-xs; step rows keep text-[0.625rem]). */
 function Duration({ className, from, to }: { className?: string; from: number; to?: number }) {
   const [, tick] = useState(0);
   useEffect(() => {
@@ -119,7 +119,7 @@ function Duration({ className, from, to }: { className?: string; from: number; t
   }, [to]);
   return (
     <span
-      className={`text-muted-foreground shrink-0 font-mono tabular-nums ${className == null ? "text-[10px]" : className}`}
+      className={`text-muted-foreground shrink-0 font-mono tabular-nums ${className == null ? "text-[0.625rem]" : className}`}
     >
       {fmtDuration(from, to)}
     </span>
@@ -158,7 +158,7 @@ export function StepTree({
           <div key={i}>
             <button
               aria-expanded={!collapsedPhases.has(i)}
-              className="text-foreground/80 hover:text-foreground mb-2 flex w-full items-center gap-1 font-mono text-[10px] font-bold tracking-wider uppercase"
+              className="text-foreground/80 hover:text-foreground mb-2 flex w-full items-center gap-1 font-mono text-[0.625rem] font-bold tracking-wider uppercase"
               onClick={() => togglePhase(i)}
               type="button"
             >
@@ -187,7 +187,7 @@ export function StepTree({
                         <Duration from={step.startedAt} />
                       ) : (
                         <span
-                          className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-[10px]"
+                          className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-[0.625rem]"
                           title={step.tool}
                         >
                           {step.tool}
@@ -195,7 +195,7 @@ export function StepTree({
                       )}
                       {reportable(step, live) && (
                         <button
-                          className="hit-44 text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                          className="hit-44 text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[0.625rem] hover:underline"
                           onClick={() => onOpenReport(step.stepId)}
                           type="button"
                         >
@@ -209,7 +209,7 @@ export function StepTree({
                         this tree). Full body still lives behind "see report". */}
                     {step.error != null && (step.state === "failed" || step.state === "skipped") && (
                       <p
-                        className={`font-mono text-[10px] leading-snug break-words ${
+                        className={`font-mono text-[0.625rem] leading-snug break-words ${
                           step.state === "failed" ? "text-destructive" : "text-muted-foreground"
                         }`}
                         title={step.error}
@@ -219,7 +219,7 @@ export function StepTree({
                     )}
                     {(step.inputs?.length ?? 0) > 0 && (
                       <div
-                        className="text-muted-foreground flex flex-wrap gap-x-2 font-mono text-[10px]"
+                        className="text-muted-foreground flex flex-wrap gap-x-2 font-mono text-[0.625rem]"
                         title="Dataflow bindings from earlier steps"
                       >
                         {step.inputs?.map((b) => (
@@ -246,11 +246,11 @@ export function StepTree({
             {live && deliverableStep.state === "running" ? (
               <Duration from={deliverableStep.startedAt ?? Date.now()} />
             ) : (
-              <span className="text-muted-foreground font-mono text-[10px]">{deliverableStep.tool}</span>
+              <span className="text-muted-foreground font-mono text-[0.625rem]">{deliverableStep.tool}</span>
             )}
             {reportable(deliverableStep, live) && (
               <button
-                className="hit-44 text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                className="hit-44 text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[0.625rem] hover:underline"
                 onClick={() => onOpenReport("final")}
                 type="button"
               >
@@ -301,7 +301,7 @@ export function RunHistoryRail({
   if (past.length === 0) return null;
   return (
     <div className="border-border/60 mb-4 border-b pb-3">
-      <h3 className="text-muted-foreground mb-2 font-mono text-[10px] font-bold tracking-wider uppercase">
+      <h3 className="text-muted-foreground mb-2 font-mono text-[0.625rem] font-bold tracking-wider uppercase">
         Run history
       </h3>
       <div className="space-y-1">
@@ -319,7 +319,7 @@ export function RunHistoryRail({
                   name="chevron-down"
                   className={`text-muted-foreground size-3 shrink-0 transition-transform ${open ? "" : "-rotate-90"}`}
                 />
-                <span className="text-muted-foreground shrink-0 font-mono text-[10px]">Run {i + 1}</span>
+                <span className="text-muted-foreground shrink-0 font-mono text-[0.625rem]">Run {i + 1}</span>
                 <span className="text-foreground/90 min-w-0 flex-1 truncate text-xs" title={r.goal}>
                   {r.goal}
                 </span>
@@ -353,7 +353,7 @@ export function RunHistoryRail({
                       {(r.outputFull != null || r.outputPreview != null) && (
                         <div className="mt-1 flex items-center gap-3">
                           <button
-                            className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                            className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[0.625rem] hover:underline"
                             onClick={() => onOpenDeliverable(r.id)}
                             type="button"
                           >
@@ -365,7 +365,7 @@ export function RunHistoryRail({
                             r.outputFull != null &&
                             r.planKey != null && (
                               <button
-                                className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[10px] hover:underline"
+                                className="text-muted-foreground hover:text-primary inline-flex items-center gap-1 font-mono text-[0.625rem] hover:underline"
                                 onClick={() => onBuildOn(r)}
                                 title={`Arm “${r.goal}” as the follow-up context`}
                                 type="button"
@@ -535,7 +535,7 @@ export function ProgressRail({
           <PlanSummaryCard summary={supervisor.review.summary ?? supervisor.summary} />
           <button
             aria-expanded={reviewStepsOpen}
-            className="text-muted-foreground flex w-full items-center gap-1 font-mono text-[11px] uppercase hover:text-foreground"
+            className="text-muted-foreground flex w-full items-center gap-1 font-mono text-[0.6875rem] uppercase hover:text-foreground"
             onClick={() => setReviewStepsOpen((o) => !o)}
             type="button"
           >
@@ -550,7 +550,7 @@ export function ProgressRail({
               <div className="text-foreground/80 pl-4 font-mono text-xs" key={s.id}>
                 · {s.task || s.tool || s.id}
                 {(s.inputs?.length ?? 0) > 0 && (
-                  <div className="text-muted-foreground pl-4 text-[10px]">
+                  <div className="text-muted-foreground pl-4 text-[0.625rem]">
                     {s.inputs?.map((b) => (
                       <div key={b.arg}>
                         {b.arg} ← {b.fromStep}.{b.output}

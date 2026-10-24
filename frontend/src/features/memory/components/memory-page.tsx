@@ -465,7 +465,7 @@ function ExperiencesPane() {
               <div className="flex items-start gap-2">
                 <span
                   className={cn(
-                    "shrink-0 rounded px-1.5 py-0.5 font-mono text-[11px] uppercase",
+                    "shrink-0 rounded px-1.5 py-0.5 font-mono text-[0.6875rem] uppercase",
                     e.outcome === "success"
                       ? "bg-[var(--tea-color-bg-secondary-default)]"
                       : "text-destructive bg-[var(--tea-color-bg-secondary-default)]",
@@ -478,7 +478,7 @@ function ExperiencesPane() {
                     {e.taskSummary}
                   </p>
                   {e.lesson && <p className="mt-1 text-xs">💡 {e.lesson}</p>}
-                  <p className="text-muted-foreground mt-1.5 text-[11px]">
+                  <p className="text-muted-foreground mt-1.5 text-[0.6875rem]">
                     {t("memory.experienceMeta", {
                       session: e.sessionId,
                       tools: e.toolSequence.join(", ") || "—",
@@ -575,12 +575,12 @@ function FacetRow({ facet, onAct }: { facet: ProfileFacet; onAct: (fn: () => Pro
   return (
     <li className="rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3">
       <div className="flex items-start gap-2">
-        <span className="text-muted-foreground shrink-0 rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 font-mono text-[11px]">
+        <span className="text-muted-foreground shrink-0 rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 font-mono text-[0.6875rem]">
           {facet.key}
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm">{facet.value}</p>
-          <p className="text-muted-foreground mt-1 text-[11px]">
+          <p className="text-muted-foreground mt-1 text-[0.6875rem]">
             {t("memory.stability", {
               value: ((facet.stability ?? 0) * 100).toFixed(0),
               state: facetStateLabel(t, facet.userState),
@@ -643,7 +643,7 @@ function ScenePane() {
               <ul className="mt-2 flex flex-wrap gap-1">
                 {s.memories.map((m) => (
                   <li
-                    className="rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 text-[11px]"
+                    className="rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 text-[0.6875rem]"
                     key={m.id}
                     title={m.content}
                   >
@@ -899,7 +899,7 @@ export function MemoryRow({
           <div className="streamdown mt-1 text-xs">
             <MessageResponse mode="static">{item.content}</MessageResponse>
           </div>
-          <p className="text-muted-foreground mt-1.5 text-[11px]">
+          <p className="text-muted-foreground mt-1.5 text-[0.6875rem]">
             {originLabel(t, item.origin)} · {fmtRelative(item.updatedAt * 1000)}
             {item.sourceSessionId != null && ` · ${t("memory.blockLabel", { id: item.sourceSessionId })}`}
           </p>
@@ -931,7 +931,7 @@ export function MemoryRow({
 function Chip({ children, icon, title }: { children: ReactNode; icon?: string; title?: string }) {
   return (
     <span
-      className="text-muted-foreground inline-flex items-center gap-1 rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 text-[11px]"
+      className="text-muted-foreground inline-flex items-center gap-1 rounded bg-[var(--tea-color-bg-secondary-default)] px-1.5 py-0.5 text-[0.6875rem]"
       title={title}
     >
       {icon && <Icon className="size-2.5" name={icon} />}
@@ -1053,7 +1053,7 @@ function Transcript({
               }
               key={m.id}
             >
-              <div className="text-muted-foreground mb-1.5 flex items-center gap-2 text-[11px] uppercase">
+              <div className="text-muted-foreground mb-1.5 flex items-center gap-2 text-[0.6875rem] uppercase">
                 <span className="font-semibold">{m.role}</span>
                 {m.createdAt != null && <span>{fmtDate(m.createdAt * 1000, { timeStyle: "short" })}</span>}
               </div>

@@ -100,12 +100,12 @@ export interface GoalTemplatesProps {
 export function GoalTemplates({ value, disabled, onChange }: GoalTemplatesProps) {
   return (
     <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-      <span className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">Templates</span>
+      <span className="text-muted-foreground font-mono text-[0.625rem] tracking-widest uppercase">Templates</span>
       <a
         href={docsUrlForTemplate(value)}
         target="_blank"
         rel="noreferrer"
-        className="text-primary inline-flex items-center gap-1 font-mono text-[11px] underline underline-offset-4 decoration-primary/40 hover:decoration-primary transition-colors"
+        className="text-primary inline-flex items-center gap-1 font-mono text-[0.6875rem] underline underline-offset-4 decoration-primary/40 hover:decoration-primary transition-colors"
       >
         <Icon name="external-link" className="size-3" />
         How these workflows work
@@ -121,7 +121,7 @@ export function GoalTemplates({ value, disabled, onChange }: GoalTemplatesProps)
               aria-pressed={active}
               onClick={() => onChange(active ? null : t.id)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                 active
                   ? "border-primary/60 bg-primary/10 text-primary"
                   : "border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground",

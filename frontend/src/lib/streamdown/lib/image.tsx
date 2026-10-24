@@ -185,7 +185,7 @@ export const ImageComponent = ({
         <button
           className={cn(
             "absolute right-2 bottom-2 flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-border bg-background/90 shadow-sm backdrop-blur-sm transition-all duration-200 hover:bg-background",
-            "opacity-0 group-hover:opacity-100"
+            "opacity-0 group-hover:opacity-100 max-md:opacity-100 pointer-coarse:opacity-100"
           )}
           onClick={downloadImage}
           title={t.downloadImage}

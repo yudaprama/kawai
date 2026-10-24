@@ -353,6 +353,14 @@ html {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Android long-press on a control's label must not open the text-selection
+   handles — controls are buttons, not copy sources (chat/report text stays
+   selectable; this only covers interactive elements). */
+button,
+[role="button"] {
+  user-select: none;
+}
+
 body {
   min-height: 100dvh;
 }

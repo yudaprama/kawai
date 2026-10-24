@@ -161,12 +161,12 @@ function DeliverableExport({ goal, markdown }: { goal: string; markdown: string 
   };
 
   return (
-    <div className="border-border/60 bg-background sticky bottom-0 z-10 -mx-6 flex flex-wrap items-center gap-2 border-t px-6 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]">
+    <div className="border-border/60 bg-background sticky bottom-0 z-10 -mx-6 flex flex-wrap items-center gap-2 border-t px-6 py-2">
       <Button disabled={copied} onClick={() => void copyMarkdown()} size="sm" variant="outline">
         <Icon name={copied ? "check" : "copy"} className="size-3" />
         {copied ? "Copied" : "Copy"}
       </Button>
-      <span className="text-muted-foreground mr-1 font-mono text-[11px] uppercase">Export</span>
+      <span className="text-muted-foreground mr-1 font-mono text-[0.6875rem] uppercase">Export</span>
       <Button disabled={exporting != null} onClick={() => void runExport("pdf")} size="sm" variant="outline">
         {exporting === "pdf" ? (
           <Icon name="loader-circle" className="size-3 animate-spin" />
@@ -185,7 +185,7 @@ function DeliverableExport({ goal, markdown }: { goal: string; markdown: string 
       </Button>
       {exported && (
         <button
-          className="text-success hover:text-primary inline-flex items-center gap-1 font-mono text-[11px] hover:underline"
+          className="text-success hover:text-primary inline-flex items-center gap-1 font-mono text-[0.6875rem] hover:underline"
           onClick={() => emitOpenPreview(exported.id, exported.name)}
           title="Open the exported file"
           type="button"
@@ -316,7 +316,7 @@ function DeliverableBody({
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground font-mono text-[11px] uppercase">Translate</span>
+        <span className="text-muted-foreground font-mono text-[0.6875rem] uppercase">Translate</span>
         <Select onValueChange={setLanguage} value={language}>
           <SelectTrigger aria-label="Target language" className="w-44" size="sm">
             <SelectValue />
@@ -342,11 +342,11 @@ function DeliverableBody({
             {/* Live region: the swap to the translated body is otherwise
                 silent for screen readers (the toolbar is where it's announced
                 — the body swap happens below the fold on long documents). */}
-            <span aria-live="polite" className="text-muted-foreground font-mono text-[11px]">
+            <span aria-live="polite" className="text-muted-foreground font-mono text-[0.6875rem]">
               Showing {shownLanguage}
             </span>
             <button
-              className="hit-44 text-muted-foreground hover:text-primary font-mono text-[11px] hover:underline"
+              className="hit-44 text-muted-foreground hover:text-primary font-mono text-[0.6875rem] hover:underline"
               onClick={() => setTranslated(null)}
               title="Back to the original deliverable"
               type="button"
@@ -356,14 +356,14 @@ function DeliverableBody({
           </>
         )}
         {saved.length > 0 && (
-          <span className="text-muted-foreground flex items-center gap-1 font-mono text-[11px]">
+          <span className="text-muted-foreground flex items-center gap-1 font-mono text-[0.6875rem]">
             Saved:
             {saved
               .filter((t) => t.language !== translated?.language)
               .map((t) => (
                 <button
                   key={t.language}
-                  className="hit-44 border-border text-muted-foreground hover:text-primary rounded-full border px-2 py-0.5 text-[11px] hover:border-current disabled:opacity-50"
+                  className="hit-44 border-border text-muted-foreground hover:text-primary rounded-full border px-2 py-0.5 text-[0.6875rem] hover:border-current disabled:opacity-50"
                   disabled={translating}
                   onClick={() => void runTranslate(t.language)}
                   title={`Show the saved ${translateLabel(t.language)} translation`}
@@ -483,7 +483,7 @@ export function PastRunCanvas({
             </span>
             {onBuildOn != null && run.status === "completed" && run.outputFull != null && run.planKey != null && (
               <button
-                className="hover:text-primary inline-flex items-center gap-1 font-mono text-[11px] hover:underline"
+                className="hover:text-primary inline-flex items-center gap-1 font-mono text-[0.6875rem] hover:underline"
                 onClick={() => onBuildOn(run)}
                 title={`Arm “${goalLabel}” as the follow-up context`}
                 type="button"
@@ -992,7 +992,7 @@ export function DeliverableViewer({
             show only the note text without the slides. */}
         {!unseeded && workbench.deck != null && (effective === "final" || effective === "__deliverable") && (
           <div className="space-y-1">
-            <div className="text-muted-foreground flex items-center gap-2 font-mono text-[11px] uppercase">
+            <div className="text-muted-foreground flex items-center gap-2 font-mono text-[0.6875rem] uppercase">
               <Icon name="zap" className="size-3" /> Deck · {workbench.deck.label ?? "presentation"}
             </div>
             {/* Native slide preview — plain DOM fragments + theme CSS (a few
@@ -1094,7 +1094,7 @@ export function RunHistory({
             <>
               <div className="min-w-0 flex-1 text-left">
                 <div className="text-foreground truncate text-sm">{r.goal}</div>
-                <div className="text-muted-foreground font-mono text-[11px]">
+                <div className="text-muted-foreground font-mono text-[0.6875rem]">
                   {fmtDateUS(r.startedAt)}
                   {r.stepsTotal != null && ` · ${r.stepsDone ?? 0}/${r.stepsTotal} steps`}
                   {/* Failed rows fall back to the plan-level error — restored
@@ -1105,7 +1105,7 @@ export function RunHistory({
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 {clickable && (
-                  <span className="text-primary font-mono text-[10px] group-hover:underline">View report</span>
+                  <span className="text-primary font-mono text-[0.625rem] group-hover:underline">View report</span>
                 )}
                 {r.status === "running" ? (
                   <Icon name="loader-circle" className="text-primary size-4 animate-spin" />

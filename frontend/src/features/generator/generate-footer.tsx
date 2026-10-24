@@ -98,7 +98,7 @@ export function GenerateFooter({
           ) : quoteState === "quoted" && quote !== null ? (
             <>
               <Icon className="text-warning size-3.5" name="zap" />
-              <span className={cn("text-[13px] font-semibold", short ? "text-destructive" : "text-warning")}>
+              <span className={cn("text-[0.8125rem] font-semibold", short ? "text-destructive" : "text-warning")}>
                 ≈{quote.toLocaleString("id-ID")}
               </span>
             </>
@@ -107,7 +107,7 @@ export function GenerateFooter({
           ) : null}
         </div>
         <Button
-          className="h-10 flex-1 rounded-[8px] text-[15px] font-semibold"
+          className="h-10 flex-1 rounded-[8px] text-[0.9375rem] font-semibold"
           disabled={submitDisabled}
           onClick={onSubmit}
           size="lg"
@@ -127,7 +127,7 @@ export function GenerateFooter({
       {/* Balance line — the shortfall case replaces the formula note with the
           one thing the user has to act on. */}
       {short ? (
-        <div className="mt-1.5 flex items-center justify-center gap-2 text-[11px]">
+        <div className="mt-1.5 flex items-center justify-center gap-2 text-[0.6875rem]">
           <span className="text-destructive">
             {t("generator.balanceShort", {
               balance: (balance ?? 0).toLocaleString("id-ID"),
@@ -139,17 +139,19 @@ export function GenerateFooter({
           </button>
         </div>
       ) : shownReason ? (
-        <p className="text-muted-foreground mt-1.5 line-clamp-2 text-center text-[11px]">{shownReason}</p>
+        <p className="text-muted-foreground mt-1.5 line-clamp-2 text-center text-[0.6875rem]">{shownReason}</p>
       ) : (
-        <p className="text-muted-foreground/70 mt-1.5 text-center text-[10px]">{note}</p>
+        <p className="text-muted-foreground/70 mt-1.5 text-center text-[0.625rem]">{note}</p>
       )}
       {/* Whatif warnings — the only pre-spend signal that a pick is wrong. */}
       {quoteState === "failed" ? (
-        <p className="text-destructive mt-1.5 text-center text-[10px]">{t("generator.quoteFailedHint")}</p>
+        <p className="text-destructive mt-1.5 text-center text-[0.625rem]">{t("generator.quoteFailedHint")}</p>
       ) : !ready ? (
-        <p className="text-destructive mt-1.5 text-center text-[11px]">{warnings[0] ?? t("generator.quoteNotReady")}</p>
+        <p className="text-destructive mt-1.5 text-center text-[0.6875rem]">
+          {warnings[0] ?? t("generator.quoteNotReady")}
+        </p>
       ) : warnings.length > 0 ? (
-        <p className="text-muted-foreground mt-1.5 line-clamp-2 text-center text-[10px]">{warnings.join(" · ")}</p>
+        <p className="text-muted-foreground mt-1.5 line-clamp-2 text-center text-[0.625rem]">{warnings.join(" · ")}</p>
       ) : null}
     </div>
   );

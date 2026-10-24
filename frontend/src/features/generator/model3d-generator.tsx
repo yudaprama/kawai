@@ -173,7 +173,7 @@ function Model3dStarterList({ ecosystem, onApply }: { ecosystem: string; onApply
   if (starters.length === 0) return null;
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.startersTitle")}</span>
+      <span className="text-muted-foreground text-[0.8125rem] font-medium">{t("model3dGenerator.startersTitle")}</span>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {starters.map((starter) => (
           <button
@@ -182,8 +182,8 @@ function Model3dStarterList({ ecosystem, onApply }: { ecosystem: string; onApply
             onClick={() => onApply(starter)}
             type="button"
           >
-            <span className="text-[13px] font-semibold">{starter.label}</span>
-            <span className="text-muted-foreground text-[11px] leading-snug">{starter.note}</span>
+            <span className="text-[0.8125rem] font-semibold">{starter.label}</span>
+            <span className="text-muted-foreground text-[0.6875rem] leading-snug">{starter.note}</span>
           </button>
         ))}
       </div>
@@ -457,7 +457,7 @@ export function Model3dGenerator() {
       {isMeshy && (
         <>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="m3d-polycount">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="m3d-polycount">
               {t("model3dGenerator.polycount", { count: polycount.toLocaleString("en-US") })}
             </Label>
             <Slider
@@ -475,7 +475,9 @@ export function Model3dGenerator() {
             </Slider>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.topology")}</Label>
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium">
+              {t("model3dGenerator.topology")}
+            </Label>
             <div className="flex gap-1.5">
               {(["triangle", "quad"] as const).map((top) => (
                 <ChoiceChip active={topology === top} className="flex-1" key={top} onClick={() => setTopology(top)}>
@@ -485,7 +487,9 @@ export function Model3dGenerator() {
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.symmetry")}</Label>
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium">
+              {t("model3dGenerator.symmetry")}
+            </Label>
             <div className="flex gap-1.5">
               {(["auto", "on", "off"] as const).map((s) => (
                 <ChoiceChip active={symmetry === s} className="flex-1" key={s} onClick={() => setSymmetry(s)}>
@@ -495,7 +499,7 @@ export function Model3dGenerator() {
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="m3d-texture-prompt">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="m3d-texture-prompt">
               {t("model3dGenerator.texturePrompt")}
             </Label>
             <Input
@@ -519,7 +523,7 @@ export function Model3dGenerator() {
       {isTripo && (
         <>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="m3d-facelimit">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="m3d-facelimit">
               {t("model3dGenerator.faceLimit", { count: faceLimit.toLocaleString("en-US") })}
             </Label>
             <Slider
@@ -537,7 +541,7 @@ export function Model3dGenerator() {
             </Slider>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium">
               {t("model3dGenerator.textureAlignment")}
             </Label>
             <div className="flex gap-1.5">
@@ -554,7 +558,9 @@ export function Model3dGenerator() {
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.orientation")}</Label>
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium">
+              {t("model3dGenerator.orientation")}
+            </Label>
             <div className="flex gap-1.5">
               {(["default", "align_image"] as const).map((o) => (
                 <ChoiceChip active={orientation === o} className="flex-1" key={o} onClick={() => setOrientation(o)}>
@@ -567,7 +573,7 @@ export function Model3dGenerator() {
           <ToggleRow checked={autoSize} label={t("model3dGenerator.autoSize")} onCheckedChange={setAutoSize} />
           <ToggleRow checked={pbr} label={t("model3dGenerator.pbr")} onCheckedChange={setPbr} />
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="m3d-texture-seed">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="m3d-texture-seed">
               {t("model3dGenerator.textureSeed")}
             </Label>
             <Input
@@ -599,7 +605,7 @@ export function Model3dGenerator() {
       {isHunyuan && (
         <>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="m3d-hy-steps">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="m3d-hy-steps">
               {t("generator.steps")}
             </Label>
             <Slider
@@ -617,7 +623,7 @@ export function Model3dGenerator() {
             </Slider>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="m3d-hy-cfg">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="m3d-hy-cfg">
               {t("generator.cfgScale")}
             </Label>
             <Slider
@@ -635,7 +641,7 @@ export function Model3dGenerator() {
             </Slider>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="m3d-hy-octree">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="m3d-hy-octree">
               {t("model3dGenerator.octree")}
             </Label>
             <Slider
@@ -655,7 +661,7 @@ export function Model3dGenerator() {
         </>
       )}
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="m3d-seed">
+        <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="m3d-seed">
           {t("generator.seed")}
         </Label>
         <Input
@@ -684,7 +690,7 @@ export function Model3dGenerator() {
       {/* Process — meshy only (every other engine is image-to-3D). */}
       {isMeshy && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.process")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("model3dGenerator.process")}</Label>
           <div className="flex gap-2">
             {eco.processes.map((p) => (
               <ChoiceChip
@@ -706,7 +712,7 @@ export function Model3dGenerator() {
       {/* Model version — hunyuan only. */}
       {isHunyuan && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.model")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("generator.model")}</Label>
           <div className="flex flex-wrap gap-1.5">
             {eco.models.map((m) => (
               <ChoiceChip
@@ -725,7 +731,7 @@ export function Model3dGenerator() {
       {/* Prompt — meshy textTo3D (required) / hunyuan texture hint. */}
       {(isTxt || isHunyuan) && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="m3d-prompt">
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="m3d-prompt">
             {t("generator.prompt")}
           </Label>
           <Textarea
@@ -744,7 +750,9 @@ export function Model3dGenerator() {
       {/* Source image — every imageTo3D process. */}
       {needsImage && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.sourceImage")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">
+            {t("model3dGenerator.sourceImage")}
+          </Label>
           <FrameSlot
             caption={t("model3dGenerator.pickImage")}
             dataUrl={image ?? ""}
@@ -757,7 +765,7 @@ export function Model3dGenerator() {
       {/* meshy textTo3D mode — preview drafts fast, full is production. */}
       {isTxt && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.mode")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("model3dGenerator.mode")}</Label>
           <div className="flex gap-1.5">
             {(["preview", "full"] as const).map((m) => (
               <ChoiceChip active={mode === m} className="flex-1" key={m} onClick={() => setMode(m)}>
@@ -776,7 +784,7 @@ export function Model3dGenerator() {
       {/* tripo texture quality. */}
       {isTripo && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("model3dGenerator.texture")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("model3dGenerator.texture")}</Label>
           <div className="flex gap-1.5">
             {(["no", "standard", "HD"] as const).map((tx) => (
               <ChoiceChip active={tripoTexture === tx} className="flex-1" key={tx} onClick={() => setTripoTexture(tx)}>
@@ -789,7 +797,7 @@ export function Model3dGenerator() {
 
       {/* Advanced */}
       <Collapsible onOpenChange={setAdvancedOpen} open={advancedOpen}>
-        <CollapsibleTrigger className="group text-muted-foreground flex items-center gap-1 text-[13px] font-medium">
+        <CollapsibleTrigger className="group text-muted-foreground flex items-center gap-1 text-[0.8125rem] font-medium">
           <Icon className="size-4 transition-transform group-data-[state=open]:rotate-180" name="chevron-down" />{" "}
           {t("generator.advanced")}
         </CollapsibleTrigger>

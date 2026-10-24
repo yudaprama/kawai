@@ -143,7 +143,7 @@ export function QrisCard({ qrPayload, amountLabel }: QrisCardProps) {
         {/* Merchant identity — from the payload, not constants */}
         <div className="mt-3 text-center">
           <p className="text-lg leading-tight font-bold tracking-wide">{merchant.name}</p>
-          {merchant.nmid ? <p className="text-[11px] text-muted-foreground">NMID: {merchant.nmid}</p> : null}
+          {merchant.nmid ? <p className="text-[0.6875rem] text-muted-foreground">NMID: {merchant.nmid}</p> : null}
         </div>
 
         {/* The dynamic QR — wallet apps read the exact prefilled amount */}
@@ -153,7 +153,7 @@ export function QrisCard({ qrPayload, amountLabel }: QrisCardProps) {
 
         {/* Amount + issuer footer — left slot, clear of the red corner accent */}
         <p className="mt-3 text-center text-lg font-extrabold">{amountLabel}</p>
-        <p className="mt-1 text-[9px] text-gray-500">{merchant.issuer ?? ""}</p>
+        <p className="mt-1 text-[0.5625rem] text-gray-500">{merchant.issuer ?? ""}</p>
       </div>
       <Button variant="outline" size="sm" onClick={() => void handleDownload()} className="w-[264px]">
         <Icon name="download" className="size-3.5" />

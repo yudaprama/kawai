@@ -22,7 +22,7 @@ export function AttachedFilesChips({
         const failed = f.status === "failed";
         return (
           <span
-            className={`inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[11px] transition-colors ${
+            className={`inline-flex max-w-[16rem] items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[0.6875rem] transition-colors ${
               failed
                 ? "border-destructive/40 bg-destructive/5 text-destructive"
                 : indexing

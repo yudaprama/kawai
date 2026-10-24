@@ -63,7 +63,7 @@ export function NewsListView({ data }: { data: unknown }) {
               )}
             </div>
             {(it.source || it.date) && (
-              <div className="text-muted-foreground mt-1 font-mono text-[11px]">
+              <div className="text-muted-foreground mt-1 font-mono text-[0.6875rem]">
                 {[it.source, it.date].filter(Boolean).join(" · ")}
               </div>
             )}
@@ -126,7 +126,7 @@ export function MarketSquawkView({ data }: { data: unknown }) {
   return (
     <div className="space-y-2">
       <SectionLabel>{label}</SectionLabel>
-      {note && <p className="text-muted-foreground font-mono text-[10px]">{note}</p>}
+      {note && <p className="text-muted-foreground font-mono text-[0.625rem]">{note}</p>}
       <ul className="space-y-2">
         {items.slice(0, 20).map((it) => {
           const date = fmtDate(it.published_at);
@@ -149,7 +149,7 @@ export function MarketSquawkView({ data }: { data: unknown }) {
                   {it.summary && <p className="text-muted-foreground mt-1 text-sm leading-relaxed">{it.summary}</p>}
                 </div>
                 {date && (
-                  <span className="text-muted-foreground shrink-0 whitespace-nowrap pt-0.5 font-mono text-[10px]">
+                  <span className="text-muted-foreground shrink-0 whitespace-nowrap pt-0.5 font-mono text-[0.625rem]">
                     {date}
                   </span>
                 )}

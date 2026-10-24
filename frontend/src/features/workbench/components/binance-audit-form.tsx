@@ -132,7 +132,7 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
   };
   const chip = (active: boolean) =>
     cn(
-      "rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+      "rounded-md border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
       active
         ? "border-primary/60 bg-primary/10 text-primary"
         : "border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground",
@@ -143,7 +143,7 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
       <div className="mb-3 flex items-center gap-2">
         <Icon name="shield-check" className="text-primary size-4" />
         <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">Futures Risk Audit</span>
-        <span className="text-muted-foreground font-mono text-[10px]">fixed pipeline · no planning round</span>
+        <span className="text-muted-foreground font-mono text-[0.625rem]">fixed pipeline · no planning round</span>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
@@ -241,22 +241,22 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
           <Icon name="zap" className="size-3.5" />
           Audit portfolio
         </button>
-        {source === "user" && <span className="text-muted-foreground font-mono text-[10px]">using your keys</span>}
+        {source === "user" && <span className="text-muted-foreground font-mono text-[0.625rem]">using your keys</span>}
       </div>
 
       {source === "baked" && (
-        <p className="text-destructive mt-3 font-mono text-[10px] leading-relaxed" role="alert">
+        <p className="text-destructive mt-3 font-mono text-[0.625rem] leading-relaxed" role="alert">
           The audit grades YOUR open positions, so it needs your own {VENUE_LABEL[venue]} keys. Add one (IP-restricted)
           in Settings → Credentials.
         </p>
       )}
       {source === "none" && (
-        <p className="text-destructive mt-3 font-mono text-[10px] leading-relaxed" role="alert">
+        <p className="text-destructive mt-3 font-mono text-[0.625rem] leading-relaxed" role="alert">
           No {VENUE_LABEL[venue]} API keys yet. Add a read-only, IP-restricted pair in Settings → Credentials — the
           audit reads your open positions and resting orders, and never places an order.
         </p>
       )}
-      <p className="text-muted-foreground mt-3 font-mono text-[10px] leading-relaxed">
+      <p className="text-muted-foreground mt-3 font-mono text-[0.625rem] leading-relaxed">
         Read-only: syncs your positions and resting orders, grades every stop, checks TP coverage, writes the report.
         The audit itself never places, modifies, or cancels an order —{" "}
         {venue === "mexc"
@@ -270,7 +270,7 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">{label}</span>
+      <span className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">{label}</span>
       <div className="flex items-center gap-1">{children}</div>
     </div>
   );

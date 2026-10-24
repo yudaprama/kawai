@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- interactive-widget=resizes-content pins the IME behavior every h-dvh /
+     min-h-dvh layout here assumes: the keyboard SHRINKS the viewport
+     (adjustResize in the manifest). Chrome 108+ browsers default to
+     resizes-visual; WebView is exempt today, but pin it so a future WebView
+     convergence (or serving this UI from a browser) cannot silently break
+     the pinned composers and centered forms. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>kawai</title>
     <link rel="preconnect" href="https://esm.sh" crossorigin />
     <!-- GUARD: these pinned versions MUST stay in sync with the exact (no ^) versions

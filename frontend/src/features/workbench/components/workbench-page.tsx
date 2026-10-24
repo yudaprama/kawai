@@ -51,7 +51,7 @@ function SessionsButton({ onOpen, iconOnly = false }: { onOpen: () => void; icon
       onClick={onOpen}
       title={t("sessionSwitcher.browseSessionsHint")}
       aria-label={t("sessionSwitcher.openHistory")}
-      className="text-muted-foreground hover:bg-[var(--tea-color-bg-secondary-default)] hover:text-foreground hit-44 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] tracking-wider uppercase transition-colors"
+      className="text-muted-foreground hover:bg-[var(--tea-color-bg-secondary-default)] hover:text-foreground hit-44 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[0.625rem] tracking-wider uppercase transition-colors"
     >
       <Icon name="history" className="size-3.5" />
       {!iconOnly && "Sessions"}
@@ -686,7 +686,7 @@ export function WorkbenchPage({
     <>
       <div className="mb-2 flex items-center justify-between">
         {workbench.runs.length > 0 ? (
-          <div className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
+          <div className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">
             Session · {workbench.runs.length} run{workbench.runs.length === 1 ? "" : "s"}
           </div>
         ) : (
@@ -739,7 +739,7 @@ export function WorkbenchPage({
       >
         {/* Drawer header (below lg): label + close affordance. */}
         <div className="border-border/60 flex items-center justify-between border-b px-3 py-2 lg:hidden">
-          <span className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
+          <span className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">
             {t("workbench.progressRail.progressLabel")}
           </span>
           <div className="flex items-center gap-1">
@@ -801,7 +801,7 @@ export function WorkbenchPage({
             className="text-muted-foreground hover:text-foreground hit-44 inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition-colors"
           >
             <Icon name="panel-left" className="size-4" />
-            <span className="font-mono text-[10px] tracking-wider uppercase">Progress</span>
+            <span className="font-mono text-[0.625rem] tracking-wider uppercase">Progress</span>
           </button>
           <span className="flex-1" />
           {onOpenSessions && <SessionsButton iconOnly onOpen={onOpenSessions} />}

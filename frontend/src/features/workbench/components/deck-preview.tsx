@@ -149,14 +149,14 @@ function TemplateSwitcher({
                   {t.id === current && <Icon className="size-3.5 shrink-0" name="check" />}
                   {t.name}
                   {t.bundled ? null : (
-                    <span className="text-muted-foreground ml-auto font-mono text-[10px]">catalogue</span>
+                    <span className="text-muted-foreground ml-auto font-mono text-[0.625rem]">catalogue</span>
                   )}
                 </span>
                 <span className="text-muted-foreground line-clamp-2 text-xs">{t.summary}</span>
               </button>
             ))
           )}
-          {error != null && <div className="text-destructive p-2 font-mono text-[11px]">{error}</div>}
+          {error != null && <div className="text-destructive p-2 font-mono text-[0.6875rem]">{error}</div>}
         </div>
       </PopoverContent>
     </Popover>
@@ -662,8 +662,8 @@ export function DeckPreview({ fileId }: { fileId: string }) {
           <span
             className={
               pptxExported.startsWith("ERROR")
-                ? "text-destructive font-mono text-[11px]"
-                : "text-success font-mono text-[11px]"
+                ? "text-destructive font-mono text-[0.6875rem]"
+                : "text-success font-mono text-[0.6875rem]"
             }
           >
             {pptxExported.startsWith("ERROR")

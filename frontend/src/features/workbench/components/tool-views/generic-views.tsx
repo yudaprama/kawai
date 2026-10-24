@@ -208,9 +208,13 @@ export function ImageExtractView({ data }: { data: Record<string, unknown> }) {
                       {name}
                     </span>
                     {bytes != null && (
-                      <span className="text-muted-foreground shrink-0 font-mono text-[11px]">{fmtBytes(bytes)}</span>
+                      <span className="text-muted-foreground shrink-0 font-mono text-[0.6875rem]">
+                        {fmtBytes(bytes)}
+                      </span>
                     )}
-                    {locator && <span className="text-muted-foreground shrink-0 font-mono text-[10px]">{locator}</span>}
+                    {locator && (
+                      <span className="text-muted-foreground shrink-0 font-mono text-[0.625rem]">{locator}</span>
+                    )}
                   </div>
                   {altText && (
                     <p className="text-muted-foreground mt-0.5 text-xs" title={altText}>

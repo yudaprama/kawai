@@ -104,7 +104,7 @@ export function SessionRow({
         </span>
         {/* Meta line: activity time · run tally · last-run status · last goal
             (truncate tail-last so context sheds before facts). */}
-        <span className="flex w-full min-w-0 items-center gap-1.5 pl-3.5 font-mono text-[10px] text-muted-foreground">
+        <span className="flex w-full min-w-0 items-center gap-1.5 pl-3.5 font-mono text-[0.625rem] text-muted-foreground">
           <span className="shrink-0">{activityAt ? fmtRelative(activityAt * 1000) : ""}</span>
           {session.runCount > 0 && (
             <>

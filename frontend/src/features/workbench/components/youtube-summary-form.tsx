@@ -30,7 +30,7 @@ export function YoutubeSummaryForm({ disabled, onSubmit }: YoutubeSummaryFormPro
       <div className="mb-3 flex items-center gap-2">
         <Icon name="play" className="text-primary size-4" />
         <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">YouTube Summary</span>
-        <span className="text-muted-foreground font-mono text-[10px]">fixed pipeline · no planning round</span>
+        <span className="text-muted-foreground font-mono text-[0.625rem]">fixed pipeline · no planning round</span>
       </div>
       <div className="flex gap-2">
         <input
@@ -55,11 +55,11 @@ export function YoutubeSummaryForm({ disabled, onSubmit }: YoutubeSummaryFormPro
         </button>
       </div>
       {url.trim() && !looksLikeYoutube && (
-        <p className="text-destructive mt-2 font-mono text-[10px]" role="alert">
+        <p className="text-destructive mt-2 font-mono text-[0.625rem]" role="alert">
           That doesn&apos;t look like a YouTube link — expected youtube.com or youtu.be.
         </p>
       )}
-      <p className="text-muted-foreground mt-3 font-mono text-[10px] leading-relaxed">
+      <p className="text-muted-foreground mt-3 font-mono text-[0.625rem] leading-relaxed">
         TL;DR · key points · timestamps · quotes · action items — in the video&apos;s language.
       </p>
     </div>

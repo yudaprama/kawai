@@ -194,13 +194,13 @@ export function YoutubeEmbed({
             <span className="bg-background/70 text-foreground group-hover:bg-background absolute top-1/2 left-1/2 flex size-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full transition-colors">
               <Icon name="play" className="size-5 translate-x-px" />
             </span>
-            <span className="text-muted-foreground group-hover:text-foreground absolute right-2 bottom-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-white">
+            <span className="text-muted-foreground group-hover:text-foreground absolute right-2 bottom-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[0.625rem] text-white">
               Tap to play
             </span>
           </button>
         )}
       </div>
-      <figcaption className="text-muted-foreground border-border/60 flex items-center justify-between gap-2 border-t px-3 py-1.5 font-mono text-[10px]">
+      <figcaption className="text-muted-foreground border-border/60 flex items-center justify-between gap-2 border-t px-3 py-1.5 font-mono text-[0.625rem]">
         <span className="min-w-0 truncate">{title ?? videoId}</span>
         <button
           type="button"

@@ -182,8 +182,8 @@ function AspectChip({
           }}
         />
       </div>
-      <span className="text-[10px] leading-none font-medium">{label}</span>
-      <span className="text-muted-foreground/70 text-[10px] leading-none">{sub}</span>
+      <span className="text-[0.625rem] leading-none font-medium">{label}</span>
+      <span className="text-muted-foreground/70 text-[0.625rem] leading-none">{sub}</span>
     </button>
   );
 }
@@ -318,19 +318,21 @@ function BrowserCard({
       </div>
       <div className="flex flex-col gap-1 p-2.5">
         <div className="flex items-start justify-between gap-2">
-          <span className="text-foreground line-clamp-1 text-[13px] font-semibold">{row.name}</span>
+          <span className="text-foreground line-clamp-1 text-[0.8125rem] font-semibold">{row.name}</span>
           {selected && <Icon className="mt-0.5 size-3.5 shrink-0" name="check" />}
         </div>
-        <span className="text-muted-foreground text-[11px]">
+        <span className="text-muted-foreground text-[0.6875rem]">
           {row.creator ?? "—"}
           {row.downloads !== null && <span> · {compactCount(row.downloads)} ⬇</span>}
           {row.thumbsUp !== null && <span className="text-warning"> · {compactCount(row.thumbsUp)} ❤</span>}
         </span>
         {row.description && (
-          <span className="text-muted-foreground/70 line-clamp-2 text-[11px] leading-snug">{row.description}</span>
+          <span className="text-muted-foreground/70 line-clamp-2 text-[0.6875rem] leading-snug">{row.description}</span>
         )}
         {row.baseModel && (
-          <span className="text-muted-foreground/70 w-fit rounded border px-1 py-px text-[10px]">{row.baseModel}</span>
+          <span className="text-muted-foreground/70 w-fit rounded border px-1 py-px text-[0.625rem]">
+            {row.baseModel}
+          </span>
         )}
       </div>
     </div>
@@ -1156,7 +1158,7 @@ function ImageGenerator() {
       {!isUpscale && (
         <div className="flex flex-col gap-1.5">
           <Label
-            className="text-muted-foreground flex items-center gap-1 text-[13px] font-medium"
+            className="text-muted-foreground flex items-center gap-1 text-[0.8125rem] font-medium"
             htmlFor="generator-prompt"
           >
             {t("generator.prompt")}
@@ -1180,7 +1182,7 @@ function ImageGenerator() {
               model parameter, so a first-time user can tell what the field is
               for without knowing the term. */}
           <Collapsible onOpenChange={setNegativeOpen} open={negativeOpen}>
-            <CollapsibleTrigger className="group mt-1 flex items-center gap-1 text-[13px] font-medium text-muted-foreground">
+            <CollapsibleTrigger className="group mt-1 flex items-center gap-1 text-[0.8125rem] font-medium text-muted-foreground">
               <Icon className="size-4 transition-transform group-data-[state=open]:rotate-180" name="chevron-down" />{" "}
               {t("generator.negativePromptTitle")}
               <span className="text-muted-foreground/70 text-xs">· {t("generator.negativePromptOptional")}</span>
@@ -1208,12 +1210,12 @@ function ImageGenerator() {
           upscale passes ride the upscale-backed ones. */}
       {needsSource && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.sourceImage")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("generator.sourceImage")}</Label>
           {sourceImage ? (
             <div className="flex items-center gap-2 rounded-[8px] border bg-secondary p-2">
               <img alt="" className="size-12 rounded-[6px] object-cover" src={sourceImage} />
               <button
-                className="text-primary text-[11px] underline-offset-2 hover:underline"
+                className="text-primary text-[0.6875rem] underline-offset-2 hover:underline"
                 onClick={() => {
                   setSourceImage(null);
                   setSourceDims(null);
@@ -1255,8 +1257,8 @@ function ImageGenerator() {
       {(isImg2Img || hiresImg) && (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between">
-            <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.strength")}</Label>
-            <span className="text-muted-foreground/70 text-[10px]">{Number(strength).toFixed(2)}</span>
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("generator.strength")}</Label>
+            <span className="text-muted-foreground/70 text-[0.625rem]">{Number(strength).toFixed(2)}</span>
           </div>
           <Slider
             value={[Number(strength)]}
@@ -1275,8 +1277,10 @@ function ImageGenerator() {
       {(workflowId === "txt2img:hires-fix" || workflowId === "img2img:upscale") && (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between">
-            <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.upscaleRepeats")}</Label>
-            <span className="text-muted-foreground/70 text-[10px]">{t("generator.upscaleRepeatsHint")}</span>
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium">
+              {t("generator.upscaleRepeats")}
+            </Label>
+            <span className="text-muted-foreground/70 text-[0.625rem]">{t("generator.upscaleRepeatsHint")}</span>
           </div>
           <div className="flex gap-1.5">
             {[1, 2, 3].map((n) => (
@@ -1286,7 +1290,7 @@ function ImageGenerator() {
             ))}
           </div>
           {workflowId === "txt2img:hires-fix" && (
-            <span className="text-muted-foreground/70 text-[10px]">{t("generator.hiresHint")}</span>
+            <span className="text-muted-foreground/70 text-[0.625rem]">{t("generator.hiresHint")}</span>
           )}
         </div>
       )}
@@ -1295,10 +1299,10 @@ function ImageGenerator() {
       {!isUpscale && (
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between">
-            <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.model")}</Label>
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("generator.model")}</Label>
             {selectedModel ? (
               <button
-                className="text-primary text-[11px] underline-offset-2 hover:underline"
+                className="text-primary text-[0.6875rem] underline-offset-2 hover:underline"
                 onClick={() => setSelectedModel(null)}
                 type="button"
               >
@@ -1322,7 +1326,7 @@ function ImageGenerator() {
                 </span>
                 <span
                   className={cn(
-                    "shrink-0 rounded border px-1 py-px text-[10px] uppercase",
+                    "shrink-0 rounded border px-1 py-px text-[0.625rem] uppercase",
                     selectedModel ? "text-warning" : "text-muted-foreground/70",
                   )}
                 >
@@ -1344,15 +1348,15 @@ function ImageGenerator() {
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Label className="text-muted-foreground text-[13px] font-medium">
+              <Label className="text-muted-foreground text-[0.8125rem] font-medium">
                 {t("generator.additionalResources")}
               </Label>
-              <span className="text-muted-foreground/70 rounded border px-1 py-px text-[10px]">
+              <span className="text-muted-foreground/70 rounded border px-1 py-px text-[0.625rem]">
                 {loras.length}/{MAX_LORAS}
               </span>
             </div>
             <button
-              className="text-primary flex items-center gap-1 text-[11px] underline-offset-2 hover:underline"
+              className="text-primary flex items-center gap-1 text-[0.6875rem] underline-offset-2 hover:underline"
               onClick={() => {
                 setPickerType("LORA");
                 setBrowserOpen(true);
@@ -1366,7 +1370,7 @@ function ImageGenerator() {
             <div className="flex flex-wrap gap-1.5">
               {loras.map((lora) => (
                 <span
-                  className="flex items-center gap-1 rounded-full border border-primary bg-secondary px-2 py-0.5 text-[11px]"
+                  className="flex items-center gap-1 rounded-full border border-primary bg-secondary px-2 py-0.5 text-[0.6875rem]"
                   key={lora.id}
                 >
                   <Icon className="size-3" name="zap" />
@@ -1390,7 +1394,7 @@ function ImageGenerator() {
           source); img2img defaults them from the source image */}
       {!isUpscale && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.size")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("generator.size")}</Label>
           <div className="flex flex-wrap gap-1.5">
             {eco.sizes.map((s, i) => (
               <AspectChip
@@ -1407,7 +1411,7 @@ function ImageGenerator() {
               />
             ))}
           </div>
-          <p className="text-muted-foreground text-[11px]">
+          <p className="text-muted-foreground text-[0.6875rem]">
             {isImg2Img && sourceDims
               ? `${genSize.width}×${genSize.height}px · ${t("generator.followsSource")}`
               : `${size.width}×${size.height}px`}
@@ -1419,7 +1423,7 @@ function ImageGenerator() {
           rides the Advanced section, civitai's layout) */}
       {!isUpscale && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="generator-quantity">
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="generator-quantity">
             {t("generator.quantity")}
           </Label>
           <NumberStepper
@@ -1431,14 +1435,14 @@ function ImageGenerator() {
             onChange={setQuantity}
             value={quantity}
           />
-          <p className="text-muted-foreground/70 text-[10px]">{t("generator.quantityHint", { max: 12 })}</p>
+          <p className="text-muted-foreground/70 text-[0.625rem]">{t("generator.quantityHint", { max: 12 })}</p>
         </div>
       )}
 
       {/* Advanced */}
       {!isUpscale && (
         <Collapsible onOpenChange={setAdvancedOpen} open={advancedOpen}>
-          <CollapsibleTrigger className="group text-muted-foreground flex items-center gap-1 text-[13px] font-medium">
+          <CollapsibleTrigger className="group text-muted-foreground flex items-center gap-1 text-[0.8125rem] font-medium">
             <Icon className="size-4 transition-transform group-data-[state=open]:rotate-180" name="chevron-down" />{" "}
             {t("generator.advanced")}
           </CollapsibleTrigger>

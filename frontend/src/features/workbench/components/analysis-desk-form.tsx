@@ -75,7 +75,9 @@ export function StockResearchForm({ disabled, domain = "stock", onSubmit }: Stoc
       <div className="mb-3 flex items-center gap-2">
         <Icon name="activity" className="text-primary size-4" />
         <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">{copy.title}</span>
-        <span className="text-muted-foreground font-mono text-[10px]">fixed research pipeline · no planning round</span>
+        <span className="text-muted-foreground font-mono text-[0.625rem]">
+          fixed research pipeline · no planning round
+        </span>
       </div>
       <div className="flex flex-wrap gap-2">
         <input
@@ -113,7 +115,7 @@ export function StockResearchForm({ disabled, domain = "stock", onSubmit }: Stoc
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-muted-foreground hover:text-foreground mt-3 font-mono text-[10px] tracking-wider uppercase"
+        className="text-muted-foreground hover:text-foreground mt-3 font-mono text-[0.625rem] tracking-wider uppercase"
       >
         Analyst team ({selected.length}/{ANALYSTS.length}) {open ? "▾" : "▸"}
       </button>
@@ -137,7 +139,7 @@ export function StockResearchForm({ disabled, domain = "stock", onSubmit }: Stoc
                 />
                 <span className="min-w-0">
                   <span className="text-foreground block font-mono text-xs font-bold">{a.label}</span>
-                  <span className="text-muted-foreground block font-mono text-[10px]">{a.hint}</span>
+                  <span className="text-muted-foreground block font-mono text-[0.625rem]">{a.hint}</span>
                 </span>
               </button>
             );

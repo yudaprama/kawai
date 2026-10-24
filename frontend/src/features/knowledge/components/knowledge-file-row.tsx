@@ -49,8 +49,8 @@ export function KnowledgeStatusBadge({ file }: { file: KnowledgeFileInfo }) {
 export function KnowledgeSectionLabel({ label, count }: { label: string; count: number }) {
   return (
     <div className="flex items-baseline justify-between px-1 pb-1.5">
-      <p className="font-mono text-[11px] tracking-wider text-muted-foreground uppercase">{label}</p>
-      <span className="font-mono text-[11px] text-muted-foreground">{count}</span>
+      <p className="font-mono text-[0.6875rem] tracking-wider text-muted-foreground uppercase">{label}</p>
+      <span className="font-mono text-[0.6875rem] text-muted-foreground">{count}</span>
     </div>
   );
 }
@@ -106,7 +106,7 @@ export const KnowledgeFileRow = function KnowledgeFileRow({
         className={`flex shrink-0 items-center gap-0.5 ${
           confirmDelete
             ? "opacity-100"
-            : "opacity-0 transition-opacity focus-within:opacity-100 group-hover/file:opacity-100 max-lg:opacity-100"
+            : "opacity-0 transition-opacity focus-within:opacity-100 group-hover/file:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100"
         }`}
       >
         <button

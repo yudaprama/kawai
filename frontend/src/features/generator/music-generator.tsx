@@ -226,7 +226,9 @@ function MusicTemplateGallery({
 
       {starters.length > 0 && (
         <div className="flex flex-col gap-2">
-          <span className="text-muted-foreground text-[13px] font-medium">{t("musicGenerator.startersTitle")}</span>
+          <span className="text-muted-foreground text-[0.8125rem] font-medium">
+            {t("musicGenerator.startersTitle")}
+          </span>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {starters.map((starter) => (
               <button
@@ -235,8 +237,8 @@ function MusicTemplateGallery({
                 onClick={() => onApplyStarter(starter)}
                 type="button"
               >
-                <span className="text-[13px] font-semibold">{starter.label}</span>
-                <span className="text-muted-foreground text-[11px] leading-snug">{starter.note}</span>
+                <span className="text-[0.8125rem] font-semibold">{starter.label}</span>
+                <span className="text-muted-foreground text-[0.6875rem] leading-snug">{starter.note}</span>
               </button>
             ))}
           </div>
@@ -500,7 +502,7 @@ export function MusicGenerator() {
           swap). Art rides `civitai_model_covers` (v1 version records,
           worker-proxied URLs); no card → letter tile like the eco picker. */}
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.model")}</Label>
+        <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("generator.model")}</Label>
         <div className="flex items-center gap-2.5 rounded-[10px] border p-2">
           {musicCover?.url ? (
             <img
@@ -520,7 +522,7 @@ export function MusicGenerator() {
           )}
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-primary">{musicCover?.modelName ?? eco.model}</div>
-            <div className="text-muted-foreground truncate text-[11px]">{eco.model}</div>
+            <div className="text-muted-foreground truncate text-[0.6875rem]">{eco.model}</div>
           </div>
         </div>
         {isAce && (
@@ -547,7 +549,7 @@ export function MusicGenerator() {
           the generate-cover checkbox is skipped — kawai has no imageGen step). */}
       {isAce && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("musicGenerator.cover")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("musicGenerator.cover")}</Label>
           {coverImage ? (
             <div className="relative overflow-hidden rounded-[8px] border">
               <img
@@ -577,7 +579,7 @@ export function MusicGenerator() {
               />
             </label>
           )}
-          <p className="text-muted-foreground/70 text-[10px]">{t("musicGenerator.coverHint")}</p>
+          <p className="text-muted-foreground/70 text-[0.625rem]">{t("musicGenerator.coverHint")}</p>
         </div>
       )}
 
@@ -585,7 +587,7 @@ export function MusicGenerator() {
           Sonilo is custom-only. */}
       {eco.modes.length > 1 && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("musicGenerator.mode")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("musicGenerator.mode")}</Label>
           <div className="flex gap-2">
             {(["simple", "custom"] as MusicMode[]).map((m) => (
               <ChoiceChip active={mode === m} className="flex-1" key={m} onClick={() => switchMode(m)}>
@@ -599,7 +601,7 @@ export function MusicGenerator() {
       {/* Operation — sonilo only: music track vs sound effect. */}
       {isSonilo && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("musicGenerator.generate")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("musicGenerator.generate")}</Label>
           <div className="flex gap-2">
             {(["music", "soundEffect"] as MusicOperation[]).map((op) => (
               <ChoiceChip active={operation === op} className="flex-1" key={op} onClick={() => switchOperation(op)}>
@@ -615,7 +617,7 @@ export function MusicGenerator() {
         <div className="flex flex-col gap-1.5">
           {/* civitai's PromptLabel: info tooltip + required asterisk. */}
           <div className="flex items-center gap-1">
-            <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="music-prompt">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="music-prompt">
               {t("generator.prompt")}
             </Label>
             {!isSonilo && (
@@ -639,7 +641,7 @@ export function MusicGenerator() {
       {/* Custom — caption (style description). */}
       {isCustom && !isSonilo && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="music-caption">
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="music-caption">
             {t("musicGenerator.caption")}
           </Label>
           <Textarea
@@ -650,14 +652,14 @@ export function MusicGenerator() {
             placeholder={t("musicGenerator.captionPlaceholder")}
             value={caption}
           />
-          <p className="text-muted-foreground/70 text-[10px]">{t("musicGenerator.captionDesc")}</p>
+          <p className="text-muted-foreground/70 text-[0.625rem]">{t("musicGenerator.captionDesc")}</p>
         </div>
       )}
 
       {/* Custom — lyrics (minimax/yue2 required; ace optional). */}
       {isCustom && !isSonilo && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="music-lyrics">
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="music-lyrics">
             {t("musicGenerator.lyrics")}
             {ecoId === "ace" ? ` (${t("musicGenerator.optional")})` : ""}
           </Label>
@@ -668,7 +670,7 @@ export function MusicGenerator() {
             placeholder={t("musicGenerator.lyricsPlaceholder")}
             value={lyrics}
           />
-          <p className="text-muted-foreground/70 text-[10px]">{t("musicGenerator.lyricsDesc")}</p>
+          <p className="text-muted-foreground/70 text-[0.625rem]">{t("musicGenerator.lyricsDesc")}</p>
         </div>
       )}
 
@@ -677,7 +679,7 @@ export function MusicGenerator() {
         <>
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-1">
-              <Label className="text-muted-foreground text-[13px] font-medium">
+              <Label className="text-muted-foreground text-[0.8125rem] font-medium">
                 {t("musicGenerator.scorePlanning")}
               </Label>
               <span className="text-muted-foreground/70 cursor-help" title={t("musicGenerator.scorePlanningInfo")}>
@@ -694,7 +696,7 @@ export function MusicGenerator() {
           </div>
           {scoreMode !== "off" && (
             <div className="flex flex-col gap-1.5">
-              <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="music-abc">
+              <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="music-abc">
                 {t("musicGenerator.abc")}
               </Label>
               <Textarea
@@ -704,7 +706,7 @@ export function MusicGenerator() {
                 placeholder={t("musicGenerator.abcPlaceholder")}
                 value={abc}
               />
-              <p className="text-muted-foreground/70 text-[10px]">{t("musicGenerator.abcDesc")}</p>
+              <p className="text-muted-foreground/70 text-[0.625rem]">{t("musicGenerator.abcDesc")}</p>
             </div>
           )}
         </>
@@ -715,7 +717,7 @@ export function MusicGenerator() {
       {isAce && isCustom && (
         <>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="music-bpm">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="music-bpm">
               {t("musicGenerator.bpm")}
             </Label>
             <Slider
@@ -733,7 +735,7 @@ export function MusicGenerator() {
             </Slider>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="music-instr">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="music-instr">
               {t("musicGenerator.instrumentalWeight")}
             </Label>
             <Slider
@@ -751,7 +753,7 @@ export function MusicGenerator() {
             </Slider>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="music-vocal">
+            <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="music-vocal">
               {t("musicGenerator.vocalWeight")}
             </Label>
             <Slider
@@ -775,7 +777,7 @@ export function MusicGenerator() {
           caps the track length, others set it outright. Civitai pairs the
           slider with a numeric stepper. */}
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="music-duration">
+        <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="music-duration">
           {t(ecoId === "yue2" ? "musicGenerator.durationMax" : "musicGenerator.duration", { seconds: duration })}
         </Label>
         <div className="flex items-center gap-2">
@@ -852,14 +854,14 @@ export function MusicGenerator() {
           civitai's sonilo graph carries none of these). */}
       {!isSonilo && (
         <Collapsible onOpenChange={setAdvancedOpen} open={advancedOpen}>
-          <CollapsibleTrigger className="group text-muted-foreground flex items-center gap-1 text-[13px] font-medium">
+          <CollapsibleTrigger className="group text-muted-foreground flex items-center gap-1 text-[0.8125rem] font-medium">
             <Icon className="size-4 transition-transform group-data-[state=open]:rotate-180" name="chevron-down" />{" "}
             {t("generator.advanced")}
           </CollapsibleTrigger>
           <CollapsibleContent className="flex flex-col gap-3 pt-2">
             {isAce && (
               <div className="flex flex-col gap-1.5">
-                <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="music-cfg">
+                <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="music-cfg">
                   {t("generator.cfgScale")}
                 </Label>
                 <Slider
@@ -879,7 +881,7 @@ export function MusicGenerator() {
             )}
             {(ecoId === "yue2" || isAce) && (
               <div className="flex flex-col gap-1.5">
-                <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="music-steps">
+                <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="music-steps">
                   {t("generator.steps")}
                 </Label>
                 <Slider
@@ -899,7 +901,7 @@ export function MusicGenerator() {
             )}
             {!isSonilo && (
               <div className="flex flex-col gap-1.5">
-                <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="music-seed">
+                <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="music-seed">
                   {t("generator.seed")}
                 </Label>
                 <div className="flex items-center gap-2">

@@ -91,7 +91,7 @@ export function ToggleRow({
 }) {
   const id = `gen-toggle-${label.replace(/\W+/g, "-").toLowerCase()}`;
   return (
-    <div className="flex items-center justify-between gap-2 text-[13px]">
+    <div className="flex items-center justify-between gap-2 text-[0.8125rem]">
       <Label className="text-muted-foreground font-medium" htmlFor={id}>
         {label}
       </Label>
@@ -455,7 +455,7 @@ export function JobCard({
       )}
       {error && <p className="text-destructive text-xs">{error}</p>}
       <div className="flex items-center justify-between gap-2">
-        <p className="text-muted-foreground/60 truncate font-mono text-[10px]">{workflowId}</p>
+        <p className="text-muted-foreground/60 truncate font-mono text-[0.625rem]">{workflowId}</p>
         <Button className="h-7 shrink-0 rounded-[6px] px-2 text-xs" onClick={onCancel} size="sm" variant="secondary">
           {cancelLabel}
         </Button>

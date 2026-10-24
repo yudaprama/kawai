@@ -61,7 +61,7 @@ export function RecordListView({ items }: { items: RecordItem[] }) {
                 {it.title}
               </span>
               {it.meta && (
-                <span className="text-muted-foreground ml-auto shrink-0 font-mono text-[10px]">{it.meta}</span>
+                <span className="text-muted-foreground ml-auto shrink-0 font-mono text-[0.625rem]">{it.meta}</span>
               )}
             </div>
             {it.body && <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">{it.body}</p>}

@@ -126,7 +126,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
 
   const chip = (active: boolean) =>
     cn(
-      "rounded-md border px-2.5 py-1 font-mono text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+      "rounded-md border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
       active
         ? "border-primary/60 bg-primary/10 text-primary"
         : "border-border text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground",
@@ -137,7 +137,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
       <div className="mb-3 flex items-center gap-2">
         <Icon name="scan-search" className="text-primary size-4" />
         <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">Crypto Screener</span>
-        <span className="text-muted-foreground font-mono text-[10px]">fixed pipeline · no planning round</span>
+        <span className="text-muted-foreground font-mono text-[0.625rem]">fixed pipeline · no planning round</span>
       </div>
 
       <div className="flex flex-col gap-3">
@@ -264,7 +264,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
         <Field label="Structure">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <div className="flex items-center gap-1">
-              <span className="text-muted-foreground font-mono text-[10px]">Level</span>
+              <span className="text-muted-foreground font-mono text-[0.625rem]">Level</span>
               {SIDES.map((s) => (
                 <button
                   key={s.label}
@@ -280,7 +280,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
               ))}
             </div>
             <div className="flex items-center gap-1">
-              <span className="text-muted-foreground font-mono text-[10px]">Within</span>
+              <span className="text-muted-foreground font-mono text-[0.625rem]">Within</span>
               {DISTANCES.map((d) => (
                 <button
                   key={d.label}
@@ -296,7 +296,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
               ))}
             </div>
             <div className="flex items-center gap-1">
-              <span className="text-muted-foreground font-mono text-[10px]">Touches</span>
+              <span className="text-muted-foreground font-mono text-[0.625rem]">Touches</span>
               {TOUCHES.map((t) => (
                 <button
                   key={t.label}
@@ -325,12 +325,12 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
           <Icon name="zap" className="size-3.5" />
           Scan market
         </button>
-        <span className="text-muted-foreground font-mono text-[10px]">
+        <span className="text-muted-foreground font-mono text-[0.625rem]">
           {screens.length} scan{screens.length === 1 ? "" : "s"} run in parallel
         </span>
       </div>
 
-      <p className="text-muted-foreground mt-3 font-mono text-[10px] leading-relaxed">
+      <p className="text-muted-foreground mt-3 font-mono text-[0.625rem] leading-relaxed">
         Read-only market scan over {venue === "mexc" ? "MEXC" : "Binance"} public data (top-liquidity USDT pairs): ranks
         symbols by 24h volume, folds indicators per symbol, and reports every hit with a conviction score and reasons.
         Every hit also carries its market structure — the nearest confirmed pivot level, how far price is from it, and
@@ -361,7 +361,7 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">{label}</span>
+      <span className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">{label}</span>
       <div className="flex items-center gap-1">{children}</div>
     </div>
   );

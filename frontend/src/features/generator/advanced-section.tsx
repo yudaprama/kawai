@@ -54,11 +54,11 @@ function SliderField({ id, label, value, min, max, step = 1, presets, specDefaul
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-2">
-        <Label className="text-muted-foreground text-[13px] font-medium" htmlFor={id}>
+        <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor={id}>
           {label}
         </Label>
         {specDefault !== undefined && clamped > specDefault ? (
-          <span className="text-warning text-[11px] font-medium">
+          <span className="text-warning text-[0.6875rem] font-medium">
             {t("generator.specDefault", { value: specDefault })}
           </span>
         ) : null}
@@ -131,7 +131,7 @@ function SeedField({ seed, onChange }: SeedFieldProps) {
   ] as const;
   return (
     <div className="flex flex-col gap-1.5">
-      <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.seed")}</Label>
+      <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("generator.seed")}</Label>
       <div className="flex items-center gap-2">
         <div role="radiogroup" className="bg-muted flex flex-1 rounded-md border p-0.5">
           {options.map((option) => (
@@ -192,7 +192,7 @@ function SamplerField({ value, presets, onChange }: SamplerFieldProps) {
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between gap-2">
-        <Label className="text-[13px] font-medium" htmlFor="generator-sampler">
+        <Label className="text-[0.8125rem] font-medium" htmlFor="generator-sampler">
           {t("generator.sampler")}
         </Label>
         <div className="flex flex-wrap items-center gap-1">

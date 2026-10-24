@@ -186,7 +186,7 @@ export function MonadTxReceiptView({ data }: { data: Record<string, unknown> }) 
       <div className="flex flex-wrap items-center gap-2">
         <Pill tone={TX_TONE[status] ?? "neutral"}>{TX_LABEL[status] ?? status}</Pill>
         <ChainTag data={data} />
-        <span className="text-muted-foreground ml-auto font-mono text-[11px]" title={hash}>
+        <span className="text-muted-foreground ml-auto font-mono text-[0.6875rem]" title={hash}>
           {short(hash)}
         </span>
       </div>
@@ -244,7 +244,7 @@ export function MonadLogsView({ data }: { data: Record<string, unknown> }) {
                   >
                     {pick<string>(t, "counterparty") ?? "—"}
                   </div>
-                  <div className="text-muted-foreground font-mono text-[10px]">
+                  <div className="text-muted-foreground font-mono text-[0.625rem]">
                     {hash && <span title={hash}>{short(hash)}</span>}
                     {block != null ? ` · block ${fmtNumber(block)}` : ""}
                   </div>

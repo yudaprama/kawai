@@ -41,7 +41,7 @@ export function PdfPagesView({ data }: { data: Record<string, unknown> }) {
         <details className="bg-card rounded-lg border p-3" key={page}>
           <summary className="text-foreground cursor-pointer text-sm font-medium">
             Page {page}
-            <span className="text-muted-foreground ml-2 font-mono text-[11px]">
+            <span className="text-muted-foreground ml-2 font-mono text-[0.6875rem]">
               {fmtNumberUS(text.length)} characters
             </span>
           </summary>

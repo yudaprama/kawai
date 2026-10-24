@@ -51,7 +51,7 @@ export function ComposerConnections() {
         >
           <Icon name="plug-zap" />
           {connectedCount > 0 && (
-            <span className="bg-primary text-primary-foreground absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full text-[10px] font-medium tabular-nums">
+            <span className="bg-primary text-primary-foreground absolute -top-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full text-[0.625rem] font-medium tabular-nums">
               {connectedCount}
             </span>
           )}

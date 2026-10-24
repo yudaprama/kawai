@@ -264,7 +264,7 @@ function BackgroundProgress() {
         : t("onboarding.progress.distilling");
 
   return (
-    <div className="fixed right-4 bottom-4 z-50 mb-[env(safe-area-inset-bottom,0px)] w-72 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3 shadow-lg">
+    <div className="fixed right-4 bottom-4 z-50 mb-[env(safe-area-inset-bottom,0px)] mr-[env(safe-area-inset-right,0px)] w-72 rounded-lg border bg-[var(--tea-color-bg-primary-default)] p-3 shadow-lg">
       {onboarding.running ? (
         <>
           <p className="flex items-center gap-2 text-sm font-medium">
@@ -273,7 +273,7 @@ function BackgroundProgress() {
           <p className="text-muted-foreground mt-1 truncate text-xs" title={note}>
             {note}
           </p>
-          <p className="text-muted-foreground mt-1 text-[11px]">
+          <p className="text-muted-foreground mt-1 text-[0.6875rem]">
             {t("onboarding.progress.sourcesDone", { count: completed })}
           </p>
         </>

@@ -44,7 +44,7 @@ export function SparklineView({ closes, label }: { closes: number[]; label: stri
         <title>Price chart</title>
         <polyline fill="none" points={pts} stroke="currentColor" strokeWidth="2" />
       </svg>
-      <div className="text-muted-foreground flex justify-between font-mono text-[11px]">
+      <div className="text-muted-foreground flex justify-between font-mono text-[0.6875rem]">
         <span>low {fmtNumber(min)}</span>
         <span>high {fmtNumber(max)}</span>
       </div>
@@ -183,7 +183,7 @@ export function TrendingView({ data }: { data: Record<string, unknown> }) {
               <span className="text-foreground font-mono text-sm font-bold">{pick<string>(t, "symbol") ?? "—"}</span>
               <span className="text-muted-foreground min-w-0 flex-1 truncate text-sm">{pick<string>(t, "title")}</span>
               {watchers != null && (
-                <span className="text-muted-foreground shrink-0 font-mono text-[11px]">
+                <span className="text-muted-foreground shrink-0 font-mono text-[0.6875rem]">
                   {fmtNumber(watchers)} watchers
                 </span>
               )}
@@ -228,7 +228,7 @@ export function SocialFeedView({ data }: { data: unknown }) {
               <div className="flex flex-wrap items-center gap-2">
                 <Pill tone={SENTIMENT_TONE[sentiment] ?? "neutral"}>{sentiment}</Pill>
                 <span className="text-foreground font-mono text-xs font-medium">{user ?? "anonymous"}</span>
-                {date && <span className="text-muted-foreground ml-auto font-mono text-[10px]">{date}</span>}
+                {date && <span className="text-muted-foreground ml-auto font-mono text-[0.625rem]">{date}</span>}
               </div>
               {body && <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">{body}</p>}
             </li>
@@ -368,7 +368,7 @@ export function PredictionMarketsView({ data }: { data: unknown }) {
     <div className="space-y-2.5">
       <div className="flex items-baseline justify-between gap-2">
         <SectionLabel>⚖️ Polymarket{parsed.topic ? ` — "${parsed.topic}"` : ""}</SectionLabel>
-        <span className="text-muted-foreground text-[11px]">crowd odds</span>
+        <span className="text-muted-foreground text-[0.6875rem]">crowd odds</span>
       </div>
       <ul className="space-y-2">
         {parsed.markets.map((m) => {
@@ -382,7 +382,7 @@ export function PredictionMarketsView({ data }: { data: unknown }) {
                 <p className="text-sm leading-snug font-medium">{m.question}</p>
                 <div className="shrink-0 text-right">
                   <span className="font-mono text-base font-semibold tabular-nums">{pct}%</span>
-                  <div className="text-muted-foreground text-[11px]">{m.outcome}</div>
+                  <div className="text-muted-foreground text-[0.6875rem]">{m.outcome}</div>
                 </div>
               </div>
               <div
@@ -398,7 +398,7 @@ export function PredictionMarketsView({ data }: { data: unknown }) {
                   style={{ width: `${Math.min(100, Math.max(2, pct))}%` }}
                 />
               </div>
-              <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+              <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem]">
                 {m.week_change_pp != null && (
                   <Pill tone={m.week_change_pp > 0 ? "up" : "down"}>
                     {m.week_change_pp > 0 ? "▲" : "▼"} {Math.abs(m.week_change_pp).toFixed(1)}pp 1w
@@ -411,7 +411,7 @@ export function PredictionMarketsView({ data }: { data: unknown }) {
           );
         })}
       </ul>
-      {parsed.note && <p className="text-muted-foreground text-[11px] italic">{parsed.note}</p>}
+      {parsed.note && <p className="text-muted-foreground text-[0.6875rem] italic">{parsed.note}</p>}
     </div>
   );
 }

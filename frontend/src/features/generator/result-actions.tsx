@@ -51,8 +51,8 @@ function ResultCaption({ label, meta }: { label: string; meta?: string }) {
       {/* `line-clamp-N` needs `display: -webkit-box` to clamp at all, and
           Tailwind emits `block`/`flex` AFTER it — pairing them silently
           disables the clamp. Keep display utilities off these spans. */}
-      <span className="line-clamp-1 text-[12px] text-foreground">{mediaExcerpt(label)}</span>
-      {meta && <span className="line-clamp-1 text-[11px] text-muted-foreground">{meta}</span>}
+      <span className="line-clamp-1 text-[0.75rem] text-foreground">{mediaExcerpt(label)}</span>
+      {meta && <span className="line-clamp-1 text-[0.6875rem] text-muted-foreground">{meta}</span>}
     </div>
   );
 }

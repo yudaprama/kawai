@@ -36,7 +36,7 @@ export function NetworkIcon({ name, size = 24 }: Props) {
   return (
     <span
       aria-hidden
-      className={`inline-flex items-center justify-center rounded-full text-white text-[10px] font-bold ${bg}`}
+      className={`inline-flex items-center justify-center rounded-full text-white text-[0.625rem] font-bold ${bg}`}
       style={{ width: size, height: size }}
     >
       {label}

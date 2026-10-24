@@ -62,7 +62,7 @@ export function TradingPerformanceForm({ disabled, onSubmit }: TradingPerformanc
         <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
           Trading Performance
         </span>
-        <span className="text-muted-foreground font-mono text-[10px]">
+        <span className="text-muted-foreground font-mono text-[0.625rem]">
           sync · win rate · per-pair PnL · fees · integrity gate
         </span>
       </div>
@@ -95,15 +95,15 @@ export function TradingPerformanceForm({ disabled, onSubmit }: TradingPerformanc
             type="button"
             onClick={() => runWith(p.value)}
             disabled={disabled}
-            className="border-border/60 text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground rounded-full border px-3 py-1 font-mono text-[10px] tracking-wider uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+            className="border-border/60 text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground rounded-full border px-3 py-1 font-mono text-[0.625rem] tracking-wider uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
           >
             {p.label} · {p.value}
           </button>
         ))}
-        <span className="text-muted-foreground ml-auto font-mono text-[10px]">kosong = bulan lalu</span>
+        <span className="text-muted-foreground ml-auto font-mono text-[0.625rem]">kosong = bulan lalu</span>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">Exchange</span>
+        <span className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">Exchange</span>
         {VENUES.map((v) => (
           <button
             key={v.label}
@@ -111,7 +111,7 @@ export function TradingPerformanceForm({ disabled, onSubmit }: TradingPerformanc
             onClick={() => setVenue(v.value)}
             disabled={disabled}
             aria-pressed={venue === v.value}
-            className={`rounded-full border px-3 py-1 font-mono text-[10px] tracking-wider uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+            className={`rounded-full border px-3 py-1 font-mono text-[0.625rem] tracking-wider uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
               venue === v.value
                 ? "border-[var(--tea-color-border-focus)] text-foreground bg-primary/10"
                 : "border-border/60 text-muted-foreground hover:border-[var(--tea-color-border-focus)] hover:text-foreground"
@@ -121,14 +121,14 @@ export function TradingPerformanceForm({ disabled, onSubmit }: TradingPerformanc
           </button>
         ))}
       </div>
-      <p className="text-muted-foreground mt-2 font-mono text-[10px]">
+      <p className="text-muted-foreground mt-2 font-mono text-[0.625rem]">
         {venue === "mexc"
           ? "MEXC: pembukuan saja — import fill + PnL + biaya. Statistik win rate masih Binance-only, jadi langkah itu dilewati."
           : venue === "binance"
             ? "Binance saja — import fill, win rate, PnL per pair, dan biaya."
             : "Semua exchange: default — fill dari setiap exchange yang punya kunci."}
       </p>
-      <p className="text-muted-foreground mt-2 font-mono text-[10px]">
+      <p className="text-muted-foreground mt-2 font-mono text-[0.625rem]">
         Lands in the review gate — the plan runs only after you approve it.
       </p>
     </div>

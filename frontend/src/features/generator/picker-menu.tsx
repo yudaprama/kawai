@@ -105,7 +105,9 @@ export function PickerMenu({
                   >
                     {item.label}
                   </span>
-                  {item.note && <span className="text-muted-foreground block truncate text-[11px]">{item.note}</span>}
+                  {item.note && (
+                    <span className="text-muted-foreground block truncate text-[0.6875rem]">{item.note}</span>
+                  )}
                 </span>
                 {item.selected ? (
                   <Icon className="size-4 shrink-0 text-primary" name="check" />

@@ -31,12 +31,12 @@ export function FileListView({ data }: { data: Record<string, unknown> }) {
                   <div className="text-foreground truncate text-sm" title={name}>
                     {name}
                   </div>
-                  <div className="text-muted-foreground truncate font-mono text-[11px]" title={id}>
+                  <div className="text-muted-foreground truncate font-mono text-[0.6875rem]" title={id}>
                     {id}
                   </div>
                 </div>
               </button>
-              <div className="text-muted-foreground shrink-0 text-right font-mono text-[11px]">
+              <div className="text-muted-foreground shrink-0 text-right font-mono text-[0.6875rem]">
                 {bytes != null && <div>{fmtBytes(bytes)}</div>}
                 {created && <div>{created}</div>}
               </div>
@@ -74,7 +74,7 @@ export function FileCreatedView({ data }: { data: Record<string, unknown> }) {
         </div>
         <div className="text-muted-foreground text-xs">Document created</div>
       </div>
-      <div className="text-muted-foreground shrink-0 text-right font-mono text-[11px]">
+      <div className="text-muted-foreground shrink-0 text-right font-mono text-[0.6875rem]">
         {bytes != null && <div>{fmtBytes(bytes)}</div>}
         {created && <div>{created}</div>}
       </div>

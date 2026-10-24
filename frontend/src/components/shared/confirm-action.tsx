@@ -114,7 +114,7 @@ export function ConfirmIconButton({
 }) {
   return (
     <span className="flex shrink-0 items-center">
-      {armed && <span className="text-destructive mr-1 text-[11px] whitespace-nowrap">{confirmLabel}</span>}
+      {armed && <span className="text-destructive mr-1 text-[0.6875rem] whitespace-nowrap">{confirmLabel}</span>}
       <button
         aria-label={armed ? confirmLabel : label}
         aria-pressed={armed}

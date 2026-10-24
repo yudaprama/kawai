@@ -43,12 +43,12 @@ export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenC
             <div className="flex items-center justify-between gap-4 py-2" key={s.action}>
               <div className="flex-1 min-w-0">
                 <span className="text-foreground text-sm">{t(s.action)}</span>
-                {s.note && <span className="block text-muted-foreground text-[10px] mt-0.5">{t(s.note)}</span>}
+                {s.note && <span className="block text-muted-foreground text-[0.625rem] mt-0.5">{t(s.note)}</span>}
               </div>
               <span className="flex shrink-0 gap-1">
                 {s.keys.map((k) => (
                   <kbd
-                    className="bg-accent text-accent-foreground rounded border px-1.5 py-0.5 font-mono text-[10px]"
+                    className="bg-accent text-accent-foreground rounded border px-1.5 py-0.5 font-mono text-[0.625rem]"
                     key={k}
                   >
                     {k}

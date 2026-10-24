@@ -176,14 +176,14 @@ export function AgentReportsSwitcher({
   if (reports.length === 0) return null;
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <span className="text-muted-foreground shrink-0 font-mono text-[10px] tracking-widest uppercase">
+      <span className="text-muted-foreground shrink-0 font-mono text-[0.625rem] tracking-widest uppercase">
         Agent reports
       </span>
       <div className="flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {hasDeliverable && (
           <button
             aria-pressed={activeDoc === "final"}
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors ${
               activeDoc === "final"
                 ? "border-primary bg-primary/10 text-foreground"
                 : "border-border/60 text-foreground/80 hover:border-primary/60"
@@ -199,7 +199,7 @@ export function AgentReportsSwitcher({
         {reports.map((r) => (
           <button
             aria-pressed={activeDoc === r.stepId}
-            className={`inline-flex max-w-[12rem] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+            className={`inline-flex max-w-[12rem] shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors ${
               activeDoc === r.stepId
                 ? "border-primary bg-primary/10 text-foreground"
                 : "border-border/60 text-foreground/80 hover:border-primary/60"

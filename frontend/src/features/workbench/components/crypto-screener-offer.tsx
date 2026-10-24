@@ -704,7 +704,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
       {/* The scan's OWN totals, so the rows below are visibly a fraction of what
           was searched rather than the whole job — and a run whose steps were
           only partly readable says so. */}
-      <div className="text-muted-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+      <div className="text-muted-foreground flex flex-wrap items-center gap-1.5 font-mono text-[0.6875rem]">
         <span className="rounded border px-1.5 py-0.5">{venueLabel} · USDⓈ-M futures</span>
         <span className="rounded border px-1.5 py-0.5">{offer.interval} candles</span>
         <span className="rounded border px-1.5 py-0.5">standard stops</span>
@@ -759,7 +759,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Cari simbol… (mis. BTC)"
             aria-label="Search hits by symbol"
-            className="border-input bg-input/20 h-7 w-44 rounded-md border px-2 font-mono text-[11px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+            className="border-input bg-input/20 h-7 w-44 rounded-md border px-2 font-mono text-[0.6875rem] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
           />
           {/* Conviction is the decision axis for a screener hit, so it is a
               single-select threshold — including "any" (0). */}
@@ -777,7 +777,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
               aria-pressed={minScore === value}
               disabled={busy}
               className={cn(
-                "rounded-md border px-2 py-1 font-mono text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                "rounded-md border px-2 py-1 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                 minScore === value
                   ? "border-primary/40 bg-primary/10 text-foreground"
                   : "border-border text-muted-foreground hover:text-foreground",
@@ -787,7 +787,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
             </button>
           ))}
           <label
-            className="text-muted-foreground flex cursor-pointer items-center gap-1.5 font-mono text-[11px]"
+            className="text-muted-foreground flex cursor-pointer items-center gap-1.5 font-mono text-[0.6875rem]"
             title="Also place the take-profit ladder with each entry (1R/2R partials at the standard style, runner trails on the advisory levels) — levels are engine-computed from the attached stop. A rung that cannot rest is reported, never retried."
           >
             <input
@@ -799,7 +799,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
             />
             Take-profit ladder
           </label>
-          <span className="text-muted-foreground ml-auto font-mono text-[11px] tabular-nums">
+          <span className="text-muted-foreground ml-auto font-mono text-[0.6875rem] tabular-nums">
             {filtered ? `${matching.length} of ${offer.hits.length}` : `${offer.hits.length} hits`}
           </span>
         </div>
@@ -814,7 +814,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
           </button>
         )}
         <div className="border-border/60 max-h-96 overflow-y-auto rounded-md border">
-          <table className="w-full border-collapse font-mono text-[11px]">
+          <table className="w-full border-collapse font-mono text-[0.6875rem]">
             <thead className="bg-background sticky top-0 z-10">
               <tr className="text-muted-foreground border-border/60 border-b text-left">
                 <th className="p-1.5">
@@ -954,7 +954,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
         {/* The viewport is ~8 rows tall; a whole-selection approval is not.
             The count and the committed capital stay on screen so an armed
             action can never describe orders the user cannot see. */}
-        <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
+        <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 font-mono text-[0.6875rem]">
           <span>
             {noneSelected
               ? `Nothing selected — ${offer.hits.length} hit${offer.hits.length === 1 ? "" : "s"} available`
@@ -964,7 +964,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
         </div>
         {/* A user who cannot tell a setup from a direction cannot safely
             approve an order. Plain sentences, once. */}
-        <dl className="text-muted-foreground grid gap-x-4 gap-y-0.5 text-[11px] sm:grid-cols-2">
+        <dl className="text-muted-foreground grid gap-x-4 gap-y-0.5 text-[0.6875rem] sm:grid-cols-2">
           <div className="flex gap-1.5">
             <dt className="text-foreground shrink-0 font-medium">Setup</dt>
             <dd>the screen that fired — kawai reads the direction from it, you never pick a side</dd>
@@ -1004,7 +1004,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
         )}
         {armedKey === "bulk" ? (
           <span className="flex flex-wrap items-center gap-2">
-            <span className="text-foreground font-mono text-[11px]">
+            <span className="text-foreground font-mono text-[0.6875rem]">
               Open {selectedHits.length} position{selectedHits.length === 1 ? "" : "s"} for {usd(selectedNotional)}?
             </span>
             <Button
@@ -1044,18 +1044,18 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
         const summary = placementSummary(entry.raw ?? "");
         return (
           <div key={entry.id} className="space-y-0.5">
-            <div className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
+            <div className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">
               {entry.label === "selected" ? "Selected hits" : entry.label}
             </div>
             {entry.error != null ? (
-              <span className="text-destructive block font-mono text-[11px]" role="alert">
+              <span className="text-destructive block font-mono text-[0.6875rem]" role="alert">
                 {entry.error}
               </span>
             ) : summary == null ? (
-              <span className="text-muted-foreground block font-mono text-[11px]">{entry.raw}</span>
+              <span className="text-muted-foreground block font-mono text-[0.6875rem]">{entry.raw}</span>
             ) : (
               <div className="space-y-1">
-                <div className="text-foreground font-mono text-[11px]">
+                <div className="text-foreground font-mono text-[0.6875rem]">
                   Opened {summary.opened} · failed {summary.failed}
                   {summary.venue && (
                     <span className="text-muted-foreground"> · on {VENUE_LABEL[summary.venue] ?? summary.venue}</span>
@@ -1065,12 +1065,12 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
                   )}
                   {summary.noTp > 0 && <span className="text-warning"> · {summary.noTp} without take-profit</span>}
                 </div>
-                {summary.note && <p className="text-muted-foreground text-[11px]">{summary.note}</p>}
+                {summary.note && <p className="text-muted-foreground text-[0.6875rem]">{summary.note}</p>}
                 {/* A filled position with no stop is the one outcome that must
                     never hide behind a success count — it is listed first and
                     in the destructive colour. */}
                 {summary.naked.length > 0 && (
-                  <ul className="text-destructive space-y-0.5 font-mono text-[11px]">
+                  <ul className="text-destructive space-y-0.5 font-mono text-[0.6875rem]">
                     {summary.naked.map((n) => (
                       <li key={`naked-${n.symbol}`}>
                         <span className="font-bold">{n.symbol}</span> — {n.error}
@@ -1079,7 +1079,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
                   </ul>
                 )}
                 {summary.failures.length > 0 && (
-                  <details className="text-muted-foreground font-mono text-[11px]">
+                  <details className="text-muted-foreground font-mono text-[0.6875rem]">
                     <summary>{summary.failures.length} not opened</summary>
                     <ul className="mt-0.5 space-y-0.5">
                       {summary.failures.map((f) => (

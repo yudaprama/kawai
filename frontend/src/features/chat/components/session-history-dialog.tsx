@@ -341,7 +341,7 @@ export function SessionHistoryDialog({
                     : group.label;
             return (
               <div key={group.label}>
-                <p className="text-muted-foreground px-2 pb-1 font-mono text-[11px] tracking-wider uppercase">
+                <p className="text-muted-foreground px-2 pb-1 font-mono text-[0.6875rem] tracking-wider uppercase">
                   {/* Buckets are keyed by their English period name (the local
                       filter compares against it) — translate only at render. */}
                   {groupLabel}
@@ -374,7 +374,7 @@ export function SessionHistoryDialog({
             <div>
               <button
                 aria-expanded={archiveOpen}
-                className="text-muted-foreground hover:text-foreground flex w-full items-center gap-1.5 px-2 pb-1 text-[11px] font-medium tracking-wider uppercase"
+                className="text-muted-foreground hover:text-foreground flex w-full items-center gap-1.5 px-2 pb-1 text-[0.6875rem] font-medium tracking-wider uppercase"
                 onClick={() => {
                   setArchiveOpen((v) => !v);
                   setActiveIndex(0);

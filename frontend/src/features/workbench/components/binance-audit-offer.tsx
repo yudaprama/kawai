@@ -678,7 +678,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
         Protect this book
       </div>
       {/* Four lines of mono prose explained what four chips say faster. */}
-      <div className="text-muted-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+      <div className="text-muted-foreground flex flex-wrap items-center gap-1.5 font-mono text-[0.6875rem]">
         <span className="rounded border px-1.5 py-0.5">{offer.params.interval} candles</span>
         <span className="rounded border px-1.5 py-0.5">{offer.params.risk} stops</span>
         <span className="rounded border px-1.5 py-0.5">{VENUE_LABEL[venue]} · USDⓈ-M</span>
@@ -705,7 +705,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Cari simbol… (mis. BTC)"
             aria-label="Search positions by symbol"
-            className="border-input bg-input/20 h-7 w-44 rounded-md border px-2 font-mono text-[11px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+            className="border-input bg-input/20 h-7 w-44 rounded-md border px-2 font-mono text-[0.6875rem] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
           />
           {(
             [
@@ -723,7 +723,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
               aria-pressed={gap === value}
               disabled={busy}
               className={cn(
-                "rounded-md border px-2 py-1 font-mono text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                "rounded-md border px-2 py-1 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                 gap === value
                   ? "border-primary/40 bg-primary/10 text-foreground"
                   : "border-border text-muted-foreground hover:text-foreground",
@@ -744,7 +744,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
             disabled={busy}
             title="Only positions currently in profit — the ones worth locking in with a break-even stop"
             className={cn(
-              "rounded-md border px-2 py-1 font-mono text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+              "rounded-md border px-2 py-1 font-mono text-[0.6875rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
               winnersOnly
                 ? "border-success/40 bg-success/10 text-foreground"
                 : "border-border text-muted-foreground hover:text-foreground",
@@ -752,7 +752,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
           >
             Dalam untung
           </button>
-          <span className="text-muted-foreground ml-auto font-mono text-[11px] tabular-nums">
+          <span className="text-muted-foreground ml-auto font-mono text-[0.6875rem] tabular-nums">
             {filtered ? `${matching.length} of ${offer.rows.length}` : `${offer.rows.length} positions`}
           </span>
         </div>
@@ -767,7 +767,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
           </button>
         )}
         <div className="border-border/60 max-h-96 overflow-y-auto rounded-md border">
-          <table className="w-full border-collapse font-mono text-[11px]">
+          <table className="w-full border-collapse font-mono text-[0.6875rem]">
             <thead className="bg-background sticky top-0 z-10">
               <tr className="text-muted-foreground border-border/60 border-b text-left">
                 <th className="p-1.5">
@@ -883,7 +883,9 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
                         // whole message: the trade cannot lose, and the only
                         // move left is to trail it higher.
                         <span
-                          className={r.locked ? "text-success text-[10px]" : "text-muted-foreground/50 text-[10px]"}
+                          className={
+                            r.locked ? "text-success text-[0.625rem]" : "text-muted-foreground/50 text-[0.625rem]"
+                          }
                         >
                           {r.locked
                             ? "profit locked — trail it higher"
@@ -957,7 +959,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
         {/* The viewport is ~8 rows tall; a whole-book selection is not. The
             count and the exposure stay on screen so the armed action can never
             describe orders the user cannot see. */}
-        <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
+        <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 font-mono text-[0.6875rem]">
           <span>
             {noneSelected
               ? `Nothing selected — ${offer.rows.length} position${offer.rows.length === 1 ? "" : "s"} available`
@@ -968,7 +970,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
         {/* A reader who cannot tell a stop from a target cannot safely approve
             an order. Three plain sentences, once, rather than tooltips they
             have to discover. */}
-        <dl className="text-muted-foreground grid gap-x-4 gap-y-0.5 text-[11px] sm:grid-cols-2">
+        <dl className="text-muted-foreground grid gap-x-4 gap-y-0.5 text-[0.6875rem] sm:grid-cols-2">
           <div className="flex gap-1.5">
             <dt className="text-foreground shrink-0 font-medium">Stop</dt>
             <dd>closes the whole position at a loss if the price moves against you</dd>
@@ -1000,7 +1002,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
         )}
         {armedKey === "bulk" ? (
           <span className="flex flex-wrap items-center gap-2">
-            <span className="text-foreground font-mono text-[11px]">
+            <span className="text-foreground font-mono text-[0.6875rem]">
               {selectedTightens > 0 && `Move ${selectedTightens} stop${selectedTightens === 1 ? "" : "s"} in, `}
               {selectedStops > 0 && `place ${selectedStops} stop${selectedStops === 1 ? "" : "s"}, `}
               {selectedTps > 0 && `${selectedTps} take-profit${selectedTps === 1 ? "" : "s"}, `}
@@ -1039,11 +1041,11 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
 
       {log.map((entry) => (
         <div key={entry.id} className="space-y-0.5">
-          <div className="text-muted-foreground font-mono text-[10px] tracking-wider uppercase">
+          <div className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">
             {entry.label === "selected" ? "Selected rows" : entry.label}
           </div>
           {entry.error != null ? (
-            <span className="text-destructive block font-mono text-[11px]" role="alert">
+            <span className="text-destructive block font-mono text-[0.6875rem]" role="alert">
               {entry.error}
             </span>
           ) : (
@@ -1083,7 +1085,7 @@ function PlacementResult({ raw }: { raw: string }) {
           return (
             <pre
               key={part.slice(0, 32)}
-              className="text-muted-foreground overflow-x-auto font-mono text-[10px] leading-relaxed"
+              className="text-muted-foreground overflow-x-auto font-mono text-[0.625rem] leading-relaxed"
             >
               {part}
             </pre>
@@ -1092,7 +1094,7 @@ function PlacementResult({ raw }: { raw: string }) {
         if (tighten != null) {
           return (
             <span key={part.slice(0, 32)} className="block w-full space-y-1">
-              <span className="text-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+              <span className="text-foreground flex flex-wrap items-center gap-1.5 font-mono text-[0.6875rem]">
                 {tighten.failed > 0 || tighten.stale.length > 0 ? (
                   <Icon name="alert-circle" className="text-destructive size-3" />
                 ) : (
@@ -1108,25 +1110,25 @@ function PlacementResult({ raw }: { raw: string }) {
                   <span className="text-muted-foreground">— re-run the audit to refresh the verdicts</span>
                 )}
                 {tighten.note.length > 0 && (
-                  <span className="text-muted-foreground block font-mono text-[10px] leading-relaxed">
+                  <span className="text-muted-foreground block font-mono text-[0.625rem] leading-relaxed">
                     {tighten.note}
                   </span>
                 )}
               </span>
               {tighten.stale.length > 0 && (
                 <details className="rounded-md border border-[var(--tea-color-border-focus)]">
-                  <summary className="cursor-pointer px-2 py-1 font-mono text-[10px] select-none text-foreground">
+                  <summary className="cursor-pointer px-2 py-1 font-mono text-[0.625rem] select-none text-foreground">
                     {tighten.stale.length} old stop{tighten.stale.length === 1 ? "" : "s"} could not be confirmed
                     canceled
                   </summary>
-                  <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[11px]">
+                  <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[0.6875rem]">
                     {tighten.stale.map((f) => (
                       <li key={`${f.symbol}:${f.error}`} className="text-muted-foreground">
                         <span className="text-foreground">{f.symbol || "position"}</span> — {f.error}
                       </li>
                     ))}
                   </ul>
-                  <p className="text-muted-foreground px-2.5 pb-1.5 font-mono text-[10px]">
+                  <p className="text-muted-foreground px-2.5 pb-1.5 font-mono text-[0.625rem]">
                     Both stops are reduce-only, so the tighter one fires first — check the resting orders on the
                     exchange and cancel the older one by hand.
                   </p>
@@ -1134,10 +1136,10 @@ function PlacementResult({ raw }: { raw: string }) {
               )}
               {tighten.failures.length > 0 && (
                 <details className="border-destructive/30 rounded-md border">
-                  <summary className="text-destructive cursor-pointer px-2 py-1 font-mono text-[10px] select-none">
+                  <summary className="text-destructive cursor-pointer px-2 py-1 font-mono text-[0.625rem] select-none">
                     Why {tighten.failures.length} move{tighten.failures.length === 1 ? "" : "s"} failed
                   </summary>
-                  <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[11px]">
+                  <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[0.6875rem]">
                     {tighten.failures.map((f) => (
                       <li key={`${f.symbol}:${f.error}`} className="text-muted-foreground">
                         <span className="text-foreground">{f.symbol || "position"}</span> — {f.error}
@@ -1155,7 +1157,7 @@ function PlacementResult({ raw }: { raw: string }) {
         if (summary == null) return null;
         return (
           <span key={part.slice(0, 32)} className="block w-full space-y-1">
-            <span className="text-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+            <span className="text-foreground flex flex-wrap items-center gap-1.5 font-mono text-[0.6875rem]">
               {summary.failed > 0 ? (
                 <Icon name="alert-circle" className="text-destructive size-3" />
               ) : (
@@ -1167,17 +1169,17 @@ function PlacementResult({ raw }: { raw: string }) {
                 <span className="text-muted-foreground">— re-run the audit to refresh the verdicts</span>
               )}
               {summary.note.length > 0 && (
-                <span className="text-muted-foreground block font-mono text-[10px] leading-relaxed">
+                <span className="text-muted-foreground block font-mono text-[0.625rem] leading-relaxed">
                   {summary.note}
                 </span>
               )}
             </span>
             {summary.failures.length > 0 && (
               <details className="border-destructive/30 rounded-md border">
-                <summary className="text-destructive cursor-pointer px-2 py-1 font-mono text-[10px] select-none">
+                <summary className="text-destructive cursor-pointer px-2 py-1 font-mono text-[0.625rem] select-none">
                   Why {summary.failures.length} order{summary.failures.length === 1 ? "" : "s"} failed
                 </summary>
-                <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[11px]">
+                <ul className="space-y-1 px-2.5 py-1.5 font-mono text-[0.6875rem]">
                   {summary.failures.map((f) => (
                     <li key={`${f.symbol}:${f.error}`} className="text-muted-foreground">
                       <span className="text-foreground">{f.symbol || "position"}</span> — {f.error}

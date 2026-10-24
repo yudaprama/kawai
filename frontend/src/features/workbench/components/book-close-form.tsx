@@ -28,7 +28,7 @@ export function BookCloseForm({ disabled, onSubmit }: BookCloseFormProps) {
       <div className="mb-3 flex items-center gap-2">
         <Icon name="book-check" className="text-primary size-4" />
         <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">Monthly Close</span>
-        <span className="text-muted-foreground font-mono text-[10px]">statements · integrity gate · GSTR-1</span>
+        <span className="text-muted-foreground font-mono text-[0.625rem]">statements · integrity gate · GSTR-1</span>
       </div>
       <div className="flex gap-2">
         <input
@@ -52,7 +52,7 @@ export function BookCloseForm({ disabled, onSubmit }: BookCloseFormProps) {
           Close books
         </button>
       </div>
-      <p className="text-muted-foreground mt-2 font-mono text-[10px]">
+      <p className="text-muted-foreground mt-2 font-mono text-[0.625rem]">
         Lands in the review gate — the plan runs only after you approve it.
       </p>
     </div>

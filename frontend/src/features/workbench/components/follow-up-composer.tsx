@@ -22,7 +22,7 @@ export function FollowUpChips({
     <div className="mb-2 flex flex-wrap gap-1.5">
       {chips.map((c) => (
         <button
-          className="border-border/60 hover:border-primary/60 text-foreground/80 hover:text-foreground inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors"
+          className="border-border/60 hover:border-primary/60 text-foreground/80 hover:text-foreground inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[0.6875rem] transition-colors"
           key={c.label}
           onClick={() => onChip(c.text)}
           title={c.text}
@@ -49,7 +49,7 @@ export function ComposerQuoteBadge({ workbench }: { workbench: ReturnType<typeof
   const label =
     target != null && runNum > 0 ? `Will include: Run ${runNum} — “${title}”` : "Will include the previous deliverable";
   return (
-    <div className="text-muted-foreground mb-2 flex items-center gap-1.5 font-mono text-[11px]">
+    <div className="text-muted-foreground mb-2 flex items-center gap-1.5 font-mono text-[0.6875rem]">
       <Icon name="corner-down-right" className="size-3 shrink-0" />
       <span
         className="min-w-0 truncate"

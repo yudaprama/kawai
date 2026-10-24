@@ -270,7 +270,7 @@ function AutoplayTile({
       >
         <source src={preset.url} type="video/mp4" />
       </video>
-      <span className="text-muted-foreground absolute top-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+      <span className="text-muted-foreground absolute top-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[0.625rem] text-white">
         {preset.duration ? `${preset.duration}s` : preset.aspectLabel}
       </span>
     </button>
@@ -348,7 +348,7 @@ export function FrameSlot({
   return dataUrl ? (
     <div className="relative overflow-hidden rounded-[8px] border">
       <img alt={caption} className="aspect-video w-full bg-black object-cover" src={dataUrl} />
-      <span className="bg-black/60 absolute bottom-1 left-1 rounded px-1 text-[10px] text-white">{caption}</span>
+      <span className="bg-black/60 absolute bottom-1 left-1 rounded px-1 text-[0.625rem] text-white">{caption}</span>
       <Button
         aria-label={caption}
         className="absolute top-1 right-1 size-6"
@@ -662,7 +662,7 @@ export function VideoGenerator() {
 
       {/* Workflow — txt2vid / img2vid segmented chips. */}
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.workflow")}</Label>
+        <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("videoGenerator.workflow")}</Label>
         <div className="flex gap-2">
           {(
             [
@@ -695,7 +695,7 @@ export function VideoGenerator() {
       {/* Prompt — directly under the workflow pick, before the model chips:
           it is the field the user came here to fill. */}
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="video-prompt">
+        <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="video-prompt">
           {t("generator.prompt")}
         </Label>
         <Textarea
@@ -711,7 +711,7 @@ export function VideoGenerator() {
       {/* Model chips — ecosystems with more than the default pick. */}
       {eco.models.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("generator.model")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("generator.model")}</Label>
           <div className="flex flex-wrap gap-1.5">
             {eco.models.map((m) => (
               <ChoiceChip
@@ -733,7 +733,7 @@ export function VideoGenerator() {
       {hasNegative && (
         <div className="flex flex-col gap-1.5">
           <Label
-            className="flex items-center gap-1 text-[13px] font-medium text-muted-foreground"
+            className="flex items-center gap-1 text-[0.8125rem] font-medium text-muted-foreground"
             htmlFor="video-negative"
           >
             {t("videoGenerator.negativePromptTitle")}
@@ -752,7 +752,9 @@ export function VideoGenerator() {
       {/* Source video — edit lane. */}
       {isEdit && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.sourceVideo")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">
+            {t("videoGenerator.sourceVideo")}
+          </Label>
           {sourceVideo ? (
             <div className="relative overflow-hidden rounded-[8px] border">
               <video className="aspect-video w-full bg-black object-contain" controls playsInline src={sourceVideo}>
@@ -786,7 +788,7 @@ export function VideoGenerator() {
       {/* Frame slots — img2vid (first required, last optional) or refs. */}
       {isImageWorkflow && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">
             {isRef2Vid ? t("videoGenerator.refFrames", { max: refMax }) : t("videoGenerator.frameSlots")}
           </Label>
           <div className={cn("grid gap-2", frameSlots > 1 && "grid-cols-2")}>
@@ -832,7 +834,7 @@ export function VideoGenerator() {
           takes no duration (vidu q1). */}
       {!durationHidden && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="video-duration">
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="video-duration">
             {t("videoGenerator.duration", { seconds: duration })}
           </Label>
           {durationChoices ? (
@@ -864,7 +866,7 @@ export function VideoGenerator() {
       {/* Resolution — engines that take one (per-model lists). */}
       {resolutions.length > 1 && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.resolution")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("videoGenerator.resolution")}</Label>
           <div className="flex gap-1.5">
             {resolutions.map((r) => (
               <ChoiceChip active={resolution === r} className="flex-1" key={r} onClick={() => setResolution(r)}>
@@ -878,7 +880,7 @@ export function VideoGenerator() {
       {/* Aspect — text-driven workflows only (frames dictate it). */}
       {workflow === "txt2vid" && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.aspect")}</Label>
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("videoGenerator.aspect")}</Label>
           <div className="flex flex-wrap gap-1.5">
             {aspects.map((a) => (
               <ChoiceChip active={aspect === a} key={a} onClick={() => setAspect(a)}>
@@ -897,7 +899,7 @@ export function VideoGenerator() {
         <div className="grid grid-cols-2 gap-2">
           {eco.styles.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.style")}</Label>
+              <Label className="text-muted-foreground text-[0.8125rem] font-medium">{t("videoGenerator.style")}</Label>
               <div className="flex gap-1.5">
                 {eco.styles.map((st) => (
                   <ChoiceChip
@@ -914,7 +916,9 @@ export function VideoGenerator() {
           )}
           {eco.movements.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              <Label className="text-muted-foreground text-[13px] font-medium">{t("videoGenerator.movement")}</Label>
+              <Label className="text-muted-foreground text-[0.8125rem] font-medium">
+                {t("videoGenerator.movement")}
+              </Label>
               <Select value={movement || "auto"} onValueChange={setMovement}>
                 <SelectTrigger className="h-8 rounded-[8px]">
                   <span>{movement || "auto"}</span>
@@ -935,7 +939,7 @@ export function VideoGenerator() {
       {/* Hunyuan CFG + steps sliders (registry ranges). */}
       {eco.cfgRange && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="video-cfg">
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="video-cfg">
             {t("generator.cfgScale")}
           </Label>
           <Slider
@@ -955,7 +959,7 @@ export function VideoGenerator() {
       )}
       {eco.stepsRange && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="video-steps">
+          <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="video-steps">
             {t("generator.steps")}
           </Label>
           <Slider
@@ -984,7 +988,7 @@ export function VideoGenerator() {
 
       {/* Seed */}
       <div className="flex flex-col gap-1.5">
-        <Label className="text-muted-foreground text-[13px] font-medium" htmlFor="video-seed">
+        <Label className="text-muted-foreground text-[0.8125rem] font-medium" htmlFor="video-seed">
           {t("generator.seed")}
         </Label>
         <Input

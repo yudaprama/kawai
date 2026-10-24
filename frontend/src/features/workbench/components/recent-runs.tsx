@@ -112,7 +112,7 @@ export function RecentRuns({
           <button
             type="button"
             onClick={() => setRetryKey((k) => k + 1)}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md font-mono text-[10px] tracking-wider uppercase transition-colors hover:underline"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded-md font-mono text-[0.625rem] tracking-wider uppercase transition-colors hover:underline"
           >
             <Icon name="refresh-cw" className="size-3" />
             {t("common.retry")}
@@ -138,14 +138,14 @@ export function RecentRuns({
         >
           <div className="min-w-0 flex-1 text-left">
             <div className="text-foreground truncate text-sm">{run.goal || run.sessionTitle || "Untitled session"}</div>
-            <div className="text-muted-foreground font-mono text-[11px]">
+            <div className="text-muted-foreground font-mono text-[0.6875rem]">
               {relativeTime(run.createdAt)}
               {run.goal && run.sessionTitle && ` · ${run.sessionTitle}`}
               {` · ${run.stepsDone}/${run.stepsTotal} steps`}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <span className="text-primary font-mono text-[10px] group-hover:underline">
+            <span className="text-primary font-mono text-[0.625rem] group-hover:underline">
               {t("workbench.landing.openReport")}
             </span>
             {run.status === "completed" ? (
