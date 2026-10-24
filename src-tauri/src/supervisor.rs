@@ -936,13 +936,12 @@ pub async fn plan_task(
             }
         }
 
-        // ── Layer 1.5: Laya zero-shot fast claim (opt-in) ──────────────────
+        // ── Layer 1.5: Laya zero-shot fast claim ───────────────────────────
         //
-        // KAWAI_LAYA_ROUTER=1 + the model assets installed. On the grey band
-        // one ~250 ms on-device forward pass either names a registered
-        // template — short-circuiting the layer-2 LLM resolver call below —
-        // or declines and layer 2 runs exactly as before. Constraints that
-        // keep a fast claim as safe as a resolver claim:
+        // On the grey band one ~250 ms on-device forward pass either names a
+        // registered template — short-circuiting the layer-2 LLM resolver
+        // call below — or declines and layer 2 runs exactly as before.
+        // Constraints that keep a fast claim as safe as a resolver claim:
         // - It can only claim when the rule-extracted facts ALREADY fill
         //   every required slot (`missing_required`): the classifier names a
         //   pipeline, it cannot extract a period or a ticker, and a
@@ -952,7 +951,9 @@ pub async fn plan_task(
         // - Greeting/question/direct goals never reach here (static layers
         //   run first — the PoC measured Laya mis-claiming questions at 0.96
         //   confidence; those guards are code, not model).
-        if crate::laya_router::enabled() {
+        // Always on: without the bundled assets the LazyLock load yields
+        // None and this block is a clean no-op.
+        {
             let templates = crate::templates::registry();
             let gate_goal = goal.to_string();
             let laya_claim = tokio::task::spawn_blocking(move || {

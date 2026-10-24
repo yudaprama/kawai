@@ -29,13 +29,11 @@ pub const CLAIM_THRESHOLD: f32 = 0.7;
 const VARIANT: &str = "multilingual";
 const OPT_OUT: &str = "plan";
 
-/// `KAWAI_LAYA_ROUTER=1` enables the fast-claim gate. Unset ⇒ never loads.
-pub fn enabled() -> bool {
-    std::env::var("KAWAI_LAYA_ROUTER").ok().as_deref() == Some("1")
-}
-
-/// Diagnostics for the `laya_status` op: flag state + asset presence. Never
-/// forces the lazy load — status must not pay a 34 MB tokenizer parse.
+/// Diagnostics for the `laya_status` op: asset presence only — there are no
+/// env knobs. The gate is always on and degrades to a no-op when the assets
+/// are absent (bundled in the .app at
+/// `Contents/Resources/models/laya/multilingual`). Never forces the lazy
+/// load — status must not pay a 34 MB tokenizer parse.
 pub fn status() -> serde_json::Value {
     let assets = find_laya_model_dir(VARIANT);
     let assets_ok = assets.as_ref().is_some_and(|dir| {
@@ -46,7 +44,6 @@ pub fn status() -> serde_json::Value {
             && dir.join("laya_ml_calibration.json").is_file()
     });
     serde_json::json!({
-        "enabled": enabled(),
         "assets_dir": assets.map(|d| d.display().to_string()),
         "assets_complete": assets_ok,
         "threshold": CLAIM_THRESHOLD,

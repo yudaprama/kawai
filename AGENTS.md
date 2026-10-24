@@ -489,14 +489,13 @@ KAWAI_CF_GLOBAL_DAILY=300     # default 300 (dev-wallet fuse)
 # release APK under test bakes it: KAWAI_LOKI_LEVEL=info bun run tauri:...).
 # Unset: release builds ship WARN/ERROR, debug builds ship INFO.
 KAWAI_LOKI_LEVEL=warn         # off|error|warn|info|debug|trace
-# ── Laya router fast-claim gate (src-tauri/src/laya_router.rs, opt-in) ──
-# Layer 1.5 between the keyword gate and the layer-2 LLM resolver in
-# plan_task: one ~250 ms on-device zero-shot pass claims a registered
-# template on the grey band when facts already fill every required slot;
-# otherwise layer 2 runs unchanged. Claims pass the same build +
-# confirmation machinery and log route_log source="laya".
-KAWAI_LAYA_ROUTER=1           # unset/other = gate never loads
-KAWAI_LAYA_MODEL_DIR=...      # else ~/.kawai/models/laya/multilingual (7-file set)
+# ── Laya router fast-claim gate (src-tauri/src/laya_router.rs) ──
+# Always on, ZERO env configuration. Assets are bundled in the .app
+# (Contents/Resources/models/laya/multilingual) and resolved by
+# kawai_paths::find_laya_model_dir; without them the gate is a clean no-op.
+# On the grey band it claims a registered template in ~250 ms on-device
+# when facts fill every required slot (route_log source="laya"), else the
+# layer-2 resolver runs unchanged.
 ```
 `.env.local` (gitignored) — reserved for future auth configuration (unused by the React frontend).
 
