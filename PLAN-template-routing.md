@@ -6,6 +6,17 @@
 
 ---
 
+**Layer 1.5 — Laya fast-claim (shipped)**: between layer 1 and layer 2, an
+on-device zero-shot classifier (`src-tauri/src/laya_router.rs`, model
+litert-community/Laya-Multilingual-LiteRT, assets auto-downloaded on first
+grey-band goal) may fast-claim a registered template in ~250 ms when the
+rule-extracted facts already fill every required slot. Claims pass the same
+build + `enforce_confirmation_policy` machinery and land in `route_log` with
+`source="laya"`; declines/missing slots fall through to layer 2 unchanged.
+Static guards (greeting/question/direct) always run before it — the PoC
+measured the classifier mis-claiming question-shaped goals at 0.96
+confidence. Threshold 0.7; the plan review gate is the real safety net.
+
 ## 1. Masalah
 
 Supervisor adalah satu-satunya execution path (`ARCHITECTURE.md:48`). Semua submission lewat `plan_task` → `TaskPlan` tervalidasi → `run_plan_with_cancel`. Dua cara jadi multi-step ada di produk:

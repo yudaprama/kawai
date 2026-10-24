@@ -763,11 +763,11 @@ pub async fn plan_task(
         }
     }
 
-    // ── Template routing — two layers (PLAN-template-routing.md §2.5) ──────
+    // ── Template routing — layer 1, 1.5, 2 (PLAN-template-routing.md §2.5) ─
     //
     // Layer 1 (deterministic, this block): the keyword gate claims goals it
     // is SURE about and skips the planner entirely. Three deliberate
-    // refusals, all falling through to layer 2 or the planner:
+    // refusals, all falling through to layer 1.5, layer 2 or the planner:
     // - Follow-ups whose user-goal carries no complete pipeline spec — a
     //   vague "lanjutkan" has no keyword/period, so the keyword gate
     //   declines it (routing happens on the clean `<user-goal>` text, never
@@ -775,6 +775,14 @@ pub async fn plan_task(
     // - Required slots the goal does not carry — never a user-facing prompt.
     // - `build` errors (a template that cannot build must never fail the
     //   submit).
+    //
+    // Layer 1.5 (between the match and layer 2, `laya_router.rs`): an
+    // on-device zero-shot classifier (~250 ms) that may fast-claim a
+    // registered template on the grey band — only when the rule-extracted
+    // facts already fill every required slot (the classifier cannot extract
+    // one), through the same build + confirmation machinery, logged
+    // route_log source="laya". Assets auto-download on first grey-band goal;
+    // absent ⇒ clean no-op and layer 2 runs unchanged.
     //
     // Layer 2 (below the match): when layer 1's decision is `plan` — the
     // grey band — one small LLM call re-validates the decision with real
