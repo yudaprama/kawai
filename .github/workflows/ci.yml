@@ -40,9 +40,12 @@ on:
   pull_request:
   workflow_dispatch:
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+# No concurrency cancel: runs always complete. Rapid pushes run in parallel
+# (job-level runner limits may still queue some jobs). Costs more Actions
+# minutes; revert by restoring:
+#   concurrency:
+#     group: ci-${{ github.ref }}
+#     cancel-in-progress: true
 
 jobs:
   # ── Fast gate: frontend + web feature (no C toolchain) ────────────────────
