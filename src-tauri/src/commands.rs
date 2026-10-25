@@ -2196,7 +2196,7 @@ pub async fn run_stock_research(
 ///
 /// `interval` / `risk` / `limit` are normalized BEFORE the plan exists, so a
 /// bad preset is a plain op error rather than a half-started run.
-#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "binance"))]
 #[tauri::command]
 pub async fn run_binance_risk_audit(
     session_id: i64,
@@ -2234,7 +2234,7 @@ pub async fn run_binance_risk_audit(
 
 /// Futures Risk Audit (MEXC): run the FIXED risk-audit pipeline over the
 /// user's open MEXC futures positions.
-#[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "mexc"))]
 #[tauri::command]
 pub async fn run_mexc_risk_audit(
     session_id: i64,
@@ -2280,7 +2280,7 @@ pub async fn run_mexc_risk_audit(
 /// The period is normalized BEFORE the plan exists, so an unreadable period is
 /// a plain op error the form can show — never a half-started run, never a
 /// silent planner fallback.
-#[cfg(all(feature = "litert", feature = "accounting", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "accounting", feature = "binance"))]
 #[tauri::command]
 pub async fn run_trading_performance(
     session_id: i64,
@@ -2317,7 +2317,7 @@ pub async fn run_trading_performance(
 /// transactions, build the four statements, gate on the integrity check,
 /// export GSTR-1. Same fixed-pipeline lifecycle and the same domain builder
 /// the `accounting_monthly_close` router template calls.
-#[cfg(all(feature = "litert", feature = "accounting", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "accounting"))]
 #[tauri::command]
 pub async fn run_monthly_close(
     session_id: i64,
@@ -2351,7 +2351,7 @@ pub async fn run_monthly_close(
 ///
 /// Strictly public market data: unlike the risk audit there is NO credential
 /// gate — the pipeline never touches a signed endpoint.
-#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "binance"))]
 #[tauri::command]
 pub async fn run_crypto_screener(
     session_id: i64,

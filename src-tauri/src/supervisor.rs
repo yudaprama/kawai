@@ -2946,9 +2946,9 @@ pub async fn build_desk_registry(
     });
     // The desk's ledger material — the user's OWN realized record on the
     // symbol, read from the LOCAL fill ledger (a SQLite read, never a
-    // signed endpoint). Absent without a venue feature or on Android: the
-    // decision roles simply run without it.
-    #[cfg(all(feature = "binance", not(target_os = "android")))]
+    // signed endpoint). Absent without a venue feature: the decision
+    // roles simply run without it.
+    #[cfg(feature = "binance")]
     let desk_ledger: Option<kawai_desk::LedgerFn> = {
         let user_id = user_id.to_string();
         Some(Arc::new(move |symbol: String| {
@@ -2979,7 +2979,7 @@ pub async fn build_desk_registry(
             })
         }))
     };
-    #[cfg(not(all(feature = "binance", not(target_os = "android"))))]
+    #[cfg(not(feature = "binance"))]
     let desk_ledger: Option<kawai_desk::LedgerFn> = None;
 
     toolset.add_tool(kawai_desk::DeskRoleTool::default().with_user(user_id));
@@ -3041,7 +3041,7 @@ pub async fn build_youtube_registry(
 /// their own keys, so the signed tools ship and a missing pair surfaces as a
 /// guidance error naming Settings, never as an un-dispatchable step; the
 /// screener is keyless market data and needs no pair at all).
-#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "binance"))]
 pub async fn build_fixed_binance_registry(
     user_id: &str,
     session_id: i64,
@@ -3054,7 +3054,7 @@ pub async fn build_fixed_binance_registry(
 }
 
 /// Shared dispatch registry for the FIXED MEXC Futures Risk Audit pipeline.
-#[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "mexc"))]
 pub async fn build_fixed_mexc_registry(
     user_id: &str,
     session_id: i64,
@@ -3072,7 +3072,7 @@ pub async fn build_fixed_mexc_registry(
 /// `books_auto_sync` — present in the AUTO toolset this registry is built
 /// from — and is fully automatic: postings derive from the exchange and are
 /// idempotent, and the audit's synthesis reports what was posted.
-#[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "accounting", feature = "binance"))]
 pub fn append_books_sync_step(
     mut plan: kawai_router::TaskPlan,
     venue: &str,
@@ -3245,7 +3245,7 @@ pub async fn prepare_youtube_run(
 /// credentials BEFORE the plan exists (the audit tool itself falls back to
 /// the product-baked pair, but that account's positions are not the
 /// user's).
-#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "binance"))]
 pub async fn prepare_binance_audit_run(
     user_id: &str,
     session_id: i64,
@@ -3285,7 +3285,7 @@ key and secret in Settings → Binance API first"
     let market = args["market"].as_str().unwrap_or_default().to_string();
     let lang = pipeline_language(language, accept_language);
     let plan = ::binance::build_audit_plan(args);
-    #[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
+    #[cfg(all(feature = "accounting", feature = "binance"))]
     let plan = append_books_sync_step(plan, "binance");
     let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &lang, Some(&market));
     let registry = build_fixed_binance_registry(user_id, session_id, &plan_key(&plan))
@@ -3303,7 +3303,7 @@ key and secret in Settings → Binance API first"
     Ok(run)
 }
 
-#[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "mexc"))]
 pub async fn prepare_mexc_audit_run(
     user_id: &str,
     session_id: i64,
@@ -3333,7 +3333,7 @@ pub async fn prepare_mexc_audit_run(
     let plan = ::mexc::build_audit_plan(args);
     // Same gate as the fn itself: accounting+binance (the books wave is
     // venue-generic but lives in the binance/accounting bridge).
-    #[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
+    #[cfg(all(feature = "accounting", feature = "binance"))]
     let plan = append_books_sync_step(plan, "mexc");
     let user_goal = ::mexc::audit_user_goal(&interval, &risk, limit, &lang);
     let registry = build_fixed_mexc_registry(user_id, session_id, &plan_key(&plan))
@@ -3354,7 +3354,7 @@ pub async fn prepare_mexc_audit_run(
 /// Trading Performance: sync venue fills into the ledger, then read the
 /// books back as a period review. The period is normalized BEFORE the plan
 /// exists, so an unreadable period is a plain op error the form can show.
-#[cfg(all(feature = "litert", feature = "accounting", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "accounting", feature = "binance"))]
 pub async fn prepare_trading_performance_run(
     user_id: &str,
     session_id: i64,
@@ -3391,7 +3391,7 @@ pub async fn prepare_trading_performance_run(
 /// Monthly Close: the accounting close over one period — collect
 /// transactions, build the four statements, gate on the integrity check,
 /// export GSTR-1.
-#[cfg(all(feature = "litert", feature = "accounting", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "accounting"))]
 pub async fn prepare_monthly_close_run(
     user_id: &str,
     session_id: i64,
@@ -3424,7 +3424,7 @@ pub async fn prepare_monthly_close_run(
 
 /// Crypto Screener: one parallel `crypto_screener` step per selected screen.
 /// Strictly public market data — NO credential gate.
-#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "binance"))]
 pub async fn prepare_screener_run(
     user_id: &str,
     session_id: i64,

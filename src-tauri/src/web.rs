@@ -2580,15 +2580,15 @@ pub fn router(dist_dir: PathBuf) -> Router {
     // the other fixed pipelines. Each route carries the SAME feature gate as
     // its handler: one shared gate would drop routes that its features don't
     // cover (or reference handlers that were compiled out).
-    #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+    #[cfg(all(feature = "litert", feature = "binance"))]
     let protected = protected
         .route("/api/run_binance_risk_audit", post(run_binance_risk_audit_handler))
         .route("/api/run_crypto_screener", post(run_crypto_screener_handler));
-    #[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+    #[cfg(all(feature = "litert", feature = "mexc"))]
     let protected = protected.route("/api/run_mexc_risk_audit", post(run_mexc_risk_audit_handler));
-    #[cfg(all(feature = "litert", feature = "accounting", feature = "binance", not(target_os = "android")))]
+    #[cfg(all(feature = "litert", feature = "accounting", feature = "binance"))]
     let protected = protected.route("/api/run_trading_performance", post(run_trading_performance_handler));
-    #[cfg(all(feature = "litert", feature = "accounting", not(target_os = "android")))]
+    #[cfg(all(feature = "litert", feature = "accounting"))]
     let protected = protected.route("/api/run_monthly_close", post(run_monthly_close_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
@@ -3078,7 +3078,7 @@ async fn run_youtube_summary_handler(
 /// Binance futures positions. Same fixed-plan contract as the desk and the
 /// YouTube summary — the presets are normalized before the plan exists, so a
 /// bad value is a 400, never a half-started run.
-#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "binance"))]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RunBinanceRiskAuditRequest {
@@ -3093,7 +3093,7 @@ struct RunBinanceRiskAuditRequest {
     stream_id: String,
 }
 
-#[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "mexc"))]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RunMexcRiskAuditRequest {
@@ -3137,7 +3137,7 @@ struct RunMonthlyCloseRequest {
 /// deliverable writer. Same fixed-plan contract as the audit: the presets are
 /// normalized before the plan exists, so a bad value is a 400, never a
 /// half-started run. No credential gate — keyless public endpoints only.
-#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "binance"))]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RunCryptoScreenerRequest {
@@ -3159,7 +3159,7 @@ struct RunCryptoScreenerRequest {
     stream_id: String,
 }
 
-#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "binance"))]
 async fn run_binance_risk_audit_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Extension(user_id): Extension<String>,
@@ -3199,7 +3199,7 @@ async fn run_binance_risk_audit_handler(
     ))
 }
 
-#[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "mexc"))]
 async fn run_mexc_risk_audit_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Extension(user_id): Extension<String>,
@@ -3236,7 +3236,7 @@ async fn run_mexc_risk_audit_handler(
 
 /// Trading Performance over the SSE transport — the same fixed plan the Tauri
 /// command runs (`accounting_tools::plan::build_trading_performance_plan`).
-#[cfg(all(feature = "litert", feature = "accounting", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "accounting", feature = "binance"))]
 async fn run_trading_performance_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Extension(user_id): Extension<String>,
@@ -3269,7 +3269,7 @@ async fn run_trading_performance_handler(
 }
 
 /// Monthly Close over the SSE transport — same fixed plan as the Tauri command.
-#[cfg(all(feature = "litert", feature = "accounting", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "accounting"))]
 async fn run_monthly_close_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Extension(user_id): Extension<String>,
@@ -3300,7 +3300,7 @@ async fn run_monthly_close_handler(
     ))
 }
 
-#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+#[cfg(all(feature = "litert", feature = "binance"))]
 async fn run_crypto_screener_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
     Extension(user_id): Extension<String>,

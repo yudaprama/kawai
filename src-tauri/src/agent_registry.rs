@@ -78,7 +78,7 @@ pub fn binance_tools_for_supervisor(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
-    #[cfg(all(feature = "binance", not(target_os = "android")))]
+    #[cfg(feature = "binance")]
     {
         let mut set = (::binance::agent::definition().build_tools)(context, remote_configured)?;
         if webread::any_engine() {
@@ -87,7 +87,7 @@ pub fn binance_tools_for_supervisor(
         }
         return Some(add_runtime_tools(set, context, remote_configured, false));
     }
-    #[cfg(not(all(feature = "binance", not(target_os = "android"))))]
+    #[cfg(not(feature = "binance"))]
     {
         let _ = (context, remote_configured);
         None
@@ -329,7 +329,7 @@ pub fn accounting_tools_for_supervisor(
     context: &AgentContext<'_>,
     remote_configured: bool,
 ) -> Option<kawai_tools::ToolSet> {
-    #[cfg(all(feature = "accounting", not(target_os = "android")))]
+    #[cfg(feature = "accounting")]
     {
         let mut set = accounting_tools::registry::toolset(context.user_id);
         // The venue fill syncs ride the ACCOUNTING agent's toolset, not a venue
@@ -340,7 +340,7 @@ pub fn accounting_tools_for_supervisor(
         set.merge(&mut mexc::registry::all_tools(context.user_id));
         return Some(add_runtime_tools(set, context, remote_configured, false));
     }
-    #[cfg(not(all(feature = "accounting", not(target_os = "android"))))]
+    #[cfg(not(feature = "accounting"))]
     {
         let _ = (context, remote_configured);
         None
@@ -534,13 +534,13 @@ pub fn builtin() -> AgentRegistry {
     };
 
     let binance = {
-        #[cfg(all(feature = "binance", not(target_os = "android")))]
+        #[cfg(feature = "binance")]
         {
             let mut d = ::binance::agent::definition();
             d.build_tools = binance_tools_for_supervisor;
             d
         }
-        #[cfg(not(all(feature = "binance", not(target_os = "android"))))]
+        #[cfg(not(feature = "binance"))]
         unavailable_definition(
             BINANCE_AGENT_ID,
             "Binance",
@@ -586,7 +586,7 @@ pub fn builtin() -> AgentRegistry {
     };
 
     let accounting = {
-        #[cfg(all(feature = "accounting", not(target_os = "android")))]
+        #[cfg(feature = "accounting")]
         {
             AgentDefinition {
                 id: ACCOUNTING_AGENT_ID,
@@ -602,7 +602,7 @@ pub fn builtin() -> AgentRegistry {
                 summary_directive: None,
             }
         }
-        #[cfg(not(all(feature = "accounting", not(target_os = "android"))))]
+        #[cfg(not(feature = "accounting"))]
         unavailable_definition(
             ACCOUNTING_AGENT_ID,
             "Accounting",
@@ -752,13 +752,9 @@ mod tests {
     fn optional_agents_are_enabled_only_with_their_capability() {
         let registry = builtin();
 
-        #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+        #[cfg(all(feature = "litert", feature = "binance"))]
         assert!(registry.resolve(BINANCE_AGENT_ID).is_some());
-        #[cfg(any(
-            not(feature = "litert"),
-            not(feature = "binance"),
-            target_os = "android"
-        ))]
+        #[cfg(any(not(feature = "litert"), not(feature = "binance")))]
         assert!(registry.resolve(BINANCE_AGENT_ID).is_none());
 
         #[cfg(feature = "litert")]
@@ -845,7 +841,7 @@ mod tests {
         assert!(names.contains(&"artifact_recall"), "{names:?}");
     }
 
-    #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+    #[cfg(all(feature = "litert", feature = "binance"))]
     #[test]
     fn binance_toolset_includes_market_and_runtime_tools() {
         let ctx = AgentContext {
@@ -874,7 +870,7 @@ mod tests {
         );
     }
 
-    #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+    #[cfg(all(feature = "litert", feature = "binance"))]
     #[test]
     fn binance_remote_adds_deep_write_no_draft() {
         let ctx = AgentContext {

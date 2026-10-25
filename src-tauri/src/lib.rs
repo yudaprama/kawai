@@ -341,15 +341,15 @@ pub fn run() {
         commands::run_stock_research,
         #[cfg(feature = "litert")]
         commands::run_youtube_summary,
-        #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+        #[cfg(all(feature = "litert", feature = "binance"))]
         commands::run_binance_risk_audit,
-        #[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+        #[cfg(all(feature = "litert", feature = "mexc"))]
         commands::run_mexc_risk_audit,
-        #[cfg(all(feature = "litert", feature = "accounting", feature = "binance", not(target_os = "android")))]
+        #[cfg(all(feature = "litert", feature = "accounting", feature = "binance"))]
         commands::run_trading_performance,
-        #[cfg(all(feature = "litert", feature = "accounting", not(target_os = "android")))]
+        #[cfg(all(feature = "litert", feature = "accounting"))]
         commands::run_monthly_close,
-        #[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+        #[cfg(all(feature = "litert", feature = "binance"))]
         commands::run_crypto_screener,
         #[cfg(feature = "litert")]
         commands::respond_supervisor_confirmation,
