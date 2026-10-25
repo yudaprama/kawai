@@ -16,7 +16,8 @@ name: ci
 # release.yml (app bundles) is gated on this workflow's conclusion via
 # workflow_run — a green run on main is what starts a release.
 # NOTE: every push to main (including the release bot's bump commits) runs
-# here too — the bazel cache makes that cheap after the first run.
+# here too — the cached litert-lm dylib set makes that cheap: the bazel
+# build only runs when the LiteRT-LM source or its bundling moves.
 #
 # agent_smoke (the full local→cloud turn) is intentionally NOT run here: it
 # needs interactive cloud-side state beyond the smokes. Run it manually
@@ -411,18 +412,6 @@ jobs:
           # dir, so the next run recompiles from cold (the 120/150-min loop).
           cache-on-failure: true
 
-      # Key is per-runner-generation: objects built against an older Xcode's
-      # libc++ headers must not be reused after a toolchain jump (same as
-      # release.yml build-macos).
-      - name: Mount bazel cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            /private/var/tmp/_bazel_runner
-          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
-          restore-keys: bazel-macos26-arm64-
-
       # Tool-catalog embedded replica (headless data root = /tmp/kawai).
       # planner_smoke opens the replica and a FRESH one full-downloads the
       # whole ~46 MB catalog from Turso EVERY run — the syncs-quota drain.
@@ -439,7 +428,47 @@ jobs:
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
         run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
 
+      # ── Cached LiteRT-LM dylib set (the expensive bazel artifact) ─────────
+      # Keyed on the LiteRT-LM commit actually checked out (the fork branch —
+      # carries the macOS sentencepiece patch) + the bundling script that
+      # post-processes the dylibs, so the ~15-30 min bazel build only runs
+      # when the engine source or its packaging moves. actions/cache is
+      # repo-wide, not per-workflow: release.yml build-macos and evals.yml
+      # can restore the same key with the identical key + path pair.
+      # NO restore-keys on purpose: a partial hit would restore dylibs built
+      # from different sources.
+      - name: LiteRT-LM dylib cache key
+        id: litert-lib-key
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C cognee-litert-lm/vendor/LiteRT-LM rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore litert-lm dylibs
+        id: litert-lib
+        uses: actions/cache@v4
+        with:
+          path: cognee-litert-lm/native
+          key: litert-lib-macos26-arm64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('scripts/bundle-litert-dylibs.sh') }}
+
+      # Bazel is only needed on a dylib-cache miss — skip the multi-GB cache
+      # restore and the build together on a hit. Mounted below the submodule
+      # init so the MODULE.bazel hash in the key actually resolves (the old
+      # pre-init position hashed an empty tree → constant key). Same
+      # per-runner-generation caveat as release.yml build-macos: objects built
+      # against an older Xcode's libc++ headers must not be reused after a
+      # toolchain jump.
+      - name: Mount bazel cache
+        if: steps.litert-lib.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            /private/var/tmp/_bazel_runner
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos26-arm64-
+
       - name: Build litert-lm dylib
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           export JAVA_HOME="$JAVA_HOME_17_arm64"
@@ -611,15 +640,38 @@ jobs:
           # dir, so the next run recompiles from cold (the 120/150-min loop).
           cache-on-failure: true
 
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+
+      # ── Cached LiteRT-LM shared-object set (the expensive bazel artifact) ─
+      # Same scheme as macos-smoke: keyed on the LiteRT-LM commit, no
+      # restore-keys (a partial hit would restore a .so built from different
+      # sources). Repo-wide key: the build is skipped when another job or a
+      # previous run already produced this exact set.
+      - name: LiteRT-LM dylib cache key
+        id: litert-lib-key
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C cognee-litert-lm/vendor/LiteRT-LM rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore litert-lm dylibs
+        id: litert-lib
+        uses: actions/cache@v4
+        with:
+          path: cognee-litert-lm/native
+          key: litert-lib-linux-x86_64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/prebuilt/linux_x86_64/*.so') }}
+
+      # Bazel is only needed on a dylib-cache miss — skip the bazel cache
+      # restore and the build together on a hit. Mounted below the submodule
+      # init so the MODULE.bazel hash in the key actually resolves (the old
+      # pre-init position hashed an empty tree → constant key).
       - name: Mount bazel cache
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/bazel
           key: bazel-linux-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux-x86_64-
-
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
 
       # Tauri needs GTK/webkit headers; bindgen + bazel need clang-18.
       # clang-18 via apt.llvm.org — ubuntu-22.04 keeps glibc >= 2.35.
@@ -637,6 +689,7 @@ jobs:
           clang --version
 
       - name: Build litert-lm shared library
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           cd cognee-litert-lm/vendor/LiteRT-LM
