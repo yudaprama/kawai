@@ -5,15 +5,23 @@ name: release-android
 # Android build must never block, delay or fail the desktop release, and
 # the Play Console rollout is not gated on desktop being green.
 #
-# Trigger: the desktop release being PUBLISHED (release.yml's publish job
-# flips the draft with RELEASE_TOKEN — a PAT — so the `release: published`
-# event actually fires; events created by GITHUB_TOKEN never trigger
-# workflows). release.yml runs twice per change (the bot's bump-push
-# re-entry), but only the first completion publishes — the re-entry's
-# publish is a guarded no-op — so this workflow sees exactly ONE event:
-# one Android build per release, mobile always ships the exact tag desktop
-# shipped. workflow_dispatch re-runs it for one tag (failed upload, new
-# internal rollout).
+# Trigger: a `v*` TAG PUSH. release.yml's bump job claims the tag with
+# RELEASE_TOKEN (a PAT), and PAT-created events DO trigger workflows
+# (GITHUB_TOKEN ones never do). The tag appears ~1 minute into the release
+# run, so this build runs IN PARALLEL with the desktop bundlers instead of
+# waiting for the published release — no `release: published` hop, no
+# serialization behind macOS/Windows/Linux. Exactly one run per tag: the
+# bump job is the only writer of `v*` tags, and release.yml's re-entry/skip
+# paths never re-create one.
+#
+# Desktop publish is NOT gated on this workflow (release.yml's
+# `publish.needs` excludes it), so a slow or failed Android build can never
+# hold the release back; in that case the APK lands on the already-published
+# release afterwards. The draft is created below when the desktop jobs
+# haven't created it yet, so normally the APK is in place before publish
+# flips the draft. The AAB is unaffected either way (run artifact + Play).
+# workflow_dispatch(tag) re-runs it for one tag (failed upload, new internal
+# rollout).
 #
 # Feature set: SAME as the desktop release — default `desktop` (office, graph,
 # mexc) + litert, tts, binance, accounting. `litert` is why this builds
@@ -33,12 +41,12 @@ name: release-android
 #          ANDROID_KEY_PASSWORD, ANDROID_KEY_ALIAS, PLAY_SERVICE_ACCOUNT_JSON
 # Variables: PLAY_UPLOAD_ENABLED ("true" enables the Play upload)
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag to build (e.g. v0.3.9). Defaults to the latest published release.'
+        description: 'Tag to rebuild (e.g. v0.3.9). Required for workflow_dispatch.'
         required: false
         type: string
       loki_level:
@@ -53,7 +61,7 @@ permissions:
 # Serialize per tag: two runs uploading the same versionCode would race
 # on Play's "versionCode already used".
 concurrency:
-  group: release-android-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+  group: release-android-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -64,15 +72,17 @@ jobs:
       - name: Resolve tag
         id: tag
         env:
-          EVENT_TAG: ${{ github.event.release.tag_name }}
+          # The tag push carries the tag in ref_name; a dispatch may override
+          # it with the input (dispatch on a branch ref must set the input).
+          PUSH_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           TAG=""
           if [ -n "${INPUT_TAG:-}" ]; then
             TAG="$INPUT_TAG"
-          elif [ -n "${EVENT_TAG:-}" ]; then
-            TAG="$EVENT_TAG"
+          elif [ -n "${PUSH_TAG:-}" ]; then
+            TAG="$PUSH_TAG"
           fi
           if [ -z "$TAG" ]; then
             echo "No tag to build — workflow_dispatch requires the tag input." >&2
@@ -254,11 +264,26 @@ jobs:
           fi
           echo "rustls-platform-verifier present in the release dex."
 
+      # The tag push starts this build before the desktop bundlers finish, so
+      # the draft release may not exist yet. Create it as a DRAFT and upload
+      # with `gh release upload` — that leaves draft state untouched, whereas
+      # action-gh-release applies its `draft: false` default when updating an
+      # existing release and would publish it with the desktop assets still
+      # missing. The publish job in release.yml flips the draft once every
+      # desktop platform is green.
       - name: Attach APK to the release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          files: src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          APK="$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -n1)"
+          # A desktop job may create the draft concurrently — losing that race
+          # is harmless (the upload needs it to exist, not to be ours).
+          gh release view "$TAG" > /dev/null 2>&1 ||
+            gh release create "$TAG" --draft --title "kawai $TAG" || true
+          gh release upload "$TAG" "$APK" --clobber
 
       # The AAB is the Play submission format and is NOT attached to the
       # public release (unlike the APK) — it is kept as a 30-day run

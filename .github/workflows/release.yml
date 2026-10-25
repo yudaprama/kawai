@@ -616,12 +616,11 @@ jobs:
     steps:
       - name: Publish draft release as latest
         env:
-          # RELEASE_TOKEN (PAT), NOT GITHUB_TOKEN: events created by
-          # GITHUB_TOKEN never trigger workflows, so release-android's
-          # `release: published` trigger would never fire. A PAT-created
-          # publish event does fire downstream workflows. Exactly one run
-          # publishes (the guard skips re-published releases), so
-          # release-android sees exactly one event per release.
+          # RELEASE_TOKEN (PAT), NOT GITHUB_TOKEN: the flip stays attributed to
+          # the release bot's identity, and any future `release`-event consumer
+          # keeps working (GITHUB_TOKEN-created events never trigger
+          # workflows). release-android does NOT depend on this event — it
+          # starts from the tag push the bump job makes.
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           # No checkout in this job — gh discovers the repo via git remote by
           # default and dies with "not a git repository". GH_REPO skips that.

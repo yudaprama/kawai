@@ -150,13 +150,18 @@ bun run bundle:litert
 # Android release (.github/workflows/release-android.yml) — a SEPARATE
 # workflow from release.yml on purpose: mobile and desktop have independent
 # lifecycles, and an Android failure must never block or fail the desktop
-# release. Trigger = `release: published` — release.yml's publish job flips
-# the draft with RELEASE_TOKEN (a PAT), and PAT-created events DO trigger
-# workflows (GITHUB_TOKEN ones never do). release.yml itself runs twice per
-# change (the bot's bump-push re-entry — the documented self-heal), but only
-# the first completion publishes; the re-entry's publish is a guarded no-op,
-# so release-android fires exactly once per release and mobile always ships
-# exactly what desktop shipped. Plus
+# release. Trigger = a `v*` tag push (release.yml's bump job claims the tag
+# with RELEASE_TOKEN — a PAT — and PAT-created events DO trigger workflows;
+# GITHUB_TOKEN ones never do), so the Android build starts ~1 minute into the
+# release run and runs IN PARALLEL with the desktop bundlers instead of
+# waiting for the published release. Exactly one run per tag: bump is the only
+# writer of `v*` tags. Desktop publish is NOT gated on it (publish.needs
+# excludes it) — a slow/failed Android build never holds the release back,
+# and the APK then lands on the already-published release. The Android job
+# creates the draft itself when the desktop jobs haven't yet, and uploads with
+# `gh release upload` (never action-gh-release, whose `draft: false` default
+# would publish the draft early) so the APK is normally in place before
+# publish flips it. Plus
 # workflow_dispatch(tag) for a re-run. Builds a signed AAB +
 # universal APK for aarch64 with the SAME cargo features as the desktop
 # release (`litert,tts,binance,accounting,mexc` on top of `desktop`) — litert
