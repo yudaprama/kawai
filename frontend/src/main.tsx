@@ -6,6 +6,7 @@ import { AuthGate } from "@/features/auth/auth-gate";
 import { ContextGatheringStep } from "@/features/auth/context-gathering-step";
 import { OnboardingProvider } from "@/features/auth/onboarding-provider";
 import { getLocale } from "@/lib/i18n";
+import { installViewportResync } from "@/lib/viewport-resync";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import App from "./app/App";
@@ -44,6 +45,13 @@ if (sentryDsn) {
     },
   });
 }
+
+// The shell is sized by CSS viewport metrics (`h-dvh` + `env(safe-area-inset-*)`)
+// with no scroll fallback (`html { overflow: clip }`), so a viewport left stale
+// by a background→foreground switch sticks until something else resizes the
+// window. Installed before React mounts so the Android resume poke
+// (MainActivity.onResume) always finds the entry point — see lib/viewport-resync.ts.
+installViewportResync();
 
 const rootEl = document.getElementById("root");
 if (rootEl) {

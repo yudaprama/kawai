@@ -43,6 +43,26 @@ class MainActivity : TauriActivity() {
     )
   }
 
+  // The layout is driven by CSS viewport metrics (`dvh`,
+  // `env(safe-area-inset-*)`) and the Activity is never recreated for window
+  // changes (see configChanges in AndroidManifest.xml), so returning from the
+  // background otherwise keeps the viewport and insets the WebView had before
+  // the switch — typically captured with the IME up — and the page renders
+  // against stale geometry. Re-dispatch the window insets, force a relayout
+  // and let the web layer re-measure + log (mirror handler
+  // `__kawaiResyncViewport` in frontend/src/lib/viewport-resync.ts).
+  override fun onResume() {
+    super.onResume()
+    val wv = mainWebView ?: return
+    window.decorView.requestApplyInsets()
+    wv.requestLayout()
+    wv.invalidate()
+    wv.evaluateJavascript(
+      "(window.__kawaiResyncViewport ? window.__kawaiResyncViewport('resume') : null)",
+      null,
+    )
+  }
+
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     mainWebView = webView
