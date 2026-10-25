@@ -384,6 +384,15 @@ jobs:
   macos-smoke:
     runs-on: macos-26
     timeout-minutes: 120
+    # CI runners are ephemeral: debuginfo and incremental artifacts lengthen
+    # cold Rust builds but do not change the test or smoke binaries' behavior.
+    # Keep source locations in normal compiler diagnostics; runtime backtraces
+    # are the only intentionally reduced diagnostic detail here.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -576,6 +585,14 @@ jobs:
     # before the old 120-min ceiling killed it mid-compile (run 36127357424,
     # 2026-09-25) — unit-test results were lost and every smoke below skipped.
     timeout-minutes: 180
+    # CI runners are ephemeral: debuginfo and incremental artifacts lengthen
+    # cold Rust builds but do not change the test or smoke binaries' behavior.
+    # Keep source locations in normal compiler diagnostics; runtime backtraces
+    # are the only intentionally reduced diagnostic detail here.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
     steps:
       - uses: actions/checkout@v4
         with:
