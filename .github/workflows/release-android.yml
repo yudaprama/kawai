@@ -107,7 +107,19 @@ jobs:
           # path/git dependencies of src-tauri's default `desktop` feature —
           # the release token above authenticates the fetches.
           submodules: recursive
+          # LiteRT-LM's Android linker input is LFS-managed in a nested
+          # submodule; without this it is checked out as a text pointer.
+          lfs: true
 
+      - name: Verify LiteRT-LM Android library
+        run: |
+          set -euo pipefail
+          library=cognee-litert-lm/vendor/LiteRT-LM/prebuilt/android_arm64/libGemmaModelConstraintProvider.so
+          test -s "$library"
+          if [ "$(wc -c < "$library")" -le 1000000 ]; then
+            echo "::error::$library is unexpectedly small; Git LFS content was not fetched."
+            exit 1
+          fi
       - name: Git auth for private dependencies
         run: |
           git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
