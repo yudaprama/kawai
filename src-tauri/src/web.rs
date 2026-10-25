@@ -2974,6 +2974,17 @@ struct RunStockResearchRequest {
     stream_id: String,
 }
 
+/// Map a fixed-pipeline build failure to its HTTP status: bad input → 400,
+/// credential precondition → 412, registry failure → 503.
+#[cfg(feature = "litert")]
+fn fixed_run_status(e: crate::supervisor::FixedRunError) -> (StatusCode, String) {
+    match e {
+        crate::supervisor::FixedRunError::BadInput(m) => (StatusCode::BAD_REQUEST, m),
+        crate::supervisor::FixedRunError::Precondition(m) => (StatusCode::PRECONDITION_FAILED, m),
+        crate::supervisor::FixedRunError::Registry(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
+    }
+}
+
 #[cfg(feature = "litert")]
 async fn run_stock_research_handler(
     Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
@@ -2986,53 +2997,27 @@ async fn run_stock_research_handler(
     let bearer = cookie_bearer(&headers)?;
     ensure_session(&user_id, req.session_id).await?;
 
-    let analysts = req.analysts.unwrap_or_default();
-    let analyst_slices: Vec<&str> = analysts.iter().map(String::as_str).collect();
-    let domain_str = req.domain.unwrap_or_else(|| "stock".into());
-    // Output language: explicit body field first, then Accept-Language.
-    let language = crate::supervisor::resolve_user_language(
-        req.language.as_deref(),
-        headers
-            .get(header::ACCEPT_LANGUAGE)
-            .and_then(|v| v.to_str().ok()),
-    )
-    .unwrap_or_default();
-    // Validate BEFORE the plan exists — a drifted domain/analyst is a 4xx
-    // carrying the reason, not a silently wrong run (same contract as the
-    // screener's normalize_screener_args).
-    let args = kawai_desk::normalize_desk_args(
-        &req.ticker,
-        req.trade_date.as_deref().unwrap_or(""),
-        &analyst_slices,
-        &domain_str,
-        &language,
-    )
-    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let analysts_ref: Vec<&str> = args.analysts.iter().map(String::as_str).collect();
-    let plan = kawai_desk::build_desk_plan(
-        &args.ticker,
-        &args.trade_date,
-        &analysts_ref,
-        &args.domain,
-        &args.language,
-    );
-    let user_goal = kawai_desk::desk_user_goal(&args.ticker, &args.trade_date, &args.domain, &args.language);
-    let tool_registry = crate::supervisor::build_desk_registry(
+    let run = crate::supervisor::prepare_desk_run(
         &user_id,
         req.session_id,
-        &crate::supervisor::plan_key(&plan),
+        &req.ticker,
+        req.trade_date.as_deref().unwrap_or(""),
+        req.analysts.unwrap_or_default(),
+        req.domain,
+        req.language.as_deref(),
+        headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
     )
     .await
-    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+    .map_err(fixed_run_status)?;
 
     Ok(supervisor_sse(
-        plan,
-        tool_registry,
+        run.plan,
+        run.registry,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(user_goal),
-        None,
+        Some(run.user_goal),
+        run.video_id,
         &bearer,
         pending,
     ))
@@ -3066,36 +3051,24 @@ async fn run_youtube_summary_handler(
     let bearer = cookie_bearer(&headers)?;
     ensure_session(&user_id, req.session_id).await?;
 
-    let video = kawai_youtube::fetch_video(&req.url)
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    // Output language: explicit body field first, then Accept-Language.
-    let language = crate::supervisor::resolve_user_language(
-        req.language.as_deref(),
-        headers
-            .get(header::ACCEPT_LANGUAGE)
-            .and_then(|v| v.to_str().ok()),
-    )
-    .unwrap_or_default();
-    let plan = kawai_youtube::build_youtube_plan(&video, &language)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let user_goal = kawai_youtube::youtube_user_goal(&video, &language);
-    let tool_registry = crate::supervisor::build_youtube_registry(
+    let run = crate::supervisor::prepare_youtube_run(
         &user_id,
         req.session_id,
-        &crate::supervisor::plan_key(&plan),
+        &req.url,
+        req.language.as_deref(),
+        headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
     )
     .await
-    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+    .map_err(fixed_run_status)?;
 
     Ok(supervisor_sse(
-        plan,
-        tool_registry,
+        run.plan,
+        run.registry,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(user_goal),
-        Some(video.id),
+        Some(run.user_goal),
+        run.video_id,
         &bearer,
         pending,
     ))
@@ -3198,57 +3171,29 @@ async fn run_binance_risk_audit_handler(
     let bearer = cookie_bearer(&headers)?;
     ensure_session(&user_id, req.session_id).await?;
 
-    // Same fail-closed credential gate as the Tauri command: the audit grades
-    // the user's OWN positions, so the product-baked pair must not stand in.
-    let creds = ::binance::credentials::op_status(&user_id).await;
-    if creds.source != "user" {
-        return Err((
-            StatusCode::PRECONDITION_FAILED,
-            "the futures risk audit grades YOUR open positions — add your own read-only Binance API \
-key and secret in Settings → Binance API first"
-                .to_string(),
-        ));
-    }
-
-    let args = ::binance::normalize_audit_args(
-        req.interval.as_deref().unwrap_or_default(),
-        req.risk.as_deref().unwrap_or_default(),
-        req.limit,
-        req.market.as_deref(),
-    );
-    // Read the normalized values back BEFORE the plan consumes them, so the
-    // report's goal describes the run that actually executes.
-    let interval = args["interval"].as_str().unwrap_or_default().to_string();
-    let risk = args["risk"].as_str().unwrap_or_default().to_string();
-    let limit = args["limit"].as_u64().unwrap_or_default() as u32;
-    let market = args["market"].as_str().unwrap_or_default().to_string();
-    let language = crate::supervisor::resolve_user_language(
-        req.language.as_deref(),
-        headers
-            .get(header::ACCEPT_LANGUAGE)
-            .and_then(|v| v.to_str().ok()),
-    )
-    .unwrap_or_default();
-    let plan = ::binance::build_audit_plan(args);
-    #[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
-    let plan = crate::supervisor::append_books_sync_step(plan, "binance");
-    let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language, Some(&market));
-    let tool_registry = crate::supervisor::build_fixed_binance_registry(
+    // Same fail-closed credential gate as the Tauri command — enforced inside
+    // the shared builder (PRECONDITION_FAILED on a missing user pair).
+    let run = crate::supervisor::prepare_binance_audit_run(
         &user_id,
         req.session_id,
-        &crate::supervisor::plan_key(&plan),
+        req.interval.as_deref(),
+        req.risk.as_deref(),
+        req.limit,
+        req.market.as_deref(),
+        req.language.as_deref(),
+        headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
     )
     .await
-    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+    .map_err(fixed_run_status)?;
 
     Ok(supervisor_sse(
-        plan,
-        tool_registry,
+        run.plan,
+        run.registry,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(user_goal),
-        None,
+        Some(run.user_goal),
+        run.video_id,
         &bearer,
         pending,
     ))
@@ -3264,50 +3209,26 @@ async fn run_mexc_risk_audit_handler(
     let bearer = cookie_bearer(&headers)?;
     ensure_session(&user_id, req.session_id).await?;
 
-    let creds = ::mexc::credentials::op_status(&user_id).await;
-    if creds.source != "user" {
-        return Err((
-            StatusCode::PRECONDITION_FAILED,
-            "the futures risk audit grades YOUR open positions — add your own read-only MEXC API key and secret in Settings → MEXC API first"
-                .to_string(),
-        ));
-    }
-
-    let args = ::mexc::normalize_audit_args(
-        req.interval.as_deref().unwrap_or_default(),
-        req.risk.as_deref().unwrap_or_default(),
-        req.limit,
-    );
-    let interval = args["interval"].as_str().unwrap_or_default().to_string();
-    let risk = args["risk"].as_str().unwrap_or_default().to_string();
-    let limit = args["limit"].as_u64().unwrap_or_default() as u32;
-    let language = crate::supervisor::resolve_user_language(
-        req.language.as_deref(),
-        headers
-            .get(header::ACCEPT_LANGUAGE)
-            .and_then(|v| v.to_str().ok()),
-    )
-    .unwrap_or_default();
-    let plan = ::mexc::build_audit_plan(args);
-    #[cfg(all(feature = "accounting", feature = "mexc", not(target_os = "android")))]
-    let plan = crate::supervisor::append_books_sync_step(plan, "mexc");
-    let user_goal = ::mexc::audit_user_goal(&interval, &risk, limit, &language);
-    let tool_registry = crate::supervisor::build_fixed_mexc_registry(
+    let run = crate::supervisor::prepare_mexc_audit_run(
         &user_id,
         req.session_id,
-        &crate::supervisor::plan_key(&plan),
+        req.interval.as_deref(),
+        req.risk.as_deref(),
+        req.limit,
+        req.language.as_deref(),
+        headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
     )
     .await
-    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+    .map_err(fixed_run_status)?;
 
     Ok(supervisor_sse(
-        plan,
-        tool_registry,
+        run.plan,
+        run.registry,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(user_goal),
-        None,
+        Some(run.user_goal),
+        run.video_id,
         &bearer,
         pending,
     ))
@@ -3324,30 +3245,24 @@ async fn run_trading_performance_handler(
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
     let bearer = cookie_bearer(&headers)?;
     ensure_session(&user_id, req.session_id).await?;
-    let language = crate::supervisor::resolve_user_language(
+    let run = crate::supervisor::prepare_trading_performance_run(
+        &user_id,
+        req.session_id,
+        &req.period,
+        req.venue.as_deref(),
         req.language.as_deref(),
         headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
-    );
-    let plan = accounting_tools::plan::build_trading_performance_plan(
-        req.period.trim(),
-        chrono::Local::now().date_naive(),
-        req.venue.as_deref().map(str::trim).filter(|v| !v.is_empty()),
-        crate::templates::TRADING_SYNC_VENUES,
-        language.as_deref(),
     )
-    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let user_goal = plan.goal.clone();
-    let tool_registry = crate::supervisor::build_registry_for_plan(&user_id, req.session_id, &plan)
-        .await
-        .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+    .await
+    .map_err(fixed_run_status)?;
     Ok(supervisor_sse(
-        plan,
-        tool_registry,
+        run.plan,
+        run.registry,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(user_goal),
-        None,
+        Some(run.user_goal),
+        run.video_id,
         &bearer,
         pending,
     ))
@@ -3363,28 +3278,23 @@ async fn run_monthly_close_handler(
 ) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
     let bearer = cookie_bearer(&headers)?;
     ensure_session(&user_id, req.session_id).await?;
-    let language = crate::supervisor::resolve_user_language(
+    let run = crate::supervisor::prepare_monthly_close_run(
+        &user_id,
+        req.session_id,
+        &req.period,
         req.language.as_deref(),
         headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
-    );
-    let plan = accounting_tools::plan::build_monthly_close_plan(
-        req.period.trim(),
-        chrono::Local::now().date_naive(),
-        language.as_deref(),
     )
-    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    let user_goal = plan.goal.clone();
-    let tool_registry = crate::supervisor::build_registry_for_plan(&user_id, req.session_id, &plan)
-        .await
-        .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+    .await
+    .map_err(fixed_run_status)?;
     Ok(supervisor_sse(
-        plan,
-        tool_registry,
+        run.plan,
+        run.registry,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(user_goal),
-        None,
+        Some(run.user_goal),
+        run.video_id,
         &bearer,
         pending,
     ))
@@ -3404,67 +3314,30 @@ async fn run_crypto_screener_handler(
 
     // NO credential gate: the screener is public market data and never
     // touches a signed endpoint — anyone signed in may scan the market.
-    let screens_owned: Vec<String> = req.screens.unwrap_or_default();
-    let screens: Vec<&str> = screens_owned.iter().map(|s| s.as_str()).collect();
-    let args = ::binance::normalize_screener_args(
-        &screens,
+    let run = crate::supervisor::prepare_screener_run(
+        &user_id,
+        req.session_id,
+        req.screens.unwrap_or_default(),
         req.universe.as_deref().unwrap_or_default(),
         req.interval.as_deref().unwrap_or_default(),
         req.venue.as_deref().unwrap_or_default(),
         req.top_n,
         req.scan_size,
         req.structure.as_ref(),
-    )
-    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    // Read the normalized values back BEFORE the plan consumes them, so the
-    // report's goal describes the run that actually executes.
-    let screens: Vec<String> = args["screens"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    let universe = args["universe"].as_str().unwrap_or_default().to_string();
-    let interval = args["interval"].as_str().unwrap_or_default().to_string();
-    let venue = args["venue"].as_str().unwrap_or_default().to_string();
-    let top_n = args["topN"].as_u64().unwrap_or_default() as u32;
-    let language = crate::supervisor::resolve_user_language(
         req.language.as_deref(),
-        headers
-            .get(header::ACCEPT_LANGUAGE)
-            .and_then(|v| v.to_str().ok()),
-    )
-    .unwrap_or_default();
-    // Read the narrowing label BEFORE the plan consumes the args.
-    let structure_label = args["structureLabel"].as_str().map(str::to_string);
-    let plan = ::binance::build_screener_plan(args);
-    let user_goal = ::binance::screener_user_goal(
-        &screens,
-        &universe,
-        &interval,
-        &venue,
-        top_n,
-        &language,
-        structure_label.as_deref(),
-    );
-    let tool_registry = crate::supervisor::build_fixed_binance_registry(
-        &user_id,
-        req.session_id,
-        &crate::supervisor::plan_key(&plan),
+        headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
     )
     .await
-    .map_err(|e| (StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+    .map_err(fixed_run_status)?;
 
     Ok(supervisor_sse(
-        plan,
-        tool_registry,
+        run.plan,
+        run.registry,
         req.stream_id,
         user_id,
         req.session_id,
-        Some(user_goal),
-        None,
+        Some(run.user_goal),
+        run.video_id,
         &bearer,
         pending,
     ))

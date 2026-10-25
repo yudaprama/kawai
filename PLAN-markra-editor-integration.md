@@ -153,7 +153,7 @@ library, same library / different version, and one-sided.
 | Syntax highlighting | `shiki` 4.4.3 | `lowlight` (highlight.js) — rejected, see §5 |
 | Editing surface | none (streamdown is read-only) | CodeMirror 6 (`@codemirror/*`) + `@lezer/*` — the whole point of this plan |
 | HTML → markdown | none in JS (Rust `logic/scrape.rs`) | `turndown` (+ `@mozilla/readability` + `jsdom` in `packages/ai`) |
-| LLM runtime | no SDK — hand-written Rust SSE client (`logic/remote.rs`) + on-device LiteRT-LM | `ai` 6 + 11 `@ai-sdk/*` providers + `@earendil-works/pi-agent-core` / `pi-ai` |
+| LLM runtime | no SDK — hand-written Rust SSE client (`crates/foundation/remote-llm`) + on-device LiteRT-LM | `ai` 6 + 11 `@ai-sdk/*` providers + `@earendil-works/pi-agent-core` / `pi-ai` |
 | UI primitives | `radix-ui` + `cmdk` | `@base-ui/react` |
 | Icons | none (inline SVG / `components/ui/`) | `lucide` / `lucide-react` — rejected, see §5 |
 | Fonts | `@fontsource-variable/inter`, `jetbrains-mono` | `@fontsource-variable/noto-sans`, `noto-sans-sc` |

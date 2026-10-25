@@ -2171,40 +2171,19 @@ pub async fn run_stock_research(
 ) -> Result<(), String> {
     let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
 
-    let analyst_refs: Vec<String> = analysts.unwrap_or_default();
-    let analyst_slices: Vec<&str> = analyst_refs.iter().map(String::as_str).collect();
-    let domain_str = domain.unwrap_or_else(|| "stock".into());
-    let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
-        .unwrap_or_default();
-    // Validate BEFORE the plan exists — a drifted domain/analyst is a plain
-    // op error, not a silently wrong 15-LLM-call run (same contract as the
-    // screener's normalize_screener_args).
-    let args = kawai_desk::normalize_desk_args(
-        &ticker,
-        trade_date.as_deref().unwrap_or(""),
-        &analyst_slices,
-        &domain_str,
-        &language,
-    )?;
-    let analysts_ref: Vec<&str> = args.analysts.iter().map(String::as_str).collect();
-    let plan = kawai_desk::build_desk_plan(
-        &args.ticker,
-        &args.trade_date,
-        &analysts_ref,
-        &args.domain,
-        &args.language,
-    );
-    let user_goal = kawai_desk::desk_user_goal(&args.ticker, &args.trade_date, &args.domain, &args.language);
-    let tool_registry = crate::supervisor::build_desk_registry(
+    let run = crate::supervisor::prepare_desk_run(
         &ctx.user_id,
         session_id,
-        &crate::supervisor::plan_key(&plan),
+        &ticker,
+        trade_date.as_deref().unwrap_or(""),
+        analysts.unwrap_or_default(),
+        domain,
+        language.as_deref(),
+        None,
     )
     .await
-    .map_err(|e| e.to_string())?;
-
-    tracing::info!(component = "stock-research", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running stock research");
-    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
+    .map_err(|e| e.message().to_string())?;
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
         .await
 }
 
@@ -2237,49 +2216,19 @@ pub async fn run_binance_risk_audit(
 ) -> Result<(), String> {
     let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
 
-    // Fail closed on credentials BEFORE the plan exists. The audit tool
-    // itself falls back to the product-baked pair (every signed binance tool
-    // does), but that account's positions are not the user's — a report
-    // grading someone else's naked notional, delivered under the user's name,
-    // is worse than no report. Only the user's own pair may run this op.
-    let creds = ::binance::credentials::op_status(&ctx.user_id).await;
-    if creds.source != "user" {
-        return Err(
-            "the futures risk audit grades YOUR open positions — add your own read-only Binance API \
-key and secret in Settings → Binance API first"
-                .to_string(),
-        );
-    }
-
-    let args = ::binance::normalize_audit_args(
-        interval.as_deref().unwrap_or_default(),
-        risk.as_deref().unwrap_or_default(),
-        limit,
-        market.as_deref(),
-    );
-    // Read the normalized values back BEFORE the plan consumes them, so the
-    // report's goal describes the run that actually executes (an unknown preset
-    // fell back to the tool default rather than reaching the writer).
-    let interval = args["interval"].as_str().unwrap_or_default().to_string();
-    let risk = args["risk"].as_str().unwrap_or_default().to_string();
-    let limit = args["limit"].as_u64().unwrap_or_default() as u32;
-    let market = args["market"].as_str().unwrap_or_default().to_string();
-    let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
-        .unwrap_or_default();
-    let plan = ::binance::build_audit_plan(args);
-    #[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
-    let plan = crate::supervisor::append_books_sync_step(plan, "binance");
-    let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &language, Some(&market));
-    let tool_registry = crate::supervisor::build_fixed_binance_registry(
+    let run = crate::supervisor::prepare_binance_audit_run(
         &ctx.user_id,
         session_id,
-        &crate::supervisor::plan_key(&plan),
+        interval.as_deref(),
+        risk.as_deref(),
+        limit,
+        market.as_deref(),
+        language.as_deref(),
+        None,
     )
     .await
-    .map_err(|e| e.to_string())?;
-
-    tracing::info!(component = "binance-risk-audit", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running futures risk audit");
-    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
+    .map_err(|e| e.message().to_string())?;
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
         .await
 }
 
@@ -2301,43 +2250,18 @@ pub async fn run_mexc_risk_audit(
 ) -> Result<(), String> {
     let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
 
-    let creds = ::mexc::credentials::op_status(&ctx.user_id).await;
-    if creds.source != "user" {
-        return Err(
-            "the futures risk audit grades YOUR open positions — add your own read-only MEXC API key and secret in Settings → MEXC API first"
-                .to_string(),
-        );
-    }
-
-    let args = ::mexc::normalize_audit_args(
-        interval.as_deref().unwrap_or_default(),
-        risk.as_deref().unwrap_or_default(),
-        limit,
-    );
-    let interval = args["interval"].as_str().unwrap_or_default().to_string();
-    let risk = args["risk"].as_str().unwrap_or_default().to_string();
-    let limit = args["limit"].as_u64().unwrap_or_default() as u32;
-    let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
-        .unwrap_or_default();
-    let plan = ::mexc::build_audit_plan(args);
-    #[cfg(all(
-        feature = "accounting",
-        feature = "binance",
-        feature = "mexc",
-        not(target_os = "android")
-    ))]
-    let plan = crate::supervisor::append_books_sync_step(plan, "mexc");
-    let user_goal = ::mexc::audit_user_goal(&interval, &risk, limit, &language);
-    let tool_registry = crate::supervisor::build_fixed_mexc_registry(
+    let run = crate::supervisor::prepare_mexc_audit_run(
         &ctx.user_id,
         session_id,
-        &crate::supervisor::plan_key(&plan),
+        interval.as_deref(),
+        risk.as_deref(),
+        limit,
+        language.as_deref(),
+        None,
     )
     .await
-    .map_err(|e| e.to_string())?;
-
-    tracing::info!(component = "mexc-risk-audit", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running futures risk audit");
-    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
+    .map_err(|e| e.message().to_string())?;
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
         .await
 }
 
@@ -2375,20 +2299,17 @@ pub async fn run_trading_performance(
     pending: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
     let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
-    let language = crate::supervisor::resolve_user_language(language.as_deref(), None);
-    let plan = accounting_tools::plan::build_trading_performance_plan(
-        period.trim(),
-        chrono::Local::now().date_naive(),
-        venue.as_deref().map(str::trim).filter(|v| !v.is_empty()),
-        crate::templates::TRADING_SYNC_VENUES,
+    let run = crate::supervisor::prepare_trading_performance_run(
+        &ctx.user_id,
+        session_id,
+        &period,
+        venue.as_deref(),
         language.as_deref(),
-    )?;
-    let user_goal = plan.goal.clone();
-    let tool_registry = crate::supervisor::build_registry_for_plan(&ctx.user_id, session_id, &plan)
-        .await
-        .map_err(|e| e.to_string())?;
-    tracing::info!(component = "trading-performance", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running trading performance review");
-    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
+        None,
+    )
+    .await
+    .map_err(|e| e.message().to_string())?;
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
         .await
 }
 
@@ -2409,18 +2330,16 @@ pub async fn run_monthly_close(
     pending: State<'_, crate::supervisor::PendingConfirmations>,
 ) -> Result<(), String> {
     let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
-    let language = crate::supervisor::resolve_user_language(language.as_deref(), None);
-    let plan = accounting_tools::plan::build_monthly_close_plan(
-        period.trim(),
-        chrono::Local::now().date_naive(),
+    let run = crate::supervisor::prepare_monthly_close_run(
+        &ctx.user_id,
+        session_id,
+        &period,
         language.as_deref(),
-    )?;
-    let user_goal = plan.goal.clone();
-    let tool_registry = crate::supervisor::build_registry_for_plan(&ctx.user_id, session_id, &plan)
-        .await
-        .map_err(|e| e.to_string())?;
-    tracing::info!(component = "monthly-close", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running monthly close");
-    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
+        None,
+    )
+    .await
+    .map_err(|e| e.message().to_string())?;
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
         .await
 }
 
@@ -2458,59 +2377,22 @@ pub async fn run_crypto_screener(
 ) -> Result<(), String> {
     let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
 
-    let screens_owned = screens.unwrap_or_default();
-    let screen_names: Vec<&str> = screens_owned
-        .iter()
-        .map(|s| s.as_str())
-        .collect();
-    let args = ::binance::normalize_screener_args(
-        &screen_names,
+    let run = crate::supervisor::prepare_screener_run(
+        &ctx.user_id,
+        session_id,
+        screens.unwrap_or_default(),
         universe.as_deref().unwrap_or_default(),
         interval.as_deref().unwrap_or_default(),
         venue.as_deref().unwrap_or_default(),
         top_n,
         scan_size,
         structure.as_ref(),
-    )
-    .map_err(|e| e.to_string())?;
-    // Read the normalized values back BEFORE the plan consumes them, so the
-    // report's goal describes the run that actually executes.
-    let screens: Vec<String> = args["screens"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    let universe = args["universe"].as_str().unwrap_or_default().to_string();
-    let interval = args["interval"].as_str().unwrap_or_default().to_string();
-    let venue = args["venue"].as_str().unwrap_or_default().to_string();
-    let top_n = args["topN"].as_u64().unwrap_or_default() as u32;
-    let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
-        .unwrap_or_default();
-    // Read the narrowing label BEFORE the plan consumes the args.
-    let structure_label = args["structureLabel"].as_str().map(str::to_string);
-    let plan = ::binance::build_screener_plan(args);
-    let user_goal = ::binance::screener_user_goal(
-        &screens,
-        &universe,
-        &interval,
-        &venue,
-        top_n,
-        &language,
-        structure_label.as_deref(),
-    );
-    let tool_registry = crate::supervisor::build_fixed_binance_registry(
-        &ctx.user_id,
-        session_id,
-        &crate::supervisor::plan_key(&plan),
+        language.as_deref(),
+        None,
     )
     .await
-    .map_err(|e| e.to_string())?;
-
-    tracing::info!(component = "crypto-screener", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running crypto screener");
-    ctx.run(plan, tool_registry, Some(user_goal), None, stream_id, on_event, &pending)
+    .map_err(|e| e.message().to_string())?;
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
         .await
 }
 
@@ -2535,21 +2417,16 @@ pub async fn run_youtube_summary(
 ) -> Result<(), String> {
     let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
 
-    let video = kawai_youtube::fetch_video(&url).await?;
-    let language = crate::supervisor::resolve_user_language(language.as_deref(), None)
-        .unwrap_or_default();
-    let plan = kawai_youtube::build_youtube_plan(&video, &language)?;
-    let user_goal = kawai_youtube::youtube_user_goal(&video, &language);
-    let tool_registry = crate::supervisor::build_youtube_registry(
+    let run = crate::supervisor::prepare_youtube_run(
         &ctx.user_id,
         session_id,
-        &crate::supervisor::plan_key(&plan),
+        &url,
+        language.as_deref(),
+        None,
     )
     .await
-    .map_err(|e| e.to_string())?;
-
-    tracing::info!(component = "youtube", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "running youtube summary");
-    ctx.run(plan, tool_registry, Some(user_goal), Some(video.id), stream_id, on_event, &pending)
+    .map_err(|e| e.message().to_string())?;
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
         .await
 }
 

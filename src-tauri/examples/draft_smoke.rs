@@ -6,7 +6,7 @@
 // Usage: cargo run --example draft_smoke --features litert,office
 use futures_util::StreamExt;
 use kawai_agent::extract_draft_blocks;
-use kawai_lib::logic::remote::{RemoteEvent, RemoteLlm};
+use remote_llm::{RemoteEvent, RemoteLlm};
 
 // Mirrors DRAFT_DOCUMENT_SYSTEM in crates/engines/agent/src/subagents.rs
 // (kept in sync by hand).

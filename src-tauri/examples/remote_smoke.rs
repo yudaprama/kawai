@@ -1,4 +1,5 @@
-// Headless smoke test for the hybrid-tier cloud subagent path (logic::remote).
+// Headless smoke test for the hybrid-tier cloud subagent path (the
+// remote-llm crate).
 // Exercises: env resolution (vault-fallback zai or explicit env) → one streamed
 // completion → per-token deltas → terminal usage record. No local model needed.
 //
@@ -6,7 +7,7 @@
 //   cargo run --example remote_smoke                # default tiny task
 //   cargo run --example remote_smoke -- "your task" # custom task
 use futures_util::StreamExt;
-use kawai_lib::logic::remote::{RemoteEvent, RemoteLlm};
+use remote_llm::{RemoteEvent, RemoteLlm};
 
 const SYSTEM: &str = "You are a terse technical writer. Answer in clean markdown, no preamble.";
 const DEFAULT_TASK: &str =

@@ -452,8 +452,8 @@ async fn download_stream(
 // Database (local SQLite), chat-session persistence lives in `db`; the
 // on-device LLM in `local_llm`; office tooling in `office`; the prompt-based
 // tool-calling agent loop in `agent`; the cloud subagent client (hybrid LLM
-// tier) in `remote`. Re-exported so `logic::X` paths used by the wrappers stay
-// stable across the split.
+// tier) is the `remote-llm` crate. Re-exported so `logic::X` paths used by
+// the wrappers stay stable across the split.
 pub mod db;
 pub mod db_migrations;
 pub mod connector;
@@ -488,7 +488,6 @@ pub fn import_office_file(
 }
 
 pub mod rag;
-pub mod remote;
 // Web read/search tiering — implementation lives in the `webread` toolset
 // crate; re-exported so `logic::scrape::*` call sites (incl. the desktop
 // webview engine) stay stable.

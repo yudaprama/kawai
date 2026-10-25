@@ -45,7 +45,7 @@ cognee-litert-lm = { path = "../cognee-litert-lm", optional = true, features = [
 # (desktop-only: pulls a C regex engine through `onig`).
 tokenizers = { version = "0.21", optional = true }
 # Agent-tier runtime (tool dispatch, tool loop) + hybrid cloud-subagent
-# streaming client (logic/remote.rs — hand-written OpenAI-compatible SSE).
+# streaming client (the remote-llm crate — hand-written OpenAI-compatible SSE).
 # default-features=false keeps only the local-SQLite core: replication/remote
 # would pull tonic 0.11 + hyper 0.14 + axum 0.6 + rustls 0.22 (dead weight —
 # every call site uses Builder::new_local; re-add "remote" with sqld sync).

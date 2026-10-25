@@ -3091,6 +3091,406 @@ pub fn append_books_sync_step(
     plan
 }
 
+// ── Fixed-pipeline builders (one per fixed workflow) ─────────────────────
+//
+// Each fixed workflow (Stock Research, risk audits, Trading Performance,
+// Monthly Close, Crypto Screener, YouTube Summary) is built by exactly ONE
+// `prepare_*` fn here. The Tauri command (commands.rs) and the Axum SSE
+// handler (web.rs) both call it, so language resolution, preset
+// normalization, read-back-before-goal, the plan, the user goal, the
+// registry and the run log can never drift between transports (AGENTS.md
+// invariant #2 — wrappers stay thin; this is the shared business logic).
+
+/// A fully-built fixed-pipeline run: everything a transport wrapper needs
+/// to start streaming.
+pub struct FixedRun {
+    pub plan: kawai_router::TaskPlan,
+    pub user_goal: String,
+    /// `tracing` component label ("stock-research", "crypto-screener", …).
+    pub component: &'static str,
+    /// Log message ("running crypto screener").
+    pub message: &'static str,
+    pub registry: ToolRegistry,
+    /// YouTube only: the transcript video id, embedded in the stream.
+    pub video_id: Option<String>,
+}
+
+/// Build-failure phase of a fixed pipeline. The web wrapper maps these to
+/// 400 / 412 / 503; the Tauri wrapper flattens to `Err(message)`.
+pub enum FixedRunError {
+    BadInput(String),
+    Precondition(String),
+    Registry(String),
+}
+
+impl FixedRunError {
+    pub fn message(&self) -> &str {
+        match self {
+            FixedRunError::BadInput(m)
+            | FixedRunError::Precondition(m)
+            | FixedRunError::Registry(m) => m,
+        }
+    }
+}
+
+fn registry_err(e: SupervisorError) -> FixedRunError {
+    FixedRunError::Registry(e.to_string())
+}
+
+/// Resolve the output language the way every fixed pipeline does: explicit
+/// locale tag first, then the web Accept-Language header (absent on the
+/// desktop transport).
+fn pipeline_language(
+    language: Option<&str>,
+    accept_language: Option<&str>,
+) -> String {
+    resolve_user_language(language, accept_language).unwrap_or_default()
+}
+
+fn log_fixed_run(run: &FixedRun, user_id: &str, session_id: i64) {
+    tracing::info!(
+        component = run.component,
+        steps = run.plan.steps.len(),
+        user = %user_id,
+        session = session_id,
+        "{}",
+        run.message
+    );
+}
+
+/// Stock Research (PLAN-stock-research) over one ticker. Validates the
+/// domain/analysts BEFORE the plan exists — a drifted input is a plain op
+/// error, never a silently wrong 15-LLM-call run.
+#[cfg(feature = "litert")]
+pub async fn prepare_desk_run(
+    user_id: &str,
+    session_id: i64,
+    ticker: &str,
+    trade_date: &str,
+    analysts: Vec<String>,
+    domain: Option<String>,
+    language: Option<&str>,
+    accept_language: Option<&str>,
+) -> Result<FixedRun, FixedRunError> {
+    let analyst_slices: Vec<&str> = analysts.iter().map(String::as_str).collect();
+    let domain_str = domain.unwrap_or_else(|| "stock".into());
+    let lang = pipeline_language(language, accept_language);
+    let args = kawai_desk::normalize_desk_args(
+        ticker,
+        trade_date,
+        &analyst_slices,
+        &domain_str,
+        &lang,
+    )
+    .map_err(FixedRunError::BadInput)?;
+    let analysts_ref: Vec<&str> = args.analysts.iter().map(String::as_str).collect();
+    let plan = kawai_desk::build_desk_plan(
+        &args.ticker,
+        &args.trade_date,
+        &analysts_ref,
+        &args.domain,
+        &args.language,
+    );
+    let user_goal =
+        kawai_desk::desk_user_goal(&args.ticker, &args.trade_date, &args.domain, &args.language);
+    let registry = build_desk_registry(user_id, session_id, &plan_key(&plan))
+        .await
+        .map_err(registry_err)?;
+    let run = FixedRun {
+        plan,
+        user_goal,
+        component: "stock-research",
+        message: "running stock research",
+        registry,
+        video_id: None,
+    };
+    log_fixed_run(&run, user_id, session_id);
+    Ok(run)
+}
+
+/// YouTube Summary (PLAN-youtube-summary): fetch the transcript, then build
+/// the FIXED map→compose plan. The fetch happens BEFORE any plan exists, so
+/// a bad URL or a transcript-less video rejects the op cleanly.
+#[cfg(feature = "litert")]
+pub async fn prepare_youtube_run(
+    user_id: &str,
+    session_id: i64,
+    url: &str,
+    language: Option<&str>,
+    accept_language: Option<&str>,
+) -> Result<FixedRun, FixedRunError> {
+    let video = kawai_youtube::fetch_video(url)
+        .await
+        .map_err(FixedRunError::BadInput)?;
+    let lang = pipeline_language(language, accept_language);
+    let plan = kawai_youtube::build_youtube_plan(&video, &lang)
+        .map_err(FixedRunError::BadInput)?;
+    let user_goal = kawai_youtube::youtube_user_goal(&video, &lang);
+    let registry = build_youtube_registry(user_id, session_id, &plan_key(&plan))
+        .await
+        .map_err(registry_err)?;
+    let run = FixedRun {
+        plan,
+        user_goal,
+        component: "youtube",
+        message: "running youtube summary",
+        registry,
+        video_id: Some(video.id),
+    };
+    log_fixed_run(&run, user_id, session_id);
+    Ok(run)
+}
+
+/// Futures Risk Audit over one venue's open positions. Fails closed on
+/// credentials BEFORE the plan exists (the audit tool itself falls back to
+/// the product-baked pair, but that account's positions are not the
+/// user's).
+#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+pub async fn prepare_binance_audit_run(
+    user_id: &str,
+    session_id: i64,
+    interval: Option<&str>,
+    risk: Option<&str>,
+    limit: Option<u32>,
+    market: Option<&str>,
+    language: Option<&str>,
+    accept_language: Option<&str>,
+) -> Result<FixedRun, FixedRunError> {
+    // Fail closed on credentials BEFORE the plan exists. The audit tool
+    // itself falls back to the product-baked pair (every signed binance tool
+    // does), but that account's positions are not the user's — a report
+    // grading someone else's naked notional, delivered under the user's name,
+    // is worse than no report. Only the user's own pair may run this op.
+    let creds = ::binance::credentials::op_status(user_id).await;
+    if creds.source != "user" {
+        return Err(FixedRunError::Precondition(
+            "the futures risk audit grades YOUR open positions — add your own read-only Binance API \
+key and secret in Settings → Binance API first"
+                .to_string(),
+        ));
+    }
+
+    let args = ::binance::normalize_audit_args(
+        interval.unwrap_or_default(),
+        risk.unwrap_or_default(),
+        limit,
+        market,
+    );
+    // Read the normalized values back BEFORE the plan consumes them, so the
+    // report's goal describes the run that actually executes (an unknown
+    // preset fell back to the tool default rather than reaching the writer).
+    let interval = args["interval"].as_str().unwrap_or_default().to_string();
+    let risk = args["risk"].as_str().unwrap_or_default().to_string();
+    let limit = args["limit"].as_u64().unwrap_or_default() as u32;
+    let market = args["market"].as_str().unwrap_or_default().to_string();
+    let lang = pipeline_language(language, accept_language);
+    let plan = ::binance::build_audit_plan(args);
+    #[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
+    let plan = append_books_sync_step(plan, "binance");
+    let user_goal = ::binance::audit_user_goal(&interval, &risk, limit, &lang, Some(&market));
+    let registry = build_fixed_binance_registry(user_id, session_id, &plan_key(&plan))
+        .await
+        .map_err(registry_err)?;
+    let run = FixedRun {
+        plan,
+        user_goal,
+        component: "binance-risk-audit",
+        message: "running futures risk audit",
+        registry,
+        video_id: None,
+    };
+    log_fixed_run(&run, user_id, session_id);
+    Ok(run)
+}
+
+#[cfg(all(feature = "litert", feature = "mexc", not(target_os = "android")))]
+pub async fn prepare_mexc_audit_run(
+    user_id: &str,
+    session_id: i64,
+    interval: Option<&str>,
+    risk: Option<&str>,
+    limit: Option<u32>,
+    language: Option<&str>,
+    accept_language: Option<&str>,
+) -> Result<FixedRun, FixedRunError> {
+    let creds = ::mexc::credentials::op_status(user_id).await;
+    if creds.source != "user" {
+        return Err(FixedRunError::Precondition(
+            "the futures risk audit grades YOUR open positions — add your own read-only MEXC API key and secret in Settings → MEXC API first"
+                .to_string(),
+        ));
+    }
+
+    let args = ::mexc::normalize_audit_args(
+        interval.unwrap_or_default(),
+        risk.unwrap_or_default(),
+        limit,
+    );
+    let interval = args["interval"].as_str().unwrap_or_default().to_string();
+    let risk = args["risk"].as_str().unwrap_or_default().to_string();
+    let limit = args["limit"].as_u64().unwrap_or_default() as u32;
+    let lang = pipeline_language(language, accept_language);
+    let plan = ::mexc::build_audit_plan(args);
+    // Same gate as the fn itself: accounting+binance (the books wave is
+    // venue-generic but lives in the binance/accounting bridge).
+    #[cfg(all(feature = "accounting", feature = "binance", not(target_os = "android")))]
+    let plan = append_books_sync_step(plan, "mexc");
+    let user_goal = ::mexc::audit_user_goal(&interval, &risk, limit, &lang);
+    let registry = build_fixed_mexc_registry(user_id, session_id, &plan_key(&plan))
+        .await
+        .map_err(registry_err)?;
+    let run = FixedRun {
+        plan,
+        user_goal,
+        component: "mexc-risk-audit",
+        message: "running futures risk audit",
+        registry,
+        video_id: None,
+    };
+    log_fixed_run(&run, user_id, session_id);
+    Ok(run)
+}
+
+/// Trading Performance: sync venue fills into the ledger, then read the
+/// books back as a period review. The period is normalized BEFORE the plan
+/// exists, so an unreadable period is a plain op error the form can show.
+#[cfg(all(feature = "litert", feature = "accounting", feature = "binance", not(target_os = "android")))]
+pub async fn prepare_trading_performance_run(
+    user_id: &str,
+    session_id: i64,
+    period: &str,
+    venue: Option<&str>,
+    language: Option<&str>,
+    accept_language: Option<&str>,
+) -> Result<FixedRun, FixedRunError> {
+    let lang = pipeline_language(language, accept_language);
+    let plan = accounting_tools::plan::build_trading_performance_plan(
+        period.trim(),
+        chrono::Local::now().date_naive(),
+        venue.map(str::trim).filter(|v| !v.is_empty()),
+        crate::templates::TRADING_SYNC_VENUES,
+        Some(&lang),
+    )
+    .map_err(FixedRunError::BadInput)?;
+    let user_goal = plan.goal.clone();
+    let registry = build_registry_for_plan(user_id, session_id, &plan)
+        .await
+        .map_err(registry_err)?;
+    let run = FixedRun {
+        plan,
+        user_goal,
+        component: "trading-performance",
+        message: "running trading performance review",
+        registry,
+        video_id: None,
+    };
+    log_fixed_run(&run, user_id, session_id);
+    Ok(run)
+}
+
+/// Monthly Close: the accounting close over one period — collect
+/// transactions, build the four statements, gate on the integrity check,
+/// export GSTR-1.
+#[cfg(all(feature = "litert", feature = "accounting", not(target_os = "android")))]
+pub async fn prepare_monthly_close_run(
+    user_id: &str,
+    session_id: i64,
+    period: &str,
+    language: Option<&str>,
+    accept_language: Option<&str>,
+) -> Result<FixedRun, FixedRunError> {
+    let lang = pipeline_language(language, accept_language);
+    let plan = accounting_tools::plan::build_monthly_close_plan(
+        period.trim(),
+        chrono::Local::now().date_naive(),
+        Some(&lang),
+    )
+    .map_err(FixedRunError::BadInput)?;
+    let user_goal = plan.goal.clone();
+    let registry = build_registry_for_plan(user_id, session_id, &plan)
+        .await
+        .map_err(registry_err)?;
+    let run = FixedRun {
+        plan,
+        user_goal,
+        component: "monthly-close",
+        message: "running monthly close",
+        registry,
+        video_id: None,
+    };
+    log_fixed_run(&run, user_id, session_id);
+    Ok(run)
+}
+
+/// Crypto Screener: one parallel `crypto_screener` step per selected screen.
+/// Strictly public market data — NO credential gate.
+#[cfg(all(feature = "litert", feature = "binance", not(target_os = "android")))]
+pub async fn prepare_screener_run(
+    user_id: &str,
+    session_id: i64,
+    screens: Vec<String>,
+    universe: &str,
+    interval: &str,
+    venue: &str,
+    top_n: Option<u32>,
+    scan_size: Option<u32>,
+    structure: Option<&::binance::StructureNarrowing>,
+    language: Option<&str>,
+    accept_language: Option<&str>,
+) -> Result<FixedRun, FixedRunError> {
+    let screen_names: Vec<&str> = screens.iter().map(String::as_str).collect();
+    let args = ::binance::normalize_screener_args(
+        &screen_names,
+        universe,
+        interval,
+        venue,
+        top_n,
+        scan_size,
+        structure,
+    )
+    .map_err(FixedRunError::BadInput)?;
+    // Read the normalized values back BEFORE the plan consumes them, so the
+    // report's goal describes the run that actually executes.
+    let screens: Vec<String> = args["screens"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let universe = args["universe"].as_str().unwrap_or_default().to_string();
+    let interval = args["interval"].as_str().unwrap_or_default().to_string();
+    let venue = args["venue"].as_str().unwrap_or_default().to_string();
+    let top_n = args["topN"].as_u64().unwrap_or_default() as u32;
+    let lang = pipeline_language(language, accept_language);
+    // Read the narrowing label BEFORE the plan consumes the args.
+    let structure_label = args["structureLabel"].as_str().map(str::to_string);
+    let plan = ::binance::build_screener_plan(args);
+    let user_goal = ::binance::screener_user_goal(
+        &screens,
+        &universe,
+        &interval,
+        &venue,
+        top_n,
+        &lang,
+        structure_label.as_deref(),
+    );
+    let registry = build_fixed_binance_registry(user_id, session_id, &plan_key(&plan))
+        .await
+        .map_err(registry_err)?;
+    let run = FixedRun {
+        plan,
+        user_goal,
+        component: "crypto-screener",
+        message: "running crypto screener",
+        registry,
+        video_id: None,
+    };
+    log_fixed_run(&run, user_id, session_id);
+    Ok(run)
+}
+
 pub(crate) async fn build_registry_from_toolset(
     user_id: &str,
     session_id: i64,
@@ -6413,6 +6813,57 @@ mod tests {
         }
     }
 
+    /// Fixed-goal plan for tests — the steps are the test-specific part.
+    fn plan_with(steps: Vec<TaskStep>) -> kawai_router::TaskPlan {
+        kawai_router::TaskPlan {
+            goal: "g".into(),
+            steps,
+            final_writer: None,
+            summary: None,
+            template: None,
+        }
+    }
+
+    /// Fresh confirmation-gate map.
+    fn new_pending() -> PendingConfirmations {
+        Arc::new(Mutex::new(HashMap::new()))
+    }
+
+    /// Echo-registry plan stream with the standard test identity: user
+    /// "test-user", session 1, no user goal / video / billing bearer.
+    fn echo_stream(
+        steps: Vec<TaskStep>,
+        pending: PendingConfirmations,
+        stream_id: &str,
+    ) -> std::pin::Pin<Box<dyn futures_core::Stream<Item = SupervisorEvent> + Send>> {
+        Box::pin(execute_plan_stream_with_cancel(
+            plan_with(steps),
+            echo_registry(),
+            tokio_util::sync::CancellationToken::new(),
+            pending,
+            stream_id.to_string(),
+            "test-user".into(),
+            1,
+            None,
+            None,
+            None,
+        ))
+    }
+
+    /// The standard `plan_task` end-to-end fixture: fresh temp data root, a
+    /// unique per-test user + chat session, and the REAL supervisor registry.
+    async fn plan_env(tag: &str) -> (String, i64, ToolRegistry) {
+        let dir = tempfile::tempdir().unwrap();
+        kawai_db::set_data_root(dir.path());
+        std::mem::forget(dir);
+        let user = format!("{tag}-{}-{}", std::process::id(), kawai_db::unix_now());
+        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
+        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
+            .await
+            .expect("supervisor registry");
+        (user, session, registry)
+    }
+
     /// Tiering validator: a cli_run step whose command is on the audited
     /// safe read-only list stays prompt-free; anything else (including an
     /// absent/unknown command) gets confirmation FORCED on, whatever the
@@ -6557,27 +7008,8 @@ mod tests {
     /// responder does) → stepCompleted → planCompleted.
     #[tokio::test]
     async fn confirmation_gate_approve_resumes_step() {
-        let pending: PendingConfirmations = Arc::new(Mutex::new(HashMap::new()));
-        let plan = kawai_router::TaskPlan {
-            goal: "g".into(),
-            steps: vec![confirm_step("s1")],
-            final_writer: None,
-            summary: None,
-            template: None,
-};
-        let stream = execute_plan_stream_with_cancel(
-            plan,
-            echo_registry(),
-            tokio_util::sync::CancellationToken::new(),
-            pending.clone(),
-            "st-a".into(),
-            "test-user".into(),
-            1,
-            None,
-            None,
-            None,
-        );
-        let mut stream = Box::pin(stream);
+        let pending = new_pending();
+        let mut stream = echo_stream(vec![confirm_step("s1")], pending.clone(), "st-a");
 
         // Drive until confirmationRequested arrives.
         let mut saw_confirmed = false;
@@ -6640,27 +7072,8 @@ mod tests {
     /// Rejection: respond(false) → the step fails and the plan reports failure.
     #[tokio::test]
     async fn confirmation_gate_reject_fails_plan() {
-        let pending: PendingConfirmations = Arc::new(Mutex::new(HashMap::new()));
-        let plan = kawai_router::TaskPlan {
-            goal: "g".into(),
-            steps: vec![confirm_step("s1")],
-            final_writer: None,
-            summary: None,
-            template: None,
-};
-        let stream = execute_plan_stream_with_cancel(
-            plan,
-            echo_registry(),
-            tokio_util::sync::CancellationToken::new(),
-            pending.clone(),
-            "st-r".into(),
-            "test-user".into(),
-            1,
-            None,
-            None,
-            None,
-        );
-        let mut stream = Box::pin(stream);
+        let pending = new_pending();
+        let mut stream = echo_stream(vec![confirm_step("s1")], pending.clone(), "st-r");
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
@@ -6703,30 +7116,16 @@ mod tests {
     /// Non-confirmation steps dispatch without any gate round-trip.
     #[tokio::test]
     async fn plain_steps_need_no_confirmation() {
-        let pending: PendingConfirmations = Arc::new(Mutex::new(HashMap::new()));
-        let plan = kawai_router::TaskPlan {
-            goal: "g".into(),
-            steps: vec![TaskStep {
+        let pending = new_pending();
+        let stream = echo_stream(
+            vec![TaskStep {
                 id: "p1".into(),
                 agent_id: "echo".into(),
                 task: "plain".into(),
                 ..Default::default()
             }],
-            final_writer: None,
-            summary: None,
-            template: None,
-};
-        let stream = execute_plan_stream_with_cancel(
-            plan,
-            echo_registry(),
-            tokio_util::sync::CancellationToken::new(),
             pending,
-            "st-p".into(),
-            "test-user".into(),
-            1,
-            None,
-            None,
-            None,
+            "st-p",
         );
         let events: Vec<SupervisorEvent> = Box::pin(stream)
             .take(8)
@@ -6793,14 +7192,7 @@ mod tests {
     /// stage, which fails closed without a remote pool.
     #[tokio::test(flavor = "multi_thread")]
     async fn plan_task_answers_static_goals_without_the_planner() {
-        let dir = tempfile::tempdir().unwrap();
-        kawai_db::set_data_root(dir.path());
-        std::mem::forget(dir);
-        let user = format!("static-reply-{}-{}", std::process::id(), kawai_db::unix_now());
-        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
-        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
-            .await
-            .expect("supervisor registry");
+        let (user, session, registry) = plan_env("static-reply").await;
 
         let (plan, usage) = plan_task(
             &user,
@@ -6881,14 +7273,7 @@ mod tests {
     #[cfg(all(feature = "accounting", feature = "binance"))]
     #[tokio::test(flavor = "multi_thread")]
     async fn plan_task_claims_trading_performance() {
-        let dir = tempfile::tempdir().unwrap();
-        kawai_db::set_data_root(dir.path());
-        std::mem::forget(dir);
-        let user = format!("trading-perf-{}-{}", std::process::id(), kawai_db::unix_now());
-        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
-        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
-            .await
-            .expect("supervisor registry");
+        let (user, session, registry) = plan_env("trading-perf").await;
 
         let (mut plan, usage) = plan_task(
             &user,
@@ -6973,14 +7358,7 @@ mod tests {
     #[cfg(all(feature = "accounting", feature = "binance", feature = "mexc"))]
     #[tokio::test(flavor = "multi_thread")]
     async fn plan_task_scopes_the_trading_review_to_the_named_exchange() {
-        let dir = tempfile::tempdir().unwrap();
-        kawai_db::set_data_root(dir.path());
-        std::mem::forget(dir);
-        let user = format!("trading-venue-{}-{}", std::process::id(), kawai_db::unix_now());
-        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
-        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
-            .await
-            .expect("supervisor registry");
+        let (user, session, registry) = plan_env("trading-venue").await;
 
         let (plan, usage) = plan_task(
             &user,
@@ -7051,14 +7429,7 @@ mod tests {
     #[cfg(all(feature = "accounting", feature = "binance", feature = "mexc"))]
     #[tokio::test(flavor = "multi_thread")]
     async fn a_mexc_scoped_trading_plan_fetches_before_it_imports() {
-        let dir = tempfile::tempdir().unwrap();
-        kawai_db::set_data_root(dir.path());
-        std::mem::forget(dir);
-        let user = format!("trading-mexc-{}-{}", std::process::id(), kawai_db::unix_now());
-        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
-        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
-            .await
-            .expect("supervisor registry");
+        let (user, session, registry) = plan_env("trading-mexc").await;
 
         let plan = accounting_tools::plan::build_trading_performance_plan(
             "2026-10",
@@ -7093,14 +7464,7 @@ mod tests {
     #[cfg(feature = "accounting")]
     #[tokio::test(flavor = "multi_thread")]
     async fn plan_task_claims_monthly_close() {
-        let dir = tempfile::tempdir().unwrap();
-        kawai_db::set_data_root(dir.path());
-        std::mem::forget(dir);
-        let user = format!("monthly-close-{}-{}", std::process::id(), kawai_db::unix_now());
-        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
-        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
-            .await
-            .expect("supervisor registry");
+        let (user, session, registry) = plan_env("monthly-close").await;
 
         let (plan, usage) =
             plan_task(&user, session, "tutup buku 2026-10", None, Some("id-ID"), &registry, |_| {})
@@ -7169,14 +7533,7 @@ mod tests {
     /// behaviour is pinned offline in `route.rs`'s unit tests.
     #[tokio::test]
     async fn template_gate_routes_without_planner_and_logs_the_decision() {
-        let dir = tempfile::tempdir().unwrap();
-        kawai_db::set_data_root(dir.path());
-        std::mem::forget(dir);
-        let user = format!("route-gate-{}-{}", std::process::id(), kawai_db::unix_now());
-        let session = kawai_db::create_chat_session(&user).await.unwrap().id;
-        let registry = build_supervisor_registry(&user, session, AUTO_AGENT_ID, "")
-            .await
-            .expect("supervisor registry");
+        let (user, session, registry) = plan_env("route-gate").await;
 
         // Eligibility needs a market listing — seeded offline (NVDA in,
         // the BRI/BBRI black-hole class out).
