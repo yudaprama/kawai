@@ -99,6 +99,16 @@ tail -n 100 /tmp/kawai-android.log
  causes on a phone: captive portal / no real network, IPv6-first DNS, or the
  worker URL in `KAWAI_WORKER_URL` being unreachable from the device.
 
+**Debug logs in, release fails instantly with `auth server unreachable:
+error sending request`** → R8 stripped the TLS verifier. Release builds run
+`optimization { enable = true }`; `org.rustls.platformverifier.
+CertificateVerifier` is instantiated from Rust via JNI BY NAME, so R8 sees
+it as dead code and removes it — every HTTPS call dies at the TLS layer
+while debug (unminified) builds work. The keep rule lives in
+`src-tauri/gen/android/app/proguard-rules.pro`; release-android.yml has a
+"Verify TLS verifier survived R8" dex check that fails the build before the
+APK can attach to a release.
+
 An ENDLESS spinner (timeout never fires) is different: the auth request
 future died before the timeout could. Check `adb logcat` for
 `panicked at rustls-platform-verifier-0.7.0/src/android.rs:90: Expect

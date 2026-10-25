@@ -19,3 +19,10 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# rustls-platform-verifier (reqwest TLS on Android): CertificateVerifier is
+# instantiated from Rust via JNI BY NAME — invisible to R8, which strips it
+# from release builds. Without this rule every HTTPS call dies with
+# "error sending request" (auth login, JWKS, remote LLM, Loki push).
+# Debug builds don't minify, which is why only release was broken.
+-keep class org.rustls.platformverifier.** { *; }
