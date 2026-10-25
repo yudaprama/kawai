@@ -164,15 +164,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: smoke-model
-          key: lfm25-1p2b-instruct-int8-litertlm
+          key: gemma4-e4b-it-litertlm
 
       - name: Download smoke model fixture
         if: steps.model.outputs.cache-hit != 'true'
         shell: bash
         run: |
           mkdir -p smoke-model
-          curl -fL --retry 3 -o smoke-model/lfm2.5-1.2b-instruct-int8.litertlm \
-            https://huggingface.co/litert-community/LFM2.5-1.2B-Instruct/resolve/main/LFM2.5-1.2B-Instruct_int8.litertlm
+          curl -fL --retry 3 -o smoke-model/gemma-4-E4B-it.litertlm \
+            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
 
       - name: local_llm_smoke (on-device streaming regression)
         working-directory: src-tauri
@@ -184,7 +184,7 @@ jobs:
         # expression is inlined into the bash script as D:\a\kawai\kawai and,
         # unquoted, bash eats the backslashes as escapes (\a → a) → the model
         # path arrives mangled. Runtime env expansion keeps them intact.
-        run: cargo run --example local_llm_smoke --features litert -- "$GITHUB_WORKSPACE/smoke-model/lfm2.5-1.2b-instruct-int8.litertlm"
+        run: cargo run --example local_llm_smoke --features litert -- "$GITHUB_WORKSPACE/smoke-model/gemma-4-E4B-it.litertlm"
 
       # ── Smoke 2 + 3: hybrid cloud tier ──
       - name: remote_smoke (cloud streaming + usage)

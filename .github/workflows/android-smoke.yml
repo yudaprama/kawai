@@ -1,0 +1,201 @@
+name: android-smoke
+
+# Android is a deliberately isolated runtime gate (the windows-smoke
+# pattern). It adds a second bazel graph (android_arm64), a full aarch64
+# cross-compile of release-android's feature set and an emulator boot —
+# together too heavy for the push cadence of ci.yml, where android-check
+# remains the every-push Android gate (compile-only). This workflow proves
+# the runtime half: the smoke binary executed under bionic on a headless
+# arm64 emulator — NDK linkage, .so loader chain, arm64 CPU inference.
+#
+# Only local_llm_smoke runs here. The cloud smokes (remote/draft/planner/
+# binance) gain no Android-specific signal beyond this compile, and a
+# headless adb-shell process has no JVM for rustls-platform-verifier's JNI
+# init — every HTTPS call would panic (see AGENTS.md Landmines). They stay
+# on the desktop gates.
+#
+# macos-26 (arm64) is required, not ubuntu: the arm64 emulator needs
+# hypervisor acceleration (HVF); arm64 AVDs on x86_64 Linux hosts have none.
+
+on:
+  schedule:
+    - cron: "41 4 * * *"
+  workflow_dispatch:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: android-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  android-smoke:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: macos-26
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      # Own shared-key: never thrash the desktop jobs' host-triple cache.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: android-smoke
+          cache-on-failure: true
+
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            /private/var/tmp/_bazel_runner
+          key: bazel-macos26-android_arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos26-android_arm64-
+
+      # Recursive: the litert feature runs bindgen over the NESTED
+      # cognee-litert-lm/vendor/LiteRT-LM headers.
+      - name: Init submodules
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+
+      # The macos runner image ships the SDK (cmdline-tools, emulator,
+      # platform-tools) — install only the pinned NDK 28 (same as
+      # android-check / release-android) and the arm64 system image.
+      - name: Install NDK 28 + arm64 system image
+        run: |
+          set -euo pipefail
+          SDKM="$(ls -d "$ANDROID_HOME"/cmdline-tools/latest*/bin/sdkmanager | sort -V | tail -n1)"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "ndk;28.2.13676358" "system-images;android-34;google_apis_playstore;arm64-v8a"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - name: Cache cargo-ndk
+        id: cargo-ndk
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-ndk
+          key: cargo-ndk-${{ runner.os }}
+
+      - name: Install cargo-ndk
+        if: steps.cargo-ndk.outputs.cache-hit != 'true'
+        run: cargo install cargo-ndk --locked
+
+      # Same recipe as release-android's build job. JAVA_HOME 17 for bazel,
+      # same as macos-smoke's desktop build.
+      - name: Build litert-lm for Android (arm64)
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_arm64"
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazel build //c:litert-lm --config=android_arm64 --jobs=6
+          mkdir -p ../../native/aarch64-linux-android
+          cp bazel-bin/c/liblitert-lm.so ../../native/aarch64-linux-android/
+          cp prebuilt/android_arm64/*.so ../../native/aarch64-linux-android/
+
+      # Feature set = EXACTLY what release-android ships (default `desktop` +
+      # litert, tts, binance, accounting, mexc); --no-default-features does
+      # NOT compile (lib code outside the feature gates needs office/graph
+      # deps). Links against native/aarch64-linux-android/, where the step
+      # above staged the .so (the dir cognee-litert-lm's build.rs resolves
+      # for this triple). The RUSTFLAGS -L exposes the NDK's static libc++
+      # (ocr-rs/MNN link `c++_static`); cargo-ndk does not add it itself, and
+      # `cargo ndk check` never links so android-check does not need it.
+      # Keep secrets out of the env: cargo-ndk's panic handler dumps all env
+      # vars to stdout.
+      - name: cargo ndk build (local_llm_smoke, aarch64, release feature set)
+        working-directory: src-tauri
+        env:
+          RUSTFLAGS: -L native=${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android
+        run: cargo ndk -t arm64-v8a -P 24 build --release --example local_llm_smoke --features litert,tts,binance,accounting,mexc
+
+      # Headless boot: HVF-accelerated arm64 guest. `-port 5556` fixes the
+      # serial (emulator-5556) so every later adb call can pin -s. wipe-data
+      # is a no-op on a fresh AVD but keeps reruns of a warm job honest.
+      - name: Boot headless arm64 emulator
+        run: |
+          set -euo pipefail
+          AVDM="$(ls "$ANDROID_HOME"/cmdline-tools/latest*/bin/avdmanager | sort -V | tail -n1)"
+          echo no | "$AVDM" create avd -n kawai_ci -k "system-images;android-34;google_apis_playstore;arm64-v8a" -d pixel_6 --force
+          printf 'hw.ramSize=4096\ndisk.dataPartition.size=12G\n' >> ~/.android/avd/kawai_ci.avd/config.ini
+          nohup "$ANDROID_HOME/emulator/emulator" -avd kawai_ci -port 5556 -memory 4096 -wipe-data \
+            -no-window -no-audio -no-snapshot -no-boot-anim -gpu swiftshader_indirect \
+            > "$RUNNER_TEMP/emu.log" 2>&1 &
+          disown
+          for i in $(seq 1 60); do
+            adb devices | grep -q "emulator-5556[[:space:]]device$" && break
+            # The adbd handshake can wedge on a stale adb-server transport
+            # while the guest boots fine — bounce the server periodically.
+            if [ $((i % 10)) -eq 0 ]; then adb kill-server; adb start-server > /dev/null 2>&1 || true; fi
+            sleep 3
+          done
+          adb devices | grep -q "emulator-5556[[:space:]]device$" || { adb devices; tail -30 "$RUNNER_TEMP/emu.log"; exit 1; }
+          for i in $(seq 1 120); do
+            [ "$(adb -s emulator-5556 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] \
+              && echo "emulator booted" && exit 0
+            sleep 5
+          done
+          echo "boot timeout"; tail -30 "$RUNNER_TEMP/emu.log"; exit 1
+
+      # Production model, same as desktop releases and the phone app: Gemma 4
+      # E4B (litert-community, public). 3.5 GB per cache miss; the smoke
+      # proves the PRODUCTION model streams on the Android engine, not just
+      # a small fixture.
+      - name: Cache smoke model fixture
+        id: model
+        uses: actions/cache@v4
+        with:
+          path: smoke-model
+          key: gemma4-e4b-it-litertlm
+
+      - name: Download smoke model fixture
+        if: steps.model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p smoke-model
+          curl -fL --retry 3 -o smoke-model/gemma-4-E4B-it.litertlm \
+            https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm
+
+      - name: Push binary + libs + model to the emulator
+        run: |
+          set -euo pipefail
+          adb -s emulator-5556 shell mkdir -p /data/local/tmp/kawai-smoke
+          adb -s emulator-5556 push src-tauri/target/aarch64-linux-android/release/examples/local_llm_smoke /data/local/tmp/kawai-smoke/
+          adb -s emulator-5556 push \
+            cognee-litert-lm/native/aarch64-linux-android/liblitert-lm.so \
+            cognee-litert-lm/native/aarch64-linux-android/libGemmaModelConstraintProvider.so \
+            /data/local/tmp/kawai-smoke/
+          adb -s emulator-5556 push smoke-model/gemma-4-E4B-it.litertlm /data/local/tmp/kawai-smoke/
+
+      # Runs as the shell user under bionic; LD_LIBRARY_PATH resolves the
+      # .so chain from the payload dir (the dlopen'd companions load from
+      # the same dir). TMPDIR must be a writable dir (there is no /tmp on
+      # Android); LLVM_PROFILE_FILE per the bazel-instrumented-dylib
+      # landmine; K/V clamped to 8192 like windows-smoke's E4B eval — the
+      # guest has 4 GB RAM and E4B already needs ~3.5 GB.
+      - name: local_llm_smoke (on-device Android streaming regression)
+        run: |
+          adb -s emulator-5556 shell "chmod 755 /data/local/tmp/kawai-smoke/local_llm_smoke \
+            && cd /data/local/tmp/kawai-smoke \
+            && TMPDIR=/data/local/tmp LD_LIBRARY_PATH=/data/local/tmp/kawai-smoke LLVM_PROFILE_FILE=/dev/null KAWAI_LLM_MAX_TOKENS=8192 \
+            ./local_llm_smoke ./gemma-4-E4B-it.litertlm"
+
+      - name: Stop emulator
+        if: always()
+        run: adb -s emulator-5556 emu kill || true
