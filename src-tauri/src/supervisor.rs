@@ -1608,10 +1608,16 @@ via the always-available `session_step_results` tool. If the goal depends on det
         }
 
         // Protocol violation (not JSON, wrong shape, or search after budget).
-        materials.push_str(
-            "\n<system-note>Unrecognized response. Respond ONLY with one JSON object: \
-             {\"action\":\"search\",\"queries\":[…]} or the final plan JSON.</system-note>",
-        );
+        // Echo a short excerpt of what was received: the model cannot fix a
+        // response shape it cannot see (CI 2026-10-25: three consecutive
+        // off-protocol rounds against a generic note burned the whole
+        // call budget).
+        let shown = planner_response_excerpt(&raw, 160);
+        materials.push_str(&format!(
+            "\n<system-note>Unrecognized response — it was not a single JSON object. It began \
+             with: `{shown}`. Respond ONLY with one JSON object: \
+             {{\"action\":\"search\",\"queries\":[…]}} or the final plan JSON.</system-note>",
+        ));
         if calls + 1 > PLAN_MAX_CALLS {
             return Err(
                 "planner kept responding off-protocol and ran out of its call budget".to_string(),
@@ -2118,6 +2124,21 @@ const PLAN_SEARCH_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_
 /// Cap on the accumulated search results package (matches the remote pool's
 /// typical small-candidate materials budget).
 const PLAN_MATERIALS_CAP: usize = 12_000;
+
+/// First `max_chars` of `s`, whitespace-collapsed, on one line — a faithful
+/// short excerpt of an off-protocol planner response. Echoed back into the
+/// `<system-note>` because the model cannot correct a response it cannot
+/// see: against a generic "unrecognized" note it repeated the same
+/// off-protocol shape until the call budget died (CI planner_smoke
+/// 2026-10-25 — three of four plan rounds were unparseable).
+fn planner_response_excerpt(s: &str, max_chars: usize) -> String {
+    let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut out: String = collapsed.chars().take(max_chars).collect();
+    if collapsed.chars().count() > max_chars {
+        out.push('…');
+    }
+    out
+}
 
 fn plan_loop_system_prompt(core_tools: &str, cli_block: &str) -> String {
     format!(
@@ -6492,6 +6513,22 @@ mod tests {
 
     use super::*;
     use kawai_router::{StepStatus, TaskStep};
+
+    #[test]
+    fn planner_response_excerpt_collapses_and_caps() {
+        let raw = "  Here  is\n\tmy reasoning  {with braces}\n  and more text  ";
+        let out = planner_response_excerpt(raw, 40);
+        assert!(
+            out.starts_with("Here is my reasoning {with braces}"),
+            "got: {out}"
+        );
+        let short = planner_response_excerpt(raw, 15);
+        assert!(short.chars().count() <= 16, "got: {short}"); // cap + ellipsis
+        assert!(short.ends_with('…'), "got: {short}");
+        assert_eq!(planner_response_excerpt("short", 30), "short");
+        // Multi-byte safety: no panic on a CJK/emoji boundary cut.
+        let _ = planner_response_excerpt("プロンプト 🎉 テスト plan JSON", 10);
+    }
 
     /// Layer-2 resolver output parsing (PLAN-template-routing.md §2.5): the
     /// claim must survive fenced/prose-wrapped JSON and case slop, and must

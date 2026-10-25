@@ -791,3 +791,21 @@ jobs:
       # quality suites (office + analytics) live in evals.yml on macOS only —
       # same model, CPU inference, OS-independent quality signal. Running the
       # battery per-OS tripled eval cost for no extra signal.
+
+  # Hosted-runner reclaims killed linux-smoke twice in two days (~47min in,
+  # "The runner has received a shutdown signal" — community discussion 209375;
+  # not a concurrency cancel and not a test failure). One automatic retry of
+  # failed jobs per run: attempt-2 failures stay red, so real breakage is
+  # never masked, and each retry reuses the caches the first attempt saved.
+  auto-rerun:
+    needs: [web, linux-check, android-check, macos-smoke, linux-smoke]
+    if: failure() && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Rerun failed jobs once
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/rerun-failed-jobs"
