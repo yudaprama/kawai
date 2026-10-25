@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { refreshTokenBalance } from "@/features/topup/use-token-balance";
 import { Icon } from "@/components/shared/icon";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import {
   call,
@@ -57,6 +58,47 @@ export function useAliveEffect(aliveRef: { current: boolean }) {
       aliveRef.current = false;
     };
   }, [aliveRef]);
+}
+
+/**
+ * Load a `<modality>_template_gallery` listing once on mount. `presets` is
+ * `null` while loading; on fetch failure it resolves to `[]` with `failed`
+ * set, so renderers can word the empty state honestly.
+ */
+export function usePresetGallery<T>(op: string): { presets: T[] | null; failed: boolean } {
+  const [presets, setPresets] = useState<T[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setPresets(null);
+    setFailed(false);
+    call<T[]>(op)
+      .then((list) => {
+        if (alive) setPresets(Array.isArray(list) ? list : []);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setFailed(true);
+        setPresets([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [op]);
+  return { presets, failed };
+}
+
+/** Skeleton tiles shown while a preset gallery loads. */
+const SKELETON_KEYS = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
+
+export function PresetSkeletonGrid({ aspect, count = 6, grid }: { aspect: string; count?: number; grid: string }) {
+  return (
+    <div className={grid}>
+      {SKELETON_KEYS.slice(0, count).map((k) => (
+        <Skeleton className={cn("w-full rounded-lg", aspect)} key={k} />
+      ))}
+    </div>
+  );
 }
 
 export function loadJson<T>(key: string, fallback: T): T {

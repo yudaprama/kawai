@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider, SliderRange, SliderThumb, SliderTrack } from "@/components/ui/slider";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
@@ -31,12 +30,14 @@ import {
 } from "./music-ecosystems";
 import {
   KeyStatusNotices,
+  PresetSkeletonGrid,
   type GenerationJob,
   laneStatusKey,
   type LaneResultEntry,
   readFileAsDataUrl,
   useCivitaiKeyStatus,
   useEcoGroups,
+  usePresetGallery,
   useWorkflowLane,
 } from "./civitai-shared";
 import { GenerateFooter } from "./generate-footer";
@@ -171,35 +172,12 @@ function MusicTemplateGallery({
   onApplyStarter: (starter: MusicStarter) => void;
 }) {
   const { t } = useI18n();
-  const [presets, setPresets] = useState<MusicTemplatePreset[] | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    setPresets(null);
-    setFailed(false);
-    call<MusicTemplatePreset[]>("civitai_music_template_gallery")
-      .then((list) => {
-        if (alive) setPresets(Array.isArray(list) ? list : []);
-      })
-      .catch(() => {
-        if (!alive) return;
-        setFailed(true);
-        setPresets([]);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const { presets, failed } = usePresetGallery<MusicTemplatePreset>("civitai_music_template_gallery");
 
   return (
     <div className="flex flex-col gap-4">
       {presets === null ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {(["a", "b", "c", "d", "e", "f"] as const).map((k) => (
-            <Skeleton className="aspect-square w-full rounded-lg" key={k} />
-          ))}
-        </div>
+        <PresetSkeletonGrid aspect="aspect-square" grid="grid grid-cols-2 gap-2 sm:grid-cols-3" />
       ) : presets.length > 0 ? (
         <div className="flex flex-col gap-2">
           <p className="text-muted-foreground text-xs">{t("musicGenerator.presetsHint")}</p>

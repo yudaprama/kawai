@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Slider, SliderRange, SliderThumb, SliderTrack } from "@/components/ui/slider";
 import { Spinner } from "@/components/ui/spinner";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Icon } from "@/components/shared/icon";
 import { cn } from "@/lib/utils";
@@ -36,12 +35,14 @@ import {
 } from "./video-ecosystems";
 import {
   KeyStatusNotices,
+  PresetSkeletonGrid,
   type GenerationJob,
   type LaneResultEntry,
   laneStatusKey,
   readFileAsDataUrl,
   useCivitaiKeyStatus,
   useEcoGroups,
+  usePresetGallery,
   useWorkflowLane,
 } from "./civitai-shared";
 import { GenerateFooter } from "./generate-footer";
@@ -127,35 +128,10 @@ function VideoTemplateGallery({ onApply }: { onApply: (preset: VideoTemplatePres
   // page), so the grid is a masonry: a row-synced grid forces one height and
   // crops the rest, which is what made every tile look square.
   const cols = useColumnCount(3);
-  const [presets, setPresets] = useState<VideoTemplatePreset[] | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    setPresets(null);
-    setFailed(false);
-    call<VideoTemplatePreset[]>("civitai_video_template_gallery")
-      .then((list) => {
-        if (alive) setPresets(Array.isArray(list) ? list : []);
-      })
-      .catch(() => {
-        if (!alive) return;
-        setFailed(true);
-        setPresets([]);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const { presets, failed } = usePresetGallery<VideoTemplatePreset>("civitai_video_template_gallery");
 
   if (presets === null) {
-    return (
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {(["a", "b", "c", "d", "e", "f"] as const).map((k) => (
-          <Skeleton className="aspect-video w-full rounded-lg" key={k} />
-        ))}
-      </div>
-    );
+    return <PresetSkeletonGrid aspect="aspect-video" grid="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3" />;
   }
 
   if (presets.length === 0) {

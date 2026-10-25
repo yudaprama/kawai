@@ -4,6 +4,8 @@ import { Icon } from "@/components/shared/icon";
 import type { ScreenerStructureFilter } from "@/features/chat/hooks/use-supervisor-plan";
 import { cn } from "@/lib/utils";
 
+import { Field } from "./workbench-ui";
+
 /** The screens the fixed pipeline accepts (mirrors the backend's
  * `screener_plan::valid_screens`). Order here is the display order; the run
  * dispatches one parallel `crypto_screener` step per picked screen. */
@@ -354,15 +356,6 @@ export function CryptoScreenerForm({ disabled, onSubmit }: CryptoScreenerFormPro
           )
         )}
       </p>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">{label}</span>
-      <div className="flex items-center gap-1">{children}</div>
     </div>
   );
 }

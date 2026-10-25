@@ -38,8 +38,10 @@ import {
   fetchGenerationHistory,
   type GenerationJob,
   KeyStatusNotices,
+  PresetSkeletonGrid,
   useAliveEffect,
   useCivitaiKeyStatus,
+  usePresetGallery,
 } from "./civitai-shared";
 import { GenerateFooter, publishMediaDebit } from "./generate-footer";
 import { MusicGenerator } from "./music-generator";
@@ -1565,30 +1567,11 @@ export function GeneratorPage({ lane }: { lane: MediaMode }) {
  */
 function TemplateGallery({ cols, onApply }: { cols: number; onApply: (preset: TemplatePreset) => void }) {
   const { t } = useI18n();
-  const [presets, setPresets] = useState<TemplatePreset[] | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    setPresets(null);
-    call<TemplatePreset[]>("civitai_template_gallery")
-      .then((list) => {
-        if (alive) setPresets(Array.isArray(list) ? list : []);
-      })
-      .catch(() => {
-        if (alive) setPresets([]);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const { presets } = usePresetGallery<TemplatePreset>("civitai_template_gallery");
 
   if (presets === null) {
     return (
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-        {(["a", "b", "c", "d", "e", "f", "g", "h"] as const).map((k) => (
-          <Skeleton key={k} className="aspect-[3/4] w-full rounded-lg" />
-        ))}
-      </div>
+      <PresetSkeletonGrid aspect="aspect-[3/4]" count={8} grid="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4" />
     );
   }
   if (presets.length === 0) {

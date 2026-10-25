@@ -1,6 +1,6 @@
 {
   "minLines": 5,
-  "formats": ["rust"],
+  "formats": ["rust", "typescript", "tsx"],
   "minTokens": 50,
   "reporters": ["console-full", "html", "json"],
   "output": "./jscpd-report-rust",

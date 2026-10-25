@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { Icon } from "@/components/shared/icon";
+import { PeriodSubmitCard } from "./workbench-ui";
 
 /** Venue the review reads. `undefined` = every exchange — the field is
  *  OPTIONAL on the backend and omitting it syncs all venues' fills. */
@@ -56,38 +56,17 @@ export function TradingPerformanceForm({ disabled, onSubmit }: TradingPerformanc
   ];
 
   return (
-    <div className="border-border/60 w-full rounded-xl border p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <Icon name="chart-line" className="text-primary size-4" />
-        <span className="text-foreground font-mono text-xs font-bold tracking-wider uppercase">
-          Trading Performance
-        </span>
-        <span className="text-muted-foreground font-mono text-[0.625rem]">
-          sync · win rate · per-pair PnL · fees · integrity gate
-        </span>
-      </div>
-      <div className="flex gap-2">
-        <input
-          value={period}
-          onChange={(e) => setPeriod(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") submit();
-          }}
-          placeholder="Oktober 2026 · 2026-10 · 31/10/26"
-          disabled={disabled}
-          spellCheck={false}
-          className="border-border bg-background text-foreground placeholder:text-muted-foreground/60 min-w-0 flex-1 rounded-lg border px-3 py-2 font-mono text-sm outline-none focus:border-[var(--tea-color-border-focus)] focus-visible:ring-2 focus-visible:ring-ring/50"
-        />
-        <button
-          type="button"
-          onClick={submit}
-          disabled={disabled}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 font-mono text-xs font-bold tracking-wider uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Icon name="zap" className="size-3.5" />
-          Review
-        </button>
-      </div>
+    <PeriodSubmitCard
+      buttonDisabled={disabled}
+      buttonLabel="Review"
+      disabled={disabled}
+      icon="chart-line"
+      onSubmit={submit}
+      period={period}
+      setPeriod={setPeriod}
+      subtitle="sync · win rate · per-pair PnL · fees · integrity gate"
+      title="Trading Performance"
+    >
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {presets.map((p) => (
           <button
@@ -131,6 +110,6 @@ export function TradingPerformanceForm({ disabled, onSubmit }: TradingPerformanc
       <p className="text-muted-foreground mt-2 font-mono text-[0.625rem]">
         Lands in the review gate — the plan runs only after you approve it.
       </p>
-    </div>
+    </PeriodSubmitCard>
   );
 }

@@ -4,6 +4,8 @@ import { Icon } from "@/components/shared/icon";
 import { call } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+import { Field } from "./workbench-ui";
+
 /** Candle intervals the stop fold accepts (mirrors the backend's
  * `AUDIT_INTERVALS`). Anything else falls back to `4h` server-side. */
 const INTERVALS = ["15m", "1h", "4h", "1d", "1w"] as const;
@@ -263,15 +265,6 @@ export function BinanceAuditForm({ disabled, onSubmit }: BinanceAuditFormProps) 
           ? "MEXC placement is not wired yet, so the recommended stops and take-profits are yours to place on the exchange."
           : "after the report lands, the run view offers one-click placement of the recommended stops and take-profits, and nothing is sent until you approve it there."}
       </p>
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-muted-foreground font-mono text-[0.625rem] tracking-wider uppercase">{label}</span>
-      <div className="flex items-center gap-1">{children}</div>
     </div>
   );
 }

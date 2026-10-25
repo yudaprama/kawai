@@ -15,6 +15,8 @@ import {
 } from "@/components/ai-elements/tool-renderers/shared";
 import { cn } from "@/lib/utils";
 
+import { MatchCount, SelectMatchingButton, SymbolSearch } from "./workbench-ui";
+
 /** Which exchange's book an audit graded. The risk POLICY is venue-neutral
  * (`kawai_futures_risk`), but the placement ops are per-venue — MEXC keeps
  * conditional orders outside the resting order book and has no stop-move
@@ -699,14 +701,7 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
         {/* 182 rows in a scroll box is a haystack. Search + a gap filter are
             how one position gets found; neither touches the selection. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Cari simbol… (mis. BTC)"
-            aria-label="Search positions by symbol"
-            className="border-input bg-input/20 h-7 w-44 rounded-md border px-2 font-mono text-[0.6875rem] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-          />
+          <SymbolSearch ariaLabel="Search positions by symbol" onQuery={setQuery} query={query} />
           {(
             [
               ["all", "Semua"],
@@ -752,19 +747,15 @@ export function BinanceAuditOffer({ planKey, stepId, venue, fetcher }: BinanceAu
           >
             Dalam untung
           </button>
-          <span className="text-muted-foreground ml-auto font-mono text-[0.6875rem] tabular-nums">
-            {filtered ? `${matching.length} of ${offer.rows.length}` : `${offer.rows.length} positions`}
-          </span>
+          <MatchCount filtered={filtered} matchCount={matching.length} total={offer.rows.length} unit="positions" />
         </div>
         {filtered && (
-          <button
-            type="button"
-            onClick={selectMatching}
+          <SelectMatchingButton
             disabled={busy || selectedInView === matching.length}
-            className="text-muted-foreground hover:text-foreground text-xs underline disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Select the {matching.length} shown{selectedInView > 0 ? ` (${selectedInView} already selected)` : ""}
-          </button>
+            matchCount={matching.length}
+            onClick={selectMatching}
+            selectedInView={selectedInView}
+          />
         )}
         <div className="border-border/60 max-h-96 overflow-y-auto rounded-md border">
           <table className="w-full border-collapse font-mono text-[0.6875rem]">

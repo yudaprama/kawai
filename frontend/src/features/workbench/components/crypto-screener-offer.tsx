@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { call, errText } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+import { MatchCount, SelectMatchingButton, SymbolSearch } from "./workbench-ui";
+
 /** Dispatch key of the screener tool — identifies a screener run's step in
  * both live supervisor state and persisted run records. */
 export const CRYPTO_SCREENER_TOOL = "crypto_screener";
@@ -753,14 +755,7 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
 
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-1.5">
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Cari simbol… (mis. BTC)"
-            aria-label="Search hits by symbol"
-            className="border-input bg-input/20 h-7 w-44 rounded-md border px-2 font-mono text-[0.6875rem] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-          />
+          <SymbolSearch ariaLabel="Search hits by symbol" onQuery={setQuery} query={query} />
           {/* Conviction is the decision axis for a screener hit, so it is a
               single-select threshold — including "any" (0). */}
           {(
@@ -799,19 +794,15 @@ export function CryptoScreenerOffer({ planKey, stepIds, fetcher }: CryptoScreene
             />
             Take-profit ladder
           </label>
-          <span className="text-muted-foreground ml-auto font-mono text-[0.6875rem] tabular-nums">
-            {filtered ? `${matching.length} of ${offer.hits.length}` : `${offer.hits.length} hits`}
-          </span>
+          <MatchCount filtered={filtered} matchCount={matching.length} total={offer.hits.length} unit="hits" />
         </div>
         {filtered && (
-          <button
-            type="button"
-            onClick={selectMatching}
+          <SelectMatchingButton
             disabled={busy || selectedInView === matching.length}
-            className="text-muted-foreground hover:text-foreground text-xs underline disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Select the {matching.length} shown{selectedInView > 0 ? ` (${selectedInView} already selected)` : ""}
-          </button>
+            matchCount={matching.length}
+            onClick={selectMatching}
+            selectedInView={selectedInView}
+          />
         )}
         <div className="border-border/60 max-h-96 overflow-y-auto rounded-md border">
           <table className="w-full border-collapse font-mono text-[0.6875rem]">
