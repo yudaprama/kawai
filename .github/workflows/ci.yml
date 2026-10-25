@@ -4,8 +4,8 @@ name: ci
 # MVP 3): unit tests and the on-device/hybrid-tier smokes on every push to
 # main and every PR. litert-dependent smokes run on the three desktop
 # platforms (macOS arm64 + Linux x86_64 here; Windows x86_64 in
-# windows-smoke.yml — it needs a 3h+ cold compile, so it cannot survive the
-# push cadence of cancel-in-progress and runs nightly/dispatched instead).
+# windows-smoke.yml — it needs a 3h+ cold compile, so it runs nightly/dispatched
+# instead).
 #
 # The agent_eval quality suites (office + analytics, E4B) live in evals.yml —
 # they run in parallel with this workflow and the release build so the
@@ -610,8 +610,14 @@ jobs:
         run: cargo run --example analytics_smoke
         working-directory: src-tauri
 
-  # ── Linux full gate: bazel-built litert-lm + unit tests + all smokes ─────
-  linux-smoke:
+  # ── Linux build gate: bazel-built litert-lm + unit tests ────────────────
+  # Split from the smokes (2026-10-26): a single job combining cold bazel +
+  # 3.5 GB model download + smokes crosses ~45 min, where GitHub-hosted
+  # runners get reclaimed ("runner has received a shutdown signal") — and a
+  # killed job cancels its cache post-steps, so every retry stayed cold.
+  # linux-build saves the dylib cache even when tests fail (cache-on-failure),
+  # so the expensive artifact is never rebuilt twice.
+  linux-build:
     runs-on: ubuntu-22.04
     # Cold-cache `cargo test (litert + office)` alone ran 117 min on a runner
     # before the old 120-min ceiling killed it mid-compile (run 36127357424,
@@ -662,6 +668,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: cognee-litert-lm/native
+          # cache-on-failure: an infra-killed job must still leave the .so set
+          # behind, or every retry rebuilds bazel from scratch (the kill loop).
+          cache-on-failure: true
           key: litert-lib-linux-x86_64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/prebuilt/linux_x86_64/*.so') }}
 
       # Bazel is only needed on a dylib-cache miss — skip the bazel cache
@@ -723,12 +732,80 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
         run: cargo test --lib
 
+      # agent_eval intentionally does NOT run here: the E4B orchestration
+      # quality suites (office + analytics) live in evals.yml on macOS only —
+      # same model, CPU inference, OS-independent quality signal. Running the
+      # battery per-OS tripled eval cost for no extra signal.
+
+  # ── Linux smokes: model download + all smoke binaries ───────────────────
+  # Separate job so neither half of the old 47-minute linux-smoke crosses the
+  # hosted-runner reclaim window. Everything expensive comes from cache
+  # (dylibs from linux-build's cache-on-failure save; model cached with
+  # cache-on-failure so a killed smoke never re-downloads 3.5 GB).
+  linux-smokes:
+    needs: linux-build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Git auth for private dependencies
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          cache-on-failure: true
+
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+
+      - name: LiteRT-LM dylib cache key
+        id: litert-lib-key
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C cognee-litert-lm/vendor/LiteRT-LM rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore litert-lm dylibs
+        id: litert-lib
+        uses: actions/cache@v4
+        with:
+          path: cognee-litert-lm/native
+          cache-on-failure: true
+          key: litert-lib-linux-x86_64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/prebuilt/linux_x86_64/*.so') }}
+
+      # Same link/bindgen toolchain as linux-build — the smoke binaries link
+      # the kawai lib (litert + office + binance features).
+      - name: Install system deps
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libclang-dev
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm18.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang-18
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 1000
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 1000
+
       # ── Smoke 1: on-device streaming ──
       - name: Cache smoke model fixture
         id: model
         uses: actions/cache@v4
         with:
           path: smoke-model
+          # If the smoke is killed mid-stream, the 3.5 GB fixture must survive
+          # or every retry re-downloads it and re-enters the reclaim window.
+          cache-on-failure: true
           key: gemma4-e4b-it-litertlm
 
       - name: Download smoke model fixture
@@ -787,18 +864,13 @@ jobs:
         run: cargo run --example analytics_smoke
         working-directory: src-tauri
 
-      # agent_eval intentionally does NOT run here: the E4B orchestration
-      # quality suites (office + analytics) live in evals.yml on macOS only —
-      # same model, CPU inference, OS-independent quality signal. Running the
-      # battery per-OS tripled eval cost for no extra signal.
-
   # Hosted-runner reclaims killed linux-smoke twice in two days (~47min in,
   # "The runner has received a shutdown signal" — community discussion 209375;
   # not a concurrency cancel and not a test failure). This job inspects the
   # failed jobs' logs and retries ONLY when the infra-kill signature is
   # present. A genuine test failure reruns NOTHING and stays red immediately.
   auto-rerun:
-    needs: [web, linux-check, android-check, macos-smoke, linux-smoke]
+    needs: [web, linux-check, android-check, macos-smoke, linux-build, linux-smokes]
     if: failure() && github.run_attempt == 1
     runs-on: ubuntu-latest
     permissions:
