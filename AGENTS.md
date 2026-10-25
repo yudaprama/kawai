@@ -169,6 +169,15 @@ bun run bundle:litert
 # and staged into jniLibs) — attaches the APK to the GitHub release, and
 # uploads the AAB to the Play internal track (packageName pro.kawai.app) when
 # PLAY_UPLOAD_ENABLED=true.
+# Size: the release .so files are stripped by `stripReleaseNativeLibs` in
+# src-tauri/gen/android/app/build.gradle.kts (`llvm-strip --strip-unneeded`,
+# .symtab only — .dynsym/JNI/litert exports stay), which exports the
+# unstripped copies to build/outputs/native-debug-symbols/ and uploads them as
+# native-debug-symbols.zip both to Play and as a run artifact. The workflow
+# verifies the packaged APK is stripped and keeps its JNI/LiteRT exports.
+# arm64-only is enough for Play (64-bit required, 32-bit optional; Play splits
+# the AAB per device), and a single-ABI APK avoids the multi-ABI sideload
+# bloat — native libs are stored uncompressed in an APK.
 # Needs repo secrets ANDROID_KEYSTORE_BASE64 / _PASSWORD / ANDROID_KEY_PASSWORD
 # / ANDROID_KEY_ALIAS / PLAY_SERVICE_ACCOUNT_JSON + repo variable
 # PLAY_UPLOAD_ENABLED. keystore.properties is written from those secrets into
@@ -295,6 +304,7 @@ DevTools, and auth/login-hang triage) see §2 "Android device" in
 - **PDF text replace is DOM-based, not content-stream regex.** `pdf_replace_text` composes `find_text` (regex predicate per element) + `set_text` — a match that spans fragmented sibling text elements in the content stream is NOT found, and replaced text keeps the original element bbox (no reflow). Fine for token substitutions (dates, names, codes); heavy rewrites should regenerate the source document (the `pdf_replace_text` tool description says exactly this).
 - **Android TLS needs `rustls-platform-verifier` init before ANY Rust HTTPS call.** `reqwest`'s `rustls` feature verifies certs through `rustls-platform-verifier`, which panics (`Expect rustls-platform-verifier to be initialized`, `android.rs:90`) on first use unless initialized with the app's JNI context. On Android the Tauri shell does this in `lib.rs` setup via `ndk-context` + `jni` (android-gated deps in `src-tauri/Cargo.toml`); the Kotlin verifier component is vendored at `gen/android/app/src/main/java/org/rustls/platformverifier/CertificateVerifier.kt` (upstream v0.7.0, `BuildConfig.TEST` inlined as `false`). Symptom when missing: every HTTPS call (auth, JWKS, remote LLM, Loki push) panics the tokio worker silently → infinite spinners, empty Grafana (the push thread dies too, so the device ships NOTHING to Loki). It never reaches Loki — panics are visible only in `adb logcat`.
 - **R8 strips the verifier component from release APKs.** Release builds minify (`optimization { enable = true }` in `gen/android/app/build.gradle.kts`), and `CertificateVerifier` is instantiated from Rust via JNI by name — invisible to R8, which deletes it: debug builds log in, every release build fails its first HTTPS call with `auth server unreachable: error sending request`. The `-keep class org.rustls.platformverifier.**` rule in `gen/android/app/proguard-rules.pro` is load-bearing; release-android.yml carries a dex check that fails the build if the class is gone. Any new JNI-instantiated Java/Kotlin class needs the same treatment.
+- **AGP leaves prebuilt jniLibs unstripped, and an APK stores native libs uncompressed.** `strip<Variant>DebugSymbols` passes jniLibs through as-is, so `libkawai_lib.so` reaches the APK as 172 MB instead of 111 MB — every `.symtab` byte counts against the download. `stripReleaseNativeLibs` in `gen/android/app/build.gradle.kts` runs `llvm-strip --strip-unneeded` on jniLibs just before packaging (both AAB and APK variant merges), exports the unstripped copies to `build/outputs/native-debug-symbols/lib/<abi>/` for Play's native debug symbols, and replaces the Tauri symlink with a stripped regular file (intended). `release-android.yml` fails the build if the packaged lib still has `.symtab` or lost `Java_pro_kawai_app_Rust_ipc` / `litert_lm_*` exports. Never use `--strip-all` — it drops `.dynsym` too and breaks JNI plus `DT_NEEDED` resolution.
 
 ## Where things live
 

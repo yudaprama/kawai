@@ -242,6 +242,86 @@ jobs:
           KAWAI_LOKI_LEVEL: ${{ inputs.loki_level || 'warn' }}
         run: bun tauri android build --target aarch64 --features litert,tts,binance,accounting,mexc --apk
 
+      # Native libraries are stored UNCOMPRESSED in an APK (extractNativeLibs
+      # =false) and AGP passes prebuilt jniLibs through untouched, so the Rust
+      # .so ships its entire .symtab (~64 MB on arm64) unless
+      # stripReleaseNativeLibs in src-tauri/gen/android/app/build.gradle.kts
+      # removed it. That task also exports unstripped copies for Play's native
+      # debug symbols (crash symbolication); this step proves the packaged libs
+      # are stripped, that .dynsym survived the strip, and packages the symbols.
+      - name: Verify stripped native libs + package debug symbols
+        id: native_symbols
+        run: |
+          set -euo pipefail
+          NDK="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
+          if [ -z "$NDK" ]; then
+            echo "::error::ANDROID_NDK_HOME/ANDROID_NDK_ROOT is unset — cannot verify the packaged native libraries."
+            exit 1
+          fi
+          READELF="$(ls "$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-readelf 2>/dev/null | head -n1)"
+          NM="$(ls "$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-nm 2>/dev/null | head -n1)"
+          if [ -z "$READELF" ] || [ -z "$NM" ]; then
+            echo "::error::llvm-readelf/llvm-nm not found under $NDK/toolchains/llvm/prebuilt."
+            exit 1
+          fi
+          APK="$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -n1)"
+          echo "APK: $APK ($(du -h "$APK" | cut -f1))"
+          WORK="$(mktemp -d)"
+          SOS=()
+          while IFS= read -r so; do SOS+=("$so"); done < <(unzip -Z1 "$APK" | grep -E '^lib/.*\.so$')
+          if [ "${#SOS[@]}" -eq 0 ]; then
+            echo "::error::The APK contains no native libraries — the Rust build did not reach jniLibs."
+            exit 1
+          fi
+          for so in "${SOS[@]}"; do
+            out="$WORK/${so//\//_}"
+            unzip -p "$APK" "$so" > "$out"
+            # Grep files, never a producer pipe: grep -q closes the pipe on
+            # the first match and SIGPIPEs the tool, which pipefail reads as
+            # a failed check.
+            "$READELF" -S "$out" > "$out.sections"
+            if grep -q '\.symtab' "$out.sections"; then
+              echo "::error::$so still carries .symtab — stripReleaseNativeLibs did not run for this build."
+              exit 1
+            fi
+          done
+          ARM="$WORK/lib_arm64-v8a_libkawai_lib.so"
+          # nm's output is huge; grep -q would close the pipe early and
+          # SIGPIPE the producer (pipefail reads that as failure) — dump to a
+          # file and grep that instead.
+          "$NM" -D --defined-only "$ARM" > "$WORK/kawai.dynsyms"
+          grep -q 'Java_pro_kawai_app_Rust_ipc' "$WORK/kawai.dynsyms" ||
+            { echo "::error::libkawai_lib.so lost Java_pro_kawai_app_Rust_ipc — the strip removed dynamic symbols."; exit 1; }
+          grep -q 'Java_app_tauri_plugin_PluginManager_sendChannelData' "$WORK/kawai.dynsyms" ||
+            { echo "::error::libkawai_lib.so lost its Java_* entrypoints — the strip removed dynamic symbols."; exit 1; }
+          LM="$WORK/lib_arm64-v8a_liblitert-lm.so"
+          if [ -f "$LM" ]; then
+            "$NM" -D --defined-only "$LM" > "$WORK/litert.dynsyms"
+            grep -q 'litert_lm_engine_create' "$WORK/litert.dynsyms" ||
+              { echo "::error::liblitert-lm.so lost the LiteRT C API exports."; exit 1; }
+          fi
+          SYMBOLS="src-tauri/gen/android/app/build/outputs/native-debug-symbols"
+          SYM_LIB="$SYMBOLS/lib/arm64-v8a/libkawai_lib.so"
+          "$READELF" -S "$SYM_LIB" > "$WORK/symbols.sections" 2>/dev/null || true
+          if [ -f "$SYM_LIB" ] && grep -q '\.symtab' "$WORK/symbols.sections"; then
+            ZIP="$RUNNER_TEMP/native-debug-symbols.zip"
+            (cd "$SYMBOLS" && zip -qr "$ZIP" lib)
+            echo "Native debug symbols: $ZIP ($(du -h "$ZIP" | cut -f1))"
+            echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          else
+            echo "zip=" >> "$GITHUB_OUTPUT"
+            echo "::warning::No unstripped native debug symbols were exported — Play cannot symbolicate native crashes for this build."
+          fi
+
+      - name: Store native debug symbols as a run artifact
+        if: ${{ steps.native_symbols.outputs.zip != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: kawai-android-native-symbols-${{ steps.tag.outputs.tag }}
+          path: ${{ steps.native_symbols.outputs.zip }}
+          if-no-files-found: error
+          retention-days: 30
+
       # R8 (release `optimization`) strips classes that are only referenced
       # from Rust via JNI by name — the rustls-platform-verifier Kotlin
       # component is one of them, and without it EVERY HTTPS call from the
@@ -306,6 +386,7 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: pro.kawai.app
           releaseFiles: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab
+          debugSymbols: ${{ steps.native_symbols.outputs.zip }}
           track: internal
           status: completed
 
