@@ -794,9 +794,9 @@ jobs:
 
   # Hosted-runner reclaims killed linux-smoke twice in two days (~47min in,
   # "The runner has received a shutdown signal" — community discussion 209375;
-  # not a concurrency cancel and not a test failure). One automatic retry of
-  # failed jobs per run: attempt-2 failures stay red, so real breakage is
-  # never masked, and each retry reuses the caches the first attempt saved.
+  # not a concurrency cancel and not a test failure). This job inspects the
+  # failed jobs' logs and retries ONLY when the infra-kill signature is
+  # present. A genuine test failure reruns NOTHING and stays red immediately.
   auto-rerun:
     needs: [web, linux-check, android-check, macos-smoke, linux-smoke]
     if: failure() && github.run_attempt == 1
@@ -804,8 +804,25 @@ jobs:
     permissions:
       actions: write
     steps:
-      - name: Rerun failed jobs once
+      - name: Rerun only runner-shutdown kills
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          gh api -X POST "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/rerun-failed-jobs"
+          infra_killed=0
+          for job_id in $(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?filter=latest" \
+              --jq '.jobs[] | select(.conclusion == "failure") | .id'); do
+            if gh api "repos/$REPO/actions/jobs/$job_id/logs" 2>/dev/null \
+               | grep -qi "runner has received a shutdown signal"; then
+              echo "job $job_id: infra kill (runner shutdown)"
+              infra_killed=1
+            else
+              echo "job $job_id: real failure — not retrying"
+            fi
+          done
+          if [ "$infra_killed" = "1" ]; then
+            gh api -X POST "repos/$REPO/actions/runs/$RUN_ID/rerun-failed-jobs"
+          else
+            echo "All failures are real; staying red."
+          fi
