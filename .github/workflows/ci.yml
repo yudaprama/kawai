@@ -22,10 +22,12 @@ name: ci
 # needs interactive cloud-side state beyond the smokes. Run it manually
 # (see its header comment) before tagging a release.
 #
-# android-check gates the Android compile of the tts chain (supertonic →
-# ocr-rs MNN prebuilt, static-linked) on both release ABIs — check-only, no
-# APK. It is the proof gate release-android.yml needs before enabling tts on
-# mobile (the MNN prebuilts for android exist; the link was never exercised).
+# android-check gates the Android compile of release-android's exact feature
+# set on its single ABI (aarch64): the tts chain (supertonic → ocr-rs MNN
+# prebuilt, static-linked), the litert chain (cognee-litert-lm bindgen over
+# the nested LiteRT-LM C headers), binance, accounting, mexc — check-only, no
+# APK. armeabi-v7a is not built: the LiteRT-LM C library exists for
+# android_arm64 only, and a GB-scale model does not fit a 32-bit address space.
 
 on:
   push:
@@ -280,16 +282,18 @@ jobs:
           EOF
           node /tmp/extractor.js
 
-  # ── Android compile gate: tts on the release ABIs (check-only, no APK) ────
+  # ── Android compile gate: release-android's feature set (no APK) ─────────
   # Proves the tts feature chain (supertonic → ocr-rs, MNN prebuilt from
-  # zibo-chen/MNN-Prebuilds, static-linked) compiles and links for
-  # aarch64-linux-android + armv7-linux-androideabi — the two targets
-  # release-android ships. release-android enables tts only once this is
-  # green. The MNN prebuilt downloads inside ocr-rs's build.rs; the ~191 MB
-  # TTS models are a runtime download, not needed for a check.
+  # zibo-chen/MNN-Prebuilds, static-linked) and the litert chain
+  # (cognee-litert-lm bindgen over the nested LiteRT-LM C headers) compile and
+  # link for aarch64-linux-android — the only target release-android builds.
+  # The MNN prebuilt downloads inside ocr-rs's build.rs; the ~191 MB TTS models
+  # are a runtime download, not needed for a check.
   android-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # tts (MNN prebuilt) + litert (bindgen over the full LiteRT-LM header tree,
+    # the whole local-llm/embedding stack) on a cold aarch64 target dir.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -299,16 +303,16 @@ jobs:
         run: |
           git config --global url."https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
-      # Same manifest set as the web job, plus full rust-paddle-ocr
-      # sources (the tts chain compiles them).
+      # Recursive: the litert feature runs bindgen, which parses the C headers
+      # of the NESTED submodule cognee-litert-lm/vendor/LiteRT-LM. Recursion
+      # also initialises crates/vendor/binance-connector-rust (a real path dep
+      # for the binance feature). Full rust-paddle-ocr sources for the tts chain.
       - name: Init submodules
-        run: |
-          git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
-          git -C crates submodule update --init vendor/binance-connector-rust
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi
+          targets: aarch64-linux-android
 
       # Own shared-key: the android target dirs must not thrash the linux
       # desktop jobs' cache (same host triple, different --target).
@@ -318,7 +322,8 @@ jobs:
           shared-key: android-check
           cache-on-failure: true
 
-      # bindgen (ocr-rs build-dep) needs libclang; cmake ships with the runner.
+      # bindgen (ocr-rs and cognee-litert-lm build-deps) needs libclang; cmake
+      # ships with the runner.
       - name: Install system deps
         run: |
           sudo apt-get update -qq
@@ -352,14 +357,18 @@ jobs:
         if: steps.cargo-ndk.outputs.cache-hit != 'true'
         run: cargo install cargo-ndk --locked
 
-      # Feature set mirrors release-android (default `desktop` + accounting +
-      # mexc) PLUS tts — the combination this job exists to prove.
+      # Feature set = EXACTLY what release-android ships (default `desktop` +
+      # litert, tts, binance, accounting, mexc) on its single ABI. `check`
+      # compiles Rust + runs bindgen against the nested C headers — no
+      # liblitert-lm.so is needed (release builds it separately and stages it
+      # into jniLibs); cognee-litert-lm's build.rs resolves the clang sysroot
+      # from ANDROID_NDK_HOME (set above).
       # -P (capital) is the cargo-ndk platform flag; -p collides with cargo
       # --package. Keep secrets out of the env: cargo-ndk's panic handler
       # dumps all env vars to stdout.
-      - name: cargo ndk check (aarch64 + armv7, tts)
+      - name: cargo ndk check (aarch64, release feature set)
         working-directory: src-tauri
-        run: cargo ndk -t arm64-v8a -t armeabi-v7a -P 24 check --features tts,accounting,mexc
+        run: cargo ndk -t arm64-v8a -P 24 check --features litert,tts,binance,accounting,mexc
 
   # ── Full gate: unit tests + on-device smoke + hybrid cloud smokes ─────────
   macos-smoke:

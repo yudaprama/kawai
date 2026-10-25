@@ -6,7 +6,8 @@
  * paths (Tauri desktop) differ, gated by `runningInTauri`.
  */
 
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { writeFile } from "@tauri-apps/plugin-fs";
 import {
   capturePhotoViaUserMedia,
   captureScreenshotViaDisplayMedia,
@@ -18,12 +19,14 @@ import {
   pickFilesViaInput,
   promptForUrlViaBrowser,
   readClipboardImageViaBrowser,
+  saveBlobViaBrowser,
   shareViaBrowser,
   writeClipboardTextViaBrowser,
 } from "./shared-media";
-import type { PickFilesOptions, Platform } from "./types";
+import type { PickFilesOptions, Platform, SaveResult } from "./types";
 
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const target = detectPlatformTarget();
 
 /** `.ext`/mime accept list → tauri-plugin-dialog `filters` shape. */
 function toDialogFilters(accept?: string[]): { name: string; extensions: string[] }[] {
@@ -55,8 +58,34 @@ async function pickFilePathsViaDialog(options?: PickFilesOptions): Promise<strin
   }
 }
 
+/**
+ * Save bytes to the device. Android/iOS have no download handler — a blob
+ * anchor is a silent no-op there — so mobile goes through the system save
+ * sheet: `save()` returns the destination (on Android a SAF `content://` URI)
+ * and `plugin-fs` writes through ContentResolver. Desktop/web keep the
+ * browser download.
+ */
+async function saveBlobToDevice(blob: Blob, name: string): Promise<SaveResult> {
+  if (target === "mobile") {
+    try {
+      const ext = name.includes(".") ? name.split(".").pop()?.toLowerCase() : "";
+      const path = await save({
+        defaultPath: name,
+        filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : [],
+      });
+      if (path == null) return "cancelled";
+      await writeFile(path, new Uint8Array(await blob.arrayBuffer()));
+      return "saved";
+    } catch (err) {
+      console.error("[platform:save]", err);
+      return "failed";
+    }
+  }
+  return saveBlobViaBrowser(blob, name);
+}
+
 export const platform: Platform = {
-  target: detectPlatformTarget(),
+  target,
   canDictate: detectDictationMode() !== "none",
   canCapturePhoto: hasGetUserMedia(),
   canCaptureScreenshot: hasGetDisplayMedia(),
@@ -69,6 +98,7 @@ export const platform: Platform = {
   writeClipboardText: writeClipboardTextViaBrowser,
   readClipboardImage: readClipboardImageViaBrowser,
   share: shareViaBrowser,
+  saveBlob: saveBlobToDevice,
 };
 
 export const runningInTauri = isTauri;

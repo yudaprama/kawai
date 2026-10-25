@@ -15,17 +15,19 @@ name: release-android
 # shipped. workflow_dispatch re-runs it for one tag (failed upload, new
 # internal rollout).
 #
-# Feature set: the `desktop` cargo feature only — NO litert, tts, binance; accounting + mexc included.
-# `litert` needs the LiteRT-LM C lib built for android_arm64
-# (`bazel build //c:litert-lm --config=android_arm64`, staged by
-# scripts/stage-litert-android.sh) — not built yet. `tts` is unproven on
-# Android: its MNN comes from ocr-rs's build.rs (prebuilts exist for both
-# ABIs), and ci.yml's android-check job is the compile gate that must go
-# green before tts is enabled here. Adding either is a separate change.
+# Feature set: SAME as the desktop release — default `desktop` (office, graph,
+# mexc) + litert, tts, binance, accounting. `litert` is why this builds
+# aarch64 ONLY: the LiteRT-LM C library is built for android_arm64
+# (`bazel build //c:litert-lm --config=android_arm64`, staged into jniLibs by
+# scripts/stage-litert-android.sh) and armeabi-v7a can neither link it nor fit
+# a GB-scale model in a 32-bit address space. Every Android phone that can run
+# API 24+ from the last decade is arm64-capable; Play requires 64-bit anyway.
 #
-# Targets: aarch64 (Play requires 64-bit) + armeabi-v7a (minSdk 24).
-# x86/x86_64 are emulator-only — they double the Rust compile time and
-# Play does not require them.
+# On-device inference also needs a `.litertlm` model file in <app_data>/models
+# — no model ships inside the APK (same as the desktop bundles).
+#
+# Targets: aarch64 only. x86/x86_64 are emulator-only — they double the Rust
+# compile time and Play does not require them.
 #
 # Secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
 #          ANDROID_KEY_PASSWORD, ANDROID_KEY_ALIAS, PLAY_SERVICE_ACCOUNT_JSON
@@ -132,15 +134,53 @@ jobs:
             "platforms;android-37.0" \
             "build-tools;37.0.0" \
             "ndk;28.2.13676358"
+          # The LiteRT-LM bazel build (androidndk rule) and cognee-litert-lm's
+          # build.rs both resolve the NDK from ANDROID_NDK_HOME.
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi
+          targets: aarch64-linux-android
 
       - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      # ── LiteRT-LM C library (android_arm64) ─────────────────────────────
+      # Same bazel source as the desktop release, different config. Bazelisk
+      # honors the vendored .bazelversion pin so this matches upstream.
+      - name: Mount bazel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-linux-android_arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-linux-android_arm64-
+
+      - name: Install bazelisk
+        run: |
+          sudo wget -qO /usr/local/bin/bazelisk \
+            https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+          sudo chmod +x /usr/local/bin/bazelisk
+          bazelisk version
+
+      # The .so and its companions land in native/aarch64-linux-android — the
+      # link dir cognee-litert-lm's build.rs infers for this target — and are
+      # then packed into jniLibs so the Android linker resolves them from the
+      # app's nativeLibraryDir at load time (both the link and the runtime half
+      # of the litert feature).
+      - name: Build litert-lm for Android (arm64)
+        run: |
+          set -euo pipefail
+          cd cognee-litert-lm/vendor/LiteRT-LM
+          bazelisk build //c:litert-lm --config=android_arm64 --jobs=6
+          mkdir -p ../../native/aarch64-linux-android
+          cp bazel-bin/c/liblitert-lm.so ../../native/aarch64-linux-android/
+          cp prebuilt/android_arm64/*.so ../../native/aarch64-linux-android/
+
+      - name: Stage litert libs into jniLibs
+        run: bash scripts/stage-litert-android.sh
 
       - name: Configure release signing
         id: signing
@@ -185,12 +225,12 @@ jobs:
           # Read at compile time (option_env!) — this is how a release APK
           # under test opts into INFO; a phone has no shell to export into.
           KAWAI_LOKI_LEVEL: ${{ inputs.loki_level || 'warn' }}
-        run: bun tauri android build --target aarch64 armv7 --features accounting,mexc
+        run: bun tauri android build --target aarch64 --features litert,tts,binance,accounting,mexc
 
       - name: Build universal APK (sideload)
         env:
           KAWAI_LOKI_LEVEL: ${{ inputs.loki_level || 'warn' }}
-        run: bun tauri android build --target aarch64 armv7 --features accounting,mexc --apk
+        run: bun tauri android build --target aarch64 --features litert,tts,binance,accounting,mexc --apk
 
       # R8 (release `optimization`) strips classes that are only referenced
       # from Rust via JNI by name — the rustls-platform-verifier Kotlin

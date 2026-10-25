@@ -57,6 +57,8 @@
     "english": "English",
     "indonesian": "Indonesian",
     "download": "Download",
+    "savedToDevice": "Saved to your device",
+    "downloadFailed": "Couldn't save the file",
     "clearSearch": "Clear search"
   },
   "workbench": {

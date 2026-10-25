@@ -1,5 +1,7 @@
 /** Base64 ↔ bytes helpers — single implementation for the frontend. */
 
+import { platform } from "@/platform";
+
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   const CHUNK = 0x8000;
@@ -21,23 +23,11 @@ export function base64ToText(b64: string): string {
 }
 
 /**
- * Saves a Blob via an object-URL anchor download. Blob URLs (not `data:`
- * URLs) keep large media out of the JS heap — a multi-MB base64 data URL
- * doubles the memory spike on phones — and revoke is deferred so the
- * download has started before the URL dies.
+ * `data:` URL → Blob → platform save. Desktop/web download the blob; mobile
+ * writes it to a destination the user picks in the system save sheet.
  */
-export function downloadBlob(blob: Blob, name: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
-
-/** `data:` URL → Blob → {@link downloadBlob} (for callers that already hold a data URL). */
 export async function downloadDataUrl(dataUrl: string, name: string): Promise<void> {
-  downloadBlob(await (await fetch(dataUrl)).blob(), name);
+  await platform.saveBlob(await (await fetch(dataUrl)).blob(), name);
 }
 
 export function dataUrlToFile(dataUrl: string, name: string): File {

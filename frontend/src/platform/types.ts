@@ -8,6 +8,9 @@
 
 export type PlatformTarget = "desktop" | "mobile" | "web";
 
+/** Outcome of handing bytes to the device: user cancelled the save sheet, or the write failed. */
+export type SaveResult = "saved" | "cancelled" | "failed";
+
 export interface PickFilesOptions {
   multiple?: boolean;
   accept?: string[];
@@ -34,4 +37,10 @@ export interface Platform {
   writeClipboardText(text: string): Promise<boolean>;
   readClipboardImage(): Promise<File | null>;
   share(text: string): Promise<void>;
+  /**
+   * Saves bytes to the user's device. Desktop/web use the browser download
+   * path; mobile has no download handler, so it opens the system save sheet
+   * and writes the bytes to the returned SAF/file-provider URI.
+   */
+  saveBlob(blob: Blob, name: string): Promise<SaveResult>;
 }

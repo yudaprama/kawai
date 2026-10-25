@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useRef } from "react";
 
 import { QRCodeSVG } from "qrcode.react";
+import { toast } from "sonner";
 
 import { Icon } from "@/components/shared/icon";
 import { Button } from "@/components/ui/button";
-import { triggerDownload } from "@/lib/download";
+import { platform } from "@/platform";
 import gpnLogo from "@/assets/GPN.svg";
 import qrisLogo from "@/assets/QRIS-withtext.svg";
 
@@ -110,9 +111,11 @@ export function QrisCard({ qrPayload, amountLabel }: QrisCardProps) {
     if (!svg) return;
     try {
       const blob = await svgToPngBlob(svg);
-      triggerDownload("qris-topup.png", blob, "image/png");
+      const outcome = await platform.saveBlob(blob, "qris-topup.png");
+      if (outcome === "saved") toast.success("QR tersimpan di perangkat");
+      else if (outcome === "failed") toast.error("Gagal menyimpan QR");
     } catch {
-      // best-effort — download silently fails
+      toast.error("Gagal menyimpan QR");
     }
   }, []);
 

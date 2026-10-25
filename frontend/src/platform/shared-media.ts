@@ -21,7 +21,7 @@
 // Capability detection
 // ---------------------------------------------------------------------------
 
-import type { PickFilesOptions, PlatformTarget } from "./types";
+import type { PickFilesOptions, PlatformTarget, SaveResult } from "./types";
 
 export type DictationMode = "speech-recognition" | "media-recorder" | "none";
 
@@ -286,6 +286,29 @@ export async function captureScreenshotViaDisplayMedia(): Promise<File | null> {
     video.pause();
     video.srcObject = null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Downloads
+// ---------------------------------------------------------------------------
+
+/**
+ * Saves a Blob through the browser download path: an object URL on an anchor
+ * that is attached to the document (a detached anchor's click is ignored by
+ * some WebViews) and revoked on a delay so the transfer can start. Blob URLs,
+ * not `data:` URLs, keep multi-MB media out of the JS heap.
+ */
+export function saveBlobViaBrowser(blob: Blob, name: string): Promise<SaveResult> {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return Promise.resolve("saved");
 }
 
 // ---------------------------------------------------------------------------

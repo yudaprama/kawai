@@ -118,7 +118,9 @@ export function useKnowledgeActions(chat: {
     const toImport: { sourcePath?: string; file?: File; name: string }[] = [];
     let picked: KnowledgeSource[];
     try {
-      if (runningInTauri) {
+      if (runningInTauri && platform.target === "desktop") {
+        // Native open dialog → real absolute paths, imported in place by the
+        // office store (no bytes cross the IPC boundary).
         const paths = await platform.pickFilePaths({
           accept: ADD_FILE_ACCEPT,
           multiple: true,
@@ -126,6 +128,10 @@ export function useKnowledgeActions(chat: {
         if (!paths?.length) return;
         picked = paths.map((p) => classifySource(p.split(/[\\/]/).pop() ?? p, { path: p }));
       } else {
+        // Android/iOS pickers hand back SAF/file-provider URIs (`content://…`),
+        // which carry no file extension for `classifySource` and cannot be read
+        // by the store's own filesystem calls. The HTML file input yields a
+        // `File` with the display name and bytes, imported as base64.
         const pickedFiles = await platform.pickFiles({
           accept: ADD_FILE_ACCEPT,
           multiple: true,

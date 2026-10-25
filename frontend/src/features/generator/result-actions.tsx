@@ -13,7 +13,8 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { useI18n } from "@/hooks/use-i18n";
 import { call, errText, type ReadFileResult } from "@/lib/api";
-import { base64ToBytes, downloadBlob } from "@/lib/base64";
+import { base64ToBytes } from "@/lib/base64";
+import { platform } from "@/platform";
 
 /**
  * The `kawai-file://` markdown token every deliverable viewer resolves — one
@@ -135,8 +136,11 @@ export function ResultActions({
     try {
       const res = await call<ReadFileResult>("office_read_file", { fileId });
       // Blob URL, not a base64 data: URL — a multi-MB video/3D result must
-      // not double into the JS heap on a phone just to be saved.
-      downloadBlob(new Blob([base64ToBytes(res.dataBase64)], { type: res.mime }), fileName);
+      // not double into the JS heap on a phone just to be saved. Mobile opens
+      // the system save sheet instead of a download.
+      const outcome = await platform.saveBlob(new Blob([base64ToBytes(res.dataBase64)], { type: res.mime }), fileName);
+      if (outcome === "saved") toast.success(t("common.savedToDevice"));
+      else if (outcome === "failed") toast.error(t("common.downloadFailed"));
     } catch (e) {
       toast.error(errText(e));
     } finally {

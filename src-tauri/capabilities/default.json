@@ -30,6 +30,7 @@
     {
       "identifier": "fs:allow-stat",
       "allow": [{ "path": "$APPDATA" }, { "path": "$APPDATA/**" }]
-    }
+    },
+    "fs:allow-write-file"
   ]
 }
