@@ -38,7 +38,9 @@ export function TokenBalanceChip({ onSelectAsset }: { onSelectAsset: (id: AssetV
       title={low ? `${label} · saldo menipis` : label}
       type="button"
     >
-      <Icon name="qr-code" className="size-4" />
+      {/* Icon is decorative — hidden below md so a long balance never pushes
+          the mode pills into overflow on narrow phones. */}
+      <Icon name="qr-code" className="hidden size-4 md:inline" />
       <span className="text-muted-foreground hidden text-xs md:inline">Saldo</span>
       <span className="font-mono text-xs font-medium tabular-nums">{value}</span>
     </button>

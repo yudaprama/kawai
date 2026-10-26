@@ -243,3 +243,11 @@ tasks.matching {
 }.configureEach {
     dependsOn(stripReleaseNativeLibs)
 }
+
+// Tauri's rust build populates jniLibs (including the libc++_shared.so
+// symlink); Gradle runs dependencies in arbitrary order, so without this pin
+// the strip task can execute against an empty jniLibs dir and silently strip
+// nothing. Force the strip to run AFTER the Rust build.
+stripReleaseNativeLibs.configure {
+    dependsOn(tasks.matching { it.name.startsWith("rustBuild") })
+}

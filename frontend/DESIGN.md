@@ -49,7 +49,9 @@ view.
   top-level axis: `Text` IS the Workbench (goal composer + deliverable), and
   `Image · Video · Audio · 3D Model` are the generation lanes. The active mode
   renders inert with `aria-current`; the rest are buttons carrying a translated
-  label. An ASSET page is a different axis, so it lights no mode. The bar owns
+  label (`lg+` — below `lg` the pills collapse to icons so all five always fit
+  the row without horizontal scroll). An ASSET page is a different axis, so it
+  lights no mode. The bar owns
   the account cluster outright — the Workbench and asset pages do not render
   their own copy, which is why the two can never drift apart.
 - **Asset destinations (avatar dropdown + drawer).** Wiki, Code, Skills,

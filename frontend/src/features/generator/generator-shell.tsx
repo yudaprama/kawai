@@ -370,7 +370,9 @@ export function NumberStepper({
       </Button>
       <Input
         aria-label={t("generator.valueLabel")}
-        className="h-full min-w-0 flex-1 border-0 bg-transparent px-1 text-center text-sm shadow-none focus-visible:ring-0"
+        className="h-full min-w-0 flex-1 border-0 bg-transparent px-1 text-center text-sm shadow-none focus-visible:ring-0
+          [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none
+          [-moz-appearance:textfield] appearance-none"
         id={id}
         inputMode="numeric"
         max={max}

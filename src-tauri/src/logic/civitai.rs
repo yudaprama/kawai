@@ -721,12 +721,14 @@ pub async fn civitai_template_gallery() -> Result<Vec<TemplatePreset>, String> {
 // ── Video lane: community txt2vid presets ───────────────────────────────────
 
 /// Civitai's video `meta.ecosystem` → the panel's video ecosystem key.
-/// Measured over the paged `type=video` feed (2026-10-08): 1048 posts, 161
-/// native civitai-generated, 31 `txt2vid` across MiniMaxH3 (22), Flux3Video
-/// (2), Kling (2), Grok (2), Veo3 (1), WanVideo27 (1), HappyHorse (1) —
-/// seven of the panel's ten engines have community presets. Unknown civitai
-/// ecosystems map to None and are dropped.
-const VIDEO_ECOSYSTEM_ALIASES: [(&str, &str); 7] = [
+/// Measured over the paged `type=video` feed (2026-10-26, 1200 posts):
+/// txt2vid clips span MiniMaxH3 (241), Veo3 (8), WanVideo-22-T2V-A14B (6),
+/// Kling (6), WanVideo30 (2), Seedance (2), LTXV25/LTXV23 (2 each). Wan
+/// variants all map to the panel's Wan 2.5 engine, LTX variants to LTX;
+/// a replayed clip may differ from its source model version, which the
+/// apply path tolerates (prompt + settings load, whatif re-validates).
+/// Unknown civitai ecosystems map to None and are dropped.
+const VIDEO_ECOSYSTEM_ALIASES: [(&str, &str); 12] = [
     ("minimaxh3", "minimax"),
     ("minimax-h3", "minimax"),
     ("flux3video", "flux3"),
@@ -734,6 +736,11 @@ const VIDEO_ECOSYSTEM_ALIASES: [(&str, &str); 7] = [
     ("grok", "grok"),
     ("veo3", "veo3"),
     ("wanvideo27", "wan"),
+    ("wanvideo30", "wan"),
+    ("wanvideo-22-t2v-a14b", "wan"),
+    ("seedance", "seedance"),
+    ("ltxv25", "ltx"),
+    ("ltxv23", "ltx"),
 ];
 
 fn video_ecosystem_for(civitai_ecosystem: &str) -> Option<&'static str> {
@@ -780,12 +787,14 @@ static VIDEO_TEMPLATE_CACHE: LazyLock<Mutex<Option<(Instant, Vec<VideoTemplatePr
 
 /// Community txt2vid presets for the video lane's empty state, read from
 /// civitai's public video feed across ALL panel engines (no ecosystem
-/// filter — every clip carries the engine it belongs to and the panel
-/// switches to it on apply). Only clips civitai itself generated carry the
-/// generation metadata (`meta.engine`), and only `workflow: "txt2vid"` ones
-/// can be replayed without source media — the img2vid families dominate the
-/// feed and are unusable here. `Result` for the same reason as the image
-/// gallery: a transport failure must not cache an empty grid for an hour.
+/// filter — every clip carries the ecosystem it belongs to and the panel
+/// switches to it on apply). Clips civitai's own orchestrator generated are
+/// marked by `meta.workflow` + `meta.ecosystem`; `meta.engine` appears only
+/// on uploaded ComfyUI recipes, which carry neither. Only `workflow:
+/// "txt2vid"` clips can be replayed without source media — the img2vid
+/// families dominate the feed and are unusable here. `Result` for the same
+/// reason as the image gallery: a transport failure must not cache an empty
+/// grid for an hour.
 pub async fn civitai_video_template_gallery() -> Result<Vec<VideoTemplatePreset>, String> {
     if let Some((at, presets)) = VIDEO_TEMPLATE_CACHE.lock().ok().and_then(|c| c.clone()) {
         if at.elapsed() < TEMPLATE_TTL {
@@ -834,9 +843,10 @@ pub async fn civitai_video_template_gallery() -> Result<Vec<VideoTemplatePreset>
                 continue;
             }
             let Some(meta) = hit.meta.clone() else { continue };
-            // `engine` marks a clip civitai generated; `workflow` must be
+            // `workflow` marks a clip civitai's own orchestrator generated
+            // (`engine` is ComfyUI-recipe-only these days) and must be
             // txt2vid for the form to replay it without source media.
-            if meta.engine.is_none() || meta.workflow.as_deref() != Some("txt2vid") {
+            if meta.workflow.as_deref() != Some("txt2vid") {
                 continue;
             }
             let Some(panel_eco) = meta.ecosystem.as_deref().and_then(video_ecosystem_for) else {
