@@ -224,18 +224,6 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # ── Build the LiteRT-LM C library (bazel, ~15-30 min first run) ──
-      # Key is per-runner-generation: objects built against an older Xcode's
-      # libc++ headers must not be reused after a toolchain jump.
-      - name: Mount bazel cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            /private/var/tmp/_bazel_runner
-          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
-          restore-keys: bazel-macos26-arm64-
-
       # local-llm's manifest path-deps the crates tools (finance,
       # weather_geo) — those crates compile under the litert feature, so
       # crates is required, not optional. The office feature also
@@ -245,7 +233,41 @@ jobs:
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
         run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
 
+      # ── Cached LiteRT-LM dylib set (the expensive bazel artifact) ──
+      # Same key + path as ci.yml macos-smoke — repo-wide actions/cache
+      # shares one entry, so the ~15-30 min bazel build only runs when the
+      # engine source or its bundling moves.
+      - name: LiteRT-LM dylib cache key
+        id: litert-lib-key
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C cognee-litert-lm/vendor/LiteRT-LM rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore litert-lm dylibs
+        id: litert-lib
+        uses: actions/cache@v4
+        with:
+          path: cognee-litert-lm/native
+          key: litert-lib-macos26-arm64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('scripts/bundle-litert-dylibs.sh') }}
+
+      # Bazel is only needed on a dylib-cache miss — skip the multi-GB
+      # restore and the build together on a hit. Mounted after the submodule
+      # init so the MODULE.bazel hash in the key resolves (pre-init it
+      # hashed an empty tree → constant key disjoint from ci.yml).
+      # Per-runner-generation caveat: objects built against an older Xcode's
+      # libc++ headers must not be reused after a toolchain jump.
+      - name: Mount bazel cache
+        if: steps.litert-lib.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            /private/var/tmp/_bazel_runner
+          key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
+          restore-keys: bazel-macos26-arm64-
+
       - name: Build litert-lm dylib
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           export JAVA_HOME="$JAVA_HOME_17_arm64"
@@ -336,15 +358,35 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+
+      # Cached LiteRT-LM .so set — same key scheme as ci.yml macos-smoke
+      # (platform-specific suffix), so the ~15-30 min bazel build only runs
+      # when the engine source moves.
+      - name: LiteRT-LM dylib cache key
+        id: litert-lib-key
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C cognee-litert-lm/vendor/LiteRT-LM rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore litert-lm shared library
+        id: litert-lib
+        uses: actions/cache@v4
+        with:
+          path: cognee-litert-lm/native
+          key: litert-lib-linux24-x86_64-${{ steps.litert-lib-key.outputs.sha }}
+
+      # Bazel is only needed on a dylib-cache miss. Mounted after the
+      # submodule init so the MODULE.bazel hash in the key resolves
+      # (pre-init it hashed an empty tree → constant key).
       - name: Mount bazel cache
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/bazel
           key: bazel-linux24-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-linux24-x86_64-
-
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
 
       # LiteRT-LM's .bazelrc pins CC=clang (action_env). ubuntu-24.04 ships
       # clang-18 in universe — no apt.llvm.org repo needed. clang-18's std lib
@@ -377,6 +419,7 @@ jobs:
           echo "LINUXDEPLOY=$(realpath ~/.cache/tauri/linuxdeploy-x86_64.AppImage)" >> "$GITHUB_ENV"
 
       - name: Build litert-lm shared library
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           cd cognee-litert-lm/vendor/LiteRT-LM

@@ -50,9 +50,31 @@ jobs:
           workspaces: src-tauri
           cache-on-failure: true
 
-      # Same cache key as release.yml build-macos — restore-keys makes the
-      # dylib build a no-op whenever either job ran recently.
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+
+      # Cached LiteRT-LM dylib set — same key + path as ci.yml macos-smoke,
+      # so repo-wide actions/cache shares one entry and the ~15-30 min bazel
+      # build only runs when the engine source or its bundling moves.
+      - name: LiteRT-LM dylib cache key
+        id: litert-lib-key
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C cognee-litert-lm/vendor/LiteRT-LM rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore litert-lm dylibs
+        id: litert-lib
+        uses: actions/cache@v4
+        with:
+          path: cognee-litert-lm/native
+          key: litert-lib-macos26-arm64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('scripts/bundle-litert-dylibs.sh') }}
+
+      # Bazel is only needed on a dylib-cache miss — skip the multi-GB
+      # restore and the build together on a hit. Mounted after the submodule
+      # init so the MODULE.bazel hash in the key resolves (pre-init it
+      # hashed an empty tree → constant key disjoint from ci.yml).
       - name: Mount bazel cache
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -61,10 +83,8 @@ jobs:
           key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-macos26-arm64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
-
       - name: Build litert-lm dylib
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           export JAVA_HOME="$JAVA_HOME_17_arm64"
@@ -129,9 +149,31 @@ jobs:
           workspaces: src-tauri
           cache-on-failure: true
 
-      # Same cache key as office-eval — restore-keys makes the dylib build a
-      # no-op whenever either job ran recently.
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+
+      # Cached LiteRT-LM dylib set — same key + path as ci.yml macos-smoke,
+      # so repo-wide actions/cache shares one entry and the ~15-30 min bazel
+      # build only runs when the engine source or its bundling moves.
+      - name: LiteRT-LM dylib cache key
+        id: litert-lib-key
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C cognee-litert-lm/vendor/LiteRT-LM rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore litert-lm dylibs
+        id: litert-lib
+        uses: actions/cache@v4
+        with:
+          path: cognee-litert-lm/native
+          key: litert-lib-macos26-arm64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('scripts/bundle-litert-dylibs.sh') }}
+
+      # Bazel is only needed on a dylib-cache miss — skip the multi-GB
+      # restore and the build together on a hit. Mounted after the submodule
+      # init so the MODULE.bazel hash in the key resolves (pre-init it
+      # hashed an empty tree → constant key disjoint from ci.yml).
       - name: Mount bazel cache
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -140,10 +182,8 @@ jobs:
           key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-macos26-arm64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
-
       - name: Build litert-lm dylib
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           export JAVA_HOME="$JAVA_HOME_17_arm64"
@@ -229,9 +269,31 @@ jobs:
           workspaces: src-tauri
           cache-on-failure: true
 
-      # Same cache key as office-eval — restore-keys makes the dylib build a
-      # no-op whenever any eval job ran recently.
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+
+      # Cached LiteRT-LM dylib set — same key + path as ci.yml macos-smoke,
+      # so repo-wide actions/cache shares one entry and the ~15-30 min bazel
+      # build only runs when the engine source or its bundling moves.
+      - name: LiteRT-LM dylib cache key
+        id: litert-lib-key
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C cognee-litert-lm/vendor/LiteRT-LM rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore litert-lm dylibs
+        id: litert-lib
+        uses: actions/cache@v4
+        with:
+          path: cognee-litert-lm/native
+          key: litert-lib-macos26-arm64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('scripts/bundle-litert-dylibs.sh') }}
+
+      # Bazel is only needed on a dylib-cache miss — skip the multi-GB
+      # restore and the build together on a hit. Mounted after the submodule
+      # init so the MODULE.bazel hash in the key resolves (pre-init it
+      # hashed an empty tree → constant key disjoint from ci.yml).
       - name: Mount bazel cache
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -240,10 +302,8 @@ jobs:
           key: bazel-macos26-arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-macos26-arm64-
 
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
-
       - name: Build litert-lm dylib
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           export JAVA_HOME="$JAVA_HOME_17_arm64"

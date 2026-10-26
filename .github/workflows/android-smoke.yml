@@ -61,6 +61,13 @@ jobs:
           shared-key: android-smoke
           cache-on-failure: true
 
+      # Recursive: the litert feature runs bindgen over the NESTED
+      # cognee-litert-lm/vendor/LiteRT-LM headers.
+      - name: Init submodules
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+
+      # Mounted after the submodule init so the MODULE.bazel hash in the key
+      # resolves (pre-init it hashed an empty tree → constant key).
       - name: Mount bazel cache
         uses: actions/cache@v4
         with:
@@ -69,11 +76,6 @@ jobs:
             /private/var/tmp/_bazel_runner
           key: bazel-macos26-android_arm64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-macos26-android_arm64-
-
-      # Recursive: the litert feature runs bindgen over the NESTED
-      # cognee-litert-lm/vendor/LiteRT-LM headers.
-      - name: Init submodules
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
 
       # The macos runner image ships the SDK (cmdline-tools, emulator,
       # platform-tools) — install only the pinned NDK 28 (same as

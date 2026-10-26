@@ -60,7 +60,32 @@ jobs:
           # the dedicated workflow avoids cancelling this long job mid-compile.
           cache-on-failure: true
 
+      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
+        shell: bash
+        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
+
+      # Cached LiteRT-LM DLL set — same key scheme as ci.yml macos-smoke
+      # (platform-specific suffix), so the ~15-30 min bazel build only runs
+      # when the engine source moves.
+      - name: LiteRT-LM dylib cache key
+        id: litert-lib-key
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C cognee-litert-lm/vendor/LiteRT-LM rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore litert-lm shared library
+        id: litert-lib
+        uses: actions/cache@v4
+        with:
+          path: cognee-litert-lm/native
+          key: litert-lib-windows-x86_64-${{ steps.litert-lib-key.outputs.sha }}
+
+      # Bazel is only needed on a dylib-cache miss. Mounted after the
+      # submodule init so the MODULE.bazel hash in the key resolves
+      # (pre-init it hashed an empty tree → constant key).
       - name: Mount bazel cache
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -68,10 +93,6 @@ jobs:
             C:\_b
           key: bazel-windows-x86_64-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/MODULE.bazel') }}
           restore-keys: bazel-windows-x86_64-
-
-      - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault)
-        shell: bash
-        run: git submodule update --init --recursive local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
 
       - name: Install bazelisk
         shell: pwsh
@@ -88,6 +109,7 @@ jobs:
           "TEMP=$newTemp" >> $env:GITHUB_ENV
 
       - name: Build litert-lm shared library
+        if: steps.litert-lib.outputs.cache-hit != 'true'
         shell: bash
         env:
           MSYS_NO_PATHCONV: 1
