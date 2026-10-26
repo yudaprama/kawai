@@ -8,7 +8,8 @@ set -euo pipefail
 #
 # Prerequisites:
 #   cognee-litert-lm/native/aarch64-linux-android/liblitert-lm.so
-#     (bazel build //c:litert-lm --config=android_arm64 — run inside
+#     (bazel build //c:litert-lm --config=android_arm64 --jobs=6 \
+#      --linkopt=-Wl,-z,max-page-size=16384 — run inside
 #      cognee-litert-lm/vendor/LiteRT-LM, then copy into native/<triple>/)
 #   src-tauri/gen/android/  (`bun tauri android init`)
 #
@@ -31,7 +32,8 @@ if [ ! -f "$LIB_DIR/liblitert-lm.so" ]; then
   echo "Build it first:"
   echo "  cd cognee-litert-lm/vendor/LiteRT-LM"
   echo "  LLVM_PROFILE_FILE=/dev/null ANDROID_NDK_HOME=/opt/homebrew/share/android-ndk \\"
-  echo "    bazel build //c:litert-lm --config=android_arm64 --jobs=6"
+  echo "    bazel build //c:litert-lm --config=android_arm64 --jobs=6 \\
+      --linkopt=-Wl,-z,max-page-size=16384"
   echo "  mkdir -p ../../native/aarch64-linux-android"
   echo "  cp bazel-bin/c/liblitert-lm.so ../../native/aarch64-linux-android/"
   exit 1

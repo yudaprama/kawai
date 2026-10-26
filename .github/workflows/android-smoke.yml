@@ -107,7 +107,10 @@ jobs:
           set -euo pipefail
           export JAVA_HOME="$JAVA_HOME_17_arm64"
           cd cognee-litert-lm/vendor/LiteRT-LM
-          bazel build //c:litert-lm --config=android_arm64 --jobs=6
+          # Same link flags as release-android.yml — 16 KB ELF alignment is a
+          # Google Play requirement; the smoke must test the shipped binary.
+          bazel build //c:litert-lm --config=android_arm64 --jobs=6 \
+            --linkopt=-Wl,-z,max-page-size=16384
           mkdir -p ../../native/aarch64-linux-android
           cp bazel-bin/c/liblitert-lm.so ../../native/aarch64-linux-android/
           cp prebuilt/android_arm64/*.so ../../native/aarch64-linux-android/

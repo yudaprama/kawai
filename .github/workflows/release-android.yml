@@ -166,20 +166,24 @@ jobs:
       # existence check), so it can replace a stripped copy with an unstripped
       # symlink between the Gradle strip task and packaging. Strip the symlink
       # TARGET instead: then any symlink cargo-mobile2 creates points at
-      # already-stripped bytes, whatever the task ordering. --strip-unneeded
-      # keeps .dynsym (linker + dlopen only need dynamic symbols).
+      # already-stripped bytes, whatever the task ordering. It picks the
+      # NEWEST installed NDK itself (ignores ANDROID_NDK_HOME), so strip every
+      # NDK's sysroot. --strip-unneeded keeps .dynsym (the linker and dlopen
+      # only need dynamic symbols).
       - name: Strip NDK runtime libc++ (symlink source of jniLibs copy)
         run: |
           set -euo pipefail
-          NDK="${ANDROID_NDK_HOME:?ANDROID_NDK_HOME is unset}"
-          STRIP="$(ls "$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip | head -n1)"
-          for triple in aarch64-linux-android arm-linux-androideabi; do
-            for lib in "$NDK"/toolchains/llvm/prebuilt/*/sysroot/usr/lib/$triple/libc++_shared.so; do
-              [ -f "$lib" ] || continue
-              "$STRIP" --strip-unneeded "$lib"
-              echo "stripped $lib"
-            done
+          SDK="${ANDROID_HOME:?ANDROID_HOME is unset}"
+          STRIP="$(ls "$SDK"/ndk/*/toolchains/llvm/prebuilt/*/bin/llvm-strip 2>/dev/null | head -n1 || true)"
+          if [ -z "$STRIP" ]; then echo "::error::no llvm-strip under $SDK/ndk"; exit 1; fi
+          found=0
+          for lib in "$SDK"/ndk/*/toolchains/llvm/prebuilt/*/sysroot/usr/lib/*/libc++_shared.so; do
+            [ -f "$lib" ] || continue
+            "$STRIP" --strip-unneeded "$lib"
+            echo "stripped $lib"
+            found=1
           done
+          [ "$found" = 1 ] || { echo "::error::no libc++_shared.so found under $SDK/ndk"; exit 1; }
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -216,7 +220,12 @@ jobs:
         run: |
           set -euo pipefail
           cd cognee-litert-lm/vendor/LiteRT-LM
-          bazelisk build //c:litert-lm --config=android_arm64 --jobs=6
+          # -z max-page-size=16384: Google Play requires all native libs in
+          # updates targeting Android 15+ to be 16 KB aligned (ELF LOAD
+          # p_align); the default lld page size here is 4 KB and Play rejects
+          # the AAB with a bare "Validation of uploaded file failed."
+          bazelisk build //c:litert-lm --config=android_arm64 --jobs=6 \
+            --linkopt=-Wl,-z,max-page-size=16384
           mkdir -p ../../native/aarch64-linux-android
           cp bazel-bin/c/liblitert-lm.so ../../native/aarch64-linux-android/
           cp prebuilt/android_arm64/*.so ../../native/aarch64-linux-android/
@@ -316,6 +325,14 @@ jobs:
               echo "::error::$so still carries .symtab — the packaged library was not stripped (see stripReleaseNativeLibs in src-tauri/gen/android/app/build.gradle.kts)."
               exit 1
             fi
+            # Google Play rejects bundles whose native libs are not 16 KB
+            # aligned (Android 15+ requirement) with a bare "Validation of
+            # uploaded file failed." — catch it here with a precise message.
+            ALIGN="$("$READELF" -l "$out" | sed -n 's/.*LOAD.*\(0x[0-9a-f]*\)$/\1/p' | sort -u | head -n1)"
+            if [ "$ALIGN" != "0x4000" ]; then
+              echo "::error::$so has ELF LOAD alignment $ALIGN — Google Play requires 16 KB (0x4000). Link with -Wl,-z,max-page-size=16384 (see the litert bazel build step)."
+              exit 1
+            fi
           done
           ARM="$WORK/lib_arm64-v8a_libkawai_lib.so"
           # nm's output is huge; grep -q would close the pipe early and
@@ -375,6 +392,22 @@ jobs:
             exit 1
           fi
           echo "rustls-platform-verifier present in the release dex."
+
+      # Play's bundle upload rejects with a bare "Validation of uploaded file
+      # failed." and the action swallows the API response body. Run the same
+      # checks locally first (bundletool is what Play's servers run) so a
+      # rejection comes back with a real, actionable message.
+      - name: Validate AAB with bundletool
+        run: |
+          set -euo pipefail
+          AAB="$(ls src-tauri/gen/android/app/build/outputs/bundle/universalRelease/*.aab | head -n1)"
+          BT="$(mktemp -d)/bundletool.jar"
+          URL="$(curl -fsSL https://api.github.com/repos/google/bundletool/releases/latest |
+            grep -oE 'https://[^"]+bundletool[^"]*\.jar' | head -n1)"
+          [ -n "$URL" ] || { echo "::error::could not resolve bundletool release jar"; exit 1; }
+          curl -fsSL -o "$BT" "$URL"
+          java -jar "$BT" validate --bundle "$AAB"
+          echo "bundletool validation passed for $AAB"
 
       # The tag push starts this build before the desktop bundlers finish, so
       # the draft release may not exist yet. Create it as a DRAFT and upload
