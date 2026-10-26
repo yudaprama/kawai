@@ -161,6 +161,26 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
 
+      # cargo-mobile2 force-symlinks the NDK sysroot's libc++_shared.so into
+      # jniLibs on EVERY rust build (src/android/jnilibs.rs symlink_lib — no
+      # existence check), so it can replace a stripped copy with an unstripped
+      # symlink between the Gradle strip task and packaging. Strip the symlink
+      # TARGET instead: then any symlink cargo-mobile2 creates points at
+      # already-stripped bytes, whatever the task ordering. --strip-unneeded
+      # keeps .dynsym (linker + dlopen only need dynamic symbols).
+      - name: Strip NDK runtime libc++ (symlink source of jniLibs copy)
+        run: |
+          set -euo pipefail
+          NDK="${ANDROID_NDK_HOME:?ANDROID_NDK_HOME is unset}"
+          STRIP="$(ls "$NDK"/toolchains/llvm/prebuilt/*/bin/llvm-strip | head -n1)"
+          for triple in aarch64-linux-android arm-linux-androideabi; do
+            for lib in "$NDK"/toolchains/llvm/prebuilt/*/sysroot/usr/lib/$triple/libc++_shared.so; do
+              [ -f "$lib" ] || continue
+              "$STRIP" --strip-unneeded "$lib"
+              echo "stripped $lib"
+            done
+          done
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
@@ -293,7 +313,7 @@ jobs:
             # a failed check.
             "$READELF" -S "$out" > "$out.sections"
             if grep -q '\.symtab' "$out.sections"; then
-              echo "::error::$so still carries .symtab — stripReleaseNativeLibs did not run for this build."
+              echo "::error::$so still carries .symtab — the packaged library was not stripped (see stripReleaseNativeLibs in src-tauri/gen/android/app/build.gradle.kts)."
               exit 1
             fi
           done

@@ -145,8 +145,12 @@ abstract class StripReleaseNativeLibs : DefaultTask() {
         val symbols = symbolsDir.get().asFile
         val strip = File(llvmStrip.get())
         if (!strip.canExecute()) {
-            logger.warn("kawai: llvm-strip not found (${strip.path}) — release native libraries stay unstripped")
-            return
+            // Hard fail: a silent return ships unstripped libs and the
+            // workflow's verify step fails later with a misleading message.
+            throw GradleException(
+                "llvm-strip not found (${strip.path}) — release native libraries cannot be stripped. " +
+                    "Set ANDROID_NDK_HOME/ANDROID_NDK_ROOT/NDK_HOME to an NDK with toolchains/llvm/prebuilt/*/bin/llvm-strip."
+            )
         }
         val libs = jniLibs.files
             .filter { it.isFile && it.name.endsWith(".so") }
