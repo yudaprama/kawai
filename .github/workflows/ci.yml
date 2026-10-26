@@ -615,7 +615,7 @@ jobs:
   # 3.5 GB model download + smokes crosses ~45 min, where GitHub-hosted
   # runners get reclaimed ("runner has received a shutdown signal") — and a
   # killed job cancels its cache post-steps, so every retry stayed cold.
-  # linux-build saves the dylib cache even when tests fail (cache-on-failure),
+  # linux-build saves the dylib cache even when tests fail (save-always),
   # so the expensive artifact is never rebuilt twice.
   linux-build:
     runs-on: ubuntu-22.04
@@ -670,7 +670,7 @@ jobs:
           path: cognee-litert-lm/native
           # cache-on-failure: an infra-killed job must still leave the .so set
           # behind, or every retry rebuilds bazel from scratch (the kill loop).
-          cache-on-failure: true
+          save-always: true
           key: litert-lib-linux-x86_64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/prebuilt/linux_x86_64/*.so') }}
 
       # Bazel is only needed on a dylib-cache miss — skip the bazel cache
@@ -740,8 +740,8 @@ jobs:
   # ── Linux smokes: model download + all smoke binaries ───────────────────
   # Separate job so neither half of the old 47-minute linux-smoke crosses the
   # hosted-runner reclaim window. Everything expensive comes from cache
-  # (dylibs from linux-build's cache-on-failure save; model cached with
-  # cache-on-failure so a killed smoke never re-downloads 3.5 GB).
+  # (dylibs from linux-build's save-always cache; model cached with
+  # save-always so a killed smoke never re-downloads 3.5 GB).
   linux-smokes:
     needs: linux-build
     runs-on: ubuntu-22.04
@@ -780,7 +780,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: cognee-litert-lm/native
-          cache-on-failure: true
+          save-always: true
           key: litert-lib-linux-x86_64-${{ steps.litert-lib-key.outputs.sha }}-${{ hashFiles('cognee-litert-lm/vendor/LiteRT-LM/prebuilt/linux_x86_64/*.so') }}
 
       # Same link/bindgen toolchain as linux-build — the smoke binaries link
@@ -805,7 +805,7 @@ jobs:
           path: smoke-model
           # If the smoke is killed mid-stream, the 3.5 GB fixture must survive
           # or every retry re-downloads it and re-enters the reclaim window.
-          cache-on-failure: true
+          save-always: true
           key: gemma4-e4b-it-litertlm
 
       - name: Download smoke model fixture
@@ -822,6 +822,12 @@ jobs:
           RUSTFLAGS: -C link-arg=-Wl,-rpath,${{ github.workspace }}/cognee-litert-lm/native
           LD_LIBRARY_PATH: ${{ github.workspace }}/cognee-litert-lm/native
           LLVM_PROFILE_FILE: /dev/null
+          # All three Linux kills (2026-10-25/26) landed ~20s after the first
+          # generated token — workload-correlated, Linux-only (macOS passes
+          # with the same model). Prime suspect: KV allocation for the full
+          # 16384 budget on a 16 GB ubuntu runner. Quarter the budget here;
+          # the 2048-token generation never approaches it.
+          KAWAI_LLM_MAX_TOKENS: "4096"
         run: cargo run --example local_llm_smoke --features litert -- ${{ github.workspace }}/smoke-model/gemma-4-E4B-it.litertlm
 
       # ── Smoke 2 + 3: hybrid cloud tier ──
@@ -871,7 +877,9 @@ jobs:
   # present. A genuine test failure reruns NOTHING and stays red immediately.
   auto-rerun:
     needs: [web, linux-check, android-check, macos-smoke, linux-build, linux-smokes]
-    if: failure() && github.run_attempt == 1
+    # cancelled() is required: a runner-shutdown kill concludes the run
+    # "cancelled", not "failure".
+    if: (failure() || cancelled()) && github.run_attempt == 1
     runs-on: ubuntu-latest
     permissions:
       actions: write
