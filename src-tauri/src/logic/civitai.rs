@@ -198,7 +198,7 @@ pub async fn civitai_model_covers() -> Result<Vec<ModelCover>, String> {
             // Card art baked outside the v1 API — just proxy it.
             Some(url) => (
                 fallback_name.to_string(),
-                civitai::rewrite_civitai_url(url).or_else(|| Some(url.to_string())),
+                civitai::rewrite_civitai_url(url).await.or_else(|| Some(url.to_string())),
             ),
             None => match civitai::model_version_card(&key, version_id).await {
                 Ok((name, url)) => {

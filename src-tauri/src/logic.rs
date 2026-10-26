@@ -549,8 +549,8 @@ pub mod topup;
 pub mod tool_pricing;
 // Civitai image generation (Generator panel) — submit/estimate/poll/save
 // over the Orchestration API. Pure reqwest — shared by both transports;
-// the user's own API key comes from the desktop keychain or
-// KAWAI_CIVITAI_API_KEY (web/dev).
+// the API key is product-baked via `kawai-vault/constants`
+// (`civitai::get_civitai()`).
 pub mod civitai;
 // Monad EVM chain client (`monad` feature): public RPC reads — native
 // balance, chain status, ERC-20 balance/info, gas price. Pure alloy HTTP
