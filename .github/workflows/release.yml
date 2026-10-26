@@ -297,6 +297,11 @@ jobs:
       # Without it, ad-hoc signing + the hardened runtime makes dyld's library
       # validation reject the prebuilt LiteRT-LM dylibs (different Team IDs) and
       # the app aborts at launch with "Library not loaded: @rpath/liblitert-lm.dylib".
+      #
+      # `headless-chrome` compiles the CDP-client crate into the desktop
+      # bundles. It does NOT ship a browser: at runtime it resolves the user's
+      # installed Chrome/Chromium (and degrades when absent). Deliberately
+      # absent from the Android release set — see release-android.yml.
 
       - name: Build .app (with litert + office)
         uses: tauri-apps/tauri-action@v0
@@ -320,7 +325,7 @@ jobs:
           # "Unexpected input(s)"). latest.json itself is excluded by
           # tauri-action; .sig companions follow the same pattern.
           assetNamePattern: "[name]_[arch].[ext]"
-          args: --features litert,tts,binance,accounting,mexc --config .github/tauri-litert.json
+          args: --features litert,tts,binance,accounting,mexc,headless-chrome --config .github/tauri-litert.json
 
       # Wallet note: the opt-in `monad` feature (Monad wallet) is deliberately
       # NOT built into release bundles — regulatory. For a local wallet build:
@@ -450,7 +455,7 @@ jobs:
           # Version-less asset names — input is assetNamePattern on
           # tauri-action@v0 (see the macos job).
           assetNamePattern: "[name]_[arch].[ext]"
-          args: --features litert,tts,binance,accounting,mexc --config .github/tauri-litert.json
+          args: --features litert,tts,binance,accounting,mexc,headless-chrome --config .github/tauri-litert.json
 
   build-windows:
     needs: bump
@@ -589,7 +594,7 @@ jobs:
           # Stable version-less name — input is assetNamePattern on
           # tauri-action@v0 (see the macos job).
           assetNamePattern: "[name]_[arch].[ext]"
-          args: --features litert,tts,binance,accounting,mexc --config .github/tauri-litert.json
+          args: --features litert,tts,binance,accounting,mexc,headless-chrome --config .github/tauri-litert.json
 
   build-web:
     needs: bump

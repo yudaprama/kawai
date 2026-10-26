@@ -31,6 +31,13 @@ name: release-android
 # a GB-scale model in a 32-bit address space. Every Android phone that can run
 # API 24+ from the last decade is arm64-capable; Play requires 64-bit anyway.
 #
+# The desktop feature `headless-chrome` is deliberately NOT in this set: the
+# crate is only a CDP client — it needs a Chromium executable to spawn, and
+# none exists in the Android app sandbox (Chrome ships as an APK; targetSdk
+# 29+ forbids exec from writable dirs; no standalone headless Chromium is
+# published for android_arm64). Scanner-grade browser automation is a
+# desktop/web-build surface only.
+#
 # On-device inference also needs a `.litertlm` model file in <app_data>/models
 # — no model ships inside the APK (same as the desktop bundles).
 #

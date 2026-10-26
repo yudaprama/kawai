@@ -106,6 +106,10 @@ kawai-venue = { path = "../crates/foundation/venue" }
 # MEXC tools: signed futures fills sync into the venue-keyed fill history the
 # ledger reads. Own-keys-only (no product-baked pair exists for MEXC).
 mexc = { path = "../crates/toolsets/mexc", optional = true }
+# Headless Chromium automation — a CDP client that spawns the machine's
+# installed Chrome/Chromium. Pure Rust (no C deps); the browser itself is NOT
+# bundled. Same crate/version/features the lonkero scanner engine pins.
+headless_chrome = { version = "1.0", features = ["fetch"], optional = true }
 
 # Split-out first-party crates (foundation / engines / toolsets / integrations).
 kawai-auth = { path = "../crates/foundation/auth" }
@@ -207,6 +211,15 @@ mexc = ["dep:mexc"]
 # HTTP provider — no keys, no signing. monad-tools carries the read-only
 # AgentTool surface (builtin.monad).
 monad = ["dep:kawai-monad", "dep:monad-tools"]
+# Headless Chromium automation (CDP client) — the browser-engine seam for
+# scanner-grade page control (render, JS eval, request interception via the
+# CDP Fetch domain). Desktop bundles ONLY, deliberately excluded from the
+# Android release set: nothing the crate can exec exists in the Android app
+# sandbox (Chrome ships as an APK; targetSdk 29+ forbids exec from writable
+# dirs) and no standalone headless Chromium artifact exists for android_arm64.
+# Runtime still needs the user's installed Chrome/Chromium — the crate ships
+# no browser of its own.
+headless-chrome = ["dep:headless_chrome"]
 # TTS via supertonic (neural MNN TTS, multilingual). Links the same MNN as
 # the OCR engine (ocr-rs) — no ONNX Runtime, no espeak-ng. Models
 # (~191 MB fp16) download on first use.
