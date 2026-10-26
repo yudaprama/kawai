@@ -1614,12 +1614,20 @@ via the always-available `session_step_results` tool. If the goal depends on det
         // call budget). Log the excerpt too — without it a CI failure is
         // undebuggable (planner_smoke 2026-10-26 burned 6 rounds with no
         // visibility into what the planner actually sent).
-        let shown = planner_response_excerpt(&raw, 160);
+        // KAWAI_PLANNER_DEBUG=1 dumps up to 8k chars of the raw reply so a
+        // recurring off-protocol shape can be diagnosed from one CI/local run
+        // without redeploying (planner_smoke 2026-10-26: 4 unreadable rounds).
+        let debug_dump = std::env::var("KAWAI_PLANNER_DEBUG").as_deref() == Ok("1");
+        let shown = planner_response_excerpt(&raw, if debug_dump { 8_000 } else { 160 });
         eprintln!("[plan_task] round {calls}: off-protocol ({len} chars), begins: `{shown}`", len = raw.len());
         materials.push_str(&format!(
             "\n<system-note>Unrecognized response — it was not a single JSON object. It began \
-             with: `{shown}`. Respond ONLY with one JSON object: \
-             {{\"action\":\"search\",\"queries\":[…]}} or the final plan JSON.</system-note>",
+             with: `{shown}`. Respond ONLY with ONE JSON object, either a search \
+             {{\"action\":\"search\",\"queries\":[…]}} or the final plan, exactly: \
+             {{\"goal\":\"<one-line goal>\",\"summary\":{{\"overview\":\"…\",\"actions\":[\"…\"],\
+             \"outputs\":[\"…\"]}},\"steps\":[{{\"id\":\"s1\",\"tool\":\"<exact tool name>\",\
+             \"task\":\"…\",\"arguments\":{{}}}}]}} — \"steps\" is REQUIRED at the TOP LEVEL, \
+             never nested inside \"summary\".</system-note>",
         ));
         if calls + 1 > PLAN_MAX_CALLS {
             return Err(

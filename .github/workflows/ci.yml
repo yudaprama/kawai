@@ -591,6 +591,10 @@ jobs:
           # planner reads the cached replica above; a cache miss degrades to
           # core tools, which this smoke tolerates (structural validation).
           KAWAI_TOOL_CATALOG_OFFLINE: "1"
+          # Dump up to 8k chars of any off-protocol planner reply — a
+          # recurring protocol drift (2026-10-25, 2026-10-26) is otherwise
+          # undebuggable from the 160-char excerpt alone.
+          KAWAI_PLANNER_DEBUG: "1"
         run: cargo run --example planner_smoke --features litert,binance
 
       
