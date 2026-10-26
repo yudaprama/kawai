@@ -1611,8 +1611,11 @@ via the always-available `session_step_results` tool. If the goal depends on det
         // Echo a short excerpt of what was received: the model cannot fix a
         // response shape it cannot see (CI 2026-10-25: three consecutive
         // off-protocol rounds against a generic note burned the whole
-        // call budget).
+        // call budget). Log the excerpt too — without it a CI failure is
+        // undebuggable (planner_smoke 2026-10-26 burned 6 rounds with no
+        // visibility into what the planner actually sent).
         let shown = planner_response_excerpt(&raw, 160);
+        eprintln!("[plan_task] round {calls}: off-protocol ({len} chars), begins: `{shown}`", len = raw.len());
         materials.push_str(&format!(
             "\n<system-note>Unrecognized response — it was not a single JSON object. It began \
              with: `{shown}`. Respond ONLY with one JSON object: \
