@@ -1038,10 +1038,10 @@ export function useWorkbench() {
   );
 
   /** Security Audit: the FIXED pipeline over one target — passive recon,
-   *  then one confirmation-gated active scan per selected category
+   *  then one auto-approved active scan per selected category
    *  (sequential). Same client mechanics as the screener (balance gate,
-   *  lazy session, no planner round); the per-scan confirmations ride the
-   *  tool gate server-side. */
+   *  lazy session, no planner round); scans run straight through — the
+   *  tool gate is off server-side (`requires_confirmation = false`). */
   const runSecurityAudit = useCallback(
     async (
       target: string,

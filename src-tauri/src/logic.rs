@@ -680,6 +680,7 @@ pub async fn ask_about_step_result(
         Some(question.to_string()), // user_goal = the question
         None,                       // internal call — no source video
         None,                       // internal call — no billing bearer
+        false,                      // fixed one-shot explainer — never revised
     ))
 }
 

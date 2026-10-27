@@ -21,6 +21,19 @@ const CATEGORIES: { id: string; label: string }[] = [
 
 const INTENSITIES = ["minimal", "standard", "extended"] as const;
 
+/** Payload volume per parameter, from lonkero's `PayloadIntensity` — the concrete
+ *  numbers are what make the levels meaningful. The time figure is the measured
+ *  one from security-tools (recon ≈ 2.5 min, one minimal scan ≈ 2.5 min). */
+const INTENSITY_META: Record<(typeof INTENSITIES)[number], { payloads: string; hint: string }> = {
+  minimal: { payloads: "50", hint: "50 payloads/parameter — quick validation pass" },
+  standard: { payloads: "500", hint: "500 payloads/parameter (10×) — balanced coverage, noticeably slower" },
+  extended: { payloads: "5,000", hint: "5,000 payloads/parameter (100×) — deep sweep, slowest" },
+};
+
+/** Where the form starts — also where the All chip collapses back to. */
+const DEFAULT_SELECTED = ["xss", "sqli"];
+const ALL_CATEGORY_IDS = CATEGORIES.map((c) => c.id);
+
 export function SecurityAuditForm({
   disabled,
   onSubmit,
@@ -29,8 +42,9 @@ export function SecurityAuditForm({
   onSubmit: (target: string, categories: string[] | undefined, intensity: string | undefined) => void;
 }) {
   const [target, setTarget] = useState("");
-  const [selected, setSelected] = useState<string[]>(["xss", "sqli"]);
-  const [intensity, setIntensity] = useState<string>("minimal");
+  const [selected, setSelected] = useState<string[]>(DEFAULT_SELECTED);
+  const [intensity, setIntensity] = useState<(typeof INTENSITIES)[number]>("minimal");
+  const allSelected = selected.length === CATEGORIES.length;
 
   const submit = () => {
     const value = target.trim();
@@ -71,6 +85,20 @@ export function SecurityAuditForm({
         </button>
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
+        <button
+          type="button"
+          disabled={disabled}
+          aria-pressed={allSelected}
+          onClick={() => setSelected(allSelected ? DEFAULT_SELECTED : ALL_CATEGORY_IDS)}
+          className={cn(
+            "rounded-full border px-2.5 py-0.5 font-mono text-[0.625rem] transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+            allSelected
+              ? "border-primary/60 bg-primary/10 text-primary"
+              : "border-border text-muted-foreground hover:text-foreground",
+          )}
+        >
+          All
+        </button>
         {CATEGORIES.map((c) => {
           const active = selected.includes(c.id);
           return (
@@ -98,17 +126,24 @@ export function SecurityAuditForm({
         <select
           value={intensity}
           disabled={disabled}
-          onChange={(e) => setIntensity(e.target.value)}
+          onChange={(e) => setIntensity(e.target.value as (typeof INTENSITIES)[number])}
           aria-label="Payload intensity"
           className="border-border bg-background text-muted-foreground ml-auto rounded-full border px-2 py-0.5 font-mono text-[0.625rem] outline-none disabled:cursor-not-allowed disabled:opacity-50"
         >
           {INTENSITIES.map((i) => (
             <option key={i} value={i}>
-              {i}
+              {i} · {INTENSITY_META[i].payloads} payloads
             </option>
           ))}
         </select>
       </div>
+      <p className="text-muted-foreground mt-2 font-mono text-[0.625rem]">
+        {INTENSITY_META[intensity].hint}. One category at a time — {selected.length} selected
+        {selected.length > 0 && intensity === "minimal"
+          ? `, ≈ ${Math.round(selected.length * 2.5 + 2.5)} min total`
+          : ""}
+        .{selected.includes("waf_bypass") && " WAF bypass always runs at maximum payload volume."}
+      </p>
       <p className="text-muted-foreground mt-2 font-mono text-[0.625rem]">
         Only scan targets you own or are authorized to test. The plan lands in the review gate — and every active scan
         asks again before it fires.

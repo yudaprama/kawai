@@ -2886,6 +2886,7 @@ async fn execute_supervisor_plan_handler(
 
     Ok(supervisor_sse(
         req.plan,
+        true,
         tool_registry,
         req.stream_id,
         user_id,
@@ -2932,6 +2933,10 @@ fn supervisor_sse_frame(
 #[cfg(feature = "litert")]
 fn supervisor_sse(
     plan: kawai_router::TaskPlan,
+    // Fixed pipelines never let the model rebuild the plan (see
+    // `FixedRun::allow_model_revision`); only the planner-driven execute
+    // handler revises.
+    allow_model_revision: bool,
     tool_registry: kawai_router::ToolRegistry,
     stream_id: String,
     user_id: String,
@@ -2954,6 +2959,7 @@ fn supervisor_sse(
         user_goal,
         video_id,
         Some(bearer),
+        allow_model_revision,
     );
     let s = stream.map(|event| Ok::<_, Infallible>(supervisor_sse_frame(&event)));
     Sse::new(s).keep_alive(KeepAlive::default())
@@ -3014,6 +3020,7 @@ async fn run_stock_research_handler(
 
     Ok(supervisor_sse(
         run.plan,
+        run.allow_model_revision,
         run.registry,
         req.stream_id,
         user_id,
@@ -3065,6 +3072,7 @@ async fn run_youtube_summary_handler(
 
     Ok(supervisor_sse(
         run.plan,
+        run.allow_model_revision,
         run.registry,
         req.stream_id,
         user_id,
@@ -3203,6 +3211,7 @@ async fn run_binance_risk_audit_handler(
 
     Ok(supervisor_sse(
         run.plan,
+        run.allow_model_revision,
         run.registry,
         req.stream_id,
         user_id,
@@ -3238,6 +3247,7 @@ async fn run_mexc_risk_audit_handler(
 
     Ok(supervisor_sse(
         run.plan,
+        run.allow_model_revision,
         run.registry,
         req.stream_id,
         user_id,
@@ -3272,6 +3282,7 @@ async fn run_trading_performance_handler(
     .map_err(fixed_run_status)?;
     Ok(supervisor_sse(
         run.plan,
+        run.allow_model_revision,
         run.registry,
         req.stream_id,
         user_id,
@@ -3304,6 +3315,7 @@ async fn run_monthly_close_handler(
     .map_err(fixed_run_status)?;
     Ok(supervisor_sse(
         run.plan,
+        run.allow_model_revision,
         run.registry,
         req.stream_id,
         user_id,
@@ -3344,6 +3356,7 @@ async fn run_security_audit_handler(
     .map_err(fixed_run_status)?;
     Ok(supervisor_sse(
         run.plan,
+        run.allow_model_revision,
         run.registry,
         req.stream_id,
         user_id,
@@ -3387,6 +3400,7 @@ async fn run_crypto_screener_handler(
 
     Ok(supervisor_sse(
         run.plan,
+        run.allow_model_revision,
         run.registry,
         req.stream_id,
         user_id,

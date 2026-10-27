@@ -2091,6 +2091,9 @@ impl SupervisorStreamCtx {
         stream_id: String,
         on_event: Channel<kawai_events::SupervisorEvent>,
         pending: &crate::supervisor::PendingConfirmations,
+        // Fixed pipelines never let the model rebuild the plan; only the
+        // planner-driven execute_supervisor_plan revises.
+        allow_model_revision: bool,
     ) -> Result<(), String> {
         let token = CancellationToken::new();
         let stream = crate::supervisor::execute_plan_stream_with_cancel(
@@ -2104,6 +2107,7 @@ impl SupervisorStreamCtx {
             user_goal,
             video_id,
             Some(&self.bearer),
+            allow_model_revision,
         );
         run_streaming(stream_id, on_event, &self.registry, stream, Some(token)).await
     }
@@ -2144,7 +2148,7 @@ pub async fn execute_supervisor_plan(
         language.as_deref(),
     ));
     tracing::info!(component = "supervisor", steps = plan.steps.len(), user = %ctx.user_id, session = session_id, "executing plan");
-    ctx.run(plan, tool_registry, user_goal, None, stream_id, on_event, &pending)
+    ctx.run(plan, tool_registry, user_goal, None, stream_id, on_event, &pending, true)
         .await
 }
 
@@ -2183,7 +2187,7 @@ pub async fn run_stock_research(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
         .await
 }
 
@@ -2228,7 +2232,7 @@ pub async fn run_binance_risk_audit(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
         .await
 }
 
@@ -2261,7 +2265,7 @@ pub async fn run_mexc_risk_audit(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
         .await
 }
 
@@ -2309,7 +2313,7 @@ pub async fn run_trading_performance(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
         .await
 }
 
@@ -2339,7 +2343,7 @@ pub async fn run_monthly_close(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
         .await
 }
 
@@ -2378,7 +2382,7 @@ pub async fn run_security_audit(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
         .await
 }
 
@@ -2431,7 +2435,7 @@ pub async fn run_crypto_screener(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
         .await
 }
 
@@ -2465,7 +2469,7 @@ pub async fn run_youtube_summary(
     )
     .await
     .map_err(|e| e.message().to_string())?;
-    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending, run.allow_model_revision)
         .await
 }
 

@@ -3156,6 +3156,14 @@ pub struct FixedRun {
     pub registry: ToolRegistry,
     /// YouTube only: the transcript video id, embedded in the stream.
     pub video_id: Option<String>,
+    /// Fixed pipelines NEVER let the model rebuild the plan: a step that
+    /// exhausts its scheduler retries fails the run honestly (`PlanFailed`
+    /// naming the step). The reviser does not know a pipeline's constraints
+    /// — the 2026-10-27 security audit revision rewrote the strictly
+    /// sequential gated scan tail into a parallel wave and downgraded
+    /// https→http. Every `FixedRun` is locked; only planner-driven runs
+    /// (`execute_supervisor_plan`) revise.
+    pub allow_model_revision: bool,
 }
 
 /// Build-failure phase of a fixed pipeline. The web wrapper maps these to
@@ -3246,6 +3254,7 @@ pub async fn prepare_desk_run(
         message: "running stock research",
         registry,
         video_id: None,
+        allow_model_revision: false,
     };
     log_fixed_run(&run, user_id, session_id);
     Ok(run)
@@ -3279,6 +3288,7 @@ pub async fn prepare_youtube_run(
         message: "running youtube summary",
         registry,
         video_id: Some(video.id),
+        allow_model_revision: false,
     };
     log_fixed_run(&run, user_id, session_id);
     Ok(run)
@@ -3341,6 +3351,7 @@ key and secret in Settings → Binance API first"
         message: "running futures risk audit",
         registry,
         video_id: None,
+        allow_model_revision: false,
     };
     log_fixed_run(&run, user_id, session_id);
     Ok(run)
@@ -3389,6 +3400,7 @@ pub async fn prepare_mexc_audit_run(
         message: "running futures risk audit",
         registry,
         video_id: None,
+        allow_model_revision: false,
     };
     log_fixed_run(&run, user_id, session_id);
     Ok(run)
@@ -3426,6 +3438,7 @@ pub async fn prepare_trading_performance_run(
         message: "running trading performance review",
         registry,
         video_id: None,
+        allow_model_revision: false,
     };
     log_fixed_run(&run, user_id, session_id);
     Ok(run)
@@ -3460,16 +3473,16 @@ pub async fn prepare_monthly_close_run(
         message: "running monthly close",
         registry,
         video_id: None,
+        allow_model_revision: false,
     };
     log_fixed_run(&run, user_id, session_id);
     Ok(run)
 }
 
-/// Security Audit: passive recon → one confirmation-gated active scan per
+/// Security Audit: passive recon → one auto-approved active scan per
 /// category (sequential — the target is never hammered in parallel). The
-/// gate lives on the tool (`security_scan` requires_confirmation), so the
-/// executor pauses before every active step even though the plan itself was
-/// already approved.
+/// active steps run straight through (`security_scan` carries
+/// `requires_confirmation = false`); no approval pause is configured.
 #[cfg(all(feature = "litert", feature = "security"))]
 pub async fn prepare_security_audit_run(
     user_id: &str,
@@ -3499,6 +3512,7 @@ pub async fn prepare_security_audit_run(
         message: "running security audit",
         registry,
         video_id: None,
+        allow_model_revision: false,
     };
     log_fixed_run(&run, user_id, session_id);
     Ok(run)
@@ -3568,6 +3582,7 @@ pub async fn prepare_screener_run(
         message: "running crypto screener",
         registry,
         video_id: None,
+        allow_model_revision: false,
     };
     log_fixed_run(&run, user_id, session_id);
     Ok(run)
@@ -5610,6 +5625,7 @@ pub fn execute_plan_stream(
         None,
         None,
         None,
+        true,
     )
 }
 
@@ -5634,6 +5650,10 @@ pub fn execute_plan_stream_with_cancel(
     // Billing bearer from the transport edge (AGENTS.md #8) — same contract
     // as supervisor::plan_task. `None` = non-billing caller (legacy/test).
     bearer: Option<&str>,
+    // Planner-driven runs may repair a failed plan through the LLM reviser
+    // (`revise_plan`); fixed pipelines pass `false` and fail honestly. See
+    // `FixedRun::allow_model_revision`.
+    allow_model_revision: bool,
 ) -> impl Stream<Item = SupervisorEvent> + Send {
     // Clone out of the borrow before the stream! block: the returned stream
     // must own its state, or `impl Stream` would have to capture the caller's
@@ -6207,14 +6227,16 @@ pub fn execute_plan_stream_with_cancel(
                         };
                         break;
                     }
-                    // Failure path — decide between replanning and giving up.
+                    // Failure path — replan (planner-driven runs only) or
+                    // give up honestly. Fixed pipelines never revise: the
+                    // reviser does not know the pipeline's constraints.
                     let reason = replan_reason(&result, &cancel);
                     let failed_ids: Vec<String> = result
                         .failures()
                         .iter()
                         .map(|f| f.step_id.clone())
                         .collect();
-                    if replan_attempt < MAX_REPLANS {
+                    if allow_model_revision && replan_attempt < MAX_REPLANS {
                         if let Some(reason) = reason {
                             replan_attempt += 1;
                             yield SupervisorEvent::PlanRevising {
@@ -6900,6 +6922,25 @@ mod tests {
         registry
     }
 
+    /// Registry whose single tool always fails with a plain engine error —
+    /// the honest-failure (no revision) fixture.
+    fn failing_registry() -> ToolRegistry {
+        let dispatch: ToolDispatch = Arc::new(|call: ToolCall| {
+            Box::pin(async move { Err(format!("{} exploded", call.step.id)) })
+        });
+        let mut registry = ToolRegistry::new(dispatch);
+        registry.register(ToolMeta {
+            name: "boom".into(),
+            kind: ToolKind::Pure,
+            description: "always fails".into(),
+            input_schema: serde_json::json!({}),
+            output_schema: serde_json::json!({}),
+            produces: vec![],
+            requires_confirmation: false,
+        });
+        registry
+    }
+
     fn confirm_step(id: &str) -> TaskStep {
         TaskStep {
             id: id.into(),
@@ -6945,6 +6986,7 @@ mod tests {
             None,
             None,
             None,
+            true,
         ))
     }
 
@@ -7244,6 +7286,60 @@ mod tests {
         assert!(!kinds.contains(&"other"), "{kinds:?}");
     }
 
+    /// Fixed pipelines (allow_model_revision = false) never hand a failed
+    /// step to the LLM reviser — the run fails honestly, naming the step.
+    /// The reviser does not know a fixed pipeline's constraints: the
+    /// 2026-10-27 security audit revision rebuilt the strictly sequential
+    /// gated scan tail into a parallel wave at http://.
+    #[tokio::test]
+    async fn fixed_run_fails_honestly_without_a_revision_round() {
+        let pending = new_pending();
+        let stream = execute_plan_stream_with_cancel(
+            plan_with(vec![TaskStep {
+                id: "s1".into(),
+                agent_id: "boom".into(),
+                task: "t".into(),
+                ..Default::default()
+            }]),
+            failing_registry(),
+            tokio_util::sync::CancellationToken::new(),
+            pending,
+            "st-fix".into(),
+            "test-user".into(),
+            1,
+            None,
+            None,
+            None,
+            false,
+        );
+        let events: Vec<SupervisorEvent> = Box::pin(stream).take(8).collect::<Vec<_>>().await;
+        assert!(
+            !events.iter().any(|e| matches!(
+                e,
+                SupervisorEvent::PlanRevising { .. } | SupervisorEvent::PlanRevised { .. }
+            )),
+            "fixed runs must not revise: {events:?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, SupervisorEvent::StepFailed { step_id, .. } if step_id == "s1")),
+            "step failure event missing: {events:?}"
+        );
+        match events
+            .iter()
+            .find(|e| matches!(e, SupervisorEvent::PlanFailed { .. }))
+        {
+            Some(SupervisorEvent::PlanFailed { error }) => {
+                assert!(
+                    error.contains("s1") && error.contains("exploded"),
+                    "honest step error expected: {error}"
+                );
+            }
+            other => panic!("no terminal PlanFailed: {other:?}"),
+        }
+    }
+
     /// The YouTube Summary's source video rides `planStarted` — the frontend
     /// embeds the player from this field, so a dropped id silently degrades
     /// the canvas to a text-only deliverable.
@@ -7273,6 +7369,7 @@ mod tests {
             None,
             Some("abc123xyz".into()),
             None,
+            true,
         );
         let events: Vec<SupervisorEvent> = Box::pin(stream).take(4).collect::<Vec<_>>().await;
         match events.into_iter().find(|e| matches!(e, SupervisorEvent::PlanStarted { .. })) {

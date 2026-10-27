@@ -4,13 +4,11 @@
 //! (`security_tools::plan::build_security_audit_plan`), validates it against
 //! the SAME merged registry the supervisor executes
 //! (`supervisor::build_registry_for_plan` → `validate_plan`), checks the
-//! confirmation policy the executor enforces, and runs it through the real
-//! scheduler against a REAL vulnerable localhost target — so what it prints
-//! is the payload the step cards actually read.
+//! confirmation policy the executor enforces (auto-approve: no gate), and
+//! runs it through the real scheduler against a REAL vulnerable localhost
+//! target — so what it prints is the payload the step cards actually read.
 //!
-//! The smoke IS the operator: it dispatches the confirmation-gated scan step
-//! directly (the interactive gate pauses for a human; a headless probe has
-//! one). The only network traffic is against 127.0.0.1.
+//! The only network traffic is against 127.0.0.1.
 //!
 //! Run from `src-tauri/`:
 //!   cargo run --example security_plan_smoke --features litert,security
@@ -135,8 +133,9 @@ async fn main() {
     // The completeness property: every step dispatches a tool the merged
     // catalog actually carries.
     registry.validate_plan(&plan).expect("plan must be dispatchable");
-    // The policy is authoritative: recon stays passive, the active scan must
-    // be gated — an ungated attack step here would be the bug.
+    // The policy is authoritative: recon stays passive and the active scan
+    // is auto-approved — no step may carry a gate. A gated attack step here
+    // would be the bug.
     let gated: Vec<bool> = plan
         .steps
         .iter()
@@ -144,20 +143,12 @@ async fn main() {
         .collect();
     assert_eq!(
         gated,
-        vec![false, true],
-        "recon must stay ungated; the active scan must be gated by policy"
+        vec![false, false],
+        "auto-approve by design: the active scan must NOT be gated"
     );
-    // The smoke IS the operator: the interactive gate pauses for a human
-    // (`confirmation_handler: None` fails the gated step), and a headless
-    // probe approves on the spot.
-    let approve: kawai_router::ConfirmationHandler = std::sync::Arc::new(|step_id, task| {
-        println!("[confirmation] approved step={step_id} task={task}");
-        Box::pin(async { Ok(()) })
-    });
-    let limits = SchedulerLimits {
-        confirmation_handler: Some(approve),
-        ..Default::default()
-    };
+    // No approval pause exists for this pipeline; the plan executes straight
+    // through with the default limits.
+    let limits = SchedulerLimits::default();
 
     let result = kawai_router::run_plan(plan, registry.step_dispatch(), limits)
         .await

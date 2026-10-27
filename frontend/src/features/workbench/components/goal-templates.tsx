@@ -73,8 +73,8 @@ export const templateOpensTradingPerformance = (t: GoalTemplateId | null): boole
 
 /** Templates whose workflow is the fixed Security Audit — the form discloses
  *  the target, category selection and intensity presets like every other
- *  fixed pipeline. The plan lands in the review gate; each ACTIVE scan step
- *  then asks for its own confirmation (one approval = one scan). */
+ *  fixed pipeline. The plan runs straight through — active scan steps are
+ *  auto-approved, no per-step confirmation. */
 const SECURITY_AUDIT_TEMPLATES: readonly GoalTemplateId[] = ["securityAudit"];
 
 export const templateOpensSecurityAudit = (t: GoalTemplateId | null): boolean =>
