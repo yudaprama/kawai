@@ -81,13 +81,16 @@ jobs:
       # office_oxide. Shallow, non-recursive: manifests only, no C sources.
       # Exception: crates' nested binance-connector-rust submodule is
       # a real path dep (binance feature) — cargo resolution needs its manifest.
+      # Same for crates/lonkero: security-tools is a crates-workspace member
+      # with a non-optional path dep on it, so ANY manifest parse of the
+      # crates workspace (e.g. generate:events) needs lonkero's manifest.
       # pdf_oxide is full source, not a manifest: the [patch] in
       # src-tauri/crates/kawai-web Cargo.toml redirects the git dep to the
       # vendored checkout, and the web feature implies office (→ pdf_oxide).
       - name: Init submodules (manifest only)
         run: |
           git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
-          git -C crates submodule update --init vendor/binance-connector-rust
+          git -C crates submodule update --init vendor/binance-connector-rust lonkero
 
       - uses: dtolnay/rust-toolchain@stable
 
