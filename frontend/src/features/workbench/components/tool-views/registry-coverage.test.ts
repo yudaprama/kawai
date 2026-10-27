@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderStepReport } from "@/features/workbench/components/tool-views";
 
 import { renderMexcFuturesFillSync, renderVenueFillsImport } from "@/components/ai-elements/tool-renderers/accounting";
+import { renderSecurityScan } from "@/components/ai-elements/tool-renderers/security";
 import { renderMarketStructure, renderMexcFuturesPositions } from "@/components/ai-elements/tool-renderers/finance";
 
 /**
@@ -324,5 +325,85 @@ describe("dispatch gate: market structure claims its output", () => {
 
   it("refuses a foreign payload instead of half-rendering it", () => {
     expect(renderMarketStructure({ kind: "audit_data", last_close: 1 })).toBeNull();
+  });
+});
+
+/** security_scan output, verbatim from the security-tools envelope builder
+ * (findings are the Rust tool's camelCase projection of lonkero's
+ * Vulnerability). */
+const SECURITY_SCAN = {
+  kind: "security_scan",
+  target: "https://example.com/search",
+  categories: ["xss"],
+  modules: ["proof_xss_scanner", "reflection_xss_scanner", "xss_scanner", "dom_xss_scanner"],
+  findings: [
+    {
+      vulnType: "Cross-Site Scripting (XSS)",
+      severity: "HIGH",
+      confidence: "HIGH",
+      category: "Injection",
+      url: "https://example.com/search",
+      parameter: "q",
+      payload: "<img src=x onerror=alert(1)>",
+      description: "Payload reflected in HTML body without encoding.",
+      evidence: "<img src=x onerror=alert(1)>",
+      cwe: "CWE-79",
+      cvss: 7.1,
+      verified: true,
+      falsePositive: false,
+      remediation: "Context-encode user input before reflection.",
+    },
+  ],
+  testsRun: 12,
+  durationSeconds: 3.2,
+  earlyTerminated: false,
+  terminationReason: null,
+  scannerVersion: "3.7.3",
+};
+
+const SECURITY_MODULES = {
+  kind: "security_modules",
+  categories: [
+    {
+      id: "xss",
+      description: "Cross-site scripting: proof-based, reflection, DOM XSS",
+      modules: ["proof_xss_scanner", "reflection_xss_scanner", "xss_scanner", "dom_xss_scanner"],
+      forceMaximumIntensity: false,
+    },
+    {
+      id: "waf_bypass",
+      description: "WAF bypass probing (always runs at maximum intensity)",
+      modules: ["waf_bypass"],
+      forceMaximumIntensity: true,
+    },
+  ],
+  reconModules: ["http_headers", "ssl_checker"],
+  crawlModules: ["endpoint_discovery"],
+  subdomainModules: ["dns_enum"],
+  frameworkNote: 'category "framework" takes a framework arg',
+};
+
+describe("dispatch gate: security tools claim their output", () => {
+  it.each([
+    ["security_scan", SECURITY_SCAN],
+    ["security_recon", { ...SECURITY_SCAN, kind: "security_recon", categories: [] }],
+    ["security_subdomains", { ...SECURITY_SCAN, kind: "security_subdomains", categories: [] }],
+  ])("%s renders a card, never the fallback", (tool, payload) => {
+    const node = renderStepReport(tool, JSON.stringify(payload));
+    expect(node, `${tool} fell through to the generic fallback`).not.toBeNull();
+  });
+
+  it("security_modules renders the category catalog", () => {
+    const node = renderStepReport("security_modules", JSON.stringify(SECURITY_MODULES));
+    expect(node).not.toBeNull();
+    expect(JSON.stringify(node)).toContain("waf_bypass");
+  });
+
+  it("security_scan renders through the chat registry too", () => {
+    expect(renderSecurityScan(SECURITY_SCAN)).not.toBeNull();
+  });
+
+  it("refuses a foreign payload instead of half-rendering it", () => {
+    expect(renderSecurityScan({ kind: "audit_data", target: "x" })).toBeNull();
   });
 });

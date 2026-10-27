@@ -106,6 +106,10 @@ kawai-venue = { path = "../crates/foundation/venue" }
 # MEXC tools: signed futures fills sync into the venue-keyed fill history the
 # ledger reads. Own-keys-only (no product-baked pair exists for MEXC).
 mexc = { path = "../crates/toolsets/mexc", optional = true }
+# Security agent tools (builtin.security): the vendored lonkero scan engine
+# (in-process standalone pipeline, no Redis) exposed as recon/scan/catalog/
+# subdomain AgentTools.
+security-tools = { path = "../crates/toolsets/security-tools", optional = true }
 # Headless Chromium automation — a CDP client that spawns the machine's
 # installed Chrome/Chromium. Pure Rust (no C deps); the browser itself is NOT
 # bundled. Same crate/version/features the lonkero scanner engine pins.
@@ -204,6 +208,10 @@ binance = ["dep:binance", "kawai-agent/binance"]
 # Accounting agent (builtin.accounting): local double-entry ledger + GST
 # via accounting-tools (vendored accounting-core). No external services.
 accounting = ["dep:accounting-tools"]
+# Security agent (builtin.security): lonkero scan engine in-process. Desktop
+# first — the engine compiles for Android but scans are heavy for a phone,
+# and its headless-Chrome paths are already non-Android-gated.
+security = ["dep:security-tools"]
 # MEXC: the fill-sync tool rides the accounting agent's toolset (the books are
 # the accounting agent's job), so the books read one venue-generic fill history.
 mexc = ["dep:mexc"]

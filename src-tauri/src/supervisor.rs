@@ -305,6 +305,15 @@ async fn build_supervisor_toolset(
             None
         }
     };
+    let security = || -> Option<kawai_tools::ToolSet> {
+        #[cfg(feature = "litert")]
+        { agent_registry::security_tools_for_supervisor(&context, remote_configured) }
+        #[cfg(not(feature = "litert"))]
+        {
+            let _ = (&context, remote_configured);
+            None
+        }
+    };
     let generated = || -> Option<kawai_tools::ToolSet> {
         #[cfg(feature = "litert")]
         {
@@ -348,6 +357,7 @@ async fn build_supervisor_toolset(
             entertainment(),
             monad(),
             accounting(),
+            security(),
             generated(),
         ]
             .into_iter()
@@ -379,6 +389,7 @@ async fn build_supervisor_toolset(
         agent_registry::ENTERTAINMENT_AGENT_ID => entertainment(),
         agent_registry::MONAD_AGENT_ID => monad(),
         agent_registry::ACCOUNTING_AGENT_ID => accounting(),
+        agent_registry::SECURITY_AGENT_ID => security(),
         _ => None,
     }
 }

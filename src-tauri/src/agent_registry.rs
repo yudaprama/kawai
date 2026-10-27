@@ -31,6 +31,7 @@ pub const MONAD_AGENT_ID: &str = "builtin.monad";
 /// Local double-entry ledger + Indian GST accounting agent. Feature
 /// "accounting".
 pub const ACCOUNTING_AGENT_ID: &str = "builtin.accounting";
+pub const SECURITY_AGENT_ID: &str = "builtin.security";
 
 /// Build the agent catalog list from the built-in registry.
 pub fn list_agents() -> Vec<AgentInfo> {
@@ -347,6 +348,26 @@ pub fn accounting_tools_for_supervisor(
     }
 }
 
+/// Security: the vendored lonkero engine as recon/scan/catalog/subdomain
+/// tools, plus the runtime cross-cutting set (deep_write serves pentest
+/// report writing when a remote LLM is configured).
+#[cfg(feature = "litert")]
+pub fn security_tools_for_supervisor(
+    context: &AgentContext<'_>,
+    remote_configured: bool,
+) -> Option<kawai_tools::ToolSet> {
+    #[cfg(feature = "security")]
+    {
+        let set = security_tools::registry::all_tools();
+        return Some(add_runtime_tools(set, context, remote_configured, false));
+    }
+    #[cfg(not(feature = "security"))]
+    {
+        let _ = (context, remote_configured);
+        None
+    }
+}
+
 /// Catalog-seed/drift variant: builds the same toolset with NO device wallet
 /// bound. The Turso catalog is global curation — one dev machine's keychain
 /// state must never leak into it (the `PER_DEVICE_TOOLS` principle), and
@@ -611,7 +632,23 @@ pub fn builtin() -> AgentRegistry {
         )
     };
 
-    AgentRegistry::new(vec![office, presentation, binance, analytics, entertainment, monad, accounting])
+    let security = {
+        #[cfg(feature = "security")]
+        {
+            let mut d = security_tools::agent::definition();
+            d.build_tools = security_tools_for_supervisor;
+            d
+        }
+        #[cfg(not(feature = "security"))]
+        unavailable_definition(
+            SECURITY_AGENT_ID,
+            "Security",
+            "Web security testing: recon, targeted vulnerability scans, and pentest reporting.",
+            false,
+        )
+    };
+
+    AgentRegistry::new(vec![office, presentation, binance, analytics, entertainment, monad, accounting, security])
 }
 
 /// Non-litert build: all agents are disabled placeholders.
@@ -658,6 +695,12 @@ pub fn builtin() -> AgentRegistry {
             ACCOUNTING_AGENT_ID,
             "Accounting",
             "Double-entry bookkeeping, GST invoices, financial reports, and GSTR-1 exports on your local ledger.",
+            false,
+        ),
+        unavailable_definition(
+            SECURITY_AGENT_ID,
+            "Security",
+            "Web security testing: recon, targeted vulnerability scans, and pentest reporting.",
             false,
         ),
     ])

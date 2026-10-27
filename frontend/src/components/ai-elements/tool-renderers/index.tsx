@@ -32,6 +32,7 @@ import {
   renderTradingPnlBySymbol,
   renderVenueFillsImport,
 } from "./accounting";
+import { renderSecurityModules, renderSecurityScan } from "./security";
 
 // ---------------------------------------------------------------------------
 // registry
@@ -126,6 +127,10 @@ const registry: Record<string, ToolRenderer> = {
   crypto_screener_data: renderCryptoScreenerData,
   crypto_funding_arb: renderFundingArb,
   desk_data: renderDeskData,
+  security_scan: renderSecurityScan,
+  security_recon: renderSecurityScan,
+  security_subdomains: renderSecurityScan,
+  security_modules: renderSecurityModules,
   geocode: renderGeocode,
   get_ip_location: renderIpLocation,
   get_iss_position: renderIss,
@@ -163,6 +168,7 @@ type IconName = string;
 
 /** Ordered [predicate, icon] — first match wins. Keeps new tools covered. */
 const iconRules: Array<[(name: string) => boolean, IconName]> = [
+  [(n) => n.startsWith("security_"), "shield"],
   [(n) => /^data_/.test(n), "bar-chart-3"],
   [(n) => /web_search|^search$/.test(n), "search"],
   [(n) => n.startsWith("browser_"), "globe"],

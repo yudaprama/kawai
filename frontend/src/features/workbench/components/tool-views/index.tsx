@@ -72,6 +72,7 @@ import {
   renderFundingArb,
 } from "@/components/ai-elements/tool-renderers/finance";
 import { renderDeskData } from "@/components/ai-elements/tool-renderers/desk";
+import { renderSecurityModules, renderSecurityScan } from "@/components/ai-elements/tool-renderers/security";
 import {
   renderDataChart,
   renderDataImport,
@@ -313,6 +314,10 @@ const registry: Record<string, StepView> = {
   crypto_screener_data: (p) => renderCryptoScreenerData(p),
   crypto_funding_arb: (p) => renderFundingArb(p),
   desk_data: (p) => renderDeskData(p),
+  security_scan: (p) => renderSecurityScan(p),
+  security_recon: (p) => renderSecurityScan(p),
+  security_subdomains: (p) => renderSecurityScan(p),
+  security_modules: (p) => renderSecurityModules(p),
 
   // accounting — trading-books wedge (ledger view of exchange fills)
   venue_fills_import: (p) => renderVenueFillsImport(p),
