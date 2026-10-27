@@ -361,7 +361,7 @@ kawai-tools/                     # the agent tool seam: AgentTool trait + ToolSe
 crates/foundation/venue/         # venue-neutral exchange types: Venue, VenueFill/Position/Asset, VenueError, VenueClient
 crates/toolsets/binance/         # Binance agent tools (feature `binance`): market data, futures mirror, execution, venue fill history
 crates/toolsets/mexc/            # MEXC agent tools (feature `mexc`): fills sync into the same venue-keyed history; own keys only
-crates/toolsets/security-tools/  # Security agent tools (feature `security`, builtin.security): recon / targeted scan / module catalog / subdomain enum over the vendored lonkero engine — in-process (`lonkero::standalone::run_scan` on a dedicated thread; the engine future is !Send), flat kind-tagged envelopes, `security_scan` requires_confirmation. Smoke: `cargo run -p security-tools --example security_smoke`
+crates/toolsets/security-tools/  # Security agent tools (feature `security`, builtin.security): recon / targeted scan / module catalog / subdomain enum over the vendored lonkero engine — in-process (`lonkero::standalone::run_scan` on a dedicated thread; the engine future is !Send), flat kind-tagged envelopes, `security_scan` requires_confirmation. Smokes: `cargo run -p security-tools --example security_smoke` (tool loop vs a local vulnerable server) and, from `src-tauri/`, `cargo run --example security_plan_smoke --features litert,security` (plan → merged registry → confirmation policy → scheduler, real scans vs the same kind of local target)
 crates/lonkero/                  # vendored web-security scanner (own .git, excluded from the crates workspace): 127 modules behind `lonkero_scanner`; lib seams = `standalone::run_scan` (the one end-to-end pipeline, no Redis), `groups` (category→module IDs, shared with `ai::tools`), `scope::ScopeConfig`, `ai::system_prompt::methodology_prompt` (persona source for builtin.security). Its vendored #[cfg(test)] modules are pre-broken (stale vs current APIs) — `cargo test` is not a usable gate here; compile with `cargo check --lib --bins`
 crates/                          # split-out first-party crates (foundation / engines / toolsets / integrations / generated-tools / vendor); crates/vendor/accounting-core is a vendored copy of accounting-blue (double-entry ledger + Indian GST) whose invoice PDF renders through pdf_oxide; exposed as the `builtin.accounting` agent via the `accounting` feature and crates/toolsets/accounting
 nautilus_trader/                # submodule, REFERENCE-ONLY: never a workspace member or path dep. nautilus-binance does NOT replace binance-sdk in-app — see PLAN-nautilus-integration.md §5.1
@@ -461,6 +461,13 @@ what produced the mess.
    args) onto its last step — `build_desk_plan`,
    `build_trading_performance_plan` and `build_monthly_close_plan` all
    do. A builder that skips it shows stale data on the second press.
+6. **A step whose tool has its own budget must declare `timeout_ms`.**
+   `SchedulerLimits::default()` is a 60s step timeout, and the supervisor
+   runs with it — a step that dispatches an in-process engine with a longer
+   internal budget (the security tools: 240s) is killed mid-run and reports
+   `step timed out after 60000ms`. The builder sets
+   `TaskStep::timeout_ms` to the tool's budget plus a dispatch margin
+   (`security_tools::plan::STEP_TIMEOUT_MS`), and a builder test pins it.
 
 **One source of truth per fact.** The slot resolution, the confirmation
 policy and the plan builder each existed in two places during the
@@ -619,5 +626,11 @@ Priority order: **MVP track → post-MVP/pre-release → end state**. Items in t
     feature set (`release.yml` macOS/Linux/Windows: `security` rides
     `litert,tts,binance,accounting,mexc,headless-chrome`) and in `bun tauri
     dev`; Android deliberately defers (phone-class CPU for active scanning +
-    the .so weight). Deferred: session-pinned scope registry (`lonkero::scope`
-    extraction exists), scan-progress streaming, persisted reports, Android.
+    the .so weight). Workflow: the **Security Audit** fixed pipeline
+    (`security_tools::plan::build_security_audit_plan` — recon → one gated
+    scan per category, sequential; chip form + `security_audit` router
+    template + `run_security_audit` op + `/api/run_security_audit`; the
+    `plan_task`-proving probe is `cargo run --example security_plan_smoke
+    --features litert,security` from `src-tauri/`). Deferred: session-pinned
+    scope registry (`lonkero::scope` extraction exists), scan-progress
+    streaming, persisted reports, Android.

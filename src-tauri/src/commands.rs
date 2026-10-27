@@ -2343,6 +2343,45 @@ pub async fn run_monthly_close(
         .await
 }
 
+/// Security Audit: the FIXED pipeline — passive recon, then ONE
+/// confirmation-gated active scan per selected category, strictly
+/// sequential. Categories default to the classic triad (xss, sqli, ssrf)
+/// when the form sends none; the builder validates everything before any
+/// step exists.
+#[cfg(all(feature = "litert", feature = "security"))]
+#[tauri::command]
+pub async fn run_security_audit(
+    session_id: i64,
+    target: String,
+    categories: Option<Vec<String>>,
+    intensity: Option<String>,
+    // Raw device locale tag (e.g. "id-ID") — resolved into the report's
+    // output language at this edge.
+    language: Option<String>,
+    stream_id: String,
+    on_event: Channel<kawai_events::SupervisorEvent>,
+    registry: State<'_, StreamRegistry>,
+    session: State<'_, Session>,
+    pending: State<'_, crate::supervisor::PendingConfirmations>,
+) -> Result<(), String> {
+    let ctx = SupervisorStreamCtx::open(&session, &registry, session_id).await?;
+    let categories = categories
+        .unwrap_or_else(|| security_tools::plan::DEFAULT_CATEGORIES.iter().map(|s| s.to_string()).collect());
+    let run = crate::supervisor::prepare_security_audit_run(
+        &ctx.user_id,
+        session_id,
+        &target,
+        categories,
+        intensity.as_deref(),
+        language.as_deref(),
+        None,
+    )
+    .await
+    .map_err(|e| e.message().to_string())?;
+    ctx.run(run.plan, run.registry, Some(run.user_goal), run.video_id, stream_id, on_event, &pending)
+        .await
+}
+
 /// Crypto Screener: run the FIXED screener pipeline — one `crypto_screener`
 /// scan per selected screen, all in ONE parallel wave — and stream the same
 /// `SupervisorEvent` lifecycle the planner-driven runs emit. No planning

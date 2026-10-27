@@ -1037,6 +1037,43 @@ export function useWorkbench() {
     [supervisor, preflightRun, beginRun],
   );
 
+  /** Security Audit: the FIXED pipeline over one target — passive recon,
+   *  then one confirmation-gated active scan per selected category
+   *  (sequential). Same client mechanics as the screener (balance gate,
+   *  lazy session, no planner round); the per-scan confirmations ride the
+   *  tool gate server-side. */
+  const runSecurityAudit = useCallback(
+    async (
+      target: string,
+      categories: string[] | undefined,
+      intensity: string | undefined,
+      opts?: {
+        onStart?: () => void;
+      },
+    ) => {
+      const host = (() => {
+        try {
+          return new URL(target).host;
+        } catch {
+          return target;
+        }
+      })();
+      if (["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)) {
+        const msg = "A run is already in progress — stop it or wait for it to finish before submitting.";
+        setSessionError(msg);
+        throw new Error(msg);
+      }
+      const sid = await preflightRun(`Security audit — ${host}`.slice(0, 80), "Couldn't start the security audit");
+      const goal = `Security audit — ${host}${categories?.length ? ` · ${categories.join(", ")}` : ""}`.slice(0, 140);
+      beginRun(goal, false);
+      opts?.onStart?.();
+      void call("append_chat_message", { sessionId: sid, role: "user", content: goal }).catch(() => {});
+      supervisor.runSecurityAudit({ target, categories, intensity }, sid);
+      void refreshTokenBalance();
+    },
+    [supervisor, preflightRun, beginRun],
+  );
+
   /** Open a past session in the workbench: clears the in-memory runs and
    *  points sessionId at the picked session — the restore effect below then
    *  rehydrates the latest persisted plan record (runs + deliverable + deck).
@@ -1175,6 +1212,7 @@ export function useWorkbench() {
     runTradingPerformance,
     runMonthlyClose,
     runScreener,
+    runSecurityAudit,
     selectSession,
     syncLatestRun,
     loadFullOutput,

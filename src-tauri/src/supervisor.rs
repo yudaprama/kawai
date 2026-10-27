@@ -3465,6 +3465,45 @@ pub async fn prepare_monthly_close_run(
     Ok(run)
 }
 
+/// Security Audit: passive recon → one confirmation-gated active scan per
+/// category (sequential — the target is never hammered in parallel). The
+/// gate lives on the tool (`security_scan` requires_confirmation), so the
+/// executor pauses before every active step even though the plan itself was
+/// already approved.
+#[cfg(all(feature = "litert", feature = "security"))]
+pub async fn prepare_security_audit_run(
+    user_id: &str,
+    session_id: i64,
+    target: &str,
+    categories: Vec<String>,
+    intensity: Option<&str>,
+    language: Option<&str>,
+    accept_language: Option<&str>,
+) -> Result<FixedRun, FixedRunError> {
+    let lang = pipeline_language(language, accept_language);
+    let plan = security_tools::plan::build_security_audit_plan(
+        target.trim(),
+        &categories,
+        intensity,
+        Some(&lang),
+    )
+    .map_err(FixedRunError::BadInput)?;
+    let user_goal = plan.goal.clone();
+    let registry = build_registry_for_plan(user_id, session_id, &plan)
+        .await
+        .map_err(registry_err)?;
+    let run = FixedRun {
+        plan,
+        user_goal,
+        component: "security-audit",
+        message: "running security audit",
+        registry,
+        video_id: None,
+    };
+    log_fixed_run(&run, user_id, session_id);
+    Ok(run)
+}
+
 /// Crypto Screener: one parallel `crypto_screener` step per selected screen.
 /// Strictly public market data — NO credential gate.
 #[cfg(all(feature = "litert", feature = "binance"))]

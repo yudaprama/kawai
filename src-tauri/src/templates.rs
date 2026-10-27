@@ -195,7 +195,59 @@ pub static TEMPLATES: &[&PlanTemplate] = &[
     &ACCOUNTING_MONTHLY_CLOSE,
     #[cfg(all(feature = "accounting", feature = "binance"))]
     &TRADING_PERFORMANCE,
+    #[cfg(feature = "security")]
+    &SECURITY_AUDIT,
 ];
+
+/// Security Audit — the fixed pipeline over one target: passive recon, then
+/// one confirmation-gated active scan per category (sequential). The URL is
+/// the claim gate: keywords alone ("pentest", "audit keamanan") never claim
+/// the pipeline without a literal target to aim at, and `requires_literal`
+/// plus the required `url` slot enforce exactly that.
+#[cfg(feature = "security")]
+static SECURITY_SLOT_URL: Slot = Slot {
+    name: "url",
+    required: true,
+    hint: "the target to audit, e.g. https://example.com",
+};
+
+#[cfg(feature = "security")]
+fn build_security_audit(slots: &ResolvedSlots) -> Result<TaskPlan, String> {
+    security_tools::plan::build_security_audit_plan(
+        slots.get("url").unwrap_or_default(),
+        // Routed runs (free text) carry no category selection — the bounded
+        // default triad; the audit form lets the user pick more.
+        security_tools::plan::DEFAULT_CATEGORIES
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect::<Vec<String>>()
+            .as_slice(),
+        None,
+        slots.get("language"),
+    )
+}
+
+#[cfg(feature = "security")]
+static SECURITY_AUDIT: PlanTemplate = PlanTemplate {
+    id: "security_audit",
+    purpose: "security audit of one target: passive recon, then per-category active scans (confirmation-gated)",
+    // Security-specific idioms only. "audit" alone is accounting's word —
+    // the risk audit and monthly close must never lose it to this template.
+    keywords: &[
+        "security audit",
+        "pentest",
+        "penetration test",
+        "audit keamanan",
+        "uji keamanan",
+        "vulnerability scan",
+        "scan keamanan",
+        "cek keamanan website",
+    ],
+    requires_literal: true,
+    market_bound: false,
+    slots: &[SECURITY_SLOT_URL],
+    build: build_security_audit,
+};
 
 pub fn registry() -> TemplateRegistry<'static> {
     TemplateRegistry::new(TEMPLATES)

@@ -11294,6 +11294,7 @@ name = "security-tools"
 version = "0.1.0"
 dependencies = [
  "kawai-agent-contract",
+ "kawai-router",
  "kawai-tools",
  "lonkero",
  "serde",

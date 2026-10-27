@@ -260,6 +260,10 @@ name = "thinking_smoke"
 required-features = ["litert", "office"]
 
 [[example]]
+name = "security_plan_smoke"
+required-features = ["litert", "security"]
+
+[[example]]
 name = "draft_smoke"
 required-features = ["litert", "office"]
 

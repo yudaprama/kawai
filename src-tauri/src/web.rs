@@ -2590,6 +2590,8 @@ pub fn router(dist_dir: PathBuf) -> Router {
     let protected = protected.route("/api/run_trading_performance", post(run_trading_performance_handler));
     #[cfg(all(feature = "litert", feature = "accounting"))]
     let protected = protected.route("/api/run_monthly_close", post(run_monthly_close_handler));
+    #[cfg(all(feature = "litert", feature = "security"))]
+    let protected = protected.route("/api/run_security_audit", post(run_security_audit_handler));
 
     // Title generation — no LLM feature gate; only needs auth + Cloudflare creds.
     let protected = protected.route(
@@ -3132,6 +3134,19 @@ struct RunMonthlyCloseRequest {
     stream_id: String,
 }
 
+/// Security Audit (fixed pipeline: recon → per-category gated scans).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunSecurityAuditRequest {
+    session_id: i64,
+    target: String,
+    /// None → the builder's default triad (xss, sqli, ssrf).
+    categories: Option<Vec<String>>,
+    intensity: Option<String>,
+    language: Option<String>,
+    stream_id: String,
+}
+
 /// Crypto Screener: the FIXED multi-screen pipeline over public market data —
 /// one parallel `crypto_screener` step per selected screen, then the built-in
 /// deliverable writer. Same fixed-plan contract as the audit: the presets are
@@ -3282,6 +3297,46 @@ async fn run_monthly_close_handler(
         &user_id,
         req.session_id,
         &req.period,
+        req.language.as_deref(),
+        headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
+    )
+    .await
+    .map_err(fixed_run_status)?;
+    Ok(supervisor_sse(
+        run.plan,
+        run.registry,
+        req.stream_id,
+        user_id,
+        req.session_id,
+        Some(run.user_goal),
+        run.video_id,
+        &bearer,
+        pending,
+    ))
+}
+
+/// Security Audit over the SSE transport — same fixed plan as the Tauri
+/// command: recon → per-category confirmation-gated scans.
+#[cfg(all(feature = "litert", feature = "security"))]
+async fn run_security_audit_handler(
+    Extension(pending): Extension<crate::supervisor::PendingConfirmations>,
+    Extension(user_id): Extension<String>,
+    headers: HeaderMap,
+    Json(req): Json<RunSecurityAuditRequest>,
+) -> Result<Sse<impl Stream<Item = Result<SseFrame, Infallible>>>, (StatusCode, String)> {
+    let bearer = cookie_bearer(&headers)?;
+    ensure_session(&user_id, req.session_id).await?;
+    let run = crate::supervisor::prepare_security_audit_run(
+        &user_id,
+        req.session_id,
+        &req.target,
+        req.categories.unwrap_or_else(|| {
+            security_tools::plan::DEFAULT_CATEGORIES
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect()
+        }),
+        req.intensity.as_deref(),
         req.language.as_deref(),
         headers.get(header::ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()),
     )

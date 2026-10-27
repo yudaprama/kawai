@@ -349,6 +349,8 @@ pub fn run() {
         commands::run_trading_performance,
         #[cfg(all(feature = "litert", feature = "accounting"))]
         commands::run_monthly_close,
+        #[cfg(all(feature = "litert", feature = "security"))]
+        commands::run_security_audit,
         #[cfg(all(feature = "litert", feature = "binance"))]
         commands::run_crypto_screener,
         #[cfg(feature = "litert")]

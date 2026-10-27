@@ -99,6 +99,17 @@ interface RunCryptoScreenerOptions {
   structure?: ScreenerStructureFilter;
 }
 
+interface RunSecurityAuditOptions {
+  /** The one target to audit — full http(s) URL. */
+  target: string;
+  /** Active categories to fire, one sequential gated step each. Omitted =
+   * the backend's default triad (xss, sqli, ssrf). */
+  categories?: string[];
+  /** Payload volume per parameter: "minimal" (default) | "standard" |
+   * "extended" | "maximum". */
+  intensity?: string;
+}
+
 export interface SupervisorPlanCallbacks {
   onPlanCompleted?: (
     goal: string | null,
@@ -713,6 +724,31 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     [startStream],
   );
 
+  /** Security Audit: execute the FIXED pipeline — passive recon, then ONE
+   *  confirmation-gated active scan per selected category, strictly
+   *  sequential. The tool's requires_confirmation makes the executor pause
+   *  before every scan step (one approval = one scan) even after the plan
+   *  itself is approved. Streams the same SupervisorEvent lifecycle as
+   *  runPlan, so the Workbench renders it unchanged. */
+  const runSecurityAudit = useCallback(
+    (options: RunSecurityAuditOptions, sessionId: number) => {
+      if (streamCtrl.current) return;
+      startStream(
+        {
+          sessionId,
+          target: options.target,
+          ...(options.categories ? { categories: options.categories } : {}),
+          ...(options.intensity ? { intensity: options.intensity } : {}),
+          // Device locale → report language (resolved server-side).
+          language: navigator.language,
+        },
+        sessionId,
+        "run_security_audit",
+      );
+    },
+    [startStream],
+  );
+
   const planAndRun = useCallback(
     async (goal: string, sessionId: number, agentId: string, userGoal?: string) => {
       const cleanGoal = userGoal ?? goal;
@@ -917,6 +953,7 @@ export function useSupervisorPlan(callbacks?: SupervisorPlanCallbacks) {
     runTradingPerformance,
     runMonthlyClose,
     runCryptoScreener,
+    runSecurityAudit,
     planAndRun,
     resume,
     approvePlan,

@@ -10,7 +10,8 @@ export type GoalTemplateId =
   | "binanceAudit"
   | "cryptoScreener"
   | "bookClose"
-  | "tradingPerformance";
+  | "tradingPerformance"
+  | "securityAudit";
 const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "stock", label: "Stock Research" },
   { id: "crypto", label: "Crypto Research" },
@@ -21,6 +22,7 @@ const GOAL_TEMPLATES: { id: GoalTemplateId; label: string }[] = [
   { id: "cryptoScreener", label: "Crypto Screener" },
   { id: "bookClose", label: "Monthly Close" },
   { id: "tradingPerformance", label: "Trading Performance" },
+  { id: "securityAudit", label: "Security Audit" },
 ];
 
 /** Templates whose workflow includes the fixed-pipeline Stock Research — only
@@ -69,6 +71,15 @@ const TRADING_PERFORMANCE_TEMPLATES: readonly GoalTemplateId[] = ["tradingPerfor
 export const templateOpensTradingPerformance = (t: GoalTemplateId | null): boolean =>
   t != null && TRADING_PERFORMANCE_TEMPLATES.includes(t);
 
+/** Templates whose workflow is the fixed Security Audit — the form discloses
+ *  the target, category selection and intensity presets like every other
+ *  fixed pipeline. The plan lands in the review gate; each ACTIVE scan step
+ *  then asks for its own confirmation (one approval = one scan). */
+const SECURITY_AUDIT_TEMPLATES: readonly GoalTemplateId[] = ["securityAudit"];
+
+export const templateOpensSecurityAudit = (t: GoalTemplateId | null): boolean =>
+  t != null && SECURITY_AUDIT_TEMPLATES.includes(t);
+
 /** Contextual composer framing per template. Desk templates keep the default
  * goal placeholder — the desk panel is their framing. */
 export const placeholderForTemplate = (_t: GoalTemplateId | null): string | undefined => undefined;
@@ -86,6 +97,7 @@ const DOCS_FOR_TEMPLATE: Record<GoalTemplateId, string> = {
   cryptoScreener: "https://kawai.pro/workflows/",
   bookClose: "https://kawai.pro/workflows/",
   tradingPerformance: "https://kawai.pro/workflows/",
+  securityAudit: "https://kawai.pro/workflows/",
 };
 
 export const docsUrlForTemplate = (t: GoalTemplateId | null): string =>

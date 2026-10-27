@@ -24,6 +24,7 @@ import {
   templateOpensScreener,
   templateOpensBookClose,
   templateOpensTradingPerformance,
+  templateOpensSecurityAudit,
   templateOpensYoutube,
 } from "./goal-templates";
 import type { GoalTemplateId } from "./goal-templates";
@@ -33,6 +34,7 @@ import { BinanceAuditForm, type AuditVenue } from "./binance-audit-form";
 import { CryptoScreenerForm } from "./crypto-screener-form";
 import { BookCloseForm } from "./book-close-form";
 import { TradingPerformanceForm, type TradingVenue } from "./trading-performance-form";
+import { SecurityAuditForm } from "./security-audit-form";
 import { emitOpenTopup } from "@/features/topup/open-topup";
 import { TokenBalanceChip } from "@/features/topup/token-balance-chip";
 import { useI18n } from "@/hooks/use-i18n";
@@ -461,6 +463,16 @@ export function WorkbenchPage({
     [beginPipelineRun, workbench.runTradingPerformance],
   );
 
+  /** Security Audit submit: the FIXED pipeline over one target — passive
+   *  recon, then one confirmation-gated active scan per selected category.
+   *  Same canvas handoff as the other fixed pipelines. */
+  const submitSecurityAudit = useCallback(
+    (target: string, categories: string[] | undefined, intensity: string | undefined) => {
+      beginPipelineRun((onStart) => workbench.runSecurityAudit(target, categories, intensity, { onStart }));
+    },
+    [beginPipelineRun, workbench.runSecurityAudit],
+  );
+
   const composerStatus = ["running", "stopping", "awaitingConfirmation"].includes(supervisor.status)
     ? ("submitted" as const)
     : ("ready" as const);
@@ -657,6 +669,11 @@ export function WorkbenchPage({
                     disabled={composerStatus === "submitted"}
                     onSubmit={submitTradingPerformance}
                   />
+                </div>
+              )}
+              {templateOpensSecurityAudit(template) && (
+                <div className="mt-3">
+                  <SecurityAuditForm disabled={composerStatus === "submitted"} onSubmit={submitSecurityAudit} />
                 </div>
               )}
             </div>
