@@ -618,13 +618,15 @@ jobs:
       # without the litert feature (optional deps still resolve) — the dirs
       # must exist. local-llm path-deps crates tools, so that
       # manifest needs crates present too. Shallow, non-recursive:
-      # only crate manifests, not C sources. The one exception is crates'
-      # own nested submodule vendor/binance-connector-rust (binance-sdk, a
-      # path dep cargo must resolve) — recurse into that single submodule.
+      # only crate manifests, not C sources. Two exceptions — crates' own
+      # nested submodules that are themselves path deps cargo must resolve
+      # (optional deps still resolve even with the feature off):
+      # vendor/binance-connector-rust (binance-sdk) and lonkero
+      # (security-tools).
       - name: Init submodules (local-llm + cognee-litert-lm + crates + kawai-embedding + office_oxide + kawai-vault, manifest only)
         run: |
           git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
-          git -C crates submodule update --init vendor/binance-connector-rust
+          git -C crates submodule update --init vendor/binance-connector-rust lonkero
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

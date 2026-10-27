@@ -41,7 +41,7 @@ jobs:
       - name: Init submodules (manifest only)
         run: |
           git submodule update --init local-llm cognee-litert-lm crates kawai-embedding office_oxide kawai-vault rust-paddle-ocr pdf_oxide
-          git -C crates submodule update --init vendor/binance-connector-rust
+          git -C crates submodule update --init vendor/binance-connector-rust lonkero
 
       - name: Install Tauri Linux system deps
         run: |
